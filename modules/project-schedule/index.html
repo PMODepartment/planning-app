@@ -4451,7 +4451,19 @@
         var patch = {
           activity_name: String(w.description || '').trim() || ('Work package ' + w.wp_no),
           wbs: codeOf[x.node.id], wbs_node_id: x.node.id,
-          activity_type: 'Task', seq_order: x.seq,
+          // ⚠️ A mirrored row IS a procurement work package, so it carries the 'Work Package'
+          // activity type rather than the generic 'Task' — the Task column chips it as one, and it
+          // becomes filterable as a class in its own right instead of being indistinguishable from
+          // hand-entered construction work. No migration: `project_schedule.activity_type` is plain
+          // text with no CHECK constraint, and 'Work Package' is already in the type vocabulary
+          // (the Add/Edit select, the Type filter, the General tab and `taskKindOf`).
+          // ⚠️ Existing rows self-migrate: `activity_type` is in `patchFields`, so the diff loop
+          // below sees 'Task' != 'Work Package' and issues the UPDATE on the next sync. Nothing to
+          // backfill.
+          // ⚠️ ONLY the package rows. The trade branches above stay 'WBS Summary' — they are the
+          // headings, and re-typing them would stop `isWbs()` recognising them, which is exactly the
+          // headless-branch failure fixed earlier today.
+          activity_type: 'Work Package', seq_order: x.seq,
           status: awarded ? 'In Progress' : 'Not Started',
           start_date: start, end_date: fin || start || null,
           // ⚠️ Link the mirrored row to its OWN package. Its activity_id already IS the wp_no,

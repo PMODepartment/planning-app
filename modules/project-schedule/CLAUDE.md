@@ -1,3 +1,33 @@
+## Mirrored procurement rows are typed 'Work Package', not 'Task' (2026-08-24) — fmlozano
+Owner: *"When syncing from procurement let's make all of these into work packages rather than a Task."*
+One value in `syncProcurement`'s patch — the surrounding vocabulary already existed.
+- **No migration.** `project_schedule.activity_type` is plain `text default 'Task'` with **no CHECK
+  constraint** (verified in both `supabase-schema.sql` and `supabase-setup.sql`), and **'Work Package'
+  was already a first-class type** — a concurrent session had added it to the Add/Edit select, the Type
+  filter menu, the General tab, `taskKindOf` and a dedicated `.ps-tk-wp` chip. This just starts using it.
+- ⚠️ **Existing rows self-migrate, nothing to backfill.** `activity_type` is in `patchFields`, so the
+  diff loop sees `'Task' !== 'Work Package'` and issues the UPDATE on the next sync.
+- ⚠️ **ONLY the package rows.** The trade branches stay `'WBS Summary'` — they are the headings, and
+  re-typing them would stop `isWbs()` recognising them, which is precisely the headless-branch failure
+  fixed earlier today. `syncDesignDevelopment` is deliberately untouched: those rows are register
+  roll-ups, not procurement packages.
+- **Checked every consumer before changing the value**, since a type is read in four places: the chip
+  (`.ps-tk-wp` exists), the Type **filter** (`filters.type[r.activity_type || 'Task']` — exact match,
+  and 'Work Package' is offered in the menu), the Activity Type **grouping** dimension (returns
+  `activity_type` verbatim, so packages now form their own group), and rendering — `isWbs()`/`isMile()`
+  both return false, so the row still draws a normal bar. Nothing keys off the literal `'Task'`.
+- **Verified by EXECUTING the shipped renderers** (`isWbs`, `isMile`, `isFinishMile`, `isWbsNode`,
+  `taskKindOf`, `taskCellHtml` sliced verbatim) — `scratchpad/check-wptype.js`, **16/16**: the chip, the
+  class, not-a-WBS, not-a-milestone, Task/WBS/Milestone all unchanged, the sync writing the new type and
+  no longer writing `'Task'`, DD untouched, and all four consumer call sites present. Other suites green
+  (cross-project 14/14, sweep 8/8, `_ensureNodeSummary` 18/18); parse clean; **0 functions lost/added**.
+- ⚠️ **Three test failures on the way, all MY assertions, none the code:** I asserted the trade headings
+  were projected by literal text inside `syncProcurement` (they come from `_ensureNodeSummary`); I sliced
+  `syncDesignDevelopment` *backwards*, since it is defined **after** `syncProcurement` in the file; and a
+  regex for `WBS Summary` matched **my own comment prose**. The last one is the repo's recurring trap —
+  assert on the payload form (`activity_type: '…'`), not on a bare phrase.
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260824d`.
+
 ## The 83 corrupt rows: characterised, and a backed-up cleanup written (2026-08-24) — fmlozano
 Follow-up to closing the writer. **Measured every one of the 83 rows before proposing anything**, and
 the result removes the ambiguity: **not one of them is a legitimate projection.**

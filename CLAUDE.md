@@ -84,6 +84,17 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-24 — Procurement sync types its rows as 'Work Package'; the null-code cleanup was run
+- **Mirrored procurement rows now carry `activity_type: 'Work Package'`** instead of the generic
+  `'Task'`. **No migration** — the column is plain text with no CHECK constraint and the type was
+  already in the vocabulary (Add/Edit select, Type filter, General tab, `taskKindOf`, `.ps-tk-wp` chip).
+  Existing rows self-migrate on the next sync via the diff loop. ⚠️ Only the package rows — the trade
+  branches stay `'WBS Summary'`, and Design Development is untouched. **16/16** executing the shipped
+  renderers; all other suites green; 0 functions lost. `MODULE_V` → `20260824d`.
+- ✅ **The owner ran `migrations/2026-08-24-cleanup-null-code-wbs-rows.sql`:** BAU101 reports **40 nodes /
+  30 summary rows**, exactly as predicted. The 10 genuinely-missing trade headings are restored by the
+  heal the next time the project is opened, for a clean 40/40.
+
 ### 2026-08-24 — The 83 corrupt WBS rows characterised; backed-up cleanup script written (USER MUST RUN)
 Measured all 83 before proposing anything: **3 point at another project's WBS node, 80 at a node that no
 longer exists, 0 at their own project's** — none is a legitimate projection — and **0 activities** hang
