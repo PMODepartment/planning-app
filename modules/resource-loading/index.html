@@ -82,6 +82,37 @@
     .rl-hint { grid-column:1 / -1; font-size:11.5px; color:var(--pd-muted); margin:-6px 0 0; }
     .rl-days { display:flex; gap:10px; flex-wrap:wrap; }
     .rl-days label { display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:400; }
+
+    /* ---- Calendar editor (2026-08-24) --------------------------------------
+       Templates, seasonal work patterns and the year preview. The preview is
+       the point of all of it: a planner has to SEE how many working days a
+       calendar actually gives per month before a duration is counted against
+       it, because a mis-ticked Saturday or an overlapping season is invisible
+       in a form and very visible in a finish date.
+       ---------------------------------------------------------------------- */
+    .rl-tpl { grid-column:1 / -1; display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px; }
+    .rl-tpl button { text-align:left; padding:9px 11px; border:1px solid var(--pd-border); border-radius:8px;
+                     background:var(--pd-card); cursor:pointer; font:inherit; color:inherit; }
+    .rl-tpl button:hover { border-color:var(--pd-accent); background:var(--pd-bg); }
+    .rl-tpl b { display:block; font-size:12.5px; margin-bottom:3px; }
+    .rl-tpl span { font-size:11px; color:var(--pd-muted); line-height:1.35; }
+    .rl-season { grid-column:1 / -1; border:1px solid var(--pd-border); border-radius:8px; padding:10px 12px; margin-bottom:8px; background:var(--pd-card); }
+    .rl-season-hd { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .rl-season-hd input { flex:1; }
+    .rl-mo { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px; }
+    .rl-mo label { font-size:11px; font-weight:600; padding:3px 7px; border:1px solid var(--pd-border); border-radius:6px; cursor:pointer; }
+    .rl-mo input { display:none; }
+    .rl-mo label.on { background:var(--pd-accent); color:#fff; border-color:var(--pd-accent); }
+    .rl-season-row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:12px; }
+    .rl-warn { grid-column:1 / -1; font-size:11.5px; color:#b45309; margin:0; }
+    .rl-yr { grid-column:1 / -1; overflow-x:auto; }
+    .rl-yr table { border-collapse:collapse; width:100%; min-width:520px; font-size:12px; }
+    .rl-yr th, .rl-yr td { padding:5px 8px; border-bottom:1px solid var(--pd-border); text-align:left; white-space:nowrap; }
+    .rl-yr th { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .rl-yr td.num, .rl-yr th.num { text-align:right; }
+    .rl-yr tr.wet td:first-child { box-shadow:inset 3px 0 0 #2563eb; }
+    .rl-yr tr.dry td:first-child { box-shadow:inset 3px 0 0 #f59e0b; }
+    .rl-yr .rl-hol { font-size:11px; color:var(--pd-muted); white-space:normal; }
   
       /* ---- Mobile & tablet (2026-07-23) --------------------------------
          Shared chrome comes from dashboard.css. The rosters and the Loading
@@ -182,7 +213,7 @@
 <script src="../../assets/js/db.js?v=20260819b"></script>
 <script src="../../assets/js/ui.js?v=20260812b"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
-<script src="../../assets/js/calendar.js?v=20260819a"></script>
+<script src="../../assets/js/calendar.js?v=20260824a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script>
@@ -327,6 +358,19 @@
     });
   }
 
+  // Seasons at a glance, plus the special-days opt-in — the two things that make
+  // two calendars with an identical weekday pattern resolve to different dates.
+  function calSeasonSummary(c) {
+    var ss = PDCal.seasonsOf(c);
+    var bits = ss.map(function (s) {
+      var mo = (s.months || []).map(function (m) { return MONTH_ABBR[m - 1]; }).join(' ');
+      return '<span class="rl-badge" title="' + esc((s.label || 'Season') + ': ' + mo) + '">' + esc(s.label || 'Season') + '</span>';
+    });
+    if (c.observe_special_days) bits.push('<span class="rl-badge">+ special days</span>');
+    if (c.climate_type) bits.unshift('<span class="rl-badge">' + esc(PDCal.climateType(c.climate_type).short) + '</span>');
+    return bits.length ? bits.join(' ') : '<span style="color:var(--pd-muted);">&mdash;</span>';
+  }
+
   function calDayPattern(c) {
     var on = DAYS.filter(function (d) { return c[d[0]]; }).map(function (d) { return d[1]; });
     return on.length === 7 ? 'Every day' : on.join('/');
@@ -419,18 +463,22 @@
           '</tr>';
         }).join('') : '<tr><td colspan="7" class="rl-empty">' + (pid ? 'No roles match.' : 'Select a project.') + '</td></tr>') + '</tbody>';
     } else {
-      t.innerHTML = '<thead><tr><th>Name</th><th>Working days</th><th class="num">Hours/day</th><th class="num">Extra holidays</th><th class="num">Resources</th><th></th></tr></thead><tbody>' +
+      t.innerHTML = '<thead><tr><th>Name</th><th>Working days</th><th class="num">Hours/day</th><th>Seasons</th><th class="num">Days in ' + new Date().getFullYear() + '</th><th class="num">Extra holidays</th><th class="num">Resources</th><th></th></tr></thead><tbody>' +
         (f.length ? f.map(function (r) {
           var n = resCountForCal(r.id);
           return '<tr>' +
             '<td><strong>' + esc(r.name || '') + '</strong>' + (r.is_default ? ' <span class="rl-badge">Default</span>' : '') + '</td>' +
             '<td>' + esc(calDayPattern(r)) + '</td>' +
             '<td class="num">' + (r.hours_per_day != null ? r.hours_per_day : 8) + '</td>' +
+            '<td style="font-size:12px;">' + calSeasonSummary(r) + '</td>' +
+            // The number a planner actually compares two calendars on. Showing the
+            // pattern alone hides what a season or the special-days toggle costs.
+            '<td class="num">' + PDCal.yearStats(r, new Date().getFullYear()).total + '</td>' +
             '<td class="num">' + ((r.extra_holidays || []).length) + '</td>' +
             '<td class="num">' + (n ? '<span class="rl-badge">' + n + '</span>' : '0') + '</td>' +
             '<td><div class="rl-actions"><button class="rl-btn-sm" data-edit="' + r.id + '">Edit</button><button class="rl-btn-sm" data-del="' + r.id + '">&#215;</button></div></td>' +
           '</tr>';
-        }).join('') : '<tr><td colspan="6" class="rl-empty">' + (pid ? 'No calendars match.' : 'Select a project.') + '</td></tr>') + '</tbody>';
+        }).join('') : '<tr><td colspan="8" class="rl-empty">' + (pid ? 'No calendars match.' : 'Select a project.') + '</td></tr>') + '</tbody>';
     }
     t.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openForm(rows[tab].find(function (x) { return x.id === b.dataset.edit; })); }; });
     t.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { del(b.dataset.del); }; });
@@ -594,19 +642,206 @@
         hint('The role’s Price/Unit is offered as the default rate when a resource picks this role and has no rate of its own.') +
         fld('Remarks', '<textarea class="pd-input" id="f-rem" rows="2">' + esc(row.remarks) + '</textarea>', true);
     } else {
-      row = row || { hours_per_day: 8, work_mon: true, work_tue: true, work_wed: true, work_thu: true, work_fri: true, work_sat: true, work_sun: false };
-      form.innerHTML =
-        fld('Calendar name', '<input class="pd-input" id="f-name" value="' + esc(row.name) + '" placeholder="e.g. Philippine Standard (6-day, 8h)">', true) +
-        sec('Schedule') +
-        fld('Hours per day', '<input class="pd-input" id="f-hpd" type="number" min="1" max="24" step="0.5" value="' + (row.hours_per_day != null ? row.hours_per_day : 8) + '">') +
-        fld('Working days', '<div class="rl-days">' + DAYS.map(function (d) { return '<label><input type="checkbox" data-day="' + d[0] + '"' + (row[d[0]] ? ' checked' : '') + '> ' + d[1] + '</label>'; }).join('') + '</div>', true) +
-        sec('Extra holidays') +
-        fld('Movable / proclaimed dates', '<textarea class="pd-input" id="f-hol" rows="3" placeholder="2026-03-20">' + esc((row.extra_holidays || []).join('\n')) + '</textarea>', true) +
-        hint('One YYYY-MM-DD per line — e.g. Eid’l Fitr, Eid’l Adha, or a proclamation-moved date. PH regular holidays (New Year’s, Holy Week, Araw ng Kagitingan, Labor Day, Independence Day, National Heroes Day, Bonifacio Day, Christmas, Rizal Day) are already applied automatically every year.');
+      calDraft = row ? JSON.parse(JSON.stringify(row)) : PDCal.defaultCalendar();
+      if (!Array.isArray(calDraft.seasons)) calDraft.seasons = [];
+      renderCalForm(!row);
     }
     document.getElementById('rl-modal').style.display = 'flex';
     if (window.Icons) Icons.hydrate(form);
   }
+  // ==========================================================================
+  // CALENDAR EDITOR
+  // --------------------------------------------------------------------------
+  // Held in `calDraft` rather than read off the DOM, because the form re-renders
+  // itself: adding a season or repointing the climate type has to redraw the
+  // month chips and the year preview, and half-typed field values would be lost
+  // if the draft lived only in the inputs. Every control writes straight into the
+  // draft; save() serialises the draft.
+  var calDraft = null, calPrevYear = new Date().getFullYear();
+  var MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function renderCalForm(isNew) {
+    var c = calDraft, form = document.getElementById('rl-form');
+    var ct = c.climate_type ? PDCal.climateType(c.climate_type) : null;
+    var html =
+      // WARNING: templates only on a NEW calendar. Offering them while editing
+      // invites one click that silently rewrites a pattern other rows already use.
+      (isNew ? sec('Start from a template') +
+        '<div class="rl-tpl">' + PDCal.CALENDAR_TEMPLATES.map(function (t) {
+          return '<button type="button" data-tpl="' + t.key + '"><b>' + esc(t.name) + '</b><span>' + esc(t.note) + '</span></button>';
+        }).join('') + '</div>' +
+        hint('A template only pre-fills this form &mdash; the saved calendar is an ordinary one you can edit freely afterwards.') : '') +
+      sec('Base pattern') +
+      fld('Calendar name', '<input class="pd-input" id="f-name" value="' + esc(c.name) + '" placeholder="e.g. Philippine Standard (6-day, 8h)">', true) +
+      fld('Hours per day', '<input class="pd-input" id="f-hpd" type="number" min="1" max="24" step="0.5" value="' + (c.hours_per_day != null ? c.hours_per_day : 8) + '">') +
+      fld('Site climate type (PAGASA)', '<select class="pd-select" id="f-clim"><option value="">&mdash; not set &mdash;</option>' +
+        PDCal.PH_CLIMATE_TYPES.map(function (t) {
+          return '<option value="' + t.key + '"' + (c.climate_type === t.key ? ' selected' : '') + '>' + esc(t.short) + '</option>';
+        }).join('') + '</select>') +
+      fld('Working days', '<div class="rl-days">' + DAYS.map(function (d) {
+        return '<label><input type="checkbox" data-day="' + d[0] + '"' + (c[d[0]] ? ' checked' : '') + '> ' + d[1] + '</label>';
+      }).join('') + '</div>', true) +
+      (ct ? hint(esc(ct.name) + ' &mdash; ' + esc(ct.areas) + '.')
+          : hint('Setting the climate type seeds the season presets below and the rain-day allowance in a duration scenario. It is where the SITE is, not where the office is &mdash; a Mindanao project planned against a Luzon wet season is the mistake this prevents.')) +
+
+      sec('Holidays') +
+      fld('Philippine special (non-working) days',
+        '<div class="rl-days"><label><input type="checkbox" id="f-spec"' + (c.observe_special_days ? ' checked' : '') + '> Treat as non-working</label></div>', true) +
+      hint('Black Saturday, Ninoy Aquino Day, All Saints&rsquo;, Immaculate Conception and Dec 31. Off by default: a special day is &ldquo;no work, no pay&rdquo; rather than a regular holiday and many sites work them. The 10 PH <em>regular</em> holidays are always applied and are listed in the preview below.') +
+      fld('Extra / proclaimed dates', '<textarea class="pd-input" id="f-hol" rows="3" placeholder="2026-03-20">' + esc((c.extra_holidays || []).join('\n')) + '</textarea>', true) +
+      hint('One YYYY-MM-DD per line &mdash; Eid&rsquo;l Fitr, Eid&rsquo;l Adha, Chinese New Year, or a proclamation-moved date. These are announced yearly and cannot be computed offline, which is why they are typed rather than derived.') +
+
+      sec('Seasonal work patterns') +
+      hint('A season changes the <em>week itself</em> for the months it covers &mdash; a shorter week or shorter days through the monsoon. This is a decision the project has made, so it applies to the live schedule and to every scenario alike. It is not the same as rain days, which are weather <em>taken</em> from you and belong to a duration scenario&rsquo;s rain profile; the two compose.') +
+      (ct ? '<div class="rl-form-full"><button type="button" class="rl-btn-sm" id="f-seed">Seed wet/dry seasons from ' + esc(ct.short) + '</button></div>'
+          : hint('Pick a climate type above to seed wet/dry season months automatically.')) +
+      c.seasons.map(seasonHtml).join('') +
+      '<div class="rl-form-full"><button type="button" class="rl-btn-sm" id="f-addseason">+ Add season</button></div>' +
+      calOverlapWarning() +
+
+      sec('Year preview &mdash; ' + calPrevYear) +
+      hint('The working days this calendar actually gives, month by month. Check it before trusting a finish date to this calendar: a mis-ticked day or an overlapping season is invisible in the form above and obvious here.') +
+      calYearPreview();
+
+    form.innerHTML = html;
+    wireCalForm(isNew);
+    if (window.Icons) Icons.hydrate(form);
+  }
+
+  function seasonHtml(s, i) {
+    return '<div class="rl-season" data-season="' + i + '">' +
+      '<div class="rl-season-hd">' +
+        '<input class="pd-input" data-sfield="label" value="' + esc(s.label || '') + '" placeholder="e.g. Wet season - reduced week">' +
+        '<button type="button" class="rl-btn-sm" data-sdel="' + i + '">&#215;</button>' +
+      '</div>' +
+      '<div class="rl-mo">' + MONTH_ABBR.map(function (m, k) {
+        var on = (s.months || []).indexOf(k + 1) !== -1;
+        return '<label class="' + (on ? 'on' : '') + '"><input type="checkbox" data-smonth="' + (k + 1) + '"' + (on ? ' checked' : '') + '>' + m + '</label>';
+      }).join('') + '</div>' +
+      '<div class="rl-season-row">' +
+        '<span>Hours/day <input class="pd-input" style="width:70px;" type="number" min="1" max="24" step="0.5" data-sfield="hours_per_day" value="' + (s.hours_per_day != null ? s.hours_per_day : '') + '" placeholder="base"></span>' +
+        DAYS.map(function (d) {
+          // Tri-state on purpose: a season that only shortens the DAY must not be
+          // forced to restate the whole week. "base" = inherit the base pattern.
+          var val = (s[d[0]] === undefined || s[d[0]] === null) ? '' : (s[d[0]] ? '1' : '0');
+          return '<label><select class="pd-select" style="width:66px;padding:2px 4px;" data-sday="' + d[0] + '">' +
+            '<option value=""' + (val === '' ? ' selected' : '') + '>base</option>' +
+            '<option value="1"' + (val === '1' ? ' selected' : '') + '>work</option>' +
+            '<option value="0"' + (val === '0' ? ' selected' : '') + '>off</option>' +
+            '</select> ' + d[1] + '</label>';
+        }).join('') +
+      '</div></div>';
+  }
+
+  // Overlapping months are refused rather than averaged: PDCal takes the FIRST
+  // matching season, so an overlap would resolve by list order and read as random.
+  function calOverlapDupes() {
+    var seen = {}, dup = {};
+    (calDraft.seasons || []).forEach(function (s) {
+      (s.months || []).forEach(function (m) { if (seen[m]) dup[m] = true; seen[m] = true; });
+    });
+    return Object.keys(dup).map(Number);
+  }
+  function calOverlapWarning() {
+    var d = calOverlapDupes();
+    if (!d.length) return '';
+    return '<p class="rl-warn">' + d.map(function (m) { return MONTH_ABBR[m - 1]; }).join(', ') +
+      ' ' + (d.length > 1 ? 'are' : 'is') + ' claimed by more than one season. Saving is blocked until each month belongs to at most one.</p>';
+  }
+
+  function calYearPreview() {
+    var st = PDCal.yearStats(calDraft, calPrevYear), ct = calDraft.climate_type;
+    var body = st.months.map(function (m) {
+      var seas = ct ? PDCal.phSeasonOf(ct, m.month) : '';
+      return '<tr class="' + seas + '"><td><strong>' + MONTH_ABBR[m.month - 1] + '</strong>' +
+        (m.season ? ' <span class="rl-badge">' + esc(m.season) + '</span>' : '') + '</td>' +
+        '<td class="num">' + m.working + '</td>' +
+        '<td class="num">' + Math.round(m.hours) + '</td>' +
+        '<td>' + (ct ? (seas === 'wet' ? 'Wet' : seas === 'dry' ? 'Dry / sunny' : 'Mixed') : '&mdash;') + '</td>' +
+        '<td class="rl-hol">' + (m.holidays.length ? m.holidays.map(function (h) { return esc(h.name); }).join(', ') : '&mdash;') + '</td></tr>';
+    }).join('');
+    return '<div class="rl-yr"><table><thead><tr><th>Month</th><th class="num">Working days</th>' +
+      '<th class="num">Hours</th><th>Season</th><th>Holidays taken out</th></tr></thead><tbody>' + body +
+      '<tr><td><strong>Year</strong></td><td class="num"><strong>' + st.total + '</strong></td>' +
+      '<td class="num"><strong>' + Math.round(st.months.reduce(function (a, m) { return a + m.hours; }, 0)) + '</strong></td>' +
+      '<td colspan="2"></td></tr></tbody></table></div>';
+  }
+
+  // Reads the live inputs back into the draft before any re-render, so a name or
+  // hours value typed but not yet committed survives adding a season.
+  function syncCalDraft() {
+    if (!calDraft) return;
+    var n = document.getElementById('f-name'); if (n) calDraft.name = n.value.trim();
+    var h = document.getElementById('f-hpd'); if (h) calDraft.hours_per_day = parseFloat(h.value) || 8;
+    var cl = document.getElementById('f-clim'); if (cl) calDraft.climate_type = cl.value || null;
+    var sp = document.getElementById('f-spec'); if (sp) calDraft.observe_special_days = sp.checked;
+    var ho = document.getElementById('f-hol');
+    if (ho) calDraft.extra_holidays = ho.value.split('\n').map(function (x) { return x.trim(); }).filter(function (x) { return /^\d{4}-\d{2}-\d{2}$/.test(x); });
+    DAYS.forEach(function (d) { var e = document.querySelector('[data-day="' + d[0] + '"]'); if (e) calDraft[d[0]] = e.checked; });
+  }
+
+  function wireCalForm(isNew) {
+    var form = document.getElementById('rl-form');
+    form.querySelectorAll('[data-tpl]').forEach(function (b) {
+      b.onclick = function () {
+        var keep = calDraft.seasons, ct = calDraft.climate_type;
+        calDraft = PDCal.templateCalendar(b.dataset.tpl);
+        calDraft.seasons = keep; calDraft.climate_type = ct;   // a template is a week shape; it must not un-pick the site
+        renderCalForm(isNew);
+      };
+    });
+    // Re-render on the controls the preview depends on. Free-text fields are not
+    // re-rendered per keystroke (it would fight the caret) but are synced first.
+    ['f-hpd', 'f-clim', 'f-spec', 'f-hol'].forEach(function (id) {
+      var e = document.getElementById(id);
+      if (e) e.onchange = function () { syncCalDraft(); renderCalForm(isNew); };
+    });
+    form.querySelectorAll('[data-day]').forEach(function (e) {
+      e.onchange = function () { syncCalDraft(); renderCalForm(isNew); };
+    });
+    var seed = document.getElementById('f-seed');
+    if (seed) seed.onclick = function () {
+      syncCalDraft();
+      calDraft.seasons = PDCal.phSeasonPreset(calDraft.climate_type, {});
+      renderCalForm(isNew);
+    };
+    var add = document.getElementById('f-addseason');
+    if (add) add.onclick = function () {
+      syncCalDraft();
+      calDraft.seasons.push({ id: 's' + Math.random().toString(36).slice(2, 8), label: '', months: [], hours_per_day: null });
+      renderCalForm(isNew);
+    };
+    form.querySelectorAll('[data-sdel]').forEach(function (b) {
+      b.onclick = function () { syncCalDraft(); calDraft.seasons.splice(+b.dataset.sdel, 1); renderCalForm(isNew); };
+    });
+    form.querySelectorAll('.rl-season').forEach(function (box) {
+      var s = calDraft.seasons[+box.dataset.season];
+      box.querySelectorAll('[data-sfield]').forEach(function (e) {
+        e.oninput = function () {
+          var f = e.dataset.sfield;
+          s[f] = (f === 'hours_per_day') ? (e.value === '' ? null : parseFloat(e.value)) : e.value;
+        };
+        if (e.dataset.sfield === 'hours_per_day') e.onchange = function () { syncCalDraft(); renderCalForm(isNew); };
+      });
+      box.querySelectorAll('[data-smonth]').forEach(function (e) {
+        e.onchange = function () {
+          var m = +e.dataset.smonth;
+          s.months = s.months || [];
+          var at = s.months.indexOf(m);
+          if (e.checked && at === -1) s.months.push(m); else if (!e.checked && at !== -1) s.months.splice(at, 1);
+          s.months.sort(function (a, b) { return a - b; });
+          syncCalDraft(); renderCalForm(isNew);
+        };
+      });
+      box.querySelectorAll('[data-sday]').forEach(function (e) {
+        e.onchange = function () {
+          s[e.dataset.sday] = e.value === '' ? null : e.value === '1';
+          syncCalDraft(); renderCalForm(isNew);
+        };
+      });
+    });
+  }
+
   function fld(label, control, full) { return '<div class="' + (full ? 'rl-form-full' : '') + '"><label class="pd-label">' + label + '</label>' + control + '</div>'; }
   function sec(label) { return '<div class="rl-form-sec">' + label + '</div>'; }
   function hint(text) { return '<p class="rl-hint">' + text + '</p>'; }
@@ -631,10 +866,25 @@
       if (!v('f-name')) { UI.toast('Role name is required.', 'error'); return; }
       payload = { project_id: pid, name: v('f-name'), discipline: v('f-disc') || null, uom: v('f-uom') || null, price_per_unit: num('f-rate'), remarks: v('f-rem') || null, updated_at: new Date().toISOString() };
     } else {
-      if (!v('f-name')) { UI.toast('Calendar name is required.', 'error'); return; }
-      var holidays = v('f-hol').split('\n').map(function (s) { return s.trim(); }).filter(function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); });
-      payload = { project_id: pid, name: v('f-name'), hours_per_day: num('f-hpd') || 8, extra_holidays: holidays, updated_at: new Date().toISOString() };
-      DAYS.forEach(function (d) { payload[d[0]] = !!document.querySelector('[data-day="' + d[0] + '"]').checked; });
+      syncCalDraft();
+      if (!calDraft.name) { UI.toast('Calendar name is required.', 'error'); return; }
+      // A calendar with no working day at all would make addWorkingDays run to its
+      // guard and hand back a finish date 20 years out. Refuse it here instead.
+      if (!DAYS.some(function (d) { return calDraft[d[0]]; })) { UI.toast('A calendar needs at least one working weekday.', 'error'); return; }
+      var dupes = calOverlapDupes();
+      if (dupes.length) { UI.toast('Two seasons claim the same month (' + dupes.map(function (m) { return MONTH_ABBR[m - 1]; }).join(', ') + ') — fix that first.', 'error'); return; }
+      // Drop seasons that cover no month: they change nothing but read as if they do.
+      var seasons = (calDraft.seasons || []).filter(function (x) { return x.months && x.months.length; }).map(function (x) {
+        var o = { id: x.id || ('s' + Math.random().toString(36).slice(2, 8)), label: (x.label || '').trim() || 'Season', months: x.months.slice() };
+        if (x.hours_per_day != null && x.hours_per_day !== '') o.hours_per_day = Number(x.hours_per_day);
+        DAYS.forEach(function (d) { if (x[d[0]] === true || x[d[0]] === false) o[d[0]] = x[d[0]]; });
+        return o;
+      });
+      payload = { project_id: pid, name: calDraft.name, hours_per_day: calDraft.hours_per_day || 8,
+        extra_holidays: calDraft.extra_holidays || [], seasons: seasons,
+        observe_special_days: !!calDraft.observe_special_days, climate_type: calDraft.climate_type || null,
+        updated_at: new Date().toISOString() };
+      DAYS.forEach(function (d) { payload[d[0]] = !!calDraft[d[0]]; });
     }
     if (editId) {
       var cur = rows[tab].find(function (x) { return x.id === editId; });

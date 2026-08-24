@@ -7190,3 +7190,63 @@ building paints a magnified copy of that part of the same `<svg>` into a docked 
 right, with the zone's dates, POC and slip underneath. It is a clone with a tighter `viewBox`, so
 it cannot drift from what the left pane draws. `MODULE_V` → `20260824g`.
 See `modules/project-schedule/CLAUDE.md` for the mechanics and what was verified.
+
+
+## 2026-08-24 — Calendar creation: templates, seasons, PH climate types
+
+Creating a working calendar was a name, seven checkboxes and an hours figure, with no way to see
+what the result actually gave you. Three things were added, all on top of the existing `calendars`
+table so every row saved before today resolves to exactly the same dates.
+
+**1. Starter templates.** `PDCal.CALENDAR_TEMPLATES` — PH 6-day, 6-day + special days, office
+5-day, extended 6×10, continuous 7-day. They only *pre-fill* the form; the saved row is an
+ordinary calendar. Offered on **new** calendars only: a template click while editing would rewrite
+a pattern activities are already scheduled against. Picking one keeps the climate type and any
+seasons already set — a template is a week shape, not the site.
+
+**2. Seasonal work patterns** (`calendars.seasons` jsonb). A season claims calendar months and
+overrides hours/day and/or the weekday pattern for them — a 5-day 6-hour week through the monsoon.
+Fields left blank inherit the base calendar (tri-state `base` / `work` / `off`), so a season that
+only shortens the *day* need not restate the week. Months no season claims fall back to the base
+pattern, which is why a calendar with no seasons is unchanged.
+
+⚠️ **A season is not a rain day.** A season is a decision the project has made, so it applies to
+the live schedule and to every scenario alike. Rain days are weather *taken* from you and stay per
+duration-scenario. Modelling a deliberate wet-season 5-day week as rain damage would have made
+policy look like weather, and would vanish the moment a different scenario was previewed. The two
+compose: a season gives fewer days, then rain takes some of those away.
+
+⚠️ **Overlapping months are refused, not averaged.** `PDCal.patternFor()` takes the *first* season
+claiming a month, so an overlap would resolve by list order and read as random. Both editors warn
+inline and block the save.
+
+**3. PAGASA climate types** (`calendars.climate_type`, `'I'`–`'IV'`). Seeds wet/dry season months
+and the rain-day allowance. ⚠️ There is no single national wet season: Type II's wettest months
+(Nov–Jan) are Type I's driest. Duration-scenario rain presets are now **(climate type × exposure)**
+— Sheltered 0.4× / Typical 1× / Exposed 1.5× — filling all twelve months with the real curve
+instead of one flat figure over Jun–Nov, and the rule Wet/Dry buttons follow the type's months.
+No type set → the old generic Jun–Nov behaviour, never a Luzon curve applied silently.
+
+**4. Year preview** in both editors: working days, hours, season and the holidays removed, month by
+month, with the year total. This is the number two calendars are actually compared on and it is now
+on the calendar list rows too.
+
+Also: `observe_special_days` (Black Saturday, Ninoy Aquino Day, All Saints', Immaculate Conception,
+Dec 31) — ⚠️ **opt-in, default false**. A special day is "no work, no pay" and many sites work
+them; defaulting it true would have removed ~5 days a year from every existing project silently.
+
+⚠️ **Both editors write all three new columns.** The schedule-side editor is the smaller door onto
+the same row — had it kept its old payload, a save there would have blanked seasons set in the
+roster module. Its base-pattern read is also scoped to `input[type=checkbox][data-day]` because the
+season rows carry `data-day` on their tri-state selects.
+
+Migration: `migrations/2026-08-24-seasonal-calendars.sql` (idempotent, all columns defaulted).
+`calendar.js?v=20260824a`, `MODULE_V` → `20260824h`.
+
+**Verified.** 24 assertions on `PDCal` (seasonless behaviour unchanged, seasons remove days only in
+their own months, hours-only seasons keep the week, Type II peaks in December not July, exposure
+scaling, over-stated rain days cannot consume a month) plus 7 on the editor's HTML builders, and
+the editor driven live in the browser: overlap warning appears and clears, template click preserves
+climate + seasons, and the preview tracks a season's Saturday and hours changes. The modules
+themselves sit behind Supabase auth, so the live drive used a temporary harness that pulled the CSS
+and the editor functions out of the shipped module file; the harness was deleted afterwards.
