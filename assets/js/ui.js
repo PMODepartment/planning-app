@@ -350,6 +350,37 @@
     document.addEventListener('DOMContentLoaded', function () { initShell(); initModuleTopbar(); });
   } else { initShell(); initModuleTopbar(); }
 
+  // ---- Accept-the-suggestion inputs -----------------------------------------
+  // A placeholder that reads like a proposed value ("Philippine Standard (6-day,
+  // 8h)") invites the shell/autocomplete reflex: Tab to take it. Without this,
+  // Tab moved on and left the field empty — the suggestion looked broken rather
+  // than decorative, which is exactly how it was reported.
+  // ⚠️ Only fires on an EMPTY field, so Tab never overwrites anything typed, and
+  // the default Tab is NOT prevented: the value is accepted and focus still moves
+  // on, which is what the reflex expects. → also on Enter, where the reflex is to
+  // commit rather than to leave.
+  // ⚠️ Bound with a capture-phase listener on a container rather than per input,
+  // so editors that re-render their own markup keep the behaviour without having
+  // to re-bind every field they draw.
+  function acceptSuggestOnTab(root) {
+    if (!root || root._pdSuggestBound) return;
+    root._pdSuggestBound = true;
+    root.addEventListener('keydown', function (e) {
+      if (e.key !== 'Tab' && e.key !== 'Enter') return;
+      var el = e.target;
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'text' && el.type !== '') return;
+      if (el.value !== '' || !el.placeholder) return;
+      if (el.dataset && el.dataset.nosuggest != null) return;
+      el.value = el.placeholder;
+      // Let anything listening for the typed value (draft readers, live previews)
+      // see it — assigning .value alone fires nothing.
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      if (e.key === 'Enter') e.preventDefault();   // commit in place; don't submit
+    }, true);
+  }
+
   window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell,
-                enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar };
+                enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar,
+                acceptSuggestOnTab: acceptSuggestOnTab };
 })();

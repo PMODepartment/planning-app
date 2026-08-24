@@ -7422,3 +7422,55 @@ light and dark cells) over `.ps-vs-scroll` / the tower svg / the cells, hotspot 
 falling back to `zoom-in`. `!important` because `.ps-vs-cell` sets `cursor:pointer`.
 
 `MODULE_V` → `20260824l`.
+
+
+## 2026-08-24 — XER import reuses calendars; placeholders accept on Tab
+
+**1. The importer no longer duplicates calendars.** It inserted every calendar in the file
+unconditionally, so each re-import of the same P6 file copied the whole set — the reported project
+reached 30+ rows. Now it loads the project's existing calendars first and reuses a match.
+
+⚠️ **Matched on name + weekday pattern + hours/day, not name alone.** Two calendars sharing a name
+but working different weeks are different calendars, and collapsing them would repoint activities
+onto the wrong week. Name comparison is trimmed + case-insensitive.
+
+⚠️ **`extra_holidays` is deliberately NOT part of the identity.** The same site calendar arrives with
+86 proclaimed days in one export and 226 in another; that is the same calendar, and the EXISTING row
+— which a planner may have curated — is the one that must survive.
+
+⚠️ **Reuse means reuse: the existing row is never updated.** It may carry `seasons`,
+`observe_special_days` or `climate_type` that a P6 file knows nothing about, and an import must not
+quietly blank the planner's own work. Newly-created calendars are also registered as they go, so two
+identical entries *within* one file collapse too.
+
+Reported, not silent: the summary card now shows "Calendars added" and "Calendars reused" — a
+planner who sees "Calendars 6" and then finds no new rows would reasonably think the import failed.
+
+⚠️ **Existing duplicates are NOT cleaned up.** Activities reference them via
+`schedule_activities.calendar_id`, so deciding which row survives needs sign-off. The Working
+Calendars list is usable meanwhile (bounded height + filter, see the entry above).
+⚠️ Names come verbatim from the XER's `clndr_name` — the `-1-1-1-1` and `Copy of …` suffixes are
+P6's own, from calendars copied in P6. This app never uniquifies them. So re-importing the SAME file
+now adds nothing; a file that has itself gained new copies will still bring them in, correctly.
+
+**2. `UI.acceptSuggestOnTab(root)`** (assets/js/ui.js). A placeholder that reads like a proposed
+value ("Philippine Standard (6-day, 8h)") invites the shell/autocomplete reflex — Tab to take it.
+Tab moved on and left the field empty, so the suggestion looked broken rather than decorative.
+
+⚠️ Only fires on an EMPTY input, so Tab never overwrites what was typed. Tab is **not**
+preventDefault-ed: the value is accepted and focus still moves on, which is what the reflex expects.
+Enter accepts in place instead. It fires `input` + `change` so draft-readers and live previews see
+the value — assigning `.value` alone fires nothing, and the accepted name would have been lost on
+the next re-render. Bound capture-phase on a CONTAINER, so editors that redraw their own markup keep
+the behaviour without re-binding every field.
+
+⚠️ Consequence for placeholders: any placeholder inside a bound container is now a value a user can
+commit, so "e.g. …" prefixes had to go — Tab was filling fields with the literal words "e.g.".
+Bound in both calendar editors only. `ui.js?v=20260824a` (bumped in all 16 pages),
+`MODULE_V` → `20260824l`.
+
+**Verified.** 7 assertions on the shipped `_calKey` (reuse on identical; case/space-insensitive;
+"-1" suffixes kept distinct; different week or hours kept apart; missing hours defaults to 8;
+extra_holidays excluded) and the Tab behaviour driven in a browser: Tab and Enter both accept, typed
+text is preserved, the season label accepts a clean value, and the accepted name survives a
+re-render — proving it reached the draft and not just the DOM.

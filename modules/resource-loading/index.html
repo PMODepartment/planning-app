@@ -211,7 +211,7 @@
 <script src="../../assets/js/config.js?v=20260819a"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
 <script src="../../assets/js/db.js?v=20260819b"></script>
-<script src="../../assets/js/ui.js?v=20260812b"></script>
+<script src="../../assets/js/ui.js?v=20260824a"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
 <script src="../../assets/js/calendar.js?v=20260824a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -672,7 +672,7 @@
         }).join('') + '</div>' +
         hint('A template only pre-fills this form &mdash; the saved calendar is an ordinary one you can edit freely afterwards.') : '') +
       sec('Base pattern') +
-      fld('Calendar name', '<input class="pd-input" id="f-name" value="' + esc(c.name) + '" placeholder="e.g. Philippine Standard (6-day, 8h)">', true) +
+      fld('Calendar name', '<input class="pd-input" id="f-name" value="' + esc(c.name) + '" placeholder="Philippine Standard (6-day, 8h)">', true) +
       fld('Hours per day', '<input class="pd-input" id="f-hpd" type="number" min="1" max="24" step="0.5" value="' + (c.hours_per_day != null ? c.hours_per_day : 8) + '">') +
       fld('Site climate type (PAGASA)', '<select class="pd-select" id="f-clim"><option value="">&mdash; not set &mdash;</option>' +
         PDCal.PH_CLIMATE_TYPES.map(function (t) {
@@ -704,6 +704,9 @@
       calYearPreview();
 
     form.innerHTML = html;
+    // Tab/Enter on an empty field takes the greyed suggestion. Bound on the form,
+    // which survives every re-render of its contents.
+    if (window.UI && UI.acceptSuggestOnTab) UI.acceptSuggestOnTab(form);
     // ⚠️ A throw in wiring must not leave a rendered form whose controls do nothing.
     try { wireCalForm(isNew); }
     catch (err) { UI.toast('Calendar editor could not attach its controls: ' + (err && err.message || err), 'error'); }
@@ -713,7 +716,7 @@
   function seasonHtml(s, i) {
     return '<div class="rl-season" data-season="' + i + '">' +
       '<div class="rl-season-hd">' +
-        '<input class="pd-input" data-sfield="label" value="' + esc(s.label || '') + '" placeholder="e.g. Wet season - reduced week">' +
+        '<input class="pd-input" data-sfield="label" value="' + esc(s.label || '') + '" placeholder="Wet season — reduced week">' +
         '<button type="button" class="rl-btn-sm" data-sdel="' + i + '">&#215;</button>' +
       '</div>' +
       '<div class="rl-mo">' + MONTH_ABBR.map(function (m, k) {
