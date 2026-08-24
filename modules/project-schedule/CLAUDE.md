@@ -1,3 +1,33 @@
+## The 83 corrupt rows: characterised, and a backed-up cleanup written (2026-08-24) — fmlozano
+Follow-up to closing the writer. **Measured every one of the 83 rows before proposing anything**, and
+the result removes the ambiguity: **not one of them is a legitimate projection.**
+- **3** point at a WBS node belonging to a **different project**; **80** point at a node that **no
+  longer exists**; **0** point at a node in their own project. **0** activities hang off those node
+  ids, so deleting them orphans nothing.
+- All 83 carry a NULL `wbs`, so they cannot nest (`rebuild()` derives ancestry by splitting the dotted
+  code) and nothing can ever be filed under them.
+- ⚠️ **Visible damage, not just clutter: BAU101 holds 40 WBS nodes and 112 summary rows.** 82 of the
+  excess are these. The names (`U1` ×14, `U2` ×13, `Z2` ×11, `Z4`, `F7`…) are Schedule Builder unit and
+  zone branches from the 2026-08-19 push.
+- **Scope verified exact against the live DB:** `wbs IS NULL` matches **83 and nothing else**;
+  `wbs = ''` matches **0** and is deliberately out of scope (copy-WBS-from-project inserts a blank code
+  on purpose and lets `_wbsCommit()` assign the real one — ⚠️ never widen the predicate to
+  `coalesce(wbs,'') = ''`); non-summary rows with a NULL `wbs`: **0**.
+
+⚠️ **NOT deleted from here, deliberately — `migrations/2026-08-24-cleanup-null-code-wbs-rows.sql` is for
+the owner to run in the SQL editor.** Two reasons, and the second is the one that decided it:
+1. **A backup table needs DDL**, which the publishable key cannot do; the repo's own precedent requires
+   the operation be reversible from a timestamped backup before any delete.
+2. ⚠️ **A JSON backup through the browser channel would have been ceremony, not safety.** It returns
+   ~900 characters per call, so the 83 rows' 10.7 KB minimum payload needs ~12 round-trips — **and the
+   restore would be worthless anyway**, because 80 of the rows reference nodes that no longer exist, so
+   re-inserting them would only re-create the same phantoms. The SQL editor gives a real
+   `create table … as select` backup in one statement.
+- The script backs up first, **deletes by joining on the backed-up ids** (so the two can never
+  disagree), then verifies. Expected: BAU101 **112 → 30** summary rows against 40 nodes, and the next
+  time it is opened the heal projects the 10 genuinely-missing trade headings for a clean **40/40**.
+  Reverse and drop statements are at the bottom.
+
 ## Cross-project summary rows: the 2026-08-17 pinning fix had a hole (2026-08-24) — fmlozano
 The 83 corrupt rows found during yesterday's verification are now understood and the writer is closed.
 ⚠️ **This is a follow-up to the 2026-08-17 `ownPid`/`ownNodes` pinning fix, which did not go far enough.**

@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-24 — The 83 corrupt WBS rows characterised; backed-up cleanup script written (USER MUST RUN)
+Measured all 83 before proposing anything: **3 point at another project's WBS node, 80 at a node that no
+longer exists, 0 at their own project's** — none is a legitimate projection — and **0 activities** hang
+off them, so deleting orphans nothing. ⚠️ Real visible damage: **BAU101 shows 112 summary rows against
+40 nodes**, the excess being Schedule Builder `U1`/`Z2`-style phantoms from 19 Aug.
+- **`migrations/2026-08-24-cleanup-null-code-wbs-rows.sql`** backs the rows up to a timestamped table,
+  deletes by joining on the backed-up ids, then verifies; reverse + drop statements included.
+- ⚠️ **Not run from here on purpose:** the backup table needs DDL the publishable key lacks, and a JSON
+  backup through the browser would take ~12 round-trips *and* be worthless as a restore, since 80 of the
+  rows reference deleted nodes. **Scope verified exact:** `wbs IS NULL` matches 83 and nothing else;
+  `wbs = ''` matches 0 and is deliberately excluded (copy-WBS-from-project depends on it).
+- Expected after running: BAU101 112 → 30 rows, then the heal restores the 10 missing trade headings for
+  a clean 40/40 on next open.
+
 ### 2026-08-24 — Closed the cross-project WBS-row writer (the 2026-08-17 pinning fix had a hole)
 - ⚠️ **Root cause:** `pid` is set early in `load()` while `WBS_NODES` is replaced later inside
   `loadResourcesAssignments()`. In that window the heal pins the NEW project id against the OLD
