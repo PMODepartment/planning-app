@@ -1,3 +1,75 @@
+## Add/Edit Activity modal restructured — sections, pinned chrome, a section rail (2026-08-24) — fmlozano
+Owner: *"Let's improve the edit activity pop up window. It looks all over the place."* Then, mid-build:
+*"If we can also have sticky tabs protruding out the side of the popout window."* Measured the modal
+first rather than restyling by eye, which is what turned a vague complaint into four specific defects.
+
+**What was actually wrong, measured in a harness built from the REAL module `<style>` + the REAL modal
+markup (sanity-gated on the grid resolving to 2 columns and the section colour being brand red):**
+1. ⚠️ **The biggest "section" was a mislabelled dumping ground.** 44 fields, 5 headers — and **19 of
+   them sat under "Contract Scope", a header that describes exactly 2.** Everything from Activity Type
+   to Earned Value had been appended there over time. That is the disorder, in one number.
+2. ⚠️ **`.pd-modal` is ITSELF the scroll container** (`max-height:90vh; overflow-y:auto` in the shared
+   dashboard.css) with the header and footer as its children — so on a **2227px** form the title AND
+   the **Save button scrolled completely out of view**, and saving meant scrolling back to the bottom.
+3. ⚠️ **Rows were ragged because label heights differ.** "Trade" carries three lines of `<small>` help
+   text while its row-mate "Work Package" carries one, so the two controls started at different heights
+   and the row read as broken.
+4. ⚠️ Measured, not guessed: the shared `.pd-select` renders **41px** and `.pd-input` **39px**, so even
+   bottom-aligned rows sat 2–3px out.
+
+**What was done.** Ten coherent sections (Classification · Dates & Duration · Constraints ·
+Relationships · Cost · Labor Units · Risk · Location/Codes · Notes), with **dates gathered from the
+three places they were scattered across** into one group. Each cell is a flex column with its control
+pushed to the bottom, so a tall label no longer drags its row out of line; control heights unified at
+40px inside this modal. Header and footer **pinned** — Save is now always reachable. A **section rail**
+of sticky tabs protrudes from the modal's left edge; clicking one scrolls that section under the header
+and lights the tab.
+- ⚠️ **Every field block was MOVED VERBATIM by script, never retyped**, and the reorder is asserted:
+  **form id set identical to HEAD, 67 before and after, 0 lost / 0 added.** Only the 4 id-less section
+  headers were replaced; the one header with an id (`ps-f-scope-sec`, toggled by the contract-scope
+  logic) was preserved untouched.
+- ⚠️ **The rail is a SIBLING of `.pd-modal`, not a child** — a child would scroll away with the form,
+  since the modal is the scroller. The overlay is `position:fixed` and already a centred flexbox, so
+  the rail parks against the modal's edge and stays put. Hidden below 1100px, where it and the 720px
+  modal no longer fit side by side.
+- ⚠️ **All new CSS is scoped `#ps-modal`.** `.pd-modal-header`/`-footer`/`.pd-input`/`.pd-select` are
+  SHARED components used by resource-loading and cash-flow, and the module contract forbids editing
+  shared assets — these must never become bare selectors.
+- `_syncFormSections()` hides a header whose whole group is hidden, so a project with no location
+  levels gets no empty "Location, Codes & UDF" heading and no dead rail tab. ⚠️ It **skips any header
+  with an id** — that means other code owns it — and reads the inline `style.display` rather than
+  `offsetParent`, which is null for everything inside a hidden overlay.
+
+**Four defects found BY MEASURING, three of which I had introduced and would otherwise have shipped:**
+- ⚠️ **Sticky section headers pinned and NEVER RELEASED** — a `.ps-form-sec` is a grid item, so by
+  mid-scroll *three* headers were painted at the same spot. Removed, with a comment saying why, since
+  making it work needs each section wrapped in its own containing block.
+- ⚠️ **My flex-column rule broke the Program Milestone row**, stacking the checkbox above its label and
+  centring both (its inline `align-items:center` is the CROSS axis, which a column flips). Fixed with a
+  `.ps-form-chk` opt-out.
+- ⚠️ **The rail's active tab was wrong on 3 of 9 tabs.** The last sections can never reach the top line
+  (nothing below them to scroll past), so a positional rule lit "Notes" for clicks on "Labor Units" and
+  "Risk". Resolved by splitting the two: **a click asserts its own tab; scrolling infers by position**
+  (with a bottom-of-scroll rule). Verified all 9 tabs: correct active state, each landing at 0px or
+  legitimately saturated.
+- The rail carried a stray horizontal scrollbar (`overflow:auto` → `overflow-x:hidden`).
+
+**Verified by MEASUREMENT, executing the shipped `_syncFormSections`/`_buildSecNav` sliced verbatim
+into the harness:** 44 fields (unchanged), 10 sections / 9 visible / 9 rail tabs, header and footer
+pinned at 22px/22px at **every** scroll depth, 2 clean column positions, no horizontal scroll, and both
+themes' sticky bars **opaque and exactly matching the modal background** (a translucent sticky bar would
+let the form scroll through it — the same trap as the translucent frozen grid columns). Screenshots in
+both themes. Parse clean; **function-set diff: 0 lost, 3 added**; form id set identical.
+- ⚠️ **Known and accepted: 2 of 18 paired rows are still 3px out.** Those two cells hold trailing
+  content AFTER the control (a `<datalist>`; a hint `<div>`), so bottom-aligning the control cannot
+  align them. Not worth restructuring the markup for 3px.
+- ⚠️ **The scroll-spy could NOT be verified here**: the Browser pane is not compositing, so **zero
+  scroll events fire even for a fresh probe listener** — the same stalled-compositor artifact as the
+  screenshot timeout. The click path is fully verified and deliberately does not depend on it.
+- ⚠️ **A stale screenshot cost a cycle**: Edge served a cached page and showed two fixes as still
+  broken. Confirm a UI fix by measuring the live DOM, or screenshot with a fresh `--user-data-dir`.
+- ⚠️ **Not verified signed-in.** `MODULE_V` → `20260824e`.
+
 ## Mirrored procurement rows are typed 'Work Package', not 'Task' (2026-08-24) — fmlozano
 Owner: *"When syncing from procurement let's make all of these into work packages rather than a Task."*
 One value in `syncProcurement`'s patch — the surrounding vocabulary already existed.

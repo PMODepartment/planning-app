@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-24 — Add/Edit Activity modal: sections, pinned header/footer, a section rail
+Owner: the popup "looks all over the place", plus a request for sticky tabs on its side. Measured first:
+**44 fields under 5 headers, 19 of them under "Contract Scope" — a header describing 2** — and because
+`.pd-modal` is itself the scroller, the title and **the Save button scrolled out of view** on a 2227px
+form. Rows were ragged because label heights differ (one label wraps to 3 lines, its row-mate to 1).
+- Regrouped into **10 coherent sections** with dates gathered from the three places they were scattered
+  across; controls bottom-aligned and unified at 40px; **header and footer pinned**; a **section rail**
+  of tabs protruding from the modal edge that scrolls to a section and highlights it.
+- ⚠️ Every field block **moved verbatim by script** — form id set identical to HEAD (67, 0 lost/added).
+  All new CSS scoped `#ps-modal`, since the header/footer/input/select are shared components.
+- ⚠️ **Three defects caught by measuring that I would otherwise have shipped:** sticky section headers
+  that pinned and never released (3 stacked at once), a flex rule that stacked and centred the Program
+  Milestone checkbox, and a rail whose active tab was wrong on 3 of 9 tabs. All fixed and re-measured.
+- Verified by executing the shipped helpers in a harness built from the real CSS + real markup; both
+  themes' sticky bars opaque; parse clean; 0 functions lost. ⚠️ Not verified signed-in; the scroll-spy
+  is unverifiable here (a non-compositing pane fires no scroll events). `MODULE_V` → `20260824e`.
+
 ### 2026-08-24 — Procurement sync types its rows as 'Work Package'; the null-code cleanup was run
 - **Mirrored procurement rows now carry `activity_type: 'Work Package'`** instead of the generic
   `'Task'`. **No migration** — the column is plain text with no CHECK constraint and the type was

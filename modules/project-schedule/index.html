@@ -1278,6 +1278,63 @@
     .ps-cc-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
     .ps-cc-lg { display:inline-flex; align-items:center; gap:6px; } .ps-cc-lg .sw { width:16px; height:3px; display:inline-block; } .ps-cc-lg .dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
     .ps-cost-wbs-over td { color:var(--pd-bad); }
+    /* ── Add/Edit Activity modal ────────────────────────────────────────────────
+       ⚠️ `.pd-modal` is ITSELF the scroll container (max-height:90vh; overflow-y:auto in the shared
+       dashboard.css) and the header/footer are its direct children — so on this form, which is ~2400px
+       tall across 44 fields, the title and the Save button scrolled away completely and you had to
+       scroll back to the bottom to save. Pinning them is the single biggest legibility win here.
+       ⚠️ Scoped to #ps-modal ON PURPOSE. `.pd-modal-header`/`-footer` are SHARED components (also used
+       by resource-loading and cash-flow), and the module contract forbids editing shared assets — so
+       this must never become a bare `.pd-modal-header` rule. */
+    #ps-modal .pd-modal-header { position:sticky; top:0; z-index:3; background:var(--pd-card); }
+    #ps-modal .pd-modal-footer { position:sticky; bottom:0; z-index:3; background:var(--pd-card); }
+    /* ⚠️ THE MAIN "all over the place" DEFECT, measured: several labels carry long <small> help text
+       ("Trade (what this activity IS, …)" wraps to THREE lines), and because each grid cell is a plain
+       block the input sits directly under its own label — so the two controls in a row started at
+       different heights and the row read as broken. Making each cell a flex column and pushing the
+       control to the BOTTOM aligns every input in a row on one line no matter how tall its label got.
+       ⚠️ Scoped with :not(.ps-form-full) — the full-width cells hold composite content (the scope
+       radios, the predecessor picker, the location/code/UDF field rows) that must keep its own layout. */
+    /* ⚠️ `.ps-form-chk` opts OUT: it is a horizontal checkbox+label row with its own inline
+       display:flex, and forcing flex-direction:column stacked the box above its label and centred
+       both (its inline align-items:center means CROSS axis, which a column flips to horizontal). */
+    #ps-modal .ps-form-grid > div:not(.ps-form-full):not(.ps-form-sec):not(.ps-form-chk) { display:flex; flex-direction:column; }
+    #ps-modal .ps-form-grid > div:not(.ps-form-full):not(.ps-form-sec):not(.ps-form-chk) > .pd-input,
+    #ps-modal .ps-form-grid > div:not(.ps-form-full):not(.ps-form-sec):not(.ps-form-chk) > .pd-select { margin-top:auto; }
+    /* Help text inside a label is secondary — let it sit quieter than the field name it qualifies. */
+    #ps-modal .ps-form-grid .pd-label small { font-weight:400; color:var(--pd-muted); }
+    /* ⚠️ Measured: the shared `.pd-select` renders 41px and `.pd-input` 39px, so a row holding one of
+       each sat 2-3px out of line even once the controls were bottom-aligned. One height inside this
+       modal puts every control on the same baseline. Scoped to #ps-modal — `.pd-input`/`.pd-select`
+       are shared components and must not be resized app-wide from a module. */
+    #ps-modal .ps-form-grid .pd-input, #ps-modal .ps-form-grid .pd-select { min-height:40px; }
+    /* Section rail — sticky tabs protruding from the side of the modal, so a 44-field form can be
+       navigated without scrolling to find a group.
+       ⚠️ It is a SIBLING of `.pd-modal`, not a child. `.pd-modal` is itself the scroll container, so
+       anything inside it scrolls away with the form; the overlay is `position:fixed` and already a
+       centred flexbox, so dropping the rail in as its first flex child parks it against the modal's
+       left edge and keeps it put. */
+    #ps-modal { }
+    .ps-secnav { display:flex; flex-direction:column; gap:2px; align-self:center; max-height:90vh;
+      overflow-y:auto; overflow-x:hidden; flex:none; }
+    .ps-secnav button { appearance:none; cursor:pointer; text-align:right; white-space:nowrap;
+      font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+      color:var(--pd-muted); background:var(--pd-card); border:1px solid var(--pd-line);
+      border-right:none; border-radius:8px 0 0 8px; padding:7px 12px 7px 14px; margin-right:-1px;
+      max-width:190px; overflow:hidden; text-overflow:ellipsis; }
+    .ps-secnav button:hover { color:var(--pd-ink); background:var(--pd-bg); }
+    /* The active tab reads as continuous with the panel it points at — no right border, modal bg. */
+    .ps-secnav button.on { color:var(--pd-red); background:var(--pd-card); border-color:var(--pd-line);
+      box-shadow:-3px 0 0 0 var(--pd-red) inset; }
+    /* ⚠️ Below ~1100px the rail + the 720px modal no longer fit side by side, and the overlay would
+       squeeze the modal rather than the rail. Hidden there — the section headers still do the job. */
+    @media (max-width:1100px) { .ps-secnav { display:none; } }
+    /* ⚠️ The section headers are deliberately NOT sticky. Tried it and MEASURED it: a `.ps-form-sec`
+       is a grid item, it pins at its `top` offset and then NEVER RELEASES, so by mid-scroll three
+       headers (Contract Scope, Classification, Dates & Duration) were all painted at the same
+       position on top of each other. Making that work needs each section wrapped in its own
+       containing block, which is a far bigger structural change than it is worth — the red
+       underlined headers read perfectly well scrolling normally. */
     .ps-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .ps-form-full { grid-column:1 / -1; }
 
@@ -2568,21 +2625,42 @@
         <div class="ps-form-full" id="ps-f-scope-na" style="display:none;font-size:12px;color:var(--pd-muted);margin-top:-4px;">
           Contract scope applies to <strong>execution-phase</strong> activities only. Place this activity under an execution-phase WBS branch (or set its Phase) to identify it as main contract or change order.
         </div>
+        <div class="ps-form-full ps-form-sec">Classification</div>
         <div><label class="pd-label">Activity Type</label><select class="pd-select" id="ps-f-type-sel"><option>Task</option><option>Work Package</option><option>WBS Summary</option><option>Start Milestone</option><option>Finish Milestone</option></select></div>
         <div><label class="pd-label">Status</label><select class="pd-select" id="ps-f-status-sel"><option>Not Started</option><option>In Progress</option><option>Completed</option></select></div>
+        <div><label class="pd-label">Trade <small>(what this activity IS, e.g. Structural Works, Tiling Works — groups the same trade across locations. Left blank, the WBS trade branch above it is used.)</small></label><input class="pd-input" id="ps-f-work" list="ps-f-work-list" autocomplete="off" /><datalist id="ps-f-work-list"></datalist></div>
+        <!-- Work Package = the Procurement (WPM) package that supplies this activity.
+             A <select> populated from the mirror in openForm (exactly like Calendar
+             above), not a text box: the stored value is a bare wp_no nobody can type. -->
+        <div><label class="pd-label">Work Package <span style="font-weight:400;color:var(--pd-muted);">(Procurement app)</span></label><select class="pd-select" id="ps-f-wp"></select><div id="ps-f-wp-hint" style="font-size:11px;color:var(--pd-muted);margin-top:3px;"></div></div>
+        <!-- Finance class code (Level 3). A <select> populated in openForm from the chart, not a
+             text box: 015051 and 15051 are DIFFERENT codes, so it must be picked, not typed. -->
+        <div><label class="pd-label">Class Code <span style="font-weight:400;color:var(--pd-muted);">(Finance)</span></label><select class="pd-select" id="ps-f-ccode"></select><div id="ps-f-ccode-hint" style="font-size:11px;color:var(--pd-muted);margin-top:3px;"></div></div>
+        <div><label class="pd-label">Duration Type</label><select class="pd-select" id="ps-f-durtype"><option>Fixed Duration &amp; Units/Time</option><option>Fixed Units/Time</option><option>Fixed Duration &amp; Units</option><option>Fixed Work</option></select></div>
+        <div><label class="pd-label">% Complete Type</label><select class="pd-select" id="ps-f-pcttype"><option>Duration</option><option>Physical</option><option>Units</option></select></div>
+        <div><label class="pd-label">Calendar</label><select class="pd-select" id="ps-f-cal"></select></div>
+        <div><label class="pd-label">Owner</label><input class="pd-input" id="ps-f-owner" /></div>
+        <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
+        <div class="ps-form-chk" style="display:flex;align-items:center;gap:8px;margin-top:22px;"><input type="checkbox" id="ps-f-progms" /><label class="pd-label" for="ps-f-progms" style="margin:0;">Program Milestone</label></div>
+        <div class="ps-form-full ps-form-sec">Dates &amp; Duration</div>
         <div><label class="pd-label">Baseline Start</label><input class="pd-input" id="ps-f-bls" type="date" /></div>
         <div><label class="pd-label">Baseline Finish</label><input class="pd-input" id="ps-f-blf" type="date" /></div>
-        <div><label class="pd-label">Contract Date <small>(obligation / LD date)</small></label><input class="pd-input" id="ps-f-contract" type="date" /></div>
-        <div><label class="pd-label">Risk: Optimistic % <small>(3-point; blank = simulation default)</small></label><input class="pd-input" id="ps-f-risk-opt" type="number" min="10" max="100" step="1" placeholder="e.g. 85" /></div>
-        <div><label class="pd-label">Risk: Pessimistic % <small>(3-point; blank = simulation default)</small></label><input class="pd-input" id="ps-f-risk-pess" type="number" min="100" max="500" step="1" placeholder="e.g. 150" /></div>
         <div><label class="pd-label">Planned Start *</label><input class="pd-input" id="ps-f-start" type="date" required /></div>
         <div><label class="pd-label">Planned Finish *</label><input class="pd-input" id="ps-f-finish" type="date" required /></div>
+        <div><label class="pd-label">Actual Start</label><input class="pd-input" id="ps-f-astart" type="date" /></div>
+        <div><label class="pd-label">Actual Finish</label><input class="pd-input" id="ps-f-afinish" type="date" /></div>
+        <div><label class="pd-label">Expected Finish</label><input class="pd-input" id="ps-f-expf" type="date" /></div>
+        <div><label class="pd-label">Actual Duration (d)</label><input class="pd-input" id="ps-f-adur" type="number" min="0" step="1" /></div>
+        <div><label class="pd-label">Remaining Duration (d)</label><input class="pd-input" id="ps-f-rdur" type="number" min="0" step="1" /></div>
+        <div><label class="pd-label">Free Float (d)</label><input class="pd-input" id="ps-f-ff" type="number" step="1" /></div>
         <div><label class="pd-label">% Complete</label><input class="pd-input" id="ps-f-pct" type="number" min="0" max="100" step="1" placeholder="0" /></div>
-        <div><label class="pd-label">Responsible Party</label><input class="pd-input" id="ps-f-resp" /></div>
-        <div><label class="pd-label">Trade <small>(what this activity IS, e.g. Structural Works, Tiling Works — groups the same trade across locations. Left blank, the WBS trade branch above it is used.)</small></label><input class="pd-input" id="ps-f-work" list="ps-f-work-list" autocomplete="off" /><datalist id="ps-f-work-list"></datalist></div>
-        <div class="ps-form-full" id="ps-f-loc-wrap" style="display:none;"><label class="pd-label">Location</label><div id="ps-f-loc-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
-        <div class="ps-form-full" id="ps-f-codes-wrap" style="display:none;"><label class="pd-label">Activity Codes</label><div id="ps-f-codes-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
-        <div class="ps-form-full" id="ps-f-udf-wrap" style="display:none;"><label class="pd-label">User-Defined Fields</label><div id="ps-f-udf-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
+        <div><label class="pd-label">Contract Date <small>(obligation / LD date)</small></label><input class="pd-input" id="ps-f-contract" type="date" /></div>
+        <div class="ps-form-full ps-form-sec">Constraints</div>
+        <div><label class="pd-label">Primary Constraint</label><select class="pd-select" id="ps-f-pcon"><option value="">None</option><option>Start On</option><option>Start On or After</option><option>Start On or Before</option><option>Finish On</option><option>Finish On or After</option><option>Finish On or Before</option><option>Mandatory Start</option><option>Mandatory Finish</option><option>As Late As Possible</option></select></div>
+        <div><label class="pd-label">Primary Constraint Date</label><input class="pd-input" id="ps-f-pcond" type="date" /></div>
+        <div><label class="pd-label">Secondary Constraint</label><select class="pd-select" id="ps-f-scon"><option value="">None</option><option>Start On</option><option>Start On or After</option><option>Start On or Before</option><option>Finish On</option><option>Finish On or After</option><option>Finish On or Before</option></select></div>
+        <div><label class="pd-label">Secondary Constraint Date</label><input class="pd-input" id="ps-f-scond" type="date" /></div>
+        <div class="ps-form-full ps-form-sec">Relationships</div>
         <div class="ps-form-full"><label class="pd-label">Predecessors <small>(Activity IDs, comma-separated; type/lag optional e.g. 1020 SS+3 — drives the critical path)</small></label><input class="pd-input" id="ps-f-pred" placeholder="e.g. 1010, 1020 SS+3" />
           <div class="ps-pred-picker" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">
             <input class="pd-input" id="ps-pred-search" list="ps-pred-list" placeholder="Pick an activity to add…" style="flex:2 1 200px;min-width:150px;" autocomplete="off" />
@@ -2593,44 +2671,23 @@
           </div>
         </div>
         <div class="ps-form-full"><label class="pd-label">Successors <small>(derived from predecessors — read-only)</small></label><input class="pd-input" id="ps-f-succ" readonly style="background:var(--pd-bg);color:var(--pd-muted);" placeholder="—" /></div>
+        <div class="ps-form-full ps-form-sec">Cost</div>
         <div><label class="pd-label">Baseline Cost (&#8369;) <small>(BL0 Planned)</small></label><input class="pd-input" id="ps-f-blcost" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Planned Cost (&#8369;)</label><input class="pd-input" id="ps-f-pcost" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Actual Cost (&#8369;)</label><input class="pd-input" id="ps-f-acost" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Earned Value (&#8369;)</label><input class="pd-input" id="ps-f-ev" type="number" min="0" step="0.01" /></div>
-
-        <div class="ps-form-full ps-form-sec">Classification (OPC)</div>
-        <div><label class="pd-label">Duration Type</label><select class="pd-select" id="ps-f-durtype"><option>Fixed Duration &amp; Units/Time</option><option>Fixed Units/Time</option><option>Fixed Duration &amp; Units</option><option>Fixed Work</option></select></div>
-        <div><label class="pd-label">% Complete Type</label><select class="pd-select" id="ps-f-pcttype"><option>Duration</option><option>Physical</option><option>Units</option></select></div>
-        <div><label class="pd-label">Calendar</label><select class="pd-select" id="ps-f-cal"></select></div>
-        <div><label class="pd-label">Owner</label><input class="pd-input" id="ps-f-owner" /></div>
-        <!-- Work Package = the Procurement (WPM) package that supplies this activity.
-             A <select> populated from the mirror in openForm (exactly like Calendar
-             above), not a text box: the stored value is a bare wp_no nobody can type. -->
-        <div><label class="pd-label">Work Package <span style="font-weight:400;color:var(--pd-muted);">(Procurement app)</span></label><select class="pd-select" id="ps-f-wp"></select><div id="ps-f-wp-hint" style="font-size:11px;color:var(--pd-muted);margin-top:3px;"></div></div>
-        <!-- Finance class code (Level 3). A <select> populated in openForm from the chart, not a
-             text box: 015051 and 15051 are DIFFERENT codes, so it must be picked, not typed. -->
-        <div><label class="pd-label">Class Code <span style="font-weight:400;color:var(--pd-muted);">(Finance)</span></label><select class="pd-select" id="ps-f-ccode"></select><div id="ps-f-ccode-hint" style="font-size:11px;color:var(--pd-muted);margin-top:3px;"></div></div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:22px;"><input type="checkbox" id="ps-f-progms" /><label class="pd-label" for="ps-f-progms" style="margin:0;">Program Milestone</label></div>
-
-        <div class="ps-form-full ps-form-sec">Status &mdash; Dates &amp; Duration</div>
-        <div><label class="pd-label">Actual Start</label><input class="pd-input" id="ps-f-astart" type="date" /></div>
-        <div><label class="pd-label">Actual Finish</label><input class="pd-input" id="ps-f-afinish" type="date" /></div>
-        <div><label class="pd-label">Expected Finish</label><input class="pd-input" id="ps-f-expf" type="date" /></div>
-        <div><label class="pd-label">Actual Duration (d)</label><input class="pd-input" id="ps-f-adur" type="number" min="0" step="1" /></div>
-        <div><label class="pd-label">Remaining Duration (d)</label><input class="pd-input" id="ps-f-rdur" type="number" min="0" step="1" /></div>
-        <div><label class="pd-label">Free Float (d)</label><input class="pd-input" id="ps-f-ff" type="number" step="1" /></div>
-
-        <div class="ps-form-full ps-form-sec">Status &mdash; Labor Units</div>
+        <div class="ps-form-full ps-form-sec">Labor Units</div>
         <div><label class="pd-label">Planned Labor Units</label><input class="pd-input" id="ps-f-plu" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Actual Labor Units</label><input class="pd-input" id="ps-f-alu" type="number" min="0" step="0.01" /></div>
         <div><label class="pd-label">Remaining Labor Units</label><input class="pd-input" id="ps-f-rlu" type="number" min="0" step="0.01" /></div>
-
-        <div class="ps-form-full ps-form-sec">Status &mdash; Constraints</div>
-        <div><label class="pd-label">Primary Constraint</label><select class="pd-select" id="ps-f-pcon"><option value="">None</option><option>Start On</option><option>Start On or After</option><option>Start On or Before</option><option>Finish On</option><option>Finish On or After</option><option>Finish On or Before</option><option>Mandatory Start</option><option>Mandatory Finish</option><option>As Late As Possible</option></select></div>
-        <div><label class="pd-label">Primary Constraint Date</label><input class="pd-input" id="ps-f-pcond" type="date" /></div>
-        <div><label class="pd-label">Secondary Constraint</label><select class="pd-select" id="ps-f-scon"><option value="">None</option><option>Start On</option><option>Start On or After</option><option>Start On or Before</option><option>Finish On</option><option>Finish On or After</option><option>Finish On or Before</option></select></div>
-        <div><label class="pd-label">Secondary Constraint Date</label><input class="pd-input" id="ps-f-scond" type="date" /></div>
-
+        <div class="ps-form-full ps-form-sec">Risk &mdash; 3-point estimate</div>
+        <div><label class="pd-label">Risk: Optimistic % <small>(3-point; blank = simulation default)</small></label><input class="pd-input" id="ps-f-risk-opt" type="number" min="10" max="100" step="1" placeholder="e.g. 85" /></div>
+        <div><label class="pd-label">Risk: Pessimistic % <small>(3-point; blank = simulation default)</small></label><input class="pd-input" id="ps-f-risk-pess" type="number" min="100" max="500" step="1" placeholder="e.g. 150" /></div>
+        <div class="ps-form-full ps-form-sec">Location, Codes &amp; User-Defined Fields</div>
+        <div class="ps-form-full" id="ps-f-loc-wrap" style="display:none;"><label class="pd-label">Location</label><div id="ps-f-loc-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
+        <div class="ps-form-full" id="ps-f-codes-wrap" style="display:none;"><label class="pd-label">Activity Codes</label><div id="ps-f-codes-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
+        <div class="ps-form-full" id="ps-f-udf-wrap" style="display:none;"><label class="pd-label">User-Defined Fields</label><div id="ps-f-udf-fields" style="display:flex;flex-wrap:wrap;gap:12px;"></div></div>
+        <div class="ps-form-full ps-form-sec">Notes</div>
         <div class="ps-form-full"><label class="pd-label">Remarks</label><textarea class="pd-input" id="ps-f-remarks" rows="2" style="resize:vertical;"></textarea></div>
       </form>
     </div>
@@ -16692,6 +16749,79 @@
         '<datalist id="ps-f-loc-dl-' + esc(l.id) + '">' + vals.map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join('') + '</datalist></div>';
     }).join('');
   }
+  // Hide a section header whose whole group is hidden, and pin the section headers under the modal
+  // header. Generic on purpose: it walks the form rather than naming the three dynamic blocks, so a
+  // section added later is covered without anyone remembering to wire it.
+  // ⚠️ A header WITH AN ID is skipped — that means some other code owns it (today: `ps-f-scope-sec`,
+  // toggled by the contract-scope logic, which shows an explanatory note when the section does not
+  // apply). Managing it here as well would make the two fight each other.
+  // ⚠️ Reads the INLINE `style.display`, not `offsetParent`: this also runs on a form whose modal may
+  // not be laid out yet, and offsetParent is null for everything in a hidden overlay.
+  // Builds the section rail from the sections that are ACTUALLY visible, every time the modal opens —
+  // so a project with no location levels (whose section `_syncFormSections` just hid) gets no dead tab,
+  // and a section added to the form later needs no bookkeeping here.
+  function _buildSecNav() {
+    var modal = document.getElementById('ps-modal'), form = document.getElementById('ps-form');
+    if (!modal || !form) return;
+    var old = modal.querySelector('.ps-secnav'); if (old) old.remove();
+    var secs = [].slice.call(form.querySelectorAll('.ps-form-sec')).filter(function (x) { return x.style.display !== 'none'; });
+    if (!secs.length) return;
+    var scroller = modal.querySelector('.pd-modal');
+    var nav = document.createElement('div');
+    nav.className = 'ps-secnav';
+    secs.forEach(function (sec, i) {
+      var b = document.createElement('button');
+      b.type = 'button';                       // ⚠️ inside a <form>: a bare button submits it
+      b.textContent = sec.textContent.trim();
+      b.onclick = function () {
+        // ⚠️ Scroll the MODAL, not the page: scrollIntoView() would also scroll the document behind
+        // the overlay. Offset by the sticky header, or the target lands underneath it.
+        var hdr = modal.querySelector('.pd-modal-header');
+        var off = hdr ? hdr.getBoundingClientRect().height : 0;
+        scroller.scrollTop += sec.getBoundingClientRect().top - scroller.getBoundingClientRect().top - off;
+        // ⚠️ Highlight from the CLICK, not only from the scroll handler. The scroll-spy below is the
+        // nice-to-have; a tab that does not light up when you click it reads as broken, and a scroll
+        // event can be starved (a background/non-compositing tab produces no frames, so no scroll
+        // events — which is exactly what made this unverifiable in the harness).
+        mark(i);
+      };
+      nav.appendChild(b);
+    });
+    modal.insertBefore(nav, modal.firstChild);
+    // ⚠️ `force` is the index the user actually CLICKED and is authoritative. Position alone cannot
+    // answer this: the last few sections can never reach the top line (there is nothing below them to
+    // scroll past), so clicking "Labor Units" saturates the scroll and a purely positional rule lights
+    // "Notes" instead — measured, on three of nine tabs. Clicks assert; scrolling infers.
+    function mark(force) {
+      var hdr = modal.querySelector('.pd-modal-header');
+      var line = scroller.getBoundingClientRect().top + (hdr ? hdr.getBoundingClientRect().height : 0) + 4;
+      var act = 0;
+      secs.forEach(function (sec, i) { if (sec.getBoundingClientRect().top <= line) act = i; });
+      // ⚠️ END CASE: the last sections cannot be scrolled to the top — there is nothing below them to
+      // scroll past — so clicking "Notes" leaves the view at its maximum with "Cost" still at the top
+      // line, and the rail would contradict the click. At the bottom, the last section IS where you
+      // are. Measured: without this, clicking the final tab landed 391px short and stayed on "Cost".
+      if (scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 2) act = secs.length - 1;
+      if (typeof force === 'number') act = force;
+      [].slice.call(nav.children).forEach(function (b, i) { b.classList.toggle('on', i === act); });
+    }
+    scroller.addEventListener('scroll', mark);   // dropped with the nav on the next open
+    mark();
+  }
+  function _syncFormSections() {
+    var form = document.getElementById('ps-form');
+    if (!form) return;
+    var kids = [].slice.call(form.children), i, j;
+    for (i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (!k.classList.contains('ps-form-sec') || k.id) continue;
+      var visible = false;
+      for (j = i + 1; j < kids.length && !kids[j].classList.contains('ps-form-sec'); j++) {
+        if (kids[j].style.display !== 'none') { visible = true; break; }
+      }
+      k.style.display = visible ? '' : 'none';
+    }
+  }
   function openForm(row) {
     editId = row ? row.id : null;
     document.getElementById('ps-modal-title').textContent = row ? 'Edit Activity' : 'Add Activity';
@@ -16794,6 +16924,10 @@
     set('ps-f-scond', row && row.secondary_constraint_date ? String(row.secondary_constraint_date).slice(0,10) : '');
     set('ps-f-remarks', row ? row.remarks : '');
     document.getElementById('ps-modal').style.display = 'flex';
+    // ⚠️ AFTER the modal is displayed: both of these MEASURE, and an element inside a
+    // `display:none` overlay has no box, so measuring earlier reads zero.
+    _syncFormSections();
+    _buildSecNav();
   }
   // ---- Add/Edit form: the Contract Scope section -------------------------------------------
   // Applicability follows the PARENT WBS live, so choosing an execution-phase branch reveals the
