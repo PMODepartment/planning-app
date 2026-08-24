@@ -4890,6 +4890,13 @@
     // activity that actually starts AFTER the data date forecasts (actual start + remaining − 1),
     // not (data date + remaining − 1) which would fall before its own start and collapse to it.
     var base = (as > today()) ? as : today();
+    // ⚠️ Retained logic: the remaining work also cannot begin before this activity's predecessors
+    // allow it. The floor is computed ONCE, by the CPM (_remStart) — deriving it a second time here
+    // is how the engine and the grid would end up reporting different finishes for the same row.
+    // ⚠️ Absent until the first computeCPM() of a load, so the ancestor roll-up span built earlier
+    // in that same rebuild() can lag by one pass; the activity row itself is correct immediately.
+    var rs = pd(r._remStart);
+    if (rs && rs > base) base = rs;
     var f = addDays(base, Math.max(0, r.remaining_duration) - 1);
     if (f < as) f = as;
     return dstr(f);
@@ -21394,6 +21401,17 @@
     if (rel.type === 'SF') return p._es + rel.lag - dur;
     return p._ef + rel.lag; // FS (default)
   }
+  // Retained logic: the earliest the REMAINING work of a started activity may begin, given one
+  // relationship. Mirrors relCandidateES exactly, but measures FF/SF against the REMAINING duration
+  // rather than the full one — the remaining part is what is still to be done, so an FF tie means
+  // 'this activity's forecast finish is at least the predecessor's finish + lag'.
+  function relCandidateRemES(rel, rem) {
+    var p = rel.p; if (p._ef == null || p._es == null) return null;
+    if (rel.type === 'SS') return p._es + rel.lag;
+    if (rel.type === 'FF') return p._ef + rel.lag - rem;
+    if (rel.type === 'SF') return p._es + rel.lag - rem;
+    return p._ef + rel.lag; // FS (default)
+  }
   // ---- Constraint-aware CPM (P6/OPC date constraints) ----
   // Returns the active date constraints for a task as {type, cd} where cd is the day-offset
   // (via A()) of the constraint date; both primary and secondary are honored.
@@ -21446,6 +21464,9 @@
       t._done = useActuals && !!t.actual_finish;
       t._started = useActuals && (!!t.actual_start || (t.percent_complete > 0));
       t._es = null; t._ef = null; t._out = [];
+      // The retained-logic floor for this activity's REMAINING work (a date string), consumed by
+      // forecastFin so the engine and the display can never disagree about it.
+      t._remStart = null;
     });
     tasks.forEach(function (t) { (t._relObjs || []).forEach(function (rel) { if (rel.p && rel.p._out) rel.p._out.push({ s: t, type: rel.type, lag: rel.lag }); }); });   // _out set only on dated tasks — skip edges from undated preds
     // Topological order (Kahn). A dependency DAG needs only ONE pass per direction once nodes are
@@ -21481,9 +21502,29 @@
       if (useActuals && t.actual_finish) { t._ef = A(t.actual_finish); }
       else if (useActuals && t._started && !t._done && t.remaining_duration != null && DD != null) {
         // Retained logic: a started activity's remaining work is scheduled from the later of the data
-        // date and its actual start, so its FORECAST finish (data date + remaining) — not the original
-        // scheduled span — drives successors. _ef is exclusive (finish + 1). Milestones stay 0-duration.
-        t._ef = isMile(t) ? es : (Math.max(es, DD) + Math.max(0, t.remaining_duration));
+        // date and its actual start, so its FORECAST finish — not the original scheduled span —
+        // drives successors. _ef is exclusive (finish + 1). Milestones stay 0-duration.
+        var rem = Math.max(0, t.remaining_duration);
+        var rs = Math.max(es, DD);
+        // ⚠️⚠️ THE RETAINED-LOGIC FLOOR, and the whole point of the two scheduling modes.
+        // The actual-start branch above deliberately pins `es` to the recorded start and SKIPS the
+        // relationship candidates — right for the START, which is a historical fact that must not
+        // move. But the REMAINING work still waits on the predecessors: that is precisely what
+        // 'Retained Logic' retains. Without this floor the pin also discarded the logic, so EVERY
+        // started activity behaved as PROGRESS OVERRIDE whatever mode was selected — and a
+        // successor could finish BEFORE its own predecessor (owner-reported: Close-Out & Acceptance
+        // finishing Sep 29 while its predecessor Physical Works Completion runs to Nov 16).
+        // ⚠️ Applied to the FINISH only, never to `es`, so the reported Start stays the actual one.
+        if (schedMode !== 'override') {
+          var rl = null;
+          (t._relObjs || []).forEach(function (rel) {
+            var c = relCandidateRemES(rel, rem);
+            if (c != null && (rl == null || c > rl)) rl = c;
+          });
+          if (rl != null && rl > rs) rs = rl;
+        }
+        t._remStart = dstr(addDays(base, rs));
+        t._ef = isMile(t) ? rs : (rs + rem);
       } else { t._ef = es + t._dur; }
     });
     var projEnd = 0; tasks.forEach(function (t) { if (t._ef != null && t._ef > projEnd) projEnd = t._ef; });
