@@ -84,6 +84,72 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-24 — ROADMAP B1 built: the client BOQ, its class-code mapping, its allocation and its billing
+Owner: *"Read the boq-and-pmi roadmap. Let's implement this"* → the whole B1 chain, under the
+Contracts tab. **Run `migrations/2026-08-24-boq.sql`.** New **BOQ** tab in
+`modules/contracts-claims/` (`boq.js`, four sub-tabs: Items · Class Codes · Allocations ·
+Billing / POC) on 8 new tables + a derived view. Detail: `modules/contracts-claims/CLAUDE.md`.
+Design note (written the prompt before, from the real OPW101 workbook): `docs/boq-and-pmi.md`.
+
+**The findings that shaped it are measured, and each one is a way of being confidently wrong in the
+money column.**
+- ⚠️ **The format varies between SHEETS OF ONE WORKBOOK** — header row 12/10/7, first column A/B/B.
+  Detection is a search; the accepted map is saved per sheet as an import profile.
+- ⚠️ **The heading discriminator is the `Total of X >>` marker, NEVER "has unit + qty"** — a heading
+  can carry both (`DIV 5 | METALS | lot | 1`), and the unit+qty test made HS-SP read sum-of-WT% =
+  **2.000000** and a contract of **₱114,410,587.84** against the true **₱57,205,293.92**.
+- ⚠️ **Non-numeric amounts are scope-boundary statements, not missing data** (`Included in Package 1`,
+  `By Megaworld`). Stored verbatim, excluded from roll-ups, **never coerced to 0** — a zero and
+  "someone else is doing this" are different facts, and the difference is what a claim turns on.
+- ⚠️ **The reconciliation gate is the most valuable thing in the importer**, and its tolerance must
+  stay ₱1/0.01%: the real files carry genuine artefacts that size (the PMI prints 12,873,167.99 where
+  D+E is 12,873,168.00 — assert it, never "fix" our arithmetic), while widening it to 5% lets the
+  **₱20,667,260.59** plant hole through, which is exactly how that hole was made.
+- ⚠️ **Only `rel_pct` is stored for billing**; WT %, %Wt. and Amt. are derived, or they disagree with
+  the BOQ the moment a revision changes a quantity. Verified: WT % sums to **1.000000** per sheet, the
+  worked Site Supervision line gives **₱3,660,000.00** / **₱7,320,000.00** exactly, 9.6718% +
+  7.5741% = **17.2459%**, and MATERIALS + LABOR = Amt.
+- ⚠️ **A project POC is NOT the average of the sheets.** Measured: ACOUSTIC alone at 100% reads its
+  **1.65%** contract share where a naive average reads **25%**; Architectural alone reads **87.90%**.
+- ⚠️ **No `project_schedule.quantity` column** (the settled decision from
+  `docs/vendor-performance-chain.md`) — that would be a third place quantities live. An activity's
+  quantity is a `security_invoker` view over the allocations.
+- ⚠️ **`boq_items` is append-and-supersede with no edit path.** It is the client's document; a
+  remeasure is a new revision with the prior retained.
+
+**Verified: 112 checks executing the shipped functions** (vm sandbox, `_internals`, nothing
+reimplemented) against the workbook's own figures. ⚠️ **Six contrast builds prove the suite bites**
+(unit+qty heading test → 7 fails, text→0 → 8, 5% tolerance → 2, pro-rata-over-location → 2,
+de-zeroed code → 1, first-Rel-column → 1). ⚠️ A **seventh** initially passed because the fixture
+never exercised the discriminator — a parsed lump-sum line has no qty, so the case that bites is a
+**heading** carrying `lot | 1`. Added; 3 fails now.
+**Browser-verified** at 1280 and a 375px layout viewport, light and dark, against the real
+`dashboard.css`/`module.css`/`ui.js`: all four sub-tabs render, header/body cells align 7/7·8/8·9/9,
+contract reads **₱1,155,577,055.60** and POC **17.2459%**, both modals work (over-allocating flips
+the reconciliation line to "over-allocated by 9,690.3"), 0 page h-scroll at either width.
+- ⚠️ **A real WCAG defect only measurement caught: 8 of 10 theme/colour combinations failed AA** —
+  the amber scope-boundary marker at **2.80:1** on a light card, green/blue/purple/red at 2.5–3.5:1
+  on dark. Same class as the Drawing Register's 2.64:1 pill and the schedule's invisible
+  "Structural". Fixed with paired light/dark semantic tokens: **min 6.39:1 light / 6.56:1 dark**
+  across all 16.
+- ⚠️ **Two real phone defects, same way:** `flex:1 1 100%` gave every filter its own row (**305px** on
+  Items, taller than the content it filters → 218px), and `flex:1 1 0` cannot shrink a flex item below
+  its text width, so the 4-button sub-tab strip was **401px inside 375px** with "Billing / POC"
+  clipped (→ 355px, wrapping labels, 44px touch minimum).
+- ⚠️ **The viewport-desync trap again:** `window.innerWidth` read **464** while the layout viewport
+  was **375** and the ≤700px rules were applying. Gate on `documentElement.clientWidth`. Also
+  `filterRows` counted from `getBoundingClientRect().top` is meaningless under `align-items:center` —
+  the bar's own height is the honest number.
+- **0 functions lost or added in `module.js`**; both files parse; CSS braces balanced; migration
+  paren-balanced, `$$`-paired, every literal policy preceded by a drop, all 8 tables under
+  project-scoped RLS. `MODULE_V` → `20260824n`; `module.css/js?v=20260824a`; new `boq.js?v=20260824a`.
+- ⚠️ **NOT verified signed-in, and the migration has not been run. No real workbook has been through
+  the importer** — the parser is verified against fixtures reproducing the measured shapes, not
+  against the file. The first real import is the test.
+- **B2 (PMI) is NOT built.** `boq_items.scope_type` is in place so a variation's priced lines can land
+  there, but ⚠️ **no `pmi_id` column yet** — a pointer added before the UI that sets it produces rows
+  belonging to no PMI that vanish from any PMI-filtered view (the packages-migration trap).
+
 ### 2026-08-24 — Vertical Stacking: both windows resizable, and the tower card stops padding itself
 Owner asked for the stacking window and the magnifier window to be resizable, and for the stacking
 card's width to match the width its information actually needs.

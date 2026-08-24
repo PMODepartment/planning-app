@@ -66,7 +66,17 @@ shell never reaches into a module's tables. Tiles show a row count, an optional
 
 ## B. Contracts & Claims (`modules/contracts-claims/`)
 
-### B1. Client BOQ upload -> internal class codes -> activities
+### B1. Client BOQ upload -> internal class codes -> activities — ✅ BUILT 2026-08-24
+Shipped as the **BOQ tab** of `modules/contracts-claims/` (`boq.js`, four sub-tabs: Items · Class
+Codes · Allocations · Billing / POC) on `migrations/2026-08-24-boq.sql` (**MUST BE RUN**). B1a + B1b +
+B1c + B1d are all in. Implementation notes, the six contrast builds that prove the test suite bites,
+and what is deliberately NOT built: `modules/contracts-claims/CLAUDE.md`.
+⚠️ **Not verified signed-in — no real workbook has been through the importer yet.** The first real
+import is the test, and the reconciliation gate is what should catch a column-map mistake.
+⚠️ Still open from §7 of the design note: **#2** (does the BOQ define the packages — offered, not
+auto-created: not built), **#6** (billing period → month mapping for Cash Flow), **#7** (which POC
+leads a report — the variance is surfaced, never auto-reconciled, as required).
+
 Full design note: **`docs/boq-and-pmi.md`** (grounded in the real OPW101 Package 2 BOQ, 10 sheets /
 ~1,215 priced lines). The middle link already exists: `class_codes` (702 L3 codes) +
 `project_schedule.class_code`. B1 is: import the client's lines verbatim, map them to class codes,

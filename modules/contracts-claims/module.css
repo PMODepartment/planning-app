@@ -16,7 +16,7 @@
 
 /* ---- Topbar ------------------------------------------------------------- */
 .cc-title-txt { white-space:nowrap; }
-@media (max-width:1250px){ .cc-title-txt { display:none; } }   /* 3 tabs need more room */
+@media (max-width:1360px){ .cc-title-txt { display:none; } }   /* 4 tabs need more room */
 .cc-title-ico { color:var(--pd-red); vertical-align:-3px; }
 .cc-modback { height:36px; width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
 
@@ -157,4 +157,161 @@ html.pd-dark .cc-age.warn { color:#f0c469; }
   .cc-filters > * { flex: 1 1 100%; min-width: 0; }
   .cc-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .cc-form { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   BOQ tab (boq.js) — all classes prefixed .boq-
+   Layout is on --pd-* tokens so dark mode follows automatically.
+
+   SEMANTIC COLOURS keep their MEANING across themes but not their VALUE, and
+   that distinction is the whole point of the block below.
+   ⚠️ A first cut used one hard-coded hue per meaning and MEASURED 8 of 10
+   theme/colour combinations below WCAG AA (4.5:1 for 10.5px bold): the amber
+   scope-boundary marker — one of the most important marks on this screen — read
+   2.80:1 on a light card, and green/blue/purple/red all sat at 2.5–3.5:1 on the
+   dark card. Same defect class as the Drawing Register's 2.64:1 "Not started"
+   pill and the schedule's invisible "Structural". Both themes are paired and
+   measured; do not collapse these back to one value per meaning.
+   ========================================================================== */
+:root {
+  --boq-good: #12693a;   /* measured / reconciles / approved */
+  --boq-info: #1f5b93;   /* lump sum / submitted */
+  --boq-prov: #5b3a9b;   /* provisional */
+  --boq-warn: #8a5200;   /* scope boundary / partial / does-not-reconcile-yet */
+  --boq-bad:  #b3241a;   /* over-allocated / refuses reconciliation */
+  /* Tints are decoration behind --pd-ink text, so they stay as-is in both
+     themes — only the TEXT colours needed pairing. */
+  --boq-good-bg: rgba(18,105,58,.12);
+  --boq-info-bg: rgba(31,91,147,.12);
+  --boq-warn-bg: rgba(138,82,0,.14);
+  --boq-bad-bg:  rgba(179,36,26,.14);
+}
+html.pd-dark {
+  --boq-good: #7fd6a2;
+  --boq-info: #8ec2f0;
+  --boq-prov: #c3a6ea;
+  --boq-warn: #f0c469;
+  --boq-bad:  #f19a9a;
+  --boq-good-bg: rgba(127,214,162,.14);
+  --boq-info-bg: rgba(142,194,240,.14);
+  --boq-warn-bg: rgba(240,196,105,.16);
+  --boq-bad-bg:  rgba(241,154,154,.16);
+}
+.boq-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+.boq-spacer { flex:1 1 auto; }
+.boq-inline { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
+.boq-inline .pd-select { height:32px; font-size:12.5px; max-width:280px; width:auto; }
+
+.boq-subtabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; }
+.boq-subtab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px; font-weight:600;
+  cursor:pointer; font-size:12.5px; white-space:nowrap; }
+.boq-subtab + .boq-subtab { border-left:1px solid var(--pd-line); }
+.boq-subtab:hover:not(.active) { background:var(--pd-bg); }
+.boq-subtab.active { background:var(--pd-red); color:#fff; }
+
+/* ---- Filters ------------------------------------------------------------
+   WARNING: the shared .pd-select is width:100% (built for stacked .pd-field
+   forms), so without an explicit width every select claims the whole bar and
+   lands on its own row — a 200px-tall filter bar. Every filter bar in this app
+   has to override that; it is not decoration. */
+.boq-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;
+  background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
+.boq-filters .pd-select { width:auto; min-width:150px; max-width:220px; height:34px; font-size:13px; }
+.boq-filters .pd-input { width:auto; flex:1 1 240px; min-width:170px; height:34px; font-size:13px; }
+
+/* ---- Alerts (the reconciliation gate speaks here) ---------------------- */
+.boq-alert { border-radius:var(--pd-radius); padding:10px 13px; font-size:12.5px; margin-bottom:12px;
+  border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); line-height:1.5; }
+.boq-alert.bad  { border-color:var(--boq-bad);  background:var(--boq-bad-bg); }
+.boq-alert.warn { border-color:var(--boq-warn); background:var(--boq-warn-bg); }
+.boq-ok  { color:var(--boq-good); font-weight:700; }
+.boq-bad { color:var(--boq-bad);  font-weight:700; }
+
+/* ---- Item table -------------------------------------------------------- */
+.boq-table { min-width:1080px; }
+.boq-table .boq-no { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+  white-space:nowrap; color:var(--pd-muted); }
+/* A heading carries the SPEC on the fit-out sheets and is where the class code
+   belongs, so it is visually the anchor row, not a de-emphasised one. */
+.boq-table tr.boq-head > td { background:var(--pd-bg); font-weight:700; }
+.boq-excl { font-size:11.5px; color:var(--boq-warn); font-style:italic; margin-top:2px; }
+.boq-h3 { margin:14px 12px 8px; font-size:13px; }
+
+.boq-kind { display:inline-block; font-size:10.5px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.03em; padding:2px 6px; border-radius:3px; white-space:nowrap;
+  background:var(--pd-bg); color:var(--pd-muted); border:1px solid var(--pd-line); }
+.boq-kind.k-measured    { color:var(--boq-good); border-color:var(--boq-good); }
+.boq-kind.k-lump_sum    { color:var(--boq-info); border-color:var(--boq-info); }
+.boq-kind.k-provisional { color:var(--boq-prov); border-color:var(--boq-prov); }
+.boq-kind.k-excluded    { color:var(--boq-warn); border-color:var(--boq-warn); }
+.boq-kind.k-approved    { color:var(--boq-good); border-color:var(--boq-good); }
+.boq-kind.k-submitted   { color:var(--boq-info); border-color:var(--boq-info); }
+
+.boq-code, .boq-sugg { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+  font-weight:700; padding:2px 6px; border-radius:3px; white-space:nowrap; }
+.boq-code { background:var(--pd-red-light); color:var(--pd-red); }
+.boq-sugg { background:var(--pd-bg); color:var(--pd-ink); border:1px dashed var(--pd-line); }
+
+/* Allocation reconciliation, always visible both ways: a silent shortfall is
+   work nobody has planned and a silent excess is a wrong S-curve. */
+.boq-alloc { display:inline-block; font-size:11px; font-weight:700; padding:2px 6px; border-radius:3px; }
+.boq-alloc.none { background:var(--pd-bg); color:var(--pd-muted); font-weight:600; }
+.boq-alloc.part { background:var(--boq-warn-bg); color:var(--boq-warn); }
+.boq-alloc.full { background:var(--boq-good-bg); color:var(--boq-good); }
+.boq-alloc.over { background:var(--boq-bad-bg);  color:var(--boq-bad); }
+
+/* ---- Import preview ---------------------------------------------------- */
+.boq-imp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:10px 0; }
+.boq-imp-grid label { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--pd-muted); }
+.boq-imp-grid .pd-input { width:100%; height:34px; }
+.boq-prevtab, .boq-splittab, .boq-progtab { width:100%; border-collapse:collapse; font-size:12.5px; margin:8px 0; }
+.boq-prevtab th, .boq-splittab th, .boq-progtab th { text-align:left; font-size:10.5px; text-transform:uppercase;
+  letter-spacing:.04em; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); padding:5px 6px; }
+.boq-prevtab td, .boq-splittab td, .boq-progtab td { padding:5px 6px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
+.boq-prevtab .boq-prevnote td { font-size:11.5px; color:var(--pd-muted); background:var(--pd-bg); }
+.boq-sm { height:28px; font-size:12px; width:auto; min-width:92px; }
+
+/* ---- Class-code picker ------------------------------------------------- */
+.boq-pick .pd-input { width:100%; }
+.boq-picklist { max-height:340px; overflow-y:auto; border:1px solid var(--pd-line);
+  border-radius:var(--pd-radius); margin:10px 0; }
+.boq-pickrow { display:flex; gap:10px; align-items:baseline; width:100%; text-align:left; border:0;
+  background:transparent; cursor:pointer; padding:7px 10px; font-size:12.5px; color:var(--pd-ink); }
+.boq-pickrow + .boq-pickrow { border-top:1px solid var(--pd-line); }
+.boq-pickrow:hover { background:var(--pd-bg); }
+.boq-pickrow code { font-weight:700; color:var(--pd-red); flex:none; }
+
+/* ---- Allocation split + progress editors ------------------------------ */
+.boq-split, .boq-prog { max-height:62vh; overflow-y:auto; }
+.boq-qin, .boq-rel { width:110px; height:30px; font-size:12.5px; text-align:right; }
+.boq-splitadd { margin:8px 0; }
+.boq-splitadd .pd-select { width:100%; max-width:none; }
+.boq-recon { font-size:12.5px; padding:8px 11px; border-radius:var(--pd-radius); border:1px solid var(--pd-line); }
+.boq-recon.ok   { border-color:var(--boq-good); background:var(--boq-good-bg); }
+.boq-recon.warn { border-color:var(--boq-warn); background:var(--boq-warn-bg); }
+.boq-recon.bad  { border-color:var(--boq-bad);  background:var(--boq-bad-bg); }
+.boq-prog .pd-input { width:100%; }
+.boq-prog .boq-rel { width:110px; }
+
+@media (max-width:700px) {
+  /* Same call as the register above: the BOQ stays a horizontal scroller. Its
+     columns ARE the money build-up (qty x material x labour = amount) and are
+     read by comparing down a column; card-stacking destroys that. */
+  .boq-table { min-width:900px; }
+
+  /* ⚠️ MEASURED at a 375px layout viewport: `flex:1 1 100%` on every filter put
+     each control on its own row — 7 rows / 305px on the Items tab, taller than
+     the content it filters. A real basis lets them PAIR UP when they fit and
+     claim a row only when they don't (the same call the shared topbar layer
+     made: 197px → 157px). Do not collapse these back to 100%. */
+  .boq-filters > * { flex:1 1 45%; min-width:0; max-width:none; }
+  .boq-filters .pd-input { flex:1 1 100%; }        /* search earns a full row */
+  .boq-filters .boq-spacer { display:none; }       /* an auto-spacer would eat a whole row */
+
+  /* ⚠️ A flex item will not shrink below its own text width, so `flex:1 1 0`
+     alone left the 4-button strip 401px wide inside a 375px viewport with
+     "Billing / POC" clipped. min-width:0 + wrapping labels is what actually
+     fits it; 44px is the touch minimum. */
+  .boq-subtabs { width:100%; flex-wrap:wrap; }
+  .boq-subtab { flex:1 1 0; min-width:0; white-space:normal; min-height:44px; line-height:1.2; }
 }

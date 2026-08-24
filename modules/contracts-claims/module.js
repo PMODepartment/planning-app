@@ -156,6 +156,14 @@ window.ContractsClaims = (function () {
   // ==========================================================================
   function render() {
     var host = document.getElementById('cc-view');
+    /* The BOQ tab is a different KIND of screen — the client's contract document
+       and its billing, not a register of claims — so it owns its own toolbar,
+       filters and sub-tabs (boq.js) and this module's filter bar / record tools
+       are hidden rather than left showing controls that do nothing there. */
+    var isBoq = view === 'boq';
+    document.getElementById('cc-filters').style.display = isBoq ? 'none' : '';
+    document.getElementById('cc-topbar-tools').style.display = isBoq ? 'none' : '';
+    if (isBoq) { if (window.BOQ) BOQ.render(); else host.innerHTML = '<div class="pd-card cc-empty"><h3>BOQ unavailable</h3><p>boq.js did not load.</p></div>'; return; }
     // The Claim/CO type filter only applies to the claims tab.
     document.getElementById('cc-f-type').style.display = view === 'claims' ? '' : 'none';
     syncClearFilt();
@@ -580,6 +588,11 @@ window.ContractsClaims = (function () {
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.view === v); });
     sel = {};
     if (v !== 'claims') { filters.type = ''; var ft = document.getElementById('cc-f-type'); if (ft) ft.value = ''; }
+    /* ⚠️ The BOQ loads on first open, not with the register. A BOQ is 1,200+
+       lines plus its mapping, allocations and every billing period — six extra
+       round-trips on every project switch, paid by everyone for a screen most
+       sessions never open. */
+    if (v === 'boq' && window.BOQ) { BOQ.show(pid, projName()); return; }
     render();
   }
 
@@ -604,9 +617,15 @@ window.ContractsClaims = (function () {
     pid = selEl.value || (projects[0] && projects[0].id) || null;
     if (UI.enhanceProjectSelect) UI.enhanceProjectSelect(selEl);
     selEl.addEventListener('change', function () {
-      pid = selEl.value; sessionStorage.setItem('pd_project', pid); sel = {}; load(); joinCollab();
+      pid = selEl.value; sessionStorage.setItem('pd_project', pid); sel = {};
+      // A BOQ belongs to ONE project, so its whole cache is dropped on a switch
+      // rather than filtered — a stale revision id would silently show another
+      // project's contract document.
+      if (window.BOQ) { BOQ.reset(); if (view === 'boq') { BOQ.show(pid, projName()); joinCollab(); return; } }
+      load(); joinCollab();
     });
 
+    if (window.BOQ) BOQ.init({ uid: UID, canWrite: canWrite, isAdmin: isAdmin });
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); }; });
     document.getElementById('cc-add').onclick = function () { openForm(null); };
     document.getElementById('cc-export').onclick = exportExcel;
