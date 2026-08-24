@@ -121,7 +121,21 @@ exactly). Each `(Billing)` twin is its trade BOQ plus a period's progress: `WT %
   billing POC (contractual/revenue). They differ legitimately; surface the variance, never
   auto-reconcile. This is also the real source for the schedule's existing IBB columns.
 
-### B2. Claims Register with PMI tracking
+### B2. Claims Register with PMI tracking - BUILT 2026-08-25
+Shipped as the **PMI tab** of `modules/contracts-claims/` (`pmi.js`, sub-tabs Register / Cost Terms
+plus a case-file modal) on `migrations/2026-08-25-pmi.sql` (**MUST BE RUN**). B2a + B2b + B2c are all
+in: the private `contracts-claims` bucket with typed attachments, the record with dual refs and the
+three relations, the receipt stage with per-stage derived aging, and the per-contract cost rate card
+whose priced lines land in `boq_items` as `scope_type='change_order'`.
+Notes, the nine contrast builds and what is deliberately NOT built:
+`modules/contracts-claims/CLAUDE.md`.
+- VERIFIED SIGNED-IN: the un-migrated tab names the missing table and the migration file, with no
+  unhandled rejections. NOT exercised against real data - no PMI filed, no file uploaded, no card
+  saved, so the upload/rollback ordering and the storage policies are structurally verified only.
+- Still open: the internal/client approval CHAIN has its columns and per-profile roles but no
+  per-record editor yet, and promoting a PMI to a `contracts_claims` row is manual (`claim_id` is
+  stored, not auto-set).
+
 Full design note: **`docs/boq-and-pmi.md`** (grounded in a real 14-page filed PMI).
 - ⚠️ **A filed PMI is a case file of 5 document types**, not one PDF -- needs a private
   `contracts-claims` bucket + typed attachments (INSERT policy `is_writer()`, not the legacy
@@ -334,7 +348,8 @@ and `productivity_activities.subcontractor` is free text that joins to nothing.
   (names/trades only, no rates or contacts); add `productivity_activities.vendor_id`.
   Enabling step for everything below.
 - **F2. Productivity activity -> work package** -- planned vs. actual quantity per trade per
-  month. Blocked on where planned quantity lives (schedule column vs. B1 BOQ).
+  month. UNBLOCKED 2026-08-25: planned quantity comes from the B1 BOQ, derived per activity by
+  the `boq_activity_quantity` view (there is deliberately no `project_schedule.quantity`).
 - **F3. Vendor S-curve** -- `schedule_scurve_agg_vendor()`: the existing
   `schedule_scurve_agg_multi` body with the leaf set filtered by awarded vendor. No new maths.
 - **F4. Monthly accomplishment + on-track/problem flags** -- SPI-style ratio, slip days and a

@@ -1,5 +1,129 @@
 # Module: contracts-claims
 
+## PMI tracking — the whole of B2 (2026-08-25) — fmlozano
+**Run `migrations/2026-08-25-pmi.sql`.** New 5th tab, `pmi.js`, two sub-tabs: **Register · Cost
+Terms**, plus a **case-file** modal per instruction. Implements ROADMAP B2a (bucket + typed
+attachments), B2b (the record) and B2c (the rate card, whose priced lines land in `boq_items`).
+Design note: `docs/boq-and-pmi.md` §5 — grounded in a real 14-page filed PMI.
+
+### Why a separate table from `contracts_claims`, and not a `record_type`
+`contracts_claims` holds the **commercial** record. A PMI is the **instruction** that precedes it and
+may never become one: it arrives, it sits un-responded (our exposure, invisible until now), it may be
+revised three times, and **one PMI can spawn several proposals that each become their own change
+order**. A `record_type` would need three self-FKs, a second reference number and a receipt stage
+bolted onto rows where all of it is meaningless — and a 1:1 would make the 29 → 29.2 → rev1 chain
+unrepresentable. `pmi_records.claim_id` links the two, so neither owns the other's state.
+
+### The record (B2b)
+- ⚠️ **Two reference numbers, both searched.** `MEL.CON.PMI-029` (theirs) and `MST347. OPS. VO-PMI
+  29.2 (rev1)` (ours). ⚠️ **OUR ref is unique per project; THEIRS deliberately is not** — one client
+  instruction spans a parent, its proposals and every revision, all citing the same number, so
+  forcing it unique would make a revision impossible to file.
+- ⚠️ **Three relations, three columns, three visually distinct marks**: `parent_id` (29 → 29.2),
+  `supersedes_id` (rev1 over rev0, **never an overwrite** — the superseded row is the evidence), and
+  `spawned_from_id` (the form says a separate PMI is issued on approval — a *third* relation).
+  A contrast build that relabels all three "related" fails the suite.
+- ⚠️ **Receipt is a real stage and comes first.** The four commercial stages are kept verbatim; what
+  they never carried is that the instruction arrives before we estimate anything.
+- ⚠️ **Aging is PER STAGE, derived, never stored**, and total-age-from-receipt is reported
+  *separately*. Null when decided, null on a future date, never negative. `daysBetween` is the
+  claims register's own UTC helper, so the two registers' figures are comparable.
+- ⚠️ **The approval rate is over DECIDED records only.** Withdrawn was never adjudicated and pending
+  is not a failure — the naive denominator is what read 0.2% where the honest figure was 85%.
+- ⚠️ `internal_chain` / `client_chain` are jsonb because the roles are **per-client configuration**,
+  not a fixed set of columns. A proposal three weeks with the COO is not "Submitted".
+
+### The case file (B2a)
+Five document types, from the real bundle's five documents by three authors. ⚠️ **Many typed
+attachments, not one `file_url`** — a single column cannot answer "has the cost proposal been
+submitted?" separately from "is the testing report attached?", which is what a QS asks when chasing
+one. Several files per type is normal (the photos are three pages), so it is *not* unique on
+`(pmi_id, doc_type)`. The required-document checklist is per profile and the register shows the
+shortfall (`2/3`).
+- New private **`contracts-claims`** bucket following **mom-attachments**, not the 2026-06-18 three:
+  ⚠️ INSERT is `is_writer()` (the legacy `is_approved()` lets a viewer upload into a register they
+  cannot write a row to), DELETE keeps the `owner` branch beside `is_planner()`.
+- ⚠️ **The object PATH is stored and the URL is signed on demand.** The ordering rules are the
+  feature: upload before the row write, roll the object back if the row write fails, and on removal
+  delete the ROW first (a failed object delete leaves a recoverable orphan; the reverse leaves an
+  attachment that will not open).
+
+### The cost build-up (B2c)
+⚠️ **The percentages are marked "As per Contract" — they are per-contract terms, not constants.** So
+`contract_cost_terms` is an ordered rate card: each step a label, a `kind`, a **basis** (which
+earlier step it multiplies or sums) and a rate. Verified against the real sheet, step by step:
+A 8,707,500 → B 9,578,250 → C 1,915,650 → D 11,493,900 → E 1,379,268 → **F 12,873,168**.
+- ⚠️ **The sheet prints 12,873,167.99 where D+E is exactly 12,873,168.00.** Asserted as the artefact
+  it is; never "fix" our arithmetic to match a rounding display.
+- ⚠️ **A step may only reference earlier steps, and a missing or forward basis yields `null`, never
+  0.** A zero silently understates a total that gets quoted in a meeting; the broken step is named on
+  screen. A contrast build that returns 0 there fails 5 assertions.
+- ⚠️ **No seeded card and no default profile.** A seeded 10/20/12 is the hard-coded percentages by
+  another name — it would be applied to the next client silently and read as a considered term. The
+  sample build-up is a one-click **template the planner must accept**, which is a different thing.
+- ⚠️ **A PMI cost proposal IS a BOQ**, so its priced lines go to `boq_items` with
+  `scope_type='change_order'` + `pmi_id`. Each proposal gets its **own `boq_revision`** (via the new
+  `boq_revisions.pmi_id`), because `boq_items.revision_id` is NOT NULL and identity is
+  `(revision_id, sheet, source_row)` — a nullable revision_id would make that unique index toothless,
+  since NULLs are distinct in Postgres. It also keeps change-order lines out of the contract
+  revision, so the BOQ tab's contract total is unaffected.
+- ⚠️ **Two delete rules on purpose:** `boq_revisions.pmi_id` **cascades** (a proposal's priced scope
+  has no meaning without its instruction) while `boq_items.pmi_id` **sets null** (a *contract* line
+  tagged to a PMI must lose its tag, not its life).
+
+### Verified
+- **82 checks green** executing the shipped functions in a `vm` sandbox — the build-up step by step,
+  the forward-reference guard, per-stage aging across all seven stages, the dual-reference search, the
+  three relations, `bumpRev`, attachment completeness and the decided-only denominator.
+- ⚠️ **Nine contrast builds, all nine bite** (zero-basis 5 fails, clock-never-stops 3, bad-revbump 4,
+  one-ref-searched 2, one-relation 2, negative-aging 1, withdrawn-decided 1, hardcoded-label 1,
+  count-unpriced 1). ⚠️ `one_relation` initially passed: my assertion checked the CSS *class* while
+  the variant changed the *label*, so it was testing the wrong half. The class drives the colour, the
+  label says what the relation is — the suite now asserts both.
+- **VERIFIED SIGNED-IN** against the real database (super admin, GPR101, via the owner's own
+  `localhost:5173`): all 5 tabs render, the BOQ tab loads cleanly on the migrated schema, and the
+  **un-migrated PMI tab degrades exactly as designed** — it names the missing table *and*
+  `migrations/2026-08-25-pmi.sql`, with **zero unhandled rejections**, and returning to Claims
+  restores the register's filters and tools.
+  ⚠️ **Measurement note:** clicking a tab *during* `init()`'s own trailing `load()` produced a
+  reading where the view had not switched. From a settled state the same click is correct — do not
+  drive the tabs until init has finished.
+- **Browser-verified** at 1280 and a 375px layout viewport, both themes, against the shipped CSS:
+  header/body cells align 9/9, the case file reproduces the full build-up to **12,873,168.00**, the
+  chain shows three distinct labels, the missing-required warning fires, desktop stays a one-row
+  52px filter bar and a 61px topbar with all **5** tabs on screen, and there is no page horizontal
+  scroll at either width.
+- ⚠️ **A real defect found by rendering, not reading:** the proposal total read **`0.00`** for every
+  unpriced instruction — asserting "we quoted nothing". That is the same false equivalence this
+  module refuses in the BOQ, where `By Megaworld` is stored verbatim rather than coerced to 0. Now
+  `not priced`, via `proposalTotal()`, which returns null with no lines *or* no card. Three
+  assertions added.
+- ⚠️ **A real WCAG failure, also only from measuring:** the `claim` relation mark used brand red,
+  which is **4.12:1 light / 3.40:1 dark** — under the 4.5:1 AA floor for 10px bold, while the other
+  eleven marks passed at 6.4+. Brand red is not a text colour at this size. It now uses body ink with
+  a red *border* (the only mark with one, so still distinguishable): **all 12 marks pass, min 6.39
+  light / 6.56 dark**.
+- ⚠️ **Harness bug worth remembering:** four aging assertions failed as off-by-one because the harness
+  built fixture dates from **UTC** getters while `todayISO()` uses **local** ones (deliberately, to
+  match the claims register). East of Greenwich that is a day out for part of every day and reads as
+  a code defect. Gate fixture dates on the same clock the module uses.
+- **0 functions lost or added in `module.js`**; all three files parse; CSS braces balanced.
+- ⚠️ **Not exercised against real data:** no PMI has been filed, no file uploaded through the bucket,
+  and no card saved — the migration is not run. The upload/rollback ordering and the storage policies
+  are structurally verified only.
+- Assets `module.css/js?v=20260825a`, new `pmi.js?v=20260825a`; `MODULE_V` → `20260825a`.
+
+### Not built (deliberate)
+- **The internal/client approval chain has columns and configuration but no editor yet** — the roles
+  are captured per profile and stored as jsonb, but ticking off "Recommending Approval" per record is
+  a further screen. Per-stage aging already surfaces the exposure the chain would explain.
+- **No OCR of client PMI PDFs.** The tempting answer to "the format varies" and the wrong one: the
+  sample is a 14-page bundle mixing a spreadsheet print, a scanned form, photos and a supplier
+  contract, and a mis-parsed amount in a claims register gets quoted at a meeting. Type the header
+  fields, attach the file.
+- Promoting a PMI to a `contracts_claims` row in one click (`claim_id` is stored but set by hand).
+
+
 ## BOQ tab — the whole B1 chain (2026-08-24) — fmlozano
 **Run `migrations/2026-08-24-boq.sql`.** New 4th top-level tab, `boq.js` (self-contained, hosted the
 way `ppr.js` is hosted by progress-photos), with four sub-tabs: **BOQ Items · Class Codes ·

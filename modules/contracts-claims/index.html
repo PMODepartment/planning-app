@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260819c" />
-  <link rel="stylesheet" href="module.css?v=20260824a" />
+  <link rel="stylesheet" href="module.css?v=20260825a" />
 </head>
 <body>
   <div class="pd-app">
@@ -25,6 +25,7 @@
           <button class="cc-tab" data-view="claims">Claims / Change Order</button>
           <button class="cc-tab" data-view="eot">Extension of Time</button>
           <button class="cc-tab" data-view="boq">BOQ</button>
+          <button class="cc-tab" data-view="pmi">PMI</button>
         </div>
         <div class="cc-topbar-tools" id="cc-topbar-tools">
           <button class="pd-btn cc-tb-labeled pd-btn-primary" id="cc-add" title="Add a record">+ Add</button>
@@ -75,7 +76,8 @@
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <!-- boq.js must load BEFORE module.js's init runs (it is read as window.BOQ). -->
   <script src="boq.js?v=20260824a"></script>
-  <script src="module.js?v=20260824a"></script>
+  <script src="pmi.js?v=20260825a"></script>
+  <script src="module.js?v=20260825a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

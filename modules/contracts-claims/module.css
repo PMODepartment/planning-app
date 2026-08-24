@@ -16,7 +16,7 @@
 
 /* ---- Topbar ------------------------------------------------------------- */
 .cc-title-txt { white-space:nowrap; }
-@media (max-width:1360px){ .cc-title-txt { display:none; } }   /* 4 tabs need more room */
+@media (max-width:1460px){ .cc-title-txt { display:none; } }   /* 5 tabs need more room */
 .cc-title-ico { color:var(--pd-red); vertical-align:-3px; }
 .cc-modback { height:36px; width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
 
@@ -314,4 +314,102 @@ html.pd-dark {
      fits it; 44px is the touch minimum. */
   .boq-subtabs { width:100%; flex-wrap:wrap; }
   .boq-subtab { flex:1 1 0; min-width:0; white-space:normal; min-height:44px; line-height:1.2; }
+}
+
+/* ==========================================================================
+   PMI tab (pmi.js) — all classes prefixed .pmi-
+   Reuses the .boq-* subtab / filter / alert / chip furniture rather than
+   inventing a second visual language for the same module, and rides the same
+   paired light/dark semantic tokens (--boq-good/info/prov/warn/bad) that were
+   measured to WCAG AA in both themes. Do not introduce fresh hex here.
+   ========================================================================== */
+
+/* The seven stages, mapped onto the existing semantic tokens by MEANING:
+   received = our exposure (warn), the middle stages are neutral-informative,
+   decided is good, rejected/withdrawn are bad/muted. */
+.boq-kind.k-received        { color:var(--boq-warn); border-color:var(--boq-warn); }
+.boq-kind.k-estimated       { color:var(--boq-info); border-color:var(--boq-info); }
+.boq-kind.k-submitted       { color:var(--boq-info); border-color:var(--boq-info); }
+.boq-kind.k-evaluated       { color:var(--boq-prov); border-color:var(--boq-prov); }
+.boq-kind.k-client_approved { color:var(--boq-good); border-color:var(--boq-good); }
+.boq-kind.k-rejected        { color:var(--boq-bad);  border-color:var(--boq-bad); }
+.boq-kind.k-withdrawn       { color:var(--pd-muted); border-color:var(--pd-line); }
+
+/* A superseded revision is history, not noise: dimmed but never hidden, because
+   it is the evidence for what changed. */
+.pmi-superseded > td { opacity:.62; }
+.pmi-refs { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
+
+/* The three relations are three DIFFERENT marks. Collapsing them into one
+   "related" badge is what makes the 29 -> 29.2 -> rev1 chain unreadable. */
+.pmi-link { display:inline-block; font-size:10px; font-weight:800; text-transform:uppercase;
+  letter-spacing:.04em; padding:2px 5px; border-radius:3px; white-space:nowrap;
+  border:1px solid var(--pd-line); background:var(--pd-bg); color:var(--pd-muted); }
+.pmi-link.parent { color:var(--boq-info); border-color:var(--boq-info); }
+.pmi-link.rev    { color:var(--boq-prov); border-color:var(--boq-prov); }
+.pmi-link.spawn  { color:var(--boq-warn); border-color:var(--boq-warn); }
+/* ⚠️ BRAND RED IS NOT A TEXT COLOUR AT THIS SIZE. Measured on the shipped
+   stylesheet: #EE3124 on the card is 4.12:1 light / 3.40:1 dark, under the 4.5:1
+   AA floor for 10px bold — while all four other relation marks passed at 6.4+.
+   The mark stays distinguishable by being the only one with a RED BORDER, and
+   its text uses the body ink, which passes by construction in both themes. */
+.pmi-link.claim  { color:var(--pd-ink);   border-color:var(--pd-red); }
+.pmi-link.kids   { color:var(--boq-good); border-color:var(--boq-good); }
+
+/* ---- The case file ----------------------------------------------------- */
+/* ⚠️ overflow-x is stated EXPLICITLY, not left to the spec rule that a `visible`
+   axis computes to `auto` when the other axis is not visible. The case file's
+   document and priced-line tables measure ~500px inside a 339px pane, so they
+   are only reachable because this box scrolls horizontally — and if someone
+   later drops overflow-y, that side-effect disappears silently and the columns
+   become unreachable rather than merely off-screen. */
+.pmi-case { max-height:66vh; overflow-y:auto; overflow-x:auto; }
+.pmi-hdr { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px;
+  background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  padding:11px 13px; margin-bottom:10px; }
+.pmi-ref { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; font-weight:700; }
+.pmi-scope { font-size:13px; line-height:1.55; margin:0 0 10px; }
+
+.pmi-chain-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:5px 0;
+  border-bottom:1px solid var(--pd-line); }
+.pmi-chain-row:last-child { border-bottom:0; }
+.pmi-jump { height:28px; padding:0 9px; font-size:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+
+.pmi-up { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0; }
+.pmi-up .pd-select { width:auto; min-width:170px; height:32px; font-size:12.5px; }
+.pmi-view { height:26px; padding:0 8px; font-size:12px; max-width:320px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+
+/* ---- The cost card ----------------------------------------------------- */
+.pmi-card .pmi-code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-weight:800;
+  color:var(--pd-red); width:26px; }
+.pmi-card tr.pmi-total > td { font-weight:800; border-top:2px solid var(--pd-line);
+  background:var(--pd-bg); }
+.pmi-card .pd-input, .pmi-card .pd-select { height:30px; font-size:12.5px; width:100%; }
+
+.pmi-prof { padding:14px 16px; margin-bottom:12px; }
+.pmi-prof-h { display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+  flex-wrap:wrap; margin-bottom:6px; }
+.pmi-req { margin-bottom:8px; }
+
+/* Checkboxes need to sit inline with their label, not stack: the shared
+   .cc-form is a grid of stacked .pd-field labels and would put each box on its
+   own line. */
+.pmi-chk { display:flex !important; flex-direction:row !important; align-items:center; gap:7px;
+  font-size:12.5px; font-weight:500; }
+.pmi-chk input { width:15px; height:15px; accent-color:var(--pd-red); flex:none; }
+.pmi-chk-sm { display:inline-flex; align-items:center; gap:3px; font-size:11px; margin-right:6px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.pmi-chk-sm input { width:13px; height:13px; accent-color:var(--pd-red); }
+
+/* The record form carries ~20 fields; two columns keeps it one screen on a
+   laptop without the label wrapping the shared .cc-form suffers at one column. */
+.pmi-form .cc-wide { grid-column:1/-1; }
+
+@media (max-width:700px) {
+  .pmi-hdr { grid-template-columns:repeat(2,1fr); }
+  /* keep the horizontal scroller on a phone: the tables are ~500px in a 339px pane */
+  .pmi-case { max-height:none; overflow-x:auto; }
+  .pmi-up > * { flex:1 1 100%; }
+  .pmi-up .pd-select { min-width:0; }
 }

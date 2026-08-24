@@ -160,10 +160,16 @@ window.ContractsClaims = (function () {
        and its billing, not a register of claims — so it owns its own toolbar,
        filters and sub-tabs (boq.js) and this module's filter bar / record tools
        are hidden rather than left showing controls that do nothing there. */
-    var isBoq = view === 'boq';
-    document.getElementById('cc-filters').style.display = isBoq ? 'none' : '';
-    document.getElementById('cc-topbar-tools').style.display = isBoq ? 'none' : '';
-    if (isBoq) { if (window.BOQ) BOQ.render(); else host.innerHTML = '<div class="pd-card cc-empty"><h3>BOQ unavailable</h3><p>boq.js did not load.</p></div>'; return; }
+    var own = view === 'boq' ? window.BOQ : view === 'pmi' ? window.PMI : null;
+    var isOwn = view === 'boq' || view === 'pmi';
+    document.getElementById('cc-filters').style.display = isOwn ? 'none' : '';
+    document.getElementById('cc-topbar-tools').style.display = isOwn ? 'none' : '';
+    if (isOwn) {
+      if (own) own.render();
+      else host.innerHTML = '<div class="pd-card cc-empty"><h3>' + esc(view.toUpperCase()) +
+        ' unavailable</h3><p>' + esc(view) + '.js did not load.</p></div>';
+      return;
+    }
     // The Claim/CO type filter only applies to the claims tab.
     document.getElementById('cc-f-type').style.display = view === 'claims' ? '' : 'none';
     syncClearFilt();
@@ -593,6 +599,7 @@ window.ContractsClaims = (function () {
        round-trips on every project switch, paid by everyone for a screen most
        sessions never open. */
     if (v === 'boq' && window.BOQ) { BOQ.show(pid, projName()); return; }
+    if (v === 'pmi' && window.PMI) { PMI.show(pid, projName()); return; }
     render();
   }
 
@@ -621,11 +628,16 @@ window.ContractsClaims = (function () {
       // A BOQ belongs to ONE project, so its whole cache is dropped on a switch
       // rather than filtered — a stale revision id would silently show another
       // project's contract document.
-      if (window.BOQ) { BOQ.reset(); if (view === 'boq') { BOQ.show(pid, projName()); joinCollab(); return; } }
+      if (window.BOQ) BOQ.reset();
+      if (window.PMI) PMI.reset();
+      if (view === 'boq' && window.BOQ) { BOQ.show(pid, projName()); joinCollab(); return; }
+      if (view === 'pmi' && window.PMI) { PMI.show(pid, projName()); joinCollab(); return; }
       load(); joinCollab();
     });
 
-    if (window.BOQ) BOQ.init({ uid: UID, canWrite: canWrite, isAdmin: isAdmin });
+    var deps = { uid: UID, canWrite: canWrite, isAdmin: isAdmin };
+    if (window.BOQ) BOQ.init(deps);
+    if (window.PMI) PMI.init(deps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); }; });
     document.getElementById('cc-add').onclick = function () { openForm(null); };
     document.getElementById('cc-export').onclick = exportExcel;

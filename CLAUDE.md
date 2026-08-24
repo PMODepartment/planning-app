@@ -84,6 +84,91 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 — ROADMAP B2 built: PMI tracking, its case file, and the contractual cost card
+Owner ran the B1 migration, then: *"Let's proceed to the rest of the roadmap."* **Run
+`migrations/2026-08-25-pmi.sql`.** New **PMI** tab in `modules/contracts-claims/` (`pmi.js`,
+sub-tabs Register · Cost Terms, plus a case-file modal) on 4 new tables, a 5th storage bucket, and
+two new columns on the B1 tables. B2a + B2b + B2c all in. Detail:
+`modules/contracts-claims/CLAUDE.md`. Design note: `docs/boq-and-pmi.md` §5.
+
+**First, the B1 migration was verified against the live DB rather than trusted.** All 8 tables and
+the `boq_activity_quantity` view resolve (42501 = present-but-grant-blocked), with the three
+controls separating cleanly (missing table → PGRST205, missing column → 42703) and a **negative
+control** — `boq_items.pmi_id` correctly ABSENT — proving the discriminator works both ways rather
+than returning a blanket 42501. The view is created *after* both DO-block loops, so its existence is
+also evidence the RLS and trigger loops ran.
+
+**The design decisions that carry the risk.**
+- ⚠️ **A PMI is not a `record_type` on `contracts_claims`.** That table holds the *commercial*
+  record; a PMI is the *instruction* that precedes it and may never become one. One PMI can spawn
+  several proposals that each become their own change order, so a 1:1 would make the 29 → 29.2 →
+  rev1 chain unrepresentable. `claim_id` links them; neither owns the other's state.
+- ⚠️ **Two reference numbers, both searched — and only OURS is unique per project.** One client
+  instruction spans a parent, its proposals and every revision, all citing the same client number;
+  forcing that unique would make a revision impossible to file.
+- ⚠️ **Three relations, not one string:** parent, supersedes, and *spawned-from* (the form issues a
+  separate PMI on approval). Three columns, three distinct on-screen marks.
+- ⚠️ **Receipt is a real stage and comes first**, and aging is **per stage**, derived, never stored —
+  null when decided, null on a future date, never negative. One aging number over an 18-month case
+  answers nothing.
+- ⚠️ **The cost build-up is a per-contract RATE CARD, not constants.** The sheet marks its
+  percentages "As per Contract". Verified step by step against the real one: A 8,707,500 → B
+  9,578,250 → C 1,915,650 → D 11,493,900 → E 1,379,268 → **F 12,873,168** (the sheet prints
+  …167.99 — asserted as the artefact it is). **No card is seeded**: the sample is a one-click
+  template the planner must accept, because a seeded 10/20/12 is the hard-coded percentages by
+  another name.
+- ⚠️ **A step may only reference earlier steps; a missing or forward basis yields null, never 0.** A
+  zero silently understates a total that gets quoted in a meeting.
+- ⚠️ **A PMI cost proposal IS a BOQ**, so its priced lines land in `boq_items` as
+  `scope_type='change_order'` — closing the gap where variation work carried no quantities anywhere.
+  Each proposal gets its own `boq_revision` (new `boq_revisions.pmi_id`), because
+  `boq_items.revision_id` is NOT NULL and a nullable one would make the identity index toothless
+  (NULLs are distinct in Postgres). ⚠️ **Two delete rules on purpose:** that revision link cascades,
+  while `boq_items.pmi_id` sets null — a *contract* line tagged to a PMI loses its tag, not its life.
+- ⚠️ **Typed attachments, not one `file_url`**, in a new private `contracts-claims` bucket following
+  **mom-attachments** (INSERT `is_writer()`, not the legacy `is_approved()` that lets a viewer upload
+  into a register they cannot write a row to). Path stored, URL signed on demand, and the ordering
+  rules preserved: upload before the row write, roll the object back on failure, row-first on removal.
+
+**Verified: 82 checks** executing the shipped functions, and ⚠️ **nine contrast builds, all nine
+bite**. ⚠️ One initially did not — `one_relation` — because my assertion checked the CSS *class*
+while the variant changed the *label*: it was testing the wrong half. Both are asserted now.
+- ✅ **VERIFIED SIGNED-IN against the real database** (super admin, GPR101, through the owner's own
+  `localhost:5173` session): all 5 tabs render, the **BOQ tab loads cleanly on the migrated schema**
+  — which closes B1's standing "not verified signed-in" caveat for the shell — and the **un-migrated
+  PMI tab degrades exactly as designed**, naming the missing table *and* the migration file, with
+  **zero unhandled rejections**, leaving the register intact on return.
+- ⚠️ **Two real defects found by rendering rather than reading.** (1) The proposal total read
+  **`0.00`** on every unpriced instruction — asserting "we quoted nothing", the same false
+  equivalence this module refuses in the BOQ where `By Megaworld` is stored verbatim rather than
+  coerced to 0; now `not priced`. (2) The `claim` mark used **brand red as text at 10px bold —
+  4.12:1 light / 3.40:1 dark**, under AA, while the other eleven marks passed at 6.4+. Brand red is
+  not a text colour at this size; it now uses body ink with a red border. **All 12 marks pass: min
+  6.39 light / 6.56 dark.**
+- ⚠️ **Two measurement traps, both mine.** Four aging assertions failed as off-by-one because the
+  harness built fixture dates from **UTC** getters while `todayISO()` uses **local** ones
+  (deliberately, to match the claims register) — east of Greenwich that is a day out for part of
+  every day. And clicking a tab *during* `init()`'s trailing `load()` reads as "the view did not
+  switch"; from a settled state the same click is correct.
+- ⚠️ Also: the Bash heredoc mangled three long-file writes this session (apostrophe/EOF), so those
+  files went through the Write tool instead. Structural checks caught it each time — the file simply
+  was not created.
+- **0 functions lost or added in `module.js`**; all three module files parse; CSS braces balanced;
+  migration paren-balanced, `$$`-paired, every literal policy preceded by a drop, all 4 tables under
+  project-scoped RLS, and re-runnable (0 non-idempotent DDL). `MODULE_V` → `20260825a`;
+  `module.css/js?v=20260825a`; new `pmi.js?v=20260825a`.
+- ⚠️ **Not exercised against real data:** no PMI filed, no file uploaded through the bucket, no card
+  saved — the migration is not run, so the upload/rollback ordering and the storage policies are
+  structurally verified only.
+
+**What is left on the roadmap after this:** **F1–F6** (vendor performance). ⚠️ F2's recorded blocker
+— "where does planned quantity live?" — is now *answered* by B1, but **F1 needs a `sync-wpm`
+redeploy plus a `WPM_SERVICE_KEY` secret, which is an owner action**; F3–F6 build on F1. Also open:
+**A3's tail** (per-module `package_id` adoption, deliberately incremental) and three design questions
+from `docs/boq-and-pmi.md` §7 — #2 (does the BOQ define the packages), #6 (billing period → month
+mapping for Cash Flow) and #7 (which POC leads a report).
+
+
 ### 2026-08-24 — ROADMAP B1 built: the client BOQ, its class-code mapping, its allocation and its billing
 Owner: *"Read the boq-and-pmi roadmap. Let's implement this"* → the whole B1 chain, under the
 Contracts tab. **Run `migrations/2026-08-24-boq.sql`.** New **BOQ** tab in
