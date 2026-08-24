@@ -5259,7 +5259,17 @@
     // in that same rebuild() can lag by one pass; the activity row itself is correct immediately.
     var rs = pd(r._remStart);
     if (rs && rs > base) base = rs;
-    var f = addDays(base, Math.max(0, r.remaining_duration) - 1);
+    // ⚠️ Must use the same day basis as cpmLogic. Adding remaining duration as
+    // calendar days here while the engine advanced it over the calendar is exactly
+    // how the grid and the Gantt end up reporting different finishes for one row.
+    var rem = Math.max(0, r.remaining_duration);
+    var f;
+    if (calCpmOn && _cpmBase && r._ax && r._ax.wd) {
+      var b0 = r._ax.snapF(dayDiff(_cpmBase, base));
+      f = addDays(_cpmBase, r._ax.plus(b0, rem) - 1);
+    } else {
+      f = addDays(base, rem - 1);
+    }
     if (f < as) f = as;
     return dstr(f);
   }
@@ -14869,7 +14879,18 @@
   function _triSample(a, c, b) { var u = Math.random(); var fc = (c - a) / (b - a); if (u < fc) return a + Math.sqrt(u * (b - a) * (c - a)); return b - Math.sqrt((1 - u) * (b - a) * (b - c)); }
   function _riskPrep() {
     var tasks = rows.filter(function (r) { return !isWbs(r) && r.start_date && r.end_date && r.activity_id; });
-    var nodes = tasks.map(function (t, i) { return { i: i, t: t, dur: (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1, done: !!(useActuals && t.actual_finish), started: !!(useActuals && (t.actual_start || t.percent_complete > 0)), rel: [], out: [], indeg: 0,
+    // ⚠️ Axis window computed BEFORE the nodes so each one can carry its own axis:
+    // _riskForward runs once per iteration (thousands of times), so resolving a
+    // calendar there would dominate the simulation.
+    var _b0 = null; tasks.forEach(function (t) { var s0 = pd((useActuals && t.actual_start) || t.start_date); if (s0 && (!_b0 || s0 < _b0)) _b0 = s0; });
+    var _mx = 0; if (_b0) tasks.forEach(function (t) { var e0 = pd(t.actual_finish || t.end_date); if (e0) { var o0 = Math.round((e0 - _b0) / 86400000); if (o0 > _mx) _mx = o0; } });
+    var RLO = -1100, RHI = _mx + 4000;
+    var nodes = tasks.map(function (t, i) { return { i: i, t: t, ax: (_b0 ? axisFor(t, _b0, RLO, RHI) : ALLAX),
+      // ⚠️ Sampled durations must be on the SAME basis the live schedule uses, or the
+      // simulation's P50 finish is not comparable with the date on the Gantt beside it.
+      dur: (calCpmOn && _b0 && window.PDCal)
+        ? axisFor(t, _b0, RLO, RHI).span(Math.round((pd(t.start_date) - _b0) / 86400000), Math.round((pd(t.end_date) - _b0) / 86400000))
+        : (pd(t.end_date) - pd(t.start_date)) / 86400000 + 1, done: !!(useActuals && t.actual_finish), started: !!(useActuals && (t.actual_start || t.percent_complete > 0)), rel: [], out: [], indeg: 0,
       // per-activity 3-point override (risk_optimistic_pct/risk_pessimistic_pct on project_schedule) —
       // null when unset, so runRisk() falls back to the simulation-wide Optimistic%/Pessimistic%.
       riskOpt: t.risk_optimistic_pct != null ? t.risk_optimistic_pct / 100 : null,
@@ -14891,11 +14912,15 @@
       if (nd.aStart != null) { es = nd.aStart; }
       else {
         var esL = null;
-        for (var ri = 0; ri < nd.rel.length; ri++) { var rel = nd.rel[ri], p = rel.p; if (p._ef == null || p._es == null) continue; var c; if (rel.type === 'SS') c = p._es + rel.lag; else if (rel.type === 'FF') c = p._ef + rel.lag - durs[nd.i]; else if (rel.type === 'SF') c = p._es + rel.lag - durs[nd.i]; else c = p._ef + rel.lag; if (esL == null || c > esL) esL = c; }
+        // Same translation as relCandidateES — `+ n` → ax.plus, `- n` → ax.minus.
+        // With working-day CPM off, ax is the identity axis and this is the old line.
+        var ax = nd.ax || ALLAX;
+        for (var ri = 0; ri < nd.rel.length; ri++) { var rel = nd.rel[ri], p = rel.p; if (p._ef == null || p._es == null) continue; var c; if (rel.type === 'SS') c = ax.plus(p._es, rel.lag); else if (rel.type === 'FF') c = ax.minus(ax.plus(p._ef, rel.lag), durs[nd.i]); else if (rel.type === 'SF') c = ax.minus(ax.plus(p._es, rel.lag), durs[nd.i]); else c = ax.plus(p._ef, rel.lag); if (esL == null || c > esL) esL = c; }
         es = (esL != null) ? esL : nd.plStart;
         if (DD != null && !nd.done && !nd.started && es < DD) es = DD;
+        es = ax.snapF(es);
       }
-      var ef = (nd.aFin != null) ? nd.aFin : es + durs[nd.i];
+      var ef = (nd.aFin != null) ? nd.aFin : (nd.ax || ALLAX).plus(es, durs[nd.i]);
       nd._es = es; nd._ef = ef; if (ef > maxEF) maxEF = ef;
     }
     return maxEF;
@@ -21979,25 +22004,147 @@
     drivingPath();
     return { mode: 'driving' };
   }
+  // ==========================================================================
+  // WORKING-DAY CPM — the calendar axis
+  // --------------------------------------------------------------------------
+  // ⚠️ THE PROBLEM. Every offset in this engine (_es/_ef/_ls/_lf) is a count of
+  // CALENDAR days from a project base date, and durations were added with plain
+  // `+`. So a 10-day activity starting Friday finished on the second Sunday, and
+  // ticking Sunday off a working calendar changed nothing about any date — the
+  // calendars only ever reached duration scenarios and the resource histogram.
+  //
+  // ⚠️ THE SHAPE OF THE FIX, and why it is not "convert the axis to working days".
+  // Offsets have to stay comparable ACROSS activities: a relationship combines a
+  // predecessor's finish with a successor's start, and the two may sit on
+  // different calendars. A working-day axis is per-calendar, so offsets on it are
+  // not comparable and every relationship would need a conversion. Instead the
+  // axis stays in calendar days — absolute and shared — and only the ARITHMETIC
+  // that adds or subtracts a duration or a lag goes through the activity's
+  // calendar. Everything downstream (float, the Gantt, applyScheduleDates) keeps
+  // working on the same numbers it always did.
+  //
+  // ⚠️ BOUNDARY SEMANTICS. An offset here is a boundary: "work resumes at o".
+  // _es is the boundary work starts at; _ef is the boundary AFTER the last worked
+  // day (finish = _ef - 1), which is the convention the rest of the module and
+  // applyScheduleDates already assume. So:
+  //     plus(o, n)  = the boundary after n working days of work starting at o
+  //     minus(o, n) = the boundary n working days of work BEFORE o
+  //     diff(a, b)  = working days from boundary a to boundary b (signed)
+  // Every formula below is the old formula with `+ n` → plus(o, n) and `- n` →
+  // minus(o, n). ⚠️ In the identity axis those are exactly o + n and o - n, which
+  // is why the mode being OFF is provably the old engine and not a re-derivation
+  // of it.
+  var calCpmOn = (function () { try { return localStorage.getItem('ps_calcpm') === '1'; } catch (e) { return false; } })();
+
+  // Calendar-day axis: every day is workable. Used whenever working-day CPM is
+  // off, so cpmLogic has ONE code path rather than two that can drift.
+  var ALLAX = {
+    wd: false,
+    snapF: function (o) { return o; },
+    plus: function (o, n) { return o + n; },
+    minus: function (o, n) { return o - n; },
+    diff: function (a, b) { return b - a; },
+    span: function (a, b) { return b - a + 1; }
+  };
+
+  // Working-day axis over one calendar, precomputed across the project window.
+  // ⚠️ Precomputed rather than walked per call: addWorkingDays() walks a day at a
+  // time, and the forward pass, the backward pass and every constraint would each
+  // pay that walk on schedules of 27k activities. Here it is one pass over the
+  // window per calendar, then O(1) lookups.
+  //   list — offsets that are working days, ascending
+  //   rank[o - lo] — how many working days lie strictly BEFORE offset o
+  // so list[rank[o]] === o exactly when o is itself a working day.
+  function makeAxis(cal, base, lo, hi) {
+    var list = [], n = hi - lo + 1, rank = new Int32Array(n + 1), o, i = 0;
+    for (o = lo; o <= hi; o++) {
+      rank[o - lo] = i;
+      if (PDCal.isWorkDay(cal, addDays(base, o))) { list.push(o); i++; }
+    }
+    rank[n] = i;
+    // ⚠️ A calendar with no working day in the window would make every lookup
+    // read off the end of `list`. That is a real mis-configuration (all seven days
+    // unticked), and the honest answer is to behave like the calendar-day axis
+    // rather than to hand back garbage dates.
+    if (!list.length) return ALLAX;
+    function clamp(x) { return x < lo ? lo : (x > hi ? hi : x); }
+    function rankOf(x) { return rank[clamp(x) - lo]; }
+    function at(i2) { return list[i2 < 0 ? 0 : (i2 >= list.length ? list.length - 1 : i2)]; }
+    // first working offset >= o
+    function snapF(o2) { return at(rankOf(o2)); }
+    // last working offset <= o
+    function snapB(o2) { var r = rankOf(o2); return (list[r] === clamp(o2)) ? list[r] : at(r - 1); }
+    return {
+      wd: true,
+      snapF: snapF,
+      // n working days of work starting at boundary o → the boundary after it
+      plus: function (o2, n2) {
+        if (n2 === 0) return o2;
+        if (n2 < 0) return this.minus(o2, -n2);
+        return at(rankOf(snapF(o2)) + n2 - 1) + 1;
+      },
+      // the boundary n working days of work before boundary o
+      minus: function (o2, n2) {
+        if (n2 === 0) return o2;
+        if (n2 < 0) return this.plus(o2, -n2);
+        return at(rankOf(snapB(o2 - 1)) - n2 + 1);
+      },
+      // working days from boundary a to boundary b, signed
+      diff: function (a, b) {
+        if (a === b) return 0;
+        return (b > a) ? (rankOf(b) - rankOf(a)) : -(rankOf(a) - rankOf(b));
+      },
+      // working days in the inclusive day range [a, b] — how a stored start/end
+      // pair becomes a working-day duration
+      span: function (a, b) { return b < a ? 0 : (rankOf(b + 1) - rankOf(a)); }
+    };
+  }
+
+  // One axis per calendar per CPM run. ⚠️ Keyed by calendar id AND base: the base
+  // is the earliest start in the schedule and moves when data changes, and a
+  // cached axis measured from a different base would silently offset every date.
+  var _axCache = {}, _axBaseKey = null;
+  function axisFor(t, base, lo, hi) {
+    if (!calCpmOn || !window.PDCal) return ALLAX;
+    var key = String(base && base.getTime()) + '|' + lo + '|' + hi;
+    if (_axBaseKey !== key) { _axCache = {}; _axBaseKey = key; }
+    var cal = cpmCalOf(t), id = (cal && cal.id) || '_default';
+    return _axCache[id] || (_axCache[id] = makeAxis(cal, base, lo, hi));
+  }
+  // The calendar an activity is scheduled on: its own, else the project default,
+  // else the Philippine standard. ⚠️ Deliberately the same order dsCalendarFor
+  // uses, minus the scenario override — a duration scenario names one calendar for
+  // the whole what-if, but the live schedule must honour each activity's own.
+  function cpmCalOf(t) {
+    var c = (t && t.calendar_id) ? calById(t.calendar_id) : null;
+    if (!c) c = CALS.find(function (x) { return x.is_default; });
+    return c || (window.PDCal ? PDCal.defaultCalendar() : null);
+  }
+
   // Full CPM honoring relationship type (FS/SS/FF/SF) + lag, actual dates, a data date,
   // and Retained-Logic vs Progress-Override handling of in-progress work.
-  function relCandidateES(rel, dur) {
+  // ⚠️ `ax` is the SUCCESSOR's axis: the lag and the successor's own duration are
+  // counted on the calendar of the activity being scheduled, not the predecessor's.
+  // (P6 makes that a project setting; one rule, stated, beats a hidden option.)
+  function relCandidateES(rel, dur, ax) {
     var p = rel.p; if (p._ef == null || p._es == null) return null;
-    if (rel.type === 'SS') return p._es + rel.lag;
-    if (rel.type === 'FF') return p._ef + rel.lag - dur;
-    if (rel.type === 'SF') return p._es + rel.lag - dur;
-    return p._ef + rel.lag; // FS (default)
+    ax = ax || ALLAX;
+    if (rel.type === 'SS') return ax.plus(p._es, rel.lag);
+    if (rel.type === 'FF') return ax.minus(ax.plus(p._ef, rel.lag), dur);
+    if (rel.type === 'SF') return ax.minus(ax.plus(p._es, rel.lag), dur);
+    return ax.plus(p._ef, rel.lag); // FS (default)
   }
   // Retained logic: the earliest the REMAINING work of a started activity may begin, given one
   // relationship. Mirrors relCandidateES exactly, but measures FF/SF against the REMAINING duration
   // rather than the full one — the remaining part is what is still to be done, so an FF tie means
   // 'this activity's forecast finish is at least the predecessor's finish + lag'.
-  function relCandidateRemES(rel, rem) {
+  function relCandidateRemES(rel, rem, ax) {
     var p = rel.p; if (p._ef == null || p._es == null) return null;
-    if (rel.type === 'SS') return p._es + rel.lag;
-    if (rel.type === 'FF') return p._ef + rel.lag - rem;
-    if (rel.type === 'SF') return p._es + rel.lag - rem;
-    return p._ef + rel.lag; // FS (default)
+    ax = ax || ALLAX;
+    if (rel.type === 'SS') return ax.plus(p._es, rel.lag);
+    if (rel.type === 'FF') return ax.minus(ax.plus(p._ef, rel.lag), rem);
+    if (rel.type === 'SF') return ax.minus(ax.plus(p._es, rel.lag), rem);
+    return ax.plus(p._ef, rel.lag); // FS (default)
   }
   // ---- Constraint-aware CPM (P6/OPC date constraints) ----
   // Returns the active date constraints for a task as {type, cd} where cd is the day-offset
@@ -22010,13 +22157,14 @@
   }
   // Forward pass: constraints that move the EARLY start/finish. Applied LAST (after the data-date
   // floor) so Mandatory/On truly pin and "or after" floors further. Returns the adjusted early start.
-  function fwdConstrain(es, dur, cons) {
+  function fwdConstrain(es, dur, cons, ax) {
+    ax = ax || ALLAX;
     cons.forEach(function (c) {
       switch (c.type) {
         case 'Start On or After': if (es < c.cd) es = c.cd; break;
         case 'Start On': case 'Mandatory Start': es = c.cd; break;                 // hard pin (overrides logic)
-        case 'Finish On or After': if (es + dur < c.cd) es = c.cd - dur; break;
-        case 'Finish On': case 'Mandatory Finish': es = c.cd - dur; break;         // hard pin to finish
+        case 'Finish On or After': if (ax.plus(es, dur) < c.cd) es = ax.minus(c.cd, dur); break;
+        case 'Finish On': case 'Mandatory Finish': es = ax.minus(c.cd, dur); break;   // hard pin to finish
         // 'Start On or Before' / 'Finish On or Before' affect LATE dates only (backward pass)
       }
     });
@@ -22024,11 +22172,12 @@
   }
   // Backward pass: constraints that cap the LATE finish (can drive float negative when infeasible,
   // which is the point — an over-constrained schedule should show it). Returns the adjusted late finish.
-  function bwdConstrain(lf, dur, cons) {
+  function bwdConstrain(lf, dur, cons, ax) {
+    ax = ax || ALLAX;
     cons.forEach(function (c) {
       switch (c.type) {
-        case 'Start On or Before': if (lf > c.cd + dur) lf = c.cd + dur; break;
-        case 'Start On': case 'Mandatory Start': lf = c.cd + dur; break;
+        case 'Start On or Before': if (lf > ax.plus(c.cd, dur)) lf = ax.plus(c.cd, dur); break;
+        case 'Start On': case 'Mandatory Start': lf = ax.plus(c.cd, dur); break;
         case 'Finish On or Before': if (lf > c.cd) lf = c.cd; break;
         case 'Finish On': case 'Mandatory Finish': lf = c.cd; break;
       }
@@ -22041,12 +22190,35 @@
     _cpmBase = base;
     var A = function (d) { var x = pd(d); return x ? dayDiff(base, x) : null; };
     var DD = useActuals ? dayDiff(base, today()) : null;   // data date offset
+    // Axis window. ⚠️ Padded generously on BOTH sides: a date constraint or an
+    // actual start can sit before the earliest planned start (negative offsets),
+    // and the forward pass pushes finishes past the last planned end. A lookup
+    // outside the window clamps to its edge, which would quietly pin dates to the
+    // boundary — so the window has to be wider than the schedule can plausibly go.
+    var _maxOff = 0;
+    tasks.forEach(function (t) {
+      var e = A(t.actual_finish) , e2 = A(t.end_date);
+      if (e != null && e > _maxOff) _maxOff = e;
+      if (e2 != null && e2 > _maxOff) _maxOff = e2;
+    });
+    var AX_LO = -1100, AX_HI = _maxOff + 4000;
+    var axOf = function (t) { return axisFor(t, base, AX_LO, AX_HI); };
     tasks.forEach(function (t) {
       // Duration for CPM. Milestones = 0; everything else ≥ 1, CLAMPED so an inconsistent
       // end_date-before-start_date can't make _dur negative and corrupt the forward pass (which would
       // schedule successors before their predecessors finish). Falls back to duration_days, then 1.
       var _s = pd(t.start_date), _e = pd(t.end_date);
-      var _raw = (_s && _e) ? dayDiff(_s, _e) + 1 : (t.duration_days != null ? t.duration_days : 1);
+      t._ax = axOf(t);
+      // ⚠️ In working-day mode the duration is DERIVED from the stored dates via the
+      // calendar rather than read as a calendar-day span. That is what migrates
+      // existing data without touching a row: an activity whose dates already skip
+      // Sundays keeps exactly the dates it has (re-advancing the same working days
+      // lands on the same day), while one that spans them is understood as the
+      // shorter working-day job it always was. Changing the stored numbers instead
+      // would have rewritten every project's durations in place.
+      var _raw = (_s && _e) ? (t._ax.wd ? t._ax.span(dayDiff(base, _s), dayDiff(base, _e))
+                                        : dayDiff(_s, _e) + 1)
+                            : (t.duration_days != null ? t.duration_days : 1);
       t._dur = isMile(t) ? 0 : Math.max(1, _raw);
       t._done = useActuals && !!t.actual_finish;
       t._started = useActuals && (!!t.actual_start || (t.percent_complete > 0));
@@ -22072,18 +22244,27 @@
     // forward pass — every predecessor precedes its successor in topo order, so a single
     // evaluation is exact (no relaxation loop needed).
     order.forEach(function (t) {
-      var es;
+      var es, ax = t._ax || ALLAX;
       t._cons = taskConstraints(t, A);   // cache for the backward pass + ALAP
+      // ⚠️ An ACTUAL start is a historical fact. It is never snapped onto the
+      // calendar: work really did start that day, even if the calendar says the
+      // site was closed, and moving it would falsify the record.
       if (useActuals && t.actual_start) { es = A(t.actual_start); }
       else {
-        var esL = null; (t._relObjs || []).forEach(function (rel) { var c = relCandidateES(rel, t._dur); if (c != null && (esL == null || c > esL)) esL = c; });
+        var esL = null; (t._relObjs || []).forEach(function (rel) { var c = relCandidateES(rel, t._dur, ax); if (c != null && (esL == null || c > esL)) esL = c; });
         es = (esL != null) ? esL : A(t.start_date);
         // Progress Override: a started-but-unfinished activity ignores predecessor logic
         if (schedMode === 'override' && t._started && !t._done) { es = (DD != null) ? Math.max(A(t.start_date), DD) : A(t.start_date); }
         // future (unstarted, incomplete) work cannot be scheduled before the data date
         if (useActuals && DD != null && !t._done && !t._started && es < DD) { es = DD; }
         // date constraints applied LAST so Mandatory/On pin and "or after" floors further
-        if (t._cons.length) es = fwdConstrain(es, t._dur, t._cons);
+        if (t._cons.length) es = fwdConstrain(es, t._dur, t._cons, ax);
+        // ⚠️ Snap LAST, after the data date and the constraints have had their say:
+        // any of them can land the start on a Sunday, and a planned start must be a
+        // day the site actually works. A hard "Start On" constraint is snapped too —
+        // pinning work to a non-working day is a contradiction the planner should see
+        // as a moved date, not as a date the calendar disagrees with.
+        es = ax.snapF(es);
       }
       t._es = es;
       if (useActuals && t.actual_finish) { t._ef = A(t.actual_finish); }
@@ -22092,7 +22273,7 @@
         // date and its actual start, so its FORECAST finish — not the original scheduled span —
         // drives successors. _ef is exclusive (finish + 1). Milestones stay 0-duration.
         var rem = Math.max(0, t.remaining_duration);
-        var rs = Math.max(es, DD);
+        var rs = ax.snapF(Math.max(es, DD));
         // ⚠️⚠️ THE RETAINED-LOGIC FLOOR, and the whole point of the two scheduling modes.
         // The actual-start branch above deliberately pins `es` to the recorded start and SKIPS the
         // relationship candidates — right for the START, which is a historical fact that must not
@@ -22105,33 +22286,33 @@
         if (schedMode !== 'override') {
           var rl = null;
           (t._relObjs || []).forEach(function (rel) {
-            var c = relCandidateRemES(rel, rem);
+            var c = relCandidateRemES(rel, rem, ax);
             if (c != null && (rl == null || c > rl)) rl = c;
           });
-          if (rl != null && rl > rs) rs = rl;
+          if (rl != null && rl > rs) rs = ax.snapF(rl);
         }
         t._remStart = dstr(addDays(base, rs));
-        t._ef = isMile(t) ? rs : (rs + rem);
-      } else { t._ef = es + t._dur; }
+        t._ef = isMile(t) ? rs : ax.plus(rs, rem);
+      } else { t._ef = ax.plus(es, t._dur); }
     });
     var projEnd = 0; tasks.forEach(function (t) { if (t._ef != null && t._ef > projEnd) projEnd = t._ef; });
     // backward pass — reverse topo order (every successor precedes its predecessor), single pass.
     for (var bi = order.length - 1; bi >= 0; bi--) {
       var t2 = order[bi];
-      var lf = t2._out.length ? Infinity : projEnd;
+      var lf = t2._out.length ? Infinity : projEnd, ax2 = t2._ax || ALLAX;
       t2._out.forEach(function (o) {
         var s = o.s; if (s._ls == null || s._lf == null) return; var cand;
-        if (o.type === 'SS') cand = (s._ls - o.lag) + t2._dur;
-        else if (o.type === 'FF') cand = s._lf - o.lag;
-        else if (o.type === 'SF') cand = s._lf - o.lag;
-        else cand = s._ls - o.lag; // FS
+        if (o.type === 'SS') cand = ax2.plus(ax2.minus(s._ls, o.lag), t2._dur);
+        else if (o.type === 'FF') cand = ax2.minus(s._lf, o.lag);
+        else if (o.type === 'SF') cand = ax2.minus(s._lf, o.lag);
+        else cand = ax2.minus(s._ls, o.lag); // FS
         if (cand < lf) lf = cand;
       });
       if (lf === Infinity) lf = projEnd;
       // date constraints can cap the late finish tighter than the successor logic (→ negative float
       // when the schedule is infeasible, which constraint-aware CPM is meant to surface).
-      if (t2._cons && t2._cons.length) lf = bwdConstrain(lf, t2._dur, t2._cons);
-      t2._lf = lf; t2._ls = lf - t2._dur;
+      if (t2._cons && t2._cons.length) lf = bwdConstrain(lf, t2._dur, t2._cons, ax2);
+      t2._lf = lf; t2._ls = ax2.minus(lf, t2._dur);
     }
     // As Late As Possible: sit the activity at its late dates (uses up its free float without
     // delaying successors). Display shows early dates, so shift _es/_ef to _ls/_lf.
@@ -22140,7 +22321,10 @@
     });
     // Float ≤ 0 is critical (P6 convention) — an over-constrained activity has NEGATIVE float and
     // must read critical, so this is `<= 0` not `=== 0`.
-    tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round(t._ls - t._es) : null; t._critical = (t._float != null && t._float <= 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
+    // ⚠️ Float is measured in WORKING days once the mode is on. Two calendar days of
+    // slack across a weekend is no slack at all, and reporting it as 2 is how an
+    // activity reads as safe on a Friday when it is actually critical.
+    tasks.forEach(function (t) { t._float = (t._ls != null && t._es != null) ? Math.round((t._ax || ALLAX).diff(t._es, t._ls)) : null; t._critical = (t._float != null && t._float <= 0); t._near = (!t._critical && t._float != null && t._float > 0 && t._float <= NEARDAYS); });
   }
   function recomputeCPM() { computeCPM(); renderGrid(); renderGantt(); }
 
@@ -22160,6 +22344,16 @@
   // Bulk write, confirms.
   async function shiftUnstartedToDataDate(silent) {
     var dd = today(); var patches = [];
+    // ⚠️ This writes dates to the database, so on a working-day basis it has to
+    // respect the calendar too — otherwise "move to the data date" is how every
+    // open-start activity in the project lands on a Sunday, and the next CPM pass
+    // silently moves them all again.
+    var _snapDD = function (t, d) {
+      if (!calCpmOn || !window.PDCal) return d;
+      var cal = cpmCalOf(t), guard = 0, x = new Date(d.getTime());
+      while (cal && !PDCal.isWorkDay(cal, x) && guard++ < 400) x = addDays(x, 1);
+      return x;
+    };
     rows.forEach(function (t) {
       if (isWbs(t) || !t.activity_id) return;
       if (t.actual_start || t.actual_finish || (t.percent_complete || 0) > 0) return;   // started/done — leave
@@ -22170,18 +22364,20 @@
       // stranded in the future — the `s >= dd` bail-out below caught them.
       // A milestone is just the zero-duration case of this: its finish rides along with its start.
       if (relPreds(t).length === 0) {
-        if (!s) { patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: dstr(dd), updated_at: new Date().toISOString() }, row: t }); return; }
-        if (dstr(s) === dstr(dd)) return;                      // already exactly there
-        var d0 = dayDiff(s, dd), e0 = pd(t.end_date);
-        patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: e0 ? dstr(addDays(e0, d0)) : dstr(dd), updated_at: new Date().toISOString() }, row: t });
+        var ddT = _snapDD(t, dd);
+        if (!s) { patches.push({ id: t.id, patch: { start_date: dstr(ddT), end_date: dstr(ddT), updated_at: new Date().toISOString() }, row: t }); return; }
+        if (dstr(s) === dstr(ddT)) return;                     // already exactly there
+        var d0 = dayDiff(s, ddT), e0 = pd(t.end_date);
+        patches.push({ id: t.id, patch: { start_date: dstr(ddT), end_date: e0 ? dstr(addDays(e0, d0)) : dstr(ddT), updated_at: new Date().toISOString() }, row: t });
         return;
       }
       // Has predecessors: only pull it forward off the past. Its logic decides where it really
       // belongs, and applyScheduleDates is what applies that.
       if (!s || s >= dd) return;                               // already at/after DD
-      var delta = dayDiff(s, dd);
+      var ddP = _snapDD(t, dd);
+      var delta = dayDiff(s, ddP);
       var e = pd(t.end_date);
-      patches.push({ id: t.id, patch: { start_date: dstr(dd), end_date: e ? dstr(addDays(e, delta)) : dstr(dd), updated_at: new Date().toISOString() }, row: t });
+      patches.push({ id: t.id, patch: { start_date: dstr(ddP), end_date: e ? dstr(addDays(e, delta)) : dstr(ddP), updated_at: new Date().toISOString() }, row: t });
     });
     if (!patches.length) { if (!silent) UI.toast('No un-started activities to move — they already sit correctly against the data date.', 'info'); return 0; }
     if (!silent && !confirm('Move ' + patches.length + ' un-started activit' + (patches.length === 1 ? 'y' : 'ies') + ' to the data date (' + Fmt.date(dstr(dd)) + '), keeping their durations?\n\nActivities with no predecessor are placed ON the data date; those with predecessors are only pulled forward out of the past.')) return 0;
@@ -22218,7 +22414,14 @@
       }
       if (!Object.keys(patch).length) return;
       var fs = pd(patch.start_date || t.start_date), fe = pd(patch.end_date || t.end_date);
-      if (!isMile(t) && fs && fe) patch.duration_days = dayDiff(fs, fe) + 1;
+      // ⚠️ duration_days must be written on the SAME basis the engine just used to
+      // compute the dates. Storing a calendar-day span while scheduling on working
+      // days would make the stored duration disagree with the dates beside it, and
+      // cpmLogic's own fallback (used when a date is missing) would then contradict
+      // the rest of the schedule.
+      if (!isMile(t) && fs && fe) patch.duration_days = (calCpmOn && t._ax && t._ax.wd)
+        ? t._ax.span(dayDiff(base, fs), dayDiff(base, fe))
+        : dayDiff(fs, fe) + 1;
       patch.updated_at = new Date().toISOString();
       patches.push({ id: t.id, patch: patch, row: t });
     });
@@ -22619,7 +22822,13 @@
       b.innerHTML = '<div class="fld"><span>Schedule calculation</span>' +
         '<label><input type="radio" name="ps-sm" value="retained"' + (schedMode === 'retained' ? ' checked' : '') + '><span>Retained Logic<small>In-progress work keeps its predecessor logic (OPC default).</small></span></label>' +
         '<label><input type="radio" name="ps-sm" value="override"' + (schedMode === 'override' ? ' checked' : '') + '><span>Progress Override<small>Started activities ignore predecessor logic for their remaining work.</small></span></label></div>' +
-        '<div class="fld"><span>Dates</span><label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date.</small></span></label></div>' +
+        '<div class="fld"><span>Dates</span><label><input type="checkbox" id="ps-useact"' + (useActuals ? ' checked' : '') + '><span>Use actual dates &amp; data date<small>Actual start/finish pin the schedule; future work can’t precede the data date.</small></span></label>' +
+        // ⚠️ OFF by default, and it must stay that way. Turning it on re-reads every
+        // duration as working days and re-advances every finish over the calendar, so
+        // it moves live dates across the whole project the moment it is enabled —
+        // including for other planners looking at the same schedule. That is a
+        // decision to take deliberately, not a default to inherit from a deploy.
+        '<label><input type="checkbox" id="ps-calcpm"' + (calCpmOn ? ' checked' : '') + '><span>Schedule on working calendars<small>Durations count WORKING days and finishes skip non-working ones, per each activity’s calendar (Working Calendars view). Float is then in working days too. ⚠️ Moves dates across the project — review before you Reschedule.</small></span></label></div>' +
         '<div class="fld"><span>Progress intelligence</span>' +
         '<label><input type="checkbox" id="ps-progdriven"' + (progressDriven ? ' checked' : '') + '><span>Progress-driven dates<small>Editing Duration POC recomputes remaining duration &amp; finish from the data date.</small></span></label>' +
         '<label><input type="checkbox" id="ps-ddretain"' + (ddRetainOn ? ' checked' : '') + '><span>Retain un-started work at the data date<small>On Schedule, move activities with 0% POC to the data date, keeping their duration. No predecessor → placed on the data date; with predecessors → only pulled forward out of the past.</small></span></label></div>';
@@ -22654,6 +22863,8 @@
     var rc = document.getElementById('ps-dd-resched'); if (rc) { reschedOn = rc.checked; try { localStorage.setItem('ps_resched', reschedOn ? '1' : '0'); } catch (e) {} }
     var sm = b.querySelector('input[name=ps-sm]:checked'); if (sm) { schedMode = sm.value; try { localStorage.setItem('ps_schedmode', schedMode); } catch (e) {} }
     var ua = document.getElementById('ps-useact'); if (ua) { useActuals = ua.checked; try { localStorage.setItem('ps_useactuals', useActuals ? '1' : '0'); } catch (e) {} }
+    var cc = document.getElementById('ps-calcpm');
+    if (cc) { calCpmOn = cc.checked; _axCache = {}; _axBaseKey = null; try { localStorage.setItem('ps_calcpm', calCpmOn ? '1' : '0'); } catch (e) {} }
     var pgd = document.getElementById('ps-progdriven'); if (pgd) { progressDriven = pgd.checked; try { localStorage.setItem('ps_progressdriven', progressDriven ? '1' : '0'); } catch (e) {} }
     var ddr = document.getElementById('ps-ddretain'); if (ddr) { ddRetainOn = ddr.checked; try { localStorage.setItem('ps_ddretain', ddRetainOn ? '1' : '0'); } catch (e) {} }
     var mfp = document.getElementById('ps-mfp'); if (mfp) { mfpOn = mfp.checked; try { localStorage.setItem('ps_mfp', mfpOn ? '1' : '0'); } catch (e) {} }
@@ -22669,6 +22880,7 @@
     schedLastLog = 'Scheduled ' + Fmt.date(dstr(wallToday())) + '\n' +
       'Data date: ' + Fmt.date(dstr(today())) + '\n' +
       'Mode: ' + (res.mode === 'logic' ? 'Logic (CPM)' : 'Driving path (dates)') + ', ' + (schedMode === 'override' ? 'Progress Override' : 'Retained Logic') + '\n' +
+      'Day basis: ' + (calCpmOn ? 'Working days (per activity calendar)' : 'Calendar days') + '\n' +
       'Activities scheduled: ' + tasks.length + '\n' +
       'Critical activities: ' + nCrit + '\n' +
       'Project finish: ' + (projFin ? Fmt.date(dstr(projFin)) : '—');

@@ -7312,3 +7312,65 @@ So an activity's Calendar field (`ps-f-cal` → `schedule_activities.calendar_id
 a *scenario* input and a label; it does not drive the dates on the Gantt. If working-day CPM is
 wanted, that is a change to `cpmLogic()` and a much bigger job than the calendar editor — noted
 here so nobody assumes the wiring already exists.
+
+
+## 2026-08-24 — CPM is now working-day aware (opt-in)
+
+Closes the gap the audit above found: `cpmLogic()` added durations and lags with plain `+` on a
+calendar-day axis, so a working calendar changed nothing about any live date.
+
+⚠️ **Why the axis was NOT converted to working days.** Offsets have to stay comparable ACROSS
+activities — a relationship combines a predecessor's finish with a successor's start, and the two
+can sit on different calendars. A working-day axis is per-calendar, so its offsets are not
+comparable and every relationship would need a conversion. Instead the axis stays in calendar days
+(absolute, shared) and only the *arithmetic that adds or subtracts a duration or lag* goes through
+the activity's calendar. `_es/_ef/_ls/_lf` keep their meaning, so float, the Gantt,
+`applyScheduleDates` and the exports all keep working on the same numbers.
+
+**The mechanism.** An offset is a boundary — "work resumes at o". `plus(o,n)` is the boundary after
+n working days from o; `minus(o,n)` its inverse; `diff(a,b)` the signed working days between two
+boundaries. Every formula in the engine is the OLD formula with `+ n` → `plus(o,n)` and `- n` →
+`minus(o,n)`. ⚠️ In the identity axis (`ALLAX`, used whenever the mode is off) those are exactly
+`o + n` and `o - n` — which is why "off" is *provably the old engine* rather than a re-derivation of
+it, and why there is one code path instead of two that drift.
+
+Axes are precomputed per calendar per run (`makeAxis` → sorted working-day list + a prefix-count
+`rank` array, O(1) lookups). ⚠️ Precomputed because `PDCal.addWorkingDays` walks a day at a time and
+the forward pass, backward pass, every constraint and every Monte Carlo iteration would each pay
+that walk. Measured: 66 ms for 5 seasonal calendars over 17 years, once per run, cached by
+calendar id + base.
+
+**What changes when it is on**
+- Durations are ⚠️ **derived** from the stored dates via the calendar, not read as calendar-day
+  spans. That migrates existing data without touching a row: an activity whose dates already skip
+  Sundays keeps exactly the dates it has (re-advancing the same working days lands on the same day);
+  one that spans them is understood as the shorter working-day job it always was. Rewriting stored
+  durations instead would have changed every project in place.
+- Starts are snapped to a working day **last** — after the data-date floor and the constraints, any
+  of which can land a start on a Sunday. A hard `Start On` is snapped too: pinning work to a
+  non-working day is a contradiction, and it should read as a moved date.
+- ⚠️ An **actual** start is never snapped. Work really did start that day even if the calendar says
+  the site was closed, and moving it would falsify the record.
+- Float is in **working days**. Two calendar days of slack across a weekend is no slack at all, and
+  reporting it as 2 is how an activity reads safe on a Friday when it is actually critical.
+- `duration_days` is written on the same basis the dates were computed on, `forecastFin` advances
+  remaining duration over the calendar (or the grid and the Gantt disagree about one row),
+  `shiftUnstartedToDataDate` snaps to a working day before writing, and Monte Carlo samples and
+  schedules on the same basis (else its P50 is not comparable with the date beside it).
+- Per-activity calendar → project default → PH standard. Lag and the successor's duration count on
+  the **successor's** calendar; one stated rule beats P6's hidden project option.
+
+⚠️ **OFF by default (`ps_calcpm`), and it must stay that way.** Turning it on re-reads every duration
+and re-advances every finish, so it moves dates across the whole project — including for other
+planners on the same schedule. Switch it on in **Schedule ▾ → Schedule on working calendars**;
+the Schedule log then reports the day basis it used. Like the other options here it is
+per-browser localStorage, so two planners can compute different dates — pre-existing to this change
+but worth more caution now that it moves *dates* and not just float.
+
+**Verified.** 4 golden runs against the previous commit's engine (retained/override ×
+useActuals on/off) are byte-identical field-for-field with the mode off, plus the same parity check
+on the Monte Carlo forward pass; with it on, every start and finish lands on a working day, a
+10-calendar-day activity over one Sunday reads as 9 working days and keeps its stored finish, an FS
+successor starts the next working day, Independence Day is spanned but never worked, constraints
+still bite, and a 7-day holiday-free calendar reproduces calendar-day scheduling exactly.
+`MODULE_V` → `20260824j`.
