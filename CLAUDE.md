@@ -7524,3 +7524,50 @@ them is a judgement call, left to the planner. A3 flags groups whose duplicates 
 count, because those activities' dates WILL move.
 
 After running it, reload any open tab: `CALS` is cached per page load.
+
+
+## 2026-08-24 — The duplicate-calendar cleanup was RUN and verified (422 → 63)
+
+Owner ran BLOCK A, the review queries, then BLOCK B and C of
+`migrations/2026-08-24-dedupe-existing-calendars.sql`. Recording the actual numbers, because the
+plan table is the only record of which row survived and it can be dropped at any time.
+
+**Scale was far larger than the screenshot suggested** — not ~30 rows on one project but **422
+calendars across 12 projects**, of which **396 were duplicates in 37 groups**. AVR101 alone held
+**270** (10 families × 27 identical copies = the same XER file imported 27 times). Result: **359
+deleted, 63 remain**, and the 26 unique calendars were untouched.
+
+**Repointed: 35,642 activities and 1,245 resources. 0 duration scenarios.**
+
+⚠️ **Only one group disagreed on holidays and it was proven harmless before running** — SLN101
+`MW6x8WH-3`, survivor 63 dates vs a loser's 35, 32 activities. Same `first_holiday` (2024-02-09),
+the short list ending 2026-12-31 against the survivor's 2028-12-31, and an array-difference query
+returned NULL: **a strict subset**. So no working day became a holiday; the survivor merely adds
+2027–2028. The survivor-ordering rule (richest holiday list) picked correctly on its own.
+
+**C1 and C2 both returned zero rows** — no duplicates left, and each survivor holds its own
+references plus every loser's, reconciled against the counts the plan recorded. ⚠️ C2 is the only
+check that can prove the repointing landed; the "nothing dangles" query it replaced could never
+fail, because the FKs are `on delete set null`.
+
+⚠️ **Practical trap: the Supabase SQL editor shows only the LAST statement's result** when several
+are run together, so a block of five SELECTs looks like it returned one thing. The first run of
+BLOCK A reported "No rows returned" — that was A5 (orphans, correctly empty) and A1–A4 were never
+displayed. Fold multi-query reviews into ONE result set with `union all`.
+
+⚠️ **A4's family grouping is lossy and must not be trusted for a merge decision** — its
+`(-[0-9]+)+$` strip ate year ranges, so `MCC Project Calendar 2018-2025-6-1` grouped as
+`mcc project calendar 2018`. It actions nothing, but it would group two genuinely different
+date-range calendars. A2 is the real identity check.
+
+⚠️ **FOUND, PRE-EXISTING, NOT FIXED: 7 of 12 projects have NO default calendar** — CDP101, GPR101,
+OPW101, PSP101, SLN101, SLT101, XERTEST. Proven to predate the cleanup: every project's plan rows
+reported `0 of N carried is_default`, so no default was among the deleted rows (PSP101/SLT101 had no
+duplicates at all). Cause: the XER importer's calendar insert never sets `is_default`, and the only
+code that does is the two editors plus `ensureDefaultCalendar`, which fires only when a project has
+**zero** calendars — so an imported project ends up with many calendars and no default. Effect:
+every activity with no `calendar_id` falls back to the hard-coded Philippine standard instead of the
+project's own. One `update` per project once the owner picks which calendar each should use.
+
+The plan table `calendars_dedupe_plan` is deliberately left in place as the audit trail; the drop
+statement is commented at the foot of the migration.
