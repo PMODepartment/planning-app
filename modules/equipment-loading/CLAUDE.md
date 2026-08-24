@@ -10,7 +10,7 @@ Three tabs:
 |---|---|
 | **Loading** | The OPS "Equipment Loading Graph": grey planned bar per month with the actual stacked in front (major solid, tools in the light tint), a cut-off month band, KPIs, and the Planned/Actual matrix below it. Editable per (equipment, month) in **By equipment** mode. |
 | **Equipment** | The register — name, category, purchase/rental, unit, cost per unit-month, supplier, site block, **schedule link**. |
-| **Site Dev** | A drag-and-drop plan of the site's blocks (towers). Pick an equipment chip, click a block to assign it. Blocks can be pulled from the schedule's own Location Breakdown values. |
+| **Site Plan** | The project's site development plan as a backdrop, each tower traced as a shape, and equipment assigned to one or more of them. |
 
 ## Tables
 `equipment_items` (register) · `equipment_loading` (one row per equipment per month) ·
@@ -169,3 +169,96 @@ dark mode entirely on tokens. The script parses and every `getElementById` targe
 read, detection against a real plan, and the pointer drag/trace gestures are untested against real
 data. **Owner action:** run `migrations/2026-08-24-site-plan-bucket.sql` (after the two equipment
 migrations) or the backdrop upload will report the bucket is missing.
+
+---
+
+## 2026-08-24 — Equipment codes, towers linked to the schedule, and equipment SHARED between towers
+
+**Run `migrations/2026-08-24-equipment-code-and-sharing.sql`** (after the three earlier ones).
+
+**1. Chart ↔ matrix alignment, and 3-letter months.** A bar now sits directly over its own
+column in the grid below it.
+- ⚠️ **The chart's origin and pitch come from the matrix, not from the pane width**:
+  `padL = MX_C1 + MX_C2` (150 + 84, the two sticky label columns) and `bw = MX_CELL` (46). Those
+  three numbers are duplicated in the CSS and **cannot be read at render time** — the matrix may
+  not be laid out on the first paint. Change one, change the other.
+- ⚠️ **Two real defects, both found by measuring rather than reading.** (a) `.eq-mx` was
+  `min-width:100%` with auto table layout, so the browser widened every column to fill the pane —
+  the label columns measured **211/118 against the declared 150/84** and a month cell **65 against
+  46**, so the chart lined up with nothing. Now `table-layout:fixed; width:max-content`. (b) After
+  that the offset was a **constant 16px**: the chart's card has `padding:14px 16px` while the
+  matrix card is `padding:0`, so the two boxes had different left origins. The chart wrap now
+  bleeds out by exactly that padding.
+- Both boxes scroll horizontally in step (guarded against the assign-back loop that reads as a
+  stutter on a trackpad).
+- Measured after: bar centre vs its column centre **0px** on all 14 months, the cut-off band exactly
+  over the cut-off column (dx 0, dw 0), no page horizontal scroll.
+
+**2. A unique equipment CODE (`equipment_items.code`).** Unique per project, case-insensitively;
+the **name is deliberately free to repeat**, because a project really does have three rows called
+"Tower Crane" and telling them apart by name is impossible. Shown in the register, the matrix row
+labels and the export.
+- ⚠️ **Unique per PROJECT, not globally** — two projects legitimately both number their first crane
+  TC-01, and a global constraint would refuse the second with an error nobody could act on. A
+  cross-project asset register is a different table and a later decision; the code is what such a
+  view will join on, which is why it is required from the start.
+- The clash is checked in the UI **as well as** by the index: the index gives a raw PostgREST
+  error, and "TC-01 is already used by Tower Crane 2" is the only version a planner can act on.
+- ⚠️ A new item is proposed the next free code, and the JS prefix rule matches the migration's seed
+  exactly (`left(regexp_replace(category,'[^A-Za-z]','','g'),2)` → `GR-01`, not initials), so a
+  seeded row and a new one never collide.
+
+**3. A shape can be linked to the schedule's own tower (`plan.blocks[].tower`).**
+- ⚠️ **Stored separately from the shape's NAME**, which is a label a planner types. They routinely
+  differ ("T1" on the plan, "Tower 1" in the schedule), and deriving one from the other is how a
+  tower silently ends up matching no activities and therefore having no window at all.
+- Selecting a shape reveals a dropdown of the project's real tower values (with activity counts,
+  from `project_location_values`), plus its resolved **schedule window** underneath.
+
+**4. Equipment is now MANY-TO-MANY with towers (`equipment_tower_links`).** The left pane exists to
+answer one question — *can one crane serve two buildings?* — and that needs an asset to hold two
+placements.
+- ⚠️ **A join table, not an array column.** A tower crane serving two towers is one asset with two
+  placements, and the questions asked of it are per-placement ("what does Tower B have?", later "is
+  TC-01 free in March?"). An array can hold the ids but cannot be joined, counted per tower by the
+  database, or later carry a placement's own dates without rewriting every reader.
+- ⚠️ **`site_block` is backfilled into it and then left in place, unread.** Dropping the column in
+  the same migration that starts using the new table leaves no way back if the backfill was wrong.
+- Clicking a **second** tower on the plan **adds** a placement rather than moving the first — that
+  is the sharing case. Saving from the form **diffs** the placements rather than clearing and
+  rewriting, so an untouched one keeps its row.
+- ⚠️ If the migration has not run the tab still **shows** existing single assignments (read from the
+  legacy column) but refuses to write, naming the file — silently accepting a write into a table
+  that does not exist would lose it.
+- Deleting a shape deletes its placements explicitly; there is no foreign key behind `block_id`
+  (it is a shape id inside the plan jsonb), so the rows would otherwise point at nothing.
+
+**5. "Shared between towers" panel — the actual answer, from the schedule.**
+- ⚠️ **Judged on the towers' schedule WINDOWS, never on the register.** Two placements are only a
+  plan; whether they can be the same physical crane depends entirely on timing. A tower's window is
+  the earliest start / latest finish of the activities tagged with its linked tower value — two
+  indexed reads per tower, cached.
+- ⚠️ **Overlap is judged in MONTHS**, matching the loading matrix's own resolution. A two-day
+  calendar overlap is not a scheduling problem, and reporting it as one trains the planner to ignore
+  the panel.
+- ⚠️ **Peak planned quantity decides whether an overlap is a clash** — two units of the same code
+  covering two towers at once is a fleet, not a conflict.
+- ⚠️ **An unlinked tower reads "timing unknown", never "fine".** It names which tower needs linking.
+
+**6. Copy / paste / duplicate a shape.** Ctrl+C / Ctrl+V on the plan, or the rail's Copy button.
+⚠️ **The geometry is copied, never the placements** — a second tower is a different building, and
+inheriting the first one's equipment would assign a crane to a tower nobody put it on.
+
+**Verified** — 29 checks executing the shipped `towersOf` / `hasTower` / `towerNamesOf` /
+`blockCounts` / `nextCode` / `overlapMonths` / `sharingRows` / `blockTowerVal` / `shapeOffset` /
+`nextTowerName` (sliced from the file, never reimplemented): every placement listed, per-tower
+counts counting each placement once, a deleted shape still reading honestly, the code prefix rule
+matching the migration and the skip being case-insensitive, sequential towers reading shareable,
+concurrent towers reporting 3 months of overlap, a two-day overlap inside one month counting as that
+month, overlap symmetric, an unlinked tower named as unknown with no pair judged, and 2 planned units
+covering a two-tower overlap while 1 does not. Plus the browser measurements in (1), the register's
+header/row cell counts aligned at 12/12, a clean parse, and every `getElementById` target present.
+
+**NOT verified** — nothing signed in (the anon key has no grants): the placement writes, the
+`location->>'<level id>'` window reads, the tower-value RPC, and the pointer gestures are untested
+against real data, and the migration has not been run.

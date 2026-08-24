@@ -7937,3 +7937,56 @@ stage aspect equals the viewBox, svg fills it to the pixel, 0 page horizontal sc
 tokens. Script parses; every `getElementById` target exists.
 **NOT verified:** nothing signed in — the upload, the signed-URL read, detection against a real
 plan and the pointer gestures are untested against real data. `MODULE_V` → `20260824o`.
+
+---
+
+## 2026-08-24 — Equipment Loading: chart aligned to the grid, equipment codes, towers linked to the schedule, and SHARED equipment
+
+**Run `migrations/2026-08-24-equipment-code-and-sharing.sql`.**
+
+**The histogram now lines up with the matrix below it, and months read Jan/Feb/Mar.** The chart takes
+its origin and pitch from the matrix (the two sticky label columns, 150 + 84, and the 46px month
+cell) rather than fitting itself to the pane, and both boxes scroll horizontally in step.
+⚠️ **Two real defects, both found by measuring rather than reading.** `.eq-mx` was `min-width:100%`
+with auto table layout, so the browser widened every column to fill the pane — the label columns
+measured **211/118 against the declared 150/84** and a month cell **65 against 46**, so the chart
+lined up with nothing. After fixing that the offset was a **constant 16px**: the chart's card has
+`padding:14px 16px` while the matrix card is `padding:0`, so the two boxes had different left
+origins. Measured after: bar centre vs its own column centre **0px** across all 14 months, and the
+cut-off band exactly over the cut-off column.
+
+**Every piece of equipment now carries a unique CODE** (`equipment_items.code`, unique per project,
+case-insensitive) while the **name stays free to repeat** — a project really does have three rows
+called "Tower Crane", and telling them apart by name is impossible. ⚠️ Unique per *project*, not
+globally: two projects legitimately both number their first crane TC-01. The code is what a
+portfolio-level "where is TC-01 and when is it free" view will join on, which is why it is required
+from the start rather than added later.
+
+**A tower shape can be linked to the schedule's own tower value** (`plan.blocks[].tower`), ⚠️ stored
+separately from the shape's *name* — they routinely differ ("T1" on the plan, "Tower 1" in the
+schedule), and deriving one from the other is how a tower silently ends up matching no activities.
+
+**Equipment is many-to-many with towers now** (`equipment_tower_links`), which is what makes the
+left pane's real question answerable: *can one crane serve two buildings?* Clicking a second tower
+**adds** a placement rather than moving the first. ⚠️ A join table, not an array column: a shared
+crane is one asset with two placements, and the questions asked of it are per-placement. ⚠️
+`site_block` is backfilled into it and then left in place unread — dropping it in the same migration
+that starts using the new table leaves no way back if the backfill was wrong.
+
+**And the panel answers the sharing question from the SCHEDULE, not the register.** Two placements
+are only a plan; whether they can be the same physical crane depends on whether the two towers'
+schedule windows overlap. ⚠️ Overlap is judged in **months**, matching the matrix's own resolution —
+a two-day calendar overlap is not a scheduling problem, and reporting it as one trains the planner to
+ignore the panel. ⚠️ **Peak planned quantity decides whether an overlap is actually a clash** (two
+units covering two towers at once is a fleet), and ⚠️ an unlinked tower reads **"timing unknown"**,
+never "fine".
+
+**Copy / paste / duplicate a shape** (Ctrl+C / Ctrl+V, or the rail's Copy). ⚠️ The geometry is
+copied, never the placements — inheriting them would assign a crane to a tower nobody put it on.
+
+**Verified:** 29 checks executing the shipped placement / sharing / code / paste functions (sliced
+from the file, never reimplemented), plus the browser measurements above, the register's header/row
+cells aligned at 12/12, a clean parse and every `getElementById` target present.
+**NOT verified:** nothing signed in — the placement writes, the `location->>'<level id>'` window
+reads and the tower-value RPC are untested against real data, and the migration has not been run.
+`MODULE_V` → `20260824p`.

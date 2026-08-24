@@ -59,7 +59,14 @@
        Matches the OPS "Equipment Loading Graph" sheet: a grey PLANNED bar per month with the
        ACTUAL stacked in front of it — major equipment solid, tools in the lighter tint — so a
        month reads as "how much of what we planned is actually on site". */
-    .eq-chartwrap { overflow-x:auto; }
+    /* ⚠️ Bled out by the card's own 16px side padding. The matrix card is padding:0, so without
+       this the chart starts 16px to the right of the table and every bar sits 16px off its own
+       month — measured before the fix. */
+    .eq-chartwrap { overflow-x:auto; margin-left:-16px; margin-right:-16px; }
+    /* The chart and the matrix are one scroller in two boxes: the sticky label columns stay put
+       in both, and the month columns move together. Kept as two elements because the matrix
+       needs its own vertical scroll. */
+    .eq-chart-legend-pad { }
     .eq-chart { display:block; }
     .eq-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:8px; font-size:12px; color:var(--pd-muted); }
     .eq-lg { display:inline-flex; align-items:center; gap:6px; }
@@ -80,17 +87,26 @@
 
     /* ---- Loading matrix ---------------------------------------------------------------- */
     .eq-mxwrap { overflow:auto; max-height:70vh; }
-    .eq-mx { border-collapse:collapse; font-size:12px; min-width:100%; }
-    .eq-mx th, .eq-mx td { padding:5px 9px; border-bottom:1px solid var(--pd-line); text-align:center; white-space:nowrap; }
+    /* ⚠️ table-layout:fixed and NO min-width:100%. With auto layout the browser widens every
+       column to fill the pane, so the label columns measured 211/118 against the declared 150/84
+       and a month cell 65 against 46 — the chart then lined up with nothing. Fixed layout plus a
+       content-width table is what makes the bars sit over their own columns. */
+    .eq-mx { border-collapse:collapse; font-size:12px; table-layout:fixed; width:max-content; }
+    /* ⚠️ Fixed month-cell widths, and they MUST match MX_CELL/MX_C1/MX_C2 in the script — the
+       chart draws its bars at those offsets so a bar sits over its own matrix column. Change one
+       and you must change the other; a padding-sized cell drifts a few px per month and by the
+       far end of a 32-month project the bar is over the wrong month. */
+    .eq-mx th, .eq-mx td { padding:5px 0; border-bottom:1px solid var(--pd-line); text-align:center; white-space:nowrap; }
+    .eq-mx th:not(.eq-c1):not(.eq-c2), .eq-mx td:not(.eq-c1):not(.eq-c2) { width:46px; min-width:46px; max-width:46px; }
     .eq-mx thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:10.5px;
       text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); }
     .eq-mx thead tr.eq-mx-yr th { font-weight:800; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
     .eq-mx thead tr.eq-mx-mo th { border-bottom:2px solid var(--pd-line); }
     /* Two sticky label columns: the equipment/category name and the Planned/Actual band. */
     .eq-mx th.eq-c1, .eq-mx td.eq-c1 { position:sticky; left:0; z-index:1; text-align:left;
-      background:var(--pd-card); font-weight:700; min-width:150px; }
+      background:var(--pd-card); font-weight:700; width:150px; min-width:150px; max-width:150px; padding-left:9px; padding-right:9px; }
     .eq-mx th.eq-c2, .eq-mx td.eq-c2 { position:sticky; left:150px; z-index:1; text-align:left;
-      background:var(--pd-card); font-weight:600; color:var(--pd-muted); min-width:84px; }
+      background:var(--pd-card); font-weight:600; color:var(--pd-muted); width:84px; min-width:84px; max-width:84px; padding-left:9px; padding-right:9px; }
     .eq-mx thead th.eq-c1, .eq-mx thead th.eq-c2 { z-index:3; background:var(--pd-bg); }
     .eq-mx tr.eq-r-actual td:not(.eq-c1):not(.eq-c2) { background:var(--pd-red-light); }
     .eq-mx tr.eq-r-total td { font-weight:800; border-top:2px solid var(--pd-line); }
@@ -156,7 +172,17 @@
     .eq-chip:hover { border-color:var(--pd-red); }
     .eq-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
     .eq-chip .x { margin-left:auto; color:var(--pd-muted); font-size:11px; }
+    .eq-tickrow { display:flex; align-items:center; gap:7px; font-size:12.5px; padding:3px 0; cursor:pointer; }
+    .eq-share { font-size:12px; line-height:1.55; }
+    .eq-share-row { padding:7px 0; border-top:1px solid var(--pd-line); }
+    .eq-share-row:first-child { border-top:0; }
+    .eq-share-ok { color:#1F7A3D; font-weight:700; }
+    .eq-share-bad { color:var(--pd-bad); font-weight:700; }
+    .eq-share-unk { color:var(--pd-muted); font-weight:700; }
+    .eq-twsel { width:100%; height:30px; font-size:12px; margin-top:4px; }
     .eq-site-hint { font-size:12px; color:var(--pd-muted); margin:0 0 8px; line-height:1.5; }
+    .eq-blk-wrap { margin-bottom:5px; }
+    .eq-blk-wrap .eq-blk-row { margin-bottom:0; }
     .eq-blk-row { display:flex; align-items:center; gap:6px; padding:5px 8px; margin-bottom:5px;
       border:1px solid var(--pd-line); border-radius:7px; font-size:12.5px; cursor:pointer; }
     .eq-blk-row.on { border-color:var(--pd-red); background:var(--pd-red-light); }
@@ -288,10 +314,14 @@
               <p class="eq-site-hint">Click a tower to select it, then drag its outline to move it or drag a corner to reshape it.</p>
               <div id="eq-site-blocks"></div>
             </div>
-            <div class="eq-card">
+            <div class="eq-card" style="margin-bottom:10px;">
               <h3>Assign equipment</h3>
-              <p class="eq-site-hint">Pick a piece of equipment, then click the tower it works on. Click it again to unassign.</p>
+              <p class="eq-site-hint">Pick a piece of equipment, then click the tower it works on. Click a second tower to <b>share</b> it between them.</p>
               <div id="eq-site-chips"></div>
+            </div>
+            <div class="eq-card">
+              <h3>Shared between towers</h3>
+              <div class="eq-share" id="eq-share"></div>
             </div>
           </div>
           <div class="eq-site-canvas">
@@ -337,6 +367,12 @@
   var CUTOFF = null;              // data date, month-floored
   var needsMigration = false;
   var view = 'loading', detail = 'cat', fCat = '', fBlk = '', siteSel = null;
+  var LINKS = {};                 // equipment_id -> [ { id, block_id } ] — the placements
+  var linksMissing = false;       // equipment_tower_links has not been migrated yet
+  var TOWERVALS = null;           // the schedule's own tower values for PLAN.level_id
+  var TOWERVALS_PAINTED = false;  // one repaint once they arrive, or renderSite would loop
+  var TWIN = {};                  // block_id -> { start, end } | null — that tower's schedule window
+  var shapeClip = null;           // copied shape geometry (Ctrl+C / Ctrl+V on the plan)
   var blkSel = null;              // the tower shape currently selected on the plan
   var drawing = false, drawPts = [];  // trace-a-tower mode and the points taken so far
   var PLANIMG_URL = null;         // object URL for the backdrop (revoked when it is replaced)
@@ -357,6 +393,11 @@
   var SITE_CATS = { 'Vertical Equipment': 1, 'Ground Equipment': 1 };
   var ACQ = ['Purchase', 'Rental'];
   var CAT_COLOR = { 'Vertical Equipment': '#EE3124', 'Ground Equipment': '#C42127', 'Tools': '#F4A0A0', 'Service Vehicles': '#7d9fd6' };
+  // ⚠️ The chart's left pad IS the matrix's two label columns, and its bar pitch IS the matrix's
+  // month-cell width, so a bar sits directly over the month it reports. These three numbers are
+  // duplicated in the CSS above; they cannot be derived from it at render time because the matrix
+  // may not be laid out yet on the first paint.
+  var MX_C1 = 150, MX_C2 = 84, MX_CELL = 46;
   var PLAN_W = 1000, PLAN_H = 620;   // virtual plan units; the canvas scales to them
 
   function sb() { return AppAuth.getSB(); }
@@ -418,6 +459,43 @@
     });
     return out;
   }
+  // ---- Placements (equipment ↔ towers) --------------------------------------------------
+  // ⚠️ Many-to-many on purpose: a tower crane serving two towers is ONE asset with TWO
+  // placements, and whether that is possible is a question about the two towers' schedule
+  // windows, not about the register. Everything below reads LINKS, never site_block.
+  function towersOf(it) { return (LINKS[it && it.id] || []).map(function (l) { return l.block_id; }); }
+  function hasTower(it, blockId) { return towersOf(it).indexOf(blockId) >= 0; }
+  function towerNamesOf(it) {
+    return towersOf(it).map(function (b) { return blockName(b) || 'unknown tower'; });
+  }
+  function blockCounts() {
+    var c = {};
+    ITEMS.forEach(function (i) { towersOf(i).forEach(function (b) { c[b] = (c[b] || 0) + 1; }); });
+    return c;
+  }
+  async function toggleTower(it, blockId) {
+    if (!it || !blockId) return false;
+    if (linksMissing) { UI.toast('Run migrations/2026-08-24-equipment-code-and-sharing.sql first — it adds the table that holds a tower placement.', 'error'); return false; }
+    var cur = (LINKS[it.id] || []).filter(function (l) { return l.block_id === blockId; })[0];
+    if (cur) {
+      var ok = await persist(sb().from('equipment_tower_links').delete().eq('id', cur.id), 'Could not unassign');
+      if (!ok) return false;
+      LINKS[it.id] = (LINKS[it.id] || []).filter(function (l) { return l.block_id !== blockId; });
+      return true;
+    }
+    var res = await sb().from('equipment_tower_links')
+      .insert({ project_id: pid, equipment_id: it.id, block_id: blockId, created_by: user && user.id }).select();
+    if (res.error) {
+      // The unique index is the backstop against two browsers adding the same placement; that is
+      // not a failure the planner needs to see, the placement they asked for now exists.
+      if (!/duplicate key/i.test(res.error.message || '')) { UI.toast('Could not assign: ' + res.error.message, 'error'); return false; }
+      (LINKS[it.id] = LINKS[it.id] || []).push({ id: null, block_id: blockId });
+      return true;
+    }
+    (LINKS[it.id] = LINKS[it.id] || []).push({ id: res.data[0].id, block_id: blockId });
+    return true;
+  }
+
   function blockById(id) { for (var i = 0; i < PLAN.blocks.length; i++) if (PLAN.blocks[i].id === id) return PLAN.blocks[i]; return null; }
   function blockName(id) { var b = blockById(id); return b ? b.name : ''; }
   function isTool(cat) { return !!TOOL_CATS[cat]; }
@@ -437,6 +515,21 @@
         if ((a.sort_order || 0) !== (b.sort_order || 0)) return (a.sort_order || 0) - (b.sort_order || 0);
         return String(a.name || '').localeCompare(String(b.name || ''));
       });
+      // Placements: one row per (equipment, tower). ⚠️ Read BEFORE the loading rows are indexed
+      // so a failure here cannot leave LINKS half-built against a fresh ITEMS list.
+      LINKS = {}; linksMissing = false;
+      try {
+        var lk = await PDb.selectAll('equipment_tower_links', function (q) { return q.eq('project_id', pid); });
+        lk.forEach(function (l) { (LINKS[l.equipment_id] = LINKS[l.equipment_id] || []).push({ id: l.id, block_id: l.block_id }); });
+      } catch (lerr) {
+        // ⚠️ Fall back to the single legacy site_block so the tab still SHOWS the assignments a
+        // planner already made. Writes are refused with the filename to run — silently accepting
+        // them into a table that does not exist would lose them.
+        if (/equipment_tower_links|schema cache/i.test(lerr.message || '')) {
+          linksMissing = true;
+          ITEMS.forEach(function (i) { if (i.site_block) LINKS[i.id] = [{ id: null, block_id: i.site_block }]; });
+        } else throw lerr;
+      }
       var rows = await PDb.selectAll('equipment_loading', function (q) { return q.eq('project_id', pid); });
       LOAD = {};
       rows.forEach(function (r) { (LOAD[r.equipment_id] = LOAD[r.equipment_id] || {})[String(r.period).slice(0, 10)] = r; });
@@ -636,7 +729,7 @@
   function visibleItems() {
     return ITEMS.filter(function (i) {
       if (fCat && i.category !== fCat) return false;
-      if (fBlk && canSite(i.category) && i.site_block !== fBlk) return false;
+      if (fBlk && canSite(i.category) && !hasTower(i, fBlk)) return false;
       if (fBlk && !canSite(i.category)) return false;
       return true;
     });
@@ -677,8 +770,10 @@
       host.innerHTML = '<div class="eq-empty">' + (ag.items.length ? 'No months in the project schedule yet.' : 'No equipment yet — add some, then set its monthly quantities.') + '</div>';
       return;
     }
-    var padL = 42, padR = 12, padT = 26, padB = 46;
-    var bw = Math.max(22, Math.min(46, Math.round(980 / months.length)));
+    // Origin and pitch come from the matrix, not from the available width — that alignment is
+    // the point, and a chart that fits itself to the pane cannot line up with a fixed grid.
+    var padL = MX_C1 + MX_C2, padR = 12, padT = 26, padB = 46;
+    var bw = MX_CELL;
     var W = padL + padR + months.length * bw, H = 320;
     var ph = H - padT - padB;
     var max = 0;
@@ -711,7 +806,7 @@
       }
       // Planned total in a box on the baseline, as the sheet prints it.
       if (t.hasP) s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 13) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + fnum(t.planned) + '</text>');
-      s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 27) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + MON[m.d.getMonth()] + '</text>');
+      s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 27) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + MON3[m.d.getMonth()] + '</text>');
       if (m.d.getMonth() === 0 || i === 0) s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 39) + '" text-anchor="middle" font-size="9" font-weight="700" fill="var(--pd-ink)">' + m.d.getFullYear() + '</text>');
     });
     s.push('<line x1="' + padL + '" y1="' + (padT + ph) + '" x2="' + (W - padR) + '" y2="' + (padT + ph) + '" stroke="var(--pd-line)"/>');
@@ -721,6 +816,24 @@
     if (!(raw > 0)) return 1;
     var p = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10)), n = raw / p;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+  }
+
+  // ⚠️ One-way-at-a-time guard: assigning scrollLeft fires the other box's scroll event, which
+  // would assign back and fight the user's own scroll (visible as a stutter, and on a trackpad as
+  // the view refusing to move).
+  var _syncing = false;
+  function syncScrollers() {
+    var a = document.getElementById('eq-chart'), b = document.getElementById('eq-matrix');
+    if (!a || !b || a._eqSynced) return;
+    a._eqSynced = b._eqSynced = true;
+    function link(from, to) {
+      from.addEventListener('scroll', function () {
+        if (_syncing) return;
+        _syncing = true; to.scrollLeft = from.scrollLeft;
+        requestAnimationFrame(function () { _syncing = false; });
+      });
+    }
+    link(a, b); link(b, a);
   }
 
   // ---- Matrix ---------------------------------------------------------------------------
@@ -740,7 +853,7 @@
     h.push('<tr class="eq-mx-yr"><th class="eq-c1"></th><th class="eq-c2"></th>' +
       yr.map(function (r) { return '<th colspan="' + r.n + '">' + r.y + '</th>'; }).join('') + '</tr>');
     h.push('<tr class="eq-mx-mo"><th class="eq-c1">' + (detail === 'item' ? 'Equipment' : 'Category') + '</th><th class="eq-c2">Planned / Actual</th>' +
-      months.map(function (m) { return '<th' + (m.iso === cutIso ? ' class="eq-cut"' : '') + '>' + MON[m.d.getMonth()] + '</th>'; }).join('') + '</tr>');
+      months.map(function (m) { return '<th' + (m.iso === cutIso ? ' class="eq-cut"' : '') + '>' + MON3[m.d.getMonth()] + '</th>'; }).join('') + '</tr>');
     h.push('<tr class="eq-mx-mo"><th class="eq-c1"></th><th class="eq-c2"></th>' +
       months.map(function (m, i) { return '<th' + (m.iso === cutIso ? ' class="eq-cut"' : '') + '>' + (i + 1) + '</th>'; }).join('') + '</tr>');
     h.push('</thead><tbody>');
@@ -774,8 +887,9 @@
 
     if (detail === 'item') {
       ag.items.forEach(function (it) {
-        var label = '<span class="eq-dot" style="background:' + catColor(it.category) + '"></span>' + esc(it.name) +
-          (it.site_block ? ' <span class="eq-badge">' + esc(blockName(it.site_block)) + '</span>' : '') +
+        var label = '<span class="eq-dot" style="background:' + catColor(it.category) + '"></span>' +
+          (it.code ? '<b>' + esc(it.code) + '</b> ' : '') + esc(it.name) +
+          (towersOf(it).length ? ' <span class="eq-badge">' + esc(towerNamesOf(it).join(' + ')) + '</span>' : '') +
           (isLinked(it) ? ' <span class="eq-linkchip on" title="Planned months come from the schedule">linked</span>' : '');
         bandRows(label, it.id, function (iso, wh) { return qtyOf(it, iso, wh); }, it.id, isLinked(it));
       });
@@ -801,6 +915,7 @@
     for (var k = saveH; k < h.length; k++) h[k] = h[k].replace('<tr class="', '<tr class="eq-r-total ').replace('<tr>', '<tr class="eq-r-total">');
     h.push('</tbody></table>');
     host.innerHTML = h.join('');
+    syncScrollers();
     if (detail === 'item') wireMatrixEdit(host);
   }
 
@@ -883,18 +998,23 @@
       return;
     }
     var cutIso = CUTOFF ? mkey(CUTOFF) : null;
-    var h = ['<thead><tr><th>Equipment</th><th>Category</th><th>Acquisition</th><th>Unit</th><th>Site</th>' +
+    var h = ['<thead><tr><th>Code</th><th>Equipment</th><th>Category</th><th>Acquisition</th><th>Unit</th><th>Towers</th>' +
       '<th>Schedule link</th><th class="num">Planned now</th><th class="num">Actual now</th><th class="num">Peak planned</th><th>Supplier</th><th></th></tr></thead><tbody>'];
     ITEMS.forEach(function (it) {
       var peak = 0; SPAN.months.forEach(function (m) { var v = qtyOf(it, m.iso, 'planned'); if (v != null && v > peak) peak = v; });
       var pn = cutIso ? qtyOf(it, cutIso, 'planned') : null, an = cutIso ? qtyOf(it, cutIso, 'actual') : null;
       h.push('<tr>' +
+        '<td><b>' + esc(it.code || '—') + '</b></td>' +
         '<td><span class="eq-dot" style="background:' + catColor(it.category) + '"></span><b>' + esc(it.name) + '</b>' +
           (it.remarks ? '<div class="eq-note">' + esc(it.remarks) + '</div>' : '') + '</td>' +
         '<td>' + esc(it.category) + '</td>' +
         '<td>' + (it.acquisition ? '<span class="eq-badge' + (it.acquisition === 'Rental' ? ' eq-rent' : '') + '">' + esc(it.acquisition) + '</span>' : '—') + '</td>' +
         '<td>' + esc(it.unit || '—') + '</td>' +
-        '<td>' + (canSite(it.category) ? (it.site_block ? esc(blockName(it.site_block) || 'unknown block') : '<span class="eq-note">unassigned</span>') : '<span class="eq-note">project-wide</span>') + '</td>' +
+        '<td>' + (canSite(it.category)
+          ? (towersOf(it).length
+              ? esc(towerNamesOf(it).join(', ')) + (towersOf(it).length > 1 ? ' <span class="eq-badge">shared</span>' : '')
+              : '<span class="eq-note">unassigned</span>')
+          : '<span class="eq-note">project-wide</span>') + '</td>' +
         '<td>' + linkCell(it) + '</td>' +
         '<td class="num">' + (pn == null ? '—' : fnum(pn)) + '</td>' +
         '<td class="num">' + (an == null ? '—' : fnum(an)) + '</td>' +
@@ -931,14 +1051,31 @@
   function itemById(id) { for (var i = 0; i < ITEMS.length; i++) if (String(ITEMS[i].id) === String(id)) return ITEMS[i]; return null; }
 
   // ---- Add / edit -----------------------------------------------------------------------
+  // A proposed code for a new item: the category's initials plus the next free number, which is
+  // the numbering every site already uses. It is a suggestion in an editable field, not a rule.
+  function nextCode(cat) {
+    var pfx = (cat || 'EQ').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || 'EQ';
+    var used = {};
+    ITEMS.forEach(function (i) { used[String(i.code || '').trim().toLowerCase()] = 1; });
+    for (var n = 1; n < 999; n++) {
+      var c = pfx + '-' + String(n).padStart(2, '0');
+      if (!used[c.toLowerCase()]) return c;
+    }
+    return pfx + '-' + Date.now().toString(36).slice(-3).toUpperCase();
+  }
   function openForm(it) {
     it = it || null;
+    // A blank form proposes the next free code; an edit keeps the one it has.
+    var defCode = it ? '' : nextCode(EQ_CATS[1]);
     var cats = catOptions(it && it.category);
     var m = UI.modal(
       '<div class="pd-modal-header"><h2>' + (it ? 'Edit equipment' : 'Add equipment') + '</h2>' +
       '<button class="pd-modal-close" id="eq-x">&times;</button></div>' +
       '<div class="eq-form-grid" style="padding:4px 0 8px;">' +
-        '<div class="pd-field eq-form-full"><label>Equipment name</label>' +
+        '<div class="pd-field"><label>Equipment code</label>' +
+          '<input class="pd-input" id="f-code" value="' + esc(it ? it.code : defCode) + '" placeholder="TC-01">' +
+          '<span class="eq-note">Unique on this project. Two cranes can share a NAME; the code is what tells them apart.</span></div>' +
+        '<div class="pd-field"><label>Equipment name</label>' +
           '<input class="pd-input" id="f-name" value="' + esc(it && it.name) + '" placeholder="e.g. Tower Crane"></div>' +
         '<div class="pd-field"><label>Category</label><select class="pd-select" id="f-cat">' +
           cats.map(function (c) { return '<option' + (it && it.category === c ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') +
@@ -950,10 +1087,14 @@
         '<div class="pd-field"><label>Unit</label><input class="pd-input" id="f-unit" value="' + esc(it && it.unit) + '" placeholder="unit / set / lot"></div>' +
         '<div class="pd-field"><label>Cost per unit-month</label><input class="pd-input" id="f-rate" type="number" step="any" min="0" value="' + esc(it && it.monthly_rate) + '"></div>' +
         '<div class="pd-field"><label>Supplier / owner</label><input class="pd-input" id="f-sup" value="' + esc(it && it.supplier) + '"></div>' +
-        '<div class="pd-field"><label>Site assignment</label><select class="pd-select" id="f-blk">' +
-          '<option value="">— unassigned —</option>' +
-          PLAN.blocks.map(function (b) { return '<option value="' + esc(b.id) + '"' + (it && it.site_block === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') +
-        '</select><span class="eq-note" id="f-blknote"></span></div>' +
+        '<div class="pd-field eq-form-full"><label>Towers it works on</label>' +
+          '<div class="eq-linkbox" id="f-blks">' + (PLAN.blocks.length
+            ? PLAN.blocks.map(function (b) {
+                return '<label class="eq-tickrow"><input type="checkbox" data-blk="' + esc(b.id) + '"' +
+                  (it && hasTower(it, b.id) ? ' checked' : '') + '> ' + esc(b.name) + '</label>';
+              }).join('')
+            : '<span class="eq-note">No towers on the site plan yet.</span>') + '</div>' +
+          '<span class="eq-note" id="f-blknote"></span></div>' +
         '<div class="pd-field eq-form-full"><label>Remarks</label><input class="pd-input" id="f-rem" value="' + esc(it && it.remarks) + '"></div>' +
         '<div class="pd-field eq-form-full"><label>Duration — linked to the project schedule</label>' +
           '<div class="eq-linkbox">' +
@@ -986,16 +1127,24 @@
       '<div class="pd-modal-footer"><button class="pd-btn" id="eq-cancel">Cancel</button>' +
       '<button class="pd-btn pd-btn-primary" id="eq-save">Save</button></div>');
     var el = m.el;
+    // ⚠️ Ticking more than one tower is the SHARING case and is deliberately allowed — whether
+    // it is feasible depends on the towers' schedule windows, which the Site Plan tab reports.
+    // The form does not refuse it; refusing here would hide a plan the planner may be about to fix.
+    function pickedBlks() {
+      return Array.prototype.map.call(el.querySelectorAll('#f-blks input[data-blk]:checked'), function (c) { return c.dataset.blk; });
+    }
     function syncBlk() {
-      var c = el.querySelector('#f-cat').value, sel = el.querySelector('#f-blk');
-      var can = canSite(c);
-      sel.disabled = !can;
+      var c = el.querySelector('#f-cat').value, can = canSite(c);
+      el.querySelectorAll('#f-blks input[data-blk]').forEach(function (cb) { cb.disabled = !can; if (!can) cb.checked = false; });
+      var n = pickedBlks().length;
       el.querySelector('#f-blknote').textContent = can
-        ? (PLAN.blocks.length ? '' : 'No towers yet — add them in Site Plan.')
+        ? (PLAN.blocks.length ? (n > 1 ? n + ' towers — this asset is shared between them.' : '') : 'No towers yet — add them in Site Plan.')
         : 'Tools and service vehicles move around the whole site, so they are not tied to one tower.';
-      if (!can) sel.value = '';
     }
     el.querySelector('#f-cat').onchange = function () { syncBlk(); syncLink(); }; syncBlk();
+    el.querySelectorAll('#f-blks input[data-blk]').forEach(function (cb) {
+      cb.onchange = function () { syncBlk(); syncLink(); };
+    });
 
     // The link picker. ⚠️ The chosen target is kept in `picked`, not read back off the <select>
     // at save time: re-running a search rebuilds the options, and reading the box then would
@@ -1006,7 +1155,7 @@
       var mode = el.querySelector('#f-lmode').value;
       var on = !!mode;
       ['f-lq', 'f-lfind', 'f-lres', 'f-lqty', 'f-llead', 'f-llag'].forEach(function (id) { el.querySelector('#' + id).disabled = !on; });
-      var blk = el.querySelector('#f-blk').value, cb = el.querySelector('#f-lloc');
+      var blk = pickedBlks()[0] || '', cb = el.querySelector('#f-lloc');
       // "only this block" needs both a block on this item and a Location level to match it
       // against — without the level there is nothing on the activity to compare the name to.
       cb.disabled = !(on && mode === 'activity' && blk && PLAN.level_id);
@@ -1018,7 +1167,7 @@
         (PLAN.level_id && blk ? ' · block <b>' + esc(blockName(blk)) + '</b> matches Location level "' + esc(levelName(PLAN.level_id)) + '"' : '') + '.';
     }
     el.querySelector('#f-lmode').onchange = function () { picked = null; el.querySelector('#f-lres').innerHTML = ''; syncLink(); };
-    el.querySelector('#f-blk').addEventListener('change', syncLink);
+
     el.querySelector('#f-lres').onchange = function () {
       var o = el.querySelector('#f-lres').selectedOptions[0];
       picked = o && o.value ? { mode: el.querySelector('#f-lmode').value, key: o.value, label: o.dataset.label || o.textContent } : null;
@@ -1027,7 +1176,7 @@
     el.querySelector('#f-lfind').onclick = async function () {
       var mode = el.querySelector('#f-lmode').value; if (!mode) return;
       var term = el.querySelector('#f-lq').value;
-      var blk = el.querySelector('#f-lloc').checked ? blockName(el.querySelector('#f-blk').value) : null;
+      var blk = el.querySelector('#f-lloc').checked ? blockTowerVal(pickedBlks()[0]) : null;
       var res = el.querySelector('#f-lres');
       res.innerHTML = '<option value="">searching…</option>';
       var rows = await searchSchedule(mode, term, blk);
@@ -1051,9 +1200,18 @@
         unit: el.querySelector('#f-unit').value.trim() || null,
         monthly_rate: num(el.querySelector('#f-rate').value),
         supplier: el.querySelector('#f-sup').value.trim() || null,
-        site_block: el.querySelector('#f-blk').value || null,
         remarks: el.querySelector('#f-rem').value.trim() || null
       };
+      var code = el.querySelector('#f-code').value.trim();
+      if (!code) { UI.toast('Give the equipment a code — it is how two cranes with the same name are told apart.', 'error'); return; }
+      // ⚠️ Checked case-insensitively here as well as by the unique index: the index gives a raw
+      // PostgREST error, and "TC-01 is already used by Tower Crane 2" is the only version of that
+      // message a planner can act on.
+      var clash = ITEMS.filter(function (x) {
+        return (!it || x.id !== it.id) && String(x.code || '').trim().toLowerCase() === code.toLowerCase();
+      })[0];
+      if (clash) { UI.toast('Code "' + code + '" is already used by ' + clash.name + '.', 'error'); return; }
+      payload.code = code;
       var mode = el.querySelector('#f-lmode').value;
       if (mode && !picked) { UI.toast('Pick the activity or WBS branch this equipment follows, or set the link back to "Not linked".', 'error'); return; }
       payload.link_mode = mode || null;
@@ -1064,6 +1222,7 @@
       payload.lead_months = mode ? (parseInt(el.querySelector('#f-llead').value, 10) || 0) : 0;
       payload.lag_months = mode ? (parseInt(el.querySelector('#f-llag').value, 10) || 0) : 0;
 
+      var wantBlks = canSite(payload.category) ? pickedBlks() : [];
       var ok, saved = null;
       if (it) {
         ok = await persist(sb().from('equipment_items').update(payload).eq('id', it.id), 'Could not save');
@@ -1078,6 +1237,17 @@
         else { ok = true; saved = ins.data[0].id; }
       }
       if (!ok) return;
+      // Placements are written as their own rows, after the item exists. ⚠️ Diffed rather than
+      // cleared-and-rewritten, so a placement nobody touched keeps its row (and its created_at)
+      // instead of being deleted and recreated on every save.
+      if (saved && !linksMissing) {
+        var target = itemById(saved) || { id: saved };
+        var have = (LINKS[saved] || []).map(function (l) { return l.block_id; });
+        for (var wi = 0; wi < wantBlks.length; wi++) if (have.indexOf(wantBlks[wi]) < 0) await toggleTower(target, wantBlks[wi]);
+        for (var hi = 0; hi < have.length; hi++) if (wantBlks.indexOf(have[hi]) < 0) await toggleTower(target, have[hi]);
+      } else if (saved && linksMissing && wantBlks.length) {
+        UI.toast('Run migrations/2026-08-24-equipment-code-and-sharing.sql — the tower assignment was not saved.', 'error');
+      }
       m.close();
       UI.toast(it ? 'Equipment updated.' : 'Equipment added.');
       await load();
@@ -1426,8 +1596,7 @@
   function renderSite() {
     var host = document.getElementById('eq-plan'); if (!host) return;
     if (PLAN.image_path && PLANIMG_FOR !== PLAN.image_path) { loadPlanImage(); return; }
-    var H = planH(), counts = {};
-    ITEMS.forEach(function (i) { if (i.site_block) counts[i.site_block] = (counts[i.site_block] || 0) + 1; });
+    var H = planH(), counts = blockCounts();
 
     var g = ['<div class="eq-plan-stage" style="padding-bottom:' + (H / PLAN_W * 100).toFixed(3) + '%;">'];
     if (PLANIMG_URL) g.push('<img class="eq-plan-img" src="' + PLANIMG_URL + '" alt="Site development plan">');
@@ -1466,17 +1635,44 @@
     var br = document.getElementById('eq-site-blocks');
     if (br) {
       br.innerHTML = PLAN.blocks.length ? PLAN.blocks.map(function (b) {
-        return '<div class="eq-blk-row' + (blkSel === b.id ? ' on' : '') + '" data-brow="' + esc(b.id) + '">' +
+        var w = TWIN[b.id];
+        return '<div class="eq-blk-wrap">' +
+          '<div class="eq-blk-row' + (blkSel === b.id ? ' on' : '') + '" data-brow="' + esc(b.id) + '">' +
           '<span class="eq-blk-sw" style="background:' + esc(b.color || '#EE3124') + '"></span>' +
           '<span>' + esc(b.name) + '</span><span class="n">' + (counts[b.id] || 0) + '</span>' +
           '<button class="eq-blk-btn" data-bren="' + esc(b.id) + '" title="Rename">Rename</button>' +
-          '<button class="eq-blk-btn" data-bdel="' + esc(b.id) + '" title="Delete this tower">&times;</button></div>';
+          '<button class="eq-blk-btn" data-bdup="' + esc(b.id) + '" title="Duplicate this shape">Copy</button>' +
+          '<button class="eq-blk-btn" data-bdel="' + esc(b.id) + '" title="Delete this tower">&times;</button></div>' +
+          (blkSel === b.id ? '<select class="pd-select eq-twsel" data-btw="' + esc(b.id) + '" title="Which tower in the project schedule this shape is">' +
+            '<option value="">— not linked to the schedule —</option>' +
+            (TOWERVALS || []).map(function (v) {
+              return '<option value="' + esc(v.value) + '"' + (b.tower === v.value ? ' selected' : '') + '>' + esc(v.value) + ' (' + v.n + ' activities)</option>';
+            }).join('') +
+            ((b.tower && !(TOWERVALS || []).some(function (v) { return v.value === b.tower; }))
+              ? '<option value="' + esc(b.tower) + '" selected>' + esc(b.tower) + ' (not in the schedule)</option>' : '') +
+            '</select>' +
+            '<div class="eq-note">' + (b.tower
+              ? (w ? MON3[w.start.getMonth()] + ' ' + String(w.start.getFullYear()).slice(2) + ' – ' + MON3[w.end.getMonth()] + ' ' + String(w.end.getFullYear()).slice(2)
+                   : (TWIN[b.id] === null ? 'no dated activities on this tower' : 'reading the schedule…'))
+              : 'link it to read its schedule window') + '</div>'
+            : '') + '</div>';
       }).join('') : '<p class="eq-note">No towers yet.</p>';
       br.querySelectorAll('[data-brow]').forEach(function (el) {
         el.onclick = function (e) { if (e.target.closest('button')) return; blkSel = (blkSel === el.dataset.brow) ? null : el.dataset.brow; renderSite(); };
       });
       br.querySelectorAll('[data-bren]').forEach(function (el) { el.onclick = function () { renameBlock(el.dataset.bren); }; });
       br.querySelectorAll('[data-bdel]').forEach(function (el) { el.onclick = function () { deleteBlock(el.dataset.bdel); }; });
+      br.querySelectorAll('[data-bdup]').forEach(function (el) { el.onclick = function () { duplicateBlock(el.dataset.bdup); }; });
+      br.querySelectorAll('[data-btw]').forEach(function (el) {
+        el.onchange = async function () {
+          var b = blockById(el.dataset.btw); if (!b) return;
+          b.tower = el.value || null;
+          delete TWIN[b.id];                      // its window has to be re-read against the new value
+          if (await savePlan()) { renderSite(); loadTowerWindows(); }
+        };
+      });
+      loadTowerVals().then(function (v) { if (v && v.length && !TOWERVALS_PAINTED) { TOWERVALS_PAINTED = true; renderSite(); } });
+      loadTowerWindows();
     }
 
     var rail = document.getElementById('eq-site-chips');
@@ -1485,7 +1681,7 @@
     else rail.innerHTML = sitable.map(function (i) {
       return '<div class="eq-chip' + (siteSel === i.id ? ' on' : '') + '" data-chip="' + esc(i.id) + '">' +
         '<span class="eq-dot" style="background:' + catColor(i.category) + '"></span>' + esc(i.name) +
-        '<span class="x">' + (i.site_block ? esc(blockName(i.site_block) || '?') : 'unassigned') + '</span></div>';
+        '<span class="x">' + (towersOf(i).length ? esc(towerNamesOf(i).join(' + ')) : 'unassigned') + '</span></div>';
     }).join('');
     rail.querySelectorAll('[data-chip]').forEach(function (c) {
       c.onclick = function () { siteSel = (siteSel === c.dataset.chip) ? null : c.dataset.chip; renderSite(); };
@@ -1510,7 +1706,9 @@
       : 'Click a tower to select it. Drag its outline to move it, drag a white handle to reshape it, or a faded handle to add a corner. Alt-click a corner to remove it. Double-click a tower to rename it.';
     var note = document.getElementById('eq-site-note');
     if (note) note.textContent = PLAN.blocks.length + ' tower(s) · ' +
-      sitable.filter(function (i) { return i.site_block; }).length + ' of ' + sitable.length + ' equipment assigned';
+      sitable.filter(function (i) { return towersOf(i).length; }).length + ' of ' + sitable.length + ' equipment assigned' +
+      (sitable.filter(function (i) { return towersOf(i).length > 1; }).length ? ' · ' + sitable.filter(function (i) { return towersOf(i).length > 1; }).length + ' shared' : '');
+    renderSharing();
   }
 
   function renameBlock(id) {
@@ -1522,7 +1720,7 @@
   }
   async function deleteBlock(id) {
     var b = blockById(id); if (!b) return;
-    var used = ITEMS.filter(function (i) { return i.site_block === id; });
+    var used = ITEMS.filter(function (i) { return hasTower(i, id); });
     if (!confirm('Delete "' + b.name + '"?' + (used.length ? '\n\n' + used.length + ' piece(s) of equipment become unassigned. No equipment is deleted.' : ''))) return;
     PLAN.blocks = PLAN.blocks.filter(function (x) { return x.id !== id; });
     if (blkSel === id) blkSel = null;
@@ -1530,12 +1728,123 @@
     // ⚠️ The equipment rows are cleared explicitly. site_block holds a plain id with no foreign
     // key behind it, so a deleted shape would otherwise leave items pointing at nothing and
     // reading as "unknown block" forever.
-    if (used.length) {
-      await persist(sb().from('equipment_items').update({ site_block: null }).eq('project_id', pid).eq('site_block', id), 'Could not unassign the equipment');
-      used.forEach(function (i) { i.site_block = null; });
+    if (used.length && !linksMissing) {
+      await persist(sb().from('equipment_tower_links').delete().eq('project_id', pid).eq('block_id', id), 'Could not unassign the equipment');
+      used.forEach(function (i) { LINKS[i.id] = (LINKS[i.id] || []).filter(function (l) { return l.block_id !== id; }); });
     }
+    delete TWIN[id];
     if (fBlk === id) fBlk = '';
     renderSite(); renderRegister(); renderAll();
+  }
+
+  // ---- A shape ↔ the schedule's own tower ------------------------------------------------
+  // ⚠️ A shape's NAME is a label a planner types; the schedule's tower value is what activities
+  // are actually tagged with. They are stored separately (b.tower) because they routinely differ
+  // ("T1" on the plan, "Tower 1" in the schedule) and guessing one from the other is how a tower
+  // silently ends up with no activities and therefore no window at all.
+  function blockTowerVal(id) { var b = blockById(id); return b ? (b.tower || b.name || '') : ''; }
+
+  async function loadTowerVals() {
+    if (TOWERVALS) return TOWERVALS;
+    if (!PLAN.level_id) { TOWERVALS = []; return TOWERVALS; }
+    try {
+      var r = await sb().rpc('project_location_values', { p_project_id: pid, p_key: PLAN.level_id });
+      if (r.error) throw r.error;
+      TOWERVALS = (r.data || []).map(function (x) { return { value: x.value, n: x.n }; });
+    } catch (_e) { TOWERVALS = []; }
+    return TOWERVALS;
+  }
+
+  // The window a tower's own work occupies, read from the schedule: earliest start, latest finish
+  // across the activities tagged with that tower value. Two indexed reads per tower, cached — a
+  // paged scan of a 40k-activity project to find two dates would be both slow and wrong (a plain
+  // read stops at 1000 rows).
+  async function loadTowerWindows() {
+    if (!PLAN.level_id) return;
+    var need = PLAN.blocks.filter(function (b) { return b.tower && TWIN[b.id] === undefined; });
+    for (var i = 0; i < need.length; i++) {
+      var b = need[i];
+      TWIN[b.id] = null;
+      try {
+        var col = 'location->>' + PLAN.level_id;
+        var a = await sb().from('project_schedule').select('start_date').eq('project_id', pid)
+          .neq('activity_type', 'WBS Summary').eq(col, b.tower).not('start_date', 'is', null)
+          .order('start_date', { ascending: true }).limit(1);
+        var z = await sb().from('project_schedule').select('end_date').eq('project_id', pid)
+          .neq('activity_type', 'WBS Summary').eq(col, b.tower).not('end_date', 'is', null)
+          .order('end_date', { ascending: false }).limit(1);
+        if (a.error || z.error) throw (a.error || z.error);
+        var st = a.data && a.data[0] ? pd(a.data[0].start_date) : null;
+        var fi = z.data && z.data[0] ? pd(z.data[0].end_date) : null;
+        if (st && fi) TWIN[b.id] = { start: st, end: fi < st ? st : fi };
+      } catch (_e) { TWIN[b.id] = null; }
+    }
+    if (need.length) renderSite();
+  }
+
+  // ---- Sharing --------------------------------------------------------------------------
+  // The question the left rail exists to answer: can ONE asset serve more than one tower?
+  // ⚠️ Answered from the towers' schedule windows, never from the register — two placements are
+  // only a plan; whether they can be the same physical crane depends entirely on timing.
+  // ⚠️ Overlap is judged in MONTHS, matching the loading matrix's own resolution. A two-day
+  // calendar overlap is not a scheduling problem, and reporting it as one would train the planner
+  // to ignore this panel.
+  function monthsBetween(a, b) {
+    return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  }
+  function overlapMonths(w1, w2) {
+    var s1 = mFloor(w1.start), e1 = mFloor(w1.end), s2 = mFloor(w2.start), e2 = mFloor(w2.end);
+    var s = s1 > s2 ? s1 : s2, e = e1 < e2 ? e1 : e2;
+    return e < s ? 0 : monthsBetween(s, e) + 1;
+  }
+  function sharingRows() {
+    return ITEMS.filter(function (i) { return towersOf(i).length > 1; }).map(function (it) {
+      var tw = towersOf(it), pairs = [], unknown = [];
+      tw.forEach(function (id) { if (!TWIN[id]) unknown.push(blockName(id) || 'unknown'); });
+      for (var a = 0; a < tw.length; a++) for (var b = a + 1; b < tw.length; b++) {
+        var wa = TWIN[tw[a]], wb = TWIN[tw[b]];
+        if (!wa || !wb) continue;
+        pairs.push({ a: blockName(tw[a]), b: blockName(tw[b]), ov: overlapMonths(wa, wb), wa: wa, wb: wb });
+      }
+      var worst = pairs.reduce(function (m, p) { return (!m || p.ov > m.ov) ? p : m; }, null);
+      // Peak planned quantity is what decides whether an overlap is actually a problem: two units
+      // of the same code covering two towers at once is a fleet, not a clash.
+      var peak = 0;
+      SPAN.months.forEach(function (m) { var v = qtyOf(it, m.iso, 'planned'); if (v != null && v > peak) peak = v; });
+      return { item: it, towers: tw, pairs: pairs, worst: worst, unknown: unknown, peak: peak };
+    });
+  }
+  function renderSharing() {
+    var host = document.getElementById('eq-share'); if (!host) return;
+    var rows = sharingRows();
+    if (!rows.length) {
+      host.innerHTML = '<p class="eq-note">No equipment is assigned to more than one tower yet. Tick two towers on a piece of equipment to plan it as shared.</p>';
+      return;
+    }
+    host.innerHTML = rows.map(function (r) {
+      var head = '<b>' + esc(r.item.code || '') + '</b> ' + esc(r.item.name) +
+        ' <span class="eq-note">' + esc(r.towers.map(function (t) { return blockName(t) || '?'; }).join(' + ')) + '</span>';
+      var body;
+      if (r.unknown.length) {
+        body = '<span class="eq-share-unk">timing unknown</span> — link ' + esc(r.unknown.join(', ')) +
+          ' to a schedule tower to check whether one unit can cover both.';
+      } else if (!r.worst) {
+        body = '<span class="eq-share-unk">timing unknown</span> — these towers have no dated activities.';
+      } else if (r.worst.ov > 0) {
+        body = '<span class="eq-share-bad">overlaps ' + r.worst.ov + ' month(s)</span> — ' +
+          esc(r.worst.a) + ' and ' + esc(r.worst.b) + ' run at the same time' +
+          (r.peak >= r.towers.length
+            ? ', and ' + fnum(r.peak) + ' units are planned, so the overlap is covered.'
+            : ', so one unit cannot serve both. Plan ' + r.towers.length + ' units, or resequence the towers.');
+      } else {
+        var f = r.worst.wa.end < r.worst.wb.start ? r.worst : { a: r.worst.b, b: r.worst.a, wa: r.worst.wb, wb: r.worst.wa };
+        body = '<span class="eq-share-ok">shareable</span> — ' + esc(f.a) + ' finishes ' +
+          MON3[f.wa.end.getMonth()] + ' ' + String(f.wa.end.getFullYear()).slice(2) + ', ' +
+          esc(f.b) + ' starts ' + MON3[f.wb.start.getMonth()] + ' ' + String(f.wb.start.getFullYear()).slice(2) +
+          '. One unit can move across.';
+      }
+      return '<div class="eq-share-row">' + head + '<div>' + body + '</div></div>';
+    }).join('');
   }
 
   // ---- Interaction ----------------------------------------------------------------------
@@ -1616,10 +1925,10 @@
           // A click with no movement is a selection — or, with a chip picked, an assignment.
           if (siteSel) {
             var it = itemById(siteSel); if (!it) return;
-            var to = (it.site_block === id) ? null : id;
-            it.site_block = to;
-            persist(sb().from('equipment_items').update({ site_block: to }).eq('id', it.id), 'Could not assign');
-            siteSel = null; renderSite(); renderRegister(); renderAll(); return;
+            // ⚠️ Clicking a SECOND tower adds a placement rather than moving the first — that is
+            // the sharing case, and the panel then reports whether the timing allows it.
+            toggleTower(it, id).then(function () { siteSel = null; renderSite(); renderRegister(); renderAll(); });
+            return;
           }
           blkSel = (blkSel === id) ? null : id;
           renderSite();
@@ -1640,6 +1949,39 @@
     savePlan().then(function () { renderSite(); renderRegister(); renderAll(); });
   }
   function cancelDraw() { drawPts = []; drawing = false; renderSite(); }
+
+  // Copy / paste / duplicate a traced shape. ⚠️ The GEOMETRY is copied, never the placements: a
+  // second tower is a different building, and inheriting the first one's equipment would assign a
+  // crane to a tower nobody put it on.
+  function shapeOffset(pts, dx, dy) {
+    var H = planH(), bb = bboxOf(pts);
+    var ox = clamp(dx, -bb.x, PLAN_W - bb.x - bb.w), oy = clamp(dy, -bb.y, H - bb.y - bb.h);
+    return pts.map(function (p) { return [p[0] + ox, p[1] + oy]; });
+  }
+  function nextTowerName(base) {
+    var used = {}; PLAN.blocks.forEach(function (b) { used[String(b.name || '').toLowerCase()] = 1; });
+    if (!used[String(base).toLowerCase()]) return base;
+    for (var n = 2; n < 99; n++) { var c = base + ' (' + n + ')'; if (!used[c.toLowerCase()]) return c; }
+    return base + ' copy';
+  }
+  function pasteShape(src, note) {
+    if (!src || !src.pts) return;
+    var b = { id: newBlockId(), name: nextTowerName(src.name || 'Tower'), color: src.color || '#EE3124', pts: shapeOffset(src.pts, 26, 26) };
+    PLAN.blocks.push(b);
+    blkSel = b.id;
+    savePlan().then(function () { renderSite(); renderRegister(); renderAll(); });
+    UI.toast((note || 'Shape pasted') + ' as "' + b.name + '" — rename it to its own tower.');
+  }
+  function duplicateBlock(id) {
+    var b = blockById(id); if (!b) return;
+    pasteShape({ name: b.name, color: b.color, pts: bpts(b).map(function (p) { return [p[0], p[1]]; }) }, 'Shape duplicated');
+  }
+  function copyShape() {
+    var b = blockById(blkSel);
+    if (!b) { UI.toast('Select a tower on the plan first.', 'error'); return; }
+    shapeClip = { name: b.name, color: b.color, pts: bpts(b).map(function (p) { return [p[0], p[1]]; }) };
+    UI.toast('"' + b.name + '" copied — press Ctrl+V to paste its shape.');
+  }
 
   function addBlock(name) {
     var n = PLAN.blocks.length, H = planH();
@@ -1701,7 +2043,7 @@
         })));
       });
     }
-    ag.items.forEach(function (it) { band(it.name, function (iso, wh) { return qtyOf(it, iso, wh); }); });
+    ag.items.forEach(function (it) { band((it.code ? it.code + ' · ' : '') + it.name, function (iso, wh) { return qtyOf(it, iso, wh); }); });
     ag.cats.forEach(function (c) {
       band(c + ' (total)', function (iso, wh) { var cc = ag.byCat[c][iso]; return wh === 'planned' ? (cc.hasP ? cc.planned : null) : (cc.hasA ? cc.actual : null); });
     });
