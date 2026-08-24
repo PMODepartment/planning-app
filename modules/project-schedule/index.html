@@ -1043,6 +1043,36 @@
     .ps-vs-scroll svg { display:block; height:auto; }
     .ps-vs-cell { cursor:pointer; }
     .ps-vs-cell:hover { filter:brightness(1.08); }
+    /* ---- Magnifier (loupe) ----------------------------------------------------------------
+       Zones get small fast - a tall tower at detail 3 is a wall of 8pt dates, and the Zoom control
+       fixes that only by making the whole building too wide to see at once. The loupe keeps the
+       building where it is and paints a magnified copy of whatever the pointer is over into a
+       docked panel on the right. It is a CLONE of the same <svg> with a tighter viewBox, so what
+       the panel shows is exactly what is drawn - there is no second renderer to keep in step. */
+    .ps-vs-stage { display:flex; gap:14px; align-items:flex-start; }
+    .ps-vs-stage > .ps-vs-viewport { flex:1 1 auto; min-width:0; }
+    .ps-vs-loupe { flex:0 0 clamp(280px, 26vw, 420px); position:sticky; top:6px; border:1px solid var(--pd-line);
+      border-radius:12px; background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
+    .ps-vs-loupe-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;
+      background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:12.5px; font-weight:800; }
+    .ps-vs-loupe-head .t { display:inline-flex; align-items:center; gap:6px; min-width:0; }
+    .ps-vs-loupe-head .ps-vs-seg > button { padding:3px 9px; }
+    .ps-vs-loupebtn { display:inline-flex; align-items:center; gap:6px; }
+    .ps-vs-loupe-stage { height:clamp(220px, 34vh, 400px); background:var(--pd-bg); overflow:hidden;
+      display:flex; align-items:center; justify-content:center; }
+    /* The clone is sized by the box, never by its own width/height attributes - those are stripped. */
+    .ps-vs-loupe-stage > svg { width:100%; height:100%; display:block; }
+    .ps-vs-loupe-hint { padding:14px; font-size:12px; color:var(--pd-muted); text-align:center; line-height:1.5; }
+    .ps-vs-loupe-info { padding:9px 11px; border-top:1px solid var(--pd-line); font-size:12px; }
+    .ps-vs-loupe-info .h { font-weight:800; font-size:13px; margin-bottom:3px; }
+    .ps-vs-loupe-info .r { color:var(--pd-muted); line-height:1.55; }
+    /* The hovered zone is outlined in BOTH panes, so it is obvious which cell the loupe is showing.
+       !important beats the per-cell stroke painted inline by _vsTowerSVG. */
+    [data-vsk].is-loupe { stroke:var(--pd-red) !important; stroke-width:2.5px !important; stroke-dasharray:none !important; }
+    @media (max-width: 1100px) {
+      .ps-vs-stage { flex-direction:column; }
+      .ps-vs-loupe { position:static; flex:1 1 auto; width:100%; }
+    }
     .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:13px; text-align:center; }
     #ps-view-schedule.ps-vstack-mode .ps-split,
     #ps-view-schedule.ps-vstack-mode .ps-network,
@@ -10097,6 +10127,19 @@
   var _vsScope = 'trade';       // 'trade' = one tower per trade · 'all' = one consolidated tower
   var _vsDetail = 2;            // 1 = per level · 2 = per zone · 3 = per unit (capped at LOC_LEVELS)
   var _vsZoom = 1;
+  // ---- Magnifier (loupe) state. See the CSS note: hovering the left pane paints a magnified clone
+  // of the same svg into the right-hand panel. Both the on/off state and the magnification are
+  // viewing preferences (like ps_ganttscale), so they persist globally rather than per project.
+  var _vsLoupe = false, _vsLoupeZ = 3;
+  try {
+    _vsLoupe = localStorage.getItem('ps_vsloupe') === '1';
+    var _vlz = parseFloat(localStorage.getItem('ps_vsloupez'));
+    if (_vlz >= 1.5 && _vlz <= 8) _vsLoupeZ = _vlz;
+  } catch (e) {}
+  function _saveLoupe() { try { localStorage.setItem('ps_vsloupe', _vsLoupe ? '1' : '0'); localStorage.setItem('ps_vsloupez', String(_vsLoupeZ)); } catch (e) {} }
+  // The svg currently cloned into the panel, its clone, and the cell outlined in the LEFT pane.
+  // All three are reset by every renderVStack - the DOM they point at is replaced wholesale.
+  var _vsLoupeSrc = null, _vsLoupeClone = null, _vsLoupeMark = null;
   var _vsTrade = 'ALL';         // focus a single trade's tower
   var _vsTower = 'ALL';         // focus a single PROJECT tower (Tower A / Tower B / …)
   // Reserved key in an activity's location map holding its project tower. See locMapOf().
@@ -10526,6 +10569,86 @@
     var _box = m.el.querySelector('.pd-modal'); if (_box) _box.classList.add('ps-vs-modal');
     m.el.querySelector('#ps-vs-x').onclick = function () { m.close(); };
   }
+  // Paint the loupe: point (ux,uy) is in the source svg's USER units, key is the hovered cell (may
+  // be null when the pointer is over the label gutter or the gap between zones).
+  function _vsLoupePaint(sv, ux, uy, key) {
+    if (!_vsLoupe) return;
+    var stage = document.getElementById('ps-vs-loupe-stage'); if (!stage || !sv) return;
+    var vb = (sv.getAttribute('viewBox') || '').split(/[\s,]+/);
+    var W = parseFloat(vb[2]), H = parseFloat(vb[3]);
+    if (!(W > 0) || !(H > 0)) return;
+    // Clone once per tower, then only the viewBox moves - re-cloning on every mousemove would
+    // rebuild thousands of rects a second at detail 3.
+    if (_vsLoupeSrc !== sv) {
+      var cl = sv.cloneNode(true);
+      cl.removeAttribute('width'); cl.removeAttribute('height');
+      cl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      // The panel is a VIEW, not a second set of controls: the copy takes no pointer events, so the
+      // native <title> tooltips and the hover brightness stay with the real cells on the left.
+      cl.querySelectorAll('title').forEach(function (t) { t.parentNode.removeChild(t); });
+      cl.querySelectorAll('.ps-vs-cell').forEach(function (r) { r.classList.remove('ps-vs-cell'); });
+      cl.style.pointerEvents = 'none';
+      stage.innerHTML = ''; stage.appendChild(cl);
+      _vsLoupeSrc = sv; _vsLoupeClone = cl;
+    }
+    var cl2 = _vsLoupeClone, box = stage.getBoundingClientRect();
+    var aspect = (box.width > 0 && box.height > 0) ? (box.height / box.width) : 0.8;
+    // Never magnify past the drawing itself: a window wider than the tower would letterbox it.
+    var vw = Math.min(W, Math.max(30, W / _vsLoupeZ)), vh = Math.min(H, Math.max(30, vw * aspect));
+    var vx = (W <= vw) ? (W - vw) / 2 : Math.max(0, Math.min(W - vw, ux - vw / 2));
+    var vy = (H <= vh) ? (H - vh) / 2 : Math.max(0, Math.min(H - vh, uy - vh / 2));
+    cl2.setAttribute('viewBox', vx.toFixed(1) + ' ' + vy.toFixed(1) + ' ' + vw.toFixed(1) + ' ' + vh.toFixed(1));
+    // Outline the hovered zone in both panes. Attribute values are compared in JS rather than
+    // through a [data-vsk="..."] selector: a level or zone name may contain a quote.
+    var prev = cl2.querySelector('[data-vsk].is-loupe'); if (prev) prev.classList.remove('is-loupe');
+    if (_vsLoupeMark) { _vsLoupeMark.classList.remove('is-loupe'); _vsLoupeMark = null; }
+    if (key) {
+      var all = cl2.querySelectorAll('[data-vsk]'), i, j;
+      for (i = 0; i < all.length; i++) if (all[i].getAttribute('data-vsk') === key) { all[i].classList.add('is-loupe'); break; }
+      var src = sv.querySelectorAll('[data-vsk]');
+      for (j = 0; j < src.length; j++) if (src[j].getAttribute('data-vsk') === key) { _vsLoupeMark = src[j]; src[j].classList.add('is-loupe'); break; }
+    }
+    _vsLoupeInfo(key, sv);
+  }
+  // The readout under the magnified copy - the same numbers the cell's tooltip carries, but held
+  // still so they can be read without keeping the pointer in place.
+  function _vsLoupeInfo(key, sv) {
+    var el = document.getElementById('ps-vs-loupe-info'); if (!el) return;
+    var d = key ? _vsCells[key] : null;
+    if (!d) {
+      var card = sv && sv.closest ? sv.closest('.ps-vs-tower') : null;
+      var nmEl = card ? card.querySelector('.ps-vs-towerh .n') : null;
+      var nm = nmEl ? String(nmEl.textContent || '').trim() : '';
+      el.innerHTML = '<div class="r">' + (nm ? '<strong>' + esc(nm) + '</strong> \u2014 hover a zone for its numbers.' : 'Hover a zone for its numbers.') + '</div>';
+      return;
+    }
+    var slip = _vsSlip(d.list), pp = _vsPlanPct(d.list);
+    el.innerHTML = '<div class="h">' + esc(String(d.level) + (d.cell ? ' \u00b7 ' + d.cell : '')) + '</div>' +
+      '<div class="r">' + d.list.length + ' activit' + (d.list.length === 1 ? 'y' : 'ies') + ' \u00b7 ' + d.pct + '% ' + _vsProgressWord() +
+        (pp == null ? '' : ' (planned ' + pp + '%)') + '<br>' +
+        _vsDateWord() + ' ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '\u2014') + ' \u00b7 ' + esc(_vsBasisWord()) +
+        (slip == null ? '' : ' \u00b7 ' + (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time'))) +
+        '<br>Click the zone on the left for the activities behind it.</div>';
+  }
+  // Hover wiring, one listener per tower svg. Throttled to a frame: mousemove fires far faster than
+  // the panel can usefully repaint, and each repaint walks the clone's cells.
+  function _vsWireLoupe(host) {
+    if (!_vsLoupe) return;
+    var raf = 0, pend = null;
+    host.querySelectorAll('.ps-vs-scroll svg').forEach(function (sv) {
+      sv.addEventListener('mousemove', function (e) {
+        var r = sv.getBoundingClientRect(); if (!r.width || !r.height) return;
+        var vb = (sv.getAttribute('viewBox') || '').split(/[\s,]+/);
+        var W = parseFloat(vb[2]) || r.width, H = parseFloat(vb[3]) || r.height;
+        var t = e.target && e.target.getAttribute ? e.target.getAttribute('data-vsk') : null;
+        pend = { sv: sv, ux: (e.clientX - r.left) * W / r.width, uy: (e.clientY - r.top) * H / r.height, key: t };
+        if (raf) return;
+        raf = requestAnimationFrame(function () { raf = 0; if (pend) _vsLoupePaint(pend.sv, pend.ux, pend.uy, pend.key); });
+      });
+      // Leaving the tower does NOT clear the panel: the last zone stays magnified so its numbers can
+      // still be read with the pointer off the building.
+    });
+  }
   function renderVStack() {
     var host = document.getElementById('ps-vstack'); if (!host) return;
     if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
@@ -10591,6 +10714,7 @@
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
       '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
+      '<span class="ps-vs-seg"><button class="ps-vs-loupebtn' + (_vsLoupe ? ' on' : '') + '" id="ps-vs-loupebtn" title="Magnifier \u2014 hover a zone on the left and it is shown enlarged, with its dates and progress, in a panel on the right"><span data-ico="search" data-ico-size="14"></span>Magnify</button></span>' +
       '<span style="flex:1 1 auto;"></span>' +
       (_vsBasis === 'compare'
         ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
@@ -10632,6 +10756,7 @@
       'or file them under a WBS branch. Actions → Diagnose data… lists them.</div>';
 
     _vsCells = {}; _vsHatchSeen = {};
+    _vsLoupeSrc = _vsLoupeClone = _vsLoupeMark = null;   // the DOM they point at is replaced below
     var towers;
     if (!acts.length) {
       towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.</div>';
@@ -10669,7 +10794,17 @@
     // ⚠️ The defs must be in the DOM before the towers that reference them are laid out, so they are
     // prepended rather than appended.
     host.innerHTML = bar + twChips + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
-      '<div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>';
+      '<div class="ps-vs-stage"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
+      // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
+      // rather than being covered by it.
+      (_vsLoupe ? '<aside class="ps-vs-loupe" id="ps-vs-loupe">' +
+        '<div class="ps-vs-loupe-head"><span class="t"><span data-ico="search" data-ico-size="14"></span>Magnifier</span>' +
+          '<span class="ps-vs-seg"><button id="ps-vs-lzout" title="Less magnification">&#8722;</button>' +
+          '<button id="ps-vs-lzin" title="More magnification">+</button></span>' +
+          '<span class="ps-vs-note">' + _vsLoupeZ.toFixed(1) + '&times;</span></div>' +
+        '<div class="ps-vs-loupe-stage" id="ps-vs-loupe-stage"><div class="ps-vs-loupe-hint">Hover a zone in the building on the left &mdash; it is magnified here, with its dates and progress underneath.</div></div>' +
+        '<div class="ps-vs-loupe-info" id="ps-vs-loupe-info"><div class="r">Nothing hovered yet.</div></div></aside>' : '') +
+      '</div>';
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
     // project still settles in well under half a second instead of trickling in.
     if (_vsAnim === 'in') {
@@ -10692,6 +10827,13 @@
     // Zoom repaints silently: a fade on every step of a held-down click would strobe.
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
+    // Magnifier: the toggle repaints silently (the towers only narrow to make room - replaying an
+    // entrance would read as though the data had changed), and so do the magnification steps.
+    var lb = host.querySelector('#ps-vs-loupebtn');
+    if (lb) lb.onclick = function () { _vsLoupe = !_vsLoupe; _saveLoupe(); renderVStack(); };
+    var lzo = host.querySelector('#ps-vs-lzout'); if (lzo) lzo.onclick = function () { _vsLoupeZ = Math.max(1.5, Math.round((_vsLoupeZ - 0.5) * 10) / 10); _saveLoupe(); renderVStack(); };
+    var lzi = host.querySelector('#ps-vs-lzin'); if (lzi) lzi.onclick = function () { _vsLoupeZ = Math.min(8, Math.round((_vsLoupeZ + 0.5) * 10) / 10); _saveLoupe(); renderVStack(); };
+    _vsWireLoupe(host);
     host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
     if (window.Icons) Icons.hydrate(host);
   }

@@ -7181,3 +7181,12 @@ about CPM, roll-up, or float. Bulk-apply it with **Actions → Global Change** (
 
 ⚠️ **Not verified against the DB.** If `schedule_activities.activity_type` carries a CHECK
 constraint, saving will 400 until `Work Package` is added to it. `MODULE_V` → `20260822f`.
+
+
+## 2026-08-24 — Vertical Stacking magnifier
+
+Project Schedule's Vertical Stacking view gained a **Magnify** toggle: hovering a zone in a
+building paints a magnified copy of that part of the same `<svg>` into a docked panel on the
+right, with the zone's dates, POC and slip underneath. It is a clone with a tighter `viewBox`, so
+it cannot drift from what the left pane draws. `MODULE_V` → `20260824g`.
+See `modules/project-schedule/CLAUDE.md` for the mechanics and what was verified.

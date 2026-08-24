@@ -8005,3 +8005,43 @@ removed rather than left asserting my discarded signature).
 ⚠️ **Not verified live** — no signed-in run this pass. The behaviour is unchanged for the columns
 ethanrobles10 had already corrected; what is newly correct is Float / Var (BL) / At Completion copy text
 and the dynamic columns copying at all. MODULE_V → 20260818i.
+
+
+## 2026-08-24 — Vertical Stacking: a magnifier that shows the hovered zone enlarged beside the building
+
+Owner: zones get small fast — a tall tower at detail 3 is a wall of 8pt dates, and the existing
+**Zoom** control only fixes that by making the whole building too wide to see at once. Asked for a
+magnifying glass: hover a zone on the left, see it enlarged on the right.
+
+**Magnify** (new toggle in the stacking bar, beside Zoom) splits the view into a flex row: the
+towers on the left, a sticky **Magnifier** panel on the right. Moving the pointer over a building
+paints a magnified copy of whatever is under it into the panel, and the readout underneath holds
+the hovered zone's activity count, POC (with the planned % when there is a baseline), date and
+slip — the same numbers the cell's tooltip carries, but held still so they can be read with the
+pointer elsewhere.
+
+⚠️ **The panel is a CLONE of the same `<svg>` with a tighter `viewBox`, not a second renderer.**
+Whatever `_vsTowerSVG` draws — hatch, planned marker, Compare's two-row table, the grade line — is
+what the loupe shows, and it cannot drift from the left pane. The clone is made **once per tower**
+and then only its `viewBox` moves; re-cloning per mousemove would rebuild thousands of rects a
+second at detail 3. Mousemove is throttled to a frame, `<title>`s are stripped from the clone and
+it takes no pointer events, so the tooltips and the click-through drill-down stay with the real
+cells. The hovered zone is outlined in **both** panes (`.is-loupe`).
+
+- Magnification is a separate control from Zoom (**1.5×–8×**, ± in the panel head); it never goes
+  wider than the drawing itself, so a short building is centred rather than letterboxed.
+- Both the toggle and the magnification persist in `localStorage` (`ps_vsloupe` / `ps_vsloupez`) —
+  viewing preferences, like `ps_ganttscale`, not project data.
+- Leaving a building does **not** clear the panel: the last zone stays magnified so its numbers can
+  still be read.
+- Under 1100px the panel drops below the towers instead of squeezing them.
+
+### Verification
+Not signed in this pass, so the loupe was driven in a **harness that loads the shipped
+`_vsLoupePaint` / `_vsLoupeInfo` / `_vsWireLoupe` verbatim** (extracted from index.html) over a
+mock 10-level × 6-zone tower: the clone is created once and reused, the `viewBox` lands centred on
+the hovered cell at exactly `W / _vsLoupeZ` wide and clamped inside the drawing, the highlight
+appears on exactly one cell in each pane, `<title>`s are stripped, two moves in one frame coalesce
+to the last, and a pointer over the label gutter still magnifies while the readout falls back to
+the tower name. Whole-file JS syntax check clean. `MODULE_V` → `20260824g`.
+⚠️ **Not verified against live schedule data** — no signed-in run.
