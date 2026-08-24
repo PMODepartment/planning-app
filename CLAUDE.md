@@ -84,7 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-08-22 — Signed-in verification of both WBS fixes (+ a pre-existing cross-project row found)
+### 2026-08-24 — Closed the cross-project WBS-row writer (the 2026-08-17 pinning fix had a hole)
+- ⚠️ **Root cause:** `pid` is set early in `load()` while `WBS_NODES` is replaced later inside
+  `loadResourcesAssignments()`. In that window the heal pins the NEW project id against the OLD
+  project's nodes, and `switched()` — which compares `pid !== ownPid` — cannot notice, because both are
+  the new id. Separately, `computeWbsCodes()` read the LIVE tree rather than the pinned one, so a pinned
+  node's code came back `undefined` → the NULL `wbs` fingerprint. Both halves of the corruption explained.
+- **Fixed with three layered guards:** `computeWbsCodes(nodeList)` now accepts a pinned list (default
+  unchanged, so ~20 call sites are untouched); the heal filters its pinned nodes by `project_id`; and
+  `_insertWbsSummary`/`_insertWbsSummaries` **refuse a payload with a null/undefined `wbs`** — the
+  universal backstop that catches any future writer. ⚠️ `''` stays legal (copy-WBS-from-project needs it).
+- **Verified by executing the shipped functions** (sliced, not reimplemented): **14/14**, including a
+  reproduction of the pre-fix `undefined` lookup and the refused write. Prior suites green; 0 functions
+  lost. ⚠️ **The 83 existing corrupt rows are not deleted** — destructive, pending owner sign-off.
+  `MODULE_V` → `20260822h`.
+
+### 2026-08-24 — Signed-in verification of both WBS fixes (+ a pre-existing cross-project row found)
 - **OPW101 repaired:** missing headings **9 → 0**, 460 nodes / 460 rows, 0 orphans, 0 duplicates. Across a
   load, a button-triggered Sync Procurement and a second load, the 9 heading rows are **byte-identical —
   0 deleted, 0 recreated** (identical IDs prove they were never touched, not deleted-and-remade).
@@ -98,7 +113,7 @@ developer, plug into one shared shell.
   dated 18–19 Aug**, and they are invisible to both the heal and the code-dedupe by construction. It
   post-dates the 2026-08-17 pinning fix, so that fix did not close every path. Needs owner sign-off.
 
-### 2026-08-22 — The WBS heal is a backstop now, not the mechanism
+### 2026-08-24 — The WBS heal is a backstop now, not the mechanism
 Follow-up to the procurement sweep fix, on the owner's instruction to *"track the root cause so that the
 heal becomes a backup not the main solution."*
 - **Audited all 18 schedule-row deletes:** only the procurement sweep (already fixed) could ever destroy
@@ -117,7 +132,7 @@ heal becomes a backup not the main solution."*
   8/8, parse clean, function-set diff 0 lost / 1 added. ⚠️ Not verified signed-in. `MODULE_V` →
   `20260822g`.
 
-### 2026-08-22 — Sync Procurement was deleting the trade headings it had just created
+### 2026-08-24 — Sync Procurement was deleting the trade headings it had just created
 Owner: the trades don't show properly, and *"when re-syncing from procurement in the WBS it shows for a
 brief moment but disappears completely."* That flash was the bug, not a symptom of one.
 - ⚠️ **`syncProcurement()`'s stale-row sweep deleted the trade nodes' own WBS-Summary rows** — in the
@@ -6986,7 +7001,7 @@ failed reads, the missing-skeleton no-op, trade ordering, and the shared WPM map
 (19), C3 (32), C4 (25) suites still green; **0 functions lost**; parses. ⚠️ **Not verified signed-in**,
 and no live sync has been run. `MODULE_V` → `20260819h`.
 
-## 2026-08-22 — Issues & Lessons: MoM UI fixes + module audit
+## 2026-08-24 — Issues & Lessons: MoM UI fixes + module audit
 
 Fixed two owner-reported defects in the Minutes of Meeting screen and audited the module.
 
@@ -7012,10 +7027,10 @@ it deliberately avoids `momOptions()` because that helper's blank option would w
 CHECK-constrained column. 75/75 checks green. `MODULE_V` → `20260822b`.
 ⚠️ **Not verified signed-in.**
 
-## 2026-08-22 — One status vocabulary across minutes and the register
+## 2026-08-24 — One status vocabulary across minutes and the register
 
 Owner: unify the status lists, following **On Hold** rather than **In Progress**.
-**⚠️ Run `migrations/2026-08-22-unify-mom-status.sql`.**
+**⚠️ Run `migrations/2026-08-24-unify-mom-status.sql`.**
 
 `mom_items` said `Open | In Progress | Closed`; `issues_lessons` said `Open | On Hold | Closed`.
 The drift was doing real damage: raising an action **translated** the value on the way across, the
@@ -7041,7 +7056,7 @@ would render in the same grey as Closed.
 77/77 checks green (gaps suite grew 42 → 44); 0 functions lost. `MODULE_V` → `20260822c`.
 ⚠️ **Not verified signed-in, and the migration has not been run.**
 
-## 2026-08-22 — MoM action items reworked into cards (reporting readability)
+## 2026-08-24 — MoM action items reworked into cards (reporting readability)
 
 Owner: all the details of an action item must be readable in one view, especially when
 reporting — and mom-app already does this. **No migration.**
@@ -7070,7 +7085,7 @@ pinning the layout viewport at 980px) — **gate viewport measurements or they l
 75/75 suite checks green; 0 functions lost. `MODULE_V` → `20260822d`.
 ⚠️ **Not verified signed-in.**
 
-## 2026-08-22 — The MoM PDF export was producing a blank page (fixed)
+## 2026-08-24 — The MoM PDF export was producing a blank page (fixed)
 
 Owner reported the PDF "format isn't working". ⚠️ **It was not formatting — every sheet was an
 empty A4 page.** All four samples were byte-identical at 3,058 bytes, their whole content stream
@@ -7091,7 +7106,7 @@ Verified on a real produced file: **216,539 bytes with a 1438×1406 image** (was
 and the extracted page shows mom-app's format exactly. 77/77 suite checks green; 0 functions lost.
 `MODULE_V` → `20260822e`. ⚠️ Not verified signed-in.
 
-## 2026-08-22 — "Work Package" is now a first-class activity type
+## 2026-08-24 — "Work Package" is now a first-class activity type
 
 Owner: procurement lines under General Requirements were showing **TASK** in the Task column when
 they are really work packages. `activity_type` only offered Task / WBS Summary / Start Milestone /

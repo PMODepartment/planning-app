@@ -4760,12 +4760,19 @@
     }
     return raw.replace(/\./g, '-').trim();   // whatever remains must still be ONE path segment
   }
-  function computeWbsCodes() {
-    // Build a parent -> sorted-children index once (O(N log N)) instead of re-scanning WBS_NODES
+  // ⚠️ `nodeList` is OPTIONAL and defaults to the live tree — but a caller that has PINNED a node
+  // list must pass it. This function used to read `WBS_NODES` unconditionally, and `WBS_NODES` is
+  // REPLACED wholesale mid-run by loadResourcesAssignments(). A projector that pinned its nodes and
+  // then asked for codes here got the codes of a DIFFERENT tree, so `codeOf[n.id]` came back
+  // undefined and the row was written with a NULL `wbs` — the fingerprint of the 83 corrupt rows
+  // found on 2026-08-24. See _wbsEnsureSummariesInner.
+  function computeWbsCodes(nodeList) {
+    var NODES = nodeList || WBS_NODES;
+    // Build a parent -> sorted-children index once (O(N log N)) instead of re-scanning the node list
     // per tree level via wbsChildren (which made this O(N²·log N) on big P6 trees). Same ordering.
     var childrenOf = new Map();
-    for (var i = 0; i < WBS_NODES.length; i++) {
-      var nd = WBS_NODES[i], p = nd.parent_id || null;
+    for (var i = 0; i < NODES.length; i++) {
+      var nd = NODES[i], p = nd.parent_id || null;
       var arr = childrenOf.get(p); if (!arr) { arr = []; childrenOf.set(p, arr); }
       arr.push(nd);
     }
@@ -15876,6 +15883,19 @@
     var ownPid = pid;
     var ownNodes = WBS_NODES.slice();
     if (!ownPid || !ownNodes.length) return 0;
+    // ⚠️⚠️ THE PINNING ABOVE WAS NOT ENOUGH, and this is how the 2026-08-24 corruption got in.
+    // `pid` is set early in load()/selectProject(), but `WBS_NODES` is only REPLACED later, inside
+    // loadResourcesAssignments(). In that window `pid` is the NEW project while `WBS_NODES` still
+    // holds the OLD project's tree — so `ownPid` pins the NEW id, `ownNodes` pins the OLD nodes, and
+    // `switched()` (which compares `pid !== ownPid`) can never notice, because BOTH are the new id.
+    // The result is a row with `project_id` = one project and `wbs_node_id` = another project's node,
+    // which is invisible to every repair here: the existence probe below fetches
+    // `.in('wbs_node_id', <this project's ids>)` and matches neither a foreign id nor a NULL.
+    // Measured on live data: 83 such rows (BAU101 82, MWD101 1) written 2026-08-18/19.
+    // The nodes carry their own `project_id` (WBS_NODES is loaded with `select('*')`), so ownership
+    // is checkable rather than assumed. Tolerates a node with no project_id rather than dropping it.
+    ownNodes = ownNodes.filter(function (n) { return !n.project_id || n.project_id === ownPid; });
+    if (!ownNodes.length) return 0;   // the tree in memory is not this project's — let the next load retry
     var switched = function () { return pid !== ownPid; };
     // Merge duplicate locked skeleton nodes first (two racing page loads can each seed a full
     // skeleton — see ensureWbsSkeleton) — otherwise the loop below would happily give each duplicate
@@ -15918,7 +15938,9 @@
     }
     var missing = ownNodes.filter(function (n) { return !have[n.id]; });
     if (!missing.length) return 0;
-    var codeOf = computeWbsCodes(), made = 0;
+    // ⚠️ Codes come from the PINNED tree, not the live one: `WBS_NODES` may have been swapped during
+    // the awaits above, and asking the new tree for an old node's code yields undefined -> NULL `wbs`.
+    var codeOf = computeWbsCodes(ownNodes), made = 0;
     for (var i = 0; i < missing.length; i++) {
       var n = missing[i];
       // ⚠️ Re-checked EVERY iteration, not just once before the loop: the switch we are guarding
@@ -15974,7 +15996,7 @@
   // on a DB where that column was never migrated, including it in the payload fails the WHOLE
   // insert — which used to leave the node in the tree with no Project Schedule row. Retry without
   // it so the row (and the grid) still works; the link is then re-established by Adopt existing WBS.
-  // ⚠️⚠️ ROOT-CAUSE FIX for the "heading flashes and vanishes" class (2026-08-22). Project a node's
+  // ⚠️⚠️ ROOT-CAUSE FIX for the "heading flashes and vanishes" class (2026-08-24). Project a node's
   // WBS-Summary row AT CREATION, idempotently, so `_wbsEnsureSummaries()` is a BACKSTOP rather than
   // the mechanism. The mirror syncs and the skeleton backfill used to create a node and leave the
   // projection entirely to the heal — but the heal has SIX bail paths (`_ensuringSummaries`
@@ -16001,6 +16023,20 @@
     return res.data;
   }
   async function _insertWbsSummary(payload) {
+    // ⚠️⚠️ UNIVERSAL BACKSTOP: never write a projection whose code could not be resolved.
+    // Every caller derives `wbs` from a `computeWbsCodes()` lookup, and that lookup returns
+    // `undefined` for exactly one reason — the node is NOT in the tree the codes were computed from,
+    // i.e. it belongs to another project. That is the whole mechanism behind the 83 corrupt rows
+    // found on 2026-08-24 (a row in one project pointing at another project's node, `wbs` NULL), and
+    // it is invisible to every repair we have: the heal probes by this project's node ids, and
+    // `_wbsDedupeSummariesByCode` skips a blank code outright (`if (!k) return`). Refusing the write
+    // is the one place that catches it no matter which writer raced.
+    // ⚠️ `''` IS legal and must stay so — the copy-WBS-from-project path deliberately inserts with a
+    // blank code and lets `_wbsCommit()` assign the real one. Only null/undefined is the failure.
+    if (payload && payload.wbs == null) {
+      console.warn('[ps] refused a WBS-Summary row with no resolvable code (node is not in the tree the codes came from)', payload);
+      return { error: null, data: null, skipped: true };   // skip quietly; the next load retries cleanly
+    }
     var res = await sb().from(TABLE).insert(payload).select().single();
     if (res.error && payload.wbs_node_id && /wbs_node_id/.test(res.error.message || '')) {
       var fallback = Object.assign({}, payload); delete fallback.wbs_node_id;
@@ -16159,6 +16195,13 @@
   // Bulk _insertWbsSummary, with the same "DB never got the wbs_node_id column" tolerance.
   async function _insertWbsSummaries(payloads) {
     var made = [], warned = false;
+    // ⚠️ Same backstop as the single-row _insertWbsSummary: drop any payload whose code could not be
+    // resolved (null/undefined — `''` stays legal). Filtered rather than aborted, so one unresolvable
+    // node cannot cost the whole batch its legitimate siblings.
+    var bad = payloads.filter(function (p) { return p && p.wbs == null; });
+    if (bad.length) { console.warn('[ps] skipped ' + bad.length + ' WBS-Summary row(s) with no resolvable code', bad); }
+    payloads = payloads.filter(function (p) { return p && p.wbs != null; });
+    if (!payloads.length) return { data: [] };
     for (var i = 0; i < payloads.length; i += 200) {
       var chunk = payloads.slice(i, i + 200);
       var res = await sb().from(TABLE).insert(chunk).select();

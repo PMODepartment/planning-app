@@ -1,5 +1,57 @@
-## VERIFIED SIGNED-IN on live data — and a pre-existing cross-project row found (2026-08-22) — fmlozano
-Both 2026-08-22 fixes verified against the deployed build in the owner's signed-in browser. This closes
+## Cross-project summary rows: the 2026-08-17 pinning fix had a hole (2026-08-24) — fmlozano
+The 83 corrupt rows found during yesterday's verification are now understood and the writer is closed.
+⚠️ **This is a follow-up to the 2026-08-17 `ownPid`/`ownNodes` pinning fix, which did not go far enough.**
+
+**Root cause, proven from the two fingerprints rather than inferred.** A corrupt row has BOTH a
+`project_id` from one project and a `wbs_node_id` from another, AND a NULL `wbs`. Each half has its own
+cause and they share one trigger:
+- ⚠️ **`pid` and `WBS_NODES` are updated at DIFFERENT times.** `pid` is set early in `load()` /
+  `selectProject()`, but `WBS_NODES` is only replaced later, inside `loadResourcesAssignments()`
+  (`WBS_NODES = await selectAllPaged('wbs_nodes','*')`). In that window `pid` is the NEW project while
+  the tree in memory is still the OLD one. So `ownPid = pid` pins the NEW id, `ownNodes =
+  WBS_NODES.slice()` pins the OLD nodes — and **`switched()` can never notice, because it compares
+  `pid !== ownPid` and both are the new id.** The guard was watching the wrong thing.
+- ⚠️ **`computeWbsCodes()` read the LIVE `WBS_NODES`, not the pinned list.** Called after dozens of
+  awaits, by which time the tree may have been swapped, so `codeOf[n.id]` for a pinned old node comes
+  back **undefined** → the row is written with `wbs` NULL. That is the marker the whole scan keyed on.
+- **Invisible to every repair by construction:** the heal probes `.in('wbs_node_id', <this project's
+  ids>)`, which matches neither a foreign id nor a NULL, and `_wbsDedupeSummariesByCode` skips a blank
+  code outright (`if (!k) return`). That is why 83 rows sat there for four days.
+
+**Three layered guards, cheapest first:**
+1. **`computeWbsCodes(nodeList)`** takes an optional pinned list, defaulting to `WBS_NODES` so all ~20
+   existing call sites are unchanged. The heal now calls `computeWbsCodes(ownNodes)`.
+2. **The heal validates that its pinned tree belongs to its pinned project** —
+   `ownNodes.filter(n => !n.project_id || n.project_id === ownPid)` — which is possible only because
+   `WBS_NODES` is loaded with `select('*')` and so carries `project_id`. ⚠️ A node with **no**
+   `project_id` is kept, not dropped: absence of the field must not silently delete real nodes. If
+   nothing survives the filter the tree in memory is not this project's and it returns 0 for the next
+   load to retry.
+3. ⚠️ **`_insertWbsSummary` / `_insertWbsSummaries` refuse a payload whose `wbs` is null/undefined** —
+   the universal backstop that catches this **no matter which writer races**, present and future.
+   `undefined` from a `computeWbsCodes()` lookup has exactly one meaning: the node is not in the tree the
+   codes came from. ⚠️ **`''` stays legal** — copy-WBS-from-project deliberately inserts a blank code and
+   lets `_wbsCommit()` assign the real one; only null/undefined is the failure. The refusal returns
+   `{error:null, data:null, skipped:true}` and console-warns rather than toasting or erroring, so a
+   caller that checks `res.error` neither breaks its loop nor spams the planner; the bulk variant
+   **filters** rather than aborting, so one unresolvable node cannot cost its legitimate siblings.
+
+**Verified by EXECUTING the shipped functions**, sliced verbatim (`computeWbsCodes`,
+`_insertWbsSummary`, `_insertWbsSummaries`) — `scratchpad/check-crossproject.js`, **14/14**. It contains
+the **reproduction**: with the live tree swapped, the pre-fix lookup yields `undefined` for a pinned old
+node while the pinned lookup still resolves it to `1.1`; the corrupt write is then refused with zero
+inserts. Plus backward compatibility of the no-arg call, `''` still inserting, a valid row still
+inserting, the bulk path keeping the good rows and dropping only the bad, an all-bad batch as a clean
+no-op, and the shipped ownership filter's behaviour. Prior suites still green (sweep 8/8,
+`_ensureNodeSummary` 18/18); parse clean; **function-set diff vs HEAD: 0 lost, 0 added.**
+⚠️ A parse error during the edit came from an escaped apostrophe inside a JS string literal that lost
+its backslash in transit — the same class as the repo's documented heredoc traps. Reworded rather than
+re-escaped; **always re-run the parse check after writing a string with a quote in it.**
+⚠️ **The 83 existing rows are NOT cleaned up here** — deleting is destructive and needs sign-off.
+`MODULE_V` → `20260822h`.
+
+## VERIFIED SIGNED-IN on live data — and a pre-existing cross-project row found (2026-08-24) — fmlozano
+Both 2026-08-24 fixes verified against the deployed build in the owner's signed-in browser. This closes
 the "not verified signed-in" caveat on the sweep fix and the creator-projection fix.
 
 - **Deployed build confirmed** by fetching the live file: 12 `_ensureNodeSummary` references and the
@@ -51,7 +103,7 @@ exactly like a data error and is fixed by a reload. Poll in short separate calls
 `projects.html`, not the ~1.2 MB module page**. One query also failed on a column I guessed at
 (`eng_design_progress.total` does not exist) — check the shape with `select('*')` first.
 
-## The heal is now a BACKSTOP, not the mechanism — creators project their own rows (2026-08-22) — fmlozano
+## The heal is now a BACKSTOP, not the mechanism — creators project their own rows (2026-08-24) — fmlozano
 Owner, after the sweep fix landed: *"Check there are cases that this happens then the heal makes it
 disappear. Let's track the root cause so that the heal becomes a backup not the main solution."* Right
 call — the sweep was the acute bug, this is the structural one behind it.
@@ -112,7 +164,7 @@ and idempotency across two back-to-back calls. The sweep suite still passes 8/8.
 turned the `pid: null` case back into a real project, so the guard looked broken.
 ⚠️ **Not verified signed-in.** `MODULE_V` → `20260822g` (+ `modules-grid.js`'s own `?v=`).
 
-## ⚠️⚠️ Sync Procurement DELETED the trade headings it had just created (2026-08-22) — fmlozano
+## ⚠️⚠️ Sync Procurement DELETED the trade headings it had just created (2026-08-24) — fmlozano
 Owner: *"The trades are not showing properly in the procurement dashboard"*, then the decisive clue —
 *"when re-syncing from procurement in the WBS it shows for a brief moment but disappears completely."*
 That is not a rendering fault. `syncProcurement()` was deleting its own work, in the same function call.
