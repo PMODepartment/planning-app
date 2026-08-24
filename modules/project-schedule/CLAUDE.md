@@ -1,3 +1,35 @@
+## Modal chrome: content was bleeding through the pinned header and footer (2026-08-24) — fmlozano
+Owner, with a screenshot: *"The ends of the pop-up window are clashing with the edit activity title
+… and risk - 3point estimate are clashing with the save activity below."* Correct, and it was a defect
+in the pinning I shipped an hour earlier.
+
+- ⚠️⚠️ **ROOT CAUSE: a sticky offset is measured from the SCROLLPORT'S CONTENT ORIGIN, and the shared
+  `.pd-modal` carries `padding:22px`.** So `top:0` parked the header **22px below the modal's visual
+  top** and left a 22px band that the form scrolled through in full view; `bottom:0` did the same under
+  the footer. That is exactly what the screenshot shows — "Secondary Constraint" above the title and
+  "RISK — 3-POINT ESTIMATE" below the Save button. Fixed with `top:-22px` / `bottom:-22px`, which is
+  where the two already sit at rest via their own negative margins.
+- ⚠️⚠️ **MY VERIFICATION WAS THE REAL FAILURE, and it is the lesson worth keeping.** The first pass
+  measured `hdrPinned: 22 / ftrPinned: 22` at four scroll depths and I read the **constant** as proof
+  of correct pinning. The constant only proved the element was sticky; **the 22 WAS the gap.** An
+  offset test cannot answer "does the user see content there" — only an occlusion test can.
+- **The test that actually settles it: `document.elementFromPoint` at the top and bottom pixel rows of
+  the modal.** At five scroll depths the top band must paint the HEADER and the bottom band the FOOTER.
+  It now does at every depth. ⚠️ **Contrast-checked by reverting the offsets to `0` in the live DOM:
+  the top band paints `ps-f-afinish` and the bottom `ps-f-succ`** — form fields showing through,
+  reproducing the report exactly. A check that does not fail on the old behaviour proves nothing.
+  (Same technique the drawing-register scroll work used for the translucent frozen columns.)
+- ⚠️ **A second bad assertion on the way:** counting elements whose rect *spans* the band flagged 1–2
+  "bleeding" items even after the fix — those are tall fields legitimately scrolled BEHIND an opaque
+  header, not visible through a gap. Rect-intersection cannot distinguish the two; hit-testing can.
+- ✅ **The scroll-spy is now VERIFIED**, closing the caveat from the previous entry. It could not be
+  exercised in the Browser pane (not compositing → zero scroll events), but a headless Edge screenshot
+  at `scrollTop=1100` shows the rail's active tab reading **DATES & DURATION**, which only the scroll
+  handler sets — the build-time call marks Contract Scope.
+- Verified at five scroll depths: gap above header **22px → 0**, gap below footer **22px → 0**, top
+  band HEADER and bottom band FOOTER throughout, plus a screenshot mid-scroll showing both edges
+  cutting cleanly. Parse clean. `MODULE_V` → `20260824f`.
+
 ## Add/Edit Activity modal restructured — sections, pinned chrome, a section rail (2026-08-24) — fmlozano
 Owner: *"Let's improve the edit activity pop up window. It looks all over the place."* Then, mid-build:
 *"If we can also have sticky tabs protruding out the side of the popout window."* Measured the modal

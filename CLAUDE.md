@@ -84,6 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-24 — Modal chrome: form content was bleeding through the pinned header and footer
+Owner reported the popup's top and bottom edges clashing with the title and the Save button — a defect
+in the pinning shipped an hour earlier.
+- ⚠️ **Root cause:** a sticky offset is measured from the scrollport's CONTENT origin, and the shared
+  `.pd-modal` has `padding:22px` — so `top:0` parked the header 22px below the modal's visual top and
+  left a band the form scrolled through. Fixed with `top:-22px` / `bottom:-22px`.
+- ⚠️ **The verification was the real failure:** the first pass measured a constant 22px offset at four
+  scroll depths and read the constant as "pinned". The constant only proved stickiness — **the 22 was
+  the gap.** Offset tests cannot answer "does the user see content there"; occlusion tests can.
+- Now checked with `document.elementFromPoint` at the modal's top and bottom pixel rows: HEADER and
+  FOOTER at all five depths. ⚠️ Contrast-checked by reverting the offsets live — the bands then paint
+  `ps-f-afinish` and `ps-f-succ`, reproducing the report exactly.
+- ✅ Also closes the previous entry's caveat: the **scroll-spy is verified** via a headless-Edge
+  screenshot at `scrollTop=1100`, where the rail reads "Dates & Duration" — a state only the scroll
+  handler sets. `MODULE_V` → `20260824f`.
+
 ### 2026-08-24 — Add/Edit Activity modal: sections, pinned header/footer, a section rail
 Owner: the popup "looks all over the place", plus a request for sticky tabs on its side. Measured first:
 **44 fields under 5 headers, 19 of them under "Contract Scope" — a header describing 2** — and because

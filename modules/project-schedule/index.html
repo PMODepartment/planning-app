@@ -1286,8 +1286,17 @@
        ⚠️ Scoped to #ps-modal ON PURPOSE. `.pd-modal-header`/`-footer` are SHARED components (also used
        by resource-loading and cash-flow), and the module contract forbids editing shared assets — so
        this must never become a bare `.pd-modal-header` rule. */
-    #ps-modal .pd-modal-header { position:sticky; top:0; z-index:3; background:var(--pd-card); }
-    #ps-modal .pd-modal-footer { position:sticky; bottom:0; z-index:3; background:var(--pd-card); }
+    /* ⚠️⚠️ `top`/`bottom` MUST be -22px, not 0, and the reason is the shared `.pd-modal { padding:22px }`.
+       A sticky offset is measured from the SCROLLPORT's content origin, which that padding pushes 22px
+       inward — so `top:0` parks the header 22px BELOW the modal's visual top and leaves a 22px band
+       that the form scrolls through in full view. Reported exactly that way: "Secondary Constraint"
+       showing above the Edit Activity title and "RISK — 3-POINT ESTIMATE" showing below the Save
+       button. The header/footer already sit at -22px at rest (their own negative margins), so this
+       simply keeps them there once stuck.
+       ⚠️ Verifying this needs an OVERLAP test, not an offset one: the first cut measured a constant
+       22px at every scroll depth and that constant was read as "pinned" when the 22 WAS the gap. */
+    #ps-modal .pd-modal-header { position:sticky; top:-22px; z-index:3; background:var(--pd-card); }
+    #ps-modal .pd-modal-footer { position:sticky; bottom:-22px; z-index:3; background:var(--pd-card); }
     /* ⚠️ THE MAIN "all over the place" DEFECT, measured: several labels carry long <small> help text
        ("Trade (what this activity IS, …)" wraps to THREE lines), and because each grid cell is a plain
        block the input sits directly under its own label — so the two controls in a row started at
