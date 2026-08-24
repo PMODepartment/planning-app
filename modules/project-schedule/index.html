@@ -452,7 +452,15 @@
     .ps-ds-raingrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:6px; }
     .ps-ds-raingrid label { display:flex; flex-direction:column; gap:2px; font-size:11px; font-weight:700; color:var(--pd-muted); }
     .ps-cal-wrap { display:flex; gap:14px; align-items:flex-start; }
-    .ps-cal-list { flex:0 0 240px; }
+    /* ⚠️ The list MUST be height-bounded. An XER import creates one calendar per P6
+       calendar per run, so a real project carries dozens; unbounded, the list ran
+       metres down the page, "+ New calendar" sat at the bottom of it, and the editor
+       — which renders beside the TOP of the flex row — opened entirely off-screen.
+       Clicking New then looked like nothing happened at all. */
+    .ps-cal-list { flex:0 0 250px; display:flex; flex-direction:column; max-height:70vh; }
+    .ps-cal-scroll { overflow-y:auto; flex:1 1 auto; min-height:0; padding-right:2px; }
+    .ps-cal-tools { display:flex; flex-direction:column; gap:6px; padding-bottom:8px; }
+    .ps-cal-count { font-size:11px; color:var(--pd-muted); }
     .ps-cal-edit { flex:1 1 auto; min-width:0; }
     .ps-cal-item { display:block; width:100%; text-align:left; background:var(--pd-card); border:1px solid var(--pd-line);
       border-radius:6px; padding:7px 10px; margin-bottom:6px; cursor:pointer; font:inherit; font-size:13px; color:var(--pd-ink); }
@@ -3374,7 +3382,11 @@
   function renderCalendarsInto(host, opts) {
     opts = opts || {};
     var m = { el: host, close: opts.close || function () {} };
-    var draft = null;
+    var draft = null, calFilter = '', _calShown = CALS;
+    function applyCalFilter() {
+      var q = calFilter.trim().toLowerCase();
+      _calShown = q ? CALS.filter(function (c) { return String(c.name || '').toLowerCase().indexOf(q) !== -1; }) : CALS;
+    }
 
     function blank() {
       // The Philippine 6-day week is the honest default here — it is what
@@ -3392,6 +3404,7 @@
       // `body.innerHTML = …`, so the previous markup stayed on screen and wire() was
       // never reached: every control silently stopped responding, with the real error
       // visible only in the console. Now the editor says what broke.
+      applyCalFilter();
       var html;
       try { html = buildHTML(); }
       catch (err) {
@@ -3417,7 +3430,17 @@
         'built in and always non-working; the list below is for the movable ones (Eid’l Fitr, Eid’l ' +
         'Adha, proclamation-moved dates) and any site-specific shutdown.</p>' +
         '<div class="ps-cal-wrap"><div class="ps-cal-list">' +
-          (CALS.length ? CALS.map(function (c) {
+          // ⚠️ Pinned ABOVE the list, not below it: this is the control a planner comes
+          // here to press, and at the bottom of a 40-row list it was unreachable
+          // without scrolling past the editor it opens.
+          '<div class="ps-cal-tools">' +
+            '<button class="pd-btn pd-btn-sm" id="ps-cal-new" style="width:100%;">+ New calendar</button>' +
+            (CALS.length > 6 ? '<input class="pd-input pd-input-sm" id="ps-cal-filter" placeholder="Filter calendars…" value="' + esc(calFilter) + '">' : '') +
+            '<span class="ps-cal-count">' + CALS.length + ' calendar' + (CALS.length === 1 ? '' : 's') +
+              (_calShown.length !== CALS.length ? ' · ' + _calShown.length + ' shown' : '') + '</span>' +
+          '</div>' +
+          '<div class="ps-cal-scroll">' +
+          (_calShown.length ? _calShown.map(function (c) {
             return '<button class="ps-cal-item' + (draft && draft.id === c.id ? ' on' : '') + '" data-cal="' + esc(c.id) + '">' +
               esc(c.name) + (c.is_default ? '<span class="ps-cal-def">DEFAULT</span>' : '') +
               '<small>' + _CAL_DAYS.filter(function (d) { return c[d[0]]; }).map(function (d) { return d[1]; }).join(' ') +
@@ -3426,8 +3449,8 @@
               (PDCal.seasonsOf(c).length ? ' · ' + PDCal.seasonsOf(c).length + ' season(s)' : '') +
               (c.observe_special_days ? ' · special days off' : '') +
               ((c.extra_holidays || []).length ? ' · ' + c.extra_holidays.length + ' extra holiday(s)' : '') + '</small></button>';
-          }).join('') : '<div class="pd-empty" style="padding:16px;">No calendars on this project yet.</div>') +
-          '<button class="pd-btn pd-btn-sm" id="ps-cal-new" style="margin-top:8px;width:100%;">+ New calendar</button>' +
+          }).join('') : '<div class="pd-empty" style="padding:16px;">' + (CALS.length ? 'No calendar matches that filter.' : 'No calendars on this project yet.') + '</div>') +
+          '</div>' +
         '</div><div class="ps-cal-edit">' + (draft ? editHTML() : '<div class="pd-empty" style="padding:24px;">Pick a calendar to edit, or create one.</div>') + '</div></div>' +
         (opts.showClose === false ? '' : '<div style="margin-top:12px;text-align:right;"><button class="pd-btn" id="ps-cal-close">Close</button></div>');
     }
@@ -3575,10 +3598,25 @@
     function wire() {
       var root = m.el;
       root.querySelectorAll('[data-cal]').forEach(function (b) {
-        b.onclick = function () { draft = JSON.parse(JSON.stringify(CALS.find(function (c) { return c.id === b.dataset.cal; }))); render(); };
+        b.onclick = function () {
+          draft = JSON.parse(JSON.stringify(CALS.find(function (c) { return c.id === b.dataset.cal; })));
+          render();
+          var ed = m.el.querySelector('.ps-cal-edit');
+          if (ed && ed.scrollIntoView) { try { ed.scrollIntoView({ block: 'nearest' }); } catch (e) { ed.scrollIntoView(); } }
+        };
       });
+      var fi = root.querySelector('#ps-cal-filter');
+      if (fi) fi.oninput = function () { calFilter = fi.value; render(); var f2 = m.el.querySelector('#ps-cal-filter'); if (f2) { f2.focus(); f2.setSelectionRange(f2.value.length, f2.value.length); } };
+      // ⚠️ Bring the editor into view after opening one. Even with the list bounded,
+      // the view can be scrolled well down the page when the button is pressed, and an
+      // editor that appears above the fold is indistinguishable from one that did not
+      // appear at all — which is exactly how this read as "New calendar does nothing".
+      function revealEditor() {
+        var ed = m.el.querySelector('.ps-cal-edit');
+        if (ed && ed.scrollIntoView) { try { ed.scrollIntoView({ block: 'nearest' }); } catch (e) { ed.scrollIntoView(); } }
+      }
       var nb = root.querySelector('#ps-cal-new');
-      if (nb) nb.onclick = function () { draft = blank(); render(); };
+      if (nb) nb.onclick = function () { draft = blank(); render(); revealEditor(); };
       root.querySelectorAll('.ps-cal-tpl').forEach(function (b) {
         b.onclick = function () {
           var keep = draft.seasons || [], ck = draft.climate_type, wasDef = draft.is_default;

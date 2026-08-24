@@ -7374,3 +7374,30 @@ on the Monte Carlo forward pass; with it on, every start and finish lands on a w
 successor starts the next working day, Independence Day is spanned but never worked, constraints
 still bite, and a 7-day holiday-free calendar reproduces calendar-day scheduling exactly.
 `MODULE_V` → `20260824j`.
+
+
+## 2026-08-24 — Working Calendars: "+ New calendar" looked dead on a real project
+
+Reported with a screenshot: 40 calendars in the list, the editor pane blank, New doing nothing.
+
+⚠️ **Nothing was broken — the editor was rendering off-screen.** `.ps-cal-list` had no height
+bound, so 40 rows ran ~3000px down the page. `.ps-cal-wrap` is a flex row, so the editor renders
+beside the list's **TOP**, while "+ New calendar" sat at the **BOTTOM** of the list. You had to
+scroll metres down to reach the button, and the editor it opened was then two screens above the
+fold. An editor that appears off-screen is indistinguishable from one that never appeared.
+
+⚠️ My own change made it worse: the new list line ("303 d in 2026", seasons, special days) made
+every row taller, so the same list got significantly longer.
+
+Fixed by bounding the list (`max-height:70vh`) with its own scroller, moving **+ New calendar to
+the top** where it is always reachable, adding a name filter once there are more than 6 calendars,
+showing the count ("40 calendars · 10 shown"), and calling `scrollIntoView` on the editor after New
+or a selection so the click always has a visible effect.
+
+⚠️ **Why there are 40 calendars: the XER importer never dedupes.** It inserts every calendar in the
+file unconditionally (`calIdMap` build, ~line 9195), so each re-import of the same P6 file
+duplicates the whole set — hence "Performance Bond-1-1-1-1" and friends. Not fixed here: activities
+reference these rows via `schedule_activities.calendar_id`, so cleaning up existing duplicates is a
+migration needing sign-off on which row survives. Spun out as its own task.
+
+`MODULE_V` → `20260824k`.
