@@ -105,7 +105,7 @@
     .rl-mo label.on { background:var(--pd-accent); color:#fff; border-color:var(--pd-accent); }
     .rl-season-row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:12px; }
     .rl-warn { grid-column:1 / -1; font-size:11.5px; color:#b45309; margin:0; }
-    .rl-yr { grid-column:1 / -1; overflow-x:auto; }
+    .rl-yr { grid-column:1 / -1; overflow:auto; max-height:260px; }
     .rl-yr table { border-collapse:collapse; width:100%; min-width:520px; font-size:12px; }
     .rl-yr th, .rl-yr td { padding:5px 8px; border-bottom:1px solid var(--pd-border); text-align:left; white-space:nowrap; }
     .rl-yr th { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
@@ -704,7 +704,9 @@
       calYearPreview();
 
     form.innerHTML = html;
-    wireCalForm(isNew);
+    // ⚠️ A throw in wiring must not leave a rendered form whose controls do nothing.
+    try { wireCalForm(isNew); }
+    catch (err) { UI.toast('Calendar editor could not attach its controls: ' + (err && err.message || err), 'error'); }
     if (window.Icons) Icons.hydrate(form);
   }
 

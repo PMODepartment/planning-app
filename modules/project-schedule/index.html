@@ -3387,7 +3387,29 @@
 
     function render() {
       var body = m.el.querySelector('#ps-cal-body') || m.el;
-      body.innerHTML =
+      // ⚠️ Build the markup BEFORE touching the DOM, and never let a throw escape.
+      // Previously a failure anywhere in editHTML() aborted render() before
+      // `body.innerHTML = …`, so the previous markup stayed on screen and wire() was
+      // never reached: every control silently stopped responding, with the real error
+      // visible only in the console. Now the editor says what broke.
+      var html;
+      try { html = buildHTML(); }
+      catch (err) {
+        body.innerHTML = '<h2 style="margin-top:0;">Working calendars</h2>' +
+          '<p class="ps-cal-warn">The calendar editor failed to draw: ' + esc(err && err.message || String(err)) +
+          '</p><p style="font-size:12px;color:var(--pd-muted);">Nothing has been saved. Reload the page — if it repeats, this message is the detail to report.</p>';
+        if (window.UI) UI.toast('Calendar editor error: ' + (err && err.message || err), 'error');
+        return;
+      }
+      body.innerHTML = html;
+      try { wire(); }
+      catch (err2) {
+        if (window.UI) UI.toast('Calendar editor could not attach its controls: ' + (err2 && err2.message || err2), 'error');
+      }
+    }
+
+    function buildHTML() {
+      return '' +
         '<h2 style="margin-top:0;">Working calendars</h2>' +
         '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 12px;">Which days are workable. ' +
         'Durations are counts of these days, so this is what turns a duration into a finish date — ' +
@@ -3408,7 +3430,6 @@
           '<button class="pd-btn pd-btn-sm" id="ps-cal-new" style="margin-top:8px;width:100%;">+ New calendar</button>' +
         '</div><div class="ps-cal-edit">' + (draft ? editHTML() : '<div class="pd-empty" style="padding:24px;">Pick a calendar to edit, or create one.</div>') + '</div></div>' +
         (opts.showClose === false ? '' : '<div style="margin-top:12px;text-align:right;"><button class="pd-btn" id="ps-cal-close">Close</button></div>');
-      wire();
     }
 
     var _MO_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -3556,7 +3577,8 @@
       root.querySelectorAll('[data-cal]').forEach(function (b) {
         b.onclick = function () { draft = JSON.parse(JSON.stringify(CALS.find(function (c) { return c.id === b.dataset.cal; }))); render(); };
       });
-      root.querySelector('#ps-cal-new').onclick = function () { draft = blank(); render(); };
+      var nb = root.querySelector('#ps-cal-new');
+      if (nb) nb.onclick = function () { draft = blank(); render(); };
       root.querySelectorAll('.ps-cal-tpl').forEach(function (b) {
         b.onclick = function () {
           var keep = draft.seasons || [], ck = draft.climate_type, wasDef = draft.is_default;
@@ -3597,7 +3619,8 @@
           render();
         };
       });
-      root.querySelector('#ps-cal-holadd').onclick = function () {
+      var holAdd = root.querySelector('#ps-cal-holadd');
+      if (holAdd) holAdd.onclick = function () {
         var v = root.querySelector('#ps-cal-holnew').value;
         if (!v) return;
         readDraft();
@@ -3611,7 +3634,8 @@
           render();
         };
       });
-      root.querySelector('#ps-cal-save').onclick = async function () {
+      var saveBtn = root.querySelector('#ps-cal-save');
+      if (saveBtn) saveBtn.onclick = async function () {
         readDraft();
         if (!draft.name) { UI.toast('Name the calendar first', 'warn'); return; }
         // ⚠️ A calendar with no working day at all would make every date computation

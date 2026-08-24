@@ -7250,3 +7250,65 @@ the editor driven live in the browser: overlap warning appears and clears, templ
 climate + seasons, and the preview tracks a season's Saturday and hours changes. The modules
 themselves sit behind Supabase auth, so the live drive used a temporary harness that pulled the CSS
 and the editor functions out of the shipped module file; the harness was deleted afterwards.
+
+
+## 2026-08-24 — Calendar editor: a render failure can no longer freeze the controls
+
+Reported as "add new calendar is not working properly — the controls don't respond" in Project
+Schedule's calendar editor.
+
+⚠️ **The failure mode, which was structural.** `render()` built its markup *inside* the
+`body.innerHTML = …` statement and called `wire()` on the line after. So a throw anywhere in
+`editHTML()` — one bad field, one `PDCal` helper missing because a stale `calendar.js` was in the
+tab — aborted `render()` **before** the assignment. The previously rendered editor stayed on screen
+looking perfectly normal, and `wire()` was never reached, so **every control silently stopped
+responding** and the only evidence was a console line nobody was looking at.
+
+Fixed by building the markup first (`buildHTML()`), then assigning, then wiring — with both steps
+guarded. A build failure now replaces the editor with the actual error message and toasts it; a
+wiring failure toasts too. The editor says what broke instead of going quietly inert.
+
+⚠️ Watch for the bare-`return` trap here: splitting `render()` left `return` alone on its line and
+ASI made the whole concatenation dead code, so `buildHTML()` returned `undefined` and the panel
+rendered the string "undefined". It is `return '' +` for that reason — do not "tidy" it away.
+
+Also null-guarded `#ps-cal-new`, `#ps-cal-holadd` and `#ps-cal-save` in `wire()`: one missing node
+threw and left every *other* control unwired — the same all-or-nothing failure at a smaller scale.
+
+Resource & Role Master got the same wiring guard, and its year preview is now capped at 260px with
+its own scroll: at 13 rows it made the form 2204px tall inside a 648px modal, pushing Save a long
+scroll away.
+
+⚠️ **If it recurs, hard-reload first** (Ctrl+F5). A tab opened before the deploy runs the old HTML
+against whichever `calendar.js` it cached; the new `PDCal` helpers the editor calls
+(`CALENDAR_TEMPLATES`, `yearStats`, `seasonsOf`) are then undefined and the build throws. The
+service worker is network-first so it cannot serve stale while online, but an already-loaded tab is
+already stale. `MODULE_V` → `20260824i`.
+
+
+## 2026-08-24 — How the schedule connects to a calendar (audit)
+
+Asked directly, and the answer has a real gap in it worth writing down.
+
+⚠️ **The live schedule does not use working calendars at all.** `cpmLogic()` works in plain
+calendar-day offsets (`dayDiff` from a project base date); grep confirms `PDCal` is never called
+anywhere in the forward or backward pass. So ticking Saturday off a calendar, adding a season, or
+observing special days changes **nothing** about live early/late dates, float or the critical path.
+Durations there are calendar-day spans, not working-day counts.
+
+Calendars are consumed in exactly three places:
+
+1. **Duration scenarios** — `dsCalendarFor(scn, r)` resolves *scenario* `calendar_id` → *activity*
+   `calendar_id` → the project's `is_default` → `PDCal.defaultCalendar()`. ⚠️ The scenario's
+   calendar **overrides** the activity's for every activity in that scenario, which is the point
+   (one what-if, one calendar) but does mean a per-activity calendar is ignored while a scenario
+   names one. This is the only place `addWorkingDays` / `addWorkingDaysWithRain` run.
+2. **Resource histogram / FTE + Max Availability** — per *resource* `calendar_id`, falling back to
+   the default calendar.
+3. **Resource loading month-weighting** — spreads an assignment across months by each month's
+   working days on the resource's calendar.
+
+So an activity's Calendar field (`ps-f-cal` → `schedule_activities.calendar_id`) is currently only
+a *scenario* input and a label; it does not drive the dates on the Gantt. If working-day CPM is
+wanted, that is a change to `cpmLogic()` and a much bigger job than the calendar editor — noted
+here so nobody assumes the wiring already exists.
