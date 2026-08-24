@@ -7571,3 +7571,40 @@ project's own. One `update` per project once the owner picks which calendar each
 
 The plan table `calendars_dedupe_plan` is deliberately left in place as the audit trail; the drop
 statement is commented at the foot of the migration.
+
+
+## 2026-08-24 — Project default calendars: 4 of 7 set, 3 held pending a planner decision
+
+Follow-up to the cleanup above, which made the missing defaults visible. Set where the schedule's
+own data said which calendar it is built on, by id, one project each:
+
+| project | calendar | why |
+|---|---|---|
+| CDP101 | `*MCC Calendar Caticlan Passenger Building` | 3,009 activities reference it |
+| SLT101 | `Paliparan Calendar Days` | 27,826 activities |
+| XERTEST | `Paliparan Calendar Days` | 27,811 activities (sandbox) |
+| PSP101 | `7x8` | 222 activities — ⚠️ note the sibling literally named "default calendar" has NONE, so someone's intent and the schedule's actual data disagree; followed the data |
+
+⚠️ **The UPDATE is self-guarding** (`and not exists (select 1 from calendars d where d.project_id =
+c.project_id and d.is_default)`) so one statement can safely cover several projects: nothing in the
+schema enforces one default per project, and a plain `where project_id = …` would flag several and
+leave the app using whichever loaded first.
+
+⚠️ **Still 0 defaults: GPR101, OPW101, SLN101** — and this is deliberately NOT guessed. In GPR101 and
+OPW101 **not one calendar has a single activity**, so there is no signal at all, and the candidates
+range from `MCC Project Calendar 2020-2049-1` with **0** extra holidays to
+`MCC Project Calendar 2018-2025-6-1` with **699**. SLN101 has a weak signal (50 activities on
+`Copy of MCC Project Calendar 2020-2049-2-1-1`, 226 holidays) but only ~102 of its activities carry
+any calendar, and most of its 19 calendars are document-tracking ones (Rebar Cutting List, Formworks
+Shop Dwg, Bid Documents) rather than site calendars.
+
+⚠️ **A missing default is not a broken state, which is why guessing is the worse option.** The
+fallback is `PDCal.defaultCalendar()` — PH standard, 6-day, 8h, PH regular holidays — and almost
+every candidate here is already `MTWTFS- / 8h`, so setting one changes only the extra-holiday list.
+Choosing a 699- or 226-date calendar would REMOVE those days from every unassigned activity. An
+explicit-but-wrong default is also misleading in a way a fallback is not: a planner reading
+"MCC Project Calendar 2020-2049" as the project default reasonably assumes it carries the holidays,
+and the row with 0 of them is a truncated import.
+
+Reversal, if a pick proves wrong: `update calendars set is_default = false, updated_at = now()
+where id = '<id>';`
