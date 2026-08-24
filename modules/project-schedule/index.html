@@ -2110,7 +2110,6 @@
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <button class="pd-btn ps-icobtn" id="ps-progressbtn" data-label="Progress" title="Activity Progress — per-activity Physical vs Planned progress bars (no dates)"><span data-ico="trendingUp" data-ico-size="16"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-vstackbtn" data-label="Stacking" title="Vertical Stacking — the building model per trade or consolidated, one cell per level / zone / unit with its completion date. Honours the current filters and search."><span data-ico="layers" data-ico-size="16"></span></button>
-          <button class="pd-btn ps-icobtn" id="ps-vstackbtn" data-label="Stacking" title="Vertical Stacking — the building model per trade or consolidated, one cell per level / zone / unit with its completion date. Honours the current filters and search."><span data-ico="layers" data-ico-size="16"></span></button>
           <span class="ps-tb-div"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight -->
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-analyzebtn" data-label="Analyze" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="16"></span></button>
@@ -2164,8 +2163,6 @@
 
         <!-- Activity Progress View — per-activity Physical vs Planned progress (no dates) -->
         <div class="ps-progress" id="ps-progress" style="display:none;"></div>
-        <!-- Vertical Stacking (toolbar button). Separate from the #ps-stack-back pane. -->
-        <div class="ps-vstack" id="ps-vstack" style="display:none;"></div>
         <!-- Vertical Stacking (toolbar button). Separate from the #ps-stack-back pane. -->
         <div class="ps-vstack" id="ps-vstack" style="display:none;"></div>
 
@@ -10355,7 +10352,7 @@
           (cmp ? (planPct == null
                   ? ' · no baseline, so there is no planned % to compare against'
                   : (' · planned ' + planPct + '% by today (the marker line), actual ' + pct + '% — ' +
-                     (function () { var g = Math.round(pct - planPct); return g === 0 ? 'exactly on plan' : (g > 0 ? g + 'pt ahead of plan' : (-g) + 'pt behind plan'); })()))
+                     (function () { var g = Math.round(pct - planPct); return g === 0 ? 'exactly on plan' : (g > 0 ? g + '% ahead of plan' : (-g) + '% behind plan'); })()))
                : '')) + '</title></rect>' +
           (lbl ? '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10.5" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
           (cmp
@@ -10375,7 +10372,10 @@
                 // The variance line carries BOTH variances — days of slip and points of POC — because
                 // they can disagree: a cell can finish on time and still be behind on progress.
                 var vtxt = (slip == null ? 'no BL' : (slip > 0 ? '+' + slip + 'd' : (slip < 0 ? slip + 'd' : 'on time'))) +
-                  (gap2 == null ? '' : ' · ' + (gap2 > 0 ? '+' : '') + Math.round(gap2) + 'pt');
+                  // ⚠️ Reads as words, not as 'pt'. The owner asked what 'pt' meant, which is the
+                  // answer: a unit nobody outside this file uses does not belong on the face of a
+                  // cell. 'behind/ahead' also states the DIRECTION, which a signed number does not.
+                  (gap2 == null ? '' : ' · ' + Math.abs(Math.round(gap2)) + '% ' + (gap2 > 0 ? 'ahead' : gap2 < 0 ? 'behind' : 'on plan'));
                 return row(yP, 'P', _vsDateShort(_vsPlanDate(c.list)), _vsPctTxt(planPct), false) +
                   row(yA, 'A', _vsDateShort(fin), _vsPctTxt(pct), true) +
                   '<text ' + VS_TXT + ' x="' + mid + '" y="' + yV + '" text-anchor="middle" font-size="9" font-weight="800" fill="#fff" pointer-events="none">' + esc(vtxt) + '</text>';
@@ -10507,7 +10507,7 @@
         '<rect x="0" y="0" width="34" height="12" rx="3" fill="url(#psvs-legend-h)"></rect>' +
         '<rect x="0.5" y="0.5" width="13" height="11" rx="2" fill="var(--pd-muted)" opacity="0.95"></rect></svg>' +
         (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
-        (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads P = planned date & %, A = actual date & %, then the slip in days and the gap in POC points' : '') + '</span>' +
+        (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads P = planned date & %, A = actual date & %, then the slip in days and how far ahead or behind plan the progress is' : '') + '</span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
