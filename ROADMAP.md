@@ -261,6 +261,27 @@ against WPM's **Target Installation** and pushed back into the Procurement app.
 
 ---
 
+## F. Vendor performance — schedule x procurement x vendor (planned 2026-08-24)
+
+Full design note: **`docs/vendor-performance-chain.md`**. The chain
+schedule -> package -> procurement -> vendor is four-fifths built (A3, C1, E1, E2 + WPM's
+vendor management); the missing link is that **the Planners app has no vendor entity** --
+`wpm_work_packages` mirrors budgets, dates and status but not `vendor_id`/`awarded_vendor_ids`,
+and `productivity_activities.subcontractor` is free text that joins to nothing.
+
+- **F1. Vendor identity** -- extend `sync-wpm` to mirror vendor ids + a `wpm_vendors` table
+  (names/trades only, no rates or contacts); add `productivity_activities.vendor_id`.
+  Enabling step for everything below.
+- **F2. Productivity activity -> work package** -- planned vs. actual quantity per trade per
+  month. Blocked on where planned quantity lives (schedule column vs. B1 BOQ).
+- **F3. Vendor S-curve** -- `schedule_scurve_agg_vendor()`: the existing
+  `schedule_scurve_agg_multi` body with the leaf set filtered by awarded vendor. No new maths.
+- **F4. Monthly accomplishment + on-track/problem flags** -- SPI-style ratio, slip days and a
+  3-month trend, derived not stored, thresholds from `schedule_thresholds`.
+- **F5. Vendor scorecard** -- per vendor across projects, incl. need-by adherence.
+- **F6. Basis of internal schedules** -- rate library from `productivity_entries` ->
+  `duration = qty / (rate x crew)` in the schedule builder; feeds C3 duration scenarios.
+
 ## Cross-cutting notes
 - A3 (Project/Package) blocks C1; B1 feeds B2, C2 and Cash Flow — sequence accordingly.
 - Every schema item needs a numbered file in `migrations/` plus an RLS check.

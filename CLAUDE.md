@@ -7633,3 +7633,37 @@ and the row with 0 of them is a truncated import.
 
 Reversal, if a pick proves wrong: `update calendars set is_default = false, updated_at = now()
 where id = '<id>';`
+
+## Vendor performance chain — design note + ROADMAP section F (2026-08-24) — fmlozano
+
+Traced how **schedule building -> packaging -> procurement -> vendor management -> schedule
+management** actually connects across the two apps, and wrote it up as
+**`docs/vendor-performance-chain.md`** + a new **Section F** in `ROADMAP.md`. Analysis only —
+no code, no schema, nothing deployed.
+
+**Finding:** four of the five links already exist (A3/C1 packages, E1 procurement branch,
+E2 activity->WP link + need-by push, and WPM's own vendor management). The one missing link is
+that **the Planners app has no vendor entity at all** — verified zero `vendor` matches across
+`migrations/` and every `modules/*/index.html`. `wpm_work_packages` mirrors budget, dates,
+trade and award/procurement/delivery status but **not** `vendor_id` / `awarded_vendor_ids[]` /
+`contractor`; and `productivity_activities.subcontractor` is free text that joins to nothing.
+
+**Why productivity-rates is the right entry point** (as the user proposed): it is the only
+module that already names a vendor, it is the only place physical accomplishment lives
+(`project_schedule` has `planned_labor_units`/`actual_labor_units` but **no quantity/unit
+column**), and its stored `rate = output / (resource x work_days)` inverts to
+`duration = qty / (rate x crew)` — which is literally the "basis of internal schedules" ask.
+
+**Why F3 is cheap:** `schedule_scurve_agg_multi()` already returns duration- and cost-weighted
+cumulative planned+actual per month, `security invoker`. A vendor S-curve is that same body
+with the leaf CTE filtered through `work_package -> wpm_work_packages -> vendor_id`. Monthly
+accomplishment is its first difference (the pattern Cash Flow already uses).
+
+**Open decisions recorded, not guessed:** (1) planned quantity source — new
+`project_schedule.quantity` vs. the B1 BOQ link; (2) co-awarded packages — attribute to primary
+vs. split by `awarded_vendor_amounts[]` (recommended: primary for now); (3) duration- vs.
+cost-weighted vendor curve (recommended: duration, per E1's rule that procurement money stays
+off schedule rows); (4) portfolio rollup must follow the portfolio-RPC pattern, not browser loops.
+
+Files: `docs/vendor-performance-chain.md` (new), `ROADMAP.md` (Section F). No `?v=` / `MODULE_V`
+bump — no shipped asset changed.
