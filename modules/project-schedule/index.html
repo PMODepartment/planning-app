@@ -1020,6 +1020,18 @@
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
     .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
     .ps-vs-dot { width:9px; height:9px; border-radius:50%; flex:none; }
+    /* ⚠️ A flex item will NOT shrink below its own text (min-width defaults to auto), so the long
+       prose legend overflowed the toolbar row and its tail was clipped — flex-wrap on the parent
+       cannot save an item that refuses to shrink. It now claims its own row and wraps inside it. */
+    .ps-vs-bar > .ps-vs-note { min-width:0; }
+    /* The bar must never be stretched wider than the panel by anything beside it. */
+    .ps-vs-bar { max-width:100%; }
+    /* No !important needed: the inline display/align this used to carry was removed with the markup,
+       so ordinary specificity wins. Reserve !important for beating an inline style. */
+    .ps-vs-legendnote { display:flex; flex:1 1 100%; align-items:flex-start; gap:6px; line-height:1.45; }
+    /* The swatch must not be squeezed by the wrapping text beside it. */
+    .ps-vs-legendnote > svg { flex:0 0 auto; margin-top:1px; }
+    .ps-vs-legendtxt { min-width:0; white-space:normal; overflow-wrap:break-word; }
     .ps-vs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:18px; align-items:start; }
     .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px;
       background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
@@ -10502,12 +10514,14 @@
             (_vsPlanLine.toUpperCase() === VS_PLAN_LINE_DEF ? '' : '<button class="pd-btn ps-vs-chip" id="ps-vs-planclrx" title="Back to the default colour">Reset</button>') +
           '</span>'
         : '') +
-      '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:6px;" title="Each cell is a progress bar: the solid part is what is complete, the hatched part is what remains.">' +
+      '<span class="ps-vs-note ps-vs-legendnote" title="Each cell is a progress bar: the solid part is what is complete, the hatched part is what remains.">' +
         '<svg width="34" height="12" style="vertical-align:middle;"><rect x="0" y="0" width="34" height="12" rx="3" fill="var(--pd-muted)" opacity="0.16"></rect>' +
         '<rect x="0" y="0" width="34" height="12" rx="3" fill="url(#psvs-legend-h)"></rect>' +
         '<rect x="0.5" y="0.5" width="13" height="11" rx="2" fill="var(--pd-muted)" opacity="0.95"></rect></svg>' +
-        (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
-        (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads P = planned date & %, A = actual date & %, then the slip in days and how far ahead or behind plan the progress is' : '') + '</span>' +
+        '<span class="ps-vs-legendtxt">' +
+          (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
+          (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads <strong>P</strong> = planned date &amp; %, <strong>A</strong> = actual date &amp; %, then the slip in days and how far ahead or behind plan the progress is' : '') +
+        '</span></span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
