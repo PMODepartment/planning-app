@@ -7474,3 +7474,53 @@ Bound in both calendar editors only. `ui.js?v=20260824a` (bumped in all 16 pages
 extra_holidays excluded) and the Tab behaviour driven in a browser: Tab and Enter both accept, typed
 text is preserved, the season label accepts a clean value, and the accepted name survives a
 re-render — proving it reached the draft and not just the DOM.
+
+
+## 2026-08-24 — One-off cleanup script for the existing duplicate calendars
+
+Owner asked to clean up the duplicates left by the old importer, without building a tool — the
+importer now reuses a matching calendar, so this runs once and never again. Delivered as
+`migrations/2026-08-24-dedupe-existing-calendars.sql`, three blocks run in order.
+
+⚠️ **NOT RUN FROM HERE, and not executable here.** There is no local Postgres (no psql, no docker),
+so this SQL has been **reviewed and structurally checked, never executed**. It deletes rows and
+repoints live schedule data. Read BLOCK A's output before running BLOCK B.
+
+⚠️ **The plan is written to a table (`calendars_dedupe_plan`) before anything changes, and BLOCK B
+acts on that saved plan.** A report that re-derives its own grouping can disagree with the action
+that follows it; this way what you review is exactly what executes. The table is left behind on
+purpose as the record of which row survived.
+
+⚠️ **Repointing is not optional and must come first.** All three FKs
+(`project_schedule` / `resources` / `duration_scenarios` → `calendars`) are `on delete set null`, so
+deleting a duplicate without repointing would silently blank the reference and drop those activities
+onto the project default. Wrapped in one transaction — a half-applied cleanup is the exact silent
+schedule change the script exists to prevent.
+
+**Identity = name + weekday pattern + hours/day**, the same rule the importer now uses, so cleanup
+and future imports agree. Survivor order, each step deliberate: `is_default` (the default must stay
+the default) → curated (never discard seasons/climate/special-days for a raw P6 copy) → **most
+proclaimed holidays** (repointed activities then GAIN non-working days, the safe direction, and no
+hand-entered holiday is thrown away) → oldest → id (deterministic, so a re-run cannot pick
+differently from what was reviewed).
+
+⚠️ **Two bugs found in my own SQL while reviewing, both silent:**
+1. `count(*) over` a window carrying ORDER BY is a **running** count, so `group_size` would have
+   read 1 for each group's first row and `group_size > 1` would have **dropped every survivor from
+   the plan** — repointing activities at rows the delete then removed. It takes the unordered
+   partition; that is why there are two window definitions.
+2. The verification block originally asked "does anything point at a deleted calendar?" — which
+   **can never fail**, because the FK nulls stragglers. Replaced with a real reconciliation: each
+   survivor must now hold its own references plus every loser's, compared against the counts the
+   plan recorded. Expect zero rows.
+
+⚠️ `project_id` is nullable, and NULLs form ONE window partition — two orphaned calendars from
+different projects would have been treated as duplicates and activities repointed ACROSS projects.
+Orphans are excluded and listed (A5) so the exclusion is visible.
+
+⚠️ **Suffix families are reported, never actioned** (A4). Names come verbatim from the XER's
+`clndr_name`, so `CARI1-1-1` vs `CARI1-1-1-1` may be genuinely different P6 calendars — collapsing
+them is a judgement call, left to the planner. A3 flags groups whose duplicates disagree on holiday
+count, because those activities' dates WILL move.
+
+After running it, reload any open tab: `CALS` is cached per page load.
