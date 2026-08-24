@@ -1,0 +1,1446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
+  <script src="../../assets/js/theme.js?v=20260812b"></script>
+  <title>Equipment Loading · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260819c" />
+  <style>
+    /* Uniform sidebar-less chrome (matches Resource & Role Master / Productivity Rates). */
+    .pd-content { width:100%; }
+    .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+    .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+    .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .eq-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .eq-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; font-size:17px; margin:0; }
+    .eq-title .eq-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .eq-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:6px; }
+    .eq-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+    .eq-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .eq-project:hover, .eq-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+    .eq-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
+    .eq-topbar-tools .pd-btn.eq-tb-labeled { height:34px; padding:0 12px; gap:6px; background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .eq-topbar-tools .pd-btn.eq-tb-labeled:hover { filter:brightness(.94); }
+    .eq-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
+    @media (max-width:820px) { .eq-title-txt { display:none; } }
+    .eq-tabs { display:flex; border-bottom:2px solid var(--pd-line); }
+    .eq-tab { padding:8px 16px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted);
+      border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none;
+      display:inline-flex; align-items:center; gap:6px; }
+    .eq-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+
+    .eq-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+      box-shadow:var(--pd-shadow); padding:14px 16px; margin-bottom:16px; }
+    .eq-card > h3 { margin:0 0 10px; font-size:14px; }
+    .eq-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
+    .eq-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:13px 16px; }
+    .eq-kpi-v { font-size:22px; font-weight:800; line-height:1; }
+    .eq-kpi-v.eq-bad { color:var(--pd-bad); }
+    .eq-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
+    .eq-note { font-size:12px; color:var(--pd-muted); }
+    .eq-warn { font-size:12.5px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8;
+      border-radius:8px; padding:9px 12px; margin-bottom:14px; }
+    .eq-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+
+    .eq-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
+    .eq-controls .pd-select { height:34px; font-size:13px; max-width:220px; }
+    .eq-filt-ico { color:var(--pd-muted); flex:none; }
+    .eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .eq-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px;
+      font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
+    .eq-seg button + button { border-left:1px solid var(--pd-line); }
+    .eq-seg button.active { background:var(--pd-red); color:#fff; }
+
+    /* ---- Loading chart ------------------------------------------------------------------
+       Matches the OPS "Equipment Loading Graph" sheet: a grey PLANNED bar per month with the
+       ACTUAL stacked in front of it — major equipment solid, tools in the lighter tint — so a
+       month reads as "how much of what we planned is actually on site". */
+    .eq-chartwrap { overflow-x:auto; }
+    .eq-chart { display:block; }
+    .eq-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:8px; font-size:12px; color:var(--pd-muted); }
+    .eq-lg { display:inline-flex; align-items:center; gap:6px; }
+    .eq-lg .sw { width:14px; height:14px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.12); }
+
+    /* A planned cell that the schedule owns. Editable-looking cells that silently refuse
+       the edit are worse than cells that look locked, so this reads as locked. */
+    .eq-mx td.eq-lock { color:var(--pd-muted); cursor:not-allowed; }
+    .eq-mx td.eq-lock::after { content:''; }
+    .eq-linkchip { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
+      border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; color:var(--pd-muted); }
+    .eq-linkchip.on { border-color:var(--pd-red); color:var(--pd-red); }
+    .eq-linkbox { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:4px; }
+    .eq-linkbox .eq-note { display:block; margin-top:6px; }
+    .eq-linkrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .eq-linkrow .pd-input, .eq-linkrow .pd-select { height:34px; font-size:13px; }
+    .eq-drift { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+    /* ---- Loading matrix ---------------------------------------------------------------- */
+    .eq-mxwrap { overflow:auto; max-height:70vh; }
+    .eq-mx { border-collapse:collapse; font-size:12px; min-width:100%; }
+    .eq-mx th, .eq-mx td { padding:5px 9px; border-bottom:1px solid var(--pd-line); text-align:center; white-space:nowrap; }
+    .eq-mx thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:10.5px;
+      text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); }
+    .eq-mx thead tr.eq-mx-yr th { font-weight:800; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
+    .eq-mx thead tr.eq-mx-mo th { border-bottom:2px solid var(--pd-line); }
+    /* Two sticky label columns: the equipment/category name and the Planned/Actual band. */
+    .eq-mx th.eq-c1, .eq-mx td.eq-c1 { position:sticky; left:0; z-index:1; text-align:left;
+      background:var(--pd-card); font-weight:700; min-width:150px; }
+    .eq-mx th.eq-c2, .eq-mx td.eq-c2 { position:sticky; left:150px; z-index:1; text-align:left;
+      background:var(--pd-card); font-weight:600; color:var(--pd-muted); min-width:84px; }
+    .eq-mx thead th.eq-c1, .eq-mx thead th.eq-c2 { z-index:3; background:var(--pd-bg); }
+    .eq-mx tr.eq-r-actual td:not(.eq-c1):not(.eq-c2) { background:var(--pd-red-light); }
+    .eq-mx tr.eq-r-total td { font-weight:800; border-top:2px solid var(--pd-line); }
+    .eq-mx tr.eq-r-total td.eq-c1, .eq-mx tr.eq-r-total td.eq-c2 { background:var(--pd-card); }
+    .eq-mx td.eq-out { background:var(--pd-bg); color:var(--pd-muted); }
+    .eq-mx .eq-cut { box-shadow:inset 2px 0 0 var(--pd-red), inset -2px 0 0 var(--pd-red); }
+    .eq-mx td.eq-edit { cursor:cell; }
+    .eq-mx td.eq-edit:hover { outline:2px solid var(--pd-red); outline-offset:-2px; }
+    .eq-mx input.eq-cellin { width:52px; height:24px; padding:0 4px; font:inherit; font-size:12px;
+      text-align:center; border:1px solid var(--pd-red); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); }
+
+    /* ---- Register ----------------------------------------------------------------------- */
+    .eq-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .eq-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:11px; font-weight:700;
+      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .eq-table th.num, .eq-table td.num { text-align:right; }
+    .eq-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
+    .eq-table tr:hover td { background:var(--pd-bg); }
+    .eq-badge { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--pd-bg); }
+    .eq-badge.eq-rent { background:var(--pd-red-light); color:var(--pd-red); }
+    .eq-actions { display:flex; gap:5px; }
+    .eq-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line);
+      background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
+    .eq-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    .eq-dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:-1px; }
+
+    /* ---- Site development view -----------------------------------------------------------
+       A plan view of the site: one block per tower, seeded from the schedule's own tower values
+       so the two cannot disagree about what the towers are called. Drag a block to lay the site
+       out; pick equipment on the left and click a block to assign it there. */
+    .eq-site { display:flex; gap:14px; align-items:flex-start; }
+    .eq-site-rail { flex:0 0 clamp(220px, 22vw, 300px); min-width:0; }
+    .eq-site-canvas { flex:1 1 0%; min-width:0; }
+    .eq-plan { position:relative; background:var(--pd-bg); border:1px solid var(--pd-line);
+      border-radius:10px; height:clamp(320px, 52vh, 640px); overflow:hidden; }
+    .eq-plan-grid { position:absolute; inset:0; pointer-events:none; opacity:.5;
+      background-image:linear-gradient(var(--pd-line) 1px, transparent 1px), linear-gradient(90deg, var(--pd-line) 1px, transparent 1px);
+      background-size:40px 40px; }
+    .eq-block { position:absolute; box-sizing:border-box; border:2px solid var(--pd-red);
+      background:var(--pd-card); border-radius:8px; padding:6px 8px; overflow:hidden; cursor:grab;
+      box-shadow:var(--pd-shadow); display:flex; flex-direction:column; gap:4px; }
+    .eq-block.drag { cursor:grabbing; opacity:.85; }
+    .eq-block.is-target { outline:3px solid var(--pd-red); outline-offset:2px; }
+    .eq-block-h { display:flex; align-items:center; justify-content:space-between; gap:6px;
+      font-size:12.5px; font-weight:800; }
+    .eq-block-n { font-size:10.5px; font-weight:700; color:var(--pd-muted); flex:none; }
+    .eq-block-list { font-size:11px; color:var(--pd-muted); line-height:1.5; overflow:hidden; }
+    .eq-block-res { position:absolute; right:0; bottom:0; width:14px; height:14px; cursor:nwse-resize; }
+    .eq-block-res::after { content:''; position:absolute; right:3px; bottom:3px; width:7px; height:7px;
+      border-right:2px solid var(--pd-muted); border-bottom:2px solid var(--pd-muted); }
+    .eq-chip { display:flex; align-items:center; gap:6px; padding:5px 8px; margin-bottom:5px;
+      border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); font-size:12.5px; cursor:pointer; }
+    .eq-chip:hover { border-color:var(--pd-red); }
+    .eq-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
+    .eq-chip .x { margin-left:auto; color:var(--pd-muted); font-size:11px; }
+    .eq-site-hint { font-size:12px; color:var(--pd-muted); margin:0 0 8px; line-height:1.5; }
+    @media (max-width: 1000px) { .eq-site { flex-direction:column; } .eq-site-rail { flex:1 1 auto; width:100%; } }
+
+    /* Modal form */
+    .eq-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; align-content:start; }
+    .eq-form-full { grid-column:1 / -1; }
+    .eq-form-sec { grid-column:1 / -1; font-size:11px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.05em; color:var(--pd-red); margin:12px 0 -2px; padding-top:10px; border-top:1px solid var(--pd-line); }
+    .eq-mon-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .eq-mon-tbl th { text-align:left; font-size:10.5px; text-transform:uppercase; color:var(--pd-muted);
+      padding:6px 8px; border-bottom:2px solid var(--pd-line); position:sticky; top:0; background:var(--pd-card); }
+    .eq-mon-tbl td { padding:4px 8px; border-bottom:1px solid var(--pd-line); }
+    .eq-mon-tbl input { width:80px; height:28px; padding:0 6px; font:inherit; font-size:12.5px;
+      border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); color:var(--pd-ink); }
+    .eq-loading { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center;
+      justify-content:center; gap:10px; color:#fff; font-size:14px; z-index:9999; }
+    .eq-spin { width:22px; height:22px; border:3px solid rgba(255,255,255,.35); border-top-color:#fff;
+      border-radius:50%; animation:eq-spin .8s linear infinite; }
+    @keyframes eq-spin { to { transform:rotate(360deg); } }
+
+    /* Below 700px the chart keeps a legible minimum width and scrolls, rather than shrinking its
+       labels to nothing — the same rule the other charting modules follow. Do not drop the
+       min-width: that restores the unreadable version. */
+    @media (max-width: 700px) {
+      .eq-chart { min-width: 620px; }
+      .eq-kpis { grid-template-columns: repeat(2, 1fr); gap:8px; }
+      .eq-form-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="pd-app">
+  <div class="pd-content">
+    <div class="pd-topbar">
+      <a class="pd-btn eq-modback" href="../../modules.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+      <h1 class="eq-title">
+        <span class="eq-title-ico" data-ico="box" data-ico-size="20"></span>
+        <span class="eq-title-txt">Equipment Loading</span>
+      </h1>
+      <div class="eq-projctx">
+        <select class="pd-select eq-project" id="eq-project" title="Project"></select>
+      </div>
+      <div class="eq-tabs" role="tablist">
+        <button class="eq-tab active" data-view="loading">Loading</button>
+        <button class="eq-tab" data-view="register">Equipment</button>
+        <button class="eq-tab" data-view="site">Site Dev</button>
+      </div>
+      <div class="eq-topbar-tools">
+        <button class="pd-btn pd-btn-primary eq-tb-labeled" id="eq-add" title="Add a piece of equipment">+ Add equipment</button>
+        <button class="pd-btn" id="eq-sync" title="Re-derive the planned months of every schedule-linked item"><span data-ico="link" data-ico-size="16"></span></button>
+        <span class="eq-tb-sep"></span>
+        <button class="pd-btn" id="eq-export" title="Export the loading matrix to Excel"><span data-ico="download" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="eq-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
+      </div>
+      <div id="user-bar"></div>
+    </div>
+    <div class="pd-main">
+      <div id="eq-migrate" class="eq-warn" style="display:none;"></div>
+      <div id="eq-drift" class="eq-warn eq-drift" style="display:none;"></div>
+
+      <!-- LOADING -->
+      <div id="eq-view-loading">
+        <div class="eq-controls">
+          <span class="eq-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <label for="eq-f-cat" style="font-size:12.5px;">Category</label>
+          <select class="pd-select" id="eq-f-cat"><option value="">All categories</option></select>
+          <label for="eq-f-blk" style="font-size:12.5px;">Site</label>
+          <select class="pd-select" id="eq-f-blk"><option value="">Whole project</option></select>
+          <span class="eq-seg" id="eq-detail">
+            <button data-det="cat" class="active">By category</button>
+            <button data-det="item">By equipment</button>
+          </span>
+          <span class="eq-note" id="eq-span-note" style="margin-left:auto;"></span>
+        </div>
+        <div class="eq-kpis" id="eq-kpis"></div>
+        <div class="eq-card">
+          <h3 id="eq-chart-title">Equipment Loading Graph</h3>
+          <div class="eq-chartwrap" id="eq-chart"></div>
+          <div class="eq-legend">
+            <span class="eq-lg"><span class="sw" style="background:#EE3124;"></span>Major Equipment Actual</span>
+            <span class="eq-lg"><span class="sw" style="background:#F4A0A0;"></span>Tools Actual</span>
+            <span class="eq-lg"><span class="sw" style="background:#9A9A9A;"></span>Planned</span>
+            <span class="eq-lg"><span class="sw" style="background:rgba(22,163,74,.35);"></span>Cut-off month</span>
+          </div>
+        </div>
+        <div class="eq-card" style="padding:0;overflow:hidden;">
+          <div class="eq-mxwrap" id="eq-matrix"></div>
+        </div>
+      </div>
+
+      <!-- REGISTER -->
+      <div id="eq-view-register" style="display:none;">
+        <div class="eq-card" style="padding:0;overflow:auto;">
+          <table class="eq-table" id="eq-reg"></table>
+        </div>
+      </div>
+
+      <!-- SITE DEV -->
+      <div id="eq-view-site" style="display:none;">
+        <div class="eq-controls">
+          <label for="eq-site-level" style="font-size:12.5px;">Site level</label>
+          <select class="pd-select" id="eq-site-level" title="Which Location Breakdown level holds the towers"></select>
+          <button class="pd-btn" id="eq-site-pull" title="Read the tower names from this project's schedule"><span data-ico="refresh" data-ico-size="15"></span> Pull towers from the schedule</button>
+          <button class="pd-btn" id="eq-site-addblk">+ Add block</button>
+          <span class="eq-note" id="eq-site-note" style="margin-left:auto;"></span>
+        </div>
+        <div class="eq-site">
+          <div class="eq-site-rail">
+            <div class="eq-card" style="margin-bottom:10px;">
+              <h3>Assign equipment</h3>
+              <p class="eq-site-hint">Pick a piece of equipment, then click the block it works on. Click it again to unassign.</p>
+              <div id="eq-site-chips"></div>
+            </div>
+          </div>
+          <div class="eq-site-canvas">
+            <div class="eq-plan" id="eq-plan"><div class="eq-plan-grid"></div></div>
+            <p class="eq-site-hint" style="margin-top:8px;">Drag a block to lay out the site; drag its bottom-right corner to resize. Double-click a block to rename it.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="eq-loading" id="eq-loading" style="display:none;"><div class="eq-spin"></div><span id="eq-loading-msg">Loading…</span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../../assets/js/config.js?v=20260819a"></script>
+<script src="../../assets/js/auth.js?v=20260814a"></script>
+<script src="../../assets/js/db.js?v=20260819b"></script>
+<script src="../../assets/js/ui.js?v=20260824a"></script>
+<script src="../../assets/js/icons.js?v=20260813a"></script>
+<script>
+// ============================================================================
+// Equipment Loading (per project).
+//
+// The register says WHAT equipment the project has; equipment_loading says how
+// much of it is planned and actually on site each MONTH; the graph and matrix
+// are the OPS "Equipment Loading Graph" sheet rendered from that.
+//
+// ⚠️ The month axis is TIED TO THE PROJECT SCHEDULE, not typed in here. It runs
+// from the earliest activity start to the latest finish, so equipment can never
+// be loaded into months the project does not run — and it follows the schedule
+// when that moves. WBS-Summary rows are excluded from the span: they carry stale
+// imported dates that nothing recomputes (one was 337 days out), which would
+// stretch the axis by a year.
+// ============================================================================
+(function () {
+  var user = null, profile = null, pid = null;
+  var PROJECTS = [];              // the projects this user can open (for the schedule-span fallback)
+  var ITEMS = [];                 // equipment_items for this project
+  var LOAD = {};                  // equipment_id -> { 'YYYY-MM-01': row }
+  var PLAN = { blocks: [] };      // site-dev geometry, one row per project
+  var SPAN = null;                // { start, end, months[], source }
+  var CUTOFF = null;              // data date, month-floored
+  var needsMigration = false;
+  var view = 'loading', detail = 'cat', fCat = '', fBlk = '', siteSel = null;
+  var LEVELS = [];                // location_levels — the project's own LBS (Tower / Level / Zone / …)
+  var DRIFT = [];                 // linked items whose schedule span has moved since the last sync
+
+  // The four the OPS sheet uses. ⚠️ Offered as a UNION with whatever the project
+  // already uses (see catOptions) — a <select> whose value is not among its options
+  // silently reports the FIRST option instead, which is how this app has wiped a
+  // stored value three times (drawing type, work package, MoM category).
+  var EQ_CATS = ['Vertical Equipment', 'Ground Equipment', 'Tools', 'Service Vehicles'];
+  // Tools are drawn in the lighter tint and stacked on top, matching the sheet's legend.
+  var TOOL_CATS = { 'Tools': 1 };
+  // Only these can be pinned to a tower. Tools and service vehicles move around the
+  // whole site, so asking which tower they belong to would invent an answer.
+  var SITE_CATS = { 'Vertical Equipment': 1, 'Ground Equipment': 1 };
+  var ACQ = ['Purchase', 'Rental'];
+  var CAT_COLOR = { 'Vertical Equipment': '#EE3124', 'Ground Equipment': '#C42127', 'Tools': '#F4A0A0', 'Service Vehicles': '#7d9fd6' };
+  var PLAN_W = 1000, PLAN_H = 620;   // virtual plan units; the canvas scales to them
+
+  function sb() { return AppAuth.getSB(); }
+  function esc(s) { return Fmt.esc(s == null ? '' : String(s)); }
+  function showLoading(m) { var e = document.getElementById('eq-loading'); document.getElementById('eq-loading-msg').textContent = m || 'Loading…'; if (e) e.style.display = 'flex'; }
+  function hideLoading() { var e = document.getElementById('eq-loading'); if (e) e.style.display = 'none'; }
+  function num(v) { if (v == null || v === '') return null; var n = +v; return isFinite(n) ? n : null; }
+  function fnum(n) { return (n == null || !isFinite(n)) ? '' : (Math.round(n * 100) / 100).toLocaleString(); }
+  function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+  function mFloor(d) { return d ? new Date(d.getFullYear(), d.getMonth(), 1) : null; }
+  function mkey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01'; }
+  var MON = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+  var MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // ---- Month axis, from the project schedule --------------------------------------------
+  // ⚠️ Two tiny indexed reads, not a paged scan: a project has up to 40k activities and a
+  // plain read is capped at 1000 rows anyway, so asking the server for the first and last
+  // date is both correct and cheap. Falls back to the cached rollup on `projects`, then to a
+  // 12-month window around today — and the note under the controls always says which.
+  async function loadSpan() {
+    var s = null, e = null, src = 'the project schedule';
+    try {
+      var a = await sb().from('project_schedule').select('start_date')
+        .eq('project_id', pid).neq('activity_type', 'WBS Summary')
+        .not('start_date', 'is', null).order('start_date', { ascending: true }).limit(1);
+      var b = await sb().from('project_schedule').select('end_date')
+        .eq('project_id', pid).neq('activity_type', 'WBS Summary')
+        .not('end_date', 'is', null).order('end_date', { ascending: false }).limit(1);
+      if (!a.error && a.data && a.data[0]) s = pd(a.data[0].start_date);
+      if (!b.error && b.data && b.data[0]) e = pd(b.data[0].end_date);
+    } catch (_e) {}
+    if (!s || !e) {
+      var p = PROJECTS.filter(function (x) { return x.id === pid; })[0];
+      if (p && p.schedule_start && p.schedule_finish) { s = pd(p.schedule_start); e = pd(p.schedule_finish); src = 'the project record'; }
+    }
+    if (!s || !e) {
+      var t = new Date(); s = new Date(t.getFullYear(), t.getMonth() - 3, 1); e = new Date(t.getFullYear(), t.getMonth() + 9, 1);
+      src = 'a default window — this project has no schedule yet';
+    }
+    if (e < s) e = s;
+    var months = [], c = mFloor(s), stop = mFloor(e), guard = 0;
+    while (c <= stop && guard++ < 600) { months.push({ d: new Date(c), iso: mkey(c) }); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    SPAN = { start: mFloor(s), end: stop, months: months, source: src };
+  }
+
+  // The data date is the Project Schedule's, shared through the same per-project key Cash Flow
+  // already reads — so "as of" means the same date in every module. Falls back to this month.
+  function loadCutoff() {
+    var v = null;
+    try { v = localStorage.getItem('ps_datadate_' + pid); } catch (_e) {}
+    CUTOFF = mFloor(pd(v) || new Date());
+  }
+
+  // ---- Data -----------------------------------------------------------------------------
+  function catOptions(cur) {
+    var seen = {}, out = [];
+    EQ_CATS.concat(ITEMS.map(function (i) { return i.category; })).concat([cur]).forEach(function (c) {
+      c = (c || '').trim(); if (!c || seen[c.toLowerCase()]) return; seen[c.toLowerCase()] = 1; out.push(c);
+    });
+    return out;
+  }
+  function blockById(id) { for (var i = 0; i < PLAN.blocks.length; i++) if (PLAN.blocks[i].id === id) return PLAN.blocks[i]; return null; }
+  function blockName(id) { var b = blockById(id); return b ? b.name : ''; }
+  function isTool(cat) { return !!TOOL_CATS[cat]; }
+  function canSite(cat) { return !!SITE_CATS[cat]; }
+  function catColor(c) { return CAT_COLOR[c] || '#7a7a7a'; }
+
+  async function load(reset) {
+    if (!pid) { ITEMS = []; LOAD = {}; PLAN = { blocks: [] }; renderAll(); return; }
+    if (reset) showLoading('Loading equipment…');
+    needsMigration = false;
+    try {
+      ITEMS = await PDb.selectAll('equipment_items', function (q) { return q.eq('project_id', pid); });
+      ITEMS.sort(function (a, b) {
+        var ai = EQ_CATS.indexOf(a.category), bi = EQ_CATS.indexOf(b.category);
+        if (ai < 0) ai = 99; if (bi < 0) bi = 99;
+        if (ai !== bi) return ai - bi;
+        if ((a.sort_order || 0) !== (b.sort_order || 0)) return (a.sort_order || 0) - (b.sort_order || 0);
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      });
+      var rows = await PDb.selectAll('equipment_loading', function (q) { return q.eq('project_id', pid); });
+      LOAD = {};
+      rows.forEach(function (r) { (LOAD[r.equipment_id] = LOAD[r.equipment_id] || {})[String(r.period).slice(0, 10)] = r; });
+      var sp = await sb().from('equipment_site_plan').select('plan').eq('project_id', pid).maybeSingle();
+      if (sp.error) throw sp.error;
+      PLAN = (sp.data && sp.data.plan) || { blocks: [] };
+      if (!Array.isArray(PLAN.blocks)) PLAN.blocks = [];
+      // The Location Breakdown levels are the schedule's own, read-only here. Which of them
+      // is the "tower" level is a per-project answer (some projects call it Building, some
+      // Structure), so it is remembered on the plan rather than guessed every time.
+      try {
+        LEVELS = await PDb.selectAll('location_levels', function (q) { return q.eq('project_id', pid).order('sort_order', { ascending: true }); });
+      } catch (_le) { LEVELS = []; }
+      if (!PLAN.level_id && LEVELS.length) PLAN.level_id = guessLevel();
+    } catch (err) {
+      // A missing table means the migration has not been run. Say exactly which file, and keep
+      // the module usable (empty) rather than throwing a raw PostgREST message at the planner.
+      if (/equipment_items|equipment_loading|equipment_site_plan|schema cache/i.test(err.message || '')) {
+        needsMigration = true; ITEMS = []; LOAD = {}; PLAN = { blocks: [] };
+      } else { UI.toast('Could not load equipment: ' + (err.message || err), 'error'); }
+    }
+    await loadSpan();
+    loadCutoff();
+    hideLoading();
+    renderAll();
+    // After the paint, never before it: the drift check is one read per linked item and the
+    // register is perfectly usable while it runs.
+    checkDrift();
+  }
+
+  async function persist(job, msg) {
+    try { var r = await job; if (r && r.error) throw r.error; return true; }
+    catch (err) { UI.toast((msg || 'Save failed') + ': ' + (err.message || err), 'error'); return false; }
+  }
+
+  // ---- Schedule link -------------------------------------------------------------------
+  // An equipment line item can point at ONE schedule activity or at a WBS BRANCH. Its planned
+  // months are then the months that link spans (plus mobilisation lead / demobilisation lag),
+  // carrying link_qty units — so when the schedule moves, the loading sheet moves with it.
+  //
+  // ⚠️ The derived months are WRITTEN into equipment_loading with source='schedule' rather than
+  // computed at render time. The chart, matrix, export and the dashboard tile all read that one
+  // table; a second, invisible source of planned quantities would make them disagree the moment
+  // anything read the table directly.
+  function isLinked(it) { return !!(it && (it.link_mode === 'activity' || it.link_mode === 'wbs')); }
+  function guessLevel() {
+    for (var i = 0; i < LEVELS.length; i++) if (/tower|building|block|structure/i.test(LEVELS[i].name || '')) return LEVELS[i].id;
+    return LEVELS.length ? LEVELS[0].id : null;
+  }
+  function levelName(id) { for (var i = 0; i < LEVELS.length; i++) if (LEVELS[i].id === id) return LEVELS[i].name; return ''; }
+
+  // Resolve a link against the schedule: earliest start, latest finish. Two indexed reads —
+  // never a paged scan, because a real project has up to 40k activities and a plain read stops
+  // at 1000 rows, which would quietly report the wrong span rather than fail.
+  async function resolveLink(it) {
+    if (!isLinked(it)) return null;
+    function q(col, asc) {
+      var b = sb().from('project_schedule').select(col).eq('project_id', pid)
+        .neq('activity_type', 'WBS Summary').not(col, 'is', null);
+      if (it.link_mode === 'activity') b = b.eq('activity_id', it.link_activity_id);
+      else b = b.like('wbs', String(it.link_wbs || '') + '%');
+      return b.order(col, { ascending: asc }).limit(1);
+    }
+    try {
+      var a = await q('start_date', true), b = await q('end_date', false);
+      if (a.error) throw a.error; if (b.error) throw b.error;
+      var st = a.data && a.data[0] ? pd(a.data[0].start_date) : null;
+      var fi = b.data && b.data[0] ? pd(b.data[0].end_date) : null;
+      if (!st || !fi) return null;
+      if (fi < st) fi = st;
+      return { start: st, end: fi };
+    } catch (err) { return { error: err.message || String(err) }; }
+  }
+
+  // The months a link covers, once lead/lag are applied. ⚠️ NOT clipped to the project's month
+  // axis: the axis is derived from the same schedule, so a link that falls outside it means the
+  // two disagree, and silently dropping those months would hide exactly that.
+  function linkMonths(startD, endD, it) {
+    if (!startD || !endD) return [];
+    var lead = Math.max(0, parseInt(it.lead_months, 10) || 0), lag = Math.max(0, parseInt(it.lag_months, 10) || 0);
+    var a = mFloor(startD), b = mFloor(endD);
+    a = new Date(a.getFullYear(), a.getMonth() - lead, 1);
+    b = new Date(b.getFullYear(), b.getMonth() + lag, 1);
+    var out = [], c = new Date(a), guard = 0;
+    while (c <= b && guard++ < 600) { out.push(mkey(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    return out;
+  }
+  function cachedMonths(it) { return linkMonths(pd(it.link_start), pd(it.link_finish), it); }
+
+  // Push one item's derived months into equipment_loading.
+  // ⚠️ Only rows this sync owns (source='schedule') are cleared. A planner's own number for a
+  // month stays put — otherwise the first re-sync after a manual correction erases it, and the
+  // register learns to distrust the sync. Actuals are never touched by the sync at all.
+  async function syncItem(it) {
+    var r = await resolveLink(it);
+    if (!r) return { item: it, status: 'unresolved' };
+    if (r.error) return { item: it, status: 'error', message: r.error };
+    var want = {}, months = linkMonths(r.start, r.end, it);
+    var qty = num(it.link_qty); if (qty == null) qty = 1;
+    months.forEach(function (iso) { want[iso] = qty; });
+
+    var have = LOAD[it.id] || {}, wrote = 0, cleared = 0;
+    for (var iso in have) {
+      var row = have[iso];
+      if (row.source !== 'schedule') continue;
+      if (want[iso] != null) continue;
+      // Outside the new span. Keep the row if it carries an actual — the equipment really was
+      // on site that month, and deleting the row would delete that fact with it.
+      if (num(row.actual_qty) != null) {
+        var u = await sb().from('equipment_loading').update({ planned_qty: null, source: 'manual' }).eq('id', row.id);
+        if (!u.error) { row.planned_qty = null; row.source = 'manual'; cleared++; }
+      } else {
+        var d = await sb().from('equipment_loading').delete().eq('id', row.id);
+        if (!d.error) { delete have[iso]; cleared++; }
+      }
+    }
+    for (var i = 0; i < months.length; i++) {
+      var isoW = months[i], cur = have[isoW];
+      if (cur) {
+        if (num(cur.planned_qty) === qty && cur.source === 'schedule') continue;
+        var up = await sb().from('equipment_loading').update({ planned_qty: qty, source: 'schedule' }).eq('id', cur.id);
+        if (up.error) return { item: it, status: 'error', message: up.error.message };
+        cur.planned_qty = qty; cur.source = 'schedule'; wrote++;
+      } else {
+        var ins = await sb().from('equipment_loading').insert({
+          project_id: pid, equipment_id: it.id, period: isoW, planned_qty: qty,
+          source: 'schedule', created_by: user && user.id
+        }).select();
+        if (ins.error) return { item: it, status: 'error', message: ins.error.message };
+        (LOAD[it.id] = LOAD[it.id] || {})[isoW] = ins.data[0];
+        have = LOAD[it.id]; wrote++;
+      }
+    }
+    var stamp = {
+      link_start: mkey(mFloor(r.start)), link_finish: mkey(mFloor(r.end)),
+      link_synced_at: new Date().toISOString()
+    };
+    var us = await sb().from('equipment_items').update(stamp).eq('id', it.id);
+    if (!us.error) { it.link_start = stamp.link_start; it.link_finish = stamp.link_finish; it.link_synced_at = stamp.link_synced_at; }
+    return { item: it, status: 'ok', months: months.length, wrote: wrote, cleared: cleared };
+  }
+
+  async function syncAll(silent) {
+    var linked = ITEMS.filter(isLinked);
+    if (!linked.length) { if (!silent) UI.toast('No equipment is linked to the schedule yet — open an item and set its schedule link.'); return; }
+    showLoading('Re-deriving ' + linked.length + ' linked item(s) from the schedule…');
+    var ok = 0, bad = [], none = [];
+    for (var i = 0; i < linked.length; i++) {
+      var r = await syncItem(linked[i]);
+      if (r.status === 'ok') ok++;
+      else if (r.status === 'unresolved') none.push(linked[i].name);
+      else bad.push(linked[i].name + ' (' + r.message + ')');
+    }
+    hideLoading();
+    DRIFT = [];
+    renderAll();
+    var msg = ok + ' item(s) re-derived from the schedule.';
+    if (none.length) msg += ' ' + none.length + ' link(s) match no dated activity: ' + none.slice(0, 3).join(', ') + '.';
+    UI.toast(msg, bad.length ? 'error' : 'success');
+    if (bad.length) UI.toast('Could not sync: ' + bad.slice(0, 2).join('; '), 'error');
+  }
+
+  // Drift check — cheap enough to run on load, and the whole point of the link: the planner has
+  // to be told the schedule moved, not discover it when the histogram is already wrong.
+  // ⚠️ Read-only. It never writes; re-deriving is the planner's explicit action, because a sync
+  // that fired by itself would overwrite a plan someone is part-way through explaining.
+  async function checkDrift() {
+    DRIFT = [];
+    var linked = ITEMS.filter(isLinked);
+    if (!linked.length || linked.length > 60) { renderDrift(); return; }
+    for (var i = 0; i < linked.length; i++) {
+      var it = linked[i], r = await resolveLink(it);
+      if (!r || r.error) continue;
+      var ns = mkey(mFloor(r.start)), nf = mkey(mFloor(r.end));
+      if (!it.link_start || !it.link_finish || String(it.link_start).slice(0, 10) !== ns || String(it.link_finish).slice(0, 10) !== nf) {
+        DRIFT.push({ item: it, start: ns, finish: nf });
+      }
+    }
+    renderDrift();
+  }
+  function renderDrift() {
+    var el = document.getElementById('eq-drift'); if (!el) return;
+    if (!DRIFT.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'flex';
+    var names = DRIFT.slice(0, 4).map(function (d) { return esc(d.item.name); }).join(', ');
+    el.innerHTML = '<span><b>' + DRIFT.length + '</b> linked item(s) no longer match the schedule (' + names +
+      (DRIFT.length > 4 ? ', +' + (DRIFT.length - 4) + ' more' : '') + '). Their planned months are still from the last sync.</span>' +
+      '<button class="pd-btn" id="eq-drift-go">Re-derive now</button>';
+    var b = document.getElementById('eq-drift-go');
+    if (b) b.onclick = function () { syncAll(); };
+  }
+
+  // ---- Aggregation ----------------------------------------------------------------------
+  // Rows the current filters admit. The site filter only ever applies to categories that CAN
+  // be sited — filtering tools out of a tower view would report a tower as having no tools
+  // when the truth is that tools are not tracked per tower at all.
+  function visibleItems() {
+    return ITEMS.filter(function (i) {
+      if (fCat && i.category !== fCat) return false;
+      if (fBlk && canSite(i.category) && i.site_block !== fBlk) return false;
+      if (fBlk && !canSite(i.category)) return false;
+      return true;
+    });
+  }
+  function qtyOf(item, iso, which) {
+    var r = (LOAD[item.id] || {})[iso];
+    if (!r) return null;
+    return num(which === 'actual' ? r.actual_qty : r.planned_qty);
+  }
+  // One pass over (items × months) producing every series the chart and the matrix need, so
+  // the two can never disagree about a month's total.
+  function aggregate() {
+    var items = visibleItems(), months = SPAN.months;
+    var byCat = {}, cats = [], total = {};
+    months.forEach(function (m) { total[m.iso] = { planned: 0, actual: 0, major: 0, tool: 0, hasP: false, hasA: false }; });
+    items.forEach(function (it) {
+      var c = it.category || '—';
+      if (!byCat[c]) { byCat[c] = {}; cats.push(c); months.forEach(function (m) { byCat[c][m.iso] = { planned: 0, actual: 0, hasP: false, hasA: false }; }); }
+      months.forEach(function (m) {
+        var p = qtyOf(it, m.iso, 'planned'), a = qtyOf(it, m.iso, 'actual');
+        var cc = byCat[c][m.iso], tt = total[m.iso];
+        if (p != null) { cc.planned += p; tt.planned += p; cc.hasP = tt.hasP = true; }
+        if (a != null) {
+          cc.actual += a; tt.actual += a; cc.hasA = tt.hasA = true;
+          if (isTool(c)) tt.tool += a; else tt.major += a;
+        }
+      });
+    });
+    cats.sort(function (a, b) { var x = EQ_CATS.indexOf(a), y = EQ_CATS.indexOf(b); return (x < 0 ? 99 : x) - (y < 0 ? 99 : y) || a.localeCompare(b); });
+    return { items: items, cats: cats, byCat: byCat, total: total };
+  }
+
+  // ---- Chart ----------------------------------------------------------------------------
+  function renderChart(ag) {
+    var host = document.getElementById('eq-chart'); if (!host) return;
+    var months = SPAN.months;
+    if (!months.length || !ag.items.length) {
+      host.innerHTML = '<div class="eq-empty">' + (ag.items.length ? 'No months in the project schedule yet.' : 'No equipment yet — add some, then set its monthly quantities.') + '</div>';
+      return;
+    }
+    var padL = 42, padR = 12, padT = 26, padB = 46;
+    var bw = Math.max(22, Math.min(46, Math.round(980 / months.length)));
+    var W = padL + padR + months.length * bw, H = 320;
+    var ph = H - padT - padB;
+    var max = 0;
+    months.forEach(function (m) { var t = ag.total[m.iso]; max = Math.max(max, t.planned, t.actual); });
+    if (max <= 0) max = 1;
+    var step = niceStep(max / 4), top = Math.ceil(max / step) * step;
+    var y = function (v) { return padT + ph - (v / top) * ph; };
+    var s = [];
+    // gridlines
+    for (var g = 0; g <= top + 1e-9; g += step) {
+      s.push('<line x1="' + padL + '" y1="' + y(g).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(g).toFixed(1) + '" stroke="var(--pd-line)" stroke-dasharray="3 3"/>');
+      s.push('<text x="' + (padL - 6) + '" y="' + (y(g) + 3.5).toFixed(1) + '" text-anchor="end" font-size="9.5" fill="var(--pd-muted)">' + g + '</text>');
+    }
+    months.forEach(function (m, i) {
+      var t = ag.total[m.iso], x = padL + i * bw, cx = x + bw / 2;
+      var isCut = CUTOFF && m.iso === mkey(CUTOFF);
+      if (isCut) s.push('<rect x="' + x + '" y="' + padT + '" width="' + bw + '" height="' + ph + '" fill="rgba(22,163,74,.18)"/>');
+      var pbw = Math.max(6, bw * 0.56), abw = Math.max(5, bw * 0.34);
+      // Planned behind (grey), actual in front — major solid, tools stacked on top in the tint.
+      if (t.hasP && t.planned > 0) {
+        var ph2 = padT + ph - y(t.planned);
+        s.push('<rect x="' + (cx - pbw / 2).toFixed(1) + '" y="' + y(t.planned).toFixed(1) + '" width="' + pbw.toFixed(1) + '" height="' + ph2.toFixed(1) + '" fill="#9A9A9A" rx="1"/>');
+      }
+      if (t.hasA && (t.major > 0 || t.tool > 0)) {
+        var ax = cx - abw / 2 + pbw * 0.10;
+        var majH = padT + ph - y(t.major), toolH = (padT + ph - y(t.tool));
+        if (t.major > 0) s.push('<rect x="' + ax.toFixed(1) + '" y="' + y(t.major).toFixed(1) + '" width="' + abw.toFixed(1) + '" height="' + majH.toFixed(1) + '" fill="#EE3124" rx="1"/>');
+        if (t.tool > 0) s.push('<rect x="' + ax.toFixed(1) + '" y="' + (y(t.major) - toolH).toFixed(1) + '" width="' + abw.toFixed(1) + '" height="' + toolH.toFixed(1) + '" fill="#F4A0A0" rx="1"/>');
+        s.push('<text x="' + cx.toFixed(1) + '" y="' + (y(t.actual) - 5).toFixed(1) + '" text-anchor="middle" font-size="10" font-weight="700" fill="var(--pd-ink)">' + fnum(t.actual) + '</text>');
+      }
+      // Planned total in a box on the baseline, as the sheet prints it.
+      if (t.hasP) s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 13) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + fnum(t.planned) + '</text>');
+      s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 27) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + MON[m.d.getMonth()] + '</text>');
+      if (m.d.getMonth() === 0 || i === 0) s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 39) + '" text-anchor="middle" font-size="9" font-weight="700" fill="var(--pd-ink)">' + m.d.getFullYear() + '</text>');
+    });
+    s.push('<line x1="' + padL + '" y1="' + (padT + ph) + '" x2="' + (W - padR) + '" y2="' + (padT + ph) + '" stroke="var(--pd-line)"/>');
+    host.innerHTML = '<svg class="eq-chart" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="Equipment loading per month">' + s.join('') + '</svg>';
+  }
+  function niceStep(raw) {
+    if (!(raw > 0)) return 1;
+    var p = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10)), n = raw / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+  }
+
+  // ---- Matrix ---------------------------------------------------------------------------
+  function renderMatrix(ag) {
+    var host = document.getElementById('eq-matrix'); if (!host) return;
+    var months = SPAN.months;
+    if (!months.length) { host.innerHTML = '<div class="eq-empty">No months to show.</div>'; return; }
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    // Year band, as the sheet has it: one cell per run of months in the same year.
+    var yr = [], run = null;
+    months.forEach(function (m) {
+      var y = m.d.getFullYear();
+      if (!run || run.y !== y) { run = { y: y, n: 0 }; yr.push(run); }
+      run.n++;
+    });
+    var h = ['<table class="eq-mx"><thead>'];
+    h.push('<tr class="eq-mx-yr"><th class="eq-c1"></th><th class="eq-c2"></th>' +
+      yr.map(function (r) { return '<th colspan="' + r.n + '">' + r.y + '</th>'; }).join('') + '</tr>');
+    h.push('<tr class="eq-mx-mo"><th class="eq-c1">' + (detail === 'item' ? 'Equipment' : 'Category') + '</th><th class="eq-c2">Planned / Actual</th>' +
+      months.map(function (m) { return '<th' + (m.iso === cutIso ? ' class="eq-cut"' : '') + '>' + MON[m.d.getMonth()] + '</th>'; }).join('') + '</tr>');
+    h.push('<tr class="eq-mx-mo"><th class="eq-c1"></th><th class="eq-c2"></th>' +
+      months.map(function (m, i) { return '<th' + (m.iso === cutIso ? ' class="eq-cut"' : '') + '>' + (i + 1) + '</th>'; }).join('') + '</tr>');
+    h.push('</thead><tbody>');
+
+    // lockPlanned: the item's planned months are derived from the schedule, so they are shown
+    // locked rather than accepting an edit that the next sync would silently throw away.
+    function bandRows(label, key, get, editItem, lockPlanned) {
+      ['planned', 'actual'].forEach(function (which) {
+        h.push('<tr class="' + (which === 'actual' ? 'eq-r-actual' : '') + '">');
+        if (which === 'planned') h.push('<td class="eq-c1" rowspan="2">' + label + '</td>');
+        h.push('<td class="eq-c2">' + (which === 'planned' ? 'Planned' : 'Actual') + '</td>');
+        months.forEach(function (m) {
+          var v = get(m.iso, which);
+          // Actuals after the cut-off are not "zero", they are not yet reported — the sheet
+          // leaves them blank and so does this, or every future month reads as a shortfall.
+          var future = which === 'actual' && cutIso && m.iso > cutIso;
+          var locked = !!lockPlanned && which === 'planned';
+          var cls = [];
+          if (m.iso === cutIso) cls.push('eq-cut');
+          if (future) cls.push('eq-out');
+          if (editItem && !locked) cls.push('eq-edit');
+          if (locked) cls.push('eq-lock');
+          h.push('<td class="' + cls.join(' ') + '"' +
+            (locked ? ' title="Derived from the schedule link — change the link, the quantity, or the lead/lag instead."' : '') +
+            (editItem && !locked ? ' data-eq="' + esc(editItem) + '" data-per="' + m.iso + '" data-wh="' + which + '"' : '') +
+            '>' + (future ? '' : (v == null ? '' : fnum(v))) + '</td>');
+        });
+        h.push('</tr>');
+      });
+    }
+
+    if (detail === 'item') {
+      ag.items.forEach(function (it) {
+        var label = '<span class="eq-dot" style="background:' + catColor(it.category) + '"></span>' + esc(it.name) +
+          (it.site_block ? ' <span class="eq-badge">' + esc(blockName(it.site_block)) + '</span>' : '') +
+          (isLinked(it) ? ' <span class="eq-linkchip on" title="Planned months come from the schedule">linked</span>' : '');
+        bandRows(label, it.id, function (iso, wh) { return qtyOf(it, iso, wh); }, it.id, isLinked(it));
+      });
+    } else {
+      ag.cats.forEach(function (c) {
+        var label = '<span class="eq-dot" style="background:' + catColor(c) + '"></span>' + esc(c);
+        bandRows(label, c, function (iso, wh) {
+          var cc = ag.byCat[c][iso];
+          if (wh === 'planned') return cc.hasP ? cc.planned : null;
+          return cc.hasA ? cc.actual : null;
+        }, null);
+      });
+    }
+    // Overall
+    h.push('</tbody><tbody>');
+    var saveH = h.length;
+    bandRows('Overall', 'total', function (iso, wh) {
+      var t = ag.total[iso];
+      if (wh === 'planned') return t.hasP ? t.planned : null;
+      return t.hasA ? t.actual : null;
+    }, null);
+    // Mark the two Overall rows as totals.
+    for (var k = saveH; k < h.length; k++) h[k] = h[k].replace('<tr class="', '<tr class="eq-r-total ').replace('<tr>', '<tr class="eq-r-total">');
+    h.push('</tbody></table>');
+    host.innerHTML = h.join('');
+    if (detail === 'item') wireMatrixEdit(host);
+  }
+
+  // Click a cell in "By equipment" mode to type the month's quantity in place. Category rows
+  // are roll-ups of several items, so they are deliberately NOT editable — there would be no
+  // way to know which item a typed number belonged to.
+  function wireMatrixEdit(host) {
+    host.querySelectorAll('td.eq-edit').forEach(function (td) {
+      td.onclick = function () {
+        if (td.querySelector('input')) return;
+        var was = td.textContent.trim();
+        td.innerHTML = '<input class="eq-cellin" type="number" step="any" min="0" value="' + esc(was) + '">';
+        var inp = td.querySelector('input'); inp.focus(); inp.select();
+        var done = false;
+        function commit(save) {
+          if (done) return; done = true;
+          var v = save ? num(inp.value) : null;
+          if (!save) { td.textContent = was; return; }
+          setQty(td.dataset.eq, td.dataset.per, td.dataset.wh, v);
+        }
+        inp.onblur = function () { commit(true); };
+        inp.onkeydown = function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+          else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+        };
+      };
+    });
+  }
+
+  // One (equipment, month) upsert. ⚠️ Blank clears the value rather than storing 0 — "not
+  // reported" and "none on site" are different facts and the matrix draws them differently.
+  async function setQty(eqId, iso, which, v) {
+    var col = which === 'actual' ? 'actual_qty' : 'planned_qty';
+    var cur = (LOAD[eqId] || {})[iso];
+    var ok;
+    if (cur) {
+      var patch = {}; patch[col] = v;
+      ok = await persist(sb().from('equipment_loading').update(patch).eq('id', cur.id), 'Could not save the quantity');
+      if (ok) cur[col] = v;
+    } else {
+      var row = { project_id: pid, equipment_id: eqId, period: iso, created_by: user && user.id };
+      row[col] = v;
+      var res = await sb().from('equipment_loading').insert(row).select();
+      if (res.error) { UI.toast('Could not save the quantity: ' + res.error.message, 'error'); ok = false; }
+      else { (LOAD[eqId] = LOAD[eqId] || {})[iso] = res.data[0]; ok = true; }
+    }
+    if (ok) renderAll();
+  }
+
+  // ---- KPIs -----------------------------------------------------------------------------
+  function renderKpis(ag) {
+    var host = document.getElementById('eq-kpis'); if (!host) return;
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var t = cutIso && ag.total[cutIso] ? ag.total[cutIso] : null;
+    var peak = 0, peakM = '';
+    SPAN.months.forEach(function (m) { var x = ag.total[m.iso]; if (x.planned > peak) { peak = x.planned; peakM = MON3[m.d.getMonth()] + ' ' + String(m.d.getFullYear()).slice(2); } });
+    var rental = ag.items.filter(function (i) { return i.acquisition === 'Rental'; }).length;
+    var gap = t ? (t.actual - t.planned) : null;
+    function k(v, l, bad) { return '<div class="eq-kpi"><div class="eq-kpi-v' + (bad ? ' eq-bad' : '') + '">' + v + '</div><div class="eq-kpi-l">' + l + '</div></div>'; }
+    host.innerHTML =
+      k(ag.items.length, 'Equipment types') +
+      k(t ? fnum(t.planned) || '0' : '—', 'Planned this month') +
+      k(t ? fnum(t.actual) || '0' : '—', 'Actual this month') +
+      k(gap == null ? '—' : (gap > 0 ? '+' : '') + fnum(gap), 'Variance vs plan', gap != null && gap < 0) +
+      k(peak ? fnum(peak) : '—', 'Peak planned' + (peakM ? ' · ' + peakM : '')) +
+      k(rental, 'On rental');
+    var note = document.getElementById('eq-span-note');
+    if (note) {
+      note.textContent = SPAN.months.length + ' months (' + MON3[SPAN.start.getMonth()] + ' ' + SPAN.start.getFullYear() +
+        ' – ' + MON3[SPAN.end.getMonth()] + ' ' + SPAN.end.getFullYear() + ') from ' + SPAN.source +
+        (CUTOFF ? ' · cut-off ' + MON3[CUTOFF.getMonth()] + ' ' + String(CUTOFF.getFullYear()).slice(2) : '');
+    }
+  }
+
+  // ---- Register -------------------------------------------------------------------------
+  function renderRegister() {
+    var el = document.getElementById('eq-reg'); if (!el) return;
+    if (!ITEMS.length) {
+      el.innerHTML = '<tbody><tr><td><div class="eq-empty">No equipment yet. Use <b>+ Add equipment</b> to start the register.</div></td></tr></tbody>';
+      return;
+    }
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var h = ['<thead><tr><th>Equipment</th><th>Category</th><th>Acquisition</th><th>Unit</th><th>Site</th>' +
+      '<th>Schedule link</th><th class="num">Planned now</th><th class="num">Actual now</th><th class="num">Peak planned</th><th>Supplier</th><th></th></tr></thead><tbody>'];
+    ITEMS.forEach(function (it) {
+      var peak = 0; SPAN.months.forEach(function (m) { var v = qtyOf(it, m.iso, 'planned'); if (v != null && v > peak) peak = v; });
+      var pn = cutIso ? qtyOf(it, cutIso, 'planned') : null, an = cutIso ? qtyOf(it, cutIso, 'actual') : null;
+      h.push('<tr>' +
+        '<td><span class="eq-dot" style="background:' + catColor(it.category) + '"></span><b>' + esc(it.name) + '</b>' +
+          (it.remarks ? '<div class="eq-note">' + esc(it.remarks) + '</div>' : '') + '</td>' +
+        '<td>' + esc(it.category) + '</td>' +
+        '<td>' + (it.acquisition ? '<span class="eq-badge' + (it.acquisition === 'Rental' ? ' eq-rent' : '') + '">' + esc(it.acquisition) + '</span>' : '—') + '</td>' +
+        '<td>' + esc(it.unit || '—') + '</td>' +
+        '<td>' + (canSite(it.category) ? (it.site_block ? esc(blockName(it.site_block) || 'unknown block') : '<span class="eq-note">unassigned</span>') : '<span class="eq-note">project-wide</span>') + '</td>' +
+        '<td>' + linkCell(it) + '</td>' +
+        '<td class="num">' + (pn == null ? '—' : fnum(pn)) + '</td>' +
+        '<td class="num">' + (an == null ? '—' : fnum(an)) + '</td>' +
+        '<td class="num">' + (peak ? fnum(peak) : '—') + '</td>' +
+        '<td>' + esc(it.supplier || '—') + '</td>' +
+        '<td><div class="eq-actions">' +
+          '<button class="eq-btn-sm" data-months="' + it.id + '">Months</button>' +
+          '<button class="eq-btn-sm" data-edit="' + it.id + '">Edit</button>' +
+          '<button class="eq-btn-sm" data-del="' + it.id + '">Delete</button>' +
+        '</div></td></tr>');
+    });
+    h.push('</tbody>');
+    el.innerHTML = h.join('');
+    el.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openForm(itemById(b.dataset.edit)); }; });
+    el.querySelectorAll('[data-months]').forEach(function (b) { b.onclick = function () { openMonths(itemById(b.dataset.months)); }; });
+    el.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { delItem(itemById(b.dataset.del)); }; });
+  }
+  // What the link is, and what duration it currently yields — the two facts a planner checks
+  // before believing a month. "not linked" is stated plainly rather than left blank: a blank
+  // cell reads as "linked, details unknown".
+  function linkCell(it) {
+    if (!isLinked(it)) return '<span class="eq-note">not linked</span>';
+    var label = it.link_label || (it.link_mode === 'activity' ? it.link_activity_id : it.link_wbs) || '—';
+    var mo = cachedMonths(it), dur = mo.length;
+    var drifted = DRIFT.some(function (d) { return d.item.id === it.id; });
+    return '<span class="eq-linkchip on">' + esc(it.link_mode === 'wbs' ? 'WBS' : 'Activity') + '</span> ' + esc(label) +
+      '<div class="eq-note">' + (dur ? dur + ' month(s) × ' + fnum(num(it.link_qty) == null ? 1 : num(it.link_qty)) +
+        (mo.length ? ' · ' + MON3[pd(mo[0]).getMonth()] + ' ' + pd(mo[0]).getFullYear() + ' – ' +
+          MON3[pd(mo[mo.length - 1]).getMonth()] + ' ' + pd(mo[mo.length - 1]).getFullYear() : '')
+        : 'never synced') +
+      (drifted ? ' · <b style="color:var(--pd-bad)">schedule moved</b>' : '') + '</div>';
+  }
+
+  function itemById(id) { for (var i = 0; i < ITEMS.length; i++) if (String(ITEMS[i].id) === String(id)) return ITEMS[i]; return null; }
+
+  // ---- Add / edit -----------------------------------------------------------------------
+  function openForm(it) {
+    it = it || null;
+    var cats = catOptions(it && it.category);
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>' + (it ? 'Edit equipment' : 'Add equipment') + '</h2>' +
+      '<button class="pd-modal-close" id="eq-x">&times;</button></div>' +
+      '<div class="eq-form-grid" style="padding:4px 0 8px;">' +
+        '<div class="pd-field eq-form-full"><label>Equipment name</label>' +
+          '<input class="pd-input" id="f-name" value="' + esc(it && it.name) + '" placeholder="e.g. Tower Crane"></div>' +
+        '<div class="pd-field"><label>Category</label><select class="pd-select" id="f-cat">' +
+          cats.map(function (c) { return '<option' + (it && it.category === c ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') +
+        '</select></div>' +
+        '<div class="pd-field"><label>Purchase or rental</label><select class="pd-select" id="f-acq">' +
+          '<option value="">—</option>' +
+          ACQ.map(function (a) { return '<option' + (it && it.acquisition === a ? ' selected' : '') + '>' + a + '</option>'; }).join('') +
+        '</select></div>' +
+        '<div class="pd-field"><label>Unit</label><input class="pd-input" id="f-unit" value="' + esc(it && it.unit) + '" placeholder="unit / set / lot"></div>' +
+        '<div class="pd-field"><label>Cost per unit-month</label><input class="pd-input" id="f-rate" type="number" step="any" min="0" value="' + esc(it && it.monthly_rate) + '"></div>' +
+        '<div class="pd-field"><label>Supplier / owner</label><input class="pd-input" id="f-sup" value="' + esc(it && it.supplier) + '"></div>' +
+        '<div class="pd-field"><label>Site assignment</label><select class="pd-select" id="f-blk">' +
+          '<option value="">— unassigned —</option>' +
+          PLAN.blocks.map(function (b) { return '<option value="' + esc(b.id) + '"' + (it && it.site_block === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') +
+        '</select><span class="eq-note" id="f-blknote"></span></div>' +
+        '<div class="pd-field eq-form-full"><label>Remarks</label><input class="pd-input" id="f-rem" value="' + esc(it && it.remarks) + '"></div>' +
+        '<div class="pd-field eq-form-full"><label>Duration — linked to the project schedule</label>' +
+          '<div class="eq-linkbox">' +
+            '<div class="eq-linkrow">' +
+              '<select class="pd-select" id="f-lmode" style="max-width:170px;">' +
+                '<option value="">Not linked</option>' +
+                '<option value="activity"' + (it && it.link_mode === 'activity' ? ' selected' : '') + '>One activity</option>' +
+                '<option value="wbs"' + (it && it.link_mode === 'wbs' ? ' selected' : '') + '>A WBS branch</option>' +
+              '</select>' +
+              '<input class="pd-input" id="f-lq" placeholder="search the schedule…" style="flex:1;min-width:150px;">' +
+              '<label style="font-size:12.5px;display:inline-flex;align-items:center;gap:5px;">' +
+                '<input type="checkbox" id="f-lloc"> only this block</label>' +
+              '<button class="pd-btn" id="f-lfind" type="button">Find</button>' +
+            '</div>' +
+            '<div class="eq-linkrow" style="margin-top:8px;">' +
+              '<select class="pd-select" id="f-lres" style="flex:1;min-width:200px;"></select>' +
+            '</div>' +
+            '<div class="eq-linkrow" style="margin-top:8px;">' +
+              '<label style="font-size:12.5px;">Qty on site</label>' +
+              '<input class="pd-input" id="f-lqty" type="number" step="any" min="0" style="width:80px;" value="' + esc(it && it.link_qty != null ? it.link_qty : 1) + '">' +
+              '<label style="font-size:12.5px;">Mobilise (months before)</label>' +
+              '<input class="pd-input" id="f-llead" type="number" step="1" min="0" style="width:70px;" value="' + esc(it && it.lead_months != null ? it.lead_months : 0) + '">' +
+              '<label style="font-size:12.5px;">Demobilise (months after)</label>' +
+              '<input class="pd-input" id="f-llag" type="number" step="1" min="0" style="width:70px;" value="' + esc(it && it.lag_months != null ? it.lag_months : 0) + '">' +
+            '</div>' +
+            '<span class="eq-note" id="f-lnote"></span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="eq-cancel">Cancel</button>' +
+      '<button class="pd-btn pd-btn-primary" id="eq-save">Save</button></div>');
+    var el = m.el;
+    function syncBlk() {
+      var c = el.querySelector('#f-cat').value, sel = el.querySelector('#f-blk');
+      var can = canSite(c);
+      sel.disabled = !can;
+      el.querySelector('#f-blknote').textContent = can
+        ? (PLAN.blocks.length ? '' : 'No blocks yet — add them in Site Dev.')
+        : 'Tools and service vehicles move around the whole site, so they are not tied to one block.';
+      if (!can) sel.value = '';
+    }
+    el.querySelector('#f-cat').onchange = function () { syncBlk(); syncLink(); }; syncBlk();
+
+    // The link picker. ⚠️ The chosen target is kept in `picked`, not read back off the <select>
+    // at save time: re-running a search rebuilds the options, and reading the box then would
+    // save whatever happened to be first in the NEW list instead of what the planner chose.
+    var picked = null;
+    if (it && isLinked(it)) picked = { mode: it.link_mode, key: it.link_mode === 'activity' ? it.link_activity_id : it.link_wbs, label: it.link_label || '' };
+    function syncLink() {
+      var mode = el.querySelector('#f-lmode').value;
+      var on = !!mode;
+      ['f-lq', 'f-lfind', 'f-lres', 'f-lqty', 'f-llead', 'f-llag'].forEach(function (id) { el.querySelector('#' + id).disabled = !on; });
+      var blk = el.querySelector('#f-blk').value, cb = el.querySelector('#f-lloc');
+      // "only this block" needs both a block on this item and a Location level to match it
+      // against — without the level there is nothing on the activity to compare the name to.
+      cb.disabled = !(on && mode === 'activity' && blk && PLAN.level_id);
+      if (cb.disabled) cb.checked = false;
+      var note = el.querySelector('#f-lnote');
+      if (!on) { note.textContent = 'Not linked — type this item\'s months by hand in the Months editor.'; return; }
+      note.innerHTML = (picked ? 'Linked to <b>' + esc(picked.label || picked.key) + '</b>. ' : 'Search, then pick a target below. ') +
+        'Saving re-derives the planned months from the schedule' +
+        (PLAN.level_id && blk ? ' · block <b>' + esc(blockName(blk)) + '</b> matches Location level "' + esc(levelName(PLAN.level_id)) + '"' : '') + '.';
+    }
+    el.querySelector('#f-lmode').onchange = function () { picked = null; el.querySelector('#f-lres').innerHTML = ''; syncLink(); };
+    el.querySelector('#f-blk').addEventListener('change', syncLink);
+    el.querySelector('#f-lres').onchange = function () {
+      var o = el.querySelector('#f-lres').selectedOptions[0];
+      picked = o && o.value ? { mode: el.querySelector('#f-lmode').value, key: o.value, label: o.dataset.label || o.textContent } : null;
+      syncLink();
+    };
+    el.querySelector('#f-lfind').onclick = async function () {
+      var mode = el.querySelector('#f-lmode').value; if (!mode) return;
+      var term = el.querySelector('#f-lq').value;
+      var blk = el.querySelector('#f-lloc').checked ? blockName(el.querySelector('#f-blk').value) : null;
+      var res = el.querySelector('#f-lres');
+      res.innerHTML = '<option value="">searching…</option>';
+      var rows = await searchSchedule(mode, term, blk);
+      if (rows.error) { res.innerHTML = '<option value="">—</option>'; UI.toast('Search failed: ' + rows.error, 'error'); return; }
+      if (!rows.length) { res.innerHTML = '<option value="">no match</option>'; return; }
+      res.innerHTML = '<option value="">— pick one —</option>' + rows.map(function (r) {
+        return '<option value="' + esc(r.key) + '" data-label="' + esc(r.label) + '">' + esc(r.label) + '</option>';
+      }).join('');
+      if (picked && rows.some(function (r) { return r.key === picked.key; })) res.value = picked.key;
+    };
+    syncLink();
+
+    el.querySelector('#eq-x').onclick = el.querySelector('#eq-cancel').onclick = m.close;
+    el.querySelector('#eq-save').onclick = async function () {
+      var name = el.querySelector('#f-name').value.trim();
+      if (!name) { UI.toast('Give the equipment a name.', 'error'); return; }
+      var payload = {
+        project_id: pid, name: name,
+        category: el.querySelector('#f-cat').value,
+        acquisition: el.querySelector('#f-acq').value || null,
+        unit: el.querySelector('#f-unit').value.trim() || null,
+        monthly_rate: num(el.querySelector('#f-rate').value),
+        supplier: el.querySelector('#f-sup').value.trim() || null,
+        site_block: el.querySelector('#f-blk').value || null,
+        remarks: el.querySelector('#f-rem').value.trim() || null
+      };
+      var mode = el.querySelector('#f-lmode').value;
+      if (mode && !picked) { UI.toast('Pick the activity or WBS branch this equipment follows, or set the link back to "Not linked".', 'error'); return; }
+      payload.link_mode = mode || null;
+      payload.link_activity_id = mode === 'activity' ? picked.key : null;
+      payload.link_wbs = mode === 'wbs' ? picked.key : null;
+      payload.link_label = mode ? (picked.label || picked.key) : null;
+      payload.link_qty = mode ? (num(el.querySelector('#f-lqty').value) == null ? 1 : num(el.querySelector('#f-lqty').value)) : null;
+      payload.lead_months = mode ? (parseInt(el.querySelector('#f-llead').value, 10) || 0) : 0;
+      payload.lag_months = mode ? (parseInt(el.querySelector('#f-llag').value, 10) || 0) : 0;
+
+      var ok, saved = null;
+      if (it) {
+        ok = await persist(sb().from('equipment_items').update(payload).eq('id', it.id), 'Could not save');
+        saved = ok ? it.id : null;
+      } else {
+        payload.created_by = user && user.id;
+        payload.sort_order = ITEMS.length;
+        // .select() so a newly added linked item can be synced immediately — without the id
+        // back, the first sync would have to wait for the planner to press the button.
+        var ins = await sb().from('equipment_items').insert(payload).select();
+        if (ins.error) { UI.toast('Could not add: ' + ins.error.message, 'error'); ok = false; }
+        else { ok = true; saved = ins.data[0].id; }
+      }
+      if (!ok) return;
+      m.close();
+      UI.toast(it ? 'Equipment updated.' : 'Equipment added.');
+      await load();
+      // Derive the months straight away when the item is linked — the link is only worth having
+      // if the histogram shows it without a second, easily-forgotten action.
+      var fresh = saved ? itemById(saved) : null;
+      if (fresh && isLinked(fresh)) {
+        showLoading('Deriving months from the schedule…');
+        var r = await syncItem(fresh);
+        hideLoading();
+        if (r.status === 'ok') UI.toast(r.months + ' month(s) derived from the schedule.');
+        else if (r.status === 'unresolved') UI.toast('That link matches no activity with dates yet — nothing derived.', 'error');
+        else UI.toast('Could not derive months: ' + r.message, 'error');
+        renderAll();
+      }
+    };
+  }
+
+  // Search the schedule for a link target.
+  // ⚠️ The term is stripped of PostgREST's own filter punctuation before it goes into an
+  // .or() string. A comma or a parenthesis typed into the box otherwise ends the filter early
+  // and the server answers a DIFFERENT question than the one asked — the same class of bug as
+  // an unescaped LIKE. WBS branches are distinct-ed client-side because PostgREST has no
+  // DISTINCT; the read is capped and the cap is stated in the option list.
+  async function searchSchedule(mode, term, blockNm) {
+    var t = String(term || '').replace(/[,()*%\\]/g, ' ').trim();
+    try {
+      if (mode === 'activity') {
+        var b = sb().from('project_schedule').select('activity_id,activity_name,start_date,end_date')
+          .eq('project_id', pid).neq('activity_type', 'WBS Summary').not('start_date', 'is', null);
+        if (t) b = b.or('activity_name.ilike.*' + t + '*,activity_id.ilike.*' + t + '*');
+        if (blockNm && PLAN.level_id) b = b.eq('location->>' + PLAN.level_id, blockNm);
+        var r = await b.order('start_date', { ascending: true }).limit(60);
+        if (r.error) throw r.error;
+        return (r.data || []).map(function (x) {
+          return { key: x.activity_id, label: (x.activity_id || '?') + ' · ' + (x.activity_name || '') +
+            (x.start_date ? '  [' + String(x.start_date).slice(0, 10) + ' → ' + String(x.end_date || '').slice(0, 10) + ']' : '') };
+        }).filter(function (x) { return x.key; });
+      }
+      var q2 = sb().from('project_schedule').select('wbs').eq('project_id', pid).not('wbs', 'is', null);
+      if (t) q2 = q2.ilike('wbs', '%' + t + '%');
+      var r2 = await q2.limit(1000);
+      if (r2.error) throw r2.error;
+      var seen = {}, out = [];
+      (r2.data || []).forEach(function (x) {
+        var w = String(x.wbs || '').trim(); if (!w || seen[w]) return; seen[w] = 1; out.push({ key: w, label: w });
+      });
+      out.sort(function (a, b) { return a.key.localeCompare(b.key); });
+      if (out.length > 60) { out = out.slice(0, 60); out.push({ key: '', label: '… more than 60 branches match — type more of the name' }); }
+      return out;
+    } catch (err) { var e = []; e.error = err.message || String(err); return e; }
+  }
+
+  async function delItem(it) {
+    if (!it) return;
+    var n = Object.keys(LOAD[it.id] || {}).length;
+    if (!confirm('Delete "' + it.name + '"?' + (n ? '\n\nIts ' + n + ' month(s) of planned/actual quantities go with it.' : ''))) return;
+    // equipment_loading cascades on the FK, so the months go with the item by construction —
+    // no orphan rows to sweep up afterwards.
+    var ok = await persist(sb().from('equipment_items').delete().eq('id', it.id), 'Could not delete');
+    if (ok) { UI.toast('Equipment deleted.'); await load(); }
+  }
+
+  // ---- Monthly editor -------------------------------------------------------------------
+  // Typing 24 months by hand for every item is the reason a loading sheet goes stale, so this
+  // carries a range fill as well as the per-month inputs.
+  function openMonths(it) {
+    if (!it) return;
+    var months = SPAN.months;
+    var opts = months.map(function (m, i) { return '<option value="' + m.iso + '">' + MON3[m.d.getMonth()] + ' ' + m.d.getFullYear() + '</option>'; }).join('');
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>Monthly quantities — ' + esc(it.name) + '</h2>' +
+      '<button class="pd-modal-close" id="eq-x">&times;</button></div>' +
+      '<div style="padding:4px 0 10px;">' +
+        '<p class="eq-note" style="margin:0 0 10px;">Months come from the project schedule (' + esc(SPAN.source) + '). Leave a month blank where nothing is reported — blank and zero mean different things.' +
+          (isLinked(it) ? ' <b>This item is linked to ' + esc(it.link_label || '') + '</b>, so its planned months are re-derived on the next sync — type here only to record something the link cannot know.' : '') + '</p>' +
+        '<div class="eq-controls" style="margin-bottom:10px;">' +
+          '<span style="font-size:12.5px;font-weight:600;">Fill</span>' +
+          '<select class="pd-select" id="fl-wh" style="max-width:120px;"><option value="planned">Planned</option><option value="actual">Actual</option></select>' +
+          '<input class="pd-input" id="fl-v" type="number" step="any" min="0" placeholder="qty" style="width:80px;height:34px;">' +
+          '<span style="font-size:12.5px;">from</span><select class="pd-select" id="fl-a" style="max-width:150px;">' + opts + '</select>' +
+          '<span style="font-size:12.5px;">to</span><select class="pd-select" id="fl-b" style="max-width:150px;">' + opts + '</select>' +
+          '<button class="pd-btn" id="fl-go">Apply</button>' +
+        '</div>' +
+        '<div style="max-height:46vh;overflow:auto;"><table class="eq-mon-tbl"><thead><tr><th>Month</th><th>Planned</th><th>Actual</th></tr></thead><tbody id="mon-body"></tbody></table></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" id="eq-done">Done</button></div>');
+    var el = m.el;
+    if (months.length) el.querySelector('#fl-b').value = months[months.length - 1].iso;
+    function body() {
+      el.querySelector('#mon-body').innerHTML = months.map(function (mo) {
+        var p = qtyOf(it, mo.iso, 'planned'), a = qtyOf(it, mo.iso, 'actual');
+        var fut = CUTOFF && mo.iso > mkey(CUTOFF);
+        return '<tr><td>' + MON3[mo.d.getMonth()] + ' ' + mo.d.getFullYear() + (fut ? ' <span class="eq-note">(future)</span>' : '') + '</td>' +
+          '<td><input type="number" step="any" min="0" data-per="' + mo.iso + '" data-wh="planned" value="' + (p == null ? '' : p) + '"></td>' +
+          '<td><input type="number" step="any" min="0" data-per="' + mo.iso + '" data-wh="actual" value="' + (a == null ? '' : a) + '"></td></tr>';
+      }).join('');
+      el.querySelectorAll('#mon-body input').forEach(function (inp) {
+        inp.onchange = async function () { await setQtyQuiet(it.id, inp.dataset.per, inp.dataset.wh, num(inp.value)); };
+      });
+    }
+    body();
+    el.querySelector('#fl-go').onclick = async function () {
+      var wh = el.querySelector('#fl-wh').value, v = num(el.querySelector('#fl-v').value);
+      var a = el.querySelector('#fl-a').value, b = el.querySelector('#fl-b').value;
+      if (a > b) { var t = a; a = b; b = t; }
+      var span = months.filter(function (mo) { return mo.iso >= a && mo.iso <= b; });
+      if (!span.length) return;
+      showLoading('Filling ' + span.length + ' month(s)…');
+      for (var i = 0; i < span.length; i++) await setQtyQuiet(it.id, span[i].iso, wh, v);
+      hideLoading(); body(); renderAll();
+      UI.toast(span.length + ' month(s) set.');
+    };
+    el.querySelector('#eq-x').onclick = el.querySelector('#eq-done').onclick = function () { m.close(); renderAll(); };
+  }
+  // Same write as setQty without the re-render — the monthly editor repaints itself once at
+  // the end, so re-rendering per keystroke would rebuild the table under the planner's cursor.
+  async function setQtyQuiet(eqId, iso, which, v) {
+    var col = which === 'actual' ? 'actual_qty' : 'planned_qty';
+    var cur = (LOAD[eqId] || {})[iso];
+    if (cur) {
+      var patch = {}; patch[col] = v;
+      var r = await sb().from('equipment_loading').update(patch).eq('id', cur.id);
+      if (r.error) { UI.toast('Could not save: ' + r.error.message, 'error'); return; }
+      cur[col] = v;
+    } else {
+      var row = { project_id: pid, equipment_id: eqId, period: iso, created_by: user && user.id };
+      row[col] = v;
+      var res = await sb().from('equipment_loading').insert(row).select();
+      if (res.error) { UI.toast('Could not save: ' + res.error.message, 'error'); return; }
+      (LOAD[eqId] = LOAD[eqId] || {})[iso] = res.data[0];
+    }
+  }
+
+  // ---- Site development view ------------------------------------------------------------
+  function newBlockId() { return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  async function savePlan() {
+    var ok = await persist(sb().from('equipment_site_plan')
+      .upsert({ project_id: pid, plan: PLAN, created_by: user && user.id }, { onConflict: 'project_id' }), 'Could not save the site plan');
+    return ok;
+  }
+  function renderSite() {
+    var host = document.getElementById('eq-plan'); if (!host) return;
+    var counts = {};
+    ITEMS.forEach(function (i) { if (i.site_block) counts[i.site_block] = (counts[i.site_block] || 0) + 1; });
+    var h = ['<div class="eq-plan-grid"></div>'];
+    PLAN.blocks.forEach(function (b) {
+      var mine = ITEMS.filter(function (i) { return i.site_block === b.id; });
+      h.push('<div class="eq-block" data-blk="' + esc(b.id) + '" style="left:' + (b.x / PLAN_W * 100) + '%;top:' + (b.y / PLAN_H * 100) + '%;' +
+        'width:' + (b.w / PLAN_W * 100) + '%;height:' + (b.h / PLAN_H * 100) + '%;border-color:' + esc(b.color || '#EE3124') + ';">' +
+        '<div class="eq-block-h"><span>' + esc(b.name) + '</span><span class="eq-block-n">' + (counts[b.id] || 0) + '</span></div>' +
+        '<div class="eq-block-list">' + (mine.length ? mine.slice(0, 8).map(function (i) { return esc(i.name); }).join('<br>') + (mine.length > 8 ? '<br>+' + (mine.length - 8) + ' more' : '') : '<i>no equipment</i>') + '</div>' +
+        '<div class="eq-block-res" data-res="' + esc(b.id) + '"></div></div>');
+    });
+    host.innerHTML = h.join('');
+    if (!PLAN.blocks.length) host.insertAdjacentHTML('beforeend',
+      '<div class="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">No blocks yet — pull the towers from the schedule, or add one.</div>');
+    wireSite(host);
+
+    // Left rail: the equipment that CAN be sited, grouped assigned/unassigned.
+    var rail = document.getElementById('eq-site-chips');
+    var sitable = ITEMS.filter(function (i) { return canSite(i.category); });
+    if (!sitable.length) rail.innerHTML = '<p class="eq-note">No vertical or ground equipment in the register yet.</p>';
+    else rail.innerHTML = sitable.map(function (i) {
+      return '<div class="eq-chip' + (siteSel === i.id ? ' on' : '') + '" data-chip="' + esc(i.id) + '">' +
+        '<span class="eq-dot" style="background:' + catColor(i.category) + '"></span>' + esc(i.name) +
+        '<span class="x">' + (i.site_block ? esc(blockName(i.site_block) || '?') : 'unassigned') + '</span></div>';
+    }).join('');
+    rail.querySelectorAll('[data-chip]').forEach(function (c) {
+      c.onclick = function () { siteSel = (siteSel === c.dataset.chip) ? null : c.dataset.chip; renderSite(); };
+    });
+    var lvl = document.getElementById('eq-site-level');
+    if (lvl) {
+      lvl.innerHTML = LEVELS.length
+        ? LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === PLAN.level_id ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('')
+        : '<option value="">no Location levels</option>';
+      lvl.disabled = !LEVELS.length;
+    }
+    var note = document.getElementById('eq-site-note');
+    if (note) note.textContent = PLAN.blocks.length + ' block(s) · ' +
+      sitable.filter(function (i) { return i.site_block; }).length + ' of ' + sitable.length + ' assigned';
+  }
+
+  function wireSite(host) {
+    host.querySelectorAll('.eq-block').forEach(function (el) {
+      var id = el.dataset.blk;
+      el.onclick = function (e) {
+        if (e.target.closest('[data-res]')) return;
+        if (!siteSel) return;
+        var it = itemById(siteSel); if (!it) return;
+        var to = (it.site_block === id) ? null : id;
+        it.site_block = to;
+        persist(sb().from('equipment_items').update({ site_block: to }).eq('id', it.id), 'Could not assign');
+        siteSel = null; renderSite(); renderRegister();
+      };
+      el.ondblclick = async function (e) {
+        e.stopPropagation();
+        var b = blockById(id); if (!b) return;
+        var n = prompt('Block name', b.name); if (n == null) return;
+        n = n.trim(); if (!n) return;
+        b.name = n; await savePlan(); renderSite(); renderRegister(); renderAll();
+      };
+      // Drag to move; the corner drags to resize. Pointer events + capture, so the gesture
+      // survives the pointer leaving the block (the same reason the schedule's dividers use them).
+      el.onpointerdown = function (e) {
+        if (e.button) return;
+        var b = blockById(id); if (!b) return;
+        var resize = !!e.target.closest('[data-res]');
+        var r = host.getBoundingClientRect();
+        var sx = e.clientX, sy = e.clientY, x0 = b.x, y0 = b.y, w0 = b.w, h0 = b.h;
+        var kx = PLAN_W / r.width, ky = PLAN_H / r.height;
+        e.preventDefault(); el.classList.add('drag');
+        try { el.setPointerCapture(e.pointerId); } catch (_e) {}
+        el.onpointermove = function (ev) {
+          var dx = (ev.clientX - sx) * kx, dy = (ev.clientY - sy) * ky;
+          if (resize) {
+            b.w = Math.max(70, Math.min(PLAN_W - b.x, w0 + dx));
+            b.h = Math.max(50, Math.min(PLAN_H - b.y, h0 + dy));
+          } else {
+            b.x = Math.max(0, Math.min(PLAN_W - b.w, x0 + dx));
+            b.y = Math.max(0, Math.min(PLAN_H - b.h, y0 + dy));
+          }
+          el.style.left = (b.x / PLAN_W * 100) + '%'; el.style.top = (b.y / PLAN_H * 100) + '%';
+          el.style.width = (b.w / PLAN_W * 100) + '%'; el.style.height = (b.h / PLAN_H * 100) + '%';
+        };
+        var done = function () {
+          el.onpointermove = el.onpointerup = el.onpointercancel = null;
+          el.classList.remove('drag');
+          try { el.releasePointerCapture(e.pointerId); } catch (_e) {}
+          savePlan();
+        };
+        el.onpointerup = el.onpointercancel = done;
+      };
+    });
+  }
+
+  function addBlock(name) {
+    var n = PLAN.blocks.length;
+    PLAN.blocks.push({
+      id: newBlockId(), name: name || ('Block ' + (n + 1)),
+      x: 40 + (n % 4) * 230, y: 40 + Math.floor(n / 4) * 180, w: 200, h: 150,
+      color: '#EE3124'
+    });
+  }
+
+  // Seed the plan from the schedule's own tower values, so the two never disagree about what
+  // the towers are called. ⚠️ Matched by NAME on the way in, then referenced by block id
+  // afterwards — re-pulling must not duplicate a tower that is already on the plan.
+  async function pullTowers() {
+    // ⚠️ The key is a location_levels ID, not the word "tower". project_schedule.location is a
+    // jsonb map keyed by level id ({"<uuid>":"Tower A"}), so passing a literal 'tower' matches
+    // nothing on any project — which is exactly what the first version of this did.
+    if (!LEVELS.length) {
+      UI.toast('This project has no Location Breakdown levels yet. Set them up in Project Schedule → Location Breakdown, then tag the activities.', 'error');
+      return;
+    }
+    if (!PLAN.level_id) PLAN.level_id = guessLevel();
+    showLoading('Reading ' + (levelName(PLAN.level_id) || 'locations') + ' from the schedule…');
+    var vals = [];
+    try {
+      var r = await sb().rpc('project_location_values', { p_project_id: pid, p_key: PLAN.level_id });
+      if (r.error) throw r.error;
+      vals = (r.data || []).map(function (x) { return x.value; });
+    } catch (err) {
+      hideLoading();
+      UI.toast(/function|schema cache/i.test(err.message || '')
+        ? 'Run migrations/2026-08-24-equipment-loading.sql first — it adds the lookup this uses.'
+        : 'Could not read the schedule: ' + (err.message || err), 'error');
+      return;
+    }
+    hideLoading();
+    if (!vals.length) {
+      UI.toast('No activity is tagged with a "' + (levelName(PLAN.level_id) || 'location') + '" value yet. Tag them in Project Schedule → Location Breakdown, pick a different level, or add blocks by hand.', 'error');
+      return;
+    }
+    var have = {}; PLAN.blocks.forEach(function (b) { have[b.name.toLowerCase()] = 1; });
+    var added = 0;
+    vals.forEach(function (v) { if (!have[String(v).toLowerCase()]) { addBlock(String(v)); added++; } });
+    if (!added) { await savePlan(); UI.toast('Already up to date — every ' + (levelName(PLAN.level_id) || 'location') + ' in the schedule is on the plan.'); return; }
+    if (await savePlan()) { UI.toast(added + ' ' + (levelName(PLAN.level_id) || 'block') + '(s) added to the site plan.'); renderSite(); }
+  }
+
+  // ---- Export ---------------------------------------------------------------------------
+  function exportXlsx() {
+    if (!window.XLSX) { UI.toast('Spreadsheet library not loaded.', 'error'); return; }
+    var ag = aggregate(), months = SPAN.months;
+    var head = ['Equipment / Category', 'Planned / Actual'].concat(months.map(function (m) { return MON3[m.d.getMonth()] + ' ' + m.d.getFullYear(); }));
+    var rows = [head];
+    function band(label, get) {
+      ['planned', 'actual'].forEach(function (wh) {
+        rows.push([label, wh === 'planned' ? 'Planned' : 'Actual'].concat(months.map(function (m) {
+          var v = get(m.iso, wh); return v == null ? '' : v;
+        })));
+      });
+    }
+    ag.items.forEach(function (it) { band(it.name, function (iso, wh) { return qtyOf(it, iso, wh); }); });
+    ag.cats.forEach(function (c) {
+      band(c + ' (total)', function (iso, wh) { var cc = ag.byCat[c][iso]; return wh === 'planned' ? (cc.hasP ? cc.planned : null) : (cc.hasA ? cc.actual : null); });
+    });
+    band('OVERALL', function (iso, wh) { var t = ag.total[iso]; return wh === 'planned' ? (t.hasP ? t.planned : null) : (t.hasA ? t.actual : null); });
+    var ws = XLSX.utils.aoa_to_sheet(rows), wb = XLSX.utils.book_new();
+    ws['!cols'] = [{ wch: 30 }, { wch: 14 }].concat(months.map(function () { return { wch: 9 }; }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Equipment Loading');
+    XLSX.writeFile(wb, 'Equipment Loading - ' + (projName() || pid) + '.xlsx');
+  }
+  function projName() {
+    var s = document.getElementById('eq-project');
+    return s && s.selectedOptions[0] ? s.selectedOptions[0].textContent : '';
+  }
+
+  // ---- Render ---------------------------------------------------------------------------
+  function renderAll() {
+    var mg = document.getElementById('eq-migrate');
+    if (mg) {
+      mg.style.display = needsMigration ? 'block' : 'none';
+      mg.innerHTML = 'Equipment Loading needs its tables. Run <b>migrations/2026-08-24-equipment-loading.sql</b> in the Supabase SQL editor, then refresh.';
+    }
+    if (!SPAN) return;
+    syncFilters();
+    var ag = aggregate();
+    renderKpis(ag); renderChart(ag); renderMatrix(ag); renderRegister(); renderSite();
+    if (window.Icons) Icons.hydrate(document.body);
+  }
+  function syncFilters() {
+    var c = document.getElementById('eq-f-cat');
+    if (c) {
+      var cur = fCat;
+      c.innerHTML = '<option value="">All categories</option>' +
+        catOptions().map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
+      // ⚠️ A filter whose stored value has since been deleted must reset, not silently narrow the
+      // whole view to a category that no longer exists.
+      if (cur && c.value !== cur) { fCat = ''; c.value = ''; }
+    }
+    var b = document.getElementById('eq-f-blk');
+    if (b) {
+      var curb = fBlk;
+      b.innerHTML = '<option value="">Whole project</option>' +
+        PLAN.blocks.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === curb ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('');
+      if (curb && b.value !== curb) { fBlk = ''; b.value = ''; }
+    }
+  }
+  function switchView(v, btn) {
+    view = v;
+    document.querySelectorAll('.eq-tab').forEach(function (b) { b.classList.toggle('active', b === btn); });
+    ['loading', 'register', 'site'].forEach(function (k) {
+      var el = document.getElementById('eq-view-' + k); if (el) el.style.display = (k === v ? 'block' : 'none');
+    });
+    var add = document.getElementById('eq-add');
+    if (add) add.style.display = (v === 'site') ? 'none' : '';
+    var sync = document.getElementById('eq-sync');
+    if (sync) sync.style.display = (v === 'site') ? 'none' : '';
+  }
+
+  // ---- Init -----------------------------------------------------------------------------
+  async function init(u, prof) {
+    user = u; profile = prof;
+    UI.renderUserBar(prof);
+    if (UI.initModuleTopbar) UI.initModuleTopbar();
+    document.querySelectorAll('.eq-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view, b); }; });
+    document.querySelectorAll('#eq-detail button').forEach(function (b) {
+      b.onclick = function () {
+        detail = b.dataset.det;
+        document.querySelectorAll('#eq-detail button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        renderAll();
+      };
+    });
+    document.getElementById('eq-f-cat').onchange = function (e) { fCat = e.target.value; renderAll(); };
+    document.getElementById('eq-f-blk').onchange = function (e) { fBlk = e.target.value; renderAll(); };
+    document.getElementById('eq-add').onclick = function () { if (!pid) { UI.toast('Pick a project first.', 'error'); return; } openForm(null); };
+    document.getElementById('eq-refresh').onclick = function () { load(true); };
+    document.getElementById('eq-export').onclick = exportXlsx;
+    document.getElementById('eq-sync').onclick = function () { if (pid) syncAll(); };
+    document.getElementById('eq-site-level').onchange = async function (e) {
+      PLAN.level_id = e.target.value || null;
+      if (await savePlan()) renderSite();
+    };
+    document.getElementById('eq-site-pull').onclick = function () { if (pid) pullTowers(); };
+    document.getElementById('eq-site-addblk').onclick = async function () {
+      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+      addBlock(); if (await savePlan()) renderSite();
+    };
+
+    var sel = document.getElementById('eq-project');
+    var projects = await PDb.getProjects();
+    projects = projects.filter(function (p) { return AppAuth.canAccessProject(prof, p.id); });
+    PROJECTS = projects;
+    sel.innerHTML = projects.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
+    var saved = sessionStorage.getItem('pd_project');
+    if (saved && projects.some(function (p) { return p.id === saved; })) sel.value = saved;
+    pid = sel.value || null;
+    if (UI.enhanceProjectSelect) UI.enhanceProjectSelect(sel);
+    sel.onchange = function () {
+      pid = sel.value || null;
+      try { sessionStorage.setItem('pd_project', pid || ''); } catch (_e) {}
+      siteSel = null; fBlk = '';
+      load(true);
+    };
+    await load(true);
+  }
+
+  AppAuth.requireLogin(init);
+})();
+</script>
+</body>
+</html>

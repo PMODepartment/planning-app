@@ -126,6 +126,7 @@ window.APP_CONFIG = {
       ] } },
     { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points' } },
     { key: 'resource-loading',  name: 'Resource & Role Master',                path: 'modules/resource-loading/index.html',  icon: 'users',      enabled: true, dash: { table: 'resources', unit: 'resources' } },
+    { key: 'equipment-loading', name: 'Equipment Loading',                      path: 'modules/equipment-loading/index.html', icon: 'box',        enabled: true, dash: { table: 'equipment_items', unit: 'equipment' } },
     { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: 'barChart',   enabled: true, dash: { table: 'productivity_entries', unit: 'entries' } },
     { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: 'cash',       enabled: true, dash: { table: 'cash_flow_rollup', unit: 'periods' } },
   ],

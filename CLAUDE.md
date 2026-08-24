@@ -7851,3 +7851,48 @@ sheet's own stated contract total caught it. **Refuse the import on mismatch.**
 
 Files: `docs/boq-and-pmi.md` (section 4 added, sections 4-6 renumbered to 5-7, two internal
 inconsistencies fixed), `ROADMAP.md` (B1d). No `?v=` / `MODULE_V` bump.
+---
+
+## 2026-08-24 — Equipment Loading: a module, and its line items linked to the schedule
+
+**What shipped.** `modules/equipment-loading/` goes live (`enabled: true`, dashboard tile on
+`equipment_items`): a per-project equipment register, the OPS-style monthly loading histogram
+(grey planned bar, actual stacked in front — major solid, tools in the light tint, cut-off month
+banded), the Planned/Actual matrix, an Excel export, and a **Site Dev** plan view where vertical
+and ground equipment are pinned to towers by dragging blocks and clicking chips. Categories are
+Vertical Equipment / Ground Equipment / Tools / Service Vehicles, each item carrying a
+purchase-or-rental type, unit, cost per unit-month and supplier.
+
+**The feature that makes it more than the spreadsheet:** an equipment line item can be **linked
+to the project schedule** — to one activity or a whole WBS branch — with a quantity and optional
+mobilisation lead / demobilisation lag. Its planned months are then *derived* from that link, so
+when the programme moves, the loading sheet moves with it. A drift banner names the items whose
+span has changed and offers to re-derive; the register shows each item's link, resulting duration
+and quantity. The activity search can be restricted to the **tower the item is assigned to**,
+which is where the site-development view and the schedule meet.
+
+⚠️ **A bug in the first version of the same day's module, fixed here:** "Pull towers from the
+schedule" passed the literal string `'tower'` as the location key. `project_schedule.location` is
+a jsonb map keyed by a **`location_levels` UUID**, so that matched nothing on any project and the
+button could only ever report "no towers". It now reads the project's Location Breakdown levels,
+defaults to the one named like a tower/building/block, remembers the choice on the site plan, and
+exposes a **Site level** picker.
+
+⚠️ **Derived months are written into `equipment_loading`, not computed at render time** — chart,
+matrix, export and the dashboard tile all read that one table, and a second invisible source of
+planned quantities would make them disagree. `equipment_loading.source` records who wrote a
+month, so a re-sync clears only rows it owns and a planner's own correction survives it; actuals
+are never touched. Planned cells of a linked item are shown locked in the matrix rather than
+accepting an edit the next sync would discard.
+
+**Verified:** the inline script parses, and the shipped text of `linkMonths` was sliced out of
+the file and executed against 7 cases (month-end spanning, lead/lag across a year boundary,
+negative lead, missing dates, a 20-year span vs the 600-month guard) — all pass. Every
+`getElementById` target exists in the markup.
+
+**NOT verified / owner action required:** run
+`migrations/2026-08-24-equipment-loading.sql` **then**
+`migrations/2026-08-24-equipment-schedule-link.sql` in the Supabase SQL editor. Until then the
+module shows its "needs its tables" banner. Nothing was exercised signed in — the anon key has no
+grants — so the sync, the drift check, the schedule search and the `location->>'<level id>'`
+tower filter are untested against real data. `MODULE_V` bumped to `20260824n`.
