@@ -99,3 +99,68 @@ read-cache** — no per-project live stream (cross-project unfiltered would be b
 ## Cash Flow module now real (2026-07-06)
 Cash Flow was flipped to `enabled: true` in `config.js` because it stopped being a placeholder
 — see `modules/cash-flow/CLAUDE.md`. This tab reads its `cash_flow` table.
+
+## Equipment availability across the portfolio (2026-08-24) — fmlozano
+
+A fifth tab, **Equipment**, answering the one question a project-scoped register cannot: *where is
+each asset committed, and when does it come free?* No migration — it reads `equipment_items` +
+`equipment_loading` for the scoped projects.
+
+**The month grid is the answer, and availability is its negative space.** One row per asset, one
+cell per month, coloured by the project that has it; an empty cell means free. A KPI band, four
+availability filters (All / Free now / Free within 3 months / Double-booked), category + search, an
+asset register below it, and an Excel export that emits **the same picture** (a column per month) so
+the sheet and the screen cannot tell different stories.
+
+⚠️ **The asset identity is `equipment_items.code`, and that column is unique per PROJECT — which is
+exactly why the same code on two projects is reported, not judged.** It is either one asset that
+moved between them or two projects that both numbered their first crane TC-01, and *nothing in the
+data distinguishes those*. So a month where two projects both plan one code is marked "planned on two
+projects" with both names in the tooltip; calling it an error would be a guess presented as a fact.
+Codes are merged case- and space-insensitively, because "TC-01" and "tc-01" are the same asset to
+every human reading the sheet.
+
+⚠️ **Only PLANNED quantities drive the grid.** Actuals say where an asset *has been*; availability is
+a forward question. A planned quantity of **0 or blank is not a commitment** — those are how the
+Equipment Loading module records "not reported" and "none on site", and treating either as a booking
+would report a free asset as busy.
+
+⚠️ **`PDb.selectAll`, never a bare select.** One row per equipment per month across a whole portfolio
+passes PostgREST's 1000-row cap easily, and a truncated read here would report an asset as free in
+months it is actually committed — the most dangerous failure this screen has, and a silent one.
+
+⚠️ **"Free from" is read off the same grid the planner is looking at**, so the number in the table and
+the picture in the strip can never disagree. This month is always on the axis even when nothing is
+committed near it — "free now" is a claim about the present and needs the present on screen to be
+checkable. The window is capped at 48 months and **says so** when it truncates.
+
+⚠️ **Project colours are keyed by project id, not by position in the filtered list** — otherwise
+every filter change repaints the grid in different colours and the legend has to be re-read.
+
+**Four real defects found by measuring, none of which would have shown up in a code read.**
+1. The inline `style="background:…"` shorthand **reset `background-image`**, so the diagonal hatch
+   marking a double-booked month never rendered — measured as `background-image: none` on a cell that
+   should carry it. It is `background-color` now.
+2. `min-width:100%` with auto table layout let the browser widen the columns past their declared
+   widths; with `table-layout:fixed; width:100%; min-width:max-content` the strip fills the card
+   (it previously huddled in ~610px of a 1400px card) and still scrolls when the portfolio is long.
+3. The brand red on the red tint used by the code chip reads **3.60:1** — under AA at 12px bold. Ink
+   on the same tint is **14.25:1 light / 13.45:1 dark**, and a red left border keeps the brand cue
+   (the same treatment as the PRC group-head chip).
+4. In dark mode the "free now" green read **2.61:1** and the flag colour **4.02:1**. The dark
+   overrides take those to 7.26 and 6.12. A single colour for both themes cannot satisfy either.
+
+**Verified** — 24 checks executing the shipped `eqBuild` / `eqVisible` / `eqColorFor` (sliced from the
+file, never reimplemented): codes merged case-insensitively into one asset, sequential months across
+two projects **not** flagged while the same month **is**, zero and blank ignored, a registered but
+unplanned asset carrying no months, an uncoded item kept + flagged + sorted last, "free from" landing
+on the first uncommitted month, this month always on the axis, a 12-year span capped at 48 with the
+truncation reported, and every filter. Plus a real browser against the shipped CSS at 1440 and a
+375px layout viewport: 23 rows × 13 months, sticky asset column and header, the hatch present, all
+five KPIs, 0 page horizontal scroll at either width, the grid and the register each scrolling inside
+their own card, every control ≥44px on the phone, and light/dark contrast at **min 5.37:1**.
+
+⚠️ **Not verified signed in** — the anon key has no grants on the equipment tables, so the
+cross-project read itself is untested against real data.
+⚠️ **This module's `index.html` is NOT cache-busted** (it is reached by a plain sidebar href, not
+through `MODULE_V`), so hard-refresh once after the deploy.

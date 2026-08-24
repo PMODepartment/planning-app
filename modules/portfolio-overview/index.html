@@ -65,6 +65,65 @@
     .po-health { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .po-tot-row td { font-weight:800; border-top:2px solid var(--pd-ink); background:var(--pd-bg); }
     .po-sort-ind { font-size:9px; color:var(--pd-red); margin-left:4px; }
+    /* ---- Equipment availability (portfolio) -----------------------------------------------
+       A calendar strip per ASSET: one cell per month, coloured by the project that has it, and
+       BLANK where the asset is free. Availability is the negative space, so the empty cell has to
+       read as deliberate — hence the faint dotted ground rather than nothing at all. */
+    .po-eq-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
+    .po-eq-bar .pd-select, .po-eq-bar .pd-input { height:34px; font-size:13px; max-width:220px; }
+    .po-eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .po-eq-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:7px 13px; font:inherit;
+      font-size:12.5px; font-weight:600; cursor:pointer; }
+    .po-eq-seg button + button { border-left:1px solid var(--pd-line); }
+    .po-eq-seg button.active { background:var(--pd-red); color:#fff; }
+
+    .po-eq-scroll { overflow:auto; max-height:66vh; }
+    .po-eq { border-collapse:separate; border-spacing:0; font-size:12px; table-layout:fixed;
+      width:100%; min-width:max-content; }
+    .po-eq th, .po-eq td { padding:0; white-space:nowrap; }
+    /* ⚠️ These three widths ARE the layout. The month cell is deliberately small enough that a
+       three-year portfolio fits without scrolling on a laptop, and the asset column wide enough for
+       a code plus a name. */
+    .po-eq th.po-eq-c1, .po-eq td.po-eq-c1 { position:sticky; left:0; z-index:2; width:236px; min-width:236px;
+      max-width:236px; background:var(--pd-card); text-align:left; padding:6px 12px; }
+    .po-eq thead th { position:sticky; top:0; z-index:3; background:var(--pd-bg); font-size:10px; font-weight:700;
+      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); padding:6px 0; text-align:center;
+      border-bottom:2px solid var(--pd-line); }
+    .po-eq thead th.po-eq-c1 { z-index:4; background:var(--pd-bg); }
+    .po-eq thead tr.po-eq-yr th { font-size:11px; color:var(--pd-ink); border-bottom:1px solid var(--pd-line);
+      text-align:left; padding-left:6px; }
+    .po-eq td.po-eq-m, .po-eq th.po-eq-m { min-width:26px; }
+    .po-eq td.po-eq-m { height:26px; }
+    .po-eq tbody tr:hover td.po-eq-c1 { background:var(--pd-bg); }
+    /* The cell grows with its column but never past a comfortable chip; the gap between cells is
+       what makes a run of months read as one committed stretch. */
+    .po-eq-cell { width:calc(100% - 3px); height:20px; margin:2px auto; border-radius:3px;
+      background:var(--pd-line); opacity:.35; }
+    .po-eq-cell.on { opacity:1; }
+    /* A month where two projects both plan the same code. Not asserted as an error — see the note
+       in the JS — so it is marked, not painted red-over-everything. */
+    .po-eq-cell.clash { background-image:repeating-linear-gradient(45deg, rgba(255,255,255,.75) 0 2px, transparent 2px 5px);
+      outline:2px solid var(--pd-bad); outline-offset:-2px; }
+    .po-eq-now { box-shadow:inset 2px 0 0 var(--pd-red); }
+    .po-eq-name { font-weight:700; overflow:hidden; text-overflow:ellipsis; }
+    .po-eq-code { display:inline-block; font-weight:800; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      background:var(--pd-red-light); color:var(--pd-ink); border-radius:0 4px 4px 0; padding:0 6px;
+      margin-right:7px; border-left:2px solid var(--pd-red); }
+    .po-eq-sub { font-size:10.5px; color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
+    .po-eq-legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:11.5px; color:var(--pd-muted); }
+    .po-eq-lg { display:inline-flex; align-items:center; gap:6px; }
+    .po-eq-lg .sw { width:13px; height:13px; border-radius:4px; display:inline-block; border:1px solid rgba(0,0,0,.12); }
+    /* ⚠️ Measured, not chosen by eye: the light-mode green (#1F7A3D) reads 2.61:1 on the dark card
+       and --pd-bad 4.02:1 — both under AA for this weight. The dark overrides below are the same
+       semantics at 7.02 / 6.20. A single colour for both themes cannot satisfy either properly. */
+    .po-eq-free { color:#1F7A3D; font-weight:700; }
+    html.pd-dark .po-eq-free { color:#5FD08A; }
+    html.pd-dark .po-eq-flag { color:#FF8A7A; }
+    .po-eq-busy { color:var(--pd-muted); }
+    .po-eq-flag { color:var(--pd-bad); font-weight:700; }
+    @media (max-width: 700px) { .po-eq th.po-eq-c1, .po-eq td.po-eq-c1 { width:150px; min-width:150px; max-width:150px; } }
+
     /* module tabs (Overview / S-Curve / Cash Flow) */
     .po-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:16px; }
     .po-tab { padding:9px 18px; cursor:pointer; font-weight:600; font-size:13.5px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -148,6 +207,7 @@
         <button class="po-tab" data-view="scurve"><span data-ico="trendingUp" data-ico-size="15"></span> S-Curve</button>
         <button class="po-tab" data-view="cashflow"><span data-ico="cash" data-ico-size="15"></span> Cash Flow</button>
         <button class="po-tab" data-view="resources"><span data-ico="users" data-ico-size="15"></span> Resources</button>
+        <button class="po-tab" data-view="equipment"><span data-ico="box" data-ico-size="15"></span> Equipment</button>
         <!-- Project filter lives here (not in the Overview toolbar) so it's reachable from every tab
              — it scopes the Overview table AND the S-Curve / Cash Flow views. -->
         <div class="po-projfilter" id="po-projfilter-wrap" style="margin-left:auto;align-self:center;">
@@ -212,6 +272,33 @@
         </div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-cf-table"></table></div>
+        </div>
+      </div>
+
+      <div id="po-view-equipment" style="display:none;">
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Where every piece of equipment is committed, and when it comes free — across the <strong>project filter</strong> above (<span id="po-eq-scope">all projects</span>). <button class="pd-btn" id="po-eq-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <div class="po-kpis2" id="po-eq-kpis"></div>
+        <div class="po-eq-bar">
+          <span data-ico="filter" data-ico-size="15" style="color:var(--pd-muted);"></span>
+          <select class="pd-select" id="po-eq-cat"><option value="">All categories</option></select>
+          <span class="po-eq-seg" id="po-eq-avail">
+            <button data-av="" class="active">All assets</button>
+            <button data-av="free">Free now</button>
+            <button data-av="soon">Free within 3 months</button>
+            <button data-av="clash">Double-booked</button>
+          </span>
+          <div class="po-search" style="min-width:180px;"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-eq-q" placeholder="Search code or name…" /></div>
+          <span style="margin-left:auto;font-size:12px;color:var(--pd-muted);" id="po-eq-count"></span>
+          <button class="pd-btn" id="po-eq-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
+        </div>
+        <div class="po-card">
+          <h3 id="po-eq-title">Equipment availability</h3>
+          <div class="po-eq-scroll" id="po-eq-grid"></div>
+          <div class="po-eq-legend" id="po-eq-legend"></div>
+        </div>
+        <div class="po-card" style="margin-top:16px;">
+          <h3>Asset register across the portfolio</h3>
+          <div style="overflow-x:auto;"><table class="po-table" id="po-eq-table"></table></div>
         </div>
       </div>
 
@@ -809,6 +896,314 @@
     t.innerHTML = head + '<tbody>' + body + '</tbody>';
   }
 
+  // ================= Portfolio Equipment availability =================
+  // Answers one question across projects: WHERE is each asset committed, and WHEN does it come
+  // free. The month grid is the answer — a coloured cell is a commitment, an empty cell is
+  // availability, so the negative space carries the meaning.
+  //
+  // ⚠️ The asset identity is equipment_items.CODE, and its uniqueness is per PROJECT (that is what
+  // the migration enforces). So one code appearing on two projects is EITHER one asset that moved
+  // between them OR two projects that both numbered their first crane TC-01 — and nothing in the
+  // data distinguishes those. The view therefore reports the overlap and says which projects,
+  // rather than asserting a clash. Calling it an error would be a guess presented as a fact.
+  //
+  // ⚠️ Only PLANNED quantities drive the grid. Actuals say where an asset HAS been, not where it is
+  // committed to be, and availability is a forward question.
+  var eqRows = null, eqLoadedIds = null, eqMonths = [], eqProjColor = {}, eqNowIso = null;
+  var eqCat = '', eqQuery = '', eqAvail = '';
+  var EQ_MAX_MONTHS = 48;   // a 4-year window; beyond that the strip is unreadable and it says so
+
+  function eqMkey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01'; }
+  function eqMonthAdd(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+  var EQ_MON3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // A stable per-project palette. ⚠️ Keyed by the project id, not by its position in the list, so a
+  // project keeps its colour when the filter changes — otherwise every filter change repaints the
+  // grid in different colours and the legend has to be re-read each time.
+  var EQ_PALETTE = ['#EE3124','#1F6FB2','#1F7A3D','#B8860B','#7D3C98','#0E8388','#C2410C','#4B5563','#9D174D','#365314'];
+  function eqColorFor(pid) {
+    if (!eqProjColor[pid]) {
+      var h = 0; for (var i = 0; i < pid.length; i++) h = (h * 31 + pid.charCodeAt(i)) % 9973;
+      eqProjColor[pid] = EQ_PALETTE[h % EQ_PALETTE.length];
+    }
+    return eqProjColor[pid];
+  }
+
+  async function loadEquipment(force) {
+    var ids = scopedProjectIds();
+    if (!force && eqLoadedIds && eqLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-eq-scope').textContent = scopeLabel(ids);
+    var grid = document.getElementById('po-eq-grid'), tbl = document.getElementById('po-eq-table'), kpis = document.getElementById('po-eq-kpis');
+    if (!ids.length) { kpis.innerHTML = ''; grid.innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; tbl.innerHTML = ''; return; }
+    grid.innerHTML = '<div class="po-empty">Reading the equipment registers of ' + ids.length + ' project(s)…</div>';
+    kpis.innerHTML = ''; tbl.innerHTML = '';
+    var items, load;
+    try {
+      // ⚠️ PDb.selectAll, not a bare select: one row per equipment per month across a whole
+      // portfolio passes PostgREST's 1000-row cap easily, and a truncated read here would report
+      // an asset as free in months it is actually committed — the most dangerous possible failure
+      // for this screen, and a silent one.
+      items = await PDb.selectAll('equipment_items', function (q) { return q.in('project_id', ids); });
+      load = await PDb.selectAll('equipment_loading', function (q) { return q.in('project_id', ids); });
+    } catch (e) {
+      var msg = (e && e.message) || String(e);
+      grid.innerHTML = '<div class="po-empty">' + (/equipment_items|equipment_loading|schema cache/i.test(msg)
+        ? 'Run <code>migrations/2026-08-24-equipment-loading.sql</code> (and the two that follow it) to enable the portfolio equipment view.'
+        : 'Could not load: ' + esc(msg)) + '</div>';
+      return;
+    }
+    eqLoadedIds = ids;
+    eqBuild(items, load);
+    eqRender();
+  }
+
+  function eqBuild(items, load) {
+    var pname = {}; PROJ.forEach(function (p) { pname[p.id] = p.name || p.id; });
+    var byItem = {};                                   // equipment_id -> { iso: planned }
+    var minIso = null, maxIso = null;
+    (load || []).forEach(function (r) {
+      var q = Number(r.planned_qty);
+      if (!isFinite(q) || q <= 0) return;               // 0 and blank are both "not committed"
+      var iso = String(r.period).slice(0, 10);
+      (byItem[r.equipment_id] = byItem[r.equipment_id] || {})[iso] = (byItem[r.equipment_id][iso] || 0) + q;
+      if (!minIso || iso < minIso) minIso = iso;
+      if (!maxIso || iso > maxIso) maxIso = iso;
+    });
+
+    // The window always includes THIS month, even when nothing is committed near it — "free now"
+    // is a claim about the present and needs the present on screen to be checkable.
+    var now = new Date(); now = new Date(now.getFullYear(), now.getMonth(), 1);
+    eqNowIso = eqMkey(now);
+    var start = minIso ? pd(minIso) : now, end = maxIso ? pd(maxIso) : eqMonthAdd(now, 11);
+    if (start > now) start = now;
+    if (end < eqMonthAdd(now, 5)) end = eqMonthAdd(now, 5);
+    eqMonths = [];
+    var c = new Date(start.getFullYear(), start.getMonth(), 1), guard = 0;
+    while (c <= end && guard++ < EQ_MAX_MONTHS) { eqMonths.push({ d: new Date(c), iso: eqMkey(c) }); c = eqMonthAdd(c, 1); }
+    var truncated = guard >= EQ_MAX_MONTHS && c <= end;
+
+    // Group by code. ⚠️ Case- and space-insensitive, because "TC-01" and "tc-01" typed on two
+    // projects are the same asset to every human reading the sheet.
+    var byCode = {};
+    (items || []).forEach(function (it) {
+      var code = String(it.code || '').trim();
+      var key = code ? code.toLowerCase() : ('__nocode__' + it.id);
+      var a = byCode[key] || (byCode[key] = {
+        code: code, name: '', category: it.category || '', acq: {}, projects: {}, months: {}, clash: {}, uncoded: !code
+      });
+      if (!a.name) a.name = it.name || '';
+      if (it.acquisition) a.acq[it.acquisition] = 1;
+      var pj = a.projects[it.project_id] || (a.projects[it.project_id] = { id: it.project_id, name: pname[it.project_id] || it.project_id, months: {}, qty: 0 });
+      var m = byItem[it.id] || {};
+      Object.keys(m).forEach(function (iso) {
+        pj.months[iso] = (pj.months[iso] || 0) + m[iso];
+        var cell = a.months[iso] || (a.months[iso] = { qty: 0, projs: {} });
+        cell.qty += m[iso];
+        cell.projs[it.project_id] = (cell.projs[it.project_id] || 0) + m[iso];
+        if (Object.keys(cell.projs).length > 1) a.clash[iso] = 1;
+        if (m[iso] > pj.qty) pj.qty = m[iso];
+      });
+    });
+
+    eqRows = Object.keys(byCode).map(function (k) {
+      var a = byCode[k];
+      a.projList = Object.keys(a.projects).map(function (id) { return a.projects[id]; })
+        .sort(function (x, y) { return x.name.localeCompare(y.name); });
+      a.committed = Object.keys(a.months).length;
+      a.clashes = Object.keys(a.clash).length;
+      // "Free from" = the first month on the axis, from this month onward, with no commitment
+      // anywhere. ⚠️ Read off the same grid the planner is looking at, so the number and the
+      // picture can never disagree; null means committed through the end of the window.
+      a.freeFrom = null;
+      for (var i = 0; i < eqMonths.length; i++) {
+        var m = eqMonths[i];
+        if (m.iso < eqNowIso) continue;
+        if (!a.months[m.iso]) { a.freeFrom = m.iso; break; }
+      }
+      a.busyNow = !!a.months[eqNowIso];
+      a.lastIso = Object.keys(a.months).sort().pop() || null;
+      return a;
+    }).sort(function (x, y) {
+      // Codeless rows last — they are a register gap, not an asset, and mixing them into the
+      // middle of the list hides them.
+      if (x.uncoded !== y.uncoded) return x.uncoded ? 1 : -1;
+      return String(x.code || x.name).localeCompare(String(y.code || y.name), undefined, { numeric: true });
+    });
+    eqRows.truncated = truncated;
+
+    var cats = {};
+    eqRows.forEach(function (a) { if (a.category) cats[a.category] = 1; });
+    var sel = document.getElementById('po-eq-cat'), cur = eqCat;
+    sel.innerHTML = '<option value="">All categories</option>' + Object.keys(cats).sort().map(function (c) {
+      return '<option' + (c === cur ? ' selected' : '') + '>' + esc(c) + '</option>';
+    }).join('');
+    if (cur && sel.value !== cur) { eqCat = ''; sel.value = ''; }
+  }
+
+  function eqVisible() {
+    var q = eqQuery.trim().toLowerCase();
+    var soon = eqMonths.filter(function (m) { return m.iso >= eqNowIso; }).slice(0, 3).map(function (m) { return m.iso; });
+    return (eqRows || []).filter(function (a) {
+      if (eqCat && a.category !== eqCat) return false;
+      if (q && (a.code + ' ' + a.name).toLowerCase().indexOf(q) < 0) return false;
+      if (eqAvail === 'free' && a.busyNow) return false;
+      if (eqAvail === 'clash' && !a.clashes) return false;
+      if (eqAvail === 'soon') {
+        var free = soon.some(function (iso) { return !a.months[iso]; });
+        if (!free) return false;
+      }
+      return true;
+    });
+  }
+
+  function eqRender() {
+    if (!eqRows) return;
+    var list = eqVisible();
+    document.getElementById('po-eq-count').textContent =
+      list.length + ' of ' + eqRows.length + ' asset(s)' + (eqRows.truncated ? ' · window capped at ' + EQ_MAX_MONTHS + ' months' : '');
+    eqRenderKpis(list);
+    eqRenderGrid(list);
+    eqRenderTable(list);
+    if (window.Icons) Icons.hydrate(document.getElementById('po-view-equipment'));
+  }
+
+  function eqRenderKpis(list) {
+    var host = document.getElementById('po-eq-kpis');
+    var freeNow = list.filter(function (a) { return !a.busyNow; }).length;
+    var shared = list.filter(function (a) { return a.projList.length > 1; }).length;
+    var clash = list.filter(function (a) { return a.clashes; }).length;
+    var rental = list.filter(function (a) { return a.acq['Rental']; }).length;
+    host.innerHTML = kpi2('Assets tracked', String(list.length)) +
+      kpi2('Free this month', String(freeNow)) +
+      kpi2('On more than one project', String(shared)) +
+      kpi2('On rental', String(rental)) +
+      kpi2('Double-booked assets', String(clash));
+  }
+
+  function eqRenderGrid(list) {
+    var host = document.getElementById('po-eq-grid');
+    if (!list.length) {
+      host.innerHTML = '<div class="po-empty">' + (eqRows.length
+        ? 'No asset matches these filters.'
+        : 'No equipment registered on the selected projects yet. Add it in each project\'s <b>Equipment Loading</b> module.') + '</div>';
+      document.getElementById('po-eq-legend').innerHTML = '';
+      return;
+    }
+    // Year band, so a 30-month strip is readable without counting columns.
+    var yr = [], run = null;
+    eqMonths.forEach(function (m) {
+      var y = m.d.getFullYear();
+      if (!run || run.y !== y) { run = { y: y, n: 0 }; yr.push(run); }
+      run.n++;
+    });
+    // 3-letter labels only while a column can hold them; past ~18 months the strip is compressed
+    // to its 26px floor and three letters would collide.
+    var wide = eqMonths.length <= 18;
+    var h = ['<table class="po-eq"><thead>'];
+    h.push('<tr class="po-eq-yr"><th class="po-eq-c1">Asset</th>' +
+      yr.map(function (r) { return '<th colspan="' + r.n + '">' + r.y + '</th>'; }).join('') + '</tr>');
+    h.push('<tr><th class="po-eq-c1"></th>' + eqMonths.map(function (m) {
+      return '<th class="po-eq-m' + (m.iso === eqNowIso ? ' po-eq-now' : '') + '">' + (wide ? EQ_MON3[m.d.getMonth()] : EQ_MON3[m.d.getMonth()].charAt(0)) + '</th>';
+    }).join('') + '</tr>');
+    h.push('</thead><tbody>');
+    list.forEach(function (a) {
+      var sub = [a.category || 'Uncategorised'];
+      if (a.projList.length) sub.push(a.projList.map(function (p) { return p.name; }).join(' · '));
+      h.push('<tr><td class="po-eq-c1">' +
+        '<div class="po-eq-name">' + (a.code ? '<span class="po-eq-code">' + esc(a.code) + '</span>' : '<span class="po-eq-flag" title="This item has no equipment code — it cannot be tracked across projects">no code</span> ') + esc(a.name || '—') + '</div>' +
+        '<div class="po-eq-sub" title="' + esc(sub.join(' — ')) + '">' + esc(sub.join(' — ')) + '</div></td>');
+      eqMonths.forEach(function (m) {
+        var cell = a.months[m.iso];
+        var cls = 'po-eq-cell', style = '', tip;
+        if (cell) {
+          var pids = Object.keys(cell.projs);
+          cls += ' on';
+          style = 'background-color:' + eqColorFor(pids[0]) + ';';
+          if (pids.length > 1) cls += ' clash';
+          tip = EQ_MON3[m.d.getMonth()] + ' ' + m.d.getFullYear() + ' — ' +
+            pids.map(function (id) { return (a.projects[id] ? a.projects[id].name : id) + ' (' + (Math.round(cell.projs[id] * 100) / 100) + ')'; }).join(' + ') +
+            (pids.length > 1 ? ' — planned on two projects at once' : '');
+        } else {
+          tip = EQ_MON3[m.d.getMonth()] + ' ' + m.d.getFullYear() + ' — free';
+        }
+        h.push('<td class="po-eq-m' + (m.iso === eqNowIso ? ' po-eq-now' : '') + '" title="' + esc(tip) + '">' +
+          '<div class="' + cls + '" style="' + style + '"></div></td>');
+      });
+      h.push('</tr>');
+    });
+    h.push('</tbody></table>');
+    host.innerHTML = h.join('');
+
+    // Legend: only the projects actually on screen, so it stays a key rather than a project list.
+    var seen = {};
+    list.forEach(function (a) { a.projList.forEach(function (p) { if (Object.keys(p.months).length) seen[p.id] = p.name; }); });
+    document.getElementById('po-eq-legend').innerHTML =
+      Object.keys(seen).map(function (id) {
+        return '<span class="po-eq-lg"><span class="sw" style="background:' + eqColorFor(id) + '"></span>' + esc(seen[id]) + '</span>';
+      }).join('') +
+      '<span class="po-eq-lg"><span class="sw" style="background:var(--pd-line);opacity:.35;"></span>free</span>' +
+      '<span class="po-eq-lg"><span class="sw clash" style="background:var(--pd-muted);outline:1.5px solid var(--pd-bad);"></span>planned on two projects</span>' +
+      '<span class="po-eq-lg"><span class="sw" style="background:var(--pd-red);width:3px;border-radius:0;"></span>this month</span>';
+  }
+
+  function eqFreeLabel(a) {
+    if (!a.busyNow) return '<span class="po-eq-free">free now</span>';
+    if (a.freeFrom) {
+      var d = pd(a.freeFrom);
+      return '<span class="po-eq-busy">' + EQ_MON3[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2) + '</span>';
+    }
+    return '<span class="po-eq-busy">beyond this window</span>';
+  }
+
+  function eqRenderTable(list) {
+    var t = document.getElementById('po-eq-table');
+    var head = '<thead><tr><th>Code</th><th>Equipment</th><th>Category</th><th>Type</th><th>Projects</th>' +
+      '<th class="num">Months committed</th><th class="num">Peak qty</th><th>Free from</th><th>Flags</th></tr></thead>';
+    if (!list.length) { t.innerHTML = head + '<tbody><tr><td colspan="9" class="po-empty">Nothing to show.</td></tr></tbody>'; return; }
+    var body = list.map(function (a) {
+      var peak = 0; Object.keys(a.months).forEach(function (iso) { if (a.months[iso].qty > peak) peak = a.months[iso].qty; });
+      var flags = [];
+      if (a.clashes) flags.push('<span class="po-eq-flag" title="Planned on more than one project in the same month — either one asset double-booked, or two projects using the same code">' + a.clashes + ' overlapping month(s)</span>');
+      if (a.uncoded) flags.push('<span class="po-eq-flag">no code</span>');
+      if (!a.committed) flags.push('<span class="po-eq-busy">no planned months</span>');
+      return '<tr><td><b>' + esc(a.code || '—') + '</b></td><td>' + esc(a.name || '—') + '</td><td>' + esc(a.category || '—') + '</td>' +
+        '<td>' + esc(Object.keys(a.acq).join(' / ') || '—') + '</td>' +
+        '<td>' + (a.projList.length ? a.projList.map(function (p) {
+          return '<span class="po-eq-lg" style="margin-right:8px;"><span class="sw" style="background:' + eqColorFor(p.id) + '"></span>' + esc(p.name) + '</span>';
+        }).join('') : '<span class="po-eq-busy">unassigned</span>') + '</td>' +
+        '<td class="num">' + a.committed + '</td><td class="num">' + (Math.round(peak * 100) / 100) + '</td>' +
+        '<td>' + eqFreeLabel(a) + '</td><td>' + (flags.join(' · ') || '') + '</td></tr>';
+    }).join('');
+    t.innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+
+  function eqExport() {
+    if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
+    var list = eqVisible();
+    if (!list.length) { UI.toast('Nothing to export.', 'warn'); return; }
+    // One row per asset with a column per month, so the exported sheet is the same picture as the
+    // grid rather than a different summary of it.
+    var rows = list.map(function (a) {
+      var o = {
+        Code: a.code, Equipment: a.name, Category: a.category,
+        Type: Object.keys(a.acq).join(' / '),
+        Projects: a.projList.map(function (p) { return p.name; }).join(' | '),
+        'Months committed': a.committed,
+        'Free from': a.busyNow ? (a.freeFrom || 'beyond window') : 'free now',
+        'Overlapping months': a.clashes
+      };
+      eqMonths.forEach(function (m) {
+        var cell = a.months[m.iso];
+        o[EQ_MON3[m.d.getMonth()] + ' ' + String(m.d.getFullYear()).slice(2)] = cell
+          ? Object.keys(cell.projs).map(function (id) { return (a.projects[id] ? a.projects[id].name : id); }).join(' + ')
+          : '';
+      });
+      return o;
+    });
+    var ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Equipment availability');
+    XLSX.writeFile(wb, 'Portfolio Equipment Availability.xlsx');
+  }
+
   // ================= Tab switching =================
   function switchView(v) {
     view = v;
@@ -817,9 +1212,11 @@
     document.getElementById('po-view-scurve').style.display = v === 'scurve' ? '' : 'none';
     document.getElementById('po-view-cashflow').style.display = v === 'cashflow' ? '' : 'none';
     document.getElementById('po-view-resources').style.display = v === 'resources' ? '' : 'none';
+    document.getElementById('po-view-equipment').style.display = v === 'equipment' ? '' : 'none';
     if (v === 'scurve') loadScurve(false);
     if (v === 'cashflow') loadCashflow(false);
     if (v === 'resources') loadResources(false);
+    if (v === 'equipment') loadEquipment(false);
   }
 
   function exportExcel() {
@@ -854,6 +1251,17 @@
     document.querySelectorAll('.po-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view); }; });
     document.getElementById('po-sc-refresh').onclick = function () { loadScurve(true); };
     document.getElementById('po-rs-refresh').onclick = function () { loadResources(true); };
+    document.getElementById('po-eq-refresh').onclick = function () { loadEquipment(true); };
+    document.getElementById('po-eq-cat').onchange = function (e) { eqCat = e.target.value; eqRender(); };
+    document.getElementById('po-eq-q').oninput = function (e) { eqQuery = e.target.value; eqRender(); };
+    document.getElementById('po-eq-export').onclick = eqExport;
+    document.querySelectorAll('#po-eq-avail button').forEach(function (b) {
+      b.onclick = function () {
+        eqAvail = b.dataset.av || '';
+        document.querySelectorAll('#po-eq-avail button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        eqRender();
+      };
+    });
     document.getElementById('po-cf-refresh').onclick = function () { loadCashflow(true); };
     try {
       var res = await Promise.all([PDb.getProjects(), PDb.getGroupHeads()]);

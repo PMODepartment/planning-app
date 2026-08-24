@@ -7990,3 +7990,47 @@ cells aligned at 12/12, a clean parse and every `getElementById` target present.
 **NOT verified:** nothing signed in — the placement writes, the `location->>'<level id>'` window
 reads and the tower-value RPC are untested against real data, and the migration has not been run.
 `MODULE_V` → `20260824p`.
+
+---
+
+## 2026-08-24 — Portfolio Overview: equipment availability across projects
+
+A fifth tab, **Equipment**, answering the question a project-scoped register cannot: *where is each
+asset committed, and when does it come free?* **No migration** — it reads `equipment_items` +
+`equipment_loading` for whatever the existing project filter scopes to.
+
+**The month grid is the answer and availability is its negative space** — one row per asset, one cell
+per month coloured by the project that has it, blank where it is free. Plus a KPI band (assets
+tracked · free this month · on more than one project · on rental · double-booked), four availability
+filters (All / Free now / Free within 3 months / Double-booked), category + search, an asset register
+below it, and an Excel export that emits **the same picture** (a column per month) so the sheet and
+the screen cannot tell different stories.
+
+⚠️ **The asset identity is `equipment_items.code`, which is unique per PROJECT — which is exactly why
+the same code on two projects is reported, not judged.** It is either one asset that moved between
+them or two projects that both numbered their first crane TC-01, and nothing in the data
+distinguishes those. A month where two projects both plan one code is marked "planned on two
+projects" with both names in the tooltip; calling it an error would be a guess presented as a fact.
+
+⚠️ **Only PLANNED quantities drive the grid**, and **0 or blank is not a commitment** — those are how
+the Equipment Loading module records "not reported" and "none on site", and treating either as a
+booking would report a free asset as busy. ⚠️ **`PDb.selectAll`, never a bare select**: one row per
+equipment per month across a portfolio passes the 1000-row cap easily, and a truncated read would
+report an asset as free in months it is actually committed — silently.
+
+**Four real defects found by measuring, none of which a code read would have shown.** (1) The inline
+`style="background:…"` **shorthand reset `background-image`**, so the hatch marking a double-booked
+month never rendered — measured as `background-image: none` on a cell that should carry it. (2)
+`min-width:100%` with auto table layout let the browser widen columns past their declared widths, and
+the strip huddled in ~610px of a 1400px card. (3) The brand red on the red tint used by the code chip
+reads **3.60:1**, under AA at 12px bold — ink on the same tint is 14.25 light / 13.45 dark, with a red
+left border keeping the brand cue. (4) In dark mode the "free now" green read **2.61:1** and the flag
+**4.02:1**; the dark overrides take those to 7.26 / 6.12.
+
+**Verified:** 24 checks executing the shipped `eqBuild` / `eqVisible` / `eqColorFor` (sliced from the
+file), plus a real browser at 1440 and a 375px layout viewport — 23 rows × 13 months, sticky asset
+column and header, all five KPIs, 0 page horizontal scroll at either width, grid and register each
+scrolling inside their own card, every phone control ≥44px, light/dark contrast **min 5.37:1**.
+**NOT verified signed in** — the anon key has no grants on the equipment tables.
+⚠️ This module's `index.html` is **not** cache-busted (a plain sidebar href, not `MODULE_V`), so
+hard-refresh once after the deploy.
