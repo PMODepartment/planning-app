@@ -66,16 +66,43 @@ shell never reaches into a module's tables. Tiles show a row count, an optional
 
 ## B. Contracts & Claims (`modules/contracts-claims/`)
 
-### B1. Client BOQ upload → internal class codes → activities
-- Upload the client BOQ (xlsx/csv), persist raw line items, then a two-stage mapping UI:
-  BOQ item → internal class code → schedule activity. Mappings must be saved, reusable,
-  and auditable (who mapped what, when).
-- Feeds C1 and the Cash Flow module (BOQ value is the natural S-curve basis).
+### B1. Client BOQ upload -> internal class codes -> activities
+Full design note: **`docs/boq-and-pmi.md`** (grounded in the real OPW101 Package 2 BOQ, 10 sheets /
+~1,215 priced lines). The middle link already exists: `class_codes` (702 L3 codes) +
+`project_schedule.class_code`. B1 is: import the client's lines verbatim, map them to class codes,
+allocate quantity to activities.
+- **Format varies per client AND per sheet of the same workbook** -- header row 12/10/7 and column
+  offset A/B inside one file -- so header detection is a search, and an accepted per-sheet
+  **import profile** is saved and reused for the next revision.
+- ⚠️ `item_no` is NOT unique (13 duplicates in one sheet) -- identity is (revision, sheet, row).
+- ⚠️ On 3 of 4 sheets the **heading is the spec and the leaf is a location** ("to Hallway & Lift
+  Lobby at 3rd floor") -- so map at the heading, allocate at the leaf, and reuse the schedule's
+  existing location matcher for the allocation.
+- ⚠️ **Mapping is per-BOQ-revision, never a global lookup**, but seeded by a **suggestion library**
+  learned from accepted mappings; only accepted rows are stored, with how they were arrived at.
+- ⚠️ Amount column carries scope statements ("Included in Package 1", "By Megaworld") -- store
+  verbatim, exclude from roll-ups, never coerce to 0. Line totals are authoritative; unit rates are
+  rounded displays (recomputing from them costs ₱8.60 on a two-line sheet).
+- ⚠️ **No `quantity` column on `project_schedule`** -- an activity's quantity is DERIVED from its
+  allocations, or quantities live in three places and drift.
+- Feeds C1, Cash Flow's cost-weighted S-curve, and F2/F6 of the vendor chain.
 
 ### B2. Claims Register with PMI tracking
-- Claims register with PMI (Potential/Pending Milestone-Impact) tracking per claim:
-  status, entitlement, time impact, cost impact, linkage to the schedule activity and to
-  the change order it may become.
+Full design note: **`docs/boq-and-pmi.md`** (grounded in a real 14-page filed PMI).
+- ⚠️ **A filed PMI is a case file of 5 document types**, not one PDF -- needs a private
+  `contracts-claims` bucket + typed attachments (INSERT policy `is_writer()`, not the legacy
+  `is_approved()`).
+- ⚠️ **Two reference numbers**, client's and ours; store and search both.
+- ⚠️ Numbering is **hierarchical + revisioned + spawning** (PMI 29 -> 29.2 -> rev1, and one PMI
+  issues another on approval) -- three distinct relations, not one string.
+- ⚠️ Add a **receipt** stage before Estimated, and per-stage derived aging; the existing four-stage
+  commercial pipeline stays.
+- ⚠️ The cost build-up (direct -> markup -> fix cost -> VAT) is **"As per Contract"** -- a
+  per-contract rate card, never hard-coded percentages.
+- **A PMI cost proposal IS a BOQ** -> its priced lines go into `boq_items` with
+  `scope_type='change_order'`, the same axis `project_schedule.scope_type` uses. This is what makes
+  variation work measurable at all.
+- ⚠️ **No OCR of client PMI PDFs.** Type the header fields, attach the file.
 
 ---
 

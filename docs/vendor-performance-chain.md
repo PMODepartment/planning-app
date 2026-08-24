@@ -113,9 +113,12 @@ Mirror the vendor, don't re-key it.
   schedule uses), and/or `wbs_node_id` for a scope-level link.
 - Reconciliation view: **planned qty (schedule/BOQ) vs. actual qty (productivity), per trade
   per month.**
-- ⚠️ Blocked on a real gap: `project_schedule` has **no `quantity` / `unit` column**. Either
-  add one (`2026-08-2x-schedule-activity-quantity.sql`) or source planned quantity from the
-  Contracts & Claims BOQ (ROADMAP B1). **Main open decision — see §4.1.**
+- **Source: the Contracts & Claims BOQ** (ROADMAP B1), decided 2026-08-24. Quantity reaches an
+  activity through `boq_allocations`; `project_schedule` gains **no** quantity column. Full design
+  in `docs/boq-and-pmi.md`.
+- ⚠️ BOQ qty (measured for payment) and productivity qty (measured for progress) are **different
+  numbers** -- waste, remeasure and provisional sums separate them legitimately. Report the
+  variance; never reconcile it away.
 
 ### F3. Vendor S-curve
 - `schedule_scurve_agg_vendor(p_project_id text, p_vendor_id uuid)` — the existing
@@ -159,10 +162,10 @@ adherence (`planners_need_by` vs. actual delivery). Portfolio-level ranking by t
 
 ## 4. Open decisions
 
-1. **Where does planned quantity come from?** (blocks F2/F6)
-   Add `quantity`/`unit` to `project_schedule`, or source it from the Contracts & Claims BOQ
-   (ROADMAP B1) and link BOQ item → activity. The second is more correct and more work; the
-   first is available now and risks a third place quantities live.
+1. ~~**Where does planned quantity come from?**~~ **DECIDED 2026-08-24: the Contracts & Claims
+   BOQ** (ROADMAP B1). A `project_schedule.quantity` column is explicitly rejected -- it would put
+   quantities in a third place with nothing keeping them in step. An activity's quantity is
+   **derived** from `boq_allocations`. See `docs/boq-and-pmi.md`.
 2. **Co-awarded packages.** `awarded_vendor_ids[]` is an array. When two vendors share WP-147,
    is progress split by `awarded_vendor_amounts[]`, attributed to the primary `vendor_id`, or
    counted for both (double-counting the total)? **Recommendation:** attribute to the primary
@@ -186,7 +189,7 @@ F1 (vendor identity) ──┬─→ F3 (vendor S-curve) ─→ F4 (accomplishme
                        │
                        └─→ F2 (productivity ↔ WP link) ─→ F6 (rate library → durations)
                                    ▲
-                       B1 (BOQ) ───┘   or   schedule quantity column
+                       B1 (BOQ) ───┘   (decided: BOQ, not a schedule column)
 ```
 
 F1 is small, unblocks both branches, and is worth doing before anything else is designed in

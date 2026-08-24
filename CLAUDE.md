@@ -7667,3 +7667,65 @@ off schedule rows); (4) portfolio rollup must follow the portfolio-RPC pattern, 
 
 Files: `docs/vendor-performance-chain.md` (new), `ROADMAP.md` (Section F). No `?v=` / `MODULE_V`
 bump — no shipped asset changed.
+
+## BOQ + PMI design note: format varies per client AND per sheet (2026-08-24) — fmlozano
+
+Owner settled the vendor-chain's open decision — **planned quantity comes from the Contracts &
+Claims BOQ, not a new `project_schedule.quantity` column** — and asked to design B1 (BOQ → class
+codes → activities) and B2 (PMI tracking), flagging that both PMI and BOQ formats vary by client
+and that **class-code mapping differs BOQ to BOQ**. Wrote **`docs/boq-and-pmi.md`** and rewrote
+ROADMAP B1/B2. Analysis only — no code, no schema, nothing deployed.
+
+**Grounded in two real documents, measured rather than assumed** — a 14-page filed PMI (My Enso
+Lofts / PH1) and the OPW101 Package 2 BOQ (10 sheets, ~1,215 priced lines).
+
+⚠️ **The format varies INSIDE one workbook, which settles the parser question.** Header row is 12 /
+10 / 7 and the first column A / B across the four trade sheets and their billing twins. So header
+detection must be a search (the Drawing Register's `findHeader` pattern), and an accepted
+**per-sheet import profile** is saved for the next revision.
+
+⚠️ **`item_no` is not unique — 13 duplicates in 901 numbered Architectural lines.** Rows numbered
+`1.1.2…1.1.5` sit as leaves under heading `1.1.1`, then `1.1.2` restarts as a heading. Identity is
+`(revision, sheet, source_row)`; the item number is a label that may only *propose* nesting.
+
+⚠️ **On 3 of the 4 trade sheets the heading is the SPEC and the leaf is a LOCATION**
+(`9.1.1 WF-1.02C: Low Wall…` → `9.1.1.1 to Hallway & Lift Lobby at 3rd floor`). That drives the
+whole workflow: **map at the heading (40 headings cover 187 lines), allocate at the leaf**, and the
+leaf text feeds the schedule's existing location matcher (`locMapPlan`). ⚠️ But `Architectural`,
+the biggest sheet, does NOT follow this — its leaves are ordinary descriptions. Heading/leaf
+semantics are per sheet, never a global rule.
+
+⚠️ **The amount column is not always a number**: `Included in Package 1` (16), `n/a` (4),
+`By Megaworld` (2). Those are **scope-boundary statements**, exactly what a claim later turns on —
+store verbatim, exclude from roll-ups, never coerce to 0. The `Summary` sheet also carries `#REF!`;
+import must survive error values.
+
+⚠️ **Line totals are authoritative; unit rates are rounded displays.** Measured: the PMI's shown
+rates recompute to **₱8,707,508.60** against its stated **₱8,707,500.00** — ₱8.60 wrong on a
+two-line sheet. Import `amount` as given; derive rates for display only. Same family as the 1-peso
+Avesta gap this module's suite already asserts — assert, never "fix" our arithmetic to match.
+
+**Mapping (the owner's specific concern):** `boq_class_map` rows are **scoped to the BOQ revision —
+no global description→code table that silently applies itself**, since two clients can mean
+different Finance codes by the same words. Viability comes from a **suggestion library** learned
+from accepted mappings (normalised text, item-number path, division headings), proposing worst-
+confidence-first; **only accepted rows are stored, with how they were arrived at.**
+
+**PMI findings:** a filed PMI is a **case file of five document types** (cost proposal, client
+form, photos, testing report, supplier contract), not one PDF → needs a private `contracts-claims`
+bucket with typed attachments. **Two reference numbers** (`MEL.CON.PMI-029` vs `MST347. OPS. VO-PMI
+29.2 rev1`) — store and search both. Numbering is **hierarchical + revisioned + spawning** (three
+distinct relations). Lifecycle ran ~18 months, so a **receipt** stage and **per-stage** derived
+aging are needed. The cost build-up is marked **"As per Contract"** → a per-contract rate card,
+never hard-coded 10/20/12.
+
+**The unifying insight: a PMI cost proposal IS a BOQ** (same qty / material / labour / total
+shape), so its priced lines go into `boq_items` with `scope_type='change_order'` — the same axis
+`project_schedule.scope_type` already uses. That closes a real gap: variation work currently
+carries no quantities anywhere, so a change order can be scheduled but never measured.
+
+⚠️ **Recommended against: OCR/auto-parsing client PMI PDFs.** Tempting answer to "the format
+varies", wrong here — a mis-parsed amount in a claims register gets quoted at a meeting.
+
+Files: `docs/boq-and-pmi.md` (new), `ROADMAP.md` (B1/B2 rewritten),
+`docs/vendor-performance-chain.md` (decision #1 settled). No `?v=` / `MODULE_V` bump.
