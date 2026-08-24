@@ -7401,3 +7401,24 @@ reference these rows via `schedule_activities.calendar_id`, so cleaning up exist
 migration needing sign-off on which row survives. Spun out as its own task.
 
 `MODULE_V` → `20260824k`.
+
+---
+
+## Vertical Stacking — magnifier off the right edge + a magnify cursor
+
+**Symptom:** with Magnify on, the loupe panel hung off the right of the window — only a sliver was
+visible, and its zoom buttons were unreachable.
+
+**Cause:** `.ps-vs-stage > .ps-vs-viewport` used `flex:1 1 auto`. An `auto` basis starts the
+viewport at the towers' *natural building width*, so on a wide building the flex row's content is
+wider than the container and the panel gets pushed past the edge. Changed to `flex:1 1 0%` (plus
+`max-width:100%`), so the viewport takes only the space left over after the panel and scrolls its
+own towers. The panel is also capped at `max-width:40%` (`clamp(260px,24vw,400px)`), overridden back
+to 100% in the <1100px stacked layout.
+
+**Magnify cursor:** `renderVStack` now puts `is-loupe-on` on `.ps-vs-stage` while the loupe is
+active, and that class paints an inline-SVG loupe cursor (red, with a dark halo so it reads on both
+light and dark cells) over `.ps-vs-scroll` / the tower svg / the cells, hotspot at the lens centre,
+falling back to `zoom-in`. `!important` because `.ps-vs-cell` sets `cursor:pointer`.
+
+`MODULE_V` → `20260824l`.

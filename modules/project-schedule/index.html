@@ -1072,9 +1072,14 @@
        building where it is and paints a magnified copy of whatever the pointer is over into a
        docked panel on the right. It is a CLONE of the same <svg> with a tighter viewBox, so what
        the panel shows is exactly what is drawn - there is no second renderer to keep in step. */
-    .ps-vs-stage { display:flex; gap:14px; align-items:flex-start; }
-    .ps-vs-stage > .ps-vs-viewport { flex:1 1 auto; min-width:0; }
-    .ps-vs-loupe { flex:0 0 clamp(280px, 26vw, 420px); position:sticky; top:6px; border:1px solid var(--pd-line);
+    .ps-vs-stage { display:flex; gap:14px; align-items:flex-start; width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
+    /* ⚠️ basis 0, not auto: with an `auto` basis the towers' natural (building) width is the starting
+       size of the viewport, and on a wide building the row still overflows its container - which is
+       how the magnifier ended up hanging off the right edge of the screen. A zero basis makes the
+       viewport take only the space LEFT OVER after the panel, so the panel is always fully on screen. */
+    .ps-vs-stage > .ps-vs-viewport { flex:1 1 0%; min-width:0; max-width:100%; }
+    .ps-vs-loupe { flex:0 0 clamp(260px, 24vw, 400px); max-width:40%; box-sizing:border-box;
+      position:sticky; top:6px; border:1px solid var(--pd-line);
       border-radius:12px; background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-vs-loupe-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;
       background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:12.5px; font-weight:800; }
@@ -1092,9 +1097,18 @@
     /* The hovered zone is outlined in BOTH panes, so it is obvious which cell the loupe is showing.
        !important beats the per-cell stroke painted inline by _vsTowerSVG. */
     [data-vsk].is-loupe { stroke:var(--pd-red) !important; stroke-width:2.5px !important; stroke-dasharray:none !important; }
+    /* ---- Magnify cursor -------------------------------------------------------------------
+       With the loupe on, the pointer itself says so: a loupe glyph rides over the building, so it
+       is obvious the left pane is the thing to sweep. `zoom-in` is the fallback for the rare
+       browser that refuses the SVG cursor. The !important beats .ps-vs-cell's own `pointer`. */
+    .ps-vs-stage.is-loupe-on .ps-vs-scroll,
+    .ps-vs-stage.is-loupe-on .ps-vs-scroll svg,
+    .ps-vs-stage.is-loupe-on .ps-vs-cell {
+      cursor: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' stroke='%23231F20' stroke-width='3' opacity='.35'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M16.2 16.2 24 24' stroke-linecap='round'/%3E%3C/g%3E%3Cg fill='none' stroke='%23E4002B' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M16.2 16.2 24 24' stroke-linecap='round'/%3E%3Cpath d='M8 11h6M11 8v6' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 11 11, zoom-in !important;
+    }
     @media (max-width: 1100px) {
       .ps-vs-stage { flex-direction:column; }
-      .ps-vs-loupe { position:static; flex:1 1 auto; width:100%; }
+      .ps-vs-loupe { position:static; flex:1 1 auto; width:100%; max-width:100%; }
     }
     .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:13px; text-align:center; }
     #ps-view-schedule.ps-vstack-mode .ps-split,
@@ -11089,7 +11103,7 @@
     // ⚠️ The defs must be in the DOM before the towers that reference them are laid out, so they are
     // prepended rather than appended.
     host.innerHTML = bar + twChips + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
-      '<div class="ps-vs-stage"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
+      '<div class="ps-vs-stage' + (_vsLoupe ? ' is-loupe-on' : '') + '"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
       // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
       // rather than being covered by it.
       (_vsLoupe ? '<aside class="ps-vs-loupe" id="ps-vs-loupe">' +
