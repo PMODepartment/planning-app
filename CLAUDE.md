@@ -7896,3 +7896,44 @@ negative lead, missing dates, a 20-year span vs the 600-month guard) — all pas
 module shows its "needs its tables" banner. Nothing was exercised signed in — the anon key has no
 grants — so the sync, the drift check, the schedule search and the `location->>'<level id>'`
 tower filter are untested against real data. `MODULE_V` bumped to `20260824n`.
+
+---
+
+## 2026-08-24 — Equipment Loading: "Site Dev" becomes **Site Plan** (traced towers over the real plan)
+
+The tab was a blank grid of draggable rectangles. It is now the project's own **site development
+plan** as the backdrop, with each tower marked on it as a shape.
+
+**Upload the plan** (private `site-plans` bucket — **run
+`migrations/2026-08-24-site-plan-bucket.sql`**), then **Detect towers** for a first pass, or
+**Draw shape** to trace one corner by corner. Any shape can be moved, reshaped corner by corner
+(add a corner from a midpoint handle, Alt-click to remove one), renamed to the tower's number, or
+deleted. Equipment is then assigned to a tower by picking a chip and clicking the shape, as before.
+
+⚠️ **The stage height is derived from the same aspect as the svg viewBox**, so a plan-unit
+coordinate and a backdrop pixel always agree — measured, CTM mapping error **0px**. A fixed-height
+stage would letterbox the image but not the shapes, putting every traced tower off its building.
+Replacing the backdrop rescales existing shapes for the same reason.
+
+⚠️ **Detection is a suggestion, and the UI says so.** Otsu threshold → connected components → two
+filters that do the real work: a size band (0.35%–35% of the sheet: below is text, above is the
+border frame) and a **fill ratio** (a footprint is solid, a road network sprawls across an empty
+box). The flood fill is iterative with an explicit stack — a recursive one blows the call stack on
+a large blob, which on a real plan is every building.
+
+⚠️ **Legacy rectangles are read as polygons, never migrated on load** — a plan saved by the first
+version keeps working and opening the tab stays a read. ⚠️ **Deleting a shape clears
+`equipment_items.site_block` explicitly**: that column has no foreign key behind it, so the rows
+would otherwise read as "unknown block" forever.
+
+⚠️ **A real defect caught by measuring, not reading:** below 1000px the panes stack, and the
+inherited `align-items:flex-start` sizes a column child to its content — the stage is an empty
+padding-box, so the whole plan collapsed to **0×0** at a 653px layout viewport. Fixed with
+`align-items:stretch`.
+
+**Verified:** 22 checks executing the shipped geometry and detection functions (sliced from the
+file, never reimplemented) plus a real browser at desktop and 653px against the shipped CSS —
+stage aspect equals the viewBox, svg fills it to the pixel, 0 page horizontal scroll, dark mode on
+tokens. Script parses; every `getElementById` target exists.
+**NOT verified:** nothing signed in — the upload, the signed-URL read, detection against a real
+plan and the pointer gestures are untested against real data. `MODULE_V` → `20260824o`.

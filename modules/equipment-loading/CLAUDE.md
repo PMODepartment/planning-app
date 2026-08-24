@@ -106,3 +106,66 @@ signed in:
   `migrations/2026-08-24-equipment-loading.sql` and then
   `migrations/2026-08-24-equipment-schedule-link.sql` in the Supabase SQL editor. Until then
   the module shows its "needs its tables" banner.
+
+---
+
+## 2026-08-24 — "Site Dev" becomes **Site Plan**: a real plan view with traced tower shapes
+
+The tab was a blank grid with draggable rectangles. It is now the site development plan itself,
+with each tower marked on it as a shape you can trace, reshape, label and assign equipment to.
+
+**What was built**
+- **Backdrop** — upload the project's site development plan (PNG/JPG, ≤12 MB) as the plan view's
+  background. Stored in a new private `site-plans` bucket; the row keeps the object **path** and
+  the module signs a short-lived URL on demand.
+- **Detect towers** — thresholds the uploaded plan (Otsu), groups the connected dark pixels, and
+  offers each solid blob's footprint as a shape, numbered `Tower 1…N` in reading order.
+- **Draw shape** — trace a tower corner by corner; click the first point again, press Enter, or
+  press Finish to close it. Esc abandons. **+ Rectangle** still adds a 4-corner box.
+- **Free shape editing** — drag the outline to move, drag a white handle to move a corner, drag a
+  faded midpoint handle to **add** a corner, Alt-click a corner to **remove** one. Double-click or
+  the rail's Rename button relabels a tower; the rail also deletes one.
+- **Assignment is unchanged** — pick an equipment chip, click the tower.
+
+**Decisions worth keeping**
+- ⚠️ **The stage's height comes from the SAME aspect as the svg viewBox** (`padding-bottom` =
+  `PLAN.h / 1000`). A fixed-height stage would letterbox the backdrop while the shapes were not
+  letterboxed, and every traced tower would sit off its building. Measured: plan-unit → screen via
+  the svg CTM equals the manual linear mapping to **0px** at both widths tested.
+- ⚠️ **Legacy rect blocks are READ as 4-point polygons, never migrated on load.** A plan written by
+  the first version keeps working, and opening the tab stays a read. `setPts` retires `x/y/w/h` the
+  first time a shape is edited, so a block can never carry two disagreeing shapes.
+- ⚠️ **Replacing the backdrop rescales the existing shapes** by the aspect change — otherwise a new
+  scan of the same site silently moves every tower off its building.
+- ⚠️ **The image is fetched to a blob and shown from an object URL**, not straight from the signed
+  URL: a cross-origin image taints a canvas and `detectTowers` reads pixels back out of one. Same
+  round-trip the PPR export has to make.
+- ⚠️ **Detection is a SUGGESTION and the UI says so.** A site plan carries roads, hatching, title
+  blocks and text, all dark pixels. Two filters do the real work: a size band (0.35%–35% of the
+  sheet — below is text, above is the border frame) and a **fill ratio** (a footprint is solid; a
+  road network sprawls across a mostly-empty box). Everything it proposes is an ordinary shape.
+- ⚠️ **The flood fill is iterative with an explicit stack.** A recursive one blows the call stack on
+  a large blob, which on a real plan is every building. Verified against a 160,000-pixel blob.
+- ⚠️ **Deleting a shape clears `equipment_items.site_block` explicitly.** That column holds a plain
+  id with no foreign key behind it, so the rows would otherwise point at nothing and read as
+  "unknown block" forever.
+- ⚠️ **Enter/Esc are bound only while drawing AND on this tab**, so they cannot swallow a keystroke
+  meant for the matrix editor or a modal.
+- ⚠️ **`align-items:stretch` in the ≤1000px media query is load-bearing.** In column direction the
+  inherited `flex-start` sizes each pane to its content, and the stage is an empty padding-box — the
+  plan collapsed to **0×0**, measured at a 653px layout viewport before the fix.
+
+**Verified** — 22 checks executing the shipped `bpts` / `setPts` / `bboxOf` / `ptsAttr` / `clamp` /
+`planH` / `otsu` / `components` (sliced from the file, never reimplemented): legacy rects read as
+polygons without mutating the row, `setPts` retires the rect fields, the bbox of a concave shape,
+Otsu splitting both a white-paper and a grey-scan histogram, exact component bounding boxes, the
+size floor rejecting a stray pixel, an L-shaped run failing the fill test while a solid block passes,
+a full-sheet blob landing over the 35% guard, and the 160k-pixel stack case. Plus a real browser at
+desktop and a 653px layout viewport against the shipped CSS: stage aspect equals the viewBox
+exactly, the svg fills the stage to the pixel, CTM mapping error 0, no page horizontal scroll, and
+dark mode entirely on tokens. The script parses and every `getElementById` target exists.
+
+**NOT verified** — nothing signed in (the anon key has no grants), so the upload, the signed-URL
+read, detection against a real plan, and the pointer drag/trace gestures are untested against real
+data. **Owner action:** run `migrations/2026-08-24-site-plan-bucket.sql` (after the two equipment
+migrations) or the backdrop upload will report the bucket is missing.

@@ -117,37 +117,60 @@
     .eq-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
     .eq-dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:-1px; }
 
-    /* ---- Site development view -----------------------------------------------------------
-       A plan view of the site: one block per tower, seeded from the schedule's own tower values
-       so the two cannot disagree about what the towers are called. Drag a block to lay the site
-       out; pick equipment on the left and click a block to assign it there. */
+    /* ---- Site Plan view ------------------------------------------------------------------
+       A TOP VIEW of the site: an optional scan of the site development plan as the backdrop,
+       and one SHAPE per tower drawn over it. Shapes are polygons in plan units (0..1000 across,
+       0..PLAN.h down) held in the site plan's own jsonb, so a tower that is not a rectangle can
+       be traced, and reshaping or renaming one touches no equipment row — an item stores only
+       the block's id.
+
+       ⚠️ The stage's height is set from the SAME aspect the svg viewBox uses, so a plan-unit
+       coordinate and an on-screen pixel always agree. Do not give the stage a fixed height:
+       the backdrop would then be letterboxed while the shapes were not, and every traced tower
+       would sit off its building. */
     .eq-site { display:flex; gap:14px; align-items:flex-start; }
-    .eq-site-rail { flex:0 0 clamp(220px, 22vw, 300px); min-width:0; }
+    .eq-site-rail { flex:0 0 clamp(230px, 23vw, 320px); min-width:0; }
     .eq-site-canvas { flex:1 1 0%; min-width:0; }
-    .eq-plan { position:relative; background:var(--pd-bg); border:1px solid var(--pd-line);
-      border-radius:10px; height:clamp(320px, 52vh, 640px); overflow:hidden; }
-    .eq-plan-grid { position:absolute; inset:0; pointer-events:none; opacity:.5;
+    .eq-plan { position:relative; width:100%; background:var(--pd-bg); border:1px solid var(--pd-line);
+      border-radius:10px; overflow:hidden; }
+    .eq-plan-stage { position:relative; width:100%; height:0; }
+    .eq-plan-grid { position:absolute; inset:0; pointer-events:none; opacity:.45;
       background-image:linear-gradient(var(--pd-line) 1px, transparent 1px), linear-gradient(90deg, var(--pd-line) 1px, transparent 1px);
       background-size:40px 40px; }
-    .eq-block { position:absolute; box-sizing:border-box; border:2px solid var(--pd-red);
-      background:var(--pd-card); border-radius:8px; padding:6px 8px; overflow:hidden; cursor:grab;
-      box-shadow:var(--pd-shadow); display:flex; flex-direction:column; gap:4px; }
-    .eq-block.drag { cursor:grabbing; opacity:.85; }
-    .eq-block.is-target { outline:3px solid var(--pd-red); outline-offset:2px; }
-    .eq-block-h { display:flex; align-items:center; justify-content:space-between; gap:6px;
-      font-size:12.5px; font-weight:800; }
-    .eq-block-n { font-size:10.5px; font-weight:700; color:var(--pd-muted); flex:none; }
-    .eq-block-list { font-size:11px; color:var(--pd-muted); line-height:1.5; overflow:hidden; }
-    .eq-block-res { position:absolute; right:0; bottom:0; width:14px; height:14px; cursor:nwse-resize; }
-    .eq-block-res::after { content:''; position:absolute; right:3px; bottom:3px; width:7px; height:7px;
-      border-right:2px solid var(--pd-muted); border-bottom:2px solid var(--pd-muted); }
+    .eq-plan-img { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    .eq-plan-svg { position:absolute; inset:0; width:100%; height:100%; touch-action:none; }
+    .eq-plan.is-draw .eq-plan-svg { cursor:crosshair; }
+    .eq-shape polygon { cursor:grab; }
+    .eq-shape.sel polygon { stroke-width:3.5; }
+    .eq-shape.drag polygon { cursor:grabbing; opacity:.85; }
+    .eq-shape text { pointer-events:none; user-select:none; font-family:inherit; font-weight:800;
+      paint-order:stroke; stroke:var(--pd-card); stroke-width:4px; stroke-linejoin:round; }
+    .eq-shape .eq-lb-n { font-weight:700; }
+    .eq-vx { fill:var(--pd-card); stroke:var(--pd-red); stroke-width:2.5; cursor:move; }
+    .eq-vx.mid { fill:var(--pd-red); opacity:.55; cursor:copy; }
+    .eq-draw-line { fill:rgba(238,49,36,.14); stroke:var(--pd-red); stroke-width:2.5; stroke-dasharray:8 6; }
+    .eq-plan-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      text-align:center; padding:24px; color:var(--pd-muted); font-size:13px; pointer-events:none; }
     .eq-chip { display:flex; align-items:center; gap:6px; padding:5px 8px; margin-bottom:5px;
       border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); font-size:12.5px; cursor:pointer; }
     .eq-chip:hover { border-color:var(--pd-red); }
     .eq-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
     .eq-chip .x { margin-left:auto; color:var(--pd-muted); font-size:11px; }
     .eq-site-hint { font-size:12px; color:var(--pd-muted); margin:0 0 8px; line-height:1.5; }
-    @media (max-width: 1000px) { .eq-site { flex-direction:column; } .eq-site-rail { flex:1 1 auto; width:100%; } }
+    .eq-blk-row { display:flex; align-items:center; gap:6px; padding:5px 8px; margin-bottom:5px;
+      border:1px solid var(--pd-line); border-radius:7px; font-size:12.5px; cursor:pointer; }
+    .eq-blk-row.on { border-color:var(--pd-red); background:var(--pd-red-light); }
+    .eq-blk-row .n { margin-left:auto; color:var(--pd-muted); font-size:11px; }
+    .eq-blk-sw { width:12px; height:12px; border-radius:3px; flex:none; border:1px solid rgba(0,0,0,.15); }
+    .eq-blk-btn { border:0; background:none; color:var(--pd-muted); cursor:pointer; font-size:12px; padding:0 3px; }
+    .eq-blk-btn:hover { color:var(--pd-red); }
+    @media (max-width: 1000px) {
+      /* align-items:stretch is load-bearing: in column direction the inherited flex-start sizes
+         each pane to its CONTENT, and the stage is an empty padding-box, so the plan collapsed
+         to 0x0. Measured at a 653px layout viewport before the fix. */
+      .eq-site { flex-direction:column; align-items:stretch; }
+      .eq-site-rail, .eq-site-canvas { flex:1 1 auto; width:100%; }
+    }
 
     /* Modal form */
     .eq-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; align-content:start; }
@@ -191,7 +214,7 @@
       <div class="eq-tabs" role="tablist">
         <button class="eq-tab active" data-view="loading">Loading</button>
         <button class="eq-tab" data-view="register">Equipment</button>
-        <button class="eq-tab" data-view="site">Site Dev</button>
+        <button class="eq-tab" data-view="site">Site Plan</button>
       </div>
       <div class="eq-topbar-tools">
         <button class="pd-btn pd-btn-primary eq-tb-labeled" id="eq-add" title="Add a piece of equipment">+ Add equipment</button>
@@ -243,26 +266,37 @@
         </div>
       </div>
 
-      <!-- SITE DEV -->
+      <!-- SITE PLAN -->
       <div id="eq-view-site" style="display:none;">
         <div class="eq-controls">
+          <button class="pd-btn" id="eq-plan-upload" title="Add a scan or export of the site development plan"><span data-ico="upload" data-ico-size="15"></span> Site development plan</button>
+          <button class="pd-btn" id="eq-plan-detect" title="Find candidate tower footprints on the uploaded plan">Detect towers</button>
+          <span class="eq-tb-sep"></span>
+          <button class="pd-btn" id="eq-site-draw" title="Trace a tower's outline on the plan">Draw shape</button>
+          <button class="pd-btn" id="eq-site-addblk" title="Add a rectangle you can then reshape">+ Rectangle</button>
+          <span class="eq-tb-sep"></span>
           <label for="eq-site-level" style="font-size:12.5px;">Site level</label>
           <select class="pd-select" id="eq-site-level" title="Which Location Breakdown level holds the towers"></select>
           <button class="pd-btn" id="eq-site-pull" title="Read the tower names from this project's schedule"><span data-ico="refresh" data-ico-size="15"></span> Pull towers from the schedule</button>
-          <button class="pd-btn" id="eq-site-addblk">+ Add block</button>
           <span class="eq-note" id="eq-site-note" style="margin-left:auto;"></span>
         </div>
+        <input type="file" id="eq-plan-file" accept="image/*" style="display:none;">
         <div class="eq-site">
           <div class="eq-site-rail">
             <div class="eq-card" style="margin-bottom:10px;">
+              <h3>Towers on the plan</h3>
+              <p class="eq-site-hint">Click a tower to select it, then drag its outline to move it or drag a corner to reshape it.</p>
+              <div id="eq-site-blocks"></div>
+            </div>
+            <div class="eq-card">
               <h3>Assign equipment</h3>
-              <p class="eq-site-hint">Pick a piece of equipment, then click the block it works on. Click it again to unassign.</p>
+              <p class="eq-site-hint">Pick a piece of equipment, then click the tower it works on. Click it again to unassign.</p>
               <div id="eq-site-chips"></div>
             </div>
           </div>
           <div class="eq-site-canvas">
-            <div class="eq-plan" id="eq-plan"><div class="eq-plan-grid"></div></div>
-            <p class="eq-site-hint" style="margin-top:8px;">Drag a block to lay out the site; drag its bottom-right corner to resize. Double-click a block to rename it.</p>
+            <div class="eq-plan" id="eq-plan"></div>
+            <p class="eq-site-hint" id="eq-site-help" style="margin-top:8px;"></p>
           </div>
         </div>
       </div>
@@ -303,6 +337,11 @@
   var CUTOFF = null;              // data date, month-floored
   var needsMigration = false;
   var view = 'loading', detail = 'cat', fCat = '', fBlk = '', siteSel = null;
+  var blkSel = null;              // the tower shape currently selected on the plan
+  var drawing = false, drawPts = [];  // trace-a-tower mode and the points taken so far
+  var PLANIMG_URL = null;         // object URL for the backdrop (revoked when it is replaced)
+  var PLANIMG_FOR = null;         // which image_path PLANIMG_URL belongs to
+  var PLAN_BUCKET = 'site-plans';
   var LEVELS = [];                // location_levels — the project's own LBS (Tower / Level / Zone / …)
   var DRIFT = [];                 // linked items whose schedule span has moved since the last sync
 
@@ -952,8 +991,8 @@
       var can = canSite(c);
       sel.disabled = !can;
       el.querySelector('#f-blknote').textContent = can
-        ? (PLAN.blocks.length ? '' : 'No blocks yet — add them in Site Dev.')
-        : 'Tools and service vehicles move around the whole site, so they are not tied to one block.';
+        ? (PLAN.blocks.length ? '' : 'No towers yet — add them in Site Plan.')
+        : 'Tools and service vehicles move around the whole site, so they are not tied to one tower.';
       if (!can) sel.value = '';
     }
     el.querySelector('#f-cat').onchange = function () { syncBlk(); syncLink(); }; syncBlk();
@@ -1173,32 +1212,273 @@
     }
   }
 
-  // ---- Site development view ------------------------------------------------------------
+  // ---- Site Plan view -------------------------------------------------------------------
+  // A top view of the site. Three things live here and they are deliberately separate:
+  //   the BACKDROP  — the project's own site development plan, an image in Storage;
+  //   the SHAPES    — one polygon per tower, in plan units, held in equipment_site_plan.plan;
+  //   the ASSIGNMENT— equipment_items.site_block, which stores only a shape's ID.
+  // ⚠️ Keeping the assignment out of the geometry is what lets a tower be renamed, retraced or
+  // detected again without touching a single equipment row.
   function newBlockId() { return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function planH() { var h = +PLAN.h; return (isFinite(h) && h > 80) ? h : 620; }
+
+  // ⚠️ Blocks saved by the first version are rectangles (x/y/w/h). They are READ as 4-point
+  // polygons rather than migrated on load: a plan written by an older build must keep working,
+  // and rewriting every stored row on open would make merely opening the tab a write.
+  function bpts(b) {
+    if (b && b.pts && b.pts.length >= 3) return b.pts;
+    var x = (b && +b.x) || 0, y = (b && +b.y) || 0, w = (b && +b.w) || 180, h = (b && +b.h) || 130;
+    return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+  }
+  // Writing points retires the rect fields, so one block can never carry two disagreeing shapes.
+  function setPts(b, pts) { b.pts = pts; delete b.x; delete b.y; delete b.w; delete b.h; }
+  function bboxOf(pts) {
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    pts.forEach(function (p) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); });
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+  }
+  function ptsAttr(pts) { return pts.map(function (p) { return (Math.round(p[0] * 10) / 10) + ',' + (Math.round(p[1] * 10) / 10); }).join(' '); }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
   async function savePlan() {
     var ok = await persist(sb().from('equipment_site_plan')
       .upsert({ project_id: pid, plan: PLAN, created_by: user && user.id }, { onConflict: 'project_id' }), 'Could not save the site plan');
     return ok;
   }
+
+  // ---- Backdrop -------------------------------------------------------------------------
+  // ⚠️ The image is fetched to a BLOB and shown from an object URL, not straight from its
+  // signed URL. A cross-origin image taints a canvas, and `detectTowers` reads pixels back out
+  // of one — the same round-trip the PPR export has to make for the same reason.
+  async function loadPlanImage() {
+    if (PLANIMG_URL) { try { URL.revokeObjectURL(PLANIMG_URL); } catch (_e) {} PLANIMG_URL = null; }
+    PLANIMG_FOR = PLAN.image_path || null;
+    if (!PLAN.image_path) { renderSite(); return; }
+    try {
+      var r = await sb().storage.from(PLAN_BUCKET).createSignedUrl(PLAN.image_path, 3600);
+      if (r.error) throw r.error;
+      var res = await fetch(r.data.signedUrl);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      PLANIMG_URL = URL.createObjectURL(await res.blob());
+    } catch (err) {
+      PLANIMG_URL = null;
+      UI.toast(/bucket|not found/i.test(err.message || '')
+        ? 'The site-plans storage bucket is missing — run migrations/2026-08-24-site-plan-bucket.sql.'
+        : 'Could not load the site plan image: ' + (err.message || err), 'error');
+    }
+    renderSite();
+  }
+
+  async function uploadPlanImage(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { UI.toast('Pick an image of the plan (PNG or JPG). Export a PDF page as an image first.', 'error'); return; }
+    if (file.size > 12 * 1024 * 1024) { UI.toast('That file is ' + Math.round(file.size / 1048576) + ' MB — keep the plan under 12 MB.', 'error'); return; }
+    showLoading('Uploading the site plan…');
+    // Read the aspect BEFORE uploading: the stage height and the svg viewBox are both derived
+    // from it, and a backdrop whose aspect we do not know cannot be aligned with the shapes.
+    var dims = await new Promise(function (res) {
+      var u = URL.createObjectURL(file), im = new Image();
+      im.onload = function () { res({ w: im.naturalWidth, h: im.naturalHeight }); URL.revokeObjectURL(u); };
+      im.onerror = function () { res(null); URL.revokeObjectURL(u); };
+      im.src = u;
+    });
+    if (!dims || !dims.w) { hideLoading(); UI.toast('That image could not be read.', 'error'); return; }
+    var ext = (file.name.match(/\.([a-z0-9]+)$/i) || [, 'png'])[1].toLowerCase();
+    var path = pid + '/plan-' + Date.now() + '.' + ext;
+    var old = PLAN.image_path || null;
+    try {
+      var up = await sb().storage.from(PLAN_BUCKET).upload(path, file, { upsert: false, contentType: file.type });
+      if (up.error) throw up.error;
+    } catch (err) {
+      hideLoading();
+      UI.toast(/bucket|not found/i.test(err.message || '')
+        ? 'The site-plans storage bucket is missing — run migrations/2026-08-24-site-plan-bucket.sql.'
+        : 'Upload failed: ' + (err.message || err), 'error');
+      return;
+    }
+    // ⚠️ The row points at the NEW object before the old one is deleted. The other order leaves
+    // a plan pointing at a file that no longer exists — the ordering rule the registers' upload
+    // paths already follow.
+    var prevH = PLAN.h;
+    PLAN.image_path = path;
+    PLAN.h = Math.round(PLAN_W * dims.h / dims.w);
+    // Existing shapes were traced against the old aspect; rescale them so a replaced plan does
+    // not silently move every tower off its building.
+    if (prevH && PLAN.blocks.length && Math.abs(prevH - PLAN.h) > 1) {
+      var k = PLAN.h / prevH;
+      PLAN.blocks.forEach(function (b) { setPts(b, bpts(b).map(function (p) { return [p[0], p[1] * k]; })); });
+    }
+    var ok = await savePlan();
+    hideLoading();
+    if (!ok) { PLAN.image_path = old; PLAN.h = prevH; return; }
+    if (old) { try { await sb().storage.from(PLAN_BUCKET).remove([old]); } catch (_e) {} }
+    UI.toast('Site development plan added.');
+    await loadPlanImage();
+  }
+
+  async function removePlanImage() {
+    if (!PLAN.image_path) return;
+    if (!confirm('Remove the site development plan image?\n\nThe towers you have drawn stay on the plan.')) return;
+    var old = PLAN.image_path;
+    PLAN.image_path = null;
+    if (!(await savePlan())) { PLAN.image_path = old; return; }
+    try { await sb().storage.from(PLAN_BUCKET).remove([old]); } catch (_e) {}
+    await loadPlanImage();
+  }
+
+  // ---- Tower detection ------------------------------------------------------------------
+  // Finds candidate building footprints on the uploaded plan: threshold the image, group the
+  // connected dark pixels, and offer each blob's bounding box as a shape.
+  //
+  // ⚠️ This is a SUGGESTION, never an answer, and the UI says so. A site plan carries roads,
+  // hatching, title blocks and text, all of which are dark pixels — so the result is a starting
+  // set the planner reshapes and renames, not a survey. Anything it proposes can be dragged,
+  // retraced or deleted like any other shape.
+  function detectTowers() {
+    if (!PLANIMG_URL) { UI.toast('Add the site development plan first — detection reads the image.', 'error'); return; }
+    showLoading('Reading the plan…');
+    var im = new Image();
+    im.onload = function () {
+      try {
+        var sc = Math.min(1, 520 / im.naturalWidth);
+        var W = Math.max(40, Math.round(im.naturalWidth * sc)), H = Math.max(40, Math.round(im.naturalHeight * sc));
+        var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        var cx = cv.getContext('2d'); cx.drawImage(im, 0, 0, W, H);
+        var d = cx.getImageData(0, 0, W, H).data;
+        var g = new Uint8Array(W * H), hist = new Float64Array(256);
+        for (var p = 0, q = 0; q < g.length; q++, p += 4) {
+          var v = (d[p] * 0.299 + d[p + 1] * 0.587 + d[p + 2] * 0.114) | 0;
+          if (d[p + 3] < 40) v = 255;                 // transparent reads as background, not black
+          g[q] = v; hist[v]++;
+        }
+        var thr = otsu(hist, g.length);
+        var comps = components(g, W, H, thr);
+        var area = W * H;
+        // A blob smaller than 0.35% of the sheet is text or a symbol; one over 35% is the border
+        // frame or the hatched site outline, not a building.
+        var cand = comps.filter(function (c) { return c.n > area * 0.0035 && c.n < area * 0.35; });
+        // Keep the ones whose bounding box is mostly filled — a building footprint is solid,
+        // whereas a road network or a leader line sprawls across a large, mostly-empty box.
+        cand = cand.filter(function (c) { return c.n / Math.max(1, (c.x1 - c.x0 + 1) * (c.y1 - c.y0 + 1)) > 0.35; });
+        cand.sort(function (a, b) { return (a.y0 - b.y0) || (a.x0 - b.x0); });
+        cand = cand.slice(0, 16);
+        hideLoading();
+        if (!cand.length) { UI.toast('No tower-sized shapes stood out on this plan. Draw them by hand instead.', 'error'); return; }
+        if (!confirm('Found ' + cand.length + ' candidate footprint(s).\n\nThey are a suggestion — add them, then rename, reshape or delete each one.\n\nAdd them to the plan?')) return;
+        var base = PLAN.blocks.length;
+        var kx = PLAN_W / W, ky = planH() / H;
+        cand.forEach(function (c, n) {
+          PLAN.blocks.push({
+            id: newBlockId(), name: 'Tower ' + (base + n + 1), color: '#EE3124',
+            pts: [[c.x0 * kx, c.y0 * ky], [(c.x1 + 1) * kx, c.y0 * ky], [(c.x1 + 1) * kx, (c.y1 + 1) * ky], [c.x0 * kx, (c.y1 + 1) * ky]]
+          });
+        });
+        savePlan().then(function () { renderSite(); renderRegister(); renderAll(); });
+        UI.toast(cand.length + ' shape(s) added — rename and reshape them to match the towers.');
+      } catch (err) {
+        hideLoading();
+        UI.toast('Could not read the plan image: ' + (err.message || err), 'error');
+      }
+    };
+    im.onerror = function () { hideLoading(); UI.toast('Could not read the plan image.', 'error'); };
+    im.src = PLANIMG_URL;
+  }
+
+  // Otsu's threshold — the split that best separates the two brightness groups. A fixed cut-off
+  // fails on a scanned plan (grey paper) and on a CAD export (pure white) alike.
+  function otsu(hist, total) {
+    var sum = 0, i;
+    for (i = 0; i < 256; i++) sum += i * hist[i];
+    var sumB = 0, wB = 0, best = 0, thr = 128;
+    for (i = 0; i < 256; i++) {
+      wB += hist[i]; if (!wB) continue;
+      var wF = total - wB; if (!wF) break;
+      sumB += i * hist[i];
+      var mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) * (mB - mF);
+      if (v > best) { best = v; thr = i; }
+    }
+    return thr;
+  }
+  // Connected dark pixels, 4-neighbour. ⚠️ Iterative, with an explicit stack — a recursive flood
+  // fill blows the call stack on a large blob, which on a big plan is every building.
+  function components(g, W, H, thr) {
+    var seen = new Uint8Array(W * H), out = [], stack = new Int32Array(W * H);
+    for (var i0 = 0; i0 < g.length; i0++) {
+      if (seen[i0] || g[i0] > thr) continue;
+      var sp = 0; stack[sp++] = i0; seen[i0] = 1;
+      var n = 0, x0 = W, y0 = H, x1 = 0, y1 = 0;
+      while (sp) {
+        var idx = stack[--sp], x = idx % W, y = (idx / W) | 0;
+        n++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+        if (x > 0 && !seen[idx - 1] && g[idx - 1] <= thr) { seen[idx - 1] = 1; stack[sp++] = idx - 1; }
+        if (x < W - 1 && !seen[idx + 1] && g[idx + 1] <= thr) { seen[idx + 1] = 1; stack[sp++] = idx + 1; }
+        if (y > 0 && !seen[idx - W] && g[idx - W] <= thr) { seen[idx - W] = 1; stack[sp++] = idx - W; }
+        if (y < H - 1 && !seen[idx + W] && g[idx + W] <= thr) { seen[idx + W] = 1; stack[sp++] = idx + W; }
+      }
+      out.push({ n: n, x0: x0, y0: y0, x1: x1, y1: y1 });
+    }
+    return out;
+  }
+
+  // ---- Render ---------------------------------------------------------------------------
   function renderSite() {
     var host = document.getElementById('eq-plan'); if (!host) return;
-    var counts = {};
+    if (PLAN.image_path && PLANIMG_FOR !== PLAN.image_path) { loadPlanImage(); return; }
+    var H = planH(), counts = {};
     ITEMS.forEach(function (i) { if (i.site_block) counts[i.site_block] = (counts[i.site_block] || 0) + 1; });
-    var h = ['<div class="eq-plan-grid"></div>'];
+
+    var g = ['<div class="eq-plan-stage" style="padding-bottom:' + (H / PLAN_W * 100).toFixed(3) + '%;">'];
+    if (PLANIMG_URL) g.push('<img class="eq-plan-img" src="' + PLANIMG_URL + '" alt="Site development plan">');
+    else g.push('<div class="eq-plan-grid"></div>');
+    g.push('<svg class="eq-plan-svg" viewBox="0 0 ' + PLAN_W + ' ' + H + '" id="eq-plan-svg">');
     PLAN.blocks.forEach(function (b) {
-      var mine = ITEMS.filter(function (i) { return i.site_block === b.id; });
-      h.push('<div class="eq-block" data-blk="' + esc(b.id) + '" style="left:' + (b.x / PLAN_W * 100) + '%;top:' + (b.y / PLAN_H * 100) + '%;' +
-        'width:' + (b.w / PLAN_W * 100) + '%;height:' + (b.h / PLAN_H * 100) + '%;border-color:' + esc(b.color || '#EE3124') + ';">' +
-        '<div class="eq-block-h"><span>' + esc(b.name) + '</span><span class="eq-block-n">' + (counts[b.id] || 0) + '</span></div>' +
-        '<div class="eq-block-list">' + (mine.length ? mine.slice(0, 8).map(function (i) { return esc(i.name); }).join('<br>') + (mine.length > 8 ? '<br>+' + (mine.length - 8) + ' more' : '') : '<i>no equipment</i>') + '</div>' +
-        '<div class="eq-block-res" data-res="' + esc(b.id) + '"></div></div>');
+      var pts = bpts(b), bb = bboxOf(pts), c = b.color || '#EE3124', n = counts[b.id] || 0;
+      var on = blkSel === b.id;
+      g.push('<g class="eq-shape' + (on ? ' sel' : '') + '" data-blk="' + esc(b.id) + '">');
+      g.push('<polygon points="' + ptsAttr(pts) + '" fill="' + c + '" fill-opacity="' + (on ? .3 : .18) + '" stroke="' + c + '" stroke-width="2.5" stroke-linejoin="round"/>');
+      g.push('<text x="' + bb.cx.toFixed(1) + '" y="' + (bb.cy - 2).toFixed(1) + '" text-anchor="middle" font-size="19" fill="var(--pd-ink)">' + esc(b.name) + '</text>');
+      g.push('<text class="eq-lb-n" x="' + bb.cx.toFixed(1) + '" y="' + (bb.cy + 17).toFixed(1) + '" text-anchor="middle" font-size="14" fill="' + c + '">' + n + ' equipment</text>');
+      if (on) {
+        pts.forEach(function (p, k) {
+          g.push('<circle class="eq-vx" data-blk="' + esc(b.id) + '" data-i="' + k + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7"/>');
+          var q = pts[(k + 1) % pts.length];
+          g.push('<circle class="eq-vx mid" data-blk="' + esc(b.id) + '" data-mid="' + k + '" cx="' + ((p[0] + q[0]) / 2).toFixed(1) + '" cy="' + ((p[1] + q[1]) / 2).toFixed(1) + '" r="5"/>');
+        });
+      }
+      g.push('</g>');
     });
-    host.innerHTML = h.join('');
-    if (!PLAN.blocks.length) host.insertAdjacentHTML('beforeend',
-      '<div class="eq-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">No blocks yet — pull the towers from the schedule, or add one.</div>');
+    if (drawPts.length) {
+      g.push('<polygon class="eq-draw-line" points="' + ptsAttr(drawPts) + '"/>');
+      drawPts.forEach(function (p) { g.push('<circle class="eq-vx" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="6"/>'); });
+    }
+    g.push('</svg></div>');
+    host.className = 'eq-plan' + (drawing ? ' is-draw' : '');
+    host.innerHTML = g.join('');
+    if (!PLAN.blocks.length && !drawPts.length) host.insertAdjacentHTML('beforeend',
+      '<div class="eq-plan-empty">' + (PLANIMG_URL
+        ? 'Now mark the towers: <b>Detect towers</b> for a first pass, or <b>Draw shape</b> to trace one by hand.'
+        : 'Add the <b>site development plan</b>, then mark each tower on it — or draw the towers without a backdrop.') + '</div>');
     wireSite(host);
 
-    // Left rail: the equipment that CAN be sited, grouped assigned/unassigned.
+    // Left rail — the towers, then the equipment that can be assigned to one.
+    var br = document.getElementById('eq-site-blocks');
+    if (br) {
+      br.innerHTML = PLAN.blocks.length ? PLAN.blocks.map(function (b) {
+        return '<div class="eq-blk-row' + (blkSel === b.id ? ' on' : '') + '" data-brow="' + esc(b.id) + '">' +
+          '<span class="eq-blk-sw" style="background:' + esc(b.color || '#EE3124') + '"></span>' +
+          '<span>' + esc(b.name) + '</span><span class="n">' + (counts[b.id] || 0) + '</span>' +
+          '<button class="eq-blk-btn" data-bren="' + esc(b.id) + '" title="Rename">Rename</button>' +
+          '<button class="eq-blk-btn" data-bdel="' + esc(b.id) + '" title="Delete this tower">&times;</button></div>';
+      }).join('') : '<p class="eq-note">No towers yet.</p>';
+      br.querySelectorAll('[data-brow]').forEach(function (el) {
+        el.onclick = function (e) { if (e.target.closest('button')) return; blkSel = (blkSel === el.dataset.brow) ? null : el.dataset.brow; renderSite(); };
+      });
+      br.querySelectorAll('[data-bren]').forEach(function (el) { el.onclick = function () { renameBlock(el.dataset.bren); }; });
+      br.querySelectorAll('[data-bdel]').forEach(function (el) { el.onclick = function () { deleteBlock(el.dataset.bdel); }; });
+    }
+
     var rail = document.getElementById('eq-site-chips');
     var sitable = ITEMS.filter(function (i) { return canSite(i.category); });
     if (!sitable.length) rail.innerHTML = '<p class="eq-note">No vertical or ground equipment in the register yet.</p>';
@@ -1210,6 +1490,7 @@
     rail.querySelectorAll('[data-chip]').forEach(function (c) {
       c.onclick = function () { siteSel = (siteSel === c.dataset.chip) ? null : c.dataset.chip; renderSite(); };
     });
+
     var lvl = document.getElementById('eq-site-level');
     if (lvl) {
       lvl.innerHTML = LEVELS.length
@@ -1217,70 +1498,156 @@
         : '<option value="">no Location levels</option>';
       lvl.disabled = !LEVELS.length;
     }
+    var det = document.getElementById('eq-plan-detect');
+    if (det) det.disabled = !PLANIMG_URL;
+    var up = document.getElementById('eq-plan-upload');
+    if (up) up.title = PLAN.image_path ? 'Replace the site development plan (click again to remove it)' : 'Add a scan or export of the site development plan';
+    var dr = document.getElementById('eq-site-draw');
+    if (dr) { dr.classList.toggle('pd-btn-primary', !!drawing); dr.textContent = drawing ? (drawPts.length >= 3 ? 'Finish shape' : 'Cancel drawing') : 'Draw shape'; }
+    var help = document.getElementById('eq-site-help');
+    if (help) help.innerHTML = drawing
+      ? 'Click each corner of the tower. Click the first point again, press Enter, or press <b>Finish shape</b> to close it; Esc cancels.'
+      : 'Click a tower to select it. Drag its outline to move it, drag a white handle to reshape it, or a faded handle to add a corner. Alt-click a corner to remove it. Double-click a tower to rename it.';
     var note = document.getElementById('eq-site-note');
-    if (note) note.textContent = PLAN.blocks.length + ' block(s) · ' +
-      sitable.filter(function (i) { return i.site_block; }).length + ' of ' + sitable.length + ' assigned';
+    if (note) note.textContent = PLAN.blocks.length + ' tower(s) · ' +
+      sitable.filter(function (i) { return i.site_block; }).length + ' of ' + sitable.length + ' equipment assigned';
+  }
+
+  function renameBlock(id) {
+    var b = blockById(id); if (!b) return;
+    var n = prompt('Tower name', b.name); if (n == null) return;
+    n = n.trim(); if (!n) return;
+    b.name = n;
+    savePlan().then(function () { renderSite(); renderRegister(); renderAll(); });
+  }
+  async function deleteBlock(id) {
+    var b = blockById(id); if (!b) return;
+    var used = ITEMS.filter(function (i) { return i.site_block === id; });
+    if (!confirm('Delete "' + b.name + '"?' + (used.length ? '\n\n' + used.length + ' piece(s) of equipment become unassigned. No equipment is deleted.' : ''))) return;
+    PLAN.blocks = PLAN.blocks.filter(function (x) { return x.id !== id; });
+    if (blkSel === id) blkSel = null;
+    if (!(await savePlan())) { await load(); return; }
+    // ⚠️ The equipment rows are cleared explicitly. site_block holds a plain id with no foreign
+    // key behind it, so a deleted shape would otherwise leave items pointing at nothing and
+    // reading as "unknown block" forever.
+    if (used.length) {
+      await persist(sb().from('equipment_items').update({ site_block: null }).eq('project_id', pid).eq('site_block', id), 'Could not unassign the equipment');
+      used.forEach(function (i) { i.site_block = null; });
+    }
+    if (fBlk === id) fBlk = '';
+    renderSite(); renderRegister(); renderAll();
+  }
+
+  // ---- Interaction ----------------------------------------------------------------------
+  function svgPoint(svg, ev) {
+    var r = svg.getBoundingClientRect();
+    return [clamp((ev.clientX - r.left) / r.width * PLAN_W, 0, PLAN_W),
+            clamp((ev.clientY - r.top) / r.height * planH(), 0, planH())];
   }
 
   function wireSite(host) {
-    host.querySelectorAll('.eq-block').forEach(function (el) {
-      var id = el.dataset.blk;
-      el.onclick = function (e) {
-        if (e.target.closest('[data-res]')) return;
-        if (!siteSel) return;
-        var it = itemById(siteSel); if (!it) return;
-        var to = (it.site_block === id) ? null : id;
-        it.site_block = to;
-        persist(sb().from('equipment_items').update({ site_block: to }).eq('id', it.id), 'Could not assign');
-        siteSel = null; renderSite(); renderRegister();
+    var svg = document.getElementById('eq-plan-svg'); if (!svg) return;
+
+    if (drawing) {
+      svg.onpointerdown = function (ev) {
+        if (ev.button) return;
+        var p = svgPoint(svg, ev);
+        // Clicking the first point again closes the shape — the usual way out of a trace.
+        if (drawPts.length >= 3) {
+          var f = drawPts[0], dx = (p[0] - f[0]) / PLAN_W, dy = (p[1] - f[1]) / planH();
+          if (Math.sqrt(dx * dx + dy * dy) < 0.02) { finishDraw(); return; }
+        }
+        drawPts.push(p); renderSite();
       };
-      el.ondblclick = async function (e) {
-        e.stopPropagation();
+      return;
+    }
+
+    svg.querySelectorAll('.eq-shape').forEach(function (gEl) {
+      var id = gEl.dataset.blk;
+      gEl.ondblclick = function (e) { e.stopPropagation(); renameBlock(id); };
+      gEl.onpointerdown = function (ev) {
+        if (ev.button) return;
         var b = blockById(id); if (!b) return;
-        var n = prompt('Block name', b.name); if (n == null) return;
-        n = n.trim(); if (!n) return;
-        b.name = n; await savePlan(); renderSite(); renderRegister(); renderAll();
-      };
-      // Drag to move; the corner drags to resize. Pointer events + capture, so the gesture
-      // survives the pointer leaving the block (the same reason the schedule's dividers use them).
-      el.onpointerdown = function (e) {
-        if (e.button) return;
-        var b = blockById(id); if (!b) return;
-        var resize = !!e.target.closest('[data-res]');
-        var r = host.getBoundingClientRect();
-        var sx = e.clientX, sy = e.clientY, x0 = b.x, y0 = b.y, w0 = b.w, h0 = b.h;
-        var kx = PLAN_W / r.width, ky = PLAN_H / r.height;
-        e.preventDefault(); el.classList.add('drag');
-        try { el.setPointerCapture(e.pointerId); } catch (_e) {}
-        el.onpointermove = function (ev) {
-          var dx = (ev.clientX - sx) * kx, dy = (ev.clientY - sy) * ky;
-          if (resize) {
-            b.w = Math.max(70, Math.min(PLAN_W - b.x, w0 + dx));
-            b.h = Math.max(50, Math.min(PLAN_H - b.y, h0 + dy));
+        var vx = ev.target.classList && ev.target.classList.contains('eq-vx') ? ev.target : null;
+
+        // A faded midpoint handle adds a corner there; alt-click a real corner removes it.
+        if (vx && vx.dataset.mid != null) {
+          var k = +vx.dataset.mid, pts0 = bpts(b).slice();
+          var q = pts0[(k + 1) % pts0.length];
+          pts0.splice(k + 1, 0, [(pts0[k][0] + q[0]) / 2, (pts0[k][1] + q[1]) / 2]);
+          setPts(b, pts0); savePlan(); renderSite(); return;
+        }
+        if (vx && ev.altKey) {
+          var ptsD = bpts(b).slice();
+          if (ptsD.length <= 3) { UI.toast('A shape needs at least three corners.', 'error'); return; }
+          ptsD.splice(+vx.dataset.i, 1); setPts(b, ptsD); savePlan(); renderSite(); return;
+        }
+
+        var pts = bpts(b).map(function (p) { return [p[0], p[1]]; });
+        var start = svgPoint(svg, ev), moved = false, H = planH();
+        var bb = bboxOf(pts);
+        ev.preventDefault();
+        try { svg.setPointerCapture(ev.pointerId); } catch (_e) {}
+        gEl.classList.add('drag');
+        var poly = gEl.querySelector('polygon');
+
+        function move(e2) {
+          var p = svgPoint(svg, e2), dx = p[0] - start[0], dy = p[1] - start[1];
+          if (!moved && Math.abs(dx) + Math.abs(dy) < 2) return;
+          moved = true;
+          var next;
+          if (vx) {
+            var i = +vx.dataset.i;
+            next = pts.map(function (q, k) { return k === i ? [clamp(p[0], 0, PLAN_W), clamp(p[1], 0, H)] : [q[0], q[1]]; });
           } else {
-            b.x = Math.max(0, Math.min(PLAN_W - b.w, x0 + dx));
-            b.y = Math.max(0, Math.min(PLAN_H - b.h, y0 + dy));
+            // Clamp the whole shape by its bounding box, so a drag can never push part of a
+            // tower off the sheet while the rest stays on it.
+            var ddx = clamp(dx, -bb.x, PLAN_W - bb.x - bb.w), ddy = clamp(dy, -bb.y, H - bb.y - bb.h);
+            next = pts.map(function (q) { return [q[0] + ddx, q[1] + ddy]; });
           }
-          el.style.left = (b.x / PLAN_W * 100) + '%'; el.style.top = (b.y / PLAN_H * 100) + '%';
-          el.style.width = (b.w / PLAN_W * 100) + '%'; el.style.height = (b.h / PLAN_H * 100) + '%';
-        };
-        var done = function () {
-          el.onpointermove = el.onpointerup = el.onpointercancel = null;
-          el.classList.remove('drag');
-          try { el.releasePointerCapture(e.pointerId); } catch (_e) {}
-          savePlan();
-        };
-        el.onpointerup = el.onpointercancel = done;
+          setPts(b, next);
+          if (poly) poly.setAttribute('points', ptsAttr(next));
+        }
+        function done() {
+          svg.onpointermove = svg.onpointerup = svg.onpointercancel = null;
+          gEl.classList.remove('drag');
+          try { svg.releasePointerCapture(ev.pointerId); } catch (_e) {}
+          if (moved) { savePlan(); renderSite(); return; }
+          // A click with no movement is a selection — or, with a chip picked, an assignment.
+          if (siteSel) {
+            var it = itemById(siteSel); if (!it) return;
+            var to = (it.site_block === id) ? null : id;
+            it.site_block = to;
+            persist(sb().from('equipment_items').update({ site_block: to }).eq('id', it.id), 'Could not assign');
+            siteSel = null; renderSite(); renderRegister(); renderAll(); return;
+          }
+          blkSel = (blkSel === id) ? null : id;
+          renderSite();
+        }
+        svg.onpointermove = move;
+        svg.onpointerup = svg.onpointercancel = done;
       };
     });
+
+    svg.onclick = function (ev) { if (ev.target === svg && !siteSel) { blkSel = null; renderSite(); } };
   }
 
+  function finishDraw() {
+    if (drawPts.length < 3) { UI.toast('A tower needs at least three corners.', 'error'); return; }
+    var n = PLAN.blocks.length + 1;
+    PLAN.blocks.push({ id: newBlockId(), name: 'Tower ' + n, color: '#EE3124', pts: drawPts.slice() });
+    drawPts = []; drawing = false;
+    savePlan().then(function () { renderSite(); renderRegister(); renderAll(); });
+  }
+  function cancelDraw() { drawPts = []; drawing = false; renderSite(); }
+
   function addBlock(name) {
-    var n = PLAN.blocks.length;
+    var n = PLAN.blocks.length, H = planH();
+    var x = 40 + (n % 4) * 230, y = 40 + Math.floor(n / 4) * 180, w = 200, h = Math.min(150, H / 4);
+    y = Math.min(y, Math.max(0, H - h - 10));
     PLAN.blocks.push({
-      id: newBlockId(), name: name || ('Block ' + (n + 1)),
-      x: 40 + (n % 4) * 230, y: 40 + Math.floor(n / 4) * 180, w: 200, h: 150,
-      color: '#EE3124'
+      id: newBlockId(), name: name || ('Tower ' + (n + 1)), color: '#EE3124',
+      pts: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
     });
   }
 
@@ -1420,6 +1787,31 @@
       if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
       addBlock(); if (await savePlan()) renderSite();
     };
+    // The backdrop button both adds and replaces; once a plan is loaded it also offers to remove
+    // it, because a remove buried in a menu is a remove nobody finds.
+    var planFile = document.getElementById('eq-plan-file');
+    document.getElementById('eq-plan-upload').onclick = function () {
+      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+      if (PLAN.image_path && confirm('Replace the current site development plan?\n\nCancel to remove it instead.') === false) { removePlanImage(); return; }
+      planFile.value = ''; planFile.click();
+    };
+    planFile.onchange = function () { if (planFile.files && planFile.files[0]) uploadPlanImage(planFile.files[0]); };
+    document.getElementById('eq-plan-detect').onclick = function () { if (pid) detectTowers(); };
+    document.getElementById('eq-site-draw').onclick = function () {
+      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+      if (!drawing) { drawing = true; drawPts = []; blkSel = null; siteSel = null; renderSite(); }
+      else if (drawPts.length >= 3) finishDraw();
+      else cancelDraw();
+    };
+    // Enter closes a trace and Esc abandons it — the keys a drawing tool is expected to answer.
+    // ⚠️ Scoped to the Site Plan view AND to drawing mode, so they cannot swallow a keystroke
+    // meant for the matrix editor or a modal.
+    document.addEventListener('keydown', function (e) {
+      if (!drawing || view !== 'site') return;
+      if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+      if (e.key === 'Enter') { e.preventDefault(); finishDraw(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancelDraw(); }
+    });
 
     var sel = document.getElementById('eq-project');
     var projects = await PDb.getProjects();
@@ -1433,7 +1825,9 @@
     sel.onchange = function () {
       pid = sel.value || null;
       try { sessionStorage.setItem('pd_project', pid || ''); } catch (_e) {}
-      siteSel = null; fBlk = '';
+      siteSel = null; fBlk = ''; blkSel = null; drawing = false; drawPts = [];
+      PLANIMG_FOR = null;
+      if (PLANIMG_URL) { try { URL.revokeObjectURL(PLANIMG_URL); } catch (_e) {} PLANIMG_URL = null; }
       load(true);
     };
     await load(true);
