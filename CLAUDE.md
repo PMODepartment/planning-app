@@ -8034,3 +8034,33 @@ scrolling inside their own card, every phone control ≥44px, light/dark contras
 **NOT verified signed in** — the anon key has no grants on the equipment tables.
 ⚠️ This module's `index.html` is **not** cache-busted (a plain sidebar href, not `MODULE_V`), so
 hard-refresh once after the deploy.
+
+---
+
+## 2026-08-24 — Equipment Loading: a save no longer dies on a column the database does not have yet
+
+Owner hit *"Could not add: Could not find the 'code' column of 'equipment_items' in the schema
+cache"* on the live site — **and lost everything typed into the form.**
+
+⚠️ **The trigger was the un-run migration; the defect was the all-or-nothing write.** PostgREST
+answers an unmigrated column with PGRST204 and **rejects the whole row**, so one unknown column threw
+away the name, category, acquisition, unit, supplier, towers and schedule link the planner had just
+filled in — and the message named a column rather than an action.
+
+A **tolerant write** now drops the column PostgREST named, retries, and reports which fields were not
+stored **plus the migration file to run**. Applied to the item insert/update, the sync's link-stamp
+and the sync's writes to `equipment_loading`. ⚠️ **Only a missing column is tolerated** — a constraint
+violation or an RLS refusal still fails loudly, because a save that silently discarded real data would
+be a worse bug than the one being fixed. ⚠️ It works on a **copy** of the payload. ⚠️ And a toast is
+not enough (it disappears, leaving a register with blank codes and no explanation), so the pending
+migration also renders as a **standing banner** until it is run.
+
+**Verified:** 16 checks executing the shipped `tolerantWrite` / `missingColumn` / `reportDropped` /
+`renderMigrateBanner` against a fake PostgREST reproducing the reported message — the row saves with
+only `code` dropped and everything else intact, one retry, payload unmutated, three missing columns
+peeled off one at a time, unique-constraint and RLS errors still failing, and the toast + banner
+naming the migration. All three earlier equipment suites still green; 0 functions lost.
+
+**Owner action, still the real fix:** run `migrations/2026-08-24-equipment-code-and-sharing.sql` in
+the Supabase SQL editor, then **reload the page** — PostgREST caches the schema and an open tab keeps
+the old one. `MODULE_V` → `20260824q`.

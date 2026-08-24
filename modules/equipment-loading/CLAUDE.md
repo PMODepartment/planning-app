@@ -262,3 +262,44 @@ header/row cell counts aligned at 12/12, a clean parse, and every `getElementByI
 **NOT verified** — nothing signed in (the anon key has no grants): the placement writes, the
 `location->>'<level id>'` window reads, the tower-value RPC, and the pointer gestures are untested
 against real data, and the migration has not been run.
+
+---
+
+## 2026-08-24 — A save no longer dies on a column the database does not have yet
+
+Reported from the live site: adding a Tower Crane failed with
+*"Could not add: Could not find the 'code' column of 'equipment_items' in the schema cache"*, and
+**everything typed into the form was lost**.
+
+⚠️ **The trigger was the un-run migration, but the defect was the all-or-nothing write.** PostgREST
+answers an unmigrated column with PGRST204 and **rejects the whole row** — so one column the database
+had not heard of threw away the name, category, acquisition, unit, supplier, towers and schedule link
+the planner had just filled in, and the message named a column rather than an action.
+
+**Fixed with a tolerant write** (`tolerantWrite`): on a missing-column error it drops the column
+PostgREST named, retries, and reports which fields were not stored **plus the exact migration file to
+run**. Applied to the item insert/update, the sync's link-stamp, and the sync's own writes to
+`equipment_loading` (which carry `source`).
+- ⚠️ **Only a MISSING COLUMN is tolerated.** A constraint violation, an RLS refusal or a bad value
+  must still fail loudly — a save that silently discarded real data would be a worse bug than the one
+  being fixed. Asserted both ways in the suite.
+- ⚠️ **It works on a COPY of the payload**, so a caller that reuses or re-reads its object is not
+  quietly mutated.
+- ⚠️ **`equipment_loading.source` missing is reported once per sync, not per row**, and says what it
+  costs: the months are still written, but without that column a re-sync cannot tell its own previous
+  output from a planner's hand-typed number, so it stops clearing its own stale months.
+- ⚠️ **A toast is not enough** — it disappears, and what is left on screen is a register with blank
+  codes and no explanation. The pending migration now also renders as a **standing banner** in the
+  same place the missing-tables warning uses, until it is run.
+
+**Verified** — 16 checks executing the shipped `tolerantWrite` / `missingColumn` / `reportDropped` /
+`renderMigrateBanner` against a fake PostgREST that reproduces the reported PGRST204 message: the row
+saves with only `code` dropped and every other field intact, exactly one retry, the caller's payload
+unmutated, three missing columns peeled off one at a time, a unique-constraint violation and an RLS
+refusal both still failing, a named column that is not in the payload not looping, and the toast +
+banner naming the migration rather than the column. Parse clean, CSS balanced, **0 functions lost**.
+
+**The real fix is still to run the migration** — `migrations/2026-08-24-equipment-code-and-sharing.sql`
+(after the earlier three). Until then codes and tower sharing are simply not stored, and the module
+now says so instead of refusing the save. ⚠️ After running it, **reload the page**: PostgREST caches
+the schema, and an already-open tab keeps the old one.

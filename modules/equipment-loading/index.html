@@ -560,6 +560,65 @@
     checkDrift();
   }
 
+  // ⚠️ A save must not be all-or-nothing when a column is missing.
+  // PostgREST answers an unmigrated column with PGRST204 ("Could not find the 'code' column of
+  // 'equipment_items' in the schema cache") and REJECTS THE WHOLE ROW — so before this, adding a
+  // piece of equipment on a project whose owner had not yet run the code/sharing migration lost
+  // every field the planner had just typed, and the message named a column rather than an action.
+  //
+  // This drops the column PostgREST named, retries, and reports which fields were not stored plus
+  // the file to run. ⚠️ Deliberately only for a MISSING COLUMN: a constraint violation, an RLS
+  // refusal or a bad value must still fail loudly, or a save would silently discard real data.
+  var EQ_MIGRATION_FOR = {
+    code: 'migrations/2026-08-24-equipment-code-and-sharing.sql',
+    link_mode: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    link_activity_id: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    link_wbs: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    link_label: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    link_qty: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    lead_months: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    lag_months: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    link_start: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    link_finish: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    link_synced_at: 'migrations/2026-08-24-equipment-schedule-link.sql',
+    source: 'migrations/2026-08-24-equipment-schedule-link.sql'
+  };
+  function missingColumn(err) {
+    var m = /Could not find the '([^']+)' column/i.exec((err && err.message) || '');
+    return m ? m[1] : null;
+  }
+  // run(payload) must return the Supabase promise. Returns { ok, data, dropped: [names] }.
+  async function tolerantWrite(payload, run) {
+    var p = {}, k;
+    for (k in payload) if (Object.prototype.hasOwnProperty.call(payload, k)) p[k] = payload[k];
+    var dropped = [];
+    for (var attempt = 0; attempt < 12; attempt++) {
+      var res = await run(p);
+      if (!res || !res.error) return { ok: true, data: res && res.data, dropped: dropped };
+      var col = missingColumn(res.error);
+      if (!col || !(col in p)) return { ok: false, error: res.error, dropped: dropped };
+      delete p[col];
+      dropped.push(col);
+    }
+    return { ok: false, error: new Error('too many missing columns'), dropped: dropped };
+  }
+  // One toast naming the fields lost AND the file that adds them — a column name alone is not
+  // something a planner can act on.
+  // ⚠️ A toast is not enough here: it disappears, and what the planner is left looking at is a
+  // register with blank codes and no explanation. The pending migration is recorded and rendered
+  // as a standing banner until it is run.
+  var eqPendingMig = {};
+  function reportDropped(dropped) {
+    if (!dropped || !dropped.length) return;
+    dropped.forEach(function (c) { if (EQ_MIGRATION_FOR[c]) eqPendingMig[EQ_MIGRATION_FOR[c]] = 1; });
+    renderMigrateBanner();
+    var files = {};
+    dropped.forEach(function (c) { if (EQ_MIGRATION_FOR[c]) files[EQ_MIGRATION_FOR[c]] = 1; });
+    var fl = Object.keys(files);
+    UI.toast('Saved, but ' + dropped.length + ' field(s) were not stored (' + dropped.join(', ') + ')' +
+      (fl.length ? ' — run ' + fl.join(' and ') + ' in the Supabase SQL editor.' : '.'), 'error');
+  }
+
   async function persist(job, msg) {
     try { var r = await job; if (r && r.error) throw r.error; return true; }
     catch (err) { UI.toast((msg || 'Save failed') + ': ' + (err.message || err), 'error'); return false; }
@@ -624,6 +683,10 @@
   // month stays put — otherwise the first re-sync after a manual correction erases it, and the
   // register learns to distrust the sync. Actuals are never touched by the sync at all.
   async function syncItem(it) {
+    // ⚠️ Set when equipment_loading.source could not be written. Without that column the sync
+    // cannot tell its own previous output from a planner's hand-typed number, so a re-sync would
+    // stop clearing its own stale months — the planner has to know that, once, not per row.
+    var srcMissing = false;
     var r = await resolveLink(it);
     if (!r) return { item: it, status: 'unresolved' };
     if (r.error) return { item: it, status: 'error', message: r.error };
@@ -639,8 +702,10 @@
       // Outside the new span. Keep the row if it carries an actual — the equipment really was
       // on site that month, and deleting the row would delete that fact with it.
       if (num(row.actual_qty) != null) {
-        var u = await sb().from('equipment_loading').update({ planned_qty: null, source: 'manual' }).eq('id', row.id);
-        if (!u.error) { row.planned_qty = null; row.source = 'manual'; cleared++; }
+        var u = await tolerantWrite({ planned_qty: null, source: 'manual' }, function (p) {
+          return sb().from('equipment_loading').update(p).eq('id', row.id);
+        });
+        if (u.ok) { row.planned_qty = null; if (!u.dropped.length) row.source = 'manual'; cleared++; }
       } else {
         var d = await sb().from('equipment_loading').delete().eq('id', row.id);
         if (!d.error) { delete have[iso]; cleared++; }
@@ -650,15 +715,19 @@
       var isoW = months[i], cur = have[isoW];
       if (cur) {
         if (num(cur.planned_qty) === qty && cur.source === 'schedule') continue;
-        var up = await sb().from('equipment_loading').update({ planned_qty: qty, source: 'schedule' }).eq('id', cur.id);
-        if (up.error) return { item: it, status: 'error', message: up.error.message };
-        cur.planned_qty = qty; cur.source = 'schedule'; wrote++;
+        var up = await tolerantWrite({ planned_qty: qty, source: 'schedule' }, function (p) {
+          return sb().from('equipment_loading').update(p).eq('id', cur.id);
+        });
+        if (!up.ok) return { item: it, status: 'error', message: (up.error.message || up.error) };
+        cur.planned_qty = qty; if (!up.dropped.length) cur.source = 'schedule'; wrote++;
+        if (up.dropped.length) srcMissing = true;
       } else {
-        var ins = await sb().from('equipment_loading').insert({
+        var ins = await tolerantWrite({
           project_id: pid, equipment_id: it.id, period: isoW, planned_qty: qty,
           source: 'schedule', created_by: user && user.id
-        }).select();
-        if (ins.error) return { item: it, status: 'error', message: ins.error.message };
+        }, function (p) { return sb().from('equipment_loading').insert(p).select(); });
+        if (!ins.ok) return { item: it, status: 'error', message: (ins.error.message || ins.error) };
+        if (ins.dropped.length) srcMissing = true;
         (LOAD[it.id] = LOAD[it.id] || {})[isoW] = ins.data[0];
         have = LOAD[it.id]; wrote++;
       }
@@ -667,18 +736,22 @@
       link_start: mkey(mFloor(r.start)), link_finish: mkey(mFloor(r.end)),
       link_synced_at: new Date().toISOString()
     };
-    var us = await sb().from('equipment_items').update(stamp).eq('id', it.id);
-    if (!us.error) { it.link_start = stamp.link_start; it.link_finish = stamp.link_finish; it.link_synced_at = stamp.link_synced_at; }
-    return { item: it, status: 'ok', months: months.length, wrote: wrote, cleared: cleared };
+    // Same tolerance, quietly: the months themselves are already written, and the stamp is only the
+    // cache that lets the register show a duration without a query per row. Losing it costs a drift
+    // warning, not data — so it must never turn a successful sync into a failed one.
+    var us = await tolerantWrite(stamp, function (p) { return sb().from('equipment_items').update(p).eq('id', it.id); });
+    if (us.ok) { it.link_start = stamp.link_start; it.link_finish = stamp.link_finish; it.link_synced_at = stamp.link_synced_at; }
+    return { item: it, status: 'ok', months: months.length, wrote: wrote, cleared: cleared, srcMissing: srcMissing || (us.dropped || []).length > 0 };
   }
 
   async function syncAll(silent) {
     var linked = ITEMS.filter(isLinked);
     if (!linked.length) { if (!silent) UI.toast('No equipment is linked to the schedule yet — open an item and set its schedule link.'); return; }
     showLoading('Re-deriving ' + linked.length + ' linked item(s) from the schedule…');
-    var ok = 0, bad = [], none = [];
+    var ok = 0, bad = [], none = [], srcGap = false;
     for (var i = 0; i < linked.length; i++) {
       var r = await syncItem(linked[i]);
+      if (r.srcMissing) srcGap = true;
       if (r.status === 'ok') ok++;
       else if (r.status === 'unresolved') none.push(linked[i].name);
       else bad.push(linked[i].name + ' (' + r.message + ')');
@@ -690,6 +763,7 @@
     if (none.length) msg += ' ' + none.length + ' link(s) match no dated activity: ' + none.slice(0, 3).join(', ') + '.';
     UI.toast(msg, bad.length ? 'error' : 'success');
     if (bad.length) UI.toast('Could not sync: ' + bad.slice(0, 2).join('; '), 'error');
+    if (srcGap) UI.toast('The months were written, but equipment_loading has no "source" column yet — run migrations/2026-08-24-equipment-schedule-link.sql, or a re-sync cannot clean up its own old months.', 'error');
   }
 
   // Drift check — cheap enough to run on load, and the whole point of the link: the planner has
@@ -1223,20 +1297,24 @@
       payload.lag_months = mode ? (parseInt(el.querySelector('#f-llag').value, 10) || 0) : 0;
 
       var wantBlks = canSite(payload.category) ? pickedBlks() : [];
-      var ok, saved = null;
+      var ok, saved = null, droppedCols = [];
       if (it) {
-        ok = await persist(sb().from('equipment_items').update(payload).eq('id', it.id), 'Could not save');
+        var upd = await tolerantWrite(payload, function (p) { return sb().from('equipment_items').update(p).eq('id', it.id); });
+        ok = upd.ok; droppedCols = upd.dropped;
+        if (!ok) UI.toast('Could not save: ' + (upd.error.message || upd.error), 'error');
         saved = ok ? it.id : null;
       } else {
         payload.created_by = user && user.id;
         payload.sort_order = ITEMS.length;
         // .select() so a newly added linked item can be synced immediately — without the id
         // back, the first sync would have to wait for the planner to press the button.
-        var ins = await sb().from('equipment_items').insert(payload).select();
-        if (ins.error) { UI.toast('Could not add: ' + ins.error.message, 'error'); ok = false; }
-        else { ok = true; saved = ins.data[0].id; }
+        var ins = await tolerantWrite(payload, function (p) { return sb().from('equipment_items').insert(p).select(); });
+        ok = ins.ok; droppedCols = ins.dropped;
+        if (!ok) UI.toast('Could not add: ' + (ins.error.message || ins.error), 'error');
+        else saved = ins.data[0].id;
       }
       if (!ok) return;
+      reportDropped(droppedCols);
       // Placements are written as their own rows, after the item exists. ⚠️ Diffed rather than
       // cleared-and-rewritten, so a placement nobody touched keeps its row (and its created_at)
       // instead of being deleted and recreated on every save.
@@ -2059,12 +2137,24 @@
   }
 
   // ---- Render ---------------------------------------------------------------------------
-  function renderAll() {
-    var mg = document.getElementById('eq-migrate');
-    if (mg) {
-      mg.style.display = needsMigration ? 'block' : 'none';
+  // One banner for both states: the tables are missing entirely, or a later migration has not been
+  // run and some columns are therefore not being stored.
+  function renderMigrateBanner() {
+    var mg = document.getElementById('eq-migrate'); if (!mg) return;
+    var files = Object.keys(eqPendingMig);
+    if (needsMigration) {
+      mg.style.display = 'block';
       mg.innerHTML = 'Equipment Loading needs its tables. Run <b>migrations/2026-08-24-equipment-loading.sql</b> in the Supabase SQL editor, then refresh.';
-    }
+    } else if (files.length) {
+      mg.style.display = 'block';
+      mg.innerHTML = 'Some fields are not being saved because the database is behind. Run ' +
+        files.map(function (f) { return '<b>' + f + '</b>'; }).join(' and ') +
+        ' in the Supabase SQL editor, then refresh this page.';
+    } else { mg.style.display = 'none'; mg.innerHTML = ''; }
+  }
+
+  function renderAll() {
+    renderMigrateBanner();
     if (!SPAN) return;
     syncFilters();
     var ag = aggregate();
