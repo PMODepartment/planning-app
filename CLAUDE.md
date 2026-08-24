@@ -7729,3 +7729,59 @@ varies", wrong here — a mis-parsed amount in a claims register gets quoted at 
 
 Files: `docs/boq-and-pmi.md` (new), `ROADMAP.md` (B1/B2 rewritten),
 `docs/vendor-performance-chain.md` (decision #1 settled). No `?v=` / `MODULE_V` bump.
+
+## BOQ billing sheets: the monthly POC + revenue engine (2026-08-24) - fmlozano
+
+Owner: the billing sheets are crucial for tracking monthly POC and revenue - check them.
+Analysed all five against the real OPW101 file and added section 4 to `docs/boq-and-pmi.md`
+plus B1d in `ROADMAP.md`. Analysis only - no code, no schema, nothing deployed.
+
+**The arithmetic closes exactly, so POC and revenue are fully derivable.** A billing sheet is its
+trade BOQ plus ten columns: `WT %`, then Previous / This Period / To Date as (Rel. %age, %Wt.,
+Amt.). Verified: **sum of WT % = 1.000000** on all five sheets; `%Wt. = WT % x Rel. %age`;
+`Amt. = line amount x Rel. %age`; previous + period = to date (9.6718% + 7.5741% = 17.2459%,
+exact); **POC = sum of %Wt.**; **revenue = contract x POC = PHP 241,004,906.59**.
+
+=> **The only stored input is `rel_pct` per line per period.** %Wt. and Amt. are derived, or they
+drift from the BOQ on the next revision - the same derive-don't-persist rule as risk-register's
+rating. Each period must snapshot the BOQ revision it billed against.
+
+**Findings that would each have produced a wrong number:**
+
+⚠️ **A heading row can carry a unit, a quantity AND its own WT %** (`DIV 5 | METALS | lot | 1`).
+The "has unit + qty" test therefore double-counts: HS-SP reads **sum WT % = 2.000000** and a
+contract of **PHP 114,410,587.84** against the true **PHP 57,205,293.92** (which then matches the
+Summary sheet exactly). The only reliable discriminator is the `Total of X >>` / `Sub-Total of X >>`
+marker. This also corrected section 2.3 of the doc, which had asserted headings have no unit/qty.
+
+⚠️ **WT % is relative to its own SHEET, not the contract.** Architectural is 87.90% of the contract,
+ACOUSTIC 1.65%; a project POC must be re-weighted by trade share, never averaged across sheets.
+The four trade sheets sum to **PHP 1,155,577,055.60 = the Summary bid PHP 1,031,765,228.24 x 1.12**
+- VAT confirmed, set complete.
+
+⚠️ **`BILLING BREAKDOWN ` (note the trailing space in the sheet name) is a DIFFERENT scope, not the
+roll-up** - PHP 1,397,462,269.86, and different quantities for the same items (Site Supervision
+22 mos @ 1,220,000 vs 34 mos @ 971,695). Summing it with the trade sheets double-counts.
+
+⚠️ **The twins are NOT views of each other** - which answers the open question as "import both".
+Architectural (901 lines), HS-SP (71) and IFO (187) match their trade sheets line-for-line and to
+the peso, but **ACOUSTIC's trade sheet is entirely unpriced (PHP 0.00) while its billing twin
+carries PHP 19,082,190.24**, only 2 of 48 lines agreeing. Trade-sheets-only would silently lose a
+whole trade.
+
+⚠️ **Billing periods are not calendar months** (26 Feb - 25 Mar 2026, PO 4100125091, Progress
+Billing No. 3), so the mapping to Cash Flow's and the S-curve's months must be explicit.
+
+⚠️ **Two POC systems will exist and must not be merged**: `schedule_scurve_agg` (progress) vs the
+BOQ billing POC (contractual/revenue). They differ legitimately - surface the variance, never
+auto-reconcile. This is also the real source for the schedule's existing IBB columns
+(Planned/Earned Value POC, Planned/Actual/EV/At Completion/BL IBB), currently kept by hand.
+
+⚠️ **Worked example of why the importer needs a reconciliation gate, from my own analysis:** a
+plausible filter skipping rows whose unit text contained "unit" silently dropped
+**PHP 20,667,260.59** of plant (Tower Crane, Elevators, Generator Set, Skidloader - UoM literally
+`unit`). The sheet was fine; the reader was wrong, and only reconciling the line sum against the
+sheet's own stated contract total caught it. **Refuse the import on mismatch.**
+
+Files: `docs/boq-and-pmi.md` (section 4 added, sections 4-6 renumbered to 5-7, two internal
+inconsistencies fixed), `ROADMAP.md` (B1d). No `?v=` / `MODULE_V` bump.

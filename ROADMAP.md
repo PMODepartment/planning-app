@@ -87,6 +87,30 @@ allocate quantity to activities.
   allocations, or quantities live in three places and drift.
 - Feeds C1, Cash Flow's cost-weighted S-curve, and F2/F6 of the vendor chain.
 
+**B1d. Billing sheets = monthly POC and revenue** (verified against the real file; arithmetic closes
+exactly). Each `(Billing)` twin is its trade BOQ plus a period's progress: `WT %` (sums to
+**1.000000**), then Previous / This Period / To Date as (Rel. %age, %Wt., Amt.).
+- **POC = sum of %Wt. = sum(WT % x Rel. %age)**; **revenue = contract x POC** (verified
+  PHP 241,004,906.59 at 17.2459%); previous + period = to date, exactly.
+- ⚠️ **Store only `rel_pct` per line per period; derive %Wt. and Amt.** Persisting them makes them
+  drift from the BOQ on the next revision. Each period snapshots the revision it billed against.
+- ⚠️ **WT % is relative to its own SHEET, not the contract** -- Architectural is 87.90% of the
+  contract and ACOUSTIC 1.65%, so a project POC must be re-weighted by trade share, never averaged.
+- ⚠️ **`BILLING BREAKDOWN ` is a DIFFERENT scope**, not the roll-up (PHP 1,397,462,269.86, different
+  quantities for the same items). The four trade sheets sum to PHP 1,155,577,055.60 = the Summary
+  bid x 1.12. Do not add them together.
+- ⚠️ **Billing periods are not calendar months** (26th->25th); the month mapping for Cash Flow and
+  the S-curve must be explicit.
+- ⚠️ **Import both trade and billing sheets.** They are not views of each other: ACOUSTIC's trade
+  sheet is entirely unpriced (PHP 0) while its billing twin carries PHP 19,082,190.24.
+- ⚠️ Traps: sheet name has a **trailing space**; a **heading can carry unit+qty and its own WT %**
+  (counting it doubled HS-SP's contract to PHP 114.4M vs the true PHP 57.2M); `#REF!` rows are real
+  rows. **Reconcile line sums against the sheet's stated contract total and refuse on mismatch** --
+  this gate caught a PHP 20,667,260.59 drop during the analysis itself.
+- ⚠️ **Two POC systems will exist** -- the schedule's `schedule_scurve_agg` (progress) and the BOQ
+  billing POC (contractual/revenue). They differ legitimately; surface the variance, never
+  auto-reconcile. This is also the real source for the schedule's existing IBB columns.
+
 ### B2. Claims Register with PMI tracking
 Full design note: **`docs/boq-and-pmi.md`** (grounded in a real 14-page filed PMI).
 - ⚠️ **A filed PMI is a case file of 5 document types**, not one PDF -- needs a private

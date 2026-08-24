@@ -8,7 +8,8 @@ vendor-performance chain (`docs/vendor-performance-chain.md`, F2/F6).
 Grounded in two real documents, both supplied as reference and both **measured, not assumed**:
 
 - **BOQ** — *EPC. CAC. BID. One Portwood Package 2 BOQ. 2025 08 28 rev.05 — commented 250925*
-  (OPW101, One Portwood Residences / Megaworld). 10 sheets, ~1,215 priced lines.
+  (OPW101, One Portwood Residences / Megaworld). 10 sheets, 1,207 priced lines across the four
+  trade BOQs, plus four billing twins and a separate 793-line master billing.
 - **PMI** — *MST347. OPS. VO-PMI 29.2 — Cost Proposal for Supply & Installation of Rangehood
   (rev1)* (My Enso Lofts / PH1 World Developers). 14 pages.
 
@@ -42,12 +43,12 @@ clients, but between sheets of the same workbook.**
 
 | Sheet | Rows | Role |
 |---|---|---|
-| `Architectural` | 902 priced lines, 235 headings | trade BOQ |
-| `HS-SP` (hardscape & swimming pool) | 78 / 41 | trade BOQ |
+| `Architectural` | 901 priced lines, 235 headings | trade BOQ |
+| `HS-SP` (hardscape & swimming pool) | 71 / 41 | trade BOQ |
 | `IFO HL&LL` (interior fit-out, hallway & lift lobby) | 187 / 40 | trade BOQ |
 | `ACOUSTIC` | 48 / 8 | trade BOQ |
 | `… (Billing)` ×4 | — | billing twin of each trade sheet |
-| `BILLING BREAKDOWN`, `Summary` | — | roll-up + bid reconciliation |
+| `BILLING BREAKDOWN ` (trailing space), `Summary` | — | a **different** contract's billing (§4.3) + bid reconciliation |
 
 ⚠️ **The header row and column offset differ per sheet, inside one file:**
 
@@ -73,8 +74,12 @@ item number used only to *propose* nesting and shown to the planner for confirma
 
 ### 2.3 Headings and leaves are structurally distinct — and both carry meaning
 
-A heading has no unit/quantity and carries `Total of 9.1 >>` / `Sub-Total of 9.1.1 >>` in its
-amount column. A leaf has a unit and a quantity.
+A heading carries `Total of 9.1 >>` / `Sub-Total of 9.1.1 >>` beside its amount column; a leaf has
+a unit and a quantity.
+
+⚠️ **The marker is the only reliable discriminator — a heading can also carry a unit and a
+quantity** (`DIV 5 | METALS | lot | 1`). Using "has unit + qty" as the test double-counts an entire
+sheet's weights; see §4.5 trap 2, where it doubles HS-SP's contract value.
 
 ⚠️ **On three of the four sheets the leaf description is a LOCATION, not a specification.**
 
@@ -115,7 +120,7 @@ advisory flag for review, never as an automatic delete**; a colour is one person
 
 `UNIT COST → MATERIAL | MATERIAL COST | LABOR + CONS | LABOR COST | TOTAL AMOUNT`.
 
-⚠️ **This is the same shape as the PMI cost proposal** (§4.5), which is what makes §4.6 possible:
+⚠️ **This is the same shape as the PMI cost proposal** (§5.5), which is what makes §4.6 possible:
 one line-item table serves the contract BOQ and variation pricing alike.
 
 ### 2.6 Line totals are authoritative; unit rates are rounded displays
@@ -252,9 +257,134 @@ RPC, not a column.
 
 ---
 
-## 4. B2 — PMI tracking
+## 4. The billing sheets — monthly POC and revenue
 
-### 4.1 A filed PMI is a case file, not a form
+**These are the point of the workbook, not an afterthought.** Every figure below was verified
+against the file; the arithmetic closes exactly.
+
+### 4.1 A billing sheet is the trade BOQ plus a period's progress
+
+Same lines, same order, plus ten columns:
+
+```
+... TOTAL AMOUNT | WT %
+| Previous Accomplishment       : Rel. %age | %Wt. | Amt. (Php.)
+| Accomplishment for this Period: Rel. %age | %Wt. | Amt. (Php.)
+| Accomplishment to Date        : Qty | MATERIALS | LABOR | Rel. %age | %Wt. | Amt. (Php.)
+```
+
+Worked line (Site Supervision, 22 mos @ PHP 1,220,000 = PHP 26,840,000):
+
+| | Rel. %age | %Wt. | Amt. |
+|---|---|---|---|
+| Previous | 0.136364 | 0.00261903 | 3,660,000.00 |
+| This period | 0.136364 | 0.00261903 | 3,660,000.00 |
+| **To date** | **0.272727** | **0.00523807** | **7,320,000.00** |
+
+Every identity holds exactly:
+
+- `WT % = line amount / sheet total` — and **sum of WT % = 1.000000** on all five billing sheets.
+- `%Wt. = WT % x Rel. %age`
+- `Amt. = line amount x Rel. %age`
+- `previous + this period = to date` (9.6718% + 7.5741% = **17.2459%**, exact)
+- **Project POC = sum of %Wt.** — a cost-weighted percent complete straight off the BOQ.
+- **Revenue to date = sum of Amt. = contract x POC** — verified **PHP 241,004,906.59 at 17.2459%**.
+- To-date `MATERIALS + LABOR = Amt.`, so the material/labour split survives into revenue.
+
+### 4.2 Therefore the only stored input is one number per line per period
+
+⚠️ **Store `rel_pct` and derive everything else.** `%Wt.` and `Amt.` are pure functions of the
+line's amount, the sheet total and `rel_pct` — persisting them means they silently disagree with
+the BOQ the moment a revision changes a quantity. Same "derive, don't persist" rule as
+risk-register's rating and productivity-rates' rate.
+
+```
+boq_billing_periods (billing_no, period_start, period_end, po_no, contract_total, status)
+boq_progress        (period_id, boq_item_id, rel_pct)          <- the ONLY input
+```
+
+`previous` need not be stored either: it is the to-date of the prior period. ⚠️ But **each period
+must snapshot the BOQ revision it was billed against** — a later remeasure must not retroactively
+rewrite a submitted billing.
+
+⚠️ **The billing period is not a calendar month:** *February 26 2026 – March 25 2026*, PO
+`4100125091`, *PROGRESS BILLING NO. 3*. Cash Flow and the S-curve are monthly, so the mapping from
+billing periods to months must be explicit, not assumed.
+
+### 4.3 ⚠️ WT % is relative to its own SHEET, not the contract
+
+Each sheet states its own *Total Contract/Project Cost* and weights against that. The four Package 2
+trade sheets sum to the contract:
+
+| sheet | total | share |
+|---|---|---|
+| Architectural | 1,015,731,442.96 | 87.90% |
+| IFO HL&LL | 63,558,128.47 | 5.50% |
+| HS-SP | 57,205,293.93 | 4.95% |
+| ACOUSTIC | 19,082,190.24 | 1.65% |
+| **total** | **1,155,577,055.60** | |
+
+and that total equals the `Summary` bid **PHP 1,031,765,228.24 x 1.12 = PHP 1,155,577,055.63** —
+VAT confirmed, set complete.
+
+⚠️ **So WT % cannot be summed or compared across sheets, and a project POC is not the average of
+the four.** It must be re-weighted by each trade's share. A naive average would let ACOUSTIC (1.65%
+of the contract) move the project POC as much as Architectural (87.90%).
+
+⚠️ **`BILLING BREAKDOWN ` is a different scope, not the roll-up.** Stated total
+**PHP 1,397,462,269.86**, scope *"COMPLETE CIVIL/STRUCTURAL..."*, and different quantities for the
+same descriptions — Site Supervision is **22 mos @ PHP 1,220,000** there against **34 mos @
+PHP 971,695** on the Architectural sheet. Summing it with the trade sheets double-counts.
+
+### 4.4 This is where the schedule's IBB columns already point
+
+The Project Schedule grid already carries **Planned Value POC / Earned Value POC / Planned IBB /
+Actual IBB to date / Earned Value IBB / At Completion IBB / BL Planned IBB** (from the OPC import
+work), and Cash Flow's cash-in is *contract IBB x delta S-curve %*. The billing sheet is the
+authoritative source for exactly those numbers, which are presently maintained by hand.
+
+⚠️ **Two POC systems will now exist and they must not be silently merged.** The schedule's
+duration- or cost-weighted `schedule_scurve_agg` is the *progress* POC; the BOQ billing POC is the
+*contractual/revenue* one the client pays against. They legitimately differ. **Reconciling them is
+a report, not an override** — and that variance is one of the most useful things this module could
+show a PM.
+
+### 4.5 Import traps — all found in this one file
+
+1. ⚠️ **The sheet name has a trailing space** — `'BILLING BREAKDOWN '`. An exact-name lookup throws.
+2. ⚠️ **Heading rows can carry a unit and a quantity *and their own WT %***: `DIV 5 | METALS | lot |
+   1`. Counting them double-counts the weights — HS-SP then reads **sum of WT % = 2.000000** and a
+   contract of **PHP 114,410,587.84** instead of the true **PHP 57,205,293.92**. **The discriminator
+   is the `Total of X >>` / `Sub-Total of X >>` marker, never the presence of unit/qty.**
+3. ⚠️ **The twins are not reliably the same data.** Architectural (901 lines), HS-SP (71) and IFO
+   (187) match their trade sheets line-for-line and to the peso — but **ACOUSTIC's trade sheet is
+   entirely unpriced (PHP 0.00) while its billing twin carries PHP 19,082,190.24**, with only 2 of
+   48 lines agreeing. Importing trade sheets only would silently lose a whole trade's value.
+4. `#REF!` rows appear as real rows (5 in HS-SP billing). Import must survive them.
+5. ⚠️ **Reconcile the sum of lines against the sheet's own stated contract total, and refuse on
+   mismatch.** Worked example from this analysis: a plausible-looking filter that skipped rows whose
+   unit text contained `"unit"` silently dropped **PHP 20,667,260.59** of plant (Tower Crane,
+   Elevators, Generator Set, Skidloader — UoM literally `unit`). The sheet was fine; the reader was
+   wrong, and only the reconciliation caught it. **This is the single most valuable gate in the
+   importer.**
+
+### 4.6 Decision: import both, as lines + progress
+
+The earlier open question ("import the twins, or treat billing as a view?") is answered:
+**a billing sheet is not a view of the trade sheet.** It is the same lines plus a period's progress,
+and for ACOUSTIC it is the only priced copy.
+
+- The **trade sheet** supplies the lines -> `boq_items` (once per revision).
+- Each **billing sheet** supplies a period -> `boq_billing_periods` + `boq_progress`, matched back
+  to `boq_items`.
+- ⚠️ **Where the two disagree on price, show the disagreement and make the planner choose the
+  priced source.** Silently preferring either one would have produced a PHP 19M error here.
+
+---
+
+## 5. B2 — PMI tracking
+
+### 5.1 A filed PMI is a case file, not a form
 
 The sample is **14 pages and five distinct documents**:
 
@@ -277,7 +407,7 @@ store the object **path**, sign on demand, never store a URL.
 legacy rule lets a viewer upload into a register they cannot write a row to, an orphan by
 construction. Precedent already set by `mom-attachments` (2026-08-21).
 
-### 4.2 Two reference numbers, both real
+### 5.2 Two reference numbers, both real
 
 - Client's: **`MEL.CON.PMI-029`** — on their form.
 - Megawide's: **`MST347. OPS. VO-PMI 29.2 (rev1)`** — project code, department, our own sequence.
@@ -286,7 +416,7 @@ construction. Precedent already set by `mom-attachments` (2026-08-21).
 the one the other party will cite. That is how a claim becomes unfindable in the meeting where it
 matters.
 
-### 4.3 Numbering is hierarchical *and* revisioned *and* spawning
+### 5.3 Numbering is hierarchical *and* revisioned *and* spawning
 
 `PMI 29` is the parent instruction (rangehood + in-line fan + cooktop). `PMI 29.2` is one cost
 proposal under it (rangehood only). `rev1` is a revision of that proposal. **Three levels**, and a
@@ -299,7 +429,7 @@ flat `reference_no` collapses all three into a string nobody can group by.
   cost proposal."* — one PMI **spawns** another. That is a third relation, distinct from parent and
   from revision; conflating them loses the chain.
 
-### 4.4 The lifecycle is long and two-sided
+### 5.4 The lifecycle is long and two-sided
 
 Dates on the sample: issued **09-Jan-2025** → received by MCC **08-Feb-2025** → cost proposal
 **24-Jun-2026** → testing **25-May-2026**. Roughly **18 months**.
@@ -323,7 +453,7 @@ no negatives) carries over unchanged.
 read **0.2%** on the real fixture where the honest figure was **85.0% of 1 decided record**. A
 long-lived PMI register makes that worse, not better.
 
-### 4.5 The cost build-up is a contractual formula, not an amount
+### 5.5 The cost build-up is a contractual formula, not an amount
 
 ```
 A  Direct cost (material + labour), VAT-ex        8,707,500.00
@@ -346,7 +476,7 @@ from its lines + the card, and the same card prints the sheet.
 ⚠️ **Store the priced lines, not just the total** — quantity, UoM, vendor, material/labour split.
 They answer "what did we price the rangehood at" a year later when the remeasure lands.
 
-### 4.6 The unifying insight: a PMI cost proposal *is* a BOQ
+### 5.6 The unifying insight: a PMI cost proposal *is* a BOQ
 
 `1,204 units, material rate, labour rate, total` is exactly the shape of §2.5. So the priced lines
 of a PMI go into **`boq_items` with a scope tag**, not a parallel table:
@@ -362,7 +492,7 @@ line-item tables would have guaranteed they drift.
 ⚠️ It also closes a real gap: **variation work currently carries no quantities anywhere**, so a
 change order can be scheduled but its productivity can never be measured.
 
-### 4.7 "PMI format varies by client" — the design answer
+### 5.7 "PMI format varies by client" — the design answer
 
 **Model what is invariant; attach the form; make the variable parts configuration.**
 
@@ -373,7 +503,7 @@ record.
 Variable, therefore configuration on a **client/contract profile**:
 - field **labels** ("PMI" / "Site Instruction" / "Architect's Instruction" / "Variation Order"),
 - the **reference-number pattern**,
-- the **cost build-up card** (§4.5),
+- the **cost build-up card** (§5.5),
 - the **required-attachment checklist** — which of the five document types this client demands
   before a submission counts as complete,
 - the **approval roles** on each side.
@@ -391,13 +521,16 @@ template with a known layout.
 
 ---
 
-## 5. Sequencing
+## 6. Sequencing
 
 ```
 class_codes ✅ + project_schedule.class_code ✅
         │
         ▼
 B1a  boq_revisions + boq_items + boq_import_profiles   (detect → preview → accept → import verbatim)
+        │
+        ├─► B1d  boq_billing_periods + boq_progress   (rel_pct only; POC + revenue derived)
+        │            └─► monthly POC, revenue, and the schedule's IBB columns
         │
         ├─► B1b  boq_class_map        (per-revision, seeded by the suggestion library)
         │            │
@@ -420,7 +553,7 @@ B1a→B1b→B1c is the critical path for the vendor chain. B2 runs in parallel u
 
 ---
 
-## 6. Open decisions
+## 7. Open decisions
 
 1. **Allocation granularity** — `boq_item → activity` (per line) or `class_code → activity` (one
    split serves every line on that code)? **Recommendation: per line**, because the line carries the
@@ -435,6 +568,9 @@ B1a→B1b→B1c is the critical path for the vendor chain. B2 runs in parallel u
 4. **Who owns the mapping?** `class_codes` is admin-owned Finance data, but BOQ mapping is a
    QS/planner act. Suggest planner-owned under the standard project-scoped RLS, rows stamped with
    author + timestamp.
-5. **The `(Billing)` twin sheets** — same lines re-cut for billing. Import both and link them, or
-   import the trade sheets only and treat billing as a view? Needs a look at how they actually
-   differ before deciding.
+5. ~~**The `(Billing)` twin sheets**~~ **ANSWERED in §4.6** — import both: lines from the trade
+   sheet, progress from each billing sheet. They are not views of each other.
+6. **Billing period → month mapping** for Cash Flow and the S-curve. Periods run 26th→25th.
+   Pro-rata by days, or assign each period to the month holding its end date? Needs a call.
+7. **Which POC leads a report?** Billing POC is contractual; schedule POC is progress. They differ
+   legitimately — confirm the variance is surfaced, never auto-reconciled (§4.4).
