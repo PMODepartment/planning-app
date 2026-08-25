@@ -1,3 +1,39 @@
+## A one-tower project now stacks vertically — the axis skips a level nobody uses (2026-08-26) — fmlozano
+Owner: *"there should be a fix for projects that have no tower. Some projects just only have 1 tower…
+the zones are just fixed horizontally, it's not a vertical stacking per se."* And: *"some projects
+don't have a WBS just for tower 1."* One root cause behind both.
+- ⚠️ **The stacking bands by the FIRST location level, and on a one-building project that level is
+  empty.** `locMapOf` deliberately never stamped a tower unless `multiTower()` (a filter with one
+  choice is noise), and a project whose WBS has no Tower branch has nothing for the location matcher
+  to read either. So every activity had no value at level 0, all of them fell into a single
+  *— No level —* band, and the floors rendered as **cells running horizontally** — a building drawn
+  sideways, which is exactly what the owner described.
+- **Fix: `_vsAxis()` drops a LEADING level that no activity uses at all**, so the first populated
+  level (Level) becomes the vertical axis and the floors stack. Zones and units stay as the cells.
+  ⚠️ **STRICTLY ZERO, never a coverage ratio.** A "fewer than half" rule was tried on 2026-08-25 and
+  was wrong: it dropped Tower **and** Level and stacked by Zone, because Level is carried by fewer
+  activities than Zone is. **A level that ANY activity uses is real structure the planner put there** —
+  it stays, and its un-valued rows keep their honest No-level band. Verified: one towered activity out
+  of 2,561 keeps Tower as the axis.
+  ⚠️ **Leading levels only, never the last one.** An unused level in the MIDDLE is a genuine gap in
+  the data; hiding it would misreport the building rather than read it. Verified: Tower used / Level
+  empty / Zone used keeps the full four-level axis.
+  ⚠️ **Measured over the activities this view stacks** (execution-phase leaves), not over `rows` —
+  which also holds WBS summaries and every Initiation / Planning / Close-out activity. One stray
+  non-execution row carrying a tower would otherwise hold the axis and put the whole project back
+  under "No level"; **that exact mistake made an earlier attempt a no-op.** Both cases verified.
+  ⚠️ **Not filtered by the toolbar** — the building's shape must not change because someone typed in
+  the search box. Re-measured when the row set or `_editSeq` changes.
+- **A genuinely multi-tower project is untouched** — asserted, in both directions.
+- The one-click **Assign** repair from earlier today stays, for a planner who would rather stamp a
+  real tower name than have the level skipped; it now targets the AXIS' first level, so it can never
+  offer to fill a level the view has already stepped past.
+- Verified by executing the shipped `_vsAxis`/`_vsHasLevel`/`_vsMaxDetail` over nine shapes: the
+  one-tower and no-Tower-WBS projects both → **Level › Zone › Unit**; a stray Planning row and a WBS
+  summary row carrying a tower both → still Level; multi-tower → unchanged; a single towered activity
+  → Tower kept; a middle gap → preserved; nothing located at all → still returns an axis rather than
+  none. Inline script parses. ⚠️ **Not verified signed-in.** Delivered as `?v=20260826c`.
+
 ## "No levels detected" — the band had TWO causes and only one had a message (2026-08-26) — fmlozano
 Owner, on One Portwood again: *"how come its like this again? there is no levels detected?"* Same
 screenshot as before — 2,561 activities in the dashed *No level* band with their floors visible as the

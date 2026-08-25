@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (c) — One-tower projects stack vertically: the axis skips a level nobody uses
+Owner: *"some projects just only have 1 tower… the zones are just fixed horizontally, it's not a
+vertical stacking per se"* / *"some projects don't have a WBS just for tower 1."* `?v=20260826c`.
+- ⚠️ **One cause behind both.** The stacking bands by the first location level; on a one-building
+  project that level is empty (`locMapOf` only stamped a tower when multiTower, and a WBS with no Tower
+  branch gives the matcher nothing), so every activity fell into one "No level" band and the floors
+  rendered as cells running horizontally.
+- **Fix:** a leading level that **no activity uses at all** is skipped, so the first populated level
+  becomes the vertical axis and the floors stack. ⚠️ Strictly zero, never a coverage ratio — the
+  half-coverage rule tried yesterday dropped Tower *and* Level and stacked by Zone. Leading levels
+  only; a middle gap is real data and is preserved. Multi-tower projects are untouched.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-26 (b) — "No levels detected": the band had two causes and only one had a message
 Owner: *"how come its like this again? there is no levels detected?"* Delivered as `?v=20260826b`.
 - ⚠️ **The banner was advice for a problem this project does not have.** Two faults share the dashed
