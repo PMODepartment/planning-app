@@ -10669,16 +10669,36 @@
   // Builder for it in the warning above the stack.
   // ⚠️ Only LEADING empty levels are dropped, and never the last one. An unused level in the MIDDLE
   // is a real gap in the data; hiding that would misreport the building rather than read it.
+  // ⚠️ Measured over THE ACTIVITIES THIS VIEW STACKS — execution-phase leaves — and not over `rows`.
+  // `rows` also holds WBS summary rows and every Initiation / Planning / Close-out activity, so a
+  // SINGLE stray non-execution row carrying a Tower was enough to keep Tower as the axis and put all
+  // 2,561 execution activities back under "— No level —". The first attempt at this fix scanned
+  // `rows` and was therefore a no-op on the very project it was written for.
+  // ⚠️ Deliberately NOT filtered by the toolbar (no rowMatches): the building's axis must not change
+  // shape because someone typed in the search box.
   var _vsLvlCache = null, _vsLvlSig = '';
   function _vsLevels() {
     if (!LOC_LEVELS.length) return [];
-    var sig = LOC_LEVELS.length + '|' + rows.length;
+    var sig = LOC_LEVELS.length + '|' + rows.length + '|' + _editSeq;
     if (_vsLvlCache && sig === _vsLvlSig) return _vsLvlCache;
+    var acts = rows.filter(function (r) { return !isWbs(r) && r._dkind !== 'group' && isExecPhase(r); });
+    // Coverage per level: how many of those activities actually carry a value there.
+    var cov = LOC_LEVELS.map(function (l) {
+      var n = 0;
+      for (var j = 0; j < acts.length; j++) if (locValOf(acts[j], l.id)) n++;
+      return n;
+    });
+    // ⚠️ A leading level is dropped when it covers FEWER THAN HALF the activities that some level
+    // below it covers. Not a zero-test: three stray towered rows out of 2,561 would otherwise still
+    // hold Tower as the axis and put the other 2,558 under "— No level —", which is the same bug
+    // wearing a smaller number. Not a plain "best coverage wins" either: a project that is genuinely
+    // multi-tower but tagged 2,000 of 2,561 must KEEP its towers — that is real structure, and the
+    // 561 untagged rows belong in the No-level band where they can be seen and fixed.
     var i = 0;
     while (i < LOC_LEVELS.length - 1) {
-      var id = LOC_LEVELS[i].id, used = false;
-      for (var j = 0; j < rows.length; j++) { if (locValOf(rows[j], id)) { used = true; break; } }
-      if (used) break;
+      var best = 0;
+      for (var k = i + 1; k < cov.length; k++) if (cov[k] > best) best = cov[k];
+      if (cov[i] * 2 >= best) break;
       i++;
     }
     _vsLvlSig = sig; _vsLvlCache = LOC_LEVELS.slice(i);

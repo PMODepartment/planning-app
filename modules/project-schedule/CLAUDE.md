@@ -1,3 +1,41 @@
+## The stac
+
+### 2026-08-25 (j) — The stacking axis is chosen by coverage; (i) was a no-op
+Owner: *"the levels are detected in the project schedule, yet in the vertical stacking no levels were
+detected."* `MODULE_V` → `20260825o`.
+- ⚠️ **(i) measured the wrong set.** It scanned `rows`, which also holds WBS summary rows and every
+  non-execution activity, so one stray Planning row carrying a Tower kept Tower as the axis and put all
+  2,561 execution activities back under "— No level —".
+- **Now it counts the activities the view actually stacks**, and drops a leading level when it covers
+  fewer than half the activities some level below it covers — so three stray towered rows cannot hold
+  the axis, while a genuinely multi-tower project tagged 2,000 of 2,561 keeps its towers.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+king axis is chosen by COVERAGE — my first attempt at it was a no-op (2026-08-25) — fmlozano
+Owner: *"the levels are detected in the project schedule, yet in the vertical stacking no levels were
+detected."*
+- ⚠️ **Why `878eb31` did not fix it: it measured the wrong set.** `_vsLevels()` scanned **`rows`** for
+  a value at each leading level — and `rows` also holds every **WBS summary row** and every
+  **Initiation / Planning / Close-out** activity. A single stray non-execution row carrying a Tower was
+  enough to mark Tower "used", keep it as the axis, and put all 2,561 execution activities straight
+  back under *— No level —*. The fix was written for this project and was a no-op on it.
+- **Now it measures the activities the view actually stacks** (execution-phase leaves), and it counts
+  them instead of asking a yes/no question. ⚠️ **A leading level is dropped when it covers fewer than
+  HALF the activities that some level below it covers.**
+  - Not a zero-test: three stray towered rows out of 2,561 would keep Tower as the axis and bury the
+    other 2,558 — the same bug wearing a smaller number.
+  - Not "best coverage wins" either: a genuinely multi-tower project tagged 2,000 of 2,561 must KEEP
+    its towers. That is real structure, and the 561 untagged rows belong in the No-level band where a
+    planner can see and fix them.
+- ⚠️ **Not filtered by the toolbar** (no `rowMatches`) — the building's axis must not change shape
+  because someone typed in the search box. Re-measured when the row set or `_editSeq` changes, so a
+  location typed into the grid is picked up without a reload.
+- Verified by executing the SHIPPED `_vsLevels` over seven shapes: no towers at all → **Level › Unit ›
+  Zone**; the same plus one PLANNING row with a tower → **Level › …** (the case that broke the last
+  attempt); plus a WBS summary row with a tower → **Level › …**; 3 towered execution rows of 2,561 →
+  **Level › …**; 2,000 of 2,561 tagged → **Tower › Level › Unit › Zone** kept; fully tagged multi-tower
+  → kept; nothing located at all → full axis kept and the existing No-level band still explains it.
+  Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260825o`.
+
 ## Vertical stacking: the building axis is the first level that is USED, not LOC_LEVELS[0] (2026-08-25) — fmlozano
 Owner, on One Portwood Residences (trades now reading correctly): *"look at the vertical stacking,
 there is no levels detected."* — 2,561 located activities, every one of them banded under
