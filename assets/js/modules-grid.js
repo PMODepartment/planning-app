@@ -16,7 +16,25 @@
   // Bump MODULE_V on any deploy that changes a module's index.html. It is defined here, not in
   // config.js, deliberately: config.js is itself cache-busted from every HTML file, so versioning
   // it there would mean an app-wide bump to make a one-module change visible.
-  var MODULE_V = '20260825q';
+  // ⚠️⚠️ THE VERSION IS TAKEN FROM THIS SCRIPT'S OWN `?v=`, NOT FROM A CONSTANT HERE.
+  // The bug that forced this (2026-08-25): dashboard.html and modules.html load
+  // `modules-grid.js?v=20260825f`, and the browser caches a script BY ITS FULL URL. Bumping the
+  // constant inside this file therefore changed nothing a returning user could ever see — the old
+  // copy kept being served from cache, kept handing out `?v=20260825f` module links, and every
+  // module fix from `g` to `q` sat undelivered behind a query string nobody had touched. Ten
+  // "MODULE_V bumped" changelog lines, none of which reached a browser.
+  // Deriving it from the tag means the ONE thing a deploy edits — the `?v=` in the HTML, which is
+  // itself always fetched fresh (the service worker forces `cache: 'reload'` on HTML) — is also the
+  // thing that busts this file AND the module pages. The two can no longer disagree.
+  // The literal below is only the fallback for a page that omits the query.
+  var MODULE_V = (function () {
+    try {
+      var s = document.currentScript && document.currentScript.src;
+      var m = s && s.match(/[?&]v=([^&]+)/);
+      if (m) return decodeURIComponent(m[1]);
+    } catch (e) {}
+    return '20260825q';
+  })();
 
   function href(m) {
     return m.path + (m.path.indexOf('?') === -1 ? '?v=' : '&v=') + MODULE_V;

@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (m) — Why none of it reached the browser: the launcher script was itself cached
+Owner: *"the interface is not reflected in the main how come?"*
+- ⚠️ **ROOT CAUSE.** `MODULE_V` lives in `assets/js/modules-grid.js`, but `dashboard.html` and
+  `modules.html` load that file as **`modules-grid.js?v=20260825f`** — and a browser caches a script
+  **by its full URL**. That query string had not changed since `…f`, so the browser kept serving the
+  OLD copy of the launcher, which kept building module links reading `?v=20260825f`, which kept
+  serving the OLD `modules/project-schedule/index.html`. **Every bump from `g` to `q` — Cost Loading,
+  the trade work, the revert, the tower fix, the restyle — was undelivered.** Ten changelog lines
+  saying "MODULE_V →" and not one of them could reach a browser.
+- **Fix: `MODULE_V` is now DERIVED from this script's own `?v=`.** The one thing a deploy edits — the
+  query in the HTML, which is always fetched fresh (the service worker forces `cache: 'reload'` on
+  HTML) — is now also the thing that busts the launcher AND the module pages. They can no longer
+  disagree. The literal in the file is only a fallback for a page that omits the query.
+- Both pages bumped to `?v=20260825q`, which is what the shipped module now resolves to.
+- ⚠️ **New deploy rule: bump the `?v=` on the `modules-grid.js` tag in `dashboard.html` and
+  `modules.html`.** Editing the constant alone changes nothing a user can see — that is precisely
+  what happened here.
+- Verified by executing the shipped file with a stubbed `document.currentScript`: tag `?v=20260825q`
+  → `MODULE_V = 20260825q` and a module link of `modules/project-schedule/index.html?v=20260825q`; no
+  query → the literal fallback; no `currentScript` → the literal fallback; `?v=…&x=1` → the `v` value.
+
+
 ### 2026-08-25 (l) — Cost Loading restyled onto the Schedule Builder's own components
 Owner: *"make the UI more visually appealing. emphasize more on the fields that are essential. Follow
 the format or appearance in the schedule builder."* `MODULE_V` → `20260825q`.
