@@ -84,6 +84,19 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (d) — Trade detection: the WBS towers were being read as trades
+Owner, on the vertical stacking's trade chips: *"it detected the towers as trades."* `MODULE_V` → `20260825i`.
+- ⚠️ **Root cause:** `_nodeTrade()` took the branch **directly under the root** as an activity's trade.
+  On a `Project › Execution Phase › Tower 1 › Structural Works` tree that branch is the phase — and
+  where the phase itself is the root, it is the tower. It now scans root-first for the **shallowest
+  branch that is neither a phase heading nor a location**, and yields **no trade** rather than naming a
+  tower, so missing tagging is visible instead of disguised as an answer.
+- ⚠️ Locations are recognised from the project's own data (values its activities carry), never a word
+  list — a real "Tower Crane Works" branch survives. Verified against the shipped code.
+- This fed Discipline/Trade grouping and the trade colours too, not just the stacking.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-25 (c) — Cost Loading: assigning the project's cost to its activities
 Owner: *"for the project schedule, there must be a cost loading feature… enlist the execution-phase
 activities, assign a cost to each, distribute it across each sub-WBS equally or by percentage, then

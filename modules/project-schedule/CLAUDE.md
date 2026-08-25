@@ -1,3 +1,35 @@
+## The vertical stacking listed the TOWERS as trades — `_nodeTrade` trusted the branch under the root (2026-08-25) — fmlozano
+Owner, with a screenshot of the trade chips reading *All trades · Execution Phase · Tower 1 · Tower 2*:
+*"i think there is error in detecting the trades in a project schedule… it detected the towers as trades."*
+- ⚠️ **Root cause:** `_nodeTrade()` took **the branch directly under the root** as the trade, with an
+  explicit "no phase-root gate — every branch name is a classification" note. Real trees are
+  `Project › Execution Phase › Tower 1 › Structural Works › Zone A`, so that branch is the **phase**;
+  and when the phase itself is the root (which is how some of these projects are filed) it is the
+  **tower**. Both chips in the screenshot are that one line of code, seen at two different WBS depths.
+  This was never only a stacking bug — `workOf()` feeds Discipline/Trade grouping, the trade colours
+  and the builder comparisons too.
+- **Fix:** scan the ancestry **root-first** and take the **shallowest branch that is neither a phase
+  heading nor a location**. Everything above it is skipped.
+- ⚠️ **Skipped, not used as a fallback.** A branch that is only ever `Execution Phase › Tower 1` now
+  yields **no trade** rather than "Tower 1" — a chip reading "Tower 1" looks like an answer and cannot
+  be spotted as missing data, whereas "— No trade —" tells the planner to tag the work.
+- ⚠️ **Locations are recognised from the project's OWN data** — the values its activities actually
+  carry at each location level, plus the level names — **never a word list**. Verified: a genuine
+  **"Tower Crane Works"** branch is still returned as the trade, because no activity carries it as a
+  location. Pattern-matching on the word "Tower" would have eaten it.
+- ⚠️ **The root is not a candidate** — it is the project, and "Test Project" is not a trade. The one
+  pre-existing exception is kept: an activity filed **directly** on a root is still named by it, since
+  a root can legitimately BE a trade node and that case is structurally indistinguishable.
+- ⚠️ `work_type` still wins over the whole walk, so Schedule-Builder pushes (which stamp the canonical
+  trade) are untouched. The location set is rebuilt when the row count or level count changes, and the
+  cached trade answers are dropped with it — a tower typed in the grid starts being excluded without a
+  reload.
+- Verified by executing the SHIPPED `_nodeTrade`/`workOf` (sliced out of the file, not reimplemented)
+  over a WBS carrying both shapes: deep `Phase›Tower›Structural›Zone` → **Structural Works**;
+  phase-as-root `Phase›Tower 2›Architectural` → **Architectural Works**; `Phase›Tower` only → **""**;
+  the phase branch itself → **""**; `Tower Crane Works` → itself; a parentless trade node → itself;
+  `work_type` set → wins. Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260825i`.
+
 ## Cost Loading — the four-step exercise that puts money on the activities (2026-08-25) — fmlozano
 Owner: *"there must be a cost loading feature… Step 1: enlisting all activity level activities found
 under the execution phase… Step 2: assigning the cost for each activity… Step 3: distribution for each

@@ -2989,7 +2989,7 @@
   // re-parenting a branch re-phases its work immediately, with no data fix-up.
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; }
+  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _clearLocNameSet(); }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -3018,17 +3018,59 @@
   // "Execution Phase › Structural Works › …" gives Structural Works), or the root itself when the
   // activity is filed directly on one. See the note above the phase-gate removal.
   var _tradeMemo = {};
+  // ⚠️ A branch name is NOT automatically a trade. Real WBS trees are organised
+  // `Execution Phase › Tower 1 › Structural Works › …`, and "the branch under the root" therefore
+  // returned **"Execution Phase"** — or, when the phase itself is the root, **"Tower 1"**. That is
+  // how the vertical stacking came to list the towers as trades (owner, 2026-08-25:
+  // *"it detected the towers as trades"*). A phase heading and a location are both excluded, and the
+  // trade is the shallowest branch that is neither.
+  // ⚠️ Locations are recognised from the PROJECT'S OWN DATA — the values its activities actually
+  // carry at each location level, plus the level names themselves — never from a word list. Guessing
+  // by pattern would eat a real trade the day someone schedules "Tower Crane Works".
+  // ⚠️ Rebuilt when the row set changes as well as on the memo clear: a location typed into the
+  // grid must start excluding that branch without waiting for a reload.
+  var _locNameSet = null, _locNameSig = '';
+  function _clearLocNameSet() { _locNameSet = null; }
+  function _locNames() {
+    var sig = rows.length + '|' + LOC_LEVELS.length;
+    if (_locNameSet && sig === _locNameSig) return _locNameSet;
+    // The cached trade answers were computed against the OLD location set, so they go with it.
+    if (_locNameSet) _tradeMemo = {};
+    _locNameSig = sig;
+    var set = {};
+    function add(v) { v = String(v == null ? '' : v).trim().toLowerCase(); if (v) set[v] = 1; }
+    LOC_LEVELS.forEach(function (l) { add(l.name); });
+    add(VS_LOC_TOWER);                      // the reserved 'tower' key has no LOC_LEVELS row
+    rows.forEach(function (r) {
+      var m = r && r.location; if (!m) return;
+      for (var k in m) if (Object.prototype.hasOwnProperty.call(m, k)) add(m[k]);
+    });
+    _locNameSet = set;
+    return set;
+  }
+  function _isLocBranch(name) {
+    var t = String(name == null ? '' : name).trim().toLowerCase();
+    return !!t && !!_locNames()[t];
+  }
   function _nodeTrade(nodeId) {
     if (!nodeId) return '';
     if (_tradeMemo[nodeId] !== undefined) return _tradeMemo[nodeId];
     _tradeMemo[nodeId] = '';                       // cycle guard (a malformed tree must not hang)
     var chain = [], n = WBS_NODES.find(function (x) { return x.id === nodeId; }), guard = 0;
     while (n && guard++ < 60) { chain.push(n); n = n.parent_id ? WBS_NODES.find(function (x) { return x.id === n.parent_id; }) : null; }
-    // The branch under the root is the trade; filed directly on a root, the root names it. No
-    // phase-root gate — every branch name is a classification (see the note above).
-    var out = '';
-    if (chain.length >= 2) out = String(chain[chain.length - 2].name || '').trim();
-    else if (chain.length === 1) out = String(chain[0].name || '').trim();
+    // Root first, then downwards: the SHALLOWEST branch that names work rather than a phase or a
+    // place. Everything above it (the phase, the tower) is skipped, not accepted as a fallback —
+    // labelling a tower as a trade is worse than saying the activity has no trade, because a chip
+    // reading "Tower 1" looks like an answer and cannot be spotted as missing data.
+    // ⚠️ The ROOT is not a candidate — it is the project, and "Test Project" is not a trade. Only an
+    // activity filed DIRECTLY on a root can be named by it, which is the pre-existing behaviour for
+    // that one case.
+    var out = '', first = chain.length > 1 ? chain.length - 2 : 0;
+    for (var i = first; i >= 0; i--) {
+      var nm = String(chain[i].name || '').trim();
+      if (!nm || phaseFromName(nm) || _isLocBranch(nm)) continue;
+      out = nm; break;
+    }
     _tradeMemo[nodeId] = out;
     return out;
   }
