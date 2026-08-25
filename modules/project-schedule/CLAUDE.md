@@ -1,3 +1,54 @@
+## A scrubbable timeline under the stack, and the stacking as a touch view (2026-08-26) — fmlozano
+Owner: *"allow it for an ipad or phone view, wherein it is very aesthetic… add like a timeline bar,
+scrollable, and the vertical stacking progress is dependent on the timeline bar. When i drag the line,
+the vertical stacking also updates so we can see the actual progression."*
+
+**The time bar.** A scrubber under the stack: drag the handle (or tap the track), and every cell —
+each band, each tower header, the overall figure — re-reads at that date, so the building fills up as
+you move through the programme. Month/year ruler, the **data date** marked in green, ‹ › to step a
+month, **▶** to play the whole programme through, **Live** to return to recorded progress.
+- ⚠️⚠️ **MODELLED FROM THE SCHEDULE'S DATES — NOT REPLAYED FROM HISTORY, and it says so on screen.**
+  `project_schedule` keeps ONE `percent_complete` per activity: today's. There is no per-date record
+  of what was complete last March, so nothing can replay it. A scrubbed cell answers *"how much of
+  this work is SCHEDULED to be done by this date"*, straight-line across each activity's own span —
+  the same model the S-curve's planned line uses. **A building filling up as you drag looks exactly
+  like recorded history and would be quoted as it**, which is why the subtitle states the basis
+  rather than leaving it to be inferred.
+- ⚠️ **Duration-weighted, using the same weighting as `_vsPct`** — so a scrubbed cell and a live cell
+  are the same kind of number and can be compared. Verified: two equal activities read 0 / 50 / 100
+  before, between and after; a 100-day activity beside a 1-day one reads **1%** on day one, not 50%.
+- ⚠️ **It follows the current BASIS.** On Planned it scrubs the baseline dates, on Actual the
+  actual/forecast ones — verified: an activity whose actuals sit in March reads **0%** at a
+  mid-January scrub even though its planned dates say otherwise.
+- ⚠️ **The whole stack re-renders on each scrub frame, deliberately.** Every cell, every tower header
+  and the magnifier all read the same `_vsProgress`, so repainting one of them would leave the others
+  reporting a different date. It is a few hundred cells of SVG string, throttled to a rAF.
+- ⚠️ **The drag captures the track's rect at pointerdown**, because the repaint REPLACES the track
+  element — anything measured per-move against the live node would jump the moment the first frame
+  landed. Pointer events, so a finger gets the same handle.
+- ⚠️ **The track scrolls rather than compressing.** 60 months squeezed into 300px is 5px a month — a
+  ruler nobody can read or hit; it keeps a legible minimum (26px a month) and scrolls.
+- ⚠️ **Play starts from the BEGINNING when the scrub is live or already at the end** — pressing play
+  on a finished programme should replay it, not sit still.
+
+**The touch view.** ⚠️ The stacking is the one part of this module that reads well on a tablet — it is
+a *picture*, not a 26-column editable grid — so unlike the schedule (a read-only card list below
+700px) it stays fully itself and is only re-proportioned: one building per row, wrapping chips, and
+every control at 44px, because this view is dragged and tapped.
+- **New "Stack" tab in the phone view**, beside List and Gantt. ⚠️ Offered **only when the project has
+  a location breakdown** — a tab that always says "nothing to stack" reads as broken.
+- ⚠️ **`renderVStack(hostEl)` takes a host argument rather than the phone reusing the id.** The
+  desktop `#ps-vstack` still exists (hidden) at phone width, so a duplicate id would win
+  `getElementById` and the phone would paint into an invisible node.
+- ⚠️ **The magnifier is DISABLED on a phone, not merely hidden** — there is no hover to drive it, and
+  a docked panel would eat half the screen to show nothing. Tapping a zone still opens its activities.
+- The building keeps its drawn size and scrolls; shrinking the SVG to 375px makes every zone date
+  unreadable, which is the entire content of the view.
+- Verified by executing the shipped `_vsPctAt`/`_vsSpan` (sliced from the file): the eight cases
+  above, plus a single-date programme and a dateless one both correctly yielding **no scrubber**
+  rather than a zero-width one. Inline script parses. ⚠️ **Not verified signed-in** — the drag, the
+  play loop and the phone layout want a real device. Delivered as `?v=20260826a`.
+
 ## Cost Loading wears the Schedule Builder's clothes, and the money is the loudest thing on screen (2026-08-25) — fmlozano
 Owner: *"can you make the UI more visually appealing. emphasize more on the fields that are essential.
 Follow the format or appearance in the schedule builder."*

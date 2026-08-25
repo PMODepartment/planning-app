@@ -1100,6 +1100,35 @@
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
     .ps-vstack { padding:12px 14px 20px; }
+    /* ---- The TIME BAR under the stack ------------------------------------------------------
+       Owner 2026-08-26: drag the line and the stacking re-reads at that date, so the building
+       fills up as you move through the programme. */
+    .ps-vs-tl { margin-top:14px; border:1px solid var(--pd-line); border-radius:12px; background:var(--pd-card); padding:10px 14px 12px; }
+    .ps-vs-tlhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:9px; }
+    .ps-vs-tldate { font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; }
+    .ps-vs-tlsub { font-size:11.5px; color:var(--pd-muted); }
+    .ps-vs-tlpct { margin-left:auto; font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; }
+    .ps-vs-tlbtns { display:inline-flex; gap:6px; }
+    .ps-vs-tlbtns button { height:32px; min-width:36px; padding:0 11px; border:1px solid var(--pd-line);
+      background:var(--pd-card); color:var(--pd-ink); border-radius:8px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+    .ps-vs-tlbtns button:hover { border-color:var(--pd-red); }
+    .ps-vs-tlbtns button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    /* The track scrolls: a 60-month programme squeezed into 300px is 5px a month, which is a ruler
+       nobody can read or hit. It keeps a legible minimum and scrolls instead. */
+    .ps-vs-tlscroll { overflow-x:auto; overflow-y:hidden; padding-bottom:2px; }
+    .ps-vs-tltrack { position:relative; height:48px; cursor:pointer; touch-action:pan-y; user-select:none; }
+    .ps-vs-tlrail { position:absolute; left:0; right:0; top:28px; height:8px; border-radius:999px; background:var(--pd-bg); border:1px solid var(--pd-line); }
+    .ps-vs-tlfill { position:absolute; top:28px; height:8px; border-radius:999px; background:var(--pd-red); opacity:.85; }
+    .ps-vs-tltick { position:absolute; top:22px; width:1px; height:20px; background:var(--pd-line); }
+    .ps-vs-tltick.yr { top:16px; height:26px; background:var(--pd-muted); }
+    .ps-vs-tllab { position:absolute; top:2px; font-size:10px; color:var(--pd-muted); transform:translateX(-50%); white-space:nowrap; }
+    .ps-vs-tlnow { position:absolute; top:16px; width:2px; height:26px; background:var(--pd-ok); }
+    .ps-vs-tlnowl { position:absolute; top:2px; font-size:9.5px; font-weight:700; color:var(--pd-ok); transform:translateX(-50%); }
+    /* A 26px round grip — a 2px line cannot be grabbed with a finger. */
+    .ps-vs-tlhandle { position:absolute; top:14px; width:26px; height:26px; margin-left:-13px; border-radius:50%;
+      background:var(--pd-red); border:2px solid var(--pd-card); box-shadow:0 1px 5px rgba(0,0,0,.3); cursor:grab; touch-action:none; }
+    .ps-vs-tlhandle:active { cursor:grabbing; }
+    body.ps-tl-drag { cursor:grabbing; user-select:none; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:12px; color:var(--pd-muted); }
     .ps-vs-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 9px; }
@@ -1201,6 +1230,49 @@
       .ps-vs-loupe { position:static; flex:1 1 auto; width:100%; max-width:100%; }
       /* Stacked layout: both panes are full-width, so a horizontal drag has nothing to divide. */
       .ps-vs-loupe-res { display:none; }
+    }
+    /* ---- iPad / phone: the vertical stacking is a TOUCH view -------------------------------
+       Owner 2026-08-26: *"allow it for an ipad or phone view, wherein it is very aesthetic."*
+       ⚠️ The stacking is the ONE part of this module that reads well on a tablet — it is a
+       picture, not a 26-column editable grid — so unlike the schedule (which drops to a
+       read-only card list below 700px) it stays fully itself here and is only re-proportioned.
+       ⚠️ Every interactive target goes to 44px: this view is dragged and tapped, and the
+       timeline handle in particular is unusable at mouse sizes on a finger. */
+    @media (max-width: 1024px) {
+      /* One building per row, full width — two half-width towers side by side on an iPad are
+         narrower than the zone labels inside them. */
+      .ps-vs-grid > .ps-vs-tower { flex:1 1 100%; min-width:0; }
+      .ps-vs-scroll { -webkit-overflow-scrolling:touch; }
+      /* Chips are the view's navigation; they wrap on a phone rather than scrolling out of reach. */
+      .ps-vs-chips { gap:8px; }
+      .ps-vs-chip { min-height:38px; padding:0 13px; font-size:12.5px; }
+      .ps-vs-seg button { min-height:38px; padding:0 12px; }
+      .ps-vs-bar .pd-btn, .ps-vs-bar .pd-select { min-height:38px; }
+    }
+    @media (max-width: 700px) {
+      /* ⚠️ The magnifier is DISABLED, not merely hidden: on a touch screen there is no hover to
+         drive it, and a docked panel would eat half the screen to show nothing. Tapping a zone
+         still opens its activity list, which is the phone equivalent. */
+      .ps-vs-loupe, .ps-vs-loupe-res, #ps-vs-loupebtn { display:none !important; }
+      .ps-vstack { padding:8px 8px 18px; }
+      .ps-vs-chip, .ps-vs-seg button, .ps-vs-bar .pd-btn, .ps-vs-bar .pd-select { min-height:44px; }
+      .ps-vs-chips { gap:8px 6px; }
+      /* The building itself keeps its drawn size and scrolls — shrinking the svg to 375px makes
+         every zone date unreadable, which is the whole content of the view. */
+      .ps-vs-scroll { overflow-x:auto; }
+      .ps-vs-towerh { flex-wrap:wrap; row-gap:2px; }
+      /* Timeline: bigger grip, bigger buttons, and the head stacks so the date is never
+         squeezed by the transport controls. */
+      .ps-vs-tl { padding:10px 10px 12px; }
+      .ps-vs-tlhead { row-gap:8px; }
+      .ps-vs-tlpct { margin-left:0; width:100%; order:3; }
+      .ps-vs-tlbtns { order:4; width:100%; }
+      .ps-vs-tlbtns button { flex:1 1 0; min-height:44px; }
+      .ps-vs-tltrack { height:56px; }
+      .ps-vs-tlrail, .ps-vs-tlfill { top:32px; height:10px; }
+      .ps-vs-tlhandle { top:14px; width:44px; height:44px; margin-left:-22px; }
+      .ps-vs-tltick { top:26px; } .ps-vs-tltick.yr { top:20px; }
+      .ps-vs-tlnow { top:20px; }
     }
     .ps-vs-empty { padding:18px; color:var(--pd-muted); font-size:13px; text-align:center; }
     #ps-view-schedule.ps-vstack-mode .ps-split,
@@ -9912,7 +9984,7 @@
   function psIsPhone() { return window.matchMedia('(max-width: 700px)').matches; }
 
   // List | Gantt toggle for the mobile view (persisted per browser).
-  var _psMView = (function () { try { return localStorage.getItem('ps_mview') === 'gantt' ? 'gantt' : 'list'; } catch (e) { return 'list'; } })();
+  var _psMView = (function () { try { var v = localStorage.getItem('ps_mview'); return (v === 'gantt' || v === 'stack') ? v : 'list'; } catch (e) { return 'list'; } })();
 
   function renderMobile() {
     var host = document.getElementById('ps-mobile');
@@ -9926,12 +9998,29 @@
       return;
     }
     var shownN = Math.min(acts.length, PS_M_CAP);
+    // ⚠️ Stack is offered on a phone only when the project HAS a location breakdown — the view
+    // would otherwise be a tab that always says "nothing to stack", which reads as broken.
+    var canStack = !!LOC_LEVELS.length;
+    if (_psMView === 'stack' && !canStack) _psMView = 'list';
     var seg = '<div class="ps-m-seg" role="tablist">' +
       '<button data-mv="list" class="' + (_psMView === 'list' ? 'on' : '') + '">List</button>' +
-      '<button data-mv="gantt" class="' + (_psMView === 'gantt' ? 'on' : '') + '">Gantt</button></div>';
+      '<button data-mv="gantt" class="' + (_psMView === 'gantt' ? 'on' : '') + '">Gantt</button>' +
+      (canStack ? '<button data-mv="stack" class="' + (_psMView === 'stack' ? 'on' : '') + '">Stack</button>' : '') +
+      '</div>';
     var bar = '<div class="ps-m-bar"><strong>' + shownN + '</strong> of ' + acts.length + ' activities' +
       '<span class="ps-m-ro" title="This is a read-only view; edit on a larger screen">read-only</span>' + seg + '</div>';
 
+    if (_psMView === 'stack') {
+      // The stacking is a picture, so it survives a phone as itself — rendered into the mobile
+      // host rather than the hidden desktop one (see renderVStack's host argument).
+      host.innerHTML = bar + '<div class="ps-vstack" id="ps-m-stack"></div>';
+      try { renderVStack(document.getElementById('ps-m-stack')); }
+      catch (e) { try { console.error('[ps] stacking failed on phone', e); } catch (e2) {} }
+      host.querySelectorAll('.ps-m-seg [data-mv]').forEach(function (b) {
+        b.onclick = function () { _psMView = b.dataset.mv; try { localStorage.setItem('ps_mview', _psMView); } catch (e) {} renderMobile(); };
+      });
+      return;
+    }
     host.innerHTML = bar + (_psMView === 'gantt' ? renderMobileGanttBody(nodes) : renderMobileList(acts));
     host.querySelectorAll('.ps-m-seg [data-mv]').forEach(function (b) {
       b.onclick = function () { _psMView = b.dataset.mv; try { localStorage.setItem('ps_mview', _psMView); } catch (e) {} renderMobile(); };
@@ -10743,7 +10832,170 @@
   // The progress the CURRENT basis is about. Planned → the baseline's expectation; Actual and Compare
   // → what has actually been done. Compare additionally marks the planned figure on the cell, so the
   // gap between "should be" and "is" is visible rather than inferred.
+  // ---- TIME SCRUB ---------------------------------------------------------------------------
+  // Owner 2026-08-26: *"add like a timeline bar… when i drag the line in the timeline bar, the
+  // vertical stacking also updates so we can see the actual progression."*
+  // `_vsAsOf` = the date the stack is being read at, or null for LIVE (recorded progress).
+  // ⚠️⚠️ MODELLED FROM THE SCHEDULE'S DATES, NOT REPLAYED FROM HISTORY. `project_schedule` keeps ONE
+  // `percent_complete` per activity — today's. There is no per-date record of what was complete last
+  // March, so nothing here can replay it. A scrubbed cell therefore answers "how much of this work
+  // is SCHEDULED to be done by this date", straight-line across each activity's own span, which is
+  // the same model the S-curve's planned line uses. The bar says this in words on screen, because a
+  // building filling up as you drag looks exactly like recorded history and would be quoted as it.
+  var _vsAsOf = null;
+  function _vsAsOfDate() { return _vsAsOf == null ? null : new Date(_vsAsOf); }
+  // Duration-weighted elapsed share at D — same weighting as _vsPct, so a scrubbed cell and a live
+  // one are the same kind of number.
+  // The programme's span on the CURRENT basis — the scrubber's domain.
+  function _vsSpan(acts) {
+    var mn = null, mx = null;
+    acts.forEach(function (r) {
+      var s = pd(_vsBasis === 'planned' ? r.bl_start : dispStart(r));
+      var e = pd(_vsBasis === 'planned' ? r.bl_finish : dispFin(r)) || s;
+      if (s && (!mn || s < mn)) mn = s;
+      if (e && (!mx || e > mx)) mx = e;
+    });
+    return (mn && mx && +mx > +mn) ? { min: mn, max: mx } : null;
+  }
+  var _VS_MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var _vsPlayT = null;
+  function _vsStopPlay() { if (_vsPlayT) { clearInterval(_vsPlayT); _vsPlayT = null; } }
+  // The scrubber. Rendered under the stack; the whole thing is skipped when the programme has no
+  // span to scrub through (a project with one date, or none).
+  function _vsTimelineHTML(acts) {
+    var sp = _vsSpan(acts);
+    if (!sp) return '';
+    var mn = +sp.min, mx = +sp.max, span = mx - mn;
+    var at = _vsAsOf == null ? mx : Math.max(mn, Math.min(mx, _vsAsOf));
+    var frac = span > 0 ? (at - mn) / span : 1;
+    // ⚠️ 26px a month keeps the ruler readable and the handle catchable on a phone; past that the
+    // track scrolls inside .ps-vs-tlscroll rather than compressing.
+    var months = Math.max(1, Math.round(span / 2629800000));
+    var trackW = Math.max(320, months * 26);
+    var ticks = '', c = new Date(sp.min.getFullYear(), sp.min.getMonth(), 1);
+    var everyN = months > 48 ? 6 : (months > 24 ? 3 : 1);   // thin the labels, never the geometry
+    var k = 0;
+    while (+c <= mx) {
+      var x = ((+c - mn) / span) * trackW;
+      if (+c >= mn) {
+        var isYr = c.getMonth() === 0;
+        ticks += '<div class="ps-vs-tltick' + (isYr ? ' yr' : '') + '" style="left:' + x.toFixed(1) + 'px;"></div>';
+        if (isYr || k % everyN === 0) ticks += '<div class="ps-vs-tllab" style="left:' + x.toFixed(1) + 'px;">' +
+          (isYr ? c.getFullYear() : _VS_MABBR[c.getMonth()]) + '</div>';
+      }
+      c = new Date(c.getFullYear(), c.getMonth() + 1, 1); k++;
+    }
+    // The data date, so "where the programme should be" and "where you are scrubbed to" are both
+    // visible at once rather than one being mistaken for the other.
+    var nowM = '';
+    var dd = today();
+    if (dd && +dd >= mn && +dd <= mx) {
+      var nx = ((+dd - mn) / span) * trackW;
+      nowM = '<div class="ps-vs-tlnow" style="left:' + nx.toFixed(1) + 'px;"></div>' +
+        '<div class="ps-vs-tlnowl" style="left:' + nx.toFixed(1) + 'px;">Data date</div>';
+    }
+    var live = (_vsAsOf == null);
+    var overall = live ? _vsProgress(acts) : _vsPctAt(acts, new Date(at));
+    return '<div class="ps-vs-tl" id="ps-vs-tl" data-min="' + mn + '" data-max="' + mx + '" data-w="' + trackW + '">' +
+      '<div class="ps-vs-tlhead">' +
+        '<span class="ps-vs-tldate">' + esc(Fmt.date(dstr(new Date(at)))) + '</span>' +
+        '<span class="ps-vs-tlsub">' + (live
+          ? 'Live — cells show recorded progress. Drag the handle to walk the programme.'
+          : 'As scheduled by this date — <b>modelled from the activities’ dates</b>, not recorded history.') + '</span>' +
+        '<span class="ps-vs-tlpct">' + overall + '% ' + (live ? _vsProgressWord() : 'scheduled') + '</span>' +
+        '<span class="ps-vs-tlbtns">' +
+          '<button data-tlstep="-1" title="Back one month">&#8249;</button>' +
+          '<button data-tlplay class="' + (_vsPlayT ? 'on' : '') + '" title="Play the programme through">' + (_vsPlayT ? '&#10073;&#10073;' : '&#9654;') + '</button>' +
+          '<button data-tlstep="1" title="Forward one month">&#8250;</button>' +
+          '<button data-tllive class="' + (live ? 'on' : '') + '" title="Back to recorded progress">Live</button>' +
+        '</span>' +
+      '</div>' +
+      '<div class="ps-vs-tlscroll"><div class="ps-vs-tltrack" id="ps-vs-tltrack" style="width:' + trackW + 'px;">' +
+        ticks + '<div class="ps-vs-tlrail"></div>' +
+        '<div class="ps-vs-tlfill" style="width:' + (frac * trackW).toFixed(1) + 'px;"></div>' + nowM +
+        '<div class="ps-vs-tlhandle" id="ps-vs-tlhandle" style="left:' + (frac * trackW).toFixed(1) + 'px;" title="Drag to move through the programme"></div>' +
+      '</div></div></div>';
+  }
+  // ⚠️ Re-render is the WHOLE stack, and that is deliberate: every cell, every tower header and the
+  // magnifier all read the same `_vsProgress`, so repainting one of them at a scrub would leave the
+  // others reporting a different date. It is a few hundred cells of SVG string — cheap enough to do
+  // on a rAF while dragging.
+  var _vsTlRaf = 0;
+  function _vsScrubTo(ms, mn, mx) {
+    _vsAsOf = Math.max(mn, Math.min(mx, ms));
+    if (_vsTlRaf) return;
+    _vsTlRaf = requestAnimationFrame(function () { _vsTlRaf = 0; renderVStack(); });
+  }
+  function _vsWireTimeline(host) {
+    var tl = host.querySelector('#ps-vs-tl'); if (!tl) return;
+    var mn = +tl.dataset.min, mx = +tl.dataset.max, trackW = +tl.dataset.w;
+    var track = host.querySelector('#ps-vs-tltrack'), handle = host.querySelector('#ps-vs-tlhandle');
+    function dateAtX(px) { return mn + Math.max(0, Math.min(1, px / trackW)) * (mx - mn); }
+    function fromEvent(e, rect) { return dateAtX(e.clientX - rect.left); }
+    // ⚠️ Pointer events + a rect captured at drag START. The track element is REPLACED by every
+    // repaint (the whole stack re-renders), so anything measured per-move against the live element
+    // would jump the moment the first frame landed. The geometry does not change during a drag.
+    function startDrag(e) {
+      var rect = track.getBoundingClientRect();
+      _vsStopPlay();
+      document.body.classList.add('ps-tl-drag');
+      _vsScrubTo(fromEvent(e, rect), mn, mx);
+      function mv(ev) { ev.preventDefault(); _vsScrubTo(fromEvent(ev, rect), mn, mx); }
+      function up() {
+        document.removeEventListener('pointermove', mv);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
+        document.body.classList.remove('ps-tl-drag');
+      }
+      document.addEventListener('pointermove', mv, { passive: false });
+      document.addEventListener('pointerup', up);
+      document.addEventListener('pointercancel', up);
+    }
+    if (handle) handle.addEventListener('pointerdown', function (e) { e.preventDefault(); startDrag(e); });
+    if (track) track.addEventListener('pointerdown', function (e) {
+      if (e.target === handle) return;              // the handle owns its own gesture
+      startDrag(e);
+    });
+    tl.querySelectorAll('[data-tlstep]').forEach(function (b) {
+      b.onclick = function () {
+        _vsStopPlay();
+        var cur = new Date(_vsAsOf == null ? mx : _vsAsOf);
+        cur.setMonth(cur.getMonth() + (+b.dataset.tlstep));
+        _vsScrubTo(+cur, mn, mx);
+      };
+    });
+    var live = tl.querySelector('[data-tllive]');
+    if (live) live.onclick = function () { _vsStopPlay(); _vsAsOf = null; renderVStack(); };
+    var play = tl.querySelector('[data-tlplay]');
+    if (play) play.onclick = function () {
+      if (_vsPlayT) { _vsStopPlay(); renderVStack(); return; }
+      // ⚠️ Start from the BEGINNING when the scrub is live or already at the end — pressing play on
+      // a finished programme should replay it, not sit still.
+      if (_vsAsOf == null || _vsAsOf >= mx) _vsAsOf = mn;
+      var stepMs = Math.max(86400000, (mx - mn) / 60);   // ~60 frames end to end, min one day
+      _vsPlayT = setInterval(function () {
+        var next = (_vsAsOf == null ? mn : _vsAsOf) + stepMs;
+        if (next >= mx) { _vsAsOf = mx; _vsStopPlay(); renderVStack(); return; }
+        _vsAsOf = next; renderVStack();
+      }, 220);
+      renderVStack();
+    };
+  }
+  function _vsPctAt(list, D) {
+    var wd = 0, we = 0, t = +D;
+    list.forEach(function (r) {
+      var s = pd(_vsBasis === 'planned' ? r.bl_start : dispStart(r));
+      var e = pd(_vsBasis === 'planned' ? r.bl_finish : dispFin(r)) || s;
+      if (!s) return;
+      var dur = (dayDiff(s, e) + 1) || 1;
+      var f = t >= +e ? 1 : (t < +s ? 0 : ((+e > +s) ? (t - +s) / (+e - +s) : 1));
+      wd += dur; we += dur * f * 100;
+    });
+    return wd > 0 ? Math.max(0, Math.min(100, Math.round(we / wd))) : 0;
+  }
   function _vsProgress(list) {
+    var D = _vsAsOfDate();
+    if (D) return _vsPctAt(list, D);
     if (_vsBasis === 'planned') { var pp = _vsPlanPct(list); return pp == null ? 0 : pp; }
     return _vsPct(list);
   }
@@ -11221,8 +11473,11 @@
       // still be read with the pointer off the building.
     });
   }
-  function renderVStack() {
-    var host = document.getElementById('ps-vstack'); if (!host) return;
+  // ⚠️ `hostEl` lets the PHONE view render the stack into its own container. The desktop
+  // #ps-vstack still exists (hidden) at phone width, so a duplicate id would win getElementById
+  // and the phone would paint into an invisible node — hence an argument, not a second id.
+  function renderVStack(hostEl) {
+    var host = hostEl || document.getElementById('ps-vstack'); if (!host) return;
     if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
     if (!LOC_LEVELS.length) {
       host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Builder push does that for you.</div>';
@@ -11378,7 +11633,7 @@
         '<div class="ps-vs-loupe-stage" id="ps-vs-loupe-stage"><div class="ps-vs-loupe-hint">Hover a zone in the building on the left &mdash; it is magnified here, with its dates and progress underneath.</div></div>' +
         '<div class="ps-vs-loupe-resb" id="ps-vs-loupe-resb" title="Drag to resize the magnified view — double-click to reset"></div>' +
         '<div class="ps-vs-loupe-info" id="ps-vs-loupe-info"><div class="r">Nothing hovered yet.</div></div></aside>' : '') +
-      '</div>';
+      '</div>' + _vsTimelineHTML(acts);
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
     // project still settles in well under half a second instead of trickling in.
     if (_vsAnim === 'in') {
@@ -11410,6 +11665,7 @@
     _vsApplyLoupeSize(host.querySelector('.ps-vs-stage'));
     _vsWireLoupeResize(host);
     _vsWireLoupe(host);
+    _vsWireTimeline(host);
     host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
     if (window.Icons) Icons.hydrate(host);
   }

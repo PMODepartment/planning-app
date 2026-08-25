@@ -84,6 +84,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (a) — Vertical stacking: a scrubbable time bar, and a touch view for iPad/phone
+Owner: *"allow it for an ipad or phone view… add like a timeline bar… when i drag the line, the
+vertical stacking also updates so we can see the actual progression."* Delivered as `?v=20260826a`.
+- **Time bar** under the stack — drag the handle and every cell re-reads at that date; month/year
+  ruler, the data date marked, step-a-month, a play button, and **Live** to return to recorded progress.
+- ⚠️ **Modelled from the schedule's dates, NOT replayed history** — the database keeps one
+  `percent_complete` per activity (today's), so a scrubbed cell answers "what is SCHEDULED to be done
+  by this date". The bar says so on screen, because a building filling up as you drag looks exactly
+  like recorded history.
+- **Touch view:** the stacking stays itself on a tablet (it is a picture, not a grid) — one building
+  per row, 44px targets — and gains a **Stack** tab in the phone view, offered only when the project
+  has a location breakdown. The magnifier is disabled on a phone: no hover to drive it.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-25 (n) — Cost Loading feeds the S-Curve: a cost basis beside the duration one
 Owner: *"the process of cost-loading… should translate or link to the s-curve module, based on the
 cost-loaded activities and in relation to the schedule."* Delivered as `?v=20260825r`.
