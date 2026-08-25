@@ -84,6 +84,18 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (h) — Reverted: the Project Schedule is back to the Cost Loading build
+Owner: *"the previous version was okay… now everything is filled with errors. revert it back."*
+`modules/project-schedule/index.html` is byte-identical to `2e418b4` again. Out: `e04c7c7`, `e6d5bd1`,
+`3e7c302`, `14f3d8d` (the three trade-detection changes **and** the loading-screen/perf work that
+shipped alongside the last one). In: Cost Loading and everything before it. `MODULE_V` → `20260825m`.
+- ⚠️ **Lesson:** `workOf()` feeds the Trade column, the grouping, the colours, the vertical stacking
+  and Cost Loading. I redefined it three times against a WBS invented from a screenshot; every test
+  passed because the tests encoded the guess. Reading the project's real rows comes first next time,
+  and a change with that blast radius lands in one place before it touches all of them.
+- Still open: the Execution Phase must not read as a trade, and Site/Structural Works must be detected.
+
+
 ### 2026-08-25 (g) — Loading screen, a "ready to edit" toast, and the WBS fetch stops queueing
 Owner: *"there is a delay in loading the project schedule, can't there be a loading screen and
 notification if successfully loaded and ready for editing?"* / *"the loading is really slow on the WBS,

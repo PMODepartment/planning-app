@@ -16,7 +16,7 @@
   // Bump MODULE_V on any deploy that changes a module's index.html. It is defined here, not in
   // config.js, deliberately: config.js is itself cache-busted from every HTML file, so versioning
   // it there would mean an app-wide bump to make a one-module change visible.
-  var MODULE_V = '20260825l';
+  var MODULE_V = '20260825m';
 
   function href(m) {
     return m.path + (m.path.indexOf('?') === -1 ? '?v=' : '&v=') + MODULE_V;

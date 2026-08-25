@@ -1,3 +1,32 @@
+## REVERTED to the Cost Loading build — the three trade changes and the loading work are OUT (2026-08-25) — fmlozano
+Owner: *"what happened? the previous version was okay haha… now everything is filled with errors.
+revert it back."* `modules/project-schedule/index.html` is now **byte-identical to commit `2e418b4`**
+(the Cost Loading build). `MODULE_V` → `20260825m` purely to bust the cached copy.
+- **What went out:** `e04c7c7` (root/phase/location-aware `_nodeTrade`), `e6d5bd1` (`isTradeName`
+  filtering a stored `work_type`), `3e7c302` (canonical matcher + short WBS codes in the walk),
+  `14f3d8d` (loading screen, ready toast, parallel `loadResourcesAssignments`, `_codeTrade`).
+- **What stayed:** Cost Loading, and everything before it.
+- ⚠️ **The honest post-mortem: I changed the meaning of a value 400 other lines depend on, four times,
+  without ever seeing the data.** `workOf()` feeds the Trade column, Trade grouping, the colours, the
+  vertical stacking, the builder comparisons and Cost Loading. Each step was verified against a WBS I
+  INVENTED from a screenshot — every test passed, and the screen still got worse, because the tests
+  encoded my guess about the tree rather than the tree. Three rounds of that is not iteration, it is
+  guessing with extra steps.
+- ⚠️ **The specific overreach:** returning **""** for a branch that is only phase+tower. It is the
+  right answer in principle — a chip reading "Tower 1" hides missing tagging — but on a project where
+  most rows resolve that way it empties the whole screen at once. A change with that blast radius
+  needed the planner to see it on ONE tab before it touched the grid, the grouping and the stacking
+  together.
+- ⚠️ **The loading/perf work (parallel fetches, overlay, ready toast) was innocent but shipped in the
+  same commit as `_codeTrade`.** It is reverted with it rather than left in: a half-reverted file
+  nobody has run is a worse starting point than the last build the owner called okay. It re-applies
+  cleanly from `14f3d8d` on request.
+- **What the owner actually asked for, still open:** (1) the Execution Phase must not read as a trade,
+  (2) Site Works / Structural Works must be detected. Next attempt starts by READING the project's real
+  `wbs_nodes` / `wbs` codes / `work_type` values — not a screenshot — and lands in ONE place first.
+- Inline script parses (0 fail); Cost Loading intact; the original `_nodeTrade` (`chain[chain.length-2]`)
+  back. `MODULE_V` → `20260825m`.
+
 ## Loading: a real loading screen, a "ready to edit" toast, and the WBS fetch stops queueing (2026-08-25) — fmlozano
 Owner: *"there is a delay in loading the project schedule, can't there be a loading screen and
 notification if successfully loaded and ready for editing?"* and then *"the loading is really slow on

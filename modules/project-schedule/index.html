@@ -2989,7 +2989,7 @@
   // re-parenting a branch re-phases its work immediately, with no data fix-up.
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _clearLocNameSet(); _codeTradeMemo = {}; _codeNameByWbs = null; }
+  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -3018,127 +3018,26 @@
   // "Execution Phase › Structural Works › …" gives Structural Works), or the root itself when the
   // activity is filed directly on one. See the note above the phase-gate removal.
   var _tradeMemo = {};
-  // ⚠️ A branch name is NOT automatically a trade. Real WBS trees are organised
-  // `Execution Phase › Tower 1 › Structural Works › …`, and "the branch under the root" therefore
-  // returned **"Execution Phase"** — or, when the phase itself is the root, **"Tower 1"**. That is
-  // how the vertical stacking came to list the towers as trades (owner, 2026-08-25:
-  // *"it detected the towers as trades"*). A phase heading and a location are both excluded, and the
-  // trade is the shallowest branch that is neither.
-  // ⚠️ Locations are recognised from the PROJECT'S OWN DATA — the values its activities actually
-  // carry at each location level, plus the level names themselves — never from a word list. Guessing
-  // by pattern would eat a real trade the day someone schedules "Tower Crane Works".
-  // ⚠️ Rebuilt when the row set changes as well as on the memo clear: a location typed into the
-  // grid must start excluding that branch without waiting for a reload.
-  var _locNameSet = null, _locNameSig = '';
-  function _clearLocNameSet() { _locNameSet = null; }
-  function _locNames() {
-    var sig = rows.length + '|' + LOC_LEVELS.length;
-    if (_locNameSet && sig === _locNameSig) return _locNameSet;
-    // The cached trade answers were computed against the OLD location set, so they go with it.
-    if (_locNameSet) _tradeMemo = {};
-    _locNameSig = sig;
-    var set = {};
-    function add(v) { v = String(v == null ? '' : v).trim().toLowerCase(); if (v) set[v] = 1; }
-    LOC_LEVELS.forEach(function (l) { add(l.name); });
-    add(VS_LOC_TOWER);                      // the reserved 'tower' key has no LOC_LEVELS row
-    rows.forEach(function (r) {
-      var m = r && r.location; if (!m) return;
-      for (var k in m) if (Object.prototype.hasOwnProperty.call(m, k)) add(m[k]);
-    });
-    _locNameSet = set;
-    return set;
-  }
-  function _isLocBranch(name) {
-    var t = String(name == null ? '' : name).trim().toLowerCase();
-    return !!t && !!_locNames()[t];
-  }
   function _nodeTrade(nodeId) {
     if (!nodeId) return '';
     if (_tradeMemo[nodeId] !== undefined) return _tradeMemo[nodeId];
     _tradeMemo[nodeId] = '';                       // cycle guard (a malformed tree must not hang)
     var chain = [], n = WBS_NODES.find(function (x) { return x.id === nodeId; }), guard = 0;
     while (n && guard++ < 60) { chain.push(n); n = n.parent_id ? WBS_NODES.find(function (x) { return x.id === n.parent_id; }) : null; }
-    // ⚠️ FIRST, nearest-first, ask the SAME canonical matcher the Trade wizard and the importer use
-    // (`_discTermMatch`): a WBS branch called ST1 / Structural Works / Superstructure all resolve to
-    // **Structural Works**, so a schedule that was imported reads in the Schedule Builder's own
-    // vocabulary without anyone running a wizard first. Nearest-first is what keeps "Fire Protection
-    // Works" nested under "MEPF Works" resolving to MEPF Works rather than a bucket of its own.
-    for (var ci = 0; ci < chain.length; ci++) {
-      var cc = _discTermMatch(String(chain[ci].name || '').trim());
-      if (cc) { _tradeMemo[nodeId] = cc; return cc; }
-    }
-    // Nothing in the canonical vocabulary: fall back to the SHALLOWEST branch that names work rather
-    // than a phase or a place, so a project with its own trade words still groups by them. Everything
-    // above it (the phase, the tower) is skipped, not accepted as a fallback — labelling a tower as a
-    // trade is worse than saying the activity has no trade, because a chip reading "Tower 1" looks
-    // like an answer and cannot be spotted as missing data.
-    // ⚠️ The ROOT is not a candidate — it is the project, and "Test Project" is not a trade. Only an
-    // activity filed DIRECTLY on a root can be named by it, which is the pre-existing behaviour for
-    // that one case.
-    var out = '', first = chain.length > 1 ? chain.length - 2 : 0;
-    for (var i = first; i >= 0; i--) {
-      var nm = String(chain[i].name || '').trim();
-      if (!isTradeName(nm)) continue;
-      out = nm; break;
-    }
+    // The branch under the root is the trade; filed directly on a root, the root names it. No
+    // phase-root gate — every branch name is a classification (see the note above).
+    var out = '';
+    if (chain.length >= 2) out = String(chain[chain.length - 2].name || '').trim();
+    else if (chain.length === 1) out = String(chain[0].name || '').trim();
     _tradeMemo[nodeId] = out;
     return out;
   }
-  // ONE rule for the whole app: a trade is a name that is not a project phase and not a place.
-  // Everything that asks "what trade is this?" — the grid's Trade column and grouping, the colours,
-  // the vertical stacking's chips, Cost Loading — goes through this, so a new project cannot acquire
-  // a "trade" called Execution Phase or Tower 1 through any route.
-  function isTradeName(name) {
-    var t = String(name == null ? '' : name).trim();
-    return !!t && !phaseFromName(t) && !_isLocBranch(t);
-  }
   // THE answer to "what trade is this activity?". Its own field wins; otherwise the WBS says.
-  // ⚠️ A STORED work_type is filtered by the same rule, not trusted because it is stored. Rows
-  // imported (or pushed long ago) carrying `work_type = 'Execution Phase'` / 'Tower 1' are exactly
-  // what put those two chips on screen, and they would survive any amount of WBS-side care. The row
-  // is not rewritten — it just stops being believed, so the WBS answer, or "no trade", shows instead.
   function workOf(r) {
     if (!r) return '';
     var own = r.work_type ? String(r.work_type).trim() : '';
-    if (own && isTradeName(own)) return own;
-    return _nodeTrade(r.wbs_node_id) || _codeTrade(r.wbs) || '';
+    return own || _nodeTrade(r.wbs_node_id) || '';
   }
-  // ⚠️ SECOND source, and on an imported project usually the ONLY one: `wbs_node_id` is written by
-  // the WBS Manager and the Schedule Builder, but an XER/Excel import files activities by DOTTED WBS
-  // CODE and leaves the node id null. The node walk above then has nothing to walk, so a schedule
-  // whose stored work_type was junk (a phase, a tower) came out with NO trade at all — which is what
-  // kept the vertical stacking wrong after the walk itself was fixed.
-  // This resolves the code path — "4.1.3" → its ancestors "4", "4.1", "4.1.3" — against the WBS
-  // SUMMARY ROWS' names, which is exactly how the importer's own trade stamp (discStampFromWbs) and
-  // the Trade wizard read the tree. Nearest-first, same canonical matcher, so the answers agree.
-  var _codeTradeMemo = {}, _codeNameSig = '';
-  function _codeTrade(code) {
-    var c = String(code == null ? '' : code).trim(); if (!c) return '';
-    var sig = rows.length + '|' + WBS_NODES.length;
-    if (sig !== _codeNameSig) { _codeNameSig = sig; _codeTradeMemo = {}; _codeNameByWbs = null; }
-    if (_codeTradeMemo[c] !== undefined) return _codeTradeMemo[c];
-    _codeTradeMemo[c] = '';                       // re-entry guard
-    if (!_codeNameByWbs) {
-      _codeNameByWbs = {};
-      rows.forEach(function (r) { if (isWbs(r) && r.wbs) _codeNameByWbs[String(r.wbs)] = String(r.activity_name || '').trim(); });
-    }
-    var segs = c.split('.'), out = '';
-    for (var i = segs.length; i >= 1 && !out; i--) {          // nearest ancestor first
-      var nm = _codeNameByWbs[segs.slice(0, i).join('.')];
-      if (nm) out = _discTermMatch(nm) || '';
-    }
-    // Still nothing canonical: the shallowest ancestor name that is neither a phase nor a place —
-    // the same last resort the node walk uses, so both sources behave identically.
-    if (!out) {
-      for (var j = 1; j <= segs.length; j++) {
-        var n2 = _codeNameByWbs[segs.slice(0, j).join('.')];
-        if (n2 && isTradeName(n2)) { out = n2; break; }
-      }
-    }
-    _codeTradeMemo[c] = out;
-    return out;
-  }
-  var _codeNameByWbs = null;
   // ---- Contract scope (Main Contract vs Change Order) --------------------------------------
   // Owner 2026-08-19: the schedule has to say, per activity, whether the work is MAIN CONTRACT or a
   // CHANGE ORDER — and the grid has to filter to one, the other, or both ("blended").
@@ -4349,16 +4248,7 @@
   }
   async function loadResourcesAssignments() {
     if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; WPM_WPS = []; DSCN = []; return; }
-    // ⚠️ EVERY fetch in this function is started HERE, together, and awaited below. It used to be a
-    // strictly sequential chain of ~12 round-trips — resources, then calendars, then assignments,
-    // then code types, then code values, then steps… — with `wbs_nodes` near the END. Nothing in the
-    // chain fed anything else in it, so the whole wait was queueing, not work. The one real ordering
-    // constraint (ensureWbsSkeleton needs WBS_NODES) is still respected below.
-    // ⚠️ Each keeps its OWN try/catch and its own empty-array fallback, so one missing table (an
-    // un-run migration) still degrades exactly that feature and nothing else — a single shared catch
-    // would have let a missing `packages` table blank out resources as well.
-    var _pRes = (async function () {
-      try {
+    try {
       // resources/resource_assignments reach tens of thousands of rows on a P6/XER import, so an
       // unpaginated select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost
       // roll-ups. Resources are re-sorted by name client-side (selectAllPaged orders by id).
@@ -4367,17 +4257,13 @@
       var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
       var asg = await selectAllPaged('resource_assignments', '*');
       RESRC = r1; ASSIGN = asg; CALS = (r3 && r3.data) || [];
-      } catch (e) { RESRC = []; ASSIGN = []; CALS = []; }
-    })();
-    var _pCodes = (async function () {
-      try {
+    } catch (e) { RESRC = []; ASSIGN = []; CALS = []; }
+    try {
       var r4 = await sb().from('activity_code_types').select('*').eq('project_id', pid).order('sort_order');
       var r5 = await selectAllPaged('activity_code_values', '*');
       r5.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
       CODE_TYPES = (r4 && r4.data) || []; CODE_VALUES = r5;
-      } catch (e) { CODE_TYPES = []; CODE_VALUES = []; }
-    })();
-    var _pSteps = (async function () {
+    } catch (e) { CODE_TYPES = []; CODE_VALUES = []; }
     try {
       // ⚠️ Was a bare .select('*'), which Supabase caps at 1000 rows — the same silent-truncation
       // bug already fixed on resource_assignments / drawing_register / progress_photos / wbs_nodes,
@@ -4391,50 +4277,31 @@
       // activity, never by position).
       STEPS = await selectAllPaged('activity_steps', '*');
     } catch (e) { STEPS = []; }
-    })();
-    var _pUdf = (async function () {
-      try {
+    try {
       var r7 = await sb().from('activity_udf_defs').select('*').eq('project_id', pid).order('sort_order');
       UDF_DEFS = (r7 && r7.data) || [];
-      } catch (e) { UDF_DEFS = []; }
-    })();
-    var _pLoc = (async function () {
-      try {
+    } catch (e) { UDF_DEFS = []; }
+    try {
       // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
       // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
       var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
       LOC_LEVELS = (r8 && !r8.error && r8.data) || [];
-      } catch (e) { LOC_LEVELS = []; }
-    })();
-    var _pPkg = (async function () {
-      try {
+    } catch (e) { LOC_LEVELS = []; }
+    try {
       // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
       // location_levels above: no table -> no packages -> the Package column offers nothing to
       // assign and everything else is unaffected. Bounded by definition (a project has packages,
       // not thousands of rows), so no pagination.
       var r9 = await sb().from('packages').select('*').eq('project_id', pid).order('sort_order').order('code');
       PACKAGES = (r9 && !r9.error && r9.data) || [];
-      } catch (e) { PACKAGES = []; }
-    })();
-    var _pCost = (async function () {
-      try {
-        var rc = await selectAllPaged('cost_accounts', '*');
-        rc.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
-        COST_ACCTS = rc;
-      } catch (e) { COST_ACCTS = []; }
-    })();
-    var _pExp = (async function () {
-      try { EXPENSES = await selectAllPaged('activity_expenses', '*'); } catch (e) { EXPENSES = []; }
-    })();
-    var _pWpm = loadWpmWorkPackages().catch(function () {});
-    var _pCls = loadClassCodes().catch(function () {});
-    var _pDscn = (async function () {
-      try {
-        // Duration scenarios (C3). Tolerant of the un-run migration like the two above.
-        var r10 = await sb().from('duration_scenarios').select('*').eq('project_id', pid).order('name');
-        DSCN = (r10 && !r10.error && r10.data) || [];
-      } catch (e) { DSCN = []; }
-    })();
+    } catch (e) { PACKAGES = []; }
+    await loadWpmWorkPackages();
+    await loadClassCodes();
+    try {
+      // Duration scenarios (C3). Tolerant of the un-run migration like the two above.
+      var r10 = await sb().from('duration_scenarios').select('*').eq('project_id', pid).order('name');
+      DSCN = (r10 && !r10.error && r10.data) || [];
+    } catch (e) { DSCN = []; }
     try {
       // Keyset-paginate: a plain select caps at Supabase's 1000-row limit, which silently TRUNCATED
       // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
@@ -4442,19 +4309,16 @@
       // re-sorts by sort_order, so load order is irrelevant.
       WBS_NODES = await selectAllPaged('wbs_nodes', '*');
     } catch (e) { WBS_NODES = []; }
-    // ⚠️ The three fetches above no longer BLOCK the WBS tree. They used to be awaited one after the
-    // other, and `wbs_nodes` — the thing the WBS Manager, the grouping and the trade derivation all
-    // wait for — sat at the END of a chain of ~12 sequential round-trips. That is the "loading is
-    // really slow on the WBS" the owner reported: not a slow query, a slow QUEUE. They are started
-    // here, awaited at the bottom, and none of them is read before then.
     _clearPhaseMemo();   // the inherited-phase cache is keyed by node id — stale after a reload
-    // ⚠️ The ONE genuine ordering constraint in this function: the skeleton seeder reads WBS_NODES to
-    // decide what is missing, so it cannot start until the fetch above has landed.
     try { await ensureWbsSkeleton(); } catch (e) { /* best-effort auto-seed; never blocks load */ }
-    // Everything else is collected here. ⚠️ Still AWAITED, not fire-and-forget: callers (the Resource
-    // Usage tab, the cost roll-ups, Cost Loading) read these arrays the moment load() returns, and a
-    // function that returns before they are populated would show empty tabs that silently fill in.
-    await Promise.all([_pRes, _pCodes, _pSteps, _pUdf, _pLoc, _pPkg, _pCost, _pExp, _pWpm, _pCls, _pDscn]);
+    try {
+      var r9 = await selectAllPaged('cost_accounts', '*');
+      r9.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      COST_ACCTS = r9;
+    } catch (e) { COST_ACCTS = []; }
+    try {
+      EXPENSES = await selectAllPaged('activity_expenses', '*');
+    } catch (e) { EXPENSES = []; }
   }
   // ---- WBS tree algorithms (verified pure logic) ----
   function wbsChildren(parentId) {
@@ -5824,12 +5688,7 @@
 
   // ---- data ----
   async function loadProjects() {
-    setStage('Loading your projects…');
-    var projects;
-    // ⚠️ Its own try/catch: this runs under the boot overlay now, so a failed project list would
-    // otherwise leave a spinner over an empty screen with nothing said. Fail loudly, uncover the app.
-    try { projects = await PDb.getProjects(); }
-    catch (e) { hideLoading(); UI.toast('Could not load your projects: ' + (e.message || e), 'error'); return; }
+    var projects = await PDb.getProjects();
     PROJECTS = projects;
     try { GROUPHEADS = await PDb.getGroupHeads(); } catch (e) { GROUPHEADS = []; }
     var sel = document.getElementById('ps-project');
@@ -5840,7 +5699,6 @@
     updateProjSelLabel();
     updateGroupHeadCaption();
     if (pid) load();
-    else hideLoading();   // no project selected — nothing to load, so the boot overlay must come down
   }
   // OPC-style: show the project's group head under the project name. (Was the
   // workspace/program path; those levels no longer exist -- the group head is
@@ -5981,10 +5839,6 @@
     var el = document.getElementById('ps-fresh'); if (!el) return;
     clearTimeout(_freshHideT);
     if (state === 'cached') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = 'Cached · updating…'; el.title = 'Showing the last-loaded schedule instantly; refreshing from the database…'; }
-    // The rows ARE live, but the WBS tree, the register mirrors and the saved grouping are not in
-    // yet — and every one of them re-renders the grid. Saying "Live" here would be a claim the
-    // screen then contradicts a second later. setStage() writes the current step into this chip.
-    else if (state === 'finishing') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = 'Finishing…'; el.title = 'The activities are loaded; the WBS tree and syncs are still finishing.'; }
     else if (state === 'live') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-live'; el.textContent = 'Live'; el.title = 'Up to date with the database.'; _freshHideT = setTimeout(function () { var e2 = document.getElementById('ps-fresh'); if (e2) e2.style.display = 'none'; }, 2500); }
     else { el.style.display = 'none'; }
   }
@@ -6105,7 +5959,6 @@
 
   async function load() {
     var gen = ++_loadGen;   // claim this load; any older in-flight load is now stale
-    var _t0 = Date.now();   // how long the planner actually waited — drives the "ready" message
     _wbsCollapseInit = false;   // re-apply the large-tree default-collapse for this freshly-loaded tree
     loadDataDate();   // per-project data date (persisted); drives CPM / gantt line / usage
     _fmtRules = loadFmtRules();   // per-project conditional-formatting rules
@@ -6145,11 +5998,6 @@
       if (gen !== _loadGen) return;
       if (cached && cached.uid === UID && cached.rows && cached.rows.length) {
         rows = cached.rows; rebuild(); _applyBigCollapse(); renderAll();
-        // ⚠️ Take the boot overlay DOWN the moment there is a real schedule on screen. The whole
-        // point of the cache path is that the planner can read (and scroll) their schedule while it
-        // revalidates; leaving the spinner over it would trade a real feature for a progress bar.
-        // The freshness chip carries the stage from here on — see setStage().
-        hideLoading();
         _setFresh('cached'); painted = true;
       }
     } catch (e) {}
@@ -6198,6 +6046,7 @@
       return;
     }
     if (gen !== _loadGen) return;   // superseded while paginating — don't clobber the newer load's state
+    hideLoading();
     // Reconcile the (cache-painted) view with the fresh DB set — UNLESS the user made an inline edit
     // while the fetch was in flight (that edit already went to the DB; keep the live in-memory rows
     // instead of overwriting with a set that raced the edit — the debounced _cacheSaveSoon re-caches).
@@ -6208,76 +6057,32 @@
       renderAll();
       _cachePut(pid, all);
     }
-    // ⚠️ The overlay comes down as soon as there is a real schedule on screen — the grid stays
-    // readable and scrollable while the rest settles, which is the whole point of painting early.
-    // What was missing is that NOTHING said the settling was still happening, so the owner read the
-    // remaining seconds as "the project schedule is slow". The chip now names the stage, and the
-    // toast at the end says when it is genuinely safe to edit.
-    hideLoading();
-    _setFresh('finishing');
-    // ⚠️ try/finally, and the finally is the ONLY place the overlay comes down on this path. Two of
-    // the steps below reach the network (the register mirrors); before this, an exception there just
-    // logged, because the overlay was already gone. With the overlay up, the same exception would
-    // have locked the planner out of their own schedule behind a spinner that never stops.
-    try {
-      setStage('Loading resources and the WBS tree…');
-      await loadResourcesAssignments();   // loads WBS_NODES
-      if (gen !== _loadGen) return;
-      setStage('Checking the WBS tree…');
-      // Re-sync dotted codes to the node tree FIRST — a code that drifted after a push makes two
-      // branches look like one, which the dedupe below would otherwise "fix" by deleting a live branch.
-      await _wbsResyncCodes();
-      if (gen !== _loadGen) return;
-      // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node-id dedupe
-      // below cannot see). Runs after the resync: it must judge duplicates on correct codes.
-      await _wbsDedupeSummariesByCode();
-      if (gen !== _loadGen) return;
-      // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
-      var healed = await _wbsEnsureSummaries();
-      if (gen !== _loadGen) return;
-      if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
-      // Mirror the two registers into the Design Development branch. Runs AFTER the WBS is
-      // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
-      // leaves the branch as it was rather than blocking the schedule.
-      setStage('Syncing design development and procurement…');
-      await syncDesignDevelopment();
-      await syncProcurement();
-      _renderSyncPrcAt();
-      if (gen !== _loadGen) return;
-      setStage('Restoring your grouping and columns…');
-      loadGroupBys();       // per-project grouping order (needs LOC_LEVELS loaded to validate against)
-      populateGroupSelect();
-      renderAll();
-      if (isAdmin && rows.length) updateProjectSummary();
-      _setFresh('live');
-      _announceReady(painted, _t0);
-    } finally {
-      // ⚠️ Guarded: a superseded load must not pull down the overlay the NEWER load is now showing.
-      if (gen === _loadGen) hideLoading();
-    }
-  }
-  // The stage text. It goes to the overlay, and — when the grid was painted from cache and there IS
-  // no overlay — to the freshness chip, so a planner looking at a usable-but-settling schedule can
-  // still see that it is working rather than assuming it has finished.
-  function setStage(msg) {
-    setLoading(msg);
-    var el = document.getElementById('ps-fresh');
-    if (el && /ps-fresh-stale/.test(el.className)) {
-      el.textContent = msg.replace(/…$/, '');
-      el.title = 'Showing the last-loaded schedule while it finishes: ' + msg;
-    }
-  }
-  // ⚠️ Announced at the END of load(), never when the grid first paints — see the note above.
-  // ⚠️ And only when the wait was REAL: undo, redo, import, paste, merge and scenario-apply all end
-  // in load(), and a "ready" toast on each of those is noise stacked on top of the message that
-  // operation already showed. A cold open (overlay shown) always says so; a warm one only if it
-  // actually took long enough for the planner to notice.
-  function _announceReady(cached, t0) {
-    var ms = Date.now() - t0;
-    if (cached && ms <= 1500) return;
-    var n = rows.filter(function (r) { return !isWbs(r); }).length;
-    UI.toast('Schedule ready — ' + n.toLocaleString() + ' activit' + (n === 1 ? 'y' : 'ies') + ' loaded in ' +
-      (ms / 1000).toFixed(1) + 's. You can edit now.', 'success');
+    _setFresh('live');
+    await loadResourcesAssignments();   // loads WBS_NODES
+    if (gen !== _loadGen) return;
+    // Re-sync dotted codes to the node tree FIRST — a code that drifted after a push makes two
+    // branches look like one, which the dedupe below would otherwise "fix" by deleting a live branch.
+    await _wbsResyncCodes();
+    if (gen !== _loadGen) return;
+    // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node-id dedupe
+    // below cannot see). Runs after the resync: it must judge duplicates on correct codes.
+    await _wbsDedupeSummariesByCode();
+    if (gen !== _loadGen) return;
+    // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
+    var healed = await _wbsEnsureSummaries();
+    if (gen !== _loadGen) return;
+    if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
+    // Mirror the two registers into the Design Development branch. Runs AFTER the WBS is
+    // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
+    // leaves the branch as it was rather than blocking the schedule.
+    await syncDesignDevelopment();
+    await syncProcurement();
+    _renderSyncPrcAt();
+    if (gen !== _loadGen) return;
+    loadGroupBys();       // per-project grouping order (needs LOC_LEVELS loaded to validate against)
+    populateGroupSelect();
+    renderAll();
+    if (isAdmin && rows.length) updateProjectSummary();
   }
 
   // Portfolio rollup: store an overall schedule summary on the project so the
@@ -8098,30 +7903,9 @@
       'conduit', 'auxiliary works', 'auxiliary'] },
     { name: 'Site Works', terms: ['site works', 'sitework'] },
     { name: 'Allied Services', terms: ['allied services', 'allied'] },
-    { name: 'Site Development', terms: ['site development works', 'site development', 'landscaping'] },
-    // ⚠️ Added 2026-08-25 so this vocabulary IS the Schedule Builder's (GWORK) vocabulary — the owner's
-    // point: "the trades should be the General Requirements, Site Works, Structural Works,
-    // Architectural Works etc… just like in the schedule builder". A builder-pushed project and an
-    // imported one must land in the SAME buckets or the two halves of the app disagree.
-    // ⚠️ 'general' alone is NOT a term: "General Notes", "General Arrangement" are drawings, not a trade.
-    { name: 'General Requirements', terms: ['general requirements', 'general requirement',
-      'general conditions', 'preliminaries', 'preliminary works', 'mobilization', 'mobilisation'] },
-    { name: 'Others', terms: ['others', 'other works'] }
+    { name: 'Site Development', terms: ['site development works', 'site development', 'landscaping'] }
   ];
-  // Short WBS codes — the shapes a real tree actually uses: "ST1", "AR-2", "MEPF 1", "Gen Req 1".
-  // ⚠️ EXACT token after stripping a trailing sequence number, never a substring: "ST" as a substring
-  // would claim "Store Room" and "Steel" would claim nothing useful. An exact-token rule can be read
-  // and predicted by a planner, which is the point of doing it this way rather than with more terms.
-  var WORK_CODES = { 'gr': 'General Requirements', 'gen req': 'General Requirements', 'genreq': 'General Requirements',
-    'sw': 'Site Works', 'st': 'Structural Works', 'ar': 'Architectural Works', 'arch': 'Architectural Works',
-    'mepf': 'MEPF Works', 'mep': 'MEPF Works', 'sd': 'Site Development', 'allied': 'Allied Services', 'ot': 'Others' };
-  function _discCodeMatch(name) {
-    var t = String(name == null ? '' : name).trim().toLowerCase()
-      .replace(/[\s\-_.#]*\d+\s*$/, '').replace(/\s+/g, ' ').trim();
-    return WORK_CODES[t] || null;
-  }
   function _discTermMatch(s) {
-    var code = _discCodeMatch(s); if (code) return code;
     for (var i = 0; i < WORK_CANON.length; i++) { if (locTermHit(s, WORK_CANON[i].terms) !== -1) return WORK_CANON[i].name; }
     return null;
   }
@@ -26742,11 +26526,6 @@
     }
     } catch (e) { try { console.error('[project-schedule] split-pane setup failed; the schedule still loads.', e); } catch (e2) {} }
 
-    // ⚠️ The overlay goes up BEFORE the first fetch, not inside load(). Sign-in, the project list and
-    // the group heads are three round-trips that happen while the screen is an empty grid — the part
-    // of "the schedule is slow" that no spinner inside load() could ever have covered. load() takes
-    // the same overlay over when it starts, so there is no flicker between the two.
-    showLoading('Opening Project Schedule…');
     loadProjects();
   });
 
