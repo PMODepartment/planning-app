@@ -950,6 +950,61 @@
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
     .ps-vstack { padding:12px 14px 20px; }
+    /* ---- Cost Loading (4-step wizard) ------------------------------------------------------ */
+    .pscl-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0; }
+    .pscl-wrap { display:flex; gap:14px; align-items:flex-start; }
+    .pscl-rail { flex:0 0 232px; display:flex; flex-direction:column; gap:6px; }
+    .pscl-step { display:flex; gap:10px; align-items:flex-start; text-align:left; border:1px solid var(--pd-line);
+      background:var(--pd-card); color:var(--pd-ink); border-radius:10px; padding:9px 11px; cursor:pointer; font:inherit; }
+    .pscl-step:hover { border-color:var(--pd-red); }
+    .pscl-step.on { border-color:var(--pd-red); background:var(--pd-red-light); }
+    .pscl-step .n { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); color:var(--pd-muted);
+      display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:800; }
+    .pscl-step.on .n { background:var(--pd-red); color:#fff; }
+    .pscl-step .t { font-size:12.5px; font-weight:700; line-height:1.25; }
+    .pscl-step .d { font-size:11px; color:var(--pd-muted); line-height:1.3; margin-top:2px; }
+    .pscl-panel { flex:1 1 0%; min-width:0; }
+    .pscl-note { font-size:12px; color:var(--pd-muted); }
+    .pscl-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
+    html.pd-dark .pscl-warn { color:#FFD79A; background:#3A2E17; border-color:#5A4620; }
+    .pscl-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .pscl-tbl th { position:sticky; top:0; z-index:1; background:var(--pd-bg); text-align:left; font-size:10.5px;
+      font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pd-muted); padding:7px 10px;
+      border-bottom:2px solid var(--pd-line); }
+    .pscl-tbl td { padding:6px 10px; border-bottom:1px solid var(--pd-line); vertical-align:middle; }
+    .pscl-tbl tr:hover td { background:var(--pd-bg); }
+    .pscl-tbl td.num, .pscl-tbl th.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .pscl-tbl tr.on td { background:var(--pd-red-light); }
+    .pscl-scroll { max-height:58vh; overflow:auto; }
+    .pscl-in { width:100%; max-width:150px; height:30px; padding:0 8px; font:inherit; font-size:12.5px; text-align:right;
+      border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); color:var(--pd-ink); }
+    .pscl-in.wide { max-width:none; text-align:left; }
+    .pscl-in:focus { outline:2px solid var(--pd-red); outline-offset:-2px; }
+    .pscl-kpis { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .pscl-kpi { flex:1 1 150px; border:1px solid var(--pd-line); border-left:3px solid var(--pd-muted); border-radius:10px;
+      background:var(--pd-card); padding:9px 12px; }
+    .pscl-kpi.red { border-left-color:var(--pd-red); }
+    .pscl-kpi .v { font-size:19px; font-weight:800; font-variant-numeric:tabular-nums; }
+    .pscl-kpi .l { font-size:10.5px; color:var(--pd-muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+    .pscl-bad { color:var(--pd-red); font-weight:700; }
+    .pscl-ok { color:#0E7A4A; font-weight:700; }
+    html.pd-dark .pscl-ok { color:#4ED18B; }
+    /* Step 4 — the cost stack. One row per location value, the bar sized by that location's SHARE
+       of the selected activity's cost, so the tallest bar is where the money is. */
+    .pscl-stk { display:flex; gap:16px; align-items:flex-start; overflow-x:auto; padding-bottom:6px; }
+    .pscl-tower { flex:0 0 auto; min-width:220px; border:1px solid var(--pd-line); border-radius:12px;
+      background:var(--pd-card); overflow:hidden; }
+    .pscl-towerh { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px;
+      border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:12.5px; font-weight:800; }
+    .pscl-towerh .m { font-size:11.5px; font-weight:700; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    .pscl-lvl { display:grid; grid-template-columns:88px 1fr 104px; gap:8px; align-items:center; padding:5px 12px;
+      border-bottom:1px solid var(--pd-line); font-size:12px; }
+    .pscl-lvl:last-child { border-bottom:0; }
+    .pscl-lvl .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+    .pscl-lvl .amt { text-align:right; font-variant-numeric:tabular-nums; }
+    .pscl-lvl .track { height:12px; border-radius:6px; background:var(--pd-bg); border:1px solid var(--pd-line); overflow:hidden; }
+    .pscl-lvl .track > i { display:block; height:100%; background:var(--pd-red); }
+    .pscl-lvl.zero .amt, .pscl-lvl.zero .nm { color:var(--pd-muted); }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:12px; color:var(--pd-muted); }
     .ps-vs-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 9px; }
@@ -2190,6 +2245,7 @@
           <button data-tab="wbs"><span data-ico="layers" data-ico-size="14"></span> WBS Manager</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Builder</button>
+          <button data-tab="costload"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
           <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost / EVM</button>
           <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
@@ -2438,7 +2494,21 @@
         </div>
       </div>
 
-      <!-- COST LOADING -->
+      <!-- COST LOADING (the wizard: enlist → assign → distribute → review) -->
+      <div id="ps-view-costload" style="display:none;">
+        <div class="pscl-bar">
+          <span class="pscl-note">Assign cost to the execution-phase activities, distribute it across the sub-WBS each activity occurs in, then review it as a vertical stack.</span>
+          <span class="pscl-note" id="ps-cl-state" style="margin-left:auto;"></span>
+          <button class="pd-btn" id="ps-cl-save"><span data-ico="check" data-ico-size="14"></span> Save loading</button>
+          <button class="pd-btn pd-btn-primary" id="ps-cl-apply"><span data-ico="cash" data-ico-size="14"></span> Apply to schedule</button>
+        </div>
+        <div class="pscl-wrap">
+          <div class="pscl-rail" id="ps-cl-rail"></div>
+          <div class="pscl-panel" id="ps-cl-panel"></div>
+        </div>
+      </div>
+
+      <!-- COST / EVM -->
       <div id="ps-view-cost" style="display:none;">
         <!-- Cost / EVM dashboard (rebuilt): project cost-performance, not a per-activity table
              (that lives in the Schedule grid; time-phased per-activity curves in Activity Usage). -->
@@ -9963,7 +10033,7 @@
     // Paint only the list. The desktop pipeline is (re)built by renderAll when a
     // resize crosses back above 700px (see the resize handler above).
     if (psIsPhone()) { renderMobile(); return; }
-    renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderActLegend(); renderCost(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); }
+    renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderActLegend(); renderCost(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); if (activeTab === 'costload' && typeof CostLoading !== 'undefined') CostLoading.repaint(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -21970,11 +22040,532 @@
       } };
   })();
 
+
+  // ==========================================================================================
+  // COST LOADING — assigning the project's cost to its activities, in four steps.
+  //
+  //   1. Enlist   — every execution-phase activity NAME, with how many times it occurs.
+  //   2. Assign   — a total cost per name.
+  //   3. Distribute — split that total across the sub-WBS instances of that name (equally, or by
+  //                 a percentage the planner types per instance).
+  //   4. Review   — the result as a vertical stack: per tower, per floor/zone, for one activity.
+  //
+  // ⚠️ The money is NOT stored here. Apply writes project_schedule.planned_cost, the column the
+  // Cost/EVM dashboard, the Excel export and Cash Flow's cost-basis S-curve already read. A second
+  // per-activity cost store would let two screens disagree about the same peso.
+  //
+  // ⚠️ Grouping is by NAME, because that is what the exercise is: "Formworks" is one cost line that
+  // happens to be programmed 40 times. Grouping by WBS would make the planner price the same work
+  // 40 times over, which is the spreadsheet this replaces.
+  // ==========================================================================================
+  var CostLoading = (function () {
+    var cfg = null, step = 0, curPid = null, curUid = null, dirty = false, wired = false, loading = false;
+    var selGroup = null;          // the name selected in steps 3 and 4
+    var clLevel = null;           // step 4: the level being stacked
+    var clScope = {};             // step 4: { <outer level id>: value } — its own, NOT the Gantt stack's
+    var clAllTowers = true;       // step 4: every tower side by side, or the pinned one
+    function sbc() { return AppAuth.getSB(); }
+    function num(v) { var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : null; }
+    function money(n) {
+      if (n == null || !isFinite(n)) return '—';
+      return '₱' + (Math.round(n * 100) / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function r2(n) { return Math.round(n * 100) / 100; }
+    function setState(t) { var el = document.getElementById('ps-cl-state'); if (el) el.textContent = t || ''; }
+    function markDirty() { dirty = true; setState('Unsaved changes'); }
+
+    // ---- Which activities are being loaded -------------------------------------------------
+    // ⚠️ Leaf activities under the EXECUTION PHASE only, per the method: cost is loaded onto the
+    // work, not onto the initiation/planning/closeout lines. A project with no such branch is NOT
+    // silently given every activity — it is told, and then offered every leaf so the exercise is
+    // still possible.
+    // ⚠️ Milestones are excluded. A zero-duration marker carrying cost would earn value on the day
+    // it flips, which is exactly the "milestone padding" a cost-loaded programme must not allow.
+    function scopeInfo() {
+      var code = execPhaseCode();
+      var leaves = rows.filter(function (r) { return !isWbs(r) && !isMile(r); });
+      var inExec = code ? leaves.filter(function (r) { return r.wbs === code || locCodeUnder(r.wbs, code); }) : [];
+      var miles = rows.filter(function (r) { return !isWbs(r) && isMile(r); }).length;
+      return { code: code, rows: (code && inExec.length) ? inExec : leaves,
+        fellBack: !(code && inExec.length), milestones: miles, allLeaves: leaves.length };
+    }
+    // ⚠️ Keyed on activity_id (the P6/business key), never the row uuid: a re-import replaces every
+    // row and mints new uuids, so a uuid-keyed distribution would reset itself on the next import.
+    // An activity with no id falls back to its WBS code + name, which is stable for the same reason.
+    function instKey(r) {
+      var a = String(r.activity_id || '').trim();
+      return a || ('~' + String(r.wbs || '') + '|' + String(r.activity_name || '').trim());
+    }
+    function nameOf(r) { return String(r.activity_name || '').trim() || '— Unnamed activity —'; }
+    function buildGroups() {
+      var sc = scopeInfo(), by = {}, order = [];
+      sc.rows.forEach(function (r) {
+        var n = nameOf(r);
+        if (!by[n]) { by[n] = { name: n, insts: [] }; order.push(n); }
+        by[n].insts.push(r);
+      });
+      var list = order.map(function (n) {
+        var g = by[n], c = (cfg && cfg.groups && cfg.groups[n]) || null;
+        g.total = c && c.total != null ? c.total : null;
+        g.mode = (c && c.mode === 'pct') ? 'pct' : 'equal';
+        g.pct = (c && c.pct) || {};
+        g.insts.sort(function (a, b) { return String(a.wbs || '').localeCompare(String(b.wbs || ''), undefined, { numeric: true }) || cmpGroupName(a.activity_id || '', b.activity_id || ''); });
+        return g;
+      });
+      list.sort(function (a, b) { return cmpGroupName(a.name, b.name); });
+      list._scope = sc;
+      return list;
+    }
+    function groupByName(n) { var gs = buildGroups(); for (var i = 0; i < gs.length; i++) if (gs[i].name === n) return gs[i]; return null; }
+    function pctOf(g, r) {
+      var v = g.pct[instKey(r)];
+      return v == null ? null : v;
+    }
+    function pctSum(g) {
+      var t = 0; g.insts.forEach(function (r) { var v = pctOf(g, r); if (v != null) t += v; });
+      return r2(t);
+    }
+    // The peso figure each instance carries. ⚠️ The rounding remainder is put on the LAST instance so
+    // the instances sum to the assigned total EXACTLY — three-way splits of 1,000,000 otherwise come
+    // to 999,999.99 and the project total drifts away from the figure the planner actually agreed.
+    function distribute(g) {
+      var out = [];
+      if (g.total == null) { g.insts.forEach(function (r) { out.push({ r: r, amount: null }); }); return out; }
+      var n = g.insts.length; if (!n) return out;
+      var share = [];
+      if (g.mode === 'pct') {
+        var sum = pctSum(g);
+        g.insts.forEach(function (r) { var p = pctOf(g, r); share.push(p == null ? 0 : p / 100); });
+        if (Math.abs(sum - 100) > 0.01) { g.insts.forEach(function (r, i) { out.push({ r: r, amount: null }); }); out._invalid = true; return out; }
+      } else {
+        for (var i = 0; i < n; i++) share.push(1 / n);
+      }
+      var run = 0;
+      g.insts.forEach(function (r, i) {
+        var a = (i === n - 1) ? r2(g.total - run) : r2(g.total * share[i]);
+        run = r2(run + a);
+        out.push({ r: r, amount: a });
+      });
+      return out;
+    }
+    function groupIssue(g) {
+      if (g.total == null) return 'no cost assigned';
+      if (g.mode === 'pct') {
+        var s = pctSum(g);
+        if (Math.abs(s - 100) > 0.01) return 'shares total ' + s + '%, not 100%';
+      }
+      return null;
+    }
+    function totals() {
+      var gs = buildGroups(), assigned = 0, priced = 0, unpriced = 0, bad = 0, acts = 0;
+      gs.forEach(function (g) {
+        acts += g.insts.length;
+        if (g.total == null) { unpriced++; return; }
+        priced++; assigned += g.total;
+        if (groupIssue(g)) bad++;
+      });
+      return { groups: gs.length, acts: acts, assigned: assigned, priced: priced, unpriced: unpriced, bad: bad, list: gs };
+    }
+
+    // ---- Persistence ------------------------------------------------------------------------
+    function ensureCfg() { if (!cfg) cfg = { groups: {} }; if (!cfg.groups) cfg.groups = {}; return cfg; }
+    function entry(name) { var c = ensureCfg(); return (c.groups[name] = c.groups[name] || { total: null, mode: 'equal', pct: {} }); }
+    async function load() {
+      cfg = { groups: {} };
+      if (!curPid) return;
+      loading = true;
+      try {
+        var r = await sbc().from('schedule_cost_loading').select('config').eq('project_id', curPid).maybeSingle();
+        if (r.error) {
+          // ⚠️ Tolerant of the un-run migration, like the builder: the exercise still works in the
+          // browser, it just cannot be saved — and it says so rather than failing to open.
+          if (/schedule_cost_loading/.test(r.error.message || '')) setState('Not saved — run migrations/2026-08-25-schedule-cost-loading.sql');
+          else setState('Could not load: ' + (r.error.message || r.error));
+        } else if (r.data && r.data.config) { cfg = r.data.config; ensureCfg(); setState('Loaded'); }
+        else setState('');
+      } catch (e) { setState('Could not load: ' + (e.message || e)); }
+      loading = false;
+    }
+    async function save() {
+      if (!curPid) return;
+      ensureCfg(); setState('Saving…');
+      try {
+        var r = await sbc().from('schedule_cost_loading').upsert({ project_id: curPid, config: cfg, updated_at: new Date().toISOString(), updated_by: curUid }, { onConflict: 'project_id' });
+        if (r.error) throw r.error;
+        dirty = false; setState('Saved'); UI.toast('Cost loading saved.', 'success');
+      } catch (er) {
+        setState('Save failed');
+        UI.toast(/schedule_cost_loading/.test(er.message || '') ? 'Run migrations/2026-08-25-schedule-cost-loading.sql first.' : ('Save failed: ' + (er.message || er)), 'error');
+      }
+    }
+
+    // ---- Step 1: rename an activity, everywhere it occurs -------------------------------------
+    // ⚠️ Renaming here is a REAL schedule edit on every instance (through persist(), so it is
+    // undoable and audited) — the planner is naming a cost line, and a cost line that does not match
+    // the programme is exactly the disconnect this feature exists to remove.
+    async function renameGroup(oldName, newName) {
+      newName = String(newName || '').trim();
+      if (!newName || newName === oldName) return false;
+      var g = groupByName(oldName); if (!g) return false;
+      // ⚠️ Refused rather than merged: two priced lines folded into one silently discards one of the
+      // two totals, and there is no way to tell afterwards which figure survived.
+      if (groupByName(newName)) { UI.toast('"' + newName + '" already exists as an activity. Rename it to something else, or price the two lines separately.', 'error'); return false; }
+      showLoading('Renaming ' + g.insts.length + ' activit' + (g.insts.length === 1 ? 'y' : 'ies') + '…');
+      var done = 0;
+      for (var i = 0; i < g.insts.length; i++) {
+        var ok = await persist(g.insts[i].id, { activity_name: newName }, false, true);
+        if (!ok) { hideLoading(); UI.toast('Renamed ' + done + ' of ' + g.insts.length + ' — ' + (_lastPersistErr || 'save failed'), 'error'); break; }
+        done++;
+      }
+      if (done === g.insts.length) hideLoading();
+      // Carry the pricing across with the name, or the planner's total is orphaned by their own rename.
+      var c = ensureCfg();
+      if (c.groups[oldName]) { c.groups[newName] = c.groups[oldName]; delete c.groups[oldName]; markDirty(); }
+      if (selGroup === oldName) selGroup = newName;
+      if (done) UI.toast('Renamed ' + done + ' activit' + (done === 1 ? 'y' : 'ies') + ' to "' + newName + '".', 'success');
+      renderAll();
+      return true;
+    }
+
+    // ---- Apply: write planned_cost onto the schedule -------------------------------------------
+    async function applyAll() {
+      var t = totals();
+      if (!t.priced) { UI.toast('Nothing to apply — assign a cost to at least one activity in step 2.', 'error'); return; }
+      // ⚠️ A group whose percentages do not add to 100 is REFUSED, never normalised: normalising
+      // silently changes figures the planner typed, and they would have no way to see that it happened.
+      var bad = t.list.filter(function (g) { return g.total != null && groupIssue(g); });
+      if (bad.length) { UI.toast(bad.length + ' activit' + (bad.length === 1 ? 'y' : 'ies') + ' still have a distribution that does not add to 100% — fix them in step 3 first (' + bad[0].name + (bad.length > 1 ? ', …' : '') + ').', 'error'); return; }
+      var writes = [], overwrite = 0;
+      t.list.forEach(function (g) {
+        if (g.total == null) return;
+        distribute(g).forEach(function (d) {
+          if (d.amount == null) return;
+          var cur = d.r.planned_cost == null ? null : r2(+d.r.planned_cost);
+          if (cur === d.amount) return;                    // already carries this figure
+          if (cur != null && cur !== 0) overwrite++;
+          writes.push({ id: d.r.id, amount: d.amount });
+        });
+      });
+      if (!writes.length) { UI.toast('The schedule already carries this loading — nothing to write.', 'success'); return; }
+      var msg = 'Write Planned IBB on ' + writes.length + ' activit' + (writes.length === 1 ? 'y' : 'ies') + '?';
+      // ⚠️ An existing planned_cost may have come from a P6 import or from someone else's loading, so
+      // overwriting it is stated with a count rather than done quietly.
+      if (overwrite) msg += '\n\n' + overwrite + ' of them already carry a Planned IBB from elsewhere (an import, or an earlier loading) and will be replaced.';
+      if (!confirm(msg)) return;
+      showLoading('Writing cost onto ' + writes.length + ' activities…');
+      var done = 0;
+      for (var i = 0; i < writes.length; i++) {
+        var ok = await persist(writes[i].id, { planned_cost: writes[i].amount }, false, true);
+        if (!ok) { hideLoading(); UI.toast('Wrote ' + done + ' of ' + writes.length + ' — ' + (_lastPersistErr || 'save failed') + '. The rest are unchanged.', 'error'); renderAll(); return; }
+        done++;
+      }
+      hideLoading();
+      UI.toast('Cost loading applied to ' + done + ' activit' + (done === 1 ? 'y' : 'ies') + ' (' + money(t.assigned) + ' assigned).', 'success');
+      renderAll();
+    }
+
+    // ---- Step 4: the cost stack ----------------------------------------------------------------
+    function clOuter(levelId) { return stkOuterLevels(levelId); }
+    function clDefaultLevel() {
+      if (clLevel && LOC_LEVELS.some(function (l) { return l.id === clLevel; })) return clLevel;
+      var m = LOC_LEVELS.filter(function (l) { return /floor|level|storey|story/i.test(l.name || ''); })[0];
+      return (m && m.id) || (LOC_LEVELS.length ? LOC_LEVELS[LOC_LEVELS.length - 1].id : null);
+    }
+    // Amount per instance across every priced group, or just the selected one.
+    function allocIndex(onlyName) {
+      var idx = {}, gs = buildGroups();
+      gs.forEach(function (g) {
+        if (onlyName && g.name !== onlyName) return;
+        if (g.total == null) return;
+        distribute(g).forEach(function (d) { if (d.amount != null) idx[d.r.id] = (idx[d.r.id] || 0) + d.amount; });
+      });
+      return idx;
+    }
+    // One stack: rows = the stacked level's values, in building order, each carrying the cost of the
+    // selected activity in that location.
+    // ⚠️ An activity with NO value at the stacked level is reported as its own "not located" line,
+    // never spread across the floors — spreading would invent a floor-by-floor split nobody made, and
+    // the whole point of the review is to show where the money actually sits.
+    function costStack(levelId, parentLevelId, parentValue, onlyName) {
+      var idx = allocIndex(onlyName), by = {}, unlocated = 0, total = 0;
+      rows.forEach(function (r) {
+        var amt = idx[r.id]; if (amt == null) return;
+        if (parentLevelId && locValOf(r, parentLevelId) !== parentValue) return;
+        if (!parentLevelId && !stkInScopeCL(r, levelId)) return;
+        total += amt;
+        var v = locValOf(r, levelId);
+        if (!v) { unlocated += amt; return; }
+        (by[v] = by[v] || { loc: v, amount: 0, n: 0 });
+        by[v].amount = r2(by[v].amount + amt); by[v].n++;
+      });
+      var list = Object.keys(by).map(function (k) { return by[k]; });
+      list.sort(function (a, b) { return cmpLevelValue(a.loc, b.loc); });
+      var ranked = list.filter(function (b) { return levelRank(b.loc) != null; });
+      var other = list.filter(function (b) { return levelRank(b.loc) == null; });
+      ranked.reverse();                                  // a stack reads top floor first
+      return { rows: ranked.concat(other), total: r2(total), unlocated: r2(unlocated) };
+    }
+    function stkInScopeCL(r, levelId) {
+      var outer = clOuter(levelId);
+      for (var i = 0; i < outer.length; i++) {
+        var want = clScope[outer[i].id];
+        if (want && locValOf(r, outer[i].id) !== want) return false;
+      }
+      return true;
+    }
+    function clTowerValues(levelId) {
+      var outer = clOuter(levelId);
+      if (!outer.length) return [];
+      var lvl = outer[outer.length - 1], seen = {};
+      rows.forEach(function (r) { if (isWbs(r)) return; var v = locValOf(r, lvl.id); if (v) seen[v] = 1; });
+      return { level: lvl, values: Object.keys(seen).sort(cmpLevelValue) };
+    }
+
+    // ---- Rendering -------------------------------------------------------------------------------
+    var STEPS = [
+      { t: 'Enlist activities', d: 'Every activity under the execution phase, and how many times it occurs. Rename here and the schedule follows.' },
+      { t: 'Assign cost', d: 'One total per activity name — the cost of that work across the whole project.' },
+      { t: 'Distribute', d: 'Split each total across the sub-WBS it occurs in: equally, or by a percentage you set.' },
+      { t: 'Consolidate & review', d: 'The result as a vertical stack — per tower, per floor or zone, for the selected activity.' }
+    ];
+    function railHTML() {
+      return STEPS.map(function (s2, i) {
+        return '<button class="pscl-step' + (i === step ? ' on' : '') + '" data-step="' + i + '">' +
+          '<span class="n">' + (i + 1) + '</span><span><span class="t">' + esc(s2.t) + '</span>' +
+          '<span class="d">' + esc(s2.d) + '</span></span></button>';
+      }).join('');
+    }
+    function kpisHTML(t) {
+      function k(v, l, red) { return '<div class="pscl-kpi' + (red ? ' red' : '') + '"><div class="v">' + v + '</div><div class="l">' + esc(l) + '</div></div>'; }
+      return '<div class="pscl-kpis">' +
+        k(t.groups, 'Activity names') + k(t.acts, 'Activities') +
+        k(money(t.assigned), 'Assigned', true) +
+        k(t.unpriced, 'Not yet priced') +
+        k(t.bad, 'Distribution incomplete') + '</div>';
+    }
+    function scopeWarnHTML(sc) {
+      var w = [];
+      if (sc.fellBack) w.push('This project has no <b>Execution Phase</b> branch with activities in it, so every leaf activity is listed. Name a branch "Execution Phase" in the WBS Manager to load cost onto the construction work only.');
+      if (sc.milestones) w.push(sc.milestones + ' milestone(s) are <b>excluded</b> — a zero-duration marker carrying cost would earn its value the day it flips.');
+      return w.length ? '<div class="pscl-warn">' + w.join('<br>') + '</div>' : '';
+    }
+    function step1HTML(t) {
+      if (!t.groups) return '<div class="ps-empty">No activities to load cost onto yet.</div>';
+      return scopeWarnHTML(t.list._scope) + kpisHTML(t) +
+        '<div class="pd-card" style="padding:0;overflow:hidden;"><div class="pscl-scroll"><table class="pscl-tbl">' +
+        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th>Sub-WBS it appears under</th><th class="num">Assigned</th><th></th></tr></thead><tbody>' +
+        t.list.map(function (g) {
+          var wbss = {}; g.insts.forEach(function (r) { if (r.wbs) wbss[r.wbs] = 1; });
+          var codes = Object.keys(wbss);
+          return '<tr data-g="' + esc(g.name) + '"><td><b>' + esc(g.name) + '</b></td>' +
+            '<td class="num">' + g.insts.length + '</td>' +
+            '<td class="pscl-note">' + esc(codes.slice(0, 4).join(', ')) + (codes.length > 4 ? ' … (' + codes.length + ')' : '') + '</td>' +
+            '<td class="num">' + (g.total == null ? '<span class="pscl-note">—</span>' : money(g.total)) + '</td>' +
+            '<td><button class="pd-btn" data-ren="' + esc(g.name) + '" style="height:28px;font-size:11.5px;">Rename</button></td></tr>';
+        }).join('') + '</tbody></table></div></div>';
+    }
+    function step2HTML(t) {
+      if (!t.groups) return '<div class="ps-empty">No activities to price yet.</div>';
+      return kpisHTML(t) +
+        '<p class="pscl-note" style="margin:0 0 8px;">One figure per activity name — the total cost of that work across every place it is programmed. Step 3 splits it.</p>' +
+        '<div class="pd-card" style="padding:0;overflow:hidden;"><div class="pscl-scroll"><table class="pscl-tbl">' +
+        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num" style="width:190px;">Total cost (₱)</th><th class="num">Per occurrence (equal)</th></tr></thead><tbody>' +
+        t.list.map(function (g) {
+          return '<tr><td><b>' + esc(g.name) + '</b></td><td class="num">' + g.insts.length + '</td>' +
+            '<td class="num"><input class="pscl-in" data-cost="' + esc(g.name) + '" value="' + (g.total == null ? '' : g.total) + '" placeholder="0.00"></td>' +
+            '<td class="num pscl-note">' + (g.total == null ? '—' : money(g.total / Math.max(1, g.insts.length))) + '</td></tr>';
+        }).join('') + '</tbody></table></div></div>';
+    }
+    function step3HTML(t) {
+      if (!t.groups) return '<div class="ps-empty">Nothing to distribute yet.</div>';
+      if (!selGroup || !groupByName(selGroup)) selGroup = (t.list.filter(function (g) { return g.total != null; })[0] || t.list[0]).name;
+      var g = groupByName(selGroup);
+      var d = distribute(g), sum = pctSum(g), issue = groupIssue(g);
+      var lv = LOC_LEVELS;
+      return '<div style="display:flex;gap:14px;align-items:flex-start;">' +
+        '<div class="pd-card" style="flex:0 0 250px;padding:0;overflow:hidden;"><div class="pscl-scroll"><table class="pscl-tbl">' +
+        '<thead><tr><th>Activity</th><th class="num">n</th></tr></thead><tbody>' +
+        t.list.map(function (x) {
+          var iss = x.total != null && groupIssue(x);
+          return '<tr class="' + (x.name === selGroup ? 'on' : '') + '" data-pick="' + esc(x.name) + '" style="cursor:pointer;">' +
+            '<td>' + esc(x.name) + (x.total == null ? ' <span class="pscl-note">(no cost)</span>' : (iss ? ' <span class="pscl-bad" title="' + esc(iss) + '">!</span>' : '')) + '</td>' +
+            '<td class="num">' + x.insts.length + '</td></tr>';
+        }).join('') + '</tbody></table></div></div>' +
+        '<div style="flex:1 1 0%;min-width:0;">' +
+          '<div class="pscl-bar" style="padding:0 0 8px;">' +
+            '<b style="font-size:13px;">' + esc(g.name) + '</b>' +
+            '<span class="pscl-note">' + (g.total == null ? 'no cost assigned in step 2' : money(g.total) + ' across ' + g.insts.length + ' occurrence(s)') + '</span>' +
+            '<span style="margin-left:auto;"></span>' +
+            '<span class="ps-vs-seg"><button data-mode="equal" class="' + (g.mode === 'equal' ? 'on' : '') + '">Split equally</button>' +
+            '<button data-mode="pct" class="' + (g.mode === 'pct' ? 'on' : '') + '">By percentage</button></span>' +
+            (g.mode === 'pct' ? '<button class="pd-btn" id="ps-cl-even" title="Set every share to an equal percentage">Even out</button>' : '') +
+          '</div>' +
+          (g.mode === 'pct'
+            ? '<div class="' + (Math.abs(sum - 100) > 0.01 ? 'pscl-warn' : 'pscl-note') + '" style="margin-bottom:8px;">Shares total <b>' + sum + '%</b>' +
+              (Math.abs(sum - 100) > 0.01 ? ' — ' + (sum > 100 ? (r2(sum - 100) + '% over') : (r2(100 - sum) + '% still to allocate')) + '. Apply is refused until this is 100%.' : ' — complete.') + '</div>'
+            : '') +
+          '<div class="pd-card" style="padding:0;overflow:hidden;"><div class="pscl-scroll"><table class="pscl-tbl">' +
+          '<thead><tr><th>Sub-WBS</th><th>Activity ID</th>' +
+          lv.map(function (l) { return '<th>' + esc(l.name) + '</th>'; }).join('') +
+          '<th class="num" style="width:130px;">Share %</th><th class="num">Cost</th></tr></thead><tbody>' +
+          d.map(function (x, i) {
+            var r = x.r, p = pctOf(g, r);
+            return '<tr><td><code>' + esc(r.wbs || '—') + '</code></td><td class="pscl-note">' + esc(r.activity_id || '—') + '</td>' +
+              lv.map(function (l) { return '<td class="pscl-note">' + esc(locValOf(r, l.id) || '—') + '</td>'; }).join('') +
+              '<td class="num">' + (g.mode === 'pct'
+                ? '<input class="pscl-in" style="max-width:96px;" data-pct="' + esc(instKey(r)) + '" value="' + (p == null ? '' : p) + '" placeholder="0">'
+                : '<span class="pscl-note">' + r2(100 / Math.max(1, g.insts.length)) + '%</span>') + '</td>' +
+              '<td class="num">' + (x.amount == null ? '<span class="pscl-note">—</span>' : money(x.amount)) + '</td></tr>';
+          }).join('') + '</tbody></table></div></div>' +
+          (issue ? '<p class="pscl-note" style="margin-top:8px;">This activity is <span class="pscl-bad">' + esc(issue) + '</span>.</p>'
+                 : '<p class="pscl-note" style="margin-top:8px;">Distribution complete — the occurrences add up to ' + money(g.total) + ' exactly.</p>') +
+        '</div></div>';
+    }
+    function step4HTML(t) {
+      if (!t.priced) return '<div class="ps-empty">Assign a cost in step 2 first — there is nothing to review yet.</div>';
+      if (!LOC_LEVELS.length) return scopeWarnHTML(t.list._scope) +
+        '<div class="pscl-warn">This project has no <b>Location Breakdown</b> levels, so there are no floors or zones to stack. Set them up in the schedule’s <b>Group ▾ → Location Breakdown</b>, then tag the activities.</div>' + kpisHTML(t);
+      var levelId = clDefaultLevel();
+      var tw = clTowerValues(levelId);
+      var onlyName = selGroup && groupByName(selGroup) && groupByName(selGroup).total != null ? selGroup : null;
+      var head = '<div class="pscl-bar" style="padding:0 0 10px;">' +
+        '<label class="pscl-note" for="ps-cl-actsel">Activity</label>' +
+        '<select class="pd-select" id="ps-cl-actsel" style="max-width:280px;">' +
+          '<option value="">All priced activities</option>' +
+          t.list.filter(function (g) { return g.total != null; }).map(function (g) {
+            return '<option value="' + esc(g.name) + '"' + (g.name === onlyName ? ' selected' : '') + '>' + esc(g.name) + ' — ' + money(g.total) + '</option>';
+          }).join('') +
+        '</select>' +
+        '<label class="pscl-note" for="ps-cl-lvlsel">Stack by</label>' +
+        '<select class="pd-select" id="ps-cl-lvlsel" style="max-width:180px;">' +
+          LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === levelId ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
+        '</select>' +
+        (tw && tw.values && tw.values.length
+          ? '<span class="ps-vs-seg"><button data-towers="all" class="' + (clAllTowers ? 'on' : '') + '">All ' + esc(tw.level.name) + 's</button>' +
+            '<button data-towers="one" class="' + (clAllTowers ? '' : 'on') + '">One</button></span>' +
+            (clAllTowers ? '' : '<select class="pd-select" id="ps-cl-twsel" style="max-width:180px;">' +
+              tw.values.map(function (v) { return '<option value="' + esc(v) + '"' + (clScope[tw.level.id] === v ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select>')
+          : '') +
+        '</div>';
+      function towerHTML(label, st) {
+        var max = st.rows.reduce(function (m, b) { return Math.max(m, b.amount); }, 0) || 1;
+        return '<div class="pscl-tower"><div class="pscl-towerh"><span>' + esc(label) + '</span><span class="m">' + money(st.total) + '</span></div>' +
+          (st.rows.length ? st.rows.map(function (b) {
+            return '<div class="pscl-lvl' + (b.amount ? '' : ' zero') + '" title="' + esc(b.loc + ' — ' + money(b.amount) + ' across ' + b.n + ' activit' + (b.n === 1 ? 'y' : 'ies')) + '">' +
+              '<span class="nm">' + esc(b.loc) + '</span>' +
+              '<span class="track"><i style="width:' + Math.max(2, Math.round((b.amount / max) * 100)) + '%;"></i></span>' +
+              '<span class="amt">' + money(b.amount) + '</span></div>';
+          }).join('') : '<div class="pscl-lvl zero"><span class="nm">—</span><span></span><span class="amt">no cost here</span></div>') +
+          (st.unlocated ? '<div class="pscl-lvl zero" title="These activities carry no value at this level, so they are reported on their own line rather than spread across the floors."><span class="nm">Not located</span><span></span><span class="amt">' + money(st.unlocated) + '</span></div>' : '') +
+          '</div>';
+      }
+      var body;
+      if (tw && tw.values && tw.values.length && clAllTowers) {
+        body = '<div class="pscl-stk">' + tw.values.map(function (v) {
+          return towerHTML(v, costStack(levelId, tw.level.id, v, onlyName));
+        }).join('') + '</div>';
+      } else {
+        if (tw && tw.values && tw.values.length && !clScope[tw.level.id]) clScope[tw.level.id] = tw.values[0];
+        var label = (tw && tw.values && tw.values.length) ? clScope[tw.level.id] : (onlyName || 'Whole project');
+        body = '<div class="pscl-stk">' + towerHTML(label, costStack(levelId, null, null, onlyName)) + '</div>';
+      }
+      var st0 = costStack(levelId, null, null, onlyName);
+      return head + kpisHTML(t) + body +
+        '<p class="pscl-note" style="margin-top:10px;">Showing <b>' + esc(onlyName || 'every priced activity') + '</b> stacked by <b>' + esc(stkLevelName(levelId)) + '</b>. ' +
+        'In scope: ' + money(st0.total) + (st0.unlocated ? ' · ' + money(st0.unlocated) + ' carries no ' + esc(stkLevelName(levelId)) + ' value' : '') +
+        '. These are the figures <b>Apply to schedule</b> writes as Planned IBB.</p>';
+    }
+    function panelHTML() {
+      var t = totals();
+      if (step === 0) return step1HTML(t);
+      if (step === 1) return step2HTML(t);
+      if (step === 2) return step3HTML(t);
+      return step4HTML(t);
+    }
+    function paint() {
+      var rail = document.getElementById('ps-cl-rail'), panel = document.getElementById('ps-cl-panel');
+      if (!rail || !panel) return;
+      rail.innerHTML = railHTML();
+      panel.innerHTML = panelHTML();
+      wirePanel();
+      if (window.Icons) Icons.hydrate(panel);
+    }
+    function wirePanel() {
+      var rail = document.getElementById('ps-cl-rail'), panel = document.getElementById('ps-cl-panel');
+      rail.querySelectorAll('[data-step]').forEach(function (b) { b.onclick = function () { step = +b.dataset.step; paint(); }; });
+      // step 1 — rename
+      panel.querySelectorAll('[data-ren]').forEach(function (b) {
+        b.onclick = function () {
+          var old = b.dataset.ren, n = prompt('Rename this activity everywhere it occurs in the schedule:', old);
+          if (n == null) return;
+          renameGroup(old, n);
+        };
+      });
+      // step 2 — the total
+      panel.querySelectorAll('[data-cost]').forEach(function (inp) {
+        inp.onchange = function () {
+          var e = entry(inp.dataset.cost), v = num(inp.value);
+          e.total = (inp.value.trim() === '') ? null : (v == null ? null : r2(v));
+          markDirty(); paint();
+        };
+      });
+      // step 3 — pick, mode, shares
+      panel.querySelectorAll('[data-pick]').forEach(function (tr) { tr.onclick = function () { selGroup = tr.dataset.pick; paint(); }; });
+      panel.querySelectorAll('[data-mode]').forEach(function (b) {
+        b.onclick = function () { entry(selGroup).mode = b.dataset.mode; markDirty(); paint(); };
+      });
+      var even = document.getElementById('ps-cl-even');
+      if (even) even.onclick = function () {
+        var g = groupByName(selGroup); if (!g) return;
+        var e = entry(selGroup), n = g.insts.length, each = r2(100 / n), run = 0;
+        e.pct = {};
+        g.insts.forEach(function (r, i) { var p = (i === n - 1) ? r2(100 - run) : each; run = r2(run + p); e.pct[instKey(r)] = p; });
+        markDirty(); paint();
+      };
+      panel.querySelectorAll('[data-pct]').forEach(function (inp) {
+        inp.onchange = function () {
+          var e = entry(selGroup), v = num(inp.value);
+          if (inp.value.trim() === '' || v == null) delete e.pct[inp.dataset.pct]; else e.pct[inp.dataset.pct] = r2(v);
+          markDirty(); paint();
+        };
+      });
+      // step 4 — the review controls
+      var asel = document.getElementById('ps-cl-actsel');
+      if (asel) asel.onchange = function () { selGroup = asel.value || null; paint(); };
+      var lsel = document.getElementById('ps-cl-lvlsel');
+      if (lsel) lsel.onchange = function () { clLevel = lsel.value; paint(); };
+      panel.querySelectorAll('[data-towers]').forEach(function (b) { b.onclick = function () { clAllTowers = b.dataset.towers === 'all'; paint(); }; });
+      var tsel = document.getElementById('ps-cl-twsel');
+      if (tsel) tsel.onchange = function () { var tw = clTowerValues(clDefaultLevel()); if (tw && tw.level) clScope[tw.level.id] = tsel.value; paint(); };
+    }
+    function wireBar() {
+      if (wired) return; wired = true;
+      var sv = document.getElementById('ps-cl-save'); if (sv) sv.onclick = save;
+      var ap = document.getElementById('ps-cl-apply'); if (ap) ap.onclick = applyAll;
+    }
+    async function open(p, u) {
+      wireBar();
+      if (!p) { var panel = document.getElementById('ps-cl-panel'); if (panel) panel.innerHTML = '<div class="ps-empty">Select a project to load cost onto its activities.</div>'; return; }
+      if (p !== curPid) { curPid = p; curUid = u; selGroup = null; clScope = {}; clLevel = null; step = 0; await load(); }
+      curUid = u;
+      paint();
+    }
+    // ⚠️ repaint() never re-reads the config — renderAll() fires on every schedule edit, and a reload
+    // there would throw away whatever the planner is part-way through typing.
+    function repaint() { if (curPid) paint(); }
+    return { open: open, repaint: repaint, save: save, apply: applyAll,
+      _internals: { buildGroups: buildGroups, distribute: distribute, pctSum: pctSum, groupIssue: groupIssue,
+        totals: totals, instKey: instKey, scopeInfo: scopeInfo, costStack: costStack, allocIndex: allocIndex,
+        setCfg: function (c) { cfg = c; }, getCfg: function () { return cfg; }, setSel: function (n) { selGroup = n; },
+        setScope: function (s2) { clScope = s2; } } };
+  })();
+
   function switchTab(tab) {
     activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
+    var vcl = document.getElementById('ps-view-costload'); if (vcl) vcl.style.display = tab === 'costload' ? '' : 'none';
     document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
     document.getElementById('ps-view-wbs').style.display = tab === 'wbs' ? '' : 'none';
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
@@ -21984,12 +22575,12 @@
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'))));
+    var name = tab === 'costload' ? 'Cost Loading' : tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'))));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
     // Planner Cockpit now hosts the Last Planner weekly section too — render both.
-    if (tab === 'schedule') renderGantt(); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else if (tab === 'calendars') renderCalendarsView();
+    if (tab === 'schedule') renderGantt(); else if (tab === 'costload') CostLoading.open(pid, UID); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else if (tab === 'calendars') renderCalendarsView();
     else { renderPlanner(); openLastPlanner(); }
   }
 

@@ -1,3 +1,40 @@
+## Cost Loading — the four-step exercise that puts money on the activities (2026-08-25) — fmlozano
+Owner: *"there must be a cost loading feature… Step 1: enlisting all activity level activities found
+under the execution phase… Step 2: assigning the cost for each activity… Step 3: distribution for each
+activity under each sub-WBS, equally or by a percentage… Step 4: consolidation and review, a vertical
+stacking dependent on the selected activity."* Built as its own tab (**Cost Loading**, left of Cost/EVM),
+a rail of four steps over one shared config. **Run `migrations/2026-08-25-schedule-cost-loading.sql`.**
+- ⚠️ **The money is NOT stored in the new table.** `schedule_cost_loading` holds only the *working
+  state* — a total per activity name and how it is split. **Apply writes `project_schedule.planned_cost`**,
+  the column Cost/EVM, the Excel export and Cash Flow's cost-basis S-curve already read. A second
+  per-activity cost store is how two screens end up disagreeing about the same peso.
+- ⚠️ **Step 1 groups by NAME, not by WBS** — that is what the exercise *is*: "Formworks" is one cost
+  line the programme happens to run 40 times. Grouping by WBS would make the planner price the same
+  work 40 times over, which is the spreadsheet this replaces. Rename in step 1 and it is a **real
+  schedule edit on every instance** (through `persist()`, so undoable and audited), and the pricing is
+  carried across with the name — otherwise a planner orphans their own total by renaming.
+- ⚠️ **Scope is execution-phase leaves only, and milestones are excluded.** A zero-duration marker
+  carrying cost earns its value the day it flips, which is precisely the milestone padding a
+  cost-loaded programme must not allow. A project with no execution branch is **told**, then offered
+  every leaf, rather than silently loaded with initiation and closeout lines.
+- ⚠️ **Instances are keyed on `activity_id`, never the row uuid.** A re-import replaces every row and
+  mints new uuids; a uuid-keyed distribution would silently reset itself to "equal" on the next import.
+  No activity id → a stable `wbs|name` fallback.
+- ⚠️ **The rounding remainder lands on the LAST instance so the split sums to the total EXACTLY.**
+  Verified by executing the shipped `distribute()`: 1,000,000 over three → 333,333.33 / 333,333.33 /
+  333,333.**34**, summing to 1,000,000. The naive version comes to 999,999.99 and the project total
+  drifts away from the figure the planner agreed.
+- ⚠️ **A percentage split that does not add to 100% is REFUSED, never normalised** — normalising
+  changes figures the planner typed with nothing on screen to say it happened. Verified: 30/60 returns
+  `null` amounts and `_invalid`, and Apply names the offending activity instead of writing.
+- ⚠️ **Apply states how many rows already carry a Planned IBB** from an import or an earlier loading and
+  will be replaced — a count in the confirm, not a quiet overwrite. Nothing to write says so.
+- Step 4 is the **vertical stack of the money**: towers side by side (or one pinned), one row per level,
+  the bar sized by that level's **share of the selected activity's cost**, so the tallest bar is where
+  the money is. Its own scope state, deliberately separate from the Gantt stack's.
+- ⚠️ Tolerant of the un-run migration, like the builder: the exercise works in the browser and says
+  *"Not saved — run migrations/…"* rather than failing to open.
+
 ## Both stacking windows are resizable, and the tower card hugs its own drawing (2026-08-24) — fmlozano
 Owner, on the vertical stacking: *"can the window size containing the vertical stacking be resizable…
 the total width of the vertical stacking based on information must also be same with the width of the

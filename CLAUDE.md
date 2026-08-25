@@ -84,6 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (c) — Cost Loading: assigning the project's cost to its activities
+Owner: *"for the project schedule, there must be a cost loading feature… enlist the execution-phase
+activities, assign a cost to each, distribute it across each sub-WBS equally or by percentage, then
+consolidate and review as a vertical stacking."* A new **Cost Loading** tab in the Project Schedule.
+**Run `migrations/2026-08-25-schedule-cost-loading.sql`.** `MODULE_V` → `20260825h`.
+- ⚠️ **No new home for the money.** The new `schedule_cost_loading` table holds the working state only;
+  applying writes `project_schedule.planned_cost` — the column Cost/EVM, the exports and Cash Flow's
+  cost-basis S-curve already read. A second per-activity cost store would let two screens disagree
+  about the same peso.
+- ⚠️ Priced by activity **NAME**, not by WBS instance — one "Formworks" cost line, not 40. Renaming in
+  step 1 edits the schedule for real and carries the pricing with it.
+- ⚠️ Splits sum to the assigned total **exactly** (remainder on the last instance), and a percentage
+  set that misses 100% is refused rather than normalised. Both verified by executing the shipped code.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-25 (b) — Vendor performance lands in the prc-app; A3's tail; design decisions #2 and #7
 Owner: *"Yes, use the push pattern like need-by. Let's do A3's tail after. Then proceed with the 3
 open design questions."* **Run `migrations/2026-08-25-package-adoption.sql`** (Planners) and
