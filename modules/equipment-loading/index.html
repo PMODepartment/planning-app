@@ -147,8 +147,14 @@
     .eq-site { display:flex; gap:14px; align-items:flex-start; }
     .eq-site-rail { flex:0 0 clamp(230px, 23vw, 320px); min-width:0; }
     .eq-site-canvas { flex:1 1 0%; min-width:0; }
+    /* ⚠️ The plan is a SCROLLER now, and the zoom lives on an inner wrapper — not on the stage.
+       A percentage padding resolves against the CONTAINING BLOCK's width, so widening the stage
+       itself would double its width while its padding-bottom kept the old container's height: the
+       backdrop would letterbox and every traced tower would sit off its building. The wrapper is
+       what gets the zoomed width; the stage stays 100% of it and keeps the aspect exactly. */
     .eq-plan { position:relative; width:100%; background:var(--pd-bg); border:1px solid var(--pd-line);
-      border-radius:10px; overflow:hidden; }
+      border-radius:10px; overflow:auto; max-height:clamp(320px, 68vh, 780px); overscroll-behavior:contain; }
+    .eq-plan-zoom { position:relative; width:100%; }
     .eq-plan-stage { position:relative; width:100%; height:0; }
     .eq-plan-grid { position:absolute; inset:0; pointer-events:none; opacity:.45;
       background-image:linear-gradient(var(--pd-line) 1px, transparent 1px), linear-gradient(90deg, var(--pd-line) 1px, transparent 1px);
@@ -157,6 +163,20 @@
     .eq-plan-svg { position:absolute; inset:0; width:100%; height:100%; touch-action:none; }
     .eq-plan.is-draw .eq-plan-svg { cursor:crosshair; }
     .eq-shape polygon { cursor:grab; }
+    /* The tower under a dragged equipment chip. Deliberately loud — a drop that lands on the wrong
+       building is silent otherwise, and the shapes are close together on a real plan. */
+    .eq-shape.dropok polygon { fill-opacity:.5 !important; stroke-width:5; }
+    .eq-blk-row.dropok { border-color:var(--pd-red); background:var(--pd-red-light); }
+    .eq-chip[draggable="true"] { cursor:grab; }
+    .eq-chip.dragging { opacity:.45; }
+    .eq-chip-grip { color:var(--pd-muted); font-size:12px; line-height:1; letter-spacing:-1px; flex:none; cursor:grab; }
+    .eq-zoom { display:inline-flex; align-items:center; gap:0; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .eq-zoom button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:13px;
+      font-weight:700; cursor:pointer; padding:6px 10px; min-width:32px; }
+    .eq-zoom button + button, .eq-zoom .lvl + button { border-left:1px solid var(--pd-line); }
+    .eq-zoom button:hover { background:var(--pd-bg); }
+    .eq-zoom .lvl { font-size:12px; font-weight:700; color:var(--pd-muted); padding:0 8px; min-width:46px;
+      text-align:center; border-left:1px solid var(--pd-line); }
     .eq-shape.sel polygon { stroke-width:3.5; }
     .eq-shape.drag polygon { cursor:grabbing; opacity:.85; }
     .eq-shape text { pointer-events:none; user-select:none; font-family:inherit; font-weight:800;
@@ -190,6 +210,16 @@
     .eq-blk-sw { width:12px; height:12px; border-radius:3px; flex:none; border:1px solid rgba(0,0,0,.15); }
     .eq-blk-btn { border:0; background:none; color:var(--pd-muted); cursor:pointer; font-size:12px; padding:0 3px; }
     .eq-blk-btn:hover { color:var(--pd-red); }
+    /* ⚠️ Touch targets, measured: the zoom buttons came out 31px and the equipment chips 29px on a
+       375px phone, under the 44px minimum the rest of the app holds to. It matters more here than
+       usual — HTML5 drag-and-drop does not fire from touch, so on a phone the chip TAP is the only
+       way to assign, and it was the smallest target on the screen. */
+    @media (max-width: 700px) {
+      .eq-zoom button { min-height:44px; padding:0 14px; }
+      .eq-zoom .lvl { line-height:44px; }
+      .eq-chip { min-height:44px; }
+      .eq-blk-row { min-height:44px; }
+    }
     @media (max-width: 1000px) {
       /* align-items:stretch is load-bearing: in column direction the inherited flex-start sizes
          each pane to its CONTENT, and the stage is an empty padding-box, so the plan collapsed
@@ -301,6 +331,13 @@
           <button class="pd-btn" id="eq-site-draw" title="Trace a tower's outline on the plan">Draw shape</button>
           <button class="pd-btn" id="eq-site-addblk" title="Add a rectangle you can then reshape">+ Rectangle</button>
           <span class="eq-tb-sep"></span>
+          <span class="eq-zoom" title="Ctrl + scroll over the plan also zooms">
+            <button id="eq-zoom-out" aria-label="Zoom out">&minus;</button>
+            <span class="lvl" id="eq-zoom-lvl">100%</span>
+            <button id="eq-zoom-in" aria-label="Zoom in">+</button>
+            <button id="eq-zoom-fit" title="Fit the whole plan">Fit</button>
+          </span>
+          <span class="eq-tb-sep"></span>
           <label for="eq-site-level" style="font-size:12.5px;">Site level</label>
           <select class="pd-select" id="eq-site-level" title="Which Location Breakdown level holds the towers"></select>
           <button class="pd-btn" id="eq-site-pull" title="Read the tower names from this project's schedule"><span data-ico="refresh" data-ico-size="15"></span> Pull towers from the schedule</button>
@@ -316,7 +353,7 @@
             </div>
             <div class="eq-card" style="margin-bottom:10px;">
               <h3>Assign equipment</h3>
-              <p class="eq-site-hint">Pick a piece of equipment, then click the tower it works on. Click a second tower to <b>share</b> it between them.</p>
+              <p class="eq-site-hint"><b>Drag</b> a piece of equipment onto a tower — on the plan or in the list above. (Tapping still works: tap the chip, then the tower.) Drop it on a second tower to <b>share</b> it between them.</p>
               <div id="eq-site-chips"></div>
             </div>
             <div class="eq-card">
@@ -373,6 +410,11 @@
   var TOWERVALS_PAINTED = false;  // one repaint once they arrive, or renderSite would loop
   var TWIN = {};                  // block_id -> { start, end } | null — that tower's schedule window
   var shapeClip = null;           // copied shape geometry (Ctrl+C / Ctrl+V on the plan)
+  var planZoom = 1;               // 1 = the plan is as wide as the pane; it scrolls past that
+  // ⚠️ The floor is below 1 on purpose. The pane is height-capped, so a tall plan still overflows
+  // vertically at 100% — "Fit" has to be allowed to shrink or it would not fit anything.
+  var PLAN_ZMIN = 0.2, PLAN_ZMAX = 8;
+  var dragItemId = null;          // the equipment chip currently being dragged onto a tower
   var blkSel = null;              // the tower shape currently selected on the plan
   var drawing = false, drawPts = [];  // trace-a-tower mode and the points taken so far
   var PLANIMG_URL = null;         // object URL for the backdrop (revoked when it is replaced)
@@ -1676,7 +1718,8 @@
     if (PLAN.image_path && PLANIMG_FOR !== PLAN.image_path) { loadPlanImage(); return; }
     var H = planH(), counts = blockCounts();
 
-    var g = ['<div class="eq-plan-stage" style="padding-bottom:' + (H / PLAN_W * 100).toFixed(3) + '%;">'];
+    var g = ['<div class="eq-plan-zoom" style="width:' + (planZoom * 100).toFixed(2) + '%;">' +
+      '<div class="eq-plan-stage" style="padding-bottom:' + (H / PLAN_W * 100).toFixed(3) + '%;">'];
     if (PLANIMG_URL) g.push('<img class="eq-plan-img" src="' + PLANIMG_URL + '" alt="Site development plan">');
     else g.push('<div class="eq-plan-grid"></div>');
     g.push('<svg class="eq-plan-svg" viewBox="0 0 ' + PLAN_W + ' ' + H + '" id="eq-plan-svg">');
@@ -1700,7 +1743,7 @@
       g.push('<polygon class="eq-draw-line" points="' + ptsAttr(drawPts) + '"/>');
       drawPts.forEach(function (p) { g.push('<circle class="eq-vx" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="6"/>'); });
     }
-    g.push('</svg></div>');
+    g.push('</svg></div></div>');
     host.className = 'eq-plan' + (drawing ? ' is-draw' : '');
     host.innerHTML = g.join('');
     if (!PLAN.blocks.length && !drawPts.length) host.insertAdjacentHTML('beforeend',
@@ -1737,6 +1780,10 @@
       }).join('') : '<p class="eq-note">No towers yet.</p>';
       br.querySelectorAll('[data-brow]').forEach(function (el) {
         el.onclick = function (e) { if (e.target.closest('button')) return; blkSel = (blkSel === el.dataset.brow) ? null : el.dataset.brow; renderSite(); };
+        // ⚠️ The rail row accepts the same drop as the shape: at any zoom past "Fit" most towers are
+        // off screen, and a feature that only works when you can see the shape is one that stops
+        // working exactly when the plan gets big.
+        wireDropTarget(el, el.dataset.brow);
       });
       br.querySelectorAll('[data-bren]').forEach(function (el) { el.onclick = function () { renameBlock(el.dataset.bren); }; });
       br.querySelectorAll('[data-bdel]').forEach(function (el) { el.onclick = function () { deleteBlock(el.dataset.bdel); }; });
@@ -1757,12 +1804,27 @@
     var sitable = ITEMS.filter(function (i) { return canSite(i.category); });
     if (!sitable.length) rail.innerHTML = '<p class="eq-note">No vertical or ground equipment in the register yet.</p>';
     else rail.innerHTML = sitable.map(function (i) {
-      return '<div class="eq-chip' + (siteSel === i.id ? ' on' : '') + '" data-chip="' + esc(i.id) + '">' +
-        '<span class="eq-dot" style="background:' + catColor(i.category) + '"></span>' + esc(i.name) +
+      return '<div class="eq-chip' + (siteSel === i.id ? ' on' : '') + '" data-chip="' + esc(i.id) + '" draggable="true" title="Drag onto a tower, or click then click a tower">' +
+        '<span class="eq-chip-grip" aria-hidden="true">⠿</span>' +
+        '<span class="eq-dot" style="background:' + catColor(i.category) + '"></span>' +
+        (i.code ? '<b>' + esc(i.code) + '</b> ' : '') + esc(i.name) +
         '<span class="x">' + (towersOf(i).length ? esc(towerNamesOf(i).join(' + ')) : 'unassigned') + '</span></div>';
     }).join('');
     rail.querySelectorAll('[data-chip]').forEach(function (c) {
       c.onclick = function () { siteSel = (siteSel === c.dataset.chip) ? null : c.dataset.chip; renderSite(); };
+      // ⚠️ The chip stays clickable as well as draggable. Click-then-click is the only path that
+      // works on a touch screen (HTML5 drag-and-drop does not fire from touch), and it is also how
+      // a planner assigns to a tower that is scrolled out of view.
+      c.ondragstart = function (ev) {
+        dragItemId = c.dataset.chip;
+        siteSel = null;
+        c.classList.add('dragging');
+        try {
+          ev.dataTransfer.setData('text/plain', dragItemId);
+          ev.dataTransfer.effectAllowed = 'copy';
+        } catch (_e) {}
+      };
+      c.ondragend = function () { dragItemId = null; c.classList.remove('dragging'); clearDropMarks(); };
     });
 
     var lvl = document.getElementById('eq-site-level');
@@ -1781,7 +1843,7 @@
     var help = document.getElementById('eq-site-help');
     if (help) help.innerHTML = drawing
       ? 'Click each corner of the tower. Click the first point again, press Enter, or press <b>Finish shape</b> to close it; Esc cancels.'
-      : 'Click a tower to select it. Drag its outline to move it, drag a white handle to reshape it, or a faded handle to add a corner. Alt-click a corner to remove it. Double-click a tower to rename it.';
+      : '<b>Drag equipment from the left onto a tower</b> to assign it (or click the chip, then the tower). <b>Ctrl + scroll</b> zooms the plan; drag its outline to move a tower, a white handle to reshape it, a faded handle to add a corner, Alt-click a corner to remove one, double-click to rename.';
     var note = document.getElementById('eq-site-note');
     if (note) note.textContent = PLAN.blocks.length + ' tower(s) · ' +
       sitable.filter(function (i) { return towersOf(i).length; }).length + ' of ' + sitable.length + ' equipment assigned' +
@@ -1932,8 +1994,106 @@
             clamp((ev.clientY - r.top) / r.height * planH(), 0, planH())];
   }
 
+  // ---- Assign by dragging a chip onto a tower --------------------------------------------
+  // ⚠️ A drop only ever ADDS a placement. The click path toggles (click a tower the item is already
+  // on to take it off), but a drag that silently unassigned when you happened to drop on the wrong
+  // tower would destroy a placement the planner never meant to touch.
+  function clearDropMarks() {
+    document.querySelectorAll('.eq-shape.dropok, .eq-blk-row.dropok').forEach(function (el) { el.classList.remove('dropok'); });
+  }
+  function dropChipOn(blockId, ev) {
+    if (ev) ev.preventDefault();
+    clearDropMarks();
+    var id = dragItemId || (ev && ev.dataTransfer ? ev.dataTransfer.getData('text/plain') : '');
+    dragItemId = null;
+    var it = itemById(id); if (!it || !blockId) return;
+    if (!canSite(it.category)) {
+      UI.toast(it.name + ' is a tool or service vehicle — it moves around the whole site, so it is not tied to one tower.', 'error');
+      return;
+    }
+    if (hasTower(it, blockId)) { UI.toast(it.name + ' is already on ' + (blockName(blockId) || 'that tower') + '.'); return; }
+    toggleTower(it, blockId).then(function (ok) {
+      if (!ok) return;
+      UI.toast(it.name + ' → ' + (blockName(blockId) || 'tower') +
+        (towersOf(it).length > 1 ? ' · now shared across ' + towersOf(it).length + ' towers' : ''));
+      renderSite(); renderRegister(); renderAll();
+    });
+  }
+  // A drop target has to answer dragover with preventDefault or the browser refuses the drop.
+  function wireDropTarget(el, blockId) {
+    el.addEventListener('dragover', function (ev) {
+      if (!dragItemId) return;
+      ev.preventDefault();
+      try { ev.dataTransfer.dropEffect = 'copy'; } catch (_e) {}
+      el.classList.add('dropok');
+    });
+    el.addEventListener('dragleave', function () { el.classList.remove('dropok'); });
+    el.addEventListener('drop', function (ev) { ev.stopPropagation(); dropChipOn(blockId, ev); });
+  }
+
+  // ---- Zoom -------------------------------------------------------------------------------
+  // ⚠️ Zooming does NOT re-render: it sets the wrapper's width and fixes up the scroll offset, so a
+  // shape being dragged or a trace in progress survives the gesture. Everything else keeps working
+  // because every pointer position is read through getBoundingClientRect, which is already zoom-aware.
+  function setZoom(z, anchor) {
+    var host = document.getElementById('eq-plan'); if (!host) return;
+    var wrap = host.querySelector('.eq-plan-zoom'); if (!wrap) return;
+    var prev = planZoom;
+    planZoom = Math.max(PLAN_ZMIN, Math.min(PLAN_ZMAX, z));
+    if (planZoom === prev) { syncZoomLabel(); return; }
+    // Keep the point under the cursor (or the pane's centre) still, the way every map does it.
+    var r = host.getBoundingClientRect();
+    var ax = anchor ? anchor.x - r.left : host.clientWidth / 2;
+    var ay = anchor ? anchor.y - r.top : host.clientHeight / 2;
+    var fx = (host.scrollLeft + ax) / (host.clientWidth * prev);
+    var fy = (host.scrollTop + ay) / (host.clientWidth * prev * (planH() / PLAN_W));
+    wrap.style.width = (planZoom * 100).toFixed(2) + '%';
+    var newW = host.clientWidth * planZoom, newH = newW * (planH() / PLAN_W);
+    host.scrollLeft = fx * newW - ax;
+    host.scrollTop = fy * newH - ay;
+    syncZoomLabel();
+  }
+  // The zoom at which the whole plan is visible: never more than 1 (we do not blow a small plan up
+  // and call it a fit), and never less than the floor.
+  function fitZoom() {
+    var host = document.getElementById('eq-plan');
+    if (!host || !host.clientWidth) return 1;
+    var h = host.clientHeight, wouldBe = host.clientWidth * (planH() / PLAN_W);
+    var z = wouldBe > h ? h / wouldBe : 1;
+    return Math.max(PLAN_ZMIN, Math.min(1, z));
+  }
+  function syncZoomLabel() {
+    var l = document.getElementById('eq-zoom-lvl');
+    if (l) l.textContent = Math.round(planZoom * 100) + '%';
+    var o = document.getElementById('eq-zoom-out'), i = document.getElementById('eq-zoom-in');
+    if (o) o.disabled = planZoom <= PLAN_ZMIN;
+    if (i) i.disabled = planZoom >= PLAN_ZMAX;
+  }
+  // ⚠️ Bound ONCE on the container (which survives every re-render), and non-passive — a passive
+  // listener cannot preventDefault, and without that Ctrl+wheel zooms the whole browser page
+  // instead of the plan.
+  function wireZoom(host) {
+    if (host._eqZoomWired) return;
+    host._eqZoomWired = true;
+    host.addEventListener('wheel', function (ev) {
+      if (!ev.ctrlKey && !ev.metaKey) return;      // a plain wheel still scrolls the plan
+      ev.preventDefault();
+      var step = ev.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setZoom(planZoom * step, { x: ev.clientX, y: ev.clientY });
+    }, { passive: false });
+  }
+
   function wireSite(host) {
+    wireZoom(host);
+    syncZoomLabel();
     var svg = document.getElementById('eq-plan-svg'); if (!svg) return;
+    // Dropping on the sheet but not on a tower must say so rather than doing nothing quietly.
+    svg.addEventListener('dragover', function (ev) { if (dragItemId) ev.preventDefault(); });
+    svg.addEventListener('drop', function (ev) {
+      if (!dragItemId) return;
+      ev.preventDefault(); clearDropMarks(); dragItemId = null;
+      UI.toast('Drop it on a tower — that is what assigns the equipment.', 'error');
+    });
 
     if (drawing) {
       svg.onpointerdown = function (ev) {
@@ -1951,6 +2111,7 @@
 
     svg.querySelectorAll('.eq-shape').forEach(function (gEl) {
       var id = gEl.dataset.blk;
+      wireDropTarget(gEl, id);
       gEl.ondblclick = function (e) { e.stopPropagation(); renameBlock(id); };
       gEl.onpointerdown = function (ev) {
         if (ev.button) return;
@@ -2229,6 +2390,12 @@
     };
     planFile.onchange = function () { if (planFile.files && planFile.files[0]) uploadPlanImage(planFile.files[0]); };
     document.getElementById('eq-plan-detect').onclick = function () { if (pid) detectTowers(); };
+    document.getElementById('eq-zoom-in').onclick = function () { setZoom(planZoom * 1.25); };
+    document.getElementById('eq-zoom-out').onclick = function () { setZoom(planZoom / 1.25); };
+    document.getElementById('eq-zoom-fit').onclick = function () {
+      setZoom(fitZoom());
+      var h = document.getElementById('eq-plan'); if (h) { h.scrollLeft = 0; h.scrollTop = 0; }
+    };
     document.getElementById('eq-site-draw').onclick = function () {
       if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
       if (!drawing) { drawing = true; drawPts = []; blkSel = null; siteSel = null; renderSite(); }

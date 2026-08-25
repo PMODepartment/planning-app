@@ -8245,3 +8245,37 @@ naming the migration. All three earlier equipment suites still green; 0 function
 **Owner action, still the real fix:** run `migrations/2026-08-24-equipment-code-and-sharing.sql` in
 the Supabase SQL editor, then **reload the page** — PostgREST caches the schema and an open tab keeps
 the old one. `MODULE_V` → `20260824q`.
+
+---
+
+## 2026-08-24 — Equipment Loading Site Plan: Ctrl+scroll zoom, and drag equipment onto a tower
+
+**Zoom:** Ctrl (or Cmd) + scroll over the plan zooms around the cursor, with a **− / % / + / Fit**
+control in the toolbar so the gesture is discoverable.
+⚠️ **The zoom had to go on a new inner wrapper, not on the stage** — a percentage padding resolves
+against the *containing block's* width, so widening the stage would have doubled its width while its
+`padding-bottom` kept computing from the old container: the backdrop letterboxes, the shapes do not,
+and every traced tower sits off its building. Measured: aspect stays 1000/700 exactly at 100% and
+152%, and a point under the cursor drifts 1px across three notches.
+⚠️ **Zooming does not re-render** (a shape mid-drag survives it), the wheel listener is bound once
+and **non-passive** — a passive one cannot `preventDefault`, and Ctrl+wheel would zoom the browser
+page instead — and the floor is **0.2, not 1**, because the pane is height-capped and a Fit that
+cannot shrink fits nothing (it lands at 77% on the test plan).
+
+**Drag to assign:** equipment chips are draggable onto the tower shape **or** its row in the rail,
+which lights up as a target.
+⚠️ **A drop only ever ADDS a placement** — the click path still toggles, but a drag that silently
+unassigned because you dropped on the wrong tower would destroy a placement nobody meant to touch.
+⚠️ **The rail row is a target too**: past Fit most towers are off screen, and a feature that only
+works while you can see the shape stops working exactly when the plan gets big. ⚠️ **Click-then-click
+is kept**, because HTML5 drag-and-drop does not fire from touch — which is also why the phone rules
+now raise chips, tower rows and zoom buttons to 44px (measured at 29–31px before). A tool dropped on
+a tower, or a drop that misses every tower, is refused **with the reason** rather than ignored.
+
+**Verified** by slicing the shipped zoom/drop functions out of the file and driving them in a real
+browser against the shipped CSS — aspect preserved, anchor drift 1px, Ctrl+wheel prevented while a
+plain wheel does not zoom, clamping at both ends, Fit fitting vertically, drops on both targets, the
+repeat drop refusing to unassign, and no claim on a drag the plan did not start. Phone at 375px: 44px
+targets, 0 page horizontal scroll; desktop unchanged. All four earlier equipment suites green, 0
+functions lost. ⚠️ **Not verified signed in** — the drop's write is exercised against a stub.
+`MODULE_V` → `20260825d` (another session had taken `20260825c` while this was in flight; a third token so the cache key means one build, not two).

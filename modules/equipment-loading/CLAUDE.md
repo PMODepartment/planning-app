@@ -303,3 +303,58 @@ banner naming the migration rather than the column. Parse clean, CSS balanced, *
 (after the earlier three). Until then codes and tower sharing are simply not stored, and the module
 now says so instead of refusing the save. ⚠️ After running it, **reload the page**: PostgREST caches
 the schema, and an already-open tab keeps the old one.
+
+---
+
+## 2026-08-24 — Site Plan: Ctrl+scroll zoom, and drag a chip onto a tower to assign it
+
+Two owner asks, both about making the plan usable on a real site drawing rather than a fixture.
+
+**1. Zoom.** Ctrl (or Cmd) + scroll over the plan zooms around the cursor; the pane scrolls at any
+zoom past fit. A **− / % / + / Fit** control sits in the toolbar so the gesture is discoverable, and
+the help line names it.
+- ⚠️ **The zoom lives on a new inner wrapper, NOT on the stage** — and this is the whole trap. A
+  percentage padding resolves against the **containing block's** width, so widening the stage itself
+  would double its width while `padding-bottom` kept computing from the old container: the backdrop
+  would letterbox while the shapes did not, and every traced tower would sit off its building. The
+  wrapper takes the zoomed width; the stage stays 100% of it. **Measured: aspect 1.4286 = 1000/700
+  at both 100% and 152%.**
+- ⚠️ **Zooming does not re-render.** It sets the wrapper's width and fixes the scroll offset, so a
+  shape mid-drag or a trace in progress survives the gesture. Everything else keeps working because
+  every pointer position is read through `getBoundingClientRect`, which is already zoom-aware.
+- ⚠️ **The wheel listener is bound ONCE on the container (which survives every re-render) and is
+  non-passive.** A passive listener cannot `preventDefault`, and without that Ctrl+wheel zooms the
+  whole browser page instead of the plan. A plain wheel still scrolls the plan — asserted both ways.
+- ⚠️ **`PLAN_ZMIN` is 0.2, not 1.** The pane is height-capped, so a tall plan still overflows
+  vertically at 100%; a Fit that could not shrink would not fit anything. Measured: Fit lands at
+  **77%** with the whole plan inside the pane both ways.
+- Anchor stability measured: a plan point under the cursor drifts **1px across three zoom notches**
+  (rounding, plus `clientWidth` changing when the scrollbar appears).
+
+**2. Drag an equipment chip onto a tower.** Chips carry a grip and their code, and drop onto either
+the **shape on the plan** or the **tower row in the rail**; the target lights up while dragging.
+- ⚠️ **A drop only ever ADDS a placement.** The click path still toggles (click a tower the item is
+  already on to take it off), but a drag that silently unassigned when you dropped on the wrong tower
+  would destroy a placement nobody meant to touch. Dropping on a tower it is already on says so.
+- ⚠️ **The rail row is a drop target as well as the shape** — past Fit most towers are off screen,
+  and a feature that only works while you can see the shape stops working exactly when the plan gets
+  big.
+- ⚠️ **Click-then-click is kept, not replaced.** HTML5 drag-and-drop does not fire from touch, so on
+  a phone tapping the chip and then the tower is the only path — which is also why the phone rules
+  raise chips, tower rows and zoom buttons to the 44px minimum (measured at 29–31px before).
+- A tool or service vehicle dropped on a tower is refused **with the reason**, not ignored; so is a
+  drop that lands on the sheet but not on a tower.
+- The plan does not claim a drag it did not start (files, text): `dragover` only preventDefaults
+  while one of our chips is in flight.
+
+**Verified** — the shipped `setZoom` / `fitZoom` / `syncZoomLabel` / `wireZoom` / `clearDropMarks` /
+`wireDropTarget` / `dropChipOn` sliced out of the file and driven in a real browser against the
+shipped CSS: aspect preserved at zoom, 1px anchor drift, Ctrl+wheel prevented and a plain wheel not
+zooming, clamping at both ends with the buttons disabling, Fit fitting vertically, drops landing on
+the shape and on the rail row, the repeat drop refusing to unassign, the tool refusal, the
+drop-on-empty-sheet message, and no claim on a foreign drag. Phone at a 375px layout viewport: 44px
+chips/rows/zoom buttons, 0 page horizontal scroll; desktop unchanged at 1280. All four earlier
+equipment suites still green, parse clean, CSS balanced, **0 functions lost**.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so the drop's actual write to
+`equipment_tower_links` is exercised against a stub, not against real data.
