@@ -8373,3 +8373,36 @@ repeat drop refusing to unassign, and no claim on a drag the plan did not start.
 targets, 0 page horizontal scroll; desktop unchanged. All four earlier equipment suites green, 0
 functions lost. ⚠️ **Not verified signed in** — the drop's write is exercised against a stub.
 `MODULE_V` → `20260825d` (another session had taken `20260825c` while this was in flight; a third token so the cache key means one build, not two).
+
+---
+
+## 2026-08-24 — Equipment Loading Site Plan: the window is fixed, the drawing scales, the view pans
+
+Owner: the window size should be retained, zoom should affect the scale, and the inside should pan —
+like AutoCAD. The previous pass got the first half wrong.
+
+⚠️ **`max-height` was the defect**: the pane grew and shrank with its own content, so at low zoom the
+*window* changed size instead of the drawing. It is a **fixed height** now. **Measured: the pane
+stays 475px at 30%, 100% and 300% zoom while the drawing goes 278 → 911 → 2733px.**
+
+**Pan** is a drag on the empty sheet or a **middle-button drag from anywhere**; **double-click the
+sheet is Zoom Extents**, and the plan opens fitted.
+⚠️ **Panning is scroll, not a transform** — the zoom already makes the drawing wider than its window,
+so a drag only moves the scroll offset. One source of truth for where the plan is; a transform would
+give the pointer maths a second frame to reconcile, which is how dragging a tower ends up landing
+somewhere else once the plan has been panned. ⚠️ **A left-drag pans only from the empty sheet**
+(dragging a shape moves the tower — stealing that would make the plan uneditable when zoomed), ⚠️ **a
+pan is not a click** (it was clearing the tower selection every time), and there is **no pan while
+drawing or while a chip is picked**. ⚠️ **`margin:auto`, never flex centring** — a flex container
+centring an overflowing child makes the left edge unreachable; measured centred at 0.5× and
+`scrollLeft = 0` still reachable at 4×. ⚠️ **`touch-action:none` on desktop but `pan-y` on phones**,
+or a finger landing on a full-width plan would trap the page.
+
+**Verified** in a real browser against the shipped CSS with `wirePan` / `setZoom` / `fitZoom` sliced
+out of the file: constant window height across three zooms, the drag moving scroll by exactly the
+drag delta, the pan not clicking through, a left-drag on a polygon **not** panning while a middle-drag
+from the same point does, a touch drag panning, and the phone rules (422px window, `pan-y`, 44px
+buttons, 0 page horizontal scroll). ⚠️ One earlier reading looked like the shape guard had failed —
+that was the harness dispatching on the pane rather than on the polygon, which is not what a real
+pointer does. All four equipment suites green, 0 functions lost. ⚠️ **Not verified signed in.**
+`MODULE_V` → `20260825f` (another session had taken `e` while this was in flight).

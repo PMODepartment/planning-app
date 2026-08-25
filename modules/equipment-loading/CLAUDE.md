@@ -358,3 +358,51 @@ equipment suites still green, parse clean, CSS balanced, **0 functions lost**.
 
 ⚠️ **Not verified signed in** — the anon key has no grants, so the drop's actual write to
 `equipment_tower_links` is exercised against a stub, not against real data.
+
+---
+
+## 2026-08-24 — Site Plan pans like CAD: the window is fixed, the drawing scales
+
+Owner: *"hopefully the size of the window is retained — zooming affects the scale, and the inside of
+the window is able to pan, similar to AutoCAD."* Right, and the previous pass got the first half
+wrong.
+
+⚠️ **`max-height` was the defect.** The pane grew and shrank with its own content, so at low zoom
+the *window* changed size instead of the drawing — which is exactly what made zooming feel like the
+window was moving. It is now a **fixed `height`** (clamped 360–780px, 300–520px on a phone).
+**Measured: the pane stays 475px at 30%, 100% and 300% zoom while the drawing goes 278 → 911 →
+2733px.**
+
+**Pan** is a drag on the empty sheet, or a **middle-button drag from anywhere** (the CAD habit, and
+the escape hatch when towers cover the whole window). **Double-clicking the empty sheet is Zoom
+Extents.** The plan also opens fitted.
+- ⚠️ **Panning is SCROLL, not a transform.** The zoom already works by making the drawing wider than
+  its window, so a drag only has to move the scroll offset. That keeps one source of truth for where
+  the plan is — a transform would give the pointer maths a second frame to reconcile, which is how
+  dragging a tower ends up landing somewhere else once the plan has been panned.
+- ⚠️ **A left-drag pans only from the EMPTY sheet.** Dragging a shape moves the tower; stealing that
+  gesture would make the plan uneditable the moment it is zoomed. Verified with the event originating
+  on the polygon, the way a real pointer does — dispatching on the pane instead made it look like the
+  guard had failed, which was the harness, not the code.
+- ⚠️ **A pan is not a click.** Without `panMoved`, dragging across empty sheet cleared the tower
+  selection every time, which reads as the plan losing your place.
+- ⚠️ **No pan while drawing, and none while an equipment chip is picked** — those gestures own the
+  sheet, and the click that follows a picked chip is an assignment.
+- ⚠️ **`margin:auto`, never flex centring.** A flex container centring an overflowing child makes the
+  left edge unreachable by scrolling; auto margins resolve to 0 once the child overflows. Measured: a
+  zoomed-out plan sits centred (232px inset) and a 4× plan still scrolls to `scrollLeft = 0`.
+- ⚠️ **`touch-action:none` on desktop, `pan-y` on phones.** `none` gives a one-finger pan, but on a
+  phone the plan is full-width and tall, so it would trap the finger and make the page unscrollable
+  from most of the screen. `pan-y` hands vertical back to the browser; a horizontal drag still pans.
+- ⚠️ **Fit runs ONCE per project/backdrop**, not per render — re-fitting on every repaint would throw
+  away the zoom and pan the planner had just set.
+
+**Verified** in a real browser against the shipped CSS with the shipped `wirePan` / `setZoom` /
+`fitZoom` sliced out of the file: the window height constant across three zoom levels while the
+drawing scales, the empty-sheet drag moving the scroll by exactly the drag delta with the grabbing
+cursor, the pan not clicking through, a left-drag on a polygon **not** panning while a middle-drag
+from the same point does, no pan while drawing or while a chip is picked, a touch drag panning, the
+left edge reachable at 4×, and the phone rules (422px window, `pan-y`, 44px buttons, 0 page
+horizontal scroll). All four earlier equipment suites still green; parse clean; **0 functions lost**.
+
+⚠️ **Not verified signed in.**
