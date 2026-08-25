@@ -84,6 +84,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (d) — Planned vs Actual: the totals now print BOTH figures
+Owner: *"for the progress bar on the bottom, it should also show the progress for the planned when in
+the planned vs actual tab. For now it just shows the progress of the actual."* `?v=20260826d`.
+- ⚠️ **The summaries disagreed with the cells they were summing.** Each cell already carries both — the
+  plan line across it and the two-row P/A readout — but every total above them printed `_vsProgress`,
+  which in Compare is the ACTUAL alone. One number cannot answer the question that basis exists to ask.
+- **Fix:** the time bar and all three tower/consolidated headers now read
+  **"38% planned · 25% actual (−13 pp)"**. The variance is signed and named rather than left to be
+  worked out from two numbers; `pp` because these are points of POC, not percent of a percent.
+- ⚠️ A branch with **no baseline** reports *"planned n/a"*, never 0 — printing 0 would say un-baselined
+  work is behind when it is simply unmeasured.
+- ⚠️ While the time bar is **scrubbed** there is one modelled figure and no actual to compare it to, so
+  it keeps saying "N% scheduled"; the both-figures readout is the live view only.
+- **Actual and Planned bases are byte-identical** — the helper returns early for them.
+- Verified by executing the shipped helper in all three bases incl. ahead-of-plan and the no-baseline
+  case. Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-26 (c) — One-tower projects stack vertically: the axis skips a level nobody uses
 Owner: *"some projects just only have 1 tower… the zones are just fixed horizontally, it's not a
 vertical stacking per se"* / *"some projects don't have a WBS just for tower 1."* `?v=20260826c`.

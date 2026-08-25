@@ -10939,7 +10939,7 @@
         '<span class="ps-vs-tlsub">' + (live
           ? 'Live — cells show recorded progress. Drag the handle to walk the programme.'
           : 'As scheduled by this date — <b>modelled from the activities’ dates</b>, not recorded history.') + '</span>' +
-        '<span class="ps-vs-tlpct">' + overall + '% ' + (live ? _vsProgressWord() : 'scheduled') + '</span>' +
+        '<span class="ps-vs-tlpct">' + (live ? _vsProgressText(acts) : overall + '% scheduled') + '</span>' +
         '<span class="ps-vs-tlbtns">' +
           '<button data-tlstep="-1" title="Back one month">&#8249;</button>' +
           '<button data-tlplay class="' + (_vsPlayT ? 'on' : '') + '" title="Play the programme through">' + (_vsPlayT ? '&#10073;&#10073;' : '&#9654;') + '</button>' +
@@ -11085,6 +11085,27 @@
     return _vsPct(list);
   }
   function _vsProgressWord() { return _vsBasis === 'planned' ? 'planned' : 'actual'; }
+  // The roll-up figure a HEADER prints — the tower cards and the time bar.
+  // ⚠️ In **Planned vs Actual** it prints BOTH, because one number cannot answer the question that
+  // basis exists to ask. Owner 2026-08-26: *"it should also show the progress for the planned when in
+  // the planned vs actual tab. For now it just shows the progress of the actual."* Correct: the cells
+  // already carry both (the plan line across each cell, and the two-row P/A readout), but every
+  // summary above them printed `_vsProgress`, which in Compare is the ACTUAL alone — so the totals
+  // silently disagreed with the cells they were summing.
+  // ⚠️ The variance is printed with a sign and named, not left to be worked out from two numbers:
+  // "38% planned · 25% actual (−13 pp)". `pp` because these are points of POC, not percent of a
+  // percent.
+  // ⚠️ A branch with NO baseline reports "planned n/a", never 0 — `_vsPlanPct` returns null there,
+  // and printing 0 would tell a manager that un-baselined work is behind when it is simply unmeasured.
+  // ⚠️ While the time bar is SCRUBBED there is one modelled figure and no actual to compare it to,
+  // so the caller passes its own text; this helper is for the live view.
+  function _vsProgressText(list) {
+    if (_vsBasis !== 'compare') return _vsProgress(list) + '% ' + _vsProgressWord();
+    var ac = _vsPct(list), pp = _vsPlanPct(list);
+    if (pp == null) return ac + '% actual · planned n/a';
+    var gap = Math.round(ac - pp);
+    return pp + '% planned · ' + ac + '% actual (' + (gap > 0 ? '+' : '') + gap + ' pp)';
+  }
   // How far progress is from where the baseline says it should be, in points of POC.
   // ⚠️ null when there is nothing to compare against — a cell with no baseline is UNKNOWN, not "on
   // plan". Reporting 0 here would tell a manager the un-baselined half of the project is fine.
@@ -11720,14 +11741,14 @@
         var col = _vsTowerColor(t, towerNames);
         return '<div class="ps-vs-tower" style="--tc:' + col + '"><div class="ps-vs-towerh">' +
           '<span class="n"><span class="ps-vs-dot" style="background:' + col + '"></span>' + esc(t) + '</span>' +
-          '<span class="ct">' + list.length + ' activities · ' + _vsProgress(list) + '% ' + _vsProgressWord() +
+          '<span class="ct">' + list.length + ' activities · ' + _vsProgressText(list) +
           ' · ' + tt.length + ' trade' + (tt.length === 1 ? '' : 's') + '</span></div>' +
           _vsTowerSVG(list, col, 'TW:' + t) + '</div>';
       }).join('');
     } else if (_vsScope === 'all') {
       towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; all trades' +
         (_vsTower === 'ALL' ? '' : ' &middot; ' + esc(_vsTower)) + '</span>' +
-        '<span class="ct">' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span></div>' +
+        '<span class="ct">' + acts.length + ' activities · ' + _vsProgressText(acts) + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span></div>' +
         _vsTowerSVG(acts, 'var(--pd-red)', 'ALL') + '</div>';
     } else {
       towers = trades.filter(function (t) { return _vsTrade === 'ALL' || t === _vsTrade; }).map(function (t) {
@@ -11735,7 +11756,7 @@
         var col = _vsColor(t);
         return '<div class="ps-vs-tower" style="--tc:' + col + '"><div class="ps-vs-towerh">' +
           '<span class="n"><span class="ps-vs-dot" style="background:' + col + '"></span>' + esc(t) + '</span>' +
-          '<span class="ct">' + list.length + ' activities · ' + _vsProgress(list) + '% ' + _vsProgressWord() + '</span></div>' +
+          '<span class="ct">' + list.length + ' activities · ' + _vsProgressText(list) + '</span></div>' +
           _vsTowerSVG(list, col, t) + '</div>';
       }).join('');
     }
