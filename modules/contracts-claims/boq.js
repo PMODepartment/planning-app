@@ -30,6 +30,19 @@ window.BOQ = (function () {
   var UID = null, canWrite = false, isAdmin = false, pid = null, projLabel = '';
   var REVS = [], REVID = null, ITEMS = [], CMAP = {}, ALLOC = [], PERIODS = [], PROG = {};
   var CODES = null, ACTS = null;            // lazy: class_codes chart, schedule activities
+  /* A3's tail / decision #2. PKGS is this project's `packages` rows, loaded
+     tolerantly: the table arrives with 2026-08-19-packages.sql and the column
+     with 2026-08-25-package-adoption.sql, and until both are run the BOQ must
+     behave exactly as it did before. */
+  var PKGS = [];
+  /* DESIGN DECISION #7 — "which POC leads a report?"
+     ANSWER: neither. Both are shown side by side with the gap between them, and
+     nothing reconciles one to the other.
+     SCHED holds schedule_scurve_agg's output: the schedule's own duration- or
+     cost-weighted PROGRESS percent complete. The billing POC on this tab is the
+     CONTRACTUAL one the client pays against. They legitimately differ, and the
+     variance is one of the most useful things this module can show a PM. */
+  var SCHED = null, schedErr = null;
   var sub = 'items';
   var filt = { q: '', sheet: '', kind: '', mapped: '' };
   var loaded = false;
@@ -419,6 +432,8 @@ window.BOQ = (function () {
         var prog = await PDb.selectAll(T_PROG, function (q) { return q.eq('project_id', pid); });
         PROG = {}; prog.forEach(function (p) { (PROG[p.period_id] = PROG[p.period_id] || {})[p.boq_item_id] = Number(p.rel_pct) || 0; });
       }
+      try { PKGS = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
+      catch (e) { PKGS = []; }   // no packages table yet: the feature is simply absent
       loaded = true;
     } catch (err) {
       document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3>Could not load the BOQ</h3><p>' +
@@ -434,6 +449,31 @@ window.BOQ = (function () {
     catch (e) { CODES = []; }
     return CODES;
   }
+  /* The schedule's own POC, via the shared RPC — one round-trip returning a few
+     dozen monthly buckets rather than every activity.
+     ⚠️ Uses schedule_scurve_agg, the SAME function the S-Curve module and Cash
+     Flow read. A second implementation here would let this tab and the S-Curve
+     screen disagree about the project's progress, which is precisely the kind of
+     contradiction a PM cannot act on. */
+  async function ensureSched() {
+    if (SCHED || schedErr) return SCHED;
+    try {
+      var r = await sb().rpc('schedule_scurve_agg', { p_id: pid });
+      if (r.error) throw r.error;
+      SCHED = r.data || null;
+    } catch (e) { schedErr = e; SCHED = null; }
+    return SCHED;
+  }
+  /* Duration-weighted progress, 0..1. ⚠️ Returns null rather than 0 when the
+     project has no schedule loaded: "no programme to compare against" and "no
+     progress" are different facts, and only one of them is a variance. */
+  function schedPoc() {
+    if (!SCHED) return null;
+    var tot = Number(SCHED.totDur) || 0;
+    if (!tot) return null;
+    return (Number(SCHED.doneDur) || 0) / tot;
+  }
+
   /* Schedule activities, lazily. ⚠️ LEAF ACTIVITIES ONLY and only the columns
      the allocator needs — a project can hold 40k rows and this is a side
      register most sessions never open. */
@@ -509,7 +549,11 @@ window.BOQ = (function () {
     if (sub === 'items') wireItems(host);
     if (sub === 'codes') wireCodes(host);
     if (sub === 'alloc') wireAlloc(host);
-    if (sub === 'billing') wireBilling(host);
+    if (sub === 'billing') {
+      wireBilling(host);
+      // Lazy: only the Billing tab needs it, and it is one round-trip.
+      if (!SCHED && !schedErr) ensureSched().then(function () { if (sub === 'billing') render(); });
+    }
   }
 
   // ==========================================================================
@@ -567,13 +611,15 @@ window.BOQ = (function () {
         '<option value="yes"' + (filt.mapped === 'yes' ? ' selected' : '') + '>Mapped</option>' +
         '<option value="no"' + (filt.mapped === 'no' ? ' selected' : '') + '>Unmapped</option></select>' +
       '<span class="cc-count">' + filtered().length + ' of ' + ITEMS.length + '</span>' +
-      '<span class="boq-spacer"></span><button class="pd-btn" id="boq-export">Export</button>' +
+      '<span class="boq-spacer"></span>' +
+      (canWrite ? '<button class="pd-btn" id="boq-pkgs">Packages from sheets…</button>' : '') +
+      '<button class="pd-btn" id="boq-export">Export</button>' +
       '</div>';
 
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table"><thead><tr>' +
       '<th class="boq-no">Item</th><th class="cc-desc">Description</th><th>Unit</th>' +
       '<th class="cc-r">Qty</th><th class="cc-r">Material</th><th class="cc-r">Labour</th>' +
-      '<th class="cc-r">Amount</th><th>Kind</th><th>Class code</th><th class="cc-r">Alloc.</th>' +
+      '<th class="cc-r">Amount</th><th>Kind</th><th>Class code</th><th>Package</th><th class="cc-r">Alloc.</th>' +
       '</tr></thead><tbody>';
 
     var list = filtered();
@@ -594,11 +640,26 @@ window.BOQ = (function () {
         '<td class="cc-r">' + (r.exclusion_note ? '<span class="cc-mut">—</span>' : money(r.amount)) + '</td>' +
         '<td><span class="boq-kind k-' + esc(r.line_kind) + '">' + esc(kindLabel(r.line_kind)) + '</span></td>' +
         '<td>' + (cm ? '<span class="boq-code" title="' + esc(cm.source) + '">' + esc(cm.class_code) + '</span>' : (mappable(r) ? '<span class="cc-mut">—</span>' : '')) + '</td>' +
+        '<td>' + pkgCell(r) + '</td>' +
         '<td class="cc-r">' + (qtyLine(r) ? allocChip(r, al) : '') + '</td>' +
         '</tr>';
     });
     h += '</tbody></table></div>';
     return h;
+  }
+  function pkgName(id) {
+    if (!id) return null;
+    var p = PKGS.find(function (x) { return String(x.id) === String(id); });
+    /* ⚠️ A package that no longer exists reads UNLINKED rather than blank — the
+       FK is `on delete set null`, so this only shows while PKGS has not loaded,
+       but "no package" and "a package that vanished" must not look alike. */
+    return p ? (p.code || p.name) : 'UNLINKED';
+  }
+  function pkgCell(r) {
+    var n = pkgName(r.package_id);
+    if (!n) return '<span class="cc-mut">—</span>';
+    return n === 'UNLINKED' ? '<span class="boq-alloc none">UNLINKED</span>'
+                            : '<span class="boq-code">' + esc(n) + '</span>';
   }
   function kindLabel(k) {
     return { measured: 'Measured', lump_sum: 'Lump sum', provisional: 'Provisional', excluded: 'Excluded', heading: 'Heading' }[k] || k;
@@ -635,6 +696,7 @@ window.BOQ = (function () {
       if (el) el.onchange = function () { filt[p[1]] = el.value; render(); };
     });
     var ex = host.querySelector('#boq-export'); if (ex) ex.onclick = exportItems;
+    var pk = host.querySelector('#boq-pkgs'); if (pk) pk.onclick = openSheetPackages;
   }
 
   function exportItems() {
@@ -659,6 +721,117 @@ window.BOQ = (function () {
     ws['!cols'] = Object.keys(aoa[0]).map(function (k) { return { wch: k === 'Description' ? 50 : Math.max(12, k.length + 2) }; });
     XLSX.utils.book_append_sheet(wb, ws, 'BOQ');
     XLSX.writeFile(wb, 'BOQ - ' + (projLabel || pid) + '.xlsx');
+  }
+
+  /* ==========================================================================
+     DESIGN DECISION #2 — "does the BOQ define the packages?"
+
+     ANSWER: it PROPOSES them. A trade sheet usually IS how a contract is bought
+     (the real workbook's four sheets are Package 2's trades), so offering one
+     package per sheet is cheap and useful. AUTO-creating them is not: a sheet is
+     a measurement convenience as often as a commercial lot, the planner's codes
+     come off the contract documents rather than a tab name, and a package minted
+     by an importer would later be cited in a claim nobody agreed to.
+
+     ⚠️ So this is propose → preview → apply, the same shape as the class-code
+     mapping and the allocation split. Nothing is created or tagged until Apply.
+     ========================================================================== */
+  function openSheetPackages() {
+    if (!canWrite) { UI.toast('You do not have permission to create packages.', 'error'); return; }
+    var st = sheetTotals(ITEMS);
+    var sheets = sheetList().map(function (sh) {
+      var lines = ITEMS.filter(function (r) { return r.sheet === sh; });
+      var tagged = lines.filter(function (r) { return r.package_id; }).length;
+      var existing = PKGS.find(function (p) { return normKey(p.name) === normKey(sh) || normKey(p.code) === normKey(sh); });
+      return { sheet: sh, total: st[sh] || 0, n: lines.length, tagged: tagged,
+               existing: existing || null,
+               // Proposed only for sheets that actually carry money — a billing
+               // twin or an unpriced sheet is not a contract lot.
+               pick: !!(st[sh] && !tagged),
+               code: (existing && existing.code) || suggestCode(sh) };
+    });
+
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Packages from BOQ sheets</h2>' +
+      '<button class="pd-modal-close" id="sp2-x">&times;</button></div>' +
+      '<div class="boq-imp" id="sp2-body"></div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="sp2-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="sp2-go">Apply</button></div>');
+    var body = m.el.querySelector('#sp2-body');
+
+    function paint() {
+      var chosen = sheets.filter(function (x) { return x.pick; });
+      body.innerHTML =
+        '<p class="cc-hint">Each priced trade sheet can become a contract package, and its lines are tagged to it. ' +
+        '<strong>Nothing is created until you press Apply</strong> — a sheet is a measurement convenience as often as ' +
+        'a commercial lot, so this proposes and you decide.</p>' +
+        '<table class="boq-prevtab"><thead><tr><th></th><th>Sheet</th><th>Package code</th>' +
+        '<th class="cc-r">Lines</th><th class="cc-r">Sheet value</th><th>Status</th></tr></thead><tbody>' +
+        sheets.map(function (x, i) {
+          return '<tr><td><input type="checkbox" data-p="' + i + '"' + (x.pick ? ' checked' : '') + ' /></td>' +
+            '<td>' + esc(x.sheet) + '</td>' +
+            '<td><input class="pd-input boq-sm" data-code="' + i + '" value="' + esc(x.code) + '" style="min-width:120px" /></td>' +
+            '<td class="cc-r">' + x.n + '</td>' +
+            '<td class="cc-r">' + (x.total ? money(x.total) : '<span class="cc-mut">unpriced</span>') + '</td>' +
+            '<td class="cc-mini">' + (x.existing ? 'reuses <strong>' + esc(x.existing.code || x.existing.name) + '</strong>' : 'new package') +
+              (x.tagged ? ' · ' + x.tagged + ' line(s) already tagged' : '') + '</td></tr>';
+        }).join('') +
+        '</tbody></table>' +
+        '<p class="cc-hint">' + chosen.length + ' package(s) will be created or reused, tagging ' +
+        chosen.reduce(function (a, x) { return a + x.n; }, 0) + ' line(s). ' +
+        '⚠️ An existing package with a matching code or name is <strong>reused, never duplicated</strong>.</p>';
+      body.querySelectorAll('[data-p]').forEach(function (cb) {
+        cb.onchange = function () { sheets[+cb.dataset.p].pick = cb.checked; paint(); };
+      });
+      body.querySelectorAll('[data-code]').forEach(function (inp) {
+        inp.onchange = function () { sheets[+inp.dataset.code].code = inp.value; };
+      });
+    }
+    paint();
+    m.el.querySelector('#sp2-x').onclick = m.close;
+    m.el.querySelector('#sp2-c').onclick = m.close;
+    m.el.querySelector('#sp2-go').onclick = async function () {
+      var take = sheets.filter(function (x) { return x.pick && txtOf(x.code); });
+      if (!take.length) { UI.toast('Nothing selected.', 'error'); return; }
+      var btn = m.el.querySelector('#sp2-go'); btn.disabled = true; btn.textContent = 'Applying…';
+      try {
+        for (var i = 0; i < take.length; i++) {
+          var x = take[i], pkgId = x.existing && x.existing.id;
+          if (!pkgId) {
+            var ins = await sb().from('packages').insert({
+              project_id: pid, code: txtOf(x.code), name: x.sheet,
+              description: 'Created from BOQ sheet "' + x.sheet + '"',
+              contract_amount: x.total || null, status: 'active', created_by: UID
+            }).select().single();
+            if (ins.error) throw ins.error;
+            pkgId = ins.data.id; PKGS.push(ins.data);
+          }
+          // Tag the sheet's lines. Chunked by id so a wide sheet cannot exceed
+          // the URL length of a single .in() filter.
+          var ids = ITEMS.filter(function (r) { return r.sheet === x.sheet; }).map(function (r) { return r.id; });
+          for (var j = 0; j < ids.length; j += 200) {
+            var up = await sb().from(T_ITEM).update({ package_id: pkgId }).in('id', ids.slice(j, j + 200));
+            if (up.error) throw up.error;
+          }
+          ITEMS.forEach(function (r) { if (r.sheet === x.sheet) r.package_id = pkgId; });
+        }
+        m.close();
+        UI.toast('Applied to ' + take.length + ' sheet(s).', 'success');
+        render();
+      } catch (err) {
+        btn.disabled = false; btn.textContent = 'Apply';
+        UI.toast((err.message || String(err)) +
+          (/package_id|packages/.test(err.message || '') ? ' — run migrations/2026-08-25-package-adoption.sql.' : ''), 'error');
+      }
+    };
+  }
+  function txtOf(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+  /* A short code from the sheet name, as a STARTING POINT the planner edits —
+     never the final answer, because a package code comes off the contract. */
+  function suggestCode(sheet) {
+    var w = txtOf(sheet).replace(/\(.*?\)/g, '').split(/[^A-Za-z0-9]+/).filter(Boolean);
+    if (!w.length) return 'PKG';
+    if (w.length === 1) return w[0].slice(0, 8).toUpperCase();
+    return w.map(function (x) { return x[0]; }).join('').slice(0, 6).toUpperCase();
   }
 
   // ==========================================================================
@@ -1428,6 +1601,8 @@ window.BOQ = (function () {
       'moment a revision changes a quantity. Each period also snapshots the revision it was billed against, so a ' +
       'remeasure cannot retroactively rewrite a submitted billing.</p>';
 
+    h += pocCompareHTML(tot, contract);
+
     h += '<div class="boq-filters">' + (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-b-new">New billing period…</button>' : '') + '</div>';
 
     if (!ord.length) {
@@ -1483,6 +1658,54 @@ window.BOQ = (function () {
         'duration- or cost-weighted S-curve is the <em>progress</em> POC; this is the <em>contractual/revenue</em> POC ' +
         'the client pays against. They legitimately differ — reconciling them is a report, never an override.</p></div>';
     }
+    return h;
+  }
+
+  /* DECISION #7, on screen. Two POCs, side by side, with the gap named — and a
+     standing refusal to reconcile them.
+     ⚠️ THE VARIANCE IS NOT AN ERROR. Billing POC is what the client has certified
+     against the BOQ; schedule POC is duration-weighted physical progress. They
+     diverge for real reasons: work done but not yet billed, a billing period that
+     closed mid-month, retention on measurement, unbilled variations. Showing one
+     "corrected" by the other would destroy the only signal in the pair. */
+  function pocCompareHTML(tot, contract) {
+    var bill = tot.poc, prog = schedPoc();
+    var h = '<div class="pd-card boq-poc">' +
+      '<h3 class="boq-h3">Two percent-completes, and the gap between them</h3>';
+
+    if (prog == null) {
+      h += '<p class="cc-hint">' + (schedErr
+        ? 'The schedule\'s own progress could not be read (' + esc(schedErr.message || String(schedErr)) + ').'
+        : 'This project has no loaded schedule, so there is no progress POC to compare against.') +
+        ' The billing POC above stands on its own.' +
+        (schedErr && /schedule_scurve_agg/.test(String(schedErr.message || ''))
+          ? ' Run <code>migrations/2026-07-20-schedule-scurve-agg.sql</code>.' : '') + '</p></div>';
+      return h;
+    }
+
+    var gap = (bill == null) ? null : bill - prog;
+    var cls = gap == null ? '' : Math.abs(gap) < 0.02 ? 'ok' : Math.abs(gap) < 0.10 ? 'warn' : 'bad';
+    h += '<div class="boq-poc-row">' +
+      '<div class="boq-poc-cell"><span class="cc-mini">Contractual (this BOQ, billed)</span>' +
+        '<div class="boq-poc-v">' + pct(bill, 4) + '</div>' +
+        '<span class="cc-mini">what the client pays against</span></div>' +
+      '<div class="boq-poc-cell"><span class="cc-mini">Progress (the schedule)</span>' +
+        '<div class="boq-poc-v">' + pct(prog, 4) + '</div>' +
+        '<span class="cc-mini">duration-weighted, ' + (Number(SCHED.nAct) || 0) + ' activities</span></div>' +
+      '<div class="boq-poc-cell ' + cls + '"><span class="cc-mini">Variance</span>' +
+        '<div class="boq-poc-v">' + (gap == null ? '—' : (gap > 0 ? '+' : '') + (gap * 100).toFixed(2) + ' pp') + '</div>' +
+        '<span class="cc-mini">' + esc(gap == null ? 'nothing billed yet'
+          : gap > 0 ? 'billed ahead of physical progress' : 'work done but not yet billed') + '</span></div>' +
+      '</div>' +
+      '<p class="cc-hint"><strong>This is a report, never a correction.</strong> Neither figure leads: the ' +
+      'contractual POC is what has been certified against the BOQ, the progress POC is physical work on the ' +
+      'programme, and they differ for real reasons — work built but not yet billed, a period that closed ' +
+      'mid-month, measurement still in dispute, variations not yet certified. Nothing here writes back to ' +
+      'either side, and the schedule\'s S-curve is not adjusted to match the billing.</p>' +
+      (contract && Math.abs(contract - contractSum(ITEMS)) > 1
+        ? '<p class="cc-hint">⚠️ Note the contractual figure is computed on the revision\'s stated contract total, ' +
+          'which differs from the sum of its lines — see the reconciliation warning on the Items tab.</p>' : '') +
+      '</div>';
     return h;
   }
 
@@ -1626,7 +1849,7 @@ window.BOQ = (function () {
     await ensureSugg();
     await load();
   }
-  function reset() { loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; ACTS = null; }
+  function reset() { loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
     init: init, show: show, reset: reset, render: render,
@@ -1637,10 +1860,12 @@ window.BOQ = (function () {
       sheetPocs: sheetPocs, moneyLine: moneyLine, qtyLine: qtyLine, mappable: mappable,
       proposeSplit: proposeSplit, locMatch: locMatch, allocSum: allocSum, suggestFor: suggestFor,
       statedTotalOf: statedTotalOf, billingColsOf: billingColsOf, guessRev: guessRev, sumStated: sumStated,
+      suggestCode: suggestCode, pkgName: pkgName, pkgCell: pkgCell, schedPoc: schedPoc,
       _set: function (o) {
         if (o.ITEMS) ITEMS = o.ITEMS; if (o.CMAP) CMAP = o.CMAP; if (o.ALLOC) ALLOC = o.ALLOC;
         if (o.PERIODS) PERIODS = o.PERIODS; if (o.PROG) PROG = o.PROG; if (o.SUGG) SUGG = o.SUGG;
-        if (o.ACTS) ACTS = o.ACTS; if (o.pid) pid = o.pid;
+        if (o.ACTS) ACTS = o.ACTS; if (o.pid) pid = o.pid; if (o.PKGS) PKGS = o.PKGS;
+        if (o.SCHED !== undefined) SCHED = o.SCHED; if (o.schedErr !== undefined) schedErr = o.schedErr;
       }
     }
   };

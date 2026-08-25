@@ -178,6 +178,17 @@ A **package** is a contract package/lot inside a project (`packages` table, see
 - Adopting `package_id` on your own table is a deliberate, per-module step: add
   the column *and* the UI that sets it in the same change, or you create rows
   belonging to no package that vanish from any package-filtered view.
+- **Adopted so far** (2026-08-25): `project_schedule` + `wbs_nodes` (C1),
+  `contracts_claims` (a claim is raised against a package) and `boq_items`
+  (a BOQ trade sheet usually IS a lot — the BOQ tab *proposes* a package per
+  sheet and never auto-creates one).
+- ⚠️ **Deliberately NOT adopted**, and each for a reason worth keeping:
+  `risk_register` / `issues_lessons` (raised about the project; a package would
+  invent precision nobody has), `productivity_activities` (it already carries
+  `work_package`, a WPM `wp_no` — a *different* axis, and two package-shaped
+  columns on one table is how a report joins the wrong one), the `cash_flow_*`
+  tables (`cash_flow_trade_packages` is already that module's own split), and
+  the retired `drawing_register` / `material_submittal`.
 
 ### 6c. Publishing a dashboard tile
 

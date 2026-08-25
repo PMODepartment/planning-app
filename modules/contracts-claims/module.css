@@ -413,3 +413,19 @@ html.pd-dark {
   .pmi-up > * { flex:1 1 100%; }
   .pmi-up .pd-select { min-width:0; }
 }
+
+/* ---- The two-POC comparison (decision #7) ------------------------------- */
+.boq-poc { padding:0 0 6px; margin-bottom:14px; }
+.boq-poc-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; padding:0 14px 4px; }
+.boq-poc-cell { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:10px 13px; }
+.boq-poc-v { font-size:22px; font-weight:800; margin:3px 0 2px; line-height:1.15; }
+/* Semantic, and on the SAME measured pairs as the rest of this module — a small
+   gap is expected, a large one is worth a conversation. Neither is an error. */
+.boq-poc-cell.ok   { border-color:var(--boq-good); }
+.boq-poc-cell.ok   .boq-poc-v { color:var(--boq-good); }
+.boq-poc-cell.warn { border-color:var(--boq-warn); }
+.boq-poc-cell.warn .boq-poc-v { color:var(--boq-warn); }
+.boq-poc-cell.bad  { border-color:var(--boq-bad); }
+.boq-poc-cell.bad  .boq-poc-v { color:var(--boq-bad); }
+.boq-poc .cc-hint { padding:0 14px; }
+@media (max-width:700px) { .boq-poc-row { grid-template-columns:1fr; } }

@@ -73,7 +73,10 @@ window.ContractsClaims = (function () {
   // ---- state ---------------------------------------------------------------
   var UID = null, pid = null, rows = [], view = 'contract';
   var canWrite = false, isAdmin = false, sel = {};
-  var filters = { q: '', type: '', status: '', dateField: '', from: '', to: '' };
+  var filters = { q: '', type: '', status: '', dateField: '', from: '', to: '', pkg: '' };
+  /* A3's tail. Loaded tolerantly — `packages` arrives with
+     2026-08-19-packages.sql, and until it is run the picker is simply absent. */
+  var PKGS = [];
 
   // ---- helpers -------------------------------------------------------------
   var MNAME = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -130,6 +133,11 @@ window.ContractsClaims = (function () {
       if (c.types.indexOf(r.record_type) < 0) return false;
       if (filters.type && r.record_type !== filters.type) return false;
       if (filters.status && statusOf(r) !== filters.status) return false;
+      /* ⚠️ '__none' is a REAL scope, not an absence of one: "which claims has
+         nobody assigned to a package yet" is the worklist that makes the filter
+         worth having. */
+      if (filters.pkg === '__none') { if (r.package_id) return false; }
+      else if (filters.pkg && String(r.package_id) !== String(filters.pkg)) return false;
       if (filters.dateField && (filters.from || filters.to)) {
         var v = r[filters.dateField];
         if (!v) return false;                       // no date = outside any window
@@ -327,6 +335,20 @@ window.ContractsClaims = (function () {
       f('Reference no.', 'cc-f-ref', e.reference_no, 'text', 'placeholder="e.g. CO 01"') +
       '<label class="cc-wide">Description<textarea id="cc-f-desc" placeholder="e.g. Additional Cost for Plumbing Fixtures">' + esc(clean(e.description) || clean(e.title)) + '</textarea></label>' +
       f('Counterparty / client', 'cc-f-cp', e.counterparty) +
+      /* A3's tail: which contract package this claim is raised against. Optional
+         by design — MODULE_CONTRACT §6b: a package is a narrowing, never a
+         requirement, and most projects have none. */
+      '<label>Package' + (PKGS.length ? '' : ' <span class="cc-mini">(none on this project)</span>') +
+        '<select id="cc-f-pkgid"' + (PKGS.length ? '' : ' disabled') + '><option value="">— none —</option>' +
+        PKGS.map(function (p2) {
+          return '<option value="' + esc(p2.id) + '"' + (String(e.package_id) === String(p2.id) ? ' selected' : '') + '>' +
+            esc((p2.code ? p2.code + ' — ' : '') + (p2.name || '')) + '</option>'; }).join('') +
+        /* ⚠️ A stored package absent from the list keeps its own option, or a
+           <select> whose value is not among its options reports the FIRST one and
+           Save silently re-assigns the claim to another package. */
+        (e.package_id && !PKGS.some(function (p2) { return String(p2.id) === String(e.package_id); })
+          ? '<option value="' + esc(e.package_id) + '" selected>UNLINKED</option>' : '') +
+        '</select></label>' +
 
       // Contract amount — only relevant to a Contract row.
       '<div class="cc-sec" data-only="Contract">Contract value</div>' +
@@ -387,6 +409,7 @@ window.ContractsClaims = (function () {
       var payload = {
         project_id: pid, record_type: t,
         reference_no: v('cc-f-ref'), description: v('cc-f-desc'), counterparty: v('cc-f-cp'),
+        package_id: (function (el2) { return el2 && el2.value ? el2.value : null; })(el('cc-f-pkgid')),
         amount: t === 'Contract' ? n('cc-f-amount') : null,
         est_amount: null, sub_amount: null, eval_amount: null, approved_amount: null,
         est_days: null, sub_days: null, eval_days: null, approved_days: null,
@@ -547,7 +570,7 @@ window.ContractsClaims = (function () {
   // SHELL
   // ==========================================================================
   function syncClearFilt() {
-    var on = !!(filters.q || filters.type || filters.status || filters.dateField || filters.from || filters.to);
+    var on = !!(filters.q || filters.type || filters.status || filters.dateField || filters.from || filters.to || filters.pkg);
     var b = document.getElementById('cc-f-clear'); if (b) b.hidden = !on;
   }
 
@@ -558,6 +581,17 @@ window.ContractsClaims = (function () {
         return '<option' + (cur === v ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('');
     }
     fill('cc-f-type', CLAIM_TYPES, filters.type);
+    var ps = document.getElementById('cc-f-pkg');
+    if (ps) {
+      // Hidden entirely when the project has no packages — an empty picker is
+      // worse than no picker.
+      ps.style.display = PKGS.length ? '' : 'none';
+      ps.innerHTML = '<option value="">All packages</option>' +
+        PKGS.map(function (p2) {
+          return '<option value="' + esc(p2.id) + '"' + (filters.pkg === String(p2.id) ? ' selected' : '') + '>' +
+            esc((p2.code ? p2.code + ' — ' : '') + (p2.name || '')) + '</option>'; }).join('') +
+        '<option value="__none"' + (filters.pkg === '__none' ? ' selected' : '') + '>— no package —</option>';
+    }
     fill('cc-f-status', STATUSES, filters.status);
   }
 
@@ -579,6 +613,8 @@ window.ContractsClaims = (function () {
           ? '<p class="cc-mut">Run <code>migrations/2026-07-20-contracts-claims-full.sql</code> in the Supabase SQL editor, then reload.</p>' : '') + '</div>';
       return;
     }
+    try { PKGS = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
+    catch (e) { PKGS = []; }
     rows = res.data || [];
     rows.sort(function (a, b) {
       var d = (a.sort_order || 0) - (b.sort_order || 0); if (d) return d;
@@ -650,13 +686,15 @@ window.ContractsClaims = (function () {
     });
     document.getElementById('cc-f-type').addEventListener('change', function (e) { filters.type = e.target.value; render(); });
     document.getElementById('cc-f-status').addEventListener('change', function (e) { filters.status = e.target.value; render(); });
+    var pkgSel = document.getElementById('cc-f-pkg');
+    if (pkgSel) pkgSel.addEventListener('change', function (e) { filters.pkg = e.target.value; render(); });
     document.getElementById('cc-f-datefield').addEventListener('change', function (e) { filters.dateField = e.target.value; render(); });
     document.getElementById('cc-f-from').addEventListener('change', function (e) { filters.from = e.target.value; render(); });
     document.getElementById('cc-f-to').addEventListener('change', function (e) { filters.to = e.target.value; render(); });
     document.getElementById('cc-f-clear').onclick = function () {
-      filters = { q: '', type: '', status: '', dateField: '', from: '', to: '' };
+      filters = { q: '', type: '', status: '', dateField: '', from: '', to: '', pkg: '' };
       q.value = '';
-      ['cc-f-type', 'cc-f-status', 'cc-f-datefield', 'cc-f-from', 'cc-f-to'].forEach(function (id) { document.getElementById(id).value = ''; });
+      ['cc-f-type', 'cc-f-status', 'cc-f-datefield', 'cc-f-from', 'cc-f-to', 'cc-f-pkg'].forEach(function (id) { var e = document.getElementById(id); if (e) e.value = ''; });
       render();
     };
 

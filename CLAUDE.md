@@ -84,6 +84,100 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (b) — Vendor performance lands in the prc-app; A3's tail; design decisions #2 and #7
+Owner: *"Yes, use the push pattern like need-by. Let's do A3's tail after. Then proceed with the 3
+open design questions."* **Run `migrations/2026-08-25-package-adoption.sql`** (Planners) and
+**`wpm/MIGRATION_planners_vendor_performance.sql`** (the WPM project).
+
+**F3/F4/F5 now render in the prc-app** (prc-app commit `7e752e3`), fed by a new
+`push-vendor-perf` Edge Function — an exact mirror of `push-need-by`, same direction, same secrets.
+- ⚠️ **Why a push at all:** `project_schedule` lives in the Planners database and WPM cannot read
+  it. Giving WPM a Planners service key would put a cross-app secret in a second codebase for
+  nothing. **So what the prc-app shows is a SNAPSHOT as fresh as the last push** — every row carries
+  `pushed_at` and `data_date`, the screen prints both, and anything older than 14 days is flagged
+  **stale**. An SPI without its date is how a month-old number ends up quoted in a negotiation.
+- ⚠️ **A separate WPM table, never columns on `vendors`.** Vendor rows are edited by staff *and by
+  vendors themselves* (WPM has `vendor_field_ownership` and an accreditation-request queue); another
+  app writing into them would destroy work with no audit trail. Service-role write only — no
+  insert/update/delete granted to `authenticated`, so a browser cannot fabricate a figure about a
+  vendor. It writes **only** that table, never `vendors` or `work_packages`.
+- ⚠️ **A vendor whose packages carry no scheduled activities is SKIPPED, not pushed as 0%** —
+  "nobody has scheduled this work" and "this vendor has done none of it" are opposite facts.
+- ⚠️ **SPI is null, not 1, when the programme says nothing should have started yet.** Dividing by
+  zero planned work reads as *perfectly on track* when the honest answer is "not comparable yet".
+- ⚠️ **Trend measures the ABSOLUTE gap, not the ratio.** A vendor holding a steady 90% of plan loses
+  *more* days every month as the plan grows, so it reads `deteriorating` rather than `flat`. **This
+  is the assertion that caught my own mistake** — I had written a test expecting `flat`.
+- ⚠️ **Co-awards are attributed to the PRIMARY vendor only**, or a shared package double-counts the
+  project — and the count of co-awards is stated on screen *with the reason*, so a low package count
+  is explainable rather than looking like missing data.
+- ⚠️ **Need-by adherence names itself PLANNED adherence.** There is no actual-delivery date anywhere
+  in the mirror; calling it "delivered on time" would be a number nobody could defend.
+- ⚠️ Thresholds come from `schedule_thresholds`, not hard-coded — **but `spi_below` is not yet in
+  that table's documented metric vocabulary**, so the defaults (0.95 / 0.85) *are* the effective
+  thresholds until a row is added. Said in the code so it isn't read as "configured".
+- ⚠️ One project per call, required: pushing the portfolio at once would let one stale or
+  half-imported schedule overwrite every vendor's record in a single request. Rows are never pruned
+  — a stale snapshot a buyer can date beats a record that vanishes mid-negotiation.
+
+**A3's tail — package adoption, and deliberately not everywhere.** `project_schedule`/`wbs_nodes`
+already had `package_id` from C1; this adds it to **`contracts_claims`** (a claim is raised against a
+package — picker in the form, filter in the bar, with a real "— no package —" scope for the worklist)
+and **`boq_items`**. ⚠️ It is **NOT** added to `risk_register`/`issues_lessons` (raised about the
+project; a package invents precision nobody has), `productivity_activities` (it already carries
+`work_package`, a WPM `wp_no` — a *different* axis, and two package-shaped columns on one table is
+how a report joins the wrong one), the `cash_flow_*` tables (`cash_flow_trade_packages` is already
+that module's split), or the retired registers. Recorded in `MODULE_CONTRACT.md` §6b.
+- ⚠️ Both FKs are `on delete set null`: retiring a package must never delete the claims raised under
+  it or the contract scope measured against it.
+
+**Design decision #2 — "does the BOQ define the packages?" ANSWERED: it proposes them.**
+New **Packages from sheets…** tool on the BOQ Items tab: one package per priced trade sheet, tagging
+that sheet's lines, **propose → preview → apply**. ⚠️ Auto-creating them is the tempting answer and
+the wrong one — a sheet is a measurement convenience as often as a commercial lot, package codes come
+off the contract documents rather than a tab name, and a package minted by an importer would later be
+cited in a claim nobody agreed to. An existing package with a matching code or name is **reused,
+never duplicated**; unpriced sheets and billing twins are not proposed.
+- ⚠️ **`package_id` is on the ITEM, not the revision.** One revision spans several trade sheets and
+  therefore several packages — the real file is one document covering four. A revision-level column
+  would force the whole document into one lot and make a per-sheet contract value unrepresentable.
+- New `boq_package_value` view (`security_invoker`) applies the *same* money rule the BOQ tab does:
+  heading rows are subtotals and an excluded line's "amount" is a sentence, so neither contributes.
+  Getting that wrong would make a package's value disagree with the screen that produced it.
+
+**Design decision #7 — "which POC leads a report?" ANSWERED: neither, and the gap is the point.**
+⚠️ **Checking it honestly, this was NOT previously satisfied.** The Billing tab *stated* that the two
+POCs must not be merged but never showed the schedule's, so there was no variance to see. It now
+shows **Contractual (billed) · Progress (schedule) · Variance in pp** side by side, reading the
+progress figure from `schedule_scurve_agg` — the **same RPC** the S-Curve module and Cash Flow use, so
+this tab cannot disagree with the S-curve screen. ⚠️ The copy says plainly that it is *a report, never
+a correction*, and names why they legitimately differ (built but not yet billed, a period closing
+mid-month, measurement in dispute, uncertified variations). Nothing writes back either way.
+- ⚠️ `schedPoc()` returns **null, not 0**, when no schedule is loaded: "no programme to compare
+  against" and "no progress" are different facts, and only one is a variance.
+
+**Verified.** 112 (BOQ) + 82 (PMI) + 11 (package helpers) + 3 (POC) checks green executing the
+shipped functions, plus **29** on the prc-app section and **22** on the push function's derived
+helpers, all sliced from the shipped files. BOQ items table **11 header / 11 body** cells. 0 functions
+lost in any file. Both migrations balanced, idempotent, `security_invoker`, no `security definer`.
+- ⚠️ **A bug of my own, caught before commit:** the prc-app renderer referenced an invented
+  `window._projNameMap` instead of that file's memoised `_projName(pid)` — every project would have
+  shown as a raw id.
+- ⚠️ **I did NOT touch the prc-app repo on the first attempt**: it was mid interactive rebase with
+  five unmerged paths. Waited for it to land on `main`, then staged only my three files — the other
+  session's `patch-notice.js` and `index.html` edits are untouched.
+- ⚠️ **NOT deployed and NOT verified against real data.** Three owner actions remain, and nothing
+  appears until all of them are done: run the two migrations; `supabase functions deploy sync-wpm`;
+  `supabase functions deploy push-vendor-perf`; then Sync from WPM and invoke the push. There is no
+  Supabase CLI in this environment. Until then both screens say so rather than showing zeroes.
+- `MODULE_V` → `20260825d`; `module.css/js?v=20260825b`, `boq.js?v=20260825b`.
+
+⚠️ **Design decision #6 is still OPEN and needs the owner's call** — billing periods run 26th→25th
+while Cash Flow and the S-curve are monthly. Pro-rata a period across the two months it spans, or
+assign the whole period to the month holding its end date? Both are defensible and they produce
+different monthly revenue, so it is not mine to pick.
+
+
 ### 2026-08-25 — ROADMAP F1/F2/F6: vendor identity, the BOQ↔site reconciliation, and the rate library
 Owner: *"Let's do F1-F6 next"*, then settled the placement map mid-build:
 **vendor management belongs in the prc-app; productivity belongs here; the BOQ stays in Contracts &

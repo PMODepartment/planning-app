@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260819c" />
-  <link rel="stylesheet" href="module.css?v=20260825a" />
+  <link rel="stylesheet" href="module.css?v=20260825b" />
 </head>
 <body>
   <div class="pd-app">
@@ -46,6 +46,7 @@
           <input class="pd-input cc-search" id="cc-f-search" placeholder="Search description, reference, counterparty…" />
           <select class="pd-select" id="cc-f-type"><option value="">All Claim/CO</option></select>
           <select class="pd-select" id="cc-f-status"><option value="">All statuses</option></select>
+          <select class="pd-select" id="cc-f-pkg" title="Contract package" style="display:none;"><option value="">All packages</option></select>
           <select class="pd-select" id="cc-f-datefield" title="Which date the window below filters on">
             <option value="">Date filter: none</option>
             <option value="date_submitted">Submitted date</option>
@@ -75,9 +76,9 @@
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <!-- boq.js must load BEFORE module.js's init runs (it is read as window.BOQ). -->
-  <script src="boq.js?v=20260824a"></script>
+  <script src="boq.js?v=20260825b"></script>
   <script src="pmi.js?v=20260825a"></script>
-  <script src="module.js?v=20260825a"></script>
+  <script src="module.js?v=20260825b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

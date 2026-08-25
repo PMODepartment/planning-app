@@ -27,8 +27,13 @@ Reconciled to PRC's own values, verified in a browser against the shipped CSS:
 - **Group by** defaults to `None` (was `Group Head`), so the landing view is flat. Grouping
   by group head or status remains available as an opt-in lens.
 
-### A3. Separate Project and Package — Package lives inside Project ⚠️ partly done 2026-08-19
-**The entity exists; module adoption does not.**
+### A3. Separate Project and Package — Package lives inside Project ✅ done 2026-08-25
+**A3s tail closed 2026-08-25.** migrations/2026-08-25-package-adoption.sql adds package_id to
+contracts_claims (picker + filter) and boq_items (the BOQ proposes a package per trade sheet),
+joining project_schedule/wbs_nodes from C1. Adoption is deliberately NOT universal - the list of
+tables that do NOT take it, and why, is in MODULE_CONTRACT.md 6b.
+
+**The entity, and now its adoption.**
 - `migrations/2026-08-19-packages.sql` (**OWNER MUST RUN**) creates `packages`
   (project_id, code unique-per-project, name, status, dates, contract_amount) with the
   same RLS shape as every project-scoped module table, plus an `updated_at` trigger.
@@ -37,9 +42,10 @@ Reconciled to PRC's own values, verified in a browser against the shipped CSS:
 - ⚠️ **A package is NOT the Main-Contract/Change-Order split** — that is `scope_type`, an
   activity-level tag from `2026-08-19-schedule-contract-scope.sql`. Orthogonal axes; an
   activity can be "Package 2" *and* "change_order". C1 builds on both, not on one.
-- **Still open:** no module table carries `package_id` yet, so selecting a package does not
-  filter module data. Adoption is per module — the column and the UI that sets it must land
-  together. Contract documented in `MODULE_CONTRACT.md` §6b.
+- **Closed 2026-08-25:** `contracts_claims` (picker + filter, with a real "no package"
+  scope) and `boq_items` (proposed per trade sheet) now carry `package_id`, joining
+  `project_schedule`/`wbs_nodes` from C1. Each landed WITH the UI that sets it, per
+  `MODULE_CONTRACT.md` §6b — which also lists the tables that deliberately do NOT take it.
 
 ### A4. Project landing page is a **dashboard** ✅ done 2026-08-19
 `dashboard.html` is now a real dashboard: project KPIs (status/group head, budget vs estimate,
@@ -73,9 +79,18 @@ B1c + B1d are all in. Implementation notes, the six contrast builds that prove t
 and what is deliberately NOT built: `modules/contracts-claims/CLAUDE.md`.
 ⚠️ **Not verified signed-in — no real workbook has been through the importer yet.** The first real
 import is the test, and the reconciliation gate is what should catch a column-map mistake.
-⚠️ Still open from §7 of the design note: **#2** (does the BOQ define the packages — offered, not
-auto-created: not built), **#6** (billing period → month mapping for Cash Flow), **#7** (which POC
-leads a report — the variance is surfaced, never auto-reconciled, as required).
+**Design decisions from §7, resolved 2026-08-25:**
+- **#2 — does the BOQ define the packages? ANSWERED: it PROPOSES them.** A "Packages from sheets…"
+  tool creates one package per priced trade sheet and tags its lines, propose → preview → apply.
+  Auto-creating is refused: a sheet is a measurement convenience as often as a commercial lot, and
+  a package minted by an importer would later be cited in a claim nobody agreed to.
+- **#7 — which POC leads a report? ANSWERED: neither.** The Billing tab now shows Contractual ·
+  Progress · Variance side by side, reading progress from the SAME `schedule_scurve_agg` the
+  S-Curve module uses. WARNING: it previously only STATED the rule without showing the comparison,
+  so this was not actually satisfied before. It is a report, never a correction.
+- **#6 — billing period → month mapping: STILL OPEN, needs the owner.** Periods run 26th→25th while
+  Cash Flow and the S-curve are monthly. Pro-rata across the two months, or assign the period to
+  the month holding its end date? Both defensible, different monthly revenue.
 
 Full design note: **`docs/boq-and-pmi.md`** (grounded in the real OPW101 Package 2 BOQ, 10 sheets /
 ~1,215 priced lines). The middle link already exists: `class_codes` (702 L3 codes) +
