@@ -3068,17 +3068,30 @@
     var out = '', first = chain.length > 1 ? chain.length - 2 : 0;
     for (var i = first; i >= 0; i--) {
       var nm = String(chain[i].name || '').trim();
-      if (!nm || phaseFromName(nm) || _isLocBranch(nm)) continue;
+      if (!isTradeName(nm)) continue;
       out = nm; break;
     }
     _tradeMemo[nodeId] = out;
     return out;
   }
+  // ONE rule for the whole app: a trade is a name that is not a project phase and not a place.
+  // Everything that asks "what trade is this?" — the grid's Trade column and grouping, the colours,
+  // the vertical stacking's chips, Cost Loading — goes through this, so a new project cannot acquire
+  // a "trade" called Execution Phase or Tower 1 through any route.
+  function isTradeName(name) {
+    var t = String(name == null ? '' : name).trim();
+    return !!t && !phaseFromName(t) && !_isLocBranch(t);
+  }
   // THE answer to "what trade is this activity?". Its own field wins; otherwise the WBS says.
+  // ⚠️ A STORED work_type is filtered by the same rule, not trusted because it is stored. Rows
+  // imported (or pushed long ago) carrying `work_type = 'Execution Phase'` / 'Tower 1' are exactly
+  // what put those two chips on screen, and they would survive any amount of WBS-side care. The row
+  // is not rewritten — it just stops being believed, so the WBS answer, or "no trade", shows instead.
   function workOf(r) {
     if (!r) return '';
     var own = r.work_type ? String(r.work_type).trim() : '';
-    return own || _nodeTrade(r.wbs_node_id) || '';
+    if (own && isTradeName(own)) return own;
+    return _nodeTrade(r.wbs_node_id) || '';
   }
   // ---- Contract scope (Main Contract vs Change Order) --------------------------------------
   // Owner 2026-08-19: the schedule has to say, per activity, whether the work is MAIN CONTRACT or a

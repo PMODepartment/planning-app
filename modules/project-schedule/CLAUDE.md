@@ -1,3 +1,29 @@
+## One rule for what a trade is — a STORED `work_type` of "Execution Phase" is no longer believed (2026-08-25) — fmlozano
+Owner, with the grid grouped `Trade › Activity › Tower › …` and every row sitting under a trade called
+**Execution Phase**: *"it detected the execution phase as a trade idk why. pls fix the logic and make
+it simpler for incoming projects."*
+- ⚠️ **Why the previous fix did not reach it.** That fix cleaned up the WBS walk (`_nodeTrade`), but
+  `workOf()` returned the row's own `work_type` **before** the walk ever ran, unfiltered. These rows
+  carry `work_type = 'Execution Phase'` (and 'Tower 1') from an import, so no amount of WBS-side care
+  could have changed the answer. I fixed the derivation and left the shortcut around it open.
+- **Now there is ONE rule, `isTradeName()`: a trade is a name that is not a project phase and not a
+  place.** Both the stored field and every WBS branch are put through it. Everything that asks "what
+  trade is this?" — the Trade column, Trade grouping, the colours, the vertical stacking's chips, Cost
+  Loading — goes through `workOf()`, so a new project cannot acquire a trade called *Execution Phase*
+  or *Tower 1* by **any** route: import, hand edit, or tree shape. That is the "simpler for incoming
+  projects" part — one predicate, one place.
+- ⚠️ **The row is NOT rewritten.** Nothing runs a silent UPDATE over the planner's data on load; the
+  value simply stops being believed, and the WBS answer (or "— No trade —") shows instead.
+- ⚠️ **The grid's Trade cell EDITOR still shows the raw stored value** (`r.work_type`, line ~13935),
+  while the cell's display shows the filtered one. Deliberate: the planner must be able to see and
+  correct the junk that is being ignored, or it becomes invisible data they cannot fix.
+- Verified by executing the SHIPPED `workOf`/`isTradeName`/`_nodeTrade` over the tree in the owner's
+  screenshot (`Project › Execution Phase › Tower 1 › ST1|AR1`, rows located at Tower 1/Tower 2 ·
+  Ground Floor/2F): stored `'Execution Phase'` + ST1 branch → **ST1**; stored `'Tower 1'` + AR1 →
+  **AR1**; stored junk with only the phase above → **""**; a real stored `'Structural Works'` → kept;
+  no `work_type` → **ST1**; **"Tower Crane Works"** → kept, because no activity carries it as a
+  location. Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260825j`.
+
 ## The vertical stacking listed the TOWERS as trades — `_nodeTrade` trusted the branch under the root (2026-08-25) — fmlozano
 Owner, with a screenshot of the trade chips reading *All trades · Execution Phase · Tower 1 · Tower 2*:
 *"i think there is error in detecting the trades in a project schedule… it detected the towers as trades."*

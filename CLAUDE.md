@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (e) — A stored `work_type` of "Execution Phase" is no longer believed
+Owner: *"it detected the execution phase as a trade… fix the logic and make it simpler for incoming
+projects."* `MODULE_V` → `20260825j`.
+- ⚠️ **Why (d) missed it:** that fix cleaned the WBS walk, but `workOf()` returned the row's own
+  `work_type` before the walk ever ran. These rows carry `work_type = 'Execution Phase'` from an
+  import, so the derivation was never consulted.
+- **One rule now — `isTradeName()`: a trade is a name that is not a project phase and not a place** —
+  applied to the stored field and to every WBS branch alike. One predicate in one place, so no future
+  project can acquire a trade called *Execution Phase* or *Tower 1* by any route.
+- ⚠️ No silent UPDATE over planner data: the value stops being believed, and the grid's Trade **editor**
+  still shows the raw stored value so the junk can be seen and corrected.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-25 (d) — Trade detection: the WBS towers were being read as trades
 Owner, on the vertical stacking's trade chips: *"it detected the towers as trades."* `MODULE_V` → `20260825i`.
 - ⚠️ **Root cause:** `_nodeTrade()` took the branch **directly under the root** as an activity's trade.
