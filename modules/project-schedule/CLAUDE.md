@@ -1,3 +1,42 @@
+## Cost Loading wears the Schedule Builder's clothes, and the money is the loudest thing on screen (2026-08-25) — fmlozano
+Owner: *"can you make the UI more visually appealing. emphasize more on the fields that are essential.
+Follow the format or appearance in the schedule builder."*
+- ⚠️ **Built ON the builder's classes, not beside them.** `.sbld-wrap` / `.sbld-rail` / `.sbld-step` /
+  `.sbld-panel` / `.sbld-kpi` / `.sbld-tablewrap` / `.sbld-foot` / `.sbld-tag` / `.sbld-locbar` are now
+  what Cost Loading is made of; the old parallel `pscl-wrap/rail/step/panel/kpis` set is **deleted**,
+  not left alongside. A second near-identical stylesheet is how two wizards in one app slowly stop
+  looking like one app, and it doubles the cost of every future theme change. What is left under
+  `pscl-` is only what Cost Loading has and the builder does not: money inputs and the step-4 stack.
+- **The emphasis, concretely** — the ask was "the fields that are essential", so the hierarchy is now
+  explicit rather than everything at one weight:
+  - **The money input is the primary control**: 36px tall, a ₱ prefix in its own gutter, tabular
+    figures at 14px/700, and a red focus ring matching the primary button.
+  - **`td.nm`** (activity name) is bold 13.5px; **`td.money`** is bold tabular; **`td.sub`** (WBS codes,
+    activity ids, location tokens) is muted 11.5px. Context stays present but stops competing with the
+    figure — before, a row of grey codes carried the same weight as the peso amount.
+  - Occurrence counts became `.sbld-tag` pills ("3×"), so a count reads as a label, not as data.
+  - An unpriced total says **"not priced"** in muted text instead of an em-dash that could be mistaken
+    for zero.
+- ⚠️ **The KPI order is an emphasis decision, not decoration.** It now leads with **Assigned so far**
+  (accent border, 26px) then what is still MISSING — not yet priced, distribution incomplete, both
+  amber when non-zero — and only then the plain counts. The old strip led with "Activity names", a
+  number nobody opens this screen for, and buried the assigned total among five identical boxes.
+- **A running total lives in the table's `tfoot`**, at the bottom of the column it sums, where a
+  planner typing down the list can watch it move — rather than as yet another box at the top.
+- **Each step now has the builder's title + lede + footer.** The footer carries Back / Next (and
+  **Apply to schedule** on step 4), because the bottom of a long table is where the eye is when the
+  step is finished — the rail alone meant scrolling back up to advance.
+- Verified by RENDERING the shipped code: the `CostLoading` closure was sliced out of the file and
+  executed against a stub project (5 activity names × 3 sub-WBS, two of them priced), its steps 1–3
+  painted into a page carrying the real `dashboard.css` + module `<style>`, and read back in a
+  browser. All three panels render: rail with the four steps and their captions, the ₱1,450,000.00
+  hero KPI, "3 not yet priced", the ₱-prefixed inputs, per-occurrence figures (₱333,333.33 for a
+  ₱1,000,000 / 3 split), the footer total "2 of 5 · ₱1,450,000.00", and Back/Next. Inline script
+  parses; no stale `pscl-wrap|rail|step|panel|kpis` reference is left. ⚠️ **Not verified signed-in**
+  (step 4's stack needs a real located project). `MODULE_V` → `20260825q`.
+- ⚠️ **No behaviour changed.** Grouping, distribution, the 100% rule, Apply and what it writes are
+  untouched — this commit is markup and CSS.
+
 ## The push
 
 ### 2026-08-25 (k) — The push always stamps the tower; both stacking-axis commits reverted

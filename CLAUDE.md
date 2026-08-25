@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (l) — Cost Loading restyled onto the Schedule Builder's own components
+Owner: *"make the UI more visually appealing. emphasize more on the fields that are essential. Follow
+the format or appearance in the schedule builder."* `MODULE_V` → `20260825q`.
+- ⚠️ Built **on** the builder's classes (`.sbld-wrap/rail/step/panel/kpi/tablewrap/foot/tag/locbar`);
+  the parallel `pscl-*` shell is deleted rather than left alongside, so the two wizards cannot drift.
+- **Emphasis is now explicit:** the ₱-prefixed money input is the primary control; activity name and
+  amount are bold, WBS codes / ids / location tokens are muted context; the KPI strip leads with
+  *Assigned so far* and then what is missing, instead of leading with a count nobody came for; a
+  running total sits in the table footer where it can be watched while typing.
+- Each step gained the builder's title + lede + Back/Next footer (Apply on step 4).
+- ⚠️ Markup and CSS only — no change to grouping, distribution, the 100% rule or what Apply writes.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-25 (i) — Vertical stacking: the axis is the first location level that is actually used
 Owner, on One Portwood Residences: *"look at the vertical stacking, there is no levels detected."*
 `MODULE_V` → `20260825n`.

@@ -950,43 +950,58 @@
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
     .ps-vstack { padding:12px 14px 20px; }
-    /* ---- Cost Loading (4-step wizard) ------------------------------------------------------ */
+    /* ---- Cost Loading (4-step wizard) ------------------------------------------------------
+       ⚠️ Deliberately built ON the Schedule Builder's own classes (.sbld-wrap / .sbld-rail /
+       .sbld-step / .sbld-panel / .sbld-kpi / .sbld-tablewrap / .sbld-foot) rather than beside them.
+       Owner: "follow the format or appearance in the schedule builder". A parallel set of
+       near-identical classes is how two wizards in one app slowly stop looking like one app — and it
+       would double the work of every future theme change. What remains here is only what Cost
+       Loading has and the builder does not: money inputs, and the step-4 cost stack. */
     .pscl-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0; }
-    .pscl-wrap { display:flex; gap:14px; align-items:flex-start; }
-    .pscl-rail { flex:0 0 232px; display:flex; flex-direction:column; gap:6px; }
-    .pscl-step { display:flex; gap:10px; align-items:flex-start; text-align:left; border:1px solid var(--pd-line);
-      background:var(--pd-card); color:var(--pd-ink); border-radius:10px; padding:9px 11px; cursor:pointer; font:inherit; }
-    .pscl-step:hover { border-color:var(--pd-red); }
-    .pscl-step.on { border-color:var(--pd-red); background:var(--pd-red-light); }
-    .pscl-step .n { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); color:var(--pd-muted);
-      display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:800; }
-    .pscl-step.on .n { background:var(--pd-red); color:#fff; }
-    .pscl-step .t { font-size:12.5px; font-weight:700; line-height:1.25; }
-    .pscl-step .d { font-size:11px; color:var(--pd-muted); line-height:1.3; margin-top:2px; }
-    .pscl-panel { flex:1 1 0%; min-width:0; }
     .pscl-note { font-size:12px; color:var(--pd-muted); }
-    .pscl-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
+    .pscl-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8; border-radius:8px; padding:8px 10px; margin-bottom:14px; }
     html.pd-dark .pscl-warn { color:#FFD79A; background:#3A2E17; border-color:#5A4620; }
-    .pscl-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .pscl-tbl { width:100%; border-collapse:collapse; font-size:13px; }
     .pscl-tbl th { position:sticky; top:0; z-index:1; background:var(--pd-bg); text-align:left; font-size:10.5px;
-      font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pd-muted); padding:7px 10px;
-      border-bottom:2px solid var(--pd-line); }
-    .pscl-tbl td { padding:6px 10px; border-bottom:1px solid var(--pd-line); vertical-align:middle; }
+      font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pd-muted); padding:8px 12px;
+      border-bottom:1px solid var(--pd-line); }
+    .pscl-tbl td { padding:7px 12px; border-bottom:1px solid var(--pd-line); vertical-align:middle; }
+    .pscl-tbl tr:last-child td { border-bottom:0; }
     .pscl-tbl tr:hover td { background:var(--pd-bg); }
     .pscl-tbl td.num, .pscl-tbl th.num { text-align:right; font-variant-numeric:tabular-nums; }
     .pscl-tbl tr.on td { background:var(--pd-red-light); }
-    .pscl-scroll { max-height:58vh; overflow:auto; }
-    .pscl-in { width:100%; max-width:150px; height:30px; padding:0 8px; font:inherit; font-size:12.5px; text-align:right;
-      border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); color:var(--pd-ink); }
-    .pscl-in.wide { max-width:none; text-align:left; }
-    .pscl-in:focus { outline:2px solid var(--pd-red); outline-offset:-2px; }
-    .pscl-kpis { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
-    .pscl-kpi { flex:1 1 150px; border:1px solid var(--pd-line); border-left:3px solid var(--pd-muted); border-radius:10px;
-      background:var(--pd-card); padding:9px 12px; }
-    .pscl-kpi.red { border-left-color:var(--pd-red); }
-    .pscl-kpi .v { font-size:19px; font-weight:800; font-variant-numeric:tabular-nums; }
-    .pscl-kpi .l { font-size:10.5px; color:var(--pd-muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+    /* ⚠️ THE HIERARCHY IS THE POINT (owner: "emphasize more on the fields that are essential").
+       .nm = the activity name and the money — what the planner is here to read and type.
+       .sub = the WBS codes, activity ids, location tokens — context, present but quieter, so the
+       eye lands on the figure rather than on a row of grey codes competing with it. */
+    .pscl-tbl td.nm { font-weight:700; font-size:13.5px; }
+    .pscl-tbl td.sub, .pscl-tbl th.sub { color:var(--pd-muted); font-size:11.5px; }
+    .pscl-tbl td.money { font-variant-numeric:tabular-nums; font-weight:700; font-size:13.5px; }
+    .pscl-tbl td.money.none { font-weight:400; color:var(--pd-muted); }
+    .pscl-tbl tfoot td { border-top:2px solid var(--pd-line); border-bottom:0; background:var(--pd-bg);
+      font-weight:800; font-size:13.5px; font-variant-numeric:tabular-nums; }
+    .pscl-scroll { max-height:52vh; overflow:auto; }
+    /* The money input is the primary control of the whole screen, so it is the biggest thing on the
+       row: a peso prefix, tabular figures, and a red focus ring that matches the primary button. */
+    .pscl-money { display:inline-flex; align-items:center; gap:0; border:1px solid var(--pd-line); border-radius:8px;
+      background:var(--pd-card); overflow:hidden; height:36px; min-width:170px; }
+    .pscl-money:focus-within { border-color:var(--pd-red); box-shadow:0 0 0 3px var(--pd-red-light); }
+    .pscl-money .cur { flex:none; padding:0 8px; font-size:12.5px; font-weight:800; color:var(--pd-muted);
+      background:var(--pd-bg); align-self:stretch; display:flex; align-items:center; border-right:1px solid var(--pd-line); }
+    .pscl-in { width:100%; height:34px; padding:0 10px; font:inherit; font-size:14px; font-weight:700; text-align:right;
+      font-variant-numeric:tabular-nums; border:0; background:transparent; color:var(--pd-ink); }
+    .pscl-in:focus { outline:none; }
+    .pscl-in.pct { max-width:96px; height:32px; font-size:13px; border:1px solid var(--pd-line); border-radius:7px;
+      background:var(--pd-card); padding:0 8px; }
+    .pscl-in.pct:focus { outline:2px solid var(--pd-red); outline-offset:-2px; }
     .pscl-bad { color:var(--pd-red); font-weight:700; }
+    /* One KPI carries the number the whole exercise is about — the money assigned so far. It gets the
+       accent border and a larger figure; the rest stay quiet counts. Same box as .sbld-kpi otherwise,
+       so the row still reads as the builder's KPI strip. */
+    .sbld-kpi.pscl-hero { border-left:3px solid var(--pd-red); background:var(--pd-card); }
+    .sbld-kpi.pscl-hero .sbld-kpi-v { font-size:26px; letter-spacing:-.01em; }
+    .sbld-kpi.pscl-warnk { border-left:3px solid var(--pd-warn); }
+    .sbld-kpi-v.num { font-variant-numeric:tabular-nums; }
     .pscl-ok { color:#0E7A4A; font-weight:700; }
     html.pd-dark .pscl-ok { color:#4ED18B; }
     /* Step 4 — the cost stack. One row per location value, the bar sized by that location's SHARE
@@ -2496,15 +2511,15 @@
 
       <!-- COST LOADING (the wizard: enlist → assign → distribute → review) -->
       <div id="ps-view-costload" style="display:none;">
-        <div class="pscl-bar">
-          <span class="pscl-note">Assign cost to the execution-phase activities, distribute it across the sub-WBS each activity occurs in, then review it as a vertical stack.</span>
-          <span class="pscl-note" id="ps-cl-state" style="margin-left:auto;"></span>
+        <div class="ps-ck-bar">
+          <span style="font-size:12px;color:var(--pd-muted);">Assign cost to the execution-phase activities, distribute it across the sub-WBS each occurs in, then review it as a vertical stack — the figures <b>Apply</b> writes as Planned IBB.</span>
+          <span class="sbld-save-state" id="ps-cl-state" style="margin-left:auto;"></span>
           <button class="pd-btn" id="ps-cl-save"><span data-ico="check" data-ico-size="14"></span> Save loading</button>
           <button class="pd-btn pd-btn-primary" id="ps-cl-apply"><span data-ico="cash" data-ico-size="14"></span> Apply to schedule</button>
         </div>
-        <div class="pscl-wrap">
-          <div class="pscl-rail" id="ps-cl-rail"></div>
-          <div class="pscl-panel" id="ps-cl-panel"></div>
+        <div class="sbld-wrap">
+          <div class="sbld-rail" id="ps-cl-rail"></div>
+          <div class="sbld-panel" id="ps-cl-panel"></div>
         </div>
       </div>
 
@@ -22330,25 +22345,51 @@
 
     // ---- Rendering -------------------------------------------------------------------------------
     var STEPS = [
-      { t: 'Enlist activities', d: 'Every activity under the execution phase, and how many times it occurs. Rename here and the schedule follows.' },
-      { t: 'Assign cost', d: 'One total per activity name — the cost of that work across the whole project.' },
-      { t: 'Distribute', d: 'Split each total across the sub-WBS it occurs in: equally, or by a percentage you set.' },
-      { t: 'Consolidate & review', d: 'The result as a vertical stack — per tower, per floor or zone, for the selected activity.' }
+      { t: 'Enlist activities', short: 'What is being priced',
+        d: 'Every activity under the <b>execution phase</b>, grouped by name with how many times it occurs. One cost line per name — "Formworks" is priced once, not the 40 times it is programmed. <b>Rename here and the schedule follows.</b>' },
+      { t: 'Assign cost', short: 'One total per name',
+        d: 'One figure per activity name — the cost of that work <b>across the whole project</b>. Step 3 splits it across the places it occurs.' },
+      { t: 'Distribute', short: 'Split across the sub-WBS',
+        d: 'Split each total across the sub-WBS it occurs in: <b>equally</b>, or by a <b>percentage</b> you set per occurrence. Shares must reach 100% before Apply will write anything.' },
+      { t: 'Consolidate & review', short: 'See where the money is',
+        d: 'The result as a vertical stack — per tower, per floor or zone, for the selected activity. These are the figures <b>Apply to schedule</b> writes as Planned IBB.' }
     ];
+    // The rail is the builder's rail — same classes, same sticky column, so switching tabs does not
+    // feel like switching apps. The step's own one-line summary sits under its title exactly as the
+    // builder's does.
     function railHTML() {
       return STEPS.map(function (s2, i) {
-        return '<button class="pscl-step' + (i === step ? ' on' : '') + '" data-step="' + i + '">' +
-          '<span class="n">' + (i + 1) + '</span><span><span class="t">' + esc(s2.t) + '</span>' +
-          '<span class="d">' + esc(s2.d) + '</span></span></button>';
+        return '<button class="sbld-step' + (i === step ? ' on' : '') + '" data-step="' + i + '">' +
+          '<span class="sbld-step-n">' + (i + 1) + '</span><span><span class="sbld-step-t">' + esc(s2.t) + '</span>' +
+          '<br><span class="sbld-step-s">' + esc(s2.short || s2.t) + '</span></span></button>';
       }).join('');
     }
+    // ⚠️ KPI ORDER IS AN EMPHASIS DECISION: the money first and largest, then what is still missing,
+    // then the plain counts. The old strip led with "Activity names" — a number nobody is here for —
+    // and buried the assigned total in the middle of five identical boxes.
     function kpisHTML(t) {
-      function k(v, l, red) { return '<div class="pscl-kpi' + (red ? ' red' : '') + '"><div class="v">' + v + '</div><div class="l">' + esc(l) + '</div></div>'; }
-      return '<div class="pscl-kpis">' +
-        k(t.groups, 'Activity names') + k(t.acts, 'Activities') +
-        k(money(t.assigned), 'Assigned', true) +
-        k(t.unpriced, 'Not yet priced') +
-        k(t.bad, 'Distribution incomplete') + '</div>';
+      function k(v, l, cls) {
+        return '<div class="sbld-kpi' + (cls ? ' ' + cls : '') + '"><div class="sbld-kpi-l">' + esc(l) + '</div>' +
+          '<div class="sbld-kpi-v num">' + v + '</div></div>';
+      }
+      return '<div class="sbld-kpis">' +
+        k(money(t.assigned), 'Assigned so far', 'pscl-hero') +
+        k(t.unpriced, 'Not yet priced', t.unpriced ? 'pscl-warnk' : '') +
+        k(t.bad, 'Distribution incomplete', t.bad ? 'pscl-warnk' : '') +
+        k(t.groups, 'Activity names') + k(t.acts, 'Occurrences') + '</div>';
+    }
+    // Title + lede + the step's own body, in the builder's panel shape.
+    function panelWrap(i, body, foot) {
+      return '<h2>' + esc(STEPS[i].t) + '</h2><p class="sbld-lede">' + STEPS[i].d + '</p>' + body + (foot || footHTML(i));
+    }
+    // The builder's footer: where you are, and the two ways out of the step.
+    function footHTML(i) {
+      return '<div class="sbld-foot">' +
+        (i > 0 ? '<button class="pd-btn" data-go="' + (i - 1) + '">← ' + esc(STEPS[i - 1].t) + '</button>' : '<span></span>') +
+        (i < STEPS.length - 1
+          ? '<button class="pd-btn pd-btn-primary" data-go="' + (i + 1) + '">' + esc(STEPS[i + 1].t) + ' →</button>'
+          : '<button class="pd-btn pd-btn-primary" id="ps-cl-apply2"><span data-ico="cash" data-ico-size="14"></span> Apply to schedule</button>') +
+        '</div>';
     }
     function scopeWarnHTML(sc) {
       var w = [];
@@ -22357,51 +22398,56 @@
       return w.length ? '<div class="pscl-warn">' + w.join('<br>') + '</div>' : '';
     }
     function step1HTML(t) {
-      if (!t.groups) return '<div class="ps-empty">No activities to load cost onto yet.</div>';
-      return scopeWarnHTML(t.list._scope) + kpisHTML(t) +
-        '<div class="pd-card" style="padding:0;overflow:hidden;"><div class="pscl-scroll"><table class="pscl-tbl">' +
-        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th>Sub-WBS it appears under</th><th class="num">Assigned</th><th></th></tr></thead><tbody>' +
+      if (!t.groups) return panelWrap(0, '<div class="sbld-empty">No activities to load cost onto yet.</div>');
+      return panelWrap(0, scopeWarnHTML(t.list._scope) + kpisHTML(t) +
+        '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
+        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="sub">Sub-WBS it appears under</th><th class="num">Assigned</th><th></th></tr></thead><tbody>' +
         t.list.map(function (g) {
           var wbss = {}; g.insts.forEach(function (r) { if (r.wbs) wbss[r.wbs] = 1; });
           var codes = Object.keys(wbss);
-          return '<tr data-g="' + esc(g.name) + '"><td><b>' + esc(g.name) + '</b></td>' +
-            '<td class="num">' + g.insts.length + '</td>' +
-            '<td class="pscl-note">' + esc(codes.slice(0, 4).join(', ')) + (codes.length > 4 ? ' … (' + codes.length + ')' : '') + '</td>' +
-            '<td class="num">' + (g.total == null ? '<span class="pscl-note">—</span>' : money(g.total)) + '</td>' +
-            '<td><button class="pd-btn" data-ren="' + esc(g.name) + '" style="height:28px;font-size:11.5px;">Rename</button></td></tr>';
-        }).join('') + '</tbody></table></div></div>';
+          return '<tr data-g="' + esc(g.name) + '"><td class="nm">' + esc(g.name) + '</td>' +
+            '<td class="num"><span class="sbld-tag">' + g.insts.length + '×</span></td>' +
+            '<td class="sub">' + esc(codes.slice(0, 4).join(', ')) + (codes.length > 4 ? ' … (' + codes.length + ')' : '') + '</td>' +
+            '<td class="num money' + (g.total == null ? ' none' : '') + '">' + (g.total == null ? 'not priced' : money(g.total)) + '</td>' +
+            '<td><button class="pd-btn pd-btn-sm" data-ren="' + esc(g.name) + '">Rename</button></td></tr>';
+        }).join('') + '</tbody></table></div></div>');
     }
     function step2HTML(t) {
-      if (!t.groups) return '<div class="ps-empty">No activities to price yet.</div>';
-      return kpisHTML(t) +
-        '<p class="pscl-note" style="margin:0 0 8px;">One figure per activity name — the total cost of that work across every place it is programmed. Step 3 splits it.</p>' +
-        '<div class="pd-card" style="padding:0;overflow:hidden;"><div class="pscl-scroll"><table class="pscl-tbl">' +
-        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num" style="width:190px;">Total cost (₱)</th><th class="num">Per occurrence (equal)</th></tr></thead><tbody>' +
+      if (!t.groups) return panelWrap(1, '<div class="sbld-empty">No activities to price yet.</div>');
+      // ⚠️ The running total is a FOOTER row, not another KPI box: it belongs at the bottom of the
+      // column it sums, where a planner typing down the list can see it move.
+      return panelWrap(1, kpisHTML(t) +
+        '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
+        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num" style="width:210px;">Total cost</th><th class="num sub">Per occurrence (equal)</th></tr></thead><tbody>' +
         t.list.map(function (g) {
-          return '<tr><td><b>' + esc(g.name) + '</b></td><td class="num">' + g.insts.length + '</td>' +
-            '<td class="num"><input class="pscl-in" data-cost="' + esc(g.name) + '" value="' + (g.total == null ? '' : g.total) + '" placeholder="0.00"></td>' +
-            '<td class="num pscl-note">' + (g.total == null ? '—' : money(g.total / Math.max(1, g.insts.length))) + '</td></tr>';
-        }).join('') + '</tbody></table></div></div>';
+          return '<tr><td class="nm">' + esc(g.name) + '</td>' +
+            '<td class="num"><span class="sbld-tag">' + g.insts.length + '×</span></td>' +
+            '<td class="num"><span class="pscl-money"><span class="cur">₱</span>' +
+              '<input class="pscl-in" data-cost="' + esc(g.name) + '" value="' + (g.total == null ? '' : g.total) + '" placeholder="0.00" inputmode="decimal"></span></td>' +
+            '<td class="num sub">' + (g.total == null ? '—' : money(g.total / Math.max(1, g.insts.length))) + '</td></tr>';
+        }).join('') + '</tbody>' +
+        '<tfoot><tr><td>Assigned so far</td><td class="num">' + t.priced + ' of ' + t.groups + '</td>' +
+        '<td class="num">' + money(t.assigned) + '</td><td></td></tr></tfoot></table></div></div>');
     }
     function step3HTML(t) {
-      if (!t.groups) return '<div class="ps-empty">Nothing to distribute yet.</div>';
+      if (!t.groups) return panelWrap(2, '<div class="sbld-empty">Nothing to distribute yet.</div>');
       if (!selGroup || !groupByName(selGroup)) selGroup = (t.list.filter(function (g) { return g.total != null; })[0] || t.list[0]).name;
       var g = groupByName(selGroup);
       var d = distribute(g), sum = pctSum(g), issue = groupIssue(g);
       var lv = LOC_LEVELS;
-      return '<div style="display:flex;gap:14px;align-items:flex-start;">' +
-        '<div class="pd-card" style="flex:0 0 250px;padding:0;overflow:hidden;"><div class="pscl-scroll"><table class="pscl-tbl">' +
+      return panelWrap(2, '<div style="display:flex;gap:16px;align-items:flex-start;">' +
+        '<div class="sbld-tablewrap" style="flex:0 0 250px;"><div class="pscl-scroll"><table class="pscl-tbl">' +
         '<thead><tr><th>Activity</th><th class="num">n</th></tr></thead><tbody>' +
         t.list.map(function (x) {
           var iss = x.total != null && groupIssue(x);
           return '<tr class="' + (x.name === selGroup ? 'on' : '') + '" data-pick="' + esc(x.name) + '" style="cursor:pointer;">' +
-            '<td>' + esc(x.name) + (x.total == null ? ' <span class="pscl-note">(no cost)</span>' : (iss ? ' <span class="pscl-bad" title="' + esc(iss) + '">!</span>' : '')) + '</td>' +
-            '<td class="num">' + x.insts.length + '</td></tr>';
+            '<td class="' + (x.name === selGroup ? 'nm' : '') + '">' + esc(x.name) + (x.total == null ? ' <span class="pscl-note">(no cost)</span>' : (iss ? ' <span class="pscl-bad" title="' + esc(iss) + '">!</span>' : '')) + '</td>' +
+            '<td class="num sub">' + x.insts.length + '</td></tr>';
         }).join('') + '</tbody></table></div></div>' +
         '<div style="flex:1 1 0%;min-width:0;">' +
-          '<div class="pscl-bar" style="padding:0 0 8px;">' +
-            '<b style="font-size:13px;">' + esc(g.name) + '</b>' +
-            '<span class="pscl-note">' + (g.total == null ? 'no cost assigned in step 2' : money(g.total) + ' across ' + g.insts.length + ' occurrence(s)') + '</span>' +
+          '<div class="pscl-bar" style="padding:0 0 10px;">' +
+            '<b style="font-size:15px;">' + esc(g.name) + '</b>' +
+            '<span class="sbld-tag">' + (g.total == null ? 'no cost yet' : money(g.total) + ' · ' + g.insts.length + '×') + '</span>' +
             '<span style="margin-left:auto;"></span>' +
             '<span class="ps-vs-seg"><button data-mode="equal" class="' + (g.mode === 'equal' ? 'on' : '') + '">Split equally</button>' +
             '<button data-mode="pct" class="' + (g.mode === 'pct' ? 'on' : '') + '">By percentage</button></span>' +
@@ -22411,39 +22457,44 @@
             ? '<div class="' + (Math.abs(sum - 100) > 0.01 ? 'pscl-warn' : 'pscl-note') + '" style="margin-bottom:8px;">Shares total <b>' + sum + '%</b>' +
               (Math.abs(sum - 100) > 0.01 ? ' — ' + (sum > 100 ? (r2(sum - 100) + '% over') : (r2(100 - sum) + '% still to allocate')) + '. Apply is refused until this is 100%.' : ' — complete.') + '</div>'
             : '') +
-          '<div class="pd-card" style="padding:0;overflow:hidden;"><div class="pscl-scroll"><table class="pscl-tbl">' +
-          '<thead><tr><th>Sub-WBS</th><th>Activity ID</th>' +
-          lv.map(function (l) { return '<th>' + esc(l.name) + '</th>'; }).join('') +
+          '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
+          '<thead><tr><th class="sub">Sub-WBS</th><th class="sub">Activity ID</th>' +
+          lv.map(function (l) { return '<th class="sub">' + esc(l.name) + '</th>'; }).join('') +
           '<th class="num" style="width:130px;">Share %</th><th class="num">Cost</th></tr></thead><tbody>' +
           d.map(function (x, i) {
             var r = x.r, p = pctOf(g, r);
-            return '<tr><td><code>' + esc(r.wbs || '—') + '</code></td><td class="pscl-note">' + esc(r.activity_id || '—') + '</td>' +
-              lv.map(function (l) { return '<td class="pscl-note">' + esc(locValOf(r, l.id) || '—') + '</td>'; }).join('') +
+            return '<tr><td class="sub"><code>' + esc(r.wbs || '—') + '</code></td><td class="sub">' + esc(r.activity_id || '—') + '</td>' +
+              lv.map(function (l) { return '<td class="sub">' + esc(locValOf(r, l.id) || '—') + '</td>'; }).join('') +
               '<td class="num">' + (g.mode === 'pct'
-                ? '<input class="pscl-in" style="max-width:96px;" data-pct="' + esc(instKey(r)) + '" value="' + (p == null ? '' : p) + '" placeholder="0">'
-                : '<span class="pscl-note">' + r2(100 / Math.max(1, g.insts.length)) + '%</span>') + '</td>' +
-              '<td class="num">' + (x.amount == null ? '<span class="pscl-note">—</span>' : money(x.amount)) + '</td></tr>';
-          }).join('') + '</tbody></table></div></div>' +
+                ? '<input class="pscl-in pct" data-pct="' + esc(instKey(r)) + '" value="' + (p == null ? '' : p) + '" placeholder="0" inputmode="decimal">'
+                : '<span class="sub">' + r2(100 / Math.max(1, g.insts.length)) + '%</span>') + '</td>' +
+              '<td class="num money' + (x.amount == null ? ' none' : '') + '">' + (x.amount == null ? '—' : money(x.amount)) + '</td></tr>';
+          }).join('') + '</tbody>' +
+          '<tfoot><tr><td colspan="' + (2 + lv.length) + '">' + (issue ? 'Incomplete' : 'Adds up exactly') + '</td>' +
+          '<td class="num">' + (g.mode === 'pct' ? sum + '%' : '100%') + '</td>' +
+          '<td class="num">' + (g.total == null ? '—' : money(g.total)) + '</td></tr></tfoot></table></div></div>' +
           (issue ? '<p class="pscl-note" style="margin-top:8px;">This activity is <span class="pscl-bad">' + esc(issue) + '</span>.</p>'
                  : '<p class="pscl-note" style="margin-top:8px;">Distribution complete — the occurrences add up to ' + money(g.total) + ' exactly.</p>') +
-        '</div></div>';
+        '</div></div>');
     }
     function step4HTML(t) {
-      if (!t.priced) return '<div class="ps-empty">Assign a cost in step 2 first — there is nothing to review yet.</div>';
-      if (!LOC_LEVELS.length) return scopeWarnHTML(t.list._scope) +
-        '<div class="pscl-warn">This project has no <b>Location Breakdown</b> levels, so there are no floors or zones to stack. Set them up in the schedule’s <b>Group ▾ → Location Breakdown</b>, then tag the activities.</div>' + kpisHTML(t);
+      if (!t.priced) return panelWrap(3, '<div class="sbld-empty">Assign a cost in step 2 first — there is nothing to review yet.</div>');
+      if (!LOC_LEVELS.length) return panelWrap(3, scopeWarnHTML(t.list._scope) +
+        '<div class="pscl-warn">This project has no <b>Location Breakdown</b> levels, so there are no floors or zones to stack. Set them up in the schedule’s <b>Group ▾ → Location Breakdown</b>, then tag the activities.</div>' + kpisHTML(t));
       var levelId = clDefaultLevel();
       var tw = clTowerValues(levelId);
       var onlyName = selGroup && groupByName(selGroup) && groupByName(selGroup).total != null ? selGroup : null;
-      var head = '<div class="pscl-bar" style="padding:0 0 10px;">' +
-        '<label class="pscl-note" for="ps-cl-actsel">Activity</label>' +
+      // The two selectors ARE the controls of this step, so they sit in the builder's own settings
+      // strip rather than loose above the stack.
+      var head = '<div class="sbld-locbar">' +
+        '<label class="sbld-locbar-l" for="ps-cl-actsel">Activity</label>' +
         '<select class="pd-select" id="ps-cl-actsel" style="max-width:280px;">' +
           '<option value="">All priced activities</option>' +
           t.list.filter(function (g) { return g.total != null; }).map(function (g) {
             return '<option value="' + esc(g.name) + '"' + (g.name === onlyName ? ' selected' : '') + '>' + esc(g.name) + ' — ' + money(g.total) + '</option>';
           }).join('') +
         '</select>' +
-        '<label class="pscl-note" for="ps-cl-lvlsel">Stack by</label>' +
+        '<label class="sbld-locbar-l" for="ps-cl-lvlsel">Stack by</label>' +
         '<select class="pd-select" id="ps-cl-lvlsel" style="max-width:180px;">' +
           LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === levelId ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
         '</select>' +
@@ -22477,10 +22528,10 @@
         body = '<div class="pscl-stk">' + towerHTML(label, costStack(levelId, null, null, onlyName)) + '</div>';
       }
       var st0 = costStack(levelId, null, null, onlyName);
-      return head + kpisHTML(t) + body +
+      return panelWrap(3, kpisHTML(t) + head + body +
         '<p class="pscl-note" style="margin-top:10px;">Showing <b>' + esc(onlyName || 'every priced activity') + '</b> stacked by <b>' + esc(stkLevelName(levelId)) + '</b>. ' +
         'In scope: ' + money(st0.total) + (st0.unlocated ? ' · ' + money(st0.unlocated) + ' carries no ' + esc(stkLevelName(levelId)) + ' value' : '') +
-        '. These are the figures <b>Apply to schedule</b> writes as Planned IBB.</p>';
+        '.</p>');
     }
     function panelHTML() {
       var t = totals();
@@ -22500,6 +22551,12 @@
     function wirePanel() {
       var rail = document.getElementById('ps-cl-rail'), panel = document.getElementById('ps-cl-panel');
       rail.querySelectorAll('[data-step]').forEach(function (b) { b.onclick = function () { step = +b.dataset.step; paint(); }; });
+      // The panel footer's Back / Next — the same navigation as the rail, where the eye already is
+      // when it reaches the bottom of a long table.
+      panel.querySelectorAll('[data-go]').forEach(function (b) {
+        b.onclick = function () { step = +b.dataset.go; paint(); var p = document.getElementById('ps-view-costload'); if (p && p.scrollIntoView) p.scrollIntoView({ block: 'start' }); };
+      });
+      var ap2 = document.getElementById('ps-cl-apply2'); if (ap2) ap2.onclick = applyAll;
       // step 1 — rename
       panel.querySelectorAll('[data-ren]').forEach(function (b) {
         b.onclick = function () {
