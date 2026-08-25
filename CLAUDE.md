@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (b) — "No levels detected": the band had two causes and only one had a message
+Owner: *"how come its like this again? there is no levels detected?"* Delivered as `?v=20260826b`.
+- ⚠️ **The banner was advice for a problem this project does not have.** Two faults share the dashed
+  *No level* band: some activities missing the level (whole-trade work — re-push), or **every** activity
+  missing it while carrying a value further down (the work is located; only the top level was never
+  stamped — a single-tower push). One Portwood is the second, and the copy only described the first.
+- ⚠️ The 2026-08-25 `locMapOf` fix was correct and could never help here — it fixes the next push, and
+  these rows were already in the database.
+- **Fix:** that case now gets its own message plus a one-click **Assign N activities** repair — writes
+  one key of the location map on a copy (Level/Zone/Unit cannot be lost), touches only rows already
+  located at a lower level, never overwrites an existing value, and never runs by itself.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-26 (a) — Vertical stacking: a scrubbable time bar, and a touch view for iPad/phone
 Owner: *"allow it for an ipad or phone view… add like a timeline bar… when i drag the line, the
 vertical stacking also updates so we can see the actual progression."* Delivered as `?v=20260826a`.

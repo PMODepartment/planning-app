@@ -1,3 +1,40 @@
+## "No levels detected" — the band had TWO causes and only one had a message (2026-08-26) — fmlozano
+Owner, on One Portwood again: *"how come its like this again? there is no levels detected?"* Same
+screenshot as before — 2,561 activities in the dashed *No level* band with their floors visible as the
+cells, and a banner telling them to give the trade floors in Schedule Builder step 2.
+- ⚠️ **The banner was giving advice for a problem this project does not have, which is why it kept
+  reading as "still broken".** The floors ARE there — 2ND Floor, B1, Ground Floor, Roof Deck, all on
+  screen. Two different faults land in the same band and the copy only ever described the first:
+  - **(a) SOME activities lack the level** — whole-trade work pushed by a trade with no floors. Re-push
+    is the right advice.
+  - **(b) EVERY activity lacks it while carrying a value FURTHER DOWN** — the work is located and only
+    the top level was never stamped. That is a single-tower project: `locMapOf` wrote the tower only
+    when `multiTower()`, so a one-building push left that column empty on every row.
+  This project is (b). The stacking bands by the first location level, so all 2,561 could only ever be
+  filed under "No level".
+- ⚠️ **The 2026-08-25 fix (`locMapOf` always stamps the tower) was correct and could never help HERE** —
+  it fixes the NEXT push, and these rows were already in the database. That gap is what this closes.
+- **Fix: the (b) case gets its own message and a one-click repair** — *"None of this project's 2,561
+  activities carry a Tower, but 2,561 of them do carry a Level — so the work IS located and only the
+  Tower was never stamped"* — with a name field (defaulting to the project's own name) and an **Assign
+  N activities** button.
+- ⚠️ **It writes ONE key of the `location` map, on a COPY of the row's existing map** — a planner's
+  Level / Zone / Unit values cannot be lost to a fix aimed at the level above them. Verified: a row's
+  Level and Zone survive the stamp byte-for-byte.
+- ⚠️ **Only rows that already carry a value at some LOWER level are touched.** Work with no location at
+  all is not located work, and giving it a tower would file it under a building nobody put it in.
+  A row that already has a tower is never overwritten. WBS summaries and non-execution work are skipped.
+- ⚠️ **Never runs by itself** — no load-time repair, no silent mass UPDATE. The planner types the value
+  and confirms the count, because it is their data and the right name is theirs to choose. Writer-only,
+  and refused on an archived or view-only project.
+- ⚠️ **Only the rows the server ACCEPTED are updated in memory.** A partial failure otherwise leaves the
+  screen claiming a value the database does not hold — verified: with one row rejected, that row keeps
+  no tower, the other keeps its new one, and the toast says "1 of 2 — run it again to retry the rest."
+- Verified by executing the shipped `_vsStampTopLevel` against a One-Portwood-shaped stub: exactly the
+  two located-but-untowered rows are sent; a row with an existing Tower and a row with no location at
+  all are both left alone; a blank name is refused; a second run reports nothing to do. Inline script
+  parses. ⚠️ **Not verified signed-in.** Delivered as `?v=20260826b`.
+
 ## A scrubbable timeline under the stack, and the stacking as a touch view (2026-08-26) — fmlozano
 Owner: *"allow it for an ipad or phone view, wherein it is very aesthetic… add like a timeline bar,
 scrollable, and the vertical stacking progress is dependent on the timeline bar. When i drag the line,

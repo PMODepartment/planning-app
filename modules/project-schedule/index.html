@@ -10926,6 +10926,52 @@
     if (_vsTlRaf) return;
     _vsTlRaf = requestAnimationFrame(function () { _vsTlRaf = 0; renderVStack(); });
   }
+  // Stamp the FIRST location level onto the execution activities that are located but carry no value
+  // there — the single-tower case the banner above describes.
+  // ⚠️ It writes ONE key of the `location` map and copies the row's existing map first, so a planner's
+  // Level / Zone / Unit values cannot be lost by a fix aimed at the level above them.
+  // ⚠️ Only rows that ALREADY carry a value at some lower level are touched. Work with no location at
+  // all is not located work, and giving it a tower would file it under a building nobody put it in.
+  // ⚠️ Never runs by itself — no load-time repair, no silent mass UPDATE. The planner types the value
+  // and confirms the count, because this is their data and the right name is theirs to choose.
+  async function _vsStampTopLevel(value) {
+    if (!canWrite || window.__viewOnly || window.__archived) { UI.toast('You do not have permission to edit this schedule.', 'error'); return; }
+    var lvl = LOC_LEVELS[0]; if (!lvl) return;
+    var val = String(value == null ? '' : value).trim();
+    if (!val) { UI.toast('Type a ' + lvl.name + ' name first.', 'error'); return; }
+    var targets = rows.filter(function (r) {
+      if (isWbs(r) || r._dkind === 'group' || !isExecPhase(r)) return false;
+      if (locValOf(r, lvl.id)) return false;                       // already has one — never overwritten
+      for (var q = 1; q < LOC_LEVELS.length; q++) if (locValOf(r, LOC_LEVELS[q].id)) return true;
+      return false;
+    });
+    if (!targets.length) { UI.toast('Nothing to assign — every located activity already carries a ' + lvl.name + '.', 'info'); return; }
+    if (!confirm('Set ' + lvl.name + ' = "' + val + '" on ' + targets.length + ' activit' +
+      (targets.length === 1 ? 'y' : 'ies') + '?\n\nOnly the ' + lvl.name +
+      ' is written; every other location value is left as it is. This can be undone by editing the ' +
+      lvl.name + ' column in the grid.')) return;
+    showLoading('Assigning ' + lvl.name + ' to ' + targets.length + ' activities…');
+    var ups = targets.map(function (r) {
+      var loc = {}; var src = r.location || {};
+      for (var k in src) if (Object.prototype.hasOwnProperty.call(src, k)) loc[k] = src[k];
+      loc[lvl.id] = val;
+      return { id: r.id, patch: { location: loc }, _row: r, _loc: loc };
+    });
+    var res = await _batchUpdate(TABLE, ups.map(function (u) { return { id: u.id, patch: u.patch }; }));
+    // ⚠️ Only the rows the server actually accepted are updated in memory — otherwise a partial
+    // failure would leave the screen claiming a value the database does not hold.
+    var bad = {}; (res.failedIds || []).forEach(function (id) { bad[id] = 1; });
+    var ok = 0;
+    ups.forEach(function (u) { if (!bad[u.id]) { u._row.location = u._loc; ok++; } });
+    hideLoading();
+    _clearPhaseMemo();
+    rebuild(); renderAll();
+    if (res.failedIds && res.failedIds.length) {
+      UI.toast('Assigned ' + ok + ' of ' + ups.length + ' — run it again to retry the rest.', 'warn');
+    } else {
+      UI.toast('Assigned ' + lvl.name + ' “' + val + '” to ' + ok + ' activit' + (ok === 1 ? 'y' : 'ies') + '.', 'success');
+    }
+  }
   function _vsWireTimeline(host) {
     var tl = host.querySelector('#ps-vs-tl'); if (!tl) return;
     var mn = +tl.dataset.min, mx = +tl.dataset.max, trackW = +tl.dataset.w;
@@ -11572,10 +11618,45 @@
     var noLevList = acts.filter(function (r) { return !_vsHasLevel(r); });
     var noLevTrades = [];
     noLevList.forEach(function (r) { var t = _vsTradeOf(r); if (noLevTrades.indexOf(t) < 0) noLevTrades.push(t); });
-    var warn = noLevList.length ? '<div class="ps-vs-warn"><strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
-      ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(LOC_LEVELS[0].name) + '</strong> — shown in the dashed <em>No level</em> band. ' +
-      'These come from ' + esc(noLevTrades.join(', ')) + ': a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work, ' +
-      'so there is no ' + esc(LOC_LEVELS[0].name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.</div>' : '';
+    // ⚠️ TWO DIFFERENT FAULTS WEAR THE SAME BAND, and the old copy only described one of them.
+    //   (a) SOME activities lack the level — whole-trade work from a trade with no floors. Re-push.
+    //   (b) EVERY activity lacks it while carrying a value FURTHER DOWN (Level, Zone) — i.e. the work
+    //       IS located, the top level was simply never stamped. That is a single-tower project:
+    //       `locMapOf` writes the tower only when `multiTower()`, so a one-building push left this
+    //       column empty on every row and the stacking could only file all of them under "No level".
+    //       Telling that planner to "give the trade floors in step 2" is advice for a problem they do
+    //       not have — the floors are already there. So (b) gets its own message and a one-click fix.
+    var deeperLoc = function (r) {
+      for (var q = 1; q < LOC_LEVELS.length; q++) if (locValOf(r, LOC_LEVELS[q].id)) return true;
+      return false;
+    };
+    var lvl0Name = LOC_LEVELS[0] ? LOC_LEVELS[0].name : 'level';
+    var allMissing = acts.length && noLevList.length === acts.length && noLevList.some(deeperLoc);
+    var warn = '';
+    if (allMissing) {
+      var locatedN = noLevList.filter(deeperLoc).length;
+      var proj = (PROJECTS.find(function (x) { return x.id === pid; }) || {});
+      var defTw = String(proj.name || proj.id || 'Tower 1').trim();
+      warn = '<div class="ps-vs-warn"><strong>None of this project’s ' + acts.length + ' activities carry a ' +
+        esc(lvl0Name) + '</strong>, but ' + locatedN + ' of them do carry a ' +
+        esc(LOC_LEVELS[1] ? LOC_LEVELS[1].name : 'lower level') + ' — so the work IS located and only the ' +
+        esc(lvl0Name) + ' was never stamped. That is what a single-' + esc(lvl0Name.toLowerCase()) +
+        ' push leaves behind, and it is why every row lands in the dashed <em>No level</em> band.' +
+        (canWrite && !window.__viewOnly && !window.__archived
+          ? '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+            '<label class="ps-vs-note" for="ps-vs-fixtw">Assign them all to ' + esc(lvl0Name) + '</label>' +
+            '<input class="pd-input" id="ps-vs-fixtw" value="' + esc(defTw) + '" style="max-width:220px;height:32px;">' +
+            '<button class="pd-btn pd-btn-primary" id="ps-vs-fixgo" style="height:32px;">Assign ' + locatedN + ' activities</button>' +
+            '<span class="ps-vs-note">Writes only the ' + esc(lvl0Name) + '; every other location value is left alone.</span>' +
+            '</div>'
+          : '') +
+        '</div>';
+    } else if (noLevList.length) {
+      warn = '<div class="ps-vs-warn"><strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
+        ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(lvl0Name) + '</strong> — shown in the dashed <em>No level</em> band. ' +
+        'These come from ' + esc(noLevTrades.join(', ')) + ': a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work, ' +
+        'so there is no ' + esc(lvl0Name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.</div>';
+    }
     // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
     // the row has no WBS node at all — a different problem, and worth naming rather than bucketing.
     if (noTradeList.length) warn += '<div class="ps-vs-warn"><strong>' + noTradeList.length + ' activit' +
@@ -11666,6 +11747,11 @@
     _vsWireLoupeResize(host);
     _vsWireLoupe(host);
     _vsWireTimeline(host);
+    var _fixGo = host.querySelector('#ps-vs-fixgo');
+    if (_fixGo) _fixGo.onclick = function () {
+      var inp = host.querySelector('#ps-vs-fixtw');
+      _vsStampTopLevel(inp ? inp.value : '');
+    };
     host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
     if (window.Icons) Icons.hydrate(host);
   }
