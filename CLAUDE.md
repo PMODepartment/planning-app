@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (i) — Vertical stacking: the axis is the first location level that is actually used
+Owner, on One Portwood Residences: *"look at the vertical stacking, there is no levels detected."*
+`MODULE_V` → `20260825n`.
+- ⚠️ **Root cause:** the stacking hard-wired its building axis to `LOC_LEVELS[0]`, which on that
+  project is **Tower** — and `locMapOf()` deliberately stamps a tower only on multi-tower projects. So
+  2,561 activities that all carried a Floor were banded under "— No level —", with the floors visible
+  one axis lower as the cells.
+- **Fix:** the axis is now the first level any activity uses. Only LEADING empty levels are dropped and
+  never the last one — an unused level in the MIDDLE is a real gap and hiding it would misreport the
+  building. Multi-tower projects are untouched.
+- ⚠️ Scope is the stacking's axis only — no trade, grid or loader changes.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-25 (h) — Reverted: the Project Schedule is back to the Cost Loading build
 Owner: *"the previous version was okay… now everything is filled with errors. revert it back."*
 `modules/project-schedule/index.html` is byte-identical to `2e418b4` again. Out: `e04c7c7`, `e6d5bd1`,

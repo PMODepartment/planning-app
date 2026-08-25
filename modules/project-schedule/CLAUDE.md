@@ -1,3 +1,29 @@
+## Vertical stacking: the building axis is the first level that is USED, not LOC_LEVELS[0] (2026-08-25) — fmlozano
+Owner, on One Portwood Residences (trades now reading correctly): *"look at the vertical stacking,
+there is no levels detected."* — 2,561 located activities, every one of them banded under
+*— No level —*, with the floors (2ND Floor, B1, Ground Floor, Roof Deck…) visible as the CELLS.
+- ⚠️ **Root cause:** the stacking hard-wired its building axis to **`LOC_LEVELS[0]`**, and on this
+  project level 0 is **Tower**. `locMapOf()` deliberately stamps a tower **only when `multiTower()`** —
+  a single-tower project is never given one, because a filter with one choice is noise. So every row
+  had a Floor and no Tower, `_vsHasLevel()` asked the wrong level, and the view reported "no levels"
+  while holding a fully located schedule — then blamed the Schedule Builder for it in the warning
+  banner. The floors were on screen the whole time, one axis lower.
+- **Fix:** `_vsLevels()` — the axis is the first location level **any activity actually uses**. On One
+  Portwood that is Level › Unit › Zone; a genuine multi-tower project is untouched.
+  ⚠️ **Only LEADING empty levels are dropped, and never the last one.** An unused level in the MIDDLE
+  is a real gap in the data — hiding it would misreport the building instead of reading it. Verified:
+  Tower used / Level empty / Unit used keeps the full four-level axis.
+- One display change that follows: the Detail buttons and the "Tower › Level" caption now count from
+  the used axis, so this project offers 1–3 (Level › Unit › Zone) rather than 1–4 with a dead first step.
+- Verified by executing the SHIPPED `_vsLevels`/`_vsHasLevel`/`_vsMaxDetail`: the One Portwood shape
+  (nothing carries a Tower) → axis **Level › Unit › Zone**, `_vsHasLevel` **true** for a 2ND-Floor
+  activity, max detail 3; a two-tower project → **Tower › Level › Unit › Zone** unchanged; a middle
+  gap → unchanged; nothing located at all → still returns an axis (never empty) and the existing
+  "no level" band still explains it. Inline script parses. ⚠️ **Not verified signed-in.**
+  `MODULE_V` → `20260825n`.
+- ⚠️ **Scope, deliberately:** this touches the stacking's axis only. Nothing in the trade derivation,
+  the grid or the loader was changed — that is what went wrong yesterday and it is not being repeated.
+
 ## REVERTED to the Cost Loading build — the three trade changes and the loading work are OUT (2026-08-25) — fmlozano
 Owner: *"what happened? the previous version was okay haha… now everything is filled with errors.
 revert it back."* `modules/project-schedule/index.html` is now **byte-identical to commit `2e418b4`**

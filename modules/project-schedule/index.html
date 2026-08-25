@@ -10661,7 +10661,30 @@
   // zones the trade happens to have. In cell-units, so the zoom still works; the floor stops it
   // getting thin at the smallest zoom. See the note in _vsTowerSVG.
   var VS_L1_SPAN = 4, VS_L1_MIN_W = 260;
-  function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
+  // ⚠️ THE BUILDING AXIS IS THE FIRST LOCATION LEVEL ANY ACTIVITY ACTUALLY USES — not LOC_LEVELS[0].
+  // A single-tower project is deliberately never stamped with a tower (locMapOf writes that value
+  // only when multiTower()), so on One Portwood every activity carried a Floor and no Tower, level 0
+  // was "Tower", and a view hard-wired to level 0 reported "no levels" while holding 2,561 perfectly
+  // located activities — it banded all of them under "— No level —" and then blamed the Schedule
+  // Builder for it in the warning above the stack.
+  // ⚠️ Only LEADING empty levels are dropped, and never the last one. An unused level in the MIDDLE
+  // is a real gap in the data; hiding that would misreport the building rather than read it.
+  var _vsLvlCache = null, _vsLvlSig = '';
+  function _vsLevels() {
+    if (!LOC_LEVELS.length) return [];
+    var sig = LOC_LEVELS.length + '|' + rows.length;
+    if (_vsLvlCache && sig === _vsLvlSig) return _vsLvlCache;
+    var i = 0;
+    while (i < LOC_LEVELS.length - 1) {
+      var id = LOC_LEVELS[i].id, used = false;
+      for (var j = 0; j < rows.length; j++) { if (locValOf(rows[j], id)) { used = true; break; } }
+      if (used) break;
+      i++;
+    }
+    _vsLvlSig = sig; _vsLvlCache = LOC_LEVELS.slice(i);
+    return _vsLvlCache;
+  }
+  function _vsMaxDetail() { return Math.max(1, _vsLevels().length); }
   function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
   // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
@@ -10698,7 +10721,7 @@
       return !isWbs(r) && r._dkind !== 'group' && isExecPhase(r) && rowMatches(r);
     });
   }
-  function _vsHasLevel(r) { return !!(LOC_LEVELS.length && locValOf(r, LOC_LEVELS[0].id)); }
+  function _vsHasLevel(r) { var L = _vsLevels(); return !!(L.length && locValOf(r, L[0].id)); }
   var VS_NOLEV = '— No level —';
   // Duration-weighted % complete — the same weighting the WBS roll-ups use, so a stacking cell and a
   // summary row covering the same activities can never disagree.
@@ -10830,7 +10853,7 @@
   // Detail 1 keeps the whole row as a single cell (the level itself).
   function _vsRowCells(list, detail) {
     if (detail <= 1) return [{ label: '', list: list }];
-    var ids = LOC_LEVELS.slice(1, detail).map(function (l) { return l.id; });
+    var ids = _vsLevels().slice(1, detail).map(function (l) { return l.id; });
     var order = [], by = {};
     list.forEach(function (r) {
       var key = ids.map(function (id) { return locValOf(r, id) || '—'; }).join(' · ');
@@ -10885,7 +10908,7 @@
     return true;
   }
   function _vsTowerSVG(list, baseColor, keyPrefix) {
-    var lvl0 = LOC_LEVELS[0].id, detail = _vsDetailNow();
+    var lvl0 = _vsLevels()[0].id, detail = _vsDetailNow();
     var byLevel = {}, levels = [], noLev = [];
     list.forEach(function (r) {
       var v = locValOf(r, lvl0);
@@ -11233,7 +11256,7 @@
     var detailBtns = '';
     for (var dlv = 1; dlv <= _vsMaxDetail(); dlv++) {
       detailBtns += '<button data-vsdet="' + dlv + '"' + (detail === dlv ? ' class="on"' : '') +
-        ' title="' + esc(LOC_LEVELS.slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
+        ' title="' + esc(_vsLevels().slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
     }
     var chips = '<div class="ps-vs-chips"><button class="ps-vs-chip' + (_vsTrade === 'ALL' ? ' on' : '') + '" data-vstr="ALL">All trades</button>' +
       trades.map(function (t) { return '<button class="ps-vs-chip' + (_vsTrade === t ? ' on' : '') + '" data-vstr="' + esc(t) + '"><span class="ps-vs-dot" style="background:' + _vsColor(t) + '"></span>' + esc(t) + '</button>'; }).join('') + '</div>';
@@ -11255,7 +11278,7 @@
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
       '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button></span>' +
       '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
-      '<span class="ps-vs-note">' + esc(LOC_LEVELS.slice(0, detail).map(function (l) { return l.name; }).join(' › ')) + '</span>' +
+      '<span class="ps-vs-note">' + esc(_vsLevels().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) + '</span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">Dates</span><span class="ps-vs-seg">' +
         [['actual', 'Actual', 'Actual where recorded, forecast where not — the dates the grid shows'],
@@ -11303,9 +11326,9 @@
     var noLevTrades = [];
     noLevList.forEach(function (r) { var t = _vsTradeOf(r); if (noLevTrades.indexOf(t) < 0) noLevTrades.push(t); });
     var warn = noLevList.length ? '<div class="ps-vs-warn"><strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
-      ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(LOC_LEVELS[0].name) + '</strong> — shown in the dashed <em>No level</em> band. ' +
+      ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(_vsLevels()[0].name) + '</strong> — shown in the dashed <em>No level</em> band. ' +
       'These come from ' + esc(noLevTrades.join(', ')) + ': a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work, ' +
-      'so there is no ' + esc(LOC_LEVELS[0].name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.</div>' : '';
+      'so there is no ' + esc(_vsLevels()[0].name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.</div>' : '';
     // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
     // the row has no WBS node at all — a different problem, and worth naming rather than bucketing.
     if (noTradeList.length) warn += '<div class="ps-vs-warn"><strong>' + noTradeList.length + ' activit' +
