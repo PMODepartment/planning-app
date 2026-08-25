@@ -1,3 +1,42 @@
+## The push
+
+### 2026-08-25 (k) — The push always stamps the tower; both stacking-axis commits reverted
+Owner: *"HUH NO! it should be tower > level > zone > unit!!!"* `MODULE_V` → `20260825p`.
+- **Reverted `878eb31` and `2f7ba1c`.** The stacking bands by `LOC_LEVELS[0]` = Tower again. Choosing a
+  different axis from the data was answering a question nobody asked — and it stacked by Zone.
+- ⚠️ **The root cause is in the WRITE path:** `locMapOf()` stamped the tower only on multi-tower
+  projects ("a filter with one choice is noise") — a filter argument applied to a data question. The
+  stacking bands by the first location level, so a single-tower push left 2,561 rows with nothing at
+  that level. The tower is now always written; the tower CHIPS still only appear when there are two.
+- ⚠️ Fixes the next push, not rows already stored — no silent mass UPDATE over planner data. Re-push,
+  or use Group ▸ Match the WBS to your location breakdown.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+ now ALWAYS stamps the tower; the stacking axis is left alone (2026-08-25) — fmlozano
+Owner: *"HUH NO! it should be tower > level > zone > unit!!!"*
+- **Both of my axis commits are reverted** (`878eb31`, `2f7ba1c`). The stacking bands by
+  `LOC_LEVELS[0]` again, which on these projects is **Tower** — which is what the owner wants. Picking
+  a different axis was me answering a question nobody asked: the levels are right, the VALUES were
+  missing.
+  ⚠️ For the record, the coverage rule did work as designed and that is exactly why it was wrong on
+  this project — it dropped Tower *and* Level and stacked by **Zone (Z1…Z6)**, because Level is
+  carried by well under half the activities that Zone is. A view that re-chooses its own axis from the
+  data will keep surprising the planner who chose those levels deliberately.
+- ⚠️ **ROOT CAUSE, and it is in the WRITE path, not the view:** `locMapOf()` stamped the tower **only
+  when `multiTower()`** — "a tower filter with one choice is noise". That is a FILTER argument applied
+  to a DATA question. The vertical stacking bands by the first location level, so a single-tower push
+  wrote 2,561 activities with no value at that level and the view could only file every one of them
+  under *— No level —*. **The tower is now always written when the builder knows it.**
+  ⚠️ The noise this guard was avoiding is still avoided: the stacking's tower CHIPS already appear
+  only when there is more than one tower to choose between. That belongs at the display layer.
+- ⚠️ **This fixes the NEXT push, not the 2,561 rows already in the database.** Nothing here rewrites
+  stored locations — a silent mass UPDATE over a planner's data is not something to do as a side
+  effect of a display bug. To fill them in: **re-push from Schedule Builder**, or use **Group ▸ Match
+  the WBS to your location breakdown** and map the tower branch to the Tower level.
+- **Zone before Unit is a Location Breakdown question, not a code one.** This project's levels are
+  ordered Tower › Level › **Unit › Zone**; the stacking follows that order by design. Reorder them in
+  **Location Breakdown…** and every view follows.
+- Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260825p`.
+
 ## The stac
 
 ### 2026-08-25 (j) — The stacking axis is chosen by coverage; (i) was a no-op
