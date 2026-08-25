@@ -1,3 +1,38 @@
+## The WBS is matched to TRADES the way it is matched to locations — ST1 → Structural Works (2026-08-25) — fmlozano
+Owner: *"the trades should be the General Requirements, Site Works, Structural Works, Architectural
+Works etc… just like in the schedule builder? why not, like the function of matching WBS to a location
+breakdown, identify also the matching of WBS to trades."*
+- **That matcher already existed and the grid was not using it.** `discCanonOf()` / `WORK_CANON` back
+  the **Match the WBS to Discipline / Trade** wizard (Group menu ▸ same place as *Match the WBS to your
+  location breakdown*) and the importer's *Set Discipline / Trade from the WBS* tick-box. `workOf()`,
+  which is what the grid, the grouping, the colours and the stacking actually read, had its **own**
+  ancestry walk that returned raw branch names. Two answers to one question, and the screen showed the
+  worse one. `_nodeTrade()` now asks `_discTermMatch()` **first**, nearest-ancestor-first — so an
+  imported schedule reads in the Schedule Builder's vocabulary with **no wizard run at all**.
+- **The vocabulary IS the builder's now.** `WORK_CANON` was missing **General Requirements** and
+  **Others** — two of the builder's seven GWORK groups — so those could never be produced. Added.
+  ⚠️ `'general'` alone is deliberately NOT a term: "General Notes" / "General Arrangement" are
+  drawings, not a trade.
+- **Short WBS codes are recognised: `ST1`, `AR-2`, `MEPF 1`, `Gen Req 1`, `SW1`, `SD3`.** This is what
+  the owner's project actually uses, and no amount of term-matching would have caught it.
+  ⚠️ **EXACT token after stripping a trailing sequence number, never a substring** — "ST" as a
+  substring claims *Store Room*. Verified: `Store Room` → no code match.
+- ⚠️ **Nearest-ancestor-first, so a breakdown collapses into its trade:** `Fire Protection Works` under
+  `MEPF1` → **MEPF Works**; `Superstructure` under `ST1` → **Structural Works**. This is the same rule
+  that stopped the Discipline grouping fragmenting into a dozen buckets on AVR101.
+- ⚠️ **A stored `work_type` that IS a valid trade still wins, untouched.** The Trade wizard exists so a
+  planner can deliberately keep a granular value — *Architectural Works › Tiling Works* → **Tiling
+  Works** — and canonicalising over the top of it would silently undo their decision. Verified: stored
+  `'Tiling Works'` survives; only junk (a phase, a tower) falls through to the WBS.
+- ⚠️ A project whose vocabulary is genuinely its own is unharmed: when **nothing** in the ancestry is
+  canonical, the previous rule still applies (shallowest branch that is neither a phase nor a place).
+- Verified by executing the SHIPPED `_nodeTrade` / `workOf` / `_discTermMatch` over the owner's tree
+  (`Project › Execution Phase › Tower 1 › ST1|AR1|SW1|MEPF1|Gen Req 1`): ST1→Structural Works,
+  AR1→Architectural Works, SW1→Site Works, MEPF1→MEPF Works, Gen Req 1→General Requirements,
+  Fire Protection Works→MEPF Works, Superstructure→Structural Works, the Tower and the phase branches→
+  no trade, `Store Room`→itself (not a code hit), stored `'Execution Phase'`+ST1→**Structural Works**.
+  Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260825k`.
+
 ## One rule for what a trade is — a STORED `work_type` of "Execution Phase" is no longer believed (2026-08-25) — fmlozano
 Owner, with the grid grouped `Trade › Activity › Tower › …` and every row sitting under a trade called
 **Execution Phase**: *"it detected the execution phase as a trade idk why. pls fix the logic and make

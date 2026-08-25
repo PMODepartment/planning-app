@@ -3058,10 +3058,20 @@
     _tradeMemo[nodeId] = '';                       // cycle guard (a malformed tree must not hang)
     var chain = [], n = WBS_NODES.find(function (x) { return x.id === nodeId; }), guard = 0;
     while (n && guard++ < 60) { chain.push(n); n = n.parent_id ? WBS_NODES.find(function (x) { return x.id === n.parent_id; }) : null; }
-    // Root first, then downwards: the SHALLOWEST branch that names work rather than a phase or a
-    // place. Everything above it (the phase, the tower) is skipped, not accepted as a fallback —
-    // labelling a tower as a trade is worse than saying the activity has no trade, because a chip
-    // reading "Tower 1" looks like an answer and cannot be spotted as missing data.
+    // ⚠️ FIRST, nearest-first, ask the SAME canonical matcher the Trade wizard and the importer use
+    // (`_discTermMatch`): a WBS branch called ST1 / Structural Works / Superstructure all resolve to
+    // **Structural Works**, so a schedule that was imported reads in the Schedule Builder's own
+    // vocabulary without anyone running a wizard first. Nearest-first is what keeps "Fire Protection
+    // Works" nested under "MEPF Works" resolving to MEPF Works rather than a bucket of its own.
+    for (var ci = 0; ci < chain.length; ci++) {
+      var cc = _discTermMatch(String(chain[ci].name || '').trim());
+      if (cc) { _tradeMemo[nodeId] = cc; return cc; }
+    }
+    // Nothing in the canonical vocabulary: fall back to the SHALLOWEST branch that names work rather
+    // than a phase or a place, so a project with its own trade words still groups by them. Everything
+    // above it (the phase, the tower) is skipped, not accepted as a fallback — labelling a tower as a
+    // trade is worse than saying the activity has no trade, because a chip reading "Tower 1" looks
+    // like an answer and cannot be spotted as missing data.
     // ⚠️ The ROOT is not a candidate — it is the project, and "Test Project" is not a trade. Only an
     // activity filed DIRECTLY on a root can be named by it, which is the pre-existing behaviour for
     // that one case.
@@ -7958,9 +7968,30 @@
       'conduit', 'auxiliary works', 'auxiliary'] },
     { name: 'Site Works', terms: ['site works', 'sitework'] },
     { name: 'Allied Services', terms: ['allied services', 'allied'] },
-    { name: 'Site Development', terms: ['site development works', 'site development', 'landscaping'] }
+    { name: 'Site Development', terms: ['site development works', 'site development', 'landscaping'] },
+    // ⚠️ Added 2026-08-25 so this vocabulary IS the Schedule Builder's (GWORK) vocabulary — the owner's
+    // point: "the trades should be the General Requirements, Site Works, Structural Works,
+    // Architectural Works etc… just like in the schedule builder". A builder-pushed project and an
+    // imported one must land in the SAME buckets or the two halves of the app disagree.
+    // ⚠️ 'general' alone is NOT a term: "General Notes", "General Arrangement" are drawings, not a trade.
+    { name: 'General Requirements', terms: ['general requirements', 'general requirement',
+      'general conditions', 'preliminaries', 'preliminary works', 'mobilization', 'mobilisation'] },
+    { name: 'Others', terms: ['others', 'other works'] }
   ];
+  // Short WBS codes — the shapes a real tree actually uses: "ST1", "AR-2", "MEPF 1", "Gen Req 1".
+  // ⚠️ EXACT token after stripping a trailing sequence number, never a substring: "ST" as a substring
+  // would claim "Store Room" and "Steel" would claim nothing useful. An exact-token rule can be read
+  // and predicted by a planner, which is the point of doing it this way rather than with more terms.
+  var WORK_CODES = { 'gr': 'General Requirements', 'gen req': 'General Requirements', 'genreq': 'General Requirements',
+    'sw': 'Site Works', 'st': 'Structural Works', 'ar': 'Architectural Works', 'arch': 'Architectural Works',
+    'mepf': 'MEPF Works', 'mep': 'MEPF Works', 'sd': 'Site Development', 'allied': 'Allied Services', 'ot': 'Others' };
+  function _discCodeMatch(name) {
+    var t = String(name == null ? '' : name).trim().toLowerCase()
+      .replace(/[\s\-_.#]*\d+\s*$/, '').replace(/\s+/g, ' ').trim();
+    return WORK_CODES[t] || null;
+  }
   function _discTermMatch(s) {
+    var code = _discCodeMatch(s); if (code) return code;
     for (var i = 0; i < WORK_CANON.length; i++) { if (locTermHit(s, WORK_CANON[i].terms) !== -1) return WORK_CANON[i].name; }
     return null;
   }

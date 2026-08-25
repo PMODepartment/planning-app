@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (f) — The WBS is matched to trades the way it is matched to locations
+Owner: *"the trades should be General Requirements, Site Works, Structural Works, Architectural Works…
+just like in the schedule builder… like the function of matching WBS to a location breakdown, identify
+also the matching of WBS to trades."* `MODULE_V` → `20260825k`.
+- **The matcher already existed; the grid was not using it.** `discCanonOf()`/`WORK_CANON` back the
+  *Match the WBS to Discipline / Trade* wizard and the importer's tick-box, while `workOf()` — what the
+  grid, grouping, colours and stacking read — had its own walk returning raw branch names. It now asks
+  the canonical matcher first, nearest-ancestor-first, so an imported schedule reads in the Schedule
+  Builder's vocabulary with no wizard run at all.
+- **Added General Requirements and Others** — two of the builder's seven groups the vocabulary could
+  never produce — and **short WBS codes** (`ST1`, `AR-2`, `MEPF 1`, `Gen Req 1`), matched as an exact
+  token after a trailing number so "ST" cannot claim *Store Room*.
+- ⚠️ A stored `work_type` that IS a valid trade still wins untouched, so a planner's deliberate
+  granular choice (*Tiling Works*) is not canonicalised away; only phase/tower junk falls through.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-25 (e) — A stored `work_type` of "Execution Phase" is no longer believed
 Owner: *"it detected the execution phase as a trade… fix the logic and make it simpler for incoming
 projects."* `MODULE_V` → `20260825j`.
