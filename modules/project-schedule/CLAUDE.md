@@ -1,3 +1,46 @@
+## Loading: a real loading screen, a "ready to edit" toast, and the WBS fetch stops queueing (2026-08-25) — fmlozano
+Owner: *"there is a delay in loading the project schedule, can't there be a loading screen and
+notification if successfully loaded and ready for editing?"* and then *"the loading is really slow on
+the WBS, and there are still errors in the trades, so the vertical stacking is not fixed."*
+- ⚠️ **ROOT CAUSE of "slow on the WBS": a slow QUEUE, not a slow query.** `loadResourcesAssignments()`
+  awaited ~12 round-trips strictly one after another — resources, calendars, assignments, code types,
+  code values, steps, UDFs, location levels, packages, WPM packages, class codes, scenarios — and
+  `wbs_nodes` sat near the **END** of that chain. Nothing in it fed anything else in it. They are now
+  all started together and awaited at the bottom; the wall-clock is the slowest fetch instead of the
+  sum. **The one real ordering constraint is kept:** `ensureWbsSkeleton()` reads `WBS_NODES`, so it
+  still waits for that fetch.
+  ⚠️ **Each keeps its OWN try/catch and empty-array fallback** — one shared catch would let a missing
+  `packages` table (an un-run migration) blank out resources too.
+  ⚠️ **Still awaited, not fire-and-forget:** Resource Usage, the cost roll-ups and Cost Loading read
+  these arrays the moment `load()` returns.
+- **The loading screen now covers the part that was never covered.** Sign-in → project list → group
+  heads are three round-trips that happened against an empty grid with no spinner at all; the overlay
+  goes up **before** the first fetch and `load()` takes the same overlay over, so there is no flicker.
+  ⚠️ `loadProjects()` got its own try/catch: under an overlay, a failed project list would otherwise
+  leave a spinner over an empty screen saying nothing.
+- ⚠️ **The overlay still comes DOWN as soon as there is a schedule on screen** — the cache-first paint
+  is a real feature and covering it with a spinner would trade it for a progress bar. What was missing
+  is that nothing said the *rest* was still running. The freshness chip now carries the stage
+  (*Loading resources and the WBS tree… → Checking the WBS tree… → Syncing… → Restoring your
+  grouping…*), because those steps each RE-RENDER the grid.
+- **"Ready" is announced at the END of `load()`**, not at first paint: *"Schedule ready — N activities
+  loaded in 4.0s. You can edit now."* ⚠️ Suppressed on a warm load that took ≤1.5s — undo, redo,
+  import, paste, merge and scenario-apply all end in `load()`, and a ready toast on each is noise on
+  top of the message that operation already showed. Verified by executing the shipped `_announceReady`:
+  warm+fast silent, warm+slow speaks, cold always speaks.
+- ⚠️ **THE remaining trade bug — an imported project has NO `wbs_node_id`.** The node walk fixed
+  earlier had nothing to walk: `wbs_node_id` is written by the WBS Manager and the Schedule Builder,
+  but an XER/Excel import files activities by **dotted WBS code** and leaves it null. So once the junk
+  `work_type` stopped being believed, those rows had no trade at all — which is why the vertical
+  stacking still looked wrong after two "fixes". `workOf()` now falls back to `_codeTrade()`, which
+  resolves the code path (`4.1.3` → `4`, `4.1`, `4.1.3`) against the WBS **summary rows'** names —
+  the same tree the importer's own stamp and the Trade wizard read — nearest-first, same canonical
+  matcher. It also works **before** `wbs_nodes` has loaded, since those rows are already in `rows`.
+- Verified by executing the SHIPPED `workOf`/`_codeTrade` on an import-shaped project (no node ids at
+  all): `4.1.3 ST1` → **Structural Works**, `4.1.4 AR1` → **Architectural Works**, the tower branch
+  `4.1` → no trade, the phase branch `4` → no trade, and a genuinely-named branch (`Store Room`) still
+  returns itself. Inline script parses. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260825l`.
+
 ## The WBS is matched to TRADES the way it is matched to locations — ST1 → Structural Works (2026-08-25) — fmlozano
 Owner: *"the trades should be the General Requirements, Site Works, Structural Works, Architectural
 Works etc… just like in the schedule builder? why not, like the function of matching WBS to a location

@@ -84,6 +84,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (g) — Loading screen, a "ready to edit" toast, and the WBS fetch stops queueing
+Owner: *"there is a delay in loading the project schedule, can't there be a loading screen and
+notification if successfully loaded and ready for editing?"* / *"the loading is really slow on the WBS,
+and there are still errors in the trades."* `MODULE_V` → `20260825l`.
+- ⚠️ **"Slow on the WBS" was a slow QUEUE, not a slow query.** `loadResourcesAssignments()` awaited ~12
+  round-trips one after another with `wbs_nodes` near the end, though none fed another. They now run
+  together and are awaited at the bottom; only `ensureWbsSkeleton()` (which reads `WBS_NODES`) still
+  waits. Each fetch keeps its own try/catch so one un-run migration cannot blank out the rest.
+- **The overlay now covers sign-in → project list**, which had no spinner at all, and the freshness
+  chip names the stage after the grid paints (the WBS heal and the register syncs each re-render it).
+  A toast at the true end says *"Schedule ready — N activities loaded in Xs. You can edit now."*,
+  suppressed on warm loads under 1.5s so undo/import/paste don't each announce themselves.
+- ⚠️ **The remaining trade bug: an imported project has no `wbs_node_id`** — imports file activities by
+  dotted WBS code — so the fixed node walk had nothing to walk and those rows came out with no trade at
+  all. `workOf()` now falls back to resolving the code path against the WBS summary rows' names.
+- Full reasoning in `modules/project-schedule/CLAUDE.md`.
+
+
 ### 2026-08-25 (f) — The WBS is matched to trades the way it is matched to locations
 Owner: *"the trades should be General Requirements, Site Works, Structural Works, Architectural Works…
 just like in the schedule builder… like the function of matching WBS to a location breakdown, identify
