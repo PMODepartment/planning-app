@@ -84,6 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 (n) — Cost Loading feeds the S-Curve: a cost basis beside the duration one
+Owner: *"the process of cost-loading… should translate or link to the s-curve module, based on the
+cost-loaded activities and in relation to the schedule."* Delivered as `?v=20260825r`.
+- **The link is one column.** Cost Loading writes `project_schedule.planned_cost`; the S-Curve now has
+  a **Duration | Cost ₱** switch and weights each activity by that figure. No export, no second store.
+- Planned value = Σ(cost × elapsed share of the planned span); earned value = Σ(cost × % complete ×
+  elapsed share of the actual span). SPI, the forecast line and the data date all keep working.
+- ⚠️ Unpriced activities count for nothing and the screen SAYS so ("₱4M on 2 of 3 activities") — a
+  curve built from part of the money looks identical to a complete one.
+- ⚠️ "No cost loaded" is its own empty state naming the way out, not "no dated activities".
+- ⚠️ The cost path skips the `schedule_scurve_agg` RPC — that aggregate is duration-only, and serving
+  a cost curve from it would label a chart in pesos while plotting days.
+- ⚠️ Duration stays the default; the choice is remembered per project.
+- Full reasoning in `modules/s-curve/CLAUDE.md`.
+
+
 ### 2026-08-25 (m) — Why none of it reached the browser: the launcher script was itself cached
 Owner: *"the interface is not reflected in the main how come?"*
 - ⚠️ **ROOT CAUSE.** `MODULE_V` lives in `assets/js/modules-grid.js`, but `dashboard.html` and

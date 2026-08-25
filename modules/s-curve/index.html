@@ -50,6 +50,14 @@
     .sc-today { stroke:var(--pd-red); stroke-width:1.5; stroke-dasharray:4 3; }
     .sc-today-lab { fill:var(--pd-red); font-size:10px; font-weight:700; }
     .sc-forecast { fill:none; stroke:var(--pd-red); stroke-width:2; stroke-dasharray:7 5; }
+    /* Weighting switch — what an activity is WORTH on the curve: its duration, or the money the
+       Project Schedule's Cost Loading put on it. */
+    .sc-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .sc-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12px;
+      font-weight:600; padding:0 10px; height:32px; cursor:pointer; }
+    .sc-seg button + button { border-left:1px solid var(--pd-line); }
+    .sc-seg button:hover { background:var(--pd-bg); }
+    .sc-seg button.on { background:var(--pd-red); color:#fff; }
     .sw-forecast { width:18px; height:0; border-top:2px dashed var(--pd-red); }
     .sc-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:12px; color:var(--pd-muted); }
     .sc-lg { display:inline-flex; align-items:center; }
@@ -107,6 +115,10 @@
         <select class="pd-select sc-project" id="sc-project" title="Project"></select>
       </div>
       <div class="sc-topbar-tools">
+        <span class="sc-seg" id="sc-weight" title="What each activity is worth on the curve">
+          <button data-w="dur" class="on">Duration</button><button data-w="cost">Cost ₱</button>
+        </span>
+        <span class="sc-tb-sep"></span>
         <label class="sc-fc">Forecast finish
           <input class="pd-input" type="date" id="sc-forecast" title="Forecast completion date — sets the end of the red dashed forecast line" /></label>
         <span class="sc-tb-sep"></span>
@@ -119,7 +131,7 @@
     <div class="pd-main">
       <div class="sc-kpis" id="sc-kpis"></div>
       <div class="sc-card">
-        <h3>Project S-Curve — Planned vs Actual (cumulative %)</h3>
+        <h3 id="sc-cardh">Project S-Curve — Planned vs Actual (cumulative %)</h3>
         <div id="sc-chart"></div>
         <p class="sc-note" id="sc-basis"></p>
       </div>
@@ -143,6 +155,16 @@
 (function () {
   'use strict';
   var TABLE = 'project_schedule', pid = null, rows = [], agg = null, forecastFinish = null, fcManual = false;
+  // ⚠️ THE COST BASIS IS THE PROJECT SCHEDULE'S COST LOADING, READ THROUGH ONE COLUMN.
+  // Cost Loading writes `project_schedule.planned_cost`; this curve weights each activity by that
+  // figure instead of by its duration. There is no second store, no export step and no sync: load
+  // the cost there, switch the weighting here, and the curve is the cost curve. Owner 2026-08-25:
+  // *"the process of cost-loading… should translate or link to the s-curve module, based on the
+  // cost-loaded activities and in relation to the schedule."*
+  // ⚠️ Duration stays the DEFAULT. A project with no loading (or a half-finished one) must not
+  // silently open on a money curve built from a handful of priced activities.
+  var basis = 'dur';
+  function basisKey() { return 'sc_basis_' + pid; }
   var UID = null, profile = null;
   function sb() { return AppAuth.getSB(); }
   function pd(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); if (!m) return null; return new Date(+m[1], +m[2]-1, +m[3]); }
@@ -192,21 +214,30 @@
   }
   async function load() {
     if (!pid) { rows = []; agg = null; render(); return; }
+    // The weighting is remembered PER PROJECT: one project is cost-loaded and one is not, and a
+    // global preference would open the second on an empty money curve.
+    try { basis = localStorage.getItem(basisKey()) === 'cost' ? 'cost' : 'dur'; } catch (e) { basis = 'dur'; }
     showLoading();
     rows = []; agg = null;
     // FAST PATH: the shared server-side monthly aggregate — the browser gets ~1 row per
     // month instead of every leaf activity (16k–40k on large schedules). Falls back to a
     // lean, keyset-paginated row fetch when the RPC isn't deployed yet.
+    // ⚠️ The RPC aggregate is duration-only by construction (it returns pre-summed month buckets and
+    // knows nothing about money), so the COST basis deliberately skips it and pays for the per-row
+    // fetch. Trying to serve a cost curve from a duration aggregate is how a chart ends up labelled
+    // in pesos while plotting days.
     try {
-      var r = await sb().rpc('schedule_scurve_agg', { p_id: pid });
-      if (!r.error && r.data && r.data.months) agg = r.data;
+      if (basis !== 'cost') {
+        var r = await sb().rpc('schedule_scurve_agg', { p_id: pid });
+        if (!r.error && r.data && r.data.months) agg = r.data;
+      }
     } catch (e) { agg = null; }
     if (!agg) {
       try {
         var last = null;
         while (true) {
           var q = sb().from(TABLE)
-            .select('id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish')
+            .select('id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish,planned_cost')
             .eq('project_id', pid).order('id', { ascending: true }).limit(1000);
           if (last) q = q.gt('id', last);
           var r1 = await q; if (r1.error) throw r1.error;
@@ -240,6 +271,7 @@
   // else computed per-activity from the fallback rows. Both expose the SAME shape so the
   // rest of compute() is source-agnostic. Cost / earned-value (EVM) is out of scope here.
   function baseSeries() {
+    if (basis === 'cost') return costSeries();
     if (agg && agg.months && agg.months.length) {
       // RPC gives cumulative planned (pd) + actual (ad) at each month END. Prepend a 0-point
       // at the schedule start so sub-month values interpolate linearly (the chart is monthly,
@@ -281,8 +313,48 @@
     };
   }
 
+  // The COST curve: identical maths to the duration one, with money as the weight.
+  //   planned value at D = Σ (activity cost × how much of its planned span has elapsed by D)
+  //   earned  value at D = Σ (activity cost × % complete × how much of its ACTUAL span has elapsed)
+  // ⚠️ Straight-line spread inside an activity, exactly as the duration curve does it. A cost-loaded
+  // activity carries no cost profile of its own, so any other shape would be invented.
+  // ⚠️ Activities with NO cost contribute nothing — they are unpriced, not free. That is why
+  // coverage is reported (`priced` / `nAct`, and the unpriced share) rather than left implicit: a
+  // curve built from a third of the schedule's money looks exactly like a complete one.
+  function costSeries() {
+    var leaves = rows.filter(function (r) { return !isWbs(r); });
+    if (!leaves.length) return null;
+    function val(a) { var c = parseFloat(a.planned_cost); return isFinite(c) && c > 0 ? c : 0; }
+    function done(a) { return val(a) * (Math.max(0, Math.min(100, a.percent_complete || 0)) / 100); }
+    var TOT = 0, priced = 0, ds = [], de = [];
+    leaves.forEach(function (a) {
+      var v = val(a); if (v > 0) { TOT += v; priced++; }
+      var s = pd(a.start_date), e = pd(a.end_date);
+      if (v > 0 && s) ds.push(+s);
+      if (v > 0 && e) de.push(+e);
+    });
+    if (!TOT || !ds.length) return { noCost: true, nAct: leaves.length };
+    return {
+      TOT: TOT, overallDone: leaves.reduce(function (s, a) { return s + done(a); }, 0),
+      minDate: new Date(Math.min.apply(null, ds)),
+      plannedEnd: new Date(Math.max.apply(null, de.length ? de : ds)),
+      nAct: leaves.length, priced: priced, money: true,
+      plannedAt: function (D) { var pv = 0; leaves.forEach(function (a) { var v = val(a); if (!v) return; var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return; var pf = D >= e ? 1 : (D < s ? 0 : (e > s ? (D - s) / (e - s) : 1)); pv += v * pf; }); return pv; },
+      actualAt: function (D) { var av = 0; leaves.forEach(function (a) { if (!val(a)) return; var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS; if (!aS) return; var af = D >= aE ? 1 : (D < aS ? 0 : (aE > aS ? (D - aS) / (aE - aS) : 1)); av += done(a) * af; }); return av; }
+    };
+  }
+  function peso(n) {
+    if (n == null || !isFinite(n)) return '—';
+    if (Math.abs(n) >= 1e9) return '₱' + (Math.round(n / 1e8) / 10) + 'B';
+    if (Math.abs(n) >= 1e6) return '₱' + (Math.round(n / 1e5) / 10) + 'M';
+    if (Math.abs(n) >= 1e3) return '₱' + (Math.round(n / 100) / 10) + 'K';
+    return '₱' + Math.round(n);
+  }
   function compute() {
     var base = baseSeries();
+    // ⚠️ A distinct state from "empty": the schedule is fine, the LOADING has not been done. Saying
+    // "no dated activities" there would send a planner to fix a schedule that has nothing wrong.
+    if (base && base.noCost) return { empty: true, noCost: true, nAct: base.nAct };
     if (!base) return { empty: true };
     var TOT = base.TOT, overallDone = base.overallDone, plannedEnd = base.plannedEnd, minDate = base.minDate;
     var plannedAt = base.plannedAt, actualAt = base.actualAt;
@@ -329,11 +401,16 @@
     }
     var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
     var overallPct = TOT ? overallDone / TOT * 100 : 0;
-    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, forecastC: forecastC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: base.nAct, plannedEnd: plannedEnd, fcFinish: fc, autoFc: autoFc, spi: spi, manual: fcManual };
+    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, forecastC: forecastC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: base.nAct, plannedEnd: plannedEnd, fcFinish: fc, autoFc: autoFc, spi: spi, manual: fcManual,
+      money: !!base.money, priced: base.priced || 0 };
   }
 
   function render() {
     var d = compute(); renderKpis(d); renderChart(d); renderTable(d);
+    var h = document.getElementById('sc-cardh');
+    if (h) h.textContent = (basis === 'cost' ? 'Cost S-Curve — Planned Value vs Earned Value (cumulative %)'
+                                             : 'Project S-Curve — Planned vs Actual (cumulative %)');
+    document.querySelectorAll('#sc-weight [data-w]').forEach(function (b) { b.classList.toggle('on', b.dataset.w === basis); });
     // reflect the effective forecast finish (auto SPI-based, or the manual override) in the input
     var fi = document.getElementById('sc-forecast'); if (fi && !d.empty && d.fcFinish) fi.value = iso(d.fcFinish);
   }
@@ -344,18 +421,42 @@
     function k(l, v, sub, cls) { return '<div class="sc-kpi"><div class="sc-kpi-l">' + l + '</div><div class="sc-kpi-v ' + (cls || '') + '">' + v + '</div>' + (sub ? '<div class="sc-kpi-s">' + sub + '</div>' : '') + '</div>'; }
     var r1 = function (x) { return Math.round(x * 10) / 10; };
     var v = r1(d.variance);
+    // ⚠️ On the cost basis the SUBTITLES carry the pesos while the big figure stays a percentage:
+    // the curve is a percentage-of-total curve either way, and swapping the headline to a peso
+    // amount would make "Schedule Variance ... pp" read as money too.
+    var m = d.money;
     host.innerHTML =
-      k('Overall Progress', r1(d.overallPct) + '%', d.activities + ' activities') +
-      k('Planned to date', r1(d.plannedPct) + '%', 'Where the plan says we should be') +
-      k('Actual to date', r1(d.actualPct) + '%', 'Physical progress achieved') +
-      k('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? 'On / ahead of plan' : 'Behind plan', v >= 0 ? 'sc-ok' : 'sc-bad');
+      k(m ? 'Cost loaded' : 'Overall Progress', r1(d.overallPct) + '%',
+        m ? (peso(d.TOT) + ' on ' + d.priced + ' of ' + d.activities + ' activities') : (d.activities + ' activities')) +
+      k(m ? 'Planned value to date' : 'Planned to date', r1(d.plannedPct) + '%',
+        m ? peso(d.plannedC[d.ti]) + ' should be spent' : 'Where the plan says we should be') +
+      k(m ? 'Earned value to date' : 'Actual to date', r1(d.actualPct) + '%',
+        m ? peso(d.actualC[d.ti]) + ' earned' : 'Physical progress achieved') +
+      k(m ? 'Cost-weighted variance' : 'Schedule Variance', (v > 0 ? '+' : '') + v + ' pp',
+        (m ? peso(d.actualC[d.ti] - d.plannedC[d.ti]) + ' vs plan · ' : '') + (v >= 0 ? 'On / ahead of plan' : 'Behind plan'),
+        v >= 0 ? 'sc-ok' : 'sc-bad');
   }
 
   function renderChart(d) {
     var host = document.getElementById('sc-chart');
-    var basis = document.getElementById('sc-basis');
-    if (d.empty) { host.innerHTML = '<div class="sc-empty">' + (pid ? 'This project has no dated activities. Import or add a schedule first.' : 'Select a project.') + '</div>'; basis.textContent = ''; return; }
-    basis.textContent = 'Progress weighted by activity duration across ' + d.activities + ' activities. Solid = planned & actual (to data date). Red dashed = forecast to finish — ' +
+    // ⚠️ NOT named `basis` — that is now the module-level weighting flag, and shadowing it here
+    // would make the note element win inside this function.
+    var basisNote = document.getElementById('sc-basis');
+    if (d.empty) {
+      // The cost basis with no loading is its own message, with the way out named.
+      host.innerHTML = '<div class="sc-empty">' + (d.noCost
+        ? 'No cost is loaded on this schedule yet — none of its ' + d.nAct + ' activities carries a Planned IBB, so there is no money to curve.<br>' +
+          'Load it in <b>Project Schedule → Cost Loading</b> (enlist → assign → distribute → apply), then come back. ' +
+          'Meanwhile, <b>Duration</b> weighting works now.'
+        : (pid ? 'This project has no dated activities. Import or add a schedule first.' : 'Select a project.')) + '</div>';
+      basisNote.textContent = ''; return;
+    }
+    basisNote.textContent = (d.money
+      ? 'Progress weighted by the COST loaded on each activity (' + peso(d.TOT) + ' across ' + d.priced + ' of ' + d.activities +
+        ' activities' + (d.priced < d.activities ? ' — the other ' + (d.activities - d.priced) + ' carry no cost and count for nothing here' : '') +
+        '), spread straight-line over each activity\'s dates. '
+      : 'Progress weighted by activity duration across ' + d.activities + ' activities. ') +
+      'Solid = planned & actual (to data date). Red dashed = forecast to finish — ' +
       (d.manual ? 'pinned to ' + iso(d.fcFinish) : 'performance-based (SPI ' + (Math.round(d.spi * 100) / 100) + ', auto finish ' + iso(d.autoFc) + ')') +
       '; it follows the plan’s shape from the actual point up to 100%. Set a date to override, clear it to auto-forecast.';
     var W = 1000, H = 340, padL = 40, padR = 16, padT = 16, padB = 40, n = d.months.length, maxV = d.TOT || 1;
@@ -411,11 +512,11 @@
     var head = '<th>POC</th>' + d.months.map(function (mo) {
       return '<th>' + MABBR[mo.getMonth()] + " '" + String(mo.getFullYear()).slice(2) + '</th>';
     }).join('');
-    var planned = '<td>Planned %</td>' + d.months.map(function (mo, i) {
+    var planned = '<td>' + (d.money ? 'Planned value %' : 'Planned %') + '</td>' + d.months.map(function (mo, i) {
       var p = d.TOT ? Math.round(d.plannedC[i] / d.TOT * 1000) / 10 : 0;
       return '<td>' + p + '%</td>';
     }).join('');
-    var actual = '<td>Actual %</td>' + d.months.map(function (mo, i) {
+    var actual = '<td>' + (d.money ? 'Earned value %' : 'Actual %') + '</td>' + d.months.map(function (mo, i) {
       var a = (i <= d.ti && d.TOT) ? Math.round(d.actualC[i] / d.TOT * 1000) / 10 : null;
       return '<td>' + (a != null ? a + '%' : '—') + '</td>';
     }).join('');
@@ -441,6 +542,17 @@
     UI.initShell();
     document.getElementById('sc-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load().then(joinCollab); };
     document.getElementById('sc-refresh').onclick = function () { load(); };
+    // ⚠️ Switching TO cost re-loads: the duration path may have been served by the RPC aggregate,
+    // which carries no `planned_cost`, so the rows simply are not in memory yet. Switching back is a
+    // repaint — the rows we already hold answer both.
+    document.querySelectorAll('#sc-weight [data-w]').forEach(function (b) {
+      b.onclick = function () {
+        if (basis === b.dataset.w) return;
+        basis = b.dataset.w;
+        try { localStorage.setItem(basisKey(), basis); } catch (e) {}
+        if (basis === 'cost' && !rows.length) load(); else render();
+      };
+    });
     document.getElementById('sc-forecast').onchange = function (e) {
       var v = e.target.value;
       // Set a date to pin (override) the forecast finish; clear it to revert to the auto SPI forecast.

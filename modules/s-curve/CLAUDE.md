@@ -72,3 +72,40 @@ live-refresh + offline read-cache — no editing cursor** (nothing to edit here)
 
 ## Notes
 (Record decisions, columns added via `alter table ... add column if not exists`, etc.)
+
+## Cost Loading feeds the curve: a COST basis alongside the duration one (2026-08-25) — fmlozano
+Owner: *"the process of cost-loading… should translate or link to the s-curve module. based on the
+cost-loaded activities and in relation to the schedule."*
+- **The link is one column, not an integration.** The Project Schedule's Cost Loading writes
+  `project_schedule.planned_cost`; this module now offers a **Duration | Cost ₱** weighting switch and,
+  on Cost, weights every activity by that figure instead of by its duration. No export, no second
+  store, no sync job — load the cost there, switch the weighting here.
+- **The maths is the same curve with money as the weight**, so planned/actual/forecast, SPI and the
+  data-date line all keep working:
+  - planned value at D = Σ (activity cost × how much of its planned span has elapsed by D)
+  - earned value at D = Σ (activity cost × % complete × how much of its ACTUAL span has elapsed)
+- ⚠️ **Straight-line spread inside an activity**, exactly as the duration curve does it. A cost-loaded
+  activity carries no cost profile of its own; any other shape would be invented.
+- ⚠️ **Unpriced activities contribute NOTHING and that is stated, not hidden.** They are unpriced, not
+  free. The KPI reads *"₱4M on 2 of 3 activities"* and the note names the remainder — a curve built
+  from a third of the schedule's money looks exactly like a complete one, and that is how a planner
+  ends up presenting one.
+- ⚠️ **"No cost loaded" is its own empty state**, not "no dated activities" — the schedule is fine, the
+  exercise simply has not been done; the message names the way out (Project Schedule → Cost Loading)
+  and points out that Duration weighting works right now.
+- ⚠️ **The cost basis deliberately SKIPS the `schedule_scurve_agg` RPC.** That aggregate is
+  duration-only by construction (pre-summed month buckets, no money), so the cost path pays for the
+  per-row fetch. Serving a cost curve from a duration aggregate is how a chart ends up labelled in
+  pesos while plotting days. Switching *to* Cost therefore re-loads; switching back is a repaint.
+- ⚠️ **Duration stays the default, and the choice is remembered PER PROJECT** — one project is
+  cost-loaded and the next is not, and a global preference would open the second on an empty money
+  curve.
+- ⚠️ On the cost basis the KPI headline stays a **percentage** and the pesos go in the subtitles: the
+  chart is a percentage-of-total curve either way, and a peso headline would make the neighbouring
+  "Schedule Variance … pp" read as money too.
+- Verified by executing the SHIPPED `costSeries`/`compute`/`peso` against a stub project (₱1M activity
+  100% done, ₱3M activity 25% done, one unpriced, data date 25-Aug-2026): total **₱4,000,000**,
+  coverage **2 of 3**, overall **43.8%** (₱1.75M earned of ₱4M), earned-to-date **₱1,750,000**,
+  planned-to-date **₱2,010,000**; the duration basis still returns 725 day-units and 56.2% (untouched);
+  everything unpriced → the `noCost` state, not a blank chart. Inline script parses. ⚠️ **Not verified
+  signed-in.** Delivered as `?v=20260825r`.
