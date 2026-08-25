@@ -1,0 +1,21 @@
+-- ============================================================================
+-- Equipment Loading — a chosen icon per piece of equipment
+-- 2026-08-25
+--
+-- The Site Plan draws each asset as a plant pictogram (tower crane, excavator,
+-- boom lift, …) on the chip, the register row and inside the tower it works on.
+-- The icon is normally READ FROM THE NAME, and this column is the override.
+--
+-- ⚠️ NULL means "auto", and that is deliberate rather than storing the guessed
+-- key. Freezing the guess would mean renaming "Crane" to "Tower Crane 2" kept the
+-- mobile-crane pictogram forever; a null lets the guess keep up with the name.
+--
+-- ⚠️ No CHECK constraint and no lookup table. The icon set is a client-side list
+-- of SVG paths, so a constraint here would have to be edited in lockstep with a
+-- JS array — and a retired icon key would then block saves on rows nobody is
+-- editing. The module falls back to the guess for a key it does not recognise.
+--
+-- Run in the Supabase SQL editor. Idempotent.
+-- ============================================================================
+
+alter table equipment_items add column if not exists icon text;

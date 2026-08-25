@@ -86,6 +86,40 @@
     .eq-drift { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 
     /* ---- Loading matrix ---------------------------------------------------------------- */
+    /* The gantt shares the matrix's geometry on purpose: same first two columns, same 46px month
+       pitch, so a bar and the quantity that produced it sit in the same column on screen. */
+    .eq-gtwrap { overflow:auto; max-height:70vh; }
+    .eq-gt { border-collapse:collapse; font-size:12px; table-layout:fixed; width:max-content; }
+    .eq-gt th, .eq-gt td { padding:0; border-bottom:1px solid var(--pd-line); text-align:center; white-space:nowrap; }
+    .eq-gt th:not(.eq-c1):not(.eq-c2), .eq-gt td:not(.eq-c1):not(.eq-c2) { width:46px; min-width:46px; max-width:46px; }
+    .eq-gt thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:10.5px;
+      font-weight:700; color:var(--pd-muted); padding:5px 0; }
+    .eq-gt thead tr.eq-gt-yr th { font-weight:800; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
+    .eq-gt thead tr.eq-gt-mo th { border-bottom:2px solid var(--pd-line); }
+    .eq-gt th.eq-c1, .eq-gt td.eq-c1 { position:sticky; left:0; z-index:1; text-align:left; padding:5px 8px;
+      width:150px; min-width:150px; max-width:150px; background:var(--pd-card); overflow:hidden; text-overflow:ellipsis; }
+    .eq-gt th.eq-c2, .eq-gt td.eq-c2 { position:sticky; left:150px; z-index:1; text-align:left; padding:5px 6px;
+      width:84px; min-width:84px; max-width:84px; background:var(--pd-card); color:var(--pd-muted); font-size:11px; }
+    .eq-gt thead th.eq-c1, .eq-gt thead th.eq-c2 { z-index:3; background:var(--pd-bg); }
+    .eq-gt tr.eq-gt-grp td { background:var(--pd-bg); font-weight:800; text-align:left; padding:6px 8px;
+      border-top:2px solid var(--pd-line); font-size:12px; }
+    .eq-gt tr.eq-gt-grp td.eq-c1, .eq-gt tr.eq-gt-grp td.eq-c2 { background:var(--pd-bg); }
+    .eq-gt td.eq-gt-cell { position:relative; height:26px; }
+    .eq-gt td.eq-cut { box-shadow:inset 2px 0 0 var(--pd-red), inset -2px 0 0 var(--pd-red); }
+    .eq-gt .bar { position:absolute; left:0; right:0; height:11px; top:50%; transform:translateY(-50%); }
+    /* ⚠️ The cap is drawn on the END cells only, so a bar that runs off the axis stays square-ended —
+       a rounded end would read as "this is when it finishes" when the truth is "the window we are
+       showing stops here". */
+    .eq-gt .bar.s { left:4px; border-top-left-radius:6px; border-bottom-left-radius:6px; }
+    .eq-gt .bar.e { right:4px; border-top-right-radius:6px; border-bottom-right-radius:6px; }
+    .eq-gt .bar.plan { background:#9A9A9A; }
+    .eq-gt .bar.act { background:var(--pd-red); height:7px; top:auto; bottom:3px; transform:none; }
+    .eq-gt .bar.share { background:repeating-linear-gradient(45deg, #F59E0B, #F59E0B 4px, #FDE68A 4px, #FDE68A 8px); }
+    .eq-gt td.eq-gt-cell .q { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      font-size:10px; font-weight:700; color:var(--pd-card); pointer-events:none; }
+    .eq-gt tr:hover td.eq-gt-cell { background:var(--pd-bg); }
+    .eq-gtlegend { display:flex; gap:14px; flex-wrap:wrap; padding:10px 12px; font-size:11.5px; color:var(--pd-muted); }
+    .eq-gtlegend .sw { display:inline-block; width:22px; height:9px; border-radius:5px; vertical-align:-1px; margin-right:5px; }
     .eq-mxwrap { overflow:auto; max-height:70vh; }
     /* ⚠️ table-layout:fixed and NO min-width:100%. With auto layout the browser widens every
        column to fill the pane, so the label columns measured 211/118 against the declared 150/84
@@ -166,6 +200,32 @@
        a zoomed-out plan is centred and a zoomed-in one still pans to its own corners. */
     .eq-plan-zoom { position:relative; width:100%; margin:0 auto; }
     .eq-plan-stage { position:relative; width:100%; height:0; }
+    /* The equipment icon, wherever it appears (chip, register, plan). Inherits currentColor so one
+       set of paths serves the rail, the table and the drawing. */
+    .eq-ico { display:inline-block; vertical-align:-3px; flex:none; }
+    .eq-ico svg { display:block; }
+    .eq-icobtn { display:flex; flex-direction:column; align-items:center; gap:3px; width:60px; padding:6px 2px;
+      border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); color:var(--pd-ink);
+      cursor:pointer; font:inherit; font-size:9.5px; line-height:1.15; text-align:center; }
+    .eq-icobtn:hover { border-color:var(--pd-red); }
+    /* ⚠️ The picked button keeps its LABEL in ink, not red: red on the red tint measured 3.60:1,
+       under the 4.5:1 a 9.5px label needs. The red is carried by the border and the pictogram. */
+    .eq-icobtn.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-ink); font-weight:700; }
+    .eq-icobtn.on .eq-ico { color:var(--pd-red); }
+    .eq-icogrid { display:flex; flex-wrap:wrap; gap:6px; max-height:190px; overflow:auto; padding:2px; }
+    .eq-icorow { display:flex; align-items:center; gap:10px; padding:6px 8px; border-bottom:1px solid var(--pd-line); }
+    .eq-icorow:last-child { border-bottom:0; }
+    .eq-icorow .nm { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; }
+    .eq-icorow .pd-select { max-width:190px; height:32px; font-size:12.5px; }
+    .eq-menu { position:relative; display:inline-flex; }
+    .eq-menu-pop { position:absolute; top:calc(100% + 4px); left:0; z-index:40; min-width:180px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:9px; box-shadow:var(--pd-shadow);
+      padding:5px; display:none; }
+    .eq-menu.open .eq-menu-pop { display:block; }
+    .eq-menu-pop button { display:flex; align-items:center; gap:9px; width:100%; border:0; background:none;
+      color:var(--pd-ink); font:inherit; font-size:12.5px; text-align:left; padding:7px 9px; border-radius:6px; cursor:pointer; }
+    .eq-menu-pop button:hover { background:var(--pd-bg); }
+    .eq-menu-pop svg { flex:none; color:var(--pd-muted); }
     .eq-plan-grid { position:absolute; inset:0; pointer-events:none; opacity:.45;
       background-image:linear-gradient(var(--pd-line) 1px, transparent 1px), linear-gradient(90deg, var(--pd-line) 1px, transparent 1px);
       background-size:40px 40px; }
@@ -284,6 +344,7 @@
       <div class="eq-tabs" role="tablist">
         <button class="eq-tab active" data-view="loading">Loading</button>
         <button class="eq-tab" data-view="register">Equipment</button>
+        <button class="eq-tab" data-view="gantt">Gantt</button>
         <button class="eq-tab" data-view="site">Site Plan</button>
       </div>
       <div class="eq-topbar-tools">
@@ -329,6 +390,29 @@
         </div>
       </div>
 
+      <!-- GANTT -->
+      <div id="eq-view-gantt" style="display:none;">
+        <div class="eq-controls">
+          <span class="eq-filt-ico" data-ico="calendar" data-ico-size="15"></span>
+          <label for="eq-g-group" style="font-size:12.5px;">Group by</label>
+          <select class="pd-select" id="eq-g-group">
+            <option value="tower">Tower</option>
+            <option value="cat">Category</option>
+            <option value="none">Nothing — one list</option>
+          </select>
+          <span class="eq-note" id="eq-gt-note" style="margin-left:auto;"></span>
+        </div>
+        <div class="eq-card" style="padding:0;overflow:hidden;">
+          <div class="eq-gtwrap" id="eq-gantt"></div>
+          <div class="eq-gtlegend">
+            <span><span class="sw" style="background:#9A9A9A;"></span>Planned window</span>
+            <span><span class="sw" style="background:var(--pd-red);"></span>Actual</span>
+            <span><span class="sw" style="background:repeating-linear-gradient(45deg,#F59E0B,#F59E0B 4px,#FDE68A 4px,#FDE68A 8px);"></span>Shared with another tower in the same month</span>
+            <span>A number in the bar is that month's planned quantity.</span>
+          </div>
+        </div>
+      </div>
+
       <!-- REGISTER -->
       <div id="eq-view-register" style="display:none;">
         <div class="eq-card" style="padding:0;overflow:auto;">
@@ -343,7 +427,12 @@
           <button class="pd-btn" id="eq-plan-detect" title="Find candidate tower footprints on the uploaded plan">Detect towers</button>
           <span class="eq-tb-sep"></span>
           <button class="pd-btn" id="eq-site-draw" title="Trace a tower's outline on the plan">Draw shape</button>
-          <button class="pd-btn" id="eq-site-addblk" title="Add a rectangle you can then reshape">+ Rectangle</button>
+          <span class="eq-menu" id="eq-shape-menu">
+            <button class="pd-btn" id="eq-shape-btn" title="Drop a ready-made footprint you can then reshape">+ Shape <span data-ico="chevronDown" data-ico-size="13"></span></button>
+            <div class="eq-menu-pop" id="eq-shape-pop"></div>
+          </span>
+          <button class="pd-btn" id="eq-grid-toggle" title="Show or hide the drawing grid">Grid</button>
+          <button class="pd-btn" id="eq-icons-btn" title="Choose the icon shown for each piece of equipment">Icons…</button>
           <span class="eq-tb-sep"></span>
           <span class="eq-zoom" title="Ctrl + scroll over the plan also zooms">
             <button id="eq-zoom-out" aria-label="Zoom out">&minus;</button>
@@ -414,6 +503,7 @@
   var ITEMS = [];                 // equipment_items for this project
   var LOAD = {};                  // equipment_id -> { 'YYYY-MM-01': row }
   var PLAN = { blocks: [] };      // site-dev geometry, one row per project
+  var gGroup = 'tower';           // how the gantt is grouped: tower | cat | none
   var SPAN = null;                // { start, end, months[], source }
   var CUTOFF = null;              // data date, month-floored
   var needsMigration = false;
@@ -428,9 +518,14 @@
   // ⚠️ The floor is below 1 on purpose. The pane is height-capped, so a tall plan still overflows
   // vertically at 100% — "Fit" has to be allowed to shrink or it would not fit anything.
   var PLAN_ZMIN = 0.2, PLAN_ZMAX = 8;
+  // ⚠️ Widened from the old 40px screen grid to 50/250 PLAN units — at the default fit that reads as
+  // a coarse major square with four minor divisions, the CAD convention, instead of the fine mesh
+  // that made a traced tower hard to see.
+  var GRID_MIN = 50, GRID_MAJ = 250;
   var dragItemId = null;          // the equipment chip currently being dragged onto a tower
   var panMoved = false;           // the pan that just ended actually moved, so its click is not a click
   var planFitted = false;         // the plan has been fitted to the window once for this project/backdrop
+  var planGrid = true;            // the drawing grid, CAD-style: model space, so it scales with zoom
   var blkSel = null;              // the tower shape currently selected on the plan
   var drawing = false, drawPts = [];  // trace-a-tower mode and the points taken so far
   var PLANIMG_URL = null;         // object URL for the backdrop (revoked when it is replaced)
@@ -628,6 +723,7 @@
   // the file to run. ⚠️ Deliberately only for a MISSING COLUMN: a constraint violation, an RLS
   // refusal or a bad value must still fail loudly, or a save would silently discard real data.
   var EQ_MIGRATION_FOR = {
+    icon: 'migrations/2026-08-25-equipment-icons.sql',
     code: 'migrations/2026-08-24-equipment-code-and-sharing.sql',
     link_mode: 'migrations/2026-08-24-equipment-schedule-link.sql',
     link_activity_id: 'migrations/2026-08-24-equipment-schedule-link.sql',
@@ -1019,7 +1115,7 @@
 
     if (detail === 'item') {
       ag.items.forEach(function (it) {
-        var label = '<span class="eq-dot" style="background:' + catColor(it.category) + '"></span>' +
+        var label = iconSvg(iconKeyOf(it), 15, catColor(it.category)) + ' ' +
           (it.code ? '<b>' + esc(it.code) + '</b> ' : '') + esc(it.name) +
           (towersOf(it).length ? ' <span class="eq-badge">' + esc(towerNamesOf(it).join(' + ')) + '</span>' : '') +
           (isLinked(it) ? ' <span class="eq-linkchip on" title="Planned months come from the schedule">linked</span>' : '');
@@ -1122,6 +1218,117 @@
     }
   }
 
+  // ---- Gantt ----------------------------------------------------------------------------
+  // What this answers is "when is each machine on site, and where" — the same numbers the matrix
+  // holds, read along time instead of down a column.
+  //
+  // ⚠️ The bars are derived from the MONTHLY QUANTITIES, not from the link's own start/end dates.
+  // A schedule-linked item whose quantities were later edited by hand would otherwise show a bar
+  // that disagrees with the grid directly below it. The quantities are what the loading actually is.
+  function itemMonths(it, which) {
+    var out = {};
+    SPAN.months.forEach(function (m) { var v = qtyOf(it, m.iso, which); if (v != null && v > 0) out[m.iso] = v; });
+    return out;
+  }
+  // A month where this item stands on more than one tower is the interesting one: that is the
+  // sharing the site plan is for, and the month a planner has to check against the tower windows.
+  function sharedMonths(it) {
+    var tw = towersOf(it);
+    if (tw.length < 2) return {};
+    var out = {}, plan = itemMonths(it, 'planned');
+    Object.keys(plan).forEach(function (iso) {
+      var live = tw.filter(function (b) {
+        var w = TWIN[b];
+        if (!w || !w.start || !w.end) return true;   // no window known — cannot rule the month out
+        return iso >= mkey(mFloor(w.start)) && iso <= mkey(mFloor(w.end));
+      });
+      if (live.length > 1) out[iso] = live.length;
+    });
+    return out;
+  }
+  function renderGantt() {
+    var host = document.getElementById('eq-gantt'); if (!host) return;
+    var note = document.getElementById('eq-gt-note');
+    var items = visibleItems(), months = SPAN ? SPAN.months : [];
+    if (!months.length || !items.length) {
+      host.innerHTML = '<div class="eq-empty">' + (items.length
+        ? 'No months in the project schedule yet.'
+        : 'No equipment yet — add some and set its monthly quantities, and its time on site appears here.') + '</div>';
+      if (note) note.textContent = '';
+      return;
+    }
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var yr = [], run = null;
+    months.forEach(function (m) { var y = m.d.getFullYear(); if (!run || run.y !== y) { run = { y: y, n: 0 }; yr.push(run); } run.n++; });
+
+    // Rows, grouped. An item on two towers appears under BOTH — that is the point of the view, and
+    // hiding the second appearance would make a shared crane look like it belongs to one building.
+    var groups = [];
+    if (gGroup === 'tower') {
+      PLAN.blocks.forEach(function (b) {
+        var rows = items.filter(function (i) { return hasTower(i, b.id); });
+        if (rows.length) groups.push({ label: b.name, sub: TWIN[b.id] && TWIN[b.id].start
+          ? 'schedule ' + Fmt.date(TWIN[b.id].start) + ' – ' + Fmt.date(TWIN[b.id].end)
+          : 'no schedule window', rows: rows });
+      });
+      var loose = items.filter(function (i) { return !towersOf(i).length; });
+      if (loose.length) groups.push({ label: 'Not on a tower', sub: 'project-wide', rows: loose });
+    } else if (gGroup === 'cat') {
+      EQ_CATS.concat(['—']).forEach(function (c) {
+        var rows = items.filter(function (i) { return (i.category || '—') === c; });
+        if (rows.length) groups.push({ label: c, sub: rows.length + ' item(s)', rows: rows });
+      });
+    } else {
+      groups.push({ label: '', sub: '', rows: items });
+    }
+
+    var h = ['<table class="eq-gt"><thead>',
+      '<tr class="eq-gt-yr"><th class="eq-c1"></th><th class="eq-c2"></th>' +
+        yr.map(function (r) { return '<th colspan="' + r.n + '">' + r.y + '</th>'; }).join('') + '</tr>',
+      '<tr class="eq-gt-mo"><th class="eq-c1">Equipment</th><th class="eq-c2">Towers</th>' +
+        months.map(function (m) { return '<th' + (m.iso === cutIso ? ' class="eq-cut"' : '') + '>' + MON3[m.d.getMonth()] + '</th>'; }).join('') + '</tr>',
+      '</thead><tbody>'];
+    var barred = items.filter(function (i) { return Object.keys(itemMonths(i, 'planned')).length; }).length;
+    groups.forEach(function (grp) {
+      if (grp.label) {
+        h.push('<tr class="eq-gt-grp"><td class="eq-c1">' + esc(grp.label) + '</td><td class="eq-c2">' + esc(grp.sub) + '</td>' +
+          months.map(function (m) { return '<td' + (m.iso === cutIso ? ' class="eq-cut"' : '') + '></td>'; }).join('') + '</tr>');
+      }
+      grp.rows.forEach(function (it) {
+        var plan = itemMonths(it, 'planned'), act = itemMonths(it, 'actual'), shr = sharedMonths(it);
+        var keys = Object.keys(plan);
+        var first = keys.length ? keys[0] : null, last = keys.length ? keys[keys.length - 1] : null;
+        var ak = Object.keys(act), aFirst = ak.length ? ak[0] : null, aLast = ak.length ? ak[ak.length - 1] : null;
+        var tw = towerNamesOf(it);
+        h.push('<tr><td class="eq-c1" title="' + esc(it.name) + '">' + iconSvg(iconKeyOf(it), 15, catColor(it.category)) + ' ' +
+          (it.code ? '<b>' + esc(it.code) + '</b> ' : '') + esc(it.name) + '</td>' +
+          '<td class="eq-c2" title="' + esc(tw.join(' + ') || 'not on a tower') + '">' + esc(tw.join(' + ') || '—') + '</td>' +
+          months.map(function (m) {
+            var p = plan[m.iso], a = act[m.iso], cls = 'eq-gt-cell' + (m.iso === cutIso ? ' eq-cut' : '');
+            var inner = '';
+            if (p != null) {
+              inner += '<div class="bar ' + (shr[m.iso] ? 'share' : 'plan') +
+                (m.iso === first ? ' s' : '') + (m.iso === last ? ' e' : '') + '"></div>' +
+                (p > 1 || shr[m.iso] ? '<span class="q">' + fnum(p) + '</span>' : '');
+            }
+            if (a != null) inner += '<div class="bar act' + (m.iso === aFirst ? ' s' : '') + (m.iso === aLast ? ' e' : '') + '"></div>';
+            var tip = MON3[m.d.getMonth()] + ' ' + m.d.getFullYear() +
+              (p != null ? ' · planned ' + fnum(p) : '') + (a != null ? ' · actual ' + fnum(a) : '') +
+              (shr[m.iso] ? ' · shared across ' + shr[m.iso] + ' towers this month' : '');
+            return '<td class="' + cls + '" title="' + esc(tip) + '">' + inner + '</td>';
+          }).join('') + '</tr>');
+      });
+    });
+    h.push('</tbody></table>');
+    host.innerHTML = h.join('');
+    if (note) {
+      var shared = items.filter(function (i) { return Object.keys(sharedMonths(i)).length; }).length;
+      note.textContent = barred + ' of ' + items.length + ' item(s) have planned months' +
+        (shared ? ' · ' + shared + ' shared across towers in the same month' : '') +
+        (gGroup === 'tower' && !PLAN.blocks.length ? ' · no towers on the site plan yet' : '');
+    }
+  }
+
   // ---- Register -------------------------------------------------------------------------
   function renderRegister() {
     var el = document.getElementById('eq-reg'); if (!el) return;
@@ -1137,7 +1344,7 @@
       var pn = cutIso ? qtyOf(it, cutIso, 'planned') : null, an = cutIso ? qtyOf(it, cutIso, 'actual') : null;
       h.push('<tr>' +
         '<td><b>' + esc(it.code || '—') + '</b></td>' +
-        '<td><span class="eq-dot" style="background:' + catColor(it.category) + '"></span><b>' + esc(it.name) + '</b>' +
+        '<td>' + iconSvg(iconKeyOf(it), 16, catColor(it.category)) + ' <b>' + esc(it.name) + '</b>' +
           (it.remarks ? '<div class="eq-note">' + esc(it.remarks) + '</div>' : '') + '</td>' +
         '<td>' + esc(it.category) + '</td>' +
         '<td>' + (it.acquisition ? '<span class="eq-badge' + (it.acquisition === 'Rental' ? ' eq-rent' : '') + '">' + esc(it.acquisition) + '</span>' : '—') + '</td>' +
@@ -1216,6 +1423,15 @@
           '<option value="">—</option>' +
           ACQ.map(function (a) { return '<option' + (it && it.acquisition === a ? ' selected' : '') + '>' + a + '</option>'; }).join('') +
         '</select></div>' +
+        '<div class="pd-field eq-form-full"><label>Icon</label>' +
+          '<div class="eq-icogrid" id="f-icons">' +
+            '<button type="button" class="eq-icobtn" data-icon="" title="Pick the icon from the equipment\'s name">' +
+              iconSvg(guessIcon(it || {}), 22) + 'Auto</button>' +
+            Object.keys(EQ_ICONS).map(function (k) {
+              return '<button type="button" class="eq-icobtn" data-icon="' + k + '" title="' + esc(EQ_ICONS[k].label) + '">' +
+                iconSvg(k, 22) + esc(EQ_ICONS[k].label) + '</button>';
+            }).join('') +
+          '</div><span class="eq-note" id="f-iconnote"></span></div>' +
         '<div class="pd-field"><label>Unit</label><input class="pd-input" id="f-unit" value="' + esc(it && it.unit) + '" placeholder="unit / set / lot"></div>' +
         '<div class="pd-field"><label>Cost per unit-month</label><input class="pd-input" id="f-rate" type="number" step="any" min="0" value="' + esc(it && it.monthly_rate) + '"></div>' +
         '<div class="pd-field"><label>Supplier / owner</label><input class="pd-input" id="f-sup" value="' + esc(it && it.supplier) + '"></div>' +
@@ -1273,6 +1489,22 @@
         ? (PLAN.blocks.length ? (n > 1 ? n + ' towers — this asset is shared between them.' : '') : 'No towers yet — add them in Site Plan.')
         : 'Tools and service vehicles move around the whole site, so they are not tied to one tower.';
     }
+    // ⚠️ 'Auto' is stored as BLANK, not as the guessed key. Storing the guess freezes it, so
+    // renaming "Crane" to "Tower Crane 2" would keep the mobile-crane icon forever.
+    var pickedIcon = (it && it.icon && EQ_ICONS[it.icon]) ? it.icon : '';
+    function syncIcon() {
+      el.querySelectorAll('#f-icons [data-icon]').forEach(function (b) {
+        b.classList.toggle('on', (b.dataset.icon || '') === pickedIcon);
+      });
+      var note = el.querySelector('#f-iconnote');
+      if (note) note.textContent = pickedIcon
+        ? EQ_ICONS[pickedIcon].label + ' — shown on the chip, the register and the site plan.'
+        : 'Auto: read from the name, so it follows a rename. Pick one to fix it.';
+    }
+    el.querySelectorAll('#f-icons [data-icon]').forEach(function (b) {
+      b.onclick = function () { pickedIcon = b.dataset.icon || ''; syncIcon(); };
+    });
+    syncIcon();
     el.querySelector('#f-cat').onchange = function () { syncBlk(); syncLink(); }; syncBlk();
     el.querySelectorAll('#f-blks input[data-blk]').forEach(function (cb) {
       cb.onchange = function () { syncBlk(); syncLink(); };
@@ -1344,6 +1576,7 @@
       })[0];
       if (clash) { UI.toast('Code "' + code + '" is already used by ' + clash.name + '.', 'error'); return; }
       payload.code = code;
+      payload.icon = pickedIcon || null;
       var mode = el.querySelector('#f-lmode').value;
       if (mode && !picked) { UI.toast('Pick the activity or WBS branch this equipment follows, or set the link back to "Not linked".', 'error'); return; }
       payload.link_mode = mode || null;
@@ -1516,6 +1749,185 @@
       if (res.error) { UI.toast('Could not save: ' + res.error.message, 'error'); return; }
       (LOAD[eqId] = LOAD[eqId] || {})[iso] = res.data[0];
     }
+  }
+
+  // ---- Equipment icons -------------------------------------------------------------------
+  // A small plant set drawn as inline SVG paths on a 24×24 grid, so one definition serves the rail
+  // chip, the register row, the plan and the picker, at any size and in either theme (they inherit
+  // currentColor).
+  //
+  // ⚠️ Deliberately NOT in assets/js/icons.js: that is a shared asset the module contract forbids a
+  // module editing, and these are plant pictograms rather than UI glyphs.
+  var EQ_ICONS = {
+    towercrane: { label: 'Tower crane', d: 'M3 4h18M12 4v16M6 20h12M12 7l-7 -3M5 4v3M9 4v3M12 7v2M10.5 9h3' },
+    mobilecrane: { label: 'Mobile crane', d: 'M3 16h11l6 -9M3 16v2h18v-2M6 18a1.6 1.6 0 1 0 3 0M14 18a1.6 1.6 0 1 0 3 0M20 7l-1 5' },
+    crawlercrane: { label: 'Crawler crane', d: 'M4 18h14M4 18a2 2 0 0 1 0 -3h14a2 2 0 0 1 0 3M7 15V9h5l6 -6M12 9l-5 0M18 3v4' },
+    excavator: { label: 'Excavator', d: 'M3 18h12M3 18a2 2 0 0 1 0 -3h12a2 2 0 0 1 0 3M5 15v-4h6v4M11 12l5 -4 4 3M20 11l-2 4h-4' },
+    backhoe: { label: 'Backhoe / loader', d: 'M4 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M15 17a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M6 15V9h6l3 6M12 9l4 -4M2 12h4' },
+    dozer: { label: 'Dozer', d: 'M3 17h13M3 17a2 2 0 0 1 0 -3h13a2 2 0 0 1 0 3M6 14v-4h6l2 4M20 8v8M20 8l-4 2v4l4 2' },
+    roller: { label: 'Roller / compactor', d: 'M3 17a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M15 17a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M9 14h6M8 11h9v3' },
+    forklift: { label: 'Forklift', d: 'M4 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M12 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M6 16V8h5l2 8M17 5v13M17 9h4' },
+    truck: { label: 'Truck', d: 'M3 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M3 16V6h10v10M13 10h4l3 3v3' },
+    mixer: { label: 'Concrete mixer', d: 'M3 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M14 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M3 16V8h6l1 8M11 7l7 2l-2 7l-6 -2z' },
+    pump: { label: 'Concrete pump', d: 'M3 17h9M3 17a2 2 0 0 1 0 -3h9a2 2 0 0 1 0 3M5 14v-3h5v3M10 11l5 -5h6M15 6v4' },
+    pilerig: { label: 'Piling rig', d: 'M5 19h9M5 19a2 2 0 0 1 0 -3h9a2 2 0 0 1 0 3M8 16V4h3M11 4v12M14 7h3v9' },
+    hoist: { label: 'Hoist / man lift', d: 'M6 21V3h4v18M6 3h8M10 7h5M10 12h5M15 5v9M17 21h-6' },
+    boomlift: { label: 'Boom lift', d: 'M4 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M12 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M5 16v-3h9v3M9 13l6 -6h5v3' },
+    scissor: { label: 'Scissor lift', d: 'M6 20h12M8 17l8 -6M16 17l-8 -6M8 11l8 -6M16 11l-8 -6M7 5h10v-1' },
+    generator: { label: 'Generator', d: 'M4 8h16v9H4zM7 17v2M17 17v2M8 11h3l-2 3h3M4 6h5' },
+    compressor: { label: 'Compressor', d: 'M4 10h12v7H4zM16 13h4M6 17v2M14 17v2M7 7h6v3H7z' },
+    welder: { label: 'Welding machine', d: 'M5 9h9v8H5zM14 12l5 -4M5 17v2M13 17v2M8 12h3' },
+    genericplant: { label: 'Other plant', d: 'M4 17h16M6 17V9h5l3 3h4v5M9 9V6h3v3' }
+  };
+  // Guessed from the equipment's own name when nobody has chosen one. ⚠️ Order matters: "tower
+  // crane" must be tested before the bare "crane", or every crane becomes a mobile one.
+  var EQ_ICON_GUESS = [
+    [/tower\s*crane|\bTC\b/i, 'towercrane'], [/crawler|lattice/i, 'crawlercrane'],
+    [/mobile\s*crane|truck\s*crane|rough\s*terrain|\bRT\b/i, 'mobilecrane'], [/crane/i, 'mobilecrane'],
+    [/excavat|backhoe|\bPC\b|digger/i, 'excavator'], [/loader|payloader|bobcat|skid/i, 'backhoe'],
+    [/dozer|grader/i, 'dozer'], [/roller|compact|vibro/i, 'roller'],
+    [/forklift|telehandler/i, 'forklift'], [/mixer|transit/i, 'mixer'],
+    [/pump/i, 'pump'], [/pile|bore|auger/i, 'pilerig'],
+    [/hoist|passenger|alimak|elevator|man\s*lift/i, 'hoist'],
+    [/boom\s*lift|cherry|manlift/i, 'boomlift'], [/scissor/i, 'scissor'],
+    [/gen\s*set|generator|\bgenset\b/i, 'generator'], [/compressor|air\s*comp/i, 'compressor'],
+    [/weld/i, 'welder'], [/truck|dump|lowbed|trailer|van|pickup/i, 'truck']
+  ];
+  function guessIcon(it) {
+    var t = ((it && it.name) || '') + ' ' + ((it && it.code) || '');
+    for (var i = 0; i < EQ_ICON_GUESS.length; i++) if (EQ_ICON_GUESS[i][0].test(t)) return EQ_ICON_GUESS[i][1];
+    return it && it.category === 'Vertical Equipment' ? 'towercrane'
+      : it && it.category === 'Service Vehicles' ? 'truck' : 'genericplant';
+  }
+  // ⚠️ A stored icon wins, and 'auto' is stored as blank so the guess keeps improving as an item is
+  // renamed. A key that no longer exists (an icon retired from the set) falls back rather than
+  // rendering an empty box.
+  function iconKeyOf(it) {
+    var k = it && it.icon;
+    return (k && EQ_ICONS[k]) ? k : guessIcon(it);
+  }
+  function iconSvg(key, size, color) {
+    var ic = EQ_ICONS[key] || EQ_ICONS.genericplant, n = size || 16;
+    return '<span class="eq-ico" style="width:' + n + 'px;height:' + n + 'px;' + (color ? 'color:' + color + ';' : '') + '">' +
+      '<svg viewBox="0 0 24 24" width="' + n + '" height="' + n + '" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="' + ic.d + '"/></svg></span>';
+  }
+  // The plan draws icons INSIDE the svg, so they scale with the drawing like everything else.
+  function iconSvgRaw(key, x, y, n, color) {
+    var ic = EQ_ICONS[key] || EQ_ICONS.genericplant, k = n / 24;
+    return '<g transform="translate(' + x.toFixed(1) + ',' + y.toFixed(1) + ') scale(' + k.toFixed(4) + ')" ' +
+      'fill="none" stroke="' + (color || 'currentColor') + '" stroke-width="1.7" stroke-linecap="round" ' +
+      'stroke-linejoin="round"><path d="' + ic.d + '"/></g>';
+  }
+  function iconOptions(cur) {
+    return '<option value=""' + (cur ? '' : ' selected') + '>Auto (from the name)</option>' +
+      Object.keys(EQ_ICONS).map(function (k) {
+        return '<option value="' + k + '"' + (cur === k ? ' selected' : '') + '>' + esc(EQ_ICONS[k].label) + '</option>';
+      }).join('');
+  }
+
+  // ---- Icon settings ---------------------------------------------------------------------
+  // One place to set every item's icon, because doing it through the Add/Edit form means opening
+  // and saving a row at a time, and the icons are only useful once they are all right.
+  function openIconSettings() {
+    if (!ITEMS.length) { UI.toast('No equipment registered yet.'); return; }
+    var draft = {};
+    ITEMS.forEach(function (i) { draft[i.id] = (i.icon && EQ_ICONS[i.icon]) ? i.icon : ''; });
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>Equipment icons</h2><button class="pd-modal-close" id="ic-x">&times;</button></div>' +
+      '<p class="eq-note" style="margin:2px 0 10px;">Each piece of equipment can carry its own icon on the chips, the register and the site plan. <b>Auto</b> reads it from the name, so it keeps up with a rename.</p>' +
+      '<div style="max-height:52vh;overflow:auto;border:1px solid var(--pd-line);border-radius:9px;">' +
+        ITEMS.map(function (i) {
+          return '<div class="eq-icorow" data-ir="' + esc(i.id) + '">' +
+            '<span class="ic" data-icp="' + esc(i.id) + '">' + iconSvg(iconKeyOf(i), 20, catColor(i.category)) + '</span>' +
+            '<span class="nm">' + (i.code ? '<b>' + esc(i.code) + '</b> ' : '') + esc(i.name) +
+              ' <span class="eq-note">' + esc(i.category || '') + '</span></span>' +
+            '<select class="pd-select" data-ic="' + esc(i.id) + '">' + iconOptions(draft[i.id]) + '</select></div>';
+        }).join('') +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="ic-cancel">Cancel</button>' +
+      '<button class="pd-btn pd-btn-primary" id="ic-save">Save icons</button></div>');
+    var el = m.el;
+    el.querySelectorAll('[data-ic]').forEach(function (sel) {
+      sel.onchange = function () {
+        var id = sel.dataset.ic;
+        draft[id] = sel.value || '';
+        // The preview updates live against the SAME resolver the plan uses, so what the dialog
+        // shows is what the drawing will show.
+        var it = itemById(id), prev = el.querySelector('[data-icp="' + id + '"]');
+        if (it && prev) prev.innerHTML = iconSvg(draft[id] || guessIcon(it), 20, catColor(it.category));
+      };
+    });
+    el.querySelector('#ic-x').onclick = el.querySelector('#ic-cancel').onclick = m.close;
+    el.querySelector('#ic-save').onclick = async function () {
+      // ⚠️ Only the rows that actually changed are written. Saving all of them would touch every
+      // updated_at on the register — the column the "last updated" reading comes from.
+      var changed = ITEMS.filter(function (i) {
+        return ((i.icon && EQ_ICONS[i.icon]) ? i.icon : '') !== draft[i.id];
+      });
+      if (!changed.length) { m.close(); return; }
+      showLoading('Saving ' + changed.length + ' icon(s)…');
+      var dropped = [];
+      for (var i = 0; i < changed.length; i++) {
+        var r = await tolerantWrite({ icon: draft[changed[i].id] || null }, (function (id) {
+          return function (p) { return sb().from('equipment_items').update(p).eq('id', id); };
+        })(changed[i].id));
+        if (!r.ok) { hideLoading(); UI.toast('Could not save the icons: ' + (r.error.message || r.error), 'error'); return; }
+        if (r.dropped.length) dropped = r.dropped;
+        changed[i].icon = draft[changed[i].id] || null;
+      }
+      hideLoading();
+      m.close();
+      if (dropped.length) reportDropped(dropped);
+      else UI.toast(changed.length + ' icon(s) updated.');
+      renderSite(); renderRegister(); renderAll();
+    };
+  }
+
+  // ---- Shape presets ---------------------------------------------------------------------
+  // Every preset is a plain polygon in plan units, so the moment one is dropped it is an ordinary
+  // shape: draggable, reshapeable corner by corner, and saved by the same path. ⚠️ That is why the
+  // circle is a 24-gon rather than an <ellipse> — a second geometry type would need its own editing,
+  // its own hit-testing and its own serialisation, for a footprint nobody traces exactly anyway.
+  function shapePreset(kind, w, h) {
+    w = w || 220; h = h || 160;
+    var pts = [];
+    function P(fx, fy) { pts.push([fx * w, fy * h]); }
+    switch (kind) {
+      case 'rect': P(0,0); P(1,0); P(1,1); P(0,1); break;
+      case 'square': h = w; P(0,0); P(1,0); P(1,1); P(0,1); break;
+      case 'lshape': P(0,0); P(.55,0); P(.55,.55); P(1,.55); P(1,1); P(0,1); break;
+      case 'tshape': P(0,0); P(1,0); P(1,.4); P(.68,.4); P(.68,1); P(.32,1); P(.32,.4); P(0,.4); break;
+      case 'ushape': P(0,0); P(.3,0); P(.3,.68); P(.7,.68); P(.7,0); P(1,0); P(1,1); P(0,1); break;
+      case 'cross': P(.32,0); P(.68,0); P(.68,.32); P(1,.32); P(1,.68); P(.68,.68); P(.68,1); P(.32,1); P(.32,.68); P(0,.68); P(0,.32); P(.32,.32); break;
+      case 'triangle': P(.5,0); P(1,1); P(0,1); break;
+      case 'trapezoid': P(.2,0); P(.8,0); P(1,1); P(0,1); break;
+      case 'hexagon': P(.25,0); P(.75,0); P(1,.5); P(.75,1); P(.25,1); P(0,.5); break;
+      case 'octagon': P(.3,0); P(.7,0); P(1,.3); P(1,.7); P(.7,1); P(.3,1); P(0,.7); P(0,.3); break;
+      case 'circle':
+        h = w;
+        for (var i = 0; i < 24; i++) {
+          var a = i / 24 * Math.PI * 2;
+          pts.push([(0.5 + Math.cos(a) * 0.5) * w, (0.5 + Math.sin(a) * 0.5) * h]);
+        }
+        break;
+      default: P(0,0); P(1,0); P(1,1); P(0,1);
+    }
+    return pts;
+  }
+  var EQ_SHAPES = [
+    { k: 'rect', label: 'Rectangle' }, { k: 'square', label: 'Square' }, { k: 'lshape', label: 'L-shape' },
+    { k: 'tshape', label: 'T-shape' }, { k: 'ushape', label: 'U-shape' }, { k: 'cross', label: 'Cross' },
+    { k: 'triangle', label: 'Triangle' }, { k: 'trapezoid', label: 'Trapezoid' },
+    { k: 'hexagon', label: 'Hexagon' }, { k: 'octagon', label: 'Octagon' }, { k: 'circle', label: 'Circle' }
+  ];
+  // A thumbnail of the real preset — drawn by the same function that builds it, so the menu can
+  // never advertise a shape the button does not produce.
+  function shapeThumb(kind) {
+    var pts = shapePreset(kind, 18, 14);
+    return '<svg width="20" height="16" viewBox="-1 -1 20 16"><polygon points="' +
+      pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') +
+      '" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
   }
 
   // ---- Site Plan view -------------------------------------------------------------------
@@ -1738,8 +2150,21 @@
     var g = ['<div class="eq-plan-zoom" style="width:' + (planZoom * 100).toFixed(2) + '%;">' +
       '<div class="eq-plan-stage" style="padding-bottom:' + (H / PLAN_W * 100).toFixed(3) + '%;">'];
     if (PLANIMG_URL) g.push('<img class="eq-plan-img" src="' + PLANIMG_URL + '" alt="Site development plan">');
-    else g.push('<div class="eq-plan-grid"></div>');
     g.push('<svg class="eq-plan-svg" viewBox="0 0 ' + PLAN_W + ' ' + H + '" id="eq-plan-svg">');
+    // ⚠️ The grid lives INSIDE the drawing, in plan units — not as a fixed CSS background on the
+    // pane. That is what makes it behave like CAD's: it scales with the zoom, so it stays a
+    // measuring aid instead of a fixed screen texture the drawing slides under. The old 40px CSS
+    // grid also only appeared when there was no backdrop; this one can sit over a scan, which is
+    // where a grid is actually wanted.
+    if (planGrid) {
+      g.push('<defs><pattern id="eq-grid-min" width="' + GRID_MIN + '" height="' + GRID_MIN + '" patternUnits="userSpaceOnUse">' +
+        '<path d="M ' + GRID_MIN + ' 0 L 0 0 0 ' + GRID_MIN + '" fill="none" stroke="var(--pd-line)" stroke-width="0.7"/></pattern>' +
+        '<pattern id="eq-grid-maj" width="' + GRID_MAJ + '" height="' + GRID_MAJ + '" patternUnits="userSpaceOnUse">' +
+        '<rect width="' + GRID_MAJ + '" height="' + GRID_MAJ + '" fill="url(#eq-grid-min)"/>' +
+        '<path d="M ' + GRID_MAJ + ' 0 L 0 0 0 ' + GRID_MAJ + '" fill="none" stroke="var(--pd-line)" stroke-width="1.6"/></pattern></defs>');
+      g.push('<rect x="0" y="0" width="' + PLAN_W + '" height="' + H + '" fill="url(#eq-grid-maj)" opacity="' +
+        (PLANIMG_URL ? '.5' : '.9') + '" pointer-events="none"/>');
+    }
     PLAN.blocks.forEach(function (b) {
       var pts = bpts(b), bb = bboxOf(pts), c = b.color || '#EE3124', n = counts[b.id] || 0;
       var on = blkSel === b.id;
@@ -1747,6 +2172,24 @@
       g.push('<polygon points="' + ptsAttr(pts) + '" fill="' + c + '" fill-opacity="' + (on ? .3 : .18) + '" stroke="' + c + '" stroke-width="2.5" stroke-linejoin="round"/>');
       g.push('<text x="' + bb.cx.toFixed(1) + '" y="' + (bb.cy - 2).toFixed(1) + '" text-anchor="middle" font-size="19" fill="var(--pd-ink)">' + esc(b.name) + '</text>');
       g.push('<text class="eq-lb-n" x="' + bb.cx.toFixed(1) + '" y="' + (bb.cy + 17).toFixed(1) + '" text-anchor="middle" font-size="14" fill="' + c + '">' + n + ' equipment</text>');
+      // The equipment actually standing on this tower, as icons under its label. ⚠️ Capped at what
+      // the shape can hold rather than a fixed number — a narrow tower would otherwise carry a row
+      // of icons wider than itself — and the overflow is stated, never silently dropped.
+      var mine = ITEMS.filter(function (i) { return hasTower(i, b.id); });
+      if (mine.length) {
+        var isz = 22, gap = 5, per = Math.max(1, Math.floor((bb.w - 8) / (isz + gap)));
+        var show = mine.slice(0, Math.min(mine.length, per));
+        var rowW = show.length * isz + (show.length - 1) * gap;
+        var ix = bb.cx - rowW / 2, iy = bb.cy + 26;
+        show.forEach(function (it2, k) {
+          g.push(iconSvgRaw(iconKeyOf(it2), ix + k * (isz + gap), iy, isz, c) +
+            '<title>' + esc((it2.code ? it2.code + ' · ' : '') + it2.name) + '</title>');
+        });
+        if (mine.length > show.length) {
+          g.push('<text x="' + bb.cx.toFixed(1) + '" y="' + (iy + isz + 12).toFixed(1) +
+            '" text-anchor="middle" font-size="12" fill="' + c + '">+' + (mine.length - show.length) + ' more</text>');
+        }
+      }
       if (on) {
         pts.forEach(function (p, k) {
           g.push('<circle class="eq-vx" data-blk="' + esc(b.id) + '" data-i="' + k + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7"/>');
@@ -1830,7 +2273,7 @@
     else rail.innerHTML = sitable.map(function (i) {
       return '<div class="eq-chip' + (siteSel === i.id ? ' on' : '') + '" data-chip="' + esc(i.id) + '" draggable="true" title="Drag onto a tower, or click then click a tower">' +
         '<span class="eq-chip-grip" aria-hidden="true">⠿</span>' +
-        '<span class="eq-dot" style="background:' + catColor(i.category) + '"></span>' +
+        iconSvg(iconKeyOf(i), 17, catColor(i.category)) +
         (i.code ? '<b>' + esc(i.code) + '</b> ' : '') + esc(i.name) +
         '<span class="x">' + (towersOf(i).length ? esc(towerNamesOf(i).join(' + ')) : 'unassigned') + '</span></div>';
     }).join('');
@@ -1879,6 +2322,8 @@
     var b = blockById(id); if (!b) return;
     var n = prompt('Tower name', b.name); if (n == null) return;
     n = n.trim(); if (!n) return;
+    var err = towerNameError(n, id);
+    if (err) { UI.toast(err, 'error'); return; }
     b.name = n;
     savePlan().then(function () { renderSite(); renderRegister(); renderAll(); });
   }
@@ -2281,6 +2726,40 @@
     var ox = clamp(dx, -bb.x, PLAN_W - bb.x - bb.w), oy = clamp(dy, -bb.y, H - bb.y - bb.h);
     return pts.map(function (p) { return [p[0] + ox, p[1] + oy]; });
   }
+  // ---- A tower on the plan must be a tower the SCHEDULE knows -----------------------------
+  // The whole point of the plan is to carry equipment onto work that is actually programmed. A shape
+  // named for a tower no activity is tagged with has no window, so its equipment can never be checked
+  // for sharing and its months can never be derived — it looks assigned and means nothing.
+  function schedTowers() { return (TOWERVALS || []).map(function (v) { return String(v.value); }); }
+  function schedTowersKnown() { return !!(TOWERVALS && TOWERVALS.length); }
+  function sameName(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
+  // ⚠️ Returns a message, never a boolean: the planner has to be told WHICH tower the schedule is
+  // missing and WHERE to add it, or the refusal reads as the plan being broken.
+  function towerNameError(name, exceptId) {
+    if (!schedTowersKnown()) return null;   // schedule says nothing about towers — nothing to check against
+    var vals = schedTowers();
+    if (vals.some(function (v) { return sameName(v, name); })) return null;
+    // A shape explicitly linked to a schedule tower is already answerable; its label may differ.
+    var b = exceptId ? blockById(exceptId) : null;
+    if (b && b.tower && vals.some(function (v) { return sameName(v, b.tower); })) return null;
+    return 'The project schedule has no "' + name + '" under ' + (levelName(PLAN.level_id) || 'this level') +
+      '. Assign "' + name + '" to a WBS activity in Project Schedule → Location Breakdown first, then it can be recognised here. ' +
+      'The schedule currently has: ' + vals.slice(0, 6).join(', ') + (vals.length > 6 ? ', …' : '') + '.';
+  }
+  // The name a NEW shape should carry.
+  // ⚠️ A single-tower project should not read "Tower 1" — on a job with one building the tower IS the
+  // project, and a generic label makes the plan, the sharing panel and the equipment chips all say
+  // "Tower 1" about a thing everyone calls by the project's name.
+  function defaultBlockName() {
+    var used = {}; PLAN.blocks.forEach(function (b) { used[String(b.name || '').trim().toLowerCase()] = 1; });
+    if (schedTowersKnown()) {
+      var free = schedTowers().filter(function (v) { return !used[String(v).trim().toLowerCase()]; });
+      if (free.length) return free[0];        // take the next tower the schedule actually has
+      return null;                            // every scheduled tower is already on the plan
+    }
+    if (!PLAN.blocks.length) return (projName() || 'Site').trim();
+    return nextTowerName('Tower ' + (PLAN.blocks.length + 1));
+  }
   function nextTowerName(base) {
     var used = {}; PLAN.blocks.forEach(function (b) { used[String(b.name || '').toLowerCase()] = 1; });
     if (!used[String(base).toLowerCase()]) return base;
@@ -2306,13 +2785,19 @@
     UI.toast('"' + b.name + '" copied — press Ctrl+V to paste its shape.');
   }
 
-  function addBlock(name) {
+  // ⚠️ One entry point for every preset, including the plain rectangle the button used to add — two
+  // paths would drift on placement, naming and the clamp the moment a preset was added.
+  function addBlock(name, kind) {
     var n = PLAN.blocks.length, H = planH();
-    var x = 40 + (n % 4) * 230, y = 40 + Math.floor(n / 4) * 180, w = 200, h = Math.min(150, H / 4);
-    y = Math.min(y, Math.max(0, H - h - 10));
+    var w = 210, h = Math.min(160, H / 3.2);
+    var pts = shapePreset(kind || 'rect', w, h);
+    var bb = bboxOf(pts);
+    var x = 40 + (n % 4) * 230, y = 40 + Math.floor(n / 4) * 180;
+    x = clamp(x, 0, Math.max(0, PLAN_W - bb.w - 10));
+    y = clamp(y, 0, Math.max(0, H - bb.h - 10));
     PLAN.blocks.push({
-      id: newBlockId(), name: name || ('Tower ' + (n + 1)), color: '#EE3124',
-      pts: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
+      id: newBlockId(), name: name || defaultBlockName() || nextTowerName('Tower ' + (n + 1)), color: '#EE3124',
+      pts: pts.map(function (p) { return [p[0] + x, p[1] + y]; })
     });
   }
 
@@ -2403,7 +2888,7 @@
     if (!SPAN) return;
     syncFilters();
     var ag = aggregate();
-    renderKpis(ag); renderChart(ag); renderMatrix(ag); renderRegister(); renderSite();
+    renderKpis(ag); renderChart(ag); renderMatrix(ag); renderGantt(); renderRegister(); renderSite();
     if (window.Icons) Icons.hydrate(document.body);
   }
   function syncFilters() {
@@ -2427,9 +2912,13 @@
   function switchView(v, btn) {
     view = v;
     document.querySelectorAll('.eq-tab').forEach(function (b) { b.classList.toggle('active', b === btn); });
-    ['loading', 'register', 'site'].forEach(function (k) {
+    ['loading', 'gantt', 'register', 'site'].forEach(function (k) {
       var el = document.getElementById('eq-view-' + k); if (el) el.style.display = (k === v ? 'block' : 'none');
     });
+    // ⚠️ Repainted on the way in, not only from renderAll: the tower windows the shared-month
+    // hatch depends on arrive asynchronously from the Site Plan tab, so a gantt painted before
+    // that would show no sharing at all.
+    if (v === 'gantt') renderGantt();
     var add = document.getElementById('eq-add');
     if (add) add.style.display = (v === 'site') ? 'none' : '';
     var sync = document.getElementById('eq-sync');
@@ -2442,6 +2931,7 @@
     UI.renderUserBar(prof);
     if (UI.initModuleTopbar) UI.initModuleTopbar();
     document.querySelectorAll('.eq-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view, b); }; });
+    document.getElementById('eq-g-group').onchange = function (e) { gGroup = e.target.value; renderGantt(); };
     document.querySelectorAll('#eq-detail button').forEach(function (b) {
       b.onclick = function () {
         detail = b.dataset.det;
@@ -2460,10 +2950,37 @@
       if (await savePlan()) renderSite();
     };
     document.getElementById('eq-site-pull').onclick = function () { if (pid) pullTowers(); };
-    document.getElementById('eq-site-addblk').onclick = async function () {
-      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
-      addBlock(); if (await savePlan()) renderSite();
+    // The shape menu is built from EQ_SHAPES, so adding a preset is one line in that list.
+    var shMenu = document.getElementById('eq-shape-menu'), shPop = document.getElementById('eq-shape-pop');
+    shPop.innerHTML = EQ_SHAPES.map(function (sp) {
+      return '<button type="button" data-shape="' + sp.k + '">' + shapeThumb(sp.k) + esc(sp.label) + '</button>';
+    }).join('');
+    document.getElementById('eq-shape-btn').onclick = function (e) { e.stopPropagation(); shMenu.classList.toggle('open'); };
+    document.addEventListener('click', function () { shMenu.classList.remove('open'); });
+    shPop.querySelectorAll('[data-shape]').forEach(function (b) {
+      b.onclick = async function () {
+        shMenu.classList.remove('open');
+        if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+        // ⚠️ Checked BEFORE the shape is created, not after: adding a shape and then refusing to name
+        // it would leave an unnamed tower on the plan that the planner has to clean up by hand.
+        if (schedTowersKnown() && !defaultBlockName()) {
+          UI.toast('Every tower in the project schedule (' + schedTowers().join(', ') + ') is already on the plan. ' +
+            'Assign the next tower to a WBS activity in Project Schedule → Location Breakdown first, then add it here.', 'error');
+          return;
+        }
+        addBlock(null, b.dataset.shape);
+        blkSel = PLAN.blocks[PLAN.blocks.length - 1].id;   // land it selected, ready to reshape
+        if (await savePlan()) { renderSite(); renderRegister(); renderAll(); }
+      };
+    });
+    var gridBtn = document.getElementById('eq-grid-toggle');
+    gridBtn.classList.toggle('pd-btn-primary', planGrid);
+    gridBtn.onclick = function () {
+      planGrid = !planGrid;
+      gridBtn.classList.toggle('pd-btn-primary', planGrid);
+      renderSite();
     };
+    document.getElementById('eq-icons-btn').onclick = function () { if (pid) openIconSettings(); };
     // The backdrop button both adds and replaces; once a plan is loaded it also offers to remove
     // it, because a remove buried in a menu is a remove nobody finds.
     var planFile = document.getElementById('eq-plan-file');

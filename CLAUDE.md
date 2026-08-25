@@ -8406,3 +8406,50 @@ buttons, 0 page horizontal scroll). ⚠️ One earlier reading looked like the s
 that was the harness dispatching on the pane rather than on the polygon, which is not what a real
 pointer does. All four equipment suites green, 0 functions lost. ⚠️ **Not verified signed in.**
 `MODULE_V` → `20260825f` (another session had taken `e` while this was in flight).
+
+---
+
+## 2026-08-25 — Equipment Loading: CAD grid, 11 footprints, plant icons, a Gantt, and towers checked against the schedule
+
+**Run `migrations/2026-08-25-equipment-icons.sql`** (adds `equipment_items.icon`).
+
+The Site Plan's grid now lives **inside the drawing in plan units**, so it scales with the zoom like
+CAD's instead of being a fixed screen texture the plan slides under — widened to 50/250 units
+(measured 42.7/213.4px at fit, 167.7/838.5 at 4×), and it can sit over a scanned backdrop, which the
+old CSS grid could not. **+ Rectangle** became a **+ Shape** menu of 11 footprints; ⚠️ a circle is a
+**24-gon** so it edits like every other shape, and each menu thumbnail is drawn by the **same**
+function the button uses, so the menu cannot advertise a shape it does not produce.
+
+**Every asset now carries a plant pictogram** on its chip, its register row, its matrix label and
+**inside the tower it works on**. ⚠️ The icon is **read from the name and the guess is never frozen
+into the row** — storing it would keep a mobile-crane icon forever after "Crane" became "Tower Crane
+2"; a name nothing matches falls back **by category**, and an icon key the client no longer knows
+falls back to the guess rather than rendering an empty box on every screen at once (hence no CHECK
+constraint on the column). ⚠️ In-plan icons are capped by what the **shape can hold**, and the
+overflow is stated as "+N more", never dropped. An **Icons…** dialog sets them all in one place and
+⚠️ writes **only the rows that changed**, so it does not touch every `updated_at`.
+
+**New Gantt tab** — the same monthly quantities read along time, grouped by tower (with each tower's
+schedule window), category, or flat. ⚠️ Bars come from the **quantities, not the link's dates**, or a
+hand-corrected item would draw a bar disagreeing with the grid below it; ⚠️ a **0 or blank month is
+not a commitment**; ⚠️ it shares the matrix's geometry exactly (measured **0px** offset between a bar
+cell and its own month header); ⚠️ a month where an asset stands on two towers whose **schedule
+windows overlap** is hatched, and a shared asset appears under **both** towers.
+
+**A tower on the plan must be one the schedule knows.** A shape named for a tower no activity is
+tagged with has no window, so its equipment can never be checked for sharing — it looks assigned and
+means nothing. Renaming to an unknown value is refused, naming the tower and pointing at Project
+Schedule → Location Breakdown; adding a shape when every scheduled tower is already placed is refused
+**before** the shape exists. ⚠️ Only when the schedule actually declares towers, ⚠️ a shape already
+**linked** to a schedule tower may carry any label, and ⚠️ **a single-tower project names its first
+shape after the PROJECT** — on a one-building job the tower is the project, and "Tower 1" makes every
+screen say it about a thing everyone calls by its name.
+
+**Verified** — 53 new checks executing the shipped functions (icons/shapes 28, Gantt + tower names
+25), plus a real browser at 1280 and 375, light and dark: grid pitch at four zooms, every preset
+inside its box, the icon cap, the shape menu, the Gantt's 0px alignment with every bar inside its own
+cell, 0 page horizontal scroll. ⚠️ One real contrast defect found by measuring — the picked-icon
+button's red label on the red tint read **3.60:1**; it is ink with a red border now (14.25 / 13.45).
+All five earlier equipment suites green; **0 functions lost**; parse clean; CSS balanced.
+⚠️ **Not verified signed in**, and the migration has not been run — until it is, a chosen icon is
+dropped with the file named and the guessed icon still renders. `MODULE_V` → `20260825g`.

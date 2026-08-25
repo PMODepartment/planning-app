@@ -406,3 +406,88 @@ left edge reachable at 4×, and the phone rules (422px window, `pan-y`, 44px but
 horizontal scroll). All four earlier equipment suites still green; parse clean; **0 functions lost**.
 
 ⚠️ **Not verified signed in.**
+
+---
+
+## 2026-08-25 — CAD-style grid, more shapes, equipment icons (+ a Gantt, and towers checked against the schedule)
+
+**Run `migrations/2026-08-25-equipment-icons.sql`** (after the four earlier ones).
+
+**1. The grid is a drawing grid now, and it belongs to the drawing.** ⚠️ The old one was a **40px CSS
+background on the pane**, so it stayed a fixed screen texture the plan slid under — a decoration, not
+a measuring aid. It is now a `<pattern>` painted **inside the svg in plan units**, so it scales with
+the zoom exactly like CAD's: measured **42.7px minor / 213.4px major at fit, 167.7 / 838.5 at 4×**,
+5 minor divisions per major throughout. Widened from 40 screen-px to **50 / 250 plan units** (the
+coarse-major-with-four-divisions convention) because the fine mesh made a traced tower hard to read.
+It can also sit over a scanned backdrop at half opacity, which is where a grid is actually wanted;
+the old one only appeared when there was none. A **Grid** toggle sits in the toolbar.
+
+**2. Eleven footprint presets** (rectangle, square, L, T, U, cross, triangle, trapezoid, hexagon,
+octagon, circle) behind a **+ Shape** menu, replacing the single **+ Rectangle**.
+⚠️ **The menu thumbnail is drawn by the SAME `shapePreset()` the button uses**, so the menu can never
+advertise a shape the button does not produce. ⚠️ A circle is a **24-gon**, not a `<circle>`, so it
+edits, drags and reshapes corner-by-corner like every other shape rather than being a special case
+nothing else in the editor understands. An unknown kind degrades to a rectangle; every preset is
+clamped inside the sheet before it is placed.
+
+**3. Every piece of equipment carries a pictogram** — 19 plant icons (tower/mobile/crawler crane,
+excavator, backhoe, dozer, roller, forklift, truck, mixer, pump, piling rig, hoist, boom/scissor
+lift, generator, compressor, welder, generic plant) on the chips, the register, the matrix labels
+and **inside the tower it works on**.
+⚠️ **The icon is READ FROM THE NAME by default and the guess is never frozen into the row** (`icon`
+stays null) — storing it would keep a mobile-crane pictogram forever after "Crane" is renamed "Tower
+Crane 2". "Tower crane" is matched before the bare "crane", and an unrecognised name falls back **by
+category**, never to nothing. ⚠️ An icon key the client no longer recognises falls back to the guess
+rather than rendering an empty box on every screen at once — which is why the column has no CHECK
+constraint and no lookup table.
+⚠️ **In-plan icons are capped by what the shape can HOLD**, not by a fixed number (a narrow tower
+would otherwise carry a row of icons wider than itself), and the overflow is stated as "+N more" —
+never silently dropped. Measured: 0 icons outside their own polygon across six footprints.
+
+**4. An Icons… dialog sets them per item in one place**, since the icons are only useful once they
+are all right and the Add/Edit form means opening and saving a row at a time. ⚠️ It writes **only
+the rows that changed** — saving all of them would touch every `updated_at`, the column the
+register's "last updated" reading comes from — and each write goes through `tolerantWrite`, so an
+un-run migration costs the icons and nothing else.
+
+**5. A Gantt tab** — the same monthly quantities read along time instead of down a column, grouped by
+tower (with each tower's schedule window), by category, or flat.
+⚠️ **The bars come from the QUANTITIES, not from the link's own dates**: a linked item whose months
+were later corrected by hand would otherwise draw a bar disagreeing with the grid directly below it.
+⚠️ **A 0 or blank month is not a commitment** — those are how this module records "none on site" and
+"not reported", and drawing either as a bar reports a free asset as busy. ⚠️ It shares the matrix's
+geometry exactly (150 + 84 label columns, 46px month cell) — measured **0px** offset between a bar
+cell and its own month header. ⚠️ A month where an item stands on two towers **whose schedule windows
+overlap** is hatched, and an item on two towers appears under **both**, because that is the sharing
+question the site plan exists to answer.
+
+**6. A tower on the plan must be a tower the SCHEDULE knows.** A shape named for a tower no activity
+is tagged with has no window, so its equipment can never be checked for sharing and its months can
+never be derived — it looks assigned and means nothing. Renaming to an unknown value is refused with
+the tower named, where to add it (Project Schedule → Location Breakdown) and the values the schedule
+does have; adding a shape when every scheduled tower is already on the plan is refused **before** the
+shape is created, so there is no orphan to clean up.
+⚠️ **Only when the schedule actually declares towers.** A project that has tagged none is not
+corrected — a fresh plan must not be blocked by a check it cannot satisfy.
+⚠️ **A shape already LINKED to a real schedule tower may carry any label it likes** — "T1 (podium)"
+on the plan against "Tower 1" in the schedule is the normal case, and the link is the answerable
+fact, not the label.
+⚠️ **A single-tower project names its first shape after the PROJECT**, not "Tower 1": on a job with
+one building the tower is the project, and a generic label makes the plan, the sharing panel and
+every chip say "Tower 1" about a thing everyone calls by its name. With scheduled towers known, a
+new shape takes the next one not yet on the plan.
+
+**Verified** — 28 checks on the icon set and the shape presets, and 25 on the Gantt and the
+tower-name rules, executing the shipped functions sliced out of the file (never reimplemented), plus
+a real browser against the shipped CSS at 1280 and 375, light and dark: the grid pitch at four zoom
+levels, every preset closing and staying inside its box, the in-plan icon cap and its "+N more", the
+11-item shape menu with thumbnails, the Icons dialog, the Gantt's 0px column alignment and sticky
+label columns with every bar inside its own cell, and 0 page horizontal scroll — contrast **min
+7.02:1 light / 7.02:1 dark** after fixing the picked-icon button, which measured **3.60:1** with a
+red label on the red tint. All five earlier equipment suites still green; parse clean; CSS braces
+balanced; **0 functions lost**.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so the icon writes, the tower-value RPC
+behind the name check and the Gantt's sharing windows are untested against real data, and the
+migration has not been run. Until it is, a chosen icon is dropped with the file named and the guess
+still renders.
