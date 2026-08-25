@@ -134,6 +134,36 @@
         .pr-controls { flex-wrap: wrap; gap: 8px; }
         .pr-controls > * { flex: 1 1 100%; min-width: 0; }
       }
+    
+    /* ---- F1/F2/F6 vendor layer -------------------------------------------
+       Semantic colours are PAIRED light/dark. The same lesson twice over in
+       this app: one hard-coded hue per meaning measured below WCAG AA on the
+       dark card (the Drawing Register's 2.64:1 pill, the schedule's invisible
+       "Structural", and the BOQ's 2.80:1 amber). Every value below was picked
+       from the pairs already measured to >= 6.3:1 on both themes. */
+    :root {
+      --pr-good: #12693a; --pr-warn: #8a5200; --pr-bad: #b3241a; --pr-info: #1f5b93;
+      --pr-warn-bg: rgba(138,82,0,.12); --pr-bad-bg: rgba(179,36,26,.12);
+    }
+    html.pd-dark {
+      --pr-good: #7fd6a2; --pr-warn: #f0c469; --pr-bad: #f19a9a; --pr-info: #8ec2f0;
+      --pr-warn-bg: rgba(240,196,105,.14); --pr-bad-bg: rgba(241,154,154,.14);
+    }
+    .pr-alert { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
+      border-radius:8px; padding:10px 13px; font-size:12.5px; line-height:1.55; margin-bottom:12px; }
+    .pr-alert.warn { border-color:var(--pr-warn); background:var(--pr-warn-bg); }
+    .pr-secthead { padding:11px 14px; border-bottom:1px solid var(--pd-line); font-weight:700; font-size:13px;
+      display:flex; align-items:baseline; gap:9px; }
+    .pr-note { margin:0; padding:10px 14px; font-size:12px; line-height:1.6; color:var(--pd-muted);
+      border-bottom:1px solid var(--pd-line); background:var(--pd-bg); }
+    /* UNLINKED is a state to act on, not decoration — it is why a vendor's
+       months cannot enter a rate or an S-curve. */
+    .pr-unlinked { display:inline-block; font-size:10.5px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.03em; padding:1px 5px; border-radius:3px;
+      color:var(--pr-warn); border:1px solid var(--pr-warn); }
+    .pr-thin { color:var(--pr-warn); }
+    .pr-pos  { color:var(--pr-good); }
+    .pr-neg  { color:var(--pr-bad); }
     </style>
 </head>
 <body>
@@ -151,6 +181,7 @@
       <div class="pr-tabs" role="tablist">
         <button class="pr-tab active" data-view="monitor">Monitoring</button>
         <button class="pr-tab" data-view="data">Data</button>
+        <button class="pr-tab" data-view="rates">Rates</button>
       </div>
       <div class="pr-topbar-tools">
         <button class="pd-btn pd-btn-primary pr-tb-labeled" id="pr-add" title="Add an activity">+ Add activity</button>
@@ -189,6 +220,7 @@
         </div>
       </div>
       <!-- DATA -->
+      <div id="pr-view-rates" style="display:none;"></div>
       <div id="pr-view-data" style="display:none;">
         <div class="pr-card" style="padding:0;overflow:auto;">
           <table class="pr-table" id="pr-datatable"></table>
@@ -307,6 +339,15 @@
 (function () {
   'use strict';
   var UID = null, profile = null, pid = null;
+  /* ---- F1/F2/F6 vendor performance ---------------------------------------
+     VENDORS is the wpm_vendors MIRROR (names + trades only; contacts and rates
+     stay in WPM). WPS is the work-package mirror, used for the wp_no picker —
+     the SAME key project_schedule.work_package uses, so planned and actual are
+     joinable without a translation table.
+     ⚠️ Every one of these reads is TOLERANT: the tables arrive with
+     2026-08-25-vendor-identity.sql, and until it is run (and sync-wpm redeployed)
+     the module must behave exactly as it did before rather than erroring. */
+  var VENDORS = [], WPS = [], RECON = [], RATELIB = [], vendorErr = null;
   var acts = [];               // productivity_activities for the project
   var entriesByAct = {};       // activity_id -> [entries]
   var view = 'monitor', selAct = null, metric = 'rate', showBL0 = true, showTable = false;
@@ -433,6 +474,50 @@
     if (pid) load().then(joinCollab);
   }
 
+  /* ⚠️ Failure here is NEVER fatal. The vendor layer is additive: a project with
+     no synced vendors, or a database where F1 has not been run, must still show
+     its productivity data exactly as before. The error is captured and shown as
+     a hint on the Vendors tab, not thrown. */
+  async function loadVendorLayer() {
+    VENDORS = []; WPS = []; RECON = []; RATELIB = []; vendorErr = null;
+    try {
+      VENDORS = await PDb.selectAll('wpm_vendors', function (q) { return q.order('name'); });
+    } catch (e) { vendorErr = e; }
+    try {
+      // The wp_no picker. Scoped through Cash Flow's OWN mapping so this module
+      // and Cash Flow can never disagree about which WPM project this is.
+      var wpmId = pid;
+      try {
+        var cs = await sb().from('cash_flow_settings').select('wpm_project_id').eq('project_id', pid).maybeSingle();
+        if (cs && cs.data && cs.data.wpm_project_id) wpmId = cs.data.wpm_project_id;
+      } catch (e) { /* no settings row yet: the project id IS the default mapping */ }
+      WPS = await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', wpmId); });
+    } catch (e) { if (!vendorErr) vendorErr = e; }
+    try {
+      RECON = await PDb.selectAll('vendor_qty_reconciliation', function (q) { return q.eq('project_id', pid); });
+    } catch (e) { /* view arrives with the F2 migration */ }
+    try {
+      RATELIB = await PDb.selectAll('vendor_rate_library', function (q) { return q; });
+    } catch (e) { /* view arrives with the F2 migration */ }
+  }
+  function vendorName(id) {
+    if (!id) return null;
+    var v = VENDORS.find(function (x) { return String(x.id) === String(id); });
+    // ⚠️ An id that resolves to nothing is shown as UNLINKED, never blanked —
+    //    a vendor that has left the mirror and a vendor that was never set are
+    //    different problems and both must be visible (the same rule E2 applied
+    //    to an unresolvable work_package).
+    return v ? v.name : 'UNLINKED';
+  }
+  function vendorLabel(a) {
+    var n = a.vendor_id ? vendorName(a.vendor_id) : null;
+    if (n) return n;
+    // The legacy free-text value stays the display fallback; it is never
+    // auto-matched, because "AFCSC" is an abbreviation two projects may use
+    // differently and a wrong guess rewrites a vendor's performance record.
+    return a.subcontractor ? a.subcontractor + ' (unlinked)' : null;
+  }
+
   async function loadProjects() {
     var projects = await PDb.getProjects();
     var sel = document.getElementById('pr-project');
@@ -461,6 +546,7 @@
       Object.keys(entriesByAct).forEach(function (k) {
         entriesByAct[k].sort(function (x, y) { return String(x.period || '').localeCompare(String(y.period || '')); });
       });
+      await loadVendorLayer();
       cacheState();   // keep the offline read-cache current
     } catch (err) {
       hideLoading();
@@ -490,12 +576,135 @@
     view = v;
     document.getElementById('pr-view-monitor').style.display = v === 'monitor' ? '' : 'none';
     document.getElementById('pr-view-data').style.display = v === 'data' ? '' : 'none';
+    document.getElementById('pr-view-rates').style.display = v === 'rates' ? '' : 'none';
     document.getElementById('pr-tabletoggle').style.display = v === 'monitor' ? '' : 'none';  // table toggle is Monitoring-only
     document.querySelectorAll('.pr-tabs [data-view]').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
     render();
   }
 
-  function render() { if (view === 'monitor') renderMonitor(); else renderData(); }
+  function render() { if (view === 'monitor') renderMonitor(); else if (view === 'rates') renderRates(); else renderData(); }
+
+  /* ==========================================================================
+     RATES — F6 rate library + F2 planned-vs-actual quantity reconciliation.
+
+     Both are PRODUCTIVITY facts: output per man-day, and BOQ-measured quantity
+     against site-reported quantity. They belong here.
+
+     WARNING: VENDOR PERFORMANCE IS NOT HERE AND MUST NOT MOVE HERE. The vendor
+     S-curve, the on-track/problem flags and the cross-project scorecard live in
+     the prc-app's Vendor Management, because that is where vendors are managed
+     and awarded. What this module owns is the vendor ATTRIBUTION on a
+     productivity record — the link that lets a rate say whose it is — and the
+     rates themselves. Rebuilding a vendor scorecard here would put a vendor's
+     story in two apps with nothing keeping them in step.
+     ========================================================================== */
+  function renderRates() {
+    var host = document.getElementById('pr-view-rates');
+    if (!pid) { host.innerHTML = '<div class="pd-card" style="padding:28px;text-align:center;color:var(--pd-muted);">Select a project.</div>'; return; }
+
+    var h = '';
+    if (vendorErr) {
+      h += '<div class="pr-alert warn"><strong>The vendor layer is not available yet.</strong> ' +
+        esc((vendorErr.message || String(vendorErr))) +
+        '<br>Run <code>migrations/2026-08-25-vendor-identity.sql</code> and ' +
+        '<code>migrations/2026-08-25-vendor-performance.sql</code>, then redeploy <code>sync-wpm</code> ' +
+        'and press <em>Sync from WPM</em> in Cash Flow. Rates and reconciliation below still work without it — ' +
+        'only the vendor attribution column is unavailable.</div>';
+    } else if (!VENDORS.length) {
+      h += '<div class="pr-alert warn"><strong>No vendors synced yet.</strong> The mirror is empty until ' +
+        '<code>sync-wpm</code> is redeployed and run — the migration alone does not populate it. Rates and ' +
+        'reconciliation below do not depend on it.</div>';
+    }
+
+    var byVendor = {};
+    acts.forEach(function (a) {
+      var key = a.vendor_id || ('~' + (a.subcontractor || '')), lbl = vendorLabel(a) || '— unassigned —';
+      var g = byVendor[key] || (byVendor[key] = { label: lbl, linked: !!a.vendor_id, acts: [], qty: 0, md: 0 });
+      g.acts.push(a);
+      (entriesByAct[a.id] || []).forEach(function (e) {
+        g.qty += Number(e.qty_actual) || 0;
+        g.md  += (Number(e.mp_actual) || 0) * (Number(e.work_days) || 0);
+      });
+    });
+    var groups = Object.keys(byVendor).map(function (k) { return byVendor[k]; });
+    var unlinked = acts.filter(function (a) { return !a.vendor_id; }).length;
+
+    h += '<div class="pr-kpis">' +
+      prKpi('Rates derived', RATELIB.length, 'trade x unit, from real months') +
+      prKpi('Activities attributed', acts.length - unlinked, unlinked + ' without a vendor link') +
+      prKpi('Packages reconciled', RECON.length, 'BOQ planned vs site actual') +
+      prKpi('Vendors represented', groups.filter(function (g) { return g.linked; }).length, 'managed in the Procurement app') +
+      '</div>';
+
+    if (unlinked) {
+      h += '<div class="pr-alert"><strong>' + unlinked + ' activit' + (unlinked === 1 ? 'y is' : 'ies are') +
+        ' not attributed to a vendor.</strong> The free-text subcontractor is kept and shown, but it joins to ' +
+        'nothing — so those months cannot be credited to anyone in the Procurement app\'s vendor performance. ' +
+        'Pick the vendor on each activity; they are deliberately not matched automatically, because ' +
+        'abbreviations differ between projects and a wrong guess rewrites a vendor\'s record.</div>';
+    }
+
+    h += '<div class="pd-card" style="padding:0;margin-bottom:14px;overflow:auto;">' +
+      '<div class="pr-secthead">Rate library <span class="pr-sub">output per man-day, from real months — the basis for schedule durations</span></div>' +
+      '<table class="pr-table"><thead><tr><th>Vendor</th><th>Trade</th><th>Unit</th>' +
+      '<th class="pr-num">Rate / man-day</th><th class="pr-num">Months</th><th class="pr-num">Projects</th><th>Range</th></tr></thead><tbody>';
+    if (!RATELIB.length) {
+      h += '<tr><td colspan="7" style="padding:22px;color:var(--pd-muted);">No rates yet. A row appears once a month records ' +
+        'output, manpower and working days together — an incomplete month is excluded rather than dragging the rate ' +
+        'toward a number no crew achieved.</td></tr>';
+    }
+    RATELIB.slice().sort(function (a, b) { return (b.n_months || 0) - (a.n_months || 0); }).slice(0, 60).forEach(function (r) {
+      /* SAMPLE SIZE AND DATE RANGE TRAVEL WITH EVERY RATE. A rate from two months
+         of one crew is not the same claim as one from thirty, and a duration
+         offered without saying which it came from is how a schedule acquires
+         false confidence. */
+      var thin = (r.n_months || 0) < 3;
+      h += '<tr><td>' + esc(vendorName(r.vendor_id) || '— unassigned —') + '</td>' +
+        '<td>' + esc(r.trade || '—') + '</td>' +
+        '<td><span class="pr-chip">' + esc(r.unit || '—') + '</span></td>' +
+        '<td class="pr-num pr-mono"><strong>' + fnum(r.rate_per_man_day, 3) + '</strong></td>' +
+        '<td class="pr-num pr-mono' + (thin ? ' pr-thin' : '') + '">' + (r.n_months || 0) +
+          (thin ? ' <span class="pr-sub">thin</span>' : '') + '</td>' +
+        '<td class="pr-num pr-mono">' + (r.n_projects || 0) + '</td>' +
+        '<td class="pr-sub">' + esc(String(r.first_period || '').slice(0, 7) + ' - ' + String(r.last_period || '').slice(0, 7)) + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+
+    h += '<div class="pd-card" style="padding:0;overflow:auto;">' +
+      '<div class="pr-secthead">Planned vs actual quantity <span class="pr-sub">BOQ allocation vs site record, per work package</span></div>' +
+      '<p class="pr-note"><strong>These are not the same number and are not meant to agree.</strong> BOQ quantity is ' +
+      'measured <em>for payment</em>; site output is measured <em>for progress</em>. Waste, remeasure, provisional sums ' +
+      'and cut allowances separate them legitimately — the variance is the information, so it is reported and never ' +
+      'reconciled away. Units are never converted: a mismatch shows as two rows.</p>' +
+      '<table class="pr-table"><thead><tr><th>Work package</th><th>Unit</th>' +
+      '<th class="pr-num">BOQ planned</th><th class="pr-num">Site actual</th><th class="pr-num">Variance</th>' +
+      '<th class="pr-num">Man-days</th><th class="pr-num">Rate</th><th>Months</th></tr></thead><tbody>';
+    if (!RECON.length) {
+      h += '<tr><td colspan="8" style="padding:22px;color:var(--pd-muted);">Nothing to reconcile yet. A row needs a BOQ ' +
+        'line allocated to a schedule activity carrying a work package (Contracts &amp; Claims, BOQ, Allocations), ' +
+        'and/or a productivity activity on the same package.</td></tr>';
+    }
+    RECON.forEach(function (r) {
+      var v = r.qty_variance;
+      h += '<tr><td><span class="pr-chip">' + esc(r.work_package || '—') + '</span>' +
+          (r.units_agree === false ? ' <span class="pr-unlinked">unit mismatch</span>' : '') + '</td>' +
+        '<td>' + esc(r.unit || '—') + '</td>' +
+        '<td class="pr-num pr-mono">' + (r.qty_planned == null ? '<span class="pr-sub">not allocated</span>' : fnum(r.qty_planned, 2)) + '</td>' +
+        '<td class="pr-num pr-mono">' + (r.qty_actual == null ? '<span class="pr-sub">not reported</span>' : fnum(r.qty_actual, 2)) + '</td>' +
+        '<td class="pr-num pr-mono' + (v == null ? '' : (v < 0 ? ' pr-neg' : ' pr-pos')) + '">' +
+          (v == null ? '<span class="pr-sub">—</span>' : (v > 0 ? '+' : '') + fnum(v, 2)) + '</td>' +
+        '<td class="pr-num pr-mono">' + fnum(r.man_days, 1) + '</td>' +
+        '<td class="pr-num pr-mono">' + fnum(r.rate_per_man_day, 3) + '</td>' +
+        '<td class="pr-sub">' + esc(String(r.first_period || '').slice(0, 7) + ' - ' + String(r.last_period || '').slice(0, 7)) + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+
+    host.innerHTML = h;
+  }
+  function prKpi(l, v, s2) {
+    return '<div class="pr-kpi"><div class="pr-kpi-l">' + esc(l) + '</div><div class="pr-kpi-v">' + v +
+      '</div><div class="pr-kpi-s">' + esc(s2 || '') + '</div></div>';
+  }
 
   // ---- build aligned monthly series for an activity ----------------------
   function seriesFor(act) {
@@ -650,7 +859,7 @@
       t.innerHTML = '<tr><td style="padding:24px;color:var(--pd-muted);">No activities yet. Click “+ Add activity”, or “Import” a productivity workbook.</td></tr>';
       return;
     }
-    var head = '<thead><tr><th>Activity</th><th>Category</th><th>Output unit</th><th>Resource</th><th>Subcontractor</th><th class="pr-num">Months</th><th class="pr-num">Latest rate (act)</th><th class="pr-num">Cum output (act)</th><th></th></tr></thead>';
+    var head = '<thead><tr><th>Activity</th><th>Category</th><th>Output unit</th><th>Resource</th><th>Vendor</th><th>Work package</th><th class="pr-num">Months</th><th class="pr-num">Latest rate (act)</th><th class="pr-num">Cum output (act)</th><th></th></tr></thead>';
     var body = acts.map(function (a) {
       var es = entriesByAct[a.id] || [];
       var latest = null; for (var i = es.length - 1; i >= 0; i--) { var r = rateOf(es[i].qty_actual, es[i].mp_actual, es[i].work_days); if (r != null) { latest = r; break; } }
@@ -660,7 +869,9 @@
         '<td>' + esc(a.category || '—') + '</td>' +
         '<td><span class="pr-chip">' + esc(a.unit || '—') + '</span></td>' +
         '<td>' + esc(a.resource_type || 'Manpower') + ' <span class="pr-sub">' + esc(a.resource_unit || '') + '</span></td>' +
-        '<td>' + esc(a.subcontractor || '—') + '</td>' +
+        '<td>' + (function () { var n = vendorLabel(a);
+            return n ? (/unlinked/i.test(n) ? '<span class="pr-unlinked">' + esc(n) + '</span>' : esc(n)) : '<span class="pr-sub">—</span>'; })() + '</td>' +
+        '<td>' + (a.work_package ? '<span class="pr-chip">' + esc(a.work_package) + '</span>' : '<span class="pr-sub">—</span>') + '</td>' +
         '<td class="pr-num pr-mono">' + es.length + '</td>' +
         '<td class="pr-num pr-mono">' + fnum(latest, 3) + '</td>' +
         '<td class="pr-num pr-mono">' + fnum(cumA, 2) + '</td>' +
@@ -695,7 +906,38 @@
       '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
         '<div class="pd-field" style="flex:0 0 150px;"><label>Resource type</label><select class="pd-select" id="f-restype">' + opts(['Manpower', 'Equipment'], a.resource_type || 'Manpower') + '</select></div>' +
         '<div class="pd-field" style="flex:0 0 130px;"><label>Resource unit</label><select class="pd-select" id="f-resunit">' + opts(RESUNITS, a.resource_unit || 'pax') + '</select></div>' +
-        '<div class="pd-field" style="flex:1;min-width:140px;"><label>Subcontractor</label><input class="pd-input" id="f-sub" value="' + esc(a.subcontractor) + '"></div>' +
+        '<div class="pd-field" style="flex:1;min-width:140px;"><label>Subcontractor (free text)</label><input class="pd-input" id="f-sub" value="' + esc(a.subcontractor) + '"></div>' +
+      '</div>' +
+      /* F1: the vendor is PICKED from the mirror, never typed — free text is what
+         made `subcontractor` join to nothing. The legacy field stays above as the
+         display fallback and is deliberately not auto-matched. */
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+        '<div class="pd-field" style="flex:1;min-width:180px;"><label>Vendor</label>' +
+          (VENDORS.length
+            ? '<select class="pd-select" id="f-vendor"><option value="">— none —</option>' +
+                VENDORS.map(function (v) {
+                  return '<option value="' + esc(v.id) + '"' + (String(a.vendor_id) === String(v.id) ? ' selected' : '') + '>' +
+                    esc(v.name) + (v.accreditation ? ' · ' + esc(v.accreditation) : '') + '</option>'; }).join('') +
+              /* ⚠️ A stored vendor absent from the mirror keeps its own option, or
+                 a <select> whose value is not among its options reports the FIRST
+                 one and Save silently reassigns the work to another vendor. This
+                 app has been bitten by that trap three times. */
+              (a.vendor_id && !VENDORS.some(function (v) { return String(v.id) === String(a.vendor_id); })
+                ? '<option value="' + esc(a.vendor_id) + '" selected>UNLINKED (' + esc(String(a.vendor_id).slice(0, 8)) + '…)</option>' : '') +
+              '</select>'
+            : '<input class="pd-input" disabled value="no vendors synced yet"><span class="pr-sub">Run the F1 migration and Sync from WPM.</span>') +
+        '</div>' +
+        '<div class="pd-field" style="flex:1;min-width:180px;"><label>Work package</label>' +
+          (WPS.length
+            ? '<select class="pd-select" id="f-wp"><option value="">— none —</option>' +
+                WPS.map(function (w) {
+                  return '<option value="' + esc(w.wp_no) + '"' + (a.work_package === w.wp_no ? ' selected' : '') + '>' +
+                    esc(w.wp_no + ' — ' + (w.description || '').slice(0, 60)) + '</option>'; }).join('') +
+              (a.work_package && !WPS.some(function (w) { return w.wp_no === a.work_package; })
+                ? '<option value="' + esc(a.work_package) + '" selected>' + esc(a.work_package) + ' (UNLINKED)</option>' : '') +
+              '</select>'
+            : '<input class="pd-input" id="f-wp" value="' + esc(a.work_package || '') + '" placeholder="WPM wp_no">') +
+        '</div>' +
       '</div>' +
       '<div class="pd-field"><label>Remarks</label><textarea class="pd-textarea" id="f-rem" rows="2">' + esc(a.remarks) + '</textarea></div>' +
       '<div style="text-align:right;margin-top:6px;"><button class="pd-btn" id="f-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="f-save">Save</button></div>'
@@ -710,6 +952,8 @@
         resource_type: m.el.querySelector('#f-restype').value,
         resource_unit: m.el.querySelector('#f-resunit').value,
         subcontractor: m.el.querySelector('#f-sub').value.trim() || null,
+        vendor_id: (function (el) { return el && el.value ? el.value : null; })(m.el.querySelector('#f-vendor')),
+        work_package: (function (el) { return el && el.value.trim() ? el.value.trim() : null; })(m.el.querySelector('#f-wp')),
         remarks: m.el.querySelector('#f-rem').value.trim() || null,
         updated_at: new Date().toISOString()
       };

@@ -129,6 +129,15 @@ Deno.serve(async (req) => {
     award_status: w.award_status,
     procurement_status: w.procurement_status,
     delivery_status: w.delivery_status,
+    // ---- F1: WHO won the package ------------------------------------------
+    // Column names are WPM's own (MIGRATION_vendor_merge.sql), not guessed.
+    vendor_id: w.vendor_id ?? null,
+    // WARNING: awarded_vendor_ids and awarded_vendor_amounts are INDEX-ALIGNED
+    // in WPM and are mirrored as a PAIR, unsorted and un-deduplicated. Touching
+    // one without the other silently reassigns money to the wrong vendor.
+    awarded_vendor_ids: w.awarded_vendor_ids ?? null,
+    awarded_vendor_amounts: w.awarded_vendor_amounts ?? null,
+    contractor: w.contractor ?? null,
     source_id: w.id,
     synced_at: now,
   })).filter((r: any) => r.wpm_project_id && r.wp_no);
@@ -151,6 +160,54 @@ Deno.serve(async (req) => {
     return "too many missing columns";
   }
 
+  // ---- F1: mirror the vendor directory ------------------------------------
+  // WARNING: NAMES AND TRADES ONLY. contact_person / contact_number /
+  // contact_email / address and every rate stay in WPM. This mirror exists so
+  // the Planners app can say WHO did the work and in WHICH trade; widening it
+  // turns a performance mirror into an unowned second contacts database.
+  let vendorsWritten = 0;
+  const vendorDropped: string[] = [];
+  {
+    const { data: vs, error: vErr } = await wpm
+      .from("vendors")
+      .select("id,name,vendor_code,trade_categories,accreditation,accreditation_date,status");
+    if (vErr) {
+      // Non-fatal: the work-package mirror is the load-bearing half, and a WPM
+      // schema that predates vendor management must not fail the whole sync.
+      vendorDropped.push("vendors: " + vErr.message);
+    } else {
+      const vrows = (vs || []).filter((v: any) => v.id && v.name).map((v: any) => ({
+        id: v.id,
+        name: v.name,
+        vendor_code: v.vendor_code ?? null,
+        trade_categories: v.trade_categories ?? [],
+        accreditation: v.accreditation ?? null,
+        accreditation_date: v.accreditation_date ?? null,
+        status: v.status ?? null,
+        synced_at: now,
+      }));
+      for (let i = 0; i < vrows.length; i += 500) {
+        const chunk = vrows.slice(i, i + 500);
+        let lastErr: string | null = null;
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const { error } = await plAdmin.from("wpm_vendors").upsert(chunk, { onConflict: "id" });
+          if (!error) { lastErr = null; break; }
+          lastErr = error.message || "";
+          const m = /Could not find the '([^']+)' column/i.exec(lastErr);
+          if (!m) break;
+          if (!vendorDropped.includes(m[1])) vendorDropped.push(m[1]);
+          chunk.forEach((r: any) => { delete r[m[1]]; });
+        }
+        if (lastErr) { vendorDropped.push("write: " + lastErr); break; }
+        vendorsWritten += chunk.length;
+      }
+    }
+  }
+  // WARNING: vendors are NOT pruned. A vendor row that leaves WPM is still cited
+  // by historical productivity records here; deleting it would turn months of
+  // site history into "unknown vendor" with no way back. Stale rows are
+  // harmless — `status` already carries 'inactive'.
+
   let written = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
@@ -159,5 +216,7 @@ Deno.serve(async (req) => {
     written += chunk.length;
   }
 
-  return json({ ok: true, read: wps?.length || 0, written, dropped, scope: scope || "all", synced_at: now });
+  return json({ ok: true, read: wps?.length || 0, written, dropped,
+                vendors_written: vendorsWritten, vendors_dropped: vendorDropped,
+                scope: scope || "all", synced_at: now });
 });

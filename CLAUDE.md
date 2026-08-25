@@ -84,6 +84,102 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-25 — ROADMAP F1/F2/F6: vendor identity, the BOQ↔site reconciliation, and the rate library
+Owner: *"Let's do F1-F6 next"*, then settled the placement map mid-build:
+**vendor management belongs in the prc-app; productivity belongs here; the BOQ stays in Contracts &
+Claims.** So this entry is the **Planners half** — the identity layer, and the two productivity facts.
+**Run `migrations/2026-08-25-vendor-identity.sql` and `migrations/2026-08-25-vendor-performance.sql`.**
+Design note: `docs/vendor-performance-chain.md`.
+
+⚠️ **THE PLACEMENT RULE, because I got it wrong twice before it was stated.** The vendor S-curve, the
+on-track/problem flags and the cross-project scorecard are **NOT in this app** — they go in the
+prc-app's own Vendor Management, where vendors are actually managed and awarded. What the Planners
+app owns is the vendor **attribution** on a productivity record (the link that lets a rate say whose
+it is) and the productivity facts themselves. A vendor scorecard built here as well would put a
+vendor's story in two apps with nothing keeping them in step. The `renderRates` comment says so at
+the code.
+
+**F1 — vendor identity.** The gap was real and total: this app had **no vendor entity at all** —
+`wpm_work_packages` mirrored budgets, dates and status but never who won the package, and
+`productivity_activities.subcontractor` was free text joining to nothing.
+- New `wpm_vendors` mirror + `vendor_id` / `awarded_vendor_ids` / `awarded_vendor_amounts` /
+  `contractor` on the work-package mirror + `productivity_activities.vendor_id`.
+- ⚠️ **Every column name was read out of WPM's own migrations, not guessed** —
+  `MIGRATION_vendor_management.sql`, `_accreditation`, `_code`, `_merge`. A guessed name reads NULL
+  forever and looks like "this vendor has no packages".
+- ⚠️ **`awarded_vendor_ids` and `awarded_vendor_amounts` are INDEX-ALIGNED in WPM** (its own merge
+  migration maintains that). They are mirrored as a pair, unsorted and un-deduplicated — touching one
+  without the other silently reassigns money to the wrong vendor.
+- ⚠️ **Names and trades only. No contacts, no rates.** Widening this mirror would turn a performance
+  join into an unowned second contacts database.
+- ⚠️ **No FK from `productivity_activities.vendor_id` to the mirror** — the same call as
+  `project_schedule.class_code`. The mirror refreshes wholesale; an FK would make a vendor leaving
+  WPM either block the sync or cascade real site history away. An id that resolves to nothing shows
+  as **UNLINKED**, never blank.
+- ⚠️ **`subcontractor` is kept and never auto-matched.** "AFCSC" is an abbreviation two projects may
+  use differently, and a wrong guess rewrites a vendor's record. It stays the display fallback,
+  shown as `GeoExpert (unlinked)`.
+- ⚠️ **Vendors are never pruned by the sync** — a vendor that leaves WPM is still cited by historical
+  productivity rows here.
+
+**F2 — planned (BOQ) vs actual (site) quantity**, as a new **Rates** tab.
+- ⚠️ **These are not the same number and are not meant to agree.** BOQ quantity is measured *for
+  payment*, site output *for progress*; waste, remeasure and provisional sums separate them
+  legitimately. The variance is the information — reported, never reconciled away.
+- ⚠️ **Units are never converted.** A BOQ measuring m2 against a site reporting kg shows as **two
+  rows with a `unit mismatch` flag**, because a wrong conversion factor silently rescales a vendor's
+  entire record.
+- ⚠️ **Null, not 0, when a side is missing** — `not allocated` and `not reported` are different facts
+  from "zero", and only they are a reason to go and look. Same rule as the BOQ's `exclusion_note`.
+- Planned quantity reaches an activity through `boq_allocations` (B1) and only `measured` lines
+  contribute; there is still **no `project_schedule.quantity` column**.
+
+**F6 — the rate library.** `vendor_rate_library` aggregates real months to vendor × trade × unit.
+- ⚠️ **Sample size and date range travel with every rate**, and a rate under 3 months is flagged
+  **thin**. A rate from two months of one crew is not the same claim as one from thirty, and a
+  duration offered without saying which is how a schedule acquires false confidence.
+- ⚠️ **The rate is recomputed from the monthly TOTALS, not averaged from the monthly rates** —
+  averaging weights a 3-day month equally with a 26-day one. Σqty ÷ Σman-days is the honest figure.
+- ⚠️ **A month missing output, manpower or working days is excluded**, not treated as zero; including
+  it drags the rate toward a number no crew achieved.
+
+**F3/F4/F5 SQL is written and verified here but renders in the prc-app** —
+`schedule_scurve_agg_vendor()` (the `schedule_scurve_agg_multi` body with ONE extra filter, so a
+vendor curve and the project curve can never disagree about a month or a weight) and
+`vendor_scorecard_multi()` (the portfolio-RPC pattern, not a browser loop). Both `security invoker`.
+- ⚠️ **Co-awarded packages are attributed to the PRIMARY `vendor_id` only**, or a shared package
+  double-counts the project total — and the omission is **not silent**: `coAwarded` reports how many
+  packages named this vendor only as a co-awardee, so a short curve is explainable.
+- ⚠️ **The Planners→WPM mapping is Cash Flow's own `wpm_project_id`**, or two modules would show
+  different packages for the same job.
+- ⚠️ Need-by adherence measures **planned** adherence: there is no actual-delivery date anywhere in
+  the mirror, and naming it "delivered on time" would be a number nobody could defend.
+
+**Verified.** Every column referenced was probed against the live database before use (12 on
+`project_schedule` plus 8 elsewhere, all PRESENT; the two the F1 migration creates correctly ABSENT,
+which also proves the probe discriminates). Both migrations balanced, `$$`-paired, fully idempotent,
+0 `security definer`. The Edge Function type-strips and parses. The module's inline script parses,
+**0 functions lost / 5 added**, and the Data register is **10 header / 10 body cells**.
+- **Browser-verified** against the shipped markup and CSS: all three attribution states render
+  distinctly (resolved name · `GeoExpert (unlinked)` · `UNLINKED`), the thin-sample flag fires on a
+  2-month rate, the unit mismatch renders as two rows, and `not reported` / `not allocated` never
+  read as 0. **All semantic colours pass WCAG AA in both themes — min 6.39 light / 6.56 dark** (the
+  third time this app has had to pair them; the values are reused from the already-measured set).
+- **The un-migrated path degrades correctly**: the Rates tab names both migrations and the redeploy
+  step, while Monitoring and Data keep working untouched.
+- ⚠️ **Harness bug, and the same lesson as before:** the module reaches Supabase through
+  `AppAuth.getSB()`, not a bare `supabase.createClient`. Stubbing the wrong one made every KPI read 0
+  as though the data were simply absent. **Stub what the module actually calls.**
+
+⚠️ **NOT DONE AND NOT DEPLOYABLE YET.** `sync-wpm` must be **redeployed** for any of the vendor
+columns to populate — the migration alone does nothing, and there is no Supabase CLI in this
+environment, so that is an owner action:
+`supabase functions deploy sync-wpm --project-ref bgupuqnkqhixpuctyder`, then Sync from WPM.
+The prc-app half (F3/F4/F5 rendering) is the next piece; it needs a Planners→WPM push following the
+existing `push-need-by` pattern, because `project_schedule` lives in this database and WPM cannot
+read it. `MODULE_V` → `20260825c`.
+
+
 ### 2026-08-25 — ROADMAP B2 built: PMI tracking, its case file, and the contractual cost card
 Owner ran the B1 migration, then: *"Let's proceed to the rest of the roadmap."* **Run
 `migrations/2026-08-25-pmi.sql`.** New **PMI** tab in `modules/contracts-claims/` (`pmi.js`,

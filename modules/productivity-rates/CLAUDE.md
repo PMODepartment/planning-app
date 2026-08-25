@@ -1,5 +1,31 @@
 # Module: productivity-rates — Productivity Monitoring
 
+## F1/F2/F6 vendor attribution, reconciliation and the rate library (2026-08-25) — fmlozano
+**Run `../../migrations/2026-08-25-vendor-identity.sql` + `-vendor-performance.sql`.** New **Rates**
+tab; `vendor_id` + `work_package` on each activity, and a Vendor + Work package column in the Data
+register. Full reasoning in the main CLAUDE.md entry of the same date.
+
+⚠️ **VENDOR PERFORMANCE IS DELIBERATELY NOT IN THIS MODULE.** The S-curve, the on-track/problem flags
+and the cross-project scorecard live in the **prc-app's Vendor Management** — that is where vendors
+are managed and awarded. This module owns the vendor **attribution** on a productivity record and the
+productivity facts (rates, BOQ-vs-site reconciliation). Building a scorecard here too would put a
+vendor's story in two apps with nothing keeping them in step.
+
+- ⚠️ `subcontractor` is kept, shown, and **never auto-matched** to a vendor — abbreviations differ
+  between projects and a wrong guess rewrites a vendor's record. Three states are distinct on screen:
+  a resolved name, `GeoExpert (unlinked)` (free text only), and `UNLINKED` (an id not in the mirror).
+- ⚠️ **No FK on `vendor_id`** — the mirror refreshes wholesale; an FK would let a vendor leaving WPM
+  cascade real site history away.
+- ⚠️ The rate library shows **sample size and date range beside every rate** and flags <3 months as
+  **thin**; the rate is Σqty ÷ Σman-days, never an average of monthly rates.
+- ⚠️ The reconciliation **never converts units** and never coerces a missing side to 0.
+- ⚠️ **Harness lesson:** this module uses `AppAuth.getSB()`, not `supabase.createClient`. Stubbing the
+  wrong one makes every KPI read 0 as if the data were absent.
+- Verified in a browser against the shipped markup/CSS; 10/10 header-body cells; all semantic colours
+  pass AA in both themes (min 6.39 / 6.56); un-migrated path degrades without touching Monitoring/Data.
+- ⚠️ **`sync-wpm` must be REDEPLOYED** or every vendor column stays NULL.
+
+
 Project-scoped **Productivity Monitoring** module, built from the Megawide OPS
 workbook *"QHL706. OPS. Productivity Monitoring … (BL02)"*. Reference module for
 the CRUD/chart patterns: **s-curve** (SVG planned/actual curves, uniform chrome)

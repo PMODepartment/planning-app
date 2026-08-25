@@ -336,7 +336,27 @@ against WPM's **Target Installation** and pushed back into the Procurement app.
 
 ---
 
-## F. Vendor performance — schedule x procurement x vendor (planned 2026-08-24)
+## F. Vendor performance — schedule x procurement x vendor
+
+**PLACEMENT SETTLED 2026-08-25 by the owner, and it overrides the split proposed below:**
+- Anything **vendor** — the S-curve (F3), accomplishment + flags (F4), the scorecard (F5) — lives in
+  the **prc-app Vendor Management**, NOT in the Planners app.
+- Anything **productivity** — the rate library (F6), the BOQ-vs-site reconciliation (F2), the vendor
+  attribution on a productivity record — lives in **Productivity Rates**.
+- The **BOQ** stays in **Contracts & Claims**.
+
+**F1 / F2 / F6 BUILT 2026-08-25** (Planners half): `migrations/2026-08-25-vendor-identity.sql`
++ `migrations/2026-08-25-vendor-performance.sql` (**MUST BE RUN**), the `sync-wpm` extension, and the
+Productivity Rates **Rates** tab. See `modules/productivity-rates/CLAUDE.md`.
+WARNING: `sync-wpm` must be REDEPLOYED or every vendor column stays NULL - an owner
+action, there is no Supabase CLI in the build environment.
+
+**F3 / F4 / F5**: the SQL exists and is verified (`schedule_scurve_agg_vendor`,
+`vendor_scorecard_multi`), but it renders in the prc-app. WARNING: `project_schedule`
+lives in the PLANNERS database and WPM cannot read it, so this needs a Planners->WPM PUSH following
+the existing `push-need-by` pattern - which also means the prc-app shows a SNAPSHOT as
+fresh as the last push, not a live curve. Same limitation need-by already has.
+
 
 Full design note: **`docs/vendor-performance-chain.md`**. The chain
 schedule -> package -> procurement -> vendor is four-fifths built (A3, C1, E1, E2 + WPM's
