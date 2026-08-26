@@ -8644,3 +8644,64 @@ its own. New built-in report **Contract Package Monitor** (`repPackages`, in the
   99-day span, not the 100-day duration. The code matched the SQL.
 - Inline script parses (`node --check` on the extracted block). ⚠️ **Not rendered in the Reports
   dialog and not run against live data** — no signed-in run.
+
+### 2026-08-26 — Packages become the schedule's top-level structure (not a report)
+Owner, rejecting the Contract Package Monitor as an answer: *"This is not the result that I am
+expecting… I am expecting that as an example the contracts will show directly in the grid. Each
+package will have its own WBS and own activities depending on the scope of that package."*
+
+The report was the wrong shape — it reported on packages instead of making the schedule package-first.
+Decisions taken with the owner before building: **package = a real top-level WBS root**;
+**change orders stay orthogonal** (a CO belongs to a package — `package_id` = which lot, `scope_type` =
+main vs change order, never derived from one another); **named Builder setups per package, with a push
+history**.
+
+`migrations/2026-08-26-package-scoped-schedule.sql`
+- `schedule_builder` goes from **one row per project** to many: `{id, project_id, package_id, name,
+  config}`. ⚠️ **The existing row is preserved** and renamed *Original setup* — a planner's builder
+  state is hours of work, and losing it to a migration is the most expensive way to add a feature.
+  ⚠️ **No package is guessed for it**: it lands unassigned, which is honest and visible.
+- `schedule_builder_pushes` — a **full copy** of the config at the moment of each push. ⚠️ A copy, never
+  a pointer: a pointer follows later edits and stops describing the schedule it produced.
+- `wbs_nodes.is_package_root` + a unique index (one root per package). ⚠️ **A flag, not a name match** —
+  matching on the branch name breaks the first time someone renames it, and the next push silently
+  builds a second root holding half the schedule.
+
+Schedule Builder
+- **Setups dialog** (new button in the builder header, labelled with the open setup and its package):
+  every setup grouped by contract package, with Open / Duplicate / Delete, *New setup for this package*,
+  and the **push history** with *Load this version*.
+- ⚠️ **Loading a pushed version restores the RECIPE, not the schedule** — the activities stay exactly
+  where they are. Anything else would be a silent bulk delete. Said in the dialog and in the confirm.
+- ⚠️ **A new setup starts empty**, never seeded from what happened to be open — that is how a Package 2
+  build inherits Package 1's floors and zones.
+- ⚠️ **Deleting a setup never deletes pushed activities.** Stated in the confirm, because the recipe and
+  the work are easy to confuse.
+- Save falls back to the old single-row upsert when the migration has not been run, so an un-migrated
+  database still keeps the planner's work instead of losing a session to an error toast.
+
+Push / Import / Clear all take a package
+- **Push** builds under that package's own WBS root (`ensurePackageRoot`), stamps `package_id` on every
+  branch **and** every activity, and records the snapshot. ⚠️ An explicitly chosen WBS row still wins —
+  a planner pushing into a branch means it. ⚠️ Pushing an **unassigned** setup on a project that has
+  packages now warns first: those activities would appear in no package total.
+- **Import** asks for the package, defaulting to **— No package —** rather than the first one: an
+  unassigned import is visible and fixable, a wrongly-assigned one looks correct. ⚠️ **Replace is now
+  scoped to that package** — importing Package 2's programme used to delete Package 1's. The adopted
+  WBS tree is then nested under the package root.
+- **Clear** asks what to delete: one package, only unassigned work, or everything. It **counts the rows
+  first** and names them on the button. ⚠️ Nothing is preselected as "Everything". ⚠️ Rows are deleted
+  **by id from the effective package** (`packageOf`), not by a `package_id` filter — an untagged row
+  inside a package's tree is still its work, and a column filter would leave it behind for the next
+  push to land on top of. ⚠️ **The package root survives** a package clear: the lot still exists, the
+  grid still shows it, and the re-push adopts it instead of creating a sibling.
+
+**Verified 9/9** executing the shipped `_clearWbsTree` in node against a two-package tree: the tagged
+branch and the **untagged descendant** both cleared, the package root kept, the other package and the
+locked skeleton untouched, unassigned top-level work left alone, a whole-project clear reducing to the
+skeleton, and an empty package clearing nothing without erroring. Inline script parses.
+
+`MODULE_V` → `20260826i`.
+
+⚠️ **The migration has NOT been run, and nothing was clicked through in a browser.** Until the migration
+runs, the builder keeps its single-setup behaviour and says so on save.
