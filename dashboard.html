@@ -82,6 +82,7 @@
         <section class="pd-card pd-pkg-card">
           <div class="pd-sec-head">
             <h3>Packages <span class="pd-tree-count" id="pkg-count">0</span></h3>
+            <button class="pd-btn pd-btn-sm" id="pkg-push" style="display:none;" title="Mirror these packages into the Procurement (WPM) and Engineering apps so their records can be filed under the same contract lots">Share with Procurement &amp; Engineering</button>
             <button class="pd-btn pd-btn-primary pd-btn-sm" id="pkg-add" style="display:none;">
               <span data-ico="plus" data-ico-size="14"></span> New Package
             </button>
@@ -242,6 +243,8 @@
         var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = '';
       }
       if (canWrite) document.getElementById('pkg-add').style.display = '';
+      // Sharing is a write to two other applications, so it follows the same permission.
+      if (canWrite) document.getElementById('pkg-push').style.display = '';
       boot();
     });
 
@@ -261,6 +264,7 @@
       loadPackages();
       renderTiles();
       document.getElementById('pkg-add').onclick = function () { packageModal(null); };
+      document.getElementById('pkg-push').onclick = pushPackages;
     }
 
     // The project's own tag — there is no workspace ancestry to walk any more.
@@ -325,6 +329,44 @@
         kpi('Forecast Start', Fmt.date(p.forecast_start || p.start_date), '') +
         kpi('Forecast Finish', Fmt.date(p.forecast_finish || p.end_date), '') +
         kpi('Location', p.location ? Fmt.esc(p.location) : '—', '');
+    }
+
+    /* Share this project's packages with the Procurement (WPM) and Engineering apps.
+       ⚠️ THE THREE APPS ARE THREE SEPARATE SUPABASE PROJECTS, so neither can read
+          `packages` across the wire. push-packages mirrors them into a read-only
+          `planners_packages` table in each — the same shape wpm_work_packages uses in
+          the opposite direction.
+       ⚠️ EXPLICIT, NOT AUTOMATIC. Packages are contractual, and a half-typed lot
+          appearing in a buyer's picker the instant it is saved is worse than a button
+          somebody presses when the contract is settled. */
+    async function pushPackages() {
+      var btn = document.getElementById('pkg-push');
+      if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+      if (!PKG.length) { UI.toast('This project has no packages to share yet.', 'warn'); return; }
+      if (btn) { btn.disabled = true; btn.textContent = 'Sharing…'; }
+      try {
+        var res = await sb().functions.invoke('push-packages', { body: { project_id: pid } });
+        var d = res && res.data;
+        if (res && res.error) throw res.error;
+        var t = (d && d.targets) || {};
+        var okBits = [], badBits = [];
+        Object.keys(t).forEach(function (k) {
+          if (t[k] && t[k].error) badBits.push(k + ': ' + t[k].error + (t[k].hint ? ' (' + t[k].hint + ')' : ''));
+          else okBits.push(k + ' ' + ((t[k] && t[k].written) || 0));
+        });
+        // ⚠️ A partial success is reported as a partial success. "Shared" while
+        //    engineering received nothing is the one outcome nobody could act on.
+        if (badBits.length) UI.toast('Shared to ' + (okBits.join(', ') || 'nothing') + '. Failed — ' + badBits.join(' | '), 'error');
+        else UI.toast('Packages shared: ' + okBits.join(', ') + '.', 'success');
+        if (d && d.not_configured && d.not_configured.length)
+          UI.toast('Not configured for: ' + d.not_configured.join(', ') + ' — set its URL/SERVICE_KEY secrets.', 'warn');
+      } catch (e) {
+        var m = (e && e.message) || String(e);
+        UI.toast(/not found|404/i.test(m)
+          ? 'push-packages is not deployed yet — run: supabase functions deploy push-packages'
+          : ('Could not share packages: ' + m), 'error');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Share with Procurement & Engineering'; }
     }
 
     // ---- Packages (A3) ----

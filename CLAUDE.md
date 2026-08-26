@@ -120,6 +120,29 @@ either width. ⚠️ `.ps-vs-sel { width:auto }` is load-bearing — the shared 
 scroll — taken before layout settled. `clientWidth` said 1265px and no phone query matched, so the
 numbers were discarded rather than chased as a CSS bug. ⚠️ **Not verified signed in.**
 
+### 2026-08-26 (f) — Signed-in verification: both migrations live, the report rework driven end to end
+Owner ran `2026-08-26-lessons-learned.sql` and `2026-08-26-package-scoped-schedule.sql`, then asked
+for a live check. **No code changed this pass** — this closes the "not verified signed in" caveat on
+entry (e).
+- **Schema confirmed against the live database, with the probe calibrated before it was trusted**
+  (`42501` present / `PGRST205` table absent / `42703` column absent, plus a negative control on each
+  table). `lessons_learned` + all 13 columns; `schedule_builder` +5 cols, `schedule_builder_pushes`,
+  `wbs_nodes.is_package_root` — all present.
+- ⚠️ **The lessons backfill copied 0 rows and that is CORRECT, not a failure**: nobody had ever used
+  the old `lesson_learned` field, so the `not exists` guard had nothing to copy (0 / 0 / 0, all three
+  agreeing). The alarming shape would be a non-zero source with an empty library.
+- **Driven end to end on the QADEMO sandbox**, every step re-checked against a full re-query, and the
+  sandbox left exactly as found (both probe rows deleted, 0 / 0 confirmed). **No live project written
+  to.** ⚠️ **The cancel path was verified to write NOTHING** — the decision that deliberately differs
+  from "+ New minutes". Save inserted and RLS accepted it; the lesson captured from the issue survived
+  a re-query and renders back inside that issue; Reporting view took 8 controls to 0 with the panel
+  measured at brand red **in dark mode**; 0 console errors.
+- **Not exercised:** a second user (per-row permissions are fixture-verified only), the meeting-linked
+  lesson picker, and the legacy fallback — now unreachable by construction.
+- ⚠️ **Pre-existing defect found, NOT introduced here and not fixed:** `modules/issues-lessons/index.html`
+  renders mojibake ("championâ€¦", "Â·", "â€""). UTF-8 bytes written through a cp1252 path; it predates
+  this work. Wants its own pass with an explicit encoding rather than a find-and-replace.
+
 ### 2026-08-26 (i) — Cost curves, per-trade subtotals, derived earned value, and EVM moves to the dashboard
 Owner, in two messages: *"there should be a step wherein the manner of distribution of an activity is
 defined… bell curve, front loaded, back loaded, linear… that POC should be multiplied with the
@@ -9016,3 +9039,40 @@ is, the Claimed column saves nothing and says so. ⚠️ The schedule's inline s
 (`node --check` on the extracted block); the report has not been rendered in the Reports dialog.
 
 - `MODULE_V` → `20260826g`; `boq.js?v=20260826c`.
+
+### 2026-08-26 — Contract packages reach Procurement and Engineering (three databases, one mirror)
+Owner: *"Now update the procurement and engineering dashboards in prc-app."*
+
+⚠️ **The blocking finding first: the three apps are three SEPARATE Supabase projects** — Planners
+`bgupuqnkqhixpuctyder`, Procurement (WPM) `cayjeqeleenizbdzrums`, Engineering `zkxzaijznutmiueeurbb`.
+They share no tables, so neither app can read `packages` across the wire. "Add a package filter" was
+therefore not a UI change; it needed the same mirror pattern the existing cross-app syncs already use
+(`wpm_work_packages` mirrors WPM *into* Planners; `planners_need_by` pushes Planners *into* WPM).
+
+- **`supabase/functions/push-packages`** — reads this project's `packages` with the Planners service
+  key and writes a read-only `planners_packages` mirror into **both** target projects with each one's
+  own service-role key. Same authorization shape as `push-need-by` (approved admin/planner, or the
+  service key for cron). Reuses the secrets `sync-wpm` and `sync-eng` already need — nothing new to set.
+- ⚠️ **It writes only `planners_packages`.** It never touches a work package, a drawing or anything
+  either team owns. One app silently editing another's records is unrecoverable and unauditable.
+- ⚠️ **Deletes are mirrored as a replace of THIS PROJECT's rows** — a package retired in Planners must
+  disappear downstream, or a buyer keeps filing purchases against a lot that no longer exists — and it
+  is scoped by project so one push can never blank another project's packages.
+- ⚠️ **A missing target is reported, not skipped.** "Shared successfully" while Engineering received
+  nothing is the one outcome nobody could act on, so partial success is surfaced as partial success.
+- ⚠️ Reuses **Cash Flow's existing `wpm_project_id` mapping** rather than inventing a second one, or
+  packages would land against a different WPM project than the work-package picker reads from.
+- **Dashboard → Packages → “Share with Procurement & Engineering”** triggers it. ⚠️ Explicit, never
+  automatic: a half-typed lot appearing in a buyer's picker the instant it is saved is worse than a
+  button pressed once the contract is settled.
+
+Downstream migrations (in the other two repos, not this one):
+- `wpm/MIGRATION_planners_packages.sql` — the mirror + `work_packages.planners_package_id`.
+- `engineering-app/migrations/0021-planners-packages.sql` — the mirror + `drawing_register.planners_package_id`.
+- ⚠️ Both: **writes are service-role only** (a browser can never invent a contract package), **no
+  foreign key** to the mirror (a delete-then-insert refresh would either block or cascade real records
+  away), and the **link column is owned by the consuming app** — the push only refreshes the list to
+  choose from. **NULL = not yet assigned**, with no back-fill.
+
+⚠️ **Nothing here has been deployed or run.** Three owner actions: run the two downstream migrations,
+`supabase functions deploy push-packages --project-ref bgupuqnkqhixpuctyder`, then press Share.
