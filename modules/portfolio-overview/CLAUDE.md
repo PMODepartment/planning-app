@@ -164,3 +164,82 @@ their own card, every control ≥44px on the phone, and light/dark contrast at *
 cross-project read itself is untested against real data.
 ⚠️ **This module's `index.html` is NOT cache-busted** (it is reached by a plain sidebar href, not
 through `MODULE_V`), so hard-refresh once after the deploy.
+
+## Milestone calendar (2026-08-26) — fmlozano
+
+Owner: *"For portfolio dashboard, let's have a calendar view of the milestones as well."* A sixth
+tab, **Milestones**, scoped by the same project filter as every other tab. **No migration** — it
+reads `project_schedule` for the scoped projects.
+
+**A month grid with an agenda under it.** Chips sit in day cells colour-coded achieved / overdue /
+due; month arrows and a Today button move the window; clicking a chip opens the milestone with its
+slip against baseline. Filters are project, state and a programme-milestones-only toggle. The KPI
+band reads Milestones · Overdue · Next 30 days · Achieved · Undated.
+
+⚠️ **A milestone is `activity_type ILIKE '%milestone%'` OR `program_milestone = true`, matched
+server-side.** Both, because the two disagree in the real data: P6 exports type them (`Start
+Milestone` / `Finish Milestone`) while the flag is set by hand here, and either test alone silently
+drops a whole class of them. The `ILIKE` also catches the `Milestone`/`milestone` casing both spellings
+appear in.
+
+⚠️ **`PDb.selectAll`, never a bare select.** Milestones across a whole portfolio pass PostgREST's
+1000-row cap, and a truncated read would report a project as having no milestones this month — a
+silent wrong answer on the screen whose entire job is "what is due".
+
+⚠️ **UNDATED MILESTONES ARE COUNTED AND NAMED, never dropped.** A milestone with no date cannot be
+placed on a grid, so the tempting thing is to filter it out — but "no milestone this month" and
+"nobody has dated this milestone" are opposite facts, and only the second is a reason to go and
+look. It gets its own KPI reading "1 (cannot be placed on the calendar)".
+
+⚠️ **Achieved is `actual_finish`, and it is reported against BASELINE, not against the current
+plan.** Comparing an actual to `end_date` measures nothing — the plan moves, so a milestone that
+slipped six months reads as on time the moment someone re-baselines the date. `bl_finish` is the
+committed date and the slip is the variance from it. Falls back to the planned date only when there
+is no baseline, and says which it used.
+
+⚠️ **Overdue means past AND not achieved.** A date in the past is not by itself a problem.
+
+⚠️ **All date arithmetic is UTC string maths** (`ymd`/`isoOf`/`addDays`), never `new Date(str)`.
+Local parsing of a bare `YYYY-MM-DD` is midnight UTC rendered in local time, which east of Greenwich
+is the previous day — the off-by-one that has bitten this repo repeatedly (see the drawing-register
+importer and the MoM aging fixtures).
+
+⚠️ **The grid is Monday-first with a fixed 42 cells** (`lead = (getUTCDay() + 6) % 7`). Six weeks
+always, so the calendar does not change height as you page through months and the chips do not jump.
+
+⚠️ **The `+N more` overflow is a BUTTON that opens the day, not a label.** The cap is 3 chips per
+cell; a "+2 more" you cannot click is the same as hiding them.
+
+**Two real contrast failures, found by measuring rather than reading.** The first measurement was
+itself wrong — it ignored alpha, so a tint of the same hue read as ratio 1.00 and looked fine.
+Compositing over the actual ancestor background surfaced `.po-cal-more` and `.po-ms-prog` at
+**3.40:1 dark / 4.12:1 light**, under the AA floor for small bold text. Both now use body ink (with a
+red border on the programme mark to keep the brand cue): **all 13 marks pass, min 4.86 light / 4.81
+dark.**
+
+⚠️ **A pre-existing phone defect, which I made worse and therefore fixed.** An A/B against my own
+added tab measured `.po-tabs` at **573px in a 375px viewport before this change** and **685px
+after** — it already overflowed, and the 6th tab widened it by 112px. It was `flex-wrap: nowrap;
+overflow-x: visible`, so the later tabs simply spilled off-screen unreachable.
+⚠️ **It now WRAPS rather than scrolling, and that is deliberate:** `#po-projfilter-wrap` is a *child*
+of `.po-tabs` and its dropdown is `position:absolute`, so an `overflow-x` scroller here would
+establish a clipping context and cut the project filter's own menu off — the exact trap the module
+topbar hit in the 2026-07-24 part-6 pass. The filter takes its own full-width row. Measured after:
+strip **355px**, all 6 tabs on screen over 2 rows, 44px targets, dropdown clipped by nothing.
+
+**Verified in a browser harness against the shipped markup and CSS**, at a 375px layout viewport and
+at 1280: 42 cells in a 7-column grid, Monday first / Sunday last, today highlighted; KPIs read
+`12 / 1 overdue / 7 next-30 / 2 achieved (1 late) / 1 undated`; the `+2 more` overflow opens and
+shows all 5; an empty month says *"Nothing in November 2026 — use the arrows, or Today, to move."*;
+the agenda's first row reads `2026-08-11 | One Portwood Residences | Topping Off — Tower 1 program |
+Construction | Achieved planned 2026-08-06 | +5d`. Desktop confirmed byte-for-byte unchanged
+(`nowrap`, one row, 38px tabs, filter right-aligned, no page scroll). Inline script parses, CSS
+braces balanced, **0 functions lost / 21 added**, and the BOQ (112), PMI (82) and push (22) suites
+are still green.
+
+⚠️ **Not verified signed in** — the anon key has no grants on `project_schedule`, so the query
+itself is exercised against a fixture, not against real data. The `.or()` filter string in particular
+is untested against PostgREST.
+⚠️ **This module's `index.html` is NOT cache-busted** — it is not in the `MODULES` registry and all
+five hrefs to it are plain links, so `MODULE_V` does not reach it. **Hard-refresh once after the
+deploy** or the new tab will not appear.

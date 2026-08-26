@@ -1,7 +1,8 @@
 -- ============================================================================
 -- Migration: A3's TAIL — package adoption on the Contracts & Claims tables,
 --            which also answers design decision #2 (does the BOQ define the
---            packages?).
+--            packages?). ⚠️ That answer was CORRECTED on 2026-08-26 — see
+--            section 2. The column is right; the tool built on it was not.
 --
 -- Run this whole file in the Supabase SQL editor. Idempotent (safe to re-run).
 -- ⚠️ Requires 2026-08-19-packages.sql and 2026-08-24-boq.sql.
@@ -40,29 +41,35 @@ alter table contracts_claims add column if not exists package_id uuid
 create index if not exists idx_contracts_claims_package on contracts_claims (package_id);
 
 -- ---------------------------------------------------------------------------
--- 2) boq_items.package_id — DESIGN DECISION #2, answered
+-- 2) boq_items.package_id — DESIGN DECISION #2
 -- ---------------------------------------------------------------------------
--- The question was: "Does the BOQ define the packages? A trade sheet usually maps
--- to a contract package, and the real file IS 'Package 2'."
+-- The question was: "Does the BOQ define the packages?"
 --
--- ANSWER: the BOQ *proposes* packages; it never creates them.
---   The four trade sheets of the real workbook (Architectural / IFO HL&LL /
---   HS-SP / ACOUSTIC) are exactly how that contract is bought, so offering
---   "create a package per sheet" is cheap and useful. AUTO-creating them is not:
---   a sheet is a measurement convenience as often as it is a commercial lot, the
---   planner's own package codes come off the contract documents (not off a tab
---   name), and a package silently minted by an importer would then be cited in a
---   claim nobody agreed to.
---   So the column lands here, the BOQ tab offers a propose-then-accept tool, and
---   nothing is created without a click. Same propose→preview→apply shape as the
---   class-code mapping and the allocation split.
+-- FIRST ANSWER (2026-08-25), WRONG, kept here because the correction only makes
+-- sense against it: "the BOQ proposes packages — offer one package per trade
+-- sheet, never auto-create." That assumed a trade sheet is a commercial lot.
 --
--- ⚠️ ON THE ITEM, NOT ON THE REVISION. One revision spans several trade sheets
---    and therefore several packages — the real file is one document covering
---    four. A `boq_revisions.package_id` would force the whole document into one
---    lot and make a per-sheet contract value unrepresentable. The tool assigns it
---    per sheet in bulk; the storage stays per line so a re-measured sheet that
---    moves between lots can be corrected without touching the others.
+-- CORRECTED 2026-08-26 by the owner. A CONTRACT PACKAGE IS A SCOPE DIVISION OF
+-- THE PROJECT, NOT A TRADE. His example — one project, two packages:
+--     Package 1 — Avesta Residences Tower 1 and General Requirements
+--     Package 2 — Avesta Residences Towers 2-7
+-- The BOQ workbook belongs TO a package (the real file IS Package 2), and the
+-- sheets inside it are whatever breakdown THE CLIENT dictated for that package's
+-- progress billing — by trade on this job, by something else on the next.
+--
+-- ⚠️ SO THE OLD TOOL WAS BACKWARDS AND IS DELETED. One package per trade sheet
+--    would have minted four lots ("Architectural", "ACOUSTIC") where the
+--    contract has one, and a claim later raised against "package ACOUSTIC"
+--    would cite a lot appearing on no contract document.
+--    The BOQ tab now only ASSIGNS lines to a package that already exists;
+--    packages are created on the Dashboard, from the contract documents.
+--
+-- ⚠️ ON THE ITEM, NOT ON THE REVISION — and the reason survives the correction.
+--    One issued document can cover more than one lot, so a
+--    boq_revisions.package_id would force the whole workbook into one package
+--    and make a per-package contract value unrepresentable. Assignment is per
+--    sheet in bulk; storage stays per line so a re-measured sheet that moves
+--    between lots is corrected without touching the others.
 --
 -- ⚠️ on delete set null: deleting a package must never delete contract scope.
 alter table boq_items add column if not exists package_id uuid

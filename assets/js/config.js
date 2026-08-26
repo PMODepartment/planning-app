@@ -93,8 +93,8 @@ window.APP_CONFIG = {
     // deliberate step, not part of this change: verify the mirror end-to-end first,
     // and confirm nothing in the local tables was left behind by the cutover. A
     // disabled module is reversible; a dropped table is not.
-    { key: 'drawing-register',  name: 'Drawing Register',                      path: 'modules/drawing-register/index.html',  icon: 'ruler',      enabled: false, retiredTo: 'the Engineering App' },
-    { key: 'material-submittal',name: 'Material Submittal Log',                path: 'modules/material-submittal/index.html',icon: 'box',        enabled: false, retiredTo: 'the Engineering App' },
+    { key: 'drawing-register',  name: 'Drawing Register',                      path: 'modules/drawing-register/index.html',  icon: 'ruler',      enabled: false, retiredTo: 'the Engineering App', externalUrl: 'https://pmodepartment.github.io/engineering-app/' },
+    { key: 'material-submittal',name: 'Material Submittal Log',                path: 'modules/material-submittal/index.html',icon: 'box',        enabled: false, retiredTo: 'the Engineering App', externalUrl: 'https://pmodepartment.github.io/engineering-app/' },
     // ---- Phase 2 ----
     { key: 'project-schedule',  name: 'Project Schedule & Cost Loading',       path: 'modules/project-schedule/index.html', icon: 'calendar',    enabled: true, dash: { table: 'project_schedule', unit: 'activities',
       // ⚠️ WBS Summary rows are roll-up headings, not work. Counting them would inflate every figure

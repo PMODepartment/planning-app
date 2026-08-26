@@ -1,5 +1,95 @@
 # Module: issues-lessons
 
+## 2026-08-26 — Tab order, the register becomes a REPORT, and lessons become their own record
+
+Four owner asks in one prompt. **⚠️ Run `migrations/2026-08-26-lessons-learned.sql`.**
+
+**1. Tab order is now Minutes of Meeting → Issues & Concerns → Lessons Learned**, which is
+the order the work actually happens: a meeting is recorded, what it raised is chased in the
+register, what it taught is kept in the library. ⚠️ **The first tab is also the default
+screen** (`screen = 'mom'`) — a tab strip whose first entry is not where the module opens
+reads as a bug, and the register is one click away.
+
+**2. Issues & Concerns is a REPORT, not only a log.** The owner's reference was their live
+Power Apps "View Open Issues" screen, and that layout is now the default: a **red status
+panel** (Status · Department · Champion · Date Presented · Days Aging · Date Resolved)
+beside the **issue / caused by / corrective action** blocks, one record at a time, in the
+same master/detail shape as the minutes. A **Report | Log** switch in the toolbar keeps the
+table — ⚠️ **the log was not replaced, deliberately**: scanning forty issues for the one you
+want is a different job from reading one of them, and both run off `issuesFiltered()`, so
+switching presentation never changes the set.
+- ⚠️ **Days Aging stays DERIVED and is the one field with no control** — 0 when Closed, else
+  today minus the date presented. A stored aging is wrong the next morning.
+- ⚠️ **The red panel is a fixed-contrast island** — brand red with white labels in *both*
+  themes, its controls on a light surface. Do not token-ise its background: remapping it in
+  dark mode turns the screen someone is presenting from into a different-looking screen
+  mid-meeting. This is the one place in the module that deliberately ignores the theme.
+- ⚠️ **The selection is validated against the FILTERED set**, not just against `rows` — a
+  filter that hides the open issue has to move the pane, or the reader is looking at a record
+  the list beside it says is not there.
+- **Reporting view** renders every field as text rather than as a control, for the reason the
+  minutes card already documents: a single-line `<input>` clips its own value, so a long
+  Caused By was unreadable in exactly the mode meant for reading it. `momFieldHTML` now
+  delegates to a shared `ilField`, so all three screens report the same way.
+
+**3. The pop-up is gone. There is ONE editor for an issue and it is the detail pane.**
+"+ New issue" and the log's ✎ both land there.
+- ⚠️ **A new issue is a DRAFT IN MEMORY, not an inserted row — deliberately UNLIKE "+ New
+  minutes"**, which inserts immediately and lets you type. It cannot work that way here:
+  `issues_lessons_del` is **planner-only** (2026-08-19-department-issues.sql), so a department
+  that mis-clicked "+ New issue" would leave a blank row in the register with no way to remove
+  it. The draft is written on Save and discarded on Cancel, and leaving it is confirmed.
+- ⚠️ `openForm` and `wireModalCursor` are **deleted, not left alongside** — a second editor is
+  a second place for the fields to drift apart. Autosave went with the modal (it wrapped a
+  modal's Save button); an explicit Save is the trade.
+- Permission gating is unchanged and still mirrors the RLS row for row: any approved
+  non-viewer may raise, you maintain your own, a planner maintains the register, and where
+  delete is unavailable the card **says why** rather than hiding a button.
+
+**4. A lesson is its own record now** (`lessons_learned`), no longer three columns on the
+issue. That shape forced **one lesson per issue**, **no lesson without an issue**, and a
+capture form welded to the issue form — all three are gone. A lesson carries **optional**
+links to the issue, the meeting and the action item that produced it, and is captured from
+three places: the Lessons screen, an issue's detail pane, and an action item's card.
+- ⚠️ **An unlinked lesson is a legitimate record, not a broken one** — meetings produce
+  lessons nobody logged as a problem, and a lesson brought from another project has no issue
+  in this register at all. "Not linked" is the first option in the source picker, never a
+  fallback, and nothing in the UI requires a link.
+- ⚠️ **`on delete set null`, never cascade.** A lesson outlives its source — that is the whole
+  point of a library — so deleting the issue strips the link, not the knowledge. The delete
+  confirmation was reworded to say so; the old wording ("this also removes any lesson captured
+  on it") is now a false warning that would stop someone deleting a duplicate.
+- ⚠️ **Delete is wider here than on the register, on purpose.** An issue may not be deleted by
+  the department that raised it (the record of a problem having existed is the point); a lesson
+  is something someone wrote down, and a duplicate is noise in a library everyone reads — so
+  its author may remove it.
+- ⚠️ **LEGACY FALLBACK, and it matters.** Until the migration runs there is no table, so the
+  library is rebuilt read-only from the old columns with a banner naming the file to run.
+  Without it, opening the app before the migration would report a project's whole lessons
+  history as empty, which reads as data loss. Legacy ids are prefixed `legacy:` so they can
+  never be mistaken for a real row and sent to the database in an update.
+- ⚠️ **The migration backfills and does NOT clear the old columns**, guarded by `not exists`.
+  Clearing them would leave an older deployed tab showing a lesson that has vanished.
+- ⚠️ The meeting picker **loads the minutes on demand** — they load lazily, so assuming they
+  are in hand would offer an empty meeting list on a project full of minutes.
+
+**Verified: 64 checks executing the SHIPPED builders**, sliced out of `module.js` and never
+reimplemented — every Power Apps field present in the layout, aging derived and uneditable,
+the full permission matrix (own / another department's / unauthored, planner and not), report
+mode emitting no controls at all, the new-issue draft offering Cancel and no Delete, **two
+lessons on one issue** (the case the old model could not represent), an unlinked lesson
+rendering and correctly *not* counting toward its issue, the legacy rebuild being read-only
+even for a planner, "Not linked" selected by default, search, and escaping.
+⚠️ **The suite cannot pass against the pre-change file** (`NOT FOUND: ilField`), so it bites.
+Function-set diff vs HEAD: **2 lost — `openForm` and `wireModalCursor`, both deliberate — 24
+added.** Parses; 0 NUL bytes; CSS braces 217/217; every `$()` id resolves to the shell or to a
+renderer.
+
+⚠️ **NOT verified signed in, and the migration has not been run.** No live click-through of a
+save, a lesson capture, or the meeting picker against real data — the module is behind Supabase
+auth and the anon key has no grants. The first real use is the test.
+`MODULE_V` → `20260826h`; module assets → `?v=20260826a`.
+
 ## MoM: last mom-app gaps closed — filters, meeting type, attachments (2026-08-21) — fmlozano
 Owner: *"close the gaps by starting with the ongoing session."* **Run
 `migrations/2026-08-21-mom-type-and-attachments.sql`** (after the schema/carry-over/distribute one

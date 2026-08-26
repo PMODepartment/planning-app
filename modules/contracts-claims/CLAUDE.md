@@ -202,7 +202,7 @@ worked Site Supervision line (22 mos @ ₱1,220,000) gives previous **₱3,660,0
 - ⚠️ Each period **snapshots the revision it was billed against**, or a remeasure rewrites a
   submitted billing. `previous` is never stored — it is the prior period's to-date.
 - ⚠️ A billing period is **not a calendar month** (26th→25th); the period→month mapping for Cash Flow
-  stays explicit (open decision #6, still open).
+  stays explicit. **Decision #6 resolved 2026-08-26** — see below.
 - ⚠️ **Two POC systems now exist and must not be merged**: `schedule_scurve_agg` is *progress*, this
   is *contractual/revenue*. Reconciling them is a report, never an override. Said on screen.
 
@@ -338,6 +338,87 @@ default size instead of matching the 34×34 tool buttons.
   right edge **1179px**, theme toggle left **1193px**, profile divider left **1247px**.
 - No horizontal overflow at 1280/1100/900/700/420px. This module wraps to a second row earlier than
   the others below 900px because it carries **three** tabs — graceful wrapping, not breakage.
+
+### 2026-08-26 — Decision #6 resolved: the reporting month, cut at month end
+Owner: *"Billing is dependent on the contract itself as this is a commercial decision. But for
+reporting purposes, can we cover til end of each month?"* — so **both**, kept apart.
+- The Billing tab's period table is unchanged: 26th→25th, the dates the client certifies and pays.
+- Added a **Monthly reporting view** beneath it. Each period's **increment** (its revenue less the
+  prior period's to-date) is spread **straight-line across the calendar days it spans**, inclusive of
+  both endpoints, and assigned to the months those days fall in. Columns: revenue in month,
+  cumulative, materials, labour, which billings fed it, and days covered / days in month.
+- ⚠️ **The increment is spread, never the to-date.** To-date is cumulative; spreading it would bill
+  the same money into every month it touches.
+- ⚠️ **Inclusive endpoints.** 26-Feb → 25-Mar is **28** days (Feb 26–28 = 3, Mar 1–25 = 25), not 27.
+- ⚠️ **UTC date arithmetic.** A local-time `Date` shifts a date across a month boundary for anyone
+  east or west of the server, silently moving revenue between months.
+- ⚠️ **The tail of the current month is left blank, not accrued.** Days after the last `period_end`
+  have been certified by nobody. Filling them from the schedule's progress would push decision #7's
+  *other* POC into a revenue figure — the one merge this module refuses. The view says so on screen
+  and names the shortfall in days.
+- ⚠️ **A part-covered month is normal at both ends and means different things**: the first is short
+  because the project started mid-month, the last because the next billing has not been raised.
+  Both are marked `part` rather than filled.
+- ⚠️ **Periods with no `period_end` fall in no month** and are **excluded, not guessed** — the view
+  names them and warns that its Total is then below Revenue to date.
+- ⚠️ **Nothing is stored and no month is editable.** `rel_pct` remains the only input; the pro-rata
+  is a derivation in `boq.js` (`monthlyRevenue`), so changing the convention later cannot corrupt a
+  submitted billing. The migration comment was updated to record the resolution.
+- **Verified by executing the shipped `monthlyRevenue`** in node against a three-billing fixture
+  (26th→25th, ₱1,000,000 contract, 60/40 material/labour): Dec 6/31 part, Jan 31/31 full, Feb 28/28
+  full, Mar 25/31 part; the monthly total closes **exactly** on revenue to date (₱300,000.00), and
+  the material split holds at 0.6 in every month. Not yet clicked through in a browser.
+
+### 2026-08-26 — Decision #2 corrected: a package is a scope division, not a trade
+Owner: *"Package 1: Avesta Residences Tower 1 and General Requirements / Package 2: Avesta Residences
+Towers 2-7 … In terms of BOQ, it is purely the client who will dictate which will define the progress
+billing of each package whether by trade or etc."*
+- **The first answer was wrong.** A trade sheet is not a commercial lot: the workbook **is** Package 2,
+  and its sheets are the client's billing breakdown *within* it. `Packages from sheets…` is **deleted**
+  and replaced by **`Assign to contract package…`** — assigns lines to a package that already exists,
+  shows each sheet's current lot (`mixed` included, never hidden), and can remove an assignment.
+- ⚠️ **No insert in that function.** Packages come off the contract documents, on the Dashboard. With
+  none on the project, the tool says where they come from instead of offering to invent one.
+- `suggestCode()` deleted — a code from a tab name means nothing under the corrected model.
+- No schema change: `boq_items.package_id` was right; per-line storage still stands because one issued
+  document can cover more than one lot. Migration comments corrected in place.
+
+### 2026-08-26 — Decision #7 reframed: the gap is an accrual, and it is money
+Owner: *"Isn't the s-curve based on actual progress? … the contractor will bill the client based on
+actual verified progress … for reporting purposes … accrual and expected accounts receivable/payable."*
+- Not rival numbers — the same work at **reported → certified → paid**. The panel is now
+  "Reported, certified, and the accrual between them", and the third cell is
+  `(reported − certified) × contract` in pesos: *Accrued — done, not yet certified*, or
+  *Billed ahead of the work* when it runs the other way (absolute value, never a negative peso).
+- ⚠️ **The reported figure is contractor-reported, not client-verified** — it is `percent_complete`
+  typed on the programme. Said on screen, because the accrual otherwise reads as agreed money.
+- ⚠️ **Dispute is not measurable**: `boq_progress` stores one `rel_pct` per line, the certified one.
+  A claimed figure beside it is a schema decision and is **open**.
+- **Verified**: 13/13 executing the shipped `pocCompareHTML` in node — ₱27,541.00 at +2.75pp
+  (0.20 reported vs 0.172459 certified on ₱1M), the reverse case at ₱22,459.00 / −2.25pp, plus the
+  no-billing, no-schedule and reconciliation branches. Not clicked through in a browser.
+
+### 2026-08-26 — Claimed vs certified: dispute becomes a number
+Owner: *"Add rel_pct_claimed vs certified so dispute is measurable"*.
+- `migrations/2026-08-26-boq-claimed-vs-certified.sql` adds `boq_progress.rel_pct_claimed` beside
+  `rel_pct`. **`rel_pct` keeps its meaning — CERTIFIED.** POC, revenue and the monthly view still
+  derive from it alone; **nothing bills from a claim**.
+- ⚠️ **NULL = "not separately recorded", never zero.** No default, no back-fill. A zero default would
+  have priced every historical line as a 100% dispute the instant the migration ran. Effective
+  claimed is `coalesce(rel_pct_claimed, rel_pct)` in SQL and in JS alike.
+- ⚠️ **Not netted.** Certified-above-claimed is reported on its own as an anomaly rather than
+  cancelling genuine disputes elsewhere, which would hide both. No CHECK constraint: refusing the
+  save would only move the wrong number somewhere unrecorded.
+- Progress dialog: **Claimed %** beside **Certified %** (was "To date %"), blank meaning *same*, with
+  a live dispute total in the footer. The save writes the **union** of both maps — keying off the
+  certified map alone drops a line claimed in full and certified at nothing, the sharpest dispute
+  there is. Save and new-period seed both **degrade gracefully** when the migration has not run.
+- Accrual panel splits into **In dispute / Not yet claimed / ⚠️ Certified above claimed**, plus an
+  **In dispute** KPI — both only once a claim exists, since a standing "₱0.00 dispute" asserts an
+  agreement nobody made.
+- `boq_period_dispute` view (security_invoker, the screen's own heading/exclusion money rules).
+- **Verified**: 12/12 on `disputeOf`, 12/12 on the reframed `pocCompareHTML`. ⚠️ Migration not run,
+  nothing clicked through.
 
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this

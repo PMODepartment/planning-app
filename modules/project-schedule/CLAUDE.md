@@ -8643,3 +8643,36 @@ appears on exactly one cell in each pane, `<title>`s are stripped, two moves in 
 to the last, and a pointer over the label gutter still magnifies while the readout falls back to
 the tower name. Whole-file JS syntax check clean. `MODULE_V` → `20260824g`.
 ⚠️ **Not verified against live schedule data** — no signed-in run.
+
+### 2026-08-26 — Contract Package Monitor: a multi-package project tracked as several
+Owner: *"For cases with projects that have multiple packages let's modify the project schedule module
+to show this multiple packaged project but tracked and monitored separately as a package."*
+
+A multi-package project (Package 1 — Tower 1 and General Requirements; Package 2 — Towers 2-7) is one
+schedule that must report as several, because each package is administered, progressed and billed on
+its own. New built-in report **Contract Package Monitor** (`repPackages`, in the Reports dialog).
+
+- One row per contract package **plus the unassigned bucket**: activities, own/total tagging, planned
+  and actual start/finish, planned % at the data date, actual %, variance (pp), cost-weighted %,
+  planned cost, earned. Project total row at the foot.
+- ⚠️ **The weighting is `schedule_scurve_agg`'s, exactly**: `w_dur` = duration_days else
+  (end−start)+1 else 1; `w_cost` = planned_cost else bl_cost else 0; leaves are rows with a start date
+  and a non-WBS/summary type; POC = Σ(w × pc)/Σ(w); planned = Σ(w × straight-line elapsed)/Σ(w). Any
+  other weighting would disagree with the S-Curve, Cash Flow and the Contracts BOQ accrual — all three
+  read that same function, and two package percentages differing by rounding are worse than one.
+- ⚠️ **Effective package via `packageOf()`**, so a WBS branch tagged once reports its whole subtree.
+  The **own / total** column exposes how much of a total is inherited rather than tagged — the way a
+  package total drifts when a branch is re-parented.
+- ⚠️ **The unassigned bucket is always listed**, and the note warns when it is non-empty: otherwise a
+  half-tagged schedule looks fully packaged, every package row right and the project's wrong.
+- ⚠️ A package with no activities reads **`— none —`, never 0%** (a zero claims a measurement was
+  made). An actual finish is **withheld while anything is open** (`— N open —`) rather than reporting
+  the latest finish among half-done work.
+- **Verified 21/21** executing the shipped `repPackages` in node on a three-package fixture: PKG-1 at
+  75.00% actual vs 100.00% planned (−25.00 pp, ₱1.5M earned of ₱2M), PKG-2 found only through WBS
+  inheritance at **0 / 1** own and 60.61% planned, PKG-3 reporting `— none —`, the WBS-summary row and
+  the start-date-less row excluded from counts, percentages and money, project total 25.56%.
+  ⚠️ My first assertion said 60.00% for PKG-2 and was wrong — the RPC divides by (end − start), a
+  99-day span, not the 100-day duration. The code matched the SQL.
+- Inline script parses (`node --check` on the extracted block). ⚠️ **Not rendered in the Reports
+  dialog and not run against live data** — no signed-in run.

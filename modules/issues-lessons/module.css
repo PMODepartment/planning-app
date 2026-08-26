@@ -508,3 +508,61 @@
 /* ⚠️ Reporting no longer renders form controls inside a card at all (momFieldHTML
    emits the value as text), so the control-neutralising rules above do not reach the
    action items — they still cover the minute's own header fields, which are inputs. */
+
+/* ============================================================================
+   REPORT / LOG PRESENTATION SWITCH  +  the Issues & Concerns report view
+   ----------------------------------------------------------------------------
+   ⚠️ The red status panel is the Power Apps "View Open Issues" layout and is a
+   DELIBERATE fixed-contrast island: brand red with white labels in both themes.
+   Do not "token-ise" its background — remapping it in dark mode is what turns a
+   report someone is presenting from into a different-looking screen mid-meeting.
+   Its controls sit on a light surface with dark ink for the same reason.
+   ========================================================================== */
+.il-viewtoggle { display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
+.il-viewtoggle[hidden] { display: none; }
+.il-viewtoggle button {
+  border: 0; background: var(--pd-card); color: var(--pd-muted);
+  font: 600 12px/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
+}
+.il-viewtoggle button + button { border-left: 1px solid var(--pd-line); }
+.il-viewtoggle button:hover:not(.on) { background: var(--pd-bg); color: var(--pd-ink); }
+.il-viewtoggle button.on { background: var(--pd-red); color: #fff; }
+
+.il-iss-split { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
+.il-iss-panel {
+  flex: 0 0 260px; min-width: 0; background: var(--pd-red); border-radius: 10px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.il-iss-panel > .il-mi-f + .il-mi-f { margin-top: 0; }   /* the flex column owns the spacing */
+.il-iss-panel label { color: #fff; opacity: .95; }
+.il-iss-panel .il-mi-val { color: #fff; background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); }
+.il-iss-panel .il-mi-val.is-empty { color: rgba(255,255,255,.7); }
+.il-iss-panel .il-mi-val.is-hot { color: #fff; background: rgba(0,0,0,.28); font-weight: 700; }
+.il-iss-panel .pd-input, .il-iss-panel .pd-select {
+  background: #fff; color: #231F20; border-color: rgba(255,255,255,.45);
+}
+.il-iss-panel :disabled { background: rgba(255,255,255,.9); opacity: 1; }
+.il-iss-body { flex: 1 1 320px; min-width: 0; }
+.il-iss-prov { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.il-iss-prov .il-raisedby { margin: 0; }
+
+/* The issue list rows carry their status, so the pane can be scanned without opening each. */
+.il-mom-item .il-iss-lpill { transform: scale(.85); transform-origin: left center; display: block; margin-bottom: 2px; }
+.il-mom-item .il-less-lchip { display: inline-block; margin-bottom: 3px; }
+
+.il-iss-lessons .il-lessons-inline { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.il-lcard-acts { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* The action-item card's lesson cell, beside the register link. */
+.il-c-lesson { flex: 0 0 auto; }
+
+/* Reporting view hides the editing controls on these screens too (the class is set on
+   each screen's own host element, never on <body>). */
+.il-mom-report #il-iss-new, .il-mom-report #il-iss-save, .il-mom-report #il-iss-del,
+.il-mom-report #il-iss-addlesson, .il-mom-report #il-less-new, .il-mom-report #il-less-save,
+.il-mom-report #il-less-del { display: none !important; }
+
+@media (max-width: 700px) {
+  .il-iss-panel { flex: 1 1 100%; }
+  .il-viewtoggle button { min-height: 44px; }
+}

@@ -84,13 +84,13 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-08-26 (f) — Cost curves, per-trade subtotals, derived earned value, and EVM moves to the dashboard
+### 2026-08-26 (i) — Cost curves, per-trade subtotals, derived earned value, and EVM moves to the dashboard
 Owner, in two messages: *"there should be a step wherein the manner of distribution of an activity is
 defined… bell curve, front loaded, back loaded, linear… that POC should be multiplied with the
 specified amount on that activity… that should be reported in the s-curve"*, then *"for the
 cost-loading step 2, can you add like a per trade sub-total… Also for Cost / EVM, remove that
 sub-module in the project schedule module. Meaning the EVM should be displayed in the planners
-dashboard."* `?v=20260826f`. **Run `migrations/2026-08-26-activity-cost-curve.sql`.**
+dashboard."* `?v=20260826i`. **Run `migrations/2026-08-26-activity-cost-curve.sql`.**
 
 - **Cost Loading gained a 5th step — "Spread over time".** Linear / Front-loaded / Back-loaded /
   Bell, picked per activity, each drawn as a 16-bar density spark and previewed as a monthly spend
@@ -138,6 +138,64 @@ construction order, 9 EVM cells, touch targets 47.5px, 0 page horizontal scroll,
 ⚠️ **Not verified signed in** — the anon key has no grants, so no cost curve has been applied against
 real data. ⚠️ `migrations/2026-08-25-schedule-cost-loading.sql` is **also still outstanding**.
 
+### 2026-08-26 (e) — Issues & Concerns becomes a report; Lessons Learned becomes its own record
+Owner: *"reorder by Minutes of Meeting → Issues & Concerns → Lessons Learned … I need the view of the
+issues & concerns as the one as with the minutes of meeting so that this can be reported not show as a
+log or database only … there may be issues raised that are not from the previous meeting. Let's revamp
+how to raise issues, the pop up window is not UI friendly … the Lessons Learned section is combined
+with the pop-up window. This should be separate and connected with the items either the minutes of
+meeting or the Issues & concerns."*
+**⚠️ Run `migrations/2026-08-26-lessons-learned.sql`.** `MODULE_V` → `20260826h`.
+
+- **Tabs reordered and the module now OPENS on the minutes** — the order the work happens: a meeting
+  is recorded → what it raised is chased in the register → what it taught is kept in the library.
+- **The register is a REPORT, with the log kept beside it.** Default view is the owner's own Power Apps
+  "View Open Issues" layout — a red status panel (Status · Department · Champion · Date Presented ·
+  Days Aging · Date Resolved) beside the issue / caused by / corrective action blocks, one record at a
+  time, in the same master/detail shape as the minutes, plus a **Reporting view** that renders fields
+  as text. A **Report | Log** switch keeps the table: ⚠️ scanning forty issues for the one you want is
+  a different job from reading one of them, and both presentations run off the same filtered set.
+- ⚠️ **The red panel deliberately ignores the theme** — brand red with white labels in both modes. A
+  screen someone is presenting from must not look like a different screen mid-meeting.
+- **The pop-up is gone; there is ONE editor and it is the detail pane** (`openForm` and
+  `wireModalCursor` deleted, not left alongside). ⚠️ **A new issue is a draft in memory, NOT an
+  inserted row — the opposite call from "+ New minutes"**, because `issues_lessons_del` is
+  planner-only: a department that mis-clicked would otherwise leave a blank row it cannot remove.
+- **Lessons are their own records** (`lessons_learned`), no longer three columns on the issue — which
+  forced one lesson per issue, no lesson without an issue, and a capture form welded to the issue form.
+  Links to the issue / meeting / action item are **all optional**, captured from three places, and
+  ⚠️ **an unlinked lesson is legitimate, never a broken one**. `on delete set null`, never cascade — a
+  lesson outlives its source, which is the point of a library.
+- ⚠️ **Legacy fallback until the migration runs:** the library is rebuilt read-only from the old
+  columns with a banner naming the file. Without it, opening the app pre-migration would report a
+  project's whole lessons history as empty — which reads as data loss. The migration backfills and
+  **does not clear** the old columns.
+- **Verified: 64 checks executing the shipped builders** (sliced, never reimplemented) — every Power
+  Apps field, aging derived and uneditable, the full permission matrix, report mode emitting no
+  controls, the draft's Cancel-and-no-Delete, **two lessons on one issue** (the case the old model
+  could not represent), the legacy rebuild read-only even for a planner, and escaping. ⚠️ The suite
+  **cannot pass against the pre-change file**, so it bites. 2 functions lost (both deliberate), 24
+  added; parses; 0 NUL bytes; CSS 217/217.
+- ⚠️ **NOT verified signed in, and the migration has not been run** — no live click-through of a save,
+  a lesson capture or the meeting picker. The first real use is the test.
+
+
+### 2026-08-26 (d) — Planned vs Actual: the totals now print BOTH figures
+Owner: *"for the progress bar on the bottom, it should also show the progress for the planned when in
+the planned vs actual tab. For now it just shows the progress of the actual."* `?v=20260826d`.
+- ⚠️ **The summaries disagreed with the cells they were summing.** Each cell already carries both — the
+  plan line across it and the two-row P/A readout — but every total above them printed `_vsProgress`,
+  which in Compare is the ACTUAL alone. One number cannot answer the question that basis exists to ask.
+- **Fix:** the time bar and all three tower/consolidated headers now read
+  **"38% planned · 25% actual (−13 pp)"**. The variance is signed and named rather than left to be
+  worked out from two numbers; `pp` because these are points of POC, not percent of a percent.
+- ⚠️ A branch with **no baseline** reports *"planned n/a"*, never 0 — printing 0 would say un-baselined
+  work is behind when it is simply unmeasured.
+- ⚠️ While the time bar is **scrubbed** there is one modelled figure and no actual to compare it to, so
+  it keeps saying "N% scheduled"; the both-figures readout is the live view only.
+- **Actual and Planned bases are byte-identical** — the helper returns early for them.
+- Verified by executing the shipped helper in all three bases incl. ahead-of-plan and the no-baseline
+  case. Full reasoning in `modules/project-schedule/CLAUDE.md`.
 ### 2026-08-26 (e) — Reverted: the vertical stacking is back to the (b) build
 Owner: *"revert it back to previous prompt. the vertical stacking levels are gone again."* `?v=20260826e`.
 - **Out: `9fc0efc`** (Planned vs Actual totals printing both figures) **and `afe2053`** (`_vsAxis` —
@@ -442,10 +500,7 @@ lost in any file. Both migrations balanced, idempotent, `security_invoker`, no `
   Supabase CLI in this environment. Until then both screens say so rather than showing zeroes.
 - `MODULE_V` → `20260825d`; `module.css/js?v=20260825b`, `boq.js?v=20260825b`.
 
-⚠️ **Design decision #6 is still OPEN and needs the owner's call** — billing periods run 26th→25th
-while Cash Flow and the S-curve are monthly. Pro-rata a period across the two months it spans, or
-assign the whole period to the month holding its end date? Both are defensible and they produce
-different monthly revenue, so it is not mine to pick.
+⚠️ **Design decision #6 — RESOLVED 2026-08-26 by the owner** (see the 2026-08-26 entry below).
 
 
 ### 2026-08-25 — ROADMAP F1/F2/F6: vendor identity, the BOQ↔site reconciliation, and the rate library
@@ -8723,3 +8778,205 @@ button's red label on the red tint read **3.60:1**; it is ink with a red border 
 All five earlier equipment suites green; **0 functions lost**; parse clean; CSS balanced.
 ⚠️ **Not verified signed in**, and the migration has not been run — until it is, a chosen icon is
 dropped with the file named and the guessed icon still renders. `MODULE_V` → `20260825g`.
+
+## 2026-08-26 — Portfolio Overview: a calendar view of the milestones
+
+Owner: *"For portfolio dashboard, let's have a calendar view of the milestones as well."* Sixth tab,
+**Milestones**, scoped by the same project filter as the rest. **No migration** — it reads
+`project_schedule` for the scoped projects. Detail: `modules/portfolio-overview/CLAUDE.md`.
+
+A Monday-first month grid with colour-coded chips (achieved / overdue / due), month arrows and Today,
+an agenda table beneath, project + state + programme-only filters, and a KPI band reading
+Milestones · Overdue · Next 30 days · Achieved · Undated.
+
+⚠️ **A milestone is `activity_type ILIKE '%milestone%'` OR `program_milestone = true`** — both,
+because the two disagree in the real data (P6 exports type them, the flag is set by hand here) and
+either test alone silently drops a whole class.
+⚠️ **`PDb.selectAll`, never a bare select** — milestones across a portfolio pass the 1000-row cap, and
+a truncated read reports "nothing due this month" on the screen whose only job is answering that.
+⚠️ **Undated milestones are counted and named, never filtered out.** "No milestone this month" and
+"nobody has dated this milestone" are opposite facts and only the second is a reason to go and look.
+⚠️ **Slip is measured against BASELINE, not the current plan** — the plan moves, so comparing an
+actual to `end_date` makes a six-month slip read as on-time the moment someone re-baselines.
+⚠️ **UTC string arithmetic throughout**, never `new Date(str)` — the local-parsing off-by-one that has
+bitten this repo repeatedly.
+⚠️ **The `+N more` overflow is a button that opens the day, not a label** — a "+2 more" you cannot
+click is the same as hiding them.
+
+⚠️ **Two real WCAG failures, and the first measurement of them was wrong.** It ignored alpha, so a
+tint of the same hue read as ratio 1.00 and looked clean. Compositing over the real ancestor
+background surfaced `.po-cal-more` and `.po-ms-prog` at **3.40:1 dark / 4.12:1 light**. Fixed with
+body ink plus a red border to keep the brand cue: **all 13 marks pass, min 4.86 light / 4.81 dark.**
+
+⚠️ **A pre-existing phone defect that I made worse, so I fixed it.** An A/B against my own added tab
+measured the tab strip at **573px in a 375px viewport BEFORE this change** and **685px after** — it
+already overflowed, and the 6th tab added 112px. With `flex-wrap:nowrap; overflow-x:visible` the later
+tabs were simply unreachable. It now **wraps rather than scrolls**, deliberately:
+`#po-projfilter-wrap` is a *child* of `.po-tabs` and its dropdown is absolute, so an overflow scroller
+would clip the project filter's own menu — the exact trap the module topbar hit in the 2026-07-24
+part-6 pass. Measured after: **355px**, all 6 tabs on screen, 44px targets, dropdown clipped by nothing.
+
+**Verified** in a browser harness against the shipped markup and CSS at 375px and 1280: 42 cells /
+7 columns, Monday first, today highlighted, KPIs `12 / 1 / 7 / 2 (1 late) / 1 undated`, the `+2 more`
+opening to all 5, the empty-month message, and the agenda's first row reading
+`Topping Off — Tower 1 · Achieved planned 2026-08-06 · +5d`. **Desktop byte-for-byte unchanged**
+(nowrap, one row, 38px tabs, filter right-aligned, no page scroll). Inline script parses, CSS braces
+balanced, **0 functions lost / 21 added**; BOQ (112), PMI (82) and push (22) suites still green.
+
+⚠️ **Not verified signed in** — the anon key has no grants on `project_schedule`, so the query, and
+the `.or()` filter string in particular, are exercised against a fixture rather than PostgREST.
+⚠️ **No `MODULE_V` bump, because it would not do anything here** — portfolio-overview is not in the
+`MODULES` registry and all five hrefs to it are plain unversioned links. **Hard-refresh once after
+the deploy** or the new tab will not appear. (Worth closing properly one day; left alone as it is a
+shared-file change outside this ask.)
+
+### 2026-08-26 — Decision #6 answered: the contract keeps its 26th→25th, the report cuts at month end
+Owner: *"Billing is dependent on the contract itself as this is a commercial decision. But for
+reporting purposes, can we cover til end of each month?"* — so both, held apart rather than merged.
+
+- The Billing tab's period table is **untouched**: 26th→25th, the dates the client certifies and pays.
+- New **Monthly reporting view** beneath it (`monthlyRevenue` + `monthlyHTML` in
+  `modules/contracts-claims/boq.js`). Each period's **increment** — its revenue less the prior
+  period's to-date — is spread **straight-line across the calendar days it spans** and assigned to
+  the months those days fall in. Revenue in month, cumulative, materials, labour, which billings fed
+  it, and days covered / days in month.
+- ⚠️ **The increment is spread, never the to-date.** To-date is cumulative; spreading that would bill
+  the same money into every month it touches.
+- ⚠️ **Endpoints inclusive** — 26-Feb → 25-Mar is **28** days (Feb 26–28 = 3, Mar 1–25 = 25), not 27.
+- ⚠️ **UTC date arithmetic throughout.** A local-time `Date` shifts a date across a month boundary for
+  anyone east or west of the server, silently moving revenue between months.
+- ⚠️ **The tail of the current month is left blank, not accrued.** Days after the last `period_end`
+  have been certified by nobody. Accruing them from the schedule would push decision #7's *other* POC
+  into a revenue figure — the one merge this module refuses. The view names the shortfall in days
+  and says why it is empty.
+- ⚠️ **Nothing is stored, and no month is editable.** `rel_pct` is still the only input; the pro-rata
+  lives in `boq.js`, so changing the convention later cannot rewrite a submitted billing. The
+  `migrations/2026-08-24-boq.sql` comment was updated from "open decision #6" to the resolution.
+- **Verified by executing the shipped `monthlyRevenue`** in node against a three-billing fixture
+  (26th→25th, ₱1,000,000 contract, 60/40 material/labour): Dec **6/31 part**, Jan **31/31 full**,
+  Feb **28/28 full**, Mar **25/31 part**; the monthly total closes **exactly** on revenue to date
+  (₱300,000.00) and the material split holds at 0.6 in every month. `node --check` clean.
+- ⚠️ **Not clicked through in a browser**, and Cash Flow does not consume this yet — it is a table on
+  the Billing tab. Wiring it into Cash Flow's monthly buckets is the obvious next step and was not
+  part of this ask.
+- `MODULE_V` → `20260826e` (in `dashboard.html`, `modules.html` and the `modules-grid.js` fallback);
+  `boq.js?v=20260826a`.
+
+### 2026-08-26 — Decision #2 corrected (a package is a scope division), decision #7 becomes an accrual
+Owner, on packages: *"Package 1: Avesta Residences Tower 1 and General Requirements / Package 2:
+Avesta Residences Towers 2-7. The contract packages define the scope but both refers to a single
+project. In terms of BOQ, it is purely the client who will dictate which will define the progress
+billing of each package whether by trade or etc."*
+
+**My earlier answer to decision #2 was wrong, and the tool built on it is deleted rather than
+extended.** "One package per priced trade sheet" assumed a trade sheet is a commercial lot. It is
+not: the workbook **is** Package 2, its sheets are the client's billing breakdown *within* that
+package, and minting four packages named "Architectural" / "ACOUSTIC" would have put a lot in the
+claims register that appears on no contract document — the precise failure the refusal-to-auto-create
+was written to prevent, one level down.
+
+- `Packages from sheets…` → **`Assign to contract package…`**. It lists the project's existing
+  packages, shows each sheet's current lot (including **`mixed`**, which is a real state and must not
+  be hidden behind the first line's value), assigns in bulk, and offers **remove assignment** so a
+  wrong call is fixable without a DB console.
+- ⚠️ **There is no insert in that function.** Packages come off the contract documents, on the
+  Dashboard. With no packages on the project the tool explains that instead of offering to invent one.
+- `suggestCode()` deleted with it — a code derived from a tab name has no meaning under the corrected
+  model. Removed from `_internals` too.
+- Migration comments corrected in `2026-08-25-package-adoption.sql`: the wrong first answer is kept
+  beside the correction, because the correction only makes sense against it. **No schema change** —
+  `boq_items.package_id` was right all along; only the tool feeding it was wrong. Per-line storage
+  still stands: one issued document can cover more than one lot.
+
+Owner, on decision #7: *"Isn't the s-curve based on actual progress? … the contractor will bill the
+client based on actual verified progress … for reporting purposes as the contractor actual progress
+will have accrual and expected accounts receivable/payable."*
+
+Right — they are not rival numbers, they are the same work at two stages: **reported → certified →
+paid**. The panel is reframed around that.
+
+- "Two percent-completes" → **"Reported, certified, and the accrual between them."** The third cell
+  is now **money**: `(reported − certified) × contract`, labelled *Accrued — done, not yet certified*
+  (an unbilled receivable) or, when negative, *Billed ahead of the work*.
+- ⚠️ **One correction to the premise, stated on screen.** The schedule figure is `percent_complete`
+  typed on the programme — **contractor-reported, not client-verified**. Nothing in this app records
+  a client's verification of a schedule activity. So the accrual is *claimed as done and not yet
+  certified*, and it includes whatever the client would still knock off on inspection.
+- ⚠️ **Dispute is not measurable from what is stored**, and the panel says so rather than implying
+  otherwise. A dispute is claimed minus certified; `boq_progress` holds **one** `rel_pct` per line —
+  the certified one. Measuring it needs a claimed figure stored beside it: a schema decision, not
+  something to infer from the schedule. **Open, and it is the natural next one.**
+- Still no write-back in either direction.
+
+**Verified** by executing the shipped `pocCompareHTML` in node with stubbed formatters: **13/13** —
+accrual ₱27,541.00 at +2.75pp on a ₱1M contract (0.20 reported vs 0.172459 certified), the reverse
+case rendering ₱22,459.00 at −2.25pp under *Billed ahead of the work* (absolute value, never a
+negative peso), plus the no-billing, no-schedule and contract-reconciliation branches. `node --check`
+clean. ⚠️ **Not clicked through in a browser** — the assign-package modal in particular has been
+exercised only as source.
+
+⚠️ **The cross-module directive is only partly satisfied, and I did not silently widen scope.**
+`package_id` exists on `project_schedule` + `wbs_nodes`, `contracts_claims` and `boq_items`. The
+**procurement and engineering dashboards live in the prc-app repo**, not here, so nothing in this
+commit touches them. Also worth re-opening: `cash_flow` was excluded from package adoption on the
+reasoning that `cash_flow_trade_packages` was "already that module's notion of a package" — under the
+corrected definition that is a **trade** split *inside* a package, a different axis, so the exclusion
+now rests on a premise that no longer holds.
+
+- `MODULE_V` → `20260826f`; `boq.js?v=20260826b`.
+
+### 2026-08-26 — Multi-package projects monitored separately, and dispute becomes a number
+Owner: *"For cases with projects that have multiple packages let's modify the project schedule module
+to show this multiple packaged project but tracked and monitored separately as a package"* and
+*"Add rel_pct_claimed vs certified so dispute is measurable"*.
+
+**Project Schedule — Contract Package Monitor** (new built-in report, `repPackages`)
+- One row per contract package plus the unassigned bucket: activities, own/total tagging, planned and
+  actual start/finish, planned % at the data date, actual %, variance in pp, cost-weighted %, planned
+  cost and earned.
+- ⚠️ **The weighting is `schedule_scurve_agg`'s, exactly** — `w_dur` = duration_days else
+  (end−start)+1 else 1; `w_cost` = planned_cost else bl_cost else 0; leaves are rows with a start date
+  and a non-WBS/summary type; POC = Σ(w × pc)/Σ(w); planned = Σ(w × straight-line elapsed)/Σ(w). Any
+  other weighting would disagree with the S-Curve, Cash Flow and the BOQ accrual, all of which read
+  that one function.
+- ⚠️ **Effective package, via `packageOf()`** — a WBS branch tagged once reports its whole subtree.
+  The **own / total** column exposes how much of a package total is inherited rather than tagged,
+  which is how a total drifts when someone re-parents a branch.
+- ⚠️ **The unassigned bucket is always listed** and the note warns when it is non-empty: without it a
+  half-tagged schedule looks fully packaged, every package row right and the project's wrong.
+- ⚠️ A package with no activities reads **`— none —`, never 0%**; an actual finish is withheld while
+  anything is open (`— N open —`) rather than reporting the latest finish among half-done work.
+- **Verified 21/21** executing the shipped `repPackages` in node against a three-package fixture:
+  75.00% actual vs 100.00% planned on PKG-1 (−25.00 pp), PKG-2 found only by WBS inheritance at
+  0 / 1 own and 60.61% planned (the RPC divides by end−start, a 99-day span — my first assertion said
+  60.00% and was wrong, the code matched the SQL), PKG-3 reporting `— none —`, the summary row and
+  the start-date-less row excluded from both counts and money, and the project total at 25.56%.
+
+**Contracts & Claims — claimed vs certified** (`migrations/2026-08-26-boq-claimed-vs-certified.sql`)
+- `boq_progress.rel_pct_claimed` added beside `rel_pct`. **`rel_pct` keeps its meaning: CERTIFIED.**
+  POC, revenue and the monthly view still derive from it alone — nothing bills from a claim.
+- ⚠️ **NULL means "not separately recorded", never zero**, with no default and no back-fill. A zero
+  default would have made every historical line read as a 100% dispute the moment the migration ran.
+  Effective claimed = `coalesce(rel_pct_claimed, rel_pct)` everywhere, in SQL and in JS.
+- ⚠️ **Not netted**: certified-above-claimed is reported separately as an anomaly (almost always a
+  keying error) instead of cancelling genuine disputes elsewhere and hiding both. No CHECK constraint
+  — refusing the save would only push the wrong number somewhere unrecorded.
+- Progress dialog gains **Claimed %** beside **Certified %** (renamed from "To date %"), blank meaning
+  *same*, with a live dispute total in the footer. The save now writes the **union** of both maps —
+  keying off the certified map alone would drop the sharpest case there is, a line claimed in full and
+  certified at nothing. Both the save and the new-period seed **degrade gracefully** if the migration
+  has not been run, storing the certified half and naming the migration.
+- The accrual panel splits into **In dispute** (claimed, not certified) / **Not yet claimed** /
+  **⚠️ Certified above claimed**, and a **In dispute** KPI appears on the Billing tab — both only once
+  a claimed figure exists, because a permanent "₱0.00 dispute" tile asserts an agreement nobody made.
+- `boq_period_dispute` view added (security_invoker, same heading/exclusion money rules as the screen).
+- **Verified 12/12** on `disputeOf` and **12/12** on the reframed `pocCompareHTML`: ₱150,000 dispute
+  across 2 lines with headings and excluded lines contributing nothing, a no-claim line not counting
+  as disputed, ₱120,000 certified-above-claimed reported without netting, a claimed-but-never-certified
+  line still counted, and the accrual splitting 27,541 into 10,000 disputed + 17,541 unclaimed.
+
+⚠️ **Nothing here is clicked through in a browser**, and the migration has **not been run** — until it
+is, the Claimed column saves nothing and says so. ⚠️ The schedule's inline script parses
+(`node --check` on the extracted block); the report has not been rendered in the Reports dialog.
+
+- `MODULE_V` → `20260826g`; `boq.js?v=20260826c`.
