@@ -1038,7 +1038,16 @@ window.IssuesLessons = (function () {
     var isNew = !l.id;
     var mayEdit = isNew ? canAdd : canEditLesson(l);
     var ro = !mayEdit || _lessReport, d = ro ? ' disabled' : '';
-    var linkKind = l.issue_id ? 'issue' : ((l.mom_id || l.mom_item_id) ? 'mom' : '');
+    // ⚠️ THE CHOSEN SOURCE IS UI INTENT AND MUST BE TRACKED, NOT DERIVED FROM THE IDS.
+    // Deriving it looks right and is broken: picking "A meeting action item" clears the
+    // issue link and leaves `mom_id` still null, so the re-render derived "Not linked" and
+    // the Source select snapped straight back — the picker could never be reached from the
+    // dropdown at all, only from a pre-filled "+ Capture a lesson". `_kind` is a transient
+    // field on the in-memory object; `saveLesson` builds its payload from named columns, so
+    // it is never written to the database.
+    var linkKind = (l._kind !== undefined && l._kind !== null)
+      ? l._kind
+      : (l.issue_id ? 'issue' : ((l.mom_id || l.mom_item_id) ? 'mom' : ''));
 
     function opts(list, val, blank) {
       return (blank ? '<option value="">' + blank + '</option>' : '') +
@@ -1172,6 +1181,7 @@ window.IssuesLessons = (function () {
     if (kind) kind.onchange = function () {
       var l = editing(); if (!l) return;
       captureLessonFields(l);
+      l._kind = kind.value;               // remember the INTENT, before any id exists
       if (kind.value === 'issue') { l.mom_id = null; l.mom_item_id = null; }
       else if (kind.value === 'mom') { l.issue_id = null; }
       else { l.issue_id = null; l.mom_id = null; l.mom_item_id = null; }
