@@ -404,6 +404,95 @@ window.BOQ = (function () {
     return i > 0 ? ord[i - 1] : null;
   }
 
+
+  // ==========================================================================
+  // DECISION #6 — RESOLVED 2026-08-26. THE BILLING PERIOD IS CONTRACTUAL; THE
+  // REPORTING MONTH IS CALENDAR. THEY ARE NOT THE SAME OBJECT.
+  // ==========================================================================
+  /* The real period runs 26-Feb → 25-Mar (PO 4100125091, BILLING NO. 3). Cash
+     Flow and the S-curve are monthly. The owner's ruling: billing dates are a
+     commercial term and are never moved to suit a report — but a report may
+     cut at month end. So a period's INCREMENT (its revenue less the prior
+     period's to-date) is spread straight-line across the calendar days it
+     spans and assigned to the months those days fall in.
+
+     ⚠️ THE PRO-RATA IS A REPORTING CONVENTION, NOT A MEASUREMENT. Nothing here
+     is written back to boq_progress, no billing_no acquires a month, and the
+     Billing table above still shows the contractual periods untouched. If the
+     two ever disagree, the contractual period wins — it is the one the client
+     signed against.
+
+     ⚠️ THE TAIL OF THE CURRENT MONTH IS LEFT BLANK, NOT ACCRUED. Days after the
+     last period_end have been certified by nobody. Filling them from the
+     schedule's progress would smuggle decision #7's other POC into a revenue
+     figure, which is the one thing that module refuses to do. */
+  var DAY_MS = 86400000;
+  var MON_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  /* 'YYYY-MM-DD' → UTC millis. UTC throughout: a local-time Date shifts a date
+     across a month boundary for anyone east or west of the server, which would
+     silently move revenue between months. */
+  function dnum(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ''));
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
+  }
+  function isoOf(t) {
+    var d = new Date(t);
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+  }
+  function monthKey(t) { var d = new Date(t); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1); }
+  function monthLabel(k) { var p = k.split('-'); return MON_ABBR[+p[1] - 1] + ' ' + p[0]; }
+  function daysInMonthKey(k) { var p = k.split('-'); return new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate(); }
+  /* Calendar days of [a..b] INCLUSIVE, bucketed by month. Inclusive because a
+     26th→25th period is 28 days in February, not 27: both endpoints are billed. */
+  function spreadDays(a, b) {
+    var days = {}, n = 0;
+    for (var t = a; t <= b; t += DAY_MS) { var k = monthKey(t); days[k] = (days[k] || 0) + 1; n++; }
+    return { days: days, n: n };
+  }
+
+  /* Monthly revenue, derived — nothing here is stored.
+     ⚠️ Spreads the INCREMENT, never the to-date figure. To-date is cumulative;
+     spreading it would bill the same money into every month it touches. */
+  function monthlyRevenue(items, contractFallback) {
+    var ord = periodsOrdered();
+    var months = {}, undated = [], covTo = null;
+    var prev = { revenue: 0, materials: 0, labor: 0 };
+    ord.forEach(function (p, i) {
+      var base = p.contract_total != null ? Number(p.contract_total) : contractFallback;
+      var t = periodTotals(items, PROG[p.id] || {}, base);
+      var inc = { revenue: t.revenue - prev.revenue, materials: t.materials - prev.materials, labor: t.labor - prev.labor };
+      prev = t;
+      var end = dnum(p.period_end), start = dnum(p.period_start);
+      /* A missing start is recoverable — it is the day after the prior period
+         closed. A missing END is not: it is the thing that decides the month. */
+      if (start == null && i > 0) { var pe = dnum(ord[i - 1].period_end); if (pe != null) start = pe + DAY_MS; }
+      if (end == null || start == null || start > end) { undated.push({ p: p, inc: inc }); return; }
+      if (covTo == null || end > covTo) covTo = end;
+      var sp = spreadDays(start, end);
+      Object.keys(sp.days).forEach(function (k) {
+        var w = sp.days[k] / sp.n;
+        var m = months[k] || (months[k] = { revenue: 0, materials: 0, labor: 0, days: 0, from: [] });
+        m.revenue += inc.revenue * w; m.materials += inc.materials * w; m.labor += inc.labor * w;
+        m.days += sp.days[k];
+        if (m.from.indexOf(p.billing_no) === -1) m.from.push(p.billing_no);
+      });
+    });
+    var cum = 0;
+    var rows = Object.keys(months).sort().map(function (k) {
+      var m = months[k], dim = daysInMonthKey(k);
+      cum += m.revenue;
+      return { key: k, label: monthLabel(k), revenue: m.revenue, cumulative: cum,
+               materials: m.materials, labor: m.labor, days: m.days, daysInMonth: dim,
+               full: m.days >= dim, from: m.from };
+    });
+    return {
+      rows: rows, undated: undated, coveredTo: covTo, total: cum,
+      /* Days of the last covered month that no billing reaches. */
+      gapDays: covTo == null ? 0 : daysInMonthKey(monthKey(covTo)) - new Date(covTo).getUTCDate()
+    };
+  }
+
   // ==========================================================================
   // LOAD
   // ==========================================================================
@@ -1633,6 +1722,8 @@ window.BOQ = (function () {
     });
     h += '</tbody></table></div>';
 
+    h += monthlyHTML(contract);
+
     // Per-sheet breakdown. ⚠️ These POCs are per SHEET and must NOT be averaged
     // into a project figure — ACOUSTIC is 1.65% of the contract and
     // Architectural 87.90%, so an average would let the small trade move the
@@ -1659,6 +1750,60 @@ window.BOQ = (function () {
         'the client pays against. They legitimately differ — reconciling them is a report, never an override.</p></div>';
     }
     return h;
+  }
+
+  /* DECISION #6, on screen. The contractual periods stay exactly as they are in
+     the table above; this is the same money re-cut at calendar month ends so it
+     can sit beside Cash Flow and the S-curve without either being bent.
+     ⚠️ NOTHING HERE IS AN INPUT. Editing a month is impossible by design — the
+     only stored number is still rel_pct, per line, per billing period. */
+  function monthlyHTML(contract) {
+    var mr = monthlyRevenue(ITEMS, contract);
+    if (!mr.rows.length && !mr.undated.length) return '';
+
+    var h = '<div class="pd-card cc-tablecard"><h3 class="boq-h3">Monthly reporting view — each period cut at month end</h3>' +
+      '<p class="cc-hint"><strong>Reporting only — the contract is untouched.</strong> A billing period runs 26th → 25th ' +
+      'because that is a commercial term, and it stays that way above. Cash Flow and the S-curve are monthly, so here each ' +
+      'period\'s <em>increment</em> (its revenue less the prior period\'s to-date) is spread straight-line across the calendar ' +
+      'days it spans and assigned to the months those days fall in. The straight line is the single assumption in this table, ' +
+      'and it is a reporting convention — never a measurement, never written back.</p>';
+
+    if (mr.rows.length) {
+      h += '<table class="cc-table"><thead><tr><th>Month</th><th class="cc-r">Revenue in month</th>' +
+        '<th class="cc-r">Cumulative</th><th class="cc-r">Materials</th><th class="cc-r">Labour</th>' +
+        '<th>From billing</th><th class="cc-r">Days covered</th></tr></thead><tbody>';
+      mr.rows.forEach(function (r) {
+        h += '<tr><td><strong>' + esc(r.label) + '</strong></td>' +
+          '<td class="cc-r">' + money(r.revenue) + '</td>' +
+          '<td class="cc-r">' + money(r.cumulative) + '</td>' +
+          '<td class="cc-r">' + money(r.materials) + '</td>' +
+          '<td class="cc-r">' + money(r.labor) + '</td>' +
+          '<td class="cc-mini">' + esc(r.from.join(', ')) + '</td>' +
+          '<td class="cc-r' + (r.full ? '' : ' cc-mini') + '">' + r.days + ' / ' + r.daysInMonth +
+            (r.full ? '' : ' <span class="boq-kind k-draft">part</span>') + '</td></tr>';
+      });
+      h += '<tr class="cc-total"><td><strong>Total</strong></td><td class="cc-r"><strong>' + money(mr.total) + '</strong></td>' +
+        '<td class="cc-r"></td><td class="cc-r"></td><td class="cc-r"></td><td></td><td class="cc-r"></td></tr>';
+      h += '</tbody></table>';
+    }
+
+    /* ⚠️ A PART-COVERED MONTH IS NORMAL AT BOTH ENDS AND MEANS DIFFERENT THINGS.
+       The first month is short because the project started mid-month; the last
+       is short because the next billing has not been raised. Neither is a defect,
+       and neither is filled in. */
+    if (mr.coveredTo != null && mr.gapDays > 0) {
+      h += '<p class="cc-hint">Billing is certified to <strong>' + esc(isoOf(mr.coveredTo)) + '</strong>, so ' +
+        esc(monthLabel(monthKey(mr.coveredTo))) + ' is short its last <strong>' + mr.gapDays + ' day(s)</strong>. ' +
+        'Those days are left blank rather than accrued: nobody has certified them, and filling them from the schedule\'s ' +
+        'progress would push the other POC (decision #7) into a revenue figure — the one merge this module refuses.</p>';
+    }
+    if (mr.undated.length) {
+      h += '<p class="cc-hint">⚠️ <strong>' + mr.undated.length + ' billing period(s) fall in no month</strong> — ' +
+        esc(mr.undated.map(function (u) { return u.p.billing_no; }).join(', ')) +
+        ' — because the period end date is missing. Their revenue is excluded from the table above rather than guessed into a ' +
+        'month, so the Total here is below Revenue to date until those dates are set.</p>';
+    }
+    return h + '</div>';
   }
 
   /* DECISION #7, on screen. Two POCs, side by side, with the gap named — and a

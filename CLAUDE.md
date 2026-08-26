@@ -389,10 +389,7 @@ lost in any file. Both migrations balanced, idempotent, `security_invoker`, no `
   Supabase CLI in this environment. Until then both screens say so rather than showing zeroes.
 - `MODULE_V` → `20260825d`; `module.css/js?v=20260825b`, `boq.js?v=20260825b`.
 
-⚠️ **Design decision #6 is still OPEN and needs the owner's call** — billing periods run 26th→25th
-while Cash Flow and the S-curve are monthly. Pro-rata a period across the two months it spans, or
-assign the whole period to the month holding its end date? Both are defensible and they produce
-different monthly revenue, so it is not mine to pick.
+⚠️ **Design decision #6 — RESOLVED 2026-08-26 by the owner** (see the 2026-08-26 entry below).
 
 
 ### 2026-08-25 — ROADMAP F1/F2/F6: vendor identity, the BOQ↔site reconciliation, and the rate library
@@ -8721,3 +8718,35 @@ the `.or()` filter string in particular, are exercised against a fixture rather 
 `MODULES` registry and all five hrefs to it are plain unversioned links. **Hard-refresh once after
 the deploy** or the new tab will not appear. (Worth closing properly one day; left alone as it is a
 shared-file change outside this ask.)
+
+### 2026-08-26 — Decision #6 answered: the contract keeps its 26th→25th, the report cuts at month end
+Owner: *"Billing is dependent on the contract itself as this is a commercial decision. But for
+reporting purposes, can we cover til end of each month?"* — so both, held apart rather than merged.
+
+- The Billing tab's period table is **untouched**: 26th→25th, the dates the client certifies and pays.
+- New **Monthly reporting view** beneath it (`monthlyRevenue` + `monthlyHTML` in
+  `modules/contracts-claims/boq.js`). Each period's **increment** — its revenue less the prior
+  period's to-date — is spread **straight-line across the calendar days it spans** and assigned to
+  the months those days fall in. Revenue in month, cumulative, materials, labour, which billings fed
+  it, and days covered / days in month.
+- ⚠️ **The increment is spread, never the to-date.** To-date is cumulative; spreading that would bill
+  the same money into every month it touches.
+- ⚠️ **Endpoints inclusive** — 26-Feb → 25-Mar is **28** days (Feb 26–28 = 3, Mar 1–25 = 25), not 27.
+- ⚠️ **UTC date arithmetic throughout.** A local-time `Date` shifts a date across a month boundary for
+  anyone east or west of the server, silently moving revenue between months.
+- ⚠️ **The tail of the current month is left blank, not accrued.** Days after the last `period_end`
+  have been certified by nobody. Accruing them from the schedule would push decision #7's *other* POC
+  into a revenue figure — the one merge this module refuses. The view names the shortfall in days
+  and says why it is empty.
+- ⚠️ **Nothing is stored, and no month is editable.** `rel_pct` is still the only input; the pro-rata
+  lives in `boq.js`, so changing the convention later cannot rewrite a submitted billing. The
+  `migrations/2026-08-24-boq.sql` comment was updated from "open decision #6" to the resolution.
+- **Verified by executing the shipped `monthlyRevenue`** in node against a three-billing fixture
+  (26th→25th, ₱1,000,000 contract, 60/40 material/labour): Dec **6/31 part**, Jan **31/31 full**,
+  Feb **28/28 full**, Mar **25/31 part**; the monthly total closes **exactly** on revenue to date
+  (₱300,000.00) and the material split holds at 0.6 in every month. `node --check` clean.
+- ⚠️ **Not clicked through in a browser**, and Cash Flow does not consume this yet — it is a table on
+  the Billing tab. Wiring it into Cash Flow's monthly buckets is the obvious next step and was not
+  part of this ask.
+- `MODULE_V` → `20260826e` (in `dashboard.html`, `modules.html` and the `modules-grid.js` fallback);
+  `boq.js?v=20260826a`.

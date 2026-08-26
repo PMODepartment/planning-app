@@ -291,7 +291,15 @@ create index if not exists boq_allocations_activity_idx
 -- ⚠️ THE BILLING PERIOD IS NOT A CALENDAR MONTH: the real one runs
 --    26-Feb-2026 → 25-Mar-2026 (PO 4100125091, PROGRESS BILLING NO. 3). Cash
 --    Flow and the S-curve are monthly, so the period→month mapping is explicit
---    (open decision #6) and never assumed.
+--    and never assumed.
+--    DECISION #6 — RESOLVED 2026-08-26 by the owner: the billing dates are a
+--    commercial term and are NEVER moved to suit a report, but a report may cut
+--    at month end. The Billing tab therefore derives a monthly view by spreading
+--    each period's INCREMENT straight-line across the calendar days it spans.
+--    ⚠️ NOTHING IS STORED FOR IT. No column here holds a month, and no month is
+--    writable — rel_pct remains the only input. The pro-rata is a reporting
+--    convention living in boq.js (monthlyRevenue), so a later change of
+--    convention cannot corrupt a submitted billing.
 create table if not exists boq_billing_periods (
   id             uuid primary key default gen_random_uuid(),
   project_id     text not null references projects(id) on delete cascade,

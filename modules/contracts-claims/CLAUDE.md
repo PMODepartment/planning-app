@@ -202,7 +202,7 @@ worked Site Supervision line (22 mos @ ₱1,220,000) gives previous **₱3,660,0
 - ⚠️ Each period **snapshots the revision it was billed against**, or a remeasure rewrites a
   submitted billing. `previous` is never stored — it is the prior period's to-date.
 - ⚠️ A billing period is **not a calendar month** (26th→25th); the period→month mapping for Cash Flow
-  stays explicit (open decision #6, still open).
+  stays explicit. **Decision #6 resolved 2026-08-26** — see below.
 - ⚠️ **Two POC systems now exist and must not be merged**: `schedule_scurve_agg` is *progress*, this
   is *contractual/revenue*. Reconciling them is a report, never an override. Said on screen.
 
@@ -338,6 +338,36 @@ default size instead of matching the 34×34 tool buttons.
   right edge **1179px**, theme toggle left **1193px**, profile divider left **1247px**.
 - No horizontal overflow at 1280/1100/900/700/420px. This module wraps to a second row earlier than
   the others below 900px because it carries **three** tabs — graceful wrapping, not breakage.
+
+### 2026-08-26 — Decision #6 resolved: the reporting month, cut at month end
+Owner: *"Billing is dependent on the contract itself as this is a commercial decision. But for
+reporting purposes, can we cover til end of each month?"* — so **both**, kept apart.
+- The Billing tab's period table is unchanged: 26th→25th, the dates the client certifies and pays.
+- Added a **Monthly reporting view** beneath it. Each period's **increment** (its revenue less the
+  prior period's to-date) is spread **straight-line across the calendar days it spans**, inclusive of
+  both endpoints, and assigned to the months those days fall in. Columns: revenue in month,
+  cumulative, materials, labour, which billings fed it, and days covered / days in month.
+- ⚠️ **The increment is spread, never the to-date.** To-date is cumulative; spreading it would bill
+  the same money into every month it touches.
+- ⚠️ **Inclusive endpoints.** 26-Feb → 25-Mar is **28** days (Feb 26–28 = 3, Mar 1–25 = 25), not 27.
+- ⚠️ **UTC date arithmetic.** A local-time `Date` shifts a date across a month boundary for anyone
+  east or west of the server, silently moving revenue between months.
+- ⚠️ **The tail of the current month is left blank, not accrued.** Days after the last `period_end`
+  have been certified by nobody. Filling them from the schedule's progress would push decision #7's
+  *other* POC into a revenue figure — the one merge this module refuses. The view says so on screen
+  and names the shortfall in days.
+- ⚠️ **A part-covered month is normal at both ends and means different things**: the first is short
+  because the project started mid-month, the last because the next billing has not been raised.
+  Both are marked `part` rather than filled.
+- ⚠️ **Periods with no `period_end` fall in no month** and are **excluded, not guessed** — the view
+  names them and warns that its Total is then below Revenue to date.
+- ⚠️ **Nothing is stored and no month is editable.** `rel_pct` remains the only input; the pro-rata
+  is a derivation in `boq.js` (`monthlyRevenue`), so changing the convention later cannot corrupt a
+  submitted billing. The migration comment was updated to record the resolution.
+- **Verified by executing the shipped `monthlyRevenue`** in node against a three-billing fixture
+  (26th→25th, ₱1,000,000 contract, 60/40 material/labour): Dec 6/31 part, Jan 31/31 full, Feb 28/28
+  full, Mar 25/31 part; the monthly total closes **exactly** on revenue to date (₱300,000.00), and
+  the material split holds at 0.6 in every month. Not yet clicked through in a browser.
 
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
