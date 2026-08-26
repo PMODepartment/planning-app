@@ -84,6 +84,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (f) — Signed-in verification: both migrations live, the report rework driven end to end
+Owner ran `2026-08-26-lessons-learned.sql` and `2026-08-26-package-scoped-schedule.sql`, then asked
+for a live check. **No code changed this pass** — this closes the "not verified signed in" caveat on
+entry (e).
+- **Schema confirmed against the live database, with the probe calibrated before it was trusted**
+  (`42501` present / `PGRST205` table absent / `42703` column absent, plus a negative control on each
+  table). `lessons_learned` + all 13 columns; `schedule_builder` +5 cols, `schedule_builder_pushes`,
+  `wbs_nodes.is_package_root` — all present.
+- ⚠️ **The lessons backfill copied 0 rows and that is CORRECT, not a failure**: nobody had ever used
+  the old `lesson_learned` field, so the `not exists` guard had nothing to copy (0 / 0 / 0, all three
+  agreeing). The alarming shape would be a non-zero source with an empty library.
+- **Driven end to end on the QADEMO sandbox**, every step re-checked against a full re-query, and the
+  sandbox left exactly as found (both probe rows deleted, 0 / 0 confirmed). **No live project written
+  to.** ⚠️ **The cancel path was verified to write NOTHING** — the decision that deliberately differs
+  from "+ New minutes". Save inserted and RLS accepted it; the lesson captured from the issue survived
+  a re-query and renders back inside that issue; Reporting view took 8 controls to 0 with the panel
+  measured at brand red **in dark mode**; 0 console errors.
+- **Not exercised:** a second user (per-row permissions are fixture-verified only), the meeting-linked
+  lesson picker, and the legacy fallback — now unreachable by construction.
+- ⚠️ **Pre-existing defect found, NOT introduced here and not fixed:** `modules/issues-lessons/index.html`
+  renders mojibake ("championâ€¦", "Â·", "â€""). UTF-8 bytes written through a cp1252 path; it predates
+  this work. Wants its own pass with an explicit encoding rather than a find-and-replace.
+
+
 ### 2026-08-26 (i) — Cost curves, per-trade subtotals, derived earned value, and EVM moves to the dashboard
 Owner, in two messages: *"there should be a step wherein the manner of distribution of an activity is
 defined… bell curve, front loaded, back loaded, linear… that POC should be multiplied with the

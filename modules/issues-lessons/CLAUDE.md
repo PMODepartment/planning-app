@@ -1,5 +1,57 @@
 # Module: issues-lessons
 
+## 2026-08-26 — SIGNED-IN VERIFICATION of the report/lessons rework (caveat closed)
+
+Both migrations were run by the owner and the whole rework was then driven **signed in on the
+deployed site** in the owner's own Chrome. This closes the "not verified signed in" caveat the
+entry below carries.
+
+**Migrations confirmed against the live database first**, with the probe calibrated before it was
+trusted — `42501` = present but grant-blocked · `PGRST205` = table absent · `42703` = column absent,
+plus a **negative control on each table** so the readings are not incidental. `lessons_learned` and
+all 13 columns present; `schedule_builder`(+5 cols), `schedule_builder_pushes` and
+`wbs_nodes.is_package_root` present (the other session's package-scoped migration).
+- ⚠️ **The backfill copied 0 rows, and that is the correct result, not a failure.** Measured:
+  `lessons_on_issues = 0`, `lessons_in_library = 0`, `linked_back = 0`. Nobody had ever filled in the
+  old `lesson_learned` field on any issue, so the `not exists` guard had nothing to copy. **The shape
+  that would be alarming is a non-zero first column with a zero second one** — that is the one to
+  check if this is ever re-run elsewhere.
+
+**Driven end to end on the QADEMO sandbox** (chosen deliberately over a live register), and every
+step verified against a **full `load()` re-query**, not just against the in-memory row:
+- Tab order **Minutes of Meeting → Issues & Concerns → Lessons Learned**, module opens on the
+  minutes, view toggle correctly hidden there.
+- Register defaults to **Report** with the log hidden; empty states correct on both sides.
+- ⚠️ **The cancel path — the decision that differs from "+ New minutes" — verified to write
+  NOTHING.** Typed into the draft, pressed Cancel, then re-queried the database: register still 0.
+  This is the whole reason a new issue is a draft in memory rather than an inserted row.
+- **Save inserted and RLS accepted it** (`created_by = auth.uid()`): 0 → 1 TOTAL / 1 OPEN, the draft
+  became a real row, detail read *"Raised by you · Operations."*
+- The detail pane renders the Power Apps layout: panel **Status · Department · Champion · Date
+  Presented · Days Aging · Date Resolved**, body **Issue · Caused By · Corrective Action**.
+- **"+ Capture a lesson"** switched screens with the source **pre-selected to that issue**, the
+  primary button relabelled *+ New lesson*, the toggle relabelled *Report | Library*, and **no
+  migration banner** — i.e. the real table is being read, not the legacy fallback.
+- Lesson saved, then **survived a full re-query**: it renders inside the issue's own detail pane and
+  the list row flags *"lesson captured"* — the round trip the old one-lesson-per-issue model could
+  not represent.
+- **Reporting view: 8 controls → 0**, zero inputs inside the split, values rendered as text, save bar
+  hidden, and the panel measured **`rgb(238,49,36)`** (brand red) **in dark mode** — the
+  fixed-contrast island holds where a token would have remapped it.
+- **0 console errors** across the whole session and on a fresh page load.
+- ⚠️ **Sandbox left exactly as found** — both probe rows deleted through the app's own delete paths
+  and confirmed 0 issues / 0 lessons after a re-query. No live project was written to.
+
+**Still not exercised:** a second user (the per-row permission branches were verified against
+fixtures, not against another account), the meeting-linked lesson picker, and the legacy fallback —
+which is now unreachable by construction, since the table exists.
+
+⚠️ **Separate pre-existing defect, NOT introduced here and not fixed:** `index.html` renders mojibake
+— *"championâ€¦"*, *"Â·"* in the tab title, *"â€""* in the minutes lead. The file holds UTF-8 bytes
+written through a cp1252 path. It predates this work (visible in the owner's screenshots from before
+the change). Worth its own pass with an explicit encoding, not a find-and-replace.
+
+
 ## 2026-08-26 — Tab order, the register becomes a REPORT, and lessons become their own record
 
 Four owner asks in one prompt. **⚠️ Run `migrations/2026-08-26-lessons-learned.sql`.**
