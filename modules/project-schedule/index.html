@@ -1064,6 +1064,12 @@
     .pscl-phase .pscl-note { padding:0 12px 10px; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:12px; color:var(--pd-muted); }
+    /* Tower picker. ⚠️ width:auto is load-bearing — the shared .pd-select is width:100%, built for
+       stacked .pd-field forms, so without this the select claims the whole toolbar row and every
+       other control lands on its own line. Every filter bar in this app has to override it. */
+    .ps-vs-sel { width:auto; min-width:150px; max-width:280px; height:auto; min-height:30px;
+      font-size:12.5px; padding:5px 9px; }
+    .ps-vs-sel:disabled { opacity:.62; cursor:not-allowed; background:var(--pd-bg); }
     .ps-vs-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 9px; }
     .ps-vs-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12.5px;
@@ -11605,20 +11611,45 @@
     }
     var chips = '<div class="ps-vs-chips"><button class="ps-vs-chip' + (_vsTrade === 'ALL' ? ' on' : '') + '" data-vstr="ALL">All trades</button>' +
       trades.map(function (t) { return '<button class="ps-vs-chip' + (_vsTrade === t ? ' on' : '') + '" data-vstr="' + esc(t) + '"><span class="ps-vs-dot" style="background:' + _vsColor(t) + '"></span>' + esc(t) + '</button>'; }).join('') + '</div>';
-    // Tower chips only when there is a choice to make. A single-tower project sees no new control.
-    var twChips = (towerNames.length > 1 || (towerNames.length && _untowered.length))
-      ? '<div class="ps-vs-chips"><span class="ps-vs-note">Tower</span>' +
-        '<button class="ps-vs-chip' + (_vsTower === 'ALL' ? ' on' : '') + '" data-vstw="ALL">All towers</button>' +
-        towerNames.map(function (t) {
-          var n = _actsAll.filter(function (r) { return _vsTowerOf(r) === t; }).length;
-          return '<button class="ps-vs-chip' + (_vsTower === t ? ' on' : '') + '" data-vstw="' + esc(t) + '" title="' + n + ' activities">' +
-            '<span class="ps-vs-dot" style="background:' + _vsTowerColor(t, towerNames) + '"></span>' + esc(t) + '</button>';
-        }).join('') +
-        (_untowered.length ? '<button class="ps-vs-chip' + (_vsTower === VS_NOTOWER ? ' on' : '') + '" data-vstw="' + esc(VS_NOTOWER) +
-          '" title="' + _untowered.length + ' activities with no tower — pushed before towers existed, or whole-trade work">' + esc(VS_NOTOWER) + '</button>' : '') +
-        '</div>'
-      : '';
-    var bar = '<div class="ps-vs-bar">' +
+    // ---- Which tower am I looking at? -----------------------------------------------------------
+    // Owner 2026-08-26: *"there should be a dropdown to determine what tower to look at (if multiple
+    // towers). there should also be a consolidated option meaning it views all towers, and the towers
+    // are side by side. if no indicated tower location breakdown, meaning it is just a singular tower,
+    // just gray out that dropdown and select tower 1."*
+    // ⚠️ A SELECT, not the chip row it replaces. Chips only existed when there was a choice, so a
+    // one-tower project saw no control at all and could not tell whether the stack was one building
+    // or every building merged. A disabled select naming the tower answers that without a click.
+    // ⚠️ 'All towers' ALSO sets the per-tower scope, because side-by-side is what the owner asked the
+    // option to mean and it is the only scope that draws one model per tower. Leaving the scope alone
+    // would let the option say 'side by side' while the trade scope merged every tower into one model.
+    // ⚠️ It does NOT touch the toolbar's own 'Consolidated' button, which means the opposite — ONE
+    // merged model for the whole project. Two controls, two meanings; collapsing them would silently
+    // redefine a button planners already use.
+    var _twOpts = [];
+    if (towerNames.length > 1) _twOpts.push({ v: 'ALL', t: 'All towers — side by side', n: _actsAll.length });
+    towerNames.forEach(function (t) {
+      _twOpts.push({ v: t, t: t, n: _actsAll.filter(function (r) { return _vsTowerOf(r) === t; }).length });
+    });
+    // ⚠️ The no-tower bucket is only a bucket when there is a tower to contrast it with. On a
+    // project with NO tower level, every activity is untowered — offering '— No tower —' as the sole
+    // option reads as missing data on a job that simply has one building, which is the confusion the
+    // owner asked this control to remove. Caught by the test, not by reading.
+    if (_untowered.length && towerNames.length) _twOpts.push({ v: VS_NOTOWER, t: VS_NOTOWER, n: _untowered.length });
+    // ⚠️ No tower level filled in at all — the honest label is the project, not an invented "Tower 1".
+    // The whole stack IS the one building, so a made-up tower name would be a claim about a
+    // breakdown nobody entered.
+    if (!_twOpts.length) _twOpts.push({ v: 'ALL', t: 'Whole project (no tower breakdown)', n: _actsAll.length });
+    // ⚠️ Pinned, not merely defaulted: with one option the selection cannot be anything else, and
+    // leaving _vsTower on 'ALL' while the select showed a tower name would make the two disagree.
+    if (_twOpts.length === 1) _vsTower = _twOpts[0].v;
+    var twSel = '<span class="ps-vs-note">Tower</span>' +
+      '<select class="pd-select ps-vs-sel" id="ps-vs-tower"' + (_twOpts.length < 2 ? ' disabled title="This project has one tower, so there is nothing to switch between."' : '') + '>' +
+      _twOpts.map(function (o) {
+        return '<option value="' + esc(o.v) + '"' + (_vsTower === o.v ? ' selected' : '') +
+          ' title="' + o.n + ' activities">' + esc(o.t) + '</option>';
+      }).join('') + '</select>';
+
+    var bar = '<div class="ps-vs-bar">' + twSel + '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-seg"><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
       '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button></span>' +
@@ -11753,7 +11784,7 @@
     }
     // ⚠️ The defs must be in the DOM before the towers that reference them are laid out, so they are
     // prepended rather than appended.
-    host.innerHTML = bar + twChips + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
+    host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
       '<div class="ps-vs-stage' + (_vsLoupe ? ' is-loupe-on' : '') + '"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
       // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
       // rather than being covered by it.
@@ -11779,7 +11810,13 @@
     host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsbasis]').forEach(function (b) { b.onclick = function () { _vsBasis = b.dataset.vsbasis; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; _vsAnim = 'in'; renderVStack(); }; });
-    host.querySelectorAll('[data-vstw]').forEach(function (b) { b.onclick = function () { _vsTower = b.dataset.vstw; _vsAnim = 'in'; renderVStack(); }; });
+    var _twEl = host.querySelector('#ps-vs-tower');
+    if (_twEl) _twEl.onchange = function () {
+      _vsTower = _twEl.value;
+      // See the note above the select: 'All towers' means side by side, which is the per-tower scope.
+      if (_vsTower === 'ALL' && towerNames.length > 1) _vsScope = 'tower';
+      _vsAnim = 'in'; renderVStack();
+    };
     // 'input' rather than 'change', so dragging through the picker previews on the real cells.
     // Repaints silently: an entrance animation on every step of a colour drag would strobe.
     var _pc = host.querySelector('#ps-vs-planclr');

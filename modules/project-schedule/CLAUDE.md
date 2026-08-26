@@ -1,3 +1,37 @@
+## Vertical stacking: the tower picker becomes a dropdown (2026-08-26) — fmlozano
+
+Owner: a dropdown for which tower, a consolidated option showing every tower side by side, and a
+greyed-out dropdown pinned to the single tower when the project has no tower breakdown. **No migration.**
+
+`twChips` / `[data-vstw]` are gone, replaced by `#ps-vs-tower` at the head of `.ps-vs-bar` — "which
+building" belongs before "how it is sliced".
+
+- ⚠️ **The chips only existed when there was a choice**, so a one-tower project rendered no control
+  and the planner could not tell a single building from every building merged. The select always
+  renders; with nothing to switch between it is `disabled` and its `title` says why.
+- ⚠️ **`_vsTower` is PINNED when there is one option** (`if (_twOpts.length === 1) _vsTower =
+  _twOpts[0].v`). Without it `_vsTower` stays `'ALL'` while the select displays a tower name — the
+  control and the model disagreeing is worse than either state alone.
+- ⚠️ **Choosing "All towers" sets `_vsScope = 'tower'`.** Per-tower is the only scope that draws one
+  model per tower; under `'trade'` the option would claim "side by side" while every tower merged.
+  It deliberately does **not** set `_vsScope = 'all'` — the toolbar's own **Consolidated** button
+  means ONE merged model for the whole project, the opposite thing. Two controls, two meanings.
+- ⚠️ **No tower level at all → "Whole project (no tower breakdown)", never "Tower 1".** The one part
+  of the ask not taken literally: the tower value may not be called "Tower 1" on any project, and
+  minting a name makes every screen assert a breakdown nobody entered.
+- ⚠️ **Found by the test, not by reading:** with no tower level every activity is untowered, so the
+  `_untowered.length` branch made "— No tower —" the sole option — a missing-data warning on a job
+  that simply has one building. Now gated on `towerNames.length`.
+- ⚠️ `.ps-vs-sel { width:auto }` overrides the shared `.pd-select`'s `width:100%` (built for stacked
+  `.pd-field` forms). Without it the select claims the whole toolbar row and every other control
+  wraps — the recurring trap this app has hit in six filter bars.
+
+**Verified.** 27 checks executing the sliced option-builder across four project shapes plus escaping
+and the handler; browser-measured at 1265px light / 640px dark (bar one 32px row, select 150–243px,
+disabled 0.62 / not-allowed, 0 clipped, 0 page h-scroll). ⚠️ The first browser reading (0px bar, 10
+rows, 194px scroll) was taken before layout settled and was discarded on the viewport gate, not
+chased. ⚠️ **Not verified signed in.**
+
 ## Cost curves, per-trade subtotals, derived earned value; Cost/EVM removed (2026-08-26) — fmlozano
 
 **Run `migrations/2026-08-26-activity-cost-curve.sql`** (`project_schedule.cost_curve text`, no CHECK,

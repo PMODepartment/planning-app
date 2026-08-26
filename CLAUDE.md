@@ -84,6 +84,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (j) — Vertical stacking: a tower dropdown, with a real consolidated option
+Owner: *"there should be a dropdown to determine what tower to look at (if multiple towers). there
+should also be a consolidated option meaning it views all towers, and the towers are side by side.
+if no indicated tower location breakdown, meaning it is just a singular tower, just gray out that
+dropdown and select tower 1."* `?v=20260826j`. **No migration.**
+- The tower **chip row is replaced by a select**. ⚠️ The chips only rendered when there was a choice,
+  so a one-tower project saw **no control at all** and could not tell whether the stack was one
+  building or every building merged into one. A disabled select naming the tower answers that
+  without a click — which is exactly what the owner asked the grey-out to do.
+- ⚠️ **"All towers — side by side" also sets the per-tower scope**, because that is the only scope
+  that draws one model per tower. Leaving the scope alone would let the option say "side by side"
+  while the trade scope quietly merged every tower into one model.
+- ⚠️ **It never touches the toolbar's own "Consolidated" button, which means the OPPOSITE** — one
+  merged model for the whole project. Two controls, two meanings; collapsing them would silently
+  redefine a button planners already use.
+- ⚠️ **With one option the selection is PINNED, not merely defaulted** — otherwise `_vsTower` sits on
+  `ALL` while the select shows a tower name, and the control and the model disagree.
+- ⚠️ **A project with no tower level is labelled "Whole project (no tower breakdown)", never
+  "Tower 1".** The owner's phrasing was the one thing not taken literally: inventing a tower name
+  makes every screen assert a breakdown nobody entered, and the stack already IS that one building.
+- ⚠️ **A real defect the test caught, not a reading:** with no tower level every activity is
+  untowered, so the "— No tower —" bucket became the sole option — reading as missing data on a job
+  that simply has one building. The bucket is now offered only when there is a real tower to
+  contrast it with.
+
+**Verified.** 27 checks executing the shipped option-builder (sliced out of `index.html`, never
+reimplemented) across multi-tower, single-tower, no-breakdown and mixed-untowered projects, plus the
+escaping and the handler read from source. Browser-measured against the shipped CSS at 1265px light
+and 640px dark: the bar stays one 32px row, the select sizes to its content (150–243px) and is
+capped, disabled reads 0.62 opacity / `not-allowed`, 0 clipped labels and 0 page horizontal scroll at
+either width. ⚠️ `.ps-vs-sel { width:auto }` is load-bearing — the shared `.pd-select` is `width:100%`
+(built for stacked `.pd-field` forms) and without the override the select claims the whole toolbar row.
+⚠️ **A measurement trap, again:** the first reading reported a 0px-wide bar, 10 rows and a 194px page
+scroll — taken before layout settled. `clientWidth` said 1265px and no phone query matched, so the
+numbers were discarded rather than chased as a CSS bug. ⚠️ **Not verified signed in.**
+
 ### 2026-08-26 (i) — Cost curves, per-trade subtotals, derived earned value, and EVM moves to the dashboard
 Owner, in two messages: *"there should be a step wherein the manner of distribution of an activity is
 defined… bell curve, front loaded, back loaded, linear… that POC should be multiplied with the
