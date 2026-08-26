@@ -84,23 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-08-26 (d) — Planned vs Actual: the totals now print BOTH figures
-Owner: *"for the progress bar on the bottom, it should also show the progress for the planned when in
-the planned vs actual tab. For now it just shows the progress of the actual."* `?v=20260826d`.
-- ⚠️ **The summaries disagreed with the cells they were summing.** Each cell already carries both — the
-  plan line across it and the two-row P/A readout — but every total above them printed `_vsProgress`,
-  which in Compare is the ACTUAL alone. One number cannot answer the question that basis exists to ask.
-- **Fix:** the time bar and all three tower/consolidated headers now read
-  **"38% planned · 25% actual (−13 pp)"**. The variance is signed and named rather than left to be
-  worked out from two numbers; `pp` because these are points of POC, not percent of a percent.
-- ⚠️ A branch with **no baseline** reports *"planned n/a"*, never 0 — printing 0 would say un-baselined
-  work is behind when it is simply unmeasured.
-- ⚠️ While the time bar is **scrubbed** there is one modelled figure and no actual to compare it to, so
-  it keeps saying "N% scheduled"; the both-figures readout is the live view only.
-- **Actual and Planned bases are byte-identical** — the helper returns early for them.
-- Verified by executing the shipped helper in all three bases incl. ahead-of-plan and the no-baseline
-  case. Full reasoning in `modules/project-schedule/CLAUDE.md`.
-
+### 2026-08-26 (e) — Reverted: the vertical stacking is back to the (b) build
+Owner: *"revert it back to previous prompt. the vertical stacking levels are gone again."* `?v=20260826e`.
+- **Out: `9fc0efc`** (Planned vs Actual totals printing both figures) **and `afe2053`** (`_vsAxis` —
+  "a one-tower project stacks, by skipping a level nobody uses"). `modules/project-schedule/index.html`
+  is byte-identical to `b234098` again.
+- ⚠️ **The levels went missing because of `afe2053`, NOT the planned-vs-actual change.** `_vsAxis()`
+  walks `i` forward past every LEADING level no activity uses — and on a project whose location levels
+  are defined but **not yet filled**, no level is used, so the loop runs to `LOC_LEVELS.length - 1` and
+  the axis collapses to the LAST level alone. `_vsMaxDetail()` then returns **1**, the Detail control
+  clamps to 1, and every level below it disappears. That is the reported symptom exactly.
+- ⚠️ **Consequence of the revert, stated plainly:** a genuinely one-tower project bands by
+  `LOC_LEVELS[0]` (Tower) again, so its activities sit under "— No level —". The **one-click Assign
+  repair** shipped in `b234098` is still there and is the way out — it stamps the top level on
+  activities that are already located further down.
+- ⚠️ **A fresh version token (`e`, not back to `c`)**: `c` was `afe2053`'s build, and re-using it would
+  make one cache key mean two different builds.
 
 ### 2026-08-26 (c) — One-tower projects stack vertically: the axis skips a level nobody uses
 Owner: *"some projects just only have 1 tower… the zones are just fixed horizontally, it's not a

@@ -1,32 +1,21 @@
-## Planned vs Actual: the totals print BOTH figures, with the variance named (2026-08-26) — fmlozano
-Owner: *"for the progress bar on the bottom, it should also show the progress for the planned when in the
-planned vs actual tab. For now it just shows the progress of the actual when under the planned vs actual
-tab."*
-- ⚠️ **The summaries were contradicting the cells underneath them.** In Compare each cell already shows
-  both — the plan line drawn across it and the two-row P/A readout in the loupe — but the time bar and
-  every tower header printed `_vsProgress(list)`, which falls through to `_vsPct` (actual) in that basis,
-  paired with `_vsProgressWord()` returning `'actual'`. So the total said 25% while the cells it was
-  summing were visibly split into a planned and an actual figure. One number cannot answer the question
-  Planned vs Actual exists to ask.
-- **New `_vsProgressText(list)`**, used by the time bar's live readout and all three header sites (per
-  tower, per trade, consolidated). In Compare it returns **"38% planned · 25% actual (−13 pp)"**;
-  in Actual and Planned it returns the previous single figure, so those two bases are **byte-identical** —
-  the helper returns early for them.
-- ⚠️ **The variance is printed with a sign and a name, not left to be subtracted by the reader.** `pp`
-  rather than `%` because these are points of POC; a "13% gap" between two percentages reads as a percent
-  of a percent.
-- ⚠️ **A branch with no baseline reports "planned n/a", never 0.** `_vsPlanPct` returns null there, and
-  printing 0 would tell a manager that un-baselined work is behind when it is simply unmeasured — the
-  same rule the cells already follow ("no baseline is UNKNOWN, not on plan").
-- ⚠️ **While the time bar is SCRUBBED it keeps saying "N% scheduled".** A scrubbed figure is modelled
-  from the dates; there is no recorded actual at that date to compare it to (the database keeps one
-  `percent_complete` per activity — today's), so pairing them would invent a comparison. The
-  both-figures readout is the live view only.
-- Verified by slicing the shipped `_vsProgressText` out of the file and executing it: compare behind
-  (−13 pp), compare ahead (+6 pp), compare with no baseline ("planned n/a"), and the Actual and Planned
-  bases each returning their single unchanged figure. Inline script parses; the helper has one definition
-  and four call sites. ⚠️ **Not verified signed-in.** `MODULE_V` → `20260826d`.
-
+## REVERTED to the (b) build — `_vsAxis` was what removed the levels (2026-08-26) — fmlozano
+Owner: *"revert it back to previous prompt. the vertical stacking levels are gone again. haha."*
+`modules/project-schedule/index.html` is byte-identical to `b234098`; `9fc0efc` and `afe2053` are both out.
+- ⚠️ **`_vsAxis()` collapses the axis to ONE level on a project whose location levels are unfilled.**
+  Its loop is `while (i < LOC_LEVELS.length - 1) { if (any activity has a value at LOC_LEVELS[i]) break; i++ }`.
+  When **no** activity carries a value at **any** level — levels defined, matching never run, which is the
+  ordinary state of a freshly imported project — nothing ever breaks the loop, so `i` lands on
+  `LOC_LEVELS.length - 1` and the axis is the LAST level alone. `_vsMaxDetail()` returns `1`,
+  `_vsDetailNow()` clamps to 1, `_vsRowCells` takes `slice(1, 1)` = no sub-cells. Every level control gone.
+- ⚠️ **The planned-vs-actual commit could NOT have caused it.** Its four call sites all pass a list the
+  caller already holds, and `_vsTimelineHTML(acts)` takes `acts` as its own **parameter** — there is no
+  scope in which it could throw. Checked before reverting rather than reverted on suspicion.
+- ⚠️ **What comes back with the revert:** a one-tower project bands by `LOC_LEVELS[0]` (Tower) and its
+  activities land in the "— No level —" band. That is the state `b234098` was built for — it ships the
+  **Assign N activities** repair banner, which stamps the top level on work already located further down.
+  So the case is handled, just by a planner action instead of silently.
+- **If the axis idea is retried:** the loop needs a floor — never advance past a level unless some level
+  BELOW it is actually populated, so "nothing is located anywhere" leaves the full axis intact.
 ## A one-tower project now stacks vertically — the axis skips a level nobody uses (2026-08-26) — fmlozano
 Owner: *"there should be a fix for projects that have no tower. Some projects just only have 1 tower…
 the zones are just fixed horizontally, it's not a vertical stacking per se."* And: *"some projects
