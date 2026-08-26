@@ -2590,6 +2590,10 @@
       <div id="ps-view-builder" style="display:none;">
         <div class="ps-ck-bar">
           <span style="font-size:12px;color:var(--pd-muted);">Bottom-up / location-based schedule setup — the generated preview stays here; pushing it into the schedule above is a later step.</span>
+          <!-- Which package this setup builds, and the way into every other setup.
+               Sits at the head of the builder because it is the first thing a planner
+               on a multi-package project needs to be sure of. -->
+          <button class="pd-btn" id="ps-bld-setups" title="Saved setups, one per contract package, and the push history"><span data-ico="layers" data-ico-size="14"></span> <span id="ps-bld-setupname">Setups</span></button>
           <span class="sbld-save-state" id="ps-bld-savestate" style="margin-left:auto;"></span>
           <button class="pd-btn sbld-help-btn" id="ps-bld-help" title="Instructions & shortcuts">?</button>
           <button class="pd-btn pd-btn-primary" id="ps-bld-save"><span data-ico="check" data-ico-size="14"></span> Save setup</button>
@@ -8776,7 +8780,29 @@
       predecessors: r.pred || null,
       planned_cost: r.pcost, actual_cost: r.acost, earned_value: r.ev };
   }
-  async function doImport(recs, replace, fname, locMap, placement, discOnImport) {
+  /* Which contract package an import belongs to.
+     ⚠️ ASKED, NEVER ASSUMED. On a multi-package project an imported P6/Excel file is
+        one package's programme, and filing it under the wrong lot silently corrupts
+        every package total downstream — the schedule's Package Monitor, the BOQ
+        accrual, Cash Flow. The picker defaults to "— No package —" rather than to the
+        first package, because an unassigned import is visible and fixable while a
+        wrongly-assigned one looks correct. */
+  function impPackageHTML() {
+    if (!(PACKAGES || []).length) return '';
+    return '<label style="display:block;font-size:12px;font-weight:600;margin:12px 0 4px;">Contract package</label>' +
+      '<select class="pd-select" id="ps-imp-pkg" style="width:100%;">' +
+      '<option value="">— No package (assign later in the grid) —</option>' +
+      (PACKAGES || []).map(function (k) {
+        return '<option value="' + esc(k.id) + '">' + esc((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
+      }).join('') +
+      '</select>' +
+      '<p style="color:var(--pd-muted);font-size:11.5px;margin:4px 0 0;">Everything in this file is filed under that ' +
+      'package and lands beneath its own top-level row. <strong>Replace</strong> then clears only that package, ' +
+      'leaving the other packages alone.</p>';
+  }
+  function impPackageRead(el) { var s2 = el.querySelector('#ps-imp-pkg'); return (s2 && s2.value) || null; }
+
+  async function doImport(recs, replace, fname, locMap, placement, discOnImport, pkgId) {
     showLoading('Preparing import…');
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
@@ -8786,7 +8812,21 @@
     // "Replace" re-import left the PREVIOUS import's assignments in place (they still matched the
     // new activities by id) and added a full new set on top — Resource/Role Usage, leveling and
     // syncActivityCost cost roll-ups silently doubled, and doubled again on the next re-import.
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: '+del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await sb().from('resource_assignments').delete().eq('project_id', pid); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
+    if (replace) { setLoading('Clearing existing activities…');
+      /* ⚠️ REPLACE IS SCOPED TO THE TARGET PACKAGE. "Replace existing activities" on a
+         multi-package project used to mean the whole project, so importing Package 2's
+         programme deleted Package 1's. With a package chosen it clears only that
+         package's own work; with none chosen it behaves exactly as it always did.
+         ⚠️ Deleted by id from the EFFECTIVE package (packageOf), not by a package_id
+            filter — an untagged row inside the package's tree is still its work. */
+      var del;
+      if (pkgId) {
+        var _pids = rows.filter(function (r) { return !isWbs(r) && String(packageOf(r) || '') === String(pkgId); }).map(function (r) { return r.id; });
+        del = { error: null };
+        for (var _pi = 0; _pi < _pids.length && !del.error; _pi += 200) del = await sb().from(TABLE).delete().in('id', _pids.slice(_pi, _pi + 200));
+      } else del = await sb().from(TABLE).delete().eq('project_id', pid);
+      if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; }
+      var werr = await _clearWbsTree(pkgId || null); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await sb().from('resource_assignments').delete().eq('project_id', pid); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
     var uid = UID;
     // Location breakdown — create any levels the mapping asked for, then stamp each leaf rec's
     // `location` so it rides along in the same insert rather than needing a second pass. Runs
@@ -8813,6 +8853,11 @@
       var p = recToPayload(r);
       if (r.loc && Object.keys(r.loc).length) p.location = r.loc;
       if (r.work) p.work_type = r.work;
+      /* ⚠️ STATED ON EVERY IMPORTED ROW, summaries included. The WBS tree is adopted
+         AFTER the insert, so an activity that relied on inheriting the package from a
+         branch would be unassigned in the window between the two — and any total taken
+         in that window would be wrong. Orthogonal to scope_type as everywhere else. */
+      if (pkgId) p.package_id = pkgId;
       return p;
     });
     if (uid) payloads.forEach(function(p){ p.created_by=uid; });
@@ -8828,6 +8873,7 @@
     if (err) { UI.toast('Insert error after '+ok+': '+err, 'error'); collapsed={}; resetUndo(); await load(); return; }
     collapsed={}; resetUndo(); await load();
     await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
+    await _importUnderPackageRoot(pkgId);   // ...then nest it under the package it belongs to
     // Post-import "what came in" summary card (better than a bare toast for large imports).
     var wbsN = recs.filter(function(r){return !r.isLeaf;}).length, actN = recs.length - wbsN;
     var relN = recs.filter(function(r){return r.isLeaf && r.pred;}).length;
@@ -9085,6 +9131,7 @@
       '<label style="display:flex;align-items:center;gap:8px;margin:12px 0;"><input type="checkbox" id="ps-imp-rep" checked> Replace existing activities for this project</label>'+
       discImportRowHTML(leafRecs, function(r){ return r.code; }, xlNameByCode)+
       (wbsPlace ? wbsPlace.html : '')+
+      impPackageHTML()+
       locSection+
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
     if (locUI) {
@@ -9100,7 +9147,8 @@
       var locMap = locUI ? locUI.read(m.el) : [];
       var placement = wbsPlace ? wbsPlace.read(m.el) : null;
       var dsc = m.el.querySelector('#ps-imp-disc'); dsc = !dsc || dsc.checked;
-      m.close(); doImport(recs, rep, fname, locMap, placement, dsc);
+      var pkgId = impPackageRead(m.el);
+      m.close(); doImport(recs, rep, fname, locMap, placement, dsc, pkgId);
     };
   }
 
@@ -17688,12 +17736,39 @@
   // already" — same tree, same ids, and `ensureWbsSkeleton` correctly no-ops since WBS_NODES isn't
   // empty. Everything imported/custom (unlocked) is still wiped. Tolerant: a DB without the
   // wbs-nodes migration has no table to clear, which is not an error.
-  async function _clearWbsTree() {
+  /* pkgId = clear ONLY that package's subtree; null/undefined = the whole project.
+     ⚠️ SCOPED BY SUBTREE, NOT BY package_id. A branch deep inside Package 2's tree may
+        carry no tag of its own and still be Package 2's — _nodePackage() resolves it
+        through its ancestors. Deleting on the column alone would leave those branches
+        behind, and the next push would build a second copy beside them.
+     ⚠️ THE PACKAGE ROOT ITSELF SURVIVES a package clear. It is the contract lot, not
+        the work: keeping it means the grid still shows "PKG-2 — Towers 2-7" as an
+        empty top-level row, which is the truth, and the re-push adopts it rather than
+        creating a sibling. */
+  async function _clearWbsTree(pkgId) {
+    var scoped = pkgId != null && pkgId !== '__none__';
     try {
+      if (scoped) {
+        var ids = (WBS_NODES || []).filter(function (n) {
+          if (n.is_locked) return false;
+          if (n.is_package_root && String(n.package_id) === String(pkgId)) return false;  // keep the root
+          return String(_nodePackage(n.id) || n.package_id || '') === String(pkgId);
+        }).map(function (n) { return n.id; });
+        if (!ids.length) { return null; }
+        for (var i = 0; i < ids.length; i += 200) {
+          var r2 = await sb().from('wbs_nodes').delete().in('id', ids.slice(i, i + 200));
+          if (r2.error && !/wbs_nodes|does not exist|schema cache|PGRST/i.test(r2.error.message || '')) return r2.error;
+        }
+        var gone = {}; ids.forEach(function (x) { gone[x] = 1; });
+        WBS_NODES = WBS_NODES.filter(function (n) { return !gone[n.id]; });
+        _clearPkgMemo();
+        return null;
+      }
       var res = await sb().from('wbs_nodes').delete().eq('project_id', pid).eq('is_locked', false);
       if (res.error && !/wbs_nodes|does not exist|schema cache|PGRST/i.test(res.error.message || '')) return res.error;
     } catch (e) {}
     WBS_NODES = WBS_NODES.filter(function (n) { return n.is_locked; });
+    _clearPkgMemo();
     return null;
   }
   // One-time bridge: build the tree from existing project_schedule WBS-Summary rows (import / legacy),
@@ -17744,6 +17819,52 @@
     return legacy.length;
   }
   // Auto-adopt after an import (tolerant — never blocks the import if the wbs_nodes table/write fails).
+  /* After an import has adopted its WBS tree, move that tree UNDER the package's own
+     root so the grid shows "PKG-2 — Towers 2-7" as a top-level row with the imported
+     programme beneath it — the same shape a Builder push produces.
+     ⚠️ ONLY UNPARENTED, UNLOCKED, NON-ROOT BRANCHES MOVE. The locked
+        Milestones / Initiation / Planning / Execution skeleton is project-level and
+        stays where it is; another package's root is left alone; and a branch that
+        already has a parent is already inside somebody's tree.
+     ⚠️ Best-effort: a failure here costs the nesting, never the import. The activities
+        already carry package_id, so every package total is correct either way. */
+  async function _importUnderPackageRoot(pkgId) {
+    if (!pkgId) return;
+    try {
+      var rootId = null;
+      var have = (WBS_NODES || []).filter(function (n) {
+        return n.is_package_root && String(n.package_id) === String(pkgId);
+      })[0];
+      if (have) rootId = have.id;
+      else {
+        var q = await sb().from('wbs_nodes').select('*').eq('project_id', pid)
+          .eq('package_id', pkgId).eq('is_package_root', true).limit(1);
+        if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); rootId = q.data[0].id; }
+        else {
+          var k = packageById(pkgId);
+          var ins = await sb().from('wbs_nodes').insert({
+            project_id: pid, parent_id: null,
+            name: k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'Contract package',
+            sort_order: k ? (Number(k.sort_order) || 0) : 0,
+            package_id: pkgId, is_package_root: true, created_by: UID
+          }).select().single();
+          if (ins.error) return;
+          WBS_NODES.push(ins.data); rootId = ins.data.id;
+        }
+      }
+      if (!rootId) return;
+      var movers = (WBS_NODES || []).filter(function (n) {
+        return !n.parent_id && !n.is_locked && !n.is_package_root && n.id !== rootId;
+      }).map(function (n) { return n.id; });
+      if (!movers.length) return;
+      for (var i = 0; i < movers.length; i += 100) {
+        await sb().from('wbs_nodes').update({ parent_id: rootId, package_id: pkgId })
+          .in('id', movers.slice(i, i + 100));
+      }
+      _clearPkgMemo();
+    } catch (e) {}
+  }
+
   async function autoAdoptAfterImport() {
     try { showLoading('Building WBS tree…'); var n = await wbsAdopt(true); hideLoading(); if (n) UI.toast('WBS tree built (' + n + ' nodes) — open the WBS Manager to edit it.', 'success'); }
     catch (e) { hideLoading(); }
@@ -18919,6 +19040,17 @@
       return (dark && GCOLOR_DARK[g]) || GCOLOR[g] || '#6f7276';
     }
     var cfg = null, step = 0, dirty = false, curPid = null, curUid = null, wired = false;
+    /* PACKAGE-SCOPED SETUPS (2026-08-26-package-scoped-schedule.sql).
+       A project is bought as several contract packages — Package 1 (Tower 1 and General
+       Requirements), Package 2 (Towers 2-7) — and each is administered, progressed and
+       billed on its own. So the builder holds MANY named setups per project, each tagged
+       to a package, and every push targets that package's own WBS root.
+       ⚠️ curPkgId NULL is a real state, not a missing value: a setup that predates packages
+          (or a single-package project) pushes exactly as it always did, at the top level.
+       ⚠️ ORTHOGONAL TO scope_type. A change order BELONGS TO a package — package_id says
+          which contract lot, scope_type says main vs change order, and a variation raised
+          against Package 2 is both. Neither is ever derived from the other. */
+    var setups = [], curSetupId = null, curSetupName = null, curPkgId = null;
     var uiTrade = 'ST';            // trade being edited/visualised in step 2
     var quickN = {};               // per-trade last-used Quick bsmt/floors/zones/units counts (UI-only, not persisted)
     var linkDrag = null, stepPos = {}, upWired = false;  // step-3 link canvas drag state
@@ -19423,32 +19555,305 @@
       d.locLevel = (['auto', 'floor', 'zone', 'unit'].indexOf(c.locLevel) >= 0) ? c.locLevel : 'auto';  // global activity/takt leaf level
       return d;
     }
-    function setState(t) { var el = document.getElementById('ps-bld-savestate'); if (el) el.textContent = t || ''; }
+    function setState(t) {
+      var el = document.getElementById('ps-bld-savestate'); if (el) el.textContent = t || '';
+      /* The button always names what is open. A builder that does not say which
+         package it is building is how a Package 2 floor plan ends up in Package 1. */
+      var nm = document.getElementById('ps-bld-setupname');
+      if (nm) {
+        var pk = curPkgId ? packageShort(curPkgId) : null;
+        nm.textContent = curSetupName
+          ? (curSetupName + (pk ? ' · ' + pk : ''))
+          : (setups && setups.length ? 'Setups' : 'Setups');
+      }
+    }
     function markDirty() { dirty = true; setState('Unsaved changes'); }
     function isDirty() { return dirty; }
 
-    async function loadCfg() {
-      cfg = blank();
-      if (!curPid) { render(); return; }
-      try {
-        var r = await sbc().from('schedule_builder').select('config').eq('project_id', curPid).maybeSingle();
-        if (r.error && r.error.code !== 'PGRST116') {
-          if (/schedule_builder/.test(r.error.message || '')) UI.toast('Run migration 2026-07-23-schedule-builder.sql to save/load builder setups.', 'error');
-        } else if (r.data && r.data.config) cfg = normalize(r.data.config);
-      } catch (er) {}
-      dirty = false; setState('Saved'); render();
+    /* ==================================================================
+       NAMED SETUPS, ONE PER PACKAGE (or several) — 2026-08-26.
+       The old table held ONE config per project, so a planner could not keep a
+       setup for Package 1 and another for Package 2, nor go back to yesterday's
+       version after a bad edit. It is now many rows: {name, package_id, config}.
+       ⚠️ TOLERANT OF THE UN-RUN MIGRATION. On the old single-row shape the select
+          below still returns the project's one row; it simply has no name and no
+          package, and the builder behaves exactly as it did before. Nothing here
+          may hard-fail on a database that has not been migrated yet.
+       ================================================================== */
+    function setupLabel(x) {
+      var pk = x && x.package_id ? packageShort(x.package_id) : null;
+      return (x && x.name ? x.name : 'Untitled setup') + (pk ? ' · ' + pk : '');
     }
+    async function loadSetups() {
+      setups = [];
+      if (!curPid) return;
+      try {
+        var r = await sbc().from('schedule_builder').select('*').eq('project_id', curPid);
+        if (r.error) {
+          if (/schedule_builder/.test(r.error.message || ''))
+            UI.toast('Run migration 2026-07-23-schedule-builder.sql to save/load builder setups.', 'error');
+          return;
+        }
+        setups = (r.data || []).slice().sort(function (a, b) {
+          // Package order first (the contract's own order), then name — so the list
+          // reads the way the contract does, not the way rows happened to be written.
+          var ka = packageById(a.package_id), kb = packageById(b.package_id);
+          var sa = ka ? (Number(ka.sort_order) || 0) : 9999, sb2 = kb ? (Number(kb.sort_order) || 0) : 9999;
+          return sa - sb2 || String(a.name || '').localeCompare(String(b.name || ''));
+        });
+      } catch (er) { setups = []; }
+    }
+    /* Which setup opens when the builder does.
+       ⚠️ PREFERS THE ONE MOST RECENTLY EDITED, not the first alphabetically: the
+          planner almost always wants the thing they were last working on, and
+          silently opening a different package's setup is how work gets typed into
+          the wrong lot. */
+    function pickDefaultSetup() {
+      if (!setups.length) return null;
+      var byTime = setups.slice().sort(function (a, b) {
+        return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+      });
+      return byTime[0];
+    }
+    function applySetup(row) {
+      curSetupId = row ? row.id || null : null;
+      curSetupName = row ? (row.name || null) : null;
+      curPkgId = row ? (row.package_id || null) : null;
+      cfg = (row && row.config) ? normalize(row.config) : blank();
+      dirty = false; setState('Saved');
+    }
+    async function loadCfg() {
+      cfg = blank(); curSetupId = null; curSetupName = null; curPkgId = null;
+      if (!curPid) { render(); return; }
+      await loadSetups();
+      applySetup(pickDefaultSetup());
+      render();
+    }
+    /* Save into the CURRENT setup, or create the first one.
+       ⚠️ Falls back to the pre-migration single-row upsert when the new columns are
+          missing, so a planner on an un-migrated database still keeps their work
+          instead of losing a session to an error toast. */
     async function save() {
       if (!curPid || !cfg) return; setState('Saving…');
+      var stamp = { config: cfg, updated_at: new Date().toISOString(), updated_by: curUid };
       try {
-        var r = await sbc().from('schedule_builder').upsert({ project_id: curPid, config: cfg, updated_at: new Date().toISOString(), updated_by: curUid }, { onConflict: 'project_id' });
+        var r;
+        if (curSetupId) {
+          r = await sbc().from('schedule_builder').update(stamp).eq('id', curSetupId);
+        } else {
+          r = await sbc().from('schedule_builder').insert(Object.assign({
+            project_id: curPid, package_id: curPkgId || null,
+            name: curSetupName || defaultSetupName(), created_by: curUid
+          }, stamp)).select().single();
+          if (!r.error && r.data) { curSetupId = r.data.id; curSetupName = r.data.name; }
+        }
         if (r.error) throw r.error;
-        dirty = false; setState('Saved'); UI.toast('Builder setup saved.', 'success');
+        dirty = false; setState('Saved');
+        UI.toast('Saved “' + (curSetupName || 'setup') + '”.', 'success');
+        await loadSetups(); render();
       } catch (er) {
+        var msg = er.message || String(er);
+        if (/column .*(name|package_id|id).* does not exist|schedule_builder_pkey/.test(msg)) {
+          try {
+            var f = await sbc().from('schedule_builder').upsert({ project_id: curPid, config: cfg,
+              updated_at: new Date().toISOString(), updated_by: curUid }, { onConflict: 'project_id' });
+            if (f.error) throw f.error;
+            dirty = false; setState('Saved');
+            UI.toast('Saved — but this project still has ONE setup. Run ' +
+              'migrations/2026-08-26-package-scoped-schedule.sql for per-package setups.', 'success');
+            return;
+          } catch (e2) { msg = e2.message || String(e2); }
+        }
         setState('Save failed');
-        UI.toast(/schedule_builder/.test(er.message || '') ? 'Run migration 2026-07-23-schedule-builder.sql first.' : ('Save failed: ' + (er.message || er)), 'error');
+        UI.toast(/schedule_builder/.test(msg) ? 'Run migration 2026-07-23-schedule-builder.sql first.' : ('Save failed: ' + msg), 'error');
       }
     }
+    /* A name a planner does not have to invent. Named after the package when there
+       is one, because that is how the setup will be referred to out loud. */
+    function defaultSetupName() {
+      var k = curPkgId ? packageById(curPkgId) : null;
+      var base = k ? (k.code || k.name) : 'Setup';
+      var used = {}; setups.forEach(function (x) { used[String(x.name || '').toLowerCase()] = 1; });
+      if (!used[base.toLowerCase()]) return base;
+      for (var i = 2; i < 200; i++) if (!used[(base + ' ' + i).toLowerCase()]) return base + ' ' + i;
+      return base + ' ' + Date.now();
+    }
+    /* Save a COPY under a new name — "go back to that saved schedule in case of any
+       error" starts with being able to branch before a risky edit.
+       ⚠️ The copy carries the package of the setup it came from unless one is chosen,
+          so duplicating Package 2's setup cannot silently produce a Package 1 build. */
+    async function saveAsNew(name, pkgId) {
+      if (!curPid || !cfg) return;
+      var row = { project_id: curPid, package_id: (pkgId === undefined ? curPkgId : pkgId) || null,
+                  name: name || defaultSetupName(), config: cfg,
+                  created_by: curUid, updated_by: curUid, updated_at: new Date().toISOString() };
+      var r = await sbc().from('schedule_builder').insert(row).select().single();
+      if (r.error) {
+        UI.toast(/duplicate key/i.test(r.error.message || '')
+          ? 'A setup with that name already exists for this package.'
+          : ('Could not save: ' + (r.error.message || r.error) +
+             (/package_id|name/.test(r.error.message || '') ? ' — run migrations/2026-08-26-package-scoped-schedule.sql.' : '')), 'error');
+        return;
+      }
+      await loadSetups(); applySetup(r.data); render();
+      UI.toast('Saved as “' + (r.data.name || 'setup') + '”.', 'success');
+    }
+    async function deleteSetup(id) {
+      var row = setups.filter(function (x) { return x.id === id; })[0];
+      if (!row) return;
+      /* ⚠️ Deleting a SETUP never touches the SCHEDULE it pushed. Those activities are
+         real work with real progress on them; the setup is only the recipe. Said out
+         loud in the prompt, because the two are easy to confuse. */
+      if (!confirm('Delete the setup “' + (row.name || 'Untitled') + '”?\n\n' +
+        'This removes the builder setup only. Activities already pushed into the schedule are NOT deleted.')) return;
+      var r = await sbc().from('schedule_builder').delete().eq('id', id);
+      if (r.error) { UI.toast(r.error.message, 'error'); return; }
+      if (curSetupId === id) { await loadSetups(); applySetup(pickDefaultSetup()); }
+      else await loadSetups();
+      render(); UI.toast('Setup deleted.', 'success');
+    }
+    /* THE PUSH SNAPSHOT. "Go back to that saved schedule in case of any error" needs
+       the config AS IT WAS when it was pushed — the setup keeps being edited after.
+       ⚠️ A FULL COPY, never a pointer to the setup row: a pointer follows later edits
+          and stops describing the schedule it actually produced. */
+    async function recordPush(nActs, rootId, note) {
+      if (!curPid) return;
+      try {
+        await sbc().from('schedule_builder_pushes').insert({
+          project_id: curPid, setup_id: curSetupId || null, package_id: curPkgId || null,
+          setup_name: curSetupName || null, config: cfg, n_activities: nActs || 0,
+          wbs_root_id: rootId || null, note: note || null, pushed_by: curUid
+        });
+      } catch (er) { /* history is a convenience — never fail a good push over it */ }
+    }
+    async function loadPushes() {
+      if (!curPid) return [];
+      try {
+        var r = await sbc().from('schedule_builder_pushes').select('*')
+          .eq('project_id', curPid).order('pushed_at', { ascending: false }).limit(40);
+        return (r.error || !r.data) ? [] : r.data;
+      } catch (er) { return []; }
+    }
+    /* Restore a snapshot INTO THE EDITOR — deliberately not straight into a save.
+       ⚠️ Restoring does NOT undo the push it came from. The activities in the schedule
+          stay exactly where they are; this hands the planner the recipe back so they
+          can correct it and push again. Anything else would be a silent bulk delete. */
+    function restoreFromPush(row) {
+      if (!row || !row.config) return;
+      if (!confirm('Load the setup as it was when “' + (row.setup_name || 'a setup') + '” was pushed on ' +
+        Fmt.date(String(row.pushed_at || '').slice(0, 10)) + '?\n\n' +
+        'Your current unsaved edits are replaced. Activities already in the schedule are NOT changed — ' +
+        'correct the setup, then push again.')) return;
+      cfg = normalize(row.config);
+      curPkgId = row.package_id || curPkgId;
+      markDirty(); setState('Restored from a push — unsaved');
+      render();
+      UI.toast('Setup restored from the push. Review it, then Save.', 'success');
+    }
+    /* The Setups dialog: every saved setup for this project, grouped by contract
+       package, plus the push history. One place to answer "which package am I
+       building, and what did I push last time?" */
+    async function openSetups() {
+      var pushes = await loadPushes();
+      var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
+      function esc2(x) { return Fmt.esc(String(x == null ? '' : x)); }
+      function pkgName2(id) {
+        var k = id ? packageById(id) : null;
+        return k ? ((k.code ? k.code + ' — ' : '') + k.name) : '— No package —';
+      }
+      // Every package that has a setup, plus every package that does not — an empty
+      // package is a prompt to build it, not something to hide.
+      var groups = [], seen = {};
+      (PACKAGES || []).forEach(function (k) { groups.push({ id: k.id, label: pkgName2(k.id) }); seen[k.id] = 1; });
+      setups.forEach(function (x) {
+        var k = x.package_id || '';
+        if (!seen[k]) { seen[k] = 1; groups.push({ id: x.package_id || null, label: pkgName2(x.package_id) }); }
+      });
+      if (!seen['']) groups.push({ id: null, label: '— No package —' });
+
+      var html = '<div class="pd-modal" style="max-width:760px;"><div class="pd-modal-header">' +
+        '<h3 style="margin:0;font-size:16px;">Schedule Builder — setups</h3>' +
+        '<button class="pd-modal-close" data-x>&times;</button></div>' +
+        '<div style="padding:14px 16px;max-height:72vh;overflow:auto;">' +
+        '<p class="sbld-hint" style="margin-top:0;">A setup is one package\'s build recipe. Keep one per contract ' +
+        'package — or several, to try an alternative without losing the one that works. ' +
+        '<strong>Deleting a setup never deletes activities already pushed.</strong></p>';
+      groups.forEach(function (grp) {
+        var mine = setups.filter(function (x) { return String(x.package_id || '') === String(grp.id || ''); });
+        html += '<div style="margin:14px 0 6px;font-weight:700;font-size:13px;">' + esc2(grp.label) + '</div>';
+        if (!mine.length) {
+          html += '<div class="sbld-hint" style="margin:0 0 6px;">No setup yet. ' +
+            '<button class="pd-btn" data-new="' + esc2(grp.id || '') + '">New setup for this package</button></div>';
+          return;
+        }
+        html += '<table class="cc-table" style="width:100%;font-size:12.5px;"><tbody>';
+        mine.forEach(function (x) {
+          var cur = String(x.id) === String(curSetupId);
+          html += '<tr' + (cur ? ' style="font-weight:700;"' : '') + '>' +
+            '<td>' + esc2(x.name || 'Untitled setup') + (cur ? ' <span class="sbld-hint">(open)</span>' : '') + '</td>' +
+            '<td style="white-space:nowrap;color:var(--pd-muted);">' + esc2(String(x.updated_at || '').slice(0, 10)) + '</td>' +
+            '<td style="text-align:right;white-space:nowrap;">' +
+              (cur ? '' : '<button class="pd-btn" data-open="' + esc2(x.id) + '">Open</button> ') +
+              '<button class="pd-btn" data-dup="' + esc2(x.id) + '">Duplicate</button> ' +
+              '<button class="pd-btn" data-del="' + esc2(x.id) + '">Delete</button></td></tr>';
+        });
+        html += '</tbody></table>' +
+          '<div style="margin:4px 0 0;"><button class="pd-btn" data-new="' + esc2(grp.id || '') + '">New setup for this package</button></div>';
+      });
+      html += '<h4 style="margin:18px 0 4px;font-size:13px;">Push history</h4>';
+      if (!pushes.length) {
+        html += '<p class="sbld-hint" style="margin:0;">Nothing pushed yet. Every push records the setup exactly as ' +
+          'it was at that moment, so you can come back to it after a bad edit.</p>';
+      } else {
+        html += '<table class="cc-table" style="width:100%;font-size:12.5px;"><thead><tr>' +
+          '<th>When</th><th>Setup</th><th>Package</th><th style="text-align:right;">Activities</th><th></th>' +
+          '</tr></thead><tbody>';
+        pushes.forEach(function (pu) {
+          html += '<tr><td style="white-space:nowrap;">' + esc2(String(pu.pushed_at || '').slice(0, 16).replace('T', ' ')) + '</td>' +
+            '<td>' + esc2(pu.setup_name || '—') + '</td>' +
+            '<td>' + esc2(pkgName2(pu.package_id)) + '</td>' +
+            '<td style="text-align:right;">' + (pu.n_activities == null ? '—' : pu.n_activities) + '</td>' +
+            '<td style="text-align:right;"><button class="pd-btn" data-restore="' + esc2(pu.id) + '">Load this version</button></td></tr>';
+        });
+        html += '</tbody></table>' +
+          '<p class="sbld-hint">⚠️ Loading a version puts that recipe back in the editor. It does <strong>not</strong> ' +
+          'remove the activities that push created — correct the setup and push again, or clear that package first ' +
+          '(Actions → Clear schedule).</p>';
+      }
+      html += '</div></div>';
+      ov.innerHTML = html;
+      document.body.appendChild(ov);
+      function close() { ov.remove(); }
+      ov.addEventListener('click', function (e) {
+        if (e.target === ov || e.target.hasAttribute('data-x')) { close(); return; }
+        var b = e.target.closest && e.target.closest('button'); if (!b) return;
+        if (b.hasAttribute('data-open')) {
+          var row = setups.filter(function (x) { return String(x.id) === b.getAttribute('data-open'); })[0];
+          if (row && dirty && !confirm('Discard unsaved changes to “' + (curSetupName || 'the current setup') + '”?')) return;
+          if (row) { applySetup(row); render(); UI.toast('Opened “' + (row.name || 'setup') + '”.', 'success'); }
+          close();
+        } else if (b.hasAttribute('data-dup')) {
+          var src = setups.filter(function (x) { return String(x.id) === b.getAttribute('data-dup'); })[0];
+          if (!src) return;
+          var nm = prompt('Name for the copy', (src.name || 'Setup') + ' copy'); if (!nm) return;
+          applySetup(src);                       // duplicate what is stored, not a stale cfg
+          saveAsNew(nm, src.package_id || null); close();
+        } else if (b.hasAttribute('data-del')) {
+          deleteSetup(b.getAttribute('data-del')); close();
+        } else if (b.hasAttribute('data-new')) {
+          var pk = b.getAttribute('data-new') || null;
+          var nm2 = prompt('Name for the new setup', pk ? (packageShort(pk) || 'Setup') : 'Setup'); if (!nm2) return;
+          /* ⚠️ A NEW setup starts EMPTY. Seeding it from whatever happened to be open is
+             how a Package 2 build quietly inherits Package 1's floors and zones. */
+          cfg = blank(); curSetupId = null; curSetupName = nm2; curPkgId = pk;
+          saveAsNew(nm2, pk); close();
+        } else if (b.hasAttribute('data-restore')) {
+          var pu = pushes.filter(function (x) { return String(x.id) === b.getAttribute('data-restore'); })[0];
+          restoreFromPush(pu); close();
+        }
+      });
+    }
+
     // Instructions & shortcuts reference (the "?" button, top-right of the builder)
     function openHelp() {
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
@@ -19481,6 +19886,7 @@
       curUid = userId;
       if (!wired) {
         var sv = document.getElementById('ps-bld-save'); if (sv) sv.onclick = save;
+        var stp = document.getElementById('ps-bld-setups'); if (stp) stp.onclick = openSetups;
         var hb = document.getElementById('ps-bld-help'); if (hb) hb.onclick = openHelp;
         // Guard accidental page close/refresh with unsaved builder edits.
         window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
@@ -21783,8 +22189,58 @@
       }
       return LOC_LEVELS.map(function (l) { return l.id; });
     }
+    /* THE PACKAGE'S OWN WBS ROOT — the node every push for that package builds under,
+       so the grid shows "PKG-1 — Tower 1 and General Requirements" as a top-level row
+       with its whole WBS beneath, beside "PKG-2 — Towers 2-7".
+       ⚠️ FOUND BY FLAG, NEVER BY NAME. is_package_root + package_id is the identity;
+          matching on the node's name would break the first time someone renames the
+          branch, and the next push would build a SECOND root holding half the
+          schedule — the failure mode that makes a package total quietly half-right.
+       ⚠️ RE-READ FROM THE SERVER before creating. Another planner may have created the
+          root in a session this browser has not loaded, and a unique index (one root
+          per package) turns that race into an error rather than a duplicate. */
+    async function ensurePackageRoot(pkgId) {
+      if (!pkgId) return null;
+      var hit = (WBS_NODES || []).filter(function (n) {
+        return n.is_package_root && String(n.package_id) === String(pkgId);
+      })[0];
+      if (hit) return hit.id;
+      var q = await sb().from('wbs_nodes').select('*').eq('project_id', pid)
+        .eq('package_id', pkgId).eq('is_package_root', true).limit(1);
+      if (q.error && /is_package_root/.test(q.error.message || '')) {
+        throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
+      }
+      if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); return q.data[0].id; }
+      var k = packageById(pkgId);
+      // Named from the contract, not from the builder: this row is what the whole
+      // project team reads at the top of the grid.
+      var nm = k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'Contract package';
+      var ins = await sb().from('wbs_nodes').insert({
+        project_id: pid, parent_id: null, name: nm,
+        sort_order: k ? (Number(k.sort_order) || 0) : 0,
+        package_id: pkgId, is_package_root: true, created_by: UID
+      }).select().single();
+      if (ins.error) {
+        if (/is_package_root/.test(ins.error.message || ''))
+          throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
+        throw ins.error;
+      }
+      WBS_NODES.push(ins.data);
+      return ins.data.id;
+    }
+
     async function pushToSchedule(parentCode, grouped, basis, order, startISO, flatGroup) {
       var g = generate(basis || 'int', startISO); if (!g.rows.length) return;
+      /* ⚠️ A MULTI-PACKAGE PROJECT AND AN UNASSIGNED SETUP IS ALMOST ALWAYS A MISTAKE.
+         The push still goes through if the planner insists — an untagged build at
+         project level is legitimate on a single-lot job — but it is never silent,
+         because unassigned activities are invisible to every package total and the
+         only cure is a bulk re-tag afterwards. */
+      if (!curPkgId && (PACKAGES || []).length) {
+        if (!confirm('This project has ' + PACKAGES.length + ' contract package(s), but this setup is not assigned to one.\n\n' +
+          'The activities will be pushed at project level and will belong to NO package, so they will not appear in any ' +
+          'package total. Assign the setup to a package first (Setups), or continue?')) return;
+      }
       if (typeof showLoading === 'function') showLoading('Pushing to the project schedule…');
       var locIds = await ensureLocLevels();
       // floor -> level 1, zone -> level 2, unit -> level 3 (only as far as the project has levels).
@@ -21888,7 +22344,13 @@
         // mirror above. The column is the canonical value (org-wide chart, hierarchy, shared with
         // the Procurement app's cost_code); the activity-code mirror is per-project and flat. Two
         // representations of one fact is a drift risk -- see this module's CLAUDE.md.
-        class_code: (r.act && r.act.code) ? String(r.act.code).trim() : null, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null }; }
+        class_code: (r.act && r.act.code) ? String(r.act.code).trim() : null, percent_complete: 0, predecessors: (r._preds && r._preds.length ? r._preds.join(', ') : null), work_type: tradeOf(r), location: locMapOf(r.loc), seq_order: r._seq, phase: 'construction', scope_type: (r.act && r.act.contract === 'change_order') ? 'change_order' : 'main', change_order_ref: (r.act && r.act.contract === 'change_order' && r.act.coRef) ? r.act.coRef : null,
+        /* ⚠️ STATED ON THE ACTIVITY, not left to inheritance — the same rule phase and
+           scope_type already follow here. An activity that says which contract lot it
+           belongs to cannot be mis-read later if the tree above it is re-parented.
+           ⚠️ Orthogonal to scope_type on purpose: the row above may be a change order AND
+           this package. Neither column is derived from the other. */
+        package_id: curPkgId || null }; }
       // ---- Class codes -> activity codes ------------------------------------------------------
       // ⚠️ Ensured BEFORE the payloads are built, because taskPayload needs the value ids. Reuses an
       // existing "Class Code" type and any values already present, so a re-push adds nothing.
@@ -22034,6 +22496,12 @@
         // base parent = the wbs_node behind the chosen WBS row (if any)
         var baseRow = rows.filter(function (r) { return isWbs(r) && String(r.wbs) === String(base); })[0];
         var baseNodeId = baseRow ? (baseRow.wbs_node_id || null) : null;
+        /* ⚠️ THE PACKAGE ROOT IS THE DEFAULT PARENT, NOT AN OVERRIDE. An explicitly
+           chosen WBS row still wins — a planner pushing into a specific branch means
+           it — but with no branch chosen and a package selected, the whole build lands
+           under that package's root instead of at the project's top level. That is what
+           makes two packages read as two top-level rows in the grid. */
+        if (!baseNodeId && curPkgId) baseNodeId = await ensurePackageRoot(curPkgId);
         // 1) create the wbs_nodes parent-first (sequential so children can reference their parent's id)
         // ⚠️ IDEMPOTENT: reuse a branch that already exists rather than inserting a second one with
         // the same name under the same parent. `ensureNode` only dedupes WITHIN one push (its keys are
@@ -22122,7 +22590,11 @@
             // row must not cost the planner the whole WBS tree.
             var _nm = (nd.name == null) ? '' : String(nd.name).trim();
             if (!_nm) { _nm = 'WBS'; _unnamedDims.unknown = (_unnamedDims.unknown || 0) + 1; }
+            /* ⚠️ package_id on the BRANCH as well as the leaf. packageOf() resolves an
+               activity through its nearest tagged ancestor, so tagging the branches is
+               what keeps a re-parented or newly-added activity inside the right lot. */
             var _row = { project_id: pid, parent_id: parentId, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID };
+            if (curPkgId) _row.package_id = curPkgId;
             batch.push(_row);
             batchDescs.push(nd);
           }
@@ -22243,12 +22715,18 @@
       }
       if (typeof hideLoading === 'function') hideLoading();
       if (!ok) { UI.toast('Could not add to schedule: ' + msg, 'error'); return; }
+      /* Snapshot the recipe that produced this schedule, BEFORE the summary — a
+         failed push (above) records nothing, because there is no schedule to go
+         back to. See recordPush: the config is copied, never referenced. */
+      await recordPush(taskN, baseNodeId || null,
+        curPkgId ? ('Pushed into ' + (packageShort(curPkgId) || 'package')) : 'Pushed at project level');
       // Completion notification — a modal summary of what landed in the schedule, not just a toast.
       var wbsCount = payloads.filter(function (p) { return p.activity_type === 'WBS Summary'; }).length;
       if (typeof showImportSummary === 'function') {
         showImportSummary({
           title: 'Pushed to the schedule',
-          file: cfg.name || projName(curPid) || 'Schedule Builder',
+          file: (curPkgId ? ((packageLabel(curPkgId) || 'Package') + ' — ') : '') +
+                (curSetupName || cfg.name || projName(curPid) || 'Schedule Builder'),
           tiles: [
             { n: taskN, l: 'Activities added' },
             { n: cfg.links ? cfg.links.length : 0, l: 'Relationships' },
@@ -27087,29 +27565,96 @@
     document.getElementById('ps-clear').onclick = function () {
       if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }
       if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+      /* ⚠️ CLEARING IS NOW PACKAGE-AWARE, and the default is the SAFEST scope.
+         On a multi-package project "clear the schedule" is ambiguous and the wrong
+         reading is unrecoverable: wiping Package 1 while re-building Package 2 is
+         exactly the accident this picker exists to prevent. So the target is chosen
+         explicitly, the confirmation names it, and "Everything" is never preselected. */
+      var pkgOpts = (PACKAGES || []).map(function (k) {
+        return '<option value="' + esc(k.id) + '">' + esc((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
+      }).join('');
+      var multi = (PACKAGES || []).length > 0;
+      var target = multi ? String((PACKAGES[0] || {}).id || '') : '__all__';
       var m = UI.modal('<h2 style="margin-top:0;">Clear schedule</h2>' +
-        '<p style="color:var(--pd-muted);font-size:13px;">This permanently deletes <strong>all activities and any custom/imported WBS branches</strong> for project <strong>' + esc(pid) + '</strong> and cannot be undone. The standard Milestones / Initiation / Planning / Execution Phase skeleton is auto-seeded and stays in place. To confirm, type the project code below.</p>' +
+        (multi
+          ? '<p style="color:var(--pd-muted);font-size:13px;">This project is built in <strong>contract packages</strong>. ' +
+            'Choose what to delete — each package is cleared on its own, so re-building one leaves the others untouched.</p>' +
+            '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Delete</label>' +
+            '<select class="pd-select" id="ps-clr-scope" style="width:100%;margin-bottom:10px;">' + pkgOpts +
+              '<option value="__none__">Only activities NOT in any package</option>' +
+              '<option value="__all__">Everything — every package and the unassigned work</option>' +
+            '</select>'
+          : '') +
+        '<p style="color:var(--pd-muted);font-size:13px;" id="ps-clr-what"></p>' +
         '<input class="pd-input" id="ps-clr-in" placeholder="Type ' + esc(pid) + ' to confirm" autocomplete="off" />' +
-        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> <button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete all activities + custom WBS</button></div>');
+        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-clr-x">Cancel</button> ' +
+        '<button class="pd-btn pd-btn-danger" id="ps-clr-go" disabled>Delete</button></div>');
       var inp = m.el.querySelector('#ps-clr-in'), go = m.el.querySelector('#ps-clr-go');
+      var sel = m.el.querySelector('#ps-clr-scope'), what = m.el.querySelector('#ps-clr-what');
+      function label() {
+        if (target === '__all__') return 'every activity and every custom/imported WBS branch in ' + esc(pid);
+        if (target === '__none__') return 'activities that belong to <strong>no package</strong>';
+        var k = packageById(target);
+        return 'everything in <strong>' + esc(k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'this package') + '</strong>';
+      }
+      function paintWhat() {
+        // The count is measured, not estimated: a planner about to type the project
+        // code deserves to know whether that is 12 rows or 2,561.
+        var n = rows.filter(function (r) {
+          if (isWbs(r)) return false;
+          var pk = packageOf(r);
+          if (target === '__all__') return true;
+          if (target === '__none__') return !pk;
+          return String(pk || '') === String(target);
+        }).length;
+        what.innerHTML = 'This permanently deletes ' + label() + ' — <strong>' + n + ' activity/activities</strong> — ' +
+          'and cannot be undone. The standard Milestones / Initiation / Planning / Execution Phase skeleton is ' +
+          'auto-seeded and stays in place.' +
+          (target === '__all__' ? '' : ' Other packages are <strong>not</strong> touched.');
+        go.textContent = target === '__all__' ? 'Delete everything' : 'Delete ' + n + ' activity/activities';
+      }
+      if (sel) { sel.value = target; sel.onchange = function () { target = sel.value; paintWhat(); }; }
+      paintWhat();
       inp.oninput = function () { go.disabled = inp.value.trim() !== String(pid); };
       inp.focus();
       m.el.querySelector('#ps-clr-x').onclick = m.close;
       go.onclick = async function () {
         if (inp.value.trim() !== String(pid)) return;
         m.close(); showLoading('Clearing schedule…');
-        var del = await sb().from(TABLE).delete().eq('project_id', pid);
+        var del;
+        if (target === '__all__') {
+          del = await sb().from(TABLE).delete().eq('project_id', pid);
+        } else {
+          /* ⚠️ DELETED BY ID, FROM THE EFFECTIVE PACKAGE — not by a package_id filter
+             on the server. packageOf() resolves an activity through its nearest tagged
+             WBS ancestor, so a row inside Package 2's tree that never got its own tag
+             IS Package 2's work. A server-side `.eq('package_id', …)` would leave every
+             one of those behind, and the planner would re-push on top of them. */
+          var ids = rows.filter(function (r) {
+            if (isWbs(r)) return false;
+            var pk = packageOf(r);
+            return target === '__none__' ? !pk : String(pk || '') === String(target);
+          }).map(function (r) { return r.id; });
+          if (!ids.length) { hideLoading(); UI.toast('Nothing to clear for that scope.', 'warn'); return; }
+          del = { error: null };
+          for (var i = 0; i < ids.length && !del.error; i += 200) {
+            del = await sb().from(TABLE).delete().in('id', ids.slice(i, i + 200));
+          }
+        }
         if (del.error) { hideLoading(); UI.toast(del.error.message, 'error'); return; }
         // Drop custom/imported WBS branches too, or load()'s _wbsEnsureSummaries() re-projects every
         // surviving node and the WBS rows come straight back — the "Clear did nothing" report. The
         // locked skeleton is deliberately left alone (see _clearWbsTree).
-        var werr = await _clearWbsTree();
+        // ⚠️ Scoped the same way: clearing ONE package must not delete another package's
+        //    branches, so the tree cleaner is told which subtree it owns.
+        var werr = await _clearWbsTree(target === '__all__' ? null : target);
         hideLoading();
         if (werr) { UI.toast('Activities cleared, but the WBS tree could not be: ' + werr.message, 'error'); }
-        else { UI.toast('Schedule cleared. The standard WBS skeleton stays in place.', 'success'); }
+        else { UI.toast('Cleared. The standard WBS skeleton stays in place.', 'success'); }
         collapsed = {}; _wbsSel = null; resetUndo(); load();
       };
     };
+
     // Labeled-mode toggle: reveals text labels on the view icon buttons (persisted).
     (function () {
       var btn = document.getElementById('ps-tb-labeltoggle'), tb = document.querySelector('.ps-toolbar');
