@@ -29,6 +29,14 @@ window.BOQ = (function () {
   // ---- state ---------------------------------------------------------------
   var UID = null, canWrite = false, isAdmin = false, pid = null, projLabel = '';
   var REVS = [], REVID = null, ITEMS = [], CMAP = {}, ALLOC = [], PERIODS = [], PROG = {};
+  /* CLAIMED progress, period_id -> { item_id: 0..1 }, from
+     2026-08-26-boq-claimed-vs-certified.sql. Kept SEPARATE from PROG rather
+     than folded into it: PROG is the certified figure every POC, revenue and
+     monthly number derives from, and a single map holding both would eventually
+     be read by something that bills the wrong one.
+     ⚠️ ONLY LINES WITH A STORED CLAIM APPEAR HERE. A missing entry means "not
+        separately recorded", i.e. claimed = certified — never zero. */
+  var CLAIM = {};
   var CODES = null, ACTS = null;            // lazy: class_codes chart, schedule activities
   /* A3's tail / decision #2. PKGS is this project's `packages` rows, loaded
      tolerantly: the table arrives with 2026-08-19-packages.sql and the column
@@ -43,9 +51,10 @@ window.BOQ = (function () {
      SCHED holds schedule_scurve_agg's output: duration- or cost-weighted
      `percent_complete`, i.e. CONTRACTOR-REPORTED progress. The billing POC on
      this tab is the CERTIFIED one the client pays against.
-     ⚠️ Dispute (claimed minus certified) is NOT measurable from what is stored —
-     boq_progress holds one rel_pct per line, the certified one. pocCompareHTML
-     says so on screen rather than implying otherwise. */
+     ⚠️ Dispute (claimed minus certified) BECAME measurable on 2026-08-26 —
+     boq_progress gained rel_pct_claimed beside the certified rel_pct, so the
+     accrual splits into "claimed and cut" and "never submitted". Where no claim
+     is recorded the line reads claimed = certified, NEVER claimed-zero. */
   var SCHED = null, schedErr = null;
   var sub = 'items';
   var filt = { q: '', sheet: '', kind: '', mapped: '' };
@@ -396,6 +405,47 @@ window.BOQ = (function () {
     });
     return out;
   }
+  /* ==========================================================================
+     DISPUTE — claimed minus certified, in money.
+     Decision #7 left this unmeasurable: boq_progress stored one rel_pct per
+     line, the CERTIFIED one, so a submission the client cut was nowhere and the
+     whole reported-vs-certified gap had to be called "not yet billed".
+     2026-08-26-boq-claimed-vs-certified.sql adds rel_pct_claimed beside it.
+
+     ⚠️ EFFECTIVE CLAIMED = the stored claim, ELSE the certified figure. A line
+        with no claim recorded is not a line claimed at zero; treating it as zero
+        would price the entire BOQ as disputed the day the migration ran.
+     ⚠️ NOT NETTED. Certified-above-claimed is reported on its own as an anomaly
+        (almost always a typo) rather than cancelling genuine disputes elsewhere:
+        netting them would hide both.
+     ⚠️ NEVER BILLED FROM. Nothing derives POC or revenue from the claim — those
+        stay on the certified figure, because that is what the client pays. */
+  function claimedOf(perId, itemId) {
+    var c = CLAIM[perId];
+    if (c && c[itemId] != null) return Number(c[itemId]) || 0;
+    var p = PROG[perId];
+    return (p && p[itemId] != null) ? Number(p[itemId]) || 0 : 0;
+  }
+  function disputeOf(perId) {
+    var out = { disputed: 0, over: 0, nDisputed: 0, nOver: 0, nClaims: 0 };
+    var certMap = PROG[perId] || {}, claimMap = CLAIM[perId] || {};
+    out.nClaims = Object.keys(claimMap).length;
+    // Union of both maps: a line claimed but not certified at all is exactly the
+    // dispute that matters most, and it has no entry in PROG.
+    var seen = {};
+    Object.keys(certMap).forEach(function (k) { seen[k] = 1; });
+    Object.keys(claimMap).forEach(function (k) { seen[k] = 1; });
+    Object.keys(seen).forEach(function (iid) {
+      var r = ITEMS.find(function (x) { return String(x.id) === String(iid); });
+      if (!r || !moneyLine(r)) return;
+      var cert = Number(certMap[iid] || 0), clm = claimedOf(perId, iid);
+      var d = (clm - cert) * Number(r.amount);
+      if (d > 0) { out.disputed += d; out.nDisputed++; }
+      else if (d < 0) { out.over += -d; out.nOver++; }
+    });
+    return out;
+  }
+
   function periodsOrdered() {
     return PERIODS.slice().sort(function (a, b) {
       return String(a.period_end || '').localeCompare(String(b.period_end || '')) ||
@@ -508,7 +558,7 @@ window.BOQ = (function () {
 
   async function load() {
     loaded = false;
-    REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {};
+    REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; CLAIM = {};
     if (!pid) { render(); return; }
     try {
       REVS = await PDb.selectAll(T_REV, function (q) { return q.eq('project_id', pid); });
@@ -523,7 +573,14 @@ window.BOQ = (function () {
         ALLOC = await PDb.selectAll(T_ALLOC, function (q) { return q.eq('project_id', pid); });
         PERIODS = await PDb.selectAll(T_PER, function (q) { return q.eq('project_id', pid); });
         var prog = await PDb.selectAll(T_PROG, function (q) { return q.eq('project_id', pid); });
-        PROG = {}; prog.forEach(function (p) { (PROG[p.period_id] = PROG[p.period_id] || {})[p.boq_item_id] = Number(p.rel_pct) || 0; });
+        PROG = {}; CLAIM = {};
+        prog.forEach(function (p) {
+          (PROG[p.period_id] = PROG[p.period_id] || {})[p.boq_item_id] = Number(p.rel_pct) || 0;
+          /* ⚠️ null (the column un-run, or no claim recorded) must NOT become 0 —
+             that would read as a 100% dispute on every historical line. */
+          if (p.rel_pct_claimed != null)
+            (CLAIM[p.period_id] = CLAIM[p.period_id] || {})[p.boq_item_id] = Number(p.rel_pct_claimed) || 0;
+        });
       }
       try { PKGS = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
       catch (e) { PKGS = []; }   // no packages table yet: the feature is simply absent
@@ -1728,6 +1785,14 @@ window.BOQ = (function () {
       kpi('This period', pct(tot.poc == null ? null : tot.poc - (totPrev.poc || 0), 4), 'movement since the prior billing') +
       kpi('Revenue to date', money(tot.revenue), 'contract × POC', 'good') +
       kpi('Materials / Labour', money(tot.materials) + ' / ' + money(tot.labor), 'split survives into revenue') +
+      /* ⚠️ Shown ONLY once a claimed figure exists on this billing. A permanent
+         "Dispute ₱0.00" tile would assert agreement nobody recorded. */
+      (function () {
+        var d = cur ? disputeOf(cur.id) : null;
+        return (d && d.nClaims)
+          ? kpi('In dispute', money(d.disputed), d.nDisputed + ' line(s) claimed but not certified', d.disputed ? 'warn' : 'good')
+          : '';
+      })() +
       '</div>';
 
     h += '<p class="cc-hint"><strong>Only <code>rel_pct</code> is stored.</strong> WT %, %Wt. and Amt. are pure functions of ' +
@@ -1735,7 +1800,7 @@ window.BOQ = (function () {
       'moment a revision changes a quantity. Each period also snapshots the revision it was billed against, so a ' +
       'remeasure cannot retroactively rewrite a submitted billing.</p>';
 
-    h += pocCompareHTML(tot, contract);
+    h += pocCompareHTML(tot, contract, cur);
 
     h += '<div class="boq-filters">' + (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-b-new">New billing period…</button>' : '') + '</div>';
 
@@ -1876,7 +1941,7 @@ window.BOQ = (function () {
      to fake from the schedule.
 
      ⚠️ STILL NO WRITE-BACK, IN EITHER DIRECTION. The accrual is a report. */
-  function pocCompareHTML(tot, contract) {
+  function pocCompareHTML(tot, contract, cur) {
     var bill = tot.poc, prog = schedPoc();
     var h = '<div class="pd-card boq-poc">' +
       '<h3 class="boq-h3">Reported, certified, and the accrual between them</h3>';
@@ -1921,16 +1986,47 @@ window.BOQ = (function () {
           'next billing.'
         : 'Carry it as an unbilled receivable in the accrual, and it converts to AR at the next certification.') + '</p>';
 
+    /* DECISION #7's SECOND HALF, now measurable. The accrual splits into the two
+       things a commercial manager treats completely differently:
+         · claimed and not certified  → in DISPUTE, argue it
+         · not claimed at all         → not yet submitted, bill it
+       ⚠️ The split only appears once a claimed figure exists. With none recorded,
+          claiming a zero dispute would be a statement nobody made. */
+    var dsp = cur ? disputeOf(cur.id) : null;
+    if (dsp && (dsp.nClaims || dsp.disputed || dsp.over)) {
+      var unclaimed = (accrAmt != null && accrAmt > 0) ? Math.max(0, accrAmt - dsp.disputed) : null;
+      h += '<div class="boq-poc-row">' +
+        '<div class="boq-poc-cell ' + (dsp.disputed ? 'warn' : 'ok') + '"><span class="cc-mini">In dispute (claimed, not certified)</span>' +
+          '<div class="boq-poc-v">' + money(dsp.disputed) + '</div>' +
+          '<span class="cc-mini">' + dsp.nDisputed + ' line' + (dsp.nDisputed === 1 ? '' : 's') + ' cut by the client</span></div>' +
+        '<div class="boq-poc-cell"><span class="cc-mini">Not yet claimed</span>' +
+          '<div class="boq-poc-v">' + (unclaimed == null ? '—' : money(unclaimed)) + '</div>' +
+          '<span class="cc-mini">' + (unclaimed == null ? 'no accrual to split' : 'reported done, never submitted') + '</span></div>' +
+        '<div class="boq-poc-cell ' + (dsp.over ? 'bad' : '') + '"><span class="cc-mini">⚠️ Certified above claimed</span>' +
+          '<div class="boq-poc-v">' + money(dsp.over) + '</div>' +
+          '<span class="cc-mini">' + (dsp.nOver ? dsp.nOver + ' line(s) — check the entry' : 'none') + '</span></div>' +
+        '</div>' +
+        '<p class="cc-hint"><strong>Dispute is claimed minus certified, per line, on billing ' + esc(cur.billing_no) + '.</strong> ' +
+        'Lines with no claimed figure recorded are read as <em>claimed = certified</em>, never as claimed-zero, so they ' +
+        'add nothing to the dispute. ' + dsp.nClaims + ' line(s) carry a claimed figure. ' +
+        '⚠️ The two are <strong>not netted</strong>: certification above what was claimed is almost always a keying ' +
+        'error, and cancelling it against genuine disputes elsewhere would hide both.</p>';
+    } else if (accrPct != null && accrPct > 0) {
+      h += '<p class="cc-hint"><strong>No claimed figures recorded on this billing</strong>, so the accrual above cannot ' +
+        'yet be split into <em>disputed</em> and <em>not yet submitted</em>. Enter Claimed % beside Certified % in the ' +
+        'Progress dialog and both appear here. ⚠️ Absent claims are read as <em>claimed = certified</em> — never as a ' +
+        'dispute of the whole amount.</p>';
+    }
+
     /* ⚠️ THE HONEST LIMIT, ON SCREEN. Overstating what the number proves is how
        an accrual figure ends up in a report nobody can defend. */
     h += '<p class="cc-hint">⚠️ <strong>The reported figure is the contractor\'s own.</strong> It is ' +
       '<code>percent_complete</code> entered on the programme; nothing in this app records the client\'s verification ' +
       'of a schedule activity. So this accrual is <em>work claimed as done and not yet certified</em>, which includes ' +
       'anything the client would still knock off on inspection. ' +
-      '<strong>Dispute cannot be measured here yet</strong> — a dispute is claimed minus certified, and ' +
-      '<code>boq_progress</code> stores one <code>rel_pct</code> per line: the certified one. Measuring it needs a ' +
-      'claimed figure stored beside the certified one, which is a schema decision and not something to infer from the ' +
-      'schedule.</p>';
+      '<strong>Dispute is a different measurement</strong>, taken from the claimed figures below, and it only covers ' +
+      'what was actually submitted — work reported on the programme but never put in a billing is not disputed, it is ' +
+      'simply unclaimed.</p>';
 
     h += (contract && Math.abs(contract - contractSum(ITEMS)) > 1
         ? '<p class="cc-hint">⚠️ The certified figure is computed on the revision\'s stated contract total, which ' +
@@ -1979,10 +2075,25 @@ window.BOQ = (function () {
       // Seed from the prior period's to-date, because a cumulative figure never
       // goes backwards and re-typing 1,200 lines is not a workflow.
       if (last && PROG[last.id]) {
+        var lastClaim = CLAIM[last.id] || {};
         var seed = Object.keys(PROG[last.id]).map(function (iid) {
-          return { project_id: pid, period_id: res.data.id, boq_item_id: iid, rel_pct: PROG[last.id][iid], created_by: UID };
+          return { project_id: pid, period_id: res.data.id, boq_item_id: iid, rel_pct: PROG[last.id][iid],
+                   /* Claimed is cumulative too, so it seeds from the prior claim —
+                      but only where one was recorded. Seeding it from the certified
+                      figure would erase the very difference it exists to hold. */
+                   rel_pct_claimed: lastClaim[iid] == null ? null : lastClaim[iid],
+                   created_by: UID };
         });
-        for (var i = 0; i < seed.length; i += 400) await sb().from(T_PROG).insert(seed.slice(i, i + 400));
+        for (var i = 0; i < seed.length; i += 400) {
+          var sres = await sb().from(T_PROG).insert(seed.slice(i, i + 400));
+          // Un-run migration: seed the certified half rather than seeding nothing.
+          if (sres && sres.error && /rel_pct_claimed/.test(sres.error.message || '')) {
+            await sb().from(T_PROG).insert(seed.slice(i, i + 400).map(function (x) {
+              return { project_id: x.project_id, period_id: x.period_id, boq_item_id: x.boq_item_id,
+                       rel_pct: x.rel_pct, created_by: x.created_by };
+            }));
+          }
+        }
       }
       m.close(); UI.toast('Billing period ' + no + ' created.', 'success');
       await load(); openProgress(res.data.id);
@@ -1993,6 +2104,9 @@ window.BOQ = (function () {
     var p = PERIODS.find(function (x) { return x.id === perId; });
     if (!p) return;
     var rel = Object.assign({}, PROG[perId] || {});
+    /* Claimed is a SEPARATE map with separate emptiness: an absent entry means
+       "no claim recorded", which reads as equal to certified — not as zero. */
+    var claim = Object.assign({}, CLAIM[perId] || {});
     var prev = prevPeriodOf(p), relPrev = prev ? (PROG[prev.id] || {}) : {};
     var contract = p.contract_total != null ? Number(p.contract_total) : contractSum(ITEMS);
     var st = sheetTotals(ITEMS);
@@ -2009,23 +2123,44 @@ window.BOQ = (function () {
 
     function paint() {
       var t = periodTotals(ITEMS, rel, contract);
-      sumEl.innerHTML = 'POC <strong>' + pct(t.poc, 4) + '</strong> · revenue <strong>' + money(t.revenue) + '</strong>';
+      /* Live dispute while typing, from the maps being edited rather than from
+         the loaded CLAIM/PROG — otherwise the footer reports the last save. */
+      var dsp = 0, dspN = 0, ovr = 0;
+      lines.forEach(function (r2) {
+        var cert = Number(rel[r2.id] || 0);
+        var clm = claim[r2.id] == null ? cert : Number(claim[r2.id]);
+        var d = (clm - cert) * Number(r2.amount);
+        if (d > 0) { dsp += d; dspN++; } else if (d < 0) { ovr += -d; }
+      });
+      sumEl.innerHTML = 'POC <strong>' + pct(t.poc, 4) + '</strong> · revenue <strong>' + money(t.revenue) + '</strong>' +
+        (dsp ? ' · in dispute <strong>' + money(dsp) + '</strong> (' + dspN + ' line' + (dspN === 1 ? '' : 's') + ')' : '') +
+        (ovr ? ' · ⚠️ certified above claimed <strong>' + money(ovr) + '</strong>' : '');
       var list = lines.filter(function (r) { return !q || normKey([r.item_no, r.description, r.sheet].join(' ')).indexOf(normKey(q)) >= 0; });
       body.innerHTML =
         '<p class="cc-hint">Enter each line\'s <strong>cumulative</strong> relative % complete (0–100). %Wt. and Amt. below ' +
         'are derived live from the line amount and its sheet total — they are never stored.</p>' +
+        '<p class="cc-hint"><strong>Claimed</strong> is what you submitted; <strong>certified</strong> is what the client ' +
+        'approved. Leave Claimed blank when they are the same — blank means <em>not separately recorded</em>, never zero. ' +
+        'Only the certified column bills: POC, revenue and the monthly view all derive from it. Their difference is ' +
+        'reported as <strong>dispute</strong> on the Billing tab.</p>' +
         '<input class="pd-input" id="pg-q" placeholder="Search lines…" value="' + esc(q) + '" />' +
         '<table class="boq-progtab"><thead><tr><th>Line</th><th class="cc-r">Amount</th><th class="cc-r">WT %</th>' +
-        '<th class="cc-r">Prev %</th><th class="cc-r">To date %</th><th class="cc-r">%Wt.</th><th class="cc-r">Amt.</th>' +
+        '<th class="cc-r">Prev %</th><th class="cc-r">Claimed %</th><th class="cc-r">Certified %</th>' +
+        '<th class="cc-r">%Wt.</th><th class="cc-r">Amt.</th>' +
         '</tr></thead><tbody>' +
         list.slice(0, 400).map(function (r) {
           var w = wtOf(r, st), rl = Number(rel[r.id] || 0), pv = Number(relPrev[r.id] || 0);
+          var cm = claim[r.id] == null ? null : Number(claim[r.id]);
           return '<tr><td class="cc-desc"><div class="cc-desc-txt">' + esc(r.description || '') + '</div>' +
             '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row + '</div></td>' +
             '<td class="cc-r">' + money(r.amount) + '</td>' +
             '<td class="cc-r">' + pct(w, 4) + '</td>' +
             '<td class="cc-r cc-mut">' + pct(pv, 2) + '</td>' +
+            '<td class="cc-r"><input class="pd-input boq-clm" type="number" step="0.01" min="0" max="100" ' +
+              'placeholder="same" title="What was submitted. Blank means the same as certified." ' +
+              'data-id="' + esc(r.id) + '" value="' + (cm == null ? '' : (cm * 100).toFixed(2)) + '" /></td>' +
             '<td class="cc-r"><input class="pd-input boq-rel" type="number" step="0.01" min="0" max="100" ' +
+              'title="What the client certified. This is the figure that bills." ' +
               'data-id="' + esc(r.id) + '" value="' + (rl ? (rl * 100).toFixed(2) : '') + '" /></td>' +
             '<td class="cc-r">' + pct(w * rl, 6) + '</td>' +
             '<td class="cc-r">' + money(Number(r.amount) * rl) + '</td></tr>';
@@ -2034,6 +2169,21 @@ window.BOQ = (function () {
         (list.length > 400 ? '<p class="cc-mut">Showing the first 400 of ' + list.length + ' lines — narrow with the search.</p>' : '');
       var qi = body.querySelector('#pg-q'), tm = null;
       qi.addEventListener('input', function () { clearTimeout(tm); tm = setTimeout(function () { q = qi.value; paint(); qi = body.querySelector('#pg-q'); qi.focus(); }, 220); });
+      body.querySelectorAll('.boq-clm').forEach(function (inp) {
+        inp.onchange = function () {
+          var v = inp.value;
+          /* ⚠️ EMPTY DELETES THE CLAIM, it does not store 0. "Not separately
+             recorded" and "submitted nothing" are different facts, and only the
+             second one is a dispute. */
+          if (String(v).trim() === '') { delete claim[inp.dataset.id]; }
+          else {
+            var n = Number(v);
+            if (!isFinite(n) || n < 0) { delete claim[inp.dataset.id]; }
+            else claim[inp.dataset.id] = Math.min(n, 100) / 100;
+          }
+          paint();
+        };
+      });
       body.querySelectorAll('.boq-rel').forEach(function (inp) {
         inp.onchange = function () {
           var v = Number(inp.value);
@@ -2050,19 +2200,47 @@ window.BOQ = (function () {
     m.el.querySelector('#pg-x').onclick = m.close;
     m.el.querySelector('#pg-c').onclick = m.close;
     m.el.querySelector('#pg-go').onclick = async function () {
-      var ids = Object.keys(rel);
+      /* ⚠️ THE UNION, NOT Object.keys(rel). A line claimed and certified at NOTHING
+         is the sharpest dispute there is — fully submitted, fully rejected — and
+         it has no entry in `rel`. Keying off the certified map alone would drop
+         exactly the rows the dispute report exists to show. */
+      var idset = {};
+      Object.keys(rel).forEach(function (k) { idset[k] = 1; });
+      Object.keys(claim).forEach(function (k) { idset[k] = 1; });
+      var ids = Object.keys(idset);
       var payload = ids.map(function (iid) {
-        return { project_id: pid, period_id: perId, boq_item_id: iid, rel_pct: rel[iid], created_by: UID };
+        return { project_id: pid, period_id: perId, boq_item_id: iid,
+                 rel_pct: rel[iid] || 0,
+                 // null, never 0 — "no claim recorded" reads as equal to certified.
+                 rel_pct_claimed: claim[iid] == null ? null : claim[iid],
+                 created_by: UID };
       });
-      // Rows dropped to zero are deleted rather than stored as 0, so "never
-      // billed" and "explicitly zero this period" do not become the same row.
-      var gone = Object.keys(PROG[perId] || {}).filter(function (iid) { return !(iid in rel); });
+      // Rows dropped to zero on BOTH figures are deleted rather than stored as 0,
+      // so "never billed" and "explicitly zero this period" stay different rows.
+      var gone = Object.keys(PROG[perId] || {}).concat(Object.keys(CLAIM[perId] || {}))
+        .filter(function (iid, i2, a2) { return a2.indexOf(iid) === i2 && !(iid in idset); });
       for (var i = 0; i < gone.length; i += 100) {
         await sb().from(T_PROG).delete().eq('period_id', perId).in('boq_item_id', gone.slice(i, i + 100));
       }
+      /* Tolerant of the un-run migration, the same way PKGS is: strip the claimed
+         column and save the certified figures rather than losing the whole edit,
+         and say which migration restores the other half. */
+      var noClaimCol = false;
       for (var j = 0; j < payload.length; j += 300) {
-        var res = await sb().from(T_PROG).upsert(payload.slice(j, j + 300), { onConflict: 'period_id,boq_item_id' });
+        var chunk = payload.slice(j, j + 300);
+        var body2 = noClaimCol ? chunk.map(function (x) {
+          return { project_id: x.project_id, period_id: x.period_id, boq_item_id: x.boq_item_id,
+                   rel_pct: x.rel_pct, created_by: x.created_by };
+        }) : chunk;
+        var res = await sb().from(T_PROG).upsert(body2, { onConflict: 'period_id,boq_item_id' });
+        if (res.error && !noClaimCol && /rel_pct_claimed/.test(res.error.message || '')) {
+          noClaimCol = true; j -= 300; continue;              // retry this chunk without it
+        }
         if (res.error) { UI.toast(res.error.message, 'error'); return; }
+      }
+      if (noClaimCol) {
+        UI.toast('Certified progress saved, but the CLAIMED figures were not — run ' +
+          'migrations/2026-08-26-boq-claimed-vs-certified.sql.', 'error');
       }
       m.close(); UI.toast('Progress saved.', 'success'); await load();
     };
@@ -2091,6 +2269,8 @@ window.BOQ = (function () {
       proposeSplit: proposeSplit, locMatch: locMatch, allocSum: allocSum, suggestFor: suggestFor,
       statedTotalOf: statedTotalOf, billingColsOf: billingColsOf, guessRev: guessRev, sumStated: sumStated,
       pkgName: pkgName, pkgCell: pkgCell, schedPoc: schedPoc, sheetPkgState: sheetPkgState,
+      /* Decision #7's second half: dispute, testable against the shipped rule. */
+      disputeOf: disputeOf, claimedOf: claimedOf,
       /* Decision #6's derivation. Exported so the monthly split is testable
          against the shipped function rather than a reimplementation. */
       monthlyRevenue: monthlyRevenue, spreadDays: spreadDays, dnum: dnum, isoOf: isoOf,
@@ -2098,6 +2278,7 @@ window.BOQ = (function () {
       _set: function (o) {
         if (o.ITEMS) ITEMS = o.ITEMS; if (o.CMAP) CMAP = o.CMAP; if (o.ALLOC) ALLOC = o.ALLOC;
         if (o.PERIODS) PERIODS = o.PERIODS; if (o.PROG) PROG = o.PROG; if (o.SUGG) SUGG = o.SUGG;
+        if (o.CLAIM) CLAIM = o.CLAIM;
         if (o.ACTS) ACTS = o.ACTS; if (o.pid) pid = o.pid; if (o.PKGS) PKGS = o.PKGS;
         if (o.SCHED !== undefined) SCHED = o.SCHED; if (o.schedErr !== undefined) schedErr = o.schedErr;
       }

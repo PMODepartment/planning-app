@@ -398,6 +398,28 @@ actual verified progress … for reporting purposes … accrual and expected acc
   (0.20 reported vs 0.172459 certified on ₱1M), the reverse case at ₱22,459.00 / −2.25pp, plus the
   no-billing, no-schedule and reconciliation branches. Not clicked through in a browser.
 
+### 2026-08-26 — Claimed vs certified: dispute becomes a number
+Owner: *"Add rel_pct_claimed vs certified so dispute is measurable"*.
+- `migrations/2026-08-26-boq-claimed-vs-certified.sql` adds `boq_progress.rel_pct_claimed` beside
+  `rel_pct`. **`rel_pct` keeps its meaning — CERTIFIED.** POC, revenue and the monthly view still
+  derive from it alone; **nothing bills from a claim**.
+- ⚠️ **NULL = "not separately recorded", never zero.** No default, no back-fill. A zero default would
+  have priced every historical line as a 100% dispute the instant the migration ran. Effective
+  claimed is `coalesce(rel_pct_claimed, rel_pct)` in SQL and in JS alike.
+- ⚠️ **Not netted.** Certified-above-claimed is reported on its own as an anomaly rather than
+  cancelling genuine disputes elsewhere, which would hide both. No CHECK constraint: refusing the
+  save would only move the wrong number somewhere unrecorded.
+- Progress dialog: **Claimed %** beside **Certified %** (was "To date %"), blank meaning *same*, with
+  a live dispute total in the footer. The save writes the **union** of both maps — keying off the
+  certified map alone drops a line claimed in full and certified at nothing, the sharpest dispute
+  there is. Save and new-period seed both **degrade gracefully** when the migration has not run.
+- Accrual panel splits into **In dispute / Not yet claimed / ⚠️ Certified above claimed**, plus an
+  **In dispute** KPI — both only once a claim exists, since a standing "₱0.00 dispute" asserts an
+  agreement nobody made.
+- `boq_period_dispute` view (security_invoker, the screen's own heading/exclusion money rules).
+- **Verified**: 12/12 on `disputeOf`, 12/12 on the reframed `pocCompareHTML`. ⚠️ Migration not run,
+  nothing clicked through.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is

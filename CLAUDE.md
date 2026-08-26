@@ -8813,3 +8813,59 @@ corrected definition that is a **trade** split *inside* a package, a different a
 now rests on a premise that no longer holds.
 
 - `MODULE_V` → `20260826f`; `boq.js?v=20260826b`.
+
+### 2026-08-26 — Multi-package projects monitored separately, and dispute becomes a number
+Owner: *"For cases with projects that have multiple packages let's modify the project schedule module
+to show this multiple packaged project but tracked and monitored separately as a package"* and
+*"Add rel_pct_claimed vs certified so dispute is measurable"*.
+
+**Project Schedule — Contract Package Monitor** (new built-in report, `repPackages`)
+- One row per contract package plus the unassigned bucket: activities, own/total tagging, planned and
+  actual start/finish, planned % at the data date, actual %, variance in pp, cost-weighted %, planned
+  cost and earned.
+- ⚠️ **The weighting is `schedule_scurve_agg`'s, exactly** — `w_dur` = duration_days else
+  (end−start)+1 else 1; `w_cost` = planned_cost else bl_cost else 0; leaves are rows with a start date
+  and a non-WBS/summary type; POC = Σ(w × pc)/Σ(w); planned = Σ(w × straight-line elapsed)/Σ(w). Any
+  other weighting would disagree with the S-Curve, Cash Flow and the BOQ accrual, all of which read
+  that one function.
+- ⚠️ **Effective package, via `packageOf()`** — a WBS branch tagged once reports its whole subtree.
+  The **own / total** column exposes how much of a package total is inherited rather than tagged,
+  which is how a total drifts when someone re-parents a branch.
+- ⚠️ **The unassigned bucket is always listed** and the note warns when it is non-empty: without it a
+  half-tagged schedule looks fully packaged, every package row right and the project's wrong.
+- ⚠️ A package with no activities reads **`— none —`, never 0%**; an actual finish is withheld while
+  anything is open (`— N open —`) rather than reporting the latest finish among half-done work.
+- **Verified 21/21** executing the shipped `repPackages` in node against a three-package fixture:
+  75.00% actual vs 100.00% planned on PKG-1 (−25.00 pp), PKG-2 found only by WBS inheritance at
+  0 / 1 own and 60.61% planned (the RPC divides by end−start, a 99-day span — my first assertion said
+  60.00% and was wrong, the code matched the SQL), PKG-3 reporting `— none —`, the summary row and
+  the start-date-less row excluded from both counts and money, and the project total at 25.56%.
+
+**Contracts & Claims — claimed vs certified** (`migrations/2026-08-26-boq-claimed-vs-certified.sql`)
+- `boq_progress.rel_pct_claimed` added beside `rel_pct`. **`rel_pct` keeps its meaning: CERTIFIED.**
+  POC, revenue and the monthly view still derive from it alone — nothing bills from a claim.
+- ⚠️ **NULL means "not separately recorded", never zero**, with no default and no back-fill. A zero
+  default would have made every historical line read as a 100% dispute the moment the migration ran.
+  Effective claimed = `coalesce(rel_pct_claimed, rel_pct)` everywhere, in SQL and in JS.
+- ⚠️ **Not netted**: certified-above-claimed is reported separately as an anomaly (almost always a
+  keying error) instead of cancelling genuine disputes elsewhere and hiding both. No CHECK constraint
+  — refusing the save would only push the wrong number somewhere unrecorded.
+- Progress dialog gains **Claimed %** beside **Certified %** (renamed from "To date %"), blank meaning
+  *same*, with a live dispute total in the footer. The save now writes the **union** of both maps —
+  keying off the certified map alone would drop the sharpest case there is, a line claimed in full and
+  certified at nothing. Both the save and the new-period seed **degrade gracefully** if the migration
+  has not been run, storing the certified half and naming the migration.
+- The accrual panel splits into **In dispute** (claimed, not certified) / **Not yet claimed** /
+  **⚠️ Certified above claimed**, and a **In dispute** KPI appears on the Billing tab — both only once
+  a claimed figure exists, because a permanent "₱0.00 dispute" tile asserts an agreement nobody made.
+- `boq_period_dispute` view added (security_invoker, same heading/exclusion money rules as the screen).
+- **Verified 12/12** on `disputeOf` and **12/12** on the reframed `pocCompareHTML`: ₱150,000 dispute
+  across 2 lines with headings and excluded lines contributing nothing, a no-claim line not counting
+  as disputed, ₱120,000 certified-above-claimed reported without netting, a claimed-but-never-certified
+  line still counted, and the accrual splitting 27,541 into 10,000 disputed + 17,541 unclaimed.
+
+⚠️ **Nothing here is clicked through in a browser**, and the migration has **not been run** — until it
+is, the Claimed column saves nothing and says so. ⚠️ The schedule's inline script parses
+(`node --check` on the extracted block); the report has not been rendered in the Reports dialog.
+
+- `MODULE_V` → `20260826g`; `boq.js?v=20260826c`.

@@ -23982,6 +23982,144 @@
       align: ['l', 'l', 'l', 'r', 'l', 'l', 'l', 'r', 'l', 'l', 'l'], note: note, rows: out };
   }
 
+  // ---- CONTRACT PACKAGE MONITORING -------------------------------------------------
+  // One row per contract package: a multi-package project (Package 1 — Tower 1 and
+  // General Requirements; Package 2 — Towers 2-7) is ONE schedule that must be
+  // reportable as several, because each package is administered, progressed and
+  // billed on its own.
+  //
+  // ⚠️ THE WEIGHTING IS schedule_scurve_agg's, DELIBERATELY AND EXACTLY:
+  //      w_dur  = duration_days, else (end - start) + 1, else 1
+  //      w_cost = planned_cost, else bl_cost, else 0
+  //      leaves = start_date not null AND activity_type not wbs/summary
+  //      POC    = Σ(w × percent_complete) / Σ(w)
+  //      planned at the data date = Σ(w × straight-line fraction elapsed) / Σ(w)
+  //    A package total computed any other way would disagree with the S-Curve, Cash
+  //    Flow and the Contracts BOQ accrual — all of which read that same function — and
+  //    two package percentages differing by rounding are worse than one.
+  //
+  // ⚠️ EFFECTIVE package, not the stored column: packageOf() falls back to the nearest
+  //    assigned WBS ancestor, so a branch tagged once reports its whole subtree. The
+  //    'own' count says how many rows carry the tag themselves, because "inherited from
+  //    a branch someone re-parented" is how a package total drifts unnoticed.
+  //
+  // ⚠️ THE UNASSIGNED BUCKET IS ALWAYS LISTED. Dropping it would make a half-tagged
+  //    schedule look completely packaged: every package percentage right, the project's
+  //    wrong.
+  function _pkgLeaves() {
+    return activityRows().filter(function (r) {
+      if (!r.start_date) return false;
+      return !/wbs|summary/i.test(String(r.activity_type || ''));
+    });
+  }
+  function _pkgWeights(r) {
+    var s = pd(r.start_date), e = pd(r.end_date) || s;
+    var wd = Number(r.duration_days) || 0;
+    if (!wd) wd = (s && e) ? dayDiff(s, e) + 1 : 1;
+    if (!wd) wd = 1;
+    var wc = Number(r.planned_cost != null ? r.planned_cost : (r.bl_cost != null ? r.bl_cost : 0)) || 0;
+    return { wd: wd, wc: wc, s: s, e: e };
+  }
+  /* Straight-line fraction of an activity elapsed at date `at` — the same case
+     expression schedule_scurve_agg uses to build its planned curve. */
+  function _pkgPlannedFrac(w, at) {
+    if (!w.s || !at) return 0;
+    var e = w.e || w.s;
+    if (at >= e) return 1;
+    if (at < w.s) return 0;
+    return e > w.s ? dayDiff(w.s, at) / dayDiff(w.s, e) : 1;
+  }
+  function repPackages() {
+    var at = today();                       // the data date when one is set, else wall today
+    var buckets = {}, order = [];
+    function bucket(key, label) {
+      if (!buckets[key]) {
+        buckets[key] = { label: label, n: 0, own: 0, totD: 0, doneD: 0, planD: 0, totC: 0, doneC: 0,
+                         ps: null, pf: null, as_: null, af: null, unfinished: 0 };
+        order.push(key);
+      }
+      return buckets[key];
+    }
+    // Every package first, in the planner's own sort order, so a package with no work
+    // yet still appears — "Package 2 has not started" is a finding, not an absence.
+    (PACKAGES || []).forEach(function (k) {
+      bucket(k.id, k.code + ' — ' + k.name + (k.status === 'archived' ? ' (archived)' : ''));
+    });
+    bucket('', '— Not assigned to a package —');
+
+    _pkgLeaves().forEach(function (r) {
+      var b = bucket(packageOf(r) || '', '(unknown package)');
+      var w = _pkgWeights(r), pc = Math.max(0, Math.min(100, Number(r.percent_complete) || 0)) / 100;
+      b.n++; if (r.package_id) b.own++;
+      b.totD += w.wd; b.doneD += w.wd * pc; b.planD += w.wd * _pkgPlannedFrac(w, at);
+      b.totC += w.wc; b.doneC += w.wc * pc;
+      if (w.s && (!b.ps || w.s < b.ps)) b.ps = w.s;
+      if (w.e && (!b.pf || w.e > b.pf)) b.pf = w.e;
+      var as_ = pd(r.actual_start), af = pd(r.actual_finish);
+      if (as_ && (!b.as_ || as_ < b.as_)) b.as_ = as_;
+      if (af) { if (!b.af || af > b.af) b.af = af; } else { b.unfinished++; }
+    });
+    return _repPackagesRows(buckets, order, at);
+  }
+  function _repPackagesRows(buckets, order, at) {
+    var rows = [], t = { n: 0, totD: 0, doneD: 0, planD: 0, totC: 0, doneC: 0 };
+    order.forEach(function (k) {
+      var b = buckets[k];
+      // A package with no activities reports "— none —", never 0%: a zero claims a
+      // measurement was made, and none was.
+      var poc  = b.totD ? b.doneD / b.totD : null;
+      var plan = b.totD ? b.planD / b.totD : null;
+      var pocC = b.totC ? b.doneC / b.totC : null;
+      var varp = (poc == null || plan == null) ? null : (poc - plan) * 100;
+      t.n += b.n; t.totD += b.totD; t.doneD += b.doneD; t.planD += b.planD;
+      t.totC += b.totC; t.doneC += b.doneC;
+      rows.push([
+        b.label,
+        b.n ? String(b.n) : '— none —',
+        b.n ? (b.own + ' / ' + b.n) : '',
+        b.ps ? Fmt.date(dstr(b.ps)) : '—',
+        b.pf ? Fmt.date(dstr(b.pf)) : '—',
+        b.as_ ? Fmt.date(dstr(b.as_)) : (b.n ? '— not started —' : '—'),
+        // ⚠️ A finish date is only real when nothing is still open. The latest actual
+        //    finish among half-done work is not the package's finish.
+        (b.af && !b.unfinished) ? Fmt.date(dstr(b.af)) : (b.n ? '— ' + b.unfinished + ' open —' : '—'),
+        plan == null ? '—' : (plan * 100).toFixed(2) + '%',
+        poc  == null ? '—' : (poc * 100).toFixed(2) + '%',
+        varp == null ? '—' : (varp > 0 ? '+' : '') + varp.toFixed(2) + ' pp',
+        pocC == null ? '—' : (pocC * 100).toFixed(2) + '%',
+        b.totC ? Fmt.money(b.totC) : '—',
+        b.totC ? Fmt.money(b.doneC) : '—'
+      ]);
+    });
+    var noPkg = buckets[''] ? buckets[''].n : 0;
+    var tv = t.totD ? (t.doneD - t.planD) / t.totD * 100 : null;
+    return { headers: ['Contract package', 'Activities', 'Own / total', 'Planned start', 'Planned finish',
+        'Actual start', 'Actual finish', 'Planned %', 'Actual %', 'Variance', 'Cost-wtd %', 'Planned cost', 'Earned'],
+      align: ['l','r','r','l','l','l','l','r','r','r','r','r','r'],
+      note: _repPackagesNote(at, noPkg), rows: rows,
+      totals: ['PROJECT', String(t.n), '', '', '', '', '',
+        t.totD ? (t.planD / t.totD * 100).toFixed(2) + '%' : '—',
+        t.totD ? (t.doneD / t.totD * 100).toFixed(2) + '%' : '—',
+        tv == null ? '—' : (tv > 0 ? '+' : '') + tv.toFixed(2) + ' pp',
+        t.totC ? (t.doneC / t.totC * 100).toFixed(2) + '%' : '—',
+        t.totC ? Fmt.money(t.totC) : '—', t.totC ? Fmt.money(t.doneC) : '—'] };
+  }
+  function _repPackagesNote(at, noPkg) {
+    var note = 'One row per contract package, at data date ' + Fmt.date(dstr(at)) + '. ' +
+      'Weighting is schedule_scurve_agg\'s own — duration- and cost-weighted — so these agree with the S-Curve, ' +
+      'Cash Flow and the Contracts BOQ accrual instead of forming a fourth opinion. ' +
+      '"Own / total" counts activities carrying the package themselves; the rest inherit it from a WBS branch. ' +
+      'Planned % is straight-line elapsed at the data date, and variance is actual minus planned — negative is behind.';
+    if (!(PACKAGES || []).length) {
+      note += '  ⚠️ This project has NO contract packages defined. They come off the contract documents and are ' +
+        'created on the project Dashboard; everything below is one unassigned bucket until then.';
+    } else if (noPkg) {
+      note += '  ⚠️ ' + noPkg + ' activity/activities belong to no package, so the package rows below do NOT add up ' +
+        'to the project. Assign them, or read the project total as the only complete figure.';
+    }
+    return note;
+  }
+
   var REPORT_TEMPLATES = [
     { id: 'schedule',  name: 'Schedule Report',                 desc: 'WBS, dates, duration & % complete',            build: repSchedule },
     { id: 'cost',      name: 'Cost / EVM Report',               desc: 'IBB planned/actual/earned, EAC & CPI + totals', build: repCost },
@@ -23991,7 +24129,8 @@
     // ⚠️ No `opts`: the report-options form (#ps-rep-f-weeks / #ps-rep-f-inc) is hardcoded to the
     // look-ahead's two settings, so any option declared here would be un-settable in the UI. The
     // report sorts worst-slip-first and states the late count in its note instead.
-    { id: 'procurement', name: 'Procurement Alignment Report',   desc: 'Need-by vs Target Installation per work package', build: repProcurement }
+    { id: 'procurement', name: 'Procurement Alignment Report',   desc: 'Need-by vs Target Installation per work package', build: repProcurement },
+    { id: 'packages',  name: 'Contract Package Monitor',        desc: 'Per-package dates, planned vs actual % and cost — a multi-package project tracked separately', build: repPackages }
   ];
   function tplById(id) { return REPORT_TEMPLATES.filter(function (t) { return t.id === id; })[0]; }
   function loadReports() { try { return JSON.parse(localStorage.getItem('ps_reports') || '[]') || []; } catch (e) { return []; } }
