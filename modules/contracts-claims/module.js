@@ -322,8 +322,12 @@ window.ContractsClaims = (function () {
     var defType = e.record_type || (view === 'contract' ? 'Contract' : view === 'eot' ? 'EOT' : 'Change Order');
     var ALL_TYPES = ['Contract', 'Claim', 'Change Order', 'EOT'];
 
-    function f(label, id, val, type, attrs) {
-      return '<label>' + esc(label) + '<input id="' + id + '" type="' + (type || 'text') + '" ' + (attrs || '') +
+    /* ⚠️ `lattrs` goes on the LABEL, not the input. applyType() toggles display on the
+       element carrying data-only / data-not, and putting the guard on the input hides
+       the box while leaving its caption floating — which is how the four claim dates
+       ended up visible on a Contract in the first place. */
+    function f(label, id, val, type, attrs, lattrs) {
+      return '<label ' + (lattrs || '') + '>' + esc(label) + '<input id="' + id + '" type="' + (type || 'text') + '" ' + (attrs || '') +
         ' value="' + esc(val == null ? '' : (type === 'date' ? String(val).slice(0, 10) : val)) + '" /></label>';
     }
     var isContract = defType === 'Contract', isEot = defType === 'EOT';
@@ -335,10 +339,45 @@ window.ContractsClaims = (function () {
       f('Reference no.', 'cc-f-ref', e.reference_no, 'text', 'placeholder="e.g. CO 01"') +
       '<label class="cc-wide">Description<textarea id="cc-f-desc" placeholder="e.g. Additional Cost for Plumbing Fixtures">' + esc(clean(e.description) || clean(e.title)) + '</textarea></label>' +
       f('Counterparty / client', 'cc-f-cp', e.counterparty) +
-      /* A3's tail: which contract package this claim is raised against. Optional
-         by design — MODULE_CONTRACT §6b: a package is a narrowing, never a
-         requirement, and most projects have none. */
-      '<label>Package' + (PKGS.length ? '' : ' <span class="cc-mini">(none on this project)</span>') +
+      /* ⚠️ THE PACKAGE FIELD POINTS TWO DIFFERENT WAYS, AND THAT IS THE POINT.
+         Owner, 2026-08-26: *"In the contract it'll be the one that will define the
+         packaging."* He is right, and the original field was wrong for one of the four
+         types. `contracts_claims.package_id` was added for CLAIMS — a claim, change
+         order or EOT is RAISED AGAINST a lot that already exists — and the same form
+         serves every type, so a Contract inherited a picker pointing backwards: it
+         asked which package this contract belongs to, when the contract is the document
+         that DEFINES the package in the first place.
+         ⚠️ This also closes a real chicken-and-egg: until now the ONLY way to create a
+            package was the Dashboard, so a project whose contracts were being entered
+            here showed "(none on this project)" — exactly the screenshot — and every
+            downstream consumer (schedule, BOQ, procurement, engineering) had nothing to
+            file against.
+         ⚠️ STILL NEVER AUTOMATIC. Decision #2 stands: a package minted without a human
+            saying so could later be cited in a claim nobody agreed to. Creating one here
+            is an explicit choice in a picker, with its code and name confirmed — which
+            is precisely the authoritative act, a planner entering the contract. */
+      '<label data-only="Contract">Contract package<select id="cc-f-pkgnew">' +
+        '<option value="">— Create from this contract —</option>' +
+        PKGS.map(function (p2) {
+          return '<option value="' + esc(p2.id) + '"' + (String(e.package_id) === String(p2.id) ? ' selected' : '') + '>' +
+            'Link to ' + esc((p2.code ? p2.code + ' — ' : '') + (p2.name || '')) + '</option>'; }).join('') +
+        '</select></label>' +
+      '<div class="cc-wide" data-only="Contract" id="cc-pkgnew-wrap">' +
+        '<div class="cc-form" style="padding:0;">' +
+        f('Package code', 'cc-f-pkgcode', '', 'text', 'placeholder="e.g. PKG-1"') +
+        f('Package name', 'cc-f-pkgname', '', 'text', 'placeholder="e.g. Tower 1 and General Requirements"') +
+        f('Package start', 'cc-f-pkgstart', '', 'date') +
+        f('Package finish', 'cc-f-pkgend', '', 'date') +
+        '</div>' +
+        '<p class="cc-hint">This contract creates the package the schedule, BOQ, procurement and engineering ' +
+        'all file against. The <b>contract amount</b> above becomes its contract value. ' +
+        '⚠️ Seeded once, on save — afterwards the package is edited on the <b>Dashboard</b>, so the two ' +
+        'cannot silently drift apart.</p>' +
+      '</div>' +
+      /* Claims / COs / EOTs keep the original direction: raised AGAINST a package that
+         already exists. Optional by design — MODULE_CONTRACT §6b: a package is a
+         narrowing, never a requirement, and most projects have none. */
+      '<label data-not="Contract">Raised against package' + (PKGS.length ? '' : ' <span class="cc-mini">(none on this project yet)</span>') +
         '<select id="cc-f-pkgid"' + (PKGS.length ? '' : ' disabled') + '><option value="">— none —</option>' +
         PKGS.map(function (p2) {
           return '<option value="' + esc(p2.id) + '"' + (String(e.package_id) === String(p2.id) ? ' selected' : '') + '>' +
@@ -372,10 +411,20 @@ window.ContractsClaims = (function () {
       '<label data-not="Contract">Status<select id="cc-f-stat"><option value="">—</option>' +
         STATUSES.map(function (s) { return '<option' + (statusOf(e) === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') +
       '</select></label>' +
-      f('Date filed', 'cc-f-filed', e.date_filed, 'date') +
-      f('Date submitted', 'cc-f-subd', e.date_submitted, 'date') +
-      f('Date evaluated', 'cc-f-evald', e.date_evaluated, 'date') +
-      f('Date approved', 'cc-f-apprd', e.date_approved, 'date') +
+      /* ⚠️ THESE FOUR HAD NO TYPE GUARD while the section header above them and the
+         aging hint below them both carried `data-not="Contract"` — so on a Contract the
+         header vanished and its four fields stayed, stranded under "Contract value".
+         Submitted → Evaluated → Client Approved is the CLAIM pipeline; a construction
+         contract is signed, not evaluated. A contract keeps one date, and it is called
+         what it is. */
+      '<div class="cc-sec" data-only="Contract">Contract dates</div>' +
+      f('Date signed', 'cc-f-signed', e.date_filed, 'date', '', 'data-only="Contract"') +
+      '<p class="cc-hint" data-only="Contract">The contract\'s own start and finish live on the ' +
+        '<b>package</b> it defines, above — they are the dates the schedule and the billing read.</p>' +
+      f('Date filed', 'cc-f-filed', e.date_filed, 'date', '', 'data-not="Contract"') +
+      f('Date submitted', 'cc-f-subd', e.date_submitted, 'date', '', 'data-not="Contract"') +
+      f('Date evaluated', 'cc-f-evald', e.date_evaluated, 'date', '', 'data-not="Contract"') +
+      f('Date approved', 'cc-f-apprd', e.date_approved, 'date', '', 'data-not="Contract"') +
       '<p class="cc-hint" data-not="Contract">Aging is calculated from <b>Date submitted</b> while the record is Pending — it is never stored.</p>' +
       '<label class="cc-wide">Remarks<textarea id="cc-f-rem">' + esc(e.remarks || '') + '</textarea></label>';
 
@@ -396,8 +445,33 @@ window.ContractsClaims = (function () {
       m.el.querySelectorAll('[data-money]').forEach(function (n) { n.style.display = (t === 'Claim' || t === 'Change Order') ? '' : 'none'; });
       m.el.querySelectorAll('[data-days]').forEach(function (n) { n.style.display = t === 'EOT' ? '' : 'none'; });
     }
-    el('cc-f-rtype').addEventListener('change', applyType);
+    el('cc-f-rtype').addEventListener('change', function () { applyType(); applyPkgMode(); });
     applyType();
+
+    /* The "create a package from this contract" block only makes sense while
+       "— Create from this contract —" is chosen; linking to an existing package must
+       not show empty code/name boxes that would look like they need filling in. */
+    function applyPkgMode() {
+      var sel = el('cc-f-pkgnew'), wrap = m.el.querySelector('#cc-pkgnew-wrap');
+      if (!sel || !wrap) return;
+      var creating = !sel.value;
+      wrap.style.display = (el('cc-f-rtype').value === 'Contract' && creating) ? '' : 'none';
+      // Seed the code and name from what the planner has already typed, without ever
+      // overwriting something they edited themselves.
+      if (creating) {
+        var code = el('cc-f-pkgcode'), name = el('cc-f-pkgname');
+        if (code && !code.value && !code.dataset.touched) code.value = (el('cc-f-ref').value || '').trim();
+        if (name && !name.value && !name.dataset.touched) name.value = (el('cc-f-desc').value || '').trim().slice(0, 80);
+      }
+    }
+    ['cc-f-pkgcode', 'cc-f-pkgname'].forEach(function (id) {
+      var x = el(id); if (x) x.addEventListener('input', function () { x.dataset.touched = '1'; });
+    });
+    (function () { var s2 = el('cc-f-pkgnew'); if (s2) s2.addEventListener('change', applyPkgMode); })();
+    ['cc-f-ref', 'cc-f-desc'].forEach(function (id) {
+      var x = el(id); if (x) x.addEventListener('input', applyPkgMode);
+    });
+    applyPkgMode();
 
     wireModalCursor(m, r);
     el('cc-m-x').onclick = m.close;
@@ -406,16 +480,57 @@ window.ContractsClaims = (function () {
       var v = function (id) { var x = (el(id).value || '').trim(); return x === '' ? null : x; };
       var n = function (id) { var x = v(id); if (x == null) return null; var y = Number(x); return isFinite(y) ? y : null; };
       var t = el('cc-f-rtype').value;
+      /* WHICH PACKAGE THIS RECORD POINTS AT, resolved per type.
+         · Claim / CO / EOT → the package it is raised against (may be none).
+         · Contract         → the package it DEFINES: an existing one it is linked to,
+                              or a new one created here from the contract itself.
+         ⚠️ Created BEFORE the record is written, and a failure aborts the save. A
+            contract row saved with a package that could not be created would claim a
+            link that does not exist, and nothing downstream would ever notice. */
+      var pkgId = (function (el2) { return el2 && el2.value ? el2.value : null; })(el('cc-f-pkgid'));
+      if (t === 'Contract') {
+        var pkgSel = el('cc-f-pkgnew');
+        pkgId = pkgSel && pkgSel.value ? pkgSel.value : null;
+        if (pkgSel && !pkgSel.value) {
+          var pcode = v('cc-f-pkgcode'), pname = v('cc-f-pkgname');
+          if (!pcode || !pname) { UI.toast('Give the package a code and a name — they come off the contract.', 'error'); return; }
+          try {
+            var made = await PDb.createPackage({
+              project_id: pid, code: pcode, name: pname,
+              description: v('cc-f-desc'),
+              // The contract's own value and dates ARE the package's. Seeded once,
+              // here; afterwards the Dashboard owns them, so the two cannot drift.
+              contract_amount: n('cc-f-amount'),
+              start_date: v('cc-f-pkgstart'), end_date: v('cc-f-pkgend'),
+              status: 'active', sort_order: PKGS.length, created_by: UID
+            });
+            pkgId = made.id;
+            PKGS.push(made);
+          } catch (er) {
+            var em = (er && er.message) || String(er);
+            UI.toast(/duplicate key/i.test(em)
+              ? 'A package with code "' + pcode + '" already exists on this project — link to it instead.'
+              : ('Could not create the package: ' + em +
+                 (/relation|does not exist/i.test(em) ? ' — run migrations/2026-08-19-packages.sql.' : '')), 'error');
+            return;
+          }
+        }
+      }
       var payload = {
         project_id: pid, record_type: t,
         reference_no: v('cc-f-ref'), description: v('cc-f-desc'), counterparty: v('cc-f-cp'),
-        package_id: (function (el2) { return el2 && el2.value ? el2.value : null; })(el('cc-f-pkgid')),
+        package_id: pkgId,
         amount: t === 'Contract' ? n('cc-f-amount') : null,
         est_amount: null, sub_amount: null, eval_amount: null, approved_amount: null,
         est_days: null, sub_days: null, eval_days: null, approved_days: null,
         status: t === 'Contract' ? null : v('cc-f-stat'),
-        date_filed: v('cc-f-filed'), date_submitted: v('cc-f-subd'),
-        date_evaluated: v('cc-f-evald'), date_approved: v('cc-f-apprd'),
+        /* One column, two labels: a Contract writes its signing date into the same
+           `date_filed` column the claim pipeline uses for filing. No schema change,
+           and the form never shows both. */
+        date_filed: t === 'Contract' ? v('cc-f-signed') : v('cc-f-filed'),
+        date_submitted: t === 'Contract' ? null : v('cc-f-subd'),
+        date_evaluated: t === 'Contract' ? null : v('cc-f-evald'),
+        date_approved: t === 'Contract' ? null : v('cc-f-apprd'),
         remarks: v('cc-f-rem'), updated_at: new Date().toISOString()
       };
       // Only the pipeline belonging to this type is written; the other is nulled

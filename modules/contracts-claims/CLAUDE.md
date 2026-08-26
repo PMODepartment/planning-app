@@ -420,6 +420,55 @@ Owner: *"Add rel_pct_claimed vs certified so dispute is measurable"*.
 - **Verified**: 12/12 on `disputeOf`, 12/12 on the reframed `pocCompareHTML`. ⚠️ Migration not run,
   nothing clicked through.
 
+### 2026-08-26 — The contract DEFINES its package (and stops showing claim dates)
+Owner, on the Add-record form: *"In the contract module, there is a package field here. How come? In
+the contract it'll be the one that will define the packaging."* And: *"There are also date fields for
+approved evaluated which are not relevant to the construction contract."*
+
+Both were real, and the first was a modelling error rather than a cosmetic one.
+
+**The package field pointed the wrong way for one of the four types.**
+`contracts_claims.package_id` was added for CLAIMS — a claim, change order or EOT is *raised against* a
+lot that already exists — and one form serves every type, so **Contract** inherited a picker asking
+which package it belongs to, when the contract is the document that **defines** the package.
+- Type **Contract** now shows **Contract package** with *— Create from this contract —* first, plus
+  *Link to …* for each existing package, and a block for package **code, name, start, finish**. The
+  contract amount becomes the package's contract value.
+- Code and name are **seeded from Reference no. and Description** as you type, and never overwrite
+  anything you have edited yourself (`dataset.touched`).
+- Types **Claim / Change Order / EOT** are unchanged, relabelled **Raised against package** so the
+  direction is legible on screen.
+- ⚠️ **This closes a real chicken-and-egg.** Until now the only way to create a package was the
+  Dashboard, so a project whose contracts were being entered here read *"(none on this project)"* — the
+  screenshot — and the schedule, BOQ, procurement and engineering all had nothing to file against.
+- ⚠️ **Still never automatic.** Decision #2 stands: a package minted without a human saying so could
+  later be cited in a claim nobody agreed to. This is an explicit choice with its code and name
+  confirmed — a planner entering the contract, which is the authoritative act.
+- ⚠️ **The package is created BEFORE the record is written, and a failure aborts the save.** A contract
+  row saved pointing at a package that could not be created would claim a link that does not exist and
+  nothing downstream would notice. A duplicate code says so and offers linking instead.
+- ⚠️ **Seeded once, then the Dashboard owns it.** No two-way sync, so the contract and the package
+  cannot silently drift apart.
+
+**The four claim dates were showing on a Contract.**
+⚠️ `Date filed / submitted / evaluated / approved` carried **no type guard**, while the `Status & dates`
+header above them and the aging hint below them both had `data-not="Contract"` — so on a Contract the
+header vanished and its four fields stayed, stranded under "Contract value". Submitted → Evaluated →
+Client Approved is the **claim** pipeline; a construction contract is signed, not evaluated.
+- A Contract now shows **Contract dates → Date signed**, and nothing else. It writes to the same
+  `date_filed` column (no schema change), and the form never shows both labels at once.
+- The three claim dates are written as `null` on a Contract rather than left holding stale values.
+- ⚠️ **The guard had to move from the input to the LABEL.** `f()` put its attributes on the `<input>`
+  while `applyType()` toggles the element carrying `data-only` / `data-not` — hiding the box and
+  leaving its caption floating, which is how this shipped unnoticed. `f()` gained a `lattrs` argument
+  and the note says why.
+
+**Verified** by static audit of the built form: **0 inputs carry a type guard** (all 18 sit on labels,
+7 Contract-only / 11 non-Contract), and `node --check` is clean. ⚠️ **Not clicked through in a browser**
+— in particular, creating a package from a contract has not been run against the live database.
+
+`MODULE_V` → `20260826p`; `module.js?v=20260826a`.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is
