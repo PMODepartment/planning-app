@@ -1,3 +1,46 @@
+## Cost curves, per-trade subtotals, derived earned value; Cost/EVM removed (2026-08-26) — fmlozano
+
+**Run `migrations/2026-08-26-activity-cost-curve.sql`** (`project_schedule.cost_curve text`, no CHECK,
+nothing back-filled — NULL means linear).
+
+**Cost Loading step 4, "Spread over time".** Per-activity Linear / Front-loaded / Back-loaded / Bell,
+each with a 16-bar spark drawn from the module's own `curveCdf` and a monthly-spend preview built by
+`monthlyPhase()` over `usageMonths()`/`spreadCurveAdd()`.
+- ⚠️ **`curveCdf` already existed** with exactly these four shapes (the resource spread uses it). A
+  second definition would let a cost curve and a resource curve disagree about "front-loaded", so the
+  picker reuses it verbatim. The S-Curve's copy is a transcription (different module, no shared
+  closure) held to this one by an agreement test over 606 sample points.
+- ⚠️ `applyAll()` writes `{planned_cost, cost_curve}` and skips a row only when BOTH match. The un-run
+  migration is tolerated by retrying without `cost_curve` — but the probe requires the column name
+  **and** missing-column phrasing, because a CHECK violation quotes the constraint name (which
+  contains the column name) and a name-only test would send a planner to re-run an applied migration.
+
+**Derived earned value.** New `evStored` / `evOf` / `evDerived` / `cpiOf` sit immediately above
+`eac()`, which now consumes them; 27 call sites rewired (10+1 CPI expressions, 2 roll-up
+accumulators, 2 column-sort/copy sites, the Activity Usage series, the export, report totals, 2
+`hasCost` expressions).
+- ⚠️ **A stored zero counts as unset**, matching the shared `sumEarned` agg exactly — the tile and the
+  grid must not disagree about one activity.
+- ⚠️ The grid cell renders a derived value **muted-italic** with a tooltip naming its inputs, so it is
+  never mistaken for a measured figure; typing over it records a real one.
+
+**Step 2 per-trade subtotal** (`tradeTotals` / `tradePanelHTML`). ⚠️ Attributed **per occurrence** by
+each occurrence's own `workOf()`, sorted by `cmpWorkName` — one cost line can span two trades, so
+bucketing by "its" trade would misattribute money or need a meaningless "Mixed" bucket. Its own panel
+rather than inline totals, and an invalid split reports the unattributed money instead of hiding it.
+
+**Cost / EVM tab removed** — tab button, `#ps-view-cost` markup, `renderCost` + `_niceTop`, the
+`.ps-cost-*` CSS, 3 call sites and the switchTab branches. ⚠️ `renderCostAccounts` (the CBS manager)
+and `ps-view-costload` deliberately survive — different features that happen to share a prefix. The
+band now lives on `dashboard.html`, derived from the four already-aggregated metrics so the landing
+page pays no extra round-trip.
+
+**Verified.** 68 checks executing the shipped functions (sliced, never reimplemented) + 15 on the
+shared agg; **8 functions lost, all 8 intentional and named**; parse clean; browser-measured light
+1400px and dark 620px. ⚠️ **Not verified signed in**, and the migration has not been run.
+⚠️ **Still open, pre-existing:** `_vsPctAt` (~line 11030) does not honour `_vsBasis`, so the planned
+figure does not move when the vertical-stacking progress bar is scrubbed.
+
 ## REVERTED to the (b) build — `_vsAxis` was what removed the levels (2026-08-26) — fmlozano
 Owner: *"revert it back to previous prompt. the vertical stacking levels are gone again. haha."*
 `modules/project-schedule/index.html` is byte-identical to `b234098`; `9fc0efc` and `afe2053` are both out.

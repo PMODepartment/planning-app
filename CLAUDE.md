@@ -84,6 +84,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (f) — Cost curves, per-trade subtotals, derived earned value, and EVM moves to the dashboard
+Owner, in two messages: *"there should be a step wherein the manner of distribution of an activity is
+defined… bell curve, front loaded, back loaded, linear… that POC should be multiplied with the
+specified amount on that activity… that should be reported in the s-curve"*, then *"for the
+cost-loading step 2, can you add like a per trade sub-total… Also for Cost / EVM, remove that
+sub-module in the project schedule module. Meaning the EVM should be displayed in the planners
+dashboard."* `?v=20260826f`. **Run `migrations/2026-08-26-activity-cost-curve.sql`.**
+
+- **Cost Loading gained a 5th step — "Spread over time".** Linear / Front-loaded / Back-loaded /
+  Bell, picked per activity, each drawn as a 16-bar density spark and previewed as a monthly spend
+  bar chart. ⚠️ **Built on the module's EXISTING `curveCdf`**, which already had exactly these four
+  shapes for the resource spread — a second definition would let a cost curve and a resource curve
+  disagree about what "front-loaded" means. The S-Curve's copy is transcribed (separate module,
+  no shared closure) and held to the schedule's by an agreement test over 606 sample points.
+- **Earned value is DERIVED where nobody typed one** — `planned_cost × percent_complete`. ⚠️ A stored
+  figure still wins and **a stored ZERO counts as unset**; a derived cell renders muted-italic with a
+  tooltip naming its inputs, so it can never be mistaken for a measured figure. 27 call sites rewired
+  through `evOf()`/`cpiOf()` so the grid, the roll-ups, the export and the reports cannot disagree.
+- ⚠️ **The two asks turned out to be one bug.** `config.js` declared `ev` as a raw `sum` of
+  `earned_value`, so a fully cost-loaded project made the dashboard's EVM panel read *"earned value
+  and cost are not loaded"*. The derivation had to reach the shared metric engine, not just the grid —
+  new `sumEarned` agg in `db.js`, declaring its amount/pct columns rather than assuming a schedule
+  calls its money `planned_cost`.
+- **Step 2 now shows a per-trade subtotal.** ⚠️ Attributed **per occurrence**, by the trade each
+  occurrence sits under — one cost line can span two trades, so bucketing by "its" trade would either
+  misattribute money or need a meaningless "Mixed" bucket. Rendered as its own panel, not inline in
+  the table, to avoid the documented "summary disagrees with the cells it sums" trap, and an invalid
+  split that leaves money unattributed says so.
+- **Cost / EVM is gone from Project Schedule and lives on the dashboard** — a 9-cell band
+  (BAC · PV · EV · AC · SV · CV · EAC · VAC · TCPI) plus the CPI/SPI gauges. ⚠️ It derives entirely
+  from the four already-aggregated metrics, so the landing page pays **zero extra round-trips**; a row
+  fetch would have put a 17,000-row read on it. ⚠️ Every figure is null-not-zero and prints an em-dash
+  when its input is missing — "no cost loaded" and "spent nothing" are opposite facts.
+  ⚠️ **What did NOT move:** the WBS cost-variance table. That per-branch detail is already in the
+  Schedule grid's own cost columns (which roll up on WBS rows via `_costMap`), and the cost S-curve is
+  the S-Curve module's cost basis.
+- ⚠️ **Apply degrades rather than failing** when the migration is un-run: it retries without
+  `cost_curve` and names the file. The probe requires BOTH the column name and missing-column
+  phrasing — this module's own 2026-08-19 lesson is that a CHECK violation quotes the constraint
+  name, which contains the column name, and a name-only test would send a planner to re-run an
+  already-applied migration.
+- ⚠️ **No CHECK constraint on `cost_curve`, and nothing back-filled** — NULL means linear, which is
+  exactly what every existing project already gets.
+
+**Verified.** 68 checks executing the shipped `curveCdf`/`curveSpark`/`spreadCurveAdd`/`tradeTotals`
+and the grid's cost cell (sliced, never reimplemented), incl. a section-10 old-vs-new contrast; 15 on
+the shared metric agg against a fake PostgREST. Function-set diff: 12 added, **8 lost and all 8
+intentional** (`renderCost`, `_niceTop` and six of its locals). All 24 inline blocks and every
+`assets/js/*.js` parse. Browser-measured at 1400px light and 620px dark against the shipped CSS:
+sanity gate passed, 256 spark rects, the bell curve rendering as a visible bell, trades in
+construction order, 9 EVM cells, touch targets 47.5px, 0 page horizontal scroll, 0 clipped labels.
+⚠️ **Not verified signed in** — the anon key has no grants, so no cost curve has been applied against
+real data. ⚠️ `migrations/2026-08-25-schedule-cost-loading.sql` is **also still outstanding**.
+
 ### 2026-08-26 (e) — Reverted: the vertical stacking is back to the (b) build
 Owner: *"revert it back to previous prompt. the vertical stacking levels are gone again."* `?v=20260826e`.
 - **Out: `9fc0efc`** (Planned vs Actual totals printing both figures) **and `afe2053`** (`_vsAxis` —

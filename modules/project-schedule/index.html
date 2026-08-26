@@ -595,6 +595,10 @@
     .ps-toggle { cursor:pointer; width:16px; display:inline-flex; align-items:center; justify-content:center;
       color:var(--pd-muted); flex:none; }
     .ps-editable { cursor:text; } .ps-editable:hover { background:var(--pd-red-light); }
+    /* An Earned Value IBB the planner has NOT typed — Planned IBB x Activity % Complete, shown
+       muted+italic so a derived figure is never mistaken for a recorded measurement. It stays
+       editable: typing records a real one, clearing returns it to the derivation. */
+    .ps-cell.ps-ev-der { color:var(--pd-muted); font-style:italic; }
     .ps-cell input { width:100%; border:1px solid var(--pd-red); border-radius:3px; font:inherit; padding:2px 4px; box-sizing:border-box; background:var(--pd-card); color:var(--pd-ink); }
     /* Cell-range selection (Excel/OPC clipboard): tinted block + a solid box on the active cell, a
        dashed "marching" box on cut-source cells. box-shadow (not outline) so it layers over zebra. */
@@ -1020,6 +1024,44 @@
     .pscl-lvl .track { height:12px; border-radius:6px; background:var(--pd-bg); border:1px solid var(--pd-line); overflow:hidden; }
     .pscl-lvl .track > i { display:block; height:100%; background:var(--pd-red); }
     .pscl-lvl.zero .amt, .pscl-lvl.zero .nm { color:var(--pd-muted); }
+    /* Step 2 — subtotal by trade. Attributed per OCCURRENCE, so it is a panel beside the
+       name-keyed table rather than subtotal rows inside it. */
+    .pscl-trades { margin:0 0 14px; border:1px solid var(--pd-line); border-radius:12px; background:var(--pd-card); overflow:hidden; }
+    .pscl-tradesh { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px;
+      border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:12px; font-weight:800; }
+    .pscl-tradesh .m { font-size:11.5px; font-weight:700; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    .pscl-trow { display:grid; grid-template-columns:minmax(120px,1.2fr) 1fr 130px 96px; gap:10px; align-items:center;
+      padding:6px 12px; border-bottom:1px solid var(--pd-line); font-size:12.5px; }
+    .pscl-trow:last-of-type { border-bottom:0; }
+    .pscl-trow .nm { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pscl-trow .track { height:12px; border-radius:6px; background:var(--pd-bg); border:1px solid var(--pd-line); overflow:hidden; }
+    .pscl-trow .track > i { display:block; height:100%; background:var(--pd-red); }
+    .pscl-trow .amt { text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+    .pscl-trow .sub { text-align:right; font-size:11px; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    .pscl-trades .pscl-note { padding:8px 12px 0; }
+    .pscl-trades .pscl-note:last-child { padding-bottom:10px; }
+    @media (max-width:720px){ .pscl-trow { grid-template-columns:1fr 96px; } .pscl-trow .track, .pscl-trow .sub { display:none; } }
+    /* Step 4 — the spread curve. Four picker buttons per activity, each drawing its OWN density
+       from curveCdf so the picture can never drift from the arithmetic that spreads the money. */
+    .pscl-curves { display:flex; gap:6px; flex-wrap:wrap; }
+    .pscl-curve { display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer;
+      padding:5px 7px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-card);
+      font:inherit; font-size:10.5px; font-weight:700; color:var(--pd-muted); line-height:1.1; min-height:44px; }
+    .pscl-curve:hover { border-color:var(--pd-red); background:var(--pd-bg); }
+    .pscl-curve.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-ink); }
+    .pscl-spark rect { fill:var(--pd-muted); opacity:.55; }
+    .pscl-spark.on rect { fill:var(--pd-red); opacity:1; }
+    /* The monthly cash-out the curves produce — a preview of what Apply makes the S-Curve draw. */
+    .pscl-phase { margin-top:14px; border:1px solid var(--pd-line); border-radius:12px; background:var(--pd-card); overflow:hidden; }
+    .pscl-phaseh { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px;
+      border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:12px; font-weight:800; }
+    .pscl-phaseh .m { font-size:11.5px; font-weight:700; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    .pscl-mos { display:flex; align-items:flex-end; gap:3px; padding:12px; overflow-x:auto; min-height:96px; }
+    .pscl-mo { flex:0 0 auto; width:26px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:78px; }
+    .pscl-mo > i { display:block; width:100%; background:var(--pd-red); border-radius:3px 3px 0 0; min-height:0; }
+    .pscl-mo > span { margin-top:4px; font-size:9px; color:var(--pd-muted); white-space:nowrap;
+      transform:rotate(-45deg); transform-origin:center; width:26px; text-align:center; }
+    .pscl-phase .pscl-note { padding:0 12px 10px; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:12px; color:var(--pd-muted); }
     .ps-vs-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 9px; }
@@ -1487,28 +1529,6 @@
     .ps-totals-row > td { font-weight:700; border-top:2px solid var(--pd-line); background:var(--pd-bg); }
     .ps-empty { text-align:center; padding:40px; color:var(--pd-muted); }
     .ps-red { color:var(--pd-bad); } .ps-green { color:var(--pd-ok); }
-    /* ---- Cost / EVM dashboard (rebuilt Cost Loading tab) ---- */
-    .ps-cost-status { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; padding:5px 13px; border-radius:999px; margin-bottom:14px; }
-    .ps-cost-status.ok { background:rgba(22,163,74,.15); color:var(--pd-ok); }
-    .ps-cost-status.warn { background:rgba(217,119,6,.18); color:#d97706; }
-    .ps-cost-status.bad { background:rgba(220,38,38,.18); color:var(--pd-bad); }
-    .ps-cost-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(138px,1fr)); gap:10px; margin-bottom:16px; }
-    .ps-cost-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:11px 13px; }
-    .ps-cost-kpi .k-l { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-    .ps-cost-kpi .k-v { font-size:18px; font-weight:800; line-height:1.15; margin-top:3px; }
-    .ps-cost-kpi .k-s { font-size:11px; color:var(--pd-muted); margin-top:1px; }
-    .ps-cost-curvecard { padding:16px; margin-bottom:16px; }
-    .ps-cost-curvecard h3 { margin:0 0 10px; font-size:14px; }
-    .ps-cost-svg { width:100%; height:auto; display:block; }
-    .ps-cost-note { font-size:11.5px; color:var(--pd-muted); margin:8px 0 0; }
-    .ps-cc-grid { stroke:var(--pd-line); stroke-width:1; }
-    .ps-cc-lab { fill:var(--pd-muted); font-size:10.5px; } .ps-cc-lab.r { text-anchor:end; } .ps-cc-lab.m { text-anchor:middle; }
-    .ps-cc-pv { fill:none; stroke:var(--pd-dark); stroke-width:2.2; } html.pd-dark .ps-cc-pv { stroke:#c7ccd1; }
-    .ps-cc-bac { stroke:#9aa0a6; stroke-width:1.2; stroke-dasharray:5 4; }
-    .ps-cc-dd { stroke:var(--pd-red); stroke-width:1.3; stroke-dasharray:4 3; }
-    .ps-cc-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
-    .ps-cc-lg { display:inline-flex; align-items:center; gap:6px; } .ps-cc-lg .sw { width:16px; height:3px; display:inline-block; } .ps-cc-lg .dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
-    .ps-cost-wbs-over td { color:var(--pd-bad); }
     /* ── Add/Edit Activity modal ────────────────────────────────────────────────
        ⚠️ `.pd-modal` is ITSELF the scroll container (max-height:90vh; overflow-y:auto in the shared
        dashboard.css) and the header/footer are its direct children — so on this form, which is ~2400px
@@ -2333,7 +2353,6 @@
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Builder</button>
           <button data-tab="costload"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
-          <button data-tab="cost"><span data-ico="cash" data-ico-size="14"></span> Cost / EVM</button>
           <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
       </div>
@@ -2596,21 +2615,6 @@
       </div>
 
       <!-- COST / EVM -->
-      <div id="ps-view-cost" style="display:none;">
-        <!-- Cost / EVM dashboard (rebuilt): project cost-performance, not a per-activity table
-             (that lives in the Schedule grid; time-phased per-activity curves in Activity Usage). -->
-        <div id="ps-cost-status"></div>
-        <div class="ps-cost-kpis" id="ps-cost-kpis"></div>
-        <div class="pd-card ps-cost-curvecard">
-          <h3>Cost Performance (EVM) — Planned Value vs Earned / Actual</h3>
-          <div id="ps-cost-curve"></div>
-          <p class="ps-cost-note" id="ps-cost-note"></p>
-        </div>
-        <div class="pd-card" style="padding:0;overflow:auto;">
-          <table class="ps-table" id="ps-cost-wbs"><tbody><tr><td class="ps-empty">Select a project to view cost performance.</td></tr></tbody></table>
-        </div>
-      </div>
-
       <!-- PLANNER COCKPIT -->
       <!-- Working Calendars — a first-class view, not a dialog. The calendar decides
            which days a duration is counted in, so it is edited where the schedule is
@@ -3008,9 +3012,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260819a"></script>
+<script src="../../assets/js/config.js?v=20260826e"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260819b"></script>
+<script src="../../assets/js/db.js?v=20260826e"></script>
 <script src="../../assets/js/ui.js?v=20260824a"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
 <script src="../../assets/js/calendar.js?v=20260824a"></script>
@@ -6582,7 +6586,7 @@
       if (isWbs(r)) return;
       var dur = (pd(r.start_date) && pd(r.end_date)) ? (dayDiff(pd(r.start_date), pd(r.end_date)) + 1) : 0;
       var poc = plannedPOC(r);
-      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      var cpi = cpiOf(r);
       var od = _origDurOf(r) || 0;                  // for the Duration % Complete roll-up (duration-weighted)
       var dpEarned = od * (_durPct(r) / 100);
       var codes2 = [r.wbs].concat(r._anc || []);
@@ -6594,7 +6598,7 @@
         if (_sc === 'change_order') cm.co += 1; else if (_sc) cm.mc += 1;
         _cmPkg(cm, _pk);
         _cmCc(cm, r.class_code);
-        cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += r.earned_value || 0; cm.bl += r.bl_cost || 0;
+        cm.pc += r.planned_cost || 0; cm.ac += r.actual_cost || 0; cm.ev += evOf(r); cm.bl += r.bl_cost || 0;
         cm.eac += eac(r, cpi);
         if (dur > 0) {
           cm.wd += dur; cm.wearn += dur * (r.percent_complete || 0);
@@ -8346,7 +8350,7 @@
     // rendered under IT rather than its whole WBS subtree. See cmOf().
     function addCost(a, codes) {
       var dur = (pd(a.start_date) && pd(a.end_date)) ? (dayDiff(pd(a.start_date), pd(a.end_date)) + 1) : 0;
-      var poc = plannedPOC(a), cpi = a.actual_cost > 0 ? (a.earned_value || 0) / a.actual_cost : null;
+      var poc = plannedPOC(a), cpi = cpiOf(a);
       var od = _origDurOf(a) || 0, dpE = od * (_durPct(a) / 100);
       for (var j = 0; j < codes.length; j++) {
         var cm = dcost[codes[j]] || (dcost[codes[j]] = { pc:0, ac:0, ev:0, bl:0, eac:0, wd:0, wearn:0, wdPoc:0, wpoc:0, wdur:0, wdurE:0, done:0, prog:0, total:0, mc:0, co:0 });
@@ -8354,7 +8358,7 @@
         var _sa = scopeOf(a); if (_sa === 'change_order') cm.co += 1; else if (_sa) cm.mc += 1;
         _cmPkg(cm, packageOf(a));
         _cmCc(cm, a.class_code);
-        cm.pc += a.planned_cost || 0; cm.ac += a.actual_cost || 0; cm.ev += a.earned_value || 0; cm.bl += a.bl_cost || 0;
+        cm.pc += a.planned_cost || 0; cm.ac += a.actual_cost || 0; cm.ev += evOf(a); cm.bl += a.bl_cost || 0;
         cm.eac += eac(a, cpi);
         if (dur > 0) { cm.wd += dur; cm.wearn += dur * (a.percent_complete || 0); if (poc != null) { cm.wdPoc += dur; cm.wpoc += dur * poc; } }
         if (od > 0) { cm.wdur += od; cm.wdurE += dpE; }
@@ -9752,7 +9756,7 @@
       case 'flt': return r._float;
       case 'var': return finVar(r);
       case 'date': return lbl === 'BL Start' ? r.bl_start : lbl === 'BL Finish' ? r.bl_finish : lbl === 'Start' ? dispStart(r) : dispFin(r);
-      case 'cost': return lbl === 'Planned IBB' ? r.planned_cost : lbl === 'Actual IBB to date' ? r.actual_cost : lbl === 'Earned Value IBB' ? r.earned_value : lbl === 'At Completion IBB' ? eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) : r.bl_cost;
+      case 'cost': return lbl === 'Planned IBB' ? r.planned_cost : lbl === 'Actual IBB to date' ? r.actual_cost : lbl === 'Earned Value IBB' ? evOf(r) : lbl === 'At Completion IBB' ? eac(r, cpiOf(r)) : r.bl_cost;
     }
     return null;
   }
@@ -9789,7 +9793,7 @@
       case 'flt': return r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '');
       case 'var': { var v = finVar(r); return v == null ? '' : ((v > 0 ? '+' : '') + v + 'd'); }
       case 'date': { var f = lbl === 'BL Start' ? r.bl_start : lbl === 'BL Finish' ? r.bl_finish : lbl === 'Start' ? dispStart(r) : dispFin(r); return f ? Fmt.date(f) : ''; }
-      case 'cost': { var cv = lbl === 'Planned IBB' ? r.planned_cost : lbl === 'Actual IBB to date' ? r.actual_cost : lbl === 'Earned Value IBB' ? r.earned_value : lbl === 'At Completion IBB' ? eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) : r.bl_cost; return cv != null ? Fmt.money(cv) : ''; }
+      case 'cost': { var cv = lbl === 'Planned IBB' ? r.planned_cost : lbl === 'Actual IBB to date' ? r.actual_cost : lbl === 'Earned Value IBB' ? evOf(r) : lbl === 'At Completion IBB' ? eac(r, cpiOf(r)) : r.bl_cost; return cv != null ? Fmt.money(cv) : ''; }
     }
     return '';
   }
@@ -10137,7 +10141,7 @@
     // Paint only the list. The desktop pipeline is (re)built by renderAll when a
     // resize crosses back above 700px (see the resize handler above).
     if (psIsPhone()) { renderMobile(); return; }
-    renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderActLegend(); renderCost(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); if (activeTab === 'costload' && typeof CostLoading !== 'undefined') CostLoading.repaint(); }
+    renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderActLegend(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); if (activeTab === 'costload' && typeof CostLoading !== 'undefined') CostLoading.repaint(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -12557,12 +12561,12 @@
       var s = pd(r.start_date), e = pd(r.end_date);
       var as = pd(r.actual_start) || s, ae = pd(r.actual_finish) || (DD < e ? DD : e);
       var done = (r.percent_complete || 0) >= 100 || !!r.actual_finish;
-      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      var cpi = cpiOf(r);
       spreadAdd(S.planned, M, r.planned_cost || 0, s, e);
       spreadAdd(S.actual, M, r.actual_cost || 0, as, ae < as ? as : ae);
       spreadAdd(S.bac, M, (r.bl_cost != null ? r.bl_cost : r.planned_cost) || 0, pd(r.bl_start) || s, pd(r.bl_finish) || e);
       spreadAdd(S.pv, M, (r.bl_cost != null ? r.bl_cost : r.planned_cost) || 0, pd(r.bl_start) || s, pd(r.bl_finish) || e);
-      spreadAdd(S.ev, M, r.earned_value || 0, as, ae < as ? as : ae);
+      spreadAdd(S.ev, M, evOf(r), as, ae < as ? as : ae);
       if (!done) {
         var remCost = Math.max((r.planned_cost || 0) * (1 - (r.percent_complete || 0) / 100), 0);
         var rs = s > DD ? s : DD, re = e > rs ? e : rs;
@@ -13145,8 +13149,8 @@
       case 7: return (pd(r.start_date) && pd(r.end_date)) ? dayDiff(pd(r.start_date), pd(r.end_date)) + 1 : (r.duration_days || 0);
       case 8: { var p = plannedPOC(r); return p == null ? -1 : p; }
       case 9: return r.percent_complete == null ? -1 : r.percent_complete;
-      case 10: return r.planned_cost || 0; case 11: return r.actual_cost || 0; case 12: return r.earned_value || 0;
-      case 13: return eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) || 0;
+      case 10: return r.planned_cost || 0; case 11: return r.actual_cost || 0; case 12: return evOf(r);
+      case 13: return eac(r, cpiOf(r)) || 0;
       case 14: return r.bl_cost || 0;
       case 15: return String(r.percent_complete_type || '');
       case 16: return r._float == null ? 1e9 : r._float;
@@ -13331,7 +13335,7 @@
     if (ft) ft.onchange = function () { _colFilterOn = ft.checked; try { localStorage.setItem('ps_colfilter', _colFilterOn ? '1' : '0'); } catch (e) {} if (!_colFilterOn) filters.col = {}; renderHeader(); renderGrid(); };
     m.querySelectorAll('input[data-col]').forEach(function (cb) {
       cb.onchange = function () { if (cb.checked) delete colHidden[cb.dataset.col]; else colHidden[cb.dataset.col] = 1;
-        saveColHidden(); applyColHidden(); renderCost(); renderColsMenu(); };
+        saveColHidden(); applyColHidden(); renderColsMenu(); };
     });
     m.querySelectorAll('[data-colact]').forEach(function (b) {
       b.onclick = function () {
@@ -13339,7 +13343,7 @@
         if (act === 'show') { colHidden = {}; defs.forEach(function (d) { _colSeen[d.key] = 1; }); }
         else if (act === 'reset') { colHidden = {}; _colSeen = {}; colOrder = []; try { localStorage.setItem('ps_colseen', '{}'); localStorage.setItem('ps_colorder', '[]'); } catch (e) {} seedExtraHidden(); applyColOrder(); }
         else if (act === 'hide') { defs.forEach(function (d) { if (!d.locked) colHidden[d.key] = 1; }); }
-        saveColHidden(); applyColHidden(); renderCost(); renderColsMenu();
+        saveColHidden(); applyColHidden(); renderColsMenu();
       };
     });
   }
@@ -13572,16 +13576,26 @@
         '<div class="ps-cell c-ctype"></div>';
     }
     var poc = plannedPOC(r);
-    var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
-    var hasCost = r.planned_cost != null || r.actual_cost != null || r.earned_value != null;
+    var cpi = cpiOf(r);
+    var hasCost = r.planned_cost != null || r.actual_cost != null || evOf(r) > 0;
     function money(field) {
       var v = r[field];
       return '<div class="ps-cell c-cost ps-editable" data-id="' + r.id + '" data-field="' + field + '" data-type="money">' + (v != null ? Fmt.money(v) : '') + '</div>';
     }
+    // ⚠️ Earned Value IBB stays EDITABLE while showing the derived figure: typing records a measured
+    // value (which then wins), and clearing the cell returns it to the derivation. beginEdit()
+    // prefills from the stored field, so a derived cell opens EMPTY — correct, because there is no
+    // typed value to edit yet, and it stops a planner accidentally committing the arithmetic as data.
+    function moneyEv() {
+      var der = evDerived(r), v = evOf(r);
+      return '<div class="ps-cell c-cost ps-editable' + (der ? ' ps-ev-der' : '') + '" data-id="' + r.id + '" data-field="earned_value" data-type="money"' +
+        (der ? ' title="Derived: Planned IBB × Activity % Complete (' + Fmt.money(r.planned_cost) + ' × ' + (r.percent_complete || 0) + '%). Type a figure to record a measured earned value instead."' : '') + '>' +
+        (evStored(r) ? Fmt.money(r.earned_value) : (der ? Fmt.money(v) : '')) + '</div>';
+    }
     return '<div class="ps-cell c-poc">' + (poc != null ? poc + '%' : '') + '</div>' +
       '<div class="ps-cell c-pct ps-editable" data-id="' + r.id + '" data-field="percent_complete" data-type="number">' + (r.percent_complete != null ? r.percent_complete + '%' : '') + _pctBar(r.percent_complete) + '</div>' +
       '<div class="ps-cell c-durpct ps-editable" data-id="' + r.id + '" data-field="dur_pct" data-type="dpct" title="Duration % Complete — sets Remaining Duration; independent of Physical % Complete">' + _durPct(r) + '%</div>' +
-      money('planned_cost') + money('actual_cost') + money('earned_value') +
+      money('planned_cost') + money('actual_cost') + moneyEv() +
       '<div class="ps-cell c-cost">' + (hasCost ? Fmt.money(eac(r, cpi)) : '') + '</div>' +
       money('bl_cost') +
       '<div class="ps-cell c-ctype">' + esc(r.percent_complete_type || '') + '</div>';
@@ -14722,8 +14736,34 @@
   }
   // Estimate at Completion (matches OPC's "At Completion IBB"): standard EAC = AC + (BAC-EV)/CPI,
   // falling back to the plan (BAC) itself when there's no actual cost or CPI yet to extrapolate from.
+  // ⚠️⚠️ EARNED VALUE IS DERIVED WHEN NOBODY HAS TYPED ONE.
+  // Owner 2026-08-26: *"there is a column for activity % complete, now that POC should be
+  // multiplied with the specified amount on that activity."* Exactly right, and the schedule was
+  // not doing it: every reader of Earned Value IBB took the STORED `earned_value` raw, so a
+  // cost-loaded activity sitting at 45% on ₱1,000,000 reported a BLANK earned value until somebody
+  // hand-typed ₱450,000 — and the WBS roll-ups, CPI, EAC, the Activity Usage curve and the Excel
+  // export all inherited that blank. The Cost/EVM dashboard already derived it correctly in a
+  // LOCAL copy of this function, so the project total and the grid column disagreed about the same
+  // activity. One definition now, read by all of them.
+  // ⚠️ A STORED FIGURE STILL WINS. A typed earned value is a measurement — a quantity survey, a
+  // certified valuation — and an arithmetic guess must never overwrite it. The derivation fills the
+  // empty case only, which is the common one on a cost-loaded schedule.
+  // ⚠️ DERIVED, NEVER PERSISTED — the same rule as risk-register's rating and issues-lessons' aging.
+  // Writing it back would freeze today's arithmetic into a column that is wrong tomorrow, and would
+  // make the stored-beats-derived rule above impossible to honour ever again.
+  function evStored(r) { return r.earned_value != null && r.earned_value !== 0; }
+  function evOf(r) {
+    if (evStored(r)) return r.earned_value;
+    var pc = parseFloat(r.planned_cost);
+    if (!isFinite(pc)) return 0;
+    return pc * (Math.max(0, Math.min(100, r.percent_complete || 0)) / 100);
+  }
+  // Is the figure evOf() reports an arithmetic derivation rather than a typed one? Drives the
+  // cell's muted styling, so a planner can always tell which of the two they are looking at.
+  function evDerived(r) { return !evStored(r) && evOf(r) > 0; }
+  function cpiOf(r) { return r.actual_cost > 0 ? evOf(r) / r.actual_cost : null; }
   function eac(r, cpi) {
-    var bac = r.planned_cost || 0, ac = r.actual_cost || 0, ev = r.earned_value || 0;
+    var bac = r.planned_cost || 0, ac = r.actual_cost || 0, ev = evOf(r);
     if (!ac || !cpi) return bac;
     return ac + (bac - ev) / cpi;
   }
@@ -14737,83 +14777,6 @@
   // Project-level cost performance at the data date. The per-activity cost columns
   // already live in the Schedule grid, and the time-phased per-activity cost curves
   // in the Activity Usage detail tab — so this tab is the EVM roll-up, not a table.
-  function _niceTop(v) { if (!(v > 0)) return 1; var s = Math.pow(10, Math.floor(Math.log10(v))); var m = v / s; var n = m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10; var top = n * s; while (top < v) top += s; return top; }
-  function renderCost() {
-    if (activeTab !== 'cost') return;   // heavy EVM compute only while this tab is open
-    var kHost = document.getElementById('ps-cost-kpis'), sEl = document.getElementById('ps-cost-status'),
-        cHost = document.getElementById('ps-cost-curve'), nEl = document.getElementById('ps-cost-note'),
-        wTbl = document.getElementById('ps-cost-wbs');
-    if (!kHost || !cHost || !wTbl) return;
-    var leaves = rows.filter(function (r) { return !isWbs(r); });
-    if (!pid || !leaves.length) {
-      if (sEl) sEl.innerHTML = ''; kHost.innerHTML = '';
-      cHost.innerHTML = '<div class="ps-empty">' + (pid ? 'No cost-loaded activities.' : 'Select a project.') + '</div>';
-      if (nEl) nEl.textContent = ''; wTbl.innerHTML = ''; return;
-    }
-    var dd = today(), money = Fmt.money;
-    function evOf(r) { return (r.earned_value != null && r.earned_value !== 0) ? r.earned_value : (r.planned_cost || 0) * (Math.max(0, Math.min(100, r.percent_complete || 0)) / 100); }
-    function pvFrac(r) { var p = plannedPOC(r); if (p != null) return Math.max(0, Math.min(1, p / 100)); var s = pd(r.start_date), e = pd(r.end_date); if (!s) return 0; if (!e || e <= s) return dd >= s ? 1 : 0; return Math.max(0, Math.min(1, (dd - s) / (e - s))); }
-    var BAC = 0, PV = 0, EV = 0, AC = 0;
-    leaves.forEach(function (r) { var b = r.planned_cost || 0; BAC += b; PV += b * pvFrac(r); EV += evOf(r); AC += r.actual_cost || 0; });
-    var SV = EV - PV, CV = EV - AC, SPI = PV > 0 ? EV / PV : null, CPI = AC > 0 ? EV / AC : null;
-    var EAC = (CPI && CPI > 0) ? AC + (BAC - EV) / CPI : BAC, VAC = BAC - EAC, TCPI = (BAC - AC) !== 0 ? (BAC - EV) / (BAC - AC) : null;
-    function vcls(n) { return n > 0 ? 'ps-green' : n < 0 ? 'ps-red' : ''; }
-    function icls(n) { return n == null ? '' : n >= 1 ? 'ps-green' : 'ps-red'; }
-    function sgn(n) { return (n >= 0 ? '+' : '') + money(n); }
-    function ix(n) { return n == null ? '—' : n.toFixed(2); }
-    function k(l, v, s, cls) { return '<div class="ps-cost-kpi"><div class="k-l">' + l + '</div><div class="k-v ' + (cls || '') + '">' + v + '</div>' + (s ? '<div class="k-s">' + s + '</div>' : '') + '</div>'; }
-    var overBudget = (CV < 0) || (CPI != null && CPI < 1), behind = (SV < 0) || (SPI != null && SPI < 1);
-    if (sEl) sEl.innerHTML = '<span class="ps-cost-status ' + (overBudget ? 'bad' : behind ? 'warn' : 'ok') + '">' +
-      (overBudget ? 'Over budget' : 'On / under budget') + ' · ' + (behind ? 'Behind schedule' : 'On / ahead of schedule') + '</span>';
-    kHost.innerHTML =
-      k('BAC', money(BAC), 'Budget at completion') +
-      k('Planned value', money(PV), 'PV — to data date') +
-      k('Earned value', money(EV), 'EV — physical progress') +
-      k('Actual cost', money(AC), 'AC — spent to date') +
-      k('Schedule var.', sgn(SV), 'SV = EV − PV', vcls(SV)) +
-      k('Cost var.', sgn(CV), 'CV = EV − AC', vcls(CV)) +
-      k('SPI', ix(SPI), 'EV ÷ PV', icls(SPI)) +
-      k('CPI', ix(CPI), 'EV ÷ AC', icls(CPI)) +
-      k('EAC', money(EAC), 'Forecast at completion') +
-      k('VAC', sgn(VAC), 'BAC − EAC', vcls(VAC)) +
-      k('TCPI', ix(TCPI), 'To-complete index', icls(TCPI));
-    // ----- cost S-curve: PV cumulative (linear spread) + EV/AC points at the data date -----
-    var months = []; if (_min && _max) { var c0 = new Date(_min.getFullYear(), _min.getMonth(), 1); while (c0 <= _max) { months.push(new Date(c0)); c0 = new Date(c0.getFullYear(), c0.getMonth() + 1, 1); } }
-    if (months.length) {
-      function mEnd(m) { return new Date(m.getFullYear(), m.getMonth() + 1, 0); }
-      var pvC = months.map(function (m) { var me = mEnd(m), sum = 0; leaves.forEach(function (r) { var b = r.planned_cost || 0; if (!b) return; var st = pd(r.start_date), en = pd(r.end_date); if (!st) return; var f = (!en || en <= st) ? (me >= st ? 1 : 0) : Math.max(0, Math.min(1, (me - st) / (en - st))); sum += b * f; }); return sum; });
-      var W = 1000, H = 300, padL = 64, padR = 18, padT = 14, padB = 34, n = months.length;
-      var top = _niceTop(Math.max(BAC, EAC, AC, EV, pvC[n - 1] || 0));
-      function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
-      function y(v) { return padT + (1 - (v / top)) * (H - padT - padB); }
-      var grid = ''; [0, .25, .5, .75, 1].forEach(function (p) { var yy = y(top * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="ps-cc-grid"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="ps-cc-lab r">' + Fmt.moneyShort(top * p) + '</text>'; });
-      var xlab = ''; months.forEach(function (m, i) { if (m.getMonth() === 0 || i === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 15) + '" class="ps-cc-lab m">' + m.getFullYear() + '</text>'; });
-      var pvLine = '<polyline class="ps-cc-pv" points="' + pvC.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ') + '"/>';
-      var bacLine = '<line x1="' + padL + '" y1="' + y(BAC) + '" x2="' + (W - padR) + '" y2="' + y(BAC) + '" class="ps-cc-bac"/>';
-      var ddi = -1; for (var di = 0; di < months.length; di++) { if (mEnd(months[di]) >= dd) { ddi = di; break; } } if (ddi < 0) ddi = months.length - 1;
-      var ddx = x(ddi);
-      var ddLine = '<line x1="' + ddx + '" y1="' + padT + '" x2="' + ddx + '" y2="' + (H - padB) + '" class="ps-cc-dd"/>';
-      cHost.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="ps-cost-svg">' + grid + bacLine + ddLine + pvLine +
-        '<circle cx="' + ddx + '" cy="' + y(EV) + '" r="4.5" fill="#F5A623"/><circle cx="' + ddx + '" cy="' + y(AC) + '" r="4.5" fill="var(--pd-red)"/></svg>' +
-        '<div class="ps-cc-legend"><span class="ps-cc-lg"><span class="sw" style="background:var(--pd-dark)"></span> Planned value (PV)</span>' +
-        '<span class="ps-cc-lg"><span class="dot" style="background:#F5A623"></span> Earned value @ data date</span>' +
-        '<span class="ps-cc-lg"><span class="dot" style="background:var(--pd-red)"></span> Actual cost @ data date</span>' +
-        '<span class="ps-cc-lg"><span class="sw" style="border-top:2px dashed #9aa0a6;height:0"></span> BAC</span></div>';
-    } else { cHost.innerHTML = '<div class="ps-empty">No dated activities to plot.</div>'; }
-    if (nEl) { var MB = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; nEl.textContent = 'PV is spread linearly across each activity’s planned dates. EV/AC are shown at the data date (' + MB[dd.getMonth()] + ' ' + dd.getFullYear() + ') as points — no cost history is stored. EAC = AC + (BAC − EV) ÷ CPI.'; }
-    // ----- cost variance by WBS (roll-up from _costMap) -----
-    var wbsRows = rows.filter(isWbs).filter(function (r) { var cm = _costMap[r.wbs]; return cm && (cm.pc || cm.ac || cm.ev); });
-    var head = '<thead><tr><th>WBS</th><th>Name</th><th class="ps-num">Budget</th><th class="ps-num">Actual</th><th class="ps-num">Earned</th><th class="ps-num">Cost Var.</th><th class="ps-num">CPI</th><th class="ps-num">% Spent</th></tr></thead>';
-    var brows = wbsRows.sort(function (a, b) { return String(a.wbs).localeCompare(String(b.wbs), undefined, { numeric: true }); }).map(function (r) {
-      var cm = _costMap[r.wbs], cv = (cm.ev || 0) - (cm.ac || 0), cpi = cm.ac > 0 ? cm.ev / cm.ac : null, sp = cm.pc > 0 ? cm.ac / cm.pc * 100 : null;
-      return '<tr' + (cv < 0 ? ' class="ps-cost-wbs-over"' : '') + '><td><code>' + esc(r.wbs || '') + '</code></td><td>' + esc(r.activity_name || '') + '</td>' +
-        '<td class="ps-num">' + money(cm.pc || 0) + '</td><td class="ps-num">' + money(cm.ac || 0) + '</td><td class="ps-num">' + money(cm.ev || 0) + '</td>' +
-        '<td class="ps-num ' + vcls(cv) + '">' + sgn(cv) + '</td><td class="ps-num ' + icls(cpi) + '">' + ix(cpi) + '</td><td class="ps-num">' + (sp != null ? Math.round(sp) + '%' : '—') + '</td></tr>';
-    }).join('');
-    var totRow = '<tr class="ps-totals-row"><td colspan="2">TOTAL (' + leaves.length + ' activities)</td><td class="ps-num">' + money(BAC) + '</td><td class="ps-num">' + money(AC) + '</td><td class="ps-num">' + money(EV) + '</td><td class="ps-num ' + vcls(CV) + '">' + sgn(CV) + '</td><td class="ps-num ' + icls(CPI) + '">' + ix(CPI) + '</td><td class="ps-num">' + (BAC > 0 ? Math.round(AC / BAC * 100) + '%' : '—') + '</td></tr>';
-    wTbl.innerHTML = head + '<tbody>' + brows + totRow + '</tbody>';
-  }
-
   // ----- PLANNER COCKPIT: the weekly "Monday morning" view (all from existing data) -----
   var _ckLookWeeks = 3;
   function _ckLookSet() {   // incomplete activities whose start/finish falls in [data date, +N weeks]
@@ -22435,6 +22398,84 @@
       return '₱' + (Math.round(n * 100) / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     function r2(n) { return Math.round(n * 100) / 100; }
+    // ⚠️⚠️ TWO DIFFERENT THINGS ARE CALLED "DISTRIBUTION" HERE, AND THEY MUST NOT BE CONFUSED.
+    // Step 3 splits one activity's total across the PLACES it occurs (a spatial split, sub-WBS by
+    // sub-WBS). This step decides how each occurrence's money is spread over TIME inside its own
+    // dates. Owner 2026-08-26: *"there should be a step wherein the manner of distribution of an
+    // activity is defined… if bell curve, front loaded, back loaded, linear distribution. This is in
+    // order to give a more accurate projection."* Hence the step is named "Spread over time" and
+    // step 3 keeps "Distribute" — one word each, so the rail cannot be read as two of the same step.
+    // ⚠️ The four shapes are `curveCdf`'s, NOT a second curve model. That function already backs the
+    // resource-assignment curves shipped 2026-07-07 and is what `spreadCurveAdd` integrates; a
+    // parallel definition here is how a cost curve and a resource curve start disagreeing about what
+    // "front-loaded" means.
+    // ⚠️ 'linear' is the DEFAULT and is exactly today's behaviour — curveCdf('linear') is the
+    // identity, so a config saved before this step existed spreads byte-identically to before.
+    var CURVES = [
+      { k: 'linear', t: 'Linear', d: 'Even spend across the activity. The default, and what every cost-loaded schedule did before this step existed.' },
+      { k: 'front',  t: 'Front-loaded', d: 'Heaviest at the start, tailing off. Mobilisation, site setup, formwork strike-out — work that front-loads its own materials.' },
+      { k: 'back',   t: 'Back-loaded', d: 'Light at the start, heaviest at the end. Fit-out, finishes, testing and commissioning.' },
+      { k: 'bell',   t: 'Bell (mid-peak)', d: 'Ramps up, peaks mid-way, ramps down. The usual shape for a trade that builds up a crew and then demobilises.' }
+    ];
+    function curveOf(g) { var k = g && g.curve; return CURVES.some(function (c) { return c.k === k; }) ? k : 'linear'; }
+    function curveLabel(k) { for (var i = 0; i < CURVES.length; i++) if (CURVES[i].k === k) return CURVES[i].t; return 'Linear'; }
+    // A 64x22 sparkline of the curve's own DENSITY (its per-period spend), drawn from curveCdf so
+    // the picture cannot drift from the arithmetic that spreads the money.
+    function curveSpark(k, on) {
+      var N = 16, v = [], mx = 0;
+      for (var i = 0; i < N; i++) { var d = curveCdf(k, (i + 1) / N) - curveCdf(k, i / N); v.push(d); if (d > mx) mx = d; }
+      var bars = v.map(function (d2, j) {
+        var h = Math.max(1, Math.round((d2 / (mx || 1)) * 18));
+        return '<rect x="' + (j * 4) + '" y="' + (20 - h) + '" width="3" height="' + h + '" rx="1"></rect>';
+      }).join('');
+      return '<svg class="pscl-spark' + (on ? ' on' : '') + '" viewBox="0 0 64 22" width="64" height="22" aria-hidden="true">' + bars + '</svg>';
+    }
+    // ---- The monthly cash-out the chosen curves actually produce -----------------------------
+    // ⚠️ Spread with `spreadCurveAdd`, the SAME integrator the Activity Usage curves and (after
+    // this change) the S-Curve use — so the review, the usage tab and the S-Curve cannot report
+    // three different monthly profiles for one activity.
+    // ⚠️ Each occurrence is spread across ITS OWN dates, never the project's: 40 instances of
+    // "Formworks" run at 40 different times, and spreading their sum across the whole programme
+    // would draw a curve no occurrence ever follows.
+    // ⚠️ An occurrence with no dates contributes to the total but to NO month, and the shortfall is
+    // reported rather than quietly folded into month one.
+    function monthlyPhase(onlyName) {
+      var M = usageMonths(), arr = zeros(M.n), total = 0, undated = 0, gs = buildGroups();
+      gs.forEach(function (g) {
+        if (onlyName && g.name !== onlyName) return;
+        if (g.total == null) return;
+        var k = curveOf(g);
+        distribute(g).forEach(function (d) {
+          if (d.amount == null) return;
+          total += d.amount;
+          var st = pd(d.r.start_date), en = pd(d.r.end_date) || st;
+          if (!st) { undated += d.amount; return; }
+          spreadCurveAdd(arr, M, d.amount, st, en, k);
+        });
+      });
+      return { M: M, months: arr, total: r2(total), undated: r2(undated) };
+    }
+    // The review step's monthly strip: what Apply will make the S-Curve draw.
+    function phaseHTML(onlyName) {
+      var p = monthlyPhase(onlyName);
+      if (!p.total) return '';
+      var mx = p.months.reduce(function (a, b) { return Math.max(a, b); }, 0);
+      if (!mx) return '';
+      var run = 0;
+      var bars = p.months.map(function (v, i) {
+        run += v;
+        var d0 = new Date(p.M.y0, p.M.mo0 + i, 1);
+        var lbl = MON3[d0.getMonth()] + " '" + String(d0.getFullYear()).slice(2);
+        return '<div class="pscl-mo" title="' + esc(lbl + ' \u2014 ' + money(v) + ' this month, ' + money(run) + ' cumulative') + '">' +
+          '<i style="height:' + Math.max(v > 0 ? 2 : 0, Math.round((v / mx) * 100)) + '%;"></i>' +
+          '<span>' + esc(lbl) + '</span></div>';
+      }).join('');
+      return '<div class="pscl-phase"><div class="pscl-phaseh">Monthly spend from the chosen curves' +
+        '<span class="m">' + money(p.total) + ' over ' + p.M.n + ' month' + (p.M.n === 1 ? '' : 's') + '</span></div>' +
+        '<div class="pscl-mos">' + bars + '</div>' +
+        (p.undated ? '<p class="pscl-note">\u26a0\ufe0f ' + money(p.undated) + ' sits on occurrences with <b>no dates</b>, so it is in the total but in no month. Give those activities dates and it will phase.</p>' : '') +
+        '</div>';
+    }
     function setState(t) { var el = document.getElementById('ps-cl-state'); if (el) el.textContent = t || ''; }
     function markDirty() { dirty = true; setState('Unsaved changes'); }
 
@@ -22472,6 +22513,7 @@
         var g = by[n], c = (cfg && cfg.groups && cfg.groups[n]) || null;
         g.total = c && c.total != null ? c.total : null;
         g.mode = (c && c.mode === 'pct') ? 'pct' : 'equal';
+        g.curve = curveOf(c);
         g.pct = (c && c.pct) || {};
         g.insts.sort(function (a, b) { return String(a.wbs || '').localeCompare(String(b.wbs || ''), undefined, { numeric: true }) || cmpGroupName(a.activity_id || '', b.activity_id || ''); });
         return g;
@@ -22531,9 +22573,67 @@
       return { groups: gs.length, acts: acts, assigned: assigned, priced: priced, unpriced: unpriced, bad: bad, list: gs };
     }
 
+    // ---- Per-trade subtotal (step 2) ---------------------------------------------------------
+    // Owner 2026-08-26: *"if i input the total cost of activities under structural activities, the
+    // total for structural trade would be shown."*
+    // ⚠️⚠️ ATTRIBUTED PER OCCURRENCE, NOT PER ACTIVITY NAME — and that is the whole design.
+    // A cost line is one NAME ("Formworks", priced once) but its occurrences are spread across the
+    // WBS, and they do not all have to sit under the same trade: Formworks under Structural Works
+    // and Formworks under Site Works are the same cost line in two trades. Bucketing the whole
+    // line by "its" trade would therefore have to either pick one (misattributing the rest) or
+    // invent a "— Mixed —" bucket that answers nobody's question. Summing the DISTRIBUTED
+    // occurrence amounts by each occurrence's own trade is exact, needs no such bucket, and reuses
+    // the split the planner already defined in step 3.
+    // ⚠️ The subtotals are a PANEL, not subtotal rows inside the table. The table's rows are
+    // activity NAMES and its input is one figure per name; a per-trade subtotal row sitting among
+    // them would be summing something the rows above it are not, which is exactly the
+    // summary-disagrees-with-its-cells trap the Planned vs Actual work ran into. Different things,
+    // shown separately, each saying what it sums.
+    // ⚠️ A line whose percentage split does not reach 100% distributes to NULL amounts, so it can be
+    // attributed to no trade at all. Its total is reported as unattributed rather than silently
+    // dropped — a trade panel that quietly omits money is worse than one that admits it.
+    function tradeTotals() {
+      var gs = buildGroups(), by = {}, order = [], attributed = 0, pending = 0;
+      gs.forEach(function (g) {
+        if (g.total == null) return;
+        var d = distribute(g);
+        if (d._invalid) { pending += g.total; return; }
+        d.forEach(function (x) {
+          if (x.amount == null) { return; }
+          var tr = workOf(x.r) || NO_TRADE;
+          if (!by[tr]) { by[tr] = { trade: tr, amount: 0, n: 0, names: {} }; order.push(tr); }
+          by[tr].amount = r2(by[tr].amount + x.amount); by[tr].n++; by[tr].names[g.name] = 1;
+          attributed = r2(attributed + x.amount);
+        });
+      });
+      // Construction order, the same comparator the grid's Discipline/Trade grouping uses, so the
+      // panel reads Gen Req -> Site Works -> Structural -> Architectural -> MEPF -> Allied -> Others.
+      var list = order.map(function (k) { var b = by[k]; b.lines = Object.keys(b.names).length; return b; });
+      try { list.sort(function (a, b) { return cmpWorkName(a.trade, b.trade); }); }
+      catch (e) { list.sort(function (a, b) { return b.amount - a.amount; }); }
+      return { list: list, attributed: attributed, pending: r2(pending) };
+    }
+    function tradePanelHTML() {
+      var tt = tradeTotals();
+      if (!tt.list.length && !tt.pending) return '';
+      var mx = tt.list.reduce(function (m, b) { return Math.max(m, b.amount); }, 0) || 1;
+      return '<div class="pscl-trades">' +
+        '<div class="pscl-tradesh">Subtotal by trade<span class="m">' + money(tt.attributed) + ' attributed</span></div>' +
+        tt.list.map(function (b) {
+          return '<div class="pscl-trow" title="' + esc(b.trade + ' — ' + money(b.amount) + ' across ' + b.n + ' occurrence' + (b.n === 1 ? '' : 's') + ' of ' + b.lines + ' cost line' + (b.lines === 1 ? '' : 's')) + '">' +
+            '<span class="nm">' + esc(b.trade) + '</span>' +
+            '<span class="track"><i style="width:' + Math.max(2, Math.round((b.amount / mx) * 100)) + '%;"></i></span>' +
+            '<span class="amt">' + money(b.amount) + '</span>' +
+            '<span class="sub">' + b.lines + ' line' + (b.lines === 1 ? '' : 's') + ' · ' + b.n + '\u00d7</span></div>';
+        }).join('') +
+        (tt.pending ? '<p class="pscl-note">\u26a0\ufe0f ' + money(tt.pending) + ' is not attributed to a trade yet \u2014 those cost lines have a percentage split that does not reach 100%, so step 3 cannot say how much of them lands where. Fix the split and it appears here.</p>' : '') +
+        '<p class="pscl-note">Attributed <b>per occurrence</b>, by the trade each occurrence sits under \u2014 so one cost line spanning two trades contributes to both, in the proportions step 3 sets.</p>' +
+        '</div>';
+    }
+
     // ---- Persistence ------------------------------------------------------------------------
     function ensureCfg() { if (!cfg) cfg = { groups: {} }; if (!cfg.groups) cfg.groups = {}; return cfg; }
-    function entry(name) { var c = ensureCfg(); return (c.groups[name] = c.groups[name] || { total: null, mode: 'equal', pct: {} }); }
+    function entry(name) { var c = ensureCfg(); return (c.groups[name] = c.groups[name] || { total: null, mode: 'equal', pct: {}, curve: 'linear' }); }
     async function load() {
       cfg = { groups: {} };
       if (!curPid) return;
@@ -22602,12 +22702,17 @@
       var writes = [], overwrite = 0;
       t.list.forEach(function (g) {
         if (g.total == null) return;
+        var k = curveOf(g);
         distribute(g).forEach(function (d) {
           if (d.amount == null) return;
           var cur = d.r.planned_cost == null ? null : r2(+d.r.planned_cost);
-          if (cur === d.amount) return;                    // already carries this figure
-          if (cur != null && cur !== 0) overwrite++;
-          writes.push({ id: d.r.id, amount: d.amount });
+          // ⚠️ Skipped only when the money AND the shape already match. Comparing the amount alone
+          // would make a curve-only change a silent no-op — the planner picks Bell, presses Apply,
+          // and is told the schedule already carries this loading.
+          var curK = d.r.cost_curve || 'linear';
+          if (cur === d.amount && curK === k) return;
+          if (cur != null && cur !== 0 && cur !== d.amount) overwrite++;
+          writes.push({ id: d.r.id, amount: d.amount, curve: k });
         });
       });
       if (!writes.length) { UI.toast('The schedule already carries this loading — nothing to write.', 'success'); return; }
@@ -22617,14 +22722,33 @@
       if (overwrite) msg += '\n\n' + overwrite + ' of them already carry a Planned IBB from elsewhere (an import, or an earlier loading) and will be replaced.';
       if (!confirm(msg)) return;
       showLoading('Writing cost onto ' + writes.length + ' activities…');
-      var done = 0;
+      // ⚠️ TOLERANT OF THE UN-RUN cost_curve MIGRATION, and it degrades rather than aborting.
+      // PostgREST rejects the WHOLE row when it does not know a column (PGRST204), so a missing
+      // `cost_curve` would otherwise fail the very first write and leave the planner's money
+      // unwritten because of a column that only affects the SHAPE. On that error the curve is
+      // dropped for the rest of the run, the money still lands, and the migration is named at the
+      // end. Only a missing column is tolerated — a constraint or RLS failure still stops the run.
+      var done = 0, curveOkNow = true, curveDropped = false;
       for (var i = 0; i < writes.length; i++) {
-        var ok = await persist(writes[i].id, { planned_cost: writes[i].amount }, false, true);
+        var patch = { planned_cost: writes[i].amount };
+        if (curveOkNow) patch.cost_curve = writes[i].curve;
+        var ok = await persist(writes[i].id, patch, false, true);
+        // ⚠️ BOTH the missing-column PHRASING and the column name. This module learned the hard
+        // way (persistScope, 2026-08-19) that matching a column NAME alone is wrong: a CHECK
+        // violation quotes the constraint, which contains the column name, so a name-only test sends
+        // the planner to re-run a migration that is already applied. cost_curve carries no CHECK
+        // today, but the next person to add one should not have to rediscover this.
+        var _e = String(_lastPersistErr || '');
+        if (!ok && curveOkNow && /cost_curve/.test(_e) && /does not exist|could not find|schema cache/i.test(_e)) {
+          curveOkNow = false; curveDropped = true;
+          ok = await persist(writes[i].id, { planned_cost: writes[i].amount }, false, true);
+        }
         if (!ok) { hideLoading(); UI.toast('Wrote ' + done + ' of ' + writes.length + ' — ' + (_lastPersistErr || 'save failed') + '. The rest are unchanged.', 'error'); renderAll(); return; }
         done++;
       }
       hideLoading();
       UI.toast('Cost loading applied to ' + done + ' activit' + (done === 1 ? 'y' : 'ies') + ' (' + money(t.assigned) + ' assigned).', 'success');
+      if (curveDropped) UI.toast('The spread curves were NOT saved — run migrations/2026-08-26-activity-cost-curve.sql, then Apply again. The money is written; the S-Curve will spread it linearly until then.', 'error');
       renderAll();
     }
 
@@ -22693,8 +22817,10 @@
         d: 'One figure per activity name — the cost of that work <b>across the whole project</b>. Step 3 splits it across the places it occurs.' },
       { t: 'Distribute', short: 'Split across the sub-WBS',
         d: 'Split each total across the sub-WBS it occurs in: <b>equally</b>, or by a <b>percentage</b> you set per occurrence. Shares must reach 100% before Apply will write anything.' },
+      { t: 'Spread over time', short: 'Linear, front, back or bell',
+        d: 'How each occurrence\u2019s money is spent <b>across its own dates</b> \u2014 evenly, front-loaded, back-loaded, or a bell. Step 3 decided <i>where</i> the money goes; this decides <i>when</i>. It is what makes the S-Curve a projection rather than a straight line.' },
       { t: 'Consolidate & review', short: 'See where the money is',
-        d: 'The result as a vertical stack — per tower, per floor or zone, for the selected activity. These are the figures <b>Apply to schedule</b> writes as Planned IBB.' }
+        d: 'The result as a vertical stack \u2014 per tower, per floor or zone, for the selected activity \u2014 and the monthly spend the chosen curves produce. These are the figures <b>Apply to schedule</b> writes as Planned IBB.' }
     ];
     // The rail is the builder's rail — same classes, same sticky column, so switching tabs does not
     // feel like switching apps. The step's own one-line summary sits under its title exactly as the
@@ -22758,7 +22884,7 @@
       if (!t.groups) return panelWrap(1, '<div class="sbld-empty">No activities to price yet.</div>');
       // ⚠️ The running total is a FOOTER row, not another KPI box: it belongs at the bottom of the
       // column it sums, where a planner typing down the list can see it move.
-      return panelWrap(1, kpisHTML(t) +
+      return panelWrap(1, kpisHTML(t) + tradePanelHTML() +
         '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
         '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num" style="width:210px;">Total cost</th><th class="num sub">Per occurrence (equal)</th></tr></thead><tbody>' +
         t.list.map(function (g) {
@@ -22819,9 +22945,30 @@
                  : '<p class="pscl-note" style="margin-top:8px;">Distribution complete — the occurrences add up to ' + money(g.total) + ' exactly.</p>') +
         '</div></div>');
     }
+    // ⚠️ Offered for EVERY activity name, priced or not: a planner reasonably sets the shape while
+    // reading the list and prices it afterwards, and a curve on an unpriced line costs nothing.
+    // The unpriced ones are marked so the strip never reads as "this is spending money".
     function step4HTML(t) {
-      if (!t.priced) return panelWrap(3, '<div class="sbld-empty">Assign a cost in step 2 first — there is nothing to review yet.</div>');
-      if (!LOC_LEVELS.length) return panelWrap(3, scopeWarnHTML(t.list._scope) +
+      if (!t.groups) return panelWrap(3, '<div class="sbld-empty">No activities to spread yet.</div>');
+      return panelWrap(3, kpisHTML(t) +
+        '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
+        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num">Total cost</th><th style="width:430px;">Spread over its dates</th></tr></thead><tbody>' +
+        t.list.map(function (g) {
+          var cur = curveOf(g);
+          return '<tr><td class="nm">' + esc(g.name) + '</td>' +
+            '<td class="num"><span class="sbld-tag">' + g.insts.length + '\u00d7</span></td>' +
+            '<td class="num money' + (g.total == null ? ' none' : '') + '">' + (g.total == null ? 'not priced' : money(g.total)) + '</td>' +
+            '<td><div class="pscl-curves">' + CURVES.map(function (c) {
+              return '<button class="pscl-curve' + (c.k === cur ? ' on' : '') + '" data-curve="' + esc(g.name) + '" data-k="' + c.k + '" title="' + esc(c.t + ' \u2014 ' + c.d) + '">' +
+                curveSpark(c.k, c.k === cur) + '<span>' + esc(c.t) + '</span></button>';
+            }).join('') + '</div></td></tr>';
+        }).join('') + '</tbody></table></div></div>' +
+        '<p class="pscl-note" style="margin-top:10px;">The shape is applied <b>per occurrence, across that occurrence\u2019s own dates</b> \u2014 not across the project. ' +
+        'It changes <b>when</b> the money is forecast, never <b>how much</b>: every curve still integrates to the activity\u2019s full total.</p>');
+    }
+    function step5HTML(t) {
+      if (!t.priced) return panelWrap(4, '<div class="sbld-empty">Assign a cost in step 2 first — there is nothing to review yet.</div>');
+      if (!LOC_LEVELS.length) return panelWrap(4, scopeWarnHTML(t.list._scope) +
         '<div class="pscl-warn">This project has no <b>Location Breakdown</b> levels, so there are no floors or zones to stack. Set them up in the schedule’s <b>Group ▾ → Location Breakdown</b>, then tag the activities.</div>' + kpisHTML(t));
       var levelId = clDefaultLevel();
       var tw = clTowerValues(levelId);
@@ -22870,7 +23017,7 @@
         body = '<div class="pscl-stk">' + towerHTML(label, costStack(levelId, null, null, onlyName)) + '</div>';
       }
       var st0 = costStack(levelId, null, null, onlyName);
-      return panelWrap(3, kpisHTML(t) + head + body +
+      return panelWrap(4, kpisHTML(t) + head + body + phaseHTML(onlyName) +
         '<p class="pscl-note" style="margin-top:10px;">Showing <b>' + esc(onlyName || 'every priced activity') + '</b> stacked by <b>' + esc(stkLevelName(levelId)) + '</b>. ' +
         'In scope: ' + money(st0.total) + (st0.unlocated ? ' · ' + money(st0.unlocated) + ' carries no ' + esc(stkLevelName(levelId)) + ' value' : '') +
         '.</p>');
@@ -22880,7 +23027,8 @@
       if (step === 0) return step1HTML(t);
       if (step === 1) return step2HTML(t);
       if (step === 2) return step3HTML(t);
-      return step4HTML(t);
+      if (step === 3) return step4HTML(t);
+      return step5HTML(t);
     }
     function paint() {
       var rail = document.getElementById('ps-cl-rail'), panel = document.getElementById('ps-cl-panel');
@@ -22935,7 +23083,11 @@
           markDirty(); paint();
         };
       });
-      // step 4 — the review controls
+      // step 4 — the spread curve
+      panel.querySelectorAll('[data-curve]').forEach(function (b) {
+        b.onclick = function () { entry(b.dataset.curve).curve = b.dataset.k; markDirty(); paint(); };
+      });
+      // step 5 — the review controls
       var asel = document.getElementById('ps-cl-actsel');
       if (asel) asel.onchange = function () { selGroup = asel.value || null; paint(); };
       var lsel = document.getElementById('ps-cl-lvlsel');
@@ -22962,6 +23114,8 @@
     return { open: open, repaint: repaint, save: save, apply: applyAll,
       _internals: { buildGroups: buildGroups, distribute: distribute, pctSum: pctSum, groupIssue: groupIssue,
         totals: totals, instKey: instKey, scopeInfo: scopeInfo, costStack: costStack, allocIndex: allocIndex,
+        curveOf: curveOf, curveLabel: curveLabel, CURVES: CURVES, monthlyPhase: monthlyPhase,
+        tradeTotals: tradeTotals,
         setCfg: function (c) { cfg = c; }, getCfg: function () { return cfg; }, setSel: function (n) { selGroup = n; },
         setScope: function (s2) { clScope = s2; } } };
   })();
@@ -22970,7 +23124,6 @@
     activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
-    document.getElementById('ps-view-cost').style.display = tab === 'cost' ? '' : 'none';
     var vcl = document.getElementById('ps-view-costload'); if (vcl) vcl.style.display = tab === 'costload' ? '' : 'none';
     document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
     document.getElementById('ps-view-wbs').style.display = tab === 'wbs' ? '' : 'none';
@@ -22981,12 +23134,12 @@
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'costload' ? 'Cost Loading' : tab === 'cost' ? 'Cost / EVM' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'))));
+    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'))));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
     // Planner Cockpit now hosts the Last Planner weekly section too — render both.
-    if (tab === 'schedule') renderGantt(); else if (tab === 'costload') CostLoading.open(pid, UID); else if (tab === 'cost') renderCost(); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else if (tab === 'calendars') renderCalendarsView();
+    if (tab === 'schedule') renderGantt(); else if (tab === 'costload') CostLoading.open(pid, UID); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else if (tab === 'calendars') renderCalendarsView();
     else { renderPlanner(); openLastPlanner(); }
   }
 
@@ -23013,8 +23166,8 @@
       var startStr = wbs ? (span ? fmtOPCDate(dstr(new Date(span.s))) : '') : fmtOPCDate(r.actual_start || r.start_date, !!r.actual_start);
       var finishStr = wbs ? (span ? fmtOPCDate(dstr(new Date(span.e))) : '') : fmtOPCDate(r.actual_finish || r.end_date, !!r.actual_finish);
       var poc = wbs ? null : plannedPOC(r);
-      var eacV = (!wbs && (r.planned_cost != null || r.actual_cost != null || r.earned_value != null))
-        ? Math.round(eac(r, r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null) * 100) / 100 : '';
+      var eacV = (!wbs && (r.planned_cost != null || r.actual_cost != null || evOf(r) > 0))
+        ? Math.round(eac(r, cpiOf(r)) * 100) / 100 : '';
       var row = {};
       row['#'] = ++n;
       row['ID'] = wbs ? (r._realCode || r.wbs || '') : (r.activity_id || '');
@@ -23029,7 +23182,7 @@
       row['Earned Value POC'] = wbs ? '' : (r.percent_complete != null ? r.percent_complete / 100 : '');
       row['Planned IBB'] = wbs ? '' : (r.planned_cost != null ? r.planned_cost : '');
       row['Actual IBB to date'] = wbs ? '' : (r.actual_cost != null ? r.actual_cost : '');
-      row['Earned Value IBB'] = wbs ? '' : (r.earned_value != null ? r.earned_value : '');
+      row['Earned Value IBB'] = wbs ? '' : (evOf(r) || (r.earned_value != null ? r.earned_value : ''));
       row['At Completion IBB'] = eacV;
       row['BL Planned IBB'] = wbs ? '' : (r.bl_cost != null ? r.bl_cost : '');
       row['Percent Complete Type'] = wbs ? '' : (r.percent_complete_type || '');
@@ -23820,7 +23973,7 @@
   // ============================================================================
   function activityRows() { return _sorted.filter(function (r) { return !isWbs(r); }); }
   function succStr(r) { return (r._succObjs && r._succObjs.length) ? r._succObjs.map(function (s) { return s.id + (s.type && s.type !== 'FS' ? ' ' + s.type : '') + (s.lag ? (s.lag > 0 ? '+' : '') + s.lag : ''); }).join(', ') : ''; }
-  function eacOf(r) { var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; return eac(r, cpi); }
+  function eacOf(r) { var cpi = cpiOf(r); return eac(r, cpi); }
   function repSchedule() {
     return { headers: ['WBS', 'ID', 'Activity Name', 'Status', 'Start', 'Finish', 'Dur', '%'],
       align: ['l','l','l','l','l','l','r','r'],
@@ -23831,11 +23984,11 @@
   function repCost() {
     var t = { pc: 0, ac: 0, ev: 0, eac: 0, bl: 0 };
     var rws = activityRows().map(function (r) {
-      t.pc += r.planned_cost || 0; t.ac += r.actual_cost || 0; t.ev += r.earned_value || 0; t.eac += eacOf(r); t.bl += r.bl_cost || 0;
-      var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null;
+      t.pc += r.planned_cost || 0; t.ac += r.actual_cost || 0; t.ev += evOf(r); t.eac += eacOf(r); t.bl += r.bl_cost || 0;
+      var cpi = cpiOf(r);
       return [r.activity_id || '', r.activity_name || '',
         r.planned_cost != null ? Fmt.money(r.planned_cost) : '—', r.actual_cost != null ? Fmt.money(r.actual_cost) : '—',
-        r.earned_value != null ? Fmt.money(r.earned_value) : '—', Fmt.money(eacOf(r)),
+        evOf(r) ? Fmt.money(evOf(r)) : '—', Fmt.money(eacOf(r)),
         r.bl_cost != null ? Fmt.money(r.bl_cost) : '—', cpi != null ? cpi.toFixed(2) : '—'];
     });
     return { headers: ['ID', 'Activity Name', 'Planned IBB', 'Actual IBB', 'Earned IBB', 'At Completion', 'BL Planned', 'CPI'],
@@ -25824,7 +25977,7 @@
       case 'Dur': { var s = pd(r.start_date), e = pd(r.end_date); var d = (s && e) ? dayDiff(s, e) + 1 : (r.duration_days || ''); return d ? String(d) : ''; }
       case 'Planned Value %': { var p = plannedPOC(r); return p == null ? '' : p + '%'; }
       case 'Duration % Complete': return _durPct(r) + '%';
-      case 'At Completion IBB': { var cpi = r.actual_cost > 0 ? (r.earned_value || 0) / r.actual_cost : null; var hasCost = r.planned_cost != null || r.actual_cost != null || r.earned_value != null; return hasCost ? String(eac(r, cpi)) : ''; }
+      case 'At Completion IBB': { var cpi = cpiOf(r); var hasCost = r.planned_cost != null || r.actual_cost != null || evOf(r) > 0; return hasCost ? String(eac(r, cpi)) : ''; }
       case 'Float': return r._critical ? 'CP' : (r._float != null ? r._float + 'd' : '');
       case 'Var (BL)': { var v = finVar(r); return v == null ? '' : (v > 0 ? '+' : '') + v + 'd'; }
       case 'Task': return taskKindOf(r);

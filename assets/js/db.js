@@ -160,7 +160,10 @@
       });
       if (spec.exclude && spec.exclude.column) want[spec.exclude.column] = 1;
       (spec.metrics || []).forEach(function (m) {
-        [m.x, m.y, m.group, m.from, m.to, m.pct, m.doneCol].forEach(function (c) { if (c) want[c] = 1; });
+        // ⚠️ m.amount is sumEarned's fallback money column — omit it here and the derivation
+        // silently reads undefined on every row, i.e. the metric comes back null and the panel
+        // says 'not loaded' for a project that is fully loaded.
+        [m.x, m.y, m.group, m.from, m.to, m.pct, m.doneCol, m.amount].forEach(function (c) { if (c) want[c] = 1; });
         (m.where || []).forEach(function (w) { if (w && w.column) want[w.column] = 1; });
       });
       if (spec.recent) {
@@ -265,6 +268,27 @@
           var r = rows[i];
           if (!keep(r, m.where)) continue;
           if (m.agg === 'sumWhere') { var sv = numOf(r[m.column]); if (sv != null) { sum += sv; n++; } continue; }
+          // ---- sumEarned: a stored figure when there is one, else amount x percent ------------
+          // ⚠️ Earned value is DERIVED when nobody has typed one. Owner 2026-08-26: "there is a
+          // column for activity % complete, now that POC should be multiplied with the specified
+          // amount on that activity." A plain `sum` over `earned_value` reported NOTHING on a
+          // fully cost-loaded schedule -- so the dashboard's EVM panel said "earned value and cost
+          // are not loaded" for a project carrying a Planned IBB and a % complete on every line.
+          // ⚠️ A STORED figure still wins, and a stored ZERO counts as unset -- the same rule the
+          // Project Schedule module applies in `evOf`, so the tile and the grid cannot disagree
+          // about one activity.
+          // ⚠️ The column names are DECLARED by the module (`amount` / `pct`), never assumed here:
+          // this engine is shared by every module and must not know that a schedule calls its money
+          // `planned_cost`.
+          if (m.agg === 'sumEarned') {
+            var stored = numOf(r[m.column]);
+            if (stored != null && stored !== 0) { sum += stored; n++; continue; }
+            var amt = numOf(r[m.amount]), pct = numOf(r[m.pct]);
+            if (amt == null) continue;
+            var p = Math.max(0, Math.min(100, pct == null ? 0 : pct));
+            if (p <= 0) continue;                      // 0% earns nothing, and adds no coverage
+            sum += amt * (p / 100); n++; continue;
+          }
           if (m.agg === 'countWhere') {
             if (m.values ? m.values.indexOf(r[m.column]) !== -1 : !!r[m.column]) n++;
             continue;
@@ -284,7 +308,7 @@
         else if (m.agg === 'max') out[m.key] = vals.length ? vals.reduce(function (a, b) { return a > b ? a : b; }) : null;
         else if (m.agg === 'countWhere') out[m.key] = n;
         else if (m.agg === 'sumWhere') out[m.key] = n ? sum : null;
-        else if (m.agg === 'sum') out[m.key] = n ? sum : null;      // null, not 0 — see below
+        else if (m.agg === 'sum' || m.agg === 'sumEarned') out[m.key] = n ? sum : null;   // null, not 0 — see below
         else if (m.agg === 'avg') out[m.key] = n ? (sum / n) : null;
         else if (m.agg === 'wavg') out[m.key] = wsum > 0 ? (wacc / wsum) : null;
       });

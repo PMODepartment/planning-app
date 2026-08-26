@@ -107,6 +107,17 @@
   </div>
 
   <style>
+    /* EVM band — the figures the Project Schedule's Cost / EVM tab used to carry, now on the
+       dashboard. Tokens throughout, so it follows the theme switch. */
+    .pd-evm-band { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin:10px 0 14px; }
+    .pd-evm-c { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; background:var(--pd-card); border-left-width:3px; }
+    .pd-evm-c.ok { border-left-color:var(--pd-ok,#16a34a); }
+    .pd-evm-c.bad { border-left-color:var(--pd-bad,#dc2626); }
+    .pd-evm-l { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .pd-evm-v { display:block; font-size:17px; font-weight:800; line-height:1.2; margin-top:3px; font-variant-numeric:tabular-nums; }
+    .pd-evm-c.ok .pd-evm-v { color:var(--pd-ok,#16a34a); }
+    .pd-evm-c.bad .pd-evm-v { color:var(--pd-bad,#dc2626); }
+    .pd-evm-s { display:block; font-size:10.5px; color:var(--pd-muted); margin-top:2px; }
     /* Project status band. Uses the shared tokens throughout so it follows the theme switch and
        never hard-codes a colour that only works on one background. */
     .pd-stat-band { margin:0 0 18px; }
@@ -207,12 +218,12 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260821f"></script>
+  <script src="assets/js/config.js?v=20260826e"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260821f"></script>
+  <script src="assets/js/db.js?v=20260826e"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
-  <script src="assets/js/modules-grid.js?v=20260826e"></script>
+  <script src="assets/js/modules-grid.js?v=20260826f"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
@@ -665,28 +676,72 @@
         '<div class="pd-gauge-k">' + Fmt.esc(label) + '</div>' +
         '<div class="pd-gauge-c">' + Fmt.esc(caption) + '</div></div>';
     }
+    // ---- 2. Cost performance (EVM) ------------------------------------------------------------
+    // ⚠️⚠️ THIS IS WHERE COST / EVM LIVES NOW. Owner 2026-08-26: *"for Cost / EVM, remove that
+    // sub-module in the project schedule module. Meaning the EVM should be displayed in the planners
+    // dashboard."* The Project Schedule's Cost / EVM tab is gone; this panel carries the full band
+    // it used to show.
+    // ⚠️ COMPUTED FROM THE FOUR DECLARED METRICS, NOT FROM A ROW FETCH. The whole band derives from
+    // budget / actual / ev / pv, which `PDb.moduleSummary` already aggregates SERVER-SIDE for the
+    // tiles. Fetching the project's activities to recompute it here would put a 17,000-row read on
+    // the landing page for figures that are already in hand — and it is a landing page, so it has to
+    // stay cheap. It costs nothing extra.
+    // ⚠️ Every figure is null-not-zero when its input is missing, and a missing figure is printed as
+    // an em-dash rather than 0: "no cost is loaded" and "this project has spent nothing" are
+    // opposite facts, and only one of them is good news.
     function renderEvm() {
       var sch = MET['project-schedule'] || {};
-      var ev = _n(sch.ev), ac = _n(sch.actual), bud = _n(sch.budget), pvPct = _n(sch.pv);
-      var pv = (bud != null && pvPct != null) ? (bud * pvPct / 100) : null;
+      var ev = _n(sch.ev), ac = _n(sch.actual), bac = _n(sch.budget), pvPct = _n(sch.pv);
+      var pv = (bac != null && pvPct != null) ? (bac * pvPct / 100) : null;
       var cpi = (ev != null && ac) ? (ev / ac) : null;
       var spi = (ev != null && pv) ? (ev / pv) : null;
-      if (cpi == null && spi == null) {
-        return vizEmpty('viz-evm', 'Performance Indicators (EVM)',
-          'Earned value and cost are not loaded on this schedule, so CPI and SPI cannot be computed.' +
-          (bud == null ? ' No planned cost yet either.' : '') +
-          '<br>Load costs in Project Schedule &mdash; and capture a baseline, which is what SPI measures against.');
+      if (bac == null && ev == null && ac == null) {
+        return vizEmpty('viz-evm', 'Cost Performance (EVM)',
+          'No cost is loaded on this schedule, so there is no earned value to measure.' +
+          '<br>Load it in <b>Project Schedule &rarr; Cost Loading</b> (enlist &rarr; assign &rarr; distribute &rarr; spread &rarr; apply). ' +
+          'SPI additionally needs a <b>baseline</b>, which is what the planned value is measured against.');
       }
+      // SV / CV are variances, so they only exist when BOTH sides of the subtraction do.
+      var sv = (ev != null && pv != null) ? (ev - pv) : null;
+      var cv = (ev != null && ac != null) ? (ev - ac) : null;
+      // ⚠️ EAC extrapolates the cost performance seen SO FAR; with no CPI there is nothing to
+      // extrapolate from, so it falls back to the budget rather than inventing a forecast.
+      var eac = (cpi && cpi > 0 && bac != null && ac != null) ? (ac + (bac - ev) / cpi) : bac;
+      var vac = (bac != null && eac != null) ? (bac - eac) : null;
+      // ⚠️ TCPI is the efficiency the REMAINING work must achieve. Undefined once the remaining
+      // budget is zero — dividing by it would print Infinity as a target.
+      var tcpi = (bac != null && ac != null && ev != null && (bac - ac) !== 0) ? ((bac - ev) / (bac - ac)) : null;
+      function m(v) { return v == null ? '&mdash;' : Fmt.moneyShort(v); }
+      function sm(v) { return v == null ? '&mdash;' : ((v > 0 ? '+' : '') + Fmt.moneyShort(v)); }
+      function r2(v) { return v == null ? '&mdash;' : (Math.round(v * 100) / 100).toFixed(2); }
+      // good === null means 'no opinion' — a neutral figure must not be coloured as if it were a verdict.
+      function cell(label, value, good, sub) {
+        return '<div class="pd-evm-c' + (good === true ? ' ok' : good === false ? ' bad' : '') + '">' +
+          '<span class="pd-evm-l">' + Fmt.esc(label) + '</span>' +
+          '<strong class="pd-evm-v">' + value + '</strong>' +
+          (sub ? '<small class="pd-evm-s">' + sub + '</small>' : '') + '</div>';
+      }
+      var band =
+        cell('BAC — budget at completion', m(bac), null, 'Planned IBB across the schedule') +
+        cell('PV — planned value', m(pv), null, pvPct == null ? 'Needs a baseline' : (Math.round(pvPct) + '% of the plan is due by today')) +
+        cell('EV — earned value', m(ev), null, 'Planned IBB &times; activity % complete') +
+        cell('AC — actual cost', m(ac), null, 'Recorded spend to date') +
+        cell('SV — schedule variance', sm(sv), sv == null ? null : sv >= 0, sv == null ? 'Needs PV' : (sv >= 0 ? 'Ahead of plan' : 'Behind plan')) +
+        cell('CV — cost variance', sm(cv), cv == null ? null : cv >= 0, cv == null ? 'Needs AC' : (cv >= 0 ? 'Under budget' : 'Over budget')) +
+        cell('EAC — estimate at completion', m(eac), (vac == null) ? null : vac >= 0, cpi ? 'Extrapolated at the CPI so far' : 'No CPI yet — shown at budget') +
+        cell('VAC — variance at completion', sm(vac), vac == null ? null : vac >= 0, vac == null ? '' : (vac >= 0 ? 'Forecast underspend' : 'Forecast overrun')) +
+        cell('TCPI — to-complete index', r2(tcpi), tcpi == null ? null : tcpi <= 1, tcpi == null ? 'Needs a budget and actuals' : 'Efficiency the remaining work must hit');
       var g = '';
       g += cpi != null ? gauge('CPI (Cost Performance)', cpi, cpi >= 1, cpi >= 1 ? 'Under budget' : 'Over budget')
         : '<div class="pd-gauge"><div class="pd-viz-empty">No earned value or actual cost recorded, so there is no CPI.</div></div>';
       g += spi != null ? gauge('SPI (Schedule Performance)', spi, spi >= 1, spi >= 1 ? 'On or ahead of plan' : 'Behind schedule')
         : '<div class="pd-gauge"><div class="pd-viz-empty">SPI needs a baseline and planned cost to measure against.</div></div>';
+      var sc = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 's-curve'; });
       document.getElementById('viz-evm').innerHTML =
-        vizHead('Performance Indicators (EVM)',
-          'Earned value ' + (ev == null ? '&mdash;' : Fmt.moneyShort(ev)) +
-          ' · actual ' + (ac == null ? '&mdash;' : Fmt.moneyShort(ac)) +
-          ' · planned to date ' + (pv == null ? '&mdash;' : Fmt.moneyShort(pv))) +
+        vizHead('Cost Performance (EVM)',
+          'Earned ' + m(ev) + ' · actual ' + m(ac) + ' · planned to date ' + m(pv),
+          sc ? '<a class="pd-viz-s" href="' + ModulesGrid.href(sc) + '">Cost S-Curve</a>' : '') +
+        '<div class="pd-evm-band">' + band + '</div>' +
         '<div class="pd-gauges">' + g + '</div>';
     }
 

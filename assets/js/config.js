@@ -118,7 +118,11 @@ window.APP_CONFIG = {
         // ⚠️ Rows with no baseline are excluded from 'pv' (the elapsed shape skips them), so SPI is
         // reported only when there is a baseline to measure against — the same rule the module
         // applies to its own Planned Value % column.
-        { key: 'ev', agg: 'sum', column: 'earned_value' },
+        // ⚠️ sumEarned, not sum: a stored earned_value wins, and an activity that has none earns
+        // planned_cost x percent_complete. A plain sum reported null on every cost-loaded project
+        // that had not ALSO been hand-valued, which made the dashboard's EVM panel read as "not
+        // loaded" while the schedule grid showed money on every line.
+        { key: 'ev', agg: 'sumEarned', column: 'earned_value', amount: 'planned_cost', pct: 'percent_complete' },
         { key: 'pv', agg: 'elapsed', from: 'bl_start', to: 'bl_finish', weight: 'planned_cost' },
         // The programme view: one bar per trade, its span, its weighted % and how many are done.
         { key: 'program', agg: 'groupSpan', group: 'work_type', from: 'start_date', to: 'end_date',
