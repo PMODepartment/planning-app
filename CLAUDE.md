@@ -8980,3 +8980,40 @@ is, the Claimed column saves nothing and says so. ⚠️ The schedule's inline s
 (`node --check` on the extracted block); the report has not been rendered in the Reports dialog.
 
 - `MODULE_V` → `20260826g`; `boq.js?v=20260826c`.
+
+### 2026-08-26 — Contract packages reach Procurement and Engineering (three databases, one mirror)
+Owner: *"Now update the procurement and engineering dashboards in prc-app."*
+
+⚠️ **The blocking finding first: the three apps are three SEPARATE Supabase projects** — Planners
+`bgupuqnkqhixpuctyder`, Procurement (WPM) `cayjeqeleenizbdzrums`, Engineering `zkxzaijznutmiueeurbb`.
+They share no tables, so neither app can read `packages` across the wire. "Add a package filter" was
+therefore not a UI change; it needed the same mirror pattern the existing cross-app syncs already use
+(`wpm_work_packages` mirrors WPM *into* Planners; `planners_need_by` pushes Planners *into* WPM).
+
+- **`supabase/functions/push-packages`** — reads this project's `packages` with the Planners service
+  key and writes a read-only `planners_packages` mirror into **both** target projects with each one's
+  own service-role key. Same authorization shape as `push-need-by` (approved admin/planner, or the
+  service key for cron). Reuses the secrets `sync-wpm` and `sync-eng` already need — nothing new to set.
+- ⚠️ **It writes only `planners_packages`.** It never touches a work package, a drawing or anything
+  either team owns. One app silently editing another's records is unrecoverable and unauditable.
+- ⚠️ **Deletes are mirrored as a replace of THIS PROJECT's rows** — a package retired in Planners must
+  disappear downstream, or a buyer keeps filing purchases against a lot that no longer exists — and it
+  is scoped by project so one push can never blank another project's packages.
+- ⚠️ **A missing target is reported, not skipped.** "Shared successfully" while Engineering received
+  nothing is the one outcome nobody could act on, so partial success is surfaced as partial success.
+- ⚠️ Reuses **Cash Flow's existing `wpm_project_id` mapping** rather than inventing a second one, or
+  packages would land against a different WPM project than the work-package picker reads from.
+- **Dashboard → Packages → “Share with Procurement & Engineering”** triggers it. ⚠️ Explicit, never
+  automatic: a half-typed lot appearing in a buyer's picker the instant it is saved is worse than a
+  button pressed once the contract is settled.
+
+Downstream migrations (in the other two repos, not this one):
+- `wpm/MIGRATION_planners_packages.sql` — the mirror + `work_packages.planners_package_id`.
+- `engineering-app/migrations/0021-planners-packages.sql` — the mirror + `drawing_register.planners_package_id`.
+- ⚠️ Both: **writes are service-role only** (a browser can never invent a contract package), **no
+  foreign key** to the mirror (a delete-then-insert refresh would either block or cascade real records
+  away), and the **link column is owned by the consuming app** — the push only refreshes the list to
+  choose from. **NULL = not yet assigned**, with no back-fill.
+
+⚠️ **Nothing here has been deployed or run.** Three owner actions: run the two downstream migrations,
+`supabase functions deploy push-packages --project-ref bgupuqnkqhixpuctyder`, then press Share.
