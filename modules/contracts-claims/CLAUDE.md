@@ -369,6 +369,8 @@ reporting purposes, can we cover til end of each month?"* — so **both**, kept 
   full, Mar 25/31 part; the monthly total closes **exactly** on revenue to date (₱300,000.00), and
   the material split holds at 0.6 in every month. Not yet clicked through in a browser.
 
+`MODULE_V` → `20260826q`; `wizard.js?v=20260826a`, `module.js?v=20260826b`, `module.css?v=20260826a`.
+
 ### 2026-08-26 — Decision #2 corrected: a package is a scope division, not a trade
 Owner: *"Package 1: Avesta Residences Tower 1 and General Requirements / Package 2: Avesta Residences
 Towers 2-7 … In terms of BOQ, it is purely the client who will dictate which will define the progress
@@ -468,6 +470,45 @@ Client Approved is the **claim** pipeline; a construction contract is signed, no
 — in particular, creating a package from a contract has not been run against the live database.
 
 `MODULE_V` → `20260826p`; `module.js?v=20260826a`.
+
+### 2026-08-26 — A guided wizard for Contract / CO / Claim / EOT / BOQ
+Owner: *"We will create a wizard for Contracts, BOQ, Change Order, Claims/EOT"*, after asking whether
+the BOQ import could cope with the many formats clients send and whether input could be *"intuitive
+like a wizard similar to how the schedule builder works so that it can easily be connected with each
+other."*
+
+Shape decided with the owner: **one** wizard with the type chosen at step 1 (not four), the **wizard for
+new records and the existing form for editing**, and — for the BOQ half — **full column mapping saved as
+a reusable format profile**.
+
+`wizard.js` (new, 347 lines) → `window.CCWizard`. Steps: **Record → Package → Details → Dates → BOQ →
+Review**, with each step declaring `when()` so the rail and the Back/Next arithmetic can never diverge
+from what is actually shown — the classic wizard bug where "3 of 5" jumps to 5 and the count lies.
+- ⚠️ **It does not own the write.** `persistRecord()` was extracted from `openForm`'s save handler and
+  both now call it. Two payload builders for one table drift, and the half that drifts is the one
+  nobody is looking at.
+- ⚠️ **Nothing is written until the last step.** The one irreversible act — creating a contract package
+  — happens inside the same save as the record, so abandoning the wizard leaves no orphan package.
+  If the package fails (a duplicate code, most often) **nothing** is saved and you stay on Review.
+- ⚠️ **The package step states its direction.** A Contract **defines** its package; a CO/Claim/EOT is
+  **raised against** one. With no packages yet, it says to record the Contract first rather than
+  showing an empty picker.
+- ⚠️ **A contract is signed, not evaluated** — the wizard never builds the claim-pipeline dates for a
+  Contract at all, rather than building and hiding them.
+- ⚠️ **Back never loses a field**: `capture()` runs on every move, including rail jumps.
+- Falls back to the old form if `wizard.js` fails to load, so the module cannot lose its Add button.
+
+**On the BOQ question, answered honestly in the step itself:** detection is a set of header patterns
+(`/description/`, `/total amount/`, `/material cost/`) plus one structural rule, all measured against
+**one** workbook (OPW101 Package 2). A client whose sheet says "Particulars / Sum" parses partly, and a
+silently-wrong money column is the dangerous failure — so the BOQ step hands over to the existing
+detect → preview → accept importer instead of pretending to have understood the file.
+⚠️ **`boq_import_profiles` already has `client_key`, `col_map`, `header_row`, `first_col` and
+`heading_rule`** — the reusable-profile machinery is in the schema and only the UI is missing.
+
+⚠️ **NOT DONE, and next:** the BOQ step is a hand-off, not yet the mapping UI — re-pointing columns per
+sheet and saving/reusing a named format profile is the second half of this build. Nothing here has been
+clicked through in a browser.
 
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this

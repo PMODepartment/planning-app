@@ -289,7 +289,7 @@ window.ContractsClaims = (function () {
       (canWrite ? '<p style="margin-top:14px;"><button class="pd-btn pd-btn-primary" id="cc-e-add">Add a record</button></p>' : '') + '</div>';
   }
   function wireEmpty() {
-    var b = document.getElementById('cc-e-add'); if (b) b.onclick = function () { openForm(null); };
+    var b = document.getElementById('cc-e-add'); if (b) b.onclick = openNew;
   }
 
   function wire() {
@@ -313,6 +313,58 @@ window.ContractsClaims = (function () {
   // ==========================================================================
   // CRUD
   // ==========================================================================
+  /* THE ONE WRITE PATH for a Contracts & Claims record, shared by the compact edit
+     form and the wizard. ⚠️ Extracted rather than copied: two payload builders for one
+     table drift, and the half that drifts is always the one you are not looking at.
+     Returns { ok, error } — the caller owns its own button state and toasts. */
+  async function persistRecord(payload, existing) {
+    if (existing) {
+      Object.assign(existing, payload);   // optimistic — applies whether online or queued offline
+      if (window.PDSync) {
+        var w = await PDSync.write({ table: TABLE, op: 'update', id: existing.id, patch: payload });
+        if (!w.ok) return { ok: false, error: w.error || new Error('Save failed') };
+        PDSync.cachePut(PID_PFX + ':' + pid, rows);
+      } else {
+        var ur = await sb().from(TABLE).update(payload).eq('id', existing.id);
+        if (ur.error) return { ok: false, error: ur.error };
+      }
+      return { ok: true, row: existing };
+    }
+    payload.created_by = UID; payload.sort_order = rows.length;
+    var ir = await sb().from(TABLE).insert(payload).select().single();
+    if (ir.error) return { ok: false, error: ir.error };
+    rows.push(ir.data);
+    return { ok: true, row: ir.data };
+  }
+  function recordFailMsg(e) {
+    return /column|schema cache|PGRST204/i.test(e.message || '')
+      ? 'Save failed — run migrations/2026-07-20-contracts-claims-full.sql first. (' + e.message + ')'
+      : e.message;
+  }
+  /* Follow the record if its type moved it to another tab, so it does not silently
+     "disappear" from the view you are looking at. */
+  function gotoTypeTab(t) {
+    var target = t === 'Contract' ? 'contract' : t === 'EOT' ? 'eot' : 'claims';
+    if (target !== view) switchTab(target); else render();
+  }
+
+  /* "+ Add" opens the guided wizard; clicking a row still opens the compact form.
+     ⚠️ New records get the guidance, edits stay fast — a wizard that owns editing too
+     becomes the slowest path to the most common action. Falls back to the form if
+     wizard.js did not load, so the module never loses its Add button. */
+  function openNew() {
+    if (!window.CCWizard) { openForm(null); return; }
+    CCWizard.open({
+      pid: function () { return pid; },
+      uid: function () { return UID; },
+      packages: function () { return PKGS; },
+      createPackage: function (p) { return PDb.createPackage(p).then(function (made) { PKGS.push(made); return made; }); },
+      persist: function (payload) { return persistRecord(payload, null); },
+      failMsg: recordFailMsg,
+      done: gotoTypeTab
+    });
+  }
+
   function openForm(r) {
     if (!canWrite) { UI.toast('You do not have permission to edit records.', 'error'); return; }
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
@@ -545,28 +597,10 @@ window.ContractsClaims = (function () {
       if (!payload.description && !payload.reference_no) { UI.toast('Give the record a description or a reference number.', 'error'); return; }
 
       var btn = el('cc-m-save'); btn.disabled = true; btn.textContent = 'Saving…';
-      function failMsg(e) { return /column|schema cache|PGRST204/i.test(e.message || '') ? 'Save failed — run migrations/2026-07-20-contracts-claims-full.sql first. (' + e.message + ')' : e.message; }
-      if (r) {
-        Object.assign(r, payload);   // optimistic — applies whether online or queued offline
-        if (window.PDSync) {
-          var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: payload });
-          if (!w.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(w.error ? failMsg(w.error) : 'Save failed', 'error'); return; }
-          PDSync.cachePut(PID_PFX + ':' + pid, rows);
-        } else {
-          var ur = await sb().from(TABLE).update(payload).eq('id', r.id);
-          if (ur.error) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(failMsg(ur.error), 'error'); return; }
-        }
-      } else {
-        payload.created_by = UID; payload.sort_order = rows.length;
-        var ir = await sb().from(TABLE).insert(payload).select().single();
-        if (ir.error) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(failMsg(ir.error), 'error'); return; }
-        rows.push(ir.data);
-      }
+      var res = await persistRecord(payload, r);
+      if (!res.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(recordFailMsg(res.error), 'error'); return; }
       m.close(); UI.toast(r ? 'Record updated.' : 'Record added.', 'success');
-      // Follow the record if its type moved it to another tab, so it doesn't
-      // silently "disappear" from the view you're looking at.
-      var target = t === 'Contract' ? 'contract' : t === 'EOT' ? 'eot' : 'claims';
-      if (target !== view) switchTab(target); else render();
+      gotoTypeTab(t);
     };
 
     // Autosave (edit only): debounced re-use of the Save button's own handler.
@@ -790,7 +824,7 @@ window.ContractsClaims = (function () {
     if (window.BOQ) BOQ.init(deps);
     if (window.PMI) PMI.init(deps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); }; });
-    document.getElementById('cc-add').onclick = function () { openForm(null); };
+    document.getElementById('cc-add').onclick = openNew;
     document.getElementById('cc-export').onclick = exportExcel;
     document.getElementById('cc-print').onclick = function () { window.print(); };
     document.getElementById('cc-clear').onclick = clearAll;

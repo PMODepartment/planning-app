@@ -429,3 +429,47 @@ html.pd-dark {
 .boq-poc-cell.bad  .boq-poc-v { color:var(--boq-bad); }
 .boq-poc .cc-hint { padding:0 14px; }
 @media (max-width:700px) { .boq-poc-row { grid-template-columns:1fr; } }
+
+/* ---- Guided wizard (wizard.js) ------------------------------------------------
+   Built on the module's own tokens, and deliberately close to the Schedule
+   Builder's step rail so the two read as one idea across the app. */
+.ccw { max-width: 880px; width: 96vw; }
+.ccw-wrap { display: flex; gap: 0; align-items: stretch; }
+.ccw-rail { flex: 0 0 190px; border-right: 1px solid var(--pd-line); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.ccw-rail-i { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 9px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--pd-muted); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
+.ccw-rail-i:hover:not(:disabled) { background: var(--pd-bg); }
+.ccw-rail-i:disabled { cursor: default; opacity: .5; }
+.ccw-rail-i.on { background: var(--pd-bg); color: var(--pd-ink); font-weight: 700; }
+.ccw-rail-n { flex: 0 0 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--pd-line); color: var(--pd-ink); font-size: 11px; font-weight: 700; }
+.ccw-rail-i.on .ccw-rail-n { background: var(--pd-red); color: #fff; }
+.ccw-rail-i.done .ccw-rail-n { background: #12693a; color: #fff; }
+.ccw-main { flex: 1 1 auto; padding: 14px 16px; min-width: 0; max-height: 66vh; overflow: auto; }
+.ccw-main h3 { margin: 0; font-size: 15px; }
+.ccw-sub { margin: 2px 0 12px; color: var(--pd-muted); font-size: 12.5px; }
+.ccw-main label { display: block; font-size: 12px; font-weight: 600; color: var(--pd-muted); margin: 10px 0 0; }
+.ccw-main input, .ccw-main select, .ccw-main textarea { width: 100%; margin-top: 4px; padding: 9px 11px;
+  border: 1px solid var(--pd-line); border-radius: 8px; font: inherit; font-size: 14px;
+  background: var(--pd-card); color: var(--pd-ink); }
+.ccw-main textarea { min-height: 68px; resize: vertical; }
+.ccw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.ccw-hint { color: var(--pd-muted); font-size: 12px; margin: 8px 0 0; line-height: 1.45; }
+.ccw-mut { color: var(--pd-muted); }
+.ccw-new { color: var(--pd-red); font-size: 11px; font-weight: 700; }
+.ccw-cards { display: grid; gap: 8px; }
+.ccw-card { display: block; width: 100%; text-align: left; padding: 11px 13px; border: 1px solid var(--pd-line);
+  border-radius: 10px; background: var(--pd-card); color: var(--pd-ink); font: inherit; cursor: pointer; }
+.ccw-card:hover { border-color: var(--pd-muted); }
+.ccw-card.on { border-color: var(--pd-red); box-shadow: inset 0 0 0 1px var(--pd-red); }
+.ccw-card-t { display: block; font-weight: 700; font-size: 13.5px; }
+.ccw-card-d { display: block; color: var(--pd-muted); font-size: 12px; margin-top: 2px; }
+.ccw-review { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ccw-review td { padding: 6px 4px; border-bottom: 1px solid var(--pd-line); vertical-align: top; }
+.ccw-review td:first-child { color: var(--pd-muted); width: 40%; }
+@media (max-width: 700px) {
+  .ccw-wrap { flex-direction: column; }
+  .ccw-rail { flex: none; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--pd-line); }
+  .ccw-rail-l { display: none; }
+  .ccw-grid { grid-template-columns: 1fr; }
+}
