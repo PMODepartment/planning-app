@@ -47,6 +47,16 @@
         '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
         '<div class="pd-module-sub">Open module ' + Icons.svg('arrowRight', 14) + '</div></div></a>';
     }
+    if (m.retiredTo && m.externalUrl) {
+      // Retired modules with a known destination are clickable and open the
+      // Engineering App (a separate Supabase project/login) in a new tab.
+      return '<a class="pd-module-card retired" href="' + Fmt.esc(m.externalUrl) + '" target="_blank" rel="noopener" title="' +
+        Fmt.esc(m.name + ' is maintained in ' + m.retiredTo + '. Opens in a new tab.') + '">' +
+        '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
+        '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
+        '<div class="pd-module-sub"><span class="pd-badge-soon">Moved to ' + Fmt.esc(m.retiredTo) + '</span> ' +
+        Icons.svg('externalLink', 12) + '</div></div></a>';
+    }
     // âš ï¸ "Disabled" covers two OPPOSITE situations and they must not read the same.
     // A module that has not been built yet is "In development"; one that has MOVED
     // to another app is retired, and labelling it "In development" would send a
