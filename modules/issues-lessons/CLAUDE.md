@@ -1,5 +1,53 @@
 # Module: issues-lessons
 
+## 2026-08-26 — Testing the meeting-linked lesson picker found TWO real defects
+
+The one path the earlier signed-in pass could not exercise (that project's single meeting had
+no action items). Built the missing fixture in the QADEMO sandbox — a meeting with an action
+item — and the test paid for itself immediately.
+
+⚠️ **DEFECT 1: the Source dropdown was unusable, so a lesson could only be linked from a
+pre-filled entry point.** Choosing *"A meeting action item"* — or *"An issue or concern"* —
+snapped straight back to **Not linked** and no picker ever appeared. `linkKind` was derived
+from the stored ids, but the dropdown is **UI INTENT that necessarily exists BEFORE any id has
+been chosen**: selecting `mom` cleared `issue_id`, left `mom_id` null, and the re-render
+derived "not linked" and reset the select. Now tracked as `_kind` on the in-memory object.
+⚠️ It is never persisted — `saveLesson` builds its payload from named columns — so it cannot
+reach the database.
+
+⚠️ **DEFECT 2: the meeting list could render EMPTY on a project full of minutes.** `_momLoaded`
+is set on the **first line** of `loadMoms` as a re-entrancy guard, so it means *"a fetch has
+started"*, not *"the minutes are in hand"*. The picker tested it, decided the data was ready,
+rendered from an empty `MOMS`, and never heard the rows arrive. Reproduced live, then confirmed
+by re-rendering seconds later and watching the meeting appear. `loadMoms` now re-renders the
+lessons screen on completion — ⚠️ **on the failure path too**, or a failed fetch leaves the
+picker waiting forever. Fixing it there covers every reader of `MOMS` at once instead of making
+each one race the fetch.
+
+⚠️ **WHY THE 64-CHECK SUITE MISSED BOTH, and it is the lesson worth keeping: it stubbed
+`momLinkPickerHTML` and only ever rendered lessons whose links were ALREADY set.** It tested the
+renderer, never the transition. A suite that only feeds a component its settled states cannot
+see a state machine that refuses to leave the first one. The suite now slices the **real**
+picker and drives the before-an-id-exists states: **6 of the new checks fail against the pre-fix
+file**, 77/77 pass after, 0 functions lost.
+
+**Verified live after the fixes**, on the deployed build:
+- Source stays on the chosen kind; the meeting picker appears with no id yet; the action-item
+  picker stays **disabled until a meeting is chosen**, then lists that meeting's items with
+  *"— the meeting as a whole —"* still offered.
+- The race path (switch project → straight to Lessons → open the picker) now **self-corrects
+  with no user interaction**, and the unsaved draft survives the re-render.
+- Both entry points work: pre-filled from an action item's *"+ Capture lesson"*, and linked by
+  hand through the dropdown. Two lessons on one action item render as **"2 lessons"** on its card.
+- 0 console errors. ⚠️ **Sandbox left exactly as found** — 0 meetings / 0 lessons / 0 issues,
+  every probe row removed through the app's own delete paths.
+
+⚠️ **Smaller gap found and NOT fixed:** a meeting created in the current session is not added to
+`MOM_BY_ID` (the "+ New minutes" handler pushes to `MOMS` only), so a lesson linked to it reads
+*"From a meeting"* without naming it until the next load. Confirmed by reloading and watching the
+title appear. Cosmetic, self-healing, and a one-line fix in that handler when it is next touched.
+
+
 ## 2026-08-26 — SIGNED-IN VERIFICATION of the report/lessons rework (caveat closed)
 
 Both migrations were run by the owner and the whole rework was then driven **signed in on the

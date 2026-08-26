@@ -84,6 +84,33 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (g) — Testing the meeting-linked lesson picker found two real defects
+The one path the signed-in pass could not exercise. Built the fixture (a meeting with an action
+item) in the QADEMO sandbox, and the test paid for itself immediately. `MODULE_V` → `20260826o`.
+- ⚠️ **The lesson Source dropdown was unusable.** Choosing "A meeting action item" or "An issue"
+  snapped back to "Not linked" and no picker appeared — so a lesson could only ever be linked
+  from a pre-filled "+ Capture a lesson". `linkKind` was derived from the stored ids, but the
+  dropdown is **intent that exists before any id does**. Tracked as `_kind` now, and never
+  persisted (the save builds its payload from named columns).
+- ⚠️ **The meeting list could render empty on a project full of minutes.** `_momLoaded` is set on
+  the first line of `loadMoms` as a re-entrancy guard, so it means "a fetch has started", not
+  "the data is here". `loadMoms` now re-renders the lessons screen on completion — **including on
+  the failure path**, or the picker waits forever.
+- ⚠️ **Why 64 green checks missed both, which is the transferable lesson: the suite stubbed the
+  picker and only rendered links that were ALREADY set.** It tested the renderer, never the
+  transition — and a suite that only feeds a component its settled states cannot see a state
+  machine that refuses to leave the first one. It now slices the real picker and drives the
+  before-an-id-exists states: **6 new checks fail against the pre-fix file**, 77/77 pass after,
+  0 functions lost.
+- **Verified live after the fixes:** the source holds, the action-item picker stays disabled until
+  a meeting is chosen, the race path self-corrects with the unsaved draft intact, both entry
+  points link correctly, two lessons on one action item read as "2 lessons". 0 console errors.
+  ⚠️ Sandbox left exactly as found (0/0/0), every probe row removed through the app's own deletes.
+- ⚠️ **Not fixed:** a meeting created in the current session is missing from `MOM_BY_ID`, so a
+  lesson linked to it reads "From a meeting" without the title until the next load. Cosmetic,
+  self-healing, one line in the "+ New minutes" handler when it is next touched.
+
+
 ### 2026-08-26 (j) — Vertical stacking: a tower dropdown, with a real consolidated option
 Owner: *"there should be a dropdown to determine what tower to look at (if multiple towers). there
 should also be a consolidated option meaning it views all towers, and the towers are side by side.
