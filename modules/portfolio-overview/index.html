@@ -164,7 +164,115 @@
         .po-table { min-width: 760px; }
         .po-projfilter { max-width: 100%; }
       }
-    </style>
+
+      /* The tab strip already overflowed a phone before the Milestones tab
+         existed (573px of tabs in a 375px viewport); the 6th tab took it to
+         685px, so it is fixed here rather than left worse than found.
+
+         It WRAPS rather than scrolling: #po-projfilter-wrap is a child of
+         .po-tabs and its dropdown is position:absolute, so an overflow-x
+         scroller here would establish a clipping context and cut the project
+         filter's own menu off. Same trap the module topbar hit. The filter
+         takes its own full-width row so the tabs keep theirs. */
+      @media (max-width: 900px) {
+        .po-tabs { flex-wrap: wrap; row-gap: 2px; }
+        .po-tab { flex: 1 1 auto; justify-content: center; min-height: 44px; }
+        #po-projfilter-wrap { margin-left: 0 !important; flex: 1 1 100%; order: -1; margin-bottom: 8px; }
+        #po-projfilter-wrap > button { width: 100%; min-height: 44px; }
+      }
+    
+    /* ---- Portfolio milestone calendar ---------------------------------------
+       Semantic colours are PAIRED light/dark and reuse the values already
+       measured to >= 6.3:1 on both themes elsewhere in this suite. Three separate
+       passes in this app shipped a single hard-coded hue per meaning and measured
+       below WCAG AA on the dark card; do not introduce a bare hex here. */
+    :root {
+      --po-ms-good: #12693a; --po-ms-warn: #8a5200; --po-ms-bad: #b3241a; --po-ms-info: #1f5b93;
+      --po-ms-good-bg: rgba(18,105,58,.12); --po-ms-warn-bg: rgba(138,82,0,.13);
+      --po-ms-bad-bg: rgba(179,36,26,.13);  --po-ms-info-bg: rgba(31,91,147,.12);
+    }
+    html.pd-dark {
+      --po-ms-good: #7fd6a2; --po-ms-warn: #f0c469; --po-ms-bad: #f19a9a; --po-ms-info: #8ec2f0;
+      --po-ms-good-bg: rgba(127,214,162,.15); --po-ms-warn-bg: rgba(240,196,105,.16);
+      --po-ms-bad-bg: rgba(241,154,154,.16);  --po-ms-info-bg: rgba(142,194,240,.15);
+    }
+    .po-kpi2-s { font-size:11.5px; color:var(--pd-muted); margin-top:3px; }
+    .po-kpi2.good .po-kpi2-v { color:var(--po-ms-good); }
+    .po-kpi2.warn .po-kpi2-v { color:var(--po-ms-warn); }
+    .po-kpi2.bad  .po-kpi2-v { color:var(--po-ms-bad); }
+
+    .po-cal { padding:0; overflow:hidden; }
+    .po-cal-head, .po-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
+    .po-cal-head { border-bottom:1px solid var(--pd-line); }
+    .po-cal-dow { padding:8px 10px; font-size:10.5px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.05em; color:var(--pd-muted); }
+    /* Sunday is the rest day on this suite's working week (Mon-Sat), which is why
+       it sits at the END of the row rather than opening it. */
+    .po-cal-dow.rest { color:var(--pd-red); }
+    .po-cal-cell { min-height:104px; border-right:1px solid var(--pd-line); border-bottom:1px solid var(--pd-line);
+      padding:5px 6px; display:flex; flex-direction:column; gap:3px; }
+    .po-cal-cell:nth-child(7n) { border-right:0; }
+    .po-cal-cell.out { background:var(--pd-bg); }
+    .po-cal-cell.rest { background:var(--pd-bg); }
+    .po-cal-cell.today { box-shadow:inset 0 0 0 2px var(--pd-red); }
+    .po-cal-daynum { font-size:11.5px; font-weight:700; color:var(--pd-muted); display:flex;
+      align-items:center; justify-content:space-between; }
+    .po-cal-todaytag { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+      color:#fff; background:var(--pd-red); border-radius:3px; padding:1px 5px; }
+
+    .po-cal-chip { display:block; width:100%; text-align:left; border:1px solid transparent;
+      border-radius:4px; padding:2px 5px; font:inherit; font-size:10.5px; line-height:1.3;
+      cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .po-cal-chip-p { font-weight:800; opacity:.8; margin-right:4px; }
+    .po-cal-chip.achieved { background:var(--po-ms-good-bg); color:var(--po-ms-good); border-color:var(--po-ms-good); }
+    .po-cal-chip.overdue  { background:var(--po-ms-bad-bg);  color:var(--po-ms-bad);  border-color:var(--po-ms-bad); }
+    .po-cal-chip.due      { background:var(--po-ms-info-bg); color:var(--po-ms-info); border-color:var(--po-ms-info); }
+    .po-cal-chip.undated  { background:var(--pd-bg); color:var(--pd-muted); border-color:var(--pd-line); }
+    /* The overflow is a real control, not a label — see the comment at its emit
+       site: "+2 more" that cannot be opened is the same as hiding them. */
+    /* WARNING: brand red is NOT a text colour at this size. Measured on the
+       shipped stylesheet with the tint composited over its real cell background:
+       #EE3124 gives 4.12:1 light / 3.40:1 dark, under the 4.5:1 AA floor for
+       10.5px bold, while every chip and state badge passed at 4.8+. It uses the
+       body ink with a PERMANENT underline instead — the classic link affordance,
+       so it still reads as clickable without relying on colour. */
+    .po-cal-more { border:0; background:none; font:inherit; font-size:10.5px; font-weight:700;
+      color:var(--pd-ink); text-decoration:underline; cursor:pointer; text-align:left; padding:1px 5px; }
+    .po-cal-more:hover { color:var(--pd-red); }
+    .po-cal-none { padding:16px; text-align:center; color:var(--pd-muted); font-size:13px; }
+
+    .po-ms-state { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.03em;
+      padding:2px 6px; border-radius:3px; white-space:nowrap; }
+    .po-ms-state.achieved { color:var(--po-ms-good); background:var(--po-ms-good-bg); }
+    .po-ms-state.overdue  { color:var(--po-ms-bad);  background:var(--po-ms-bad-bg); }
+    .po-ms-state.due      { color:var(--po-ms-info); background:var(--po-ms-info-bg); }
+    .po-ms-state.undated  { color:var(--pd-muted);   background:var(--pd-bg); }
+    .po-ms-slip { font-weight:700; font-size:12px; }
+    .po-ms-slip.late  { color:var(--po-ms-bad); }
+    .po-ms-slip.early { color:var(--po-ms-good); }
+    .po-ms-sub { color:var(--pd-muted); font-size:11.5px; }
+    .po-ms-prog, .po-ms-co { font-size:9.5px; font-weight:800; text-transform:uppercase;
+      letter-spacing:.04em; padding:1px 5px; border-radius:3px; border:1px solid currentColor; }
+    /* Same reason, and worse at 9.5px: the badge keeps its RED BORDER — the only
+       mark here that has one, so it stays distinguishable — while its text uses
+       the body ink, which passes by construction in both themes. */
+    .po-ms-prog { color:var(--pd-ink); border-color:var(--pd-red); }
+    .po-ms-co   { color:var(--po-ms-warn); }
+    .po-nowrap { white-space:nowrap; }
+
+    .po-ms-daylist { max-height:56vh; overflow-y:auto; }
+    .po-ms-dayrow { padding:9px 0; border-bottom:1px solid var(--pd-line); display:flex;
+      flex-direction:column; gap:3px; }
+    .po-ms-dayrow:last-child { border-bottom:0; }
+
+    @media (max-width:820px) {
+      /* A 7-column month grid cannot be read on a phone — below this width the
+         calendar becomes a scroller rather than crushing each day to ~40px, and
+         the agenda table underneath carries the same information linearly. */
+      .po-cal { overflow-x:auto; }
+      .po-cal-head, .po-cal-grid { min-width:700px; }
+    }
+  </style>
 </head>
 <body>
 <div class="pd-app">
@@ -208,6 +316,7 @@
         <button class="po-tab" data-view="cashflow"><span data-ico="cash" data-ico-size="15"></span> Cash Flow</button>
         <button class="po-tab" data-view="resources"><span data-ico="users" data-ico-size="15"></span> Resources</button>
         <button class="po-tab" data-view="equipment"><span data-ico="box" data-ico-size="15"></span> Equipment</button>
+        <button class="po-tab" data-view="milestones"><span data-ico="calendar" data-ico-size="15"></span> Milestones</button>
         <!-- Project filter lives here (not in the Overview toolbar) so it's reachable from every tab
              — it scopes the Overview table AND the S-Curve / Cash Flow views. -->
         <div class="po-projfilter" id="po-projfilter-wrap" style="margin-left:auto;align-self:center;">
@@ -300,6 +409,27 @@
           <h3>Asset register across the portfolio</h3>
           <div style="overflow-x:auto;"><table class="po-table" id="po-eq-table"></table></div>
         </div>
+      </div>
+
+      <div id="po-view-milestones" style="display:none;">
+        <div class="po-toolbar">
+          <button class="pd-btn" id="po-ms-prev" title="Previous month"><span data-ico="arrowLeft" data-ico-size="14"></span></button>
+          <button class="pd-btn" id="po-ms-today">Today</button>
+          <button class="pd-btn" id="po-ms-next" title="Next month"><span data-ico="arrowRight" data-ico-size="14"></span></button>
+          <strong id="po-ms-month" style="font-size:15px;min-width:150px;"></strong>
+          <select class="pd-select" id="po-ms-state" style="max-width:170px;">
+            <option value="">All milestones</option>
+            <option value="overdue">Overdue only</option>
+            <option value="due">Due, not achieved</option>
+            <option value="achieved">Achieved</option>
+          </select>
+          <label class="po-chk"><input type="checkbox" id="po-ms-prog"> Program milestones only</label>
+          <span class="po-spacer"></span>
+          <span class="po-scope" id="po-ms-scope"></span>
+          <button class="pd-btn" id="po-ms-refresh" title="Reload"><span data-ico="refresh" data-ico-size="14"></span></button>
+        </div>
+        <div id="po-ms-kpis" class="po-kpis2"></div>
+        <div id="po-ms-body"></div>
       </div>
 
       <div id="po-view-resources" style="display:none;">
@@ -1205,18 +1335,300 @@
   }
 
   // ================= Tab switching =================
+  /* ==========================================================================
+     PORTFOLIO MILESTONE CALENDAR
+     A month grid of every scoped project's milestones, so "what lands next, and
+     what has already slipped" is one glance instead of one schedule at a time.
+
+     ⚠️ ALL DATE MATHS IS ON THE STRINGS, IN UTC. `new Date('2026-08-25')` parses
+     as UTC midnight and then prints in local time, which east of Greenwich is a
+     day out — this app has been bitten by that repeatedly (minusDays in both
+     registers, the drawing importer's whole date column). Nothing here converts
+     a date string to a Date except through ymd()/addDays(), which are integer
+     arithmetic on Date.UTC.
+     ========================================================================== */
+  var msRows = null, msLoadedIds = null, msMonth = null;   // msMonth = 'YYYY-MM'
+  var msState = '', msProgOnly = false;
+
+  function ymd(str) {
+    var p = String(str || '').slice(0, 10).split('-');
+    if (p.length !== 3) return null;
+    var y = +p[0], m = +p[1], d = +p[2];
+    if (!y || !m || !d) return null;
+    return { y: y, m: m, d: d, t: Date.UTC(y, m - 1, d) };
+  }
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function isoOf(t) { var d = new Date(t); return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()); }
+  function addDays(t, n) { return t + n * 86400000; }
+  /* Today as the USER sees it — local getters, matching every other "today" in
+     this app — then pinned to a UTC instant so it compares with the date strings. */
+  function todayT() { var n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()); }
+  var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  /* The date a milestone actually lands on: the ACTUAL if it happened, else the
+     planned one. ⚠️ A milestone is a single point, but the schema still carries
+     start and finish — a Start Milestone stores its date in start_date and a
+     Finish Milestone in end_date, so both are consulted rather than assuming one. */
+  function msDate(r) {
+    return r.actual_finish || r.actual_start || r.end_date || r.start_date || null;
+  }
+  function msPlanned(r) { return r.end_date || r.start_date || null; }
+  function msAchieved(r) { return !!(r.actual_finish || r.actual_start); }
+  /* ⚠️ Slip is measured against the BASELINE, not against the plan. The plan
+     moves every time someone reschedules; the baseline is what was committed to,
+     which is the only thing a slip can honestly be measured from. Null when
+     there is no baseline — "we never committed to a date" is not zero slip. */
+  function msSlip(r) {
+    var b = ymd(r.bl_finish), a = ymd(msDate(r));
+    if (!b || !a) return null;
+    return Math.round((a.t - b.t) / 86400000);
+  }
+  function msStateOf(r) {
+    if (msAchieved(r)) return 'achieved';
+    var d = ymd(msDate(r));
+    if (!d) return 'undated';
+    return d.t < todayT() ? 'overdue' : 'due';
+  }
+
+  async function loadMilestones(force) {
+    var ids = scopedProjectIds();
+    if (!force && msLoadedIds && msLoadedIds.join(',') === ids.join(',')) { renderMilestones(); return; }
+    document.getElementById('po-ms-scope').textContent = scopeLabel(ids);
+    var body = document.getElementById('po-ms-body');
+    if (!ids.length) { document.getElementById('po-ms-kpis').innerHTML = ''; body.innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; return; }
+    body.innerHTML = '<div class="po-empty">Loading milestones across ' + ids.length + ' project(s)…</div>';
+    try {
+      /* ⚠️ PAGINATED, and filtered SERVER-SIDE to milestones only. Pulling every
+         activity across the portfolio to find a few hundred milestones is the
+         mistake the S-Curve tab already had to fix; and an unpaginated read caps
+         at 1000 rows with no error, which would silently hide the later months. */
+      msRows = await PDb.selectAll('project_schedule', function (q) {
+        return q.in('project_id', ids)
+                .or('activity_type.ilike.%milestone%,program_milestone.is.true');
+      }, 'id,project_id,activity_id,activity_name,activity_type,program_milestone,' +
+         'start_date,end_date,actual_start,actual_finish,bl_finish,percent_complete,phase,scope_type');
+      msLoadedIds = ids;
+    } catch (e) {
+      body.innerHTML = '<div class="po-empty">Could not load milestones: ' + esc(e.message || String(e)) + '</div>';
+      return;
+    }
+    if (!msMonth) {
+      /* Open on the month that has something to show: today if anything is
+         happening around now, otherwise the next month that carries a milestone.
+         Opening on an empty month reads as "there are none". */
+      var t = todayT(), fut = msRows.map(msDate).filter(Boolean).map(ymd).filter(Boolean)
+        .filter(function (d) { return d.t >= t; }).sort(function (a, b) { return a.t - b.t; });
+      var cur = new Date(t);
+      var thisKey = cur.getUTCFullYear() + '-' + pad2(cur.getUTCMonth() + 1);
+      var hasThis = msRows.some(function (r) { var d = msDate(r); return d && String(d).slice(0, 7) === thisKey; });
+      msMonth = hasThis || !fut.length ? thisKey : String(isoOf(fut[0].t)).slice(0, 7);
+    }
+    renderMilestones();
+  }
+
+  function msVisible() {
+    return (msRows || []).filter(function (r) {
+      if (msProgOnly && !r.program_milestone) return false;
+      if (msState && msStateOf(r) !== msState) return false;
+      return true;
+    });
+  }
+
+  function renderMilestones() {
+    var body = document.getElementById('po-ms-body');
+    if (!msRows) return;
+    var rows = msVisible();
+    var t = todayT();
+
+    // ---- KPIs, over the whole scope (not just the month on screen) --------
+    var undated = rows.filter(function (r) { return msStateOf(r) === 'undated'; }).length;
+    var overdue = rows.filter(function (r) { return msStateOf(r) === 'overdue'; });
+    var achieved = rows.filter(msAchieved);
+    var next30 = rows.filter(function (r) {
+      var d = ymd(msDate(r)); return d && !msAchieved(r) && d.t >= t && d.t <= addDays(t, 30);
+    });
+    var slips = achieved.map(msSlip).filter(function (x) { return x != null; });
+    var late = slips.filter(function (x) { return x > 0; });
+    document.getElementById('po-ms-kpis').innerHTML =
+      msKpi('Milestones', rows.length, scopeLabel(scopedProjectIds())) +
+      msKpi('Overdue', overdue.length, 'past due and not achieved', overdue.length ? 'bad' : 'good') +
+      msKpi('Next 30 days', next30.length, 'coming up', next30.length ? 'warn' : '') +
+      msKpi('Achieved', achieved.length, late.length + ' of ' + slips.length + ' landed late', 'good') +
+      /* ⚠️ Undated milestones get their own tile rather than being dropped: a
+         milestone with no date cannot appear on a calendar at all, and silently
+         omitting it is how one goes unnoticed until it is missed. */
+      msKpi('Undated', undated, undated ? 'cannot be placed on the calendar' : 'all dated', undated ? 'warn' : '');
+
+    // ---- the month grid ---------------------------------------------------
+    var mk = msMonth.split('-'), Y = +mk[0], M = +mk[1];
+    document.getElementById('po-ms-month').textContent = MONTH_NAMES[M - 1] + ' ' + Y;
+
+    var first = Date.UTC(Y, M - 1, 1);
+    var daysIn = new Date(Date.UTC(Y, M, 0)).getUTCDate();
+    /* ⚠️ MONDAY-FIRST. The working week here is Mon–Sat (see PDCal and the
+       seasonal calendars), so Sunday is the rest day and belongs at the END of
+       the row rather than opening it. getUTCDay() is 0=Sun, so shift by 6. */
+    var lead = (new Date(first).getUTCDay() + 6) % 7;
+
+    var byDay = {};
+    rows.forEach(function (r) {
+      var d = msDate(r); if (!d) return;
+      var k = String(d).slice(0, 10);
+      (byDay[k] = byDay[k] || []).push(r);
+    });
+
+    var inMonth = rows.filter(function (r) { var d = msDate(r); return d && String(d).slice(0, 7) === msMonth; });
+    var h = '<div class="pd-card po-cal">' +
+      '<div class="po-cal-head">' + ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+        .map(function (d, i) { return '<div class="po-cal-dow' + (i === 6 ? ' rest' : '') + '">' + d + '</div>'; }).join('') + '</div>' +
+      '<div class="po-cal-grid">';
+
+    var CAP = 3;   // chips drawn per day before the overflow button
+    for (var i = 0; i < lead; i++) h += '<div class="po-cal-cell out"></div>';
+    for (var day = 1; day <= daysIn; day++) {
+      var cellT = Date.UTC(Y, M - 1, day), key = isoOf(cellT);
+      var list = (byDay[key] || []).slice().sort(function (a, b) {
+        return (msStateOf(a) === 'overdue' ? -1 : 0) - (msStateOf(b) === 'overdue' ? -1 : 0);
+      });
+      var isToday = cellT === t, isRest = (new Date(cellT).getUTCDay() === 0);
+      h += '<div class="po-cal-cell' + (isToday ? ' today' : '') + (isRest ? ' rest' : '') + '">' +
+        '<div class="po-cal-daynum">' + day + (isToday ? '<span class="po-cal-todaytag">today</span>' : '') + '</div>';
+      list.slice(0, CAP).forEach(function (r) { h += msChip(r); });
+      if (list.length > CAP) {
+        /* ⚠️ The overflow is a BUTTON, not a silent truncation. "+2 more" that
+           cannot be opened is the same as hiding them. */
+        h += '<button class="po-cal-more" data-day="' + esc(key) + '">+' + (list.length - CAP) + ' more</button>';
+      }
+      h += '</div>';
+    }
+    var tail = (7 - ((lead + daysIn) % 7)) % 7;
+    for (var j = 0; j < tail; j++) h += '<div class="po-cal-cell out"></div>';
+    h += '</div>';
+
+    if (!inMonth.length) {
+      h += '<div class="po-cal-none">Nothing in ' + esc(MONTH_NAMES[M - 1] + ' ' + Y) +
+        (rows.length ? ' — use the arrows, or Today, to move.' : '.') + '</div>';
+    }
+    h += '</div>';
+
+    // ---- an agenda under the grid, because a chip cannot show everything ---
+    var agenda = inMonth.slice().sort(function (a, b) {
+      return String(msDate(a)).localeCompare(String(msDate(b))) ||
+             String(projNameOf(a.project_id)).localeCompare(String(projNameOf(b.project_id)));
+    });
+    if (agenda.length) {
+      h += '<div class="pd-card po-tablecard" style="margin-top:14px;overflow:auto;">' +
+        '<table class="po-table"><thead><tr><th>Date</th><th>Project</th><th>Milestone</th>' +
+        '<th>Phase</th><th>State</th><th class="num">Slip vs baseline</th></tr></thead><tbody>' +
+        agenda.map(function (r) {
+          var st = msStateOf(r), sl = msSlip(r);
+          return '<tr><td class="po-nowrap">' + esc(String(msDate(r)).slice(0, 10)) + '</td>' +
+            '<td>' + esc(projNameOf(r.project_id)) + '</td>' +
+            '<td><strong>' + esc(r.activity_name || r.activity_id || '(unnamed)') + '</strong>' +
+              (r.program_milestone ? ' <span class="po-ms-prog">program</span>' : '') +
+              (r.scope_type === 'change_order' ? ' <span class="po-ms-co">change order</span>' : '') + '</td>' +
+            '<td>' + esc(r.phase || '') + '</td>' +
+            '<td><span class="po-ms-state ' + st + '">' + msStateLabel(st) + '</span>' +
+              (msAchieved(r) && msPlanned(r) ? '<div class="po-ms-sub">planned ' + esc(String(msPlanned(r)).slice(0, 10)) + '</div>' : '') + '</td>' +
+            '<td class="num">' + (sl == null
+              ? '<span class="po-ms-sub">no baseline</span>'
+              : '<span class="po-ms-slip ' + (sl > 0 ? 'late' : sl < 0 ? 'early' : '') + '">' + (sl > 0 ? '+' : '') + sl + 'd</span>') + '</td></tr>';
+        }).join('') +
+        '</tbody></table></div>';
+    }
+
+    body.innerHTML = h;
+    if (window.Icons) Icons.hydrate(body);
+    body.querySelectorAll('[data-day]').forEach(function (b) {
+      b.onclick = function () { openMsDay(b.dataset.day, byDay[b.dataset.day] || []); };
+    });
+    body.querySelectorAll('[data-msid]').forEach(function (b) {
+      b.onclick = function () {
+        var r = (msRows || []).find(function (x) { return String(x.id) === b.dataset.msid; });
+        if (r) openMsDay(String(msDate(r)).slice(0, 10), [r]);
+      };
+    });
+  }
+
+  function msStateLabel(st) {
+    return { achieved: 'Achieved', overdue: 'Overdue', due: 'Due', undated: 'No date' }[st] || st;
+  }
+  function msChip(r) {
+    var st = msStateOf(r);
+    return '<button class="po-cal-chip ' + st + '" data-msid="' + esc(r.id) + '" title="' +
+      esc(projNameOf(r.project_id) + ' — ' + (r.activity_name || r.activity_id || '')) + '">' +
+      '<span class="po-cal-chip-p">' + esc(projShort(r.project_id)) + '</span>' +
+      esc(r.activity_name || r.activity_id || '(unnamed)') + '</button>';
+  }
+  function msKpi(l, v, sub, cls) {
+    return '<div class="po-kpi2 ' + (cls || '') + '"><div class="po-kpi2-l">' + esc(l) + '</div>' +
+      '<div class="po-kpi2-v">' + v + '</div><div class="po-kpi2-s">' + esc(sub || '') + '</div></div>';
+  }
+  function projNameOf(id) {
+    var p = (PROJ || []).find(function (x) { return String(x.id) === String(id); });
+    return (p && (p.name || p.id)) || id;
+  }
+  function projShort(id) { return String(id || '').slice(0, 8); }
+
+  /* One day's milestones in full — the overflow target, and the chip target.
+     ⚠️ Read-only: this is the portfolio view, and a milestone is owned by its
+     project's schedule. Editing it here would put two writers on one row. */
+  function openMsDay(dayKey, list) {
+    var m = UI.modal('<h2 style="margin-top:0;">' + esc(dayKey) + '</h2>' +
+      '<p class="po-ms-sub" style="margin-top:-6px;">' + list.length + ' milestone' + (list.length === 1 ? '' : 's') +
+      ' across the scoped projects. Read-only — open the project schedule to change one.</p>' +
+      '<div class="po-ms-daylist">' +
+      list.map(function (r) {
+        var st = msStateOf(r), sl = msSlip(r);
+        return '<div class="po-ms-dayrow">' +
+          '<div><strong>' + esc(r.activity_name || r.activity_id || '(unnamed)') + '</strong>' +
+            (r.program_milestone ? ' <span class="po-ms-prog">program</span>' : '') + '</div>' +
+          '<div class="po-ms-sub">' + esc(projNameOf(r.project_id)) +
+            (r.phase ? ' · ' + esc(r.phase) : '') + '</div>' +
+          '<div><span class="po-ms-state ' + st + '">' + msStateLabel(st) + '</span>' +
+            (sl == null ? '' : ' <span class="po-ms-slip ' + (sl > 0 ? 'late' : sl < 0 ? 'early' : '') + '">' +
+              (sl > 0 ? '+' : '') + sl + 'd vs baseline</span>') + '</div>' +
+          (msAchieved(r) && msPlanned(r) ? '<div class="po-ms-sub">planned ' + esc(String(msPlanned(r)).slice(0, 10)) +
+            ' · actual ' + esc(String(msDate(r)).slice(0, 10)) + '</div>' : '') +
+          '</div>';
+      }).join('') + '</div>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="msd-x">Close</button></div>');
+    m.el.querySelector('#msd-x').onclick = m.close;
+  }
+
+  function msShiftMonth(n) {
+    var k = msMonth.split('-'), Y = +k[0], M = +k[1] - 1 + n;
+    var d = new Date(Date.UTC(Y, M, 1));
+    msMonth = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1);
+    renderMilestones();
+  }
+  function wireMilestones() {
+    document.getElementById('po-ms-prev').onclick = function () { msShiftMonth(-1); };
+    document.getElementById('po-ms-next').onclick = function () { msShiftMonth(1); };
+    document.getElementById('po-ms-today').onclick = function () {
+      var n = new Date(todayT());
+      msMonth = n.getUTCFullYear() + '-' + pad2(n.getUTCMonth() + 1); renderMilestones();
+    };
+    document.getElementById('po-ms-state').onchange = function (e) { msState = e.target.value; renderMilestones(); };
+    document.getElementById('po-ms-prog').onchange = function (e) { msProgOnly = e.target.checked; renderMilestones(); };
+    document.getElementById('po-ms-refresh').onclick = function () { loadMilestones(true); };
+  }
+
   function switchView(v) {
     view = v;
+    wireMilestones();
     document.querySelectorAll('.po-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
     document.getElementById('po-view-overview').style.display = v === 'overview' ? '' : 'none';
     document.getElementById('po-view-scurve').style.display = v === 'scurve' ? '' : 'none';
     document.getElementById('po-view-cashflow').style.display = v === 'cashflow' ? '' : 'none';
     document.getElementById('po-view-resources').style.display = v === 'resources' ? '' : 'none';
     document.getElementById('po-view-equipment').style.display = v === 'equipment' ? '' : 'none';
+    document.getElementById('po-view-milestones').style.display = v === 'milestones' ? '' : 'none';
     if (v === 'scurve') loadScurve(false);
     if (v === 'cashflow') loadCashflow(false);
     if (v === 'resources') loadResources(false);
     if (v === 'equipment') loadEquipment(false);
+    if (v === 'milestones') loadMilestones(false);
   }
 
   function exportExcel() {

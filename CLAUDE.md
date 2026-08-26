@@ -8670,3 +8670,54 @@ button's red label on the red tint read **3.60:1**; it is ink with a red border 
 All five earlier equipment suites green; **0 functions lost**; parse clean; CSS balanced.
 ⚠️ **Not verified signed in**, and the migration has not been run — until it is, a chosen icon is
 dropped with the file named and the guessed icon still renders. `MODULE_V` → `20260825g`.
+
+## 2026-08-26 — Portfolio Overview: a calendar view of the milestones
+
+Owner: *"For portfolio dashboard, let's have a calendar view of the milestones as well."* Sixth tab,
+**Milestones**, scoped by the same project filter as the rest. **No migration** — it reads
+`project_schedule` for the scoped projects. Detail: `modules/portfolio-overview/CLAUDE.md`.
+
+A Monday-first month grid with colour-coded chips (achieved / overdue / due), month arrows and Today,
+an agenda table beneath, project + state + programme-only filters, and a KPI band reading
+Milestones · Overdue · Next 30 days · Achieved · Undated.
+
+⚠️ **A milestone is `activity_type ILIKE '%milestone%'` OR `program_milestone = true`** — both,
+because the two disagree in the real data (P6 exports type them, the flag is set by hand here) and
+either test alone silently drops a whole class.
+⚠️ **`PDb.selectAll`, never a bare select** — milestones across a portfolio pass the 1000-row cap, and
+a truncated read reports "nothing due this month" on the screen whose only job is answering that.
+⚠️ **Undated milestones are counted and named, never filtered out.** "No milestone this month" and
+"nobody has dated this milestone" are opposite facts and only the second is a reason to go and look.
+⚠️ **Slip is measured against BASELINE, not the current plan** — the plan moves, so comparing an
+actual to `end_date` makes a six-month slip read as on-time the moment someone re-baselines.
+⚠️ **UTC string arithmetic throughout**, never `new Date(str)` — the local-parsing off-by-one that has
+bitten this repo repeatedly.
+⚠️ **The `+N more` overflow is a button that opens the day, not a label** — a "+2 more" you cannot
+click is the same as hiding them.
+
+⚠️ **Two real WCAG failures, and the first measurement of them was wrong.** It ignored alpha, so a
+tint of the same hue read as ratio 1.00 and looked clean. Compositing over the real ancestor
+background surfaced `.po-cal-more` and `.po-ms-prog` at **3.40:1 dark / 4.12:1 light**. Fixed with
+body ink plus a red border to keep the brand cue: **all 13 marks pass, min 4.86 light / 4.81 dark.**
+
+⚠️ **A pre-existing phone defect that I made worse, so I fixed it.** An A/B against my own added tab
+measured the tab strip at **573px in a 375px viewport BEFORE this change** and **685px after** — it
+already overflowed, and the 6th tab added 112px. With `flex-wrap:nowrap; overflow-x:visible` the later
+tabs were simply unreachable. It now **wraps rather than scrolls**, deliberately:
+`#po-projfilter-wrap` is a *child* of `.po-tabs` and its dropdown is absolute, so an overflow scroller
+would clip the project filter's own menu — the exact trap the module topbar hit in the 2026-07-24
+part-6 pass. Measured after: **355px**, all 6 tabs on screen, 44px targets, dropdown clipped by nothing.
+
+**Verified** in a browser harness against the shipped markup and CSS at 375px and 1280: 42 cells /
+7 columns, Monday first, today highlighted, KPIs `12 / 1 / 7 / 2 (1 late) / 1 undated`, the `+2 more`
+opening to all 5, the empty-month message, and the agenda's first row reading
+`Topping Off — Tower 1 · Achieved planned 2026-08-06 · +5d`. **Desktop byte-for-byte unchanged**
+(nowrap, one row, 38px tabs, filter right-aligned, no page scroll). Inline script parses, CSS braces
+balanced, **0 functions lost / 21 added**; BOQ (112), PMI (82) and push (22) suites still green.
+
+⚠️ **Not verified signed in** — the anon key has no grants on `project_schedule`, so the query, and
+the `.or()` filter string in particular, are exercised against a fixture rather than PostgREST.
+⚠️ **No `MODULE_V` bump, because it would not do anything here** — portfolio-overview is not in the
+`MODULES` registry and all five hrefs to it are plain unversioned links. **Hard-refresh once after
+the deploy** or the new tab will not appear. (Worth closing properly one day; left alone as it is a
+shared-file change outside this ask.)
