@@ -8817,3 +8817,47 @@ branch scope takes only that subtree; and re-filing into the owning package adds
 `MODULE_V` → `20260826j`.
 
 ⚠️ **Not clicked through in a browser** — no signed-in run against real data.
+
+### 2026-08-26 — The push dialog names its package, and each package gets its own phase branch
+Owner, from the push dialog: *"Where will the push to project schedule at which package show? See the
+dropdown is clashing."*
+
+Two problems, and the second was a real bug in what shipped this morning.
+
+**1. The package was invisible — and was never actually applied.**
+⚠️ `pushToSchedule` resolved the package root only `if (!baseNodeId && curPkgId)`, but `parentCode` is
+**always** `execPhaseCode()` (the WBS picker was removed 2026-08-18), so `baseNodeId` was **always** the
+shared project-level Execution Phase and the package root was found and then silently ignored. A
+Builder push could never have produced a top-level package row — the thing packages exist for.
+- New `ensurePackageBranch(pkgId, name)` creates/adopts **"PKG-2 — Towers 2-7 › Execution Phase"**, and
+  the package now **wins over** the project-level phase.
+- ⚠️ **Matched by name key UNDER THE ROOT, never globally**: every package has an "Execution Phase" of
+  its own, so a global lookup would collapse them all onto the first package's.
+- ⚠️ Falls back to the root itself if the branch insert fails — never lose the push over a nicety.
+- The dialog gains a **Contract package** select, defaulting to the open setup's package, plus
+  **— No package (project level) —**. It states the destination in full: *Filed under **PKG-1 — Tower 1
+  and General Requirements › Execution Phase***.
+- ⚠️ Shown even when there is only one choice. "Where did my 2,561 activities go" is the question this
+  dialog exists to answer, and a package applied invisibly from the open setup is exactly what could
+  not be seen.
+- Choosing a package **other than the setup's** is allowed and says so: it files the activities there
+  and does **not** change the setup. Choosing none warns that the work will appear in no package total
+  and points at **Actions → File under a package…**.
+- `pushToSchedule` takes a 7th arg, `pkgOverride`. ⚠️ `undefined` means "not asked" (use the setup's);
+  `null` means "deliberately no package" — they are not the same and the default must not collapse them.
+
+**2. The "Schedule to push" dropdown clipped its own text.**
+⚠️ Measured, not guessed: `.pd-select` is `padding:9px 11px; font-size:14px; border:1px`, and `* {
+box-sizing:border-box }` is global — so the inline `height:34px` left **34 − 18 − 2 = 14px** of content
+box for a line box of ~17px, clipping the descenders of "Internal (target)". The inline height is
+removed; padding sizes the control to its natural ~37px. No other fixed-height `.pd-select` exists in
+this module.
+
+**Verified 10/10** executing the shipped `ensurePackageRoot` + `ensurePackageBranch` in node against a
+stubbed PostgREST: the root is named from the contract and flagged, a second call **adopts** rather
+than duplicating, the phase branch is created under the root carrying the package, a re-push adopts it,
+`_wbsNameKey` matching survives case and spacing (`EXECUTION  phase`), and a second package gets its
+**own** root and its **own** Execution Phase — four nodes, no collapse onto the first.
+`MODULE_V` → `20260826m` (j..l were taken by a concurrent session; `l` was already live, so this needed a fresh one).
+
+⚠️ **Still not clicked through in a browser.**

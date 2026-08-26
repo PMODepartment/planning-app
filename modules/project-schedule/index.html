@@ -17985,6 +17985,33 @@
     return ins.data.id;
   }
 
+  /* A named branch INSIDE a package's own root — "PKG-2 — Towers 2-7 › Execution Phase".
+     ⚠️ WHY THIS EXISTS AT ALL: a Builder push always files under Execution Phase, resolved
+        by execPhaseCode() from the PROJECT-level branch. That meant a package's root was
+        found, then immediately ignored, and the pushed work landed under the shared
+        project phase instead of the package's own row — packages never became top-level
+        rows, which is the whole point of them. Each package gets its own phase branch.
+     ⚠️ MATCHED BY NAME KEY UNDER THE ROOT, not globally: every package has an "Execution
+        Phase" of its own, so a global name lookup would collapse them all onto the first. */
+  async function ensurePackageBranch(pkgId, name) {
+    var rootId = await ensurePackageRoot(pkgId);
+    if (!rootId) return null;
+    var key = _wbsNameKey(name);
+    var hit = (WBS_NODES || []).filter(function (n) {
+      return (n.parent_id || null) === rootId && _wbsNameKey(n.name) === key;
+    })[0];
+    if (hit) return hit.id;
+    var sibs = (WBS_NODES || []).filter(function (n) { return (n.parent_id || null) === rootId; });
+    var ins = await sb().from('wbs_nodes').insert({
+      project_id: pid, parent_id: rootId, name: name, sort_order: sibs.length,
+      package_id: pkgId, created_by: UID
+    }).select().single();
+    if (ins.error) return rootId;   // fall back to the root itself rather than losing the push
+    WBS_NODES.push(ins.data);
+    _clearPkgMemo();
+    return ins.data.id;
+  }
+
   async function _clearWbsTree(pkgId) {
     var scoped = pkgId != null && pkgId !== '__none__';
     try {
@@ -22318,20 +22345,36 @@
         : '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Start date <span style="color:var(--pd-red);">*</span></label>' +
           '<input class="pd-input" type="date" id="sbpush-start" value="' + e2(ddISO) + '" style="width:100%;height:34px;">' +
           '<p class="sbld-hint" style="margin:4px 0 0;">No project <b>Data Date</b> is set — choose the date the schedule should start from.</p>';
+      // Which contract package this push lands in. ⚠️ Shown even when there is only one
+      // choice: "where did my 2,561 activities go" is the question this dialog exists to
+      // answer, and a package applied invisibly from the open setup is exactly what the
+      // owner could not see.
+      var pkgSel = curPkgId || '';
+      var pkgBlock = !(PACKAGES || []).length ? '' :
+        '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Contract package</label>' +
+        '<select class="pd-select" id="sbpush-pkg" style="width:100%;">' +
+          (PACKAGES || []).map(function (k) {
+            return '<option value="' + e2(k.id) + '"' + (String(pkgSel) === String(k.id) ? ' selected' : '') + '>' +
+              e2((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
+          }).join('') +
+          '<option value=""' + (pkgSel ? '' : ' selected') + '>— No package (project level) —</option>' +
+        '</select>' +
+        '<p class="sbld-hint" id="sbpush-pkghint" style="margin:4px 0 0;"></p>';
       // (the WBS picker was removed — a builder push always files under Execution Phase)
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 500;
       ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:16px;">' +
         '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + gI.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule with their <b>relationships</b> (FS/SS/FF/SF + lag) as predecessors. Nothing is replaced.</p>' +
         '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Schedule to push</label>' +
-        '<select class="pd-select" id="sbpush-basis" style="width:100%;height:34px;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
+        '<select class="pd-select" id="sbpush-basis" style="width:100%;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
+        pkgBlock +
         startBlock +
         // ⚠️ The "Assign under WBS" picker is gone (owner 2026-08-18: it was always set to Execution
         // Phase, so offering the choice only invited a wrong one). A builder push is construction
         // work by definition, and construction lives under Execution Phase — resolved at push time by
         // execPhaseCode() so it follows a renamed/re-coded branch, and falling back to the top level
         // only if the project genuinely has no Execution Phase branch.
-        '<p class="sbld-hint" style="margin:12px 0 0;">Filed under <b>' + e2(_pushParentLabel()) + '</b>.</p>' +
+        '<p class="sbld-hint" style="margin:12px 0 0;" id="sbpush-filed"></p>' +
         // ⚠️ The "Group into a sub-WBS instead" tick-box is gone (owner 2026-08-18: it was always
         // ticked, exactly like the WBS picker before it). A builder push always builds the real
         // Trade › Floor › Zone › Unit branch tree — that is the whole point of defining the location
@@ -22342,6 +22385,37 @@
         '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbpush-go">Add to schedule</button></div></div>';
       document.body.appendChild(ov);
+      // The two lines that answer "which package, and where inside it?" — repainted on
+      // every change so the dialog never states a destination it will not use.
+      function paintPkgHint() {
+        var sel = ov.querySelector('#sbpush-pkg');
+        var val = sel ? sel.value : (curPkgId || '');
+        var hint = ov.querySelector('#sbpush-pkghint');
+        var filed = ov.querySelector('#sbpush-filed');
+        var phase = (function () {
+          var pc = _pushParentCode();
+          var row = (typeof rows !== 'undefined' ? rows : []).filter(function (r) { return String(r.wbs) === String(pc); })[0];
+          return (row && row.activity_name) || 'Execution Phase';
+        })();
+        if (hint) {
+          if (!val) {
+            hint.innerHTML = '⚠️ These activities will belong to <b>no package</b> and will not appear in any package total.' +
+              ((PACKAGES || []).length ? ' You can file them later with <b>Actions → File under a package…</b>.' : '');
+          } else if (curPkgId && String(val) !== String(curPkgId)) {
+            hint.innerHTML = '⚠️ This setup is saved against <b>' + e2(packageShort(curPkgId) || 'another package') +
+              '</b>. Pushing into <b>' + e2(packageShort(val) || 'this package') + '</b> files the activities there and does <b>not</b> change the setup.';
+          } else {
+            hint.innerHTML = 'From this setup. The build lands under this package\'s own top-level row.';
+          }
+        }
+        if (filed) {
+          filed.innerHTML = val
+            ? 'Filed under <b>' + e2((packageLabel(val) || 'the package')) + ' › ' + e2(phase) + '</b> — the package\'s own branch, created on first push.'
+            : 'Filed under <b>' + e2(_pushParentLabel()) + '</b>.';
+        }
+      }
+      (function () { var s2 = ov.querySelector('#sbpush-pkg'); if (s2) s2.onchange = paintPkgHint; })();
+      paintPkgHint();
       // WBS-structure editor: an ordered, on/off list of the location dimensions (level 1 = top). The
       // order + which dims are included define how many WBS levels and what each level is.
       var work = cfg.wbsOrder.slice(); WBS_DIMS.forEach(function (d) { if (work.indexOf(d) < 0) work.push(d); });
@@ -22374,7 +22448,8 @@
         cfg.wbsOrder = order.slice(); markDirty();   // remember the chosen structure
         var pc = _pushParentCode(), bs = ov.querySelector('#sbpush-basis').value;
         close();
-        pushToSchedule(pc, true, bs, order, startISO, 'auto');
+        var _pkgEl = ov.querySelector('#sbpush-pkg');
+        pushToSchedule(pc, true, bs, order, startISO, 'auto', _pkgEl ? (_pkgEl.value || null) : undefined);
       };
     }
     // The builder already knows every generated activity's work type and its floor/zone/unit — it
@@ -22409,14 +22484,18 @@
       }
       return LOC_LEVELS.map(function (l) { return l.id; });
     }
-    async function pushToSchedule(parentCode, grouped, basis, order, startISO, flatGroup) {
+    async function pushToSchedule(parentCode, grouped, basis, order, startISO, flatGroup, pkgOverride) {
+      /* The package chosen in the push dialog wins over the setup's own, so a planner
+         can push one recipe into a second lot without re-saving the setup. undefined
+         (not null) means "not asked" — null means "deliberately no package". */
+      var usePkg = (pkgOverride === undefined) ? curPkgId : (pkgOverride || null);
       var g = generate(basis || 'int', startISO); if (!g.rows.length) return;
       /* ⚠️ A MULTI-PACKAGE PROJECT AND AN UNASSIGNED SETUP IS ALMOST ALWAYS A MISTAKE.
          The push still goes through if the planner insists — an untagged build at
          project level is legitimate on a single-lot job — but it is never silent,
          because unassigned activities are invisible to every package total and the
          only cure is a bulk re-tag afterwards. */
-      if (!curPkgId && (PACKAGES || []).length) {
+      if (!usePkg && (PACKAGES || []).length) {
         if (!confirm('This project has ' + PACKAGES.length + ' contract package(s), but this setup is not assigned to one.\n\n' +
           'The activities will be pushed at project level and will belong to NO package, so they will not appear in any ' +
           'package total. Assign the setup to a package first (Setups), or continue?')) return;
@@ -22530,7 +22609,7 @@
            belongs to cannot be mis-read later if the tree above it is re-parented.
            ⚠️ Orthogonal to scope_type on purpose: the row above may be a change order AND
            this package. Neither column is derived from the other. */
-        package_id: curPkgId || null }; }
+        package_id: usePkg || null }; }
       // ---- Class codes -> activity codes ------------------------------------------------------
       // ⚠️ Ensured BEFORE the payloads are built, because taskPayload needs the value ids. Reuses an
       // existing "Class Code" type and any values already present, so a re-push adds nothing.
@@ -22681,7 +22760,17 @@
            it — but with no branch chosen and a package selected, the whole build lands
            under that package's root instead of at the project's top level. That is what
            makes two packages read as two top-level rows in the grid. */
-        if (!baseNodeId && curPkgId) baseNodeId = await ensurePackageRoot(curPkgId);
+        /* ⚠️ THE PACKAGE WINS OVER THE PROJECT-LEVEL PHASE, and must. parentCode is
+           always execPhaseCode() — the WBS picker was removed in 2026-08-18 — so
+           baseNodeId is ALWAYS the shared project Execution Phase, and a package root
+           resolved only when it happened to be null never applied. The build now goes
+           under that package's OWN phase branch, which is what puts each contract at
+           the top of the grid. */
+        if (usePkg) {
+          var _phaseName = (baseRow && baseRow.activity_name) || 'Execution Phase';
+          var _pkgBase = await ensurePackageBranch(usePkg, _phaseName);
+          if (_pkgBase) baseNodeId = _pkgBase;
+        }
         // 1) create the wbs_nodes parent-first (sequential so children can reference their parent's id)
         // ⚠️ IDEMPOTENT: reuse a branch that already exists rather than inserting a second one with
         // the same name under the same parent. `ensureNode` only dedupes WITHIN one push (its keys are
@@ -22774,7 +22863,7 @@
                activity through its nearest tagged ancestor, so tagging the branches is
                what keeps a re-parented or newly-added activity inside the right lot. */
             var _row = { project_id: pid, parent_id: parentId, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID };
-            if (curPkgId) _row.package_id = curPkgId;
+            if (usePkg) _row.package_id = usePkg;
             batch.push(_row);
             batchDescs.push(nd);
           }
@@ -22899,13 +22988,13 @@
          failed push (above) records nothing, because there is no schedule to go
          back to. See recordPush: the config is copied, never referenced. */
       await recordPush(taskN, baseNodeId || null,
-        curPkgId ? ('Pushed into ' + (packageShort(curPkgId) || 'package')) : 'Pushed at project level');
+        usePkg ? ('Pushed into ' + (packageShort(usePkg) || 'package')) : 'Pushed at project level');
       // Completion notification — a modal summary of what landed in the schedule, not just a toast.
       var wbsCount = payloads.filter(function (p) { return p.activity_type === 'WBS Summary'; }).length;
       if (typeof showImportSummary === 'function') {
         showImportSummary({
           title: 'Pushed to the schedule',
-          file: (curPkgId ? ((packageLabel(curPkgId) || 'Package') + ' — ') : '') +
+          file: (usePkg ? ((packageLabel(usePkg) || 'Package') + ' — ') : '') +
                 (curSetupName || cfg.name || projName(curPid) || 'Schedule Builder'),
           tiles: [
             { n: taskN, l: 'Activities added' },
