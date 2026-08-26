@@ -84,6 +84,48 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-26 (e) — Issues & Concerns becomes a report; Lessons Learned becomes its own record
+Owner: *"reorder by Minutes of Meeting → Issues & Concerns → Lessons Learned … I need the view of the
+issues & concerns as the one as with the minutes of meeting so that this can be reported not show as a
+log or database only … there may be issues raised that are not from the previous meeting. Let's revamp
+how to raise issues, the pop up window is not UI friendly … the Lessons Learned section is combined
+with the pop-up window. This should be separate and connected with the items either the minutes of
+meeting or the Issues & concerns."*
+**⚠️ Run `migrations/2026-08-26-lessons-learned.sql`.** `MODULE_V` → `20260826h`.
+
+- **Tabs reordered and the module now OPENS on the minutes** — the order the work happens: a meeting
+  is recorded → what it raised is chased in the register → what it taught is kept in the library.
+- **The register is a REPORT, with the log kept beside it.** Default view is the owner's own Power Apps
+  "View Open Issues" layout — a red status panel (Status · Department · Champion · Date Presented ·
+  Days Aging · Date Resolved) beside the issue / caused by / corrective action blocks, one record at a
+  time, in the same master/detail shape as the minutes, plus a **Reporting view** that renders fields
+  as text. A **Report | Log** switch keeps the table: ⚠️ scanning forty issues for the one you want is
+  a different job from reading one of them, and both presentations run off the same filtered set.
+- ⚠️ **The red panel deliberately ignores the theme** — brand red with white labels in both modes. A
+  screen someone is presenting from must not look like a different screen mid-meeting.
+- **The pop-up is gone; there is ONE editor and it is the detail pane** (`openForm` and
+  `wireModalCursor` deleted, not left alongside). ⚠️ **A new issue is a draft in memory, NOT an
+  inserted row — the opposite call from "+ New minutes"**, because `issues_lessons_del` is
+  planner-only: a department that mis-clicked would otherwise leave a blank row it cannot remove.
+- **Lessons are their own records** (`lessons_learned`), no longer three columns on the issue — which
+  forced one lesson per issue, no lesson without an issue, and a capture form welded to the issue form.
+  Links to the issue / meeting / action item are **all optional**, captured from three places, and
+  ⚠️ **an unlinked lesson is legitimate, never a broken one**. `on delete set null`, never cascade — a
+  lesson outlives its source, which is the point of a library.
+- ⚠️ **Legacy fallback until the migration runs:** the library is rebuilt read-only from the old
+  columns with a banner naming the file. Without it, opening the app pre-migration would report a
+  project's whole lessons history as empty — which reads as data loss. The migration backfills and
+  **does not clear** the old columns.
+- **Verified: 64 checks executing the shipped builders** (sliced, never reimplemented) — every Power
+  Apps field, aging derived and uneditable, the full permission matrix, report mode emitting no
+  controls, the draft's Cancel-and-no-Delete, **two lessons on one issue** (the case the old model
+  could not represent), the legacy rebuild read-only even for a planner, and escaping. ⚠️ The suite
+  **cannot pass against the pre-change file**, so it bites. 2 functions lost (both deliberate), 24
+  added; parses; 0 NUL bytes; CSS 217/217.
+- ⚠️ **NOT verified signed in, and the migration has not been run** — no live click-through of a save,
+  a lesson capture or the meeting picker. The first real use is the test.
+
+
 ### 2026-08-26 (d) — Planned vs Actual: the totals now print BOTH figures
 Owner: *"for the progress bar on the bottom, it should also show the progress for the planned when in
 the planned vs actual tab. For now it just shows the progress of the actual."* `?v=20260826d`.

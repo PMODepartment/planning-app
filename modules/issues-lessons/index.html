@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Issues, Concerns &amp; Lessons Learned Â· Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260819c" />
-  <link rel="stylesheet" href="module.css?v=20260822c" />
+  <link rel="stylesheet" href="module.css?v=20260826a" />
 </head>
 <body>
   <div class="pd-app">
@@ -19,21 +19,31 @@
           <span data-ico="arrowLeft" data-ico-size="18"></span></a>
         <h1 class="il-title" style="margin:0;">
           <span class="il-title-ico" data-ico="clipboard" data-ico-size="20"></span>
-          <span class="il-title-txt" id="il-screen-title">Issues &amp; Concerns</span>
+          <span class="il-title-txt" id="il-screen-title">Minutes of Meeting</span>
         </h1>
         <div class="il-projctx">
           <select class="pd-select il-project" id="il-project" title="Project"></select>
         </div>
 
-        <!-- Top-level screens -->
+        <!-- Top-level screens, in the order the work actually happens:
+             a meeting is recorded -> what it raised is chased in the register ->
+             what it taught is kept in the library. The first tab is the default
+             screen, so the module opens where the input comes in. -->
         <div class="il-tabs" role="tablist">
-          <button class="il-tab active" data-screen="issues">Issues &amp; Concerns</button>
+          <button class="il-tab active" data-screen="mom">Minutes of Meeting</button>
+          <button class="il-tab" data-screen="issues">Issues &amp; Concerns</button>
           <button class="il-tab" data-screen="lessons">Lessons Learned</button>
-          <button class="il-tab" data-screen="mom">Minutes of Meeting</button>
         </div>
 
         <!-- Tool cluster beside the profile: one labelled primary + icon tools -->
         <div class="il-topbar-tools">
+          <!-- Report / Log is a PRESENTATION switch, not a filter: the same records
+               either as one readable record at a time (what gets reported) or as the
+               scannable table (what gets worked through). -->
+          <div class="il-viewtoggle" id="il-viewtoggle" hidden>
+            <button type="button" data-view="report" class="on">Report</button>
+            <button type="button" data-view="log" id="il-view-log">Log</button>
+          </div>
           <button class="pd-btn pd-btn-primary il-tb-labeled" id="il-new" title="Log a new issue">+ New issue</button>
           <span class="il-tb-sep" id="il-sep"></span>
           <button class="pd-btn" id="il-refresh" title="Reload">
@@ -45,7 +55,7 @@
 
       <div class="pd-main">
         <!-- ================= Issues & Concerns ================= -->
-        <div id="il-screen-issues">
+        <div id="il-screen-issues" hidden>
           <div class="il-filters">
             <span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>
             <input class="pd-input il-search" id="il-f-search" placeholder="Search issue, cause, corrective action, championâ€¦" />
@@ -65,8 +75,17 @@
 
           <div class="il-kpis" id="il-kpis"></div>
 
-          <div class="pd-card" style="padding:0;overflow:auto;">
-            <table class="pd-table il-table" id="il-table"></table>
+          <!-- REPORT: one issue at a time, laid out the way the Power Apps
+               "View Open Issues" screen reports it — status panel beside the
+               issue / cause / corrective action. This is the default. -->
+          <div id="il-issues-view"></div>
+
+          <!-- LOG: the register as a table. Kept, because scanning ten issues for
+               the one you want is a different job from reading one of them. -->
+          <div id="il-issues-log" hidden>
+            <div class="pd-card" style="padding:0;overflow:auto;">
+              <table class="pd-table il-table" id="il-table"></table>
+            </div>
           </div>
         </div>
 
@@ -76,9 +95,9 @@
             <span class="il-lead-ico" data-ico="bulb" data-ico-size="20"></span>
             <div>
               <strong>Lessons Learned library.</strong>
-              <span class="il-lead-sub">Every lesson captured on an issue or concern is collected here so management
-              and operations can reference it on future projects. Add or edit a lesson from any issue's
-              <em>Lessons Learned</em> section.</span>
+              <span class="il-lead-sub">A lesson is its own record. It can be captured on its own, or linked to the
+              issue or the meeting action item that produced it &mdash; and it stays in this library after that issue
+              closes, which is the point of keeping it.</span>
             </div>
           </div>
 
@@ -98,7 +117,7 @@
         <!-- ================= Minutes of Meeting ================= -->
         <!-- Moved here out of the Project Schedule module: a meeting's action items
              become entries in THIS register, so the minutes belong beside it. -->
-        <div id="il-screen-mom" hidden>
+        <div id="il-screen-mom">
           <div class="il-lead pd-card">
             <span class="il-lead-ico" data-ico="clipboard" data-ico-size="20"></span>
             <div>
@@ -126,7 +145,7 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260822d"></script>
+  <script src="module.js?v=20260826a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

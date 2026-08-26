@@ -40,7 +40,34 @@ window.IssuesLessons = (function () {
   // the silent failure D1 removed from issues.
   var rows = [];
   var MOM_BY_ID = {};                  // meeting_minutes referenced by these issues (C4)
-  var screen = 'issues';               // 'issues' | 'lessons' | 'mom'
+  // ⚠️ DEFAULT SCREEN IS THE MINUTES, matching the tab order (meeting → register → library).
+  // The module opens where the input comes in; the register is one click away.
+  var screen = 'mom';                  // 'mom' | 'issues' | 'lessons'
+
+  // ---- Issues & Concerns presentation ---------------------------------------
+  // ⚠️ TWO PRESENTATIONS OF ONE REGISTER, not two features. `report` reads ONE issue
+  // the way the Power Apps "View Open Issues" screen reports it — a status panel beside
+  // the issue / cause / corrective action — because that is what gets presented in a
+  // meeting. `log` is the table, because scanning forty issues for the one you want is a
+  // different job from reading one of them. Neither is a filter; both show the same set.
+  var _issMode = 'report';             // 'report' | 'log'
+  var _issSel = null;                  // id of the issue open in the detail pane
+  // ⚠️ A NEW ISSUE IS A DRAFT IN MEMORY, NOT AN INSERTED ROW — deliberately UNLIKE
+  // "+ New minutes", which inserts immediately and lets you type. It cannot work that way
+  // here: `issues_lessons_del` is planner-only (2026-08-19-department-issues.sql), so a
+  // department that mis-clicked "+ New issue" would leave a blank row in the register with
+  // no way to remove it. The draft is written on Save and discarded on Cancel.
+  var _issNew = null;
+  var _issReport = false;              // reporting view (read-only presentation)
+  var _issQ = '';                      // search inside the issue list
+
+  // ---- Lessons Learned ------------------------------------------------------
+  // A lesson is its OWN record now (table `lessons_learned`), linked to the issue and/or
+  // the meeting that produced it — see migrations/2026-08-26-lessons-learned.sql for why
+  // it stopped being three columns on the issue.
+  var LESSONS = [], _lessLoaded = false, _lessErr = '', _lessLegacy = false;
+  var _lessMode = 'report';            // 'report' | 'library'
+  var _lessSel = null, _lessNew = null, _lessReport = false;
   // "This came out of a meeting." The tag is read-only in the log: the minute is the
   // record of what was said, this register owns how the issue is chased. Both now live
   // in this module (the Minutes of Meeting screen), but they stay separate records.
@@ -106,7 +133,8 @@ window.IssuesLessons = (function () {
     else return;
     render();
   }
-  function wireModalCursor(m, r) { if (!r || !r.id) return; var oc = m.close; m.close = function () { broadcastCollabSel(null); oc(); }; broadcastCollabSel(r.id, true); m.el.addEventListener('click', function (e) { if (e.target === m.el) broadcastCollabSel(null); }); }
+  // (the modal cursor helper was removed with the Add/Edit modal — the detail pane
+  // broadcasts the collab selection directly from wireIssues())
   function $(id) { return document.getElementById(id); }
   function statusClass(s) {
     return s === 'Closed' ? 'is-closed' : (s === 'On Hold' ? 'is-hold' : 'is-open');
@@ -122,7 +150,13 @@ window.IssuesLessons = (function () {
     var now = new Date(); now.setHours(0, 0, 0, 0);
     return Math.max(0, Math.round((now - d0) / 86400000));
   }
-  function hasLesson(r) { return !!(r.lesson_learned && r.lesson_learned.trim()); }
+  // ⚠️ Reads the LESSONS library first and the old column only as a fallback. A lesson is
+  // its own record now, so an issue can carry several — or one captured by someone else —
+  // and testing the legacy column alone would report those issues as having none.
+  function hasLesson(r) {
+    if (r && r.id && LESSONS.some(function (l) { return l.issue_id === r.id; })) return true;
+    return !!(r && r.lesson_learned && r.lesson_learned.trim());
+  }
 
   // ========================================================================
   async function init(user, prof) {
@@ -162,6 +196,7 @@ window.IssuesLessons = (function () {
       projName = opt ? opt.textContent : '';
       if (pid) sessionStorage.setItem('pd_project', pid);
       momReset();          // minutes belong to a project — never carry them across a switch
+      issReset(); lessReset();
       load();
       if (screen === 'mom') renderMom();
       joinCollab();
@@ -204,11 +239,25 @@ window.IssuesLessons = (function () {
       renderLessons();
     };
 
-    $('il-new').onclick = function () { openForm(null); };
+    $('il-new').onclick = function () {
+      if (screen === 'issues') newIssue();
+      else if (screen === 'lessons') newLesson(null);
+    };
     $('il-refresh').onclick = function () {
       if (screen === 'mom') { momReset(); renderMom(); }   // renderMom re-fetches when unloaded
       load();
     };
+
+    // Report / Log presentation switch. One control, two screens — the second button's
+    // label changes with the screen because "Log" and "Library" name different things.
+    Array.prototype.forEach.call(document.querySelectorAll('#il-viewtoggle [data-view]'), function (b) {
+      b.onclick = function () {
+        if (screen === 'issues') _issMode = (b.dataset.view === 'log') ? 'log' : 'report';
+        else if (screen === 'lessons') _lessMode = (b.dataset.view === 'log') ? 'library' : 'report';
+        syncChrome();
+        render();
+      };
+    });
   }
 
   function switchScreen(s) {
@@ -226,10 +275,30 @@ window.IssuesLessons = (function () {
   }
 
   function syncChrome() {
-    // "+ New issue" is planner+ and belongs to the Issues screen.
-    var show = canWrite && screen === 'issues';
-    $('il-new').style.display = show ? '' : 'none';
-    $('il-sep').style.display = show ? '' : 'none';
+    // ⚠️ `canAdd`, not `canWrite`: raising an issue is open to any approved non-viewer
+    // (D1 — the DATABASE has always allowed it). Same rule for capturing a lesson.
+    var showNew = canAdd && (screen === 'issues' || screen === 'lessons');
+    var nb = $('il-new');
+    nb.style.display = showNew ? '' : 'none';
+    $('il-sep').style.display = showNew ? '' : 'none';
+    if (showNew) {
+      nb.textContent = screen === 'lessons' ? '+ New lesson' : '+ New issue';
+      nb.title = screen === 'lessons' ? 'Capture a lesson learned' : 'Log a new issue';
+    }
+
+    // The presentation switch belongs to the two record screens; the minutes have their
+    // own Reporting view on the minute itself.
+    var tg = $('il-viewtoggle');
+    if (tg) {
+      tg.hidden = (screen === 'mom');
+      var mode = screen === 'lessons' ? _lessMode : _issMode;
+      var second = screen === 'lessons' ? 'library' : 'log';
+      var lbl = $('il-view-log'); if (lbl) lbl.textContent = screen === 'lessons' ? 'Library' : 'Log';
+      Array.prototype.forEach.call(tg.querySelectorAll('[data-view]'), function (b) {
+        var isSecond = b.dataset.view === 'log';
+        b.classList.toggle('on', isSecond ? (mode === second) : (mode === 'report'));
+      });
+    }
   }
 
   // ------------------------------------------------------------------ load ---
@@ -242,6 +311,10 @@ window.IssuesLessons = (function () {
       return;
     }
     $('il-table').innerHTML = '<tr><td style="padding:24px;color:var(--pd-muted);">Loading…</td></tr>';
+    // The report view is the default now, so it needs the loading state too — otherwise a
+    // slow project reads as an empty register.
+    var _iv = $('il-issues-view');
+    if (_iv && !_issNew) _iv.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Loading issues…</div>';
     // ⚠️ Keyset-paginated (see PDb.selectAll) — a plain .select() truncates at 1000 rows server-side
     // with no error, and this log accumulates for the life of the project. Shaped as {data}/{error}
     // so the offline-cache branch is untouched; the display sort is re-applied in memory.
@@ -274,6 +347,11 @@ window.IssuesLessons = (function () {
       return String(b.created_at || '').localeCompare(String(a.created_at || ''));
     });
     if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
+    // ⚠️ Lessons load WITH the register, not lazily like the minutes. An issue's detail
+    // pane states the lessons captured on it, so a lazily-loaded library would make the
+    // issue screen say "no lessons yet" about an issue that has some — the worst possible
+    // reading on a screen whose whole job is to be reported from.
+    await loadLessons();
     populateFilterOptions();
     render();
   }
@@ -291,7 +369,13 @@ window.IssuesLessons = (function () {
     rows.forEach(function (r) {
       if (r.department) depts[r.department] = 1;
       if (r.champion) champs[r.champion] = 1;
-      if (hasLesson(r) && r.lesson_category) cats[r.lesson_category] = 1;
+    });
+    // ⚠️ Lesson departments/categories come from the LESSONS table, not from the issues.
+    // A lesson can be captured on a meeting or on nothing at all, so filtering the library
+    // by the issues' vocabulary would hide every unlinked lesson's category.
+    LESSONS.forEach(function (l) {
+      if (l.department) depts[l.department] = 1;
+      if (l.category) cats[l.category] = 1;
     });
     var deptList = Object.keys(depts).sort();
     fill($('il-f-status'), STATUSES, iFilters.status, 'All statuses');
@@ -332,13 +416,24 @@ window.IssuesLessons = (function () {
     });
   }
 
+  // Dispatcher. Both presentations run off `issuesFiltered()`, so the filter bar and the
+  // KPIs mean the same thing in either — switching presentation never changes the set.
   function renderIssues() {
     renderIssueKpis();
     var anyF = ['search', 'status', 'department', 'champion', 'aging'].some(function (k) { return iFilters[k]; });
     var clr = $('il-clearfilters'); if (clr) clr.hidden = !anyF;
+    var log = $('il-issues-log'), view = $('il-issues-view');
+    if (log) log.hidden = _issMode !== 'log';
+    if (view) view.hidden = _issMode === 'log';
+    if (_issMode === 'log') renderIssuesLog(); else renderIssuesReport();
+  }
 
+  function renderIssuesLog() {
     var t = $('il-table');
-    if (!pid) return;
+    if (!pid) {
+      t.innerHTML = '<tr><td style="padding:24px;color:var(--pd-muted);">Select a project to see its issues.</td></tr>';
+      return;
+    }
     if (!rows.length) {
       t.innerHTML = '<tr><td style="padding:0;">' +
         '<div class="il-empty"><span data-ico="clipboard" data-ico-size="40"></span>' +
@@ -389,13 +484,316 @@ window.IssuesLessons = (function () {
       '<tr><td colspan="' + (canWrite ? 11 : 10) + '" style="padding:24px;color:var(--pd-muted);">No issues match the current filters.</td></tr>') +
       '</tbody>';
 
+    // ⚠️ Editing from the log SWITCHES to the report view rather than opening a modal.
+    // There is one editor for an issue now, and it is the detail pane — a second one would
+    // be a second place for the fields to drift apart.
     t.querySelectorAll('[data-edit]').forEach(function (b) {
-      b.onclick = function () { openForm(rows.find(function (x) { return x.id === b.dataset.edit; })); };
+      b.onclick = function () { openIssue(b.dataset.edit); };
     });
     t.querySelectorAll('[data-del]').forEach(function (b) {
       b.onclick = function () { del(b.dataset.del); };
     });
     if (window.Icons) Icons.hydrate(t);
+  }
+
+  // Open an issue in the report view (from the log, from a minute, from a lesson).
+  function openIssue(id) {
+    _issMode = 'report'; _issSel = id; _issNew = null;
+    if (screen !== 'issues') switchScreen('issues');
+    else { syncChrome(); renderIssues(); }
+  }
+
+  function issReset() {
+    _issSel = null; _issNew = null; _issQ = ''; _issReport = false;
+  }
+
+  // ------------------------------------------------- Issues: report view -----
+  // ⚠️ THIS IS THE POWER APPS "VIEW OPEN ISSUES" LAYOUT, and it is the point of the
+  // screen: a status panel beside the issue / cause / corrective action, one record at a
+  // time, readable aloud. The log is for finding a record; this is for reporting it.
+  //
+  // ⚠️ ONE renderer for read-only and editable, disabled by field rather than a second
+  // markup path — two paths drift the moment either is touched (the same call the minutes
+  // detail card documents).
+  function renderIssuesReport() {
+    var host = $('il-issues-view'); if (!host) return;
+    if (!pid) {
+      host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Select a project to see its issues.</div>';
+      return;
+    }
+    var data = issuesFiltered();
+    // ⚠️ The selection is validated against the FILTERED set, not just against `rows`: a
+    // filter that hides the open issue must move the pane, or the reader is looking at a
+    // record the list beside it says is not there.
+    if (_issNew) _issSel = null;
+    else if (!data.some(function (r) { return r.id === _issSel; })) _issSel = data.length ? data[0].id : null;
+
+    var cur = _issNew || rows.find(function (r) { return r.id === _issSel; }) || null;
+    var shown = issSearchList(data);
+
+    host.classList.toggle('il-mom-report', _issReport);
+    host.innerHTML =
+      '<div class="il-mom-wrap"><div class="il-mom-list">' +
+        '<div class="il-mom-head">Issues <span>' + data.length + '</span></div>' +
+        (data.length > 6
+          ? '<input class="pd-input pd-input-sm il-mom-search" id="il-iss-q" ' +
+            'placeholder="Search these issues…" value="' + Fmt.esc(_issQ) + '">' : '') +
+        (_issNew ? '<button class="il-mom-item on" data-iss="__new__">' +
+          '<span class="il-mom-draft">New</span>Unsaved issue<small>Not yet in the register</small></button>' : '') +
+        (shown.length ? shown.map(issListRowHTML).join('')
+          : '<div class="il-empty" style="padding:14px;">' +
+            (rows.length ? 'No issue matches the current filters.'
+                         : 'No issues logged yet for this project.') + '</div>') +
+        (canAdd ? '<button class="pd-btn pd-btn-sm pd-btn-primary" id="il-iss-new" style="width:100%;margin-top:8px;">+ New issue</button>' : '') +
+      '</div><div class="il-mom-detail">' +
+        (cur ? issDetailHTML(cur)
+             : '<div class="il-empty" style="padding:28px;">' +
+               (rows.length ? 'Pick an issue to read it.' : 'Nothing to show yet.') + '</div>') +
+      '</div></div>';
+    wireIssues();
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+  }
+
+  function issSearchList(data) {
+    var q = _issQ.trim().toLowerCase();
+    if (!q) return data;
+    return data.filter(function (r) {
+      return [r.description, r.department, r.champion, r.caused_by, r.corrective_action]
+        .join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  function issListRowHTML(r) {
+    var a = agingDays(r);
+    return '<button class="il-mom-item' + (r.id === _issSel ? ' on' : '') + '" data-iss="' + Fmt.esc(r.id) + '">' +
+      '<span class="il-pill ' + statusClass(r.status) + ' il-iss-lpill">' + Fmt.esc(r.status || 'Open') + '</span>' +
+      Fmt.esc(clip(r.description, 90) || '(no issue text)') +
+      '<small>' + Fmt.esc(r.department || 'No department') +
+      (a == null ? '' : ' · ' + a + 'd aging') +
+      (lessonsOfIssue(r.id).length ? ' · lesson captured' : '') + '</small></button>';
+  }
+
+  function issDetailHTML(r) {
+    var isNew = !r.id;
+    var mayEdit = isNew ? canAdd : canEditRow(r);
+    var ro = !mayEdit || _issReport, d = ro ? ' disabled' : '';
+    var a = agingDays(r);
+    var ls = isNew ? [] : lessonsOfIssue(r.id);
+
+    function opts(list, val, blank) {
+      return (blank ? '<option value="">' + blank + '</option>' : '') +
+        list.map(function (o) { return '<option' + (val === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>'; }).join('');
+    }
+
+    return '<div class="il-mom-detail-card il-iss-card">' +
+      '<div class="il-mom-toolbar">' +
+        '<span class="il-mom-state' + ((r.status || 'Open') === 'Closed' ? ' on' : '') + '">' +
+          (isNew ? 'New issue — not yet saved' : 'Issue in the register') + '</span>' +
+        '<div style="flex:1;"></div>' +
+        // A VIEW control, offered to everyone who can read the issue — unlike every other
+        // control on this card, which is gated on who may change the record.
+        (isNew ? '' :
+          '<button class="pd-btn pd-btn-sm' + (_issReport ? ' is-active' : '') + '" id="il-iss-report" ' +
+            'title="Present this issue as a clean read-only record">' +
+            (_issReport ? '✓ Reporting view' : 'Reporting view') + '</button>') +
+      '</div>' +
+
+      // ---- the Power Apps two-pane body -------------------------------------
+      '<div class="il-iss-split">' +
+        '<div class="il-iss-panel">' +
+          ilField(_issReport, 'Status', 'il-c-status',
+            '<select class="pd-select pd-input-sm il-if" data-f="status"' + d + '>' +
+              opts(STATUSES, r.status || 'Open') + '</select>', r.status || 'Open') +
+          ilField(_issReport, 'Department', 'il-c-dept',
+            '<select class="pd-select pd-input-sm il-if" data-f="department"' + d + '>' +
+              opts(DEPARTMENTS, r.department || '', '—') + '</select>', r.department) +
+          ilField(_issReport, 'Champion', 'il-c-champ',
+            '<input class="pd-input pd-input-sm il-if" data-f="champion" list="il-champ-list" value="' +
+              Fmt.esc(r.champion) + '" placeholder="Who owns it"' + d + '>', r.champion) +
+          ilField(_issReport, 'Date Presented', 'il-c-pres',
+            '<input class="pd-input pd-input-sm il-if" data-f="date_presented" type="date" value="' +
+              dateVal(r.date_presented) + '"' + d + '>',
+            r.date_presented ? Fmt.date(r.date_presented) : '') +
+          // ⚠️ DERIVED, never stored and never editable — 0 when Closed, else today minus
+          // the date presented. A stored aging is wrong the next morning.
+          '<div class="il-mi-f il-c-aging"><label>Days Aging</label>' +
+            '<div class="il-mi-val' + (a != null && a > 90 && (r.status || 'Open') !== 'Closed' ? ' is-hot' : '') + '">' +
+            (a == null ? '—' : a + ' day' + (a === 1 ? '' : 's')) + '</div></div>' +
+          ilField(_issReport, 'Date Resolved', 'il-c-res',
+            '<input class="pd-input pd-input-sm il-if" data-f="date_resolved" type="date" value="' +
+              dateVal(r.date_resolved) + '"' + d + '>',
+            r.date_resolved ? Fmt.date(r.date_resolved) : '') +
+        '</div>' +
+
+        '<div class="il-iss-body">' +
+          ilField(_issReport, 'Issue', 'il-c-issue',
+            '<textarea class="pd-textarea il-if" data-f="description" rows="4" ' +
+              'placeholder="Describe the issue or concern…"' + d + '>' + Fmt.esc(r.description) + '</textarea>',
+            r.description) +
+          ilField(_issReport, 'Caused By', 'il-c-cause',
+            '<textarea class="pd-textarea il-if" data-f="caused_by" rows="3" ' +
+              'placeholder="Root cause…"' + d + '>' + Fmt.esc(r.caused_by) + '</textarea>', r.caused_by) +
+          ilField(_issReport, 'Corrective Action', 'il-c-action',
+            '<textarea class="pd-textarea il-if" data-f="corrective_action" rows="4" ' +
+              'placeholder="Actions taken / planned…"' + d + '>' + Fmt.esc(r.corrective_action) + '</textarea>',
+            r.corrective_action) +
+          (isNew ? '' : '<div class="il-iss-prov">' + (momTag(r) || '') +
+            '<span class="il-raisedby">' + Fmt.esc(raisedByLabel(r)) + '</span></div>') +
+        '</div>' +
+      '</div>' +
+
+      // ---- lessons, as their own records ------------------------------------
+      // ⚠️ NOT fields on this form any more. A lesson lives in `lessons_learned` and is
+      // shown here because this issue produced it — one issue can produce several, and a
+      // lesson outlives the issue. Editing one happens on the Lessons Learned screen.
+      '<div class="il-mom-actions il-iss-lessons"><h4>Lessons learned from this issue</h4>' +
+        '<p>A lesson is its own record in the library, linked back here. It stays there after ' +
+        'this issue closes — which is the point of keeping it.</p>' +
+        (ls.length
+          ? '<div class="il-lessons il-lessons-inline">' + ls.map(lessonCardHTML).join('') + '</div>'
+          : '<div class="il-empty" style="padding:12px;">No lesson captured from this issue yet.</div>') +
+        (canAdd && !isNew && !_issReport
+          ? '<div class="il-mom-addrow"><button class="pd-btn pd-btn-sm" id="il-iss-addlesson">+ Capture a lesson</button></div>'
+          : '') +
+      '</div>' +
+
+      '<datalist id="il-champ-list">' + champDatalist() + '</datalist>' +
+
+      (ro ? '' :
+        '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+          (isNew
+            ? '<button class="pd-btn pd-btn-sm" id="il-iss-cancel">Cancel</button>'
+            : (isSteward
+                ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-iss-del">Delete issue…</button>'
+                // Says why rather than showing a button the database would refuse: a
+                // department raising an issue must not be able to make it disappear.
+                : '<span class="il-raisedby" style="margin:0;">Closing an issue is a status. ' +
+                  'Only a planner can delete it from the register.</span>')) +
+          '<div style="flex:1;"></div>' +
+          '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-iss-save">' +
+            (isNew ? 'Save issue' : 'Save changes') + '</button></div>') +
+    '</div>';
+  }
+
+  function wireIssues() {
+    var host = $('il-issues-view'); if (!host) return;
+    host.querySelectorAll('[data-iss]').forEach(function (b) {
+      b.onclick = function () {
+        if (b.dataset.iss === '__new__') return;
+        // ⚠️ Leaving an unsaved draft is confirmed. The draft is in memory only, so
+        // clicking another issue would otherwise discard typed work with no warning.
+        if (_issNew && !confirm('Discard the unsaved new issue?')) return;
+        _issNew = null; _issSel = b.dataset.iss; _issReport = false; renderIssues();
+      };
+    });
+    var q = host.querySelector('#il-iss-q');
+    if (q) q.oninput = function () {
+      _issQ = q.value;
+      var at = q.selectionStart; renderIssues();
+      var n = $('il-iss-q'); if (n) { n.focus(); try { n.setSelectionRange(at, at); } catch (e) {} }
+    };
+    var nb = host.querySelector('#il-iss-new'); if (nb) nb.onclick = newIssue;
+    var rep = host.querySelector('#il-iss-report');
+    if (rep) rep.onclick = function () { _issReport = !_issReport; renderIssues(); };
+    var sv = host.querySelector('#il-iss-save'); if (sv) sv.onclick = saveIssue;
+    var cn = host.querySelector('#il-iss-cancel');
+    if (cn) cn.onclick = function () { _issNew = null; renderIssues(); };
+    var dl = host.querySelector('#il-iss-del');
+    if (dl) dl.onclick = function () { del(_issSel); };
+    var al = host.querySelector('#il-iss-addlesson');
+    if (al) al.onclick = function () {
+      var r = rows.find(function (x) { return x.id === _issSel; }) || {};
+      newLesson({ issue_id: _issSel, mom_id: r.mom_id || null, department: r.department || null });
+    };
+    host.querySelectorAll('[data-open-lesson]').forEach(function (b) {
+      b.onclick = function () { openLesson(b.dataset.openLesson); };
+    });
+    // A draft's typing has to survive a re-render, so it is written into `_issNew` as it
+    // is typed; a saved issue is read out of the form on Save.
+    if (_issNew) {
+      host.querySelectorAll('.il-if').forEach(function (f) {
+        f.oninput = f.onchange = function () { _issNew[f.dataset.f] = f.value; };
+      });
+    }
+    // Broadcast the collab cursor for whichever issue is open.
+    broadcastCollabSel(_issNew ? null : _issSel, !_issReport);
+  }
+
+  function newIssue() {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!canAdd) return;
+    // ⚠️ Defaults from the raiser's PROFILE (D1). Typing the department every time invites
+    // the typo that silently splits the register's own Department filter in two.
+    _issNew = {
+      status: 'Open',
+      department: (profile && profile.department) || '',
+      champion: '', description: '', caused_by: '', corrective_action: '',
+      date_presented: todayISO(), date_resolved: '',
+    };
+    _issSel = null; _issMode = 'report'; _issReport = false;
+    if (screen !== 'issues') switchScreen('issues'); else { syncChrome(); renderIssues(); }
+    var el = $('il-issues-view'); var f = el && el.querySelector('[data-f="description"]');
+    if (f) f.focus();
+  }
+
+  function issFormValues() {
+    var host = $('il-issues-view'), out = {};
+    if (!host) return out;
+    host.querySelectorAll('.il-if').forEach(function (f) { out[f.dataset.f] = f.value; });
+    return out;
+  }
+
+  async function saveIssue() {
+    var v = issFormValues();
+    var data = {
+      project_id:        pid,
+      type:              'Issue',
+      status:            v.status || 'Open',
+      department:        v.department || null,
+      champion:          (v.champion || '').trim(),
+      description:       (v.description || '').trim(),
+      caused_by:         (v.caused_by || '').trim(),
+      corrective_action: (v.corrective_action || '').trim(),
+      date_presented:    v.date_presented || null,
+      date_resolved:     v.date_resolved || null,
+      updated_at:        new Date().toISOString(),
+    };
+    if (!data.description) { UI.toast('The Issue field is required', 'warn'); return; }
+    try {
+      if (_issNew) {
+        data.created_by = UID;               // REQUIRED for RLS
+        var ins = await sb().from(TABLE).insert(data).select().single();
+        if (ins.error) throw ins.error;
+        rows.unshift(ins.data);
+        _issNew = null; _issSel = ins.data.id;
+        if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
+        populateFilterOptions();
+        UI.toast('Issue logged', 'ok');
+        renderIssues();
+      } else {
+        var r = rows.find(function (x) { return x.id === _issSel; });
+        if (!r) return;
+        if (!canEditRow(r)) { UI.toast('This issue was raised by someone else — ask a planner to change it.', 'warn'); return; }
+        Object.assign(r, data);   // optimistic — applies whether online or queued offline
+        if (window.PDSync) {
+          var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: data });
+          if (!w.ok) throw (w.error || new Error('Save failed'));
+          PDSync.cachePut(PID_PFX + ':' + pid, rows);
+        } else {
+          var upd = await sb().from(TABLE).update(data).eq('id', r.id);
+          if (upd.error) throw upd.error;
+        }
+        populateFilterOptions();
+        UI.toast('Saved', 'ok');
+        renderIssues();
+      }
+    } catch (e) { UI.toast(e.message, 'error'); }
+  }
+
+  function todayISO() {
+    // Local date, not toISOString().slice(0,10) — east of Greenwich that is yesterday.
+    var dt = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return dt.getFullYear() + '-' + p(dt.getMonth() + 1) + '-' + p(dt.getDate());
   }
 
   function renderIssueKpis() {
@@ -417,14 +815,94 @@ window.IssuesLessons = (function () {
       '<div class="il-kpi-label">' + label + '</div></div>';
   }
 
-  // ------------------------------------------------------------ Lessons ------
+  // ==========================================================================
+  // LESSONS LEARNED — its own record, linked to what produced it
+  // --------------------------------------------------------------------------
+  // ⚠️ A LESSON IS NO LONGER THREE COLUMNS ON AN ISSUE. It used to be
+  // `lesson_learned` / `lesson_category` / `recommendation` on `issues_lessons`, which
+  // forced one lesson per issue, no lesson without an issue, and a capture form welded to
+  // the issue form. It is now a row in `lessons_learned` carrying OPTIONAL links to the
+  // issue, the meeting and the action item that produced it — see
+  // migrations/2026-08-26-lessons-learned.sql.
+  //
+  // ⚠️ AN UNLINKED LESSON IS A LEGITIMATE RECORD, not a broken one. Meetings produce
+  // lessons nobody logged as a problem, and a lesson brought from another project has no
+  // issue in THIS register at all. Nothing in the UI may require a link.
+  //
+  // ⚠️ LEGACY FALLBACK. Until the migration is run there is no table, so the library is
+  // rebuilt read-only from the old columns and the screen says which file to run. Without
+  // this, running the app before the migration would report a project's whole lessons
+  // history as empty — which reads as data loss.
+  // ==========================================================================
+  var LESSON_TABLE = 'lessons_learned';
+
+  function lessReset() {
+    LESSONS = []; _lessLoaded = false; _lessErr = ''; _lessLegacy = false;
+    _lessSel = null; _lessNew = null; _lessReport = false;
+  }
+
+  async function loadLessons() {
+    _lessLoaded = true; _lessErr = ''; _lessLegacy = false;
+    if (!pid) { LESSONS = []; return; }
+    try {
+      // ⚠️ Keyset-paginated (PDb.selectAll) — a plain .select() truncates at 1000 rows
+      // server-side with no error, and a library accumulates for the life of the project.
+      LESSONS = await PDb.selectAll(LESSON_TABLE, function (q) { return q.eq('project_id', pid); });
+    } catch (e) {
+      LESSONS = legacyLessons();
+      _lessLegacy = true;
+      _lessErr = (e && e.message) || 'load failed';
+      return;
+    }
+    LESSONS.sort(function (a, b) {                    // newest first, blanks last
+      var x = a.date_captured || '', y = b.date_captured || '';
+      if (!x !== !y) return x ? -1 : 1;
+      if (x !== y) return y.localeCompare(x);
+      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+    });
+  }
+
+  // The pre-migration shape, presented as read-only lessons so nothing disappears.
+  // ⚠️ Ids are prefixed `legacy:` so they can never be mistaken for a real row and sent
+  // to the database in an update.
+  function legacyLessons() {
+    return rows.filter(function (r) { return r.lesson_learned && r.lesson_learned.trim(); })
+      .map(function (r) {
+        return {
+          id: 'legacy:' + r.id, project_id: r.project_id, issue_id: r.id, mom_id: r.mom_id || null,
+          mom_item_id: null, department: r.department, category: r.lesson_category,
+          lesson: r.lesson_learned, recommendation: r.recommendation,
+          date_captured: r.date_resolved || r.date_presented, created_by: r.created_by, _legacy: true,
+        };
+      });
+  }
+  function isLegacyLesson(l) { return !!(l && (l._legacy || String(l.id || '').indexOf('legacy:') === 0)); }
+
+  function lessonsOfIssue(id) {
+    return id ? LESSONS.filter(function (l) { return l.issue_id === id; }) : [];
+  }
+  function lessonsOfMomItem(itemId) {
+    return itemId ? LESSONS.filter(function (l) { return l.mom_item_id === itemId; }) : [];
+  }
+
+  // ⚠️ Mirrors the migration's policies. A lesson's author may edit AND delete it (unlike
+  // an issue, which only a planner may delete): a lesson is something someone wrote down,
+  // not the record of a problem having existed, and a duplicate is noise in a library
+  // everyone reads. A lesson with no `created_by` is planner-only — there is no way to
+  // know whose it was.
+  function canEditLesson(l) {
+    if (isLegacyLesson(l)) return false;
+    if (isSteward) return true;
+    return !!(canAdd && l && l.created_by && UID && l.created_by === UID);
+  }
+
   function lessonsFiltered() {
-    return rows.filter(hasLesson).filter(function (r) {
-      if (lFilters.department && r.department !== lFilters.department) return false;
-      if (lFilters.category && r.lesson_category !== lFilters.category) return false;
+    return LESSONS.filter(function (l) {
+      if (lFilters.department && l.department !== lFilters.department) return false;
+      if (lFilters.category && l.category !== lFilters.category) return false;
       if (lFilters.search) {
-        var hay = [r.lesson_learned, r.recommendation, r.description, r.lesson_category]
-          .join(' ').toLowerCase();
+        var hay = [l.lesson, l.recommendation, l.category, l.department,
+                   lessonSourceText(l)].join(' ').toLowerCase();
         if (hay.indexOf(lFilters.search) === -1) return false;
       }
       return true;
@@ -432,54 +910,381 @@ window.IssuesLessons = (function () {
   }
 
   function renderLessons() {
-    var all = rows.filter(hasLesson);
-    var closed = all.filter(function (r) { return r.status === 'Closed'; }).length;
-    var cats = {}; all.forEach(function (r) { if (r.lesson_category) cats[r.lesson_category] = 1; });
-    $('il-lkpis').innerHTML =
-      kpi('Lessons captured', all.length, '') +
-      kpi('From closed items', closed, 'is-closed') +
-      kpi('Categories', Object.keys(cats).length, '');
-
+    renderLessonKpis();
     var anyF = ['search', 'department', 'category'].some(function (k) { return lFilters[k]; });
     var clr = $('il-lclearfilters'); if (clr) clr.hidden = !anyF;
-
-    var host = $('il-lessons-view');
+    var host = $('il-lessons-view'); if (!host) return;
     if (!pid) { host.innerHTML = ''; return; }
-    if (!all.length) {
-      host.innerHTML = '<div class="il-empty"><span data-ico="bulb" data-ico-size="40"></span>' +
-        '<div class="il-empty-title">No lessons captured yet.</div>' +
-        '<div>Open any issue and fill in its <strong>Lessons Learned</strong> section — it will appear here.</div>' +
-        '</div>';
-      if (window.Icons) Icons.hydrate(host);
-      return;
-    }
-    var data = lessonsFiltered();
-    if (!data.length) {
-      host.innerHTML = '<div class="il-empty"><div class="il-empty-title">No lessons match the current filters.</div></div>';
-      return;
-    }
-    host.innerHTML = '<div class="il-lessons">' + data.map(function (r) {
-      return '<div class="il-lcard">' +
-        '<div class="il-lcard-top">' +
-          (r.lesson_category ? '<span class="il-chip is-cat">' + Fmt.esc(r.lesson_category) + '</span>' : '') +
-          (r.department ? '<span class="il-chip">' + Fmt.esc(r.department) + '</span>' : '') +
-          '<span class="il-lcard-date">' + Fmt.date(r.date_resolved || r.date_presented) + '</span>' +
-        '</div>' +
-        '<div class="il-lcard-lesson">' + Fmt.esc(r.lesson_learned) + '</div>' +
-        (r.recommendation && r.recommendation.trim()
-          ? '<div class="il-lcard-rec"><b>Recommendation:</b> ' + Fmt.esc(r.recommendation) + '</div>' : '') +
-        '<div class="il-lcard-src"><span class="il-src-issue">From issue:</span> ' +
-          Fmt.esc(clip(r.description, 140)) +
-          ' <span class="il-pill ' + statusClass(r.status) + '" style="transform:scale(.85);">' +
-          Fmt.esc(r.status || 'Open') + '</span></div>' +
-        (canWrite ? '<button class="il-lcard-open" data-open="' + r.id + '">Edit this issue &amp; lesson →</button>' : '') +
-      '</div>';
-    }).join('') + '</div>';
-
-    host.querySelectorAll('[data-open]').forEach(function (b) {
-      b.onclick = function () { openForm(rows.find(function (x) { return x.id === b.dataset.open; })); };
-    });
+    if (_lessMode === 'library') renderLessonsLibrary(host);
+    else renderLessonsReport(host);
     if (window.Icons) Icons.hydrate(host);
+  }
+
+  function migrateNoteHTML() {
+    return _lessLegacy
+      ? '<p class="il-mom-note">Showing lessons captured on issues before the library existed, ' +
+        'read-only. Run <code>migrations/2026-08-26-lessons-learned.sql</code> to capture and edit ' +
+        'lessons as records of their own.</p>'
+      : '';
+  }
+
+  function renderLessonKpis() {
+    var all = LESSONS;
+    var linked = all.filter(function (l) { return l.issue_id || l.mom_id || l.mom_item_id; }).length;
+    var cats = {}; all.forEach(function (l) { if (l.category) cats[l.category] = 1; });
+    $('il-lkpis').innerHTML =
+      kpi('Lessons captured', all.length, '') +
+      kpi('Linked to a record', linked, 'is-closed') +
+      kpi('Categories', Object.keys(cats).length, '');
+  }
+
+  // The library: every lesson at once, for browsing. Unchanged in spirit from the original
+  // card grid — this is what people scan when starting a new project.
+  function renderLessonsLibrary(host) {
+    var data = lessonsFiltered();
+    host.classList.remove('il-mom-report');
+    if (!LESSONS.length) {
+      host.innerHTML = migrateNoteHTML() +
+        '<div class="il-empty"><span data-ico="bulb" data-ico-size="40"></span>' +
+        '<div class="il-empty-title">No lessons captured yet.</div>' +
+        '<div>Use <strong>+ New lesson</strong>, or capture one from an issue or a meeting action item.</div>' +
+        '</div>';
+      return;
+    }
+    host.innerHTML = migrateNoteHTML() + (data.length
+      ? '<div class="il-lessons">' + data.map(lessonCardHTML).join('') + '</div>'
+      : '<div class="il-empty"><div class="il-empty-title">No lessons match the current filters.</div></div>');
+    host.querySelectorAll('[data-open-lesson]').forEach(function (b) {
+      b.onclick = function () { openLesson(b.dataset.openLesson); };
+    });
+    host.querySelectorAll('[data-open-issue]').forEach(function (b) {
+      b.onclick = function () { openIssue(b.dataset.openIssue); };
+    });
+  }
+
+  // The report: one lesson at a time, the same master/detail shape as the minutes and the
+  // register, so all three screens read the same way.
+  function renderLessonsReport(host) {
+    var data = lessonsFiltered();
+    if (_lessNew) _lessSel = null;
+    else if (!data.some(function (l) { return l.id === _lessSel; })) _lessSel = data.length ? data[0].id : null;
+    var cur = _lessNew || LESSONS.find(function (l) { return l.id === _lessSel; }) || null;
+
+    host.classList.toggle('il-mom-report', _lessReport);
+    host.innerHTML = migrateNoteHTML() +
+      '<div class="il-mom-wrap"><div class="il-mom-list">' +
+        '<div class="il-mom-head">Lessons <span>' + LESSONS.length + '</span></div>' +
+        (_lessNew ? '<button class="il-mom-item on" data-less="__new__">' +
+          '<span class="il-mom-draft">New</span>Unsaved lesson<small>Not yet in the library</small></button>' : '') +
+        (data.length ? data.map(lessonListRowHTML).join('')
+          : '<div class="il-empty" style="padding:14px;">' +
+            (LESSONS.length ? 'No lesson matches the current filters.'
+                            : 'No lessons captured on this project yet.') + '</div>') +
+        (canAdd && !_lessLegacy
+          ? '<button class="pd-btn pd-btn-sm pd-btn-primary" id="il-less-new" style="width:100%;margin-top:8px;">+ New lesson</button>' : '') +
+      '</div><div class="il-mom-detail">' +
+        (cur ? lessonDetailHTML(cur)
+             : '<div class="il-empty" style="padding:28px;">' +
+               (LESSONS.length ? 'Pick a lesson to read it.' : 'Nothing to show yet.') + '</div>') +
+      '</div></div>';
+    wireLessons();
+  }
+
+  function lessonListRowHTML(l) {
+    return '<button class="il-mom-item' + (l.id === _lessSel ? ' on' : '') + '" data-less="' + Fmt.esc(l.id) + '">' +
+      (l.category ? '<span class="il-chip is-cat il-less-lchip">' + Fmt.esc(l.category) + '</span>' : '') +
+      Fmt.esc(clip(l.lesson, 90) || '(no lesson text)') +
+      '<small>' + Fmt.esc(l.department || 'No department') +
+      (l.date_captured ? ' · ' + Fmt.date(l.date_captured) : '') +
+      ' · ' + Fmt.esc(lessonSourceText(l)) + '</small></button>';
+  }
+
+  // What produced this lesson, said in one phrase. ⚠️ "Captured on its own" is a real
+  // answer, never an apology for a missing link.
+  function lessonSourceText(l) {
+    if (!l) return '';
+    if (l.issue_id) {
+      var r = rows.find(function (x) { return x.id === l.issue_id; });
+      return 'From an issue' + (r && r.description ? ': ' + clip(r.description, 60) : '');
+    }
+    if (l.mom_item_id || l.mom_id) {
+      var m = MOM_BY_ID[l.mom_id];
+      return 'From a meeting' + (m && m.title ? ': ' + m.title : '');
+    }
+    return 'Captured on its own';
+  }
+
+  function lessonCardHTML(l) {
+    var src = lessonSourceText(l);
+    return '<div class="il-lcard">' +
+      '<div class="il-lcard-top">' +
+        (l.category ? '<span class="il-chip is-cat">' + Fmt.esc(l.category) + '</span>' : '') +
+        (l.department ? '<span class="il-chip">' + Fmt.esc(l.department) + '</span>' : '') +
+        '<span class="il-lcard-date">' + (l.date_captured ? Fmt.date(l.date_captured) : '—') + '</span>' +
+      '</div>' +
+      '<div class="il-lcard-lesson">' + Fmt.esc(l.lesson) + '</div>' +
+      (l.recommendation && l.recommendation.trim()
+        ? '<div class="il-lcard-rec"><b>Recommendation:</b> ' + Fmt.esc(l.recommendation) + '</div>' : '') +
+      '<div class="il-lcard-src"><span class="il-src-issue">' + Fmt.esc(src) + '</span></div>' +
+      '<div class="il-lcard-acts">' +
+        '<button class="il-lcard-open" data-open-lesson="' + Fmt.esc(l.id) + '">Open this lesson →</button>' +
+        (l.issue_id && rows.some(function (x) { return x.id === l.issue_id; })
+          ? '<button class="il-lcard-open" data-open-issue="' + Fmt.esc(l.issue_id) + '">Open the issue →</button>' : '') +
+      '</div>' +
+    '</div>';
+  }
+
+  function lessonDetailHTML(l) {
+    var isNew = !l.id;
+    var mayEdit = isNew ? canAdd : canEditLesson(l);
+    var ro = !mayEdit || _lessReport, d = ro ? ' disabled' : '';
+    var linkKind = l.issue_id ? 'issue' : ((l.mom_id || l.mom_item_id) ? 'mom' : '');
+
+    function opts(list, val, blank) {
+      return (blank ? '<option value="">' + blank + '</option>' : '') +
+        list.map(function (o) { return '<option' + (val === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>'; }).join('');
+    }
+
+    return '<div class="il-mom-detail-card">' +
+      '<div class="il-mom-toolbar">' +
+        '<span class="il-mom-state' + (linkKind ? ' on' : '') + '">' +
+          (isNew ? 'New lesson — not yet saved' : lessonSourceText(l)) + '</span>' +
+        '<div style="flex:1;"></div>' +
+        (isNew ? '' :
+          '<button class="pd-btn pd-btn-sm' + (_lessReport ? ' is-active' : '') + '" id="il-less-report" ' +
+            'title="Present this lesson as a clean read-only record">' +
+            (_lessReport ? '✓ Reporting view' : 'Reporting view') + '</button>') +
+      '</div>' +
+      (isLegacyLesson(l)
+        ? '<p class="il-mom-note" style="margin-top:0;">Captured on the issue itself, before lessons ' +
+          'became records of their own. Run the migration named above to edit it here.</p>' : '') +
+
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 200px;">' +
+          ilField(_lessReport, 'Lesson category', 'il-c-cat',
+            '<select class="pd-select pd-input-sm il-lf-fld" data-f="category"' + d + '>' +
+            opts(LESSON_CATS, l.category || '', '—') + '</select>', l.category) + '</div>' +
+        '<div class="pd-field" style="flex:1 1 200px;">' +
+          ilField(_lessReport, 'Department', 'il-c-dept',
+            '<select class="pd-select pd-input-sm il-lf-fld" data-f="department"' + d + '>' +
+            opts(DEPARTMENTS, l.department || '', '—') + '</select>', l.department) + '</div>' +
+        '<div class="pd-field" style="flex:1 1 160px;">' +
+          ilField(_lessReport, 'Date captured', 'il-c-date',
+            '<input class="pd-input pd-input-sm il-lf-fld" data-f="date_captured" type="date" value="' +
+            dateVal(l.date_captured) + '"' + d + '>',
+            l.date_captured ? Fmt.date(l.date_captured) : '') + '</div>' +
+      '</div>' +
+
+      ilField(_lessReport, 'Lesson learned', 'il-c-lesson',
+        '<textarea class="pd-textarea il-lf-fld" data-f="lesson" rows="4" ' +
+        'placeholder="What did the team learn?"' + d + '>' + Fmt.esc(l.lesson) + '</textarea>', l.lesson) +
+      ilField(_lessReport, 'Recommendation', 'il-c-rec',
+        '<textarea class="pd-textarea il-lf-fld" data-f="recommendation" rows="3" ' +
+        'placeholder="What should be done differently next time?"' + d + '>' +
+        Fmt.esc(l.recommendation) + '</textarea>', l.recommendation) +
+
+      // ---- what produced it -------------------------------------------------
+      // ⚠️ Every link is OPTIONAL and "Not linked" is the first option, not a fallback.
+      '<div class="il-mom-actions"><h4>What produced this lesson</h4>' +
+        '<p>Link it to the issue or the meeting action item it came from — or leave it ' +
+        'unlinked, which is a legitimate record. The lesson stays in the library either way.</p>' +
+        (ro
+          ? '<div class="il-mi-val">' + Fmt.esc(lessonSourceText(l)) + '</div>'
+          : '<div class="il-form-row">' +
+              '<div class="pd-field" style="flex:0 0 180px;"><label>Source</label>' +
+                '<select class="pd-select pd-input-sm" id="il-less-kind">' +
+                  '<option value=""' + (linkKind ? '' : ' selected') + '>Not linked</option>' +
+                  '<option value="issue"' + (linkKind === 'issue' ? ' selected' : '') + '>An issue or concern</option>' +
+                  '<option value="mom"' + (linkKind === 'mom' ? ' selected' : '') + '>A meeting action item</option>' +
+                '</select></div>' +
+              (linkKind === 'issue'
+                ? '<div class="pd-field" style="flex:1 1 260px;"><label>Issue</label>' +
+                  '<select class="pd-select pd-input-sm" id="il-less-issue">' +
+                    '<option value="">— pick an issue —</option>' +
+                    rows.map(function (r) {
+                      return '<option value="' + Fmt.esc(r.id) + '"' + (l.issue_id === r.id ? ' selected' : '') + '>' +
+                        Fmt.esc(clip(r.description, 70) || '(no issue text)') + '</option>';
+                    }).join('') + '</select></div>'
+                : '') +
+              (linkKind === 'mom' ? momLinkPickerHTML(l) : '') +
+            '</div>') +
+      '</div>' +
+
+      (ro ? '' :
+        '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+          (isNew
+            ? '<button class="pd-btn pd-btn-sm" id="il-less-cancel">Cancel</button>'
+            : '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-less-del">Delete lesson…</button>') +
+          '<div style="flex:1;"></div>' +
+          '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-less-save">' +
+            (isNew ? 'Save lesson' : 'Save changes') + '</button></div>') +
+    '</div>';
+  }
+
+  // ⚠️ The minutes load lazily (most sessions never open them), so the picker asks for
+  // them on demand rather than assuming they are in hand — otherwise linking a lesson to a
+  // meeting would offer an empty list on a project full of minutes.
+  function momLinkPickerHTML(l) {
+    if (!_momLoaded) { loadMoms().then(function () { renderLessons(); }); return '<div class="pd-field" style="flex:1 1 260px;"><label>Meeting</label><div class="il-mi-val">Loading minutes…</div></div>'; }
+    var items = l.mom_id ? momItemsOf(l.mom_id) : [];
+    return '<div class="pd-field" style="flex:1 1 240px;"><label>Meeting</label>' +
+      '<select class="pd-select pd-input-sm" id="il-less-mom">' +
+        '<option value="">— pick a meeting —</option>' +
+        MOMS.map(function (m) {
+          return '<option value="' + Fmt.esc(m.id) + '"' + (l.mom_id === m.id ? ' selected' : '') + '>' +
+            Fmt.esc(m.title || '(untitled)') + (m.meeting_date ? ' · ' + Fmt.esc(Fmt.date(m.meeting_date)) : '') +
+            '</option>';
+        }).join('') + '</select></div>' +
+      '<div class="pd-field" style="flex:1 1 240px;"><label>Action item <small style="font-weight:400;color:var(--pd-muted);">— optional</small></label>' +
+        '<select class="pd-select pd-input-sm" id="il-less-momitem"' + (items.length ? '' : ' disabled') + '>' +
+          '<option value="">— the meeting as a whole —</option>' +
+          items.map(function (it) {
+            var txt = it.action_item || it.description || it.issue || '(no action text)';
+            return '<option value="' + Fmt.esc(it.id) + '"' + (l.mom_item_id === it.id ? ' selected' : '') + '>' +
+              Fmt.esc((it.item_no ? it.item_no + '. ' : '') + clip(txt, 60)) + '</option>';
+          }).join('') + '</select></div>';
+  }
+
+  function wireLessons() {
+    var host = $('il-lessons-view'); if (!host) return;
+    host.querySelectorAll('[data-less]').forEach(function (b) {
+      b.onclick = function () {
+        if (b.dataset.less === '__new__') return;
+        if (_lessNew && !confirm('Discard the unsaved new lesson?')) return;
+        _lessNew = null; _lessSel = b.dataset.less; _lessReport = false; renderLessons();
+      };
+    });
+    var nb = host.querySelector('#il-less-new'); if (nb) nb.onclick = function () { newLesson(null); };
+    var rep = host.querySelector('#il-less-report');
+    if (rep) rep.onclick = function () { _lessReport = !_lessReport; renderLessons(); };
+    var sv = host.querySelector('#il-less-save'); if (sv) sv.onclick = saveLesson;
+    var cn = host.querySelector('#il-less-cancel');
+    if (cn) cn.onclick = function () { _lessNew = null; renderLessons(); };
+    var dl = host.querySelector('#il-less-del'); if (dl) dl.onclick = delLesson;
+
+    // The link pickers re-render, because changing the source changes which controls exist.
+    // ⚠️ Whatever has been typed is captured into the draft/edit buffer FIRST, or changing
+    // the source would throw away the lesson text.
+    function editing() {
+      return _lessNew || LESSONS.find(function (x) { return x.id === _lessSel; });
+    }
+    var kind = host.querySelector('#il-less-kind');
+    if (kind) kind.onchange = function () {
+      var l = editing(); if (!l) return;
+      captureLessonFields(l);
+      if (kind.value === 'issue') { l.mom_id = null; l.mom_item_id = null; }
+      else if (kind.value === 'mom') { l.issue_id = null; }
+      else { l.issue_id = null; l.mom_id = null; l.mom_item_id = null; }
+      renderLessons();
+    };
+    var isel = host.querySelector('#il-less-issue');
+    if (isel) isel.onchange = function () {
+      var l = editing(); if (!l) return; captureLessonFields(l);
+      l.issue_id = isel.value || null; renderLessons();
+    };
+    var msel = host.querySelector('#il-less-mom');
+    if (msel) msel.onchange = function () {
+      var l = editing(); if (!l) return; captureLessonFields(l);
+      l.mom_id = msel.value || null; l.mom_item_id = null; renderLessons();
+    };
+    var isel2 = host.querySelector('#il-less-momitem');
+    if (isel2) isel2.onchange = function () {
+      var l = editing(); if (!l) return; captureLessonFields(l);
+      l.mom_item_id = isel2.value || null;
+    };
+    host.querySelectorAll('.il-lf-fld').forEach(function (f) {
+      f.oninput = f.onchange = function () {
+        var l = editing(); if (l) l[f.dataset.f] = f.value;
+      };
+    });
+  }
+
+  // ⚠️ Reads the form into the object in hand. For an EXISTING lesson this mutates the
+  // loaded row optimistically — the same shape the register's save uses — so a re-render
+  // triggered by a link change cannot lose typed text. Nothing is written until Save.
+  function captureLessonFields(l) {
+    var host = $('il-lessons-view'); if (!host) return;
+    host.querySelectorAll('.il-lf-fld').forEach(function (f) { l[f.dataset.f] = f.value; });
+  }
+
+  // `link` pre-fills the source, so "Capture a lesson" from an issue or a meeting action
+  // item arrives already pointing at what produced it.
+  function newLesson(link) {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!canAdd) return;
+    if (_lessLegacy) {
+      UI.toast('Run migrations/2026-08-26-lessons-learned.sql before capturing lessons.', 'warn');
+      return;
+    }
+    _lessNew = {
+      category: '', department: (link && link.department) || (profile && profile.department) || '',
+      lesson: '', recommendation: '', date_captured: todayISO(),
+      issue_id: (link && link.issue_id) || null,
+      mom_id: (link && link.mom_id) || null,
+      mom_item_id: (link && link.mom_item_id) || null,
+    };
+    _lessSel = null; _lessMode = 'report'; _lessReport = false;
+    if (screen !== 'lessons') switchScreen('lessons'); else { syncChrome(); renderLessons(); }
+    var el = $('il-lessons-view'); var f = el && el.querySelector('[data-f="lesson"]');
+    if (f) f.focus();
+  }
+
+  function openLesson(id) {
+    _lessMode = 'report'; _lessSel = id; _lessNew = null; _lessReport = false;
+    if (screen !== 'lessons') switchScreen('lessons'); else { syncChrome(); renderLessons(); }
+  }
+
+  async function saveLesson() {
+    var l = _lessNew || LESSONS.find(function (x) { return x.id === _lessSel; });
+    if (!l) return;
+    captureLessonFields(l);
+    var data = {
+      project_id:     pid,
+      issue_id:       l.issue_id || null,
+      mom_id:         l.mom_id || null,
+      mom_item_id:    l.mom_item_id || null,
+      department:     l.department || null,
+      category:       l.category || null,
+      lesson:         (l.lesson || '').trim(),
+      recommendation: (l.recommendation || '').trim(),
+      date_captured:  l.date_captured || null,
+      updated_at:     new Date().toISOString(),
+    };
+    if (!data.lesson) { UI.toast('The Lesson learned field is required', 'warn'); return; }
+    try {
+      if (_lessNew) {
+        data.created_by = UID;             // REQUIRED for RLS
+        var ins = await sb().from(LESSON_TABLE).insert(data).select().single();
+        if (ins.error) throw ins.error;
+        LESSONS.unshift(ins.data);
+        _lessNew = null; _lessSel = ins.data.id;
+        UI.toast('Lesson captured', 'ok');
+      } else {
+        if (!canEditLesson(l)) { UI.toast('This lesson was captured by someone else.', 'warn'); return; }
+        var upd = await sb().from(LESSON_TABLE).update(data).eq('id', l.id);
+        if (upd.error) throw upd.error;
+        Object.assign(l, data);
+        UI.toast('Saved', 'ok');
+      }
+      populateFilterOptions();
+      render();
+    } catch (e) {
+      UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
+        ? 'Run migrations/2026-08-26-lessons-learned.sql in Supabase first.' : e.message, 'error');
+    }
+  }
+
+  async function delLesson() {
+    var l = LESSONS.find(function (x) { return x.id === _lessSel; });
+    if (!l || !canEditLesson(l)) return;
+    if (!confirm('Delete this lesson? The issue or meeting it came from is not affected.')) return;
+    var res = await sb().from(LESSON_TABLE).delete().eq('id', l.id);
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    LESSONS = LESSONS.filter(function (x) { return x.id !== l.id; });
+    _lessSel = null;
+    UI.toast('Deleted', 'ok');
+    populateFilterOptions();
+    render();
   }
 
   function clip(s, n) {
@@ -487,113 +1292,19 @@ window.IssuesLessons = (function () {
     return s.length > n ? s.slice(0, n).trim() + '…' : s;
   }
 
-  // ---------------------------------------------------------- Add / Edit -----
-  function openForm(r) {
-    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
-    if (!canAdd) return;
-    // ⚠️ Checked here, not only on the row button: an edit the DATABASE will refuse must
-    // not open a form at all. Letting someone fill one in and bounce the save is how a
-    // permission boundary reads as a bug.
-    if (r && !canEditRow(r)) {
-      UI.toast('This issue was raised by someone else — ask a planner to change it.', 'warn');
-      return;
-    }
-    var isNew = !r; r = r || {};
-
-    function opts(list, val, blank) {
-      return (blank ? '<option value="">' + blank + '</option>' : '') +
-        list.map(function (o) { return '<option' + (val === o ? ' selected' : '') + '>' + o + '</option>'; }).join('');
-    }
-
-    var m = UI.modal(
-      '<h2 style="margin-top:0;">' + (isNew ? 'Log issue / concern' : 'Edit issue / concern') + '</h2>' +
-
-      '<div class="il-form-sec">Details</div>' +
-      '<div class="il-form-row">' +
-        // ⚠️ Defaults from the raiser's PROFILE on a new issue (D1). Typing it every time
-        // invites the typo that silently splits the register's own Department filter in
-        // two — the same failure the group_heads lookup exists to prevent.
-        '<div class="pd-field"><label>Department</label><select class="pd-select" id="f-dept">' +
-          opts(DEPARTMENTS, isNew ? (r.department || (profile && profile.department) || '') : r.department, '—') + '</select></div>' +
-        '<div class="pd-field"><label>Status</label><select class="pd-select" id="f-status">' + opts(STATUSES, r.status || 'Open') + '</select></div>' +
-      '</div>' +
-      '<div class="pd-field"><label>Champion(s)</label>' +
-        '<input class="pd-input" id="f-champ" list="il-champ-list" value="' + Fmt.esc(r.champion) + '" placeholder="e.g. Ronquillo, Jules Norman; Agcaoili, Heherson"></div>' +
-      '<div class="il-form-row">' +
-        '<div class="pd-field"><label>Date Presented</label><input class="pd-input" type="date" id="f-presented" value="' + (dateVal(r.date_presented)) + '"></div>' +
-        '<div class="pd-field"><label>Date Resolved</label><input class="pd-input" type="date" id="f-resolved" value="' + (dateVal(r.date_resolved)) + '"></div>' +
-      '</div>' +
-
-      (isNew ? '' : '<p class="il-raisedby">' + Fmt.esc(raisedByLabel(r)) + '</p>') +
-      '<div class="il-form-sec">Issue</div>' +
-      '<div class="pd-field"><label>Issue</label><textarea class="pd-textarea" id="f-issue" rows="3" placeholder="Describe the issue or concern…">' + Fmt.esc(r.description) + '</textarea></div>' +
-      '<div class="pd-field"><label>Caused By</label><textarea class="pd-textarea" id="f-cause" rows="2" placeholder="Root cause…">' + Fmt.esc(r.caused_by) + '</textarea></div>' +
-      '<div class="pd-field"><label>Corrective Action</label><textarea class="pd-textarea" id="f-action" rows="3" placeholder="Actions taken / planned…">' + Fmt.esc(r.corrective_action) + '</textarea></div>' +
-
-      '<div class="il-form-sec">Lessons Learned <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--pd-muted);">— for future reference</span></div>' +
-      '<div class="pd-field"><label>Lesson category</label><select class="pd-select" id="f-lcat" style="max-width:220px;">' + opts(LESSON_CATS, r.lesson_category, '—') + '</select></div>' +
-      '<div class="pd-field"><label>Lesson learned</label><textarea class="pd-textarea" id="f-lesson" rows="3" placeholder="What did the team learn from this issue?">' + Fmt.esc(r.lesson_learned) + '</textarea></div>' +
-      '<div class="pd-field"><label>Recommendation</label><textarea class="pd-textarea" id="f-rec" rows="2" placeholder="What should be done differently next time?">' + Fmt.esc(r.recommendation) + '</textarea></div>' +
-
-      '<datalist id="il-champ-list">' + champDatalist() + '</datalist>' +
-
-      '<div style="text-align:right;margin-top:10px;">' +
-        '<button class="pd-btn" id="f-cancel">Cancel</button> ' +
-        '<button class="pd-btn pd-btn-primary" id="f-save">Save</button></div>'
-    );
-
-    wireModalCursor(m, isNew ? null : r);
-    m.el.querySelector('#f-cancel').onclick = m.close;
-    m.el.querySelector('#f-save').onclick = async function () {
-      var data = {
-        project_id:        pid,
-        type:              'Issue',
-        status:            m.el.querySelector('#f-status').value,
-        department:        m.el.querySelector('#f-dept').value,
-        champion:          m.el.querySelector('#f-champ').value.trim(),
-        description:       m.el.querySelector('#f-issue').value.trim(),
-        caused_by:         m.el.querySelector('#f-cause').value.trim(),
-        corrective_action: m.el.querySelector('#f-action').value.trim(),
-        date_presented:    m.el.querySelector('#f-presented').value || null,
-        date_resolved:     m.el.querySelector('#f-resolved').value || null,
-        lesson_category:   m.el.querySelector('#f-lcat').value,
-        lesson_learned:    m.el.querySelector('#f-lesson').value.trim(),
-        recommendation:    m.el.querySelector('#f-rec').value.trim(),
-        updated_at:        new Date().toISOString(),
-      };
-      if (!data.description) { UI.toast('The Issue field is required', 'warn'); return; }
-      try {
-        if (isNew) {
-          data.created_by = UID;               // REQUIRED for RLS
-          var ins = await sb().from(TABLE).insert(data);
-          if (ins.error) throw ins.error;
-          UI.toast('Saved', 'ok'); m.close(); load();
-        } else {
-          Object.assign(r, data);   // optimistic — applies whether online or queued offline
-          if (window.PDSync) {
-            var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: data });
-            if (!w.ok) throw (w.error || new Error('Save failed'));
-            PDSync.cachePut(PID_PFX + ':' + pid, rows);
-          } else {
-            var upd = await sb().from(TABLE).update(data).eq('id', r.id);
-            if (upd.error) throw upd.error;
-          }
-          UI.toast('Saved', 'ok'); m.close(); render();
-        }
-      } catch (e) { UI.toast(e.message, 'error'); }
-    };
-
-    // Autosave (edit only): debounced re-use of the Save button's own handler.
-    if (!isNew && window.Autosave) {
-      var asInd = document.createElement('span');
-      asInd.className = 'pd-autosave pd-autosave-idle';
-      asInd.textContent = 'Autosave on';
-      var h2 = m.el.querySelector('h2');
-      if (h2) { h2.style.display = 'flex'; h2.style.alignItems = 'center'; h2.style.gap = '10px'; h2.appendChild(asInd); }
-      var as = Autosave.wire({ root: m.el, modal: m, saveBtn: m.el.querySelector('#f-save'), indicator: asInd });
-      var _ilClose = m.close;
-      m.close = function () { as.cancel(); _ilClose(); };
-    }
+  // ⚠️ ONE field renderer for all three screens. In reporting mode a field renders as
+  // TEXT, not as a control — a single-line <input> CLIPS its own value, so a long value was
+  // unreadable in exactly the mode meant for reading it. Newlines survive as <br> because
+  // the record is what was written, not a flattened paragraph. `extra` is appended INSIDE
+  // the block because the reporting body itself contains a </div>, and splicing onto the
+  // result would close the wrong one.
+  function ilField(report, label, cls, control, raw, extra) {
+    var body = report
+      ? '<div class="il-mi-val' + (raw ? '' : ' is-empty') + '">' +
+          (raw ? Fmt.esc(raw).replace(/\n/g, '<br>') : '—') + '</div>'
+      : control;
+    return '<div class="il-mi-f ' + cls + '"><label>' + label + '</label>' +
+      body + (extra || '') + '</div>';
   }
 
   function dateVal(d) {
@@ -610,9 +1321,16 @@ window.IssuesLessons = (function () {
   }
 
   async function del(id) {
-    if (!confirm('Delete this issue? This also removes any lesson captured on it. This cannot be undone.')) return;
+    if (!id) return;
+    // ⚠️ The wording changed with the model, and the difference matters: lessons are their
+    // own records with an `on delete set null` link, so they SURVIVE the issue. Saying
+    // they are removed would be a false warning that stops people deleting a duplicate.
+    var n = lessonsOfIssue(id).length;
+    if (!confirm('Delete this issue? This cannot be undone.' +
+      (n ? '\n\nThe ' + n + ' lesson' + (n === 1 ? '' : 's') + ' captured from it stay in the library, unlinked.' : ''))) return;
     var res = await sb().from(TABLE).delete().eq('id', id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (_issSel === id) _issSel = null;
     UI.toast('Deleted', 'ok'); load();
   }
 
@@ -1092,13 +1810,10 @@ window.IssuesLessons = (function () {
   // number in both modes). It is a separate argument rather than something the caller
   // splices onto the result, because the reporting body itself contains a </div> and a
   // string-surgery approach would close the wrong one.
+  // Delegates to the shared renderer — the register and the library render their fields
+  // the same way, so a change to reporting presentation lands on all three screens at once.
   function momFieldHTML(label, cls, control, raw, extra) {
-    var body = _momReport
-      ? '<div class="il-mi-val' + (raw ? '' : ' is-empty') + '">' +
-          (raw ? Fmt.esc(raw).replace(/\n/g, '<br>') : '—') + '</div>'
-      : control;
-    return '<div class="il-mi-f ' + cls + '"><label>' + label + '</label>' +
-      body + (extra || '') + '</div>';
+    return ilField(_momReport, label, cls, control, raw, extra);
   }
 
   function momItemRowHTML(it, ro, d, mayEdit, locked, i) {
@@ -1204,6 +1919,22 @@ window.IssuesLessons = (function () {
               // error on every click — the state is visible before the click, not after.
               ? '<button class="pd-btn pd-btn-sm" disabled title="Distribute these minutes first — an issue in the register must come from a meeting record everyone can read.">Raise as issue</button>'
               : '<button class="pd-btn pd-btn-sm il-mi-raise">Raise as issue</button>')) + '</div>' +
+      // ⚠️ Capturing a lesson is NOT an edit of the minute — it writes a row in the
+      // library — so it is offered to anyone who may add records, on a distributed minute
+      // or a draft alike, and it stays available when the minute is locked. Same reasoning
+      // as the register cell above, without the distribution gate: a lesson carries no
+      // provenance a reader must be able to open.
+      '<div class="il-mi-f il-c-lesson"><label>Lesson</label>' + (function () {
+        var ls = lessonsOfMomItem(it.id);
+        if (ls.length) {
+          return '<button class="pd-btn pd-btn-sm il-mi-lesson-open" data-lesson="' + Fmt.esc(ls[0].id) + '" ' +
+            'title="' + Fmt.esc(clip(ls[0].lesson, 140)) + '">' +
+            (ls.length > 1 ? ls.length + ' lessons' : 'Lesson captured') + '</button>';
+        }
+        return canAdd && !_momReport
+          ? '<button class="pd-btn pd-btn-sm il-mi-lesson">+ Capture lesson</button>'
+          : '<span class="il-noedit" title="No lesson captured from this action">—</span>';
+      })() + '</div>' +
       (ro ? '' : '<div class="il-mi-f il-c-del"><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this action">Remove</button></div>') +
       '</div>' +
     '</div>';
@@ -1883,6 +2614,18 @@ window.IssuesLessons = (function () {
 
     host.querySelectorAll('.il-mi-raise').forEach(function (b) {
       b.onclick = function () { momRaiseIssue(b.closest('[data-item]').dataset.item); };
+    });
+    host.querySelectorAll('.il-mi-lesson').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.closest('[data-item]').dataset.item;
+        var it = MOM_ITEMS.find(function (x) { return x.id === id; }) || {};
+        // Carries the register link across when the action was already raised, so the
+        // lesson points at the issue rather than only at the meeting.
+        newLesson({ mom_id: it.mom_id, mom_item_id: id, issue_id: it.issue_id || null });
+      };
+    });
+    host.querySelectorAll('.il-mi-lesson-open').forEach(function (b) {
+      b.onclick = function () { openLesson(b.dataset.lesson); };
     });
     host.querySelectorAll('.il-mi-del').forEach(function (b) {
       b.onclick = async function () {
