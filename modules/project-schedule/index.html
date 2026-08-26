@@ -2410,6 +2410,7 @@
               <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
               <button id="ps-costacctbtn"><span data-ico="cash" data-ico-size="14"></span> Cost Accounts…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
+              <button id="ps-filepkg" title="File work planned before this project was split into contract packages under one of them"><span data-ico="box" data-ico-size="14"></span> File under a package…</button>
               <button id="ps-diagnose" title="Where did my activities go? Read-only report on this project's data"><span data-ico="risk" data-ico-size="14"></span> Diagnose data…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
               <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
@@ -17782,6 +17783,208 @@
         the work: keeping it means the grid still shows "PKG-2 — Towers 2-7" as an
         empty top-level row, which is the truth, and the re-push adopts it rather than
         creating a sibling. */
+  /* THE PACKAGE'S OWN WBS ROOT — the node every push for that package builds under,
+     so the grid shows "PKG-1 — Tower 1 and General Requirements" as a top-level row
+     with its whole WBS beneath, beside "PKG-2 — Towers 2-7".
+     ⚠️ FOUND BY FLAG, NEVER BY NAME. is_package_root + package_id is the identity;
+        matching on the node's name would break the first time someone renames the
+        branch, and the next push would build a SECOND root holding half the
+        schedule — the failure mode that makes a package total quietly half-right.
+     ⚠️ RE-READ FROM THE SERVER before creating. Another planner may have created the
+        root in a session this browser has not loaded, and a unique index (one root
+        per package) turns that race into an error rather than a duplicate. */
+  // ==========================================================================
+  // FILE AN EXISTING SCHEDULE UNDER A CONTRACT PACKAGE
+  // --------------------------------------------------------------------------
+  // Push, import and clear all take a package now, but that only helps work built
+  // AFTER packages existed. A live project — One Portwood's 2,665 activities — was
+  // planned before them and belongs to no lot, so it appears in no package total and
+  // the grid still shows phases rather than contracts at the top. This is the one-time
+  // action that fixes that, and the reason the mockup's two top-level rows are real.
+  //
+  // WHAT IT DOES, in one apply:
+  //   1. ensures the package's own WBS root ("PKG-1 — Tower 1 and General Requirements")
+  //   2. stamps package_id on the chosen activities
+  //   3. stamps package_id on the branches holding them
+  //   4. re-parents the chosen TOP-LEVEL branches under that root
+  //
+  // ⚠️ ONLY TOP-LEVEL BRANCHES MOVE. Deeper branches are re-tagged, never re-parented:
+  //    a deep move would rewrite a WBS someone built by hand, and it is the one part of
+  //    this that a planner could not undo by eye. Moving a top level back is one drag.
+  // ⚠️ WORK ALREADY IN ANOTHER PACKAGE IS NEVER TOUCHED, in any scope. Stealing
+  //    Package 1's activities into Package 2 would be silent and unrecoverable — the
+  //    previous owner is not recorded anywhere to restore from.
+  // ⚠️ THE LOCKED SKELETON DOES MOVE when it is in scope, and that is deliberate: the
+  //    mockup shows Planning Phase and Execution Phase UNDER the package. Verified safe
+  //    against the duplicate-skeleton bug — ensureWbsSkeleton() only seeds a project
+  //    with NO nodes at all, and _wbsBackfillSkeleton() fails closed (its `seeded` guard
+  //    looks for a locked skeleton node at TOP level, finds none once moved, and returns
+  //    without inserting anything).
+  function _pkgFileCandidates(target, scopeKind, branchId) {
+    var acts = [], branches = [], tops = [];
+    var inBranch = {};
+    if (scopeKind === 'branch' && branchId) {
+      (function walk(id) { inBranch[id] = 1; wbsChildren(id).forEach(function (c) { walk(c.id); }); })(branchId);
+    }
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var pk = packageOf(r);
+      // Already in ANOTHER package → never in scope.
+      if (pk && String(pk) !== String(target)) return;
+      if (scopeKind === 'unassigned') { if (pk) return; }
+      else if (scopeKind === 'branch') { if (!r.wbs_node_id || !inBranch[r.wbs_node_id]) return; }
+      acts.push(r.id);
+    });
+    (WBS_NODES || []).forEach(function (n) {
+      if (n.is_package_root) return;
+      var pk = _nodePackage(n.id) || n.package_id || null;
+      if (pk && String(pk) !== String(target)) return;
+      if (scopeKind === 'unassigned') { if (pk) return; }
+      else if (scopeKind === 'branch') { if (!inBranch[n.id]) return; }
+      branches.push(n.id);
+      if (!n.parent_id) tops.push(n.id);
+    });
+    return { acts: acts, branches: branches, tops: tops };
+  }
+  function openFileUnderPackage() {
+    if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (!(PACKAGES || []).length) {
+      UI.toast('This project has no contract packages yet — add them on the Dashboard, from the contract documents.', 'warn');
+      return;
+    }
+    var target = String(PACKAGES[0].id), scopeKind = 'unassigned', branchId = '';
+    var topBranches = (WBS_NODES || []).filter(function (n) { return !n.parent_id && !n.is_package_root; });
+
+    var m = UI.modal('<h2 style="margin-top:0;">File existing work under a contract package</h2>' +
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">Work planned before this project was ' +
+      'split into contract packages belongs to no lot, so it appears in no package total. This files it, and ' +
+      'moves its top-level branches under the package\'s own row so the grid reads contract-first.</p>' +
+      '<label style="display:block;font-size:12px;font-weight:600;margin:10px 0 4px;">Contract package</label>' +
+      '<select class="pd-select" id="fp-pkg" style="width:100%;">' +
+        PACKAGES.map(function (k) {
+          return '<option value="' + esc(k.id) + '">' + esc((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
+        }).join('') + '</select>' +
+      '<label style="display:block;font-size:12px;font-weight:600;margin:12px 0 4px;">What to file</label>' +
+      '<select class="pd-select" id="fp-scope" style="width:100%;">' +
+        '<option value="unassigned">Everything not yet in a package</option>' +
+        '<option value="branch">One WBS branch and everything under it</option>' +
+      '</select>' +
+      '<div id="fp-branchwrap" style="display:none;margin-top:8px;">' +
+        '<select class="pd-select" id="fp-branch" style="width:100%;">' +
+          '<option value="">— Choose a branch —</option>' +
+          topBranches.map(function (n) { return '<option value="' + esc(n.id) + '">' + esc(n.name || 'WBS') + '</option>'; }).join('') +
+        '</select></div>' +
+      '<div id="fp-what" style="margin:12px 0;font-size:13px;"></div>' +
+      '<div style="text-align:right;"><button class="pd-btn" id="fp-x">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="fp-go">File</button></div>');
+
+    var what = m.el.querySelector('#fp-what'), go = m.el.querySelector('#fp-go');
+    function paint() {
+      var c = _pkgFileCandidates(target, scopeKind, branchId);
+      var k = packageById(target);
+      var nm = k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'this package';
+      if (scopeKind === 'branch' && !branchId) {
+        what.innerHTML = '<span style="color:var(--pd-muted);">Choose a branch to see what would be filed.</span>';
+        go.disabled = true; return;
+      }
+      go.disabled = !c.acts.length && !c.branches.length;
+      what.innerHTML = '<strong>' + c.acts.length + '</strong> activity/activities and <strong>' + c.branches.length +
+        '</strong> WBS branch(es) will be filed under <strong>' + esc(nm) + '</strong>' +
+        (c.tops.length ? ', and <strong>' + c.tops.length + '</strong> top-level branch(es) will move under its row.' : '.') +
+        '<div style="color:var(--pd-muted);font-size:12px;margin-top:6px;">' +
+        'Work already filed under a <em>different</em> package is never touched. Only top-level branches move — ' +
+        'deeper ones are re-tagged where they are. Nothing is deleted, and no dates or progress change.</div>';
+    }
+    m.el.querySelector('#fp-pkg').onchange = function () { target = this.value; paint(); };
+    m.el.querySelector('#fp-scope').onchange = function () {
+      scopeKind = this.value;
+      m.el.querySelector('#fp-branchwrap').style.display = scopeKind === 'branch' ? '' : 'none';
+      paint();
+    };
+    m.el.querySelector('#fp-branch').onchange = function () { branchId = this.value; paint(); };
+    m.el.querySelector('#fp-x').onclick = m.close;
+    paint();
+    go.onclick = async function () {
+      var c = _pkgFileCandidates(target, scopeKind, branchId);
+      if (!c.acts.length && !c.branches.length) return;
+      go.disabled = true; go.textContent = 'Filing…';
+      showLoading('Filing under the package…');
+      var failed = null;
+      try {
+        var rootId = await ensurePackageRoot(target);
+        // 1) Activities. Chunked by id so a 2,665-activity project cannot exceed the
+        //    URL length of one .in() filter — the same rule every bulk write here uses.
+        for (var i = 0; i < c.acts.length && !failed; i += 200) {
+          var ra = await sb().from(TABLE).update({ package_id: target }).in('id', c.acts.slice(i, i + 200));
+          if (ra.error) failed = ra.error;
+        }
+        // 2) Branches keep their place but gain the tag, so a NEW activity added under
+        //    one of them inherits the package through packageOf() without anyone
+        //    remembering to set it.
+        for (var j = 0; j < c.branches.length && !failed; j += 100) {
+          var rb = await sb().from('wbs_nodes').update({ package_id: target }).in('id', c.branches.slice(j, j + 100));
+          if (rb.error) failed = rb.error;
+        }
+        // 3) The structural half: top-level branches move under the package's row.
+        //    ⚠️ Never the root itself, and never a branch that is already the root's
+        //    child — re-parenting a node to its current parent is a no-op write, but
+        //    including the root would make it its own parent and detach the subtree.
+        var movers = c.tops.filter(function (id) { return id !== rootId; });
+        for (var k2 = 0; k2 < movers.length && !failed; k2 += 100) {
+          var rc = await sb().from('wbs_nodes').update({ parent_id: rootId, package_id: target })
+            .in('id', movers.slice(k2, k2 + 100));
+          if (rc.error) failed = rc.error;
+        }
+      } catch (e) { failed = e; }
+      hideLoading();
+      if (failed) {
+        go.disabled = false; go.textContent = 'File';
+        var msg = failed.message || String(failed);
+        UI.toast('Could not file everything: ' + msg +
+          (/package_id|is_package_root/.test(msg) ? ' — run migrations/2026-08-26-package-scoped-schedule.sql.' : ''), 'error');
+        // ⚠️ Reload anyway: a partial apply must be VISIBLE, not hidden behind stale
+        //    state that would let someone re-run it and double-move a branch.
+        _clearPkgMemo(); collapsed = {}; resetUndo(); load();
+        return;
+      }
+      m.close();
+      UI.toast('Filed ' + c.acts.length + ' activity/activities under ' + (packageShort(target) || 'the package') + '.', 'success');
+      _clearPkgMemo(); collapsed = {}; _wbsSel = null; resetUndo(); load();
+    };
+  }
+
+
+  async function ensurePackageRoot(pkgId) {
+    if (!pkgId) return null;
+    var hit = (WBS_NODES || []).filter(function (n) {
+      return n.is_package_root && String(n.package_id) === String(pkgId);
+    })[0];
+    if (hit) return hit.id;
+    var q = await sb().from('wbs_nodes').select('*').eq('project_id', pid)
+      .eq('package_id', pkgId).eq('is_package_root', true).limit(1);
+    if (q.error && /is_package_root/.test(q.error.message || '')) {
+      throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
+    }
+    if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); return q.data[0].id; }
+    var k = packageById(pkgId);
+    // Named from the contract, not from the builder: this row is what the whole
+    // project team reads at the top of the grid.
+    var nm = k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'Contract package';
+    var ins = await sb().from('wbs_nodes').insert({
+      project_id: pid, parent_id: null, name: nm,
+      sort_order: k ? (Number(k.sort_order) || 0) : 0,
+      package_id: pkgId, is_package_root: true, created_by: UID
+    }).select().single();
+    if (ins.error) {
+      if (/is_package_root/.test(ins.error.message || ''))
+        throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
+      throw ins.error;
+    }
+    WBS_NODES.push(ins.data);
+    return ins.data.id;
+  }
+
   async function _clearWbsTree(pkgId) {
     var scoped = pkgId != null && pkgId !== '__none__';
     try {
@@ -17868,27 +18071,7 @@
   async function _importUnderPackageRoot(pkgId) {
     if (!pkgId) return;
     try {
-      var rootId = null;
-      var have = (WBS_NODES || []).filter(function (n) {
-        return n.is_package_root && String(n.package_id) === String(pkgId);
-      })[0];
-      if (have) rootId = have.id;
-      else {
-        var q = await sb().from('wbs_nodes').select('*').eq('project_id', pid)
-          .eq('package_id', pkgId).eq('is_package_root', true).limit(1);
-        if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); rootId = q.data[0].id; }
-        else {
-          var k = packageById(pkgId);
-          var ins = await sb().from('wbs_nodes').insert({
-            project_id: pid, parent_id: null,
-            name: k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'Contract package',
-            sort_order: k ? (Number(k.sort_order) || 0) : 0,
-            package_id: pkgId, is_package_root: true, created_by: UID
-          }).select().single();
-          if (ins.error) return;
-          WBS_NODES.push(ins.data); rootId = ins.data.id;
-        }
-      }
+      var rootId = await ensurePackageRoot(pkgId);
       if (!rootId) return;
       var movers = (WBS_NODES || []).filter(function (n) {
         return !n.parent_id && !n.is_locked && !n.is_package_root && n.id !== rootId;
@@ -17899,7 +18082,7 @@
           .in('id', movers.slice(i, i + 100));
       }
       _clearPkgMemo();
-    } catch (e) {}
+    } catch (e) { /* best effort: a failure costs the nesting, never the import */ }
   }
 
   async function autoAdoptAfterImport() {
@@ -22226,46 +22409,6 @@
       }
       return LOC_LEVELS.map(function (l) { return l.id; });
     }
-    /* THE PACKAGE'S OWN WBS ROOT — the node every push for that package builds under,
-       so the grid shows "PKG-1 — Tower 1 and General Requirements" as a top-level row
-       with its whole WBS beneath, beside "PKG-2 — Towers 2-7".
-       ⚠️ FOUND BY FLAG, NEVER BY NAME. is_package_root + package_id is the identity;
-          matching on the node's name would break the first time someone renames the
-          branch, and the next push would build a SECOND root holding half the
-          schedule — the failure mode that makes a package total quietly half-right.
-       ⚠️ RE-READ FROM THE SERVER before creating. Another planner may have created the
-          root in a session this browser has not loaded, and a unique index (one root
-          per package) turns that race into an error rather than a duplicate. */
-    async function ensurePackageRoot(pkgId) {
-      if (!pkgId) return null;
-      var hit = (WBS_NODES || []).filter(function (n) {
-        return n.is_package_root && String(n.package_id) === String(pkgId);
-      })[0];
-      if (hit) return hit.id;
-      var q = await sb().from('wbs_nodes').select('*').eq('project_id', pid)
-        .eq('package_id', pkgId).eq('is_package_root', true).limit(1);
-      if (q.error && /is_package_root/.test(q.error.message || '')) {
-        throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
-      }
-      if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); return q.data[0].id; }
-      var k = packageById(pkgId);
-      // Named from the contract, not from the builder: this row is what the whole
-      // project team reads at the top of the grid.
-      var nm = k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'Contract package';
-      var ins = await sb().from('wbs_nodes').insert({
-        project_id: pid, parent_id: null, name: nm,
-        sort_order: k ? (Number(k.sort_order) || 0) : 0,
-        package_id: pkgId, is_package_root: true, created_by: UID
-      }).select().single();
-      if (ins.error) {
-        if (/is_package_root/.test(ins.error.message || ''))
-          throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
-        throw ins.error;
-      }
-      WBS_NODES.push(ins.data);
-      return ins.data.id;
-    }
-
     async function pushToSchedule(parentCode, grouped, basis, order, startISO, flatGroup) {
       var g = generate(basis || 'int', startISO); if (!g.rows.length) return;
       /* ⚠️ A MULTI-PACKAGE PROJECT AND AN UNASSIGNED SETUP IS ALMOST ALWAYS A MISTAKE.
@@ -27599,6 +27742,7 @@
       renderGantt();
     };
     _syncAnalyzeBtn();   // reflect the initial deps-on state on the Analyze ▾ button
+    (function () { var b = document.getElementById('ps-filepkg'); if (b) b.onclick = openFileUnderPackage; })();
     document.getElementById('ps-clear').onclick = function () {
       if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }
       if (!pid) { UI.toast('Select a project first.', 'error'); return; }

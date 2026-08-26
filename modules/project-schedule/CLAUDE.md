@@ -8771,3 +8771,49 @@ skeleton, and an empty package clearing nothing without erroring. Inline script 
 
 ⚠️ **The migration has NOT been run, and nothing was clicked through in a browser.** Until the migration
 runs, the builder keeps its single-setup behaviour and says so on save.
+
+### 2026-08-26 — File an EXISTING schedule under a contract package
+Owner: *"Now build the bulk action to file existing schedules under a package."*
+
+Push, import and clear all take a package, but that only helps work built *after* packages existed.
+One Portwood's **2,665 activities** were planned before them, belong to no lot, appear in no package
+total, and still show phases rather than contracts at the top of the grid. **Actions → File under a
+package…** is the one-time action that fixes that, and what makes the two top-level rows real.
+
+One apply does four things: ensure the package's WBS root → stamp `package_id` on the chosen
+activities → stamp it on the branches holding them → re-parent the chosen **top-level** branches under
+that root.
+
+- Two scopes: **everything not yet in a package** (the common case) or **one WBS branch and everything
+  under it**. Both preview measured counts — activities, branches, and how many top-level branches
+  would move — before anything is written.
+- ⚠️ **Work already in ANOTHER package is never touched, in any scope.** Stealing Package 1's
+  activities into Package 2 would be silent and unrecoverable: the previous owner is recorded nowhere
+  to restore from. Filing into the package that already owns the work is a no-op, not a double move.
+- ⚠️ **Only TOP-LEVEL branches move.** Deeper ones are re-tagged where they are — a deep re-parent
+  would rewrite a hand-built WBS, and it is the one part of this a planner could not undo by eye.
+  Moving a top level back is one drag in the WBS Manager.
+- ⚠️ **Branches are tagged as well as activities**, so a NEW activity added under one of them inherits
+  the package through `packageOf()` without anyone remembering to set it.
+- ⚠️ **The locked skeleton DOES move** when it is in scope — the mockup puts Planning Phase and
+  Execution Phase *under* the package. **Verified safe against the duplicate-skeleton bug**:
+  `ensureWbsSkeleton()` only seeds a project with **no nodes at all**, and `_wbsBackfillSkeleton()`
+  fails closed — its `seeded` guard looks for a locked skeleton node at TOP level, finds none once
+  they have moved, and returns without inserting.
+- ⚠️ **A partial apply still reloads.** Hiding a half-done write behind stale state is how someone
+  re-runs it and double-moves a branch.
+- ⚠️ Nothing is deleted; no dates, durations or progress are touched.
+
+**Refactor in passing:** `ensurePackageRoot` was lifted out of the Schedule Builder closure to module
+scope — three callers need it now (builder push, import nesting, this action) — and
+`_importUnderPackageRoot` lost its duplicated copy of the root-resolution dance (**−871 chars**).
+
+**Verified 13/13** executing the shipped `_pkgFileCandidates` in node against One Portwood's shape (a
+locked skeleton at top level, everything unassigned, plus a Builder-made Package 2 root with its own
+subtree): the unassigned scope takes exactly the two unassigned activities; an activity already in
+Package 2 **and one that inherits it** are both left alone; WBS summary rows are not filed as
+activities; package roots are never candidates; exactly the two top-level skeleton branches move;
+branch scope takes only that subtree; and re-filing into the owning package adds nothing.
+`MODULE_V` → `20260826j`.
+
+⚠️ **Not clicked through in a browser** — no signed-in run against real data.
