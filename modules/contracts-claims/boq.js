@@ -36,12 +36,16 @@ window.BOQ = (function () {
      behave exactly as it did before. */
   var PKGS = [];
   /* DESIGN DECISION #7 — "which POC leads a report?"
-     ANSWER: neither. Both are shown side by side with the gap between them, and
-     nothing reconciles one to the other.
-     SCHED holds schedule_scurve_agg's output: the schedule's own duration- or
-     cost-weighted PROGRESS percent complete. The billing POC on this tab is the
-     CONTRACTUAL one the client pays against. They legitimately differ, and the
-     variance is one of the most useful things this module can show a PM. */
+     ANSWER: neither, because they are not rivals. They are the same work at two
+     stages — reported on the programme, then certified by the client — and the
+     distance between them is ACCRUED REVENUE, an unbilled receivable. It is
+     shown as money, with the gap named, and nothing reconciles one to the other.
+     SCHED holds schedule_scurve_agg's output: duration- or cost-weighted
+     `percent_complete`, i.e. CONTRACTOR-REPORTED progress. The billing POC on
+     this tab is the CERTIFIED one the client pays against.
+     ⚠️ Dispute (claimed minus certified) is NOT measurable from what is stored —
+     boq_progress holds one rel_pct per line, the certified one. pocCompareHTML
+     says so on screen rather than implying otherwise. */
   var SCHED = null, schedErr = null;
   var sub = 'items';
   var filt = { q: '', sheet: '', kind: '', mapped: '' };
@@ -701,7 +705,7 @@ window.BOQ = (function () {
         '<option value="no"' + (filt.mapped === 'no' ? ' selected' : '') + '>Unmapped</option></select>' +
       '<span class="cc-count">' + filtered().length + ' of ' + ITEMS.length + '</span>' +
       '<span class="boq-spacer"></span>' +
-      (canWrite ? '<button class="pd-btn" id="boq-pkgs">Packages from sheets…</button>' : '') +
+      (canWrite ? '<button class="pd-btn" id="boq-pkgs">Assign to contract package…</button>' : '') +
       '<button class="pd-btn" id="boq-export">Export</button>' +
       '</div>';
 
@@ -785,7 +789,7 @@ window.BOQ = (function () {
       if (el) el.onchange = function () { filt[p[1]] = el.value; render(); };
     });
     var ex = host.querySelector('#boq-export'); if (ex) ex.onclick = exportItems;
-    var pk = host.querySelector('#boq-pkgs'); if (pk) pk.onclick = openSheetPackages;
+    var pk = host.querySelector('#boq-pkgs'); if (pk) pk.onclick = openAssignPackage;
   }
 
   function exportItems() {
@@ -813,98 +817,147 @@ window.BOQ = (function () {
   }
 
   /* ==========================================================================
-     DESIGN DECISION #2 — "does the BOQ define the packages?"
+     DESIGN DECISION #2 — RE-ANSWERED 2026-08-26. THE FIRST ANSWER WAS WRONG.
 
-     ANSWER: it PROPOSES them. A trade sheet usually IS how a contract is bought
-     (the real workbook's four sheets are Package 2's trades), so offering one
-     package per sheet is cheap and useful. AUTO-creating them is not: a sheet is
-     a measurement convenience as often as a commercial lot, the planner's codes
-     come off the contract documents rather than a tab name, and a package minted
-     by an importer would later be cited in a claim nobody agreed to.
+     A CONTRACT PACKAGE IS A SCOPE DIVISION OF THE PROJECT, NOT A TRADE.
+     The owner's own example — Avesta Residences is ONE project, bought as:
+        Package 1 — Avesta Residences Tower 1 and General Requirements
+        Package 2 — Avesta Residences Towers 2-7
+     The BOQ workbook belongs TO a package. The sheets inside it are whatever
+     breakdown the CLIENT dictated for that package's progress billing — by
+     trade on this job, by something else on the next. The client decides that,
+     not the importer and not us.
 
-     ⚠️ So this is propose → preview → apply, the same shape as the class-code
-     mapping and the allocation split. Nothing is created or tagged until Apply.
+     ⚠️ THE OLD "PACKAGES FROM SHEETS" TOOL HAD IT EXACTLY BACKWARDS and is
+     deleted, not extended. Minting one package per trade sheet would have
+     produced four packages ("Architectural", "ACOUSTIC") where the real
+     contract has one — the workbook IS Package 2 — and a claim later raised
+     against "package ACOUSTIC" would name a lot that appears on no contract
+     document. That is the same failure the refusal-to-auto-create was written
+     to prevent, one level down: a sheet name is not a commercial lot.
+
+     So packages are created on the Dashboard from the contract documents, and
+     this tool only ASSIGNS existing ones. ⚠️ IT CANNOT CREATE A PACKAGE — there
+     is no insert in this function, deliberately.
      ========================================================================== */
-  function openSheetPackages() {
-    if (!canWrite) { UI.toast('You do not have permission to create packages.', 'error'); return; }
+  /* What package do a sheet's lines currently carry? 'mixed' is a real answer —
+     a sheet split across lots is unusual but legitimate, and hiding it behind
+     the first line's value would make a wrong assignment invisible. */
+  function sheetPkgState(sh) {
+    var seen = {}, n = 0;
+    ITEMS.forEach(function (r) {
+      if (r.sheet !== sh) return;
+      n++; seen[r.package_id || ''] = (seen[r.package_id || ''] || 0) + 1;
+    });
+    var keys = Object.keys(seen);
+    if (!n) return { label: 'no lines', n: 0 };
+    if (keys.length > 1) return { label: 'mixed — ' + keys.length + ' lots', n: n, mixed: true };
+    return { label: keys[0] ? esc(pkgName(keys[0])) : '<span class="cc-mut">unassigned</span>', n: n };
+  }
+
+  function openAssignPackage() {
+    if (!canWrite) { UI.toast('You do not have permission to assign packages.', 'error'); return; }
+
+    /* ⚠️ NO PACKAGES → NO GUESSING. The honest move is to say where they come
+       from, not to offer to invent one from the workbook. */
+    if (!PKGS.length) {
+      var m0 = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">No contract packages yet</h2>' +
+        '<button class="pd-modal-close" id="ap-x0">&times;</button></div>' +
+        '<div class="boq-imp"><p class="cc-hint">A contract package is a <strong>scope division of this project</strong> ' +
+        '— "Package 1 — Tower 1 and General Requirements", "Package 2 — Towers 2-7". It comes off the contract ' +
+        'documents, so it is created once on the <strong>Dashboard</strong> and then used by the schedule, the claims ' +
+        'register and this BOQ alike.</p>' +
+        '<p class="cc-hint">⚠️ This tool will not create one from a sheet name. The workbook\'s sheets are the ' +
+        'client\'s billing breakdown <em>within</em> a package (by trade here, by something else elsewhere) — they are ' +
+        'not the packages themselves, and a lot minted from a tab name would later be cited in a claim nobody agreed ' +
+        'to.</p></div>' +
+        '<div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" id="ap-c0">Close</button></div>');
+      m0.el.querySelector('#ap-x0').onclick = m0.close;
+      m0.el.querySelector('#ap-c0').onclick = m0.close;
+      return;
+    }
+
     var st = sheetTotals(ITEMS);
     var sheets = sheetList().map(function (sh) {
-      var lines = ITEMS.filter(function (r) { return r.sheet === sh; });
-      var tagged = lines.filter(function (r) { return r.package_id; }).length;
-      var existing = PKGS.find(function (p) { return normKey(p.name) === normKey(sh) || normKey(p.code) === normKey(sh); });
-      return { sheet: sh, total: st[sh] || 0, n: lines.length, tagged: tagged,
-               existing: existing || null,
-               // Proposed only for sheets that actually carry money — a billing
-               // twin or an unpriced sheet is not a contract lot.
-               pick: !!(st[sh] && !tagged),
-               code: (existing && existing.code) || suggestCode(sh) };
+      var state = sheetPkgState(sh);
+      return { sheet: sh, total: st[sh] || 0, n: state.n, state: state, pick: false };
     });
+    var target = PKGS[0].id;   // '' means "clear the assignment"
 
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Packages from BOQ sheets</h2>' +
-      '<button class="pd-modal-close" id="sp2-x">&times;</button></div>' +
-      '<div class="boq-imp" id="sp2-body"></div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" id="sp2-c">Cancel</button> ' +
-      '<button class="pd-btn pd-btn-primary" id="sp2-go">Apply</button></div>');
-    var body = m.el.querySelector('#sp2-body');
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Assign BOQ to a contract package</h2>' +
+      '<button class="pd-modal-close" id="ap-x">&times;</button></div>' +
+      '<div class="boq-imp" id="ap-body"></div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="ap-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="ap-go">Apply</button></div>');
+    var body = m.el.querySelector('#ap-body');
 
     function paint() {
       var chosen = sheets.filter(function (x) { return x.pick; });
       body.innerHTML =
-        '<p class="cc-hint">Each priced trade sheet can become a contract package, and its lines are tagged to it. ' +
-        '<strong>Nothing is created until you press Apply</strong> — a sheet is a measurement convenience as often as ' +
-        'a commercial lot, so this proposes and you decide.</p>' +
-        '<table class="boq-prevtab"><thead><tr><th></th><th>Sheet</th><th>Package code</th>' +
-        '<th class="cc-r">Lines</th><th class="cc-r">Sheet value</th><th>Status</th></tr></thead><tbody>' +
+        '<p class="cc-hint">A contract package is a <strong>scope division of the project</strong> (Package 1 — Tower 1 ' +
+        'and General Requirements; Package 2 — Towers 2-7). This BOQ belongs to one of them; its sheets are the ' +
+        'breakdown the <strong>client</strong> dictated for that package\'s progress billing. ' +
+        '<strong>Nothing is written until you press Apply, and no package is ever created here</strong> — they come off ' +
+        'the contract documents, on the Dashboard.</p>' +
+        '<label>Package<select class="pd-input" id="ap-pkg">' +
+          PKGS.map(function (p) {
+            return '<option value="' + esc(p.id) + '"' + (String(target) === String(p.id) ? ' selected' : '') + '>' +
+              esc((p.code ? p.code + ' — ' : '') + p.name) + '</option>';
+          }).join('') +
+          /* Correcting a wrong assignment must be possible without a DB console. */
+          '<option value=""' + (target === '' ? ' selected' : '') + '>— remove assignment —</option>' +
+        '</select></label>' +
+        '<p class="cc-hint"><button class="pd-btn boq-sm" id="ap-all">Select every sheet</button> ' +
+        '<button class="pd-btn boq-sm" id="ap-none">Select none</button> ' +
+        'Most workbooks are one package end to end. Choose sheet by sheet only when the client issued one document ' +
+        'covering more than one lot.</p>' +
+        '<table class="boq-prevtab"><thead><tr><th></th><th>Sheet</th><th class="cc-r">Lines</th>' +
+        '<th class="cc-r">Sheet value</th><th>Currently</th></tr></thead><tbody>' +
         sheets.map(function (x, i) {
           return '<tr><td><input type="checkbox" data-p="' + i + '"' + (x.pick ? ' checked' : '') + ' /></td>' +
-            '<td>' + esc(x.sheet) + '</td>' +
-            '<td><input class="pd-input boq-sm" data-code="' + i + '" value="' + esc(x.code) + '" style="min-width:120px" /></td>' +
-            '<td class="cc-r">' + x.n + '</td>' +
+            '<td>' + esc(x.sheet) + '</td><td class="cc-r">' + x.n + '</td>' +
             '<td class="cc-r">' + (x.total ? money(x.total) : '<span class="cc-mut">unpriced</span>') + '</td>' +
-            '<td class="cc-mini">' + (x.existing ? 'reuses <strong>' + esc(x.existing.code || x.existing.name) + '</strong>' : 'new package') +
-              (x.tagged ? ' · ' + x.tagged + ' line(s) already tagged' : '') + '</td></tr>';
+            '<td class="cc-mini">' + x.state.label + '</td></tr>';
         }).join('') +
         '</tbody></table>' +
-        '<p class="cc-hint">' + chosen.length + ' package(s) will be created or reused, tagging ' +
-        chosen.reduce(function (a, x) { return a + x.n; }, 0) + ' line(s). ' +
-        '⚠️ An existing package with a matching code or name is <strong>reused, never duplicated</strong>.</p>';
+        '<p class="cc-hint">' + (chosen.length
+          ? chosen.reduce(function (a, x) { return a + x.n; }, 0) + ' line(s) across ' + chosen.length + ' sheet(s) worth ' +
+            '<strong>' + money(chosen.reduce(function (a, x) { return a + x.total; }, 0)) + '</strong> will be ' +
+            (target ? 'assigned to <strong>' + esc(pkgName(target)) + '</strong>.' : '<strong>unassigned</strong>.')
+          : 'Nothing selected.') +
+        ' ⚠️ Re-assigning overwrites whatever those lines carry now — a sheet reading <em>mixed</em> is currently split ' +
+        'across lots, and applying here collapses it into one.</p>';
+
+      body.querySelector('#ap-pkg').onchange = function () { target = this.value; paint(); };
+      body.querySelector('#ap-all').onclick = function () { sheets.forEach(function (x) { x.pick = x.n > 0; }); paint(); };
+      body.querySelector('#ap-none').onclick = function () { sheets.forEach(function (x) { x.pick = false; }); paint(); };
       body.querySelectorAll('[data-p]').forEach(function (cb) {
         cb.onchange = function () { sheets[+cb.dataset.p].pick = cb.checked; paint(); };
       });
-      body.querySelectorAll('[data-code]').forEach(function (inp) {
-        inp.onchange = function () { sheets[+inp.dataset.code].code = inp.value; };
-      });
     }
     paint();
-    m.el.querySelector('#sp2-x').onclick = m.close;
-    m.el.querySelector('#sp2-c').onclick = m.close;
-    m.el.querySelector('#sp2-go').onclick = async function () {
-      var take = sheets.filter(function (x) { return x.pick && txtOf(x.code); });
+    m.el.querySelector('#ap-x').onclick = m.close;
+    m.el.querySelector('#ap-c').onclick = m.close;
+    m.el.querySelector('#ap-go').onclick = async function () {
+      var take = sheets.filter(function (x) { return x.pick && x.n; });
       if (!take.length) { UI.toast('Nothing selected.', 'error'); return; }
-      var btn = m.el.querySelector('#sp2-go'); btn.disabled = true; btn.textContent = 'Applying…';
+      var btn = m.el.querySelector('#ap-go'); btn.disabled = true; btn.textContent = 'Applying…';
+      var pkgId = target || null;
       try {
         for (var i = 0; i < take.length; i++) {
-          var x = take[i], pkgId = x.existing && x.existing.id;
-          if (!pkgId) {
-            var ins = await sb().from('packages').insert({
-              project_id: pid, code: txtOf(x.code), name: x.sheet,
-              description: 'Created from BOQ sheet "' + x.sheet + '"',
-              contract_amount: x.total || null, status: 'active', created_by: UID
-            }).select().single();
-            if (ins.error) throw ins.error;
-            pkgId = ins.data.id; PKGS.push(ins.data);
-          }
-          // Tag the sheet's lines. Chunked by id so a wide sheet cannot exceed
-          // the URL length of a single .in() filter.
-          var ids = ITEMS.filter(function (r) { return r.sheet === x.sheet; }).map(function (r) { return r.id; });
+          var sh = take[i].sheet;
+          // Chunked by id: a wide sheet would otherwise exceed the URL length of
+          // a single .in() filter.
+          var ids = ITEMS.filter(function (r) { return r.sheet === sh; }).map(function (r) { return r.id; });
           for (var j = 0; j < ids.length; j += 200) {
             var up = await sb().from(T_ITEM).update({ package_id: pkgId }).in('id', ids.slice(j, j + 200));
             if (up.error) throw up.error;
           }
-          ITEMS.forEach(function (r) { if (r.sheet === x.sheet) r.package_id = pkgId; });
+          ITEMS.forEach(function (r) { if (r.sheet === sh) r.package_id = pkgId; });
         }
         m.close();
-        UI.toast('Applied to ' + take.length + ' sheet(s).', 'success');
+        UI.toast(pkgId ? 'Assigned ' + take.length + ' sheet(s) to ' + pkgName(pkgId) + '.'
+                       : 'Cleared the package on ' + take.length + ' sheet(s).', 'success');
         render();
       } catch (err) {
         btn.disabled = false; btn.textContent = 'Apply';
@@ -914,14 +967,6 @@ window.BOQ = (function () {
     };
   }
   function txtOf(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
-  /* A short code from the sheet name, as a STARTING POINT the planner edits —
-     never the final answer, because a package code comes off the contract. */
-  function suggestCode(sheet) {
-    var w = txtOf(sheet).replace(/\(.*?\)/g, '').split(/[^A-Za-z0-9]+/).filter(Boolean);
-    if (!w.length) return 'PKG';
-    if (w.length === 1) return w[0].slice(0, 8).toUpperCase();
-    return w.map(function (x) { return x[0]; }).join('').slice(0, 6).toUpperCase();
-  }
 
   // ==========================================================================
   // IMPORT — detect → preview → accept → import verbatim
@@ -1745,9 +1790,9 @@ window.BOQ = (function () {
         '<td class="cc-r">100.00%</td><td class="cc-r"><strong>' + pct(tot.poc, 4) + '</strong></td>' +
         '<td class="cc-r"><strong>' + money(tot.revenue) + '</strong></td></tr>';
       h += '</tbody></table>' +
-        '<p class="cc-hint">⚠️ Two POC systems now exist and they must not be silently merged. The schedule\'s ' +
-        'duration- or cost-weighted S-curve is the <em>progress</em> POC; this is the <em>contractual/revenue</em> POC ' +
-        'the client pays against. They legitimately differ — reconciling them is a report, never an override.</p></div>';
+        '<p class="cc-hint">⚠️ These are the <em>certified</em> percentages — what the client has already paid ' +
+        'against. The schedule\'s S-curve is <em>reported</em> progress, and the two must not be silently merged: ' +
+        'their difference is the accrual shown above, never an error to correct in either direction.</p></div>';
     }
     return h;
   }
@@ -1806,50 +1851,90 @@ window.BOQ = (function () {
     return h + '</div>';
   }
 
-  /* DECISION #7, on screen. Two POCs, side by side, with the gap named — and a
-     standing refusal to reconcile them.
-     ⚠️ THE VARIANCE IS NOT AN ERROR. Billing POC is what the client has certified
-     against the BOQ; schedule POC is duration-weighted physical progress. They
-     diverge for real reasons: work done but not yet billed, a billing period that
-     closed mid-month, retention on measurement, unbilled variations. Showing one
-     "corrected" by the other would destroy the only signal in the pair. */
+  /* DECISION #7 — REFRAMED 2026-08-26. Still "neither leads", but the gap now
+     has a name and a peso figure instead of only a percentage.
+
+     The owner's point: the S-curve IS actual progress, the client verifies it,
+     and the contractor bills against what was verified. So the two figures are
+     not two rival opinions of the same thing — they are the SAME work at two
+     stages of the same pipeline:
+        done (reported)  →  certified (billed)  →  paid
+     and the distance between the first two is ACCRUED REVENUE — work performed
+     and not yet certified, an unbilled receivable.
+
+     ⚠️ ONE CORRECTION TO THAT PICTURE, AND IT MATTERS. The schedule figure here
+     is `percent_complete` typed on the programme (schedule_scurve_agg weights
+     it by duration or cost). It is CONTRACTOR-REPORTED, not client-verified —
+     nothing in this app records a client's verification of a schedule activity.
+     So the gap is accrual PLUS whatever the client would knock off on
+     inspection, and the two are not separable from what is stored.
+
+     ⚠️ DISPUTE IS THEREFORE NOT MEASURABLE YET, and this panel says so rather
+     than implying it is. A dispute is claimed-minus-certified, and boq_progress
+     holds ONE rel_pct per line — the certified one. Measuring dispute needs a
+     claimed figure stored beside it; that is a schema decision, not something
+     to fake from the schedule.
+
+     ⚠️ STILL NO WRITE-BACK, IN EITHER DIRECTION. The accrual is a report. */
   function pocCompareHTML(tot, contract) {
     var bill = tot.poc, prog = schedPoc();
     var h = '<div class="pd-card boq-poc">' +
-      '<h3 class="boq-h3">Two percent-completes, and the gap between them</h3>';
+      '<h3 class="boq-h3">Reported, certified, and the accrual between them</h3>';
 
     if (prog == null) {
       h += '<p class="cc-hint">' + (schedErr
         ? 'The schedule\'s own progress could not be read (' + esc(schedErr.message || String(schedErr)) + ').'
-        : 'This project has no loaded schedule, so there is no progress POC to compare against.') +
-        ' The billing POC above stands on its own.' +
+        : 'This project has no loaded schedule, so there is no reported progress to compare against.') +
+        ' The certified POC above stands on its own, and no accrual can be computed.' +
         (schedErr && /schedule_scurve_agg/.test(String(schedErr.message || ''))
           ? ' Run <code>migrations/2026-07-20-schedule-scurve-agg.sql</code>.' : '') + '</p></div>';
       return h;
     }
 
-    var gap = (bill == null) ? null : bill - prog;
-    var cls = gap == null ? '' : Math.abs(gap) < 0.02 ? 'ok' : Math.abs(gap) < 0.10 ? 'warn' : 'bad';
+    /* Signed so that POSITIVE = work done and not yet certified = money the
+       contractor is owed but cannot yet invoice. Negative is the other way and
+       is the more serious of the two: billing has run ahead of the work. */
+    var accrPct = (bill == null) ? null : prog - bill;
+    var accrAmt = (accrPct == null || !contract) ? null : accrPct * contract;
+    var cls = accrPct == null ? '' : Math.abs(accrPct) < 0.02 ? 'ok' : Math.abs(accrPct) < 0.10 ? 'warn' : 'bad';
     h += '<div class="boq-poc-row">' +
-      '<div class="boq-poc-cell"><span class="cc-mini">Contractual (this BOQ, billed)</span>' +
+      '<div class="boq-poc-cell"><span class="cc-mini">Reported (the schedule)</span>' +
+        '<div class="boq-poc-v">' + pct(prog, 4) + '</div>' +
+        '<span class="cc-mini">contractor-reported, ' + (Number(SCHED.nAct) || 0) + ' activities</span></div>' +
+      '<div class="boq-poc-cell"><span class="cc-mini">Certified (billed)</span>' +
         '<div class="boq-poc-v">' + pct(bill, 4) + '</div>' +
         '<span class="cc-mini">what the client pays against</span></div>' +
-      '<div class="boq-poc-cell"><span class="cc-mini">Progress (the schedule)</span>' +
-        '<div class="boq-poc-v">' + pct(prog, 4) + '</div>' +
-        '<span class="cc-mini">duration-weighted, ' + (Number(SCHED.nAct) || 0) + ' activities</span></div>' +
-      '<div class="boq-poc-cell ' + cls + '"><span class="cc-mini">Variance</span>' +
-        '<div class="boq-poc-v">' + (gap == null ? '—' : (gap > 0 ? '+' : '') + (gap * 100).toFixed(2) + ' pp') + '</div>' +
-        '<span class="cc-mini">' + esc(gap == null ? 'nothing billed yet'
-          : gap > 0 ? 'billed ahead of physical progress' : 'work done but not yet billed') + '</span></div>' +
-      '</div>' +
-      '<p class="cc-hint"><strong>This is a report, never a correction.</strong> Neither figure leads: the ' +
-      'contractual POC is what has been certified against the BOQ, the progress POC is physical work on the ' +
-      'programme, and they differ for real reasons — work built but not yet billed, a period that closed ' +
-      'mid-month, measurement still in dispute, variations not yet certified. Nothing here writes back to ' +
-      'either side, and the schedule\'s S-curve is not adjusted to match the billing.</p>' +
-      (contract && Math.abs(contract - contractSum(ITEMS)) > 1
-        ? '<p class="cc-hint">⚠️ Note the contractual figure is computed on the revision\'s stated contract total, ' +
-          'which differs from the sum of its lines — see the reconciliation warning on the Items tab.</p>' : '') +
+      '<div class="boq-poc-cell ' + cls + '"><span class="cc-mini">' +
+        (accrPct == null || accrPct >= 0 ? 'Accrued — done, not yet certified' : 'Billed ahead of the work') + '</span>' +
+        '<div class="boq-poc-v">' + (accrAmt == null ? '—' : money(Math.abs(accrAmt))) + '</div>' +
+        '<span class="cc-mini">' + (accrPct == null ? 'nothing billed yet'
+          : (accrPct >= 0 ? '+' : '') + (accrPct * 100).toFixed(2) + ' pp · ' +
+            (accrPct >= 0 ? 'unbilled receivable' : 'certified beyond reported progress')) + '</span></div>' +
+      '</div>';
+
+    h += '<p class="cc-hint"><strong>The same work at two stages, not two rival numbers.</strong> ' +
+      'Work is reported on the programme, certified by the client, then paid. The distance between the first two is ' +
+      '<strong>accrued revenue</strong> — earned, not yet invoiceable. ' +
+      (accrPct != null && accrPct < 0
+        ? '⚠️ Here it runs the <em>other</em> way: certification is ahead of reported progress, which is either ' +
+          'front-loaded measurement, an advance, or a programme that has not been updated. Worth resolving before the ' +
+          'next billing.'
+        : 'Carry it as an unbilled receivable in the accrual, and it converts to AR at the next certification.') + '</p>';
+
+    /* ⚠️ THE HONEST LIMIT, ON SCREEN. Overstating what the number proves is how
+       an accrual figure ends up in a report nobody can defend. */
+    h += '<p class="cc-hint">⚠️ <strong>The reported figure is the contractor\'s own.</strong> It is ' +
+      '<code>percent_complete</code> entered on the programme; nothing in this app records the client\'s verification ' +
+      'of a schedule activity. So this accrual is <em>work claimed as done and not yet certified</em>, which includes ' +
+      'anything the client would still knock off on inspection. ' +
+      '<strong>Dispute cannot be measured here yet</strong> — a dispute is claimed minus certified, and ' +
+      '<code>boq_progress</code> stores one <code>rel_pct</code> per line: the certified one. Measuring it needs a ' +
+      'claimed figure stored beside the certified one, which is a schema decision and not something to infer from the ' +
+      'schedule.</p>';
+
+    h += (contract && Math.abs(contract - contractSum(ITEMS)) > 1
+        ? '<p class="cc-hint">⚠️ The certified figure is computed on the revision\'s stated contract total, which ' +
+          'differs from the sum of its lines — see the reconciliation warning on the Items tab.</p>' : '') +
       '</div>';
     return h;
   }
@@ -2005,7 +2090,11 @@ window.BOQ = (function () {
       sheetPocs: sheetPocs, moneyLine: moneyLine, qtyLine: qtyLine, mappable: mappable,
       proposeSplit: proposeSplit, locMatch: locMatch, allocSum: allocSum, suggestFor: suggestFor,
       statedTotalOf: statedTotalOf, billingColsOf: billingColsOf, guessRev: guessRev, sumStated: sumStated,
-      suggestCode: suggestCode, pkgName: pkgName, pkgCell: pkgCell, schedPoc: schedPoc,
+      pkgName: pkgName, pkgCell: pkgCell, schedPoc: schedPoc, sheetPkgState: sheetPkgState,
+      /* Decision #6's derivation. Exported so the monthly split is testable
+         against the shipped function rather than a reimplementation. */
+      monthlyRevenue: monthlyRevenue, spreadDays: spreadDays, dnum: dnum, isoOf: isoOf,
+      monthKey: monthKey, daysInMonthKey: daysInMonthKey,
       _set: function (o) {
         if (o.ITEMS) ITEMS = o.ITEMS; if (o.CMAP) CMAP = o.CMAP; if (o.ALLOC) ALLOC = o.ALLOC;
         if (o.PERIODS) PERIODS = o.PERIODS; if (o.PROG) PROG = o.PROG; if (o.SUGG) SUGG = o.SUGG;

@@ -369,6 +369,35 @@ reporting purposes, can we cover til end of each month?"* — so **both**, kept 
   full, Mar 25/31 part; the monthly total closes **exactly** on revenue to date (₱300,000.00), and
   the material split holds at 0.6 in every month. Not yet clicked through in a browser.
 
+### 2026-08-26 — Decision #2 corrected: a package is a scope division, not a trade
+Owner: *"Package 1: Avesta Residences Tower 1 and General Requirements / Package 2: Avesta Residences
+Towers 2-7 … In terms of BOQ, it is purely the client who will dictate which will define the progress
+billing of each package whether by trade or etc."*
+- **The first answer was wrong.** A trade sheet is not a commercial lot: the workbook **is** Package 2,
+  and its sheets are the client's billing breakdown *within* it. `Packages from sheets…` is **deleted**
+  and replaced by **`Assign to contract package…`** — assigns lines to a package that already exists,
+  shows each sheet's current lot (`mixed` included, never hidden), and can remove an assignment.
+- ⚠️ **No insert in that function.** Packages come off the contract documents, on the Dashboard. With
+  none on the project, the tool says where they come from instead of offering to invent one.
+- `suggestCode()` deleted — a code from a tab name means nothing under the corrected model.
+- No schema change: `boq_items.package_id` was right; per-line storage still stands because one issued
+  document can cover more than one lot. Migration comments corrected in place.
+
+### 2026-08-26 — Decision #7 reframed: the gap is an accrual, and it is money
+Owner: *"Isn't the s-curve based on actual progress? … the contractor will bill the client based on
+actual verified progress … for reporting purposes … accrual and expected accounts receivable/payable."*
+- Not rival numbers — the same work at **reported → certified → paid**. The panel is now
+  "Reported, certified, and the accrual between them", and the third cell is
+  `(reported − certified) × contract` in pesos: *Accrued — done, not yet certified*, or
+  *Billed ahead of the work* when it runs the other way (absolute value, never a negative peso).
+- ⚠️ **The reported figure is contractor-reported, not client-verified** — it is `percent_complete`
+  typed on the programme. Said on screen, because the accrual otherwise reads as agreed money.
+- ⚠️ **Dispute is not measurable**: `boq_progress` stores one `rel_pct` per line, the certified one.
+  A claimed figure beside it is a schema decision and is **open**.
+- **Verified**: 13/13 executing the shipped `pocCompareHTML` in node — ₱27,541.00 at +2.75pp
+  (0.20 reported vs 0.172459 certified on ₱1M), the reverse case at ₱22,459.00 / −2.25pp, plus the
+  no-billing, no-schedule and reconciliation branches. Not clicked through in a browser.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is

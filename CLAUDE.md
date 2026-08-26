@@ -8750,3 +8750,66 @@ reporting purposes, can we cover til end of each month?"* — so both, held apar
   part of this ask.
 - `MODULE_V` → `20260826e` (in `dashboard.html`, `modules.html` and the `modules-grid.js` fallback);
   `boq.js?v=20260826a`.
+
+### 2026-08-26 — Decision #2 corrected (a package is a scope division), decision #7 becomes an accrual
+Owner, on packages: *"Package 1: Avesta Residences Tower 1 and General Requirements / Package 2:
+Avesta Residences Towers 2-7. The contract packages define the scope but both refers to a single
+project. In terms of BOQ, it is purely the client who will dictate which will define the progress
+billing of each package whether by trade or etc."*
+
+**My earlier answer to decision #2 was wrong, and the tool built on it is deleted rather than
+extended.** "One package per priced trade sheet" assumed a trade sheet is a commercial lot. It is
+not: the workbook **is** Package 2, its sheets are the client's billing breakdown *within* that
+package, and minting four packages named "Architectural" / "ACOUSTIC" would have put a lot in the
+claims register that appears on no contract document — the precise failure the refusal-to-auto-create
+was written to prevent, one level down.
+
+- `Packages from sheets…` → **`Assign to contract package…`**. It lists the project's existing
+  packages, shows each sheet's current lot (including **`mixed`**, which is a real state and must not
+  be hidden behind the first line's value), assigns in bulk, and offers **remove assignment** so a
+  wrong call is fixable without a DB console.
+- ⚠️ **There is no insert in that function.** Packages come off the contract documents, on the
+  Dashboard. With no packages on the project the tool explains that instead of offering to invent one.
+- `suggestCode()` deleted with it — a code derived from a tab name has no meaning under the corrected
+  model. Removed from `_internals` too.
+- Migration comments corrected in `2026-08-25-package-adoption.sql`: the wrong first answer is kept
+  beside the correction, because the correction only makes sense against it. **No schema change** —
+  `boq_items.package_id` was right all along; only the tool feeding it was wrong. Per-line storage
+  still stands: one issued document can cover more than one lot.
+
+Owner, on decision #7: *"Isn't the s-curve based on actual progress? … the contractor will bill the
+client based on actual verified progress … for reporting purposes as the contractor actual progress
+will have accrual and expected accounts receivable/payable."*
+
+Right — they are not rival numbers, they are the same work at two stages: **reported → certified →
+paid**. The panel is reframed around that.
+
+- "Two percent-completes" → **"Reported, certified, and the accrual between them."** The third cell
+  is now **money**: `(reported − certified) × contract`, labelled *Accrued — done, not yet certified*
+  (an unbilled receivable) or, when negative, *Billed ahead of the work*.
+- ⚠️ **One correction to the premise, stated on screen.** The schedule figure is `percent_complete`
+  typed on the programme — **contractor-reported, not client-verified**. Nothing in this app records
+  a client's verification of a schedule activity. So the accrual is *claimed as done and not yet
+  certified*, and it includes whatever the client would still knock off on inspection.
+- ⚠️ **Dispute is not measurable from what is stored**, and the panel says so rather than implying
+  otherwise. A dispute is claimed minus certified; `boq_progress` holds **one** `rel_pct` per line —
+  the certified one. Measuring it needs a claimed figure stored beside it: a schema decision, not
+  something to infer from the schedule. **Open, and it is the natural next one.**
+- Still no write-back in either direction.
+
+**Verified** by executing the shipped `pocCompareHTML` in node with stubbed formatters: **13/13** —
+accrual ₱27,541.00 at +2.75pp on a ₱1M contract (0.20 reported vs 0.172459 certified), the reverse
+case rendering ₱22,459.00 at −2.25pp under *Billed ahead of the work* (absolute value, never a
+negative peso), plus the no-billing, no-schedule and contract-reconciliation branches. `node --check`
+clean. ⚠️ **Not clicked through in a browser** — the assign-package modal in particular has been
+exercised only as source.
+
+⚠️ **The cross-module directive is only partly satisfied, and I did not silently widen scope.**
+`package_id` exists on `project_schedule` + `wbs_nodes`, `contracts_claims` and `boq_items`. The
+**procurement and engineering dashboards live in the prc-app repo**, not here, so nothing in this
+commit touches them. Also worth re-opening: `cash_flow` was excluded from package adoption on the
+reasoning that `cash_flow_trade_packages` was "already that module's notion of a package" — under the
+corrected definition that is a **trade** split *inside* a package, a different axis, so the exclusion
+now rests on a premise that no longer holds.
+
+- `MODULE_V` → `20260826f`; `boq.js?v=20260826b`.
