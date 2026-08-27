@@ -24922,6 +24922,69 @@
       align: ['l', 'l', 'l', 'r', 'l', 'l', 'l', 'r', 'l', 'l', 'l'], note: note, rows: out };
   }
 
+  /* ==========================================================================
+     EXTENSION OF TIME — connected to the schedule, and NOT spread onto activities.
+     --------------------------------------------------------------------------
+     Owner: *"EOT should be connected and it will impact the project schedule, but in
+     terms of spreading the N days on to which activities I am not sure how to go through
+     with this."*
+
+     ⚠️ THE PREMISE IS THE TRAP: AN EOT IS NEVER SPREAD ONTO ACTIVITIES. It does not add
+        work and it does not change how long anything takes. It moves the CONTRACTUAL
+        COMPLETION DATE — the date against which lateness, and therefore liquidated
+        damages, are measured. Activity dates come from the programme's own logic; an
+        EOT is the reason a late finish becomes EXCUSABLE, not the cause of it.
+
+        Pushing N days across activities would be backwards twice over: it would corrupt
+        a programme that already says what it says, and it would hide the very thing the
+        EOT exists to show — the gap between when the work will actually finish and when
+        the contract now says it must.
+
+     ⚠️ SO NOTHING HERE WRITES A DATE. This derives three figures per package and reports
+        them; the schedule is never adjusted to match a claim.
+          contract finish   = the package's own end_date (from the contract)
+          + granted days    = Σ approved_days of EOTs with status 'Approved'
+          = revised finish  — the date lateness is now measured against
+        and separately, exposure = forecast finish − revised finish.
+
+     ⚠️ ONLY 'Approved' EOTs MOVE THE DATE. A pending claim is exposure, not entitlement,
+        and reporting it as granted would tell a PM they have time they have not been
+        given. Pending days are counted and shown apart.
+     ⚠️ CALENDAR DAYS. An EOT is granted in calendar days unless the contract says
+        otherwise; if yours is in working days the granted figure needs the project
+        calendar applied, and the note says so rather than quietly assuming. */
+  function eotFor(pkgId) {
+    var out = { granted: 0, pending: 0, nGranted: 0, nPending: 0 };
+    (CONTRACT_RECS || []).forEach(function (x) {
+      if (x.record_type !== 'EOT') return;
+      /* ⚠️ EXACT PACKAGE MATCH, and an untagged EOT counts ONCE — in the unassigned
+         row — never against every package. Crediting an untagged claim to all of them
+         would tell a PM that each lot has time it may not have been granted, and the
+         same days would be counted several times over in one report. The note says to
+         tag it in Contracts & Claims, which is the only way to know which lot it is. */
+      if (String(x.package_id || '') !== String(pkgId || '')) return;
+      var st = String(x.status || '').trim();
+      if (st === 'Approved') {
+        var g = Number(x.approved_days) || 0;
+        if (g) { out.granted += g; out.nGranted++; }
+      } else if (st === 'Pending') {
+        var c = Number(x.sub_days != null ? x.sub_days : x.est_days) || 0;
+        if (c) { out.pending += c; out.nPending++; }
+      }
+    });
+    return out;
+  }
+  /* The date lateness is measured against once the granted EOTs are applied. */
+  function revisedFinishOf(pkgId) {
+    var k = pkgId ? packageById(pkgId) : null;
+    var base = k && k.end_date ? pd(k.end_date) : null;
+    if (!base) return null;                       // no contract finish on record → nothing to revise
+    var e = eotFor(pkgId);
+    return { base: base, granted: e.granted, pending: e.pending,
+             revised: e.granted ? addDays(base, e.granted) : base,
+             nGranted: e.nGranted, nPending: e.nPending };
+  }
+
   // ---- CONTRACT PACKAGE MONITORING -------------------------------------------------
   // One row per contract package: a multi-package project (Package 1 — Tower 1 and
   // General Requirements; Package 2 — Towers 2-7) is ONE schedule that must be
@@ -25023,6 +25086,30 @@
         // ⚠️ A finish date is only real when nothing is still open. The latest actual
         //    finish among half-done work is not the package's finish.
         (b.af && !b.unfinished) ? Fmt.date(dstr(b.af)) : (b.n ? '— ' + b.unfinished + ' open —' : '—'),
+        // ---- contract time: what the contract says, once EOTs are applied -------
+        (function () {
+          var rv = revisedFinishOf(k || null);
+          if (!rv) return '—';
+          return Fmt.date(dstr(rv.base));
+        })(),
+        (function () {
+          var rv = revisedFinishOf(k || null);
+          if (!rv) return '—';
+          return (rv.granted ? '+' + rv.granted + 'd' : '—') + (rv.pending ? ' (' + rv.pending + 'd pending)' : '');
+        })(),
+        (function () {
+          var rv = revisedFinishOf(k || null);
+          return rv ? Fmt.date(dstr(rv.revised)) : '—';
+        })(),
+        /* ⚠️ EXPOSURE, NOT DELAY. Positive = the programme forecasts finishing AFTER the
+           date the contract now allows, which is what liquidated damages attach to.
+           Measured against the REVISED date, so granted time is already credited. */
+        (function () {
+          var rv = revisedFinishOf(k || null);
+          if (!rv || !b.pf) return '—';
+          var d = dayDiff(rv.revised, b.pf);
+          return d > 0 ? '+' + d + 'd late' : (d < 0 ? (-d) + 'd float' : 'on the date');
+        })(),
         plan == null ? '—' : (plan * 100).toFixed(2) + '%',
         poc  == null ? '—' : (poc * 100).toFixed(2) + '%',
         varp == null ? '—' : (varp > 0 ? '+' : '') + varp.toFixed(2) + ' pp',
@@ -25034,10 +25121,12 @@
     var noPkg = buckets[''] ? buckets[''].n : 0;
     var tv = t.totD ? (t.doneD - t.planD) / t.totD * 100 : null;
     return { headers: ['Contract package', 'Activities', 'Own / total', 'Planned start', 'Planned finish',
-        'Actual start', 'Actual finish', 'Planned %', 'Actual %', 'Variance', 'Cost-wtd %', 'Planned cost', 'Earned'],
-      align: ['l','r','r','l','l','l','l','r','r','r','r','r','r'],
+        'Actual start', 'Actual finish',
+        'Contract finish', 'EOT', 'Revised finish', 'Exposure',
+        'Planned %', 'Actual %', 'Variance', 'Cost-wtd %', 'Planned cost', 'Earned'],
+      align: ['l','r','r','l','l','l','l','l','r','l','r','r','r','r','r','r','r'],
       note: _repPackagesNote(at, noPkg), rows: rows,
-      totals: ['PROJECT', String(t.n), '', '', '', '', '',
+      totals: ['PROJECT', String(t.n), '', '', '', '', '', '', '', '', '',
         t.totD ? (t.planD / t.totD * 100).toFixed(2) + '%' : '—',
         t.totD ? (t.doneD / t.totD * 100).toFixed(2) + '%' : '—',
         tv == null ? '—' : (tv > 0 ? '+' : '') + tv.toFixed(2) + ' pp',
@@ -25056,6 +25145,22 @@
     } else if (noPkg) {
       note += '  ⚠️ ' + noPkg + ' activity/activities belong to no package, so the package rows below do NOT add up ' +
         'to the project. Assign them, or read the project total as the only complete figure.';
+    }
+    /* The EOT half of the report explains itself, because "revised finish" is a
+       contractual assertion and a reader must know exactly what produced it. */
+    var anyEot = (CONTRACT_RECS || []).some(function (x) { return x.record_type === 'EOT'; });
+    if (anyEot) {
+      note += '  Contract finish is the package\'s own end date; ⚠️ only EOTs marked <b>Approved</b> move it — ' +
+        'a pending claim is exposure, not entitlement, and is shown in brackets. Exposure compares the ' +
+        'programme\'s forecast finish with the REVISED date, so granted time is already credited. ' +
+        '⚠️ EOT days are treated as CALENDAR days; if your contract grants working days, apply the project ' +
+        'calendar to the granted figure before quoting it. ⚠️ Nothing here moves an activity — an EOT changes ' +
+        'the date lateness is measured against, never how long the work takes.';
+      var loose = (CONTRACT_RECS || []).filter(function (x) { return x.record_type === 'EOT' && !x.package_id; }).length;
+      if (loose) {
+        note += '  ⚠️ ' + loose + ' EOT(s) are not assigned to a package, so they are read as project-wide and ' +
+          'counted against the unassigned row only. Tag them in Contracts & Claims to credit the right lot.';
+      }
     }
     return note;
   }

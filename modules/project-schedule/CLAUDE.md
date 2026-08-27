@@ -8899,3 +8899,46 @@ keeps its option in position 1, a registered value is never duplicated, and the 
 ⚠️ **EOT is still not connected** and needs the owner's call first: an approved EOT is *N days*, and
 whether that shifts a completion milestone, relaxes a constraint, or stays informational beside the
 schedule is a commercial decision.
+
+### 2026-08-26 — EOT connected to the schedule, and deliberately NOT spread onto activities
+Owner: *"EOT should be connected and it will impact the project schedule, but in terms of spreading the
+N days on to which activities I am not sure how to go through with this."*
+
+⚠️ **The uncertainty was the right instinct, because the premise hides a trap: an EOT is never spread
+onto activities at all.** It adds no work and changes no duration. It moves the **contractual completion
+date** — the date lateness, and therefore liquidated damages, are measured against. Activity dates come
+from the programme's own logic; an EOT is what makes a late finish *excusable*, not what causes it.
+
+Pushing N days across activities would be backwards twice: it would corrupt a programme that already
+says what it says, and it would hide the very thing the EOT exists to show — the gap between when the
+work will actually finish and when the contract now requires it.
+
+So **nothing here writes a date.** Three derived figures per package, reported in the Contract Package
+Monitor beside the programme's own:
+```
+  contract finish   the package's own end_date, off the contract
+  + granted days    Σ approved_days of EOTs with status 'Approved'
+  = revised finish  the date lateness is now measured against
+  exposure          forecast finish − revised finish   (positive = LD exposure)
+```
+- ⚠️ **Only `Approved` EOTs move the date.** A pending claim is exposure, not entitlement — reporting it
+  as granted would tell a PM they have time nobody has given them. Pending days show in brackets.
+- ⚠️ **A Change Order's `approved_days` is not EOT time** and is excluded, even though the column exists
+  on both.
+- ⚠️ **An untagged EOT counts ONCE, in the unassigned row** — never against every package. The first
+  cut of this credited it to all of them; the harness caught that the code and its own note disagreed,
+  and the note's rule was the safe one. Crediting one untagged claim to every lot would tell each PM
+  they have time they may not have, and count the same days several times in one report.
+- ⚠️ **Calendar days.** An EOT is granted in calendar days unless the contract says otherwise; the note
+  says to apply the project calendar if yours grants working days, rather than quietly assuming.
+- ⚠️ **Exposure is measured against the REVISED date**, so granted time is already credited — it reads
+  "+18d late" or "42d float", never raw slippage that ignores the extension.
+
+**Verified 12/12** executing the shipped `eotFor` / `revisedFinishOf` in node: 30d + 15d granted on
+PKG-1 with a Disapproved 99d ignored and a 500d Change Order excluded; 20d pending reported apart and
+never added; a project-wide EOT staying out of both packages; 2028-06-30 + 45d = **2028-08-14**; and a
+package with no contract finish on record returning null rather than a guessed date.
+
+⚠️ **Not clicked through in a browser.** The report is reachable at Reports → Contract Package Monitor.
+
+`MODULE_V` → `20260826s`.
