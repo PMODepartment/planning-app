@@ -785,3 +785,48 @@ star/blank-row/duplicate-code behaviour unchanged.
 ⚠️ **Not clicked through signed in** — auth-gated, no credentials in this session. `node --check` clean on
 all three module scripts; class audit clean (`ccw-stop` defined), with only the pre-existing `ccw-ov` and
 `cc-listbar` undefined.
+
+### 2026-08-27 (2) — OPW101 could not be saved without inventing a package
+
+Owner, on the live build: *"OPW101 is a one work construction contract without any packages. But this
+requires me to connect it to a package."* And: *"There is still an add package in the wizard wherein the
+project code… will have two branched packages AVR101 (again) and AVR102."*
+
+**Both were real, and the first is the more serious: it was a hard block.** `openForm`'s package select
+offered only *"— Create from this contract —"* or a link, and the save handler then **refused** without a
+package code and name. A single-lot contract — the ordinary case here — had **no way through the form**
+except to invent a package, and the only code to hand was the project's own. ⚠️ **The validator was
+manufacturing the AVR101 › {AVR101, AVR102} shape**, and yesterday's fix only closed the wizard door
+while this one stayed open.
+
+⚠️ **NOTHING EVER REQUIRED A PACKAGE, and the UI claimed otherwise in four places.** `package_id` is
+nullable on `contracts_claims`, `boq_items`, `project_schedule` and `wbs_nodes` with no back-fill —
+2026-08-25-package-adoption.sql says it outright: *"every existing row keeps package_id NULL, which is
+[normal]"*. The orphan section's *"nothing downstream can file against them"* was simply **false**: the
+schedule, BOQ, procurement and engineering all file against the **project**; a package only NARROWS that.
+
+- **`openForm` now offers None / Define / Link**, with **None the default and saveable**. Choosing None on
+  a record that has a package also **unlinks** it — which is how the existing AVR101/AVR102 rows get
+  unpicked without a delete.
+- **The conflict guard is now ONE function, shared.** `wizard.js` exports `codeConflict` as a pure
+  `(code, projectId, projects)`; the form calls the same one, live per keystroke and again at save.
+  ⚠️ Two copies of this rule would drift, and the half that drifted would be the one nobody looks at.
+- **The Avesta example is purged from the copy.** Packages empty state, orphan section, BOQ assign modal,
+  BOQ "no packages" modal, the wizard's type cards and the form's placeholder all held up *"Package 1 —
+  Tower 1 and General Requirements / Package 2 — Towers 2-7"* as the model. That example is **two
+  projects**, so every one of those screens was teaching the exact structure the guard refuses. Replaced
+  with a genuine sub-lot ("enabling works vs main works") and a pointer to the Portfolio rollup.
+- ⚠️ **The Contract type card said *"It DEFINES a contract package"*.** That sentence is why planners
+  believed recording a contract means creating one. Now: *"Most need no package — the project already is
+  the lot."*
+- **The packages empty state is no longer a deficiency.** *"No packages — and most projects need none."*
+- **The orphan warning now fires only when the project HAS packages**, where a contract sitting outside
+  all of them really is a gap. On OPW101 it reads as a plain list with no warning.
+- **The reference no longer seeds a clashing code** in the form either, matching the wizard.
+
+**Verified 40/40 in Node against the shipped functions** (28 wizard + shared guard, 12 rendering
+`orphanHTML` in both states): OPW101 renders no warning, no badge and no "not linked" headline; a project
+with packages still warns, without the false downstream claim; the shared guard refuses own-code and
+sibling-code case-insensitively and passes genuine sub-lots, blanks and an absent project list.
+
+⚠️ **Not clicked through signed in.** `node --check` clean on all four module scripts.

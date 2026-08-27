@@ -84,23 +84,43 @@ window.CCPackages = (function () {
     return bits.join(' · ') || '<span class="cc-mut">— contract record has no details —</span>';
   }
 
+  /* Contracts carrying no package.
+     ⚠️ THIS USED TO BE A WARNING AND IT WAS WRONG ON BOTH COUNTS — corrected 2026-08-27
+        after the owner hit it on OPW101: *"OPW101 is a one work construction contract
+        without any packages. But this requires me to connect it to a package."*
+        1. It is not required. `package_id` is nullable on contracts_claims, boq_items,
+           project_schedule and wbs_nodes, with no back-fill — 2026-08-25-package-adoption
+           says so outright: *"every existing row keeps package_id NULL, which is [normal]"*.
+        2. The old text claimed *"nothing downstream can file against them"*. False. The
+           schedule, the BOQ, procurement and engineering all file against the PROJECT; a
+           package only NARROWS that. A single-lot contract like OPW101 needs none, and
+           telling a planner otherwise pushes them to invent one — which is how a project
+           code ends up restated as a package.
+     So it warns ONLY when this project actually has packages, where a contract sitting
+     outside all of them really is a gap someone left. */
   function orphanHTML() {
     var loose = CONTRACTS.filter(function (r) { return !r.package_id; });
     if (!loose.length) return '';
+    var hasPkgs = PKG.length > 0;
     return '<div class="pd-card cc-tablecard" style="margin-top:12px;">' +
-      '<h3 class="boq-h3">Contract records not linked to a package</h3>' +
+      '<h3 class="boq-h3">' + (hasPkgs ? 'Contract records not linked to a package' : 'Contract records') + '</h3>' +
       '<table class="cc-table"><tbody>' +
       loose.map(function (r) {
         return '<tr><td><strong>' + esc(r.reference_no || '(no reference)') + '</strong>' +
           (r.description ? ' — ' + esc(r.description) : '') + '</td>' +
           '<td>' + esc(r.counterparty || '') + '</td>' +
           '<td class="cc-r">' + esc(r.amount == null ? '' : money(r.amount)) + '</td>' +
-          '<td><span class="boq-kind">no package</span></td></tr>';
+          '<td>' + (hasPkgs ? '<span class="boq-kind">no package</span>' : '') + '</td></tr>';
       }).join('') +
       '</tbody></table>' +
-      '<p class="cc-hint">⚠️ These define no contract lot, so nothing downstream can file against them — ' +
-      'the schedule, BOQ, procurement and engineering all narrow by package. Open the record and link it, ' +
-      'or let it define a package.</p></div>';
+      (hasPkgs
+        ? '<p class="cc-hint">⚠️ This project <b>has</b> packages, and these sit outside all of them — so they ' +
+          'are missing from any package-filtered view, though the schedule, BOQ, procurement and engineering ' +
+          'still read them at project level. Open the record and link it to the lot it belongs to.</p>'
+        : '<p class="cc-hint">This project has no packages, so these contracts cover the whole project — which is ' +
+          'the normal shape for a single-lot job. Nothing is missing: the schedule, BOQ, procurement and ' +
+          'engineering all file against the project, and a package only <b>narrows</b> that.</p>') +
+      '</div>';
   }
 
   function render() {
@@ -111,12 +131,21 @@ window.CCPackages = (function () {
       '</div>';
     if (!PKG.length) {
       h.innerHTML = head +
-        '<div class="pd-card cc-empty"><h3>No contract packages yet</h3>' +
-        '<p>A package is a scope division of this project — <b>Package 1 — Tower 1 and General ' +
-        'Requirements</b>, <b>Package 2 — Towers 2-7</b>. They come off the contract documents.</p>' +
-        '<p class="cc-hint">Record a <b>Contract</b> on the Contract tab and it can define its package as ' +
-        'you save it — or add one here directly. Everything downstream files against these: the schedule\'s ' +
-        'top-level rows, the BOQ, procurement and engineering.</p></div>' + orphanHTML();
+        /* ⚠️ "No packages" IS NOT A DEFICIENCY, and this screen no longer implies it is.
+           It used to headline *"No contract packages yet"* and then hold up
+           "Package 1 — Tower 1 and General Requirements / Package 2 — Towers 2-7" as the
+           model. That example is Avesta — which is TWO PROJECTS (AVR101, AVR102), not two
+           packages — so the empty state was teaching the exact structure the wizard now
+           refuses, on every project that had none. */
+        '<div class="pd-card cc-empty"><h3>No packages — and most projects need none</h3>' +
+        '<p>A project code (<b>' + esc(pid || 'OPW101') + '</b>) already names one contract lot. The schedule, ' +
+        'the BOQ, procurement and engineering all file against the project directly, so a single-work ' +
+        'contract is complete exactly as it is.</p>' +
+        '<p class="cc-hint">Add a package only for a division <b>below</b> this project — a lot inside ' +
+        '<i>this</i> contract with no project code of its own (enabling works vs main works, say). ' +
+        '⚠️ If the division you have in mind already has its own code, it is a <b>separate project</b>: ' +
+        'create it in the projects list, and consolidate the two on the <b>Portfolio Overview</b> under ' +
+        '<b>Group by → Parent project</b>.</p></div>' + orphanHTML();
       wire(h); return;
     }
     var rows = PKG.map(function (k) {

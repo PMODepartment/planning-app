@@ -9142,3 +9142,30 @@ under test cannot catch state that is never constructed.
 
 **Cache:** `MODULE_V` → `20260827a` (dashboard.html, modules.html, modules-grid.js fallback); contracts
 `module.css` / `wizard.js` / `module.js` → `?v=20260827a`.
+
+### 2026-08-27 (2) — A package was never required, and four screens said it was
+
+Owner on the live build: *"OPW101 is a one work construction contract without any packages. But this
+requires me to connect it to a package. Double check migration running as well if there are pending that
+needs to be run."*
+
+**It was a hard block, not a nudge** — `contracts-claims/module.js`'s edit form refused to save a Contract
+without a package code and name, so a single-lot job could only be saved by inventing a package, and the
+only code to hand was the project's own. See `modules/contracts-claims/CLAUDE.md` for the full fix.
+
+⚠️ **`package_id` is nullable everywhere with no back-fill** (`2026-08-25-package-adoption.sql`), so the
+claim that *"nothing downstream can file against them"* was false. Everything files against the
+**project**; a package only narrows.
+
+**New: `migrations/VERIFY-schema.sql`** — answers the migrations half of the question without needing
+anyone to remember what was run. Generated from all **101** `2026-07-*` / `2026-08-*` migration files
+(**274** declared tables, columns and functions); paste it into the Supabase SQL editor and it returns one
+row per migration with missing objects, naming each. **No rows = everything applied.**
+- ⚠️ **Object existence only** — not RLS policies, grants, index definitions, trigger bodies or
+  back-fills. A file can look complete and still have had its policy block skipped, so a clean result
+  means *the schema is there*, not *every migration ran end to end*.
+- ⚠️ A column is checked only when its table exists, so a missing table is reported once rather than
+  dragging all of its columns in behind it.
+
+**Cache:** `MODULE_V` → `20260827b`; contracts `module.css` / `boq.js` / `packages.js` / `wizard.js` /
+`module.js` → `?v=20260827b`.

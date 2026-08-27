@@ -918,12 +918,15 @@ window.BOQ = (function () {
     /* ⚠️ NO PACKAGES → NO GUESSING. The honest move is to say where they come
        from, not to offer to invent one from the workbook. */
     if (!PKGS.length) {
-      var m0 = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">No contract packages yet</h2>' +
+      /* ⚠️ Reframed 2026-08-27. This modal used to headline "No contract packages yet"
+         and hold up the Avesta pair as the model — but Avesta is TWO PROJECTS, and a BOQ
+         needs no package at all: `boq_items.package_id` is nullable and unfilled by
+         design. Assigning is a way to NARROW a BOQ, never a precondition for having one. */
+      var m0 = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">This project has no packages</h2>' +
         '<button class="pd-modal-close" id="ap-x0">&times;</button></div>' +
-        '<div class="boq-imp"><p class="cc-hint">A contract package is a <strong>scope division of this project</strong> ' +
-        '— "Package 1 — Tower 1 and General Requirements", "Package 2 — Towers 2-7". It comes off the contract ' +
-        'documents, so it is created once on the <strong>Dashboard</strong> and then used by the schedule, the claims ' +
-        'register and this BOQ alike.</p>' +
+        '<div class="boq-imp"><p class="cc-hint">Nothing is wrong: assigning a package <strong>narrows</strong> a BOQ ' +
+        'to one lot, it is never required. This BOQ already belongs to the project, and the billing reads it either ' +
+        'way. Most projects are a single lot and need no package.</p>' +
         '<p class="cc-hint">⚠️ This tool will not create one from a sheet name. The workbook\'s sheets are the ' +
         'client\'s billing breakdown <em>within</em> a package (by trade here, by something else elsewhere) — they are ' +
         'not the packages themselves, and a lot minted from a tab name would later be cited in a claim nobody agreed ' +
@@ -951,8 +954,8 @@ window.BOQ = (function () {
     function paint() {
       var chosen = sheets.filter(function (x) { return x.pick; });
       body.innerHTML =
-        '<p class="cc-hint">A contract package is a <strong>scope division of the project</strong> (Package 1 — Tower 1 ' +
-        'and General Requirements; Package 2 — Towers 2-7). This BOQ belongs to one of them; its sheets are the ' +
+        '<p class="cc-hint">A package is a <strong>division below this project</strong> — a lot inside one contract ' +
+        'with no project code of its own. This BOQ belongs to one of them; its sheets are the ' +
         'breakdown the <strong>client</strong> dictated for that package\'s progress billing. ' +
         '<strong>Nothing is written until you press Apply, and no package is ever created here</strong> — they come off ' +
         'the contract documents, on the Dashboard.</p>' +

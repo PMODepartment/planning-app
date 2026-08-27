@@ -523,8 +523,20 @@ window.ContractsClaims = (function () {
             saying so could later be cited in a claim nobody agreed to. Creating one here
             is an explicit choice in a picker, with its code and name confirmed — which
             is precisely the authoritative act, a planner entering the contract. */
+      /* ⚠️ "NONE" IS THE DEFAULT, AND IT IS SAVEABLE. Owner, 2026-08-27, on OPW101:
+            *"OPW101 is a one work construction contract without any packages. But this
+            requires me to connect it to a package."*
+         He could not save. This select's only non-linking option was "— Create from this
+         contract —", and the save handler then REFUSED without a package code and name
+         (see below). So a single-lot contract — the ordinary case — had no way through
+         the form except to invent a package, and the only code to hand was the project's
+         own. That is the AVR101 › {AVR101, AVR102} shape, manufactured by a validator.
+         ⚠️ `package_id` is nullable on contracts_claims, boq_items, project_schedule and
+            wbs_nodes with no back-fill (2026-08-25-package-adoption.sql). Nothing ever
+            required this. */
       '<label data-only="Contract">Contract package<select id="cc-f-pkgnew">' +
-        '<option value="">— Create from this contract —</option>' +
+        '<option value=""' + (e.package_id ? '' : ' selected') + '>— None: this project is the contract lot —</option>' +
+        '<option value="__new">— Define a package from this contract —</option>' +
         PKGS.map(function (p2) {
           return '<option value="' + esc(p2.id) + '"' + (String(e.package_id) === String(p2.id) ? ' selected' : '') + '>' +
             'Link to ' + esc((p2.code ? p2.code + ' — ' : '') + (p2.name || '')) + '</option>'; }).join('') +
@@ -532,13 +544,17 @@ window.ContractsClaims = (function () {
       '<div class="cc-wide" data-only="Contract" id="cc-pkgnew-wrap">' +
         '<div class="cc-form" style="padding:0;">' +
         f('Package code', 'cc-f-pkgcode', '', 'text', 'placeholder="e.g. PKG-1"') +
-        f('Package name', 'cc-f-pkgname', '', 'text', 'placeholder="e.g. Tower 1 and General Requirements"') +
+        f('Package name', 'cc-f-pkgname', '', 'text', 'placeholder="e.g. Enabling works"') +
         f('Package start', 'cc-f-pkgstart', '', 'date') +
         f('Package finish', 'cc-f-pkgend', '', 'date') +
         '</div>' +
-        '<p class="cc-hint">This contract creates the package the schedule, BOQ, procurement and engineering ' +
-        'all file against. The <b>contract amount</b> above becomes its contract value. ' +
-        '⚠️ Seeded once, on save — afterwards the package is edited on the <b>Dashboard</b>, so the two ' +
+        '<div id="cc-pkgwarn"></div>' +
+        '<p class="cc-hint">⚠️ Only for a division <b>below</b> this project — a lot inside <i>this</i> contract ' +
+        'with no project code of its own. A division that already has its own code is a <b>separate project</b>: ' +
+        'create it in the projects list and consolidate the two on the Portfolio Overview ' +
+        '(<b>Group by → Parent project</b>).</p>' +
+        '<p class="cc-hint">The <b>contract amount</b> above becomes its contract value. ' +
+        'Seeded once, on save — afterwards the package is edited on the <b>Contract tab</b>, so the two ' +
         'cannot silently drift apart.</p>' +
       '</div>' +
       /* Claims / COs / EOTs keep the original direction: raised AGAINST a package that
@@ -621,18 +637,37 @@ window.ContractsClaims = (function () {
     function applyPkgMode() {
       var sel = el('cc-f-pkgnew'), wrap = m.el.querySelector('#cc-pkgnew-wrap');
       if (!sel || !wrap) return;
-      var creating = !sel.value;
+      var creating = sel.value === '__new';     // '' now means "none", not "create"
       wrap.style.display = (el('cc-f-rtype').value === 'Contract' && creating) ? '' : 'none';
       // Seed the code and name from what the planner has already typed, without ever
       // overwriting something they edited themselves.
       if (creating) {
         var code = el('cc-f-pkgcode'), name = el('cc-f-pkgname');
-        if (code && !code.value && !code.dataset.touched) code.value = (el('cc-f-ref').value || '').trim();
+        var ref = (el('cc-f-ref').value || '').trim();
+        /* ⚠️ NEVER seed a code that names a project — same rule as the wizard. A contract
+           on OPW101 is very often referenced "OPW101", and seeding that is the form itself
+           proposing the structure the save below refuses. */
+        if (code && !code.value && !code.dataset.touched && !pkgConflict(ref)) code.value = ref;
         if (name && !name.value && !name.dataset.touched) name.value = (el('cc-f-desc').value || '').trim().slice(0, 80);
       }
+      paintPkgWarn();
+    }
+    function pkgConflict(code) {
+      return (window.CCWizard && CCWizard.codeConflict)
+        ? CCWizard.codeConflict(code, pid, ALL_PROJECTS) : null;
+    }
+    function paintPkgWarn() {
+      var box = m.el.querySelector('#cc-pkgwarn'); if (!box) return;
+      var sel = el('cc-f-pkgnew');
+      var c = (sel && sel.value === '__new') ? pkgConflict((el('cc-f-pkgcode') || {}).value) : null;
+      box.innerHTML = c ? '<p class="cc-hint ccw-stop">⛔ <b>' + esc(c.code) + '</b> ' + (c.self
+        ? 'is this project\'s own code — a project cannot be a package of itself. Choose <b>None</b> instead.'
+        : 'already exists as a <b>separate project</b>' + (c.proj && c.proj.name ? ' (' + esc(c.proj.name) + ')' : '') +
+          '. Consolidate the two on the Portfolio Overview (<b>Group by → Parent project</b>) rather than ' +
+          'nesting one inside the other.') + '</p>' : '';
     }
     ['cc-f-pkgcode', 'cc-f-pkgname'].forEach(function (id) {
-      var x = el(id); if (x) x.addEventListener('input', function () { x.dataset.touched = '1'; });
+      var x = el(id); if (x) x.addEventListener('input', function () { x.dataset.touched = '1'; paintPkgWarn(); });
     });
     (function () { var s2 = el('cc-f-pkgnew'); if (s2) s2.addEventListener('change', applyPkgMode); })();
     ['cc-f-ref', 'cc-f-desc'].forEach(function (id) {
@@ -657,10 +692,21 @@ window.ContractsClaims = (function () {
       var pkgId = (function (el2) { return el2 && el2.value ? el2.value : null; })(el('cc-f-pkgid'));
       if (t === 'Contract') {
         var pkgSel = el('cc-f-pkgnew');
-        pkgId = pkgSel && pkgSel.value ? pkgSel.value : null;
-        if (pkgSel && !pkgSel.value) {
+        var pmode = pkgSel ? pkgSel.value : '';
+        // '' = none (and it SAVES — that is the fix), '__new' = create, anything else = link.
+        pkgId = (pmode && pmode !== '__new') ? pmode : null;
+        if (pmode === '__new') {
           var pcode = v('cc-f-pkgcode'), pname = v('cc-f-pkgname');
-          if (!pcode || !pname) { UI.toast('Give the package a code and a name — they come off the contract.', 'error'); return; }
+          if (!pcode || !pname) { UI.toast('Give the package a code and a name, or set the package to "None".', 'error'); return; }
+          // Same refusal as the wizard, from the same function — see wizard.js rawConflict.
+          var clash = pkgConflict(pcode);
+          if (clash) {
+            UI.toast(clash.self
+              ? '"' + pcode + '" is this project\'s own code — a project cannot be a package of itself. Set the package to "None".'
+              : '"' + pcode + '" is a separate project in this app, not a package of ' + (pid || 'this project') +
+                '. Consolidate them on the Portfolio Overview (Group by → Parent project) instead.', 'error');
+            return;
+          }
           try {
             var made = await PDb.createPackage({
               project_id: pid, code: pcode, name: pname,

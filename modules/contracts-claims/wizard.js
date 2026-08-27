@@ -56,12 +56,16 @@ window.CCWizard = (function () {
   // ---- steps -----------------------------------------------------------------
   function stepType() {
     var opts = [
-      ['Contract',      'A construction contract. It DEFINES a contract package, and can carry its BOQ.'],
-      ['Change Order',  'A variation raised against a package that already exists.'],
-      ['Claim',         'A commercial claim raised against a package.'],
+      /* ⚠️ THE DESCRIPTIONS ARE THE GUARDRAIL, not decoration. "It DEFINES a contract
+         package" told every planner that recording a contract means creating a package,
+         and the only code they had to hand was the project's own — which is how
+         AVR101 › {AVR101, AVR102} was built. A contract usually defines nothing. */
+      ['Contract',      'A construction contract. Most need no package — the project already is the lot.'],
+      ['Change Order',  'A variation raised against this project, or against one of its packages.'],
+      ['Claim',         'A commercial claim raised against this project, or one of its packages.'],
       ['EOT',           'Extension of Time — measured in days, not pesos.'],
-      ['Package',       'A contract lot on its own — when the package is known before its contract is.'],
-      ['BOQ',           'Load a bill of quantities against a package, without creating a record.']
+      ['Package',       'Rarely needed. A division BELOW this project — a lot inside one contract with no project code of its own.'],
+      ['BOQ',           'Load a bill of quantities, optionally narrowed to a package.']
     ];
     return '<div class="ccw-cards">' + opts.map(function (o) {
       return '<button class="ccw-card' + (st.type === o[0] ? ' on' : '') + '" data-type="' + esc(o[0]) + '">' +
@@ -140,16 +144,20 @@ window.CCWizard = (function () {
      A package is for a division BELOW a project: a lot inside one contract that has no
      project code of its own. If the code you are about to type already names a project,
      it is not that. */
+  /* PURE, and exported — the compact edit form (module.js `openForm`) can create a
+     package too, and it must refuse exactly what the wizard refuses. Two copies of this
+     rule would drift, and the half that drifted would be the one nobody was looking at. */
+  function rawConflict(code, projectId, projects) {
+    var c = String(code || '').trim().toLowerCase();
+    if (!c) return null;
+    if (c === String(projectId || '').trim().toLowerCase()) return { code: code, self: true };
+    var hit = (projects || []).filter(function (p) { return String(p.id || '').trim().toLowerCase() === c; })[0];
+    return hit ? { code: code, self: false, proj: hit } : null;
+  }
   function projectCodes() {
     try { return (D.projects && D.projects()) || []; } catch (e) { return []; }
   }
-  function codeConflict(code) {
-    var c = String(code || '').trim().toLowerCase();
-    if (!c) return null;
-    if (c === String(D.pid() || '').trim().toLowerCase()) return { code: code, self: true };
-    var hit = projectCodes().filter(function (p) { return String(p.id || '').trim().toLowerCase() === c; })[0];
-    return hit ? { code: code, self: false, proj: hit } : null;
-  }
+  function codeConflict(code) { return rawConflict(code, D.pid(), projectCodes()); }
   function pkgProjectClash() {
     var list = pkgToCreate();
     for (var i = 0; i < list.length; i++) { var c = codeConflict(list[i].code); if (c) return c; }
@@ -623,5 +631,5 @@ window.CCWizard = (function () {
     });
     paint();
   }
-  return { open: open };
+  return { open: open, codeConflict: rawConflict };
 })();
