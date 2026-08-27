@@ -31,10 +31,42 @@ window.CCWizard = (function () {
   /* The steps, per type. A step declares whether it applies, so the rail and the
      Back/Next arithmetic never diverge from what is actually shown — the classic
      wizard bug where "step 3 of 5" skips to 5 and the count lies. */
+  /* A CONTRACT AND A PACKAGE ARE THE SAME THING UNTIL A PROJECT IS SUBDIVIDED, and this
+     table is where the wizard finally admits it. Owner, 2026-08-27: *"a contract in itself
+     is a package, in this case it's just 1 package for the whole project… contract and
+     package are case to case the same definition and different."*
+
+     The settled model, stated once so every step below can lean on it:
+       · a PROJECT (OPW101, AVR101) already IS one contract lot — that is what its code
+         names, and it is the whole story for most jobs;
+       · a CONTRACT record is the commercial document for that lot;
+       · a PACKAGE is an OPTIONAL subdivision BELOW the project, for the rare contract
+         that is genuinely let in separately administered lots.
+     So "1 project = 1 contract = 1 implicit package" is the normal case, and the word
+     "package" should not appear at all until a second one actually exists.
+
+     ⚠️ A STEP WITH NOTHING TO CHOOSE IS NOT A STEP. Raising a Change Order, Claim or EOT
+        on a project with no packages used to open a full step whose entire content was a
+        ⚠️ notice headlined "This project has no contract packages yet", telling the
+        planner to go and record a Contract because "it defines the package". Nothing on
+        that screen was actionable, the warning triangle implied a defect where there was
+        none, and it is exactly the "some wizards require the package to be defined" the
+        owner reported. It is now SKIPPED — the rail, the step count and the Back/Next
+        arithmetic all follow, because `when()` is the single source for all three. */
+  function hasPkgs() { try { return (D.packages() || []).length > 0; } catch (e) { return false; } }
+  function raisedAgainst() { return st.type === 'Change Order' || st.type === 'Claim' || st.type === 'EOT'; }
   var STEPS = [
     { key: 'type',    label: 'Record',   sub: 'What are you recording?', when: function () { return true; } },
-    { key: 'package', label: 'Package',  sub: 'Define or link the contract lot',
-      when: function () { return true; } },
+    { key: 'package',
+      label: function () { return raisedAgainst() || st.type === 'BOQ' ? 'Scope' : 'Package'; },
+      sub: function () {
+        return raisedAgainst() ? 'Optional — narrow this to one package'
+             : st.type === 'BOQ' ? 'Which package this BOQ is loaded against'
+             : 'Define or link the contract lot';
+      },
+      /* Contract and Package always ask — that is where "none / define / link" is chosen.
+         Everything else only narrows, so it asks only when there is something to narrow to. */
+      when: function () { return st.type === 'Contract' || st.type === 'Package' || hasPkgs(); } },
     /* ⚠️ A PACKAGE HAS NO DETAILS OR DATES STEP. It has no reference number, no
        counterparty and no claim pipeline — those belong to the CONTRACT that defines it.
        Offering them would invite a package that quietly carries half a contract. */
@@ -47,6 +79,9 @@ window.CCWizard = (function () {
     { key: 'review',  label: 'Review',   sub: 'Check, then save', when: function () { return true; } }
   ];
   function liveSteps() { return STEPS.filter(function (s) { return s.when(); }); }
+  // label/sub may be a string or a function of the current type — resolved in one place so
+  // the rail, the heading and the sub-heading can never disagree about what a step is called.
+  function txt(v) { return typeof v === 'function' ? v() : v; }
   function stepIndex() {
     var ls = liveSteps();
     for (var i = 0; i < ls.length; i++) if (ls[i].key === st.step) return i;
@@ -258,15 +293,21 @@ window.CCWizard = (function () {
           '<b>every</b> package this run created is rolled back.</p>' +
         '</div>';
     }
+    /* ⚠️ Unreachable in the ordinary way — `when()` skips this whole step for a Change
+       Order / Claim / EOT / BOQ when the project has no packages. Kept as a correct
+       fallback for the one path that can still land here: jumping back via the rail after
+       the only package was deleted in another tab. It states the normal case rather than
+       the old ⚠️ "no contract packages yet", which read as a defect. */
     if (!pk.length) {
-      return '<p class="ccw-hint">⚠️ This project has <b>no contract packages yet</b>. They come off the contract ' +
-        'documents — record the <b>Contract</b> first (it defines the package), or add one on the Dashboard. ' +
-        'You can continue without one: the record is simply not narrowed to a lot.</p>';
+      return '<p class="ccw-hint">This project has <b>no packages</b>, so this is raised against the ' +
+        '<b>whole project</b> — which is the normal shape for a single-lot job. Press <b>Next</b>; ' +
+        'nothing is missing.</p>';
     }
-    return '<p class="ccw-hint">Which contract lot is this raised against? Optional — a package narrows a record, ' +
-      'it is never required.</p>' +
-      '<label>Raised against package<select id="ccw-pkg">' +
-        '<option value="">— none —</option>' +
+    return '<p class="ccw-hint">This is raised against the <b>whole project</b> unless you narrow it. ' +
+      'Optional: a package narrows a record, it is never required, and leaving it as the whole project ' +
+      'is a complete answer.</p>' +
+      '<label>Raised against<select id="ccw-pkg">' +
+        '<option value="">— the whole project (' + esc(String(D.pid() || '')) + ') —</option>' +
         pk.map(function (p) { return '<option value="' + esc(p.id) + '"' + (st.pkgId === p.id ? ' selected' : '') + '>' + esc((p.code ? p.code + ' — ' : '') + p.name) + '</option>'; }).join('') +
       '</select></label>';
   }
@@ -342,9 +383,13 @@ window.CCWizard = (function () {
             return esc(p.code + (p.name ? ' — ' + p.name : '')) +
               (st.type !== 'Package' && p === primaryPkg() ? ' <span class="ccw-new">★ linked to this contract</span>' : '');
           }).join('<br>') + ' <span class="ccw-new">' + mk.length + ' will be created</span>'
-        : (st.type === 'Contract' && !linkedPkgId()
-            ? '<span class="ccw-mut">none — this project is the contract lot</span>'
-            : esc(st.pkgLabel()))) +
+        /* ⚠️ "No package" is an ANSWER here, never an empty cell. A blank against
+           "Raised against" reads as something the planner forgot; "the whole project"
+           reads as what they actually chose, and it is the usual choice. */
+        : (linkedPkgId() ? esc(st.pkgLabel())
+            : (st.type === 'Contract'
+                ? '<span class="ccw-mut">none — this project is the contract lot</span>'
+                : '<span class="ccw-mut">the whole project (' + esc(String(D.pid() || '')) + ')</span>'))) +
       (st.type === 'BOQ' || st.type === 'Package' ? '' :
         row('Reference no.', esc(st.ref)) +
         row('Description', esc(st.desc)) +
@@ -375,10 +420,10 @@ window.CCWizard = (function () {
     ov.querySelector('#ccw-rail').innerHTML = ls.map(function (s, n) {
       return '<button class="ccw-rail-i' + (n === i ? ' on' : (n < i ? ' done' : '')) + '" data-goto="' + esc(s.key) + '"' +
         (n > i ? ' disabled' : '') + '><span class="ccw-rail-n">' + (n + 1) + '</span>' +
-        '<span class="ccw-rail-l">' + esc(s.label) + '</span></button>';
+        '<span class="ccw-rail-l">' + esc(txt(s.label)) + '</span></button>';
     }).join('');
-    ov.querySelector('#ccw-h').textContent = (i + 1) + ' · ' + cur.label;
-    ov.querySelector('#ccw-sub').textContent = cur.sub;
+    ov.querySelector('#ccw-h').textContent = (i + 1) + ' · ' + txt(cur.label);
+    ov.querySelector('#ccw-sub').textContent = txt(cur.sub);
     ov.querySelector('#ccw-body').innerHTML = RENDER[cur.key]();
     ov.querySelector('#ccw-back').disabled = i === 0;
     var last = i === ls.length - 1;

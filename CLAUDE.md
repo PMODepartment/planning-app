@@ -9203,3 +9203,15 @@ after adding a migration so it never lags the repo. Coverage widened from the 20
 113** dated migrations (**293** live objects after supersession).
 
 **Cache:** `MODULE_V` → `20260827c`; contracts `module.js` → `?v=20260827c`.
+
+### 2026-08-27 (4) — Wizard audit: the package step is skipped when there is nothing to choose
+
+Owner asked for an audit of the contract/CO/EOT wizard, on the grounds that *"a contract in itself is a
+package… contract and package are case to case the same definition and different."*
+
+Audited both entry points for all four record types. `openForm` was clean for CO/Claim/EOT. **The wizard
+showed a full step with nothing on it but a ⚠️ telling the planner to go create a package** — now skipped
+when the project has none, renamed **"Scope"** for records that only narrow, with *"the whole project
+(OPW101)"* as the explicit default. Full detail in `modules/contracts-claims/CLAUDE.md`.
+
+**Cache:** `MODULE_V` → `20260827d`; contracts `wizard.js` / `module.js` → `?v=20260827d`.

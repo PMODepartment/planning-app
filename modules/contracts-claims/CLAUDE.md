@@ -830,3 +830,54 @@ with packages still warns, without the false downstream claim; the shared guard 
 sibling-code case-insensitively and passes genuine sub-lots, blanks and an absent project list.
 
 ⚠️ **Not clicked through signed in.** `node --check` clean on all four module scripts.
+
+### 2026-08-27 (3) — Audit: a contract IS a package until a project is subdivided
+
+Owner: *"Please audit the contract/CO/EOT wizard — some wizards require the package to be defined,
+wherein a contract in itself is a package; in this case it's just 1 package for the whole project. I see
+that contract and package are case to case the same definition and different."*
+
+**Audited all four record types across both entry points (wizard + `openForm`). One was broken.**
+
+| Path | Verdict |
+|---|---|
+| `openForm`, CO / Claim / EOT | ✅ Clean — defaults to "— none —", disables the select when the project has no packages, never blocks |
+| `openForm`, Contract | ✅ Fixed earlier today (None / Define / Link, None default and saveable) |
+| Wizard, Contract / Package | ✅ Fixed earlier today |
+| **Wizard, CO / Claim / EOT / BOQ** | ❌ **A whole step with nothing to do** |
+
+⚠️ **THE FINDING.** The package step was `when: always`. Raising a Change Order, Claim or EOT on a
+project with no packages opened a full step — numbered in the rail, counted in "step 2 of 5" — whose
+entire content was a **⚠️ notice** headlined *"This project has no contract packages yet"*, telling the
+planner to record a Contract first because *"it defines the package"*. Nothing on it was actionable, the
+warning triangle asserted a defect where there was none, and the instruction repeated the claim already
+disproved this morning. **That is the "some wizards require the package to be defined" being reported.**
+
+- **The step is now SKIPPED when there is nothing to choose** — `when()` is true for Contract and Package
+  (where *none / define / link* is chosen) and otherwise only when the project actually has packages.
+  ⚠️ The rail, the step numbering and the Back/Next arithmetic all follow automatically, because
+  `when()` is the single source for all three — the original design decision that made this a one-line
+  fix instead of a three-place one.
+- **The step is named for what it does.** "Package · Define or link the contract lot" for a Contract;
+  **"Scope · Optional — narrow this to one package"** for a CO/Claim/EOT. `label`/`sub` may now be
+  functions, resolved through one `txt()` helper so the rail and the two headings cannot disagree.
+- **The empty option is an answer, not a blank:** *"— the whole project (OPW101) —"*, and the Review row
+  reads *"the whole project (OPW101)"* rather than an em-dash. ⚠️ A blank against "Raised against" reads
+  as something forgotten; this reads as what was chosen, and it is the usual choice.
+- **The `!pk.length` branch is kept as a fallback** (reachable by jumping back via the rail after the last
+  package is deleted in another tab) and now states the normal case instead of warning.
+- ⚠️ **A `packages()` call that throws degrades to "no packages" and skips the step** — before the
+  packages table exists, the wizard still works rather than dying on step 2.
+
+**The model, now stated once in the STEPS table so every step can lean on it:** a PROJECT code already
+names one contract lot; a CONTRACT record is the commercial document for it; a PACKAGE is an *optional
+subdivision below* the project. **1 project = 1 contract = 1 implicit package is the normal case**, and
+the word "package" should not appear until a second one exists.
+
+**Verified 31/31 in Node against the shipped `STEPS` table** (extracted from the file, not re-typed):
+CO/Claim/EOT/BOQ drop to 4/4/4/3 steps with no packages and regain the step when one exists; Contract and
+Package always keep it; every live step of every type resolves a non-empty label and sub; every sequence
+starts at Record and ends at Review; a throwing package list skips rather than crashes.
+Suite total today: **94** (31 steps + 28 wizard/guard + 23 portfolio + 12 orphan rendering).
+
+⚠️ **Not clicked through signed in.**
