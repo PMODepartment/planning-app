@@ -1,16 +1,16 @@
 ﻿// ============================================================================
-// Planners Dashboard â€” shared module launcher grid (ModulesGrid)
+// Planners Dashboard — shared module launcher grid (ModulesGrid)
 // ----------------------------------------------------------------------------
 // The launcher is rendered by TWO pages now (modules.html, and the Dashboard's
 // tile grid links through the same MODULE_V), so the card markup and the
 // cache-busting version live here once instead of being copy-pasted.
-// âš ï¸ MODULE_V used to sit inside dashboard.html. It moved here when the module
-// launcher moved out of dashboard.html (A4) â€” bump it HERE from now on.
+// ⚠️ MODULE_V used to sit inside dashboard.html. It moved here when the module
+// launcher moved out of dashboard.html (A4) — bump it HERE from now on.
 // ============================================================================
 
 (function () {
-  // âš ï¸ Cache-busting for the MODULE PAGES themselves. Every shared asset carries a ?v=, but each
-  // module's own index.html did not â€” so a returning user kept serving the cached page and none of
+  // ⚠️ Cache-busting for the MODULE PAGES themselves. Every shared asset carries a ?v=, but each
+  // module's own index.html did not — so a returning user kept serving the cached page and none of
   // that module's fixes reached them until a hard refresh. That has been mis-diagnosed as a code
   // bug more than once (a "broken import" that was simply an old parser still executing).
   // Bump MODULE_V on any deploy that changes a module's index.html. It is defined here, not in
@@ -33,7 +33,7 @@
       var m = s && s.match(/[?&]v=([^&]+)/);
       if (m) return decodeURIComponent(m[1]);
     } catch (e) {}
-    return '20260827a';
+    return '20260827h';
   })();
 
   function href(m) {
@@ -57,7 +57,7 @@
         '<div class="pd-module-sub"><span class="pd-badge-soon">Moved to ' + Fmt.esc(m.retiredTo) + '</span> ' +
         Icons.svg('externalLink', 12) + '</div></div></a>';
     }
-    // âš ï¸ "Disabled" covers two OPPOSITE situations and they must not read the same.
+    // ⚠️ "Disabled" covers two OPPOSITE situations and they must not read the same.
     // A module that has not been built yet is "In development"; one that has MOVED
     // to another app is retired, and labelling it "In development" would send a
     // user waiting for something that already exists elsewhere.
@@ -65,7 +65,7 @@
       ? '<span class="pd-badge-soon">Moved to ' + Fmt.esc(m.retiredTo) + '</span>'
       : '<span class="pd-badge-soon">In development</span>';
     return '<div class="pd-module-card disabled" title="' +
-      Fmt.esc(m.retiredTo ? m.name + ' is maintained in ' + m.retiredTo + ' â€” this copy is read-only history.'
+      Fmt.esc(m.retiredTo ? m.name + ' is maintained in ' + m.retiredTo + ' — this copy is read-only history.'
                           : m.name + ' is not built yet.') + '">' +
       '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
       '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +

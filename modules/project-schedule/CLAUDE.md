@@ -8816,3 +8816,220 @@ skeleton, and an empty package clearing nothing without erroring. Inline script 
 
 ⚠️ **The migration has NOT been run, and nothing was clicked through in a browser.** Until the migration
 runs, the builder keeps its single-setup behaviour and says so on save.
+
+### 2026-08-26 — File an EXISTING schedule under a contract package
+Owner: *"Now build the bulk action to file existing schedules under a package."*
+
+Push, import and clear all take a package, but that only helps work built *after* packages existed.
+One Portwood's **2,665 activities** were planned before them, belong to no lot, appear in no package
+total, and still show phases rather than contracts at the top of the grid. **Actions → File under a
+package…** is the one-time action that fixes that, and what makes the two top-level rows real.
+
+One apply does four things: ensure the package's WBS root → stamp `package_id` on the chosen
+activities → stamp it on the branches holding them → re-parent the chosen **top-level** branches under
+that root.
+
+- Two scopes: **everything not yet in a package** (the common case) or **one WBS branch and everything
+  under it**. Both preview measured counts — activities, branches, and how many top-level branches
+  would move — before anything is written.
+- ⚠️ **Work already in ANOTHER package is never touched, in any scope.** Stealing Package 1's
+  activities into Package 2 would be silent and unrecoverable: the previous owner is recorded nowhere
+  to restore from. Filing into the package that already owns the work is a no-op, not a double move.
+- ⚠️ **Only TOP-LEVEL branches move.** Deeper ones are re-tagged where they are — a deep re-parent
+  would rewrite a hand-built WBS, and it is the one part of this a planner could not undo by eye.
+  Moving a top level back is one drag in the WBS Manager.
+- ⚠️ **Branches are tagged as well as activities**, so a NEW activity added under one of them inherits
+  the package through `packageOf()` without anyone remembering to set it.
+- ⚠️ **The locked skeleton DOES move** when it is in scope — the mockup puts Planning Phase and
+  Execution Phase *under* the package. **Verified safe against the duplicate-skeleton bug**:
+  `ensureWbsSkeleton()` only seeds a project with **no nodes at all**, and `_wbsBackfillSkeleton()`
+  fails closed — its `seeded` guard looks for a locked skeleton node at TOP level, finds none once
+  they have moved, and returns without inserting.
+- ⚠️ **A partial apply still reloads.** Hiding a half-done write behind stale state is how someone
+  re-runs it and double-moves a branch.
+- ⚠️ Nothing is deleted; no dates, durations or progress are touched.
+
+**Refactor in passing:** `ensurePackageRoot` was lifted out of the Schedule Builder closure to module
+scope — three callers need it now (builder push, import nesting, this action) — and
+`_importUnderPackageRoot` lost its duplicated copy of the root-resolution dance (**−871 chars**).
+
+**Verified 13/13** executing the shipped `_pkgFileCandidates` in node against One Portwood's shape (a
+locked skeleton at top level, everything unassigned, plus a Builder-made Package 2 root with its own
+subtree): the unassigned scope takes exactly the two unassigned activities; an activity already in
+Package 2 **and one that inherits it** are both left alone; WBS summary rows are not filed as
+activities; package roots are never candidates; exactly the two top-level skeleton branches move;
+branch scope takes only that subtree; and re-filing into the owning package adds nothing.
+`MODULE_V` → `20260826j`.
+
+⚠️ **Not clicked through in a browser** — no signed-in run against real data.
+
+### 2026-08-26 — The push dialog names its package, and each package gets its own phase branch
+Owner, from the push dialog: *"Where will the push to project schedule at which package show? See the
+dropdown is clashing."*
+
+Two problems, and the second was a real bug in what shipped this morning.
+
+**1. The package was invisible — and was never actually applied.**
+⚠️ `pushToSchedule` resolved the package root only `if (!baseNodeId && curPkgId)`, but `parentCode` is
+**always** `execPhaseCode()` (the WBS picker was removed 2026-08-18), so `baseNodeId` was **always** the
+shared project-level Execution Phase and the package root was found and then silently ignored. A
+Builder push could never have produced a top-level package row — the thing packages exist for.
+- New `ensurePackageBranch(pkgId, name)` creates/adopts **"PKG-2 — Towers 2-7 › Execution Phase"**, and
+  the package now **wins over** the project-level phase.
+- ⚠️ **Matched by name key UNDER THE ROOT, never globally**: every package has an "Execution Phase" of
+  its own, so a global lookup would collapse them all onto the first package's.
+- ⚠️ Falls back to the root itself if the branch insert fails — never lose the push over a nicety.
+- The dialog gains a **Contract package** select, defaulting to the open setup's package, plus
+  **— No package (project level) —**. It states the destination in full: *Filed under **PKG-1 — Tower 1
+  and General Requirements › Execution Phase***.
+- ⚠️ Shown even when there is only one choice. "Where did my 2,561 activities go" is the question this
+  dialog exists to answer, and a package applied invisibly from the open setup is exactly what could
+  not be seen.
+- Choosing a package **other than the setup's** is allowed and says so: it files the activities there
+  and does **not** change the setup. Choosing none warns that the work will appear in no package total
+  and points at **Actions → File under a package…**.
+- `pushToSchedule` takes a 7th arg, `pkgOverride`. ⚠️ `undefined` means "not asked" (use the setup's);
+  `null` means "deliberately no package" — they are not the same and the default must not collapse them.
+
+**2. The "Schedule to push" dropdown clipped its own text.**
+⚠️ Measured, not guessed: `.pd-select` is `padding:9px 11px; font-size:14px; border:1px`, and `* {
+box-sizing:border-box }` is global — so the inline `height:34px` left **34 − 18 − 2 = 14px** of content
+box for a line box of ~17px, clipping the descenders of "Internal (target)". The inline height is
+removed; padding sizes the control to its natural ~37px. No other fixed-height `.pd-select` exists in
+this module.
+
+**Verified 10/10** executing the shipped `ensurePackageRoot` + `ensurePackageBranch` in node against a
+stubbed PostgREST: the root is named from the contract and flagged, a second call **adopts** rather
+than duplicating, the phase branch is created under the root carrying the package, a re-push adopts it,
+`_wbsNameKey` matching survives case and spacing (`EXECUTION  phase`), and a second package gets its
+**own** root and its **own** Execution Phase — four nodes, no collapse onto the first.
+`MODULE_V` → `20260826m` (j..l were taken by a concurrent session; `l` was already live, so this needed a fresh one).
+
+⚠️ **Still not clicked through in a browser.**
+
+### 2026-08-26 — Schedule ↔ Contracts: change orders come from the register, not free text
+Owner: *"This should also connect to the project schedule via the tagging for contracts, packages,
+change orders, EOT."*
+
+Where the four axes stood: **package** connected that morning (`project_schedule.package_id` +
+`wbs_nodes.package_id`, roots and inheritance); **contract** covered by the package it defines;
+**change order** — `scope_type` existed but `change_order_ref` was **free text**; **EOT** — nothing.
+
+⚠️ **The change-order gap was worse than "not connected".** `change_order_ref` was typed into a
+`prompt()` whose only help was a comma-joined list of strings already used on that project. The
+commercial team records every variation next door in `contracts_claims`, in the **same database**, and
+the two lists could never see each other — so the schedule said `VO-14` while the register said
+`VO-014`, and no report could join them.
+
+- The schedule now reads Change Orders and EOTs from `contracts_claims` on project load
+  (`CONTRACT_RECS`). ⚠️ **Read-only**: the schedule cites a variation, it never creates one — that is
+  the Contracts module's job, and one app inventing another's commercial records is unrecoverable.
+- ⚠️ **Tolerant of every absence** — no table, no grant, no rows → empty list, and the CO field behaves
+  exactly as it always did. A project whose Contracts module was never set up must not lose its schedule.
+- `promptCoRef` is now a **picker** over the registered COs (reference + description + status), with
+  free text kept for a variation not yet recorded.
+- The details panel's **Change Order Ref** is a select over the same list.
+- ⚠️ **A stored ref always keeps its own option**, labelled **"⚠ not in the register"** and placed
+  directly under "none" so it is seen. Without it a `<select>` whose value is absent reports the FIRST
+  option and the next save silently re-files the activity under a different variation — the same rule
+  the package picker follows.
+- ⚠️ **Registered refs sort first** so the list leads with what the commercial team owns; refs used
+  only on the schedule follow, so nothing existing disappears.
+
+**Verified 20/20** executing the shipped `coRegistered` / `coIsRegistered` / `coLabel` / `coRefValues` /
+`coSelOpts` in node: EOTs are not offered as change orders, a blank reference is excluded, `VO-2` sorts
+before `VO-014` (numeric), whitespace matches, the legacy `VO-14` typo reports **not registered** and
+keeps its option in position 1, a registered value is never duplicated, and the union has no duplicates.
+
+⚠️ **EOT is still not connected** and needs the owner's call first: an approved EOT is *N days*, and
+whether that shifts a completion milestone, relaxes a constraint, or stays informational beside the
+schedule is a commercial decision.
+
+### 2026-08-26 — EOT connected to the schedule, and deliberately NOT spread onto activities
+Owner: *"EOT should be connected and it will impact the project schedule, but in terms of spreading the
+N days on to which activities I am not sure how to go through with this."*
+
+⚠️ **The uncertainty was the right instinct, because the premise hides a trap: an EOT is never spread
+onto activities at all.** It adds no work and changes no duration. It moves the **contractual completion
+date** — the date lateness, and therefore liquidated damages, are measured against. Activity dates come
+from the programme's own logic; an EOT is what makes a late finish *excusable*, not what causes it.
+
+Pushing N days across activities would be backwards twice: it would corrupt a programme that already
+says what it says, and it would hide the very thing the EOT exists to show — the gap between when the
+work will actually finish and when the contract now requires it.
+
+So **nothing here writes a date.** Three derived figures per package, reported in the Contract Package
+Monitor beside the programme's own:
+```
+  contract finish   the package's own end_date, off the contract
+  + granted days    Σ approved_days of EOTs with status 'Approved'
+  = revised finish  the date lateness is now measured against
+  exposure          forecast finish − revised finish   (positive = LD exposure)
+```
+- ⚠️ **Only `Approved` EOTs move the date.** A pending claim is exposure, not entitlement — reporting it
+  as granted would tell a PM they have time nobody has given them. Pending days show in brackets.
+- ⚠️ **A Change Order's `approved_days` is not EOT time** and is excluded, even though the column exists
+  on both.
+- ⚠️ **An untagged EOT counts ONCE, in the unassigned row** — never against every package. The first
+  cut of this credited it to all of them; the harness caught that the code and its own note disagreed,
+  and the note's rule was the safe one. Crediting one untagged claim to every lot would tell each PM
+  they have time they may not have, and count the same days several times in one report.
+- ⚠️ **Calendar days.** An EOT is granted in calendar days unless the contract says otherwise; the note
+  says to apply the project calendar if yours grants working days, rather than quietly assuming.
+- ⚠️ **Exposure is measured against the REVISED date**, so granted time is already credited — it reads
+  "+18d late" or "42d float", never raw slippage that ignores the extension.
+
+**Verified 12/12** executing the shipped `eotFor` / `revisedFinishOf` in node: 30d + 15d granted on
+PKG-1 with a Disapproved 99d ignored and a 500d Change Order excluded; 20d pending reported apart and
+never added; a project-wide EOT staying out of both packages; 2028-06-30 + 45d = **2028-08-14**; and a
+package with no contract finish on record returning null rather than a guessed date.
+
+⚠️ **Not clicked through in a browser.** The report is reachable at Reports → Contract Package Monitor.
+
+`MODULE_V` → `20260826s`.
+
+### 2026-08-27 — Reading more than one Procurement project from one schedule
+
+AVR101's schedule covers all 7 towers, but Towers 2-7 are bought under **AVR102**, a different project in
+the Procurement app. `_prcWpmProjectId()` resolved exactly one WPM project, so AVR102's work packages
+could never reach the activities that consume them.
+
+- **`_prcWpmScopes()`** = the project's own `cash_flow_settings.wpm_project_id` **plus** one per contract
+  package naming its own (`packages.wpm_project_id`, 2026-08-27-package-external-codes.sql).
+- **`_wpmScopeOf(r)`** = which WPM project ONE activity's work package is read from, resolved through
+  `packageOf()` so a WBS branch tagged once answers for its whole subtree.
+- ⚠️ **INERT UNTIL A PACKAGE IS MAPPED.** One scope in, one scope out — the tree, the ids and the
+  resolution are byte-identical to before on every existing project.
+- ⚠️ An **archived** lot still contributes a scope: the lot is retired, its procurement history is not.
+
+**⚠️ `wp_no` IS UNIQUE ONLY WITHIN A WPM PROJECT.** Both AVR101 and AVR102 have a "1". Consequences, each
+handled explicitly:
+- The index is **nested** `byScope[project][no]`, plus a `uniq` map of numbers appearing in exactly one
+  project. ⚠️ The first cut joined them into one string key with `\u0000` and **wrote a real NUL byte into
+  the file** — nesting needs no separator, so nothing can collide and the bug cannot come back.
+- `wpOf(r)`: the activity's own lot → the host → an unambiguous number → **null**. ⚠️ Null, not a guess:
+  showing another lot's vendor under an activity is worse than showing none.
+- **`activity_id` prefixes only a NON-HOST scope** (`AVR102-1`). Prefixing everything would re-key every
+  package on every existing project and the next sync would sweep and re-insert the lot.
+- The **picker is scoped to the activity's own lot** — two `<option>`s with `value="1"` are
+  indistinguishable to a `<select>`, and the label would otherwise resolve through the host.
+
+**The Procurement branch gains a LOT level** when the schedule spans several codes:
+`Procurement › Towers 2-7 › Structural › WP`, named from the package (its **scope**, which is what a
+planner reads), falling back to the bare code when no package claims that mapping so an unmapped scope
+stays visible. A single-code project keeps `Procurement › Trade › WP` exactly.
+- ⚠️ **The stale sweep now walks the WHOLE subtree.** Trade nodes are grandchildren under a lot, so the
+  old direct-children scan would have found nothing stale AND read every package as new — a second copy
+  of the entire branch on the first sync.
+- ⚠️ `nodeOf` is keyed **lot → trade**; one flat map collides the moment two lots both buy Structural
+  Works, which is the normal case.
+
+⚠️ **`wpIsUnlinked` was left reading the old flat index** and would have flagged **every** activity as
+unlinked. Now asks `wpOf()`, so the flag and the label cannot disagree.
+
+**Verified 22/22** executing the shipped `_prcWpmScopes` / `_wpmScopeOf` / `_wpIndex` / `wpOf` / `wpByNo`
+(sliced by brace-matching): the single-code path unchanged, an activity in each lot resolving to its own
+project's WP "1", the ambiguous case returning null, archived lots still contributing, and the cache
+invalidating on reassignment. **0 functions lost** against HEAD; 0 NUL bytes; inline script parses.
+⚠️ **Not clicked through signed in and no live sync has been run** — the first real Sync Procurement on a
+mapped project is the test.

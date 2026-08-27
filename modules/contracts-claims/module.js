@@ -77,6 +77,10 @@ window.ContractsClaims = (function () {
   /* A3's tail. Loaded tolerantly — `packages` arrives with
      2026-08-19-packages.sql, and until it is run the picker is simply absent. */
   var PKGS = [];
+  /* Every project id in the app — read once, used only to refuse a package that restates
+     a project (see wizard.js's `codeConflict`). Tolerant like PKGS: a failed read leaves
+     it empty and the guard simply finds fewer conflicts, never a false one. */
+  var ALL_PROJECTS = [];
 
   // ---- helpers -------------------------------------------------------------
   var MNAME = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -162,31 +166,81 @@ window.ContractsClaims = (function () {
   // ==========================================================================
   // RENDER
   // ==========================================================================
+  /* SUB-VIEWS — the screens that used to be top-level tabs.
+     ⚠️ FOLDED, NOT MERGED. The BOQ and PMI keep their own screens because neither is a
+        variant of a register row: the BOQ is revisions + 1,200 lines + billing periods,
+        and PMI is `pmi_records` with its own stage pipeline, attachments, per-client
+        instruction label and approval roles. Flattening either into the claims table
+        would cost that machinery for the sake of a shorter list. They simply stop
+        competing at the top level — BOQ opens from inside Contract, PMI from inside
+        Claims, each with a way back.
+     ⚠️ THE BACK BAR IS A SIBLING OF #cc-view, NOT INSIDE IT. Both sub-modules render by
+        replacing #cc-view's innerHTML, so a back link placed inside would be wiped the
+        moment the screen it belongs to finished loading — leaving no way out. */
+  var sub = null;              // null | 'boq' | 'pmi'
+  function subBar() { return document.getElementById('cc-subbar'); }
+  function clearSubBar() { var b = subBar(); if (b) b.remove(); }
+  function openSub(which) {
+    var mod = which === 'boq' ? window.BOQ : window.PMI;
+    if (!mod) { UI.toast(which.toUpperCase() + ' did not load.', 'error'); return; }
+    sub = which;
+    clearSubBar();
+    var host = document.getElementById('cc-view');
+    var bar = document.createElement('div');
+    bar.id = 'cc-subbar';
+    bar.className = 'boq-filters';
+    bar.innerHTML = '<button class="pd-btn" id="cc-subback">&larr; Back to ' +
+      esc(which === 'boq' ? 'Contract' : 'Claims / Change Order') + '</button>' +
+      '<span class="cc-mini">' + esc(which === 'boq' ? 'Bill of quantities' : 'Instructions register') + '</span>';
+    host.parentNode.insertBefore(bar, host);
+    bar.querySelector('#cc-subback').onclick = function () { sub = null; switchTab(view); };
+    document.getElementById('cc-filters').style.display = 'none';
+    document.getElementById('cc-topbar-tools').style.display = 'none';
+    mod.show(pid, projName());
+  }
+
+  function wirePmiEntry(host) {
+    var b = host && host.querySelector('#cc-open-pmi');
+    if (b) b.onclick = function () { openSub('pmi'); };
+  }
   function render() {
     var host = document.getElementById('cc-view');
     /* The BOQ tab is a different KIND of screen — the client's contract document
        and its billing, not a register of claims — so it owns its own toolbar,
        filters and sub-tabs (boq.js) and this module's filter bar / record tools
        are hidden rather than left showing controls that do nothing there. */
-    var own = view === 'boq' ? window.BOQ : view === 'pmi' ? window.PMI : null;
-    var isOwn = view === 'boq' || view === 'pmi';
-    document.getElementById('cc-filters').style.display = isOwn ? 'none' : '';
-    document.getElementById('cc-topbar-tools').style.display = isOwn ? 'none' : '';
-    if (isOwn) {
-      if (own) own.render();
-      else host.innerHTML = '<div class="pd-card cc-empty"><h3>' + esc(view.toUpperCase()) +
-        ' unavailable</h3><p>' + esc(view) + '.js did not load.</p></div>';
+    if (sub) { (sub === 'boq' ? window.BOQ : window.PMI).render(); return; }
+    clearSubBar();
+    document.getElementById('cc-filters').style.display = '';
+    document.getElementById('cc-topbar-tools').style.display = '';
+    /* The Contract tab is now keyed by PACKAGE — a contract defines a package, so one
+       list carries both, and a package with no contract (or a contract with no package)
+       is shown rather than dropped. packages.js owns that view. */
+    if (view === 'contract' && window.CCPackages) {
+      document.getElementById('cc-filters').style.display = 'none';
+      CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew);
       return;
     }
     // The Claim/CO type filter only applies to the claims tab.
     document.getElementById('cc-f-type').style.display = view === 'claims' ? '' : 'none';
     syncClearFilt();
 
-    if (!rows.length) { host.innerHTML = emptyHTML(); wireEmpty(); return; }
+    if (!rows.length) {
+      host.innerHTML = (view === 'claims'
+        ? '<div class="boq-filters"><button class="pd-btn" id="cc-open-pmi">Instructions (PMI) &rarr;</button></div>' : '') +
+        emptyHTML();
+      wireEmpty(); wirePmiEntry(host); return;
+    }
     var c = cfg(), list = visibleRows(), t = totals(list);
     document.getElementById('cc-count').textContent = 'Showing ' + list.length + ' ' + (list.length === 1 ? 'record' : 'records');
 
-    var h = kpiHTML(list, t);
+    /* PMI lives inside this register now rather than beside it: an instruction is the
+       same commercial conversation one step earlier, and it was a sixth tab nobody could
+       keep track of. Its own screen is unchanged — this is the way in. */
+    var h = (view === 'claims'
+      ? '<div class="boq-filters"><button class="pd-btn" id="cc-open-pmi">Instructions (PMI) &rarr;</button>' +
+        '<span class="cc-mini">Client instructions, before they become a claim or change order</span></div>'
+      : '') + kpiHTML(list, t);
 
     h += '<div class="pd-card cc-tablecard"><table class="cc-table"><thead><tr>' +
       '<th class="cc-cb"><input type="checkbox" id="cc-xall" title="Select all shown" /></th>' +
@@ -241,6 +295,7 @@ window.ContractsClaims = (function () {
     }
 
     host.innerHTML = h;
+    wirePmiEntry(host);
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
     wire();
     paintRemote();
@@ -289,7 +344,7 @@ window.ContractsClaims = (function () {
       (canWrite ? '<p style="margin-top:14px;"><button class="pd-btn pd-btn-primary" id="cc-e-add">Add a record</button></p>' : '') + '</div>';
   }
   function wireEmpty() {
-    var b = document.getElementById('cc-e-add'); if (b) b.onclick = function () { openForm(null); };
+    var b = document.getElementById('cc-e-add'); if (b) b.onclick = openNew;
   }
 
   function wire() {
@@ -313,6 +368,156 @@ window.ContractsClaims = (function () {
   // ==========================================================================
   // CRUD
   // ==========================================================================
+  /* THE ONE WRITE PATH for a Contracts & Claims record, shared by the compact edit
+     form and the wizard. ⚠️ Extracted rather than copied: two payload builders for one
+     table drift, and the half that drifts is always the one you are not looking at.
+     Returns { ok, error } — the caller owns its own button state and toasts. */
+  /* ⚠️ A COLUMN THIS DATABASE DOES NOT HAVE, CARRYING NOTHING, MUST NOT COST THE SAVE.
+     Measured live: `contracts_claims` on this project predates the four
+     est/sub/eval/approved columns, so PostgREST rejected the whole insert with
+     "Could not find the 'approved_amount' column … in the schema cache" — and a Contract
+     sends all four as NULL, because a contract has no claim pipeline. The record was
+     unsavable over columns that held nothing.
+     ⚠️ ONLY A NULL IS DROPPED. A column carrying a real figure that the database cannot
+        store is a genuine failure and still stops the save loudly — silently discarding
+        money is the one outcome worse than an error. The retry is bounded, and it names
+        the migration either way so the schema still gets fixed. */
+  function _dropMissingNull(payload, err) {
+    var m = /(?:column|find the)\s+'?"?([a-z_]+)"?'?\s+(?:column\s+)?of/i.exec(err && err.message || '');
+    var col = m && m[1];
+    if (!col || !(col in payload) || payload[col] !== null) return null;
+    var next = Object.assign({}, payload); delete next[col];
+    return next;
+  }
+  async function persistRecord(payload, existing) {
+    var body = Object.assign({}, payload), dropped = [];
+    if (!existing) { body.created_by = UID; body.sort_order = rows.length; }
+    for (var attempt = 0; attempt < 8; attempt++) {
+      var err = null, out = null;
+      if (existing) {
+        if (window.PDSync) {
+          var w = await PDSync.write({ table: TABLE, op: 'update', id: existing.id, patch: body });
+          if (!w.ok) err = w.error || new Error('Save failed');
+        } else {
+          var ur = await sb().from(TABLE).update(body).eq('id', existing.id);
+          err = ur.error;
+        }
+      } else {
+        var ir = await sb().from(TABLE).insert(body).select().single();
+        err = ir.error; out = ir.data;
+      }
+      if (!err) {
+        if (existing) {
+          Object.assign(existing, body);   // optimistic — applies whether online or queued offline
+          if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
+          return { ok: true, row: existing, dropped: dropped };
+        }
+        rows.push(out);
+        return { ok: true, row: out, dropped: dropped };
+      }
+      var next = _dropMissingNull(body, err);
+      if (!next) return { ok: false, error: err };
+      dropped.push(Object.keys(body).filter(function (k) { return !(k in next); })[0]);
+      body = next;
+    }
+    return { ok: false, error: new Error('Too many missing columns — run migrations/2026-07-20-contracts-claims-full.sql.') };
+  }
+  /* The save succeeded, but this database is missing columns the app expects. Said out
+     loud every time rather than once: a silent degrade becomes the permanent state, and
+     the columns it drops are the ones a claim's whole pipeline lives in. */
+  /* Which migration introduces which column.
+     ⚠️ THIS EXISTS BECAUSE THE HINT NAMED THE WRONG FILE. Both messages below used to
+        say "run 2026-07-20-contracts-claims-full.sql" for ANY dropped column — but
+        `package_id` comes from 2026-08-25-package-adoption.sql, and that file was the one
+        actually unrun on the live database (confirmed 2026-08-27 by VERIFY-schema.sql:
+        contracts_claims.package_id and boq_items.package_id both absent). So every
+        contract save silently dropped its package link, the register listed every contract
+        as "not linked to a package", and the toast sent whoever read it to a migration
+        that was already applied and would have changed nothing. */
+  var COL_MIGRATION = { package_id: 'migrations/2026-08-25-package-adoption.sql' };
+  var DEFAULT_MIGRATION = 'migrations/2026-07-20-contracts-claims-full.sql';
+  function migrationsFor(cols) {
+    var seen = {};
+    (cols || []).forEach(function (c) { seen[COL_MIGRATION[c] || DEFAULT_MIGRATION] = 1; });
+    return Object.keys(seen);
+  }
+  function warnDropped(dropped) {
+    if (!dropped || !dropped.length) return;
+    var files = migrationsFor(dropped);
+    UI.toast('Saved, but this database has no ' + dropped.join(', ') + ' column' + (dropped.length > 1 ? 's' : '') +
+      ' — that value was NOT recorded. Run ' + files.join(' and ') + ', then save again.', 'warn');
+  }
+  function recordFailMsg(e) {
+    var msg = e.message || '';
+    if (!/column|schema cache|PGRST204/i.test(msg)) return msg;
+    // Name the column's own migration when the error names the column.
+    var hit = Object.keys(COL_MIGRATION).filter(function (c) { return msg.indexOf(c) !== -1; });
+    return 'Save failed — run ' + (hit.length ? COL_MIGRATION[hit[0]] : DEFAULT_MIGRATION) + ' first. (' + msg + ')';
+  }
+  /* Follow the record if its type moved it to another tab, so it does not silently
+     "disappear" from the view you are looking at. */
+  function gotoTypeTab(t) {
+    /* ⚠️ 'Package' must land on Contract, not Claims. The old ternary sent anything
+       unrecognised to claims, so a package saved from the wizard would have dropped the
+       planner on a register that cannot show it. */
+    var target = (t === 'Contract' || t === 'Package') ? 'contract' : t === 'EOT' ? 'eot' : 'claims';
+    if (target !== view) switchTab(target); else render();
+  }
+
+  /* "+ Add" opens the guided wizard; clicking a row still opens the compact form.
+     ⚠️ New records get the guidance, edits stay fast — a wizard that owns editing too
+     becomes the slowest path to the most common action. Falls back to the form if
+     wizard.js did not load, so the module never loses its Add button. */
+  function openNew(type) {
+    if (!window.CCWizard) { openForm(null); return; }
+    CCWizard.open({
+      pid: function () { return pid; },
+      uid: function () { return UID; },
+      packages: function () { return PKGS; },
+      /* Every project in the app, so the wizard can refuse a package that restates one.
+         ⚠️ Read from the cache filled at load, never fetched here — the check runs on
+         every keystroke in the package step, and a network round trip per character
+         would either lag the field or race itself. An empty cache degrades to "no
+         conflict found", which is the safe direction: it never blocks a legitimate
+         package, it only stops catching the illegitimate one. */
+      projects: function () { return ALL_PROJECTS; },
+      createPackage: function (p) { return PDb.createPackage(p).then(function (made) { PKGS.push(made); return made; }); },
+      /* Rollback for a package this wizard created moments ago and could not use. It is
+         guaranteed to have nothing pointing at it, so admin_delete_package's in-use guard
+         passes; the local list is trimmed either way so a stale entry cannot make the
+         next attempt think the code is taken. */
+      deletePackage: function (id) {
+        return PDb.deletePackage(id)
+          .catch(function (e) { return sb().from('packages').delete().eq('id', id).then(function () { throw e; }); })
+          .then(function () { PKGS = PKGS.filter(function (k) { return String(k.id) !== String(id); }); },
+                function (e) { PKGS = PKGS.filter(function (k) { return String(k.id) !== String(id); }); throw e; });
+      },
+      /* Open the BOQ screen AND its importer, so a "BOQ" run in the wizard ends in the
+         file picker rather than in a paragraph describing where the file picker lives.
+         ⚠️ The importer is opened after `show()` resolves — it reads the current revision
+         list to offer "supersede vs new", and opening it against an unloaded module would
+         offer neither. */
+      openBoqImport: function () {
+        openSub('boq');
+        var tries = 0;
+        (function waitForLoad() {
+          /* ⚠️ The readiness signal is the IMPORT BUTTON, not a timer and not a container.
+             It appears only once boq.js has rendered AND the user may write — so a viewer
+             lands on the BOQ screen and is never shown an importer they cannot use. */
+          var btn = document.getElementById('boq-import') || document.getElementById('boq-import2');
+          if (btn && window.BOQ && BOQ.openImport) { BOQ.openImport(); return; }
+          // ~4s: the first load fetches revisions, items, allocations and periods.
+          if (++tries > 40) return;
+          setTimeout(waitForLoad, 100);
+        })();
+      },
+      persist: function (payload) { return persistRecord(payload, null); },
+      failMsg: recordFailMsg,
+      warnDropped: warnDropped,
+      done: gotoTypeTab
+    }, type);
+  }
+
   function openForm(r) {
     if (!canWrite) { UI.toast('You do not have permission to edit records.', 'error'); return; }
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
@@ -322,8 +527,12 @@ window.ContractsClaims = (function () {
     var defType = e.record_type || (view === 'contract' ? 'Contract' : view === 'eot' ? 'EOT' : 'Change Order');
     var ALL_TYPES = ['Contract', 'Claim', 'Change Order', 'EOT'];
 
-    function f(label, id, val, type, attrs) {
-      return '<label>' + esc(label) + '<input id="' + id + '" type="' + (type || 'text') + '" ' + (attrs || '') +
+    /* ⚠️ `lattrs` goes on the LABEL, not the input. applyType() toggles display on the
+       element carrying data-only / data-not, and putting the guard on the input hides
+       the box while leaving its caption floating — which is how the four claim dates
+       ended up visible on a Contract in the first place. */
+    function f(label, id, val, type, attrs, lattrs) {
+      return '<label ' + (lattrs || '') + '>' + esc(label) + '<input id="' + id + '" type="' + (type || 'text') + '" ' + (attrs || '') +
         ' value="' + esc(val == null ? '' : (type === 'date' ? String(val).slice(0, 10) : val)) + '" /></label>';
     }
     var isContract = defType === 'Contract', isEot = defType === 'EOT';
@@ -335,10 +544,61 @@ window.ContractsClaims = (function () {
       f('Reference no.', 'cc-f-ref', e.reference_no, 'text', 'placeholder="e.g. CO 01"') +
       '<label class="cc-wide">Description<textarea id="cc-f-desc" placeholder="e.g. Additional Cost for Plumbing Fixtures">' + esc(clean(e.description) || clean(e.title)) + '</textarea></label>' +
       f('Counterparty / client', 'cc-f-cp', e.counterparty) +
-      /* A3's tail: which contract package this claim is raised against. Optional
-         by design — MODULE_CONTRACT §6b: a package is a narrowing, never a
-         requirement, and most projects have none. */
-      '<label>Package' + (PKGS.length ? '' : ' <span class="cc-mini">(none on this project)</span>') +
+      /* ⚠️ THE PACKAGE FIELD POINTS TWO DIFFERENT WAYS, AND THAT IS THE POINT.
+         Owner, 2026-08-26: *"In the contract it'll be the one that will define the
+         packaging."* He is right, and the original field was wrong for one of the four
+         types. `contracts_claims.package_id` was added for CLAIMS — a claim, change
+         order or EOT is RAISED AGAINST a lot that already exists — and the same form
+         serves every type, so a Contract inherited a picker pointing backwards: it
+         asked which package this contract belongs to, when the contract is the document
+         that DEFINES the package in the first place.
+         ⚠️ This also closes a real chicken-and-egg: until now the ONLY way to create a
+            package was the Dashboard, so a project whose contracts were being entered
+            here showed "(none on this project)" — exactly the screenshot — and every
+            downstream consumer (schedule, BOQ, procurement, engineering) had nothing to
+            file against.
+         ⚠️ STILL NEVER AUTOMATIC. Decision #2 stands: a package minted without a human
+            saying so could later be cited in a claim nobody agreed to. Creating one here
+            is an explicit choice in a picker, with its code and name confirmed — which
+            is precisely the authoritative act, a planner entering the contract. */
+      /* ⚠️ "NONE" IS THE DEFAULT, AND IT IS SAVEABLE. Owner, 2026-08-27, on OPW101:
+            *"OPW101 is a one work construction contract without any packages. But this
+            requires me to connect it to a package."*
+         He could not save. This select's only non-linking option was "— Create from this
+         contract —", and the save handler then REFUSED without a package code and name
+         (see below). So a single-lot contract — the ordinary case — had no way through
+         the form except to invent a package, and the only code to hand was the project's
+         own. That is the AVR101 › {AVR101, AVR102} shape, manufactured by a validator.
+         ⚠️ `package_id` is nullable on contracts_claims, boq_items, project_schedule and
+            wbs_nodes with no back-fill (2026-08-25-package-adoption.sql). Nothing ever
+            required this. */
+      '<label data-only="Contract">Contract package<select id="cc-f-pkgnew">' +
+        '<option value=""' + (e.package_id ? '' : ' selected') + '>— None: this project is the contract lot —</option>' +
+        '<option value="__new">— Define a package from this contract —</option>' +
+        PKGS.map(function (p2) {
+          return '<option value="' + esc(p2.id) + '"' + (String(e.package_id) === String(p2.id) ? ' selected' : '') + '>' +
+            'Link to ' + esc((p2.code ? p2.code + ' — ' : '') + (p2.name || '')) + '</option>'; }).join('') +
+        '</select></label>' +
+      '<div class="cc-wide" data-only="Contract" id="cc-pkgnew-wrap">' +
+        '<div class="cc-form" style="padding:0;">' +
+        f('Package code', 'cc-f-pkgcode', '', 'text', 'placeholder="e.g. PKG-1"') +
+        f('Package name', 'cc-f-pkgname', '', 'text', 'placeholder="e.g. Enabling works"') +
+        f('Package start', 'cc-f-pkgstart', '', 'date') +
+        f('Package finish', 'cc-f-pkgend', '', 'date') +
+        '</div>' +
+        '<div id="cc-pkgwarn"></div>' +
+        '<p class="cc-hint">⚠️ Only for a division <b>below</b> this project — a lot inside <i>this</i> contract ' +
+        'with no project code of its own. A division that already has its own code is a <b>separate project</b>: ' +
+        'create it in the projects list and consolidate the two on the Portfolio Overview ' +
+        '(<b>Group by → Parent project</b>).</p>' +
+        '<p class="cc-hint">The <b>contract amount</b> above becomes its contract value. ' +
+        'Seeded once, on save — afterwards the package is edited on the <b>Contract tab</b>, so the two ' +
+        'cannot silently drift apart.</p>' +
+      '</div>' +
+      /* Claims / COs / EOTs keep the original direction: raised AGAINST a package that
+         already exists. Optional by design — MODULE_CONTRACT §6b: a package is a
+         narrowing, never a requirement, and most projects have none. */
+      '<label data-not="Contract">Raised against package' + (PKGS.length ? '' : ' <span class="cc-mini">(none on this project yet)</span>') +
         '<select id="cc-f-pkgid"' + (PKGS.length ? '' : ' disabled') + '><option value="">— none —</option>' +
         PKGS.map(function (p2) {
           return '<option value="' + esc(p2.id) + '"' + (String(e.package_id) === String(p2.id) ? ' selected' : '') + '>' +
@@ -372,10 +632,20 @@ window.ContractsClaims = (function () {
       '<label data-not="Contract">Status<select id="cc-f-stat"><option value="">—</option>' +
         STATUSES.map(function (s) { return '<option' + (statusOf(e) === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') +
       '</select></label>' +
-      f('Date filed', 'cc-f-filed', e.date_filed, 'date') +
-      f('Date submitted', 'cc-f-subd', e.date_submitted, 'date') +
-      f('Date evaluated', 'cc-f-evald', e.date_evaluated, 'date') +
-      f('Date approved', 'cc-f-apprd', e.date_approved, 'date') +
+      /* ⚠️ THESE FOUR HAD NO TYPE GUARD while the section header above them and the
+         aging hint below them both carried `data-not="Contract"` — so on a Contract the
+         header vanished and its four fields stayed, stranded under "Contract value".
+         Submitted → Evaluated → Client Approved is the CLAIM pipeline; a construction
+         contract is signed, not evaluated. A contract keeps one date, and it is called
+         what it is. */
+      '<div class="cc-sec" data-only="Contract">Contract dates</div>' +
+      f('Date signed', 'cc-f-signed', e.date_filed, 'date', '', 'data-only="Contract"') +
+      '<p class="cc-hint" data-only="Contract">The contract\'s own start and finish live on the ' +
+        '<b>package</b> it defines, above — they are the dates the schedule and the billing read.</p>' +
+      f('Date filed', 'cc-f-filed', e.date_filed, 'date', '', 'data-not="Contract"') +
+      f('Date submitted', 'cc-f-subd', e.date_submitted, 'date', '', 'data-not="Contract"') +
+      f('Date evaluated', 'cc-f-evald', e.date_evaluated, 'date', '', 'data-not="Contract"') +
+      f('Date approved', 'cc-f-apprd', e.date_approved, 'date', '', 'data-not="Contract"') +
       '<p class="cc-hint" data-not="Contract">Aging is calculated from <b>Date submitted</b> while the record is Pending — it is never stored.</p>' +
       '<label class="cc-wide">Remarks<textarea id="cc-f-rem">' + esc(e.remarks || '') + '</textarea></label>';
 
@@ -396,8 +666,52 @@ window.ContractsClaims = (function () {
       m.el.querySelectorAll('[data-money]').forEach(function (n) { n.style.display = (t === 'Claim' || t === 'Change Order') ? '' : 'none'; });
       m.el.querySelectorAll('[data-days]').forEach(function (n) { n.style.display = t === 'EOT' ? '' : 'none'; });
     }
-    el('cc-f-rtype').addEventListener('change', applyType);
+    el('cc-f-rtype').addEventListener('change', function () { applyType(); applyPkgMode(); });
     applyType();
+
+    /* The "create a package from this contract" block only makes sense while
+       "— Create from this contract —" is chosen; linking to an existing package must
+       not show empty code/name boxes that would look like they need filling in. */
+    function applyPkgMode() {
+      var sel = el('cc-f-pkgnew'), wrap = m.el.querySelector('#cc-pkgnew-wrap');
+      if (!sel || !wrap) return;
+      var creating = sel.value === '__new';     // '' now means "none", not "create"
+      wrap.style.display = (el('cc-f-rtype').value === 'Contract' && creating) ? '' : 'none';
+      // Seed the code and name from what the planner has already typed, without ever
+      // overwriting something they edited themselves.
+      if (creating) {
+        var code = el('cc-f-pkgcode'), name = el('cc-f-pkgname');
+        var ref = (el('cc-f-ref').value || '').trim();
+        /* ⚠️ NEVER seed a code that names a project — same rule as the wizard. A contract
+           on OPW101 is very often referenced "OPW101", and seeding that is the form itself
+           proposing the structure the save below refuses. */
+        if (code && !code.value && !code.dataset.touched && !pkgConflict(ref)) code.value = ref;
+        if (name && !name.value && !name.dataset.touched) name.value = (el('cc-f-desc').value || '').trim().slice(0, 80);
+      }
+      paintPkgWarn();
+    }
+    function pkgConflict(code) {
+      return (window.CCWizard && CCWizard.codeConflict)
+        ? CCWizard.codeConflict(code, pid, ALL_PROJECTS) : null;
+    }
+    function paintPkgWarn() {
+      var box = m.el.querySelector('#cc-pkgwarn'); if (!box) return;
+      var sel = el('cc-f-pkgnew');
+      var c = (sel && sel.value === '__new') ? pkgConflict((el('cc-f-pkgcode') || {}).value) : null;
+      box.innerHTML = c ? '<p class="cc-hint ccw-stop">⛔ <b>' + esc(c.code) + '</b> ' + (c.self
+        ? 'is this project\'s own code — a project cannot be a package of itself. Choose <b>None</b> instead.'
+        : 'already exists as a <b>separate project</b>' + (c.proj && c.proj.name ? ' (' + esc(c.proj.name) + ')' : '') +
+          '. Consolidate the two on the Portfolio Overview (<b>Group by → Parent project</b>) rather than ' +
+          'nesting one inside the other.') + '</p>' : '';
+    }
+    ['cc-f-pkgcode', 'cc-f-pkgname'].forEach(function (id) {
+      var x = el(id); if (x) x.addEventListener('input', function () { x.dataset.touched = '1'; paintPkgWarn(); });
+    });
+    (function () { var s2 = el('cc-f-pkgnew'); if (s2) s2.addEventListener('change', applyPkgMode); })();
+    ['cc-f-ref', 'cc-f-desc'].forEach(function (id) {
+      var x = el(id); if (x) x.addEventListener('input', applyPkgMode);
+    });
+    applyPkgMode();
 
     wireModalCursor(m, r);
     el('cc-m-x').onclick = m.close;
@@ -406,16 +720,68 @@ window.ContractsClaims = (function () {
       var v = function (id) { var x = (el(id).value || '').trim(); return x === '' ? null : x; };
       var n = function (id) { var x = v(id); if (x == null) return null; var y = Number(x); return isFinite(y) ? y : null; };
       var t = el('cc-f-rtype').value;
+      /* WHICH PACKAGE THIS RECORD POINTS AT, resolved per type.
+         · Claim / CO / EOT → the package it is raised against (may be none).
+         · Contract         → the package it DEFINES: an existing one it is linked to,
+                              or a new one created here from the contract itself.
+         ⚠️ Created BEFORE the record is written, and a failure aborts the save. A
+            contract row saved with a package that could not be created would claim a
+            link that does not exist, and nothing downstream would ever notice. */
+      var pkgId = (function (el2) { return el2 && el2.value ? el2.value : null; })(el('cc-f-pkgid'));
+      if (t === 'Contract') {
+        var pkgSel = el('cc-f-pkgnew');
+        var pmode = pkgSel ? pkgSel.value : '';
+        // '' = none (and it SAVES — that is the fix), '__new' = create, anything else = link.
+        pkgId = (pmode && pmode !== '__new') ? pmode : null;
+        if (pmode === '__new') {
+          var pcode = v('cc-f-pkgcode'), pname = v('cc-f-pkgname');
+          if (!pcode || !pname) { UI.toast('Give the package a code and a name, or set the package to "None".', 'error'); return; }
+          // Same refusal as the wizard, from the same function — see wizard.js rawConflict.
+          var clash = pkgConflict(pcode);
+          if (clash) {
+            UI.toast(clash.self
+              ? '"' + pcode + '" is this project\'s own code — a project cannot be a package of itself. Set the package to "None".'
+              : '"' + pcode + '" is a separate project in this app, not a package of ' + (pid || 'this project') +
+                '. Consolidate them on the Portfolio Overview (Group by → Parent project) instead.', 'error');
+            return;
+          }
+          try {
+            var made = await PDb.createPackage({
+              project_id: pid, code: pcode, name: pname,
+              description: v('cc-f-desc'),
+              // The contract's own value and dates ARE the package's. Seeded once,
+              // here; afterwards the Dashboard owns them, so the two cannot drift.
+              contract_amount: n('cc-f-amount'),
+              start_date: v('cc-f-pkgstart'), end_date: v('cc-f-pkgend'),
+              status: 'active', sort_order: PKGS.length, created_by: UID
+            });
+            pkgId = made.id;
+            PKGS.push(made);
+          } catch (er) {
+            var em = (er && er.message) || String(er);
+            UI.toast(/duplicate key/i.test(em)
+              ? 'A package with code "' + pcode + '" already exists on this project — link to it instead.'
+              : ('Could not create the package: ' + em +
+                 (/relation|does not exist/i.test(em) ? ' — run migrations/2026-08-19-packages.sql.' : '')), 'error');
+            return;
+          }
+        }
+      }
       var payload = {
         project_id: pid, record_type: t,
         reference_no: v('cc-f-ref'), description: v('cc-f-desc'), counterparty: v('cc-f-cp'),
-        package_id: (function (el2) { return el2 && el2.value ? el2.value : null; })(el('cc-f-pkgid')),
+        package_id: pkgId,
         amount: t === 'Contract' ? n('cc-f-amount') : null,
         est_amount: null, sub_amount: null, eval_amount: null, approved_amount: null,
         est_days: null, sub_days: null, eval_days: null, approved_days: null,
         status: t === 'Contract' ? null : v('cc-f-stat'),
-        date_filed: v('cc-f-filed'), date_submitted: v('cc-f-subd'),
-        date_evaluated: v('cc-f-evald'), date_approved: v('cc-f-apprd'),
+        /* One column, two labels: a Contract writes its signing date into the same
+           `date_filed` column the claim pipeline uses for filing. No schema change,
+           and the form never shows both. */
+        date_filed: t === 'Contract' ? v('cc-f-signed') : v('cc-f-filed'),
+        date_submitted: t === 'Contract' ? null : v('cc-f-subd'),
+        date_evaluated: t === 'Contract' ? null : v('cc-f-evald'),
+        date_approved: t === 'Contract' ? null : v('cc-f-apprd'),
         remarks: v('cc-f-rem'), updated_at: new Date().toISOString()
       };
       // Only the pipeline belonging to this type is written; the other is nulled
@@ -430,28 +796,11 @@ window.ContractsClaims = (function () {
       if (!payload.description && !payload.reference_no) { UI.toast('Give the record a description or a reference number.', 'error'); return; }
 
       var btn = el('cc-m-save'); btn.disabled = true; btn.textContent = 'Saving…';
-      function failMsg(e) { return /column|schema cache|PGRST204/i.test(e.message || '') ? 'Save failed — run migrations/2026-07-20-contracts-claims-full.sql first. (' + e.message + ')' : e.message; }
-      if (r) {
-        Object.assign(r, payload);   // optimistic — applies whether online or queued offline
-        if (window.PDSync) {
-          var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: payload });
-          if (!w.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(w.error ? failMsg(w.error) : 'Save failed', 'error'); return; }
-          PDSync.cachePut(PID_PFX + ':' + pid, rows);
-        } else {
-          var ur = await sb().from(TABLE).update(payload).eq('id', r.id);
-          if (ur.error) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(failMsg(ur.error), 'error'); return; }
-        }
-      } else {
-        payload.created_by = UID; payload.sort_order = rows.length;
-        var ir = await sb().from(TABLE).insert(payload).select().single();
-        if (ir.error) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(failMsg(ir.error), 'error'); return; }
-        rows.push(ir.data);
-      }
+      var res = await persistRecord(payload, r);
+      if (!res.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(recordFailMsg(res.error), 'error'); return; }
       m.close(); UI.toast(r ? 'Record updated.' : 'Record added.', 'success');
-      // Follow the record if its type moved it to another tab, so it doesn't
-      // silently "disappear" from the view you're looking at.
-      var target = t === 'Contract' ? 'contract' : t === 'EOT' ? 'eot' : 'claims';
-      if (target !== view) switchTab(target); else render();
+      warnDropped(res.dropped);
+      gotoTypeTab(t);
     };
 
     // Autosave (edit only): debounced re-use of the Save button's own handler.
@@ -615,6 +964,10 @@ window.ContractsClaims = (function () {
     }
     try { PKGS = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
     catch (e) { PKGS = []; }
+    // Cheap (a few dozen rows) and read once per project switch, so the wizard's
+    // per-keystroke conflict check never touches the network.
+    try { ALL_PROJECTS = await PDb.getProjects(); }
+    catch (e) { ALL_PROJECTS = []; }
     rows = res.data || [];
     rows.sort(function (a, b) {
       var d = (a.sort_order || 0) - (b.sort_order || 0); if (d) return d;
@@ -634,8 +987,7 @@ window.ContractsClaims = (function () {
        lines plus its mapping, allocations and every billing period — six extra
        round-trips on every project switch, paid by everyone for a screen most
        sessions never open. */
-    if (v === 'boq' && window.BOQ) { BOQ.show(pid, projName()); return; }
-    if (v === 'pmi' && window.PMI) { PMI.show(pid, projName()); return; }
+    sub = null;                       // leaving a tab always leaves its sub-view
     render();
   }
 
@@ -664,7 +1016,8 @@ window.ContractsClaims = (function () {
       // A BOQ belongs to ONE project, so its whole cache is dropped on a switch
       // rather than filtered — a stale revision id would silently show another
       // project's contract document.
-      if (window.BOQ) BOQ.reset();
+      if (window.CCPackages) CCPackages.reset();
+    if (window.BOQ) BOQ.reset();
       if (window.PMI) PMI.reset();
       if (view === 'boq' && window.BOQ) { BOQ.show(pid, projName()); joinCollab(); return; }
       if (view === 'pmi' && window.PMI) { PMI.show(pid, projName()); joinCollab(); return; }
@@ -672,10 +1025,11 @@ window.ContractsClaims = (function () {
     });
 
     var deps = { uid: UID, canWrite: canWrite, isAdmin: isAdmin };
+    if (window.CCPackages) CCPackages.init(deps);
     if (window.BOQ) BOQ.init(deps);
     if (window.PMI) PMI.init(deps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); }; });
-    document.getElementById('cc-add').onclick = function () { openForm(null); };
+    document.getElementById('cc-add').onclick = openNew;
     document.getElementById('cc-export').onclick = exportExcel;
     document.getElementById('cc-print').onclick = function () { window.print(); };
     document.getElementById('cc-clear').onclick = clearAll;

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260819c" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260827a" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -2436,6 +2436,7 @@
               <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
               <button id="ps-costacctbtn"><span data-ico="cash" data-ico-size="14"></span> Cost Accounts…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
+              <button id="ps-filepkg" title="File work planned before this project was split into contract packages under one of them"><span data-ico="box" data-ico-size="14"></span> File under a package…</button>
               <button id="ps-diagnose" title="Where did my activities go? Read-only report on this project's data"><span data-ico="risk" data-ico-size="14"></span> Diagnose data…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
               <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
@@ -3050,7 +3051,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260826e"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260826e"></script>
+<script src="../../assets/js/db.js?v=20260827b"></script>
+<script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260824a"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
 <script src="../../assets/js/calendar.js?v=20260824a"></script>
@@ -3076,6 +3078,9 @@
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var PACKAGES = [];     // Contract packages for this project (2026-08-19-packages.sql)
+  /* Change Orders + EOTs from the Contracts & Claims register, read-only. See the
+     load for why this exists and why it tolerates every kind of absence. */
+  var CONTRACT_RECS = [];
   // The Procurement (WPM) app's work packages for this project, read from the
   // `wpm_work_packages` MIRROR — never from the WPM app directly (its anon key is public).
   // This is what `project_schedule.work_package` now points at: an activity carries the
@@ -3227,13 +3232,35 @@
     while (n) { if (n.change_order_ref) return String(n.change_order_ref); n = n.parent_id && WBS_NODES.find(function (x) { return x.id === n.parent_id; }); }
     return '';
   }
+  /* The registered change orders — the authoritative list, from Contracts & Claims. */
+  function coRegistered() {
+    return (CONTRACT_RECS || []).filter(function (x) {
+      return x.record_type === 'Change Order' && String(x.reference_no || '').trim();
+    }).sort(function (a, b) { return String(a.reference_no).localeCompare(String(b.reference_no), undefined, { numeric: true }); });
+  }
+  function coLabel(ref) {
+    var hit = coRegistered().filter(function (x) { return String(x.reference_no).trim() === String(ref).trim(); })[0];
+    return hit ? (hit.reference_no + (hit.description ? ' — ' + String(hit.description).slice(0, 60) : '')) : String(ref || '');
+  }
+  /* ⚠️ IS THIS REFERENCE ACTUALLY REGISTERED? A ref typed on the schedule that matches
+     no record in Contracts & Claims is not an error — the variation may be recorded
+     later, or on paper — but it must be VISIBLE, because an unregistered CO is money
+     nobody is tracking commercially. Callers show it as "not in the register". */
+  function coIsRegistered(ref) {
+    var k = String(ref || '').trim();
+    if (!k) return true;
+    return coRegistered().some(function (x) { return String(x.reference_no).trim() === k; });
+  }
   // Every CO reference in use on this project — feeds the grid editor's datalist and the Add form,
   // so "VO-014" is picked rather than retyped (and mistyped, which silently splits a variation).
+  // ⚠️ REGISTERED ONES FIRST, then anything already used on the schedule that is not in the
+  //    register — so the list a planner sees leads with the references the commercial team owns.
   function coRefValues() {
     var seen = {}, out = [];
+    coRegistered().forEach(function (x) { var v = String(x.reference_no).trim(); if (!seen[v]) { seen[v] = 1; out.push(v); } });
     rows.forEach(function (r) { var v = r.change_order_ref; if (v && !seen[v]) { seen[v] = 1; out.push(String(v)); } });
     WBS_NODES.forEach(function (n) { var v = n.change_order_ref; if (v && !seen[v]) { seen[v] = 1; out.push(String(v)); } });
-    return out.sort();
+    return out;
   }
   // ---- Contract PACKAGE (2026-08-19-schedule-package.sql) --------------------
   // ⚠️ A DIFFERENT AXIS FROM scope_type, and the distinction is the point: scope_type says where
@@ -4422,6 +4449,24 @@
       var r9 = await sb().from('packages').select('*').eq('project_id', pid).order('sort_order').order('code');
       PACKAGES = (r9 && !r9.error && r9.data) || [];
     } catch (e) { PACKAGES = []; }
+    try {
+      /* CHANGE ORDERS (and EOTs) as the CONTRACTS & CLAIMS module recorded them.
+         ⚠️ WHY: `change_order_ref` has always been FREE TEXT, typed into a prompt() that
+            only suggested references already used on this project. The commercial team
+            records every variation next door in `contracts_claims`, and the two lists
+            could never see each other — so the schedule said "VO-14" while the register
+            said "VO-014", and no report could join them. Same database, one select.
+         ⚠️ TOLERANT: no table, no grant, no rows → an empty list, and the CO field
+            behaves exactly as it always did (free text). This must never break the
+            schedule for a project whose Contracts module was never set up.
+         ⚠️ READ-ONLY HERE. The schedule never writes a change order; it only cites one.
+            Creating variations is the Contracts & Claims module's job, and one app
+            inventing another's commercial records is unrecoverable. */
+      var rCo = await sb().from('contracts_claims')
+        .select('id,record_type,reference_no,description,status,amount,approved_amount,approved_days,package_id')
+        .eq('project_id', pid).in('record_type', ['Change Order', 'EOT']);
+      CONTRACT_RECS = (rCo && !rCo.error && rCo.data) || [];
+    } catch (e) { CONTRACT_RECS = []; }
     await loadWpmWorkPackages();
     await loadClassCodes();
     try {
@@ -4604,12 +4649,55 @@
   // modules disagreeing about which WPM project a schedule belongs to would show
   // different work packages for the same job. Falls back to the project id, which is
   // the convention when the ids already match.
+  var _wpmHostId = null;          // the project-level mapping, resolved once per load
   async function _prcWpmProjectId() {
     try {
       var r = await sb().from('cash_flow_settings').select('wpm_project_id').eq('project_id', pid).limit(1);
       var v = (!r.error && r.data && r.data[0] && r.data[0].wpm_project_id) || null;
       return v || pid;
     } catch (e) { return pid; }
+  }
+
+  /* EVERY WPM project this schedule buys under — the project's own mapping PLUS one
+     per contract package that names its own (packages.wpm_project_id,
+     2026-08-27-package-external-codes.sql).
+
+     ⚠️ THIS IS THE WHOLE POINT OF THE CHANGE. One schedule can span several contract
+        codes: AVR101's schedule covers all 7 towers, but Towers 2-7 are bought under
+        AVR102, which is a different project in the Procurement app. Reading one WPM
+        project meant AVR102's work packages could never reach the activities that
+        consume them.
+     ⚠️ INERT ON EVERY PROJECT THAT MAPS TO ONE WPM PROJECT. With no package mapping set
+        this returns exactly the single id it returned before, so nothing changes for any
+        existing job until someone deliberately maps a package. That is what makes it
+        safe to ship to every project at once. */
+  function _prcWpmScopes() {
+    var seen = {}, out = [];
+    var add = function (v) {
+      var k = String(v == null ? '' : v).trim();
+      if (k && !seen[k.toUpperCase()]) { seen[k.toUpperCase()] = 1; out.push(k); }
+    };
+    add(_wpmHostId || pid);
+    (PACKAGES || []).forEach(function (k) {
+      // An archived package's work packages still have to resolve — the lot is retired,
+      // its procurement history is not, and blanking those links would read as data loss.
+      add(k && k.wpm_project_id);
+    });
+    return out;
+  }
+
+  /* Which WPM project ONE activity's work package should be read from: its own
+     contract package's mapping, else the project-level one.
+     ⚠️ Resolved through packageOf(), so a WBS branch tagged once answers for its whole
+        subtree — tagging 4,000 activities by hand is not a plan anyone would carry out. */
+  function _wpmScopeOf(r) {
+    var pk = packageOf(r);
+    if (pk) {
+      var k = (PACKAGES || []).filter(function (x) { return String(x.id) === String(pk); })[0];
+      var v = k && String(k.wpm_project_id || '').trim();
+      if (v) return v;
+    }
+    return _wpmHostId || pid;
   }
 
   // ==========================================================================
@@ -4735,11 +4823,22 @@
   async function loadWpmWorkPackages() {
     if (!pid) { WPM_WPS = []; return; }
     try {
-      var wpmId = await _prcWpmProjectId();
-      var r = await sb().from('wpm_work_packages')
-        .select('wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at')
-        .eq('wpm_project_id', wpmId).limit(2000);
-      var list = (r && !r.error && r.data) || [];
+      _wpmHostId = await _prcWpmProjectId();
+      var scopes = _prcWpmScopes();
+      /* ⚠️ `wpm_project_id` IS NOW SELECTED, and it has to be. `wp_no` is unique only
+         WITHIN a WPM project — both AVR101 and AVR102 have a work package "1" — so the
+         moment this loads more than one project the number alone stops identifying a
+         package. Everything downstream keys on the pair. */
+      /* WARN: PDb.selectAll, NOT a .limit(). PostgREST caps a read at 1000 rows SERVER-side
+         and a client .limit() cannot raise it, so the previous `.limit(2000)` read as a
+         bound and was not one -- and unioning a second contract code doubled the row count
+         it had to survive. A truncated mirror silently drops work packages from the
+         picker, the grid label and the procurement report, with no error anywhere. */
+      var list = [];
+      try {
+        list = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
+          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at');
+      } catch (e) { list = []; }
       // Trade order then WP number, so every picker and report shows packages in the order
       // they are actually procured rather than in mirror-id order.
       list.sort(function (a, b) {
@@ -4752,36 +4851,90 @@
   }
 
   function _wpKey(no) { return String(no == null ? '' : no).trim().toUpperCase(); }
+  function _wpScope(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
   var _wpMap = null, _wpMapSrc = null;
+  /* Two indexes, because a bare wp_no is no longer an identity:
+       byScope — (wpm project, wp_no) -> row. The real key.
+       uniq    — wp_no -> row, ONLY where that number appears in exactly one project.
+     ⚠️ `uniq` exists for legacy links, not as a shortcut. Activities predating contract
+        packages store a bare number with no package to resolve it through; where that
+        number is unambiguous across every mirrored project it still resolves, and where
+        it is NOT the entry is deliberately absent so the link reads UNLINKED rather than
+        silently resolving to whichever project happened to load second. Showing the wrong
+        vendor's package under an activity is worse than showing none. */
   function _wpIndex() {
     // Rebuilt whenever WPM_WPS is reassigned (identity check) — a per-call scan would
     // run once per grid row per render on a 17k-activity schedule.
     if (_wpMap && _wpMapSrc === WPM_WPS) return _wpMap;
-    _wpMap = {}; _wpMapSrc = WPM_WPS;
-    (WPM_WPS || []).forEach(function (w) { var k = _wpKey(w.wp_no); if (k) _wpMap[k] = w; });
+    /* ⚠️ A NESTED map (scope -> no -> row), NOT a joined string key. The first cut
+       joined them with a NUL-code escape and the patch script wrote a REAL NUL byte into
+       this file — which makes grep treat it as binary, and is a documented trap in this
+       repo's own log. Nesting needs no separator at all, so nothing can collide with a
+       project id or a wp_no and the bug cannot come back. */
+    var byScope = {}, count = {}, first = {};
+    (WPM_WPS || []).forEach(function (w) {
+      var k = _wpKey(w.wp_no); if (!k) return;
+      var sc = _wpScope(w.wpm_project_id);
+      (byScope[sc] || (byScope[sc] = {}))[k] = w;
+      count[k] = (count[k] || 0) + 1;
+      if (count[k] === 1) first[k] = w;
+    });
+    var uniq = {};
+    Object.keys(first).forEach(function (k) { if (count[k] === 1) uniq[k] = first[k]; });
+    _wpMap = { byScope: byScope, uniq: uniq }; _wpMapSrc = WPM_WPS;
     return _wpMap;
   }
-  // The mirror row an activity points at, or null when it points at nothing that exists.
-  function wpOf(r) { var k = _wpKey(r && r.work_package); return k ? (_wpIndex()[k] || null) : null; }
-  function wpByNo(no) { var k = _wpKey(no); return k ? (_wpIndex()[k] || null) : null; }
+  /* The mirror row an activity points at, or null when it points at nothing that exists.
+     ⚠️ Resolved through the ACTIVITY'S OWN contract package first, so an activity in
+        AVR101's schedule that is tagged to the Towers 2-7 lot reads AVR102's work package
+        "1" and not AVR101's. */
+  function wpOf(r) {
+    var k = _wpKey(r && r.work_package); if (!k) return null;
+    var ix = _wpIndex();
+    return (ix.byScope[_wpScope(_wpmScopeOf(r))] || {})[k] || ix.uniq[k] || null;
+  }
+  // No activity in hand (a picker label, a report heading), so no package to scope by:
+  // the host project's mapping first, then an unambiguous number.
+  function wpByNo(no, scope) {
+    var k = _wpKey(no); if (!k) return null;
+    var ix = _wpIndex();
+    return (ix.byScope[_wpScope(scope || _wpmHostId || pid)] || {})[k] || ix.uniq[k] || null;
+  }
   // "12 — Structural Steel Supply". Falls back to the bare stored value so an unresolved
   // link still shows what it was pointing at.
-  function wpLabel(no) {
+  function wpLabel(no, scope) {
     var k = String(no == null ? '' : no).trim(); if (!k) return '';
-    var w = wpByNo(k); if (!w) return k;
+    var w = wpByNo(k, scope); if (!w) return k;
     var d = String(w.description || '').trim();
     return d ? (w.wp_no + ' — ' + d) : String(w.wp_no);
   }
-  function wpIsUnlinked(r) { var k = _wpKey(r && r.work_package); return !!k && !_wpIndex()[k]; }
+  /* ⚠️ Was `!_wpIndex()[k]` against the old FLAT map. The index is now {byScope,uniq},
+     so that test was true for every activity — the whole schedule would have reported its
+     work packages as UNLINKED. It asks wpOf() now, the same resolution the label uses, so
+     the flag and the text can never disagree. */
+  function wpIsUnlinked(r) { var k = _wpKey(r && r.work_package); return !!k && !wpOf(r); }
   // The <select> body for the Work Package picker: one <optgroup> per trade, in the
   // owner's procurement order. `cur` is kept as an option even when it resolves to
   // nothing, so opening a form on a legacy value and changing an unrelated field can
   // never silently wipe the link (a select whose value isn't in its option list reads
   // back as '').
-  function wpOptsHTML(cur) {
+  function wpOptsHTML(cur, r) {
     var curK = _wpKey(cur), seen = false;
+    /* WARN: SCOPED TO THE ACTIVITY'S OWN CONTRACT LOT once this schedule spans more than
+       one contract code. Two reasons, both of which produce a wrong answer rather than an
+       untidy one:
+         1. The stored value is a bare wp_no, and AVR101 and AVR102 both have a "1" -- two
+            <option>s sharing value="1" cannot be told apart by a <select> at all.
+         2. The label would resolve through the host, so an AVR102 package would be listed
+            under AVR101's description.
+       An activity with no package falls back to the host, which is exactly what a
+       single-code project has always done -- so nothing changes there. */
+    var scopes = _prcWpmScopes();
+    var mine = _wpScope(r ? _wpmScopeOf(r) : (_wpmHostId || pid));
+    var pool = (WPM_WPS || []);
+    if (scopes.length > 1) pool = pool.filter(function (w) { return _wpScope(w.wpm_project_id) === mine; });
     var byTrade = {}, order = [];
-    (WPM_WPS || []).forEach(function (w) {
+    pool.forEach(function (w) {
       var t = _prcTradeOf(w);
       if (!byTrade[t]) { byTrade[t] = []; order.push(t); }
       byTrade[t].push(w);
@@ -4804,7 +4957,7 @@
     }
     order.forEach(function (t) {
       html += '<optgroup label="' + esc(t) + '">' + byTrade[t].map(function (w) {
-        var lbl = wpLabel(w.wp_no);
+        var lbl = wpLabel(w.wp_no, w.wpm_project_id);
         return '<option value="' + esc(String(w.wp_no)) + '"' +
           (_wpKey(w.wp_no) === curK ? ' selected' : '') + '>' + esc(lbl) + '</option>';
       }).join('') + '</optgroup>';
@@ -4978,11 +5131,13 @@
     if (!prcNode) return;                                  // skeleton not seeded
     _prcSyncing = true;
     try {
-      var wpmId = await _prcWpmProjectId();
+      _wpmHostId = await _prcWpmProjectId();
+      var scopes = _prcWpmScopes();
+      var multi = scopes.length > 1;      // this schedule spans more than one contract code
       var mirror;
       try {
-        mirror = await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', wpmId); },
-          'wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
+        mirror = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
+          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
       } catch (e) { return; }   // a partial read must not be mirrored as the truth
       // ⚠️ Never synced, or this project has no work packages yet — leave the branch
       // exactly as it is. Reading "no rows" as "delete everything" is how a failed or
@@ -4990,33 +5145,91 @@
       if (!mirror.length) return;
       _prcLastSynced = mirror[0] && mirror[0].synced_at || null;
 
-      // Group by trade, and order the packages inside each by their own WP number.
-      var byTrade = {};
+      /* THE ACTIVITY ID.
+         WARN: a wp_no is unique only WITHIN a WPM project, so once this schedule reads two
+            of them, AVR101's WP "1" and AVR102's WP "1" both want the Activity ID "1" --
+            they would overwrite each other and every sync would thrash between them.
+         WARN: ONLY a NON-HOST scope is prefixed, and that is deliberate rather than tidier.
+            Prefixing everything would change the Activity ID of every package on every
+            existing project, so the next sync would sweep them all as stale and re-insert
+            them. Leaving the host bare means adding a second contract code touches nothing
+            that is already there. */
+      var aidOf = function (w) {
+        var no = String(w.wp_no);
+        return _wpScope(w.wpm_project_id) === _wpScope(_wpmHostId) ? no : (String(w.wpm_project_id).trim() + '-' + no);
+      };
+      // Which contract lot a mirrored package belongs to, for the LOT level below.
+      var pkgByScope = {};
+      (PACKAGES || []).forEach(function (k) {
+        var v = _wpScope(k && k.wpm_project_id);
+        if (v && !pkgByScope[v]) pkgByScope[v] = k;
+      });
+      var lotName = function (scope) {
+        var k = pkgByScope[_wpScope(scope)];
+        // The package's own name -- the SCOPE ("Towers 2-7"), which is what a planner reads.
+        // WARN: falls back to the bare code only when no package claims that mapping, so an
+        //    unmapped scope stays visible as a code rather than silently merging into a lot.
+        return k ? ((k.code ? k.code + ' - ' : '') + (k.name || '')) : String(scope);
+      };
+
+      /* Group by TRADE, and -- when the schedule spans several contract codes -- by LOT
+         above it, so Procurement reads  Procurement > Towers 2-7 > Structural > WP.
+         WARN: a single-code project keeps the exact tree it has today (Procurement > Trade
+            > WP): `multi` is false, no lot node is created, and nothing re-nests. That is
+            what makes this safe to ship to every project at once. */
+      var byLot = {};
       mirror.forEach(function (w) {
         if (!w.wp_no) return;                              // a WP with no number has no Activity ID
+        var lot = multi ? _wpScope(w.wpm_project_id) : '';
         var t = _prcTradeOf(w);
-        (byTrade[t] = byTrade[t] || []).push(w);
+        var m = byLot[lot] = byLot[lot] || {};
+        (m[t] = m[t] || []).push(w);
       });
-      var trades = Object.keys(byTrade).sort(function (a, b) {
-        return _prcTradeRank(a) - _prcTradeRank(b) || a.localeCompare(b);
+      // Host lot first, then the rest by their package's sort order, then by code.
+      var lots = Object.keys(byLot).sort(function (a, b) {
+        if (a === _wpScope(_wpmHostId)) return -1;
+        if (b === _wpScope(_wpmHostId)) return 1;
+        var ka = pkgByScope[a], kb = pkgByScope[b];
+        return ((ka && ka.sort_order) || 0) - ((kb && kb.sort_order) || 0) || a.localeCompare(b);
+      });
+      var trades = [];
+      lots.forEach(function (l) {
+        Object.keys(byLot[l]).forEach(function (t) { if (trades.indexOf(t) === -1) trades.push(t); });
       });
       if (!trades.length) return;
 
-      var nodeOf = {};
-      for (var ti = 0; ti < trades.length; ti++) {
-        var nd = await _prcEnsureNode(prcNode.id, trades[ti], ti);
-        if (nd) nodeOf[trades[ti]] = nd;
+      // nodeOf is keyed by LOT then TRADE -- one flat map would collide the moment two lots
+      // both buy Structural Works, which is the normal case.
+      var nodeOf = {}, lotNodeIds = [];
+      for (var li = 0; li < lots.length; li++) {
+        var lot = lots[li];
+        var parent = prcNode;
+        if (multi) {
+          var ln = await _prcEnsureNode(prcNode.id, lotName(lot), li);
+          if (!ln) continue;
+          parent = ln; lotNodeIds.push(ln.id);
+        }
+        var lotTrades = Object.keys(byLot[lot]).sort(function (a, b) {
+          return _prcTradeRank(a) - _prcTradeRank(b) || a.localeCompare(b);
+        });
+        nodeOf[lot] = {};
+        for (var ti = 0; ti < lotTrades.length; ti++) {
+          var nd = await _prcEnsureNode(parent.id, lotTrades[ti], ti);
+          if (nd) nodeOf[lot][lotTrades[ti]] = nd;
+        }
       }
       await _wbsEnsureSummaries();                         // each new node needs its projected WBS-Summary row
       var codeOf = computeWbsCodes();
 
       var want = [];
-      trades.forEach(function (t) {
-        var nd = nodeOf[t]; if (!nd) return;
-        byTrade[t].slice().sort(function (a, b) {
-          return String(a.wp_no).localeCompare(String(b.wp_no), undefined, { numeric: true });
-        }).forEach(function (w, i) {
-          want.push({ aid: String(w.wp_no), node: nd, w: w, seq: i });
+      lots.forEach(function (lot) {
+        Object.keys(byLot[lot]).forEach(function (t) {
+          var nd = nodeOf[lot] && nodeOf[lot][t]; if (!nd) return;
+          byLot[lot][t].slice().sort(function (a, b) {
+            return String(a.wp_no).localeCompare(String(b.wp_no), undefined, { numeric: true });
+          }).forEach(function (w, i) {
+            want.push({ aid: aidOf(w), node: nd, w: w, seq: i });
+          });
         });
       });
       var wantIds = {}; want.forEach(function (x) { wantIds[x.aid] = 1; });
@@ -5032,12 +5245,24 @@
       // queried, its activities are never seen as stale, and they sit in the branch
       // forever showing packages that no longer exist in WPM. Caught by a test that
       // removed the only Mechanical Works package.
-      var prcNodeIds = WBS_NODES.filter(function (n) { return n.parent_id === prcNode.id; })
-        .map(function (n) { return n.id; });
-      trades.forEach(function (t) {
-        var nd = nodeOf[t];
-        if (nd && prcNodeIds.indexOf(nd.id) === -1) prcNodeIds.push(nd.id);
+      /* WARN: EVERY DESCENDANT of Procurement, not just its direct children. With a LOT
+         level the trade nodes are grandchildren, so the old one-level scan would have missed
+         every mirrored activity -- the sweep would find nothing stale AND the diff would read
+         every package as new, inserting a second copy of the whole branch. */
+      var prcNodeIds = [];
+      (function collect(parentId) {
+        WBS_NODES.forEach(function (n) {
+          if (n.parent_id !== parentId) return;
+          if (prcNodeIds.indexOf(n.id) === -1) { prcNodeIds.push(n.id); collect(n.id); }
+        });
+      })(prcNode.id);
+      lots.forEach(function (lot) {
+        Object.keys(nodeOf[lot] || {}).forEach(function (t) {
+          var nd = nodeOf[lot][t];
+          if (nd && prcNodeIds.indexOf(nd.id) === -1) prcNodeIds.push(nd.id);
+        });
       });
+      lotNodeIds.forEach(function (id) { if (prcNodeIds.indexOf(id) === -1) prcNodeIds.push(id); });
       var existingByAid = {}, allPrcRows = [];
       // ⚠️ `work_package` MUST be selected here even though nothing below reads it directly:
       // the diff loop compares `ex[f]` against the patch, and an unselected column reads as
@@ -6268,17 +6493,57 @@
     }
     return ok;
   }
-  // Marking an activity as a change order asks for its CO reference straight away: a CO with no
-  // number is not traceable back to the client correspondence it came from, and a planner asked for
-  // it later never has it to hand.
+  /* Marking an activity as a change order asks for its CO reference straight away: a CO with no
+     number is not traceable back to the client correspondence it came from, and a planner asked for
+     it later never has it to hand.
+     ⚠️ WAS A prompt(). It offered a comma-joined list of strings already typed on this project and
+        no way to pick one, so "VO-14" and "VO-014" became two variations that no report could join.
+        It is now a picker over the CHANGE ORDERS RECORDED IN CONTRACTS & CLAIMS — the same database,
+        the commercial team's own list — with free text kept for a variation not yet registered. */
   function promptCoRef(id) {
     var r = rows.find(function (x) { return x.id === id; }); if (!r) return;
-    var known = coRefValues();
-    var ref = prompt('Change order reference for "' + (r.activity_name || r.activity_id || 'this activity') + '"' +
-      (known.length ? '\n\nAlready used on this project: ' + known.join(', ') : '') + '\n\n(e.g. VO-014 — leave blank to fill in later)', r.change_order_ref || '');
-    if (ref == null) return;
-    ref = String(ref).trim();
-    persistScope(id, { change_order_ref: ref || null }).then(function (ok) { if (ok) { renderGrid(); renderDetails(); } });
+    var reg = coRegistered(), cur = String(r.change_order_ref || '').trim();
+    var others = coRefValues().filter(function (v) { return !coIsRegistered(v); });
+    var m = UI.modal('<h2 style="margin-top:0;">Change order reference</h2>' +
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">For <b>' +
+        esc(r.activity_name || r.activity_id || 'this activity') + '</b>.</p>' +
+      (reg.length
+        ? '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Recorded in Contracts &amp; Claims</label>' +
+          '<select class="pd-select" id="ps-co-sel" style="width:100%;">' +
+            '<option value="">— none —</option>' +
+            reg.map(function (x) {
+              var v = String(x.reference_no).trim();
+              return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' +
+                esc(v + (x.description ? ' — ' + String(x.description).slice(0, 60) : '')) +
+                (x.status ? ' · ' + esc(x.status) : '') + '</option>';
+            }).join('') +
+            others.map(function (v) {
+              return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + ' · not in the register</option>';
+            }).join('') +
+            '<option value="__other__">Other — type a reference…</option>' +
+          '</select>'
+        : '<p style="color:var(--pd-muted);font-size:12.5px;">⚠️ No change orders are recorded for this project in ' +
+          '<b>Contracts &amp; Claims</b>. Record it there and it appears here — until then, type the reference.</p>') +
+      '<div id="ps-co-freewrap"' + (reg.length && coIsRegistered(cur) ? ' style="display:none;"' : '') + '>' +
+        '<label style="display:block;font-size:12px;font-weight:600;margin:10px 0 4px;">Reference</label>' +
+        '<input class="pd-input" id="ps-co-free" value="' + esc(cur) + '" placeholder="e.g. VO-014" style="width:100%;" />' +
+        '<p style="color:var(--pd-muted);font-size:11.5px;margin:4px 0 0;">⚠️ A reference typed here is <b>not</b> in the ' +
+        'commercial register. It will show as <i>not in the register</i> until a matching Change Order is recorded.</p>' +
+      '</div>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-co-x">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="ps-co-go">Save</button></div>');
+    var sel = m.el.querySelector('#ps-co-sel'), free = m.el.querySelector('#ps-co-free');
+    if (sel) sel.onchange = function () {
+      m.el.querySelector('#ps-co-freewrap').style.display = sel.value === '__other__' ? '' : 'none';
+      if (sel.value === '__other__' && free) free.focus();
+    };
+    m.el.querySelector('#ps-co-x').onclick = m.close;
+    m.el.querySelector('#ps-co-go').onclick = function () {
+      var ref = (!sel || sel.value === '__other__') ? (free ? free.value : '') : sel.value;
+      ref = String(ref || '').trim();
+      m.close();
+      persistScope(id, { change_order_ref: ref || null }).then(function (ok) { if (ok) { renderGrid(); renderDetails(); } });
+    };
   }
   // The last error persist() saw, so a caller that passed quiet:true can still report the truth
   // instead of guessing at it. Cleared on every attempt so a stale message can never be shown.
@@ -6889,7 +7154,8 @@
     if (dim === 'wp') {
       var wpv = (r.work_package || '').trim();
       if (!wpv) return '— No work package —';
-      return wpByNo(wpv) ? wpLabel(wpv) : ('⚠ ' + wpv + ' — not in the Procurement app');
+      var sc = _wpmScopeOf(r);
+      return wpByNo(wpv, sc) ? wpLabel(wpv, sc) : ('⚠ ' + wpv + ' — not in the Procurement app');
     }
     // Contract package resolves through the WBS, so an activity under an assigned branch groups
     // with its branch rather than falling into "— No package —".
@@ -9884,7 +10150,7 @@
       // ⚠️ `wpLabel` not `r.work_package`: the stored value is a bare ordinal, so searching the
       // raw column meant "steel" could never find the activities fed by the steel package. The
       // label is "12 — Structural Steel Supply", which matches both the number and the description.
-      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), wpLabel(r.work_package), ccSearchText(r), phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
+      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), wpLabel(r.work_package, _wpmScopeOf(r)), ccSearchText(r), phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
@@ -9973,7 +10239,7 @@
       // has since been emptied.
       ((WPM_WPS.length || rows.some(wpIsUnlinked)) ? '<h4>Procurement work package</h4><select id="ps-f-wp-filter" class="pd-select pd-input-sm" style="width:100%;">' +
         [['', 'All work packages'], ['__none__', '— Not linked to a work package —'], ['__unlinked__', '⚠ Linked to a package the Procurement app does not have']]
-          .concat(WPM_WPS.map(function (w) { return [String(w.wp_no), wpLabel(w.wp_no)]; }))
+          .concat(WPM_WPS.map(function (w) { return [String(w.wp_no), wpLabel(w.wp_no, w.wpm_project_id)]; }))
           .map(function (o) { return '<option value="' + esc(o[0]) + '"' + ((filters.wp || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') +
         '</select>' : '') +
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
@@ -12042,6 +12308,23 @@
       return '<option value="' + esc(v) + '"' + (v === (cur || '') ? ' selected' : '') + '>' + esc(lbl) + '</option>';
     }).join('');
   }
+  /* Options for the details panel's Change Order Ref, from the commercial register.
+     ⚠️ THE STORED VALUE ALWAYS KEEPS AN OPTION, even when it is in no register — a
+        <select> whose value is not among its options reports the FIRST one, and the next
+        save would silently re-file the activity under a different variation. Same rule
+        the package picker follows. It is labelled so the gap is visible, not hidden. */
+  function coSelOpts(cur) {
+    var k = String(cur == null ? '' : cur).trim(), seen = false;
+    var opts = [{ v: '', l: '— No change order —' }];
+    coRegistered().forEach(function (x) {
+      var v = String(x.reference_no).trim();
+      if (v === k) seen = true;
+      opts.push({ v: v, l: v + (x.description ? ' — ' + String(x.description).slice(0, 50) : '') });
+    });
+    if (k && !seen) opts.splice(1, 0, { v: k, l: '⚠ ' + k + ' — not in the register' });
+    return opts;
+  }
+
   function _gf(label, field, type, r, opts, full) {
     var val = r[field]; if (val == null) val = '';
     var st = 'width:100%;box-sizing:border-box;font-size:12.5px;';
@@ -12094,7 +12377,7 @@
     return '<div style="display:flex;flex-direction:column;gap:3px;">' +
       '<label style="font-size:11px;color:var(--pd-muted);">Work Package <span style="opacity:.8;">(Procurement app)</span></label>' +
       '<select class="pd-select ps-gedit" data-f="work_package" data-t="select" style="width:100%;box-sizing:border-box;font-size:12.5px;">' +
-      wpOptsHTML(r.work_package) + '</select>' + note + '</div>';
+      wpOptsHTML(r.work_package, r) + '</select>' + note + '</div>';
   }
   // Class code for the detail panel. Persists through the standard ps-gedit / data-t="select"
   // wiring, like every other field here.
@@ -12162,7 +12445,8 @@
         // that would accept a value the rest of the app deliberately ignores.
         (isExecPhase(r)
           ? _gf('Contract Scope' + (!r.scope_type && scopeOf(r) ? ' (inherited: ' + scopeTypeLabel(scopeOf(r)) + ')' : ''), 'scope_type', 'select', r, SCOPE_SEL_OPTS) +
-            (isChangeOrder(r) ? _gf('Change Order Ref', 'change_order_ref', 'text', r) : '')
+            /* A picker over the Contracts & Claims register, not free text — see coSelOpts. */
+            (isChangeOrder(r) ? _gf('Change Order Ref', 'change_order_ref', 'select', r, coSelOpts(r.change_order_ref)) : '')
           : _gf('Contract Scope', 'scope_type', 'ro', { scope_type: 'n/a — execution phase only' })) +
         // ⚠️ Sits beside Contract Scope because they read as one idea and are NOT: scope says where
         // the money comes from, package says which lot the work belongs to. Both apply at once.
@@ -17895,6 +18179,235 @@
         the work: keeping it means the grid still shows "PKG-2 — Towers 2-7" as an
         empty top-level row, which is the truth, and the re-push adopts it rather than
         creating a sibling. */
+  /* THE PACKAGE'S OWN WBS ROOT — the node every push for that package builds under,
+     so the grid shows "PKG-1 — Tower 1 and General Requirements" as a top-level row
+     with its whole WBS beneath, beside "PKG-2 — Towers 2-7".
+     ⚠️ FOUND BY FLAG, NEVER BY NAME. is_package_root + package_id is the identity;
+        matching on the node's name would break the first time someone renames the
+        branch, and the next push would build a SECOND root holding half the
+        schedule — the failure mode that makes a package total quietly half-right.
+     ⚠️ RE-READ FROM THE SERVER before creating. Another planner may have created the
+        root in a session this browser has not loaded, and a unique index (one root
+        per package) turns that race into an error rather than a duplicate. */
+  // ==========================================================================
+  // FILE AN EXISTING SCHEDULE UNDER A CONTRACT PACKAGE
+  // --------------------------------------------------------------------------
+  // Push, import and clear all take a package now, but that only helps work built
+  // AFTER packages existed. A live project — One Portwood's 2,665 activities — was
+  // planned before them and belongs to no lot, so it appears in no package total and
+  // the grid still shows phases rather than contracts at the top. This is the one-time
+  // action that fixes that, and the reason the mockup's two top-level rows are real.
+  //
+  // WHAT IT DOES, in one apply:
+  //   1. ensures the package's own WBS root ("PKG-1 — Tower 1 and General Requirements")
+  //   2. stamps package_id on the chosen activities
+  //   3. stamps package_id on the branches holding them
+  //   4. re-parents the chosen TOP-LEVEL branches under that root
+  //
+  // ⚠️ ONLY TOP-LEVEL BRANCHES MOVE. Deeper branches are re-tagged, never re-parented:
+  //    a deep move would rewrite a WBS someone built by hand, and it is the one part of
+  //    this that a planner could not undo by eye. Moving a top level back is one drag.
+  // ⚠️ WORK ALREADY IN ANOTHER PACKAGE IS NEVER TOUCHED, in any scope. Stealing
+  //    Package 1's activities into Package 2 would be silent and unrecoverable — the
+  //    previous owner is not recorded anywhere to restore from.
+  // ⚠️ THE LOCKED SKELETON DOES MOVE when it is in scope, and that is deliberate: the
+  //    mockup shows Planning Phase and Execution Phase UNDER the package. Verified safe
+  //    against the duplicate-skeleton bug — ensureWbsSkeleton() only seeds a project
+  //    with NO nodes at all, and _wbsBackfillSkeleton() fails closed (its `seeded` guard
+  //    looks for a locked skeleton node at TOP level, finds none once moved, and returns
+  //    without inserting anything).
+  function _pkgFileCandidates(target, scopeKind, branchId) {
+    var acts = [], branches = [], tops = [];
+    var inBranch = {};
+    if (scopeKind === 'branch' && branchId) {
+      (function walk(id) { inBranch[id] = 1; wbsChildren(id).forEach(function (c) { walk(c.id); }); })(branchId);
+    }
+    rows.forEach(function (r) {
+      if (isWbs(r)) return;
+      var pk = packageOf(r);
+      // Already in ANOTHER package → never in scope.
+      if (pk && String(pk) !== String(target)) return;
+      if (scopeKind === 'unassigned') { if (pk) return; }
+      else if (scopeKind === 'branch') { if (!r.wbs_node_id || !inBranch[r.wbs_node_id]) return; }
+      acts.push(r.id);
+    });
+    (WBS_NODES || []).forEach(function (n) {
+      if (n.is_package_root) return;
+      var pk = _nodePackage(n.id) || n.package_id || null;
+      if (pk && String(pk) !== String(target)) return;
+      if (scopeKind === 'unassigned') { if (pk) return; }
+      else if (scopeKind === 'branch') { if (!inBranch[n.id]) return; }
+      branches.push(n.id);
+      if (!n.parent_id) tops.push(n.id);
+    });
+    return { acts: acts, branches: branches, tops: tops };
+  }
+  function openFileUnderPackage() {
+    if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (!(PACKAGES || []).length) {
+      UI.toast('This project has no contract packages yet — add them on the Dashboard, from the contract documents.', 'warn');
+      return;
+    }
+    var target = String(PACKAGES[0].id), scopeKind = 'unassigned', branchId = '';
+    var topBranches = (WBS_NODES || []).filter(function (n) { return !n.parent_id && !n.is_package_root; });
+
+    var m = UI.modal('<h2 style="margin-top:0;">File existing work under a contract package</h2>' +
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">Work planned before this project was ' +
+      'split into contract packages belongs to no lot, so it appears in no package total. This files it, and ' +
+      'moves its top-level branches under the package\'s own row so the grid reads contract-first.</p>' +
+      '<label style="display:block;font-size:12px;font-weight:600;margin:10px 0 4px;">Contract package</label>' +
+      '<select class="pd-select" id="fp-pkg" style="width:100%;">' +
+        PACKAGES.map(function (k) {
+          return '<option value="' + esc(k.id) + '">' + esc((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
+        }).join('') + '</select>' +
+      '<label style="display:block;font-size:12px;font-weight:600;margin:12px 0 4px;">What to file</label>' +
+      '<select class="pd-select" id="fp-scope" style="width:100%;">' +
+        '<option value="unassigned">Everything not yet in a package</option>' +
+        '<option value="branch">One WBS branch and everything under it</option>' +
+      '</select>' +
+      '<div id="fp-branchwrap" style="display:none;margin-top:8px;">' +
+        '<select class="pd-select" id="fp-branch" style="width:100%;">' +
+          '<option value="">— Choose a branch —</option>' +
+          topBranches.map(function (n) { return '<option value="' + esc(n.id) + '">' + esc(n.name || 'WBS') + '</option>'; }).join('') +
+        '</select></div>' +
+      '<div id="fp-what" style="margin:12px 0;font-size:13px;"></div>' +
+      '<div style="text-align:right;"><button class="pd-btn" id="fp-x">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="fp-go">File</button></div>');
+
+    var what = m.el.querySelector('#fp-what'), go = m.el.querySelector('#fp-go');
+    function paint() {
+      var c = _pkgFileCandidates(target, scopeKind, branchId);
+      var k = packageById(target);
+      var nm = k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'this package';
+      if (scopeKind === 'branch' && !branchId) {
+        what.innerHTML = '<span style="color:var(--pd-muted);">Choose a branch to see what would be filed.</span>';
+        go.disabled = true; return;
+      }
+      go.disabled = !c.acts.length && !c.branches.length;
+      what.innerHTML = '<strong>' + c.acts.length + '</strong> activity/activities and <strong>' + c.branches.length +
+        '</strong> WBS branch(es) will be filed under <strong>' + esc(nm) + '</strong>' +
+        (c.tops.length ? ', and <strong>' + c.tops.length + '</strong> top-level branch(es) will move under its row.' : '.') +
+        '<div style="color:var(--pd-muted);font-size:12px;margin-top:6px;">' +
+        'Work already filed under a <em>different</em> package is never touched. Only top-level branches move — ' +
+        'deeper ones are re-tagged where they are. Nothing is deleted, and no dates or progress change.</div>';
+    }
+    m.el.querySelector('#fp-pkg').onchange = function () { target = this.value; paint(); };
+    m.el.querySelector('#fp-scope').onchange = function () {
+      scopeKind = this.value;
+      m.el.querySelector('#fp-branchwrap').style.display = scopeKind === 'branch' ? '' : 'none';
+      paint();
+    };
+    m.el.querySelector('#fp-branch').onchange = function () { branchId = this.value; paint(); };
+    m.el.querySelector('#fp-x').onclick = m.close;
+    paint();
+    go.onclick = async function () {
+      var c = _pkgFileCandidates(target, scopeKind, branchId);
+      if (!c.acts.length && !c.branches.length) return;
+      go.disabled = true; go.textContent = 'Filing…';
+      showLoading('Filing under the package…');
+      var failed = null;
+      try {
+        var rootId = await ensurePackageRoot(target);
+        // 1) Activities. Chunked by id so a 2,665-activity project cannot exceed the
+        //    URL length of one .in() filter — the same rule every bulk write here uses.
+        for (var i = 0; i < c.acts.length && !failed; i += 200) {
+          var ra = await sb().from(TABLE).update({ package_id: target }).in('id', c.acts.slice(i, i + 200));
+          if (ra.error) failed = ra.error;
+        }
+        // 2) Branches keep their place but gain the tag, so a NEW activity added under
+        //    one of them inherits the package through packageOf() without anyone
+        //    remembering to set it.
+        for (var j = 0; j < c.branches.length && !failed; j += 100) {
+          var rb = await sb().from('wbs_nodes').update({ package_id: target }).in('id', c.branches.slice(j, j + 100));
+          if (rb.error) failed = rb.error;
+        }
+        // 3) The structural half: top-level branches move under the package's row.
+        //    ⚠️ Never the root itself, and never a branch that is already the root's
+        //    child — re-parenting a node to its current parent is a no-op write, but
+        //    including the root would make it its own parent and detach the subtree.
+        var movers = c.tops.filter(function (id) { return id !== rootId; });
+        for (var k2 = 0; k2 < movers.length && !failed; k2 += 100) {
+          var rc = await sb().from('wbs_nodes').update({ parent_id: rootId, package_id: target })
+            .in('id', movers.slice(k2, k2 + 100));
+          if (rc.error) failed = rc.error;
+        }
+      } catch (e) { failed = e; }
+      hideLoading();
+      if (failed) {
+        go.disabled = false; go.textContent = 'File';
+        var msg = failed.message || String(failed);
+        UI.toast('Could not file everything: ' + msg +
+          (/package_id|is_package_root/.test(msg) ? ' — run migrations/2026-08-26-package-scoped-schedule.sql.' : ''), 'error');
+        // ⚠️ Reload anyway: a partial apply must be VISIBLE, not hidden behind stale
+        //    state that would let someone re-run it and double-move a branch.
+        _clearPkgMemo(); collapsed = {}; resetUndo(); load();
+        return;
+      }
+      m.close();
+      UI.toast('Filed ' + c.acts.length + ' activity/activities under ' + (packageShort(target) || 'the package') + '.', 'success');
+      _clearPkgMemo(); collapsed = {}; _wbsSel = null; resetUndo(); load();
+    };
+  }
+
+
+  async function ensurePackageRoot(pkgId) {
+    if (!pkgId) return null;
+    var hit = (WBS_NODES || []).filter(function (n) {
+      return n.is_package_root && String(n.package_id) === String(pkgId);
+    })[0];
+    if (hit) return hit.id;
+    var q = await sb().from('wbs_nodes').select('*').eq('project_id', pid)
+      .eq('package_id', pkgId).eq('is_package_root', true).limit(1);
+    if (q.error && /is_package_root/.test(q.error.message || '')) {
+      throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
+    }
+    if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); return q.data[0].id; }
+    var k = packageById(pkgId);
+    // Named from the contract, not from the builder: this row is what the whole
+    // project team reads at the top of the grid.
+    var nm = k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'Contract package';
+    var ins = await sb().from('wbs_nodes').insert({
+      project_id: pid, parent_id: null, name: nm,
+      sort_order: k ? (Number(k.sort_order) || 0) : 0,
+      package_id: pkgId, is_package_root: true, created_by: UID
+    }).select().single();
+    if (ins.error) {
+      if (/is_package_root/.test(ins.error.message || ''))
+        throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
+      throw ins.error;
+    }
+    WBS_NODES.push(ins.data);
+    return ins.data.id;
+  }
+
+  /* A named branch INSIDE a package's own root — "PKG-2 — Towers 2-7 › Execution Phase".
+     ⚠️ WHY THIS EXISTS AT ALL: a Builder push always files under Execution Phase, resolved
+        by execPhaseCode() from the PROJECT-level branch. That meant a package's root was
+        found, then immediately ignored, and the pushed work landed under the shared
+        project phase instead of the package's own row — packages never became top-level
+        rows, which is the whole point of them. Each package gets its own phase branch.
+     ⚠️ MATCHED BY NAME KEY UNDER THE ROOT, not globally: every package has an "Execution
+        Phase" of its own, so a global name lookup would collapse them all onto the first. */
+  async function ensurePackageBranch(pkgId, name) {
+    var rootId = await ensurePackageRoot(pkgId);
+    if (!rootId) return null;
+    var key = _wbsNameKey(name);
+    var hit = (WBS_NODES || []).filter(function (n) {
+      return (n.parent_id || null) === rootId && _wbsNameKey(n.name) === key;
+    })[0];
+    if (hit) return hit.id;
+    var sibs = (WBS_NODES || []).filter(function (n) { return (n.parent_id || null) === rootId; });
+    var ins = await sb().from('wbs_nodes').insert({
+      project_id: pid, parent_id: rootId, name: name, sort_order: sibs.length,
+      package_id: pkgId, created_by: UID
+    }).select().single();
+    if (ins.error) return rootId;   // fall back to the root itself rather than losing the push
+    WBS_NODES.push(ins.data);
+    _clearPkgMemo();
+    return ins.data.id;
+  }
+
   async function _clearWbsTree(pkgId) {
     var scoped = pkgId != null && pkgId !== '__none__';
     try {
@@ -17981,27 +18494,7 @@
   async function _importUnderPackageRoot(pkgId) {
     if (!pkgId) return;
     try {
-      var rootId = null;
-      var have = (WBS_NODES || []).filter(function (n) {
-        return n.is_package_root && String(n.package_id) === String(pkgId);
-      })[0];
-      if (have) rootId = have.id;
-      else {
-        var q = await sb().from('wbs_nodes').select('*').eq('project_id', pid)
-          .eq('package_id', pkgId).eq('is_package_root', true).limit(1);
-        if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); rootId = q.data[0].id; }
-        else {
-          var k = packageById(pkgId);
-          var ins = await sb().from('wbs_nodes').insert({
-            project_id: pid, parent_id: null,
-            name: k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'Contract package',
-            sort_order: k ? (Number(k.sort_order) || 0) : 0,
-            package_id: pkgId, is_package_root: true, created_by: UID
-          }).select().single();
-          if (ins.error) return;
-          WBS_NODES.push(ins.data); rootId = ins.data.id;
-        }
-      }
+      var rootId = await ensurePackageRoot(pkgId);
       if (!rootId) return;
       var movers = (WBS_NODES || []).filter(function (n) {
         return !n.parent_id && !n.is_locked && !n.is_package_root && n.id !== rootId;
@@ -18012,7 +18505,7 @@
           .in('id', movers.slice(i, i + 100));
       }
       _clearPkgMemo();
-    } catch (e) {}
+    } catch (e) { /* best effort: a failure costs the nesting, never the import */ }
   }
 
   async function autoAdoptAfterImport() {
@@ -18199,7 +18692,7 @@
     // an option would silently clear the link.
     var _wpSel = document.getElementById('ps-f-wp');
     if (_wpSel) {
-      _wpSel.innerHTML = wpOptsHTML(row ? row.work_package : '');
+      _wpSel.innerHTML = wpOptsHTML(row ? row.work_package : '', row);
       _wpSel.disabled = !WPM_WPS.length && !(row && row.work_package);
       var _wpHint = document.getElementById('ps-f-wp-hint');
       if (_wpHint) {
@@ -22248,20 +22741,36 @@
         : '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Start date <span style="color:var(--pd-red);">*</span></label>' +
           '<input class="pd-input" type="date" id="sbpush-start" value="' + e2(ddISO) + '" style="width:100%;height:34px;">' +
           '<p class="sbld-hint" style="margin:4px 0 0;">No project <b>Data Date</b> is set — choose the date the schedule should start from.</p>';
+      // Which contract package this push lands in. ⚠️ Shown even when there is only one
+      // choice: "where did my 2,561 activities go" is the question this dialog exists to
+      // answer, and a package applied invisibly from the open setup is exactly what the
+      // owner could not see.
+      var pkgSel = curPkgId || '';
+      var pkgBlock = !(PACKAGES || []).length ? '' :
+        '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Contract package</label>' +
+        '<select class="pd-select" id="sbpush-pkg" style="width:100%;">' +
+          (PACKAGES || []).map(function (k) {
+            return '<option value="' + e2(k.id) + '"' + (String(pkgSel) === String(k.id) ? ' selected' : '') + '>' +
+              e2((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
+          }).join('') +
+          '<option value=""' + (pkgSel ? '' : ' selected') + '>— No package (project level) —</option>' +
+        '</select>' +
+        '<p class="sbld-hint" id="sbpush-pkghint" style="margin:4px 0 0;"></p>';
       // (the WBS picker was removed — a builder push always files under Execution Phase)
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 500;
       ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:16px;">' +
         '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + gI.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule with their <b>relationships</b> (FS/SS/FF/SF + lag) as predecessors. Nothing is replaced.</p>' +
         '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Schedule to push</label>' +
-        '<select class="pd-select" id="sbpush-basis" style="width:100%;height:34px;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
+        '<select class="pd-select" id="sbpush-basis" style="width:100%;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
+        pkgBlock +
         startBlock +
         // ⚠️ The "Assign under WBS" picker is gone (owner 2026-08-18: it was always set to Execution
         // Phase, so offering the choice only invited a wrong one). A builder push is construction
         // work by definition, and construction lives under Execution Phase — resolved at push time by
         // execPhaseCode() so it follows a renamed/re-coded branch, and falling back to the top level
         // only if the project genuinely has no Execution Phase branch.
-        '<p class="sbld-hint" style="margin:12px 0 0;">Filed under <b>' + e2(_pushParentLabel()) + '</b>.</p>' +
+        '<p class="sbld-hint" style="margin:12px 0 0;" id="sbpush-filed"></p>' +
         // ⚠️ The "Group into a sub-WBS instead" tick-box is gone (owner 2026-08-18: it was always
         // ticked, exactly like the WBS picker before it). A builder push always builds the real
         // Trade › Floor › Zone › Unit branch tree — that is the whole point of defining the location
@@ -22272,6 +22781,37 @@
         '</div>' +
         '<div class="pd-modal-footer"><button class="pd-btn" data-x>Cancel</button><button class="pd-btn pd-btn-primary" id="sbpush-go">Add to schedule</button></div></div>';
       document.body.appendChild(ov);
+      // The two lines that answer "which package, and where inside it?" — repainted on
+      // every change so the dialog never states a destination it will not use.
+      function paintPkgHint() {
+        var sel = ov.querySelector('#sbpush-pkg');
+        var val = sel ? sel.value : (curPkgId || '');
+        var hint = ov.querySelector('#sbpush-pkghint');
+        var filed = ov.querySelector('#sbpush-filed');
+        var phase = (function () {
+          var pc = _pushParentCode();
+          var row = (typeof rows !== 'undefined' ? rows : []).filter(function (r) { return String(r.wbs) === String(pc); })[0];
+          return (row && row.activity_name) || 'Execution Phase';
+        })();
+        if (hint) {
+          if (!val) {
+            hint.innerHTML = '⚠️ These activities will belong to <b>no package</b> and will not appear in any package total.' +
+              ((PACKAGES || []).length ? ' You can file them later with <b>Actions → File under a package…</b>.' : '');
+          } else if (curPkgId && String(val) !== String(curPkgId)) {
+            hint.innerHTML = '⚠️ This setup is saved against <b>' + e2(packageShort(curPkgId) || 'another package') +
+              '</b>. Pushing into <b>' + e2(packageShort(val) || 'this package') + '</b> files the activities there and does <b>not</b> change the setup.';
+          } else {
+            hint.innerHTML = 'From this setup. The build lands under this package\'s own top-level row.';
+          }
+        }
+        if (filed) {
+          filed.innerHTML = val
+            ? 'Filed under <b>' + e2((packageLabel(val) || 'the package')) + ' › ' + e2(phase) + '</b> — the package\'s own branch, created on first push.'
+            : 'Filed under <b>' + e2(_pushParentLabel()) + '</b>.';
+        }
+      }
+      (function () { var s2 = ov.querySelector('#sbpush-pkg'); if (s2) s2.onchange = paintPkgHint; })();
+      paintPkgHint();
       // WBS-structure editor: an ordered, on/off list of the location dimensions (level 1 = top). The
       // order + which dims are included define how many WBS levels and what each level is.
       var work = cfg.wbsOrder.slice(); WBS_DIMS.forEach(function (d) { if (work.indexOf(d) < 0) work.push(d); });
@@ -22304,7 +22844,8 @@
         cfg.wbsOrder = order.slice(); markDirty();   // remember the chosen structure
         var pc = _pushParentCode(), bs = ov.querySelector('#sbpush-basis').value;
         close();
-        pushToSchedule(pc, true, bs, order, startISO, 'auto');
+        var _pkgEl = ov.querySelector('#sbpush-pkg');
+        pushToSchedule(pc, true, bs, order, startISO, 'auto', _pkgEl ? (_pkgEl.value || null) : undefined);
       };
     }
     // The builder already knows every generated activity's work type and its floor/zone/unit — it
@@ -22339,54 +22880,18 @@
       }
       return LOC_LEVELS.map(function (l) { return l.id; });
     }
-    /* THE PACKAGE'S OWN WBS ROOT — the node every push for that package builds under,
-       so the grid shows "PKG-1 — Tower 1 and General Requirements" as a top-level row
-       with its whole WBS beneath, beside "PKG-2 — Towers 2-7".
-       ⚠️ FOUND BY FLAG, NEVER BY NAME. is_package_root + package_id is the identity;
-          matching on the node's name would break the first time someone renames the
-          branch, and the next push would build a SECOND root holding half the
-          schedule — the failure mode that makes a package total quietly half-right.
-       ⚠️ RE-READ FROM THE SERVER before creating. Another planner may have created the
-          root in a session this browser has not loaded, and a unique index (one root
-          per package) turns that race into an error rather than a duplicate. */
-    async function ensurePackageRoot(pkgId) {
-      if (!pkgId) return null;
-      var hit = (WBS_NODES || []).filter(function (n) {
-        return n.is_package_root && String(n.package_id) === String(pkgId);
-      })[0];
-      if (hit) return hit.id;
-      var q = await sb().from('wbs_nodes').select('*').eq('project_id', pid)
-        .eq('package_id', pkgId).eq('is_package_root', true).limit(1);
-      if (q.error && /is_package_root/.test(q.error.message || '')) {
-        throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
-      }
-      if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); return q.data[0].id; }
-      var k = packageById(pkgId);
-      // Named from the contract, not from the builder: this row is what the whole
-      // project team reads at the top of the grid.
-      var nm = k ? ((k.code ? k.code + ' — ' : '') + k.name) : 'Contract package';
-      var ins = await sb().from('wbs_nodes').insert({
-        project_id: pid, parent_id: null, name: nm,
-        sort_order: k ? (Number(k.sort_order) || 0) : 0,
-        package_id: pkgId, is_package_root: true, created_by: UID
-      }).select().single();
-      if (ins.error) {
-        if (/is_package_root/.test(ins.error.message || ''))
-          throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
-        throw ins.error;
-      }
-      WBS_NODES.push(ins.data);
-      return ins.data.id;
-    }
-
-    async function pushToSchedule(parentCode, grouped, basis, order, startISO, flatGroup) {
+    async function pushToSchedule(parentCode, grouped, basis, order, startISO, flatGroup, pkgOverride) {
+      /* The package chosen in the push dialog wins over the setup's own, so a planner
+         can push one recipe into a second lot without re-saving the setup. undefined
+         (not null) means "not asked" — null means "deliberately no package". */
+      var usePkg = (pkgOverride === undefined) ? curPkgId : (pkgOverride || null);
       var g = generate(basis || 'int', startISO); if (!g.rows.length) return;
       /* ⚠️ A MULTI-PACKAGE PROJECT AND AN UNASSIGNED SETUP IS ALMOST ALWAYS A MISTAKE.
          The push still goes through if the planner insists — an untagged build at
          project level is legitimate on a single-lot job — but it is never silent,
          because unassigned activities are invisible to every package total and the
          only cure is a bulk re-tag afterwards. */
-      if (!curPkgId && (PACKAGES || []).length) {
+      if (!usePkg && (PACKAGES || []).length) {
         if (!confirm('This project has ' + PACKAGES.length + ' contract package(s), but this setup is not assigned to one.\n\n' +
           'The activities will be pushed at project level and will belong to NO package, so they will not appear in any ' +
           'package total. Assign the setup to a package first (Setups), or continue?')) return;
@@ -22500,7 +23005,7 @@
            belongs to cannot be mis-read later if the tree above it is re-parented.
            ⚠️ Orthogonal to scope_type on purpose: the row above may be a change order AND
            this package. Neither column is derived from the other. */
-        package_id: curPkgId || null }; }
+        package_id: usePkg || null }; }
       // ---- Class codes -> activity codes ------------------------------------------------------
       // ⚠️ Ensured BEFORE the payloads are built, because taskPayload needs the value ids. Reuses an
       // existing "Class Code" type and any values already present, so a re-push adds nothing.
@@ -22651,7 +23156,17 @@
            it — but with no branch chosen and a package selected, the whole build lands
            under that package's root instead of at the project's top level. That is what
            makes two packages read as two top-level rows in the grid. */
-        if (!baseNodeId && curPkgId) baseNodeId = await ensurePackageRoot(curPkgId);
+        /* ⚠️ THE PACKAGE WINS OVER THE PROJECT-LEVEL PHASE, and must. parentCode is
+           always execPhaseCode() — the WBS picker was removed in 2026-08-18 — so
+           baseNodeId is ALWAYS the shared project Execution Phase, and a package root
+           resolved only when it happened to be null never applied. The build now goes
+           under that package's OWN phase branch, which is what puts each contract at
+           the top of the grid. */
+        if (usePkg) {
+          var _phaseName = (baseRow && baseRow.activity_name) || 'Execution Phase';
+          var _pkgBase = await ensurePackageBranch(usePkg, _phaseName);
+          if (_pkgBase) baseNodeId = _pkgBase;
+        }
         // 1) create the wbs_nodes parent-first (sequential so children can reference their parent's id)
         // ⚠️ IDEMPOTENT: reuse a branch that already exists rather than inserting a second one with
         // the same name under the same parent. `ensureNode` only dedupes WITHIN one push (its keys are
@@ -22744,7 +23259,7 @@
                activity through its nearest tagged ancestor, so tagging the branches is
                what keeps a re-parented or newly-added activity inside the right lot. */
             var _row = { project_id: pid, parent_id: parentId, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID };
-            if (curPkgId) _row.package_id = curPkgId;
+            if (usePkg) _row.package_id = usePkg;
             batch.push(_row);
             batchDescs.push(nd);
           }
@@ -22869,13 +23384,13 @@
          failed push (above) records nothing, because there is no schedule to go
          back to. See recordPush: the config is copied, never referenced. */
       await recordPush(taskN, baseNodeId || null,
-        curPkgId ? ('Pushed into ' + (packageShort(curPkgId) || 'package')) : 'Pushed at project level');
+        usePkg ? ('Pushed into ' + (packageShort(usePkg) || 'package')) : 'Pushed at project level');
       // Completion notification — a modal summary of what landed in the schedule, not just a toast.
       var wbsCount = payloads.filter(function (p) { return p.activity_type === 'WBS Summary'; }).length;
       if (typeof showImportSummary === 'function') {
         showImportSummary({
           title: 'Pushed to the schedule',
-          file: (curPkgId ? ((packageLabel(curPkgId) || 'Package') + ' — ') : '') +
+          file: (usePkg ? ((packageLabel(usePkg) || 'Package') + ' — ') : '') +
                 (curSetupName || cfg.name || projName(curPid) || 'Schedule Builder'),
           tiles: [
             { n: taskN, l: 'Activities added' },
@@ -24702,6 +25217,69 @@
       align: ['l', 'l', 'l', 'r', 'l', 'l', 'l', 'r', 'l', 'l', 'l'], note: note, rows: out };
   }
 
+  /* ==========================================================================
+     EXTENSION OF TIME — connected to the schedule, and NOT spread onto activities.
+     --------------------------------------------------------------------------
+     Owner: *"EOT should be connected and it will impact the project schedule, but in
+     terms of spreading the N days on to which activities I am not sure how to go through
+     with this."*
+
+     ⚠️ THE PREMISE IS THE TRAP: AN EOT IS NEVER SPREAD ONTO ACTIVITIES. It does not add
+        work and it does not change how long anything takes. It moves the CONTRACTUAL
+        COMPLETION DATE — the date against which lateness, and therefore liquidated
+        damages, are measured. Activity dates come from the programme's own logic; an
+        EOT is the reason a late finish becomes EXCUSABLE, not the cause of it.
+
+        Pushing N days across activities would be backwards twice over: it would corrupt
+        a programme that already says what it says, and it would hide the very thing the
+        EOT exists to show — the gap between when the work will actually finish and when
+        the contract now says it must.
+
+     ⚠️ SO NOTHING HERE WRITES A DATE. This derives three figures per package and reports
+        them; the schedule is never adjusted to match a claim.
+          contract finish   = the package's own end_date (from the contract)
+          + granted days    = Σ approved_days of EOTs with status 'Approved'
+          = revised finish  — the date lateness is now measured against
+        and separately, exposure = forecast finish − revised finish.
+
+     ⚠️ ONLY 'Approved' EOTs MOVE THE DATE. A pending claim is exposure, not entitlement,
+        and reporting it as granted would tell a PM they have time they have not been
+        given. Pending days are counted and shown apart.
+     ⚠️ CALENDAR DAYS. An EOT is granted in calendar days unless the contract says
+        otherwise; if yours is in working days the granted figure needs the project
+        calendar applied, and the note says so rather than quietly assuming. */
+  function eotFor(pkgId) {
+    var out = { granted: 0, pending: 0, nGranted: 0, nPending: 0 };
+    (CONTRACT_RECS || []).forEach(function (x) {
+      if (x.record_type !== 'EOT') return;
+      /* ⚠️ EXACT PACKAGE MATCH, and an untagged EOT counts ONCE — in the unassigned
+         row — never against every package. Crediting an untagged claim to all of them
+         would tell a PM that each lot has time it may not have been granted, and the
+         same days would be counted several times over in one report. The note says to
+         tag it in Contracts & Claims, which is the only way to know which lot it is. */
+      if (String(x.package_id || '') !== String(pkgId || '')) return;
+      var st = String(x.status || '').trim();
+      if (st === 'Approved') {
+        var g = Number(x.approved_days) || 0;
+        if (g) { out.granted += g; out.nGranted++; }
+      } else if (st === 'Pending') {
+        var c = Number(x.sub_days != null ? x.sub_days : x.est_days) || 0;
+        if (c) { out.pending += c; out.nPending++; }
+      }
+    });
+    return out;
+  }
+  /* The date lateness is measured against once the granted EOTs are applied. */
+  function revisedFinishOf(pkgId) {
+    var k = pkgId ? packageById(pkgId) : null;
+    var base = k && k.end_date ? pd(k.end_date) : null;
+    if (!base) return null;                       // no contract finish on record → nothing to revise
+    var e = eotFor(pkgId);
+    return { base: base, granted: e.granted, pending: e.pending,
+             revised: e.granted ? addDays(base, e.granted) : base,
+             nGranted: e.nGranted, nPending: e.nPending };
+  }
+
   // ---- CONTRACT PACKAGE MONITORING -------------------------------------------------
   // One row per contract package: a multi-package project (Package 1 — Tower 1 and
   // General Requirements; Package 2 — Towers 2-7) is ONE schedule that must be
@@ -24803,6 +25381,30 @@
         // ⚠️ A finish date is only real when nothing is still open. The latest actual
         //    finish among half-done work is not the package's finish.
         (b.af && !b.unfinished) ? Fmt.date(dstr(b.af)) : (b.n ? '— ' + b.unfinished + ' open —' : '—'),
+        // ---- contract time: what the contract says, once EOTs are applied -------
+        (function () {
+          var rv = revisedFinishOf(k || null);
+          if (!rv) return '—';
+          return Fmt.date(dstr(rv.base));
+        })(),
+        (function () {
+          var rv = revisedFinishOf(k || null);
+          if (!rv) return '—';
+          return (rv.granted ? '+' + rv.granted + 'd' : '—') + (rv.pending ? ' (' + rv.pending + 'd pending)' : '');
+        })(),
+        (function () {
+          var rv = revisedFinishOf(k || null);
+          return rv ? Fmt.date(dstr(rv.revised)) : '—';
+        })(),
+        /* ⚠️ EXPOSURE, NOT DELAY. Positive = the programme forecasts finishing AFTER the
+           date the contract now allows, which is what liquidated damages attach to.
+           Measured against the REVISED date, so granted time is already credited. */
+        (function () {
+          var rv = revisedFinishOf(k || null);
+          if (!rv || !b.pf) return '—';
+          var d = dayDiff(rv.revised, b.pf);
+          return d > 0 ? '+' + d + 'd late' : (d < 0 ? (-d) + 'd float' : 'on the date');
+        })(),
         plan == null ? '—' : (plan * 100).toFixed(2) + '%',
         poc  == null ? '—' : (poc * 100).toFixed(2) + '%',
         varp == null ? '—' : (varp > 0 ? '+' : '') + varp.toFixed(2) + ' pp',
@@ -24814,10 +25416,12 @@
     var noPkg = buckets[''] ? buckets[''].n : 0;
     var tv = t.totD ? (t.doneD - t.planD) / t.totD * 100 : null;
     return { headers: ['Contract package', 'Activities', 'Own / total', 'Planned start', 'Planned finish',
-        'Actual start', 'Actual finish', 'Planned %', 'Actual %', 'Variance', 'Cost-wtd %', 'Planned cost', 'Earned'],
-      align: ['l','r','r','l','l','l','l','r','r','r','r','r','r'],
+        'Actual start', 'Actual finish',
+        'Contract finish', 'EOT', 'Revised finish', 'Exposure',
+        'Planned %', 'Actual %', 'Variance', 'Cost-wtd %', 'Planned cost', 'Earned'],
+      align: ['l','r','r','l','l','l','l','l','r','l','r','r','r','r','r','r','r'],
       note: _repPackagesNote(at, noPkg), rows: rows,
-      totals: ['PROJECT', String(t.n), '', '', '', '', '',
+      totals: ['PROJECT', String(t.n), '', '', '', '', '', '', '', '', '',
         t.totD ? (t.planD / t.totD * 100).toFixed(2) + '%' : '—',
         t.totD ? (t.doneD / t.totD * 100).toFixed(2) + '%' : '—',
         tv == null ? '—' : (tv > 0 ? '+' : '') + tv.toFixed(2) + ' pp',
@@ -24836,6 +25440,22 @@
     } else if (noPkg) {
       note += '  ⚠️ ' + noPkg + ' activity/activities belong to no package, so the package rows below do NOT add up ' +
         'to the project. Assign them, or read the project total as the only complete figure.';
+    }
+    /* The EOT half of the report explains itself, because "revised finish" is a
+       contractual assertion and a reader must know exactly what produced it. */
+    var anyEot = (CONTRACT_RECS || []).some(function (x) { return x.record_type === 'EOT'; });
+    if (anyEot) {
+      note += '  Contract finish is the package\'s own end date; ⚠️ only EOTs marked <b>Approved</b> move it — ' +
+        'a pending claim is exposure, not entitlement, and is shown in brackets. Exposure compares the ' +
+        'programme\'s forecast finish with the REVISED date, so granted time is already credited. ' +
+        '⚠️ EOT days are treated as CALENDAR days; if your contract grants working days, apply the project ' +
+        'calendar to the granted figure before quoting it. ⚠️ Nothing here moves an activity — an EOT changes ' +
+        'the date lateness is measured against, never how long the work takes.';
+      var loose = (CONTRACT_RECS || []).filter(function (x) { return x.record_type === 'EOT' && !x.package_id; }).length;
+      if (loose) {
+        note += '  ⚠️ ' + loose + ' EOT(s) are not assigned to a package, so they are read as project-wide and ' +
+          'counted against the unassigned row only. Tag them in Contracts & Claims to credit the right lot.';
+      }
     }
     return note;
   }
@@ -27712,6 +28332,7 @@
       renderGantt();
     };
     _syncAnalyzeBtn();   // reflect the initial deps-on state on the Analyze ▾ button
+    (function () { var b = document.getElementById('ps-filepkg'); if (b) b.onclick = openFileUnderPackage; })();
     document.getElementById('ps-clear').onclick = function () {
       if (!isAdmin) { UI.toast('Clearing the schedule is restricted to admins.', 'error'); return; }
       if (!pid) { UI.toast('Select a project first.', 'error'); return; }

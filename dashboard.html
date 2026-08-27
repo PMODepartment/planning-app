@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819c" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260827a" />
 </head>
 <body>
   <div class="pd-app">
@@ -79,20 +79,20 @@
         </section>
 
         <!-- ---- Packages (A3): a contract package lives inside a project -->
+        <!-- ⚠️ THE PACKAGES PANEL MOVED to Contracts & Claims → Packages (2026-08-26).
+             Owner: *"I think the packages in the dashboard is misplaced it should be within
+             the contract module itself."* A contract package is a scope division that comes
+             off the CONTRACT DOCUMENTS, so the contract module owns it — the same principle
+             that put "— Create from this contract —" on the Add-record form.
+             ⚠️ The old "Select" button is NOT carried over: it wrote `pd_package` into
+             sessionStorage and nothing ever read it, so it narrowed nothing. Every module
+             that really does narrow by package has its own filter. -->
         <section class="pd-card pd-pkg-card">
-          <div class="pd-sec-head">
-            <h3>Packages <span class="pd-tree-count" id="pkg-count">0</span></h3>
-            <button class="pd-btn pd-btn-sm" id="pkg-push" style="display:none;" title="Mirror these packages into the Procurement (WPM) and Engineering apps so their records can be filed under the same contract lots">Share with Procurement &amp; Engineering</button>
-            <button class="pd-btn pd-btn-primary pd-btn-sm" id="pkg-add" style="display:none;">
-              <span data-ico="plus" data-ico-size="14"></span> New Package
-            </button>
-          </div>
-          <div id="pkg-body"></div>
-          <!-- Said plainly rather than implied: a planner who picks a package and
-               sees the module figures stay put would otherwise assume a bug. -->
-          <p class="pd-sec-note">Packages break this project into contract lots. Module data is still
-            recorded against the <strong>project</strong> — package-level scoping is being adopted
-            one module at a time (roadmap A3).</p>
+          <div class="pd-sec-head"><h3>Packages</h3></div>
+          <p class="pd-sec-note">Contract packages are managed in
+            <a href="modules/contracts-claims/index.html" style="color:var(--pd-red);font-weight:600;text-decoration:none;">Contracts &amp; Claims → Packages</a>,
+            where the contract that defines them lives. The schedule, BOQ, procurement and
+            engineering all file against them from there.</p>
         </section>
 
         <!-- ---- Module summaries (A5) ----------------------------------- -->
@@ -221,17 +221,18 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260826e"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260826e"></script>
+  <script src="assets/js/db.js?v=20260827b"></script>
+  <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
-  <script src="assets/js/modules-grid.js?v=20260827a"></script>
+  <script src="assets/js/modules-grid.js?v=20260827h"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
     // No project chosen yet → go pick one first (Primavera-style entry).
     if (!pid) { location.replace('projects.html'); return; }
 
-    var PROJ = [], GH = [], ghById = {}, curProj = null, PKG = [], canWrite = false;
+    var PROJ = [], GH = [], ghById = {}, curProj = null, canWrite = false;
 
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -242,9 +243,6 @@
         document.getElementById('nav-admin').style.display = '';
         var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = '';
       }
-      if (canWrite) document.getElementById('pkg-add').style.display = '';
-      // Sharing is a write to two other applications, so it follows the same permission.
-      if (canWrite) document.getElementById('pkg-push').style.display = '';
       boot();
     });
 
@@ -261,10 +259,7 @@
       renderKpis();
       loadStatus();
       // Independent of one another: a packages failure must not blank the tiles.
-      loadPackages();
       renderTiles();
-      document.getElementById('pkg-add').onclick = function () { packageModal(null); };
-      document.getElementById('pkg-push').onclick = pushPackages;
     }
 
     // The project's own tag — there is no workspace ancestry to walk any more.
@@ -286,10 +281,25 @@
 
     function renderSwitcherMenu() {
       var menu = document.getElementById('projsw-menu');
-      var items = PROJ.map(function (p) {
-        var gh = groupHead(p);
-        return '<button data-pick="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' class="cur"' : '') + '>' +
-          '<strong>' + Fmt.esc(p.name || p.id) + '</strong><small>' + Fmt.esc(p.id) + (gh ? ' · ' + Fmt.esc(gh) : '') + '</small></button>';
+      /* Grouped by PARENT PROJECT, so the sibling projects of one development sit
+         together — switching from AVR101 to AVR102 is the most common switch there is,
+         and a flat alphabetical list scatters them among unrelated jobs.
+         ⚠️ A parent of ONE renders flat, with no heading: a heading above a single
+            project invents a hierarchy that is not there. See assets/js/program.js. */
+      var items = PDProgram.groups(PROJ).map(function (g) {
+        /* ⚠️ The members are WRAPPED, not merely preceded by a heading. Indenting them
+           with a CSS sibling selector would also indent every project rendered after the
+           group — including a later group-of-one, which has no parent at all. */
+        var grouped = g.members.length > 1;
+        var kids = g.members.map(function (p) {
+          var gh = groupHead(p);
+          return '<button data-pick="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' class="cur"' : '') + '>' +
+            '<strong>' + Fmt.esc(p.name || p.id) + '</strong><small>' + Fmt.esc(p.id) + (gh ? ' · ' + Fmt.esc(gh) : '') + '</small></button>';
+        }).join('');
+        return grouped
+          ? '<div class="pd-projsw-group">' + Fmt.esc(g.label) + '</div>' +
+            '<div class="pd-projsw-kids">' + kids + '</div>'
+          : kids;
       }).join('');
       menu.innerHTML = '<div class="pd-projsw-menu-head">Switch project</div>' + items +
         '<a class="pd-projsw-all" href="projects.html">' + Icons.svg('arrowRight', 15) + ' All projects / selector</a>';
@@ -331,181 +341,11 @@
         kpi('Location', p.location ? Fmt.esc(p.location) : '—', '');
     }
 
-    /* Share this project's packages with the Procurement (WPM) and Engineering apps.
-       ⚠️ THE THREE APPS ARE THREE SEPARATE SUPABASE PROJECTS, so neither can read
-          `packages` across the wire. push-packages mirrors them into a read-only
-          `planners_packages` table in each — the same shape wpm_work_packages uses in
-          the opposite direction.
-       ⚠️ EXPLICIT, NOT AUTOMATIC. Packages are contractual, and a half-typed lot
-          appearing in a buyer's picker the instant it is saved is worse than a button
-          somebody presses when the contract is settled. */
-    async function pushPackages() {
-      var btn = document.getElementById('pkg-push');
-      if (!pid) { UI.toast('Select a project first.', 'error'); return; }
-      if (!PKG.length) { UI.toast('This project has no packages to share yet.', 'warn'); return; }
-      if (btn) { btn.disabled = true; btn.textContent = 'Sharing…'; }
-      try {
-        var res = await sb().functions.invoke('push-packages', { body: { project_id: pid } });
-        var d = res && res.data;
-        if (res && res.error) throw res.error;
-        var t = (d && d.targets) || {};
-        var okBits = [], badBits = [];
-        Object.keys(t).forEach(function (k) {
-          if (t[k] && t[k].error) badBits.push(k + ': ' + t[k].error + (t[k].hint ? ' (' + t[k].hint + ')' : ''));
-          else okBits.push(k + ' ' + ((t[k] && t[k].written) || 0));
-        });
-        // ⚠️ A partial success is reported as a partial success. "Shared" while
-        //    engineering received nothing is the one outcome nobody could act on.
-        if (badBits.length) UI.toast('Shared to ' + (okBits.join(', ') || 'nothing') + '. Failed — ' + badBits.join(' | '), 'error');
-        else UI.toast('Packages shared: ' + okBits.join(', ') + '.', 'success');
-        if (d && d.not_configured && d.not_configured.length)
-          UI.toast('Not configured for: ' + d.not_configured.join(', ') + ' — set its URL/SERVICE_KEY secrets.', 'warn');
-      } catch (e) {
-        var m = (e && e.message) || String(e);
-        UI.toast(/not found|404/i.test(m)
-          ? 'push-packages is not deployed yet — run: supabase functions deploy push-packages'
-          : ('Could not share packages: ' + m), 'error');
-      }
-      if (btn) { btn.disabled = false; btn.textContent = 'Share with Procurement & Engineering'; }
-    }
-
-    // ---- Packages (A3) ----
-    async function loadPackages() {
-      var body = document.getElementById('pkg-body');
-      body.innerHTML = '<div class="pd-empty">Loading packages…</div>';
-      try {
-        PKG = await PDb.getPackages(pid);
-      } catch (e) {
-        // ⚠️ Names the likely cause. Before the migration runs, this table does
-        // not exist, and a bare "failed" would send someone hunting in the app.
-        body.innerHTML = '<div class="pd-empty">Could not load packages: ' + Fmt.esc(e.message) +
-          '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-packages.sql</code>.</small></div>';
-        return;
-      }
-      renderPackages();
-    }
-
-    function renderPackages() {
-      var body = document.getElementById('pkg-body');
-      document.getElementById('pkg-count').textContent = PKG.length;
-      var sel = sessionStorage.getItem('pd_package') || '';
-      if (!PKG.length) {
-        body.innerHTML = '<div class="pd-empty">No packages yet — this project is tracked as a single scope.' +
-          (canWrite ? ' Use <strong>New Package</strong> to break it into contract lots.' : '') + '</div>';
-        return;
-      }
-      var rows = PKG.map(function (k) {
-        var cur = k.id === sel;
-        return '<tr class="pd-proj-row' + (cur ? ' cur' : '') + '" data-pkg="' + Fmt.esc(k.id) + '">' +
-          '<td class="pd-proj-name"><span class="pd-proj-ic">' + Icons.svg('box', 16) + '</span>' + Fmt.esc(k.code) + '</td>' +
-          '<td>' + Fmt.esc(k.name) + '</td>' +
-          '<td><span class="pd-pill ' + (k.status === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok') + '">' +
-            Fmt.esc((k.status || 'active').charAt(0).toUpperCase() + (k.status || 'active').slice(1)) + '</span></td>' +
-          '<td>' + Fmt.date(k.start_date) + '</td><td>' + Fmt.date(k.end_date) + '</td>' +
-          '<td class="num">' + (k.contract_amount != null ? Fmt.moneyShort(k.contract_amount) : '—') + '</td>' +
-          '<td>' + (cur ? '<span class="pd-pill pd-pill-ok">Selected</span>' : '<button class="pd-btn pd-btn-sm" data-select="' + Fmt.esc(k.id) + '">Select</button>') + '</td>' +
-          (canWrite ? '<td><button class="pd-btn pd-btn-sm" data-edit="' + Fmt.esc(k.id) + '">Edit</button></td>' : '') +
-        '</tr>';
-      }).join('');
-      body.innerHTML = '<table class="pd-table"><thead><tr><th>Code</th><th>Name</th><th>Status</th>' +
-        '<th>Start</th><th>Finish</th><th class="num">Contract Amount</th><th></th>' +
-        (canWrite ? '<th></th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table>' +
-        (sel ? '<div class="pd-sec-note"><button class="pd-btn pd-btn-sm" id="pkg-clear">Clear package selection</button></div>' : '');
-
-      body.querySelectorAll('[data-select]').forEach(function (b) {
-        b.onclick = function () {
-          var k = PKG.find(function (x) { return x.id === b.dataset.select; });
-          sessionStorage.setItem('pd_package', k.id);
-          sessionStorage.setItem('pd_package_name', k.code + ' — ' + k.name);
-          renderPackages();
-        };
-      });
-      var clear = document.getElementById('pkg-clear');
-      if (clear) clear.onclick = function () {
-        sessionStorage.removeItem('pd_package');
-        sessionStorage.removeItem('pd_package_name');
-        renderPackages();
-      };
-      if (canWrite) body.querySelectorAll('[data-edit]').forEach(function (b) {
-        b.onclick = function () { packageModal(PKG.find(function (x) { return x.id === b.dataset.edit; })); };
-      });
-    }
-
-    function packageModal(k) {
-      var isNew = !k; k = k || {};
-      var m = UI.modal(
-        '<h2 style="margin-top:0;">' + (isNew ? 'New Package' : 'Edit Package') + '</h2>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Code (e.g. PKG-01)</label>' +
-        '<input class="pd-input" id="k-code" value="' + Fmt.esc(k.code) + '"></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Status</label><select class="pd-select" id="k-status">' +
-        ['active', 'archived'].map(function (s) { return '<option' + (k.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
-        '</select></div></div>' +
-        '<div class="pd-field"><label>Name</label><input class="pd-input" id="k-name" value="' + Fmt.esc(k.name) + '"></div>' +
-        '<div class="pd-field"><label>Description</label><input class="pd-input" id="k-desc" value="' + Fmt.esc(k.description) + '"></div>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Start</label>' +
-        '<input class="pd-input" type="date" id="k-fs" value="' + (k.start_date || '') + '"></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Finish</label>' +
-        '<input class="pd-input" type="date" id="k-ff" value="' + (k.end_date || '') + '"></div></div>' +
-        '<div style="display:flex;gap:10px;"><div class="pd-field" style="flex:1;"><label>Contract Amount (₱)</label>' +
-        '<input class="pd-input" type="number" id="k-amt" value="' + (k.contract_amount != null ? k.contract_amount : '') + '"></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Sort order</label>' +
-        '<input class="pd-input" type="number" id="k-sort" value="' + (k.sort_order != null ? k.sort_order : 0) + '"></div></div>' +
-        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
-        (isNew ? '<div style="flex:1;"></div>' :
-          '<button class="pd-btn pd-btn-danger" id="k-del">Delete…</button><div style="flex:1;"></div>') +
-        '<button class="pd-btn" id="k-cancel">Cancel</button> <button class="pd-btn pd-btn-primary" id="k-save">Save</button></div>');
-      m.el.querySelector('#k-cancel').onclick = m.close;
-      if (!isNew) m.el.querySelector('#k-del').onclick = function () { deletePackageModal(k, m); };
-      m.el.querySelector('#k-save').onclick = async function () {
-        var num = function (id) { var v = m.el.querySelector(id).value; return v === '' ? null : Number(v); };
-        var data = {
-          project_id: pid,
-          code: m.el.querySelector('#k-code').value.trim(),
-          name: m.el.querySelector('#k-name').value.trim(),
-          description: m.el.querySelector('#k-desc').value.trim() || null,
-          status: m.el.querySelector('#k-status').value,
-          start_date: m.el.querySelector('#k-fs').value || null,
-          end_date: m.el.querySelector('#k-ff').value || null,
-          contract_amount: num('#k-amt'), sort_order: num('#k-sort') || 0,
-        };
-        if (!data.code) { UI.toast('Code required', 'warn'); return; }
-        if (!data.name) { UI.toast('Name required', 'warn'); return; }
-        try {
-          if (isNew) await PDb.createPackage(data);
-          else await PDb.updatePackage(k.id, data);
-          UI.toast('Saved', 'ok'); m.close(); await loadPackages();
-        } catch (e) { UI.toast(e.message, 'error'); }
-      };
-    }
-
-    function deletePackageModal(k, parent) {
-      var m = UI.modal(
-        '<h2 style="margin-top:0;">Delete package ' + Fmt.esc(k.code) + '?</h2>' +
-        '<p style="color:var(--pd-muted);">This cannot be undone. It is refused while any <b>schedule ' +
-        'activity or WBS branch is still assigned</b> to this package, and the error says how many — ' +
-        'reassign them first. To retire a package that has history, set its status to <b>archived</b> ' +
-        'instead; it stays readable and keeps every assignment.</p>' +
-        '<div class="pd-field"><label>Type <b>' + Fmt.esc(k.code) + '</b> to confirm</label>' +
-        '<input class="pd-input" id="d-echo" autocomplete="off"></div>' +
-        '<div style="margin-top:8px;text-align:right;"><button class="pd-btn" id="d-cancel">Cancel</button> ' +
-        '<button class="pd-btn pd-btn-danger" id="d-go" disabled>Delete permanently</button></div>');
-      var echo = m.el.querySelector('#d-echo'), go = m.el.querySelector('#d-go');
-      echo.oninput = function () { go.disabled = echo.value.trim() !== k.code; };
-      m.el.querySelector('#d-cancel').onclick = m.close;
-      go.onclick = async function () {
-        go.disabled = true;
-        try {
-          await PDb.deletePackage(k.id);
-          // A deleted package must not stay as the shell's selected scope.
-          if (sessionStorage.getItem('pd_package') === k.id) {
-            sessionStorage.removeItem('pd_package');
-            sessionStorage.removeItem('pd_package_name');
-          }
-          UI.toast('Package deleted', 'ok'); m.close(); parent.close(); await loadPackages();
-        } catch (e) { UI.toast(e.message, 'error'); go.disabled = false; }
-      };
-      echo.focus();
-    }
+    /* ⚠️ The package CRUD, the share button and the "Select" control that lived here
+       all moved to Contracts & Claims → Packages on 2026-08-26 (modules/contracts-claims/
+       packages.js). A contract package comes off the contract documents, so the contract
+       module owns it. Nothing was reimplemented — same `packages` table, same PDb calls,
+       same guarded delete RPC — so every consumer is untouched. */
 
     // ---- Module tiles (A5) ----
     // Each enabled module gets a tile. Figures come from the module's own `dash`

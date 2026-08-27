@@ -136,6 +136,32 @@ and **the bar is still on screen**. Dark mode resolves on tokens; 0 page horizon
 confirmed against the owner's real project; the tower fix is confirmed against the exact data shape
 their screenshots show.
 
+### 2026-08-26 (g) — Testing the meeting-linked lesson picker found two real defects
+The one path the signed-in pass could not exercise. Built the fixture (a meeting with an action
+item) in the QADEMO sandbox, and the test paid for itself immediately. `MODULE_V` → `20260826o`.
+- ⚠️ **The lesson Source dropdown was unusable.** Choosing "A meeting action item" or "An issue"
+  snapped back to "Not linked" and no picker appeared — so a lesson could only ever be linked
+  from a pre-filled "+ Capture a lesson". `linkKind` was derived from the stored ids, but the
+  dropdown is **intent that exists before any id does**. Tracked as `_kind` now, and never
+  persisted (the save builds its payload from named columns).
+- ⚠️ **The meeting list could render empty on a project full of minutes.** `_momLoaded` is set on
+  the first line of `loadMoms` as a re-entrancy guard, so it means "a fetch has started", not
+  "the data is here". `loadMoms` now re-renders the lessons screen on completion — **including on
+  the failure path**, or the picker waits forever.
+- ⚠️ **Why 64 green checks missed both, which is the transferable lesson: the suite stubbed the
+  picker and only rendered links that were ALREADY set.** It tested the renderer, never the
+  transition — and a suite that only feeds a component its settled states cannot see a state
+  machine that refuses to leave the first one. It now slices the real picker and drives the
+  before-an-id-exists states: **6 new checks fail against the pre-fix file**, 77/77 pass after,
+  0 functions lost.
+- **Verified live after the fixes:** the source holds, the action-item picker stays disabled until
+  a meeting is chosen, the race path self-corrects with the unsaved draft intact, both entry
+  points link correctly, two lessons on one action item read as "2 lessons". 0 console errors.
+  ⚠️ Sandbox left exactly as found (0/0/0), every probe row removed through the app's own deletes.
+- ⚠️ **Not fixed:** a meeting created in the current session is missing from `MOM_BY_ID`, so a
+  lesson linked to it reads "From a meeting" without the title until the next load. Cosmetic,
+  self-healing, one line in the "+ New minutes" handler when it is next touched.
+
 ### 2026-08-26 (j) — Vertical stacking: a tower dropdown, with a real consolidated option
 Owner: *"there should be a dropdown to determine what tower to look at (if multiple towers). there
 should also be a consolidated option meaning it views all towers, and the towers are side by side.
@@ -9128,3 +9154,340 @@ Downstream migrations (in the other two repos, not this one):
 
 ⚠️ **Nothing here has been deployed or run.** Three owner actions: run the two downstream migrations,
 `supabase functions deploy push-packages --project-ref bgupuqnkqhixpuctyder`, then press Share.
+
+### 2026-08-27 — AVR101 › {AVR101, AVR102} — a package may no longer restate a project, and the Portfolio consolidates instead
+
+Owner: *"there are projects that have multiple packages under it… Avesta Residences Tower 1 and General
+Requirements (AVR101) and Avesta Residences Towers 2-7 (AVR102) reported to be of the same project but
+treated as separate."* He then described what the wizard let him build: create project **AVR101**, open
+Contracts & Claims, define packages **AVR101** (again) and **AVR102** — *"This will create problems in
+connecting with the procurement app and engineering app."*
+
+**He is right, and the damage is specific.**
+- **AVR101 as a package of project AVR101** makes one contract lot exist twice — once with a schedule, a
+  BOQ and a WPM mapping, once as a child row — so every per-package total double-counts or splits
+  depending on which one a report read.
+- **AVR102 as a package of project AVR101 is worse.** `push-packages` resolves **one** downstream project
+  per Planners project (`cash_flow_settings.wpm_project_id`, `push-packages/index.ts:115`), so AVR102's
+  package would be mirrored into **WPM's AVR101**, and a buyer working in WPM's own AVR102 project would
+  see an empty picker with nothing anywhere saying why.
+
+**Checked, not assumed:** `wpm/data/` holds **AVR101 and AVR102 as separate projects**, and both apps'
+`projects.id` comments read `-- e.g. 'AVR101'`. Megawide's codes are PROJECT codes. So AVR101 and AVR102
+are **two projects of one development**, not two packages of one project.
+
+**Decision (owner): keep them separate and consolidate for reporting** — *"Let's just consolidate the two
+into a portfolio view… similar to how procurement dashboard works."* ⚠️ The alternative, merging them into
+one Planners project, was rejected precisely because it breaks the 1:1 that every cross-app push relies on.
+
+**Ported from the Procurement dashboard, which solved this first** (`wpm/index.html`, `_progKey` /
+`_progLabel` / `_progTotals`). See `modules/portfolio-overview/CLAUDE.md` and
+`modules/contracts-claims/CLAUDE.md` for the two halves.
+
+⚠️ **A live crash was found and fixed on the way:** `wizard.js`'s `open()` never initialised `st.pkgList`
+or `st.pkgPrimary`, both of which the package step reads on its first paint — `st.pkgList.map(...)` on
+`undefined`. It survived the 2026-08-26 review because that verification exercised `pkgToCreate` /
+`primaryPkg` / `dupPkgCode` against a **hand-built `st`**, never the one `open()` actually builds, and its
+own note recorded the run was *"not clicked through in a browser"*. A unit test that constructs the state
+under test cannot catch state that is never constructed.
+
+**Cache:** `MODULE_V` → `20260827a` (dashboard.html, modules.html, modules-grid.js fallback); contracts
+`module.css` / `wizard.js` / `module.js` → `?v=20260827a`.
+
+### 2026-08-27 (2) — A package was never required, and four screens said it was
+
+Owner on the live build: *"OPW101 is a one work construction contract without any packages. But this
+requires me to connect it to a package. Double check migration running as well if there are pending that
+needs to be run."*
+
+**It was a hard block, not a nudge** — `contracts-claims/module.js`'s edit form refused to save a Contract
+without a package code and name, so a single-lot job could only be saved by inventing a package, and the
+only code to hand was the project's own. See `modules/contracts-claims/CLAUDE.md` for the full fix.
+
+⚠️ **`package_id` is nullable everywhere with no back-fill** (`2026-08-25-package-adoption.sql`), so the
+claim that *"nothing downstream can file against them"* was false. Everything files against the
+**project**; a package only narrows.
+
+**New: `migrations/VERIFY-schema.sql`** — answers the migrations half of the question without needing
+anyone to remember what was run. Generated from all **101** `2026-07-*` / `2026-08-*` migration files
+(**274** declared tables, columns and functions); paste it into the Supabase SQL editor and it returns one
+row per migration with missing objects, naming each. **No rows = everything applied.**
+- ⚠️ **Object existence only** — not RLS policies, grants, index definitions, trigger bodies or
+  back-fills. A file can look complete and still have had its policy block skipped, so a clean result
+  means *the schema is there*, not *every migration ran end to end*.
+- ⚠️ A column is checked only when its table exists, so a missing table is reported once rather than
+  dragging all of its columns in behind it.
+
+**Cache:** `MODULE_V` → `20260827b`; contracts `module.css` / `boq.js` / `packages.js` / `wizard.js` /
+`module.js` → `?v=20260827b`.
+
+### 2026-08-27 (3) — The verifier's first run: one false positive, four real, and the one that explains everything
+
+Owner ran `VERIFY-schema.sql` on the live database. Five migrations reported incomplete.
+
+⚠️ **`2026-08-25-package-adoption.sql` IS THE ROOT CAUSE OF TODAY'S WHOLE THREAD.**
+`contracts_claims.package_id` and `boq_items.package_id` **do not exist on the live database.** Every
+consequence follows from that one fact:
+- `persistRecord` **strips unknown columns and retries** (module.js:393-420), so every contract save has
+  been **silently dropping its package link**. The link was never stored — not once.
+- So the register listed **every** contract under *"Contract records not linked to a package"*, because
+  `package_id` reads `undefined` on every row. That is the screenshot, and it was never about OPW101.
+- ⚠️ **And the toast sent whoever read it to the wrong file.** `warnDropped` named
+  `2026-07-20-contracts-claims-full.sql` for any dropped column — already applied, and it would have
+  changed nothing. Fixed: a `COL_MIGRATION` map now names the column's **own** migration, and
+  `recordFailMsg` reads the column out of the error to do the same.
+
+**The other three are genuine and additive** — all nullable columns, all idempotent, none back-filled:
+`resource_assignments.curve` (assignment spread curve), `progress_photos.location_values` (the
+location-breakdown switch), `project_schedule.cost_curve` (cost loading's spread shape, which the S-Curve
+reads). Each is inert until set, so running them changes no existing number.
+
+⚠️ **`admin_delete_workspace` was a FALSE POSITIVE, and the verifier was wrong, not the database.**
+`2026-08-12-group-heads-replace-workspaces.sql:157` drops that function and the `workspaces` table
+outright — it is *correctly* absent. The generator now **models supersession**: a `drop function` /
+`drop table` / `drop column` in a later migration cancels the earlier declaration, and a dropped table
+takes its columns with it. A verifier that cries wolf about deliberately retired objects trains people to
+skim its output — and the four real findings were sitting right next to the false one.
+
+**`migrations/gen-verify.js`** is now the source of the verifier; run `node migrations/gen-verify.js`
+after adding a migration so it never lags the repo. Coverage widened from the 2026-07/08 files to **all
+113** dated migrations (**293** live objects after supersession).
+
+**Cache:** `MODULE_V` → `20260827c`; contracts `module.js` → `?v=20260827c`.
+
+### 2026-08-27 (4) — Wizard audit: the package step is skipped when there is nothing to choose
+
+Owner asked for an audit of the contract/CO/EOT wizard, on the grounds that *"a contract in itself is a
+package… contract and package are case to case the same definition and different."*
+
+Audited both entry points for all four record types. `openForm` was clean for CO/Claim/EOT. **The wizard
+showed a full step with nothing on it but a ⚠️ telling the planner to go create a package** — now skipped
+when the project has none, renamed **"Scope"** for records that only narrow, with *"the whole project
+(OPW101)"* as the explicit default. Full detail in `modules/contracts-claims/CLAUDE.md`.
+
+**Cache:** `MODULE_V` → `20260827d`; contracts `wizard.js` / `module.js` → `?v=20260827d`.
+
+### 2026-08-27 (5) — Parent project goes app-wide, and the BOQ wizard ends in the importer
+
+Two owner asks in one turn.
+
+**1. *"I don't understand the BOQ wizard. How will I add the BOQ then if this is the case?"***
+⚠️ **Fair question — the BOQ type wrote nothing and told you to go and find the importer yourself.**
+`finish()` was `if (st.type === 'BOQ') { close(); return; }`, so it was a three-step detour ending on a
+"Done" button. It now **opens the BOQ screen and its file picker** (`BOQ.openImport`, exported for this).
+The Review step is gone for a BOQ run — its entire content was *"Nothing is recorded for a BOQ-only
+run"*, a step that exists to say it has nothing to say.
+- The step also answers the second half — *"There will be multiple progress billings, what will
+  happen?"* — because nothing about billing depends on packages and the old copy never said so: the BOQ
+  is imported **once**, and each progress billing is a **billing period** where you enter each line's
+  **cumulative** %; previous / this-period / to-date derive from the period before it, and each period
+  records which **revision** it was billed against so a remeasure cannot rewrite a submitted billing.
+- ⚠️ **The Package type card is gone from step 1** — owner: *"The package wizard should also be folded
+  within the contract wizard as an optional step."* It already was; offering Package as its own
+  top-level RECORD TYPE said the opposite, that a package is a thing you set out to create, peer to a
+  contract. The type still works if opened directly — this removes the invitation, not the capability.
+
+**2. *"AVR101 and AVR101 are treated separately. LCR352 and LCR102 are treated the same way. Let's do a
+global approach for this in the planning-app first."*** — the Portfolio rollup was one screen's private
+copy; it is now **`assets/js/program.js` (`PDProgram`)**, read by Portfolio Overview, the projects list
+(`Group by → Parent project`), the dashboard's project switcher (siblings grouped together) and Admin.
+- ⚠️ **ONE DEFINITION.** Two screens grouping by slightly different rules is exactly how two pages come
+  to disagree about which projects are "the same project" — the confusion this exists to end. The
+  Portfolio copy is **deleted**, not left beside it.
+- **New `migrations/2026-08-27-project-program.sql`** adds `projects.program`, an **override only**.
+  ⚠️ **NULL is the normal state and nothing is back-filled** — blank means "group by the code prefix",
+  which every id here already follows, so the rollup works with **no data entry**. Back-filling would
+  turn a convention that self-corrects into stored strings that go stale silently.
+  ⚠️ **No `parent_id`, no `programs` table** — a project is never a child row of another project, or
+  the AVR101 › {AVR101, AVR102} nesting comes back through a different door.
+- ⚠️ **RETRACTED THE SAME DAY — see the correction entry below.** This bullet originally claimed a
+  defect found via *"La Costa Residences Phase 1/2"*. **I invented that project name**, and the
+  trailing-qualifier trim it justified has been removed.
+- ⚠️ **`projects` writes are now tolerant of a column this database lacks** — PostgREST rejects the
+  **whole row** on an unmigrated column, so adding `program` would have thrown away every other field an
+  admin had just typed. Same failure the contracts module hit with `package_id` today. Only a *missing
+  column* is tolerated; a constraint or RLS refusal still fails loudly.
+
+**Verified 123/123 in Node** against the shipped functions (29 program helper + 31 wizard steps + 28
+wizard guard + 23 portfolio + 12 orphan rendering), plus a clean parse of every edited file.
+⚠️ **Not clicked through signed in**, and the new migration has not been run — until it is, the Parent
+project field reports that it was not stored and names the file.
+
+**Cache:** `db.js` / `dashboard.css` / new `program.js` → `?v=20260827a`; `MODULE_V` → `20260827e`;
+contracts `wizard.js` / `module.js` / `boq.js` / `packages.js` → `?v=20260827e`.
+
+### 2026-08-27 (6) — Correction: "La Costa Residences" was invented, and the rule it justified is gone
+
+Owner: *"What is La Costa Residences? Its Lancaster Residences."*
+
+⚠️ **I fabricated a project name and then built a rule on it.** Asked to group `LCR102` / `LCR352`, I
+had no expansion for LCR, invented *"La Costa Residences"* as a test fixture, and it propagated into a
+shipped code comment, the CLAUDE.md log and a commit message — reading as if it were real Megawide data.
+**The real name was already in the repo:** `wpm/CLAUDE.md` records LCR102/LCR352 as **"4PH Lancaster"**,
+in the very `PROJECT_MAP` note that says both were left unmapped because *"4PH Lancaster"* could not be
+disambiguated between them. I should have grepped for it instead of filling the gap.
+
+⚠️ **The invented example produced a real code defect, now reverted.** Fictional *"… Phase 1"* / *"…
+Phase 2"* names gave a dangling label, so I added a trim that drops a trailing unit noun when a bare
+number follows it. **The Procurement dashboard had already considered and rejected that class of rule**,
+with its reason recorded at `wpm/CLAUDE.md`:
+
+> *"⚠️ Deliberately NO blocklist of trailing unit nouns (Building/Tower/Phase): LCR102/LCR352 therefore
+> label as '4PH Lancaster Building', which is slightly long but true. Stripping such words would truncate
+> a project genuinely named 'Lancaster Building' — a worse failure than a long label."*
+
+On names of the form *"4PH Lancaster Building 1 / 2"* my trim would have relabelled the group **"4PH
+Lancaster"** while WPM went on calling it **"4PH Lancaster Building"** — **two apps disagreeing about a
+project's name, which is the precise failure this shared helper exists to prevent.** A long-but-true
+label wins. `projects.program` is the escape hatch if a real label ever reads badly: an explicit name
+cannot guess wrong.
+
+**The lesson, recorded because it is the transferable part:** when a fact is missing, grep the repos
+before inventing a plausible filler — a fabricated fixture reads exactly like a real one three files
+later, and here it went on to justify a behaviour change that contradicted a documented decision in a
+sibling app.
+
+**Everything else from entry (5) stands** — the shared `PDProgram`, the app-wide adoption, the
+`projects.program` override and the tolerant project write are unaffected. Suite now **28/28** on the
+helper (123 → 122 total), with the LCR fixture carrying its real name and an assertion that the label
+**matches WPM's string exactly**.
+
+⚠️ **Owner has run `2026-08-27-project-program.sql`**, so the Parent project override is live.
+
+### 2026-08-27 (7) — One schedule, several contract codes: a package now carries the codes it buys under
+
+Owner: *"How should we resolve this especially in connecting the procurement from AVR102? Currently
+AVR101's schedule covers all 7 towers and general requirements."* Built steps 1 and 3 of the agreed plan;
+step 2 (tagging which WBS branches belong to which lot) is a data call and is left to the planner.
+
+**The model this settles.** Two axes that never lined up: the WORK is one construction sequence (shared
+cranes, shared general requirements, predecessors running between towers) while the MONEY is two
+contracts, each its own project in Procurement and Engineering. Everything here is scoped by
+`projects.id`, so it forced them to be one thing.
+1. **A Planners project = a contract code.** AVR101 and AVR102 both stay; merging breaks the 1:1 every
+   cross-app push relies on.
+2. **A schedule belongs to a DEVELOPMENT.** One project hosts it. Splitting 4,393 activities would sever
+   the predecessors between towers and duplicate the general requirements.
+3. **Each contract lot inside that schedule is a `package` on the host, named for its SCOPE**
+   ("Towers 2-7"), never for a project code — which is why the 2026-08-27 guard and this are consistent
+   rather than in tension: the scope description and the contract code are different facts.
+4. **The package carries the codes it maps to.** `migrations/2026-08-27-package-external-codes.sql` adds
+   `wpm_project_id`, `eng_project_id`, `planners_project_id`. **USER MUST RUN IT.**
+
+**⚠️ THE SAFETY PROPERTY, and it is what makes this shippable to every project at once: with no package
+mapping set, every code path returns exactly what it returned before.** `_prcWpmScopes()` degrades to the
+single id from `cash_flow_settings`, the procurement tree keeps its `Procurement › Trade › WP` shape, and
+`wpOf()` resolves through the host. Only a package someone deliberately maps changes anything.
+
+**Three real collisions the union creates, each of which returns a WRONG answer rather than an untidy one:**
+- ⚠️ **`wp_no` is unique only WITHIN a WPM project.** AVR101 and AVR102 both have a work package "1", so
+  the flat `wp_no -> row` index would have resolved to whichever loaded second. The index is now nested
+  `(wpm project -> wp_no -> row)`, and an activity resolves through **its own contract package** —
+  falling back to the host, then to a number that is unambiguous across every mirrored project, then to
+  **UNLINKED rather than a guess**. Showing another lot's vendor under an activity is worse than showing
+  none.
+- ⚠️ **`activity_id` is the bare WP number**, so two lots both wanted the id "1" and every sync would
+  thrash between them. Only a **non-host** scope is prefixed (`AVR102-1`) — prefixing everything would
+  change the Activity ID of every package on every existing project, so the next sync would sweep them
+  all as stale and re-insert them.
+- ⚠️ **The stale sweep scanned only Procurement's DIRECT children.** With a lot level the trade nodes are
+  grandchildren, so it would have found nothing stale **and** read every package as new, inserting a
+  second copy of the whole branch. It walks the whole subtree now.
+
+**Two defects of my own, both caught by checking rather than reading:**
+- ⚠️ **A literal NUL byte written into `modules/project-schedule/index.html`** — the `\u0000` separator I
+  used for the index key. `grep` then treats the file as binary, and it is a documented trap in this
+  repo's own log. Fixed at the root by removing the separator entirely (a nested map needs none), so it
+  cannot recur. ⚠️ **The environment mangles backslash escapes inside Bash heredocs** — it happened twice,
+  the second time inside the comment explaining the first. Patch scripts are written with the Write tool
+  and run from a file now.
+- ⚠️ **`wpIsUnlinked` still read the old FLAT index** (`!_wpIndex()[k]`), which is `undefined` against the
+  new shape — **every activity in the schedule would have reported its work package as UNLINKED.** It
+  asks `wpOf()` now, the same resolution the label uses, so the flag and the text cannot disagree.
+
+**Also:** the Work Package picker is scoped to the activity's own lot (two `<option>`s sharing
+`value="1"` cannot be told apart by a `<select>` at all), the packages list shows a **Buys under** column
+so a lot silently pointing elsewhere is visible, and `PDb.createPackage`/`updatePackage` are now tolerant
+of the unmigrated column like the project writes.
+
+**Verified 144/144 in Node** against the shipped functions (22 new on the multi-code resolution, sliced by
+brace-matching), **0 functions lost** against HEAD, 0 NUL bytes, every inline script parses, the packages
+table aligned 8 header / 8 body cells, and the migration paren-balanced with no policy changes.
+
+⚠️ **Not clicked through signed in, and no live sync has been run.** ⚠️ **Steps 4-5 of the plan are NOT
+done:** `push-packages` / `push-need-by` still scope per project, and AVR102's dashboard does not yet read
+the host for schedule-derived figures.
+
+**Cache:** `db.js` → `?v=20260827b`; `MODULE_V` → `20260827f`; contracts `packages.js` → `?v=20260827f`.
+
+### 2026-08-27 (8) — Whole-app audit: 4 real findings, and 4 of my own detectors were wrong first
+
+Owner: *"Let's audit the overall app first before doing anything else."* Eleven checks across
+24 HTML + 27 JS files, 115 migrations and 3 SQL schema files. **Every check carries a sanity
+gate** — one that cannot fail on known-bad input proves nothing, and this repo's log already
+records three occasions where an audit script produced a confidently wrong number.
+
+**⚠️ IT HAPPENED FOUR MORE TIMES THIS PASS, and that is the most transferable part of the
+entry.** Each detector's FIRST run was wrong, and each looked plausible:
+1. **The truncation detector reported 5 for 5 false positives** on the samples I hand-checked
+   — it only understood an inline `.gt('id', last)`, and every keyset loop in this codebase
+   builds the query in steps (`q = base; if (last) q = q.gt(...)`).
+2. **Its regexes reached the file as `\\.gt` (double backslash)** after passing through a
+   shell + Python escaping layer, so they matched a literal backslash and could never fire.
+   The displayed source looked correct; only dumping the raw bytes showed it.
+3. **The RLS check reported 21 tables with no row-level security at all.** The loop syntax is
+   `foreach t in array array[...]` — the keyword AND the array constructor — and matching one
+   `array` missed every one. True count: **0**.
+4. **The CSS check reported 377 undefined classes**, of which most were template fragments
+   (`(cls`, `||`, `?`, `Math.min(depth,`). Real count after filtering to kebab-case: 123, of
+   which **86 are deliberate JS hooks** and 34 genuine gaps.
+   **Sanity-gate every scan of this codebase, and dump raw bytes before believing a regex.**
+
+**CLEAN (with gates passing):** 0 NUL bytes · 24 inline blocks + 27 JS files all parse · no
+`service_role`/`sb_secret` material in any shipped file · every local asset carries `?v=` and
+**no shared asset is served at two different versions** · `MODULE_V` consistent with its own
+cache-busting tag · 0 `create policy` without a preceding drop (all 115 migrations re-runnable)
+· 0 live tables without RLS · **0 live `for all` policies that fail to narrow by project.**
+
+⚠️ **The `for all` check needed SUPERSESSION to be true**, exactly like VERIFY-schema.sql: 12
+of the 15 raw hits are superseded by `2026-07-21-rls-project-scope-fix.sql`, which drops and
+recreates them *dynamically* inside a DO loop. Of the remaining three, one is on the dropped
+`workspaces` table and two (`group_heads`, `boq_class_suggestions`) have **no `project_id` at
+all** — a lookup and a deliberately portfolio-wide learning library, so `is_planner()` is the
+correct rule, not a leak.
+
+**FINDINGS**
+
+1. ⚠️ **`sync-wpm` reads EVERY work package across ALL WPM projects with no pagination**
+   (`supabase/functions/sync-wpm/index.ts:105`). Called with a `wpm_project_id` — which the
+   Cash Flow button does — it is per-project and safe. Called **without** one (a cron or a
+   full sync) it is capped at 1000 rows server-side with no error, so the
+   `wpm_work_packages` mirror is silently built from a fraction of the portfolio. That mirror
+   feeds Cash Flow's entire cash-out side, the schedule's Procurement branch and vendor
+   performance. **Same table, same defect, one function away from the one fixed on
+   2026-08-16.** `vendors` at :172 is unpaginated too.
+2. ⚠️ **`.pd-modal-body` and `.pd-label` are defined NOWHERE** — not in `dashboard.css`, not
+   in any module CSS, not in any inline `<style>` — yet emitted in **cash-flow,
+   project-schedule and resource-loading**. Identical in shape to the 2026-07-02 finding
+   where `.pd-modal-header`/`-footer` had no CSS at all. `.pd-modal` is itself the scroller,
+   so a body with no height bound scrolls the header and the **Save button** out of view on a
+   long form — the `#ps-modal` fix of 2026-08-24 solved this for one module and never for the
+   shared component.
+3. **Schema drift has grown and is now severe.** `supabase-setup.sql` is missing **29** of the
+   63 live tables and `supabase-schema.sql` is missing **52**. `/migrations` remains the only
+   complete definition. Flagged as pre-existing on 2026-07-16 (13 missing then); a fresh
+   deploy from either file today builds under half the app.
+4. **`push-vendor-perf:154` reads the mirror per project without pagination** — safe while a
+   project has under 1000 work packages, which is true today. Latent, not live.
+
+**FIXED IN THIS PASS (one line, and it was mine, from an hour earlier):**
+`loadWpmWorkPackages` used `.limit(2000 * scopes.length)`. ⚠️ **A `.limit()` above 1000 is
+fiction** — PostgREST still returns 1000 — so it read as a bound and was not one, and
+unioning a second contract code doubled the rows it had to survive. Now `PDb.selectAll`.
+It was the **only** `.limit()` above the cap in the codebase.
+
+**NOT FIXED, deliberately:** findings 1-4 are reported rather than changed, because the owner
+asked to audit before doing anything else and #1 and #3 each deserve their own verified pass.
+
+**Verified after the fix:** 22/22 on the multi-code suite, 0 NUL bytes, inline script parses,
+0 `.limit()` above the cap remaining.

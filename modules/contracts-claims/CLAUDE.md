@@ -369,6 +369,8 @@ reporting purposes, can we cover til end of each month?"* — so **both**, kept 
   full, Mar 25/31 part; the monthly total closes **exactly** on revenue to date (₱300,000.00), and
   the material split holds at 0.6 in every month. Not yet clicked through in a browser.
 
+`MODULE_V` → `20260826q`; `wizard.js?v=20260826a`, `module.js?v=20260826b`, `module.css?v=20260826a`.
+
 ### 2026-08-26 — Decision #2 corrected: a package is a scope division, not a trade
 Owner: *"Package 1: Avesta Residences Tower 1 and General Requirements / Package 2: Avesta Residences
 Towers 2-7 … In terms of BOQ, it is purely the client who will dictate which will define the progress
@@ -420,6 +422,293 @@ Owner: *"Add rel_pct_claimed vs certified so dispute is measurable"*.
 - **Verified**: 12/12 on `disputeOf`, 12/12 on the reframed `pocCompareHTML`. ⚠️ Migration not run,
   nothing clicked through.
 
+### 2026-08-26 — The contract DEFINES its package (and stops showing claim dates)
+Owner, on the Add-record form: *"In the contract module, there is a package field here. How come? In
+the contract it'll be the one that will define the packaging."* And: *"There are also date fields for
+approved evaluated which are not relevant to the construction contract."*
+
+Both were real, and the first was a modelling error rather than a cosmetic one.
+
+**The package field pointed the wrong way for one of the four types.**
+`contracts_claims.package_id` was added for CLAIMS — a claim, change order or EOT is *raised against* a
+lot that already exists — and one form serves every type, so **Contract** inherited a picker asking
+which package it belongs to, when the contract is the document that **defines** the package.
+- Type **Contract** now shows **Contract package** with *— Create from this contract —* first, plus
+  *Link to …* for each existing package, and a block for package **code, name, start, finish**. The
+  contract amount becomes the package's contract value.
+- Code and name are **seeded from Reference no. and Description** as you type, and never overwrite
+  anything you have edited yourself (`dataset.touched`).
+- Types **Claim / Change Order / EOT** are unchanged, relabelled **Raised against package** so the
+  direction is legible on screen.
+- ⚠️ **This closes a real chicken-and-egg.** Until now the only way to create a package was the
+  Dashboard, so a project whose contracts were being entered here read *"(none on this project)"* — the
+  screenshot — and the schedule, BOQ, procurement and engineering all had nothing to file against.
+- ⚠️ **Still never automatic.** Decision #2 stands: a package minted without a human saying so could
+  later be cited in a claim nobody agreed to. This is an explicit choice with its code and name
+  confirmed — a planner entering the contract, which is the authoritative act.
+- ⚠️ **The package is created BEFORE the record is written, and a failure aborts the save.** A contract
+  row saved pointing at a package that could not be created would claim a link that does not exist and
+  nothing downstream would notice. A duplicate code says so and offers linking instead.
+- ⚠️ **Seeded once, then the Dashboard owns it.** No two-way sync, so the contract and the package
+  cannot silently drift apart.
+
+**The four claim dates were showing on a Contract.**
+⚠️ `Date filed / submitted / evaluated / approved` carried **no type guard**, while the `Status & dates`
+header above them and the aging hint below them both had `data-not="Contract"` — so on a Contract the
+header vanished and its four fields stayed, stranded under "Contract value". Submitted → Evaluated →
+Client Approved is the **claim** pipeline; a construction contract is signed, not evaluated.
+- A Contract now shows **Contract dates → Date signed**, and nothing else. It writes to the same
+  `date_filed` column (no schema change), and the form never shows both labels at once.
+- The three claim dates are written as `null` on a Contract rather than left holding stale values.
+- ⚠️ **The guard had to move from the input to the LABEL.** `f()` put its attributes on the `<input>`
+  while `applyType()` toggles the element carrying `data-only` / `data-not` — hiding the box and
+  leaving its caption floating, which is how this shipped unnoticed. `f()` gained a `lattrs` argument
+  and the note says why.
+
+**Verified** by static audit of the built form: **0 inputs carry a type guard** (all 18 sit on labels,
+7 Contract-only / 11 non-Contract), and `node --check` is clean. ⚠️ **Not clicked through in a browser**
+— in particular, creating a package from a contract has not been run against the live database.
+
+`MODULE_V` → `20260826p`; `module.js?v=20260826a`.
+
+### 2026-08-26 — A guided wizard for Contract / CO / Claim / EOT / BOQ
+Owner: *"We will create a wizard for Contracts, BOQ, Change Order, Claims/EOT"*, after asking whether
+the BOQ import could cope with the many formats clients send and whether input could be *"intuitive
+like a wizard similar to how the schedule builder works so that it can easily be connected with each
+other."*
+
+Shape decided with the owner: **one** wizard with the type chosen at step 1 (not four), the **wizard for
+new records and the existing form for editing**, and — for the BOQ half — **full column mapping saved as
+a reusable format profile**.
+
+`wizard.js` (new, 347 lines) → `window.CCWizard`. Steps: **Record → Package → Details → Dates → BOQ →
+Review**, with each step declaring `when()` so the rail and the Back/Next arithmetic can never diverge
+from what is actually shown — the classic wizard bug where "3 of 5" jumps to 5 and the count lies.
+- ⚠️ **It does not own the write.** `persistRecord()` was extracted from `openForm`'s save handler and
+  both now call it. Two payload builders for one table drift, and the half that drifts is the one
+  nobody is looking at.
+- ⚠️ **Nothing is written until the last step.** The one irreversible act — creating a contract package
+  — happens inside the same save as the record, so abandoning the wizard leaves no orphan package.
+  If the package fails (a duplicate code, most often) **nothing** is saved and you stay on Review.
+- ⚠️ **The package step states its direction.** A Contract **defines** its package; a CO/Claim/EOT is
+  **raised against** one. With no packages yet, it says to record the Contract first rather than
+  showing an empty picker.
+- ⚠️ **A contract is signed, not evaluated** — the wizard never builds the claim-pipeline dates for a
+  Contract at all, rather than building and hiding them.
+- ⚠️ **Back never loses a field**: `capture()` runs on every move, including rail jumps.
+- Falls back to the old form if `wizard.js` fails to load, so the module cannot lose its Add button.
+
+**On the BOQ question, answered honestly in the step itself:** detection is a set of header patterns
+(`/description/`, `/total amount/`, `/material cost/`) plus one structural rule, all measured against
+**one** workbook (OPW101 Package 2). A client whose sheet says "Particulars / Sum" parses partly, and a
+silently-wrong money column is the dangerous failure — so the BOQ step hands over to the existing
+detect → preview → accept importer instead of pretending to have understood the file.
+⚠️ **`boq_import_profiles` already has `client_key`, `col_map`, `header_row`, `first_col` and
+`heading_rule`** — the reusable-profile machinery is in the schema and only the UI is missing.
+
+⚠️ **NOT DONE, and next:** the BOQ step is a hand-off, not yet the mapping UI — re-pointing columns per
+sheet and saving/reusing a named format profile is the second half of this build. Nothing here has been
+clicked through in a browser.
+
+### 2026-08-26 — Three defects the owner found in the wizard, one of them mine to own
+Owner, from the live wizard: *"there is already a BOQ field is this section optional? Or even at the
+right time to add where for example a project had just been awarded and there is no BOQ to import
+yet"*, then a save that failed on `approved_amount`, then *"It says PKG-1 already exists but doesn't
+show in the contract records."*
+
+**1. ⚠️ THE WIZARD LEFT ORPHAN PACKAGES — and its own comment claimed it could not.** The package is
+created before the record because the record needs its id; when the record insert then failed, the
+package stayed. The owner hit it twice: the save died on a missing column, the retry was refused with
+*"PKG-1 already exists"* — a package they had never knowingly created and could not see anywhere in
+the records list, because a package is not a record. A failed save now **rolls the package back**, and
+⚠️ **only one this save created** — a package the planner *linked* to is somebody else's row and is
+never touched.
+
+**2. The BOQ step looked mandatory at exactly the wrong moment.** A contract is recorded the week it is
+awarded; the priced BOQ arrives weeks later. A step that looks required then invites either a
+fabricated import or an abandoned wizard. It now says **"optional — most contracts are recorded before
+the BOQ arrives"**, the rail sub-title says so too, and the dead "Open the BOQ importer…" button is
+gone rather than lying about what it does.
+
+**3. A save could not survive a column this database does not have.** `contracts_claims` here predates
+the four est/sub/eval/approved columns, and a **Contract sends all four as NULL** — it has no claim
+pipeline — so PostgREST rejected the whole insert over columns holding nothing. `persistRecord` now
+drops a missing column **only when its value is null** and retries, bounded, then reports which ones
+went so the migration still gets run.
+⚠️ **A missing column carrying a real figure still fails loudly.** Silently discarding money is the one
+outcome worse than an error.
+
+**Verified 12/12** executing the shipped `persistRecord` against a stubbed PostgREST: the exact live
+case (four missing NULL columns) saves with the ₱1,397,462,269.86 contract amount intact in 5 bounded
+attempts; a missing column holding ₱250,000 fails and names itself; a healthy schema takes exactly one
+attempt; the caller's payload is never mutated; and the update path degrades identically without
+stamping `created_by`.
+
+⚠️ **Two orphan packages already exist on One Portwood** (PKG-1, PKG-2) from before this fix — they are
+on the **Dashboard → Packages**, not in the Contracts records, and can be edited or archived there.
+
+`MODULE_V` → `20260826r`; `wizard.js?v=20260826b`, `module.js?v=20260826c`.
+
+### 2026-08-26 — Packages move out of the Dashboard and into the contract module
+Owner: *"I think the packages in the dashboard is misplaced it should be within the contract module
+itself."* Right, and it is the same principle that corrected the Add-record form earlier the same day:
+a contract package is a scope division that comes off the **contract documents**, so the contract
+module owns it.
+
+- New **Packages** tab in Contracts & Claims (`packages.js` → `window.CCPackages`), between Contract and
+  Claims. Full CRUD, the guarded delete, and the **Share with Procurement & Engineering** button, all
+  moved rather than reimplemented — same `packages` table, same `PDb` calls, same
+  `admin_delete_package` RPC, so every consumer is untouched.
+- Loads on first open, like the BOQ and PMI tabs: a project switch should not pay for a screen most
+  sessions never open.
+- The Dashboard keeps a one-line pointer to where it went, so nobody hunts for it.
+
+⚠️ **ONE FINDING FROM THE MOVE, AND IT IS THE REASON THE OLD PANEL FELT INERT: the "Select" button did
+nothing.** It wrote `pd_package` into `sessionStorage` and **nothing ever read it** — only
+`projects.html` cleared it on a project switch. The panel's own note admitted module data would not
+narrow, and it never did, because no consumer existed. The control is **not carried over**: a button
+that does nothing is worse than no button, and every module that genuinely narrows by package (the
+schedule, the BOQ, procurement, engineering) has its own filter.
+
+⚠️ **Dead references had to go with it.** The markup swap alone would have left
+`document.getElementById('pkg-add').style.display` throwing on every Dashboard load — the panel's JS
+(`loadPackages` / `renderPackages` / `packageModal` / `deletePackageModal` / `pushPackages`) and its
+four wiring lines are removed. The dashboard's inline script parses clean.
+
+⚠️ **A copied class that does not exist.** `boq.js` writes `boq-kind k-trade` / `k-skip`, and neither
+variant is defined in `module.css` — those pills fall back to the base style. Copying that idiom would
+have shipped a status column with no visual distinction, so the new one uses `k-measured`, which is
+real. **Worth fixing in boq.js separately.**
+
+⚠️ **`packages.end_date` is now load-bearing beyond this screen** — the schedule's EOT arithmetic reads
+it as the contractual completion date (revised finish = end_date + granted days). Both the list and the
+edit dialog say so, and a package without one shows *"— not set —"* rather than an empty cell.
+
+⚠️ **Not clicked through in a browser.** `node --check` clean on `packages.js`, `module.js` and the
+dashboard's inline script.
+
+### 2026-08-26 — The BOQ status pills that said nothing
+Owner: *"fix the boq.js pills too"*, after the Packages move turned up `boq-kind k-…` classes the JS
+emits and the stylesheet never defined.
+
+Audited every class the module can emit against every one `module.css` defines, rather than fixing the
+two that happened to be noticed:
+
+| source | values |
+|---|---|
+| `line_kind` | measured · lump_sum · provisional · excluded · **heading** |
+| billing period `status` | **draft** · submitted · approved |
+| PMI `stage` | received · estimated · submitted · evaluated · client_approved · rejected · withdrawn |
+
+**Exactly two were undefined — `k-heading` and `k-draft`** — and both fell back to the base muted pill,
+so a heading row and a priced row wore the same badge, and a draft billing looked identical to a
+submitted one. PMI's seven were all already defined; my earlier guess that `k-trade` / `k-skip` were
+the culprits was wrong — those strings are `<option>` values in the import dialog, never pill classes.
+
+- ⚠️ **`k-heading` is dashed, not coloured.** A heading is a **subtotal of the lines beneath it** and
+  carries no money of its own — the dashed border says *structure, not a value*, which is the one
+  confusion that matters here, because summing headings double-counts the sheet (the same trap the
+  `Total of X >>` marker rule exists to prevent).
+- `k-draft` takes the amber `--boq-warn` already used for "partial" — the monthly view's `part` badge
+  borrows this very class, so that badge was invisible too and is fixed by the same rule.
+- ⚠️ **Package status got its own `k-active` / `k-archived`** rather than keeping the `k-measured` the
+  Packages tab borrowed yesterday. It was legible, but `measured` means *measured quantity* everywhere
+  else in this file, and one class with two meanings is how a vocabulary rots.
+
+**Verified** by a set-difference over the shipped stylesheet: **emitted-but-undefined: none;
+defined-but-never-emitted: none.** ⚠️ Not looked at in a browser — this is a colour/border change, so
+the audit proves the classes resolve, not that the shades read well on screen.
+
+### 2026-08-26 — Six tabs become three, and the module gets its title back
+Owner: *"The module for contracts/claims page does not have the website title. I also want to have the
+tabs to be consolidated into fewer tabs only. There are too many tabs to keep track of. Contracts and
+packages are the same thing isn't it? If it makes sense let's fold the BOQ tab and fold the PMI with
+the Claims register."*
+
+**The missing title was caused by the tab count.** `module.css` hid `.cc-title-txt` below **1460px**
+with the comment *"5 tabs need more room"* — so the module showed no title on any normal laptop, and
+the sixth tab made it certain. Three tabs need far less room, so the breakpoint drops to **1080px** and
+the title survives everywhere but a genuinely narrow window.
+
+**Contract · Claims / Change Order · Extension of Time.** Packages folded into Contract; BOQ folded
+under Contract; PMI folded under Claims.
+
+⚠️ **"Contracts and packages are the same thing" — nearly, and in practice one-to-one, but NOT
+identically**, and the gap is what the merged view must not hide:
+- a package with **no contract record** is real (created directly, or before the contract was entered)
+  and must still appear, or it drops off the very screen the schedule and BOQ file against;
+- a contract record with **no package** is also real (the link is optional) and is listed in its own
+  section rather than dropped.
+So: **one row per package**, carrying its contract's reference, counterparty and signing date on a
+second line, and a *"Contract records not linked to a package"* section beneath.
+- ⚠️ **Joined on `package_id`, never on code or name.** A contract's reference has no relationship to a
+  package's code, and text matching would pair the wrong two the first time someone renamed one.
+- ⚠️ **A contract amount that disagrees with its package's is flagged**, not averaged or hidden. The two
+  are seeded from one another and then edited apart, and a silent disagreement only surfaces in a
+  billing dispute.
+
+⚠️ **FOLDED, NOT MERGED — and that distinction is deliberate.** BOQ and PMI keep their own screens: the
+BOQ is revisions + 1,200 lines + billing periods, and PMI is `pmi_records` with its own stage pipeline,
+attachments, per-client instruction label and approval roles. Flattening either into the claims table
+would have cost that machinery for the sake of a shorter list. They stop *competing at the top level* —
+BOQ opens from the Contract tab, PMI from the Claims register, each with a way back.
+- ⚠️ **The back bar is a SIBLING of `#cc-view`, not inside it.** Both sub-modules render by replacing
+  that element's innerHTML, so a back link placed inside would be wiped the moment the screen finished
+  loading, leaving no way out.
+
+**Two more undefined classes, found by extending yesterday's pill audit to every class the module
+emits:**
+- ⚠️ **`.boq-imp` — the import/preview modal body, used 8 times in `boq.js` and never styled.** A
+  1,200-line preview had no scroll of its own, so it pushed the modal's own footer — with **Accept** and
+  **Cancel** — off the screen. Now `max-height:70vh; overflow:auto`.
+- `.cc-warn` added for the amount-mismatch flag rather than emitting a class that resolves to nothing.
+- `.cc-listbar` is emitted undefined but carries its whole layout inline — a hook, not a gap.
+
+⚠️ **Not clicked through in a browser.** `node --check` clean on `module.js` and `packages.js`; the
+class audit reports **emitted-but-undefined: none** apart from that inline-styled hook.
+
+### 2026-08-26 — The wizard creates packages, and several of them in one run
+Owner, on the New-package form: *"I thought we will have a wizard for this"*, then: *"upon creating a
+construction contract - it would also define multiple packages in one go. Currently the planner would
+have to go through multiple runs in the same wizard just to log for example 5 packages."*
+
+Both were right. Folding Packages into the Contract tab left **New package** opening a raw modal while
+every other new thing went through the wizard — the exact inconsistency the wizard existed to remove.
+
+- **Package is now a wizard type** alongside Contract / Change Order / Claim / EOT / BOQ. ⚠️ It has **no
+  Details and no Dates step** — a package has no reference number, no counterparty and no claim
+  pipeline; those belong to the contract that defines it, and offering them would invite a package
+  quietly carrying half a contract.
+- **New package** opens the wizard at that type; **Edit** keeps the compact form, the same rule the
+  records follow.
+- ⚠️ `gotoTypeTab` sent anything unrecognised to **Claims**, so a saved package would have dropped the
+  planner on a register that cannot show it. `Package` now lands on Contract.
+
+**The package step is a LIST, not a form.** Add a row per lot — code, name, start, finish, amount — and
+save five in one run.
+- ⚠️ **The contract record can cite only ONE.** `contracts_claims.package_id` is a single column, so the
+  row marked **★** is the one the record links to and the rest are created beside it. Said on screen;
+  silently linking to whichever sorted first would make the claims register cite a lot nobody chose.
+- ⚠️ **The ★ follows a deletion.** Removing a row above the primary shifts it, and leaving the index
+  where it was would link the contract to the wrong lot.
+- ⚠️ **Duplicate codes are caught BEFORE anything is written** — case- and whitespace-insensitively.
+  The table is unique on `(project, lower(code))`, so the second would otherwise fail halfway through,
+  after the first had already been created.
+- ⚠️ **Blank rows are dropped**, not saved: a row added and never filled is a UI artefact.
+- ⚠️ **ALL-OR-NOTHING ROLLBACK.** If any package fails, or the contract record fails afterwards, **every
+  package this run created** is deleted, newest first — not just the last one. A package the planner
+  *linked* to is somebody else's row and is never touched.
+- ⚠️ Only the **first** row is seeded from the contract's reference/description, and only while
+  untouched — a contract buying five lots must not have four of them named after itself.
+
+**Verified 8/8** executing the shipped `pkgToCreate` / `primaryPkg` / `dupPkgCode`: five rows with a
+blank one drop to four; the ★ on row 2 wins over the first; a ★ left on a blank row falls back to the
+first real one; `PKG-1` vs `pkg-1` and `PKG-1` vs `" PKG-1 "` both caught; an all-blank list creates
+nothing; a single row behaves exactly as before.
+
+⚠️ **Not clicked through in a browser.** Class audit clean apart from `cc-listbar`, which carries its
+layout inline.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is
@@ -439,3 +728,156 @@ Owner: *"Add rel_pct_claimed vs certified so dispute is measurable"*.
 - [x] `enabled: true` set in `assets/js/config.js`
 - [ ] **Run `migrations/2026-07-20-contracts-claims-full.sql` on the live DB**
 - [ ] Live click-through against a real login
+
+### 2026-08-27 — The wizard may no longer build a package that restates a project
+
+Owner: *"Created AVR101 in the projects list → went to contracts & claims → defined AVR101 (again) and
+AVR102 packages. The structure now is AVR101 › {AVR101, AVR102}. This will create problems in connecting
+with the procurement app and engineering app."*
+
+**The wizard was not misused — it invited this.** Step 2 opened on *"— Create it from this contract —"*
+with an empty row already waiting, which reads as an instruction; the planner filled it with the only code
+they had, which was the **project's own**. A wizard that pre-selects the rarer answer manufactures the
+rarer answer.
+
+**Checked before designing:** `wpm/data/` holds **AVR101 and AVR102 as separate projects**. Megawide's
+codes are PROJECT codes, so those two are two projects of one development — consolidated for reporting by
+the Portfolio Overview's new **Group by → Parent project** rollup, which needs no package.
+
+- ⚠️ **"None: this project is the contract lot" is now the DEFAULT** for a Contract. Defining packages is
+  a deliberate third choice (`— Define package(s) from this contract —`) beside None and Link.
+  `st.pkgId` therefore carries **three** meanings, read only through `linkedPkgId()` / `willCreate()` —
+  the empty string used to mean *create*, and a stale reading of it would silently make every contract
+  define a package again.
+- ⚠️ **A package whose code names a project is REFUSED**, live on every keystroke and again at Save, which
+  jumps back to the package step. Two shapes, two messages: **its own project** ("a project cannot be a
+  package of itself") and **a sibling project**, which names the real consequence — *Share with
+  Procurement & Engineering* maps every package of this project to **one** downstream project, so
+  AVR102's lot would land in AVR101 and a buyer in AVR102 would see nothing.
+- ⚠️ **Refused, not warned.** By the time Save is pressed the step has already explained it in full. A
+  package that restates a project is not a typo fixable later — the schedule, the BOQ and the downstream
+  mirror all start filing against it.
+- ⚠️ **The reference no longer seeds a clashing code.** A contract on AVR101 is very often referenced
+  "AVR101", and seeding that into the package row was the app proposing the exact structure the guard
+  refuses. Left blank instead: an empty row asks a question, a pre-filled wrong one looks like an answer.
+- ⚠️ **The project list is read once per project switch, never per keystroke.** An unreadable list
+  degrades to "no conflict" — it never blocks a legitimate package, it only stops catching an
+  illegitimate one.
+- **Chose packages and filled none** is now refused too, rather than silently saving as "no package" —
+  a different answer than the one on screen, with no way to tell which the record got.
+- ⚠️ **The validation chain was an `else if` and is now independent checks.** A contract that defines
+  packages AND has no reference must fail both; the chain let the second through whenever the first
+  branch was taken.
+
+⚠️ **A LIVE CRASH, FIXED: `open()` never initialised `st.pkgList` or `st.pkgPrimary`.** The package step
+reads both on its first paint, so `st.pkgList.map(...)` threw a TypeError on `undefined` and the step
+rendered nothing. Yesterday's "Verified 8/8" exercised `pkgToCreate` / `primaryPkg` / `dupPkgCode` against
+a **hand-built `st`**, never the one `open()` builds — and its own note recorded the run was *"not clicked
+through in a browser"*. A unit test that constructs the state under test cannot catch state that is never
+constructed.
+
+**Verified 22/22 in Node against the shipped functions** (extracted by brace-matching, not re-typed): both
+reported shapes caught, case- and whitespace-insensitively; the sibling conflict carries the project it
+collides with; genuine sub-lots, `AVR101-A`, blank rows and not-yet-existing codes all pass; an
+unreadable project list degrades safely; all six states of the three-way package choice; and the previous
+star/blank-row/duplicate-code behaviour unchanged.
+
+⚠️ **Not clicked through signed in** — auth-gated, no credentials in this session. `node --check` clean on
+all three module scripts; class audit clean (`ccw-stop` defined), with only the pre-existing `ccw-ov` and
+`cc-listbar` undefined.
+
+### 2026-08-27 (2) — OPW101 could not be saved without inventing a package
+
+Owner, on the live build: *"OPW101 is a one work construction contract without any packages. But this
+requires me to connect it to a package."* And: *"There is still an add package in the wizard wherein the
+project code… will have two branched packages AVR101 (again) and AVR102."*
+
+**Both were real, and the first is the more serious: it was a hard block.** `openForm`'s package select
+offered only *"— Create from this contract —"* or a link, and the save handler then **refused** without a
+package code and name. A single-lot contract — the ordinary case here — had **no way through the form**
+except to invent a package, and the only code to hand was the project's own. ⚠️ **The validator was
+manufacturing the AVR101 › {AVR101, AVR102} shape**, and yesterday's fix only closed the wizard door
+while this one stayed open.
+
+⚠️ **NOTHING EVER REQUIRED A PACKAGE, and the UI claimed otherwise in four places.** `package_id` is
+nullable on `contracts_claims`, `boq_items`, `project_schedule` and `wbs_nodes` with no back-fill —
+2026-08-25-package-adoption.sql says it outright: *"every existing row keeps package_id NULL, which is
+[normal]"*. The orphan section's *"nothing downstream can file against them"* was simply **false**: the
+schedule, BOQ, procurement and engineering all file against the **project**; a package only NARROWS that.
+
+- **`openForm` now offers None / Define / Link**, with **None the default and saveable**. Choosing None on
+  a record that has a package also **unlinks** it — which is how the existing AVR101/AVR102 rows get
+  unpicked without a delete.
+- **The conflict guard is now ONE function, shared.** `wizard.js` exports `codeConflict` as a pure
+  `(code, projectId, projects)`; the form calls the same one, live per keystroke and again at save.
+  ⚠️ Two copies of this rule would drift, and the half that drifted would be the one nobody looks at.
+- **The Avesta example is purged from the copy.** Packages empty state, orphan section, BOQ assign modal,
+  BOQ "no packages" modal, the wizard's type cards and the form's placeholder all held up *"Package 1 —
+  Tower 1 and General Requirements / Package 2 — Towers 2-7"* as the model. That example is **two
+  projects**, so every one of those screens was teaching the exact structure the guard refuses. Replaced
+  with a genuine sub-lot ("enabling works vs main works") and a pointer to the Portfolio rollup.
+- ⚠️ **The Contract type card said *"It DEFINES a contract package"*.** That sentence is why planners
+  believed recording a contract means creating one. Now: *"Most need no package — the project already is
+  the lot."*
+- **The packages empty state is no longer a deficiency.** *"No packages — and most projects need none."*
+- **The orphan warning now fires only when the project HAS packages**, where a contract sitting outside
+  all of them really is a gap. On OPW101 it reads as a plain list with no warning.
+- **The reference no longer seeds a clashing code** in the form either, matching the wizard.
+
+**Verified 40/40 in Node against the shipped functions** (28 wizard + shared guard, 12 rendering
+`orphanHTML` in both states): OPW101 renders no warning, no badge and no "not linked" headline; a project
+with packages still warns, without the false downstream claim; the shared guard refuses own-code and
+sibling-code case-insensitively and passes genuine sub-lots, blanks and an absent project list.
+
+⚠️ **Not clicked through signed in.** `node --check` clean on all four module scripts.
+
+### 2026-08-27 (3) — Audit: a contract IS a package until a project is subdivided
+
+Owner: *"Please audit the contract/CO/EOT wizard — some wizards require the package to be defined,
+wherein a contract in itself is a package; in this case it's just 1 package for the whole project. I see
+that contract and package are case to case the same definition and different."*
+
+**Audited all four record types across both entry points (wizard + `openForm`). One was broken.**
+
+| Path | Verdict |
+|---|---|
+| `openForm`, CO / Claim / EOT | ✅ Clean — defaults to "— none —", disables the select when the project has no packages, never blocks |
+| `openForm`, Contract | ✅ Fixed earlier today (None / Define / Link, None default and saveable) |
+| Wizard, Contract / Package | ✅ Fixed earlier today |
+| **Wizard, CO / Claim / EOT / BOQ** | ❌ **A whole step with nothing to do** |
+
+⚠️ **THE FINDING.** The package step was `when: always`. Raising a Change Order, Claim or EOT on a
+project with no packages opened a full step — numbered in the rail, counted in "step 2 of 5" — whose
+entire content was a **⚠️ notice** headlined *"This project has no contract packages yet"*, telling the
+planner to record a Contract first because *"it defines the package"*. Nothing on it was actionable, the
+warning triangle asserted a defect where there was none, and the instruction repeated the claim already
+disproved this morning. **That is the "some wizards require the package to be defined" being reported.**
+
+- **The step is now SKIPPED when there is nothing to choose** — `when()` is true for Contract and Package
+  (where *none / define / link* is chosen) and otherwise only when the project actually has packages.
+  ⚠️ The rail, the step numbering and the Back/Next arithmetic all follow automatically, because
+  `when()` is the single source for all three — the original design decision that made this a one-line
+  fix instead of a three-place one.
+- **The step is named for what it does.** "Package · Define or link the contract lot" for a Contract;
+  **"Scope · Optional — narrow this to one package"** for a CO/Claim/EOT. `label`/`sub` may now be
+  functions, resolved through one `txt()` helper so the rail and the two headings cannot disagree.
+- **The empty option is an answer, not a blank:** *"— the whole project (OPW101) —"*, and the Review row
+  reads *"the whole project (OPW101)"* rather than an em-dash. ⚠️ A blank against "Raised against" reads
+  as something forgotten; this reads as what was chosen, and it is the usual choice.
+- **The `!pk.length` branch is kept as a fallback** (reachable by jumping back via the rail after the last
+  package is deleted in another tab) and now states the normal case instead of warning.
+- ⚠️ **A `packages()` call that throws degrades to "no packages" and skips the step** — before the
+  packages table exists, the wizard still works rather than dying on step 2.
+
+**The model, now stated once in the STEPS table so every step can lean on it:** a PROJECT code already
+names one contract lot; a CONTRACT record is the commercial document for it; a PACKAGE is an *optional
+subdivision below* the project. **1 project = 1 contract = 1 implicit package is the normal case**, and
+the word "package" should not appear until a second one exists.
+
+**Verified 31/31 in Node against the shipped `STEPS` table** (extracted from the file, not re-typed):
+CO/Claim/EOT/BOQ drop to 4/4/4/3 steps with no packages and regain the step when one exists; Contract and
+Package always keep it; every live step of every type resolves a non-empty label and sub; every sequence
+starts at Record and ends at Review; a throwing package list skips rather than crashes.
+Suite total today: **94** (31 steps + 28 wizard/guard + 23 portfolio + 12 orphan rendering).
+
+⚠️ **Not clicked through signed in.**

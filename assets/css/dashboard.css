@@ -528,6 +528,12 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-projsw-menu.open { display: block; }
 .pd-projsw-menu-head { padding: 10px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
   color: var(--pd-muted); border-bottom: 1px solid var(--pd-line); }
+/* Parent-project heading inside the switcher — the sibling projects of one development
+   (AVR101 + AVR102 = Avesta Residences). Rendered only for a parent with more than one
+   member; the indent below is the only thing saying which projects belong to it. */
+.pd-projsw-group { padding: 9px 14px 5px; font-size: 11px; font-weight: 700; letter-spacing: .02em;
+  color: var(--pd-muted); background: var(--pd-bg); border-bottom: 1px solid var(--pd-line); }
+.pd-projsw-kids > button { padding-left: 26px; }
 .pd-projsw-menu button { display: block; width: 100%; text-align: left; border: none; background: none;
   padding: 9px 14px; cursor: pointer; color: var(--pd-ink); border-bottom: 1px solid var(--pd-line); }
 .pd-projsw-menu button:hover { background: var(--pd-red-light); }

@@ -56,14 +56,60 @@
       if (error) throw error;
       return data;
     },
+    /* ⚠️ TOLERANT OF A COLUMN THIS DATABASE DOES NOT HAVE YET. PostgREST answers an
+       unmigrated column with PGRST204 and REJECTS THE WHOLE ROW, so one new field would
+       throw away every other value the admin just typed — the exact failure the contracts
+       module hit on 2026-08-27 with `package_id`. Drops the column PostgREST named, retries,
+       and reports which fields were not stored so the migration still gets run.
+       ⚠️ ONLY a missing column is tolerated. A constraint violation or an RLS refusal still
+          fails loudly: a save that silently discarded real data would be the worse bug. */
+    _missingCol(err) {
+      var m = String((err && err.message) || '');
+      if (!/PGRST204|schema cache|column/i.test(m)) return null;
+      var q = m.match(/'([a-z0-9_]+)' column/i) || m.match(/column "?([a-z0-9_]+)"?/i);
+      return q ? q[1] : null;
+    },
+    async _tolerant(run, payload) {
+      var body = Object.assign({}, payload), dropped = [];
+      for (var i = 0; i < 6; i++) {
+        var res = await run(body);
+        if (!res.error) return { data: res.data, dropped: dropped };
+        var col = PDb._missingCol(res.error);
+        if (!col || !(col in body)) throw res.error;
+        delete body[col]; dropped.push(col);
+      }
+      throw new Error('Could not save the project after dropping: ' + dropped.join(', '));
+    },
     async createProject(p) {
-      var { data, error } = await sb().from('projects').insert(p).select().single();
-      if (error) throw error;
-      return data;
+      var r = await PDb._tolerant(function (body) {
+        return sb().from('projects').insert(body).select().single();
+      }, p);
+      PDb._warnDropped(r.dropped);
+      return r.data;
     },
     async updateProject(id, p) {
-      var { error } = await sb().from('projects').update(p).eq('id', id);
-      if (error) throw error;
+      var r = await PDb._tolerant(function (body) {
+        return sb().from('projects').update(body).eq('id', id);
+      }, p);
+      PDb._warnDropped(r.dropped);
+    },
+    // Names the column's OWN migration, never a generic "run the migrations" —
+    // a hint that points at the wrong file sends whoever reads it hunting in it.
+    _warnDropped(dropped) {
+      if (!dropped || !dropped.length) return;
+      var MIG = {
+        program: 'migrations/2026-08-27-project-program.sql',
+        wpm_project_id: 'migrations/2026-08-27-package-external-codes.sql',
+        eng_project_id: 'migrations/2026-08-27-package-external-codes.sql',
+        planners_project_id: 'migrations/2026-08-27-package-external-codes.sql'
+      };
+      var files = {};
+      dropped.forEach(function (c) { if (MIG[c]) files[MIG[c]] = 1; });
+      var names = Object.keys(files);
+      var msg = 'Saved, but this database has no ' + dropped.join(', ') + ' column' +
+        (dropped.length > 1 ? 's' : '') + ' — that value was NOT stored.' +
+        (names.length ? ' Run ' + names.join(' and ') + ', then save again.' : '');
+      if (window.UI && UI.toast) UI.toast(msg, 'warn'); else console.warn(msg);
     },
     // Reversible — the everyday "retire a project" action. Sets the existing
     // projects.status to archived/active (same flag the Edit modal exposes and
@@ -121,14 +167,22 @@
       if (error) throw error;
       return data || [];
     },
+    /* Tolerant of an unmigrated column, for the same reason the project writes are:
+       PostgREST rejects the WHOLE row on one unknown column, so adding the external-code
+       mappings would otherwise throw away the code, name, dates and amount the planner had
+       just typed. See _projWrite above. */
     async createPackage(p) {
-      var { data, error } = await sb().from('packages').insert(p).select().single();
-      if (error) throw error;
-      return data;
+      var r = await PDb._tolerant(function (body) {
+        return sb().from('packages').insert(body).select().single();
+      }, p);
+      PDb._warnDropped(r.dropped);
+      return r.data;
     },
     async updatePackage(id, p) {
-      var { error } = await sb().from('packages').update(p).eq('id', id);
-      if (error) throw error;
+      var r = await PDb._tolerant(function (body) {
+        return sb().from('packages').update(body).eq('id', id);
+      }, p);
+      PDb._warnDropped(r.dropped);
     },
     // Guarded delete. The Project Schedule now carries `package_id` on activities
     // and WBS nodes (2026-08-19-schedule-package.sql), so the RPC refuses while

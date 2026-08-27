@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260819c" />
-  <link rel="stylesheet" href="module.css?v=20260825b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260827a" />
+  <link rel="stylesheet" href="module.css?v=20260827b" />
 </head>
 <body>
   <div class="pd-app">
@@ -21,11 +21,17 @@
           <select class="pd-select cc-project" id="cc-project" title="Project"></select>
         </div>
         <div class="cc-tabs" role="tablist">
+          <!-- ⚠️ THREE TABS, NOT SIX (2026-08-26). Owner: *"There are too many tabs to keep
+               track of."* Packages folded into Contract (a contract defines a package, so
+               one list keyed by package carries both); BOQ folded under Contract and PMI
+               under Claims — both keep their own screens, reached from inside the parent
+               tab instead of competing with it at the top level.
+               ⚠️ The tab count is load-bearing for the TITLE: module.css hid
+               `.cc-title-txt` below 1460px because "5 tabs need more room", so the sixth
+               tab is why the page had no title at all on a normal laptop. -->
           <button class="cc-tab active" data-view="contract">Contract</button>
           <button class="cc-tab" data-view="claims">Claims / Change Order</button>
           <button class="cc-tab" data-view="eot">Extension of Time</button>
-          <button class="cc-tab" data-view="boq">BOQ</button>
-          <button class="cc-tab" data-view="pmi">PMI</button>
         </div>
         <div class="cc-topbar-tools" id="cc-topbar-tools">
           <button class="pd-btn cc-tb-labeled pd-btn-primary" id="cc-add" title="Add a record">+ Add</button>
@@ -69,16 +75,19 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="../../assets/js/config.js?v=20260826e"></script>
   <script src="../../assets/js/auth.js?v=20260814a"></script>
-  <script src="../../assets/js/db.js?v=20260826e"></script>
+  <script src="../../assets/js/db.js?v=20260827b"></script>
+  <script src="../../assets/js/program.js?v=20260827a"></script>
   <script src="../../assets/js/ui.js?v=20260824a"></script>
   <script src="../../assets/js/icons.js?v=20260813a"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <!-- boq.js must load BEFORE module.js's init runs (it is read as window.BOQ). -->
-  <script src="boq.js?v=20260826c"></script>
+  <script src="boq.js?v=20260827e"></script>
   <script src="pmi.js?v=20260825a"></script>
-  <script src="module.js?v=20260825b"></script>
+  <script src="packages.js?v=20260827f"></script>
+  <script src="wizard.js?v=20260827e"></script>
+  <script src="module.js?v=20260827e"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

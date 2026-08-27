@@ -1038,7 +1038,16 @@ window.IssuesLessons = (function () {
     var isNew = !l.id;
     var mayEdit = isNew ? canAdd : canEditLesson(l);
     var ro = !mayEdit || _lessReport, d = ro ? ' disabled' : '';
-    var linkKind = l.issue_id ? 'issue' : ((l.mom_id || l.mom_item_id) ? 'mom' : '');
+    // ⚠️ THE CHOSEN SOURCE IS UI INTENT AND MUST BE TRACKED, NOT DERIVED FROM THE IDS.
+    // Deriving it looks right and is broken: picking "A meeting action item" clears the
+    // issue link and leaves `mom_id` still null, so the re-render derived "Not linked" and
+    // the Source select snapped straight back — the picker could never be reached from the
+    // dropdown at all, only from a pre-filled "+ Capture a lesson". `_kind` is a transient
+    // field on the in-memory object; `saveLesson` builds its payload from named columns, so
+    // it is never written to the database.
+    var linkKind = (l._kind !== undefined && l._kind !== null)
+      ? l._kind
+      : (l.issue_id ? 'issue' : ((l.mom_id || l.mom_item_id) ? 'mom' : ''));
 
     function opts(list, val, blank) {
       return (blank ? '<option value="">' + blank + '</option>' : '') +
@@ -1172,6 +1181,7 @@ window.IssuesLessons = (function () {
     if (kind) kind.onchange = function () {
       var l = editing(); if (!l) return;
       captureLessonFields(l);
+      l._kind = kind.value;               // remember the INTENT, before any id exists
       if (kind.value === 'issue') { l.mom_id = null; l.mom_item_id = null; }
       else if (kind.value === 'mom') { l.issue_id = null; }
       else { l.issue_id = null; l.mom_id = null; l.mom_item_id = null; }
@@ -1482,6 +1492,7 @@ window.IssuesLessons = (function () {
     } catch (e) {
       MOMS = []; MOM_ITEMS = [];
       _momErr = (e && e.message) || 'load failed';
+      momLoadDone();      // a failed fetch must also stop the picker waiting forever
       return;
     }
     // selectAll returns id order — the display order is applied here.
@@ -1498,6 +1509,18 @@ window.IssuesLessons = (function () {
     // The log's "From MOM" tag reads MOM_BY_ID. Now that the real minutes are in hand,
     // feed it from them rather than leaving it on the narrower fetch load() does.
     MOMS.forEach(function (m) { MOM_BY_ID[m.id] = m; });
+    momLoadDone();
+  }
+
+  // ⚠️ `_momLoaded` is set on the FIRST line of loadMoms as a re-entrancy guard, so it
+  // means "a fetch has started", NOT "the minutes are in hand". Anything that renders from
+  // MOMS while the fetch is in flight therefore sees an EMPTY list and, without this, never
+  // hears that the data arrived: the lesson form's meeting picker rendered "— pick a
+  // meeting —" and nothing else on a project full of minutes. Measured, then fixed.
+  // Re-rendering the lessons screen on completion covers every such reader at once rather
+  // than making each one race the fetch.
+  function momLoadDone() {
+    if (screen === 'lessons') renderLessons();
   }
 
   function momItemsOf(id) { return MOM_ITEMS.filter(function (x) { return x.mom_id === id; }); }
