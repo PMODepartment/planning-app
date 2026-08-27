@@ -22,6 +22,7 @@
         </div>
         <div class="cc-tabs" role="tablist">
           <button class="cc-tab active" data-view="contract">Contract</button>
+          <button class="cc-tab" data-view="packages">Packages</button>
           <button class="cc-tab" data-view="claims">Claims / Change Order</button>
           <button class="cc-tab" data-view="eot">Extension of Time</button>
           <button class="cc-tab" data-view="boq">BOQ</button>
@@ -78,8 +79,9 @@
   <!-- boq.js must load BEFORE module.js's init runs (it is read as window.BOQ). -->
   <script src="boq.js?v=20260826c"></script>
   <script src="pmi.js?v=20260825a"></script>
+  <script src="packages.js?v=20260826a"></script>
   <script src="wizard.js?v=20260826b"></script>
-  <script src="module.js?v=20260826c"></script>
+  <script src="module.js?v=20260826d"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

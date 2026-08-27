@@ -834,6 +834,9 @@ window.ContractsClaims = (function () {
        lines plus its mapping, allocations and every billing period — six extra
        round-trips on every project switch, paid by everyone for a screen most
        sessions never open. */
+    /* Packages load on first open like the BOQ: a project switch should not pay for
+       a screen most sessions never open. */
+    if (v === 'packages' && window.CCPackages) { CCPackages.show(pid); return; }
     if (v === 'boq' && window.BOQ) { BOQ.show(pid, projName()); return; }
     if (v === 'pmi' && window.PMI) { PMI.show(pid, projName()); return; }
     render();
@@ -864,7 +867,8 @@ window.ContractsClaims = (function () {
       // A BOQ belongs to ONE project, so its whole cache is dropped on a switch
       // rather than filtered — a stale revision id would silently show another
       // project's contract document.
-      if (window.BOQ) BOQ.reset();
+      if (window.CCPackages) CCPackages.reset();
+    if (window.BOQ) BOQ.reset();
       if (window.PMI) PMI.reset();
       if (view === 'boq' && window.BOQ) { BOQ.show(pid, projName()); joinCollab(); return; }
       if (view === 'pmi' && window.PMI) { PMI.show(pid, projName()); joinCollab(); return; }
@@ -872,6 +876,7 @@ window.ContractsClaims = (function () {
     });
 
     var deps = { uid: UID, canWrite: canWrite, isAdmin: isAdmin };
+    if (window.CCPackages) CCPackages.init(deps);
     if (window.BOQ) BOQ.init(deps);
     if (window.PMI) PMI.init(deps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); }; });

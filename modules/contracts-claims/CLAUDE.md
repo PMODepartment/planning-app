@@ -549,6 +549,44 @@ on the **Dashboard → Packages**, not in the Contracts records, and can be edit
 
 `MODULE_V` → `20260826r`; `wizard.js?v=20260826b`, `module.js?v=20260826c`.
 
+### 2026-08-26 — Packages move out of the Dashboard and into the contract module
+Owner: *"I think the packages in the dashboard is misplaced it should be within the contract module
+itself."* Right, and it is the same principle that corrected the Add-record form earlier the same day:
+a contract package is a scope division that comes off the **contract documents**, so the contract
+module owns it.
+
+- New **Packages** tab in Contracts & Claims (`packages.js` → `window.CCPackages`), between Contract and
+  Claims. Full CRUD, the guarded delete, and the **Share with Procurement & Engineering** button, all
+  moved rather than reimplemented — same `packages` table, same `PDb` calls, same
+  `admin_delete_package` RPC, so every consumer is untouched.
+- Loads on first open, like the BOQ and PMI tabs: a project switch should not pay for a screen most
+  sessions never open.
+- The Dashboard keeps a one-line pointer to where it went, so nobody hunts for it.
+
+⚠️ **ONE FINDING FROM THE MOVE, AND IT IS THE REASON THE OLD PANEL FELT INERT: the "Select" button did
+nothing.** It wrote `pd_package` into `sessionStorage` and **nothing ever read it** — only
+`projects.html` cleared it on a project switch. The panel's own note admitted module data would not
+narrow, and it never did, because no consumer existed. The control is **not carried over**: a button
+that does nothing is worse than no button, and every module that genuinely narrows by package (the
+schedule, the BOQ, procurement, engineering) has its own filter.
+
+⚠️ **Dead references had to go with it.** The markup swap alone would have left
+`document.getElementById('pkg-add').style.display` throwing on every Dashboard load — the panel's JS
+(`loadPackages` / `renderPackages` / `packageModal` / `deletePackageModal` / `pushPackages`) and its
+four wiring lines are removed. The dashboard's inline script parses clean.
+
+⚠️ **A copied class that does not exist.** `boq.js` writes `boq-kind k-trade` / `k-skip`, and neither
+variant is defined in `module.css` — those pills fall back to the base style. Copying that idiom would
+have shipped a status column with no visual distinction, so the new one uses `k-measured`, which is
+real. **Worth fixing in boq.js separately.**
+
+⚠️ **`packages.end_date` is now load-bearing beyond this screen** — the schedule's EOT arithmetic reads
+it as the contractual completion date (revised finish = end_date + granted days). Both the list and the
+edit dialog say so, and a package without one shows *"— not set —"* rather than an empty cell.
+
+⚠️ **Not clicked through in a browser.** `node --check` clean on `packages.js`, `module.js` and the
+dashboard's inline script.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is
