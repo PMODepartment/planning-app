@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819c" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260827a" />
 </head>
 <body>
   <div class="pd-app">
@@ -221,10 +221,11 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260826e"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260826e"></script>
+  <script src="assets/js/db.js?v=20260827a"></script>
+  <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
-  <script src="assets/js/modules-grid.js?v=20260827d"></script>
+  <script src="assets/js/modules-grid.js?v=20260827e"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
@@ -280,10 +281,25 @@
 
     function renderSwitcherMenu() {
       var menu = document.getElementById('projsw-menu');
-      var items = PROJ.map(function (p) {
-        var gh = groupHead(p);
-        return '<button data-pick="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' class="cur"' : '') + '>' +
-          '<strong>' + Fmt.esc(p.name || p.id) + '</strong><small>' + Fmt.esc(p.id) + (gh ? ' · ' + Fmt.esc(gh) : '') + '</small></button>';
+      /* Grouped by PARENT PROJECT, so the sibling projects of one development sit
+         together — switching from AVR101 to AVR102 is the most common switch there is,
+         and a flat alphabetical list scatters them among unrelated jobs.
+         ⚠️ A parent of ONE renders flat, with no heading: a heading above a single
+            project invents a hierarchy that is not there. See assets/js/program.js. */
+      var items = PDProgram.groups(PROJ).map(function (g) {
+        /* ⚠️ The members are WRAPPED, not merely preceded by a heading. Indenting them
+           with a CSS sibling selector would also indent every project rendered after the
+           group — including a later group-of-one, which has no parent at all. */
+        var grouped = g.members.length > 1;
+        var kids = g.members.map(function (p) {
+          var gh = groupHead(p);
+          return '<button data-pick="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' class="cur"' : '') + '>' +
+            '<strong>' + Fmt.esc(p.name || p.id) + '</strong><small>' + Fmt.esc(p.id) + (gh ? ' · ' + Fmt.esc(gh) : '') + '</small></button>';
+        }).join('');
+        return grouped
+          ? '<div class="pd-projsw-group">' + Fmt.esc(g.label) + '</div>' +
+            '<div class="pd-projsw-kids">' + kids + '</div>'
+          : kids;
       }).join('');
       menu.innerHTML = '<div class="pd-projsw-menu-head">Switch project</div>' + items +
         '<a class="pd-projsw-all" href="projects.html">' + Icons.svg('arrowRight', 15) + ' All projects / selector</a>';

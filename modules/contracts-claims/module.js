@@ -492,6 +492,25 @@ window.ContractsClaims = (function () {
           .then(function () { PKGS = PKGS.filter(function (k) { return String(k.id) !== String(id); }); },
                 function (e) { PKGS = PKGS.filter(function (k) { return String(k.id) !== String(id); }); throw e; });
       },
+      /* Open the BOQ screen AND its importer, so a "BOQ" run in the wizard ends in the
+         file picker rather than in a paragraph describing where the file picker lives.
+         ⚠️ The importer is opened after `show()` resolves — it reads the current revision
+         list to offer "supersede vs new", and opening it against an unloaded module would
+         offer neither. */
+      openBoqImport: function () {
+        openSub('boq');
+        var tries = 0;
+        (function waitForLoad() {
+          /* ⚠️ The readiness signal is the IMPORT BUTTON, not a timer and not a container.
+             It appears only once boq.js has rendered AND the user may write — so a viewer
+             lands on the BOQ screen and is never shown an importer they cannot use. */
+          var btn = document.getElementById('boq-import') || document.getElementById('boq-import2');
+          if (btn && window.BOQ && BOQ.openImport) { BOQ.openImport(); return; }
+          // ~4s: the first load fetches revisions, items, allocations and periods.
+          if (++tries > 40) return;
+          setTimeout(waitForLoad, 100);
+        })();
+      },
       persist: function (payload) { return persistRecord(payload, null); },
       failMsg: recordFailMsg,
       warnDropped: warnDropped,

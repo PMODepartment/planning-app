@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Projects — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819c" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260827a" />
 </head>
 <body>
   <div class="pd-app">
@@ -66,6 +66,11 @@
               <button class="pd-icon-btn" id="gh-manage" title="Edit the selected group head" style="display:none;"><span data-ico="settings" data-ico-size="16"></span></button>
               <select class="pd-select pd-input-sm" id="group-by" title="Group projects by">
                 <option value="grouphead">Group by: Group Head</option>
+                <!-- One development bought as several projects (AVR101 + AVR102 =
+                     Avesta Residences). ⚠️ A reporting rollup only — the projects stay
+                     separate rows, which is what keeps the 1:1 mapping to the Procurement
+                     and Engineering apps intact. See assets/js/program.js. -->
+                <option value="program">Group by: Parent project</option>
                 <option value="status">Group by: Status</option>
                 <option value="none">Group by: None</option>
               </select>
@@ -92,7 +97,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260826e"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260826e"></script>
+  <script src="assets/js/db.js?v=20260827a"></script>
+  <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
   <script>
@@ -252,11 +258,17 @@
     // never disagree with the rows filed under it.
     function groupKeyOf(p) {
       if (groupBy === 'status') return (p.status || 'active').toLowerCase();
+      if (groupBy === 'program') return PDProgram.keyOf(p);
       if (groupBy === 'none') return '__all__';
       return ghIdOf(p);
     }
-    function groupLabelOf(k) {
+    /* ⚠️ In program mode the KEY is the code prefix (AVR) and the NAME is the shared
+       title (Avesta Residences), so the label needs the group's members — every other
+       mode's key is already its own label. Grouping and collapse stay on the key, so a
+       rename never re-files a project. */
+    function groupLabelOf(k, members) {
       if (groupBy === 'status') return k.charAt(0).toUpperCase() + k.slice(1);
+      if (groupBy === 'program') return PDProgram.labelOf(k, members || []);
       if (groupBy === 'none') return 'All Projects';
       return ghLabel(k);
     }
@@ -271,12 +283,20 @@
         if (!groups[k]) { groups[k] = []; order.push(k); }
         groups[k].push(p);
       });
+      /* ⚠️ The label is resolved ONCE, here, and travels with the group as a third
+         element — in program mode it depends on the group's MEMBERS (the shared part of
+         their names), so a caller holding only the key cannot compute it. Resolving it at
+         each render site instead would let the sort order and the printed heading be
+         derived differently, which is how a group ends up filed under one name and
+         labelled with another. */
+      var labels = {};
+      order.forEach(function (k) { labels[k] = groupLabelOf(k, groups[k]); });
       // The unassigned bucket always sits last; the rest read alphabetically.
       order.sort(function (a, b) {
         if (a === NONE) return 1; if (b === NONE) return -1;
-        return groupLabelOf(a).localeCompare(groupLabelOf(b));
+        return labels[a].localeCompare(labels[b]);
       });
-      return order.map(function (k) { return [k, groups[k]]; });
+      return order.map(function (k) { return [k, groups[k], labels[k]]; });
     }
 
     function renderList(area, list) {
@@ -290,7 +310,7 @@
           // RED LEFT BORDER, then a muted "N projects" beside it — deliberately not a solid-red
           // pill (PRC records that as user feedback; red is reserved for the code pill).
           rows += '<tr class="pd-group-row"><td colspan="' + cols + '">' +
-            '<span class="pd-ghchip">' + Fmt.esc(groupLabelOf(g[0])) + '</span>' +
+            '<span class="pd-ghchip">' + Fmt.esc(g[2]) + '</span>' +
             '<span class="pd-ghcount">' + g[1].length + ' project' + (g[1].length === 1 ? '' : 's') + '</span>' +
             '</td></tr>';
         }
@@ -331,7 +351,7 @@
     function renderCards(area, list) {
       area.innerHTML = groupProjects(list).map(function (g) {
         var head = (groupBy === 'none') ? '' :
-          '<div class="pd-cardgroup"><span class="pd-ghchip">' + Fmt.esc(groupLabelOf(g[0])) + '</span>' +
+          '<div class="pd-cardgroup"><span class="pd-ghchip">' + Fmt.esc(g[2]) + '</span>' +
           '<span class="pd-ghcount">' + g[1].length + ' project' + (g[1].length === 1 ? '' : 's') + '</span>' +
           '<span class="pd-cardgroup-rule"></span></div>';
         return head + '<div class="pd-proj-cards">' + g[1].map(cardHTML).join('') + '</div>';

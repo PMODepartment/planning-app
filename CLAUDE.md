@@ -9215,3 +9215,53 @@ when the project has none, renamed **"Scope"** for records that only narrow, wit
 (OPW101)"* as the explicit default. Full detail in `modules/contracts-claims/CLAUDE.md`.
 
 **Cache:** `MODULE_V` → `20260827d`; contracts `wizard.js` / `module.js` → `?v=20260827d`.
+
+### 2026-08-27 (5) — Parent project goes app-wide, and the BOQ wizard ends in the importer
+
+Two owner asks in one turn.
+
+**1. *"I don't understand the BOQ wizard. How will I add the BOQ then if this is the case?"***
+⚠️ **Fair question — the BOQ type wrote nothing and told you to go and find the importer yourself.**
+`finish()` was `if (st.type === 'BOQ') { close(); return; }`, so it was a three-step detour ending on a
+"Done" button. It now **opens the BOQ screen and its file picker** (`BOQ.openImport`, exported for this).
+The Review step is gone for a BOQ run — its entire content was *"Nothing is recorded for a BOQ-only
+run"*, a step that exists to say it has nothing to say.
+- The step also answers the second half — *"There will be multiple progress billings, what will
+  happen?"* — because nothing about billing depends on packages and the old copy never said so: the BOQ
+  is imported **once**, and each progress billing is a **billing period** where you enter each line's
+  **cumulative** %; previous / this-period / to-date derive from the period before it, and each period
+  records which **revision** it was billed against so a remeasure cannot rewrite a submitted billing.
+- ⚠️ **The Package type card is gone from step 1** — owner: *"The package wizard should also be folded
+  within the contract wizard as an optional step."* It already was; offering Package as its own
+  top-level RECORD TYPE said the opposite, that a package is a thing you set out to create, peer to a
+  contract. The type still works if opened directly — this removes the invitation, not the capability.
+
+**2. *"AVR101 and AVR101 are treated separately. LCR352 and LCR102 are treated the same way. Let's do a
+global approach for this in the planning-app first."*** — the Portfolio rollup was one screen's private
+copy; it is now **`assets/js/program.js` (`PDProgram`)**, read by Portfolio Overview, the projects list
+(`Group by → Parent project`), the dashboard's project switcher (siblings grouped together) and Admin.
+- ⚠️ **ONE DEFINITION.** Two screens grouping by slightly different rules is exactly how two pages come
+  to disagree about which projects are "the same project" — the confusion this exists to end. The
+  Portfolio copy is **deleted**, not left beside it.
+- **New `migrations/2026-08-27-project-program.sql`** adds `projects.program`, an **override only**.
+  ⚠️ **NULL is the normal state and nothing is back-filled** — blank means "group by the code prefix",
+  which every id here already follows, so the rollup works with **no data entry**. Back-filling would
+  turn a convention that self-corrects into stored strings that go stale silently.
+  ⚠️ **No `parent_id`, no `programs` table** — a project is never a child row of another project, or
+  the AVR101 › {AVR101, AVR102} nesting comes back through a different door.
+- ⚠️ **A real defect the tests caught, which the WPM original also has:** *"La Costa Residences Phase 1"*
+  + *"Phase 2"* share the word "Phase", so the label read **"La Costa Residences Phase"** — a dangling
+  qualifier. A trailing qualifier is dropped **only when a bare number follows it in every member**, so
+  *"Sun Tower A"/"Sun Tower B"* correctly keeps "Sun Tower" rather than collapsing to "Sun".
+- ⚠️ **`projects` writes are now tolerant of a column this database lacks** — PostgREST rejects the
+  **whole row** on an unmigrated column, so adding `program` would have thrown away every other field an
+  admin had just typed. Same failure the contracts module hit with `package_id` today. Only a *missing
+  column* is tolerated; a constraint or RLS refusal still fails loudly.
+
+**Verified 123/123 in Node** against the shipped functions (29 program helper + 31 wizard steps + 28
+wizard guard + 23 portfolio + 12 orphan rendering), plus a clean parse of every edited file.
+⚠️ **Not clicked through signed in**, and the new migration has not been run — until it is, the Parent
+project field reports that it was not stored and names the file.
+
+**Cache:** `db.js` / `dashboard.css` / new `program.js` → `?v=20260827a`; `MODULE_V` → `20260827e`;
+contracts `wizard.js` / `module.js` / `boq.js` / `packages.js` → `?v=20260827e`.

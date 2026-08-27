@@ -76,7 +76,11 @@ window.CCWizard = (function () {
       when: function () { return st.type !== 'BOQ' && st.type !== 'Package'; } },
     { key: 'boq',     label: 'BOQ',      sub: 'Optional — skip it if the BOQ has not arrived yet',
       when: function () { return st.type === 'Contract' || st.type === 'BOQ'; } },
-    { key: 'review',  label: 'Review',   sub: 'Check, then save', when: function () { return true; } }
+    /* ⚠️ NO REVIEW FOR A BOQ RUN. It had one, and its entire content was "Nothing is
+       recorded for a BOQ-only run" — a step that exists to say it has nothing to say. The
+       BOQ step is now the last one, and its button opens the importer. */
+    { key: 'review',  label: 'Review',   sub: 'Check, then save',
+      when: function () { return st.type !== 'BOQ'; } }
   ];
   function liveSteps() { return STEPS.filter(function (s) { return s.when(); }); }
   // label/sub may be a string or a function of the current type — resolved in one place so
@@ -99,7 +103,16 @@ window.CCWizard = (function () {
       ['Change Order',  'A variation raised against this project, or against one of its packages.'],
       ['Claim',         'A commercial claim raised against this project, or one of its packages.'],
       ['EOT',           'Extension of Time — measured in days, not pesos.'],
-      ['Package',       'Rarely needed. A division BELOW this project — a lot inside one contract with no project code of its own.'],
+      /* ⚠️ NO "Package" CARD. Owner, 2026-08-27: *"The package wizard should also be folded
+         within the contract wizard as an optional step."* It already is — the Contract
+         flow's package step offers none / define / link and takes as many rows as a
+         contract has lots. Offering Package as its own top-level RECORD TYPE said the
+         opposite: that a package is a thing you set out to create, peer to a contract.
+         That framing is what produced AVR101 › {AVR101, AVR102}.
+         ⚠️ The type still WORKS if opened directly (`CCWizard.open(deps, 'Package')`) and
+            every branch below still handles it — this removes the invitation, not the
+            capability. The Contract tab's "New package" button now opens the compact form,
+            which is the right tool for adding one lot and the same one Edit uses. */
       ['BOQ',           'Load a bill of quantities, optionally narrowed to a package.']
     ];
     return '<div class="ccw-cards">' + opts.map(function (o) {
@@ -359,17 +372,37 @@ window.CCWizard = (function () {
           partly, and a silently-wrong money column is the dangerous failure. So it hands
           over to the existing detect → preview → accept importer rather than pretending
           the wizard has already understood the file. */
-    return '<p class="ccw-hint"><b>This step is optional — most contracts are recorded before the BOQ arrives.</b> ' +
-      'Press <b>Next</b> to skip it; nothing is lost, and the package you just defined is what the BOQ will be ' +
-      'loaded against whenever it turns up.</p>' +
-      '<p class="ccw-hint">When you do have it: a BOQ comes in whatever format the client uses, so the importer ' +
-      '<b>proposes</b> a column map and you accept or correct it — nothing is written until you do.</p>' +
-      (linkedPkgId() || (willCreate() && pkgToCreate().length)
-        ? '<p class="ccw-hint">It will be loaded against <b>' +
-          esc(st.pkgLabel() || (primaryPkg() ? primaryPkg().code : '') || 'the package from step 2') + '</b>.</p>'
-        : '<p class="ccw-hint">⚠️ No package chosen, so a BOQ loaded later will not be narrowed to a lot.</p>') +
-      '<p class="ccw-hint">⚠️ The importer lives on the <b>BOQ tab</b> and writes on its own Accept. Finish here ' +
-      'first so the package exists — then import against it.</p>';
+    /* ⚠️ THE BOQ TYPE NOW ENDS IN THE IMPORTER. It used to end on "Done", write nothing,
+       and describe where the importer lives — owner, 2026-08-27: *"I don't understand the
+       BOQ wizard. How will I add the BOQ then if this is the case?"* Fair question: the
+       answer the screen gave was "leave the wizard and go find it", which is not an answer
+       a wizard should give. `finish()` now opens it. */
+    var scope = linkedPkgId() ? st.pkgLabel()
+              : (willCreate() && primaryPkg() ? primaryPkg().code : '');
+    return (st.type === 'BOQ'
+        ? '<p class="ccw-hint"><b>Open importer</b> below takes you straight to the BOQ screen and opens the ' +
+          'file picker. Nothing has been written yet, and nothing will be until you accept the preview there.</p>'
+        : '<p class="ccw-hint"><b>This step is optional — most contracts are recorded before the BOQ arrives.</b> ' +
+          'Press <b>Next</b> to skip it; nothing is lost, and the BOQ can be imported at any time from the ' +
+          '<b>BOQ tab</b>.</p>') +
+      '<p class="ccw-hint">A BOQ comes in whatever format the client uses, so the importer <b>proposes</b> a ' +
+      'column map and you accept or correct it — nothing is written until you do. It is stored as a ' +
+      '<b>revision</b>, so a re-issued or remeasured BOQ supersedes it without destroying what was tendered.</p>' +
+      /* ⚠️ THE QUESTION UNDER THE QUESTION, answered here because this is where it gets
+         asked: *"There will be multiple progress billings in this project so what will
+         happen?"* Nothing about billing depends on packages, and the old copy never said
+         so — it talked only about lots, which is why this screen looked like it was gating
+         something it was not. */
+      '<p class="ccw-hint"><b>Progress billings.</b> The BOQ is imported <b>once</b>. Each progress billing is ' +
+      'then a <b>billing period</b> on the BOQ tab — its own number, dates, PO and status — where you enter each ' +
+      'line\'s <b>cumulative</b> % complete. Previous, this-period and to-date are derived from the period before ' +
+      'it, so they can never disagree, and POC and revenue fall out of the same figures. ⚠️ Each period records ' +
+      'which BOQ <b>revision</b> it was billed against, so a later remeasure cannot retroactively rewrite a ' +
+      'billing already submitted.</p>' +
+      (scope
+        ? '<p class="ccw-hint">It will be loaded against <b>' + esc(scope) + '</b>.</p>'
+        : '<p class="ccw-hint">It will be loaded against the <b>whole project</b> (' + esc(String(D.pid() || '')) +
+          ') — the normal case, and what the billing reads. A package would only <b>narrow</b> it.</p>');
   }
 
   function stepReview() {
@@ -427,7 +460,7 @@ window.CCWizard = (function () {
     ov.querySelector('#ccw-body').innerHTML = RENDER[cur.key]();
     ov.querySelector('#ccw-back').disabled = i === 0;
     var last = i === ls.length - 1;
-    ov.querySelector('#ccw-next').textContent = last ? (st.type === 'BOQ' ? 'Done' : 'Save') : 'Next';
+    ov.querySelector('#ccw-next').textContent = last ? (st.type === 'BOQ' ? 'Open importer' : 'Save') : 'Next';
     ov.querySelector('#ccw-next').className = 'pd-btn ' + (last ? 'pd-btn-primary' : 'pd-btn-primary');
     wireStep(cur.key);
   }
@@ -503,7 +536,15 @@ window.CCWizard = (function () {
   }
   async function finish() {
     var btn = ov.querySelector('#ccw-next');
-    if (st.type === 'BOQ') { close(); return; }
+    /* A BOQ run writes no record — it hands off. ⚠️ close() FIRST: the importer is a
+       modal too, and opening it under this overlay would leave the planner clicking a
+       file picker they cannot reach. */
+    if (st.type === 'BOQ') {
+      close();
+      if (D.openBoqImport) D.openBoqImport();
+      else UI.toast('Open the BOQ tab and press Import BOQ.', 'info');
+      return;
+    }
     if (st.type === 'Package') {
       if (!pkgToCreate().length) { UI.toast('Give at least one package a code — it comes off the contract.', 'error'); return; }
     } else {

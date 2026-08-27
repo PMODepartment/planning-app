@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Portfolio Overview · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260819c" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260827a" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -465,7 +465,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260826e"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260826e"></script>
+<script src="../../assets/js/db.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260824a"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -530,27 +530,15 @@
         `push-packages` resolves ONE downstream project per Planners project
         (cash_flow_settings.wpm_project_id), while WPM and Engineering each hold AVR101
         and AVR102 as separate projects. Keeping the rows separate keeps that 1:1. */
-  function progKey(p) {
-    if (p && p.program) return String(p.program).toUpperCase();
-    var m = String((p && p.id) || '').match(/^[A-Za-z]+/);
-    return (m ? m[0] : String((p && p.id) || '')).toUpperCase();
-  }
-  /* Label a program by the words its members' names actually SHARE — "Avesta Residences
-     Tower 1 and General Requirements" + "Avesta Residences Towers 2-7" reads as
-     "Avesta Residences" rather than the bare code.
-     ⚠️ Falls back to the code when the names share too little to mean anything, which is
-        the honest answer for an accidental prefix collision (two unrelated projects that
-        happen to start with the same letters must not be given an invented shared name). */
-  function progLabel(key, plist) {
-    var names = plist.map(function (p) { return String(p.name || '').trim(); }).filter(Boolean);
-    if (!names.length) return key;
-    if (names.length === 1) return names[0];
-    var parts = names.map(function (n) { return n.split(/\s+/); });
-    var i = 0;
-    while (i < parts[0].length && parts.every(function (w) { return w[i] && w[i].toLowerCase() === parts[0][i].toLowerCase(); })) i++;
-    var common = parts[0].slice(0, i).join(' ').replace(/[\s\-–—,:]+$/, '');
-    return common.length >= 3 ? common : key;
-  }
+  /* ⚠️ ONE DEFINITION, IN assets/js/program.js. This screen solved the rollup
+     first and carried a private copy; the owner then asked for the same
+     grouping app-wide ("let's do a global approach for this in the planning-app
+     first"), so the copy is gone rather than left beside the shared helper —
+     two screens disagreeing about which projects are "the same project" is the
+     exact confusion this exists to end. See program.js for the prefix rule, the
+     shared-name label and why this is a rollup and not a merge. */
+  function progKey(p) { return PDProgram.keyOf(p); }
+  function progLabel(key, plist) { return PDProgram.labelOf(key, plist); }
 
   function groupKeyOf(p) {
     if (groupMode === 'grouphead') { return groupHead(p) || '(No group head)'; }
@@ -767,14 +755,8 @@
      consolidation usable BEYOND the overview table: the project filter scopes the S-curve,
      Cash Flow, Equipment, Milestones and Resources tabs too, so ticking one parent project
      puts both of its packages into every one of them at once. */
-  function programGroups() {
-    var by = {}, order = [];
-    PROJ.forEach(function (p) { var k = progKey(p); if (!by[k]) { by[k] = []; order.push(k); } by[k].push(p); });
-    return order.map(function (k) {
-      var ps = by[k].slice().sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
-      return { key: k, label: progLabel(k, ps), members: ps };
-    }).sort(function (a, b) { return a.label.localeCompare(b.label); });
-  }
+  function programGroups() { return PDProgram.groups(PROJ); }
+
   function projFilterLabel() {
     var n = projSelCount();
     if (!n) return 'All projects';

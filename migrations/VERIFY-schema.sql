@@ -314,7 +314,8 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-26-lessons-learned.sql','table','lessons_learned',''),
     ('2026-08-26-package-scoped-schedule.sql','column','wbs_nodes','is_package_root'),
     ('2026-08-26-package-scoped-schedule.sql','table','schedule_builder',''),
-    ('2026-08-26-package-scoped-schedule.sql','table','schedule_builder_pushes','')
+    ('2026-08-26-package-scoped-schedule.sql','table','schedule_builder_pushes',''),
+    ('2026-08-27-project-program.sql','column','projects','program')
 ),
 missing as (
   select e.* from expected e

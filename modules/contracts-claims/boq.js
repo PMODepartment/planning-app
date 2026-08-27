@@ -2264,6 +2264,13 @@ window.BOQ = (function () {
 
   return {
     init: init, show: show, reset: reset, render: render,
+    /* ⚠️ EXPORTED so the wizard can HAND OFF instead of giving directions. The BOQ
+       wizard type used to end on "Done", write nothing, and tell the planner to go to
+       the BOQ tab and find the importer themselves — owner, 2026-08-27: *"I don't
+       understand the BOQ wizard. How will I add the BOQ then if this is the case?"* A
+       wizard that ends by describing the next screen instead of opening it is a
+       three-step detour. `finish()` now calls this. */
+    openImport: function () { openImport(); },
     _internals: {
       numOf: numOf, normKey: normKey, locKey: locKey, findHeader: findHeader, colMapOf: colMapOf,
       markerIn: markerIn, MARKER_RE: MARKER_RE, parseSheet: parseSheet, reconcile: reconcile,

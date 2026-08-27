@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Admin · Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260819c" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260827a" />
   <style>
     .pd-tabs { display:flex; gap:4px; border-bottom:1px solid var(--pd-line); margin-bottom:18px; }
     .pd-tab { padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent; color:var(--pd-muted); font-weight:600; }
@@ -73,7 +73,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260826e"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260826e"></script>
+  <script src="assets/js/db.js?v=20260827a"></script>
+  <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
   <script>
@@ -229,12 +230,30 @@
       echo.focus();
     }
 
+    /* What the code prefix would give, shown as the placeholder so an admin can see the
+       default before deciding whether to override it. */
+    function autoParent(p) {
+      // A new project has no id yet, so there is no prefix to show — say so rather
+      // than printing an empty placeholder that reads as a missing value.
+      if (!p || !p.id) return 'the code prefix';
+      try { return PDProgram.keyOf({ id: p.id, program: null }); } catch (e) { return 'the code prefix'; }
+    }
     function editProject(p) {
       var isNew = !p; p = p || {};
       var m = UI.modal(
         '<h2 style="margin-top:0;">'+(isNew?'New project':'Edit project')+'</h2>' +
         '<div class="pd-field"><label>Project ID '+(isNew?'(e.g. AVR101)':'')+'</label><input class="pd-input" id="p-id" value="'+Fmt.esc(p.id)+'"'+(isNew?'':' disabled')+'></div>' +
         '<div class="pd-field"><label>Name</label><input class="pd-input" id="p-name" value="'+Fmt.esc(p.name)+'"></div>' +
+        /* Parent project — the override, not the normal case. ⚠️ Leave it BLANK and the app
+           groups by the code prefix (AVR101 -> AVR), which every id in this portfolio already
+           follows. Set it only when the prefix is wrong: two developments sharing one, or one
+           development split across two. It changes reporting only — the projects stay separate
+           rows, which is what keeps the 1:1 mapping to Procurement and Engineering intact. */
+        '<div class="pd-field"><label>Parent project (optional)</label>' +
+          '<input class="pd-input" id="p-prog" value="'+Fmt.esc(p.program||'')+'" placeholder="'+Fmt.esc(autoParent(p))+'">' +
+          '<small style="display:block;margin-top:4px;color:var(--pd-muted);font-size:11px;">' +
+          'Blank = grouped by the code prefix (<b>'+Fmt.esc(autoParent(p))+'</b>). Set it only to override that.' +
+          '</small></div>' +
         '<div class="pd-field"><label>Location</label><input class="pd-input" id="p-loc" value="'+Fmt.esc(p.location)+'"></div>' +
         '<div class="pd-field"><label>Status</label><select class="pd-select" id="p-status">' +
           ['active','archived'].map(function(s){return '<option'+(p.status===s?' selected':'')+'>'+s+'</option>';}).join('') + '</select></div>' +
@@ -264,6 +283,8 @@
           name: m.el.querySelector('#p-name').value.trim(),
           location: m.el.querySelector('#p-loc').value.trim(),
           status: m.el.querySelector('#p-status').value,
+          // Empty means "use the code prefix", so it is stored as NULL rather than ''.
+          program: (m.el.querySelector('#p-prog').value || '').trim().toUpperCase() || null,
           start_date: m.el.querySelector('#p-start').value || null,
           end_date: m.el.querySelector('#p-end').value || null,
         };
