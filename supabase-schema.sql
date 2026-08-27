@@ -3,11 +3,22 @@
 -- Run this in the Supabase SQL Editor of the NEW planning project.
 -- All statements are idempotent (IF NOT EXISTS) and safe to re-run.
 --
--- ⚠️ NOT the complete DB (audit 2026-07-21). This file is the Phase-1 base; many
--- Phase-2 tables live only in /migrations (schedule/cash-flow/resource/PPR/WPM
--- support tables). **For a complete one-paste build, use `supabase-setup.sql`** —
--- it now folds in every Phase-2 table/column with project-scoped RLS. Otherwise
--- run /migrations in date order after this file.
+-- ⚠️ NOT the complete DB, and the pointer that used to be here was wrong.
+-- This is the Phase-1 BASE only; measured 2026-08-27 it is missing 52 of the 63
+-- live tables. It previously sent readers to `supabase-setup.sql` "for a complete
+-- one-paste build" — that file has since drifted too (29 tables missing).
+--
+-- ➡️ FOR A COMPLETE BUILD, RUN `supabase-build.sql` (generated:
+--    `node migrations/gen-build.js`).
+--
+-- ⚠️ THIS FILE IS AN INPUT TO THAT GENERATOR, so it is not dead — it is the only
+-- place `projects`, `users` and the Phase-1 module tables are created, and the
+-- generated build starts with it. Keep adding a new module's base table here per
+-- MODULE_CONTRACT.md; do NOT fold whole migrations in.
+--
+-- ⚠️ Its tail already ALTERs `wbs_nodes`, a table only /migrations creates, so
+-- the generator defers those statements to the end of the build. Adding more
+-- hand-folded migration bodies here makes that worse, not better.
 --
 -- Conventions for module developers (see MODULE_CONTRACT.md):
 --   * Every module owns its own table(s), prefixed with the module key,

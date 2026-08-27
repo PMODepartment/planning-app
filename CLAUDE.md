@@ -9440,3 +9440,75 @@ asked to audit before doing anything else and #1 and #3 each deserve their own v
 
 **Verified after the fix:** 22/22 on the multi-code suite, 0 NUL bytes, inline script parses,
 0 `.limit()` above the cap remaining.
+
+### 2026-08-27 (9) — All four audit findings fixed, and the schema file stops lying about itself
+
+Owner: *"Let's do all in one passing."* The four findings from the audit above, closed together.
+
+**#1 + #4 — `sync-wpm` and `push-vendor-perf` now paginate.** Both gained the same `readAll()`
+keyset helper, applied to `work_packages` (the unscoped whole-portfolio read), `vendors`, and the
+`wpm_work_packages` mirror read.
+- ⚠️ **This was live, not latent, for #1.** Called without a `wpm_project_id` — a cron, or any full
+  sync — the mirror was built from the first 1000 work packages of the entire portfolio, **with no
+  error**. That mirror feeds Cash Flow's whole cash-out side, the schedule's Procurement branch and
+  vendor performance, so every one of them was computing from a fraction of the data.
+- ⚠️ `readAll` **prepends `id` to the column list when the caller did not ask for it** — the cursor
+  cannot page on a column that is not in the response, and `push-vendor-perf` selects `vendor_id`
+  without it.
+- **Verified 13/13** by slicing the shipped `readAll` out of the file and running it against a fake
+  PostgREST that enforces the real 1000-row cap: 2500 rows load complete in **3** round trips with
+  no duplicates, exactly-1000 terminates in 2, 999 in 1, the scope filter survives the loop, an
+  error propagates instead of returning a short list, and — the check that proves the loop is
+  required rather than stylistic — **a client `.limit(5000)` still comes back with 1000.**
+
+**#2 — `.pd-modal-body` and `.pd-label` now exist.** They were emitted by cash-flow, project-schedule
+and resource-loading and defined nowhere at all. `.pd-modal` is itself the scroller, so a body with
+no height bound scrolled the header and the **Save button** out of view on a long form — the
+`#ps-modal` fix of 2026-08-24 solved that for one module and never for the shared component. Genuine
+CSS gaps fell 34 → 29, with cash-flow and resource-loading clearing entirely.
+
+**#3 — the schema drift is fixed by generating the build, not by hand-folding it again.**
+New `migrations/gen-build.js` emits **`supabase-build.sql`** — `supabase-schema.sql` followed by all
+115 migrations in a computed order. Regenerating is the whole maintenance story; there is nothing
+left to remember.
+- ⚠️ **The reason the two old files rotted is structural, and re-folding today's migrations into them
+  would just restart it.** `supabase-setup.sql` asserted **"✅ COMPLETE (audit 2026-07-21)"** while
+  missing **29 of 63** live tables, and `supabase-schema.sql` pointed readers at it as the complete
+  build while itself missing 52. Both headers now say what they actually are, and setup.sql's only
+  remaining job is named: the DEMO01 seed and the bootstrap admin, which are deliberate one-off acts
+  and are **not** in the generated build.
+- ⚠️ **FILENAME ORDER ALONE IS NOT SAFE, and this was measured before the generator was written, not
+  assumed.** Two failure modes: **(a)** four ALTER-before-CREATE pairs, because same-date files sort
+  alphabetically (`2026-07-14-wpm-mirror-award-status.sql` runs before the file that CREATES
+  `wpm_work_packages`); **(b)** `2026-06-18-fix-rls-recursion.sql` sorts BEFORE
+  `2026-06-18-project-access-rls.sql`, whose `can_access_project` has no `security definer` — so
+  plain date order **reinstates the stack-depth RLS recursion that fix exists to prevent.**
+- ⚠️ **Order is COMPUTED, not hand-listed** — a hand-kept order is the same maintenance burden as the
+  files it replaces. Dependencies are read out of the SQL and a stable topological sort keeps
+  filename order everywhere they do not care. The only hand input is one PIN, for the recursion fix,
+  with its reason stated: an unexplained pin is indistinguishable from a mistake later.
+- ⚠️ **THE DESIGN CHANGED MID-PASS ON A CHECKED FACT.** A migrations-only build fails on the first
+  foreign key to `projects(id)`: **`/migrations` never creates `projects`, `users` or the Phase-1
+  module tables** — they exist only in `supabase-schema.sql`. Checked with grep rather than assumed,
+  and the generator now carries a sanity gate that refuses to build if the base stops creating them.
+- ⚠️ **And the base itself broke the ordering**, which no reordering of the migrations could fix:
+  `supabase-schema.sql` has had migrations hand-folded into it, so its tail **ALTERs `wbs_nodes`, a
+  table only /migrations creates**. The rule is general rather than a hardcode — any base statement
+  referencing a table the base does not create is deferred to the end of the build (4 statements).
+  ⚠️ Its statement splitter understands `$$` bodies, `'...'` literals and `--` comments, and is
+  **asserted byte-for-byte lossless** against the source; a splitter that can silently drop a
+  statement is the wrong shape regardless of whether it currently does.
+
+**Verified 17/17** on the generated build: every declared table, column and function of the union
+present; the base-only tables present and emitted first; every ALTER after its CREATE; the last
+`can_access_project` / `is_admin` / `is_approved` all SECURITY DEFINER; the 2026-07-16
+`projects_write for all` leak still closed; parens balanced, `$$` paired, no NUL byte.
+⚠️ **And the suite bites** — against a naive filename-order concatenation it fails **5**, naming the
+missing base tables, the ALTER-before-CREATE trio and the clobbered `security definer` exactly.
+
+⚠️ **NOT verified against a live database.** Nothing here was run in Supabase: no fresh project was
+built from `supabase-build.sql`, and the two edge functions are **not redeployed**, so their
+pagination fix does nothing yet. **Owner actions:** `supabase functions deploy sync-wpm` and
+`supabase functions deploy push-vendor-perf`; optionally build a scratch project from
+`supabase-build.sql` and run `migrations/VERIFY-schema.sql` against it (no rows = complete).
+⚠️ The generated file is ~570 KB — the Supabase SQL editor may need it pasted in parts.

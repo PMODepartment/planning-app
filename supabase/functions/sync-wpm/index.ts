@@ -42,6 +42,36 @@ const pick = (...v: any[]) => {
   return null;
 };
 
+/* Keyset-paginated read of one table.
+ * WARN: PostgREST caps a table read at 1000 rows SERVER-side and a client .limit() CANNOT
+ * raise it, so a plain .select() returns a partial result with NO error. A truncated read
+ * here silently understates Cash Flow's cash-out, the schedule's Procurement branch and
+ * vendor performance -- and nothing anywhere reports a problem.
+ * WARN: paginates by `id` because a keyset cursor must be UNIQUE and NON-NULL. project_id
+ * and wp_no are neither. `id` is therefore selected even when the caller does not want it.
+ */
+async function readAll(client: any, table: string, cols: string, apply?: (q: any) => any) {
+  const PAGE = 1000;
+  const need = /(^|,)\s*id\s*(,|$)/.test(cols) ? cols : ("id," + cols);
+  let last: string | null = null;
+  const out: any[] = [];
+  for (;;) {
+    let q = client.from(table).select(need).order("id", { ascending: true }).limit(PAGE);
+    if (apply) q = apply(q);
+    if (last !== null) q = q.gt("id", last);
+    const { data, error } = await q;
+    if (error) return { data: null, error };
+    const batch = data || [];
+    out.push(...batch);
+    if (batch.length < PAGE) break;
+    const cursor = batch[batch.length - 1].id;
+    // No usable cursor would loop forever; stop rather than hang the function.
+    if (cursor === undefined || cursor === null) break;
+    last = cursor;
+  }
+  return { data: out, error: null };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -102,9 +132,10 @@ Deno.serve(async (req) => {
 
   // ---- Read WPM (service role, server-side only) ----------------------------
   const wpm = createClient(WPM_URL, WPM_SERVICE, { auth: { persistSession: false } });
-  let q = wpm.from("work_packages").select(WP_COLS);
-  if (scope) q = q.eq("project_id", scope);
-  const { data: wps, error: wErr } = await q;
+  // WARN: paginated. Unscoped -- which is what any full or cron sync does -- this reads
+  // EVERY work package in the WPM portfolio, far past the 1000-row cap. See readAll.
+  const { data: wps, error: wErr } = await readAll(wpm, "work_packages", WP_COLS,
+    (q: any) => (scope ? q.eq("project_id", scope) : q));
   if (wErr) return json({ error: "WPM read failed: " + wErr.message }, 502);
 
   const now = new Date().toISOString();
@@ -168,9 +199,10 @@ Deno.serve(async (req) => {
   let vendorsWritten = 0;
   const vendorDropped: string[] = [];
   {
-    const { data: vs, error: vErr } = await wpm
-      .from("vendors")
-      .select("id,name,vendor_code,trade_categories,accreditation,accreditation_date,status");
+    // WARN: paginated for the same reason -- the vendor directory is portfolio-wide, so it
+    // is never scoped by project and nothing else bounds it.
+    const { data: vs, error: vErr } = await readAll(wpm, "vendors",
+      "id,name,vendor_code,trade_categories,accreditation,accreditation_date,status");
     if (vErr) {
       // Non-fatal: the work-package mirror is the load-bearing half, and a WPM
       // schema that predates vendor management must not fail the whole sync.

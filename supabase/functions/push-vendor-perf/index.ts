@@ -82,6 +82,36 @@ function trendOf(months: any[], totDur: number): string {
   return "flat";
 }
 
+/* Keyset-paginated read of one table.
+ * WARN: PostgREST caps a table read at 1000 rows SERVER-side and a client .limit() CANNOT
+ * raise it, so a plain .select() returns a partial result with NO error. A truncated read
+ * here silently understates Cash Flow's cash-out, the schedule's Procurement branch and
+ * vendor performance -- and nothing anywhere reports a problem.
+ * WARN: paginates by `id` because a keyset cursor must be UNIQUE and NON-NULL. project_id
+ * and wp_no are neither. `id` is therefore selected even when the caller does not want it.
+ */
+async function readAll(client: any, table: string, cols: string, apply?: (q: any) => any) {
+  const PAGE = 1000;
+  const need = /(^|,)\s*id\s*(,|$)/.test(cols) ? cols : ("id," + cols);
+  let last: string | null = null;
+  const out: any[] = [];
+  for (;;) {
+    let q = client.from(table).select(need).order("id", { ascending: true }).limit(PAGE);
+    if (apply) q = apply(q);
+    if (last !== null) q = q.gt("id", last);
+    const { data, error } = await q;
+    if (error) return { data: null, error };
+    const batch = data || [];
+    out.push(...batch);
+    if (batch.length < PAGE) break;
+    const cursor = batch[batch.length - 1].id;
+    // No usable cursor would loop forever; stop rather than hang the function.
+    if (cursor === undefined || cursor === null) break;
+    last = cursor;
+  }
+  return { data: out, error: null };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -150,11 +180,12 @@ Deno.serve(async (req) => {
   }
 
   // ---- The vendors that actually have packages on this project -------------
-  const { data: mirror, error: mErr } = await plAdmin
-    .from("wpm_work_packages")
-    .select("vendor_id, awarded_vendor_ids")
-    .eq("wpm_project_id", wpmProjectId)
-    .not("vendor_id", "is", null);
+  // WARN: paginated, not capped. A .limit(1000) here would make the truncation explicit
+  // rather than fix it, and a dropped vendor reads as "this vendor has no packages" --
+  // indistinguishable from the truth, which is what makes it dangerous.
+  const { data: mirror, error: mErr } = await readAll(plAdmin, "wpm_work_packages",
+    "vendor_id, awarded_vendor_ids",
+    (q: any) => q.eq("wpm_project_id", wpmProjectId).not("vendor_id", "is", null));
   if (mErr) return json({
     error: "Could not read the work-package mirror: " + mErr.message,
     hint: /vendor_id/.test(mErr.message)

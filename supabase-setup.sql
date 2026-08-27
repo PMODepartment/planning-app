@@ -5,14 +5,23 @@
 -- It is idempotent (safe to re-run). Order: tables → grants → helpers → RLS →
 -- storage → demo seed → bootstrap admin → Phase-2 consolidation.
 --
--- ✅ COMPLETE (audit 2026-07-21). This file alone builds the full DB: the Phase-2
--- tables/columns that used to live only in /migrations are folded into the
--- "CONSOLIDATION" section at the bottom (cash_flow_*, schedule_baselines/
--- _snapshots/_audit, activity_expenses, cost_accounts, wpm_work_packages,
--- ppr_presentations/_slides, + the module-full column sets), with RLS applied
--- project-scoped. Running the individual /migrations afterward is optional and
--- harmless (all idempotent). Verified: 0 tables / 0 columns missing vs the union
--- of all sources; every policy re-runnable.
+-- ⚠️ THIS FILE NO LONGER BUILDS THE WHOLE DATABASE, whatever the line above says.
+-- It claimed "✅ COMPLETE (audit 2026-07-21)" for a year; measured again on
+-- 2026-08-27 it is missing **29 of the 63 live tables**. The claim was true when
+-- written and rotted, because every new migration has to be remembered here BY
+-- HAND and dozens were not. A file that asserts its own completeness is exactly
+-- the thing that stops anyone checking.
+--
+-- ➡️ FOR THE SCHEMA, RUN `supabase-build.sql` — generated from /migrations by
+--    `node migrations/gen-build.js`, so it cannot drift.
+--
+-- What this file is still FOR, and what nothing else does: the **DEMO01 sandbox
+-- seed** and the **bootstrap admin promotion** at the bottom. Those are one-off
+-- deliberate acts, not schema, so they are deliberately NOT in the generated
+-- build. Run those sections on a fresh project after the build.
+--
+-- ⚠️ Do not "fix" this file by folding today's migrations into it. That is the
+-- loop that produced the drift. Fix it by regenerating supabase-build.sql.
 --
 -- After running: see SETUP.md for the Supabase dashboard settings (disable
 -- email confirmation, password-reset redirect URL) and the GitHub steps.

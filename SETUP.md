@@ -8,9 +8,17 @@ rebuilding from scratch.
 - [ ] Create a Supabase project (or use the existing one).
 - [ ] Paste the **Project URL** + **anon/public** key into
       `assets/js/config.js`. **Never** use the `service_role` key in this app.
-- [ ] In the SQL editor, run **[`supabase-setup.sql`](supabase-setup.sql)** in
-      full (one paste — tables, grants, RLS, storage buckets, demo project +
-      sample data, and the bootstrap admin promotion). It is idempotent.
+- [ ] In the SQL editor, run **[`supabase-build.sql`](supabase-build.sql)** in
+      full (one paste — every table, grant, RLS policy, helper and storage
+      bucket). It is generated from `/migrations` by `node migrations/gen-build.js`
+      and is idempotent, so it is safe to re-run.
+      ⚠️ Regenerate it after adding a migration; do not hand-edit it.
+- [ ] Then verify with **[`migrations/VERIFY-schema.sql`](migrations/VERIFY-schema.sql)** —
+      it returns one row per migration that is missing an object. **No rows = done.**
+- [ ] Optional, fresh projects only: run the **demo seed** and **bootstrap admin**
+      sections at the bottom of [`supabase-setup.sql`](supabase-setup.sql).
+      ⚠️ That file no longer builds the schema (it has drifted 29 tables behind);
+      those two sections are all it is still for.
 
 ## 2. Supabase — Auth settings (Dashboard → Authentication)
 - [ ] **Providers → Email → "Confirm email": OFF.** New users then land in

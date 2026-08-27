@@ -363,6 +363,26 @@ a:hover { text-decoration: underline; }
 .pd-modal-footer { display: flex; justify-content: flex-end; gap: 10px;
   margin: 18px -22px -22px; padding: 14px 20px; border-top: 1px solid var(--pd-line); }
 
+/* THE BODY BETWEEN THEM. The comment above has said "header/BODY/footer" since 2026-07-02
+   and .pd-modal-body was never actually written -- it is emitted in cash-flow (4x),
+   project-schedule and resource-loading, and resolved to nothing in all three.
+   ⚠️ THIS IS NOT COSMETIC. `.pd-modal` is itself the scroller (max-height:90vh;
+      overflow-y:auto), so with an unbounded body a long form scrolls the WHOLE modal --
+      taking the title and the Save button off screen with it. That is the same defect
+      fixed for `#ps-modal` on 2026-08-24 and for `.boq-imp` on 2026-08-26, each time in
+      one module only. Bounding the body here means the modal itself rarely needs to
+      scroll, so the header and footer stay put by construction rather than by a sticky
+      offset that has to know the padding.
+   ⚠️ The subtrahend is header + footer + the modal's own 22px top and bottom padding
+      (~50 + ~55 + 44). Deliberately generous: over-reserving costs a little height, while
+      under-reserving puts the footer back off screen, which is the bug. */
+.pd-modal-body { max-height: calc(90vh - 150px); overflow-y: auto; overscroll-behavior: contain; }
+
+/* Form label used outside .pd-field (cash-flow's tabbed Assumptions, resource-loading).
+   ⚠️ Same values as `.pd-field label` on purpose -- two label styles that drift apart is
+      how one dialog ends up looking like a different product. */
+.pd-label { display: block; font-size: 12px; font-weight: 600; color: var(--pd-muted); margin-bottom: 5px; }
+
 /* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
 .pd-autosave { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
   white-space: nowrap; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); }
@@ -743,6 +763,9 @@ body { overflow-x: clip; }
   .pd-modal-header { margin: -18px -18px 14px; padding: 13px 16px; border-radius: 14px 14px 0 0; }
   .pd-modal-footer { margin: 14px -18px -18px; padding: 12px 16px;
     padding-bottom: max(12px, env(safe-area-inset-bottom)); flex-wrap: wrap; }
+  /* ⚠️ Recomputed for the phone chrome: the modal is 92dvh with 18px padding here, and a
+     footer that wraps to two rows is normal at this width. */
+  .pd-modal-body { max-height: calc(92dvh - 175px); }
   .pd-modal-footer .pd-btn { flex: 1 1 auto; justify-content: center; }
   .pd-modal-close { width: var(--pd-tap); height: var(--pd-tap); }
 
