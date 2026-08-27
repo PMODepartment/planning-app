@@ -9368,3 +9368,75 @@ done:** `push-packages` / `push-need-by` still scope per project, and AVR102's d
 the host for schedule-derived figures.
 
 **Cache:** `db.js` → `?v=20260827b`; `MODULE_V` → `20260827f`; contracts `packages.js` → `?v=20260827f`.
+
+### 2026-08-27 (8) — Whole-app audit: 4 real findings, and 4 of my own detectors were wrong first
+
+Owner: *"Let's audit the overall app first before doing anything else."* Eleven checks across
+24 HTML + 27 JS files, 115 migrations and 3 SQL schema files. **Every check carries a sanity
+gate** — one that cannot fail on known-bad input proves nothing, and this repo's log already
+records three occasions where an audit script produced a confidently wrong number.
+
+**⚠️ IT HAPPENED FOUR MORE TIMES THIS PASS, and that is the most transferable part of the
+entry.** Each detector's FIRST run was wrong, and each looked plausible:
+1. **The truncation detector reported 5 for 5 false positives** on the samples I hand-checked
+   — it only understood an inline `.gt('id', last)`, and every keyset loop in this codebase
+   builds the query in steps (`q = base; if (last) q = q.gt(...)`).
+2. **Its regexes reached the file as `\\.gt` (double backslash)** after passing through a
+   shell + Python escaping layer, so they matched a literal backslash and could never fire.
+   The displayed source looked correct; only dumping the raw bytes showed it.
+3. **The RLS check reported 21 tables with no row-level security at all.** The loop syntax is
+   `foreach t in array array[...]` — the keyword AND the array constructor — and matching one
+   `array` missed every one. True count: **0**.
+4. **The CSS check reported 377 undefined classes**, of which most were template fragments
+   (`(cls`, `||`, `?`, `Math.min(depth,`). Real count after filtering to kebab-case: 123, of
+   which **86 are deliberate JS hooks** and 34 genuine gaps.
+   **Sanity-gate every scan of this codebase, and dump raw bytes before believing a regex.**
+
+**CLEAN (with gates passing):** 0 NUL bytes · 24 inline blocks + 27 JS files all parse · no
+`service_role`/`sb_secret` material in any shipped file · every local asset carries `?v=` and
+**no shared asset is served at two different versions** · `MODULE_V` consistent with its own
+cache-busting tag · 0 `create policy` without a preceding drop (all 115 migrations re-runnable)
+· 0 live tables without RLS · **0 live `for all` policies that fail to narrow by project.**
+
+⚠️ **The `for all` check needed SUPERSESSION to be true**, exactly like VERIFY-schema.sql: 12
+of the 15 raw hits are superseded by `2026-07-21-rls-project-scope-fix.sql`, which drops and
+recreates them *dynamically* inside a DO loop. Of the remaining three, one is on the dropped
+`workspaces` table and two (`group_heads`, `boq_class_suggestions`) have **no `project_id` at
+all** — a lookup and a deliberately portfolio-wide learning library, so `is_planner()` is the
+correct rule, not a leak.
+
+**FINDINGS**
+
+1. ⚠️ **`sync-wpm` reads EVERY work package across ALL WPM projects with no pagination**
+   (`supabase/functions/sync-wpm/index.ts:105`). Called with a `wpm_project_id` — which the
+   Cash Flow button does — it is per-project and safe. Called **without** one (a cron or a
+   full sync) it is capped at 1000 rows server-side with no error, so the
+   `wpm_work_packages` mirror is silently built from a fraction of the portfolio. That mirror
+   feeds Cash Flow's entire cash-out side, the schedule's Procurement branch and vendor
+   performance. **Same table, same defect, one function away from the one fixed on
+   2026-08-16.** `vendors` at :172 is unpaginated too.
+2. ⚠️ **`.pd-modal-body` and `.pd-label` are defined NOWHERE** — not in `dashboard.css`, not
+   in any module CSS, not in any inline `<style>` — yet emitted in **cash-flow,
+   project-schedule and resource-loading**. Identical in shape to the 2026-07-02 finding
+   where `.pd-modal-header`/`-footer` had no CSS at all. `.pd-modal` is itself the scroller,
+   so a body with no height bound scrolls the header and the **Save button** out of view on a
+   long form — the `#ps-modal` fix of 2026-08-24 solved this for one module and never for the
+   shared component.
+3. **Schema drift has grown and is now severe.** `supabase-setup.sql` is missing **29** of the
+   63 live tables and `supabase-schema.sql` is missing **52**. `/migrations` remains the only
+   complete definition. Flagged as pre-existing on 2026-07-16 (13 missing then); a fresh
+   deploy from either file today builds under half the app.
+4. **`push-vendor-perf:154` reads the mirror per project without pagination** — safe while a
+   project has under 1000 work packages, which is true today. Latent, not live.
+
+**FIXED IN THIS PASS (one line, and it was mine, from an hour earlier):**
+`loadWpmWorkPackages` used `.limit(2000 * scopes.length)`. ⚠️ **A `.limit()` above 1000 is
+fiction** — PostgREST still returns 1000 — so it read as a bound and was not one, and
+unioning a second contract code doubled the rows it had to survive. Now `PDb.selectAll`.
+It was the **only** `.limit()` above the cap in the codebase.
+
+**NOT FIXED, deliberately:** findings 1-4 are reported rather than changed, because the owner
+asked to audit before doing anything else and #1 and #3 each deserve their own verified pass.
+
+**Verified after the fix:** 22/22 on the multi-code suite, 0 NUL bytes, inline script parses,
+0 `.limit()` above the cap remaining.
