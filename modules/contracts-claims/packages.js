@@ -23,13 +23,16 @@
 window.CCPackages = (function () {
   'use strict';
   var UID = null, canWrite = false, pid = null, PKG = [], loaded = false;
+  var CONTRACTS = [], onSub = null;   // contract records to join, and the way into the BOQ
   var esc = function (x) { return Fmt.esc(String(x == null ? '' : x)); };
   function host() { return document.getElementById('cc-view'); }
 
   function init(deps) { UID = deps.uid; canWrite = !!deps.canWrite; }
   function reset() { loaded = false; PKG = []; }
-  async function show(projectId) {
+  async function show(projectId, contracts, openSub) {
     pid = projectId;
+    CONTRACTS = contracts || [];
+    onSub = openSub || null;
     await load();
   }
   async function load() {
@@ -47,6 +50,58 @@ window.CCPackages = (function () {
     render();
   }
 
+
+  /* THE MERGED CONTRACT VIEW — one row per package, carrying the contract that defines it.
+     Owner: *"Contracts and packages are the same thing isn't it?"* Nearly, and in practice
+     one-to-one — but not identically, and the gap is what this view must not hide:
+       · a package with NO contract record (created directly, or before the contract was
+         entered) is real and must still appear, or it silently drops off the screen the
+         schedule and BOQ file against;
+       · a contract record with NO package is also real (the link is optional) and is
+         listed separately rather than dropped.
+     ⚠️ MATCHED ON package_id, never on code or name. A contract's reference has no
+        relationship to a package's code, and matching on text would pair the wrong two
+        the first time someone renamed one. */
+  function contractFor(pkgId) {
+    return CONTRACTS.filter(function (r) { return String(r.package_id || '') === String(pkgId); })[0] || null;
+  }
+  function money(n) { return n == null ? null : Fmt.moneyShort(n); }
+  function subLine(k) {
+    var c = contractFor(k.id);
+    if (!c) return '<span class="cc-mut">— no contract record yet —</span>';
+    var bits = [];
+    if (c.reference_no) bits.push('<strong>' + esc(c.reference_no) + '</strong>');
+    if (c.counterparty) bits.push(esc(c.counterparty));
+    if (c.date_filed) bits.push('signed ' + esc(Fmt.date(c.date_filed)));
+    /* ⚠️ The CONTRACT's amount is shown when it differs from the package's. They are
+       seeded from one another and then edited apart, and a silent disagreement between
+       the contract value and the package value is exactly the kind of drift that only
+       surfaces in a billing dispute. */
+    if (c.amount != null && k.contract_amount != null && Number(c.amount) !== Number(k.contract_amount)) {
+      bits.push('<span class="cc-warn">⚠ contract says ' + esc(money(c.amount)) + '</span>');
+    }
+    return bits.join(' · ') || '<span class="cc-mut">— contract record has no details —</span>';
+  }
+
+  function orphanHTML() {
+    var loose = CONTRACTS.filter(function (r) { return !r.package_id; });
+    if (!loose.length) return '';
+    return '<div class="pd-card cc-tablecard" style="margin-top:12px;">' +
+      '<h3 class="boq-h3">Contract records not linked to a package</h3>' +
+      '<table class="cc-table"><tbody>' +
+      loose.map(function (r) {
+        return '<tr><td><strong>' + esc(r.reference_no || '(no reference)') + '</strong>' +
+          (r.description ? ' — ' + esc(r.description) : '') + '</td>' +
+          '<td>' + esc(r.counterparty || '') + '</td>' +
+          '<td class="cc-r">' + esc(r.amount == null ? '' : money(r.amount)) + '</td>' +
+          '<td><span class="boq-kind">no package</span></td></tr>';
+      }).join('') +
+      '</tbody></table>' +
+      '<p class="cc-hint">⚠️ These define no contract lot, so nothing downstream can file against them — ' +
+      'the schedule, BOQ, procurement and engineering all narrow by package. Open the record and link it, ' +
+      'or let it define a package.</p></div>';
+  }
+
   function render() {
     var h = host(); if (!h) return;
     var head = '<div class="boq-filters">' +
@@ -60,7 +115,7 @@ window.CCPackages = (function () {
         'Requirements</b>, <b>Package 2 — Towers 2-7</b>. They come off the contract documents.</p>' +
         '<p class="cc-hint">Record a <b>Contract</b> on the Contract tab and it can define its package as ' +
         'you save it — or add one here directly. Everything downstream files against these: the schedule\'s ' +
-        'top-level rows, the BOQ, procurement and engineering.</p></div>';
+        'top-level rows, the BOQ, procurement and engineering.</p></div>' + orphanHTML();
       wire(h); return;
     }
     var rows = PKG.map(function (k) {
@@ -89,11 +144,12 @@ window.CCPackages = (function () {
       '<p class="cc-hint">These are what the schedule files its top-level rows under, what the BOQ is ' +
       'assigned to, and what procurement and engineering read once shared. ⚠️ <b>Finish</b> is the ' +
       'contractual completion date the schedule\'s EOT arithmetic revises — a package without one shows ' +
-      'no revised finish and no exposure.</p></div>';
+      'no revised finish and no exposure.</p></div>' + orphanHTML();
     wire(h);
   }
   function wire(h) {
     var a = h.querySelector('#pk-add'); if (a) a.onclick = function () { edit(null); };
+    var bq = h.querySelector('#pk-boq'); if (bq && onSub) bq.onclick = function () { onSub('boq'); };
     var p = h.querySelector('#pk-push'); if (p) p.onclick = share;
     h.querySelectorAll('[data-edit]').forEach(function (b) {
       b.onclick = function () { edit(PKG.filter(function (k) { return String(k.id) === b.dataset.edit; })[0]); };

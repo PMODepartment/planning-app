@@ -162,31 +162,81 @@ window.ContractsClaims = (function () {
   // ==========================================================================
   // RENDER
   // ==========================================================================
+  /* SUB-VIEWS — the screens that used to be top-level tabs.
+     ⚠️ FOLDED, NOT MERGED. The BOQ and PMI keep their own screens because neither is a
+        variant of a register row: the BOQ is revisions + 1,200 lines + billing periods,
+        and PMI is `pmi_records` with its own stage pipeline, attachments, per-client
+        instruction label and approval roles. Flattening either into the claims table
+        would cost that machinery for the sake of a shorter list. They simply stop
+        competing at the top level — BOQ opens from inside Contract, PMI from inside
+        Claims, each with a way back.
+     ⚠️ THE BACK BAR IS A SIBLING OF #cc-view, NOT INSIDE IT. Both sub-modules render by
+        replacing #cc-view's innerHTML, so a back link placed inside would be wiped the
+        moment the screen it belongs to finished loading — leaving no way out. */
+  var sub = null;              // null | 'boq' | 'pmi'
+  function subBar() { return document.getElementById('cc-subbar'); }
+  function clearSubBar() { var b = subBar(); if (b) b.remove(); }
+  function openSub(which) {
+    var mod = which === 'boq' ? window.BOQ : window.PMI;
+    if (!mod) { UI.toast(which.toUpperCase() + ' did not load.', 'error'); return; }
+    sub = which;
+    clearSubBar();
+    var host = document.getElementById('cc-view');
+    var bar = document.createElement('div');
+    bar.id = 'cc-subbar';
+    bar.className = 'boq-filters';
+    bar.innerHTML = '<button class="pd-btn" id="cc-subback">&larr; Back to ' +
+      esc(which === 'boq' ? 'Contract' : 'Claims / Change Order') + '</button>' +
+      '<span class="cc-mini">' + esc(which === 'boq' ? 'Bill of quantities' : 'Instructions register') + '</span>';
+    host.parentNode.insertBefore(bar, host);
+    bar.querySelector('#cc-subback').onclick = function () { sub = null; switchTab(view); };
+    document.getElementById('cc-filters').style.display = 'none';
+    document.getElementById('cc-topbar-tools').style.display = 'none';
+    mod.show(pid, projName());
+  }
+
+  function wirePmiEntry(host) {
+    var b = host && host.querySelector('#cc-open-pmi');
+    if (b) b.onclick = function () { openSub('pmi'); };
+  }
   function render() {
     var host = document.getElementById('cc-view');
     /* The BOQ tab is a different KIND of screen — the client's contract document
        and its billing, not a register of claims — so it owns its own toolbar,
        filters and sub-tabs (boq.js) and this module's filter bar / record tools
        are hidden rather than left showing controls that do nothing there. */
-    var own = view === 'boq' ? window.BOQ : view === 'pmi' ? window.PMI : null;
-    var isOwn = view === 'boq' || view === 'pmi';
-    document.getElementById('cc-filters').style.display = isOwn ? 'none' : '';
-    document.getElementById('cc-topbar-tools').style.display = isOwn ? 'none' : '';
-    if (isOwn) {
-      if (own) own.render();
-      else host.innerHTML = '<div class="pd-card cc-empty"><h3>' + esc(view.toUpperCase()) +
-        ' unavailable</h3><p>' + esc(view) + '.js did not load.</p></div>';
+    if (sub) { (sub === 'boq' ? window.BOQ : window.PMI).render(); return; }
+    clearSubBar();
+    document.getElementById('cc-filters').style.display = '';
+    document.getElementById('cc-topbar-tools').style.display = '';
+    /* The Contract tab is now keyed by PACKAGE — a contract defines a package, so one
+       list carries both, and a package with no contract (or a contract with no package)
+       is shown rather than dropped. packages.js owns that view. */
+    if (view === 'contract' && window.CCPackages) {
+      document.getElementById('cc-filters').style.display = 'none';
+      CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub);
       return;
     }
     // The Claim/CO type filter only applies to the claims tab.
     document.getElementById('cc-f-type').style.display = view === 'claims' ? '' : 'none';
     syncClearFilt();
 
-    if (!rows.length) { host.innerHTML = emptyHTML(); wireEmpty(); return; }
+    if (!rows.length) {
+      host.innerHTML = (view === 'claims'
+        ? '<div class="boq-filters"><button class="pd-btn" id="cc-open-pmi">Instructions (PMI) &rarr;</button></div>' : '') +
+        emptyHTML();
+      wireEmpty(); wirePmiEntry(host); return;
+    }
     var c = cfg(), list = visibleRows(), t = totals(list);
     document.getElementById('cc-count').textContent = 'Showing ' + list.length + ' ' + (list.length === 1 ? 'record' : 'records');
 
-    var h = kpiHTML(list, t);
+    /* PMI lives inside this register now rather than beside it: an instruction is the
+       same commercial conversation one step earlier, and it was a sixth tab nobody could
+       keep track of. Its own screen is unchanged — this is the way in. */
+    var h = (view === 'claims'
+      ? '<div class="boq-filters"><button class="pd-btn" id="cc-open-pmi">Instructions (PMI) &rarr;</button>' +
+        '<span class="cc-mini">Client instructions, before they become a claim or change order</span></div>'
+      : '') + kpiHTML(list, t);
 
     h += '<div class="pd-card cc-tablecard"><table class="cc-table"><thead><tr>' +
       '<th class="cc-cb"><input type="checkbox" id="cc-xall" title="Select all shown" /></th>' +
@@ -241,6 +291,7 @@ window.ContractsClaims = (function () {
     }
 
     host.innerHTML = h;
+    wirePmiEntry(host);
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
     wire();
     paintRemote();
@@ -834,11 +885,7 @@ window.ContractsClaims = (function () {
        lines plus its mapping, allocations and every billing period — six extra
        round-trips on every project switch, paid by everyone for a screen most
        sessions never open. */
-    /* Packages load on first open like the BOQ: a project switch should not pay for
-       a screen most sessions never open. */
-    if (v === 'packages' && window.CCPackages) { CCPackages.show(pid); return; }
-    if (v === 'boq' && window.BOQ) { BOQ.show(pid, projName()); return; }
-    if (v === 'pmi' && window.PMI) { PMI.show(pid, projName()); return; }
+    sub = null;                       // leaving a tab always leaves its sub-view
     render();
   }
 

@@ -619,6 +619,54 @@ the culprits was wrong — those strings are `<option>` values in the import dia
 defined-but-never-emitted: none.** ⚠️ Not looked at in a browser — this is a colour/border change, so
 the audit proves the classes resolve, not that the shades read well on screen.
 
+### 2026-08-26 — Six tabs become three, and the module gets its title back
+Owner: *"The module for contracts/claims page does not have the website title. I also want to have the
+tabs to be consolidated into fewer tabs only. There are too many tabs to keep track of. Contracts and
+packages are the same thing isn't it? If it makes sense let's fold the BOQ tab and fold the PMI with
+the Claims register."*
+
+**The missing title was caused by the tab count.** `module.css` hid `.cc-title-txt` below **1460px**
+with the comment *"5 tabs need more room"* — so the module showed no title on any normal laptop, and
+the sixth tab made it certain. Three tabs need far less room, so the breakpoint drops to **1080px** and
+the title survives everywhere but a genuinely narrow window.
+
+**Contract · Claims / Change Order · Extension of Time.** Packages folded into Contract; BOQ folded
+under Contract; PMI folded under Claims.
+
+⚠️ **"Contracts and packages are the same thing" — nearly, and in practice one-to-one, but NOT
+identically**, and the gap is what the merged view must not hide:
+- a package with **no contract record** is real (created directly, or before the contract was entered)
+  and must still appear, or it drops off the very screen the schedule and BOQ file against;
+- a contract record with **no package** is also real (the link is optional) and is listed in its own
+  section rather than dropped.
+So: **one row per package**, carrying its contract's reference, counterparty and signing date on a
+second line, and a *"Contract records not linked to a package"* section beneath.
+- ⚠️ **Joined on `package_id`, never on code or name.** A contract's reference has no relationship to a
+  package's code, and text matching would pair the wrong two the first time someone renamed one.
+- ⚠️ **A contract amount that disagrees with its package's is flagged**, not averaged or hidden. The two
+  are seeded from one another and then edited apart, and a silent disagreement only surfaces in a
+  billing dispute.
+
+⚠️ **FOLDED, NOT MERGED — and that distinction is deliberate.** BOQ and PMI keep their own screens: the
+BOQ is revisions + 1,200 lines + billing periods, and PMI is `pmi_records` with its own stage pipeline,
+attachments, per-client instruction label and approval roles. Flattening either into the claims table
+would have cost that machinery for the sake of a shorter list. They stop *competing at the top level* —
+BOQ opens from the Contract tab, PMI from the Claims register, each with a way back.
+- ⚠️ **The back bar is a SIBLING of `#cc-view`, not inside it.** Both sub-modules render by replacing
+  that element's innerHTML, so a back link placed inside would be wiped the moment the screen finished
+  loading, leaving no way out.
+
+**Two more undefined classes, found by extending yesterday's pill audit to every class the module
+emits:**
+- ⚠️ **`.boq-imp` — the import/preview modal body, used 8 times in `boq.js` and never styled.** A
+  1,200-line preview had no scroll of its own, so it pushed the modal's own footer — with **Accept** and
+  **Cancel** — off the screen. Now `max-height:70vh; overflow:auto`.
+- `.cc-warn` added for the amount-mismatch flag rather than emitting a class that resolves to nothing.
+- `.cc-listbar` is emitted undefined but carries its whole layout inline — a hook, not a gap.
+
+⚠️ **Not clicked through in a browser.** `node --check` clean on `module.js` and `packages.js`; the
+class audit reports **emitted-but-undefined: none** apart from that inline-styled hook.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is

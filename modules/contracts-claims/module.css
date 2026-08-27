@@ -16,7 +16,10 @@
 
 /* ---- Topbar ------------------------------------------------------------- */
 .cc-title-txt { white-space:nowrap; }
-@media (max-width:1460px){ .cc-title-txt { display:none; } }   /* 5 tabs need more room */
+/* ⚠️ WAS 1460px, "5 tabs need more room" — which meant the module showed NO title on any
+   normal laptop, and the sixth tab made it certain. Three tabs need far less room, so the
+   title survives down to a small window and only yields on genuinely narrow screens. */
+@media (max-width:1080px){ .cc-title-txt { display:none; } }
 .cc-title-ico { color:var(--pd-red); vertical-align:-3px; }
 .cc-modback { height:36px; width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
 
@@ -67,6 +70,11 @@
 .cc-r { text-align:right; white-space:nowrap; }
 .cc-table th.cc-r { text-align:right; }
 .cc-mut { color:var(--pd-muted); }
+/* Used where a contract's amount disagrees with its package's — the two are seeded
+   from one another then edited apart, and a silent disagreement only surfaces in a
+   billing dispute. Defined here rather than emitted undefined, which is the bug this
+   file's pill audit had just fixed. */
+.cc-warn { color:var(--boq-warn); font-weight:600; }
 .cc-mini { color:var(--pd-muted); font-size:11px; }
 .cc-nowrap { white-space:nowrap; }
 .cc-actcol { width:76px; }
@@ -236,6 +244,11 @@ html.pd-dark {
 .boq-table tr.boq-head > td { background:var(--pd-bg); font-weight:700; }
 .boq-excl { font-size:11.5px; color:var(--boq-warn); font-style:italic; margin-top:2px; }
 .boq-h3 { margin:14px 12px 8px; font-size:13px; }
+/* ⚠️ The import/preview modal body, used 8 times in boq.js and never styled — so a
+   1,200-line preview had no scroll of its own and pushed the modal's footer (with
+   Accept and Cancel) off the screen. Found by auditing every class the module emits
+   against every one this file defines. */
+.boq-imp { padding:14px 16px; max-height:70vh; overflow:auto; }
 
 .boq-kind { display:inline-block; font-size:10.5px; font-weight:700; text-transform:uppercase;
   letter-spacing:.03em; padding:2px 6px; border-radius:3px; white-space:nowrap;
