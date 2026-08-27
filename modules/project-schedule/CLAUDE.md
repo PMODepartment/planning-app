@@ -8942,3 +8942,49 @@ package with no contract finish on record returning null rather than a guessed d
 ⚠️ **Not clicked through in a browser.** The report is reachable at Reports → Contract Package Monitor.
 
 `MODULE_V` → `20260826s`.
+
+### 2026-08-27 — Reading more than one Procurement project from one schedule
+
+AVR101's schedule covers all 7 towers, but Towers 2-7 are bought under **AVR102**, a different project in
+the Procurement app. `_prcWpmProjectId()` resolved exactly one WPM project, so AVR102's work packages
+could never reach the activities that consume them.
+
+- **`_prcWpmScopes()`** = the project's own `cash_flow_settings.wpm_project_id` **plus** one per contract
+  package naming its own (`packages.wpm_project_id`, 2026-08-27-package-external-codes.sql).
+- **`_wpmScopeOf(r)`** = which WPM project ONE activity's work package is read from, resolved through
+  `packageOf()` so a WBS branch tagged once answers for its whole subtree.
+- ⚠️ **INERT UNTIL A PACKAGE IS MAPPED.** One scope in, one scope out — the tree, the ids and the
+  resolution are byte-identical to before on every existing project.
+- ⚠️ An **archived** lot still contributes a scope: the lot is retired, its procurement history is not.
+
+**⚠️ `wp_no` IS UNIQUE ONLY WITHIN A WPM PROJECT.** Both AVR101 and AVR102 have a "1". Consequences, each
+handled explicitly:
+- The index is **nested** `byScope[project][no]`, plus a `uniq` map of numbers appearing in exactly one
+  project. ⚠️ The first cut joined them into one string key with `\u0000` and **wrote a real NUL byte into
+  the file** — nesting needs no separator, so nothing can collide and the bug cannot come back.
+- `wpOf(r)`: the activity's own lot → the host → an unambiguous number → **null**. ⚠️ Null, not a guess:
+  showing another lot's vendor under an activity is worse than showing none.
+- **`activity_id` prefixes only a NON-HOST scope** (`AVR102-1`). Prefixing everything would re-key every
+  package on every existing project and the next sync would sweep and re-insert the lot.
+- The **picker is scoped to the activity's own lot** — two `<option>`s with `value="1"` are
+  indistinguishable to a `<select>`, and the label would otherwise resolve through the host.
+
+**The Procurement branch gains a LOT level** when the schedule spans several codes:
+`Procurement › Towers 2-7 › Structural › WP`, named from the package (its **scope**, which is what a
+planner reads), falling back to the bare code when no package claims that mapping so an unmapped scope
+stays visible. A single-code project keeps `Procurement › Trade › WP` exactly.
+- ⚠️ **The stale sweep now walks the WHOLE subtree.** Trade nodes are grandchildren under a lot, so the
+  old direct-children scan would have found nothing stale AND read every package as new — a second copy
+  of the entire branch on the first sync.
+- ⚠️ `nodeOf` is keyed **lot → trade**; one flat map collides the moment two lots both buy Structural
+  Works, which is the normal case.
+
+⚠️ **`wpIsUnlinked` was left reading the old flat index** and would have flagged **every** activity as
+unlinked. Now asks `wpOf()`, so the flag and the label cannot disagree.
+
+**Verified 22/22** executing the shipped `_prcWpmScopes` / `_wpmScopeOf` / `_wpIndex` / `wpOf` / `wpByNo`
+(sliced by brace-matching): the single-code path unchanged, an activity in each lot resolving to its own
+project's WP "1", the ambiguous case returning null, archived lots still contributing, and the cache
+invalidating on reassignment. **0 functions lost** against HEAD; 0 NUL bytes; inline script parses.
+⚠️ **Not clicked through signed in and no live sync has been run** — the first real Sync Procurement on a
+mapped project is the test.

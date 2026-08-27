@@ -163,13 +163,19 @@ window.CCPackages = (function () {
         '<td>' + (k.start_date ? esc(Fmt.date(k.start_date)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
         '<td>' + (k.end_date ? esc(Fmt.date(k.end_date)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
         '<td class="cc-r">' + (k.contract_amount != null ? esc(Fmt.moneyShort(k.contract_amount)) : '<span class="cc-mut">—</span>') + '</td>' +
+        /* The mapping has to be VISIBLE on the list. A lot silently pointing at another
+           project's procurement is exactly the kind of thing nobody finds until a buyer
+           reports an empty picker. */
+        '<td>' + (k.wpm_project_id
+          ? '<code title="Procurement project this lot buys under">' + esc(k.wpm_project_id) + '</code>'
+          : '<span class="cc-mut">this project</span>') + '</td>' +
         (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-edit="' + esc(k.id) + '">Edit</button></td>' : '') +
         '</tr>';
     }).join('');
     h.innerHTML = head +
       '<div class="pd-card cc-tablecard"><table class="cc-table"><thead><tr>' +
       '<th>Code</th><th>Name</th><th>Status</th><th>Start</th><th>Finish</th>' +
-      '<th class="cc-r">Contract amount</th>' + (canWrite ? '<th class="cc-actcol"></th>' : '') +
+      '<th class="cc-r">Contract amount</th><th>Buys under</th>' + (canWrite ? '<th class="cc-actcol"></th>' : '') +
       '</tr></thead><tbody>' + rows + '</tbody></table>' +
       '<p class="cc-hint">These are what the schedule files its top-level rows under, what the BOQ is ' +
       'assigned to, and what procurement and engineering read once shared. ⚠️ <b>Finish</b> is the ' +
@@ -206,6 +212,26 @@ window.CCPackages = (function () {
       '<label>Finish<input id="pk-ff" type="date" value="' + esc(k.end_date ? String(k.end_date).slice(0, 10) : '') + '" /></label>' +
       '<label>Contract amount<input id="pk-amt" type="number" step="0.01" value="' + esc(k.contract_amount == null ? '' : k.contract_amount) + '" /></label>' +
       '<label>Sort order<input id="pk-sort" type="number" value="' + esc(k.sort_order == null ? PKG.length : k.sort_order) + '" /></label>' +
+      /* WHICH CONTRACT CODE THIS LOT BUYS UNDER.
+         The gap this closes: one schedule can span several contract codes (AVR101's
+         schedule covers all 7 towers, but Towers 2-7 are bought under AVR102, a different
+         project in the Procurement app). Without these the schedule can only ever read one
+         Procurement project, so the other lot's work packages never reach the activities
+         that consume them.
+         WARN: BLANK IS THE NORMAL CASE and means "the same project this package is on".
+            Only fill these in when a lot genuinely buys under a different code -- a value
+            set by habit would point a lot's procurement at the wrong project silently. */
+      '<div class="cc-wide" style="margin-top:6px;border-top:1px solid var(--pd-line);padding-top:10px;">' +
+        '<strong style="font-size:12px;">Contract codes this lot buys under</strong>' +
+        '<p class="cc-hint" style="margin-top:2px;">Leave blank unless this lot is bought under a ' +
+        '<b>different project code</b> from the one it sits on. Only then does the schedule read a ' +
+        'second Procurement project.</p></div>' +
+      '<label>Procurement (WPM) project<input id="pk-wpm" value="' + esc(k.wpm_project_id || '') +
+        '" placeholder="' + esc(pid || '') + '" /></label>' +
+      '<label>Engineering project<input id="pk-eng" value="' + esc(k.eng_project_id || '') +
+        '" placeholder="' + esc(pid || '') + '" /></label>' +
+      '<label class="cc-wide">This lot\'s own Planners project<input id="pk-plan" value="' + esc(k.planners_project_id || '') +
+        '" placeholder="e.g. AVR102 — where its contract, claims and billing are filed" /></label>' +
       '<p class="cc-hint cc-wide">⚠️ <b>Finish</b> is the contractual completion date. The schedule reads it ' +
       'to compute a revised finish once approved EOT days are granted, so a package without one reports no ' +
       'revised finish and no liquidated-damages exposure.</p>' +
@@ -228,7 +254,11 @@ window.CCPackages = (function () {
         status: el('pk-status').value,
         start_date: el('pk-fs').value || null,
         end_date: el('pk-ff').value || null,
-        contract_amount: num('pk-amt'), sort_order: num('pk-sort') || 0
+        contract_amount: num('pk-amt'), sort_order: num('pk-sort') || 0,
+        // Empty means "same as this project", so it is stored as NULL rather than ''.
+        wpm_project_id: (el('pk-wpm').value || '').trim() || null,
+        eng_project_id: (el('pk-eng').value || '').trim() || null,
+        planners_project_id: (el('pk-plan').value || '').trim() || null
       };
       if (!data.code) { UI.toast('Give the package a code - it comes off the contract.', 'error'); return; }
       if (!data.name) { UI.toast('Give the package a name.', 'error'); return; }

@@ -3025,7 +3025,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260826e"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260827a"></script>
+<script src="../../assets/js/db.js?v=20260827b"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260824a"></script>
 <script src="../../assets/js/icons.js?v=20260813a"></script>
@@ -4623,12 +4623,55 @@
   // modules disagreeing about which WPM project a schedule belongs to would show
   // different work packages for the same job. Falls back to the project id, which is
   // the convention when the ids already match.
+  var _wpmHostId = null;          // the project-level mapping, resolved once per load
   async function _prcWpmProjectId() {
     try {
       var r = await sb().from('cash_flow_settings').select('wpm_project_id').eq('project_id', pid).limit(1);
       var v = (!r.error && r.data && r.data[0] && r.data[0].wpm_project_id) || null;
       return v || pid;
     } catch (e) { return pid; }
+  }
+
+  /* EVERY WPM project this schedule buys under — the project's own mapping PLUS one
+     per contract package that names its own (packages.wpm_project_id,
+     2026-08-27-package-external-codes.sql).
+
+     ⚠️ THIS IS THE WHOLE POINT OF THE CHANGE. One schedule can span several contract
+        codes: AVR101's schedule covers all 7 towers, but Towers 2-7 are bought under
+        AVR102, which is a different project in the Procurement app. Reading one WPM
+        project meant AVR102's work packages could never reach the activities that
+        consume them.
+     ⚠️ INERT ON EVERY PROJECT THAT MAPS TO ONE WPM PROJECT. With no package mapping set
+        this returns exactly the single id it returned before, so nothing changes for any
+        existing job until someone deliberately maps a package. That is what makes it
+        safe to ship to every project at once. */
+  function _prcWpmScopes() {
+    var seen = {}, out = [];
+    var add = function (v) {
+      var k = String(v == null ? '' : v).trim();
+      if (k && !seen[k.toUpperCase()]) { seen[k.toUpperCase()] = 1; out.push(k); }
+    };
+    add(_wpmHostId || pid);
+    (PACKAGES || []).forEach(function (k) {
+      // An archived package's work packages still have to resolve — the lot is retired,
+      // its procurement history is not, and blanking those links would read as data loss.
+      add(k && k.wpm_project_id);
+    });
+    return out;
+  }
+
+  /* Which WPM project ONE activity's work package should be read from: its own
+     contract package's mapping, else the project-level one.
+     ⚠️ Resolved through packageOf(), so a WBS branch tagged once answers for its whole
+        subtree — tagging 4,000 activities by hand is not a plan anyone would carry out. */
+  function _wpmScopeOf(r) {
+    var pk = packageOf(r);
+    if (pk) {
+      var k = (PACKAGES || []).filter(function (x) { return String(x.id) === String(pk); })[0];
+      var v = k && String(k.wpm_project_id || '').trim();
+      if (v) return v;
+    }
+    return _wpmHostId || pid;
   }
 
   // ==========================================================================
@@ -4754,10 +4797,15 @@
   async function loadWpmWorkPackages() {
     if (!pid) { WPM_WPS = []; return; }
     try {
-      var wpmId = await _prcWpmProjectId();
+      _wpmHostId = await _prcWpmProjectId();
+      var scopes = _prcWpmScopes();
+      /* ⚠️ `wpm_project_id` IS NOW SELECTED, and it has to be. `wp_no` is unique only
+         WITHIN a WPM project — both AVR101 and AVR102 have a work package "1" — so the
+         moment this loads more than one project the number alone stops identifying a
+         package. Everything downstream keys on the pair. */
       var r = await sb().from('wpm_work_packages')
-        .select('wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at')
-        .eq('wpm_project_id', wpmId).limit(2000);
+        .select('wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,procurement_status,delivery_status,synced_at')
+        .in('wpm_project_id', scopes).limit(2000 * Math.max(1, scopes.length));
       var list = (r && !r.error && r.data) || [];
       // Trade order then WP number, so every picker and report shows packages in the order
       // they are actually procured rather than in mirror-id order.
@@ -4771,36 +4819,90 @@
   }
 
   function _wpKey(no) { return String(no == null ? '' : no).trim().toUpperCase(); }
+  function _wpScope(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
   var _wpMap = null, _wpMapSrc = null;
+  /* Two indexes, because a bare wp_no is no longer an identity:
+       byScope — (wpm project, wp_no) -> row. The real key.
+       uniq    — wp_no -> row, ONLY where that number appears in exactly one project.
+     ⚠️ `uniq` exists for legacy links, not as a shortcut. Activities predating contract
+        packages store a bare number with no package to resolve it through; where that
+        number is unambiguous across every mirrored project it still resolves, and where
+        it is NOT the entry is deliberately absent so the link reads UNLINKED rather than
+        silently resolving to whichever project happened to load second. Showing the wrong
+        vendor's package under an activity is worse than showing none. */
   function _wpIndex() {
     // Rebuilt whenever WPM_WPS is reassigned (identity check) — a per-call scan would
     // run once per grid row per render on a 17k-activity schedule.
     if (_wpMap && _wpMapSrc === WPM_WPS) return _wpMap;
-    _wpMap = {}; _wpMapSrc = WPM_WPS;
-    (WPM_WPS || []).forEach(function (w) { var k = _wpKey(w.wp_no); if (k) _wpMap[k] = w; });
+    /* ⚠️ A NESTED map (scope -> no -> row), NOT a joined string key. The first cut
+       joined them with a NUL-code escape and the patch script wrote a REAL NUL byte into
+       this file — which makes grep treat it as binary, and is a documented trap in this
+       repo's own log. Nesting needs no separator at all, so nothing can collide with a
+       project id or a wp_no and the bug cannot come back. */
+    var byScope = {}, count = {}, first = {};
+    (WPM_WPS || []).forEach(function (w) {
+      var k = _wpKey(w.wp_no); if (!k) return;
+      var sc = _wpScope(w.wpm_project_id);
+      (byScope[sc] || (byScope[sc] = {}))[k] = w;
+      count[k] = (count[k] || 0) + 1;
+      if (count[k] === 1) first[k] = w;
+    });
+    var uniq = {};
+    Object.keys(first).forEach(function (k) { if (count[k] === 1) uniq[k] = first[k]; });
+    _wpMap = { byScope: byScope, uniq: uniq }; _wpMapSrc = WPM_WPS;
     return _wpMap;
   }
-  // The mirror row an activity points at, or null when it points at nothing that exists.
-  function wpOf(r) { var k = _wpKey(r && r.work_package); return k ? (_wpIndex()[k] || null) : null; }
-  function wpByNo(no) { var k = _wpKey(no); return k ? (_wpIndex()[k] || null) : null; }
+  /* The mirror row an activity points at, or null when it points at nothing that exists.
+     ⚠️ Resolved through the ACTIVITY'S OWN contract package first, so an activity in
+        AVR101's schedule that is tagged to the Towers 2-7 lot reads AVR102's work package
+        "1" and not AVR101's. */
+  function wpOf(r) {
+    var k = _wpKey(r && r.work_package); if (!k) return null;
+    var ix = _wpIndex();
+    return (ix.byScope[_wpScope(_wpmScopeOf(r))] || {})[k] || ix.uniq[k] || null;
+  }
+  // No activity in hand (a picker label, a report heading), so no package to scope by:
+  // the host project's mapping first, then an unambiguous number.
+  function wpByNo(no, scope) {
+    var k = _wpKey(no); if (!k) return null;
+    var ix = _wpIndex();
+    return (ix.byScope[_wpScope(scope || _wpmHostId || pid)] || {})[k] || ix.uniq[k] || null;
+  }
   // "12 — Structural Steel Supply". Falls back to the bare stored value so an unresolved
   // link still shows what it was pointing at.
-  function wpLabel(no) {
+  function wpLabel(no, scope) {
     var k = String(no == null ? '' : no).trim(); if (!k) return '';
-    var w = wpByNo(k); if (!w) return k;
+    var w = wpByNo(k, scope); if (!w) return k;
     var d = String(w.description || '').trim();
     return d ? (w.wp_no + ' — ' + d) : String(w.wp_no);
   }
-  function wpIsUnlinked(r) { var k = _wpKey(r && r.work_package); return !!k && !_wpIndex()[k]; }
+  /* ⚠️ Was `!_wpIndex()[k]` against the old FLAT map. The index is now {byScope,uniq},
+     so that test was true for every activity — the whole schedule would have reported its
+     work packages as UNLINKED. It asks wpOf() now, the same resolution the label uses, so
+     the flag and the text can never disagree. */
+  function wpIsUnlinked(r) { var k = _wpKey(r && r.work_package); return !!k && !wpOf(r); }
   // The <select> body for the Work Package picker: one <optgroup> per trade, in the
   // owner's procurement order. `cur` is kept as an option even when it resolves to
   // nothing, so opening a form on a legacy value and changing an unrelated field can
   // never silently wipe the link (a select whose value isn't in its option list reads
   // back as '').
-  function wpOptsHTML(cur) {
+  function wpOptsHTML(cur, r) {
     var curK = _wpKey(cur), seen = false;
+    /* WARN: SCOPED TO THE ACTIVITY'S OWN CONTRACT LOT once this schedule spans more than
+       one contract code. Two reasons, both of which produce a wrong answer rather than an
+       untidy one:
+         1. The stored value is a bare wp_no, and AVR101 and AVR102 both have a "1" -- two
+            <option>s sharing value="1" cannot be told apart by a <select> at all.
+         2. The label would resolve through the host, so an AVR102 package would be listed
+            under AVR101's description.
+       An activity with no package falls back to the host, which is exactly what a
+       single-code project has always done -- so nothing changes there. */
+    var scopes = _prcWpmScopes();
+    var mine = _wpScope(r ? _wpmScopeOf(r) : (_wpmHostId || pid));
+    var pool = (WPM_WPS || []);
+    if (scopes.length > 1) pool = pool.filter(function (w) { return _wpScope(w.wpm_project_id) === mine; });
     var byTrade = {}, order = [];
-    (WPM_WPS || []).forEach(function (w) {
+    pool.forEach(function (w) {
       var t = _prcTradeOf(w);
       if (!byTrade[t]) { byTrade[t] = []; order.push(t); }
       byTrade[t].push(w);
@@ -4823,7 +4925,7 @@
     }
     order.forEach(function (t) {
       html += '<optgroup label="' + esc(t) + '">' + byTrade[t].map(function (w) {
-        var lbl = wpLabel(w.wp_no);
+        var lbl = wpLabel(w.wp_no, w.wpm_project_id);
         return '<option value="' + esc(String(w.wp_no)) + '"' +
           (_wpKey(w.wp_no) === curK ? ' selected' : '') + '>' + esc(lbl) + '</option>';
       }).join('') + '</optgroup>';
@@ -4997,11 +5099,13 @@
     if (!prcNode) return;                                  // skeleton not seeded
     _prcSyncing = true;
     try {
-      var wpmId = await _prcWpmProjectId();
+      _wpmHostId = await _prcWpmProjectId();
+      var scopes = _prcWpmScopes();
+      var multi = scopes.length > 1;      // this schedule spans more than one contract code
       var mirror;
       try {
-        mirror = await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', wpmId); },
-          'wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
+        mirror = await PDb.selectAll('wpm_work_packages', function (q) { return q.in('wpm_project_id', scopes); },
+          'wpm_project_id,wp_no,description,trade,awarding_date,actual_awarding_date,target_delivery,target_installation,target_completion,award_status,synced_at');
       } catch (e) { return; }   // a partial read must not be mirrored as the truth
       // ⚠️ Never synced, or this project has no work packages yet — leave the branch
       // exactly as it is. Reading "no rows" as "delete everything" is how a failed or
@@ -5009,33 +5113,91 @@
       if (!mirror.length) return;
       _prcLastSynced = mirror[0] && mirror[0].synced_at || null;
 
-      // Group by trade, and order the packages inside each by their own WP number.
-      var byTrade = {};
+      /* THE ACTIVITY ID.
+         WARN: a wp_no is unique only WITHIN a WPM project, so once this schedule reads two
+            of them, AVR101's WP "1" and AVR102's WP "1" both want the Activity ID "1" --
+            they would overwrite each other and every sync would thrash between them.
+         WARN: ONLY a NON-HOST scope is prefixed, and that is deliberate rather than tidier.
+            Prefixing everything would change the Activity ID of every package on every
+            existing project, so the next sync would sweep them all as stale and re-insert
+            them. Leaving the host bare means adding a second contract code touches nothing
+            that is already there. */
+      var aidOf = function (w) {
+        var no = String(w.wp_no);
+        return _wpScope(w.wpm_project_id) === _wpScope(_wpmHostId) ? no : (String(w.wpm_project_id).trim() + '-' + no);
+      };
+      // Which contract lot a mirrored package belongs to, for the LOT level below.
+      var pkgByScope = {};
+      (PACKAGES || []).forEach(function (k) {
+        var v = _wpScope(k && k.wpm_project_id);
+        if (v && !pkgByScope[v]) pkgByScope[v] = k;
+      });
+      var lotName = function (scope) {
+        var k = pkgByScope[_wpScope(scope)];
+        // The package's own name -- the SCOPE ("Towers 2-7"), which is what a planner reads.
+        // WARN: falls back to the bare code only when no package claims that mapping, so an
+        //    unmapped scope stays visible as a code rather than silently merging into a lot.
+        return k ? ((k.code ? k.code + ' - ' : '') + (k.name || '')) : String(scope);
+      };
+
+      /* Group by TRADE, and -- when the schedule spans several contract codes -- by LOT
+         above it, so Procurement reads  Procurement > Towers 2-7 > Structural > WP.
+         WARN: a single-code project keeps the exact tree it has today (Procurement > Trade
+            > WP): `multi` is false, no lot node is created, and nothing re-nests. That is
+            what makes this safe to ship to every project at once. */
+      var byLot = {};
       mirror.forEach(function (w) {
         if (!w.wp_no) return;                              // a WP with no number has no Activity ID
+        var lot = multi ? _wpScope(w.wpm_project_id) : '';
         var t = _prcTradeOf(w);
-        (byTrade[t] = byTrade[t] || []).push(w);
+        var m = byLot[lot] = byLot[lot] || {};
+        (m[t] = m[t] || []).push(w);
       });
-      var trades = Object.keys(byTrade).sort(function (a, b) {
-        return _prcTradeRank(a) - _prcTradeRank(b) || a.localeCompare(b);
+      // Host lot first, then the rest by their package's sort order, then by code.
+      var lots = Object.keys(byLot).sort(function (a, b) {
+        if (a === _wpScope(_wpmHostId)) return -1;
+        if (b === _wpScope(_wpmHostId)) return 1;
+        var ka = pkgByScope[a], kb = pkgByScope[b];
+        return ((ka && ka.sort_order) || 0) - ((kb && kb.sort_order) || 0) || a.localeCompare(b);
+      });
+      var trades = [];
+      lots.forEach(function (l) {
+        Object.keys(byLot[l]).forEach(function (t) { if (trades.indexOf(t) === -1) trades.push(t); });
       });
       if (!trades.length) return;
 
-      var nodeOf = {};
-      for (var ti = 0; ti < trades.length; ti++) {
-        var nd = await _prcEnsureNode(prcNode.id, trades[ti], ti);
-        if (nd) nodeOf[trades[ti]] = nd;
+      // nodeOf is keyed by LOT then TRADE -- one flat map would collide the moment two lots
+      // both buy Structural Works, which is the normal case.
+      var nodeOf = {}, lotNodeIds = [];
+      for (var li = 0; li < lots.length; li++) {
+        var lot = lots[li];
+        var parent = prcNode;
+        if (multi) {
+          var ln = await _prcEnsureNode(prcNode.id, lotName(lot), li);
+          if (!ln) continue;
+          parent = ln; lotNodeIds.push(ln.id);
+        }
+        var lotTrades = Object.keys(byLot[lot]).sort(function (a, b) {
+          return _prcTradeRank(a) - _prcTradeRank(b) || a.localeCompare(b);
+        });
+        nodeOf[lot] = {};
+        for (var ti = 0; ti < lotTrades.length; ti++) {
+          var nd = await _prcEnsureNode(parent.id, lotTrades[ti], ti);
+          if (nd) nodeOf[lot][lotTrades[ti]] = nd;
+        }
       }
       await _wbsEnsureSummaries();                         // each new node needs its projected WBS-Summary row
       var codeOf = computeWbsCodes();
 
       var want = [];
-      trades.forEach(function (t) {
-        var nd = nodeOf[t]; if (!nd) return;
-        byTrade[t].slice().sort(function (a, b) {
-          return String(a.wp_no).localeCompare(String(b.wp_no), undefined, { numeric: true });
-        }).forEach(function (w, i) {
-          want.push({ aid: String(w.wp_no), node: nd, w: w, seq: i });
+      lots.forEach(function (lot) {
+        Object.keys(byLot[lot]).forEach(function (t) {
+          var nd = nodeOf[lot] && nodeOf[lot][t]; if (!nd) return;
+          byLot[lot][t].slice().sort(function (a, b) {
+            return String(a.wp_no).localeCompare(String(b.wp_no), undefined, { numeric: true });
+          }).forEach(function (w, i) {
+            want.push({ aid: aidOf(w), node: nd, w: w, seq: i });
+          });
         });
       });
       var wantIds = {}; want.forEach(function (x) { wantIds[x.aid] = 1; });
@@ -5051,12 +5213,24 @@
       // queried, its activities are never seen as stale, and they sit in the branch
       // forever showing packages that no longer exist in WPM. Caught by a test that
       // removed the only Mechanical Works package.
-      var prcNodeIds = WBS_NODES.filter(function (n) { return n.parent_id === prcNode.id; })
-        .map(function (n) { return n.id; });
-      trades.forEach(function (t) {
-        var nd = nodeOf[t];
-        if (nd && prcNodeIds.indexOf(nd.id) === -1) prcNodeIds.push(nd.id);
+      /* WARN: EVERY DESCENDANT of Procurement, not just its direct children. With a LOT
+         level the trade nodes are grandchildren, so the old one-level scan would have missed
+         every mirrored activity -- the sweep would find nothing stale AND the diff would read
+         every package as new, inserting a second copy of the whole branch. */
+      var prcNodeIds = [];
+      (function collect(parentId) {
+        WBS_NODES.forEach(function (n) {
+          if (n.parent_id !== parentId) return;
+          if (prcNodeIds.indexOf(n.id) === -1) { prcNodeIds.push(n.id); collect(n.id); }
+        });
+      })(prcNode.id);
+      lots.forEach(function (lot) {
+        Object.keys(nodeOf[lot] || {}).forEach(function (t) {
+          var nd = nodeOf[lot][t];
+          if (nd && prcNodeIds.indexOf(nd.id) === -1) prcNodeIds.push(nd.id);
+        });
       });
+      lotNodeIds.forEach(function (id) { if (prcNodeIds.indexOf(id) === -1) prcNodeIds.push(id); });
       var existingByAid = {}, allPrcRows = [];
       // ⚠️ `work_package` MUST be selected here even though nothing below reads it directly:
       // the diff loop compares `ex[f]` against the patch, and an unselected column reads as
@@ -6948,7 +7122,8 @@
     if (dim === 'wp') {
       var wpv = (r.work_package || '').trim();
       if (!wpv) return '— No work package —';
-      return wpByNo(wpv) ? wpLabel(wpv) : ('⚠ ' + wpv + ' — not in the Procurement app');
+      var sc = _wpmScopeOf(r);
+      return wpByNo(wpv, sc) ? wpLabel(wpv, sc) : ('⚠ ' + wpv + ' — not in the Procurement app');
     }
     // Contract package resolves through the WBS, so an activity under an assigned branch groups
     // with its branch rather than falling into "— No package —".
@@ -9943,7 +10118,7 @@
       // ⚠️ `wpLabel` not `r.work_package`: the stored value is a bare ordinal, so searching the
       // raw column meant "steel" could never find the activities fed by the steel package. The
       // label is "12 — Structural Steel Supply", which matches both the number and the description.
-      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), wpLabel(r.work_package), ccSearchText(r), phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
+      var hay = [r.activity_id, r.activity_name, r.wbs, workOf(r), wpLabel(r.work_package, _wpmScopeOf(r)), ccSearchText(r), phaseLabel(phaseOf(r)), scopeTypeLabel(scopeOf(r)), coRefOf(r), packageLabel(packageOf(r))].concat(
         r.location ? Object.keys(r.location).map(function (k) { return r.location[k]; }) : []
       ).join(' ').toLowerCase();
       if (hay.indexOf(search.trim().toLowerCase()) === -1) return false;
@@ -10032,7 +10207,7 @@
       // has since been emptied.
       ((WPM_WPS.length || rows.some(wpIsUnlinked)) ? '<h4>Procurement work package</h4><select id="ps-f-wp-filter" class="pd-select pd-input-sm" style="width:100%;">' +
         [['', 'All work packages'], ['__none__', '— Not linked to a work package —'], ['__unlinked__', '⚠ Linked to a package the Procurement app does not have']]
-          .concat(WPM_WPS.map(function (w) { return [String(w.wp_no), wpLabel(w.wp_no)]; }))
+          .concat(WPM_WPS.map(function (w) { return [String(w.wp_no), wpLabel(w.wp_no, w.wpm_project_id)]; }))
           .map(function (o) { return '<option value="' + esc(o[0]) + '"' + ((filters.wp || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') +
         '</select>' : '') +
       '<label style="margin-top:4px;">Look-ahead: <select id="ps-f-look" class="pd-select pd-input-sm" style="max-width:150px;">' +
@@ -12083,7 +12258,7 @@
     return '<div style="display:flex;flex-direction:column;gap:3px;">' +
       '<label style="font-size:11px;color:var(--pd-muted);">Work Package <span style="opacity:.8;">(Procurement app)</span></label>' +
       '<select class="pd-select ps-gedit" data-f="work_package" data-t="select" style="width:100%;box-sizing:border-box;font-size:12.5px;">' +
-      wpOptsHTML(r.work_package) + '</select>' + note + '</div>';
+      wpOptsHTML(r.work_package, r) + '</select>' + note + '</div>';
   }
   // Class code for the detail panel. Persists through the standard ps-gedit / data-t="select"
   // wiring, like every other field here.
@@ -18398,7 +18573,7 @@
     // an option would silently clear the link.
     var _wpSel = document.getElementById('ps-f-wp');
     if (_wpSel) {
-      _wpSel.innerHTML = wpOptsHTML(row ? row.work_package : '');
+      _wpSel.innerHTML = wpOptsHTML(row ? row.work_package : '', row);
       _wpSel.disabled = !WPM_WPS.length && !(row && row.work_package);
       var _wpHint = document.getElementById('ps-f-wp-hint');
       if (_wpHint) {

@@ -9302,3 +9302,69 @@ helper (123 → 122 total), with the LCR fixture carrying its real name and an a
 **matches WPM's string exactly**.
 
 ⚠️ **Owner has run `2026-08-27-project-program.sql`**, so the Parent project override is live.
+
+### 2026-08-27 (7) — One schedule, several contract codes: a package now carries the codes it buys under
+
+Owner: *"How should we resolve this especially in connecting the procurement from AVR102? Currently
+AVR101's schedule covers all 7 towers and general requirements."* Built steps 1 and 3 of the agreed plan;
+step 2 (tagging which WBS branches belong to which lot) is a data call and is left to the planner.
+
+**The model this settles.** Two axes that never lined up: the WORK is one construction sequence (shared
+cranes, shared general requirements, predecessors running between towers) while the MONEY is two
+contracts, each its own project in Procurement and Engineering. Everything here is scoped by
+`projects.id`, so it forced them to be one thing.
+1. **A Planners project = a contract code.** AVR101 and AVR102 both stay; merging breaks the 1:1 every
+   cross-app push relies on.
+2. **A schedule belongs to a DEVELOPMENT.** One project hosts it. Splitting 4,393 activities would sever
+   the predecessors between towers and duplicate the general requirements.
+3. **Each contract lot inside that schedule is a `package` on the host, named for its SCOPE**
+   ("Towers 2-7"), never for a project code — which is why the 2026-08-27 guard and this are consistent
+   rather than in tension: the scope description and the contract code are different facts.
+4. **The package carries the codes it maps to.** `migrations/2026-08-27-package-external-codes.sql` adds
+   `wpm_project_id`, `eng_project_id`, `planners_project_id`. **USER MUST RUN IT.**
+
+**⚠️ THE SAFETY PROPERTY, and it is what makes this shippable to every project at once: with no package
+mapping set, every code path returns exactly what it returned before.** `_prcWpmScopes()` degrades to the
+single id from `cash_flow_settings`, the procurement tree keeps its `Procurement › Trade › WP` shape, and
+`wpOf()` resolves through the host. Only a package someone deliberately maps changes anything.
+
+**Three real collisions the union creates, each of which returns a WRONG answer rather than an untidy one:**
+- ⚠️ **`wp_no` is unique only WITHIN a WPM project.** AVR101 and AVR102 both have a work package "1", so
+  the flat `wp_no -> row` index would have resolved to whichever loaded second. The index is now nested
+  `(wpm project -> wp_no -> row)`, and an activity resolves through **its own contract package** —
+  falling back to the host, then to a number that is unambiguous across every mirrored project, then to
+  **UNLINKED rather than a guess**. Showing another lot's vendor under an activity is worse than showing
+  none.
+- ⚠️ **`activity_id` is the bare WP number**, so two lots both wanted the id "1" and every sync would
+  thrash between them. Only a **non-host** scope is prefixed (`AVR102-1`) — prefixing everything would
+  change the Activity ID of every package on every existing project, so the next sync would sweep them
+  all as stale and re-insert them.
+- ⚠️ **The stale sweep scanned only Procurement's DIRECT children.** With a lot level the trade nodes are
+  grandchildren, so it would have found nothing stale **and** read every package as new, inserting a
+  second copy of the whole branch. It walks the whole subtree now.
+
+**Two defects of my own, both caught by checking rather than reading:**
+- ⚠️ **A literal NUL byte written into `modules/project-schedule/index.html`** — the `\u0000` separator I
+  used for the index key. `grep` then treats the file as binary, and it is a documented trap in this
+  repo's own log. Fixed at the root by removing the separator entirely (a nested map needs none), so it
+  cannot recur. ⚠️ **The environment mangles backslash escapes inside Bash heredocs** — it happened twice,
+  the second time inside the comment explaining the first. Patch scripts are written with the Write tool
+  and run from a file now.
+- ⚠️ **`wpIsUnlinked` still read the old FLAT index** (`!_wpIndex()[k]`), which is `undefined` against the
+  new shape — **every activity in the schedule would have reported its work package as UNLINKED.** It
+  asks `wpOf()` now, the same resolution the label uses, so the flag and the text cannot disagree.
+
+**Also:** the Work Package picker is scoped to the activity's own lot (two `<option>`s sharing
+`value="1"` cannot be told apart by a `<select>` at all), the packages list shows a **Buys under** column
+so a lot silently pointing elsewhere is visible, and `PDb.createPackage`/`updatePackage` are now tolerant
+of the unmigrated column like the project writes.
+
+**Verified 144/144 in Node** against the shipped functions (22 new on the multi-code resolution, sliced by
+brace-matching), **0 functions lost** against HEAD, 0 NUL bytes, every inline script parses, the packages
+table aligned 8 header / 8 body cells, and the migration paren-balanced with no policy changes.
+
+⚠️ **Not clicked through signed in, and no live sync has been run.** ⚠️ **Steps 4-5 of the plan are NOT
+done:** `push-packages` / `push-need-by` still scope per project, and AVR102's dashboard does not yet read
+the host for schedule-derived figures.
+
+**Cache:** `db.js` → `?v=20260827b`; `MODULE_V` → `20260827f`; contracts `packages.js` → `?v=20260827f`.

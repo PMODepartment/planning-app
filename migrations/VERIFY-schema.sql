@@ -315,6 +315,9 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-26-package-scoped-schedule.sql','column','wbs_nodes','is_package_root'),
     ('2026-08-26-package-scoped-schedule.sql','table','schedule_builder',''),
     ('2026-08-26-package-scoped-schedule.sql','table','schedule_builder_pushes',''),
+    ('2026-08-27-package-external-codes.sql','column','packages','eng_project_id'),
+    ('2026-08-27-package-external-codes.sql','column','packages','planners_project_id'),
+    ('2026-08-27-package-external-codes.sql','column','packages','wpm_project_id'),
     ('2026-08-27-project-program.sql','column','projects','program')
 ),
 missing as (

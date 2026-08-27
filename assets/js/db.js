@@ -69,7 +69,7 @@
       var q = m.match(/'([a-z0-9_]+)' column/i) || m.match(/column "?([a-z0-9_]+)"?/i);
       return q ? q[1] : null;
     },
-    async _projWrite(run, payload) {
+    async _tolerant(run, payload) {
       var body = Object.assign({}, payload), dropped = [];
       for (var i = 0; i < 6; i++) {
         var res = await run(body);
@@ -81,14 +81,14 @@
       throw new Error('Could not save the project after dropping: ' + dropped.join(', '));
     },
     async createProject(p) {
-      var r = await PDb._projWrite(function (body) {
+      var r = await PDb._tolerant(function (body) {
         return sb().from('projects').insert(body).select().single();
       }, p);
       PDb._warnDropped(r.dropped);
       return r.data;
     },
     async updateProject(id, p) {
-      var r = await PDb._projWrite(function (body) {
+      var r = await PDb._tolerant(function (body) {
         return sb().from('projects').update(body).eq('id', id);
       }, p);
       PDb._warnDropped(r.dropped);
@@ -97,7 +97,12 @@
     // a hint that points at the wrong file sends whoever reads it hunting in it.
     _warnDropped(dropped) {
       if (!dropped || !dropped.length) return;
-      var MIG = { program: 'migrations/2026-08-27-project-program.sql' };
+      var MIG = {
+        program: 'migrations/2026-08-27-project-program.sql',
+        wpm_project_id: 'migrations/2026-08-27-package-external-codes.sql',
+        eng_project_id: 'migrations/2026-08-27-package-external-codes.sql',
+        planners_project_id: 'migrations/2026-08-27-package-external-codes.sql'
+      };
       var files = {};
       dropped.forEach(function (c) { if (MIG[c]) files[MIG[c]] = 1; });
       var names = Object.keys(files);
@@ -162,14 +167,22 @@
       if (error) throw error;
       return data || [];
     },
+    /* Tolerant of an unmigrated column, for the same reason the project writes are:
+       PostgREST rejects the WHOLE row on one unknown column, so adding the external-code
+       mappings would otherwise throw away the code, name, dates and amount the planner had
+       just typed. See _projWrite above. */
     async createPackage(p) {
-      var { data, error } = await sb().from('packages').insert(p).select().single();
-      if (error) throw error;
-      return data;
+      var r = await PDb._tolerant(function (body) {
+        return sb().from('packages').insert(body).select().single();
+      }, p);
+      PDb._warnDropped(r.dropped);
+      return r.data;
     },
     async updatePackage(id, p) {
-      var { error } = await sb().from('packages').update(p).eq('id', id);
-      if (error) throw error;
+      var r = await PDb._tolerant(function (body) {
+        return sb().from('packages').update(body).eq('id', id);
+      }, p);
+      PDb._warnDropped(r.dropped);
     },
     // Guarded delete. The Project Schedule now carries `package_id` on activities
     // and WBS nodes (2026-08-19-schedule-package.sql), so the RPC refuses while
