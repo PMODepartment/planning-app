@@ -587,6 +587,38 @@ edit dialog say so, and a package without one shows *"— not set —"* rather t
 ⚠️ **Not clicked through in a browser.** `node --check` clean on `packages.js`, `module.js` and the
 dashboard's inline script.
 
+### 2026-08-26 — The BOQ status pills that said nothing
+Owner: *"fix the boq.js pills too"*, after the Packages move turned up `boq-kind k-…` classes the JS
+emits and the stylesheet never defined.
+
+Audited every class the module can emit against every one `module.css` defines, rather than fixing the
+two that happened to be noticed:
+
+| source | values |
+|---|---|
+| `line_kind` | measured · lump_sum · provisional · excluded · **heading** |
+| billing period `status` | **draft** · submitted · approved |
+| PMI `stage` | received · estimated · submitted · evaluated · client_approved · rejected · withdrawn |
+
+**Exactly two were undefined — `k-heading` and `k-draft`** — and both fell back to the base muted pill,
+so a heading row and a priced row wore the same badge, and a draft billing looked identical to a
+submitted one. PMI's seven were all already defined; my earlier guess that `k-trade` / `k-skip` were
+the culprits was wrong — those strings are `<option>` values in the import dialog, never pill classes.
+
+- ⚠️ **`k-heading` is dashed, not coloured.** A heading is a **subtotal of the lines beneath it** and
+  carries no money of its own — the dashed border says *structure, not a value*, which is the one
+  confusion that matters here, because summing headings double-counts the sheet (the same trap the
+  `Total of X >>` marker rule exists to prevent).
+- `k-draft` takes the amber `--boq-warn` already used for "partial" — the monthly view's `part` badge
+  borrows this very class, so that badge was invisible too and is fixed by the same rule.
+- ⚠️ **Package status got its own `k-active` / `k-archived`** rather than keeping the `k-measured` the
+  Packages tab borrowed yesterday. It was legible, but `measured` means *measured quantity* everywhere
+  else in this file, and one class with two meanings is how a vocabulary rots.
+
+**Verified** by a set-difference over the shipped stylesheet: **emitted-but-undefined: none;
+defined-but-never-emitted: none.** ⚠️ Not looked at in a browser — this is a colour/border change, so
+the audit proves the classes resolve, not that the shades read well on screen.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is

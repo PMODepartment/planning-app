@@ -246,6 +246,26 @@ html.pd-dark {
 .boq-kind.k-excluded    { color:var(--boq-warn); border-color:var(--boq-warn); }
 .boq-kind.k-approved    { color:var(--boq-good); border-color:var(--boq-good); }
 .boq-kind.k-submitted   { color:var(--boq-info); border-color:var(--boq-info); }
+/* ⚠️ THESE TWO WERE EMITTED BY boq.js AND NEVER DEFINED, so both fell back to the base
+   muted pill and said nothing. Found by auditing every class the JS can emit against
+   every one this file defines:
+     line_kind  -> measured | lump_sum | provisional | excluded | HEADING
+     period     -> DRAFT | submitted | approved
+     pmi stage  -> received | estimated | submitted | evaluated | client_approved |
+                   rejected | withdrawn   (all seven already defined)
+   A heading is a SUBTOTAL of the lines beneath it and carries no money of its own — the
+   dashed border says "structure, not a value", which is the one thing a reader must not
+   confuse, since summing headings double-counts the sheet.
+   Draft = not yet submitted, so it shares the amber the monthly view's "part" badge
+   already borrows from this class. */
+.boq-kind.k-heading     { color:var(--pd-muted); border-style:dashed; }
+.boq-kind.k-draft       { color:var(--boq-warn); border-color:var(--boq-warn); }
+/* Package status has its own pair rather than borrowing a BOQ line kind — the first cut
+   of the Packages tab reused `k-measured` for "active", which is green and legible but
+   means "measured quantity" everywhere else in this file. One class, two meanings, is
+   how a vocabulary rots. */
+.boq-kind.k-active      { color:var(--boq-good); border-color:var(--boq-good); }
+.boq-kind.k-archived    { color:var(--pd-muted); border-style:dashed; }
 
 .boq-code, .boq-sugg { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
   font-weight:700; padding:2px 6px; border-radius:3px; white-space:nowrap; }

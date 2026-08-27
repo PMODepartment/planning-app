@@ -70,10 +70,11 @@ window.CCPackages = (function () {
       return '<tr data-pk="' + esc(k.id) + '">' +
         '<td><strong>' + esc(k.code) + '</strong></td>' +
         '<td>' + esc(k.name) + '</td>' +
-        /* ⚠️ k-measured is a variant that EXISTS in module.css. boq.js writes k-trade /
-           k-skip, which do not, so those pills silently fall back to the base style —
-           copying that would have shipped a status column with no visual distinction. */
-        '<td><span class="boq-kind' + (k.status === 'archived' ? '' : ' k-measured') + '">' + esc(k.status || 'active') + '</span></td>' +
+        /* k-active / k-archived are this status's OWN variants. The first cut borrowed
+           k-measured, which is legible but means "measured quantity" everywhere else —
+           one class with two meanings is how a vocabulary rots. */
+        '<td><span class="boq-kind k-' + esc(k.status === 'archived' ? 'archived' : 'active') + '">' +
+          esc(k.status || 'active') + '</span></td>' +
         '<td>' + (k.start_date ? esc(Fmt.date(k.start_date)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
         '<td>' + (k.end_date ? esc(Fmt.date(k.end_date)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
         '<td class="cc-r">' + (k.contract_amount != null ? esc(Fmt.moneyShort(k.contract_amount)) : '<span class="cc-mut">—</span>') + '</td>' +
