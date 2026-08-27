@@ -77,6 +77,10 @@ window.ContractsClaims = (function () {
   /* A3's tail. Loaded tolerantly — `packages` arrives with
      2026-08-19-packages.sql, and until it is run the picker is simply absent. */
   var PKGS = [];
+  /* Every project id in the app — read once, used only to refuse a package that restates
+     a project (see wizard.js's `codeConflict`). Tolerant like PKGS: a failed read leaves
+     it empty and the guard simply finds fewer conflicts, never a false one. */
+  var ALL_PROJECTS = [];
 
   // ---- helpers -------------------------------------------------------------
   var MNAME = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -451,6 +455,13 @@ window.ContractsClaims = (function () {
       pid: function () { return pid; },
       uid: function () { return UID; },
       packages: function () { return PKGS; },
+      /* Every project in the app, so the wizard can refuse a package that restates one.
+         ⚠️ Read from the cache filled at load, never fetched here — the check runs on
+         every keystroke in the package step, and a network round trip per character
+         would either lag the field or race itself. An empty cache degrades to "no
+         conflict found", which is the safe direction: it never blocks a legitimate
+         package, it only stops catching the illegitimate one. */
+      projects: function () { return ALL_PROJECTS; },
       createPackage: function (p) { return PDb.createPackage(p).then(function (made) { PKGS.push(made); return made; }); },
       /* Rollback for a package this wizard created moments ago and could not use. It is
          guaranteed to have nothing pointing at it, so admin_delete_package's in-use guard
@@ -869,6 +880,10 @@ window.ContractsClaims = (function () {
     }
     try { PKGS = await PDb.selectAll('packages', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
     catch (e) { PKGS = []; }
+    // Cheap (a few dozen rows) and read once per project switch, so the wizard's
+    // per-keystroke conflict check never touches the network.
+    try { ALL_PROJECTS = await PDb.getProjects(); }
+    catch (e) { ALL_PROJECTS = []; }
     rows = res.data || [];
     rows.sort(function (a, b) {
       var d = (a.sort_order || 0) - (b.sort_order || 0); if (d) return d;

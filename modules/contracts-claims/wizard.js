@@ -87,6 +87,14 @@ window.CCWizard = (function () {
   function pkgToCreate() {
     return st.pkgList.filter(function (p) { return String(p.code || '').trim(); });
   }
+  /* `st.pkgId` now carries three meanings for a Contract, not two: '' = this project is
+     the lot and needs no package, NEWPKG = define one (or several) here, a uuid = link to
+     one that already exists. Read it through these two so no branch has to know which
+     sentinel is which — the empty string used to mean "create", and a stale reading of it
+     would silently make every contract define a package again. */
+  var NEWPKG = '__new';
+  function linkedPkgId() { return (st.pkgId && st.pkgId !== NEWPKG) ? st.pkgId : ''; }
+  function willCreate() { return st.type === 'Package' || (st.type === 'Contract' && st.pkgId === NEWPKG); }
   function primaryPkg() {
     var list = pkgToCreate();
     if (!list.length) return null;
@@ -106,6 +114,66 @@ window.CCWizard = (function () {
     return null;
   }
   function blankPkg() { return { code: '', name: '', start: '', end: '', amount: '' }; }
+
+  /* ⚠️ A PACKAGE MAY NOT RESTATE A PROJECT — the bug this guard exists for.
+     Owner, 2026-08-27: *"Created AVR101 in the projects list → went to contracts &
+     claims → defined AVR101 (again) and AVR102 packages. The structure now is
+     AVR101 › {AVR101, AVR102}. This will create problems in connecting with the
+     procurement app and engineering app."*
+
+     He is right, and the damage is specific, not cosmetic:
+       · AVR101 as a package of project AVR101 makes the same contract lot exist twice —
+         once with a schedule, a BOQ and a WPM mapping, once as a child row — and every
+         per-package total then double-counts or splits depending on which one it read.
+       · AVR102 as a package of project AVR101 is worse. `push-packages` resolves ONE
+         downstream project per Planners project (cash_flow_settings.wpm_project_id), so
+         AVR102's package would be mirrored into WPM's AVR101 — and a buyer working in
+         WPM's own AVR102 project would see an empty picker, with nothing anywhere saying
+         why.
+
+     Megawide's codes are PROJECT codes (AVR101, AVR102, BAU101, SLN101), and Procurement
+     and Engineering both hold them as separate projects. So AVR101 and AVR102 are two
+     projects of one development, NOT two packages of one project — and they are
+     consolidated for reporting by the Portfolio Overview's "Parent project" grouping,
+     which is a rollup and costs no data change.
+
+     A package is for a division BELOW a project: a lot inside one contract that has no
+     project code of its own. If the code you are about to type already names a project,
+     it is not that. */
+  function projectCodes() {
+    try { return (D.projects && D.projects()) || []; } catch (e) { return []; }
+  }
+  function codeConflict(code) {
+    var c = String(code || '').trim().toLowerCase();
+    if (!c) return null;
+    if (c === String(D.pid() || '').trim().toLowerCase()) return { code: code, self: true };
+    var hit = projectCodes().filter(function (p) { return String(p.id || '').trim().toLowerCase() === c; })[0];
+    return hit ? { code: code, self: false, proj: hit } : null;
+  }
+  function pkgProjectClash() {
+    var list = pkgToCreate();
+    for (var i = 0; i < list.length; i++) { var c = codeConflict(list[i].code); if (c) return c; }
+    return null;
+  }
+  function clashMsg(c) {
+    if (c.self) {
+      return '<b>' + esc(c.code) + '</b> is this project\'s own code. A package named after its project ' +
+        'makes the same contract lot exist twice — once with a schedule, a BOQ and a Procurement mapping, ' +
+        'once as a child row — and every per-package total then double-counts. ' +
+        'If this project <i>is</i> the contract lot, it needs no package at all.';
+    }
+    return '<b>' + esc(c.code) + '</b> already exists as a <b>separate project</b> in this app' +
+      (c.proj && c.proj.name ? ' (' + esc(c.proj.name) + ')' : '') + '. Creating it as a package here files ' +
+      'it under the wrong parent: <b>Share with Procurement &amp; Engineering</b> maps every package of ' +
+      'this project to <i>one</i> downstream project, so ' + esc(c.code) + '\'s lot would land in ' +
+      esc(String(D.pid() || 'this project')) + ' and a buyer working in ' + esc(c.code) + ' would see nothing. ' +
+      'Two projects of one development are consolidated on the <b>Portfolio Overview</b> — set ' +
+      '<b>Group by → Parent project</b> — which needs no package.';
+  }
+  function clashHTML() {
+    var c = pkgProjectClash();
+    return c ? '<p class="ccw-hint ccw-stop">⛔ ' + clashMsg(c) + '</p>' : '';
+  }
   function pkgRowsHTML() {
     return '<table class="ccw-pkgs"><thead><tr>' +
       '<th style="width:26px;" title="Which package the contract record is linked to">★</th>' +
@@ -124,16 +192,24 @@ window.CCWizard = (function () {
           '</tr>';
       }).join('') +
       '</tbody></table>' +
-      '<button class="pd-btn" id="ccw-addpkg">+ Add another package</button>';
+      '<button class="pd-btn" id="ccw-addpkg">+ Add another package</button>' +
+      /* Repainted on every keystroke by wireStep, NOT by paint() — a full repaint would
+         rebuild the inputs and steal the cursor mid-word, which is how a live validator
+         becomes unusable. */
+      '<div id="ccw-pkgwarn">' + clashHTML() + '</div>';
   }
 
   function stepPackage() {
     var pk = D.packages();
     if (st.type === 'Package') {
-      return '<p class="ccw-hint">A contract package is a scope division of this project — ' +
-        '<b>Package 1 — Tower 1 and General Requirements</b>, <b>Package 2 — Towers 2-7</b>. ' +
-        'They come off the contract documents; record one here when you have the lot before the ' +
-        'signed contract.</p>' +
+      return '<p class="ccw-hint">A package is a scope division <i>below</i> a project — a lot inside one ' +
+        'contract that has <b>no project code of its own</b>. They come off the contract documents; record ' +
+        'one here when you have the lot before the signed contract.</p>' +
+        '<p class="ccw-hint">⚠️ <b>Not</b> for two projects of one development. ' +
+        '<b>' + esc(String(D.pid() || 'AVR101')) + '</b> and a sibling like <b>AVR102</b> are separate ' +
+        'projects — Procurement and Engineering hold them that way too — and they are consolidated for ' +
+        'reporting on the <b>Portfolio Overview</b> under <b>Group by → Parent project</b>, which needs ' +
+        'no package and changes no data.</p>' +
         pkgRowsHTML() +
         '<p class="ccw-hint">⚠️ <b>Finish</b> is the contractual completion date. The schedule adds approved ' +
         'EOT days to it to get a revised finish, so a package without one reports no revised finish and no ' +
@@ -143,16 +219,30 @@ window.CCWizard = (function () {
        package; everything else is RAISED AGAINST one that already exists. Getting this
        backwards is what the owner caught in the old form. */
     if (st.type === 'Contract') {
-      return '<p class="ccw-hint">A contract package is a scope division of this project — ' +
-        '<b>Package 1 — Tower 1 and General Requirements</b>, <b>Package 2 — Towers 2-7</b>. ' +
-        'This contract <b>defines</b> one. The schedule, BOQ, procurement and engineering all file against it.</p>' +
+      /* ⚠️ "NO PACKAGE" IS THE DEFAULT, and that is a deliberate reversal (2026-08-27).
+         This step used to open on *— Create it from this contract —* with an empty row
+         already waiting, which read as an instruction: the planner filled it in with the
+         only code they had, which was the PROJECT's own code. That is precisely how
+         AVR101 › {AVR101, AVR102} was built. A wizard that pre-selects the rarer answer
+         manufactures the rarer answer.
+         Most projects here ARE one contract lot — the project code IS the lot — so the
+         honest default is that this contract needs no package at all. */
+      return '<p class="ccw-hint">Most contracts need <b>no package</b>. A project code ' +
+        '(<b>' + esc(String(D.pid() || 'AVR101')) + '</b>) already names one contract lot, and the schedule, ' +
+        'BOQ, procurement and engineering all file against the project directly.</p>' +
+        '<p class="ccw-hint">A <b>package</b> is only for a division <i>below</i> a project — a lot inside ' +
+        '<i>this</i> contract that has no project code of its own. ⚠️ If the division you have in mind ' +
+        'already has its own code (<b>AVR102</b>), it is a <b>separate project</b>, not a package: create it ' +
+        'in the projects list, and consolidate the two on the <b>Portfolio Overview</b> with ' +
+        '<b>Group by → Parent project</b>.</p>' +
         '<label>Package<select id="ccw-pkg">' +
-          '<option value="">— Create it from this contract —</option>' +
+          '<option value=""' + (st.pkgId ? '' : ' selected') + '>— None: this project is the contract lot —</option>' +
+          '<option value="' + NEWPKG + '"' + (st.pkgId === NEWPKG ? ' selected' : '') + '>— Define package(s) from this contract —</option>' +
           pk.map(function (p) { return '<option value="' + esc(p.id) + '"' + (st.pkgId === p.id ? ' selected' : '') + '>Link to ' + esc((p.code ? p.code + ' — ' : '') + p.name) + '</option>'; }).join('') +
         '</select></label>' +
-        '<div id="ccw-pkgnew"' + (st.pkgId ? ' style="display:none;"' : '') + '>' +
+        '<div id="ccw-pkgnew"' + (st.pkgId === NEWPKG ? '' : ' style="display:none;"') + '>' +
           pkgRowsHTML() +
-          '<p class="ccw-hint">One contract often buys several lots — add a row for each, in one run. ' +
+          '<p class="ccw-hint">One contract can buy several lots — add a row for each, in one run. ' +
           '⚠️ The contract record itself can cite only <b>one</b> package, so the row marked <b>★</b> is the one ' +
           'it links to; the rest are created beside it.</p>' +
           '<p class="ccw-hint">⚠️ Created only when you press <b>Save</b> on the last step — never before, so ' +
@@ -225,7 +315,7 @@ window.CCWizard = (function () {
       'loaded against whenever it turns up.</p>' +
       '<p class="ccw-hint">When you do have it: a BOQ comes in whatever format the client uses, so the importer ' +
       '<b>proposes</b> a column map and you accept or correct it — nothing is written until you do.</p>' +
-      (st.pkgId || pkgToCreate().length
+      (linkedPkgId() || (willCreate() && pkgToCreate().length)
         ? '<p class="ccw-hint">It will be loaded against <b>' +
           esc(st.pkgLabel() || (primaryPkg() ? primaryPkg().code : '') || 'the package from step 2') + '</b>.</p>'
         : '<p class="ccw-hint">⚠️ No package chosen, so a BOQ loaded later will not be narrowed to a lot.</p>') +
@@ -236,7 +326,7 @@ window.CCWizard = (function () {
   function stepReview() {
     function row(k, v2) { return '<tr><td>' + esc(k) + '</td><td><b>' + (v2 || '<span class="ccw-mut">—</span>') + '</b></td></tr>'; }
     var mk = pkgToCreate();
-    var creating = (st.type === 'Contract' || st.type === 'Package') && !st.pkgId && mk.length;
+    var creating = willCreate() && mk.length;
     var h = '<table class="ccw-review"><tbody>' +
       row('Type', esc(st.type)) +
       row(st.type === 'Package' ? 'Package' : (st.type === 'Contract' ? 'Defines package' : 'Raised against'), creating
@@ -244,7 +334,9 @@ window.CCWizard = (function () {
             return esc(p.code + (p.name ? ' — ' + p.name : '')) +
               (st.type !== 'Package' && p === primaryPkg() ? ' <span class="ccw-new">★ linked to this contract</span>' : '');
           }).join('<br>') + ' <span class="ccw-new">' + mk.length + ' will be created</span>'
-        : esc(st.pkgLabel())) +
+        : (st.type === 'Contract' && !linkedPkgId()
+            ? '<span class="ccw-mut">none — this project is the contract lot</span>'
+            : esc(st.pkgLabel()))) +
       (st.type === 'BOQ' || st.type === 'Package' ? '' :
         row('Reference no.', esc(st.ref)) +
         row('Description', esc(st.desc)) +
@@ -256,7 +348,8 @@ window.CCWizard = (function () {
         (st.type === 'Contract' ? '' : row('Date submitted', esc(st.d2)))) +
       '</tbody></table>';
     if (creating) {
-      h += '<p class="ccw-hint">⚠️ Saving creates ' + mk.length + ' package(s) and the record together. ' +
+      h += clashHTML() +
+        '<p class="ccw-hint">⚠️ Saving creates ' + mk.length + ' package(s) and the record together. ' +
         'If the package cannot be created — a duplicate code, most often — <b>nothing</b> is saved and you stay here.</p>';
     }
     if (st.type === 'BOQ') {
@@ -296,10 +389,13 @@ window.CCWizard = (function () {
       if (sel) sel.onchange = function () {
         st.pkgId = sel.value || '';
         var box = ov.querySelector('#ccw-pkgnew');
-        if (box) box.style.display = st.pkgId ? 'none' : '';
+        if (box) box.style.display = (st.pkgId === NEWPKG) ? '' : 'none';
       };
       ov.querySelectorAll('[data-pf]').forEach(function (x) {
-        x.oninput = function () { st.pkgList[+x.dataset.i][x.dataset.pf] = x.value; };
+        x.oninput = function () {
+          st.pkgList[+x.dataset.i][x.dataset.pf] = x.value;
+          var w = ov.querySelector('#ccw-pkgwarn'); if (w) w.innerHTML = clashHTML();
+        };
       });
       ov.querySelectorAll('[data-primary]').forEach(function (r) {
         r.onchange = function () { st.pkgPrimary = +r.dataset.primary; };
@@ -334,7 +430,11 @@ window.CCWizard = (function () {
       /* Seed only the FIRST row, and only while it is untouched — a contract that buys
          five lots must not have four of them silently named after the contract. */
       var p0 = st.pkgList[0];
-      if (p0 && !p0.code) p0.code = st.ref;
+      /* ⚠️ NEVER seed a code that names a project. A contract on AVR101 is very often
+         referenced "AVR101", and seeding that into the package row is the app itself
+         proposing the exact structure the guard below refuses. Leave it blank instead —
+         an empty row asks a question; a pre-filled wrong one looks like an answer. */
+      if (p0 && !p0.code && !codeConflict(st.ref)) p0.code = st.ref;
       if (p0 && !p0.name) p0.name = st.desc.slice(0, 80);
     } else if (key === 'dates') {
       st.d1 = read('ccw-d1'); st.d2 = read('ccw-d2');
@@ -353,17 +453,44 @@ window.CCWizard = (function () {
     if (st.type === 'BOQ') { close(); return; }
     if (st.type === 'Package') {
       if (!pkgToCreate().length) { UI.toast('Give at least one package a code — it comes off the contract.', 'error'); return; }
-    } else if (!st.desc && !st.ref) {
-      UI.toast('Give the record a description or a reference number.', 'error'); return;
+    } else {
+      /* ⚠️ Independent checks, not an else-if chain. A contract that defines packages
+         AND has no reference must fail BOTH, or the chain lets the second one through
+         whenever the first branch was taken. */
+      if (!st.desc && !st.ref) {
+        UI.toast('Give the record a description or a reference number.', 'error'); return;
+      }
+      if (st.type === 'Contract' && st.pkgId === NEWPKG && !pkgToCreate().length) {
+        /* Asked for packages and filled none. Saving silently as "no package" would be a
+           different answer than the one on screen, and the planner would have no way to
+           tell which one the record got. */
+        UI.toast('You chose to define package(s) but gave none a code. Fill a row, or set the package to "None".', 'error');
+        st.step = 'package'; paint(); return;
+      }
     }
     btn.disabled = true; btn.textContent = 'Saving…';
-    var pkgId = st.pkgId || null, madeIds = [];   // madeIds = created by THIS save, in order
+    var pkgId = linkedPkgId() || null, madeIds = [];   // madeIds = created by THIS save, in order
     /* ⚠️ PACKAGES ARE CREATED FIRST AND A FAILURE ABORTS EVERYTHING — including packages
        already written in this same run, which are rolled back below. A record saved
        pointing at a package that could not be created would claim a link that does not
        exist, and nothing downstream would ever notice. */
     var t0 = st.type;
-    if ((t0 === 'Contract' || t0 === 'Package') && !pkgId) {
+    if (willCreate()) {
+      /* ⚠️ REFUSED, not warned. The step already says why in full; by the time Save is
+         pressed the only thing left to do is stop. A package that restates a project is
+         not a typo that can be corrected later — the schedule, the BOQ and the downstream
+         mirror all start filing against it, and unpicking that costs far more than the
+         click this refusal costs. */
+      var clash = pkgProjectClash();
+      if (clash) {
+        btn.disabled = false; btn.textContent = 'Save';
+        UI.toast(clash.self
+          ? '"' + clash.code + '" is this project\'s own code — a project cannot be a package of itself. Go back and remove that row.'
+          : '"' + clash.code + '" is a separate project in this app, not a package of ' + (D.pid() || 'this project') +
+            '. Consolidate them on the Portfolio Overview (Group by → Parent project) instead.', 'error');
+        st.step = 'package'; paint();
+        return;
+      }
       var dup = dupPkgCode();
       if (dup) {
         btn.disabled = false; btn.textContent = 'Save';
@@ -451,6 +578,14 @@ window.CCWizard = (function () {
     st = {
       step: 'type', type: type || 'Contract',
       pkgId: '', pkgCode: '', pkgName: '', pkgStart: '', pkgEnd: '',
+      /* ⚠️ THESE WERE MISSING, and the package step reads both on its first paint —
+         `st.pkgList.map(...)` on undefined threw a TypeError and the step rendered
+         nothing. It survived review because the 2026-08-26 verification exercised
+         pkgToCreate / primaryPkg / dupPkgCode against a hand-built `st`, never against
+         the one `open()` actually builds; that same note records the run was "not clicked
+         through in a browser". One blank row, primary on it — what the list has always
+         assumed it starts with. */
+      pkgList: [blankPkg()], pkgPrimary: 0,
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];

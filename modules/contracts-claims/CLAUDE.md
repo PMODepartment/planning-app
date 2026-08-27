@@ -728,3 +728,60 @@ layout inline.
 - [x] `enabled: true` set in `assets/js/config.js`
 - [ ] **Run `migrations/2026-07-20-contracts-claims-full.sql` on the live DB**
 - [ ] Live click-through against a real login
+
+### 2026-08-27 — The wizard may no longer build a package that restates a project
+
+Owner: *"Created AVR101 in the projects list → went to contracts & claims → defined AVR101 (again) and
+AVR102 packages. The structure now is AVR101 › {AVR101, AVR102}. This will create problems in connecting
+with the procurement app and engineering app."*
+
+**The wizard was not misused — it invited this.** Step 2 opened on *"— Create it from this contract —"*
+with an empty row already waiting, which reads as an instruction; the planner filled it with the only code
+they had, which was the **project's own**. A wizard that pre-selects the rarer answer manufactures the
+rarer answer.
+
+**Checked before designing:** `wpm/data/` holds **AVR101 and AVR102 as separate projects**. Megawide's
+codes are PROJECT codes, so those two are two projects of one development — consolidated for reporting by
+the Portfolio Overview's new **Group by → Parent project** rollup, which needs no package.
+
+- ⚠️ **"None: this project is the contract lot" is now the DEFAULT** for a Contract. Defining packages is
+  a deliberate third choice (`— Define package(s) from this contract —`) beside None and Link.
+  `st.pkgId` therefore carries **three** meanings, read only through `linkedPkgId()` / `willCreate()` —
+  the empty string used to mean *create*, and a stale reading of it would silently make every contract
+  define a package again.
+- ⚠️ **A package whose code names a project is REFUSED**, live on every keystroke and again at Save, which
+  jumps back to the package step. Two shapes, two messages: **its own project** ("a project cannot be a
+  package of itself") and **a sibling project**, which names the real consequence — *Share with
+  Procurement & Engineering* maps every package of this project to **one** downstream project, so
+  AVR102's lot would land in AVR101 and a buyer in AVR102 would see nothing.
+- ⚠️ **Refused, not warned.** By the time Save is pressed the step has already explained it in full. A
+  package that restates a project is not a typo fixable later — the schedule, the BOQ and the downstream
+  mirror all start filing against it.
+- ⚠️ **The reference no longer seeds a clashing code.** A contract on AVR101 is very often referenced
+  "AVR101", and seeding that into the package row was the app proposing the exact structure the guard
+  refuses. Left blank instead: an empty row asks a question, a pre-filled wrong one looks like an answer.
+- ⚠️ **The project list is read once per project switch, never per keystroke.** An unreadable list
+  degrades to "no conflict" — it never blocks a legitimate package, it only stops catching an
+  illegitimate one.
+- **Chose packages and filled none** is now refused too, rather than silently saving as "no package" —
+  a different answer than the one on screen, with no way to tell which the record got.
+- ⚠️ **The validation chain was an `else if` and is now independent checks.** A contract that defines
+  packages AND has no reference must fail both; the chain let the second through whenever the first
+  branch was taken.
+
+⚠️ **A LIVE CRASH, FIXED: `open()` never initialised `st.pkgList` or `st.pkgPrimary`.** The package step
+reads both on its first paint, so `st.pkgList.map(...)` threw a TypeError on `undefined` and the step
+rendered nothing. Yesterday's "Verified 8/8" exercised `pkgToCreate` / `primaryPkg` / `dupPkgCode` against
+a **hand-built `st`**, never the one `open()` builds — and its own note recorded the run was *"not clicked
+through in a browser"*. A unit test that constructs the state under test cannot catch state that is never
+constructed.
+
+**Verified 22/22 in Node against the shipped functions** (extracted by brace-matching, not re-typed): both
+reported shapes caught, case- and whitespace-insensitively; the sibling conflict carries the project it
+collides with; genuine sub-lots, `AVR101-A`, blank rows and not-yet-existing codes all pass; an
+unreadable project list degrades safely; all six states of the three-way package choice; and the previous
+star/blank-row/duplicate-code behaviour unchanged.
+
+⚠️ **Not clicked through signed in** — auth-gated, no credentials in this session. `node --check` clean on
+all three module scripts; class audit clean (`ccw-stop` defined), with only the pre-existing `ccw-ov` and
+`cc-listbar` undefined.

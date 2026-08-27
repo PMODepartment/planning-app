@@ -32,6 +32,14 @@
       font-size:13px; cursor:pointer; color:var(--pd-ink); }
     .po-projfilter-list label:hover { background:var(--pd-red-light); }
     .po-projfilter-list .po-pf-empty { padding:12px; color:var(--pd-muted); font-size:13px; }
+    /* Parent project (a development bought as several contract packages) and its packages.
+       The indent is the only thing saying "these belong to that", so it has to survive the
+       hover background — hence the padding shift rather than a margin. */
+    .po-projfilter-list label.po-pf-prog { padding-top:9px; border-top:1px solid var(--pd-line,#eee); }
+    .po-projfilter-list label.po-pf-prog:first-child { border-top:0; }
+    .po-projfilter-list .po-pf-count { margin-left:auto; font-size:11px; color:var(--pd-muted); white-space:nowrap; }
+    .po-projfilter-list label.po-pf-child { padding-left:30px; }
+    .po-projfilter-list label.po-pf-child code { margin-left:auto; font-size:11px; color:var(--pd-muted); }
     /* charts */
     .po-charts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:16px; margin:16px 0; }
     @media (max-width:920px){ .po-charts { grid-template-columns:1fr; } }
@@ -334,8 +342,15 @@
       <div id="po-view-overview">
         <div class="po-toolbar">
           <label class="po-chk" style="gap:6px;">Group by
-            <select class="pd-select" id="po-group" style="max-width:170px;">
+            <!-- "Parent project" consolidates the contract packages of one development
+                 (AVR101 + AVR102 = Avesta Residences) into a single group with combined
+                 figures. ⚠️ The projects stay SEPARATE rows — this is a reporting rollup,
+                 not a data change, and it is deliberately not a merge: procurement and
+                 engineering both hold AVR101 and AVR102 as their own projects, so merging
+                 here would break the one-to-one mapping every cross-app push relies on. -->
+            <select class="pd-select" id="po-group" style="max-width:190px;">
               <option value="grouphead">Group Head</option>
+              <option value="program">Parent project</option>
               <option value="status">Status</option>
               <option value="none">None (flat)</option>
             </select>
@@ -494,10 +509,60 @@
   var HEALTH = { ontrack: { label: 'On Track', color: '#1f8f4e' }, behind: { label: 'Behind', color: '#C42127' }, none: { label: 'No Schedule', color: '#9a9a9a' } };
   function variance(p) { return num(p.estimated_cost) - num(p.original_budget); }
 
+  /* ── PARENT PROJECT (consolidating contract packages) ───────────────────────
+     Owner, 2026-08-27: *"Avesta Residences Tower 1 and General Requirements (AVR101)
+     and Avesta Residences Towers 2-7 (AVR102) reported to be of the same project but
+     treated as separate… Let's just consolidate the two into a portfolio view, similar
+     to how procurement dashboard works."*
+
+     Ported from the Procurement dashboard, which solved this first (wpm/index.html,
+     `_progKey` / `_progLabel` / `_progTotals`). The key is the LEADING LETTERS of the
+     project code — AVR101 and AVR102 both key to AVR — overridable per project by a
+     `program` column if one is ever added.
+
+     ⚠️ THE PREFIX IS NOT A GUESS. It is the convention every project id in this
+        portfolio already follows (AVR101, BAU101, GPR101, SLN101, SLT101), so this needs
+        no data entry to start working. A project whose prefix is unique simply forms a
+        group of one and reads exactly as it does today.
+     ⚠️ IT IS A ROLLUP, NOT A MERGE, and that is the whole design. The alternative — one
+        Planners project "Avesta" holding AVR101/AVR102 as `packages` rows — is what
+        produced the AVR101 › {AVR101, AVR102} nesting, and it breaks the cross-app link:
+        `push-packages` resolves ONE downstream project per Planners project
+        (cash_flow_settings.wpm_project_id), while WPM and Engineering each hold AVR101
+        and AVR102 as separate projects. Keeping the rows separate keeps that 1:1. */
+  function progKey(p) {
+    if (p && p.program) return String(p.program).toUpperCase();
+    var m = String((p && p.id) || '').match(/^[A-Za-z]+/);
+    return (m ? m[0] : String((p && p.id) || '')).toUpperCase();
+  }
+  /* Label a program by the words its members' names actually SHARE — "Avesta Residences
+     Tower 1 and General Requirements" + "Avesta Residences Towers 2-7" reads as
+     "Avesta Residences" rather than the bare code.
+     ⚠️ Falls back to the code when the names share too little to mean anything, which is
+        the honest answer for an accidental prefix collision (two unrelated projects that
+        happen to start with the same letters must not be given an invented shared name). */
+  function progLabel(key, plist) {
+    var names = plist.map(function (p) { return String(p.name || '').trim(); }).filter(Boolean);
+    if (!names.length) return key;
+    if (names.length === 1) return names[0];
+    var parts = names.map(function (n) { return n.split(/\s+/); });
+    var i = 0;
+    while (i < parts[0].length && parts.every(function (w) { return w[i] && w[i].toLowerCase() === parts[0][i].toLowerCase(); })) i++;
+    var common = parts[0].slice(0, i).join(' ').replace(/[\s\-–—,:]+$/, '');
+    return common.length >= 3 ? common : key;
+  }
+
   function groupKeyOf(p) {
     if (groupMode === 'grouphead') { return groupHead(p) || '(No group head)'; }
+    if (groupMode === 'program') { return progKey(p); }
     if (groupMode === 'status') { return (p.status || 'active'); }
     return 'All Projects';
+  }
+  /* The key groups; this names. They differ only in program mode, where the key is the
+     code prefix (AVR) and the name is the shared title (Avesta Residences). Collapse
+     state and sorting stay on the KEY, so a rename never loses a collapsed group. */
+  function groupDisplayOf(key, plist) {
+    return groupMode === 'program' ? progLabel(key, plist) : key;
   }
 
   function projSelCount() { return Object.keys(projSel).length; }
@@ -562,8 +627,10 @@
   function renderBars(list) {
     document.getElementById('po-bars-title').textContent = 'Budget by ' + groupLabel() + ' — Original vs Estimated';
     var groups = {};
-    list.forEach(function (p) { var k = groupKeyOf(p); var g = groups[k] || (groups[k] = { orig: 0, est: 0 }); g.orig += num(p.original_budget); g.est += num(p.estimated_cost); });
-    var arr = Object.keys(groups).map(function (k) { return { name: k, orig: groups[k].orig, est: groups[k].est }; })
+    list.forEach(function (p) { var k = groupKeyOf(p); var g = groups[k] || (groups[k] = { orig: 0, est: 0, ps: [] }); g.orig += num(p.original_budget); g.est += num(p.estimated_cost); g.ps.push(p); });
+    // Bars are read at a glance, so they carry the DISPLAY name ("Avesta Residences"),
+    // not the grouping key ("AVR") — the key is an implementation detail of the rollup.
+    var arr = Object.keys(groups).map(function (k) { return { name: groupDisplayOf(k, groups[k].ps), orig: groups[k].orig, est: groups[k].est }; })
       .filter(function (g) { return g.orig || g.est; })
       .sort(function (a, b) { return b.est - a.est; }).slice(0, 8);
     var host = document.getElementById('po-bars');
@@ -584,7 +651,7 @@
     host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + (H + 12) + '" preserveAspectRatio="xMinYMin meet">' + out + '</svg>';
   }
 
-  function groupLabel() { return { grouphead: 'Group Head', status: 'Status', none: 'Portfolio' }[groupMode] || 'Group Head'; }
+  function groupLabel() { return { grouphead: 'Group Head', program: 'Parent project', status: 'Status', none: 'Portfolio' }[groupMode] || 'Group Head'; }
 
   // ---- grouped, sortable portfolio table ----
   var COLS = [
@@ -627,14 +694,37 @@
       '<td class="num">' + (p.estimated_cost != null ? Fmt.moneyShort(p.estimated_cost) : '—') + '</td>' +
       '<td class="num">' + varCell(p) + '</td></tr>';
   }
+  /* A group's combined schedule progress.
+     ⚠️ WEIGHTED BY ACTIVITY COUNT, never a plain mean of the members' percentages —
+        which is the whole reason this rollup is worth having. Avesta's AVR101 carries
+        ~4,393 activities and AVR102 far fewer; averaging "60%" and "10%" to 35% describes
+        no real project. Same principle as the Procurement dashboard's note on award rate:
+        *"a 2-WP package at 100% and a 200-WP package at 10% is not 55%."*
+     ⚠️ Falls back to the unweighted mean ONLY when no member reports an activity count,
+        and the cell says which method it used rather than presenting the two alike. */
+  function groupProgress(plist) {
+    var m = plist.filter(function (p) { return progressOf(p) != null; });
+    if (!m.length) return null;
+    var wsum = m.reduce(function (a, p) { return a + num(p.schedule_activities); }, 0);
+    if (wsum > 0) {
+      var acc = m.reduce(function (a, p) { return a + progressOf(p) * num(p.schedule_activities); }, 0);
+      return { pct: Math.round(acc / wsum), how: 'Weighted by activity count (' + wsum.toLocaleString('en-US') + ' activities)' };
+    }
+    return { pct: Math.round(m.reduce(function (a, p) { return a + progressOf(p); }, 0) / m.length),
+             how: 'Unweighted mean of ' + m.length + ' project(s) — no activity counts recorded' };
+  }
   function subtotal(name, plist) {
     var orig = plist.reduce(function (a, p) { return a + num(p.original_budget); }, 0);
     var est = plist.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
-    var pv = plist.map(progressOf).filter(function (x) { return x != null; });
-    var avg = pv.length ? Math.round(pv.reduce(function (a, b) { return a + b; }, 0) / pv.length) : null;
+    var pr = groupProgress(plist);
     var open = !collapsed[name];
-    return '<tr class="po-grp" data-grp="' + esc(name) + '"><td colspan="3"><span class="po-grp-name"><span class="po-caret">' + (open ? '▾' : '▸') + '</span>' + esc(name) + ' <span style="color:var(--pd-muted);font-weight:400;">(' + plist.length + ')</span></span></td>' +
-      '<td>' + (avg != null ? avg + '%' : '—') + '</td><td></td><td></td>' +
+    // In program mode the members ARE the contract packages of one development, so they
+    // are counted as packages; every other mode is counting projects.
+    var unit = groupMode === 'program'
+      ? plist.length + ' package' + (plist.length === 1 ? '' : 's')
+      : String(plist.length);
+    return '<tr class="po-grp" data-grp="' + esc(name) + '"><td colspan="3"><span class="po-grp-name"><span class="po-caret">' + (open ? '▾' : '▸') + '</span>' + esc(groupDisplayOf(name, plist)) + ' <span style="color:var(--pd-muted);font-weight:400;">(' + esc(unit) + ')</span></span></td>' +
+      '<td' + (pr ? ' title="' + esc(pr.how) + '"' : '') + '>' + (pr ? pr.pct + '%' : '—') + '</td><td></td><td></td>' +
       '<td class="num">' + (orig ? Fmt.moneyShort(orig) : '—') + '</td><td class="num">' + (est ? Fmt.moneyShort(est) : '—') + '</td>' +
       '<td class="num">' + ((orig || est) ? Fmt.moneyShort(est - orig) : '—') + '</td></tr>';
   }
@@ -673,26 +763,80 @@
 
   // ---- multi-select project filter (checklist dropdown) ----
   var pfQuery = '';
+  /* Every project keyed by its program, programs of 2+ first. This is what makes the
+     consolidation usable BEYOND the overview table: the project filter scopes the S-curve,
+     Cash Flow, Equipment, Milestones and Resources tabs too, so ticking one parent project
+     puts both of its packages into every one of them at once. */
+  function programGroups() {
+    var by = {}, order = [];
+    PROJ.forEach(function (p) { var k = progKey(p); if (!by[k]) { by[k] = []; order.push(k); } by[k].push(p); });
+    return order.map(function (k) {
+      var ps = by[k].slice().sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
+      return { key: k, label: progLabel(k, ps), members: ps };
+    }).sort(function (a, b) { return a.label.localeCompare(b.label); });
+  }
   function projFilterLabel() {
     var n = projSelCount();
     if (!n) return 'All projects';
     if (n === 1) { var p = PROJ.find(function (x) { return projSel[x.id]; }); return p ? (p.name || p.id) : '1 project'; }
+    // Exactly one whole parent project selected reads as that project, not as a count —
+    // "Avesta Residences (2 packages)" is the answer to "what am I looking at?".
+    var whole = programGroups().filter(function (g) {
+      return g.members.length > 1 && g.members.every(function (p) { return projSel[p.id]; });
+    });
+    if (whole.length === 1 && whole[0].members.length === n) {
+      return whole[0].label + ' (' + n + ' packages)';
+    }
     return n + ' projects';
   }
   function renderProjFilterList() {
     var q = pfQuery.trim().toLowerCase();
-    var list = PROJ.slice().sort(function (a, b) { return (a.name || a.id).localeCompare(b.name || b.id); })
-      .filter(function (p) { return !q || (p.name || p.id).toLowerCase().indexOf(q) !== -1; });
+    var match = function (p) { return !q || ((p.name || '') + ' ' + p.id).toLowerCase().indexOf(q) !== -1; };
     var host = document.getElementById('po-projfilter-list');
-    if (!list.length) { host.innerHTML = '<div class="po-pf-empty">No projects match.</div>'; return; }
-    host.innerHTML = list.map(function (p) {
-      return '<label><input type="checkbox" data-pf="' + esc(p.id) + '"' + (projSel[p.id] ? ' checked' : '') + '> ' + esc(p.name || p.id) + '</label>';
+    var groups = programGroups().map(function (g) {
+      // A search that matches the PARENT name keeps all its packages — searching
+      // "Avesta" must not hide AVR102 just because its own name reads "Towers 2-7".
+      var keep = (q && g.label.toLowerCase().indexOf(q) !== -1) ? g.members : g.members.filter(match);
+      return { key: g.key, label: g.label, members: keep };
+    }).filter(function (g) { return g.members.length; });
+    if (!groups.length) { host.innerHTML = '<div class="po-pf-empty">No projects match.</div>'; return; }
+    host.innerHTML = groups.map(function (g) {
+      var one = g.members.length === 1;
+      // A program of one is not a group — rendering a parent header above a single
+      // package invents a hierarchy that is not there, which is the very thing being fixed.
+      if (one) {
+        var p = g.members[0];
+        return '<label><input type="checkbox" data-pf="' + esc(p.id) + '"' + (projSel[p.id] ? ' checked' : '') + '> ' + esc(p.name || p.id) + '</label>';
+      }
+      var all = g.members.every(function (p) { return projSel[p.id]; });
+      var some = !all && g.members.some(function (p) { return projSel[p.id]; });
+      return '<label class="po-pf-prog"><input type="checkbox" data-pf-prog="' + esc(g.key) + '"' +
+          (all ? ' checked' : '') + (some ? ' data-ind="1"' : '') + '> <strong>' + esc(g.label) + '</strong>' +
+          '<span class="po-pf-count">' + g.members.length + ' packages</span></label>' +
+        g.members.map(function (p) {
+          return '<label class="po-pf-child"><input type="checkbox" data-pf="' + esc(p.id) + '"' + (projSel[p.id] ? ' checked' : '') + '> ' +
+            '<span>' + esc(p.name || p.id) + '</span><code>' + esc(p.id) + '</code></label>';
+        }).join('');
     }).join('');
+    // Indeterminate is a property, not an attribute — it cannot be set in the markup above.
+    host.querySelectorAll('input[data-ind]').forEach(function (cb) { cb.indeterminate = true; });
+    var after = function () {
+      document.getElementById('po-projfilter-label').textContent = projFilterLabel();
+      renderProjFilterList();   // repaint so a parent's tick state follows its packages
+      renderAll();
+    };
     host.querySelectorAll('input[data-pf]').forEach(function (cb) {
       cb.onchange = function () {
         if (cb.checked) projSel[cb.dataset.pf] = true; else delete projSel[cb.dataset.pf];
-        document.getElementById('po-projfilter-label').textContent = projFilterLabel();
-        renderAll();
+        after();
+      };
+    });
+    host.querySelectorAll('input[data-pf-prog]').forEach(function (cb) {
+      cb.onchange = function () {
+        var g = groups.filter(function (x) { return x.key === cb.dataset.pfProg; })[0];
+        if (!g) return;
+        g.members.forEach(function (p) { if (cb.checked) projSel[p.id] = true; else delete projSel[p.id]; });
+        after();
       };
     });
   }
@@ -1635,9 +1779,15 @@
     if (typeof XLSX === 'undefined') { UI.toast('Excel library still loading — try again.', 'error'); return; }
     var list = filtered();
     if (!list.length) { UI.toast('Nothing to export.', 'warn'); return; }
+    // The parent project travels with the export, so a pivot in Excel can consolidate
+    // AVR101 + AVR102 the same way the on-screen rollup does. Computed over the whole
+    // portfolio, not the filtered list, or a filter that hides AVR102 would rename
+    // AVR101's parent to AVR101's own title.
+    var pLabel = {};
+    programGroups().forEach(function (g) { g.members.forEach(function (p) { pLabel[p.id] = g.label; }); });
     var data = list.map(function (p) {
       return {
-        'Project': p.name || p.id, 'ID': p.id, 'Status': p.status || 'active',
+        'Project': p.name || p.id, 'ID': p.id, 'Parent project': pLabel[p.id] || '', 'Status': p.status || 'active',
         'Group Head': groupHead(p) || '', 'Schedule %': progressOf(p) != null ? progressOf(p) : '',
         'Health': HEALTH[health(p)].label,
         'Forecast Start': p.forecast_start || p.start_date || '', 'Forecast Finish': p.forecast_finish || p.end_date || '',

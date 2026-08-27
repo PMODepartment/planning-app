@@ -488,6 +488,11 @@ html.pd-dark {
 .ccw-main textarea { min-height: 68px; resize: vertical; }
 .ccw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .ccw-hint { color: var(--pd-muted); font-size: 12px; margin: 8px 0 0; line-height: 1.45; }
+/* A refusal, not a hint. It shares .ccw-hint's typography so it reads as part of the
+   step, but it must not be scanned past like the muted advice around it — the whole
+   point is that Save will not proceed while it is showing. */
+.ccw-stop { color: var(--pd-ink); background: var(--pd-red-light, #fdf1f1); border: 1px solid #C42127;
+  border-left-width: 3px; border-radius: 6px; padding: 9px 11px; margin-top: 10px; }
 .ccw-mut { color: var(--pd-muted); }
 .ccw-new { color: var(--pd-red); font-size: 11px; font-weight: 700; }
 .ccw-cards { display: grid; gap: 8px; }

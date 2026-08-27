@@ -243,3 +243,57 @@ is untested against PostgREST.
 ⚠️ **This module's `index.html` is NOT cache-busted** — it is not in the `MODULES` registry and all
 five hrefs to it are plain links, so `MODULE_V` does not reach it. **Hard-refresh once after the
 deploy** or the new tab will not appear.
+
+### 2026-08-27 — "Parent project": AVR101 + AVR102 consolidate without becoming one project
+
+Owner: *"Let's just consolidate the two into a portfolio view… similar to how procurement dashboard
+works."* Avesta Residences is bought as **AVR101** (Tower 1 and General Requirements) and **AVR102**
+(Towers 2-7). Both are real, separate projects here — and in Procurement and Engineering, which is the
+constraint that decided the design.
+
+⚠️ **A ROLLUP, NOT A MERGE, and that is the whole point.** Folding them into one Planners project holding
+two `packages` rows is what produced the `AVR101 › {AVR101, AVR102}` nesting the owner reported, and it
+breaks the cross-app link: `push-packages` resolves **one** downstream project per Planners project
+(`cash_flow_settings.wpm_project_id`), while WPM and Engineering each hold AVR101 and AVR102 as their own
+projects. Keeping the rows separate keeps that 1:1 intact and costs no data change.
+
+**Ported from `wpm/index.html`** (`_progKey` / `_progLabel` / `_progTotals`) rather than re-invented — the
+Procurement dashboard hit this first and its answer is already the one the buyers read.
+
+- **`Group by → Parent project`**, alongside Group Head / Status / None. The key is the **leading letters
+  of the project code** (AVR101, AVR102 → AVR), overridable by a `program` column if one is ever added.
+  ⚠️ Not a guess: it is the convention every id here already follows (AVR, BAU, GPR, SLN, SLT), so it
+  needs **no data entry** to start working, and a project with a unique prefix forms a group of one that
+  reads exactly as it does today.
+- **The group is named by the words its members' names actually share** — "Avesta Residences", not "AVR".
+  ⚠️ Falls back to the code when they share fewer than 3 characters, which is the honest answer for an
+  accidental prefix collision; inventing a shared name for two unrelated projects would be worse than
+  showing the bare code.
+- ⚠️ **The key groups, a separate function names.** Collapse state and sorting stay on the KEY, so
+  renaming a project never loses a collapsed group.
+- ⚠️ **GROUP PROGRESS IS WEIGHTED BY ACTIVITY COUNT, never a plain mean** — the single number that makes
+  this rollup worth having. AVR101 carries ~4,393 activities and AVR102 far fewer; averaging 60% and 10%
+  to **35%** describes no real project, where the weighted answer is **58%**. Same principle as WPM's note
+  on award rate: *"a 2-WP package at 100% and a 200-WP package at 10% is not 55%."* Falls back to the
+  unweighted mean only when no member reports a count, and the cell's tooltip **says which method it
+  used** rather than presenting the two alike.
+- **The project filter groups too**, so the consolidation reaches past the overview table: ticking
+  **Avesta Residences** puts both packages into the S-curve, Cash Flow, Equipment, Milestones and
+  Resources tabs at once. The parent checkbox is tri-state; searching "Avesta" keeps AVR102 even though
+  its own name reads "Towers 2-7". ⚠️ A program of one renders **flat, with no parent header** — a
+  hierarchy above a single project is the same invention this change exists to remove.
+- **The label answers "what am I looking at?"** — one whole parent selected reads *"Avesta Residences
+  (2 packages)"*, not *"2 projects"*.
+- **The Excel export carries a `Parent project` column** so a pivot consolidates the same way.
+  ⚠️ Computed over the whole portfolio, not the filtered list, or a filter hiding AVR102 would rename
+  AVR101's parent to AVR101's own title.
+
+**Verified 23/23 in Node against the shipped functions** (extracted from this file by brace-matching, not
+re-typed): the AVR pair keys together; `program` overrides the prefix; the shared-name label, its
+punctuation trim and its collision fallback; weighted 58% vs the naive 35%; a project with no progress
+excluded rather than counted as zero; group ordering and membership; all four filter-label states.
+Group-header and checklist markup rendered and inspected.
+
+⚠️ **Not clicked through signed in** — the app is auth-gated and this session had no credentials. Class
+audit clean (`po-pf-prog` / `po-pf-child` / `po-pf-count` all defined); the only undefined classes are the
+pre-existing `po-scope` and `po-tablecard`.

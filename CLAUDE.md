@@ -9103,3 +9103,42 @@ Downstream migrations (in the other two repos, not this one):
 
 ⚠️ **Nothing here has been deployed or run.** Three owner actions: run the two downstream migrations,
 `supabase functions deploy push-packages --project-ref bgupuqnkqhixpuctyder`, then press Share.
+
+### 2026-08-27 — AVR101 › {AVR101, AVR102} — a package may no longer restate a project, and the Portfolio consolidates instead
+
+Owner: *"there are projects that have multiple packages under it… Avesta Residences Tower 1 and General
+Requirements (AVR101) and Avesta Residences Towers 2-7 (AVR102) reported to be of the same project but
+treated as separate."* He then described what the wizard let him build: create project **AVR101**, open
+Contracts & Claims, define packages **AVR101** (again) and **AVR102** — *"This will create problems in
+connecting with the procurement app and engineering app."*
+
+**He is right, and the damage is specific.**
+- **AVR101 as a package of project AVR101** makes one contract lot exist twice — once with a schedule, a
+  BOQ and a WPM mapping, once as a child row — so every per-package total double-counts or splits
+  depending on which one a report read.
+- **AVR102 as a package of project AVR101 is worse.** `push-packages` resolves **one** downstream project
+  per Planners project (`cash_flow_settings.wpm_project_id`, `push-packages/index.ts:115`), so AVR102's
+  package would be mirrored into **WPM's AVR101**, and a buyer working in WPM's own AVR102 project would
+  see an empty picker with nothing anywhere saying why.
+
+**Checked, not assumed:** `wpm/data/` holds **AVR101 and AVR102 as separate projects**, and both apps'
+`projects.id` comments read `-- e.g. 'AVR101'`. Megawide's codes are PROJECT codes. So AVR101 and AVR102
+are **two projects of one development**, not two packages of one project.
+
+**Decision (owner): keep them separate and consolidate for reporting** — *"Let's just consolidate the two
+into a portfolio view… similar to how procurement dashboard works."* ⚠️ The alternative, merging them into
+one Planners project, was rejected precisely because it breaks the 1:1 that every cross-app push relies on.
+
+**Ported from the Procurement dashboard, which solved this first** (`wpm/index.html`, `_progKey` /
+`_progLabel` / `_progTotals`). See `modules/portfolio-overview/CLAUDE.md` and
+`modules/contracts-claims/CLAUDE.md` for the two halves.
+
+⚠️ **A live crash was found and fixed on the way:** `wizard.js`'s `open()` never initialised `st.pkgList`
+or `st.pkgPrimary`, both of which the package step reads on its first paint — `st.pkgList.map(...)` on
+`undefined`. It survived the 2026-08-26 review because that verification exercised `pkgToCreate` /
+`primaryPkg` / `dupPkgCode` against a **hand-built `st`**, never the one `open()` actually builds, and its
+own note recorded the run was *"not clicked through in a browser"*. A unit test that constructs the state
+under test cannot catch state that is never constructed.
+
+**Cache:** `MODULE_V` → `20260827a` (dashboard.html, modules.html, modules-grid.js fallback); contracts
+`module.css` / `wizard.js` / `module.js` → `?v=20260827a`.
