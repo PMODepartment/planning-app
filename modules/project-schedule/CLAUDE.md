@@ -1,3 +1,31 @@
+## Stacking: the trade chips become a multi-select filter (2026-08-27) — fmlozano
+
+`_vsTrade` (a single value) → `_vsTradeSel` (a list) + `_vsTradeOn` / `_vsTradeToggle`.
+
+- ⚠️ **Empty means ALL.** A stored "every trade ticked" would silently exclude a trade the project
+  gains later while the control claimed everything was on. "All trades" clears the selection.
+- ⚠️ **Session-only.** A remembered trade filter reads as missing buildings next week.
+- The **Per trade** scope needed no new view for "side by side" — it already draws one building per
+  trade and was only ever handed one. `towers = tradesShown.map(...)`.
+- ⚠️ `acts` itself is narrowed, so the per-tower and Consolidated models, the warning counts and the
+  time bar all describe the same set the buildings are drawn from. `actsPreTrade` is kept **only** for
+  the chip counts — from the filtered set a hidden trade would read "0 activities".
+- ⚠️ `trades` is collected BEFORE the filter, or selecting one trade would leave the chip row showing
+  only that trade with no way back.
+- ⚠️ The chip row renders in every scope now (was `_vsScope === 'trade'` only).
+- ⚠️ Stale names are dropped per render, so the view cannot filter itself to nothing.
+- ⚠️ **`.ps-vs-chip.on` was brand red as text — 3.75:1 dark, under AA.** Harmless-ish with
+  single-select; with a multi-select the lit chips ARE the filter. Now ink on the red tint (13.45 dark
+  / 14.25 light), red kept as the border. Both stylesheet regions.
+
+**Verified.** 25 checks executing the sliced helpers + the structural assertions; browser-measured
+(two trades at x=12/x=238 on one row, `aria-pressed`, "2 of 5 trades shown side by side", five on one
+row by default, Fit and the time bar unaffected). 0 functions lost, 2 added.
+⚠️ **Test-authoring trap, three times in one pass:** the contrast assertion matched
+`border-color:var(--pd-red)` as `color:` and could never pass, and shell-escaped regexes were mangled
+on the way into the file twice. Guard with `[;{]`, and write test regexes literally (heredoc), never
+through a `node -e` shell round-trip. ⚠️ **Not verified signed in.**
+
 ## Stacking: the header trim, and dismissible notices (2026-08-27) — fmlozano
 
 **Header.** New `body.ps-vstack-on` (toggled by `setVStackMode`, both ways) hides `#ps-groupbtn`,

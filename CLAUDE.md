@@ -84,6 +84,53 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-27 (j) — Vertical stacking: a real trade filter, and the selected trades side by side
+Owner: *"can't there be a filter to show which trades to be shown. In addition, i want a view wherein
+all selected trades can be shown side by side."* `?v=20260827j`. **No migration.**
+
+- **The trade chips are a multi-select filter now.** They used to select **one** trade to look at
+  (All trades, or exactly one); clicking a second replaced the first. Clicking now **toggles**, so
+  Structural + MEPF sit beside each other — which is the second half of the ask, and it needed no new
+  view: the *Per trade* scope already draws one building per trade, it was only ever being handed one.
+  Measured: two selected trades render as two cards on one row.
+- ⚠️ **Empty means ALL, and that is the whole design.** A project gains trades — a re-push, a new WBS
+  branch — and a stored "every trade ticked" would silently exclude the new one while the control
+  claimed everything was on. Empty is the only state that keeps meaning *whatever this project has*.
+  "All trades" therefore **clears** the selection rather than ticking every box.
+- ⚠️ **Session-only, deliberately not persisted.** A remembered trade filter is how a planner opens the
+  stacking next week, sees three of six buildings and reports them as missing.
+- ⚠️ **The filter narrows the activity set, not just the cards**, so the per-tower and Consolidated
+  models, the warning counts and the time-bar percentage all describe the same activities the
+  buildings are drawn from. Consolidated names the selected trades instead of claiming "all trades".
+- ⚠️ **The chip counts come from the UNFILTERED set** — read from the filtered one, a hidden trade
+  would report "0 activities", which is the single number most likely to read as *the filter deleted
+  my work*.
+- ⚠️ **The chip row now shows in every scope**, not just Per trade. It was per-trade-only from when it
+  picked one trade to view; as a filter it changes the other two scopes as well, and a filter you
+  cannot see is a filter that gets blamed on missing data.
+- ⚠️ A stale trade name (another project, or a re-push that renamed a branch) is dropped each render,
+  so the view can never filter itself down to nothing.
+- ⚠️ **An accessibility defect that measurement caught and this change made serious:** the selected
+  chip was brand red as text — **3.75:1 in dark mode**, under AA. With single-select you could infer
+  the state from context; with a multi-select the lit chips *are* the filter, so a chip you cannot
+  read is a filter you cannot check. Now ink on the red tint with the red kept as the border:
+  **13.45:1 dark / 14.25:1 light**. Same fix and the same reason as the contracts-claims `claim` mark
+  (2026-08-25) — brand red is not a text colour at this size.
+
+**Verified.** 25 checks executing the shipped `_vsTradeOn` / `_vsTradeToggle` (sliced out of
+`index.html`, never reimplemented): empty-means-all including a trade added later, toggling adding
+rather than swapping, removal, canonical trade order regardless of click order, plus assertions that
+the render narrows `acts`, keeps the pre-filter set for counts, sanitises stale names, shows the chips
+in every scope and drops the old per-trade-only condition. Browser-measured against the shipped CSS:
+two selected trades on one row at x=12 and x=238, both chips `aria-pressed="true"`, the note reading
+"2 of 5 trades shown side by side", five trades on one row by default, Fit still fitting, the time bar
+still visible, 0 page horizontal scroll, dark tokens resolving. The three earlier stacking suites pass
+27/27 each; 0 functions lost, 2 added.
+⚠️ **Three of my own assertions were wrong before they were right** — the contrast regex matched
+`border-color:var(--pd-red)` as if it were `color:`, so it could never pass; shell-escaped regexes
+were mangled twice more on the way into the test file. The CSS was correct throughout. Build test
+regexes literally, not through a shell round-trip. ⚠️ **Not verified signed in.**
+
 ### 2026-08-27 (i) — Vertical stacking: the header stops carrying controls it cannot drive, and the notices can be dismissed
 Owner: *"can you simplify the headers, even in reporting view there is still too much, and also can
 you put an x on the error of 1 activity carries no Level. so it can be dismissed and more space for

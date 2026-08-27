@@ -1106,7 +1106,12 @@
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
-    .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
+    /* ⚠️ INK on the red tint, not brand red as text. Measured 3.75:1 in dark mode (#EE3124 on
+       #3D1A19) — under AA, and it matters far more now the chips are a multi-select: the lit state
+       IS the filter, so a chip you cannot read is a filter you cannot check. Same fix and the same
+       reason as the contracts-claims claim mark (4.12 light / 3.40 dark, 2026-08-25): the red stays
+       as the border and the tint, which carry the state without being the text. 12.22:1 dark. */
+    .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-ink); font-weight:700; }
     .ps-vs-dot { width:9px; height:9px; border-radius:50%; flex:none; }
     /* One scroller around everything; towers keep their natural (building) width side by side. */
     .ps-vs-viewport { overflow-x:auto; overflow-y:visible; padding-bottom:6px; }
@@ -1233,7 +1238,12 @@
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
-    .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
+    /* ⚠️ INK on the red tint, not brand red as text. Measured 3.75:1 in dark mode (#EE3124 on
+       #3D1A19) — under AA, and it matters far more now the chips are a multi-select: the lit state
+       IS the filter, so a chip you cannot read is a filter you cannot check. Same fix and the same
+       reason as the contracts-claims claim mark (4.12 light / 3.40 dark, 2026-08-25): the red stays
+       as the border and the tint, which carry the state without being the text. 12.22:1 dark. */
+    .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-ink); font-weight:700; }
     .ps-vs-dot { width:9px; height:9px; border-radius:50%; flex:none; }
     /* ⚠️ A flex item will NOT shrink below its own text (min-width defaults to auto), so the long
        prose legend overflowed the toolbar row and its tail was clipped — flex-wrap on the parent
@@ -11164,7 +11174,20 @@
   // The svg currently cloned into the panel, its clone, and the cell outlined in the LEFT pane.
   // All three are reset by every renderVStack - the DOM they point at is replaced wholesale.
   var _vsLoupeSrc = null, _vsLoupeClone = null, _vsLoupeMark = null;
-  var _vsTrade = 'ALL';         // focus a single trade's tower
+  // Which trades are shown. Owner 2026-08-27: *"can't there be a filter to show which trades to be
+  // shown. In addition, i want a view wherein all selected trades can be shown side by side."*
+  // ⚠️ EMPTY MEANS ALL, and that is the whole reason this is a list rather than a set of booleans.
+  // A project gains trades — a re-push, a new WBS branch — and a stored "every trade ticked" would
+  // silently exclude the new one while the control claimed everything was on. Empty is the only
+  // state that keeps meaning "whatever this project has".
+  // ⚠️ Session-only, deliberately not persisted. A remembered trade filter is how a planner opens
+  // the stacking next week, sees three of six buildings and reports them as missing.
+  var _vsTradeSel = [];
+  function _vsTradeOn(t) { return !_vsTradeSel.length || _vsTradeSel.indexOf(t) >= 0; }
+  function _vsTradeToggle(t) {
+    var i = _vsTradeSel.indexOf(t);
+    if (i >= 0) _vsTradeSel.splice(i, 1); else _vsTradeSel.push(t);
+  }
   var _vsTower = 'ALL';         // focus a single PROJECT tower (Tower A / Tower B / …)
   // Reserved key in an activity's location map holding its project tower. See locMapOf().
   var VS_LOC_TOWER = 'tower';
@@ -12033,15 +12056,39 @@
     var trades = [], seen = {};
     acts.forEach(function (r) { var t = _vsTradeOf(r); if (!seen[t]) { seen[t] = 1; trades.push(t); } });
     trades.sort(_vsCmpTrade);   // canonical trade order, not alphabetical
-    if (_vsTrade !== 'ALL' && trades.indexOf(_vsTrade) < 0) _vsTrade = 'ALL';
+    // ⚠️ Sanitised against the trades this project actually has, so a name left over from another
+    // project (or from a re-push that renamed a branch) cannot filter the view down to nothing.
+    _vsTradeSel = _vsTradeSel.filter(function (t) { return trades.indexOf(t) >= 0; });
+    // ⚠️ The trade list is collected BEFORE this filter is applied — otherwise selecting one trade
+    // would leave the chip row showing only that trade, with no way back to the others.
+    var tradesShown = trades.filter(_vsTradeOn);
+    // From here on `acts` is the SELECTED work: the per-tower and consolidated models, the warning
+    // counts and the time bar all narrow with the filter, so every number on screen describes the
+    // same set of activities the buildings are drawn from.
+    // ⚠️ Kept for the chip counts: taken from `acts` after the filter, a hidden trade would report
+    // 0 activities — the one number that would make a planner think the filter had deleted work.
+    var actsPreTrade = acts;
+    if (_vsTradeSel.length) acts = acts.filter(function (r) { return _vsTradeOn(_vsTradeOf(r)); });
 
     var detailBtns = '';
     for (var dlv = 1; dlv <= _vsMaxDetail(); dlv++) {
       detailBtns += '<button data-vsdet="' + dlv + '"' + (detail === dlv ? ' class="on"' : '') +
         ' title="' + esc(LOC_LEVELS.slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
     }
-    var chips = '<div class="ps-vs-chips"><button class="ps-vs-chip' + (_vsTrade === 'ALL' ? ' on' : '') + '" data-vstr="ALL">All trades</button>' +
-      trades.map(function (t) { return '<button class="ps-vs-chip' + (_vsTrade === t ? ' on' : '') + '" data-vstr="' + esc(t) + '"><span class="ps-vs-dot" style="background:' + _vsColor(t) + '"></span>' + esc(t) + '</button>'; }).join('') + '</div>';
+    // ⚠️ Multi-select. Clicking a trade TOGGLES it, so several can be shown side by side; "All
+    // trades" clears the selection rather than ticking every box (see the note on _vsTradeSel).
+    // Each chip carries aria-pressed so the state is not colour-only.
+    var chips = '<div class="ps-vs-chips"><button class="ps-vs-chip' + (!_vsTradeSel.length ? ' on' : '') +
+      '" data-vstr="ALL" aria-pressed="' + (!_vsTradeSel.length) + '" title="Show every trade">All trades</button>' +
+      trades.map(function (t) {
+        var on = _vsTradeSel.indexOf(t) >= 0;
+        var n = actsPreTrade.filter(function (r) { return _vsTradeOf(r) === t; }).length;
+        return '<button class="ps-vs-chip' + (on ? ' on' : '') + '" data-vstr="' + esc(t) + '" aria-pressed="' + on +
+          '" title="' + esc(t) + ' · ' + n + ' activities' + (on ? ' — click to hide it' : ' — click to add it beside the others') + '">' +
+          '<span class="ps-vs-dot" style="background:' + _vsColor(t) + '"></span>' + esc(t) + '</button>';
+      }).join('') +
+      (_vsTradeSel.length ? '<span class="ps-vs-note">' + tradesShown.length + ' of ' + trades.length +
+        ' trades shown side by side</span>' : '') + '</div>';
     // ---- Which tower am I looking at? -----------------------------------------------------------
     // Owner 2026-08-26: *"there should be a dropdown to determine what tower to look at (if multiple
     // towers). there should also be a consolidated option meaning it views all towers, and the towers
@@ -12200,12 +12247,13 @@
           _vsTowerSVG(list, col, 'TW:' + t) + '</div>';
       }).join('');
     } else if (_vsScope === 'all') {
-      towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; all trades' +
+      towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; ' +
+        (_vsTradeSel.length ? esc(tradesShown.join(', ')) : 'all trades') +
         (_vsTower === 'ALL' ? '' : ' &middot; ' + esc(_vsTower)) + '</span>' +
         '<span class="ct">' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span></div>' +
         _vsTowerSVG(acts, 'var(--pd-red)', 'ALL') + '</div>';
     } else {
-      towers = trades.filter(function (t) { return _vsTrade === 'ALL' || t === _vsTrade; }).map(function (t) {
+      towers = tradesShown.map(function (t) {
         var list = acts.filter(function (r) { return _vsTradeOf(r) === t; });
         var col = _vsColor(t);
         return '<div class="ps-vs-tower" style="--tc:' + col + '"><div class="ps-vs-towerh">' +
@@ -12216,7 +12264,10 @@
     }
     // ⚠️ The defs must be in the DOM before the towers that reference them are laid out, so they are
     // prepended rather than appended.
-    host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
+    // ⚠️ The chip row shows in every scope now. It used to be per-trade only, from when it selected
+    // ONE trade to look at; as a filter it narrows the per-tower and consolidated models too, and a
+    // filter you cannot see is a filter that gets blamed on missing data.
+    host.innerHTML = bar + chips + warn + _vsHatchDefs() +
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
@@ -12244,7 +12295,13 @@
     host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsbasis]').forEach(function (b) { b.onclick = function () { _vsBasis = b.dataset.vsbasis; _vsAnim = 'fade'; renderVStack(); }; });
-    host.querySelectorAll('[data-vstr]').forEach(function (b) { b.onclick = function () { _vsTrade = b.dataset.vstr; _vsAnim = 'in'; renderVStack(); }; });
+    host.querySelectorAll('[data-vstr]').forEach(function (b) {
+      b.onclick = function () {
+        if (b.dataset.vstr === 'ALL') _vsTradeSel = [];
+        else _vsTradeToggle(b.dataset.vstr);
+        _vsAnim = 'in'; renderVStack();
+      };
+    });
     var _twEl = host.querySelector('#ps-vs-tower');
     if (_twEl) _twEl.onchange = function () {
       _vsTower = _twEl.value;
