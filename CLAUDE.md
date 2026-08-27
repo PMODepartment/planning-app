@@ -9512,3 +9512,34 @@ pagination fix does nothing yet. **Owner actions:** `supabase functions deploy s
 `supabase functions deploy push-vendor-perf`; optionally build a scratch project from
 `supabase-build.sql` and run `migrations/VERIFY-schema.sql` against it (no rows = complete).
 ⚠️ The generated file is ~570 KB — the Supabase SQL editor may need it pasted in parts.
+
+### 2026-08-27 (10) — Both edge functions deployed; push-vendor-perf had never been deployed at all
+
+Owner ran the deploy command and hit `supabase : The term 'supabase' is not recognized`. ⚠️ There is
+no global CLI on this machine — it runs through **`npx.cmd supabase`** (note `.cmd`; bare `npx` does
+not resolve here either). Deployed both from that.
+
+**Verified against `functions list`, not against the CLI's own success message:**
+
+| function | version | status | created | updated |
+|---|---|---|---|---|
+| `sync-wpm` | **26** | ACTIVE | 2026-07-14 | **2026-08-27 07:50** |
+| `push-vendor-perf` | **1** | ACTIVE | **2026-08-27 07:50** | 2026-08-27 07:50 |
+
+⚠️ **`push-vendor-perf` is at version 1 with `created_at == updated_at`, which means today was its
+FIRST EVER deployment.** It was written on 2026-08-25 and that entry's caveat — *"NOT deployed and
+NOT verified against real data"* — was never closed, so the prc-app's F3/F4/F5 vendor-performance
+screens have been reading an empty table for two days, showing their "not deployed" state rather than
+a wrong number. It is deployed now; whether it can do anything also depends on
+`wpm/MIGRATION_planners_vendor_performance.sql` having been run in the WPM project, **which I have
+not checked**, and on the push actually being invoked.
+
+⚠️ **DEPLOYING FIXES NOTHING RETROACTIVELY, and this is the part that still needs doing.** The
+pagination fix changes what the NEXT sync writes; the `wpm_work_packages` mirror in the database is
+still whatever the old truncated read left there. Until someone presses **Sync from WPM** (Cash Flow
+→ Sync), Cash Flow's cash-out, the schedule's Procurement branch and vendor performance keep reading
+the same partial mirror they did yesterday.
+
+Both functions keep `verify_jwt: true`, so the authorization shape is unchanged.
+⚠️ `WARNING: Docker is not running` on both deploys is expected and harmless — Docker is only needed
+to serve functions locally, not to deploy them.
