@@ -425,15 +425,34 @@ window.ContractsClaims = (function () {
   /* The save succeeded, but this database is missing columns the app expects. Said out
      loud every time rather than once: a silent degrade becomes the permanent state, and
      the columns it drops are the ones a claim's whole pipeline lives in. */
+  /* Which migration introduces which column.
+     ⚠️ THIS EXISTS BECAUSE THE HINT NAMED THE WRONG FILE. Both messages below used to
+        say "run 2026-07-20-contracts-claims-full.sql" for ANY dropped column — but
+        `package_id` comes from 2026-08-25-package-adoption.sql, and that file was the one
+        actually unrun on the live database (confirmed 2026-08-27 by VERIFY-schema.sql:
+        contracts_claims.package_id and boq_items.package_id both absent). So every
+        contract save silently dropped its package link, the register listed every contract
+        as "not linked to a package", and the toast sent whoever read it to a migration
+        that was already applied and would have changed nothing. */
+  var COL_MIGRATION = { package_id: 'migrations/2026-08-25-package-adoption.sql' };
+  var DEFAULT_MIGRATION = 'migrations/2026-07-20-contracts-claims-full.sql';
+  function migrationsFor(cols) {
+    var seen = {};
+    (cols || []).forEach(function (c) { seen[COL_MIGRATION[c] || DEFAULT_MIGRATION] = 1; });
+    return Object.keys(seen);
+  }
   function warnDropped(dropped) {
     if (!dropped || !dropped.length) return;
+    var files = migrationsFor(dropped);
     UI.toast('Saved, but this database has no ' + dropped.join(', ') + ' column' + (dropped.length > 1 ? 's' : '') +
-      ' — run migrations/2026-07-20-contracts-claims-full.sql to record those figures.', 'warn');
+      ' — that value was NOT recorded. Run ' + files.join(' and ') + ', then save again.', 'warn');
   }
   function recordFailMsg(e) {
-    return /column|schema cache|PGRST204/i.test(e.message || '')
-      ? 'Save failed — run migrations/2026-07-20-contracts-claims-full.sql first. (' + e.message + ')'
-      : e.message;
+    var msg = e.message || '';
+    if (!/column|schema cache|PGRST204/i.test(msg)) return msg;
+    // Name the column's own migration when the error names the column.
+    var hit = Object.keys(COL_MIGRATION).filter(function (c) { return msg.indexOf(c) !== -1; });
+    return 'Save failed — run ' + (hit.length ? COL_MIGRATION[hit[0]] : DEFAULT_MIGRATION) + ' first. (' + msg + ')';
   }
   /* Follow the record if its type moved it to another tab, so it does not silently
      "disappear" from the view you are looking at. */

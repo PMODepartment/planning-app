@@ -9169,3 +9169,37 @@ row per migration with missing objects, naming each. **No rows = everything appl
 
 **Cache:** `MODULE_V` → `20260827b`; contracts `module.css` / `boq.js` / `packages.js` / `wizard.js` /
 `module.js` → `?v=20260827b`.
+
+### 2026-08-27 (3) — The verifier's first run: one false positive, four real, and the one that explains everything
+
+Owner ran `VERIFY-schema.sql` on the live database. Five migrations reported incomplete.
+
+⚠️ **`2026-08-25-package-adoption.sql` IS THE ROOT CAUSE OF TODAY'S WHOLE THREAD.**
+`contracts_claims.package_id` and `boq_items.package_id` **do not exist on the live database.** Every
+consequence follows from that one fact:
+- `persistRecord` **strips unknown columns and retries** (module.js:393-420), so every contract save has
+  been **silently dropping its package link**. The link was never stored — not once.
+- So the register listed **every** contract under *"Contract records not linked to a package"*, because
+  `package_id` reads `undefined` on every row. That is the screenshot, and it was never about OPW101.
+- ⚠️ **And the toast sent whoever read it to the wrong file.** `warnDropped` named
+  `2026-07-20-contracts-claims-full.sql` for any dropped column — already applied, and it would have
+  changed nothing. Fixed: a `COL_MIGRATION` map now names the column's **own** migration, and
+  `recordFailMsg` reads the column out of the error to do the same.
+
+**The other three are genuine and additive** — all nullable columns, all idempotent, none back-filled:
+`resource_assignments.curve` (assignment spread curve), `progress_photos.location_values` (the
+location-breakdown switch), `project_schedule.cost_curve` (cost loading's spread shape, which the S-Curve
+reads). Each is inert until set, so running them changes no existing number.
+
+⚠️ **`admin_delete_workspace` was a FALSE POSITIVE, and the verifier was wrong, not the database.**
+`2026-08-12-group-heads-replace-workspaces.sql:157` drops that function and the `workspaces` table
+outright — it is *correctly* absent. The generator now **models supersession**: a `drop function` /
+`drop table` / `drop column` in a later migration cancels the earlier declaration, and a dropped table
+takes its columns with it. A verifier that cries wolf about deliberately retired objects trains people to
+skim its output — and the four real findings were sitting right next to the false one.
+
+**`migrations/gen-verify.js`** is now the source of the verifier; run `node migrations/gen-verify.js`
+after adding a migration so it never lags the repo. Coverage widened from the 2026-07/08 files to **all
+113** dated migrations (**293** live objects after supersession).
+
+**Cache:** `MODULE_V` → `20260827c`; contracts `module.js` → `?v=20260827c`.
