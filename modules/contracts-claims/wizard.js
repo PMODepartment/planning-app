@@ -39,7 +39,7 @@ window.CCWizard = (function () {
       when: function () { return st.type !== 'BOQ'; } },
     { key: 'dates',   label: 'Dates',    sub: 'When it was signed or filed',
       when: function () { return st.type !== 'BOQ'; } },
-    { key: 'boq',     label: 'BOQ',      sub: 'Load the bill of quantities',
+    { key: 'boq',     label: 'BOQ',      sub: 'Optional — skip it if the BOQ has not arrived yet',
       when: function () { return st.type === 'Contract' || st.type === 'BOQ'; } },
     { key: 'review',  label: 'Review',   sub: 'Check, then save', when: function () { return true; } }
   ];
@@ -139,19 +139,27 @@ window.CCWizard = (function () {
   }
 
   function stepBoq() {
-    /* ⚠️ HONEST ABOUT WHAT THE PARSER CAN AND CANNOT DO. Detection is a set of header
-       patterns measured against ONE real workbook; a client whose sheet says
-       "Particulars / Sum" will parse partly, and a silently-wrong money column is the
-       dangerous failure. So this step hands over to the existing detect → preview →
-       accept import rather than pretending the wizard has already understood the file. */
-    return '<p class="ccw-hint">A BOQ arrives in whatever format the client uses. The importer <b>proposes</b> a ' +
-      'column map and you accept or correct it — nothing is written until you do.</p>' +
-      (st.pkgId || st.type === 'Contract'
-        ? '<p class="ccw-hint">It will be loaded against <b>' + esc(st.pkgLabel() || 'the package from step 2') + '</b>.</p>'
-        : '<p class="ccw-hint">⚠️ No package chosen, so the BOQ will not be narrowed to a lot.</p>') +
-      '<button class="pd-btn" id="ccw-boq-open">Open the BOQ importer…</button>' +
-      '<p class="ccw-hint">⚠️ The importer runs on the <b>BOQ tab</b> and writes on its own Accept. Finish this ' +
-      'wizard first so the package exists — then import against it.</p>';
+    /* ⚠️ OPTIONAL, AND SAID SO — owner, on seeing this step: *"is this section optional?
+       Or even at the right time to add where for example a project had just been awarded
+       and there is no BOQ to import yet."* He is right: a contract is recorded the week
+       it is awarded, and the priced BOQ often arrives weeks later. A step that looks
+       mandatory at that moment invites either a fabricated import or an abandoned wizard.
+       So this step asserts nothing, blocks nothing, and names the later path.
+       ⚠️ ALSO HONEST ABOUT THE PARSER. Detection is a set of header patterns measured
+          against ONE real workbook; a client whose sheet says "Particulars / Sum" parses
+          partly, and a silently-wrong money column is the dangerous failure. So it hands
+          over to the existing detect → preview → accept importer rather than pretending
+          the wizard has already understood the file. */
+    return '<p class="ccw-hint"><b>This step is optional — most contracts are recorded before the BOQ arrives.</b> ' +
+      'Press <b>Next</b> to skip it; nothing is lost, and the package you just defined is what the BOQ will be ' +
+      'loaded against whenever it turns up.</p>' +
+      '<p class="ccw-hint">When you do have it: a BOQ comes in whatever format the client uses, so the importer ' +
+      '<b>proposes</b> a column map and you accept or correct it — nothing is written until you do.</p>' +
+      (st.pkgId || st.pkgCode
+        ? '<p class="ccw-hint">It will be loaded against <b>' + esc(st.pkgLabel() || st.pkgCode || 'the package from step 2') + '</b>.</p>'
+        : '<p class="ccw-hint">⚠️ No package chosen, so a BOQ loaded later will not be narrowed to a lot.</p>') +
+      '<p class="ccw-hint">⚠️ The importer lives on the <b>BOQ tab</b> and writes on its own Accept. Finish here ' +
+      'first so the package exists — then import against it.</p>';
   }
 
   function stepReview() {
@@ -222,9 +230,6 @@ window.CCWizard = (function () {
           st[{ 'ccw-pkgcode': 'pkgCode', 'ccw-pkgname': 'pkgName', 'ccw-pkgstart': 'pkgStart', 'ccw-pkgend': 'pkgEnd' }[id]] = x.value;
         };
       });
-    } else if (key === 'boq') {
-      var b2 = ov.querySelector('#ccw-boq-open');
-      if (b2) b2.onclick = function () { UI.toast('Finish the wizard, then use Import on the BOQ tab.', 'info'); };
     }
   }
   /* Capture whatever the current step holds before leaving it — a wizard that loses a
@@ -251,7 +256,7 @@ window.CCWizard = (function () {
     if (st.type === 'BOQ') { close(); return; }
     if (!st.desc && !st.ref) { UI.toast('Give the record a description or a reference number.', 'error'); return; }
     btn.disabled = true; btn.textContent = 'Saving…';
-    var pkgId = st.pkgId || null;
+    var pkgId = st.pkgId || null, madeId = null;   // madeId = created by THIS save, and only that
     /* ⚠️ THE PACKAGE IS CREATED FIRST AND A FAILURE ABORTS EVERYTHING. A record saved
        pointing at a package that could not be created would claim a link that does not
        exist, and nothing downstream would ever notice. */
@@ -264,7 +269,7 @@ window.CCWizard = (function () {
           start_date: st.pkgStart || null, end_date: st.pkgEnd || null,
           status: 'active', sort_order: D.packages().length, created_by: D.uid()
         });
-        pkgId = made.id;
+        pkgId = made.id; madeId = made.id;
       } catch (er) {
         var em = (er && er.message) || String(er);
         btn.disabled = false; btn.textContent = 'Save';
@@ -292,10 +297,26 @@ window.CCWizard = (function () {
     else if (t === 'EOT') { payload.est_days = num(st.est); payload.sub_days = num(st.sub); }
 
     var res = await D.persist(payload);
-    if (!res.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(D.failMsg(res.error), 'error'); return; }
+    if (!res.ok) {
+      /* ⚠️ ROLL THE PACKAGE BACK. This wizard's own note claimed "abandoning the wizard
+         leaves no orphan package behind" — and it was FALSE, caught live: the package is
+         created first (the record needs its id), so a record insert that then failed left
+         a real package behind with nothing pointing at it. The owner hit exactly that,
+         twice: the save failed on a missing `approved_amount` column, and the retry was
+         refused with "PKG-1 already exists" — a package they had never knowingly created
+         and could not see in the records list.
+         ⚠️ ONLY A PACKAGE THIS SAVE CREATED IS REMOVED. One the planner linked to
+            (st.pkgId set) is somebody else's row and is never touched. */
+      if (madeId) {
+        try { await D.deletePackage(madeId); } catch (e2) { /* reported below */ }
+      }
+      btn.disabled = false; btn.textContent = 'Save';
+      UI.toast(D.failMsg(res.error) + (madeId ? ' The package was rolled back, so nothing was left behind.' : ''), 'error');
+      return;
+    }
     close();
-    UI.toast(pkgId && st.type === 'Contract' && !st.pkgId
-      ? 'Contract saved, and package ' + st.pkgCode + ' created.' : 'Record added.', 'success');
+    UI.toast(madeId ? 'Contract saved, and package ' + st.pkgCode + ' created.' : 'Record added.', 'success');
+    if (D.warnDropped) D.warnDropped(res.dropped);
     D.done(t);
   }
 

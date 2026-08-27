@@ -8861,3 +8861,41 @@ than duplicating, the phase branch is created under the root carrying the packag
 `MODULE_V` → `20260826m` (j..l were taken by a concurrent session; `l` was already live, so this needed a fresh one).
 
 ⚠️ **Still not clicked through in a browser.**
+
+### 2026-08-26 — Schedule ↔ Contracts: change orders come from the register, not free text
+Owner: *"This should also connect to the project schedule via the tagging for contracts, packages,
+change orders, EOT."*
+
+Where the four axes stood: **package** connected that morning (`project_schedule.package_id` +
+`wbs_nodes.package_id`, roots and inheritance); **contract** covered by the package it defines;
+**change order** — `scope_type` existed but `change_order_ref` was **free text**; **EOT** — nothing.
+
+⚠️ **The change-order gap was worse than "not connected".** `change_order_ref` was typed into a
+`prompt()` whose only help was a comma-joined list of strings already used on that project. The
+commercial team records every variation next door in `contracts_claims`, in the **same database**, and
+the two lists could never see each other — so the schedule said `VO-14` while the register said
+`VO-014`, and no report could join them.
+
+- The schedule now reads Change Orders and EOTs from `contracts_claims` on project load
+  (`CONTRACT_RECS`). ⚠️ **Read-only**: the schedule cites a variation, it never creates one — that is
+  the Contracts module's job, and one app inventing another's commercial records is unrecoverable.
+- ⚠️ **Tolerant of every absence** — no table, no grant, no rows → empty list, and the CO field behaves
+  exactly as it always did. A project whose Contracts module was never set up must not lose its schedule.
+- `promptCoRef` is now a **picker** over the registered COs (reference + description + status), with
+  free text kept for a variation not yet recorded.
+- The details panel's **Change Order Ref** is a select over the same list.
+- ⚠️ **A stored ref always keeps its own option**, labelled **"⚠ not in the register"** and placed
+  directly under "none" so it is seen. Without it a `<select>` whose value is absent reports the FIRST
+  option and the next save silently re-files the activity under a different variation — the same rule
+  the package picker follows.
+- ⚠️ **Registered refs sort first** so the list leads with what the commercial team owns; refs used
+  only on the schedule follow, so nothing existing disappears.
+
+**Verified 20/20** executing the shipped `coRegistered` / `coIsRegistered` / `coLabel` / `coRefValues` /
+`coSelOpts` in node: EOTs are not offered as change orders, a blank reference is excluded, `VO-2` sorts
+before `VO-014` (numeric), whitespace matches, the legacy `VO-14` typo reports **not registered** and
+keeps its option in position 1, a registered value is never duplicated, and the union has no duplicates.
+
+⚠️ **EOT is still not connected** and needs the owner's call first: an approved EOT is *N days*, and
+whether that shifts a completion milestone, relaxes a constraint, or stays informational beside the
+schedule is a commercial decision.

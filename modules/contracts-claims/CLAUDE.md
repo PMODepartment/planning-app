@@ -510,6 +510,45 @@ detect → preview → accept importer instead of pretending to have understood 
 sheet and saving/reusing a named format profile is the second half of this build. Nothing here has been
 clicked through in a browser.
 
+### 2026-08-26 — Three defects the owner found in the wizard, one of them mine to own
+Owner, from the live wizard: *"there is already a BOQ field is this section optional? Or even at the
+right time to add where for example a project had just been awarded and there is no BOQ to import
+yet"*, then a save that failed on `approved_amount`, then *"It says PKG-1 already exists but doesn't
+show in the contract records."*
+
+**1. ⚠️ THE WIZARD LEFT ORPHAN PACKAGES — and its own comment claimed it could not.** The package is
+created before the record because the record needs its id; when the record insert then failed, the
+package stayed. The owner hit it twice: the save died on a missing column, the retry was refused with
+*"PKG-1 already exists"* — a package they had never knowingly created and could not see anywhere in
+the records list, because a package is not a record. A failed save now **rolls the package back**, and
+⚠️ **only one this save created** — a package the planner *linked* to is somebody else's row and is
+never touched.
+
+**2. The BOQ step looked mandatory at exactly the wrong moment.** A contract is recorded the week it is
+awarded; the priced BOQ arrives weeks later. A step that looks required then invites either a
+fabricated import or an abandoned wizard. It now says **"optional — most contracts are recorded before
+the BOQ arrives"**, the rail sub-title says so too, and the dead "Open the BOQ importer…" button is
+gone rather than lying about what it does.
+
+**3. A save could not survive a column this database does not have.** `contracts_claims` here predates
+the four est/sub/eval/approved columns, and a **Contract sends all four as NULL** — it has no claim
+pipeline — so PostgREST rejected the whole insert over columns holding nothing. `persistRecord` now
+drops a missing column **only when its value is null** and retries, bounded, then reports which ones
+went so the migration still gets run.
+⚠️ **A missing column carrying a real figure still fails loudly.** Silently discarding money is the one
+outcome worse than an error.
+
+**Verified 12/12** executing the shipped `persistRecord` against a stubbed PostgREST: the exact live
+case (four missing NULL columns) saves with the ₱1,397,462,269.86 contract amount intact in 5 bounded
+attempts; a missing column holding ₱250,000 fails and names itself; a healthy schema takes exactly one
+attempt; the caller's payload is never mutated; and the update path degrades identically without
+stamping `created_by`.
+
+⚠️ **Two orphan packages already exist on One Portwood** (PKG-1, PKG-2) from before this fix — they are
+on the **Dashboard → Packages**, not in the Contracts records, and can be edited or archived there.
+
+`MODULE_V` → `20260826r`; `wizard.js?v=20260826b`, `module.js?v=20260826c`.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is

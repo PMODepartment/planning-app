@@ -317,24 +317,63 @@ window.ContractsClaims = (function () {
      form and the wizard. ⚠️ Extracted rather than copied: two payload builders for one
      table drift, and the half that drifts is always the one you are not looking at.
      Returns { ok, error } — the caller owns its own button state and toasts. */
+  /* ⚠️ A COLUMN THIS DATABASE DOES NOT HAVE, CARRYING NOTHING, MUST NOT COST THE SAVE.
+     Measured live: `contracts_claims` on this project predates the four
+     est/sub/eval/approved columns, so PostgREST rejected the whole insert with
+     "Could not find the 'approved_amount' column … in the schema cache" — and a Contract
+     sends all four as NULL, because a contract has no claim pipeline. The record was
+     unsavable over columns that held nothing.
+     ⚠️ ONLY A NULL IS DROPPED. A column carrying a real figure that the database cannot
+        store is a genuine failure and still stops the save loudly — silently discarding
+        money is the one outcome worse than an error. The retry is bounded, and it names
+        the migration either way so the schema still gets fixed. */
+  function _dropMissingNull(payload, err) {
+    var m = /(?:column|find the)\s+'?"?([a-z_]+)"?'?\s+(?:column\s+)?of/i.exec(err && err.message || '');
+    var col = m && m[1];
+    if (!col || !(col in payload) || payload[col] !== null) return null;
+    var next = Object.assign({}, payload); delete next[col];
+    return next;
+  }
   async function persistRecord(payload, existing) {
-    if (existing) {
-      Object.assign(existing, payload);   // optimistic — applies whether online or queued offline
-      if (window.PDSync) {
-        var w = await PDSync.write({ table: TABLE, op: 'update', id: existing.id, patch: payload });
-        if (!w.ok) return { ok: false, error: w.error || new Error('Save failed') };
-        PDSync.cachePut(PID_PFX + ':' + pid, rows);
+    var body = Object.assign({}, payload), dropped = [];
+    if (!existing) { body.created_by = UID; body.sort_order = rows.length; }
+    for (var attempt = 0; attempt < 8; attempt++) {
+      var err = null, out = null;
+      if (existing) {
+        if (window.PDSync) {
+          var w = await PDSync.write({ table: TABLE, op: 'update', id: existing.id, patch: body });
+          if (!w.ok) err = w.error || new Error('Save failed');
+        } else {
+          var ur = await sb().from(TABLE).update(body).eq('id', existing.id);
+          err = ur.error;
+        }
       } else {
-        var ur = await sb().from(TABLE).update(payload).eq('id', existing.id);
-        if (ur.error) return { ok: false, error: ur.error };
+        var ir = await sb().from(TABLE).insert(body).select().single();
+        err = ir.error; out = ir.data;
       }
-      return { ok: true, row: existing };
+      if (!err) {
+        if (existing) {
+          Object.assign(existing, body);   // optimistic — applies whether online or queued offline
+          if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
+          return { ok: true, row: existing, dropped: dropped };
+        }
+        rows.push(out);
+        return { ok: true, row: out, dropped: dropped };
+      }
+      var next = _dropMissingNull(body, err);
+      if (!next) return { ok: false, error: err };
+      dropped.push(Object.keys(body).filter(function (k) { return !(k in next); })[0]);
+      body = next;
     }
-    payload.created_by = UID; payload.sort_order = rows.length;
-    var ir = await sb().from(TABLE).insert(payload).select().single();
-    if (ir.error) return { ok: false, error: ir.error };
-    rows.push(ir.data);
-    return { ok: true, row: ir.data };
+    return { ok: false, error: new Error('Too many missing columns — run migrations/2026-07-20-contracts-claims-full.sql.') };
+  }
+  /* The save succeeded, but this database is missing columns the app expects. Said out
+     loud every time rather than once: a silent degrade becomes the permanent state, and
+     the columns it drops are the ones a claim's whole pipeline lives in. */
+  function warnDropped(dropped) {
+    if (!dropped || !dropped.length) return;
+    UI.toast('Saved, but this database has no ' + dropped.join(', ') + ' column' + (dropped.length > 1 ? 's' : '') +
+      ' — run migrations/2026-07-20-contracts-claims-full.sql to record those figures.', 'warn');
   }
   function recordFailMsg(e) {
     return /column|schema cache|PGRST204/i.test(e.message || '')
@@ -359,8 +398,19 @@ window.ContractsClaims = (function () {
       uid: function () { return UID; },
       packages: function () { return PKGS; },
       createPackage: function (p) { return PDb.createPackage(p).then(function (made) { PKGS.push(made); return made; }); },
+      /* Rollback for a package this wizard created moments ago and could not use. It is
+         guaranteed to have nothing pointing at it, so admin_delete_package's in-use guard
+         passes; the local list is trimmed either way so a stale entry cannot make the
+         next attempt think the code is taken. */
+      deletePackage: function (id) {
+        return PDb.deletePackage(id)
+          .catch(function (e) { return sb().from('packages').delete().eq('id', id).then(function () { throw e; }); })
+          .then(function () { PKGS = PKGS.filter(function (k) { return String(k.id) !== String(id); }); },
+                function (e) { PKGS = PKGS.filter(function (k) { return String(k.id) !== String(id); }); throw e; });
+      },
       persist: function (payload) { return persistRecord(payload, null); },
       failMsg: recordFailMsg,
+      warnDropped: warnDropped,
       done: gotoTypeTab
     });
   }
@@ -600,6 +650,7 @@ window.ContractsClaims = (function () {
       var res = await persistRecord(payload, r);
       if (!res.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(recordFailMsg(res.error), 'error'); return; }
       m.close(); UI.toast(r ? 'Record updated.' : 'Record added.', 'success');
+      warnDropped(res.dropped);
       gotoTypeTab(t);
     };
 

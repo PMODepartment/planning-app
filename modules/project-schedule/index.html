@@ -3051,6 +3051,9 @@
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var PACKAGES = [];     // Contract packages for this project (2026-08-19-packages.sql)
+  /* Change Orders + EOTs from the Contracts & Claims register, read-only. See the
+     load for why this exists and why it tolerates every kind of absence. */
+  var CONTRACT_RECS = [];
   // The Procurement (WPM) app's work packages for this project, read from the
   // `wpm_work_packages` MIRROR — never from the WPM app directly (its anon key is public).
   // This is what `project_schedule.work_package` now points at: an activity carries the
@@ -3202,13 +3205,35 @@
     while (n) { if (n.change_order_ref) return String(n.change_order_ref); n = n.parent_id && WBS_NODES.find(function (x) { return x.id === n.parent_id; }); }
     return '';
   }
+  /* The registered change orders — the authoritative list, from Contracts & Claims. */
+  function coRegistered() {
+    return (CONTRACT_RECS || []).filter(function (x) {
+      return x.record_type === 'Change Order' && String(x.reference_no || '').trim();
+    }).sort(function (a, b) { return String(a.reference_no).localeCompare(String(b.reference_no), undefined, { numeric: true }); });
+  }
+  function coLabel(ref) {
+    var hit = coRegistered().filter(function (x) { return String(x.reference_no).trim() === String(ref).trim(); })[0];
+    return hit ? (hit.reference_no + (hit.description ? ' — ' + String(hit.description).slice(0, 60) : '')) : String(ref || '');
+  }
+  /* ⚠️ IS THIS REFERENCE ACTUALLY REGISTERED? A ref typed on the schedule that matches
+     no record in Contracts & Claims is not an error — the variation may be recorded
+     later, or on paper — but it must be VISIBLE, because an unregistered CO is money
+     nobody is tracking commercially. Callers show it as "not in the register". */
+  function coIsRegistered(ref) {
+    var k = String(ref || '').trim();
+    if (!k) return true;
+    return coRegistered().some(function (x) { return String(x.reference_no).trim() === k; });
+  }
   // Every CO reference in use on this project — feeds the grid editor's datalist and the Add form,
   // so "VO-014" is picked rather than retyped (and mistyped, which silently splits a variation).
+  // ⚠️ REGISTERED ONES FIRST, then anything already used on the schedule that is not in the
+  //    register — so the list a planner sees leads with the references the commercial team owns.
   function coRefValues() {
     var seen = {}, out = [];
+    coRegistered().forEach(function (x) { var v = String(x.reference_no).trim(); if (!seen[v]) { seen[v] = 1; out.push(v); } });
     rows.forEach(function (r) { var v = r.change_order_ref; if (v && !seen[v]) { seen[v] = 1; out.push(String(v)); } });
     WBS_NODES.forEach(function (n) { var v = n.change_order_ref; if (v && !seen[v]) { seen[v] = 1; out.push(String(v)); } });
-    return out.sort();
+    return out;
   }
   // ---- Contract PACKAGE (2026-08-19-schedule-package.sql) --------------------
   // ⚠️ A DIFFERENT AXIS FROM scope_type, and the distinction is the point: scope_type says where
@@ -4397,6 +4422,24 @@
       var r9 = await sb().from('packages').select('*').eq('project_id', pid).order('sort_order').order('code');
       PACKAGES = (r9 && !r9.error && r9.data) || [];
     } catch (e) { PACKAGES = []; }
+    try {
+      /* CHANGE ORDERS (and EOTs) as the CONTRACTS & CLAIMS module recorded them.
+         ⚠️ WHY: `change_order_ref` has always been FREE TEXT, typed into a prompt() that
+            only suggested references already used on this project. The commercial team
+            records every variation next door in `contracts_claims`, and the two lists
+            could never see each other — so the schedule said "VO-14" while the register
+            said "VO-014", and no report could join them. Same database, one select.
+         ⚠️ TOLERANT: no table, no grant, no rows → an empty list, and the CO field
+            behaves exactly as it always did (free text). This must never break the
+            schedule for a project whose Contracts module was never set up.
+         ⚠️ READ-ONLY HERE. The schedule never writes a change order; it only cites one.
+            Creating variations is the Contracts & Claims module's job, and one app
+            inventing another's commercial records is unrecoverable. */
+      var rCo = await sb().from('contracts_claims')
+        .select('id,record_type,reference_no,description,status,amount,approved_amount,approved_days,package_id')
+        .eq('project_id', pid).in('record_type', ['Change Order', 'EOT']);
+      CONTRACT_RECS = (rCo && !rCo.error && rCo.data) || [];
+    } catch (e) { CONTRACT_RECS = []; }
     await loadWpmWorkPackages();
     await loadClassCodes();
     try {
@@ -6243,17 +6286,57 @@
     }
     return ok;
   }
-  // Marking an activity as a change order asks for its CO reference straight away: a CO with no
-  // number is not traceable back to the client correspondence it came from, and a planner asked for
-  // it later never has it to hand.
+  /* Marking an activity as a change order asks for its CO reference straight away: a CO with no
+     number is not traceable back to the client correspondence it came from, and a planner asked for
+     it later never has it to hand.
+     ⚠️ WAS A prompt(). It offered a comma-joined list of strings already typed on this project and
+        no way to pick one, so "VO-14" and "VO-014" became two variations that no report could join.
+        It is now a picker over the CHANGE ORDERS RECORDED IN CONTRACTS & CLAIMS — the same database,
+        the commercial team's own list — with free text kept for a variation not yet registered. */
   function promptCoRef(id) {
     var r = rows.find(function (x) { return x.id === id; }); if (!r) return;
-    var known = coRefValues();
-    var ref = prompt('Change order reference for "' + (r.activity_name || r.activity_id || 'this activity') + '"' +
-      (known.length ? '\n\nAlready used on this project: ' + known.join(', ') : '') + '\n\n(e.g. VO-014 — leave blank to fill in later)', r.change_order_ref || '');
-    if (ref == null) return;
-    ref = String(ref).trim();
-    persistScope(id, { change_order_ref: ref || null }).then(function (ok) { if (ok) { renderGrid(); renderDetails(); } });
+    var reg = coRegistered(), cur = String(r.change_order_ref || '').trim();
+    var others = coRefValues().filter(function (v) { return !coIsRegistered(v); });
+    var m = UI.modal('<h2 style="margin-top:0;">Change order reference</h2>' +
+      '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">For <b>' +
+        esc(r.activity_name || r.activity_id || 'this activity') + '</b>.</p>' +
+      (reg.length
+        ? '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Recorded in Contracts &amp; Claims</label>' +
+          '<select class="pd-select" id="ps-co-sel" style="width:100%;">' +
+            '<option value="">— none —</option>' +
+            reg.map(function (x) {
+              var v = String(x.reference_no).trim();
+              return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' +
+                esc(v + (x.description ? ' — ' + String(x.description).slice(0, 60) : '')) +
+                (x.status ? ' · ' + esc(x.status) : '') + '</option>';
+            }).join('') +
+            others.map(function (v) {
+              return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + ' · not in the register</option>';
+            }).join('') +
+            '<option value="__other__">Other — type a reference…</option>' +
+          '</select>'
+        : '<p style="color:var(--pd-muted);font-size:12.5px;">⚠️ No change orders are recorded for this project in ' +
+          '<b>Contracts &amp; Claims</b>. Record it there and it appears here — until then, type the reference.</p>') +
+      '<div id="ps-co-freewrap"' + (reg.length && coIsRegistered(cur) ? ' style="display:none;"' : '') + '>' +
+        '<label style="display:block;font-size:12px;font-weight:600;margin:10px 0 4px;">Reference</label>' +
+        '<input class="pd-input" id="ps-co-free" value="' + esc(cur) + '" placeholder="e.g. VO-014" style="width:100%;" />' +
+        '<p style="color:var(--pd-muted);font-size:11.5px;margin:4px 0 0;">⚠️ A reference typed here is <b>not</b> in the ' +
+        'commercial register. It will show as <i>not in the register</i> until a matching Change Order is recorded.</p>' +
+      '</div>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-co-x">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="ps-co-go">Save</button></div>');
+    var sel = m.el.querySelector('#ps-co-sel'), free = m.el.querySelector('#ps-co-free');
+    if (sel) sel.onchange = function () {
+      m.el.querySelector('#ps-co-freewrap').style.display = sel.value === '__other__' ? '' : 'none';
+      if (sel.value === '__other__' && free) free.focus();
+    };
+    m.el.querySelector('#ps-co-x').onclick = m.close;
+    m.el.querySelector('#ps-co-go').onclick = function () {
+      var ref = (!sel || sel.value === '__other__') ? (free ? free.value : '') : sel.value;
+      ref = String(ref || '').trim();
+      m.close();
+      persistScope(id, { change_order_ref: ref || null }).then(function (ok) { if (ok) { renderGrid(); renderDetails(); } });
+    };
   }
   // The last error persist() saw, so a caller that passed quiet:true can still report the truth
   // instead of guessing at it. Cleared on every attempt so a stale message can never be shown.
@@ -11930,6 +12013,23 @@
       return '<option value="' + esc(v) + '"' + (v === (cur || '') ? ' selected' : '') + '>' + esc(lbl) + '</option>';
     }).join('');
   }
+  /* Options for the details panel's Change Order Ref, from the commercial register.
+     ⚠️ THE STORED VALUE ALWAYS KEEPS AN OPTION, even when it is in no register — a
+        <select> whose value is not among its options reports the FIRST one, and the next
+        save would silently re-file the activity under a different variation. Same rule
+        the package picker follows. It is labelled so the gap is visible, not hidden. */
+  function coSelOpts(cur) {
+    var k = String(cur == null ? '' : cur).trim(), seen = false;
+    var opts = [{ v: '', l: '— No change order —' }];
+    coRegistered().forEach(function (x) {
+      var v = String(x.reference_no).trim();
+      if (v === k) seen = true;
+      opts.push({ v: v, l: v + (x.description ? ' — ' + String(x.description).slice(0, 50) : '') });
+    });
+    if (k && !seen) opts.splice(1, 0, { v: k, l: '⚠ ' + k + ' — not in the register' });
+    return opts;
+  }
+
   function _gf(label, field, type, r, opts, full) {
     var val = r[field]; if (val == null) val = '';
     var st = 'width:100%;box-sizing:border-box;font-size:12.5px;';
@@ -12050,7 +12150,8 @@
         // that would accept a value the rest of the app deliberately ignores.
         (isExecPhase(r)
           ? _gf('Contract Scope' + (!r.scope_type && scopeOf(r) ? ' (inherited: ' + scopeTypeLabel(scopeOf(r)) + ')' : ''), 'scope_type', 'select', r, SCOPE_SEL_OPTS) +
-            (isChangeOrder(r) ? _gf('Change Order Ref', 'change_order_ref', 'text', r) : '')
+            /* A picker over the Contracts & Claims register, not free text — see coSelOpts. */
+            (isChangeOrder(r) ? _gf('Change Order Ref', 'change_order_ref', 'select', r, coSelOpts(r.change_order_ref)) : '')
           : _gf('Contract Scope', 'scope_type', 'ro', { scope_type: 'n/a — execution phase only' })) +
         // ⚠️ Sits beside Contract Scope because they read as one idea and are NOT: scope says where
         // the money comes from, package says which lot the work belongs to. Both apply at once.
