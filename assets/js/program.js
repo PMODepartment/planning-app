@@ -7,7 +7,7 @@
 
    Megawide buys one development as several PROJECTS, each with its own code:
      AVR101 / AVR102  → Avesta Residences
-     LCR102 / LCR352  → the same development, two contracts
+     LCR102 / LCR352  → 4PH Lancaster (per the WPM app's own PROJECT_MAP note)
    Procurement and Engineering hold them the same way, so the codes are the
    shared key across all three apps.
 
@@ -62,30 +62,26 @@ window.PDProgram = (function () {
     })) i++;
     var words = parts[0].slice(0, i);
 
-    /* ⚠️ DROP A TRAILING QUALIFIER THAT IS PART OF THE NUMBERING, NOT THE NAME.
-       "La Costa Residences Phase 1" + "Phase 2" share the word "Phase", so the raw
-       shared prefix is "La Costa Residences Phase" — a dangling qualifier that reads
-       as an unfinished name. (The WPM version this was ported from has the same flaw.)
-       ⚠️ ONLY when what follows it is a bare NUMBER in every member, because that is
-          what makes it a numbering scheme rather than the development's actual name:
-            "… Phase 1" / "… Phase 2"  -> numbering  -> drop "Phase"
-            "Sun Tower A" / "Sun Tower B" -> A and B are wings of a building genuinely
-            called Sun Tower -> KEEP it, or the group reads as "Sun".
-       Checked against the NEXT token of every member, so one member breaking the
-       pattern leaves the qualifier alone. */
-    var QUALIFIER = /^(phase|package|pkg|tower|building|bldg|block|lot|stage|section|part|cluster|wing)$/i;
-    if (words.length && QUALIFIER.test(words[words.length - 1])) {
-      // ⚠️ The token AFTER the shared run, i.e. index words.length — words[words.length-1]
-      // is the qualifier itself, and testing that for a number can never be true.
-      var allNumbered = parts.every(function (w) {
-        var nxt = w[words.length];
-        return nxt && /^\d+([-–—/]\d+)?$/.test(nxt.replace(/[.,;:]+$/, ''));
-      });
-      // ⚠️ Trimming to nothing is allowed on purpose: "Tower 1" / "Tower 2" leaves a bare
-      // "Tower", which names no development — the length check below then falls back to
-      // the code, which at least identifies it.
-      if (allNumbered) words = words.slice(0, -1);
-    }
+    /* ⚠️ NO TRIMMING OF TRAILING UNIT NOUNS (Building / Tower / Phase), and this is a
+       DELIBERATE choice the Procurement dashboard already made and documented:
+
+         "Deliberately NO blocklist of trailing unit nouns: LCR102/LCR352 therefore label
+          as '4PH Lancaster Building', which is slightly long but true. Stripping such
+          words would truncate a project genuinely named 'Lancaster Building' — a worse
+          failure than a long label."   — wpm/CLAUDE.md
+
+       ⚠️ I ADDED SUCH A TRIM AND REMOVED IT AGAIN (2026-08-27). It was justified by a
+          fixture I invented — "La Costa Residences Phase 1/2" — for a project that does
+          not exist; LCR is Lancaster, which the WPM log already recorded. The rule was
+          narrower than the blocklist WPM rejected (it fired only when a bare number
+          followed the noun), but on names like "… Building 1" / "… Building 2" it would
+          have relabelled the group "4PH Lancaster" while WPM still called it "4PH
+          Lancaster Building" — two apps disagreeing about a project's name, which is the
+          precise failure this shared helper exists to prevent.
+
+       So a long-but-true label wins. If a dangling qualifier ever does read badly on a
+       REAL project, set `projects.program` and give that development an explicit name —
+       that is what the override is for, and it cannot guess wrong. */
 
     var common = words.join(' ').replace(/[\s\-–—,:]+$/, '');
     return common.length >= 3 ? common : key;

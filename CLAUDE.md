@@ -9249,10 +9249,9 @@ copy; it is now **`assets/js/program.js` (`PDProgram`)**, read by Portfolio Over
   turn a convention that self-corrects into stored strings that go stale silently.
   ⚠️ **No `parent_id`, no `programs` table** — a project is never a child row of another project, or
   the AVR101 › {AVR101, AVR102} nesting comes back through a different door.
-- ⚠️ **A real defect the tests caught, which the WPM original also has:** *"La Costa Residences Phase 1"*
-  + *"Phase 2"* share the word "Phase", so the label read **"La Costa Residences Phase"** — a dangling
-  qualifier. A trailing qualifier is dropped **only when a bare number follows it in every member**, so
-  *"Sun Tower A"/"Sun Tower B"* correctly keeps "Sun Tower" rather than collapsing to "Sun".
+- ⚠️ **RETRACTED THE SAME DAY — see the correction entry below.** This bullet originally claimed a
+  defect found via *"La Costa Residences Phase 1/2"*. **I invented that project name**, and the
+  trailing-qualifier trim it justified has been removed.
 - ⚠️ **`projects` writes are now tolerant of a column this database lacks** — PostgREST rejects the
   **whole row** on an unmigrated column, so adding `program` would have thrown away every other field an
   admin had just typed. Same failure the contracts module hit with `package_id` today. Only a *missing
@@ -9265,3 +9264,41 @@ project field reports that it was not stored and names the file.
 
 **Cache:** `db.js` / `dashboard.css` / new `program.js` → `?v=20260827a`; `MODULE_V` → `20260827e`;
 contracts `wizard.js` / `module.js` / `boq.js` / `packages.js` → `?v=20260827e`.
+
+### 2026-08-27 (6) — Correction: "La Costa Residences" was invented, and the rule it justified is gone
+
+Owner: *"What is La Costa Residences? Its Lancaster Residences."*
+
+⚠️ **I fabricated a project name and then built a rule on it.** Asked to group `LCR102` / `LCR352`, I
+had no expansion for LCR, invented *"La Costa Residences"* as a test fixture, and it propagated into a
+shipped code comment, the CLAUDE.md log and a commit message — reading as if it were real Megawide data.
+**The real name was already in the repo:** `wpm/CLAUDE.md` records LCR102/LCR352 as **"4PH Lancaster"**,
+in the very `PROJECT_MAP` note that says both were left unmapped because *"4PH Lancaster"* could not be
+disambiguated between them. I should have grepped for it instead of filling the gap.
+
+⚠️ **The invented example produced a real code defect, now reverted.** Fictional *"… Phase 1"* / *"…
+Phase 2"* names gave a dangling label, so I added a trim that drops a trailing unit noun when a bare
+number follows it. **The Procurement dashboard had already considered and rejected that class of rule**,
+with its reason recorded at `wpm/CLAUDE.md`:
+
+> *"⚠️ Deliberately NO blocklist of trailing unit nouns (Building/Tower/Phase): LCR102/LCR352 therefore
+> label as '4PH Lancaster Building', which is slightly long but true. Stripping such words would truncate
+> a project genuinely named 'Lancaster Building' — a worse failure than a long label."*
+
+On names of the form *"4PH Lancaster Building 1 / 2"* my trim would have relabelled the group **"4PH
+Lancaster"** while WPM went on calling it **"4PH Lancaster Building"** — **two apps disagreeing about a
+project's name, which is the precise failure this shared helper exists to prevent.** A long-but-true
+label wins. `projects.program` is the escape hatch if a real label ever reads badly: an explicit name
+cannot guess wrong.
+
+**The lesson, recorded because it is the transferable part:** when a fact is missing, grep the repos
+before inventing a plausible filler — a fabricated fixture reads exactly like a real one three files
+later, and here it went on to justify a behaviour change that contradicted a documented decision in a
+sibling app.
+
+**Everything else from entry (5) stands** — the shared `PDProgram`, the app-wide adoption, the
+`projects.program` override and the tolerant project write are unaffected. Suite now **28/28** on the
+helper (123 → 122 total), with the LCR fixture carrying its real name and an assertion that the label
+**matches WPM's string exactly**.
+
+⚠️ **Owner has run `2026-08-27-project-program.sql`**, so the Parent project override is live.
