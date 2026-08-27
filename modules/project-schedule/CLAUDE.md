@@ -1,3 +1,48 @@
+## Vertical stacking: the tower key, the fit, and the pane (2026-08-27) — fmlozano
+
+**1. Towers were not detected on a matcher-mapped project.** `_vsTowerOf` read
+`r.location[VS_LOC_TOWER]` — the literal string `'tower'`.
+- ⚠️ **`location` has TWO writers and they use different keys.** `locMapPlan` (the WBS→location
+  matcher) and both importers write `loc[<location_levels.id>]`; only `locMapOf` (the Schedule Builder
+  push) writes the reserved literal `tower`. So every project whose towers came from the matcher
+  reported zero towers — the stack banded Tower 1 / Tower 2 (it reads `LOC_LEVELS` by id) while the
+  picker said "no tower breakdown". Contrast run against the pre-fix function: `[]` vs
+  `['Tower 1','Tower 2']`.
+- New `_vsTowerLevelId()`: the **first** location level, name test (`tower|building|block`) as a
+  tie-breaker only. ⚠️ Order is the primary rule because a level legitimately called "Building" or
+  "Block" is still the tower axis, and a project that named it something else must still resolve to
+  *something* rather than to nothing.
+- ⚠️ The level id wins over the literal key when a project carries both — the matcher is the planner's
+  decision, the push's value is derived.
+- ⚠️ Same class as the Equipment module's `'tower'` literal (2026-08-24). **A jsonb location map is
+  keyed by level id.**
+
+**2. Fit — see the whole building.** `_vsFit` (on, persisted `ps_vsfit`) + `.ps-vs-stage.is-fit`.
+- ⚠️ `width:auto` on the svg is what makes it scale rather than squash: the svg carries explicit
+  width/height **attributes**, and a `max-height` alone with a fixed width distorts it.
+- ⚠️ The fit cap subtracts the tower card's **measured** chrome (`card.height - svg.height`), not a
+  constant. A cap from the body height alone fitted a 469px drawing into a 497px body and the body
+  still scrolled — the card header, padding and border are ~71px.
+
+**3. The time bar stays on screen.** `.ps-vs-pane` (bounded height) › `.ps-vs-body` (scrolls) ›
+`.ps-vs-tl` (`flex:0 0 auto`).
+- ⚠️⚠️ **`position:sticky; bottom:0` was tried first and is a NO-OP here.** Sticky is bounded by its
+  containing block; the bar is the pane's LAST child, so the container's bottom edge *is* the bar's
+  bottom edge and it has zero travel. Measured scrolling away at 0/300/600px with the rule in place.
+  Do not "restore" it.
+- ⚠️ `position:fixed` is also wrong — out of flow it overlaps the last building instead of ending the
+  pane.
+- ⚠️ The toolbar and trade chips are **outside** the scroller; scrolling the buildings must not take
+  the controls with them.
+- ⚠️ `_vsApplyPane` is re-run from the existing debounced `resize` handler — measured geometry goes
+  stale, and a window dragged shorter would hide the bar again. It re-measures rather than
+  re-rendering, so a resize does not restart the entrance animation.
+
+**Verified.** 27 checks executing the sliced functions + the old-vs-new contrast; browser-measured at
+1265px light and dark (fit 420×1400 → 141×452, aspect kept, body no longer scrolls, bar at 703 of
+720; Fit off → full size, body scrolls 948px, bar still on screen; 0 page h-scroll). 0 functions lost,
+3 added. ⚠️ **Not verified signed in.**
+
 ## Vertical stacking: the tower picker becomes a dropdown (2026-08-26) — fmlozano
 
 Owner: a dropdown for which tower, a consolidated option showing every tower side by side, and a

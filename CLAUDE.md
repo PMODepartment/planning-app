@@ -84,6 +84,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-27 (a) — Vertical stacking: towers detected properly, the whole building fits, the progress bar stops scrolling away
+Owner: *"how come the Tower 2 is not detected? even though the location breakdown, there is tower
+indicated"*, then *"the goal is to see the whole tower whether the texts are small and the purpose of
+the magnifying glass is to see the zones clearer"* and *"the progress timeline bar at the bottom …
+when you scroll down the progress should always be shown."* `?v=20260827a`. **No migration.**
+
+- ⚠️ **THE TOWER BUG: two writers, two different keys.** `project_schedule.location` is a jsonb map
+  keyed by **`location_levels.id`** — that is what the WBS→location matcher (`locMapPlan`) and both
+  importers write. The Schedule Builder push *additionally* writes a reserved literal `tower` key
+  (`locMapOf`). `_vsTowerOf` read **only the literal key**, so a project whose towers came from the
+  matcher reported **zero towers**: the stacking banded Tower 1 / Tower 2 correctly (it reads
+  `LOC_LEVELS` by id) while the tower picker sat greyed out saying "no tower breakdown" — two halves
+  of one screen disagreeing about the same project. Measured on the owner's own shape: the old code
+  returns `[]` where the fix returns `['Tower 1','Tower 2']`.
+- ⚠️ **Same bug class as the Equipment module's `'tower'` literal (2026-08-24).** A jsonb location map
+  is keyed by level id; never key it by a level's name or by a guessed constant. That is now written
+  at the code.
+- ⚠️ **The level id wins over the literal key** on a project carrying both: the matcher is a planner's
+  explicit decision and the push's value is derived. The tower level is the **first** location level
+  (the breakdown is ordered Tower › Level › Zone › Unit), with a name test as a tie-breaker only — a
+  level called "Building" or "Block" is still the tower axis, and a level called nothing recognisable
+  still falls back to the first rather than to nothing.
+- **Fit.** A new **Fit** toggle (on by default, remembered) scales each building to the pane so the
+  **whole tower is visible however small the labels get** — which is the division of labour the owner
+  asked for: the stack answers *how is the building doing*, the magnifier answers *what does this zone
+  say*. ⚠️ `width:auto` is load-bearing — the svg carries explicit width/height **attributes**, so a
+  `max-height` alone squashes it instead of scaling it. ⚠️ The card's own chrome (header, padding,
+  border) is **measured off the rendered card**, not assumed: a cap taken from the pane height alone
+  still left a 469px building inside a 497px body **scrolling**, which is the one thing Fit exists to
+  prevent.
+- **The progress bar no longer scrolls away.** The pane is height-bounded, the **buildings** scroll
+  inside it, and the time bar is its fixed last row — so it is on screen at every scroll position, in
+  both Fit and full-size modes. ⚠️ **`position:sticky` was tried first and silently does nothing here:**
+  sticky is bounded by its containing block and the bar is the pane's LAST child, so it has zero
+  travel. Measured — it scrolled away at 0/300/600px exactly as before. A rule that exists and can
+  never fire is worse than no rule, because it reads as done. ⚠️ `position:fixed` is the other
+  tempting answer and is also wrong: out of flow it would overlap the last building instead of ending
+  the pane. ⚠️ The toolbar and the trade chips sit **outside** the scroller — scrolling the buildings
+  must never take the controls that drive them off screen. ⚠️ Geometry is re-measured on resize, or a
+  window dragged shorter hides the bar again.
+
+**Verified.** 27 checks executing the shipped `_vsTowerLevelId` / `_vsTowerOf` / `_vsTowersIn` (sliced
+out of `index.html`, never reimplemented) across matcher-written, builder-pushed, both-writers,
+oddly-ordered, unnamed, empty and malformed projects — plus an explicit **old-vs-new contrast run**
+showing `[]` against `['Tower 1','Tower 2']`. Browser-measured against the shipped CSS at 1265px:
+a 420×1400 building fits to 141×452 with its aspect kept and **the body no longer scrolls**, the bar
+sits at 703 of a 720px window, and with Fit off the building renders full size, the body scrolls 948px
+and **the bar is still on screen**. Dark mode resolves on tokens; 0 page horizontal scroll.
+0 functions lost, 3 added. ⚠️ **Not verified signed in** — the anon key has no grants, so this is not
+confirmed against the owner's real project; the tower fix is confirmed against the exact data shape
+their screenshots show.
+
 ### 2026-08-26 (j) — Vertical stacking: a tower dropdown, with a real consolidated option
 Owner: *"there should be a dropdown to determine what tower to look at (if multiple towers). there
 should also be a consolidated option meaning it views all towers, and the towers are side by side.

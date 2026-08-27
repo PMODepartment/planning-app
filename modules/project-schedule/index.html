@@ -1151,7 +1151,20 @@
     /* ---- The TIME BAR under the stack ------------------------------------------------------
        Owner 2026-08-26: drag the line and the stacking re-reads at that date, so the building
        fills up as you move through the programme. */
-    .ps-vs-tl { margin-top:14px; border:1px solid var(--pd-line); border-radius:12px; background:var(--pd-card); padding:10px 14px 12px; }
+    /* ---- The pane holds its own scroll so the time bar is always on screen ----------------
+       Owner 2026-08-27: *"when you scroll down the progress should always be shown."*
+       ⚠️ position:sticky CANNOT do this and was tried first. Sticky is bounded by its containing
+       block, and the time bar is the LAST child of the pane — the container's bottom edge IS the
+       bar's bottom edge, so it has zero travel and the rule silently never fires. Measured: the
+       bar scrolled away exactly as before at scrollY 0/300/600. A rule that exists and can never
+       fire is worse than no rule, because it reads as done.
+       ⚠️ Fixed positioning is the other tempting answer and is also wrong — out of flow, it would
+       overlap the last building rather than ending the pane.
+       So the BUILDINGS scroll inside the pane and the bar sits below them, permanently visible. */
+    .ps-vs-pane { display:flex; flex-direction:column; min-height:0; max-height:var(--ps-vs-paneh, none); }
+    .ps-vs-body { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; }
+    .ps-vs-tl { flex:0 0 auto; margin-top:14px; border:1px solid var(--pd-line);
+      border-radius:12px; background:var(--pd-card); padding:10px 14px 12px; }
     .ps-vs-tlhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:9px; }
     .ps-vs-tldate { font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; }
     .ps-vs-tlsub { font-size:11.5px; color:var(--pd-muted); }
@@ -1226,6 +1239,19 @@
        docked panel on the right. It is a CLONE of the same <svg> with a tighter viewBox, so what
        the panel shows is exactly what is drawn - there is no second renderer to keep in step. */
     .ps-vs-stage { display:flex; gap:14px; align-items:flex-start; width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
+    /* ---- Fit the whole building in the pane -----------------------------------------------
+       ⚠️ width:auto is what makes this work. The svg carries explicit width/height ATTRIBUTES, so
+       a max-height alone would squash it — the browser only preserves the aspect ratio when the
+       other axis is free to follow. Both axes are auto here and both are capped, so the building
+       shrinks whole rather than being cropped or distorted.
+       ⚠️ The cap is a CSS VAR set per render from the real pane geometry, not a vh constant: this
+       pane sits under a toolbar whose height changes with wrapping, and a fixed vh would put the
+       bottom of a tall building behind the time bar on exactly the projects that need it most. */
+    .ps-vs-stage.is-fit .ps-vs-scroll { overflow:visible; }
+    .ps-vs-stage.is-fit .ps-vs-scroll svg {
+      width:auto; height:auto; max-width:100%; max-height:var(--ps-vs-fith, 420px); }
+    /* The card must not hold the old width open once its drawing has shrunk. */
+    .ps-vs-stage.is-fit .ps-vs-tower { min-width:0; }
     /* ⚠️ basis 0, not auto: with an `auto` basis the towers' natural (building) width is the starting
        size of the viewport, and on a wide building the row still overflows its container - which is
        how the magnifier ended up hanging off the right edge of the screen. A zero basis makes the
@@ -10184,6 +10210,11 @@
       if (now) renderMobile();
       else if (_psWasPhone) renderAll();   // crossed phone -> desktop: build the grid/Gantt
       _psWasPhone = now;
+      // ⚠️ The stacking pane's height is MEASURED, so a resize leaves it stale — a window dragged
+      // shorter would put the time bar off screen again, which is the whole defect. Re-measure
+      // rather than re-render: renderVStack rebuilds every svg and would restart the entrance
+      // animation on every resize tick.
+      try { _vsApplyPane(document.getElementById('ps-vstack')); } catch (e) {}
     }, 150);
   });
 
@@ -10735,6 +10766,53 @@
   var _vsScope = 'trade';       // 'trade' = one tower per trade · 'all' = one consolidated tower
   var _vsDetail = 2;            // 1 = per level · 2 = per zone · 3 = per unit (capped at LOC_LEVELS)
   var _vsZoom = 1;
+  // Fit the WHOLE building into the pane, however small that makes the text. Owner 2026-08-27:
+  // *"the goal is to see the whole tower whether the texts are small and the purpose of the
+  // magnifying glass is to see the zones clearer."* So the two controls have separate jobs and
+  // neither should try to do the other's: the stack answers "how is the building doing", the
+  // magnifier answers "what does this zone say". Zooming the stack to make labels readable is what
+  // pushed the top of the building off screen.
+  // ⚠️ ON by default. The default view of a stacking is the whole stack; a planner who wants a
+  // bigger picture of one part turns Fit off (or hovers, which is cheaper).
+  var _vsFit = true;
+  try { var _vf = localStorage.getItem('ps_vsfit'); if (_vf === '0') _vsFit = false; } catch (e) {}
+  function _saveVsFit() { try { localStorage.setItem('ps_vsfit', _vsFit ? '1' : '0'); } catch (e) {} }
+  // How much height the fitted stack may claim. Measured from the pane's own top so the time bar
+  // and the toolbar are never covered — a fit that hides the control you fit with is not a fit.
+  // ⚠️ Measured from each element's own live position, never from a vh constant. This pane sits
+  // under a toolbar whose height changes with wrapping and a chip row that comes and goes with the
+  // scope, so a fixed vh would put the bottom of a tall building behind the time bar on exactly the
+  // projects that need it most.
+  function _vsApplyPane(host) {
+    if (!host) return;
+    var pane = host.querySelector('.ps-vs-pane'), body = host.querySelector('.ps-vs-body');
+    var tl = host.querySelector('.ps-vs-tl'), grid = host.querySelector('.ps-vs-grid');
+    if (pane) {
+      var top = pane.getBoundingClientRect().top;
+      // 16px of breathing room below the pane. Floored at 320 so a short window still shows a
+      // building AND its bar rather than two slivers.
+      pane.style.setProperty('--ps-vs-paneh', Math.max(320, Math.round(window.innerHeight - top - 16)) + 'px');
+    }
+    if (grid && body) {
+      // The fit cap is the height the BODY actually has, so a fitted building is whole without
+      // the body needing to scroll at all — which is the point of fitting it.
+      var bh = body.clientHeight || 0;
+      var tlh = tl ? Math.round(tl.getBoundingClientRect().height) : 0;
+      var cap = Math.max(240, (bh ? bh : Math.round(window.innerHeight - grid.getBoundingClientRect().top - tlh - 40)) - 28);
+      grid.style.setProperty('--ps-vs-fith', cap + 'px');
+      // ⚠️ Second pass, and it is not belt-and-braces: a tower CARD is its drawing plus a header,
+      // padding and a border, so a cap set from the body height alone still leaves the card taller
+      // than the body and the fitted building scrolls — which is the one thing Fit exists to stop.
+      // The overhead is MEASURED off the rendered card rather than assumed, because it changes with
+      // the header's own wrapping. Measured 469px fitted inside a 497px body and the body still
+      // scrolled; this is what closes that gap.
+      var card = grid.querySelector('.ps-vs-tower'), sv = card && card.querySelector('.ps-vs-scroll svg');
+      if (card && sv && bh) {
+        var over = Math.round(card.getBoundingClientRect().height - sv.getBoundingClientRect().height);
+        if (over > 0 && over < bh) grid.style.setProperty('--ps-vs-fith', Math.max(200, bh - over - 6) + 'px');
+      }
+    }
+  }
   // ---- Magnifier (loupe) state. See the CSS note: hovering the left pane paints a magnified clone
   // of the same svg into the right-hand panel. Both the on/off state and the magnification are
   // viewing preferences (like ps_ganttscale), so they persist globally rather than per project.
@@ -10827,7 +10905,34 @@
   function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
   // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
-  function _vsTowerOf(r) { return (r && r.location && r.location[VS_LOC_TOWER]) || ''; }
+  // ⚠️⚠️ THERE ARE TWO WRITERS AND THEY USE DIFFERENT KEYS. `location` is a jsonb map keyed by
+  // `location_levels.id` (a uuid) — that is what the WBS→location matcher (`locMapPlan`) and both
+  // importers write. The Schedule Builder push ALSO writes a reserved literal `tower` key
+  // (`locMapOf`). Reading only the literal key, as this did, meant a project whose towers came from
+  // the matcher reported ZERO towers: the stacking banded Tower 1 / Tower 2 correctly (it reads
+  // LOC_LEVELS by id) while the tower picker sat greyed out saying "no tower breakdown" — the two
+  // halves of one screen disagreeing about the same project. Owner: *"how come the Tower 2 is not
+  // detected? even though the location breakdown, there is tower indicated."*
+  // ⚠️ Same bug class as the Equipment module's `'tower'` literal (2026-08-24). A jsonb location map
+  // is keyed by level id; never key it by a level's NAME or by a guessed constant.
+  // ⚠️ The level id wins over the literal key. A project that has been BOTH pushed and matched
+  // carries both, and the matcher is the planner's own explicit decision — the push's value is
+  // derived. Preferring the derived one would silently overrule what someone sat down and mapped.
+  function _vsTowerLevelId() {
+    if (!LOC_LEVELS.length) return '';
+    // The tower is the FIRST location level — the breakdown is ordered Tower › Level › Zone › Unit
+    // and `sort_order` is what LOC_LEVELS is loaded by. A name test is only a tie-breaker for a
+    // project that ordered its levels differently; it must never be the primary rule, because a
+    // level legitimately called "Building" or "Block" is still the tower axis.
+    var named = LOC_LEVELS.find(function (l) { return /tower|building|block/i.test(l.name || ''); });
+    return (named || LOC_LEVELS[0]).id;
+  }
+  function _vsTowerOf(r) {
+    if (!r || !r.location) return '';
+    var id = _vsTowerLevelId();
+    var v = id ? r.location[id] : '';
+    return String(v || r.location[VS_LOC_TOWER] || '').trim();
+  }
   // Distinct towers present in a set, in first-seen order — which is the builder's tower order,
   // since the push walks the towers in sequence. Untagged rows are NOT counted here; they get
   // their own band so they are never silently dropped.
@@ -11668,6 +11773,8 @@
         '<button data-vsdt="start"' + (_vsDateMode === 'start' ? ' class="on"' : '') + ' title="Each cell shows when it BEGINS (its first activity\'s start)">Start</button>' +
       '</span>' +
       '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-seg"><button id="ps-vs-fit"' + (_vsFit ? ' class="on"' : '') +
+        ' title="Fit the whole building in the pane. The labels get small on purpose — hover a zone and read it in the magnifier.">Fit</button></span>' +
       '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
       '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
       '<span class="ps-vs-seg"><button class="ps-vs-loupebtn' + (_vsLoupe ? ' on' : '') + '" id="ps-vs-loupebtn" title="Magnifier \u2014 hover a zone on the left and it is shown enlarged, with its dates and progress, in a panel on the right"><span data-ico="search" data-ico-size="14"></span>Magnify</button></span>' +
@@ -11785,7 +11892,10 @@
     // ⚠️ The defs must be in the DOM before the towers that reference them are laid out, so they are
     // prepended rather than appended.
     host.innerHTML = bar + (_vsScope === 'trade' ? chips : '') + warn + _vsHatchDefs() +
-      '<div class="ps-vs-stage' + (_vsLoupe ? ' is-loupe-on' : '') + '"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
+      // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
+      // must never take the controls that drive them off screen.
+      '<div class="ps-vs-pane"><div class="ps-vs-body">' +
+      '<div class="ps-vs-stage' + (_vsLoupe ? ' is-loupe-on' : '') + (_vsFit ? ' is-fit' : '') + '"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
       // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
       // rather than being covered by it.
       (_vsLoupe ? '<div class="ps-vs-loupe-res" id="ps-vs-loupe-res" title="Drag to resize both windows — double-click to reset"></div>' +
@@ -11797,7 +11907,7 @@
         '<div class="ps-vs-loupe-stage" id="ps-vs-loupe-stage"><div class="ps-vs-loupe-hint">Hover a zone in the building on the left &mdash; it is magnified here, with its dates and progress underneath.</div></div>' +
         '<div class="ps-vs-loupe-resb" id="ps-vs-loupe-resb" title="Drag to resize the magnified view — double-click to reset"></div>' +
         '<div class="ps-vs-loupe-info" id="ps-vs-loupe-info"><div class="r">Nothing hovered yet.</div></div></aside>' : '') +
-      '</div>' + _vsTimelineHTML(acts);
+      '</div></div>' + _vsTimelineHTML(acts) + '</div>';
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
     // project still settles in well under half a second instead of trickling in.
     if (_vsAnim === 'in') {
@@ -11824,6 +11934,9 @@
     var _pcx = host.querySelector('#ps-vs-planclrx');
     if (_pcx) _pcx.onclick = function () { _vsPlanLine = VS_PLAN_LINE_DEF; _saveVsPlanLine(); renderVStack(); };
     // Zoom repaints silently: a fade on every step of a held-down click would strobe.
+    var fitB = host.querySelector('#ps-vs-fit');
+    if (fitB) fitB.onclick = function () { _vsFit = !_vsFit; _saveVsFit(); renderVStack(); };
+    _vsApplyPane(host);
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
     // Magnifier: the toggle repaints silently (the towers only narrow to make room - replaying an
