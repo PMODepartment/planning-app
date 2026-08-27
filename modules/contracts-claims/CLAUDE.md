@@ -667,6 +667,48 @@ emits:**
 ⚠️ **Not clicked through in a browser.** `node --check` clean on `module.js` and `packages.js`; the
 class audit reports **emitted-but-undefined: none** apart from that inline-styled hook.
 
+### 2026-08-26 — The wizard creates packages, and several of them in one run
+Owner, on the New-package form: *"I thought we will have a wizard for this"*, then: *"upon creating a
+construction contract - it would also define multiple packages in one go. Currently the planner would
+have to go through multiple runs in the same wizard just to log for example 5 packages."*
+
+Both were right. Folding Packages into the Contract tab left **New package** opening a raw modal while
+every other new thing went through the wizard — the exact inconsistency the wizard existed to remove.
+
+- **Package is now a wizard type** alongside Contract / Change Order / Claim / EOT / BOQ. ⚠️ It has **no
+  Details and no Dates step** — a package has no reference number, no counterparty and no claim
+  pipeline; those belong to the contract that defines it, and offering them would invite a package
+  quietly carrying half a contract.
+- **New package** opens the wizard at that type; **Edit** keeps the compact form, the same rule the
+  records follow.
+- ⚠️ `gotoTypeTab` sent anything unrecognised to **Claims**, so a saved package would have dropped the
+  planner on a register that cannot show it. `Package` now lands on Contract.
+
+**The package step is a LIST, not a form.** Add a row per lot — code, name, start, finish, amount — and
+save five in one run.
+- ⚠️ **The contract record can cite only ONE.** `contracts_claims.package_id` is a single column, so the
+  row marked **★** is the one the record links to and the rest are created beside it. Said on screen;
+  silently linking to whichever sorted first would make the claims register cite a lot nobody chose.
+- ⚠️ **The ★ follows a deletion.** Removing a row above the primary shifts it, and leaving the index
+  where it was would link the contract to the wrong lot.
+- ⚠️ **Duplicate codes are caught BEFORE anything is written** — case- and whitespace-insensitively.
+  The table is unique on `(project, lower(code))`, so the second would otherwise fail halfway through,
+  after the first had already been created.
+- ⚠️ **Blank rows are dropped**, not saved: a row added and never filled is a UI artefact.
+- ⚠️ **ALL-OR-NOTHING ROLLBACK.** If any package fails, or the contract record fails afterwards, **every
+  package this run created** is deleted, newest first — not just the last one. A package the planner
+  *linked* to is somebody else's row and is never touched.
+- ⚠️ Only the **first** row is seeded from the contract's reference/description, and only while
+  untouched — a contract buying five lots must not have four of them named after itself.
+
+**Verified 8/8** executing the shipped `pkgToCreate` / `primaryPkg` / `dupPkgCode`: five rows with a
+blank one drop to four; the ★ on row 2 wins over the first; a ★ left on a blank row falls back to the
+first real one; `PKG-1` vs `pkg-1` and `PKG-1` vs `" PKG-1 "` both caught; an all-blank list creates
+nothing; a single row behaves exactly as before.
+
+⚠️ **Not clicked through in a browser.** Class audit clean apart from `cc-listbar`, which carries its
+layout inline.
+
 ### Notes / follow-ups
 - **Project-scoped by contract §6.** The app's Overview screen is cross-project ("My Projects"); this
   module scopes to the topbar project, so the roll-up banner is that project's total — which is

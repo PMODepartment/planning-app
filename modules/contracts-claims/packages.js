@@ -23,16 +23,17 @@
 window.CCPackages = (function () {
   'use strict';
   var UID = null, canWrite = false, pid = null, PKG = [], loaded = false;
-  var CONTRACTS = [], onSub = null;   // contract records to join, and the way into the BOQ
+  var CONTRACTS = [], onSub = null, onNew = null;   // contracts to join, the BOQ, and the wizard
   var esc = function (x) { return Fmt.esc(String(x == null ? '' : x)); };
   function host() { return document.getElementById('cc-view'); }
 
   function init(deps) { UID = deps.uid; canWrite = !!deps.canWrite; }
   function reset() { loaded = false; PKG = []; }
-  async function show(projectId, contracts, openSub) {
+  async function show(projectId, contracts, openSub, openNew) {
     pid = projectId;
     CONTRACTS = contracts || [];
     onSub = openSub || null;
+    onNew = openNew || null;
     await load();
   }
   async function load() {
@@ -148,7 +149,11 @@ window.CCPackages = (function () {
     wire(h);
   }
   function wire(h) {
-    var a = h.querySelector('#pk-add'); if (a) a.onclick = function () { edit(null); };
+    /* ⚠️ NEW GOES THROUGH THE WIZARD, edit keeps the compact form — the same rule the
+       records follow. A raw modal for one kind of new thing and a guided flow for the
+       others is exactly the inconsistency the owner spotted. */
+    var a = h.querySelector('#pk-add');
+    if (a) a.onclick = function () { if (onNew) onNew('Package'); else edit(null); };
     var bq = h.querySelector('#pk-boq'); if (bq && onSub) bq.onclick = function () { onSub('boq'); };
     var p = h.querySelector('#pk-push'); if (p) p.onclick = share;
     h.querySelectorAll('[data-edit]').forEach(function (b) {

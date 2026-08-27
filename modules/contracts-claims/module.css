@@ -497,6 +497,21 @@ html.pd-dark {
 .ccw-card.on { border-color: var(--pd-red); box-shadow: inset 0 0 0 1px var(--pd-red); }
 .ccw-card-t { display: block; font-weight: 700; font-size: 13.5px; }
 .ccw-card-d { display: block; color: var(--pd-muted); font-size: 12px; margin-top: 2px; }
+/* The repeatable package list: one contract commonly buys several lots, so this is a
+   table of rows rather than a form. Inputs are compact because five rows must fit
+   without the step becoming a scroll of its own. */
+.ccw-pkgs { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:8px; }
+.ccw-pkgs th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em;
+  color:var(--pd-muted); font-weight:700; padding:0 4px 4px; }
+.ccw-pkgs td { padding:2px 3px; }
+.ccw-pkgs input[type="text"], .ccw-pkgs input:not([type]), .ccw-pkgs input[type="date"], .ccw-pkgs input[type="number"] {
+  width:100%; margin:0; padding:6px 8px; font-size:12.5px; }
+.ccw-x { padding:2px 8px; line-height:1.2; color:var(--pd-muted); }
+.ccw-x:hover { color:var(--boq-bad,#b3241a); }
+#ccw-addpkg { margin-top:8px; }
+@media (max-width:700px) { .ccw-pkgs, .ccw-pkgs tbody, .ccw-pkgs tr, .ccw-pkgs td { display:block; width:100%; }
+  .ccw-pkgs thead { display:none; }
+  .ccw-pkgs tr { border-bottom:1px solid var(--pd-line); padding-bottom:6px; margin-bottom:6px; } }
 .ccw-review { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ccw-review td { padding: 6px 4px; border-bottom: 1px solid var(--pd-line); vertical-align: top; }
 .ccw-review td:first-child { color: var(--pd-muted); width: 40%; }

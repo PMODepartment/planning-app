@@ -214,7 +214,7 @@ window.ContractsClaims = (function () {
        is shown rather than dropped. packages.js owns that view. */
     if (view === 'contract' && window.CCPackages) {
       document.getElementById('cc-filters').style.display = 'none';
-      CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub);
+      CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew);
       return;
     }
     // The Claim/CO type filter only applies to the claims tab.
@@ -434,7 +434,10 @@ window.ContractsClaims = (function () {
   /* Follow the record if its type moved it to another tab, so it does not silently
      "disappear" from the view you are looking at. */
   function gotoTypeTab(t) {
-    var target = t === 'Contract' ? 'contract' : t === 'EOT' ? 'eot' : 'claims';
+    /* ⚠️ 'Package' must land on Contract, not Claims. The old ternary sent anything
+       unrecognised to claims, so a package saved from the wizard would have dropped the
+       planner on a register that cannot show it. */
+    var target = (t === 'Contract' || t === 'Package') ? 'contract' : t === 'EOT' ? 'eot' : 'claims';
     if (target !== view) switchTab(target); else render();
   }
 
@@ -442,7 +445,7 @@ window.ContractsClaims = (function () {
      ⚠️ New records get the guidance, edits stay fast — a wizard that owns editing too
      becomes the slowest path to the most common action. Falls back to the form if
      wizard.js did not load, so the module never loses its Add button. */
-  function openNew() {
+  function openNew(type) {
     if (!window.CCWizard) { openForm(null); return; }
     CCWizard.open({
       pid: function () { return pid; },
@@ -463,7 +466,7 @@ window.ContractsClaims = (function () {
       failMsg: recordFailMsg,
       warnDropped: warnDropped,
       done: gotoTypeTab
-    });
+    }, type);
   }
 
   function openForm(r) {
