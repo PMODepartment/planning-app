@@ -245,6 +245,28 @@
     body.ps-reporting #ps-details,
     body.ps-reporting .ps-filter-row,
     body.ps-reporting .ps-grid-foot .ps-foot-chk { display:none !important; }
+    /* ---- The stacking is open, so the GRID/GANTT controls are noise ------------------------
+       Owner 2026-08-27: *"can you simplify the headers, even in reporting view there is still too
+       much."* These five act on a grid and a Gantt that are not on screen: grouping, the timeline
+       scale, the outline collapse, the bar colours and the critical-path/dependency analysis. A
+       control that cannot affect what you are looking at is the clearest thing to remove.
+       ⚠️ Deliberately KEPT, and each for a reason: Layout ▾ (the way out of Reporting view, and the
+       documented rule that it must never be hidden), Open ▾ and Layouts (they change WHICH schedule
+       and which filters the stack reads), the contract-scope segment and the search (the stack
+       honours both), and the view switches themselves.
+       ⚠️ Scoped to `body.ps-vstack-on`, set by setVStackMode — not to the reporting class, because
+       these controls are just as irrelevant when a planner opens the stacking to work. */
+    body.ps-vstack-on #ps-groupbtn,
+    body.ps-vstack-on #ps-zoom,
+    body.ps-vstack-on #ps-collapseto,
+    body.ps-vstack-on #ps-colorsbtn,
+    body.ps-vstack-on #ps-analyzebtn { display:none !important; }
+    body.ps-vstack-on #ps-groupbtn + .ps-menu, body.ps-vstack-on #ps-colorsbtn + .ps-menu { display:none !important; }
+    /* Reporting view trims the last of it: the two remaining conveniences and the stacking bar's
+       own field labels, which name controls a reader is not going to touch. */
+    body.ps-reporting #ps-tb-labeltoggle,
+    body.ps-reporting #ps-help-btn,
+    body.ps-reporting .ps-vs-bar > .ps-vs-note { display:none !important; }
     /* No edit affordances — nothing should invite a click that would change data. */
     body.ps-reporting .ps-editable { cursor:default; }
     body.ps-reporting .ps-grid-pane .ps-cell.ps-editable:hover { background:transparent; }
@@ -1070,7 +1092,12 @@
     .ps-vs-sel { width:auto; min-width:150px; max-width:280px; height:auto; min-height:30px;
       font-size:12.5px; padding:5px 9px; }
     .ps-vs-sel:disabled { opacity:.62; cursor:not-allowed; background:var(--pd-bg); }
-    .ps-vs-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 9px; }
+    /* ⚠️ 30px of right padding, not a float: the text must wrap CLEAR of the ×. A floated or
+       absolutely-positioned button over unpadded text overlaps the last line on a narrow pane. */
+    .ps-vs-warn { position:relative; font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 30px 6px 9px; }
+    .ps-vs-warnx { position:absolute; top:3px; right:4px; width:22px; height:22px; line-height:1;
+      border:0; background:transparent; color:inherit; font-size:17px; cursor:pointer; border-radius:5px; opacity:.7; }
+    .ps-vs-warnx:hover, .ps-vs-warnx:focus-visible { opacity:1; background:rgba(0,0,0,.08); }
     .ps-vs-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12.5px;
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
@@ -1192,7 +1219,12 @@
     body.ps-tl-drag { cursor:grabbing; user-select:none; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:12px; color:var(--pd-muted); }
-    .ps-vs-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 9px; }
+    /* ⚠️ 30px of right padding, not a float: the text must wrap CLEAR of the ×. A floated or
+       absolutely-positioned button over unpadded text overlaps the last line on a narrow pane. */
+    .ps-vs-warn { position:relative; font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 30px 6px 9px; }
+    .ps-vs-warnx { position:absolute; top:3px; right:4px; width:22px; height:22px; line-height:1;
+      border:0; background:transparent; color:inherit; font-size:17px; cursor:pointer; border-radius:5px; opacity:.7; }
+    .ps-vs-warnx:hover, .ps-vs-warnx:focus-visible { opacity:1; background:rgba(0,0,0,.08); }
     .ps-vs-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12.5px;
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
@@ -11167,6 +11199,34 @@
   // zones the trade happens to have. In cell-units, so the zoom still works; the floor stops it
   // getting thin at the smallest zoom. See the note in _vsTowerSVG.
   var VS_L1_SPAN = 4, VS_L1_MIN_W = 260;
+  // ---- Dismissing a stacking warning ---------------------------------------------------------
+  // Owner 2026-08-27: *"can you put an x on the error of 1 activity carries no Level. so it can be
+  // dismissed and more space for the vertical stacking."*
+  // ⚠️ The COUNT is part of the key, not just the kind. Dismissing "1 activity carries no Level"
+  // must not also silence "40 activities carry no Level" after the next push — that is a materially
+  // different fact about the schedule, and a banner that stays hidden through it would be actively
+  // misleading. Fixing the last one and re-breaking it later brings the notice back, which is right.
+  // ⚠️ Per project, and localStorage rather than a column: it is a per-person reading preference,
+  // not project data, and it must never be something one planner hides from another.
+  var _vsWarnHidden = {};
+  function _vsWarnKey(kind, n) { return String(pid || '') + '|' + kind + '|' + n; }
+  function _vsWarnLoad() {
+    try { _vsWarnHidden = JSON.parse(localStorage.getItem('ps_vswarn') || '{}') || {}; }
+    catch (e) { _vsWarnHidden = {}; }
+  }
+  _vsWarnLoad();
+  function _vsWarnDismiss(key) {
+    _vsWarnHidden[key] = 1;
+    try { localStorage.setItem('ps_vswarn', JSON.stringify(_vsWarnHidden)); } catch (e) {}
+  }
+  // ⚠️ The × is a real <button> with an aria-label, not a styled span: it is the only control in the
+  // banner and a reader that cannot reach it cannot reclaim the space.
+  function _vsWarnWrap(key, html) {
+    if (_vsWarnHidden[key]) return '';
+    return '<div class="ps-vs-warn" data-vsw="' + esc(key) + '">' +
+      '<button class="ps-vs-warnx" data-vswx="' + esc(key) + '" title="Dismiss — it comes back if the count changes" aria-label="Dismiss this notice">&times;</button>' +
+      html + '</div>';
+  }
   function _vsMaxDetail() { return Math.max(1, LOC_LEVELS.length); }
   function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
@@ -12093,7 +12153,7 @@
       var locatedN = noLevList.filter(deeperLoc).length;
       var proj = (PROJECTS.find(function (x) { return x.id === pid; }) || {});
       var defTw = String(proj.name || proj.id || 'Tower 1').trim();
-      warn = '<div class="ps-vs-warn"><strong>None of this project’s ' + acts.length + ' activities carry a ' +
+      warn = _vsWarnWrap(_vsWarnKey('alllevel', acts.length), '<strong>None of this project’s ' + acts.length + ' activities carry a ' +
         esc(lvl0Name) + '</strong>, but ' + locatedN + ' of them do carry a ' +
         esc(LOC_LEVELS[1] ? LOC_LEVELS[1].name : 'lower level') + ' — so the work IS located and only the ' +
         esc(lvl0Name) + ' was never stamped. That is what a single-' + esc(lvl0Name.toLowerCase()) +
@@ -12105,19 +12165,18 @@
             '<button class="pd-btn pd-btn-primary" id="ps-vs-fixgo" style="height:32px;">Assign ' + locatedN + ' activities</button>' +
             '<span class="ps-vs-note">Writes only the ' + esc(lvl0Name) + '; every other location value is left alone.</span>' +
             '</div>'
-          : '') +
-        '</div>';
+          : ''));
     } else if (noLevList.length) {
-      warn = '<div class="ps-vs-warn"><strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
+      warn = _vsWarnWrap(_vsWarnKey('nolevel', noLevList.length), '<strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
         ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(lvl0Name) + '</strong> — shown in the dashed <em>No level</em> band. ' +
         'These come from ' + esc(noLevTrades.join(', ')) + ': a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work, ' +
-        'so there is no ' + esc(lvl0Name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.</div>';
+        'so there is no ' + esc(lvl0Name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.');
     }
     // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
     // the row has no WBS node at all — a different problem, and worth naming rather than bucketing.
-    if (noTradeList.length) warn += '<div class="ps-vs-warn"><strong>' + noTradeList.length + ' activit' +
+    if (noTradeList.length) warn += _vsWarnWrap(_vsWarnKey('notrade', noTradeList.length), '<strong>' + noTradeList.length + ' activit' +
       (noTradeList.length === 1 ? 'y has' : 'ies have') + ' no Trade and no WBS branch to infer one from</strong> — set their Trade, ' +
-      'or file them under a WBS branch. Actions → Diagnose data… lists them.</div>';
+      'or file them under a WBS branch. Actions → Diagnose data… lists them.');
 
     _vsCells = {}; _vsHatchSeen = {};
     _vsLoupeSrc = _vsLoupeClone = _vsLoupeMark = _vsLoupeLast = null;   // the DOM they point at is replaced below
@@ -12200,6 +12259,16 @@
     var _pcx = host.querySelector('#ps-vs-planclrx');
     if (_pcx) _pcx.onclick = function () { _vsPlanLine = VS_PLAN_LINE_DEF; _saveVsPlanLine(); renderVStack(); };
     // Zoom repaints silently: a fade on every step of a held-down click would strobe.
+    host.querySelectorAll('[data-vswx]').forEach(function (x) {
+      x.onclick = function (e) {
+        e.stopPropagation();
+        _vsWarnDismiss(x.dataset.vswx);
+        var box = x.closest('.ps-vs-warn'); if (box) box.remove();
+        // ⚠️ Re-measure rather than re-render: the pane just got taller, and a full renderVStack
+        // would rebuild every svg and restart the entrance animation for a dismissal.
+        _vsApplyPane(host);
+      };
+    });
     var fitB = host.querySelector('#ps-vs-fit');
     if (fitB) fitB.onclick = function () { _vsFit = !_vsFit; _saveVsFit(); renderVStack(); };
     _vsApplyPane(host);
@@ -12228,6 +12297,7 @@
     if (on && progressMode) setProgressMode(false);   // one full-width panel at a time
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-vstack-mode', on);
     var btn = document.getElementById('ps-vstackbtn'); if (btn) btn.classList.toggle('active', on);
+    document.body.classList.toggle('ps-vstack-on', !!on);
     var host = document.getElementById('ps-vstack'); if (host) host.style.display = on ? 'block' : 'none';
     if (on) { _vsAnim = 'in'; renderVStack(); _animIn(host); }
     else { _animIn(document.querySelector('.ps-split')); }

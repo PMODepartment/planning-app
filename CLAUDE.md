@@ -84,6 +84,52 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-27 (i) — Vertical stacking: the header stops carrying controls it cannot drive, and the notices can be dismissed
+Owner: *"can you simplify the headers, even in reporting view there is still too much, and also can
+you put an x on the error of 1 activity carries no Level. so it can be dismissed and more space for
+the vertical stacking."* `?v=20260827i`. **No migration.**
+
+- **Five toolbar controls are hidden while the stacking is open** — Group, the Month/Quarter/Year
+  timeline scale, Outline, Colors and Analyze. Each acts on a **grid and a Gantt that are not on
+  screen**, so the clearest thing to remove is a control that cannot affect what you are looking at.
+  ⚠️ Scoped to the stacking being open, **not** to Reporting view: they are just as irrelevant when a
+  planner opens the stacking to work.
+- ⚠️ **What was deliberately KEPT, each for a stated reason:** Layout ▾ (the documented rule — it is
+  the way back out of Reporting view), Open ▾ and Layouts (they change *which* schedule and which
+  filters the stack reads), the contract-scope segment and the search (the stack honours both), and
+  the view switches themselves. Hiding those would trade clutter for a dead end.
+- **Reporting view trims the last of it** — the Labels toggle, the `?` shortcuts button, and the
+  stacking bar's own field labels (Tower / Detail / Dates / Zoom), which name controls a *reader* is
+  not going to touch. Measured: the stacking bar drops to **32px, one row**.
+- **Every stacking notice now carries an ×.** ⚠️ **The COUNT is part of the dismissal key, not just
+  the kind.** Dismissing *"1 activity carries no Level"* must not also silence *"40 activities carry
+  no Level"* after the next push — that is a materially different fact about the schedule, and a
+  banner that stayed hidden through it would be actively misleading. Fixing the last one and
+  re-breaking it later brings the notice back, which is correct.
+- ⚠️ Per project, in localStorage, never a column: it is one person's reading preference and must not
+  be something one planner hides from another. Unreadable storage falls back to **showing** the
+  notice, never to hiding it.
+- ⚠️ Dismissing **re-measures the pane rather than re-rendering** — a full render would rebuild every
+  svg and restart the entrance animation for the sake of closing a banner. Measured space returned to
+  the buildings: **47px at full width, 82px at 430px** where the message wraps to seven lines.
+- ⚠️ 30px of right padding rather than a float, so the text wraps *clear* of the button: measured **0
+  of 7 text line-boxes** overlapping it at 430px. The × is a real `<button>` with an `aria-label`, not
+  a styled span — it is the only control in the banner, and a reader who cannot reach it cannot
+  reclaim the space.
+
+**Verified.** 27 checks executing the shipped `_vsWarnKey` / `_vsWarnLoad` / `_vsWarnDismiss` /
+`_vsWarnWrap` (sliced out of `index.html`, never reimplemented): renders, dismisses, survives a
+reload, comes back on a different count, is unaffected on another project and by a different kind of
+warning, and survives corrupt storage. Plus assertions that all three banners route through the
+wrapper (no hand-built `.ps-vs-warn` is left without an ×) and that each kept control is *not* in the
+hidden list. Browser-measured against the shipped CSS: five controls hidden, Layout and Open still
+visible, bar 32px in reporting view, 0 text overlap at 430px. The earlier stacking suites still pass
+27/27 each; 0 functions lost, 4 added.
+⚠️ **A measurement of my own that was wrong twice before it was right:** the first overlap reading
+said the text collided with the × — the range included the button itself, since it is a child of the
+banner. And a contrast check printed 1.76:1 because the hex was indexed as if it carried a leading
+`#`; read correctly the banner text is **5.64:1**, unchanged by this work. ⚠️ **Not verified signed in.**
+
 ### 2026-08-27 (a) — Vertical stacking: towers detected properly, the whole building fits, the progress bar stops scrolling away
 Owner: *"how come the Tower 2 is not detected? even though the location breakdown, there is tower
 indicated"*, then *"the goal is to see the whole tower whether the texts are small and the purpose of

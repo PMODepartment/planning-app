@@ -1,3 +1,35 @@
+## Stacking: the header trim, and dismissible notices (2026-08-27) — fmlozano
+
+**Header.** New `body.ps-vstack-on` (toggled by `setVStackMode`, both ways) hides `#ps-groupbtn`,
+`#ps-zoom`, `#ps-collapseto`, `#ps-colorsbtn`, `#ps-analyzebtn` while the stacking is open — all five
+act on the grid/Gantt, which is not on screen.
+- ⚠️ Scoped to the stacking, not to `ps-reporting`: they are equally irrelevant to a planner working
+  in the stack.
+- ⚠️ **Kept on purpose:** Layout ▾ (the documented "way out of Reporting view" rule), Open ▾ and
+  Layouts (they change which schedule/filters the stack reads), `#ps-scope` and the search (honoured
+  by the stack), and the view switches. The suite asserts each of these is NOT in the hidden list, so
+  a later tidy-up cannot quietly remove the exit.
+- Reporting view additionally drops `#ps-tb-labeltoggle`, `#ps-help-btn` and `.ps-vs-bar > .ps-vs-note`
+  (the field labels) → bar measured at 32px, one row.
+
+**Dismissible notices.** `_vsWarnWrap(key, html)` wraps all three banners; `_vsWarnKey(kind, n)`.
+- ⚠️ **The count is in the key.** Dismissing "1 activity carries no Level" must not silence "40
+  activities carry no Level" later — different fact, and staying hidden through it would mislead.
+- ⚠️ Per project, localStorage (`ps_vswarn`), never a column — one person's reading preference, not
+  project state, and not something one planner can hide from another. A corrupt store falls back to
+  **showing**.
+- ⚠️ The handler removes the node and calls `_vsApplyPane(host)` — **not** `renderVStack()`, which
+  would rebuild every svg and restart the entrance animation just to close a banner.
+- ⚠️ 30px right padding, not a float: measured 0 of 7 text line-boxes overlapping the × at 430px.
+  Space returned to the buildings: 47px at full width, 82px at 430px.
+
+**Verified.** 27 checks executing the sliced helpers (render, dismiss, persist, count-changed,
+other-project, other-kind, corrupt storage) + the structural assertions above; browser-measured
+against the shipped CSS. 0 functions lost, 4 added.
+⚠️ **Two of my own measurements were wrong first:** the overlap test included the button itself (it is
+a child of the banner), and a contrast check indexed the hex as if it had a leading `#` and printed
+1.76:1 — the banner text is 5.64:1 and untouched by this work. ⚠️ **Not verified signed in.**
+
 ## Vertical stacking: the tower key, the fit, and the pane (2026-08-27) — fmlozano
 
 **1. Towers were not detected on a matcher-mapped project.** `_vsTowerOf` read
