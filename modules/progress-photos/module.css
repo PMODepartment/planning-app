@@ -373,7 +373,43 @@
 }
 .ppr-date { font-weight: 600; font-variant-numeric: tabular-nums; }
 .ppr-num { text-align: center; }
-.ppr-acts { display: flex; gap: 3px; }
+.ppr-acts { display: flex; gap: 3px; align-items: center; }
+
+/* ---- Report Templates (brief Section 5) ---------------------------------- */
+/* ⚠️ .ppr-head/.ppr-row's base grid-template-columns is 4 tracks, sized for
+   the Meetings list (Date/Description/Slides/Actions). The templates table
+   has 5 columns (Name/Type/Locations/Comparison/Actions) — never let it
+   silently inherit the Meetings list's column count (the exact class of
+   defect this app's own history has been bitten by more than once). */
+.ppr-tmpl-table .ppr-head, .ppr-tmpl-table .ppr-row {
+  grid-template-columns: minmax(140px, 1.4fr) 90px 100px 160px 210px;
+}
+.ppr-tmpl-table .ppr-row { cursor: default; }
+.ppr-tmpl-table .ppr-acts { justify-content: flex-end; }
+
+.ppr-tmpl-locrow {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  background: var(--pd-bg); margin-bottom: 6px;
+}
+.ppr-tmpl-locorder {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--pd-red); color: #fff; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.ppr-tmpl-loclabel { flex: 1 1 auto; font-size: 13px; color: var(--pd-ink); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ppr-tmpl-baseline { flex: 0 0 220px; max-width: 220px; }
+.ppr-tmpl-locbtns { flex: 0 0 auto; display: flex; gap: 2px; }
+.ppr-tmpl-locbtns .pp-iconbtn { width: 26px; height: 26px; }
+
+.ppr-tmpl-picklist { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.ppr-tmpl-pickrow {
+  text-align: left; padding: 8px 10px; border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); background: var(--pd-card); color: var(--pd-ink);
+  font-size: 13px; cursor: pointer;
+}
+.ppr-tmpl-pickrow:hover { background: var(--pd-bg); border-color: var(--pd-red); }
 
 /* ---- Preview pane -------------------------------------------------------- */
 .ppr-preview {

@@ -122,6 +122,23 @@ create table if not exists ppr_slides (
 
 create index if not exists ppr_presentations_proj_date_idx
   on ppr_presentations (project_id, ppr_date desc);
+
+-- Report Templates (brief Section 5 / Phase 2) — a saved, re-runnable report
+-- definition. See migrations/2026-08-29-ppr-report-templates.sql for the full
+-- design rationale (jsonb locations array, comparison_rule semantics).
+create table if not exists ppr_report_templates (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id),
+  name            text not null,
+  meeting_type    text default 'client',
+  comparison_rule text default 'previous',
+  locations       jsonb default '[]'::jsonb,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+create index if not exists ppr_report_templates_proj_idx
+  on ppr_report_templates (project_id, name);
 create index if not exists ppr_slides_ppr_idx
   on ppr_slides (ppr_id, slide_no);
 
@@ -586,7 +603,7 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'progress_photos','ppr_presentations','ppr_slides',
+    'progress_photos','ppr_presentations','ppr_slides','ppr_report_templates',
     'issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
     'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve',

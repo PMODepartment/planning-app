@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260827a" />
-  <link rel="stylesheet" href="module.css?v=20260828a" />
+  <link rel="stylesheet" href="module.css?v=20260829a" />
 </head>
 <body>
   <div class="pd-app">
@@ -42,6 +42,9 @@
             <span data-ico="refresh" data-ico-size="16"></span></button>
           <!-- PPR-screen tools -->
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-new" title="Create a meeting" style="display:none;">+ New Meeting</button>
+          <button class="pd-btn" id="ppr-templates" title="Report templates (Section 5)" style="display:none;">
+            <span data-ico="layers" data-ico-size="16"></span></button>
+          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-tmpl-new" title="Create a report template" style="display:none;">+ New template</button>
           <button class="pd-btn pp-tb-labeled" id="ppr-back" title="Back to the meeting list" style="display:none;">
             <span data-ico="arrowLeft" data-ico-size="16"></span> Meetings list</button>
         </div>
@@ -106,6 +109,10 @@
             <span class="pp-countbar" id="ppr-count"></span>
           </div>
           <div id="ppr-view"></div>
+          <!-- Report Templates (brief Section 5 / Phase 2) — a management view
+               reached from the Meetings screen, since running one produces an
+               ordinary meeting rather than being its own kind of record. -->
+          <div id="ppr-tmpl-wrap" hidden><div id="ppr-tmpl-view"></div></div>
         </div>
       </div>
     </div>
@@ -126,6 +133,11 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Report export libraries (brief Section 5): both loaded exactly as this
+       app's other feature libraries are (SheetJS/html2pdf.js elsewhere) — a
+       single pinned-version <script> tag, no build step. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
   <script src="../../assets/js/config.js?v=20260828b"></script>
   <script src="../../assets/js/auth.js?v=20260814a"></script>
   <script src="../../assets/js/db.js?v=20260827c"></script>
@@ -135,8 +147,8 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260828a"></script>
-  <script src="ppr.js?v=20260828a"></script>
+  <script src="module.js?v=20260829a"></script>
+  <script src="ppr.js?v=20260829a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

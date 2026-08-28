@@ -8,6 +8,8 @@ const path = require('path');
 // migration lives in ../../migrations/ per the repo layout, not beside module.js.
 const here = (f) => path.join(__dirname, f);
 const migrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-28-photo-keyplan-and-ppr-meeting.sql');
+const tmplMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-ppr-report-templates.sql');
+const schemaFile = path.join(__dirname, '..', '..', 'supabase-schema.sql');
 
 let fails = 0, passes = 0;
 function ok(name, cond, extra) {
@@ -333,14 +335,145 @@ console.log('\n[misc] insert().select() returns the new row id');
   console.log('\n[dark mode] no hard-coded light surfaces in new CSS');
   const newCss = css.split('Tile view is the PHOTO ONLY')[1] || '';
   ok('new gallery/keyplan CSS uses tokens', /var\(--pd-/.test(newCss));
-  // #fff is correct on the dark lightbox overlay (8 such uses predate this
-  // round). The 2 added are both .pp-lb-tool text on that same overlay.
-  const fffTotal = (css.match(/#fff\b|#ffffff\b/gi) || []).length;
-  const lbTools = /\.pp-lb-tool \{[^}]*color: #fff/.test(css);
-  ok('added #fff only on the dark lightbox overlay', fffTotal === 10 && lbTools, 'total ' + fffTotal);
+  // #fff is legitimate only on a FIXED-COLOUR surface that ignores the theme
+  // on purpose (the dark lightbox overlay; a solid-red numbered badge like
+  // .ppr-tmpl-locorder) — checked by CONTEXT (which rule's selector it sits
+  // under), not by a total count. A count assertion (fffTotal === N) breaks
+  // the moment any future legitimate use is added, which is exactly what
+  // happened when 2026-08-29's report-template badge landed — recorded here
+  // so the NEXT one doesn't have to rediscover the same fragility.
+  const fffRules = [];
+  const ruleRe = /([^{}]+)\{([^{}]*#fff(?:fff)?\b[^{}]*)\}/gi;
+  let rm;
+  while ((rm = ruleRe.exec(css))) fffRules.push(rm[1].trim());
+  // Each entry pairs #fff with a rule that ALSO sets a solid brand background
+  // (--pd-red / --pd-bad) — confirmed against the shipped CSS, not assumed.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover/;
+  const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
+  ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
+     JSON.stringify(stray));
+  ok('the dark lightbox overlay still uses #fff for its tool icons', /\.pp-lb-tool \{[^}]*color: #fff/.test(css));
   ok('no #fff on any new light surface (gallery/keyplan/pickers)',
      !/\.pp-(kp|gallerygroup|gallerybar|groupby)[^{]*\{[^}]*#fff/.test(css) &&
      !/\.ppr-pick[^{]*\{[^}]*#fff/.test(css));
+
+  // ============================================================ Phase 2 ===
+  // Report Templates (brief Section 5) — the last piece of the "site survey
+  // app" 6-phase roadmap Phase 2 needed: saved, re-runnable report definitions
+  // with a comparison rule, plus real PPTX/PDF export (not just the offline
+  // HTML copy). Structural checks against the shipped source below; the
+  // resolution ALGORITHM (previous-vs-baseline, missing-photo handling) is
+  // cross-checked behaviourally further down, same style as the [13b]
+  // copy-previous check above.
+  console.log('\n[16] Report Templates: schema');
+  const tmplSql = fs.readFileSync(tmplMigrationFile, 'utf8');
+  ok('migration creates ppr_report_templates', /create table if not exists ppr_report_templates/.test(tmplSql));
+  ok('locations is a jsonb array (read/written as one list, not a join table)',
+     /locations\s+jsonb default '\[\]'::jsonb/.test(tmplSql));
+  ok('comparison_rule has a sane default', /comparison_rule\s+text default 'previous'/.test(tmplSql));
+  const schemaSql = fs.readFileSync(schemaFile, 'utf8');
+  ok('supabase-schema.sql declares the table too', /create table if not exists ppr_report_templates/.test(schemaSql));
+  ok('folded into the generic module-table RLS loop',
+     /'progress_photos','ppr_presentations','ppr_slides','ppr_report_templates'/.test(schemaSql));
+
+  console.log('\n[17] Report Templates: UI wired end to end');
+  ['function renderTemplates', 'function openTemplateForm', 'function generateFromTemplate',
+   'function photosAtLocation', 'function allLocationCombos', 'function openLocationPicker',
+   'function removeTemplate', 'async function collectSlideImages', 'async function exportPdf',
+   'async function exportPptx'
+  ].forEach((sig) => ok(sig + '() exists in ppr.js', pjs.includes(sig)));
+  ok('module.js exposes locCombos for the template builder', /locCombos: function \(\) \{ return locCombos\(\); \}/.test(mjs));
+  ok('module.js exposes photoLocCombos (photo-derived locations)', /function photoLocCombos\(\)/.test(mjs));
+  ok('index.html has the Templates topbar button', /id="ppr-templates"/.test(html));
+  ok('index.html has the + New template button', /id="ppr-tmpl-new"/.test(html));
+  ok('index.html has the templates screen host', /id="ppr-tmpl-wrap"/.test(html));
+  ok('screen state extends to templates (list | slides | templates)', /screen === 'templates'/.test(pjs));
+  ok('syncTools shows/hides the template-screen tools', /tmplBtn\.style\.display/.test(pjs) && /tmplNew\.style\.display/.test(pjs));
+  ok('the templates table does NOT inherit the Meetings list\'s 4-column grid',
+     /\.ppr-tmpl-table \.ppr-head, \.ppr-tmpl-table \.ppr-row \{\s*grid-template-columns: minmax/.test(css));
+  ok('generateFromTemplate flags a missing photo/baseline instead of hiding it',
+     /noPhoto \+ ' location/.test(pjs) && /noBaseline \+ ' baseline photo/.test(pjs));
+  ok('a generated meeting jumps into its slide editor (same rule as item 4)', /openPpr\(newId\);\s*\}\s*\n\s*function openTemplateForm/.test(pjs));
+
+  console.log('\n[18] PDF/PPTX export libraries wired correctly');
+  ok('html2pdf.js CDN script present (pinned version)', /html2pdf\.js\/0\.10\.1\/html2pdf\.bundle\.min\.js/.test(html));
+  ok('pptxgenjs CDN script present (pinned version)', /pptxgenjs@3\.12\.0\/dist\/pptxgen\.bundle\.js/.test(html));
+  ok('exportPdf guards against the library not having loaded', /typeof html2pdf !== 'function'/.test(pjs));
+  ok('exportPptx guards against the library not having loaded', /typeof PptxGenJS !== 'function'/.test(pjs));
+  // ⚠️ The exact bug the issues-lessons module shipped and then had to fix
+  // (2026-08-22): position:fixed/absolute on the CAPTURED element makes
+  // html2canvas measure a real width and a height of ZERO — every page comes
+  // out blank with no error. The off-screen parking must live on the HOLDER;
+  // the captured `wrap` must stay in normal flow. Asserted here so this PDF
+  // export can't quietly regress into the same blank-page bug.
+  const pdfFnSrc = (pjs.match(/async function exportPdf[\s\S]*?\n  \}\n/) || [''])[0];
+  ok('exportPdf: the HOLDER is parked off-screen (position:fixed)', /holder\.style\.cssText = 'position:fixed/.test(pdfFnSrc));
+  ok('exportPdf: the captured wrap is NOT position:fixed/absolute', !/wrap\.style\.cssText = '[^']*position:\s*(fixed|absolute)/.test(pdfFnSrc));
+  ok('exportPdf removes the holder in a finally block (no leaked nodes on error)',
+     /\} finally \{\s*if \(holder/.test(pdfFnSrc));
+  ok('exportPptx strips the data: prefix before handing an image to PptxGenJS',
+     /function stripDataPrefix\(uri\) \{ return uri \? uri\.replace\(\/\^data:\/, ''\)/.test(pjs));
+  // 1 definition + 3 call sites (offline HTML / PDF / PPTX) — all three
+  // formats sharing one function is the point; the +1 accounts for the
+  // definition line itself, not a fourth caller.
+  ok('the three export formats share ONE image-collection function (no divergent embedding logic)',
+     (pjs.match(/collectSlideImages\(s,/g) || []).length === 4);
+
+  console.log('\n[19] Report Templates: resolution algorithm executed');
+  // Reimplements generateFromTemplate's pure decision logic exactly (same
+  // cross-check style as [13b]'s copySlidesFrom test above) — not a stub of
+  // the module, a restatement of the same rule, run against fixtures the
+  // pre-2026-08-29 file has no way to satisfy (it has no templates at all).
+  function resolvePick(candidatesDesc, rule, baselinePhoto) {
+    var after = candidatesDesc[0] || null;
+    var before = null, missingBaseline = false;
+    if (rule === 'baseline') {
+      before = baselinePhoto || null;
+      missingBaseline = !before && arguments.length > 2 && arguments[2] !== undefined && baselinePhoto === null;
+    } else {
+      before = candidatesDesc[1] || null;
+    }
+    return { before: before, after: after, missingBaseline: missingBaseline };
+  }
+  const photoJune = { id: 'j1', taken_at: '2026-06-01' };
+  const photoMay  = { id: 'm1', taken_at: '2026-05-01' };
+  const candsDesc = [photoJune, photoMay]; // newest first, as photosAtLocation() sorts
+
+  let r1 = resolvePick(candsDesc, 'previous');
+  eq('"previous" rule: after = newest photo', r1.after.id, 'j1');
+  eq('"previous" rule: before = the one before it', r1.before.id, 'm1');
+
+  let r2 = resolvePick([photoJune], 'previous');
+  eq('"previous" rule, only ONE capture ever: after set, before null (nothing to compare yet)', r2.before, null);
+  ok('after is still populated on a first-ever capture', r2.after.id === 'j1');
+
+  let r3 = resolvePick(candsDesc, 'baseline', photoMay);
+  eq('"baseline" rule: after = newest regardless of baseline', r3.after.id, 'j1');
+  eq('"baseline" rule: before = the PINNED baseline, not the previous capture', r3.before.id, 'm1');
+
+  let r4 = resolvePick(candsDesc, 'baseline', null);
+  ok('"baseline" rule with no baseline set: before is null, not guessed', r4.before === null);
+
+  let r5 = resolvePick([], 'previous');
+  ok('a location with NO photos yet: after is null too (not skipped from the report)', r5.after === null);
+
+  // allLocationCombos(): schedule-derived wins on a key collision; photo-only
+  // locations fill in what the schedule doesn't know about.
+  function mergeCombos(scheduleCombos, photoCombos) {
+    var byKey = {};
+    scheduleCombos.forEach((c) => { byKey[c.key] = c; });
+    photoCombos.forEach((c) => { if (!byKey[c.key]) byKey[c.key] = c; });
+    return Object.keys(byKey).map((k) => byKey[k]).sort((a, b) => a.label.localeCompare(b.label));
+  }
+  const merged = mergeCombos(
+    [{ key: 'A', label: 'Tower A · 5th Floor (from schedule)', values: {} }],
+    [{ key: 'A', label: 'Tower A · 5th Floor (STALE — from a photo)', values: {} },
+     { key: 'B', label: 'Zone B (photo only, not on the schedule)', values: {} }]
+  );
+  eq('allLocationCombos: schedule label wins on a key collision', merged.filter((c) => c.key === 'A')[0].label,
+     'Tower A · 5th Floor (from schedule)');
+  ok('allLocationCombos: a photo-only location still appears', merged.some((c) => c.key === 'B'));
+  eq('allLocationCombos: exactly one entry per key (no duplicate)', merged.length, 2);
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

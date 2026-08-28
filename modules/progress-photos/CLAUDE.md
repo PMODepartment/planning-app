@@ -2,6 +2,131 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Report Templates + real PPTX/PDF export — brief Section 5 / Phase 2 completed (2026-08-29)
+
+Owner asked to confirm all 15 items from the 2026-08-28 feedback round were captured (they were —
+re-verified directly against the shipped code, not just the changelog), then to continue through
+every remaining phase of the site-survey-app brief. Phase 1 (schedule integration + streamlined
+capture) is built but not yet live-verified; Phase 3+ (360° panoramas, 3D/Gaussian Splatting, BIM
+overlay, drone capture) need new infrastructure this app's stack doesn't have and are being taken
+one verified increment at a time, starting here with the piece that fits the existing stack
+cleanly: **Phase 2, Reporting.** The Meetings/slides screen already covered slide *assembly*; what
+Section 5 actually asks for — a **saved, re-runnable report definition** with a comparison rule,
+and **PPTX/PDF export**, not just the offline HTML copy — was still missing.
+
+**Run `migrations/2026-08-29-ppr-report-templates.sql`.**
+
+### Report Templates (`ppr_report_templates`)
+
+A template is a saved definition — name, meeting type, an ordered list of locations, and a
+comparison rule — reached from a new **Templates** button on the Meetings screen (a sub-view of it,
+not a fourth top-level tab: running a template produces an ordinary Meeting, so it belongs where
+Meetings live, not beside them).
+
+- **`locations` is a JSONB array, not a join table** — the same call as `equipment_site_plan.plan`
+  (2026-08-24): a template's location list is read and written as ONE ordered list in a single
+  builder screen, never queried location-by-location, so a relational table would only add
+  round-trips for no query benefit. Each entry: `{key, label, values, baseline_photo_id}` — `values`
+  is a `location_values` map, matched the exact way `resolveActivity()`/`lastCaptureAt()` already
+  do (superset equality on every non-empty key), so a template location resolves photos by the same
+  rule as everywhere else in this module.
+- **The location picker's universe is the UNION of two sources**, not just one. `locCombos()`
+  (module.js) only enumerates locations the **schedule** currently declares — a real photographed
+  location that the schedule no longer lists (a completed zone already dropped from it, or a shot
+  taken before its zone existed there) would otherwise be un-pickable for a template even though
+  real photos exist. New `photoLocCombos()` derives the same shape from the **photo library**
+  instead, and ppr.js's `allLocationCombos()` merges them — schedule wins on a key collision (more
+  current source), photo-only locations fill in what the schedule doesn't know about. Both are new,
+  minimal exports off `ProgressPhotos` (module.js), keeping `LOC_LEVELS`/`locBreadcrumb` in one file.
+- **Comparison is TEMPLATE-LEVEL, not per-location** — matches the brief's own phrasing ("the
+  comparison window… this week vs last week, or this week vs baseline"), one rule for the whole
+  report. Two modes:
+  - **`previous`** — always live: latest photo at a location vs. the one captured before it.
+  - **`baseline`** — latest vs. a photo **pinned once per location**, picked in the builder from a
+    dropdown scoped to photos already captured there. ⚠️ **`baseline_photo_id` is a SOFT reference —
+    no FK, since it's inside jsonb** — resolved at generate time and **flagged, not silently
+    dropped**, if the photo has since been deleted.
+- **Generate ("Run") never destroys anything** — it only ever creates a NEW meeting, so there's no
+  confirm step; the button just disables itself for the duration to block a double-click from
+  double-generating.
+- ⚠️ **A location with no photo yet still gets a slide, deliberately** (`after_photo_id: null`,
+  rendering the existing "Photo not set" placeholder) — omitting it would make a location on the
+  report list silently vanish, which reads as "nobody noticed it was missing" rather than "nobody
+  has shot it yet." Same for a deleted baseline photo: reported in the completion toast
+  ("2 locations still have no photo; 1 baseline photo no longer exists"), never hidden.
+- **If nothing at all has a photo, no meeting is created** — an entirely empty report has nothing to
+  present and would just be clutter in the Meetings list.
+- After a successful generate, the new meeting opens straight into its slide editor — the same rule
+  item 4 established on 2026-08-28 ("after adding PPR, it should go to PPR edit").
+
+### Real PPTX and PDF export (the offline HTML copy was never actually either format)
+
+The existing "Download" button produces a self-contained offline `.html` — useful, but not what
+Section 5 asks for ("exportable as a slide deck (PPTX) or PDF suitable for presenting directly in a
+meeting"). Two new buttons on every meeting row.
+
+- **PDF** — `html2pdf.js@0.10.1`, the exact pinned version `issues-lessons` already loads for its
+  MoM export, loaded the same way (a single CDN `<script>` tag, no build step). ⚠️ **Followed that
+  module's own hard-won rule to the letter: the captured element must stay in NORMAL FLOW.**
+  `issues-lessons`' 2026-08-22 entry documents shipping a PDF export with `position:fixed` on the
+  rendered node and it producing a **byte-identical blank page on every export, with no error** —
+  html2pdf clones the source into its own container to measure it, and an out-of-flow element
+  contributes nothing to that container's height, so html2canvas gets the right width and a height
+  of **zero**. The off-screen parking here lives on a **holder**; the captured `wrap` sits in
+  normal flow inside it — verified structurally (asserted in `test.js`) so this can't quietly
+  regress into the same bug the way that module's first attempt did.
+- **PPTX** — `pptxgenjs@3.12.0`, loaded from `cdn.jsdelivr.net/npm/…` (verified resolvable and
+  confirmed a real UMD bundle before committing to it — jsdelivr's npm-pinned CDN is already this
+  app's own convention for `@supabase/supabase-js`, not a new vendor). One slide per report slide,
+  before pane left / after pane right (or centered alone with no before photo). ⚠️ **PptxGenJS's
+  `data` option for `addImage()` takes the base64 payload WITHOUT the `data:` prefix**
+  (`"image/jpeg;base64,…"`, not `"data:image/jpeg;base64,…"`) — verified against the library's own
+  documented example before writing `stripDataPrefix()`, since `canvas.toDataURL()` (this module's
+  own `toDataURL()`) always includes that prefix and passing it through unstripped would have
+  produced a deck with broken images in every slide, silently.
+- **All three formats — offline HTML, PDF, PPTX — now share ONE image-collection function**
+  (`collectSlideImages()`, extracted from what used to be `exportOffline()`'s own inline loop) and
+  one slide-markup function (`slideFigureHTML()`/`slidesBodyHTML()`, extracted from the old private
+  `figure()`/the body of `offlineHTML()`). Three formats each embedding images their own way is
+  exactly how one export ends up showing a different picture of the same slide than another —
+  this closes that off structurally, not by convention.
+
+### A harness fragility this round tripped over, and fixed properly
+
+Adding one legitimate new `#fff` use (`.ppr-tmpl-locorder`, white text on a solid `--pd-red` badge —
+the same class of exception as the lightbox overlay) broke the 2026-08-28 harness's
+`fffTotal === 10` assertion — exactly the fragility that entry's own closing note warned about
+("assert `#fff` by context, not count"). Fixed properly rather than bumping the magic number:
+the check now extracts every CSS rule containing `#fff`/`#ffffff` and asserts each one's **selector**
+matches a documented allow-list of fixed-brand-background contexts (the lightbox family, the new
+badge, and — found only by fixing this — three more pre-existing legitimate uses the old total had
+been silently including all along: `.pp-tab.active`, `.pd-btn-primary`, `.pp-del:hover`,
+`.pp-syncbtn:hover`, each confirmed to pair `#fff` with `background: var(--pd-red)`/`var(--pd-bad)`
+before being allow-listed). A genuinely stray `#fff` on a real light surface still fails; a new
+*legitimate* one no longer requires touching this assertion at all.
+
+### Verified (2026-08-29)
+
+**131 checks, 0 failures** (`test.js`, up from 85) — every item above, plus a behavioural
+cross-check of the resolution algorithm itself (same style as 2026-08-28's copy-previous check):
+`previous` vs `baseline` picks, a first-ever capture correctly leaving `before` null instead of
+guessing, a deleted baseline correctly flagged rather than silently reassigned, a location with no
+photos yet still producing a (empty) slide, and `allLocationCombos()`'s schedule-wins-on-collision /
+photo-only-fills-gaps merge rule. **0 functions lost in `module.js`; ppr.js lost exactly one
+(`figure`, promoted from a private nested function to the module-level, reused `slideFigureHTML`) —
+deliberate, not a regression.** 0 NUL bytes across every touched file; CSS braces 227/227; the new
+migration's own `create table` also appears in `supabase-schema.sql`'s per-module RLS array.
+`node -c` clean on `module.js`, `ppr.js`, `test.js`.
+
+⚠️ **Not verified signed in** — no live click-through of Generate against real Supabase, and neither
+the PDF nor the PPTX has been opened as a produced file (unlike `issues-lessons`' PDF fix, which was
+verified by inspecting the actual bytes of a generated PDF — that level of verification needs a real
+browser with the CDN libraries actually loaded, which this environment doesn't have). The CDN URLs
+for both libraries were fetched and confirmed to resolve to real UMD bundles before being committed
+to, and the `data:`-prefix behaviour was checked against PptxGenJS's own documented example — but
+neither substitutes for opening an actual exported file. **Priority for the next live pass**:
+generate a template against a real project with photos at 2+ locations, and open both exported files.
+
 ## Owner feedback round: Works choices, per-photo key plans, PPR→Meeting, photo-first slides, tile view (2026-08-28)
 
 Fifteen items from the owner's review of the live Phase-1/Phase-2 build, against
