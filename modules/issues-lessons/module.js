@@ -1671,10 +1671,7 @@ window.IssuesLessons = (function () {
   // A starting vocabulary, NOT a closed list — see the migration's note on why
   // `meeting_type` carries no CHECK. Whatever a project actually uses joins it
   // through momOptions().
-  var MOM_MEETING_TYPES = [
-    'Weekly Coordination', 'Client Progress Meeting', 'Technical Coordination',
-    'Kick-off', 'Safety Toolbox', 'Site Inspection', 'Management Review'
-  ];
+  var MOM_MEETING_TYPES = ['PPR Meeting', 'PSC Meeting', 'Client Meeting'];
   // ⚠️ SESSION-ONLY and never persisted or written anywhere. Reporting view is how
   // the record is being LOOKED AT right now — on a projector in the meeting — not a
   // property of the minute. Persisting it would have one planner's presentation mode
@@ -2053,6 +2050,18 @@ window.IssuesLessons = (function () {
                   '<button class="pd-btn pd-btn-sm" id="il-mom-carrygo">Carry over</button>' +
                 '</span>'
               : '') +
+            // ⚠️ Offered ONLY when there is something to bring in, and it says how
+            // many. A permanently-present "Add open issues" button that usually does
+            // nothing is the same invitation-to-a-no-op the carry-over dropdown
+            // avoids by listing only meetings that still have open actions.
+            (function () {
+              var n = momOpenIssuesFor(mom.id).length;
+              return n
+                ? '<button class="pd-btn pd-btn-sm" id="il-mom-pullissues" ' +
+                    'title="Still-open issues in the register that are not yet on this agenda">' +
+                    '+ ' + n + ' open issue' + (n === 1 ? '' : 's') + ' from the register</button>'
+                : '';
+            })() +
           '</div>') +
       '</div>' +
 
@@ -2172,22 +2181,28 @@ window.IssuesLessons = (function () {
       momFieldHTML('Issue / Agenda', 'il-c-issue',
         '<input class="pd-input pd-input-sm il-mi" data-f="issue" value="' + Fmt.esc(it.issue || '') + '" placeholder="What was raised" ' + d + '>',
         it.issue) +
-      momFieldHTML('Action item', 'il-c-act',
-        '<input class="pd-input pd-input-sm il-mi" data-f="action_item" value="' + Fmt.esc(actText) + '" placeholder="What will be done" ' + d + '>',
-        actText) +
-      // ⚠️ Description is rendered here but was NOT on the old table, so it was a
-      // column the screen could never show — the PDF printed it and the screen did
-      // not. In reporting/read-only it appears only when it has something to say;
-      // an empty labelled block on every action is noise in a printed record.
-      // ⚠️ Blank when the action text CAME from `description` (a legacy row), or the
-      // card shows the same sentence twice under two headings — the same rule the PDF
-      // applies.
+      // ⚠️ Description comes BEFORE the action item, and both are textareas. The
+      // order follows how the item is actually written up: what was discussed, then
+      // what will be done about it. The action item was a single-line <input>, which
+      // clips its own value — an action of any length was unreadable in exactly the
+      // mode that exists for reading it, the same defect the reporting view fixed for
+      // Issue / Agenda.
+      // ⚠️ Description was NOT on the old table at all, so it was a column the screen
+      // could never show while the PDF printed it. In reporting/read-only it appears
+      // only when it has something to say; an empty labelled block on every action is
+      // noise in a printed record. Blank when the action text CAME from `description`
+      // (a legacy row), or the card prints the same sentence twice under two headings
+      // — the rule the PDF already applies.
       ((ro && (!it.description || it.description === actText))
         ? ''
         : momFieldHTML('Description <span>optional</span>', 'il-c-desc',
-            '<textarea class="pd-textarea il-mi" data-f="description" rows="2" placeholder="Any elaboration"' + d + '>' +
+            '<textarea class="pd-textarea il-mi" data-f="description" rows="2" placeholder="What was discussed"' + d + '>' +
             Fmt.esc(it.description === actText ? '' : (it.description || '')) + '</textarea>',
             it.description === actText ? '' : it.description)) +
+      momFieldHTML('Action item', 'il-c-act',
+        '<textarea class="pd-textarea il-mi" data-f="action_item" rows="2" placeholder="What will be done"' + d + '>' +
+        Fmt.esc(actText) + '</textarea>',
+        actText) +
       // ---- the footer: the two things the PDF has no equivalent for ----------
       '<div class="il-mi-foot">' +
       '<div class="il-mi-f il-c-file"><label>File</label>' + momAttachCellHTML(it, ro) + '</div>' +
@@ -2256,6 +2271,106 @@ window.IssuesLessons = (function () {
       var iss = momIssueOf(it);
       return (iss ? (iss.status || 'Open') : (it.status || 'Open')) !== 'Closed';
     });
+  }
+
+  // ==========================================================================
+  // OPEN ISSUES ONTO THE NEXT AGENDA
+  //
+  // The other direction of the minutes<->register link. Raising sends an action
+  // INTO the register; this brings a still-open issue BACK onto the next meeting's
+  // agenda, so a problem raised three meetings ago stops falling off the sheet
+  // simply because nobody retyped it.
+  //
+  // ⚠️ It is carry-over's sibling and shares its rules on purpose — one issue, N
+  // meetings. It COPIES the register link (`issue_id`) rather than raising a second
+  // issue, which also means the resulting row shows the register's LIVE status and
+  // carries no "Raise" button, so it cannot be double-raised by hand.
+  //
+  // ⚠️ `issues_lessons.mom_id` is NOT touched. Provenance names the meeting an issue
+  // was FIRST raised from; moving it would make canDeleteMinute() treat every meeting
+  // that merely discussed the issue as the one that owns it.
+  // ==========================================================================
+
+  // Still-open issues in THIS project's register that are not already on this minute.
+  // ⚠️ Openness is decided by the REGISTER, the same rule the screen, the PDF and
+  // carry-over already follow. An issue closed last week must not be dragged onto
+  // next week's agenda because nobody went back to tick a box on an old minute.
+  function momOpenIssuesFor(momId) {
+    var on = {};
+    momItemsOf(momId).forEach(function (it) { if (it.issue_id) on[it.issue_id] = 1; });
+    return rows.filter(function (r) {
+      return (r.status || 'Open') !== 'Closed' && !on[r.id];
+    });
+  }
+
+  async function momPullIssues(momId, opts) {
+    opts = opts || {};
+    var target = MOMS.find(function (x) { return x.id === (momId || _momSel); });
+    if (!target || !canEditMinute(target) || momLocked(target)) return 0;
+    var take = momOpenIssuesFor(target.id);
+    if (!take.length) {
+      // ⚠️ Silent when this ran by itself on a new minute — a toast saying nothing
+      // happened, for something nobody asked for, is noise. Loud when the planner
+      // pressed the button, because then "nothing happened" is the answer.
+      if (!opts.quiet) UI.toast('Every open issue is already on this agenda.', 'info');
+      return 0;
+    }
+    if (!opts.quiet) await momSaveHeader();
+
+    var seq = momItemsOf(target.id).length;
+    var payload = take.map(function (r, i) {
+      return {
+        mom_id: target.id, project_id: pid, seq: seq + i,
+        // ⚠️ Type is 'Issue', because it is one. FYI would file a live problem under
+        // the heading the PDF prints for information-only items.
+        type: 'Issue',
+        category: null,
+        issue: r.description || null,
+        // The register's corrective action is what is currently being done about it —
+        // the right thing to read out, and the right thing to update in the meeting.
+        action_item: r.corrective_action || null,
+        description: r.caused_by || '',
+        // ⚠️ Responsible comes across as BOTH the ids and the text, so an item pulled
+        // onto an agenda still resolves on the champion's My Work page. Copying only
+        // the text would silently drop the assignment.
+        owner_ids: r.champion_ids || [],
+        owner: r.champion || null,
+        due_date: null,
+        // ⚠️ Its own status is seeded from the register, but the row DISPLAYS the
+        // register's live value from then on (momItemRowHTML reads the linked issue),
+        // so this copy can never be what anyone reads as authoritative.
+        status: (r.status || 'Open'),
+        issue_id: r.id
+      };
+    });
+
+    try {
+      var ins = await sb().from('mom_items').insert(payload).select();
+      if (ins.error) throw ins.error;
+      (ins.data || []).forEach(function (x) { MOM_ITEMS.push(x); });
+      UI.toast('Added ' + take.length + ' open issue' + (take.length === 1 ? '' : 's') +
+        ' from the register to this agenda.', 'ok');
+      if (!opts.quiet) renderMom();
+      return take.length;
+    } catch (e) {
+      // ⚠️ Tolerant of the un-run assignment migration: owner_ids is dropped and the
+      // pull is retried, so the agenda still gets its issues and the planner is told
+      // which field did not travel rather than losing the whole action.
+      if (/owner_ids/.test(e.message || '')) {
+        payload.forEach(function (x) { delete x.owner_ids; });
+        try {
+          var ins2 = await sb().from('mom_items').insert(payload).select();
+          if (ins2.error) throw ins2.error;
+          (ins2.data || []).forEach(function (x) { MOM_ITEMS.push(x); });
+          UI.toast('Added ' + take.length + ' open issue' + (take.length === 1 ? '' : 's') +
+            ' — the responsible person was not stored. Run migrations/2026-08-26-people-and-assignment.sql', 'warn');
+          if (!opts.quiet) renderMom();
+          return take.length;
+        } catch (e2) { e = e2; }
+      }
+      UI.toast('Could not add the open issues: ' + (e.message || e), 'error');
+      return 0;
+    }
   }
 
   // ⚠️ CARRY-OVER COPIES THE REGISTER LINK RATHER THAN RE-RAISING. A carried action is
@@ -2795,7 +2910,18 @@ window.IssuesLessons = (function () {
           project_id: pid, title: 'Meeting ' + Fmt.date(momToday()),
           meeting_date: momToday(), created_by: UID }).select().single();
         if (ins.error) throw ins.error;
-        MOMS.unshift(ins.data); _momSel = ins.data.id; _momErr = ''; renderMom();
+        MOMS.unshift(ins.data); _momSel = ins.data.id; _momErr = '';
+        // ⚠️ The next meeting's agenda is SEEDED with the register's still-open
+        // issues, which is what "automatically logged in the minutes of the next
+        // meeting" means: a problem raised three meetings ago keeps appearing until
+        // somebody closes it, instead of falling off because nobody retyped it.
+        // ⚠️ Only on a BRAND-NEW minute. Re-running it on every render would fight
+        // a planner who deliberately removed an item from this week's agenda, and
+        // the button beside carry-over is how they pull in anything raised since.
+        // ⚠️ `quiet` so it does not save the header (there is nothing typed yet) and
+        // does not re-render underneath the renderMom() below.
+        try { await momPullIssues(ins.data.id, { quiet: true }); } catch (e) {}
+        renderMom();
       } catch (e) {
         UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
           ? 'Run migrations/2026-08-19-duration-scenarios-and-mom.sql in Supabase first.' : e.message, 'error');
@@ -2838,6 +2964,8 @@ window.IssuesLessons = (function () {
       momSetDistributed(_momSel, !momLocked(cur));
     };
 
+    var pib = host.querySelector('#il-mom-pullissues');
+    if (pib) pib.onclick = function () { momPullIssues(_momSel); };
     var cgo = host.querySelector('#il-mom-carrygo');
     if (cgo) cgo.onclick = function () {
       var sel = host.querySelector('#il-mom-carryfrom');

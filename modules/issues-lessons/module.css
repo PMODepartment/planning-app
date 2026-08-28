@@ -70,9 +70,20 @@
   border-radius: var(--pd-radius); padding: 8px 12px;
 }
 .il-filt-ico { color: var(--pd-muted); flex: none; }
-.il-filters .pd-input, .il-filters .pd-select { height: 34px; font-size: 13px; }
-.il-filters .il-search { flex: 1 1 280px; min-width: 180px; }
-.il-filters .pd-select { flex: 0 0 auto; max-width: 190px; }
+/* ⚠️ MIN-height, not height. A fixed 34px box against the shared 16px control
+   font clips its own descenders — "Any aging" lost the tail of its g. This module
+   has hit that exact defect once before on the action-item filters; do not put the
+   fixed height back to tighten the bar. */
+.il-filters .pd-input, .il-filters .pd-select { min-height: 34px; font-size: 13px; }
+.il-filters .il-search { flex: 1 1 240px; min-width: 160px; }
+/* ⚠️ The selects must be able to SHRINK. `flex: 0 0 auto` gives an auto basis —
+   the control's own content width — and a flex item will not go below that, so
+   with a search box and four filters the last one (Any aging) ran past the card's
+   edge and was clipped rather than wrapping. A real basis lets them share the row
+   and drop to a second one only when they genuinely cannot fit.
+   ⚠️ `min-width: 0` is load-bearing: without it the auto minimum reinstates the
+   content width and the shrink never happens. */
+.il-filters .pd-select { flex: 1 1 150px; min-width: 0; max-width: 200px; }
 /* Clear filters: subtle borderless ghost, only shown when a filter is active */
 .il-clear {
   display: inline-flex; align-items: center; gap: 5px; flex: none;
@@ -200,6 +211,16 @@
   .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); }
   .il-filters .il-search { flex: 1 1 100%; }
   .il-title-txt { display: none; }
+}
+
+/* ⚠️ The topbar spilled to a second row and orphaned the avatar on its own line.
+   The Lessons screen carries the most chrome — back, icon, title, project, three
+   tabs, a Report/Library toggle, a primary button, refresh, presence, theme and
+   the avatar — and the title TEXT is the one item that costs width while saying
+   what the active tab already says. It goes first, keeping the module icon, well
+   before the row is forced to wrap. */
+@media (max-width: 1500px) {
+  .il-title .il-title-txt { display: none; }
 }
 
 /* ---- Mobile & tablet (2026-07-23) ----------------------------------------
@@ -529,19 +550,72 @@
 .il-viewtoggle button.on { background: var(--pd-red); color: #fff; }
 
 .il-iss-split { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
+
+/* ⚠️ A PAIRED red for the panel's accent text, because one value cannot serve both
+   themes. --pd-bad is #C42127 in light (5.84 on the card) and remaps to #EF5350 in
+   dark, which measures 4.02 there — under AA, and invisible-ish against the dark
+   card. #FF8A80 is 6.14 / 6.76 in dark. Measured, not chosen by eye; this repo has
+   paired light/dark semantic reds four times now for exactly this reason. */
+:root { --il-panel-accent: var(--pd-bad); }
+html.pd-dark { --il-panel-accent: #FF8A80; }
+
+/* ---- The status panel ----------------------------------------------------
+   ⚠️ THIS WAS A SOLID BRAND-RED SLAB AND IT IS DELIBERATELY NOT ONE ANY MORE.
+   #EE3124 is a 4.5:1-against-white accent chosen to be seen in small doses; at
+   ~260x600px of continuous fill, with white text and white input boxes punched
+   into it, it is a glare source — the owner reported it hurting the eye in BOTH
+   themes, which is the tell that the problem is area and saturation, not the
+   theme mapping.
+
+   The panel keeps every job it had: it still reads instantly as the status block
+   beside the issue text, still groups the six Power Apps fields, and still uses
+   brand red. Red is now the ACCENT — a rail and a heading — over a quiet surface,
+   which is the same move the Gantt pass made when red stopped being the fill and
+   went back to meaning progress.
+
+   ⚠️ The RAIL is the fixed-contrast part, and that is what survives of the
+   original "must not look like a different screen mid-meeting" rule: the brand
+   cue is identical in both themes, while the surface follows the theme like every
+   other card. A saturated slab that ignored the theme was the thing being
+   complained about, so the fixed-contrast rule now applies to the accent only.
+
+   ⚠️ Do NOT colour the labels brand red to "keep it red". Measured in this repo
+   twice: brand red as small bold text is 4.12:1 light / 3.40:1 dark — under AA
+   at this size. Labels stay on the muted ink token. */
 .il-iss-panel {
-  flex: 0 0 260px; min-width: 0; background: var(--pd-red); border-radius: 10px;
-  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+  flex: 0 0 260px; min-width: 0; border-radius: 10px;
+  padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px;
+  background: var(--pd-card);
+  border: 1px solid var(--pd-line);
+  border-left: 4px solid var(--pd-red);
+  box-shadow: var(--pd-shadow);
 }
 .il-iss-panel > .il-mi-f + .il-mi-f { margin-top: 0; }   /* the flex column owns the spacing */
-.il-iss-panel label { color: #fff; opacity: .95; }
-.il-iss-panel .il-mi-val { color: #fff; background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); }
-.il-iss-panel .il-mi-val.is-empty { color: rgba(255,255,255,.7); }
-.il-iss-panel .il-mi-val.is-hot { color: #fff; background: rgba(0,0,0,.28); font-weight: 700; }
-.il-iss-panel .pd-input, .il-iss-panel .pd-select {
-  background: #fff; color: #231F20; border-color: rgba(255,255,255,.45);
+/* ⚠️ --pd-bad (#C42127), NOT --pd-red. Measured against this panel's own surface:
+   brand red is 4.12:1 here, under AA for 10px text — the same failure this repo has
+   now recorded three times. --pd-bad is 5.84 on the card and 5.11 on the red tint,
+   and still reads unmistakably as red.
+   ⚠️ There is no --pd-dark-red token. Writing one resolves to nothing and silently
+   inherits the ink colour, which measures 16.3 and looks like a pass. */
+.il-iss-panel::before {
+  content: 'Status';
+  font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--il-panel-accent);
+  padding-bottom: 8px; margin-bottom: 2px;
+  border-bottom: 1px solid var(--pd-line);
 }
-.il-iss-panel :disabled { background: rgba(255,255,255,.9); opacity: 1; }
+/* The panel's own STATUS field label would then read "Status" twice under a
+   heading that already says it. */
+.il-iss-panel > .il-c-status > label { display: none; }
+.il-iss-panel label { color: var(--pd-muted); }
+/* ⚠️ Days Aging keeps a real emphasis, because it is the one derived figure on
+   the panel and the only one that is a reason to act. Over 90 days it goes red on
+   a tint rather than white-on-red: a tint at this size passes AA where reversed
+   small text on saturated red does not. */
+.il-iss-panel .il-mi-val.is-hot {
+  color: var(--il-panel-accent); background: var(--pd-red-light);
+  border-color: var(--il-panel-accent); font-weight: 800;
+}
 .il-iss-body { flex: 1 1 320px; min-width: 0; }
 .il-iss-prov { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .il-iss-prov .il-raisedby { margin: 0; }
