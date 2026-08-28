@@ -9772,3 +9772,62 @@ the same partial mirror they did yesterday.
 Both functions keep `verify_jwt: true`, so the authorization shape is unchanged.
 ⚠️ `WARNING: Docker is not running` on both deploys is expected and harmless — Docker is only needed
 to serve functions locally, not to deploy them.
+
+### 2026-08-28 — Manpower Loading: staff + skilled headcount, and which project is starving
+
+Owner: *"another module for manpower loading… follows the same idea with the equipment loading…
+tracking the planned vs actual deployment of manpower in a month. The strategy is that we can look at
+the consolidated view of all active projects to see which project critically needs staff/skilled
+workers."* Built from the supplied HRD report, `QHL706. HRD. Manpower Report - Staff v4`.
+
+**Run `migrations/2026-08-27-manpower-loading.sql`.** Four tabs — Loading (the manpower curve + the
+editable four-series matrix), Positions (the requirement register), Roster (who fills them, with the
+demobilisation summary), and **Portfolio**, which is the consolidated view the ask is actually about:
+one month, every project the user can open, ranked by fill rate, with the worst shortfall named and
+the projects carrying spare listed as the places to draw from. Detail and the full decision list:
+`modules/manpower-loading/CLAUDE.md`.
+
+**The reference report's own structure was treated as the spec**, read off its cells rather than
+guessed: rows are POSITIONS grouped by department (11 departments, **27** positions, seeded so a new
+project does not retype the org chart), each carrying four monthly bands — Planned (B0) / Revised
+(B1) / Proposed / Actual — plus a project phase per month and project-level cost rows.
+
+⚠️ **The governing requirement is `approved ?? planned`, computed PER POSITION and only then summed.**
+Summing the two series separately and picking one under-reports every project that is mid-revision,
+which is most of them. ⚠️ **Forecast never governs** — it is the "for approval" column, and reporting
+an unapproved number as the requirement is how a project reads fully staffed against a plan nobody
+signed. ⚠️ **Costs are project-month, not per position** — they come off payroll, which never equals
+rate × headcount; rate × headcount is derived when a month has no typed figure and the screen says
+which it is showing, and a **typed cost is never shown against a filtered subset**.
+
+⚠️ **TBH is a vacancy, not a person** (the masterlist really carries those rows), and **no roster at
+all reports vacancies as unknown, never zero**. ⚠️ **Actuals after the cut-off are blank, not zero**,
+and excluded from the chart's scale. ⚠️ **A project with no plan for the month is listed separately,
+never as 0% filled** — ranking it as most critical buries the projects that really are short.
+
+**Verified: 91 checks executing the shipped functions** (sliced by brace-matching, never
+reimplemented), plus the module driven end to end in a real browser with only the shared app scripts
+stubbed — **0 console errors**, chart↔matrix alignment **0px** on all 18 months at three widths and
+while scrolled, and the **portfolio's independent bulk read agreeing exactly with the project tab's
+own aggregate** (53 / 31 / −22 / 58%), which is two separate code paths reaching the same number.
+⚠️ **Three real defects found by measuring, not reading:** the Skilled badge at **2.98:1** and Filled
+at **2.86:1** in dark mode, and the vacancy badge at **3.60:1** in light — the exact figure the
+equipment module's picked-icon button was fixed for (`var(--pd-red)` on `var(--pd-red-light)` is not
+a text pairing at 11px). Now min **4.50 light / 6.73 dark**. And on a phone the row actions measured
+**20px**, segments 30px, tabs 33px — the shared CSS raises `.pd-btn` and inputs to 44px but knows
+nothing about those three.
+
+⚠️ **NOT verified signed in** — the anon key has no grants, so every write ran against a stub and the
+portfolio's real query has never hit the server. ⚠️ **The migration has not been run.** ⚠️ **No
+screenshot** — the Browser pane was not compositing, so every visual claim is measured DOM geometry.
+
+⚠️ **The skilled-worker seed is PROVISIONAL and the dialog says so** — that reference report has not
+been supplied yet, so its trades are taken from the staff report's own demobilisation summary
+(carpenter, foreman, steelman, painter, sealant applicator, tilesetter, site driver) plus the usual
+rest of a building job. Replace `SKILLED_SEED` when the real list arrives.
+
+**Cache:** `config.js` → `?v=20260828b` app-wide (24 refs) — that is what gates the new tile
+appearing. ⚠️ **No `MODULE_V` bump**: the page is new, so no browser holds a stale copy, and bumping
+would force every returning user to re-fetch all 13 module pages for nothing. ⚠️ Fixed a split of my
+own making — the new module had copied `db.js?v=20260827b` while the other 19 pages serve `c`; every
+shared asset is now at one version each.

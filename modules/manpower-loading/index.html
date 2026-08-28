@@ -1,0 +1,2030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
+  <script src="../../assets/js/theme.js?v=20260812b"></script>
+  <title>Manpower Loading · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260827a" />
+  <style>
+    /* Uniform sidebar-less chrome — same shell as Equipment Loading. */
+    .pd-content { width:100%; }
+    .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
+    .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
+    .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .mp-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
+    .mp-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; font-size:17px; margin:0; }
+    .mp-title .mp-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .mp-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:6px; }
+    .mp-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
+    .mp-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .mp-project:hover, .mp-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+    .mp-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
+    .mp-topbar-tools .pd-btn.mp-tb-labeled { height:34px; padding:0 12px; gap:6px; background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .mp-topbar-tools .pd-btn.mp-tb-labeled:hover { filter:brightness(.94); }
+    .mp-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
+    @media (max-width:900px) { .mp-title-txt { display:none; } }
+
+    .mp-tabs { display:flex; border-bottom:2px solid var(--pd-line); }
+    .mp-tab { padding:8px 16px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted);
+      border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none;
+      display:inline-flex; align-items:center; gap:6px; }
+    .mp-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+
+    .mp-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+      box-shadow:var(--pd-shadow); padding:14px 16px; margin-bottom:16px; }
+    .mp-card > h3 { margin:0 0 10px; font-size:14px; }
+    .mp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+    .mp-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:13px 16px; }
+    .mp-kpi-v { font-size:22px; font-weight:800; line-height:1; }
+    .mp-kpi-v.mp-bad { color:var(--pd-bad); }
+    .mp-kpi-v.mp-good { color:var(--pd-ok); }
+    .mp-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
+    .mp-note { font-size:12px; color:var(--pd-muted); }
+    .mp-warn { font-size:12.5px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8;
+      border-radius:8px; padding:9px 12px; margin-bottom:14px; }
+    .mp-empty { text-align:center; padding:40px; color:var(--pd-muted); }
+
+    .mp-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
+    .mp-controls .pd-select, .mp-controls .pd-input { height:34px; font-size:13px; max-width:230px; }
+    .mp-filt-ico { color:var(--pd-muted); flex:none; }
+    .mp-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .mp-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px;
+      font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
+    .mp-seg button + button { border-left:1px solid var(--pd-line); }
+    .mp-seg button.active { background:var(--pd-red); color:#fff; }
+    .mp-checks { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12.5px; }
+    .mp-checks label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+    .mp-checks .sw { width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.14); }
+
+    /* ---- Manpower curve ------------------------------------------------------------------
+       The HRD "Manpower Curve" sheet: a grey PLANNED column per month with the ACTUAL in
+       front of it, and the approved (B1) / forecast revisions drawn as LINES over the top —
+       which is how the source sheet reads, and the only way four series fit a 48px month. */
+    /* ⚠️ Bled out by the card's own 16px side padding. The matrix card is padding:0, so
+       without this every column sits 16px right of its own matrix column. Same trap the
+       equipment chart hit and measured. */
+    .mp-chartwrap { overflow-x:auto; margin-left:-16px; margin-right:-16px; }
+    .mp-chart { display:block; }
+    .mp-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:8px; font-size:12px; color:var(--pd-muted); }
+    .mp-lg { display:inline-flex; align-items:center; gap:6px; }
+    .mp-lg .sw { width:14px; height:14px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.12); }
+    .mp-lg .ln { width:18px; height:0; border-top:2.5px solid currentColor; display:inline-block; }
+
+    /* ---- Loading matrix ------------------------------------------------------------------
+       ⚠️ table-layout:fixed and NO min-width:100%. With auto layout the browser widens every
+       column to fill the pane and the chart above lines up with nothing — measured on the
+       equipment matrix (label columns 211/118 against a declared 150/84). The three widths
+       below are duplicated as MX_C1 / MX_C2 / MX_CELL in the script and CANNOT be read back
+       at render time (the table may not be laid out on the first paint). Change one, change
+       the other. */
+    .mp-mxwrap { overflow:auto; max-height:70vh; }
+    .mp-mx { border-collapse:collapse; font-size:12px; table-layout:fixed; width:max-content; }
+    .mp-mx th, .mp-mx td { padding:5px 0; border-bottom:1px solid var(--pd-line); text-align:center; white-space:nowrap; }
+    .mp-mx th:not(.mp-c1):not(.mp-c2), .mp-mx td:not(.mp-c1):not(.mp-c2) { width:48px; min-width:48px; max-width:48px; }
+    .mp-mx thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:10.5px;
+      text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); }
+    .mp-mx thead tr.mp-mx-yr th { font-weight:800; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
+    .mp-mx thead tr.mp-mx-mo th { border-bottom:2px solid var(--pd-line); }
+    .mp-mx th.mp-c1, .mp-mx td.mp-c1 { position:sticky; left:0; z-index:1; text-align:left;
+      background:var(--pd-card); font-weight:700; width:190px; min-width:190px; max-width:190px;
+      padding-left:9px; padding-right:9px; overflow:hidden; text-overflow:ellipsis; }
+    .mp-mx th.mp-c2, .mp-mx td.mp-c2 { position:sticky; left:190px; z-index:1; text-align:left;
+      background:var(--pd-card); font-weight:600; color:var(--pd-muted); width:96px; min-width:96px; max-width:96px;
+      padding-left:9px; padding-right:9px; font-size:11px; }
+    .mp-mx thead th.mp-c1, .mp-mx thead th.mp-c2 { z-index:3; background:var(--pd-bg); }
+    .mp-mx tr.mp-r-actual td:not(.mp-c1):not(.mp-c2) { background:var(--pd-red-light); }
+    .mp-mx tr.mp-r-total td { font-weight:800; border-top:2px solid var(--pd-line); }
+    .mp-mx tr.mp-r-total td.mp-c1, .mp-mx tr.mp-r-total td.mp-c2 { background:var(--pd-card); }
+    .mp-mx tr.mp-r-grp td.mp-c1 { color:var(--pd-ink); }
+    .mp-mx td.mp-out { background:var(--pd-bg); color:var(--pd-muted); }
+    .mp-mx td.mp-neg { color:var(--pd-bad); font-weight:700; }
+    .mp-mx td.mp-pos { color:var(--pd-ok); font-weight:700; }
+    .mp-mx .mp-cut { box-shadow:inset 2px 0 0 var(--pd-red), inset -2px 0 0 var(--pd-red); }
+    .mp-mx td.mp-edit { cursor:cell; }
+    .mp-mx td.mp-edit:hover { outline:2px solid var(--pd-red); outline-offset:-2px; }
+    .mp-mx td.mp-phase { font-size:10.5px; color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
+    .mp-mx input.mp-cellin { width:56px; height:24px; padding:0 4px; font:inherit; font-size:12px;
+      text-align:center; border:1px solid var(--pd-red); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); }
+    .mp-mx input.mp-cellin.wide { width:80px; text-align:left; }
+    .mp-mx td.mp-cost { font-size:11px; }
+
+    /* ---- Tables (register / roster / portfolio) ------------------------------------------ */
+    .mp-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .mp-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:11px; font-weight:700;
+      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .mp-table th.num, .mp-table td.num { text-align:right; }
+    .mp-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
+    .mp-table tr:hover td { background:var(--pd-bg); }
+    .mp-table tr.mp-grp td { background:var(--pd-bg); font-weight:800; font-size:11.5px;
+      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-ink); }
+    .mp-badge { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--pd-bg); display:inline-block; }
+    .mp-badge.mp-skill { background:#EAF2FF; color:#2F6FBF; }
+    /* ⚠️ NOT var(--pd-red) on var(--pd-red-light). That pairing measures 3.60:1 — the very
+       number the equipment module's picked-icon button was fixed for — and this badge carries
+       11px text, which needs 4.5:1. Darkened to 6.4:1. */
+    .mp-badge.mp-vac { background:var(--pd-red-light); color:#A81F17; }
+    .mp-badge.mp-fill { background:#E7F7EE; color:#1B7F4B; }
+    /* ⚠️ The dark rules MUST restate the text colour, not only the tint. Darkening the
+       background while leaving the light theme's ink measured 2.98:1 (skilled) and 2.86:1
+       (filled) on an 11px badge — under the 4.5:1 that size needs. Same defect the equipment
+       module's picked-icon button had at 3.60:1. Measured after: 6.7:1 and 8.1:1. */
+    html.pd-dark .mp-badge.mp-skill { background:#16273D; color:#7FB0F0; }
+    html.pd-dark .mp-badge.mp-fill { background:#12301F; color:#6FD79B; }
+    html.pd-dark .mp-badge.mp-vac { color:#FF9A93; }
+    .mp-actions { display:flex; gap:5px; }
+    .mp-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line);
+      background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
+    .mp-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    .mp-dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:-1px; }
+
+    /* Fill bar — one glance per project in the portfolio table. */
+    .mp-bar { position:relative; height:8px; border-radius:5px; background:var(--pd-line); overflow:hidden; min-width:70px; }
+    .mp-bar > i { position:absolute; left:0; top:0; bottom:0; border-radius:5px; }
+    .mp-sev { font-weight:800; }
+    .mp-sev.crit { color:var(--pd-bad); }
+    .mp-sev.warn { color:var(--pd-warn); }
+    .mp-sev.ok   { color:var(--pd-ok); }
+
+    /* Modal form */
+    .mp-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; align-content:start; }
+    .mp-form-full { grid-column:1 / -1; }
+    .mp-form-sec { grid-column:1 / -1; font-size:11px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.05em; color:var(--pd-red); margin:12px 0 -2px; padding-top:10px; border-top:1px solid var(--pd-line); }
+    .mp-mon-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+    .mp-mon-tbl th { text-align:left; font-size:10.5px; text-transform:uppercase; color:var(--pd-muted);
+      padding:6px 8px; border-bottom:2px solid var(--pd-line); position:sticky; top:0; background:var(--pd-card); }
+    .mp-mon-tbl td { padding:4px 8px; border-bottom:1px solid var(--pd-line); }
+    .mp-mon-tbl input { width:72px; height:28px; padding:0 6px; font:inherit; font-size:12.5px;
+      border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); color:var(--pd-ink); }
+    .mp-seedgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px 14px;
+      max-height:320px; overflow:auto; padding:4px 2px; }
+    .mp-seedgrid label { display:flex; align-items:center; gap:7px; font-size:12.5px; }
+    .mp-seedgrid .dept { grid-column:1 / -1; font-size:10.5px; font-weight:800; text-transform:uppercase;
+      letter-spacing:.05em; color:var(--pd-muted); margin-top:8px; }
+
+    .mp-loading { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center;
+      justify-content:center; gap:10px; color:#fff; font-size:14px; z-index:9999; }
+    .mp-spin { width:22px; height:22px; border:3px solid rgba(255,255,255,.35); border-top-color:#fff;
+      border-radius:50%; animation:mp-spin .8s linear infinite; }
+    @keyframes mp-spin { to { transform:rotate(360deg); } }
+
+    /* Below 700px the chart keeps a legible minimum width and scrolls rather than shrinking its
+       labels to nothing — the rule every charting module here follows. */
+    @media (max-width: 700px) {
+      .mp-chart { min-width: 640px; }
+      .mp-kpis { grid-template-columns: repeat(2, 1fr); gap:8px; }
+      .mp-form-grid { grid-template-columns:1fr; }
+      .mp-controls .pd-select, .mp-controls .pd-input { max-width:100%; }
+      /* ⚠️ The shared CSS raises inputs and .pd-btn to 44px on a phone but knows nothing about
+         these three. Measured at 20px (row actions), 30px (segments) and 33px (tabs) before —
+         a row action you cannot reliably hit is a row action that is not there. */
+      .mp-btn-sm { min-height:44px; padding:3px 12px; }
+      .mp-seg button { min-height:44px; }
+      .mp-tab { min-height:44px; }
+    }
+  </style>
+</head>
+<body>
+<div class="pd-app">
+  <div class="pd-content">
+    <div class="pd-topbar">
+      <a class="pd-btn mp-modback" href="../../modules.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
+      <h1 class="mp-title">
+        <span class="mp-title-ico" data-ico="users" data-ico-size="20"></span>
+        <span class="mp-title-txt">Manpower Loading</span>
+      </h1>
+      <div class="mp-projctx">
+        <select class="pd-select mp-project" id="mp-project" title="Project"></select>
+      </div>
+      <div class="mp-tabs" role="tablist">
+        <button class="mp-tab active" data-view="loading">Loading</button>
+        <button class="mp-tab" data-view="register">Positions</button>
+        <button class="mp-tab" data-view="roster">Roster</button>
+        <button class="mp-tab" data-view="portfolio">Portfolio</button>
+      </div>
+      <div class="mp-topbar-tools">
+        <button class="pd-btn pd-btn-primary mp-tb-labeled" id="mp-add" title="Add a position line">+ Add position</button>
+        <button class="pd-btn" id="mp-seed" title="Seed the standard organisation chart">Seed</button>
+        <span class="mp-tb-sep"></span>
+        <button class="pd-btn" id="mp-import" title="Import a filled loading sheet"><span data-ico="upload" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="mp-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
+        <button class="pd-btn" id="mp-refresh" title="Refresh"><span data-ico="refresh" data-ico-size="16"></span></button>
+      </div>
+      <div id="user-bar"></div>
+    </div>
+    <div class="pd-main">
+      <div id="mp-migrate" class="mp-warn" style="display:none;"></div>
+
+      <!-- LOADING -->
+      <div id="mp-view-loading">
+        <div class="mp-controls">
+          <span class="mp-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <label for="mp-f-work" style="font-size:12.5px;">Workforce</label>
+          <select class="pd-select" id="mp-f-work">
+            <option value="">Staff + Skilled</option>
+            <option value="Staff">Staff only</option>
+            <option value="Skilled">Skilled only</option>
+          </select>
+          <label for="mp-f-dept" style="font-size:12.5px;">Department</label>
+          <select class="pd-select" id="mp-f-dept"><option value="">All departments</option></select>
+          <span class="mp-seg" id="mp-detail">
+            <button data-det="dept" class="active">By department</button>
+            <button data-det="pos">By position</button>
+          </span>
+          <span class="mp-seg" id="mp-mode">
+            <button data-mode="head" class="active">Headcount</button>
+            <button data-mode="cost">Cost</button>
+          </span>
+          <span class="mp-note" id="mp-span-note" style="margin-left:auto;"></span>
+        </div>
+        <div class="mp-controls" style="margin-top:-8px;">
+          <span class="mp-note" style="font-weight:700;">Series</span>
+          <span class="mp-checks" id="mp-series"></span>
+          <span class="mp-checks" style="margin-left:auto;">
+            <label><input type="checkbox" id="mp-show-cost"> Show cost rows in the grid</label>
+          </span>
+        </div>
+        <div class="mp-kpis" id="mp-kpis"></div>
+        <div class="mp-card">
+          <h3 id="mp-chart-title">Manpower Curve</h3>
+          <div class="mp-chartwrap" id="mp-chart"></div>
+          <div class="mp-legend" id="mp-chart-legend"></div>
+        </div>
+        <div class="mp-card" style="padding:0;overflow:hidden;">
+          <div class="mp-mxwrap" id="mp-matrix"></div>
+        </div>
+      </div>
+
+      <!-- POSITIONS -->
+      <div id="mp-view-register" style="display:none;">
+        <div class="mp-card" style="padding:0;overflow:auto;">
+          <table class="mp-table" id="mp-reg"></table>
+        </div>
+      </div>
+
+      <!-- ROSTER -->
+      <div id="mp-view-roster" style="display:none;">
+        <div class="mp-controls">
+          <button class="pd-btn pd-btn-primary" id="mp-add-person" style="height:34px;">+ Add person</button>
+          <span class="mp-tb-sep"></span>
+          <label for="mp-r-search" style="font-size:12.5px;">Find</label>
+          <input class="pd-input" id="mp-r-search" placeholder="name or position">
+          <label for="mp-r-work" style="font-size:12.5px;">Workforce</label>
+          <select class="pd-select" id="mp-r-work">
+            <option value="">Staff + Skilled</option>
+            <option value="Staff">Staff only</option>
+            <option value="Skilled">Skilled only</option>
+          </select>
+          <span class="mp-note" id="mp-roster-note" style="margin-left:auto;"></span>
+        </div>
+        <div class="mp-kpis" id="mp-roster-kpis"></div>
+        <div class="mp-card" style="padding:0;overflow:auto;">
+          <table class="mp-table" id="mp-roster"></table>
+        </div>
+        <div class="mp-card">
+          <h3>Demobilisation — heads coming off contract</h3>
+          <div id="mp-demob"></div>
+        </div>
+      </div>
+
+      <!-- PORTFOLIO -->
+      <div id="mp-view-portfolio" style="display:none;">
+        <div class="mp-controls">
+          <span class="mp-filt-ico" data-ico="barChart" data-ico-size="15"></span>
+          <label for="mp-p-month" style="font-size:12.5px;">As of</label>
+          <input class="pd-input" id="mp-p-month" type="month" style="max-width:160px;">
+          <label for="mp-p-work" style="font-size:12.5px;">Workforce</label>
+          <select class="pd-select" id="mp-p-work">
+            <option value="">Staff + Skilled</option>
+            <option value="Staff">Staff only</option>
+            <option value="Skilled">Skilled only</option>
+          </select>
+          <button class="pd-btn" id="mp-p-run" style="height:34px;"><span data-ico="refresh" data-ico-size="15"></span> Read every project</button>
+          <span class="mp-note" id="mp-p-note" style="margin-left:auto;"></span>
+        </div>
+        <div class="mp-kpis" id="mp-p-kpis"></div>
+        <div class="mp-card" style="padding:0;overflow:auto;">
+          <table class="mp-table" id="mp-p-tbl"></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="mp-loading" id="mp-loading" style="display:none;"><div class="mp-spin"></div><span id="mp-loading-msg">Loading…</span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../../assets/js/config.js?v=20260828b"></script>
+<script src="../../assets/js/auth.js?v=20260814a"></script>
+<script src="../../assets/js/db.js?v=20260827c"></script>
+<script src="../../assets/js/program.js?v=20260827a"></script>
+<script src="../../assets/js/ui.js?v=20260824a"></script>
+<script src="../../assets/js/icons.js?v=20260813a"></script>
+<script>
+// ============================================================================
+// Manpower Loading (per project) — the HRD Manpower Report as a live module.
+//
+// The register says WHAT POSITIONS the project needs; manpower_loading says how
+// many heads of each are planned / approved / forecast / actually deployed each
+// MONTH; the roster says WHO is filling them and when their contract ends.
+//
+// ⚠️ The month axis is TIED TO THE PROJECT SCHEDULE, not typed here — same rule
+// as Equipment Loading. It runs from the earliest activity start to the latest
+// finish, WBS-Summary rows excluded (they carry stale imported dates that
+// nothing recomputes; one was 337 days out, which would stretch the axis by a
+// year). The note under the controls always says which source the axis came from.
+//
+// ⚠️ FOUR series, and which one GOVERNS is a rule, not a preference:
+// requirement = approved (B1) if the month has one, else planned (B0). Forecast
+// is "for approval" and deliberately never governs — reporting an unapproved
+// number as the requirement is how a project reads as fully staffed against a
+// plan nobody signed.
+//
+// ⚠️ Actuals after the cut-off month are left BLANK, not zero. "Not reported"
+// and "nobody on site" are different facts, and drawing them the same makes
+// every future month read as a shortfall.
+// ============================================================================
+(function () {
+  var user = null, profile = null, pid = null;
+  var PROJECTS = [];              // projects this user can open
+  var POS = [];                   // manpower_positions for this project
+  var LOAD = {};                  // position_id -> { 'YYYY-MM-01': row }
+  var ROSTER = [];                // manpower_roster for this project
+  var MONTHS = {};                // 'YYYY-MM-01' -> manpower_months row (phase + costs)
+  var SPAN = null;                // { start, end, months[], source }
+  var CUTOFF = null;              // data date, month-floored
+  var needsMigration = false;
+  var view = 'loading', detail = 'dept', mode = 'head';
+  var fWork = '', fDept = '', rWork = '', rSearch = '';
+  var showCost = false;
+  var PORT = null;                // portfolio rows, once read
+  var portAsOf = null;            // Date, month-floored
+  var portWork = '';
+  var portReading = false;
+
+  // The four bands of the source sheet. `col` is the headcount column, `cost` the
+  // project-month cost column that pairs with it.
+  var SERIES = [
+    { k: 'planned',  col: 'planned_qty',  cost: 'planned_cost',  label: 'Planned (B0)',  short: 'Planned',  color: '#9A9A9A', draw: 'bar'  },
+    { k: 'approved', col: 'approved_qty', cost: 'approved_cost', label: 'Approved (B1)', short: 'Approved', color: '#2F6FBF', draw: 'line' },
+    { k: 'forecast', col: 'forecast_qty', cost: 'forecast_cost', label: 'Forecast',      short: 'Forecast', color: '#F59E0B', draw: 'dash' },
+    { k: 'actual',   col: 'actual_qty',   cost: 'actual_cost',   label: 'Actual',        short: 'Actual',   color: '#EE3124', draw: 'bar'  }
+  ];
+  var SER_BY_K = {}; SERIES.forEach(function (s) { SER_BY_K[s.k] = s; });
+  // Planned + Actual on by default: they are what a monthly report is read for, and four
+  // bands per position turns the grid into something nobody scrolls.
+  var shown = { planned: true, approved: false, forecast: false, actual: true };
+
+  var WORKFORCES = ['Staff', 'Skilled'];
+  var RANKS = ['Managerial', 'Supervisory', 'Rank & File', 'Skilled', 'Helper'];
+  var EMP_STATUS = ['Full-time', 'Part-time', 'Project-based', 'Agency'];
+  var ALLOCATIONS = ['FULL-TIME', 'SHARED'];
+  // A name that means "this slot is not filled yet". The masterlist really does carry these
+  // as rows, and counting them as people is how a project reports itself fully staffed.
+  var TBH_RE = /^\s*(tbh|tba|tbd|vacant|vacancy|open|for hiring|unfilled|n\/?a|-{1,2})\s*$/i;
+
+  // ⚠️ The chart's left pad IS the matrix's two label columns and its bar pitch IS the
+  // matrix's month-cell width, so a column sits directly over the month it reports. These
+  // three numbers are duplicated in the CSS above and cannot be derived from it at render
+  // time — the table may not be laid out on the first paint.
+  var MX_C1 = 190, MX_C2 = 96, MX_CELL = 48;
+
+  var MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // ---- The standard organisation chart --------------------------------------------------
+  // Read off the HRD reference report (QHL706 Manpower Report - Staff v4). Every project
+  // starts from the same table of organisation, so typing 26 rows by hand on every new job
+  // is work the module can simply not ask for. It is a SEED, not a schema: the departments
+  // and titles are ordinary editable text once they land.
+  var STAFF_SEED = [
+    ['OFFICE',            [['Area Manager', 'Managerial'], ['Project Manager', 'Managerial']]],
+    ['PLANNING',          [['Planning Engineer', 'Rank & File']]],
+    ['COMMERCIAL',        [['Office Manager', 'Supervisory'], ['QS Engineer', 'Rank & File'], ['Accounting Assistant', 'Rank & File'], ['Documentation Assistant', 'Rank & File'], ['Warehouseman', 'Rank & File']]],
+    ['TECHNICAL',         [['Technical Officer', 'Supervisory'], ['Design Architect', 'Rank & File'], ['MEPF Design Engineer', 'Rank & File']]],
+    ['STRUCTURAL',        [['Construction Manager', 'Managerial'], ['Project Superintendent', 'Supervisory'], ['Field Engineer', 'Rank & File']]],
+    ['LINE & GRADE',      [['Survey Engineer', 'Rank & File'], ['Assistant Surveyor', 'Rank & File'], ['Survey Aide', 'Rank & File']]],
+    ['QUALITY ASSURANCE', [['QA/QC Supervisor', 'Supervisory'], ['QA/QC Engineer', 'Rank & File']]],
+    ['ARCHITECTURAL',     [['Finishing Supervisor', 'Supervisory'], ['Finishing Architect / Engineer', 'Rank & File']]],
+    ['MEPF',              [['MEPF Supervisor', 'Supervisory'], ['MEPF Engineer', 'Rank & File']]],
+    ['SAFETY',            [['Safety Advisor', 'Supervisory'], ['Safety Officer', 'Rank & File'], ['Project Nurse', 'Rank & File']]],
+    ['HR',                [['HR Assistant', 'Rank & File']]]
+  ];
+  // ⚠️ PROVISIONAL. The skilled-worker reference report has not been supplied yet; these
+  // trades are the ones the staff report's own demobilisation summary names (carpenter,
+  // foreman, steelman, painter, sealant applicator, tilesetter, site driver) plus the usual
+  // rest of a building job. The seed dialog says so, so nobody mistakes it for the official
+  // trade list. Replace this array when the real report arrives.
+  var SKILLED_SEED = [
+    ['SUPERVISION',   [['Foreman', 'Supervisory'], ['Leadman', 'Supervisory']]],
+    ['STRUCTURAL',    [['Steelman', 'Skilled'], ['Carpenter', 'Skilled'], ['Mason', 'Skilled'], ['Scaffolder', 'Skilled'], ['Welder', 'Skilled']]],
+    ['ARCHITECTURAL', [['Tilesetter', 'Skilled'], ['Painter', 'Skilled'], ['Sealant Applicator', 'Skilled'], ['Plasterer', 'Skilled'], ['Drywall Installer', 'Skilled']]],
+    ['MEPF',          [['Electrician', 'Skilled'], ['Plumber', 'Skilled'], ['Pipefitter', 'Skilled'], ['Tinsmith', 'Skilled']]],
+    ['SUPPORT',       [['Heavy Equipment Operator', 'Skilled'], ['Rigger', 'Skilled'], ['Site Driver', 'Skilled'], ['Helper / Laborer', 'Helper']]]
+  ];
+
+  function sb() { return AppAuth.getSB(); }
+  function esc(s) { return Fmt.esc(s == null ? '' : String(s)); }
+  function showLoading(m) { var e = document.getElementById('mp-loading'); var t = document.getElementById('mp-loading-msg'); if (t) t.textContent = m || 'Loading…'; if (e) e.style.display = 'flex'; }
+  function hideLoading() { var e = document.getElementById('mp-loading'); if (e) e.style.display = 'none'; }
+  function num(v) { if (v == null || v === '') return null; var n = +v; return isFinite(n) ? n : null; }
+  function fnum(n) { return (n == null || !isFinite(n)) ? '' : (Math.round(n * 100) / 100).toLocaleString(); }
+  function pd_(v) { if (!v) return null; var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+  function mFloor(d) { return d ? new Date(d.getFullYear(), d.getMonth(), 1) : null; }
+  function mkey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01'; }
+  function monLabel(d) { return MON3[d.getMonth()] + ' ' + d.getFullYear(); }
+  function moneyShort(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (Fmt.moneyShort) return Fmt.moneyShort(v);
+    return Fmt.money ? Fmt.money(v) : String(Math.round(v));
+  }
+
+  // ---- Month axis, from the project schedule --------------------------------------------
+  // ⚠️ Two tiny indexed reads, not a paged scan: a project has up to 40k activities and a
+  // plain read is capped at 1000 rows anyway, so asking the server for the first and last
+  // date is both correct and cheap. Falls back to the cached rollup on `projects`, then to a
+  // 12-month window around today — and the note under the controls always says which.
+  async function loadSpan() {
+    var s = null, e = null, src = 'the project schedule';
+    try {
+      var a = await sb().from('project_schedule').select('start_date')
+        .eq('project_id', pid).neq('activity_type', 'WBS Summary')
+        .not('start_date', 'is', null).order('start_date', { ascending: true }).limit(1);
+      var b = await sb().from('project_schedule').select('end_date')
+        .eq('project_id', pid).neq('activity_type', 'WBS Summary')
+        .not('end_date', 'is', null).order('end_date', { ascending: false }).limit(1);
+      if (!a.error && a.data && a.data[0]) s = pd_(a.data[0].start_date);
+      if (!b.error && b.data && b.data[0]) e = pd_(b.data[0].end_date);
+    } catch (_e) {}
+    if (!s || !e) {
+      var p = PROJECTS.filter(function (x) { return x.id === pid; })[0];
+      if (p && p.schedule_start && p.schedule_finish) { s = pd_(p.schedule_start); e = pd_(p.schedule_finish); src = 'the project record'; }
+    }
+    if (!s || !e) {
+      var t = new Date(); s = new Date(t.getFullYear(), t.getMonth() - 3, 1); e = new Date(t.getFullYear(), t.getMonth() + 9, 1);
+      src = 'a default window — this project has no schedule yet';
+    }
+    if (e < s) e = s;
+    var months = [], c = mFloor(s), stop = mFloor(e), guard = 0;
+    while (c <= stop && guard++ < 600) { months.push({ d: new Date(c), iso: mkey(c) }); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    SPAN = { start: mFloor(s), end: stop, months: months, source: src };
+  }
+
+  // The data date is the Project Schedule's, shared through the same per-project key Cash
+  // Flow and Equipment Loading already read — so "as of" means the same date everywhere.
+  function loadCutoff() {
+    var v = null;
+    try { v = localStorage.getItem('ps_datadate_' + pid); } catch (_e) {}
+    CUTOFF = mFloor(pd_(v) || new Date());
+  }
+
+  // ---- Data -----------------------------------------------------------------------------
+  async function load(reset) {
+    if (!pid) { POS = []; LOAD = {}; ROSTER = []; MONTHS = {}; await loadSpan(); renderAll(); return; }
+    if (reset) showLoading('Loading manpower…');
+    needsMigration = false;
+    try {
+      POS = await PDb.selectAll('manpower_positions', function (q) { return q.eq('project_id', pid); });
+      sortPositions();
+      var rows = await PDb.selectAll('manpower_loading', function (q) { return q.eq('project_id', pid); });
+      LOAD = {};
+      rows.forEach(function (r) { (LOAD[r.position_id] = LOAD[r.position_id] || {})[String(r.period).slice(0, 10)] = r; });
+      ROSTER = await PDb.selectAll('manpower_roster', function (q) { return q.eq('project_id', pid); });
+      ROSTER.sort(function (a, b) { return String(a.employee_name || '').localeCompare(String(b.employee_name || '')); });
+      var mm = await PDb.selectAll('manpower_months', function (q) { return q.eq('project_id', pid); });
+      MONTHS = {};
+      mm.forEach(function (r) { MONTHS[String(r.period).slice(0, 10)] = r; });
+    } catch (err) {
+      // A missing table means the migration has not been run. Name the file and keep the
+      // module usable (empty) rather than throwing a raw PostgREST message at the planner.
+      if (/manpower_positions|manpower_loading|manpower_roster|manpower_months|schema cache/i.test(err.message || '')) {
+        needsMigration = true; POS = []; LOAD = {}; ROSTER = []; MONTHS = {};
+      } else { UI.toast('Could not load manpower: ' + (err.message || err), 'error'); }
+    }
+    await loadSpan();
+    loadCutoff();
+    if (!portAsOf) portAsOf = CUTOFF;
+    hideLoading();
+    renderAll();
+  }
+
+  // Departments in the seed's own order first (that IS the org chart's order), then anything
+  // the project has invented, alphabetically. Sorting departments alphabetically would put
+  // HR above the Project Manager on every printout.
+  function deptRank(d) {
+    var i = STAFF_SEED.findIndex(function (x) { return x[0] === d; });
+    if (i >= 0) return i;
+    var j = SKILLED_SEED.findIndex(function (x) { return x[0] === d; });
+    return j >= 0 ? 100 + j : 900;
+  }
+  function sortPositions() {
+    POS.sort(function (a, b) {
+      var aw = WORKFORCES.indexOf(a.workforce), bw = WORKFORCES.indexOf(b.workforce);
+      if (aw < 0) aw = 9; if (bw < 0) bw = 9;
+      if (aw !== bw) return aw - bw;
+      var ad = deptRank(a.department), bd = deptRank(b.department);
+      if (ad !== bd) return ad - bd;
+      if (ad === 900 && a.department !== b.department) return String(a.department || '').localeCompare(String(b.department || ''));
+      if ((a.sort_order || 0) !== (b.sort_order || 0)) return (a.sort_order || 0) - (b.sort_order || 0);
+      return String(a.position_title || '').localeCompare(String(b.position_title || ''));
+    });
+  }
+
+  // ⚠️ A save must not be all-or-nothing when a column is missing. PostgREST answers an
+  // unmigrated column with PGRST204 and REJECTS THE WHOLE ROW — which on the equipment
+  // module lost every field a planner had just typed. This drops the column PostgREST named,
+  // retries, and reports which fields were not stored plus the file to run.
+  // ⚠️ Deliberately only for a MISSING COLUMN: a constraint violation, an RLS refusal or a
+  // bad value must still fail loudly, or a save would silently discard real data.
+  var MP_MIGRATION = 'migrations/2026-08-27-manpower-loading.sql';
+  function missingColumn(err) {
+    var m = /Could not find the '([^']+)' column/i.exec((err && err.message) || '');
+    return m ? m[1] : null;
+  }
+  async function tolerantWrite(payload, run) {
+    var p = {}, k;
+    for (k in payload) if (Object.prototype.hasOwnProperty.call(payload, k)) p[k] = payload[k];
+    var dropped = [];
+    for (var attempt = 0; attempt < 12; attempt++) {
+      var res = await run(p);
+      if (!res || !res.error) return { ok: true, data: res && res.data, dropped: dropped };
+      var col = missingColumn(res.error);
+      if (!col || !(col in p)) return { ok: false, error: res.error, dropped: dropped };
+      delete p[col];
+      dropped.push(col);
+    }
+    return { ok: false, error: new Error('too many missing columns'), dropped: dropped };
+  }
+  var mpPendingMig = false;
+  function reportDropped(dropped) {
+    if (!dropped || !dropped.length) return;
+    mpPendingMig = true;
+    renderMigrateBanner();
+    UI.toast('Saved, but ' + dropped.length + ' field(s) were not stored (' + dropped.join(', ') +
+      ') — run ' + MP_MIGRATION + ' in the Supabase SQL editor.', 'error');
+  }
+  async function persist(job, msg) {
+    try { var r = await job; if (r && r.error) throw r.error; return true; }
+    catch (err) { UI.toast((msg || 'Save failed') + ': ' + (err.message || err), 'error'); return false; }
+  }
+
+  // ---- Reading a month ------------------------------------------------------------------
+  function rowOf(p, iso) { return (LOAD[p.id] || {})[iso] || null; }
+  function qtyOf(p, iso, k) { var r = rowOf(p, iso); return r ? num(r[SER_BY_K[k].col]) : null; }
+  // ⚠️ THE GOVERNING REQUIREMENT, and it is computed PER POSITION before it is summed.
+  // Summing approved and planned separately and then picking one would under-report a
+  // project where some lines are revised and others are not — which is every project
+  // mid-revision.
+  function govOf(p, iso) {
+    var r = rowOf(p, iso); if (!r) return null;
+    var a = num(r.approved_qty); if (a != null) return a;
+    return num(r.planned_qty);
+  }
+  function visiblePositions() {
+    return POS.filter(function (p) {
+      if (fWork && p.workforce !== fWork) return false;
+      if (fDept && p.department !== fDept) return false;
+      return true;
+    });
+  }
+  function deptOptions() {
+    var seen = {}, out = [];
+    POS.forEach(function (p) {
+      var d = (p.department || '').trim(); if (!d || seen[d]) return; seen[d] = 1; out.push(d);
+    });
+    out.sort(function (a, b) { return deptRank(a) - deptRank(b) || a.localeCompare(b); });
+    return out;
+  }
+
+  function blankCell() {
+    return { planned: 0, approved: 0, forecast: 0, actual: 0, gov: 0,
+             has: { planned: false, approved: false, forecast: false, actual: false, gov: false },
+             cost: { planned: 0, approved: 0, forecast: 0, actual: 0, gov: 0 },
+             costHas: { planned: false, approved: false, forecast: false, actual: false, gov: false } };
+  }
+  // One pass over (positions × months) producing every series the chart, the grid, the KPIs
+  // and the export need — so no two of them can disagree about a month's total.
+  function aggregate() {
+    var items = visiblePositions(), months = SPAN.months;
+    var byDept = {}, depts = [], total = {};
+    months.forEach(function (m) { total[m.iso] = blankCell(); });
+    items.forEach(function (p) {
+      var d = (p.department || '—');
+      if (!byDept[d]) { byDept[d] = {}; depts.push(d); months.forEach(function (m) { byDept[d][m.iso] = blankCell(); }); }
+      var rate = num(p.monthly_rate);
+      months.forEach(function (m) {
+        var dc = byDept[d][m.iso], tc = total[m.iso];
+        SERIES.forEach(function (s) {
+          var v = qtyOf(p, m.iso, s.k);
+          if (v == null) return;
+          dc[s.k] += v; dc.has[s.k] = true; tc[s.k] += v; tc.has[s.k] = true;
+          if (rate != null) { dc.cost[s.k] += rate * v; dc.costHas[s.k] = true; tc.cost[s.k] += rate * v; tc.costHas[s.k] = true; }
+        });
+        var g = govOf(p, m.iso);
+        if (g != null) {
+          dc.gov += g; dc.has.gov = true; tc.gov += g; tc.has.gov = true;
+          if (rate != null) { dc.cost.gov += rate * g; dc.costHas.gov = true; tc.cost.gov += rate * g; tc.costHas.gov = true; }
+        }
+      });
+    });
+    depts.sort(function (a, b) { return deptRank(a) - deptRank(b) || a.localeCompare(b); });
+    return { items: items, depts: depts, byDept: byDept, total: total };
+  }
+
+  // A month's cost for one series. Typed payroll wins; otherwise rate × headcount, and the
+  // caller is told which so the screen can say so rather than implying a figure came off a
+  // payslip when it came off a rate card.
+  // ⚠️ A TYPED cost is for the WHOLE PROJECT — it cannot be narrowed by the department or
+  // workforce filter, so while a filter is on the derived figure is used instead. Showing a
+  // project-wide payroll total against one department's headcount is the kind of number that
+  // ends up in a report.
+  function filtered() { return !!(fWork || fDept); }
+  function costOf(ag, iso, k) {
+    if (!filtered()) {
+      var mr = MONTHS[iso];
+      var typed = mr ? num(mr[SER_BY_K[k] ? SER_BY_K[k].cost : (k + '_cost')]) : null;
+      if (typed != null) return { v: typed, derived: false };
+    }
+    var c = ag.total[iso];
+    if (c && c.costHas[k]) return { v: c.cost[k], derived: true };
+    return { v: null, derived: true };
+  }
+  function anyTypedCost() {
+    for (var k in MONTHS) if (Object.prototype.hasOwnProperty.call(MONTHS, k)) {
+      var r = MONTHS[k];
+      if (num(r.planned_cost) != null || num(r.approved_cost) != null || num(r.forecast_cost) != null || num(r.actual_cost) != null) return true;
+    }
+    return false;
+  }
+  function phaseOf(iso) { var r = MONTHS[iso]; return r ? (r.phase || '') : ''; }
+
+  // ---- KPIs -----------------------------------------------------------------------------
+  function renderKpis(ag) {
+    var host = document.getElementById('mp-kpis'); if (!host) return;
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var t = cutIso && ag.total[cutIso] ? ag.total[cutIso] : null;
+    var req = t && t.has.gov ? t.gov : null;
+    var act = t && t.has.actual ? t.actual : null;
+    var gap = (req != null && act != null) ? (act - req) : null;
+    var fill = (req && act != null) ? (act / req) : null;
+    var peak = 0, peakM = '';
+    SPAN.months.forEach(function (m) { var x = ag.total[m.iso]; if (x.has.gov && x.gov > peak) { peak = x.gov; peakM = MON3[m.d.getMonth()] + ' ' + String(m.d.getFullYear()).slice(2); } });
+    var vac = vacancyNow(ag);
+    function k(v, l, cls) { return '<div class="mp-kpi"><div class="mp-kpi-v' + (cls ? ' ' + cls : '') + '">' + v + '</div><div class="mp-kpi-l">' + l + '</div></div>'; }
+    host.innerHTML =
+      k(ag.items.length, 'Position lines') +
+      k(req == null ? '—' : fnum(req), 'Requirement this month') +
+      k(act == null ? '—' : fnum(act), 'Actual this month') +
+      k(gap == null ? '—' : (gap > 0 ? '+' : '') + fnum(gap), 'Variance vs requirement', gap != null && gap < 0 ? 'mp-bad' : (gap != null && gap > 0 ? 'mp-good' : '')) +
+      k(fill == null ? '—' : Math.round(fill * 100) + '%', 'Fill rate', fill != null && fill < 0.85 ? 'mp-bad' : '') +
+      k(peak ? fnum(peak) : '—', 'Peak requirement' + (peakM ? ' · ' + peakM : '')) +
+      k(vac == null ? '—' : fnum(vac), 'Unfilled slots (roster)', vac ? 'mp-bad' : '');
+    var note = document.getElementById('mp-span-note');
+    if (note) {
+      note.textContent = SPAN.months.length + ' months (' + monLabel(SPAN.start) + ' – ' + monLabel(SPAN.end) +
+        ') from ' + SPAN.source + (CUTOFF ? ' · cut-off ' + monLabel(CUTOFF) : '');
+    }
+  }
+  // Requirement at the cut-off minus the people actually on the roster for it. Returns null
+  // when there is no roster at all — a project that has not typed one has an UNKNOWN number
+  // of vacancies, not zero.
+  function filledCount(posId, atIso) {
+    var n = 0;
+    ROSTER.forEach(function (r) {
+      if (String(r.position_id) !== String(posId)) return;
+      if (TBH_RE.test(r.employee_name || '')) return;
+      if (atIso && r.contract_end) { var e = mFloor(pd_(r.contract_end)); if (e && mkey(e) < atIso) return; }
+      if (atIso && r.contract_start) { var s = mFloor(pd_(r.contract_start)); if (s && mkey(s) > atIso) return; }
+      n++;
+    });
+    return n;
+  }
+  function vacancyNow(ag) {
+    if (!ROSTER.length) return null;
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var items = ag.items, total = 0, any = false;
+    items.forEach(function (p) {
+      var req = cutIso ? govOf(p, cutIso) : null;
+      if (req == null) return;
+      any = true;
+      total += Math.max(0, req - filledCount(p.id, cutIso));
+    });
+    return any ? total : null;
+  }
+
+  // ---- Chart ----------------------------------------------------------------------------
+  // ⚠️ Bars for Planned and Actual, LINES for Approved and Forecast — which is how the source
+  // sheet reads it, and the only arrangement in which four series fit a 48px month column
+  // without one hiding another.
+  function renderChart(ag) {
+    var host = document.getElementById('mp-chart'); if (!host) return;
+    var months = SPAN.months;
+    if (!months.length || !ag.items.length) {
+      host.innerHTML = '<div class="mp-empty">' + (ag.items.length ? 'No months in the project schedule yet.'
+        : 'No positions yet — use <b>Seed</b> to drop in the standard organisation chart, or <b>+ Add position</b>.') + '</div>';
+      renderChartLegend();
+      return;
+    }
+    var padL = MX_C1 + MX_C2, padR = 12, padT = 26, padB = 46;
+    var bw = MX_CELL;
+    var W = padL + padR + months.length * bw, H = 330;
+    var ph = H - padT - padB;
+    var costMode = (mode === 'cost');
+
+    // Values to plot, per series, per month. In cost mode these are ACCUMULATED costs — the
+    // sheet's "ACCM." rows — because a monthly cost column and a headcount column on the same
+    // axis is two different quantities sharing a scale.
+    var val = {}, running = {};
+    SERIES.forEach(function (s) { val[s.k] = {}; running[s.k] = 0; });
+    months.forEach(function (m) {
+      SERIES.forEach(function (s) {
+        if (costMode) {
+          var c = costOf(ag, m.iso, s.k);
+          if (c.v != null) running[s.k] += c.v;
+          // ⚠️ A running total is only meaningful once the series has started; before its
+          // first reported month it is left null rather than drawn flat along zero.
+          val[s.k][m.iso] = (running[s.k] === 0 && c.v == null) ? null : running[s.k];
+        } else {
+          var cell = ag.total[m.iso];
+          val[s.k][m.iso] = cell.has[s.k] ? cell[s.k] : null;
+        }
+      });
+    });
+
+    var max = 0;
+    months.forEach(function (m) {
+      SERIES.forEach(function (s) {
+        if (!shown[s.k]) return;
+        var v = val[s.k][m.iso];
+        // Actuals past the cut-off are not reported; they must not set the scale.
+        if (v != null && !(s.k === 'actual' && CUTOFF && m.iso > mkey(CUTOFF))) max = Math.max(max, v);
+      });
+    });
+    if (max <= 0) max = 1;
+    var step = niceStep(max / 4), top = Math.ceil(max / step) * step;
+    var y = function (v) { return padT + ph - (v / top) * ph; };
+    var s = [];
+    for (var g = 0; g <= top + 1e-9; g += step) {
+      s.push('<line x1="' + padL + '" y1="' + y(g).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(g).toFixed(1) + '" stroke="var(--pd-line)" stroke-dasharray="3 3"/>');
+      s.push('<text x="' + (padL - 6) + '" y="' + (y(g) + 3.5).toFixed(1) + '" text-anchor="end" font-size="9.5" fill="var(--pd-muted)">' + (costMode ? moneyShort(g) : g) + '</text>');
+    }
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    months.forEach(function (m, i) {
+      var x = padL + i * bw, cx = x + bw / 2;
+      if (cutIso && m.iso === cutIso) s.push('<rect x="' + x + '" y="' + padT + '" width="' + bw + '" height="' + ph + '" fill="rgba(22,163,74,.18)"/>');
+      if (!costMode) {
+        var pbw = Math.max(6, bw * 0.56), abw = Math.max(5, bw * 0.34);
+        var pv = shown.planned ? val.planned[m.iso] : null;
+        if (pv != null && pv > 0) {
+          s.push('<rect x="' + (cx - pbw / 2).toFixed(1) + '" y="' + y(pv).toFixed(1) + '" width="' + pbw.toFixed(1) +
+            '" height="' + (padT + ph - y(pv)).toFixed(1) + '" fill="#9A9A9A" rx="1"/>');
+        }
+        var av = shown.actual ? val.actual[m.iso] : null;
+        var futureA = cutIso && m.iso > cutIso;
+        if (av != null && av > 0 && !futureA) {
+          s.push('<rect x="' + (cx - abw / 2 + pbw * 0.10).toFixed(1) + '" y="' + y(av).toFixed(1) + '" width="' + abw.toFixed(1) +
+            '" height="' + (padT + ph - y(av)).toFixed(1) + '" fill="#EE3124" rx="1"/>');
+          s.push('<text x="' + cx.toFixed(1) + '" y="' + (y(av) - 5).toFixed(1) + '" text-anchor="middle" font-size="10" font-weight="700" fill="var(--pd-ink)">' + fnum(av) + '</text>');
+        }
+        if (shown.planned && pv != null) s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 13) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + fnum(pv) + '</text>');
+      }
+      s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 27) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + MON3[m.d.getMonth()] + '</text>');
+      if (m.d.getMonth() === 0 || i === 0) s.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 39) + '" text-anchor="middle" font-size="9" font-weight="700" fill="var(--pd-ink)">' + m.d.getFullYear() + '</text>');
+    });
+
+    // Lines. In cost mode EVERY shown series is a line (they are accumulations); in headcount
+    // mode only the two revision series are, because bars already carry plan and actual.
+    SERIES.forEach(function (ser) {
+      if (!shown[ser.k]) return;
+      if (!costMode && ser.draw === 'bar') return;
+      var pts = [], dots = [];
+      months.forEach(function (m, i) {
+        var v = val[ser.k][m.iso];
+        if (v == null) return;
+        if (ser.k === 'actual' && cutIso && m.iso > cutIso) return;   // not reported yet
+        var cx = padL + i * bw + bw / 2;
+        pts.push(cx.toFixed(1) + ',' + y(v).toFixed(1));
+        dots.push('<circle cx="' + cx.toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="2.6" fill="' + ser.color + '"/>');
+      });
+      if (pts.length > 1) {
+        s.push('<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + ser.color + '" stroke-width="2.2"' +
+          (ser.draw === 'dash' ? ' stroke-dasharray="6 4"' : '') + ' stroke-linejoin="round"/>');
+      }
+      s.push(dots.join(''));
+    });
+    s.push('<line x1="' + padL + '" y1="' + (padT + ph) + '" x2="' + (W - padR) + '" y2="' + (padT + ph) + '" stroke="var(--pd-line)"/>');
+    host.innerHTML = '<svg class="mp-chart" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H +
+      '" role="img" aria-label="Manpower curve per month">' + s.join('') + '</svg>';
+
+    var title = document.getElementById('mp-chart-title');
+    if (title) title.textContent = costMode ? 'Manpower Cost Curve (accumulated)' : 'Manpower Curve';
+    renderChartLegend();
+    syncScrollers();
+  }
+  function renderChartLegend() {
+    var el = document.getElementById('mp-chart-legend'); if (!el) return;
+    var costMode = (mode === 'cost');
+    var parts = SERIES.filter(function (s) { return shown[s.k]; }).map(function (s) {
+      var asBar = !costMode && s.draw === 'bar';
+      return '<span class="mp-lg" style="color:' + s.color + '">' +
+        (asBar ? '<span class="sw" style="background:' + s.color + '"></span>'
+               : '<span class="ln"' + (s.draw === 'dash' ? ' style="border-top-style:dashed"' : '') + '></span>') +
+        '<span style="color:var(--pd-muted)">' + esc(s.label) + '</span></span>';
+    });
+    parts.push('<span class="mp-lg"><span class="sw" style="background:rgba(22,163,74,.35);"></span>Cut-off month</span>');
+    if (costMode) {
+      parts.push('<span class="mp-lg">' + (anyTypedCost() && !filtered()
+        ? 'Costs typed per month where available, otherwise rate × headcount.'
+        : 'Costs derived as monthly rate × headcount' + (filtered() ? ' (a typed project cost cannot be split by this filter).' : ' — no month has a typed cost yet.')) + '</span>');
+    }
+    el.innerHTML = parts.join('');
+  }
+  function niceStep(raw) {
+    if (!(raw > 0)) return 1;
+    var p = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10)), n = raw / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+  }
+  // ⚠️ One-way-at-a-time guard: assigning scrollLeft fires the other box's scroll event, which
+  // would assign back and fight the user's own scroll (a stutter on a mouse, a refusal to move
+  // on a trackpad).
+  var _syncing = false;
+  function syncScrollers() {
+    var a = document.getElementById('mp-chart'), b = document.getElementById('mp-matrix');
+    if (!a || !b || a._mpSynced) return;
+    a._mpSynced = b._mpSynced = true;
+    function link(from, to) {
+      from.addEventListener('scroll', function () {
+        if (_syncing) return;
+        _syncing = true; to.scrollLeft = from.scrollLeft;
+        requestAnimationFrame(function () { _syncing = false; });
+      });
+    }
+    link(a, b); link(b, a);
+  }
+
+  // ---- Matrix ---------------------------------------------------------------------------
+  function renderMatrix(ag) {
+    var host = document.getElementById('mp-matrix'); if (!host) return;
+    var months = SPAN.months;
+    if (!months.length) { host.innerHTML = '<div class="mp-empty">No months to show.</div>'; return; }
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var yr = [], run = null;
+    months.forEach(function (m) {
+      var y = m.d.getFullYear();
+      if (!run || run.y !== y) { run = { y: y, n: 0 }; yr.push(run); }
+      run.n++;
+    });
+    var h = ['<table class="mp-mx"><thead>'];
+    h.push('<tr class="mp-mx-yr"><th class="mp-c1"></th><th class="mp-c2"></th>' +
+      yr.map(function (r) { return '<th colspan="' + r.n + '">' + r.y + '</th>'; }).join('') + '</tr>');
+    h.push('<tr class="mp-mx-mo"><th class="mp-c1">' + (detail === 'pos' ? 'Position' : 'Department') + '</th><th class="mp-c2">Series</th>' +
+      months.map(function (m) { return '<th' + (m.iso === cutIso ? ' class="mp-cut"' : '') + '>' + MON3[m.d.getMonth()] + '</th>'; }).join('') + '</tr>');
+    h.push('</thead><tbody>');
+
+    // Phase band — project-month, so it is editable in every mode. The source sheet's
+    // "Indicate PHASE of Project" row, which is what makes a headcount dip readable.
+    h.push('<tr><td class="mp-c1">Project phase</td><td class="mp-c2">&nbsp;</td>' +
+      months.map(function (m) {
+        return '<td class="mp-phase mp-edit' + (m.iso === cutIso ? ' mp-cut' : '') + '" data-phase="' + m.iso +
+          '" title="' + esc(phaseOf(m.iso) || 'Click to set the phase') + '">' + esc(phaseOf(m.iso)) + '</td>';
+      }).join('') + '</tr>');
+
+    var live = SERIES.filter(function (s) { return shown[s.k]; });
+    if (!live.length) h.push('<tr><td class="mp-c1">—</td><td class="mp-c2">&nbsp;</td><td colspan="' + months.length + '" style="text-align:left;padding-left:10px;color:var(--pd-muted)">No series selected. Tick at least one above.</td></tr>');
+
+    function bandRows(label, get, editId, cls) {
+      live.forEach(function (ser, idx) {
+        h.push('<tr class="' + (cls || '') + (ser.k === 'actual' ? ' mp-r-actual' : '') + '">');
+        if (idx === 0) h.push('<td class="mp-c1" rowspan="' + live.length + '">' + label + '</td>');
+        h.push('<td class="mp-c2">' + esc(ser.short) + '</td>');
+        months.forEach(function (m) {
+          var v = get(m.iso, ser.k);
+          // Actuals after the cut-off are not "zero", they are not yet reported — the sheet
+          // leaves them blank and so does this, or every future month reads as a shortfall.
+          var future = ser.k === 'actual' && cutIso && m.iso > cutIso;
+          var c = [];
+          if (m.iso === cutIso) c.push('mp-cut');
+          if (future) c.push('mp-out');
+          if (editId) c.push('mp-edit');
+          h.push('<td class="' + c.join(' ') + '"' +
+            (editId ? ' data-pos="' + esc(editId) + '" data-per="' + m.iso + '" data-ser="' + ser.k + '"' : '') +
+            '>' + (future ? '' : (v == null ? '' : fnum(v))) + '</td>');
+        });
+        h.push('</tr>');
+      });
+    }
+
+    if (detail === 'pos') {
+      var lastDept = null;
+      ag.items.forEach(function (p) {
+        var d = p.department || '—';
+        if (d !== lastDept) {
+          lastDept = d;
+          h.push('<tr class="mp-r-grp"><td class="mp-c1">' + esc(d) + '</td><td class="mp-c2">&nbsp;</td>' +
+            months.map(function (m) { return '<td' + (m.iso === cutIso ? ' class="mp-cut"' : '') + '></td>'; }).join('') + '</tr>');
+        }
+        var label = (p.code ? '<b>' + esc(p.code) + '</b> ' : '') + esc(p.position_title) +
+          (p.workforce === 'Skilled' ? ' <span class="mp-badge mp-skill">Skilled</span>' : '');
+        bandRows(label, function (iso, k) { return qtyOf(p, iso, k); }, p.id);
+      });
+    } else {
+      ag.depts.forEach(function (d) {
+        var label = '<span class="mp-dot" style="background:' + deptColor(d) + '"></span>' + esc(d);
+        bandRows(label, function (iso, k) {
+          var c = ag.byDept[d][iso];
+          return c.has[k] ? c[k] : null;
+        }, null);
+      });
+    }
+
+    // Overall + the requirement and the variance it produces.
+    h.push('</tbody><tbody>');
+    var mark = h.length;
+    bandRows('Overall', function (iso, k) { var t = ag.total[iso]; return t.has[k] ? t[k] : null; }, null);
+    for (var i = mark; i < h.length; i++) h[i] = h[i].replace('<tr class="', '<tr class="mp-r-total ');
+    h.push('<tr class="mp-r-total"><td class="mp-c1">Requirement</td><td class="mp-c2">B1 else B0</td>' +
+      months.map(function (m) {
+        var t = ag.total[m.iso];
+        return '<td' + (m.iso === cutIso ? ' class="mp-cut"' : '') + '>' + (t.has.gov ? fnum(t.gov) : '') + '</td>';
+      }).join('') + '</tr>');
+    h.push('<tr class="mp-r-total"><td class="mp-c1">Variance</td><td class="mp-c2">Actual − req.</td>' +
+      months.map(function (m) {
+        var t = ag.total[m.iso];
+        var future = cutIso && m.iso > cutIso;
+        if (future || !t.has.gov || !t.has.actual) return '<td class="mp-out' + (m.iso === cutIso ? ' mp-cut' : '') + '"></td>';
+        var v = t.actual - t.gov;
+        var c = v < 0 ? 'mp-neg' : (v > 0 ? 'mp-pos' : '');
+        return '<td class="' + c + (m.iso === cutIso ? ' mp-cut' : '') + '">' + (v > 0 ? '+' : '') + fnum(v) + '</td>';
+      }).join('') + '</tr>');
+
+    if (showCost) {
+      h.push('</tbody><tbody>');
+      SERIES.forEach(function (ser) {
+        h.push('<tr class="mp-r-total"><td class="mp-c1">' + (ser === SERIES[0] ? 'Cost' : '&nbsp;') + '</td>' +
+          '<td class="mp-c2">' + esc(ser.short) + '</td>' +
+          months.map(function (m) {
+            var c = costOf(ag, m.iso, ser.k);
+            var editable = !filtered();
+            var cls = ['mp-cost'];
+            if (m.iso === cutIso) cls.push('mp-cut');
+            if (editable) cls.push('mp-edit');
+            if (c.v != null && c.derived) cls.push('mp-out');
+            return '<td class="' + cls.join(' ') + '"' +
+              (editable ? ' data-cost="' + ser.k + '" data-per="' + m.iso + '"' : '') +
+              ' title="' + (c.v == null ? 'no figure' : (c.derived ? 'derived: monthly rate × headcount' : 'typed for this month')) + '">' +
+              (c.v == null ? '' : moneyShort(c.v)) + '</td>';
+          }).join('') + '</tr>');
+      });
+    }
+    h.push('</tbody></table>');
+    host.innerHTML = h.join('');
+    wireMatrixEdit(host);
+    syncScrollers();
+  }
+  // A stable colour per department, so the same department is the same colour on every
+  // project without a lookup table anybody has to maintain.
+  var DEPT_PALETTE = ['#EE3124', '#2F6FBF', '#1B7F4B', '#B4610F', '#6B3FA0', '#0E7C86', '#A8322D', '#4A5C6A', '#8A6D1F', '#3C7D3C'];
+  function deptColor(d) {
+    var s = String(d || ''), n = 0;
+    for (var i = 0; i < s.length; i++) n = (n * 31 + s.charCodeAt(i)) >>> 0;
+    return DEPT_PALETTE[n % DEPT_PALETTE.length];
+  }
+
+  function wireMatrixEdit(host) {
+    // Headcount cells — only in "By position" mode. A department row is a roll-up of several
+    // positions, so there would be no way to know which position a typed number belonged to.
+    host.querySelectorAll('td.mp-edit[data-pos]').forEach(function (td) {
+      td.onclick = function () { cellEdit(td, false, function (v) { setQty(td.dataset.pos, td.dataset.per, td.dataset.ser, v); }); };
+    });
+    host.querySelectorAll('td.mp-edit[data-cost]').forEach(function (td) {
+      td.onclick = function () { cellEdit(td, false, function (v) { setMonthField(td.dataset.per, SER_BY_K[td.dataset.cost].cost, v); }); };
+    });
+    host.querySelectorAll('td.mp-edit[data-phase]').forEach(function (td) {
+      td.onclick = function () { cellEdit(td, true, function (v) { setMonthField(td.dataset.phase, 'phase', v); }); };
+    });
+  }
+  function cellEdit(td, isText, commitFn) {
+    if (td.querySelector('input')) return;
+    var was = td.textContent.trim();
+    td.innerHTML = '<input class="mp-cellin' + (isText ? ' wide' : '') + '" type="' + (isText ? 'text' : 'number') + '"' +
+      (isText ? '' : ' step="any" min="0"') + ' value="' + esc(was) + '">';
+    var inp = td.querySelector('input'); inp.focus(); inp.select();
+    var done = false;
+    function commit(save) {
+      if (done) return; done = true;
+      if (!save) { td.textContent = was; return; }
+      commitFn(isText ? (inp.value.trim() || null) : num(inp.value));
+    }
+    inp.onblur = function () { commit(true); };
+    inp.onkeydown = function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+    };
+  }
+
+  // One (position, month) upsert. ⚠️ Blank CLEARS the value rather than storing 0 — "not
+  // reported" and "nobody deployed" are different facts and the grid draws them differently.
+  async function setQty(posId, iso, k, v) {
+    var col = SER_BY_K[k].col;
+    var cur = (LOAD[posId] || {})[iso];
+    var ok;
+    if (cur) {
+      var patch = {}; patch[col] = v; patch.source = 'hand';
+      var r1 = await tolerantWrite(patch, function (p) { return sb().from('manpower_loading').update(p).eq('id', cur.id); });
+      ok = r1.ok;
+      if (ok) { cur[col] = v; reportDropped(r1.dropped); }
+      else UI.toast('Could not save: ' + (r1.error && r1.error.message), 'error');
+    } else {
+      var row = { project_id: pid, position_id: posId, period: iso, source: 'hand', created_by: user && user.id };
+      row[col] = v;
+      var r2 = await tolerantWrite(row, function (p) { return sb().from('manpower_loading').insert(p).select(); });
+      if (!r2.ok) { UI.toast('Could not save: ' + (r2.error && r2.error.message), 'error'); ok = false; }
+      else { (LOAD[posId] = LOAD[posId] || {})[iso] = r2.data[0]; reportDropped(r2.dropped); ok = true; }
+    }
+    if (ok) renderAll();
+  }
+  // The project-month row: phase, and the four typed costs. Upserted the same way.
+  async function setMonthField(iso, col, v) {
+    var cur = MONTHS[iso];
+    var ok;
+    if (cur) {
+      var patch = {}; patch[col] = v;
+      var r1 = await tolerantWrite(patch, function (p) { return sb().from('manpower_months').update(p).eq('id', cur.id); });
+      ok = r1.ok;
+      if (ok) { cur[col] = v; reportDropped(r1.dropped); }
+      else UI.toast('Could not save: ' + (r1.error && r1.error.message), 'error');
+    } else {
+      var row = { project_id: pid, period: iso, created_by: user && user.id };
+      row[col] = v;
+      var r2 = await tolerantWrite(row, function (p) { return sb().from('manpower_months').insert(p).select(); });
+      if (!r2.ok) { UI.toast('Could not save: ' + (r2.error && r2.error.message), 'error'); ok = false; }
+      else { MONTHS[iso] = r2.data[0]; reportDropped(r2.dropped); ok = true; }
+    }
+    if (ok) renderAll();
+  }
+
+  // ---- Positions register ---------------------------------------------------------------
+  function renderRegister() {
+    var el = document.getElementById('mp-reg'); if (!el) return;
+    if (!POS.length) {
+      el.innerHTML = '<tbody><tr><td><div class="mp-empty">No positions yet. Use <b>Seed</b> for the standard organisation chart, or <b>+ Add position</b> for one line.</div></td></tr></tbody>';
+      return;
+    }
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var h = ['<thead><tr><th>Code</th><th>Position</th><th>Workforce</th><th>Rank</th>' +
+      '<th class="num">Req. now</th><th class="num">Actual now</th><th class="num">Filled</th><th class="num">Peak req.</th>' +
+      '<th class="num">Rate / month</th><th></th></tr></thead><tbody>'];
+    var lastKey = null;
+    POS.forEach(function (p) {
+      var key = (p.workforce || '') + ' · ' + (p.department || '—');
+      if (key !== lastKey) { lastKey = key; h.push('<tr class="mp-grp"><td colspan="10">' + esc(key) + '</td></tr>'); }
+      var peak = 0;
+      SPAN.months.forEach(function (m) { var v = govOf(p, m.iso); if (v != null && v > peak) peak = v; });
+      var req = cutIso ? govOf(p, cutIso) : null;
+      var act = cutIso ? qtyOf(p, cutIso, 'actual') : null;
+      var fil = ROSTER.length ? filledCount(p.id, cutIso) : null;
+      var short = (req != null && fil != null) ? Math.max(0, req - fil) : null;
+      h.push('<tr>' +
+        '<td><b>' + esc(p.code || '—') + '</b></td>' +
+        '<td><b>' + esc(p.position_title) + '</b>' + (p.remarks ? '<div class="mp-note">' + esc(p.remarks) + '</div>' : '') + '</td>' +
+        '<td><span class="mp-badge' + (p.workforce === 'Skilled' ? ' mp-skill' : '') + '">' + esc(p.workforce || 'Staff') + '</span></td>' +
+        '<td>' + esc(p.job_rank || '—') + '</td>' +
+        '<td class="num">' + (req == null ? '—' : fnum(req)) + '</td>' +
+        '<td class="num">' + (act == null ? '—' : fnum(act)) + '</td>' +
+        '<td class="num">' + (fil == null ? '<span class="mp-note">no roster</span>'
+          : fnum(fil) + (short ? ' <span class="mp-badge mp-vac">' + short + ' open</span>' : ' <span class="mp-badge mp-fill">full</span>')) + '</td>' +
+        '<td class="num">' + (peak ? fnum(peak) : '—') + '</td>' +
+        '<td class="num">' + (num(p.monthly_rate) == null ? '—' : moneyShort(num(p.monthly_rate))) + '</td>' +
+        '<td><div class="mp-actions">' +
+          '<button class="mp-btn-sm" data-months="' + p.id + '">Months</button>' +
+          '<button class="mp-btn-sm" data-edit="' + p.id + '">Edit</button>' +
+          '<button class="mp-btn-sm" data-del="' + p.id + '">Delete</button>' +
+        '</div></td></tr>');
+    });
+    h.push('</tbody>');
+    el.innerHTML = h.join('');
+    el.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openForm(posById(b.dataset.edit)); }; });
+    el.querySelectorAll('[data-months]').forEach(function (b) { b.onclick = function () { openMonths(posById(b.dataset.months)); }; });
+    el.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { delPosition(posById(b.dataset.del)); }; });
+  }
+  function posById(id) { for (var i = 0; i < POS.length; i++) if (String(POS[i].id) === String(id)) return POS[i]; return null; }
+  function posTitle(id) { var p = posById(id); return p ? p.position_title : ''; }
+
+  // A proposed code: the title's initials plus the next free number, which is the numbering
+  // every project already uses on paper. It is a suggestion in an editable field, not a rule.
+  function initialsOf(t) {
+    var w = String(t || '').replace(/[^A-Za-z ]/g, ' ').split(/\s+/).filter(Boolean);
+    if (!w.length) return 'MP';
+    if (w.length === 1) return w[0].slice(0, 2).toUpperCase();
+    return (w[0].charAt(0) + w[1].charAt(0)).toUpperCase();
+  }
+  function nextCode(title) {
+    var pfx = initialsOf(title);
+    var used = {};
+    POS.forEach(function (p) { used[String(p.code || '').trim().toLowerCase()] = 1; });
+    for (var n = 1; n < 999; n++) {
+      var c = pfx + '-' + String(n).padStart(2, '0');
+      if (!used[c.toLowerCase()]) return c;
+    }
+    return pfx + '-' + Date.now().toString(36).slice(-3).toUpperCase();
+  }
+  function codeClash(code, exceptId) {
+    var c = String(code || '').trim().toLowerCase();
+    if (!c) return null;
+    for (var i = 0; i < POS.length; i++) {
+      if (exceptId && String(POS[i].id) === String(exceptId)) continue;
+      if (String(POS[i].code || '').trim().toLowerCase() === c) return POS[i];
+    }
+    return null;
+  }
+  function selOpts(list, cur) {
+    return list.map(function (x) { return '<option' + (String(x) === String(cur || '') ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
+  }
+
+  function openForm(p) {
+    p = p || null;
+    var defCode = p ? '' : '';
+    var depts = deptOptions();
+    STAFF_SEED.concat(SKILLED_SEED).forEach(function (d) { if (depts.indexOf(d[0]) < 0) depts.push(d[0]); });
+    if (p && p.department && depts.indexOf(p.department) < 0) depts.push(p.department);
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>' + (p ? 'Edit position' : 'Add position') + '</h2>' +
+      '<button class="pd-modal-close" id="mp-x">&times;</button></div>' +
+      '<div class="pd-modal-body"><div class="mp-form-grid" style="padding:4px 0 8px;">' +
+        '<div class="pd-field"><label>Position code</label>' +
+          '<input class="pd-input" id="f-code" value="' + esc(p ? p.code : defCode) + '" placeholder="FE-01">' +
+          '<span class="mp-note">Unique on this project. Two lines can share a TITLE; the code is what tells them apart.</span></div>' +
+        '<div class="pd-field"><label>Position title</label>' +
+          '<input class="pd-input" id="f-title" value="' + esc(p && p.position_title) + '" placeholder="e.g. Field Engineer"></div>' +
+        '<div class="pd-field"><label>Workforce</label><select class="pd-select" id="f-work">' + selOpts(WORKFORCES, p && p.workforce || 'Staff') + '</select></div>' +
+        '<div class="pd-field"><label>Department</label><select class="pd-select" id="f-dept">' + selOpts(depts, p && p.department) + '</select></div>' +
+        '<div class="pd-field"><label>Rank</label><select class="pd-select" id="f-rank"><option value="">—</option>' + selOpts(RANKS, p && p.job_rank) + '</select></div>' +
+        '<div class="pd-field"><label>Cost per head-month</label>' +
+          '<input class="pd-input" id="f-rate" type="number" step="any" min="0" value="' + esc(p && p.monthly_rate != null ? p.monthly_rate : '') + '">' +
+          '<span class="mp-note">Used only to derive a cost curve when payroll has not been typed for the month.</span></div>' +
+        '<div class="pd-field mp-form-full"><label>Remarks</label>' +
+          '<input class="pd-input" id="f-rem" value="' + esc(p && p.remarks) + '"></div>' +
+      '</div></div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="mp-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="mp-save">' + (p ? 'Save' : 'Add position') + '</button>' +
+      '</div>', { noBackdropClose: true });
+    var g = function (id) { return m.el.querySelector('#' + id); };
+    // A new line proposes a code the moment there is a title to derive one from; an edit
+    // never overwrites the code the planner already has.
+    if (!p) {
+      g('f-title').oninput = function () {
+        if (g('f-code').dataset.touched) return;
+        g('f-code').value = g('f-title').value.trim() ? nextCode(g('f-title').value) : '';
+      };
+      g('f-code').oninput = function () { g('f-code').dataset.touched = '1'; };
+    }
+    g('mp-x').onclick = m.close;
+    g('mp-cancel').onclick = m.close;
+    g('mp-save').onclick = async function () {
+      var title = g('f-title').value.trim();
+      if (!title) { UI.toast('A position needs a title.', 'error'); return; }
+      var code = g('f-code').value.trim();
+      var clash = codeClash(code, p && p.id);
+      // ⚠️ Checked here as well as by the unique index: the index answers with a raw
+      // PostgREST message, and "FE-01 is already used by Field Engineer" is the only version
+      // a planner can act on.
+      if (clash) { UI.toast('Code ' + code + ' is already used by ' + clash.position_title + '.', 'error'); return; }
+      var payload = {
+        code: code || null,
+        position_title: title,
+        workforce: g('f-work').value,
+        department: g('f-dept').value,
+        job_rank: g('f-rank').value || null,
+        monthly_rate: num(g('f-rate').value),
+        remarks: g('f-rem').value.trim() || null
+      };
+      var res;
+      if (p) {
+        res = await tolerantWrite(payload, function (x) { return sb().from('manpower_positions').update(x).eq('id', p.id); });
+      } else {
+        payload.project_id = pid;
+        payload.created_by = user && user.id;
+        payload.sort_order = POS.length;
+        res = await tolerantWrite(payload, function (x) { return sb().from('manpower_positions').insert(x).select(); });
+      }
+      if (!res.ok) { UI.toast('Could not save: ' + (res.error && res.error.message), 'error'); return; }
+      reportDropped(res.dropped);
+      m.close();
+      UI.toast(p ? 'Position updated.' : 'Position added.', 'ok');
+      load();
+    };
+  }
+
+  async function delPosition(p) {
+    if (!p) return;
+    var n = Object.keys(LOAD[p.id] || {}).length;
+    var people = ROSTER.filter(function (r) { return String(r.position_id) === String(p.id); }).length;
+    if (!confirm('Delete ' + (p.code ? p.code + ' — ' : '') + p.position_title + '?\n\n' +
+      'This also deletes its ' + n + ' month(s) of loading.' +
+      (people ? '\n' + people + ' roster entry(ies) will be left without a position.' : ''))) return;
+    if (await persist(sb().from('manpower_positions').delete().eq('id', p.id), 'Could not delete')) {
+      UI.toast('Position deleted.', 'ok');
+      load();
+    }
+  }
+
+  // The per-position month sheet — the same numbers as the grid, typed down a column instead
+  // of across a row, which is how a planner filling a new position actually works.
+  function openMonths(p) {
+    if (!p) return;
+    var months = SPAN.months;
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>' + esc((p.code ? p.code + ' — ' : '') + p.position_title) + '</h2>' +
+      '<button class="pd-modal-close" id="mp-mx-x">&times;</button></div>' +
+      '<div class="pd-modal-body"><table class="mp-mon-tbl"><thead><tr><th>Month</th>' +
+        SERIES.map(function (s) { return '<th>' + esc(s.short) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        months.map(function (mo) {
+          return '<tr><td>' + monLabel(mo.d) + '</td>' + SERIES.map(function (s) {
+            var v = qtyOf(p, mo.iso, s.k);
+            return '<td><input type="number" step="any" min="0" data-per="' + mo.iso + '" data-ser="' + s.k + '" value="' + (v == null ? '' : v) + '"></td>';
+          }).join('') + '</tr>';
+        }).join('') +
+      '</tbody></table></div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="mp-mx-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="mp-mx-save">Save months</button>' +
+      '</div>', { noBackdropClose: true });
+    var g = function (id) { return m.el.querySelector('#' + id); };
+    g('mp-mx-x').onclick = m.close;
+    g('mp-mx-cancel').onclick = m.close;
+    g('mp-mx-save').onclick = async function () {
+      var byPer = {};
+      m.el.querySelectorAll('input[data-per]').forEach(function (inp) {
+        var per = inp.dataset.per;
+        (byPer[per] = byPer[per] || {})[SER_BY_K[inp.dataset.ser].col] = num(inp.value);
+      });
+      // ⚠️ Only the months that actually CHANGED are written. Saving all of them would touch
+      // every updated_at — the column the register's "last updated" reading comes from — and
+      // would turn one typo into 40 writes.
+      var jobs = [], changed = 0;
+      Object.keys(byPer).forEach(function (per) {
+        var want = byPer[per], cur = (LOAD[p.id] || {})[per];
+        var diff = false;
+        SERIES.forEach(function (s) {
+          var a = cur ? num(cur[s.col]) : null, b = want[s.col];
+          if (a !== b) diff = true;
+        });
+        if (!diff) return;
+        changed++;
+        if (cur) jobs.push({ kind: 'u', id: cur.id, per: per, payload: want });
+        else {
+          var allNull = SERIES.every(function (s) { return want[s.col] == null; });
+          if (allNull) { changed--; return; }
+          var row = { project_id: pid, position_id: p.id, period: per, source: 'hand', created_by: user && user.id };
+          SERIES.forEach(function (s) { row[s.col] = want[s.col]; });
+          jobs.push({ kind: 'i', per: per, payload: row });
+        }
+      });
+      if (!jobs.length) { m.close(); UI.toast('Nothing changed.', 'ok'); return; }
+      showLoading('Saving ' + changed + ' month(s)…');
+      var failed = 0;
+      for (var i = 0; i < jobs.length; i++) {
+        var j = jobs[i], r;
+        if (j.kind === 'u') r = await tolerantWrite(j.payload, (function (id) { return function (x) { return sb().from('manpower_loading').update(x).eq('id', id); }; })(j.id));
+        else r = await tolerantWrite(j.payload, function (x) { return sb().from('manpower_loading').insert(x).select(); });
+        if (!r.ok) failed++;
+        else reportDropped(r.dropped);
+      }
+      hideLoading();
+      m.close();
+      if (failed) UI.toast(failed + ' of ' + jobs.length + ' month(s) could not be saved.', 'error');
+      else UI.toast(changed + ' month(s) saved.', 'ok');
+      load();
+    };
+  }
+
+  // ---- Seed the organisation chart ------------------------------------------------------
+  function openSeed() {
+    var have = {};
+    POS.forEach(function (p) { have[(p.workforce || '') + '|' + (p.position_title || '').trim().toLowerCase()] = 1; });
+    function block(title, seed, work, note) {
+      var rows = [];
+      seed.forEach(function (d) {
+        rows.push('<div class="dept">' + esc(d[0]) + '</div>');
+        d[1].forEach(function (t) {
+          var key = work + '|' + t[0].toLowerCase();
+          var already = !!have[key];
+          rows.push('<label><input type="checkbox" data-seed="' + esc(work + '|' + d[0] + '|' + t[0] + '|' + t[1]) + '"' +
+            (already ? ' disabled' : ' checked') + '>' + esc(t[0]) + (already ? ' <span class="mp-note">(already on this project)</span>' : '') + '</label>');
+        });
+      });
+      return '<div class="mp-form-sec">' + esc(title) + '</div>' +
+        (note ? '<p class="mp-note" style="margin:6px 0 0;">' + note + '</p>' : '') +
+        '<div class="mp-seedgrid">' + rows.join('') + '</div>';
+    }
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>Seed the organisation chart</h2>' +
+      '<button class="pd-modal-close" id="mp-s-x">&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="mp-note">These become ordinary position lines you can rename, re-rank or delete. Nothing is loaded into any month — that is the grid&rsquo;s job.</p>' +
+        '<div class="mp-seg" id="mp-s-which" style="margin-top:10px;">' +
+          '<button data-w="Staff" class="active">Staff</button><button data-w="Skilled">Skilled</button>' +
+        '</div>' +
+        '<div id="mp-s-staff">' + block('Staff — direct staffing', STAFF_SEED, 'Staff', '') + '</div>' +
+        '<div id="mp-s-skilled" style="display:none;">' + block('Skilled workers', SKILLED_SEED, 'Skilled',
+          '&#9888; <b>Provisional list.</b> The skilled-worker reference report has not been supplied yet, so these trades are taken from the staff report&rsquo;s own demobilisation summary plus the usual rest of a building job. Correct them here, or delete and re-seed once the real list arrives.') + '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="mp-s-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="mp-s-save">Add selected</button>' +
+      '</div>', { noBackdropClose: true });
+    var g = function (id) { return m.el.querySelector('#' + id); };
+    m.el.querySelectorAll('#mp-s-which button').forEach(function (b) {
+      b.onclick = function () {
+        m.el.querySelectorAll('#mp-s-which button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        g('mp-s-staff').style.display = b.dataset.w === 'Staff' ? '' : 'none';
+        g('mp-s-skilled').style.display = b.dataset.w === 'Skilled' ? '' : 'none';
+      };
+    });
+    // ⚠️ Codes are allocated against a list that GROWS as the batch is built, not against POS
+    // alone. Two seeded rows whose titles share initials ("Safety Advisor" / "Safety Officer")
+    // would otherwise both be handed SA-01, and the unique index would refuse the insert with a
+    // raw constraint error for a button nobody typed into.
+    function nextCodeWith(title, taken) {
+      var pfx = initialsOf(title), used = {};
+      POS.forEach(function (p) { used[String(p.code || '').trim().toLowerCase()] = 1; });
+      taken.forEach(function (c) { used[String(c).toLowerCase()] = 1; });
+      for (var n = 1; n < 999; n++) {
+        var c = pfx + '-' + String(n).padStart(2, '0');
+        if (!used[c.toLowerCase()]) return c;
+      }
+      return pfx + '-' + Date.now().toString(36).slice(-3).toUpperCase();
+    }
+    g('mp-s-x').onclick = m.close;
+    g('mp-s-cancel').onclick = m.close;
+    g('mp-s-save').onclick = async function () {
+      var picks = [];
+      m.el.querySelectorAll('input[data-seed]:checked:not(:disabled)').forEach(function (c) { picks.push(c.dataset.seed.split('|')); });
+      if (!picks.length) { UI.toast('Nothing selected.', 'error'); return; }
+      var taken = [];
+      var rows = picks.map(function (x, i) {
+        var code = nextCodeWith(x[2], taken);
+        taken.push(code);
+        return { project_id: pid, code: code, workforce: x[0], department: x[1], position_title: x[2],
+                 job_rank: x[3], sort_order: POS.length + i, created_by: user && user.id };
+      });
+      showLoading('Adding ' + rows.length + ' position(s)…');
+      var r = await sb().from('manpower_positions').insert(rows).select();
+      // ⚠️ The batch insert cannot go through tolerantWrite (that works on ONE payload), so the
+      // missing-column retry is done here by hand — and only for a missing column. Losing a
+      // 26-row seed to one unmigrated field would be the same defect the equipment module was
+      // fixed for.
+      if (r.error) {
+        var col = missingColumn(r.error);
+        if (!col) { hideLoading(); UI.toast('Could not seed: ' + r.error.message, 'error'); return; }
+        rows.forEach(function (row) { delete row[col]; });
+        var r2 = await sb().from('manpower_positions').insert(rows).select();
+        if (r2.error) { hideLoading(); UI.toast('Could not seed: ' + r2.error.message, 'error'); return; }
+        reportDropped([col]);
+      }
+      hideLoading();
+      m.close();
+      UI.toast(rows.length + ' position(s) added.', 'ok');
+      load();
+    };
+  }
+
+  // ---- Roster ---------------------------------------------------------------------------
+  function isTBH(r) { return TBH_RE.test(r.employee_name || ''); }
+  function rosterVisible() {
+    var q = rSearch.trim().toLowerCase();
+    return ROSTER.filter(function (r) {
+      var p = r.position_id ? posById(r.position_id) : null;
+      if (rWork && (!p || p.workforce !== rWork)) return false;
+      if (!q) return true;
+      return (String(r.employee_name || '') + ' ' + (p ? p.position_title : '')).toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  function renderRoster() {
+    var el = document.getElementById('mp-roster'); if (!el) return;
+    var rows = rosterVisible();
+    var kp = document.getElementById('mp-roster-kpis');
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var onboard = rows.filter(function (r) { return !isTBH(r); }).length;
+    var tbh = rows.filter(isTBH).length;
+    var ending = rows.filter(function (r) {
+      if (!r.contract_end) return false;
+      var e = mFloor(pd_(r.contract_end));
+      if (!e || !CUTOFF) return false;
+      var lim = new Date(CUTOFF.getFullYear(), CUTOFF.getMonth() + 3, 1);
+      return e >= CUTOFF && e < lim;
+    }).length;
+    var noPos = rows.filter(function (r) { return !r.position_id; }).length;
+    if (kp) {
+      function k(v, l, cls) { return '<div class="mp-kpi"><div class="mp-kpi-v' + (cls ? ' ' + cls : '') + '">' + v + '</div><div class="mp-kpi-l">' + l + '</div></div>'; }
+      kp.innerHTML = k(rows.length, 'Roster entries') + k(onboard, 'People on board') +
+        k(tbh, 'Slots marked TBH', tbh ? 'mp-bad' : '') +
+        k(ending, 'Contracts ending in 3 months', ending ? 'mp-bad' : '') +
+        k(noPos, 'Not linked to a position', noPos ? 'mp-bad' : '');
+    }
+    var note = document.getElementById('mp-roster-note');
+    if (note) note.textContent = CUTOFF ? ('Fill counted as of ' + monLabel(CUTOFF)) : '';
+    if (!ROSTER.length) {
+      el.innerHTML = '<tbody><tr><td><div class="mp-empty">No roster yet. <b>+ Add person</b> records who is actually filling each position — that is what turns a requirement into a vacancy.</div></td></tr></tbody>';
+      renderDemob();
+      return;
+    }
+    var h = ['<thead><tr><th>#</th><th>Name</th><th>Position</th><th>Status</th><th>Allocation</th>' +
+      '<th>Hired</th><th>Contract</th><th>Remarks</th><th></th></tr></thead><tbody>'];
+    rows.forEach(function (r, i) {
+      var p = r.position_id ? posById(r.position_id) : null;
+      var ce = pd_(r.contract_end);
+      var ended = ce && CUTOFF && mFloor(ce) < CUTOFF;
+      h.push('<tr>' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><b>' + esc(r.employee_name) + '</b>' + (isTBH(r) ? ' <span class="mp-badge mp-vac">unfilled</span>' : '') +
+          (ended ? ' <span class="mp-badge">demobilised</span>' : '') + '</td>' +
+        '<td>' + (p ? esc((p.code ? p.code + ' · ' : '') + p.position_title) +
+          (p.workforce === 'Skilled' ? ' <span class="mp-badge mp-skill">Skilled</span>' : '')
+          : '<span class="mp-note">not linked</span>') + '</td>' +
+        '<td>' + esc(r.employee_status || '—') + '</td>' +
+        '<td>' + esc(r.allocation || '—') + '</td>' +
+        '<td>' + (r.date_hired ? esc(Fmt.date ? Fmt.date(r.date_hired) : r.date_hired) : '—') + '</td>' +
+        '<td>' + (r.contract_start || r.contract_end
+            ? esc((r.contract_start ? (Fmt.date ? Fmt.date(r.contract_start) : r.contract_start) : '?') + ' → ' +
+                  (r.contract_end ? (Fmt.date ? Fmt.date(r.contract_end) : r.contract_end) : 'open'))
+            : '—') + '</td>' +
+        '<td>' + esc(r.remarks || '') + '</td>' +
+        '<td><div class="mp-actions">' +
+          '<button class="mp-btn-sm" data-redit="' + r.id + '">Edit</button>' +
+          '<button class="mp-btn-sm" data-rdel="' + r.id + '">Delete</button>' +
+        '</div></td></tr>');
+    });
+    h.push('</tbody>');
+    el.innerHTML = h.join('');
+    el.querySelectorAll('[data-redit]').forEach(function (b) { b.onclick = function () { openRosterForm(rosterById(b.dataset.redit)); }; });
+    el.querySelectorAll('[data-rdel]').forEach(function (b) { b.onclick = function () { delRoster(rosterById(b.dataset.rdel)); }; });
+    renderDemob();
+  }
+  function rosterById(id) { for (var i = 0; i < ROSTER.length; i++) if (String(ROSTER[i].id) === String(id)) return ROSTER[i]; return null; }
+
+  // The DEMOB summary the reference workbook keeps on its own sheet: how many heads come off
+  // contract in each month, and which positions they are. ⚠️ Rows with no contract end are
+  // reported as "open-ended", never folded into a month — a blank end date is an unanswered
+  // question, and putting it in the last month would invent a demobilisation.
+  function renderDemob() {
+    var host = document.getElementById('mp-demob'); if (!host) return;
+    var rows = rosterVisible().filter(function (r) { return !isTBH(r); });
+    var byMonth = {}, open = 0;
+    rows.forEach(function (r) {
+      var e = pd_(r.contract_end);
+      if (!e) { open++; return; }
+      var iso = mkey(mFloor(e));
+      (byMonth[iso] = byMonth[iso] || []).push(r);
+    });
+    var keys = Object.keys(byMonth).sort();
+    if (!keys.length) {
+      host.innerHTML = '<div class="mp-note">No contract end dates recorded' + (open ? ' — ' + open + ' entr(ies) are open-ended.' : '.') + '</div>';
+      return;
+    }
+    var h = ['<table class="mp-table"><thead><tr><th>Contract end</th><th class="num">Heads</th><th>Positions</th></tr></thead><tbody>'];
+    keys.forEach(function (iso) {
+      var list = byMonth[iso], by = {};
+      list.forEach(function (r) { var t = r.position_id ? posTitle(r.position_id) : 'not linked'; by[t] = (by[t] || 0) + 1; });
+      h.push('<tr><td><b>' + monLabel(pd_(iso)) + '</b></td><td class="num">' + list.length + '</td><td>' +
+        Object.keys(by).sort().map(function (t) { return esc(t) + ' × ' + by[t]; }).join(', ') + '</td></tr>');
+    });
+    h.push('</tbody></table>');
+    if (open) h.push('<div class="mp-note" style="padding:8px 2px 0;">' + open + ' entr(ies) have no contract end date and are not counted above.</div>');
+    host.innerHTML = h.join('');
+  }
+
+  function openRosterForm(r) {
+    r = r || null;
+    var posOpts = '<option value="">— not linked —</option>' + POS.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (r && String(r.position_id) === String(p.id) ? ' selected' : '') + '>' +
+        esc((p.code ? p.code + ' · ' : '') + p.position_title + ' (' + (p.workforce || 'Staff') + ')') + '</option>';
+    }).join('');
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>' + (r ? 'Edit roster entry' : 'Add person') + '</h2>' +
+      '<button class="pd-modal-close" id="mp-r-x">&times;</button></div>' +
+      '<div class="pd-modal-body"><div class="mp-form-grid" style="padding:4px 0 8px;">' +
+        '<div class="pd-field"><label>Name</label>' +
+          '<input class="pd-input" id="r-name" value="' + esc(r && r.employee_name) + '" placeholder="Surname, First name — or TBH">' +
+          '<span class="mp-note">Type <b>TBH</b> for a slot that is budgeted but not yet filled. It is counted as a vacancy, never as a person.</span></div>' +
+        '<div class="pd-field"><label>Position</label><select class="pd-select" id="r-pos">' + posOpts + '</select></div>' +
+        '<div class="pd-field"><label>Employment status</label><select class="pd-select" id="r-status"><option value="">—</option>' + selOpts(EMP_STATUS, r && r.employee_status) + '</select></div>' +
+        '<div class="pd-field"><label>Allocation</label><select class="pd-select" id="r-alloc"><option value="">—</option>' + selOpts(ALLOCATIONS, r && r.allocation) + '</select></div>' +
+        '<div class="pd-field"><label>Date hired (in project)</label><input class="pd-input" id="r-hired" type="date" value="' + esc(r && r.date_hired || '') + '"></div>' +
+        '<div class="pd-field"><label>Rank</label><select class="pd-select" id="r-rank"><option value="">—</option>' + selOpts(RANKS, r && r.job_rank) + '</select></div>' +
+        '<div class="pd-field"><label>Contract start</label><input class="pd-input" id="r-cs" type="date" value="' + esc(r && r.contract_start || '') + '"></div>' +
+        '<div class="pd-field"><label>Contract end</label><input class="pd-input" id="r-ce" type="date" value="' + esc(r && r.contract_end || '') + '">' +
+          '<span class="mp-note">Drives the demobilisation summary. Leave blank for open-ended.</span></div>' +
+        '<div class="pd-field mp-form-full"><label>Remarks</label><input class="pd-input" id="r-rem" value="' + esc(r && r.remarks) + '"></div>' +
+      '</div></div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="mp-r-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="mp-r-save">' + (r ? 'Save' : 'Add person') + '</button>' +
+      '</div>', { noBackdropClose: true });
+    var g = function (id) { return m.el.querySelector('#' + id); };
+    g('mp-r-x').onclick = m.close;
+    g('mp-r-cancel').onclick = m.close;
+    g('mp-r-save').onclick = async function () {
+      var name = g('r-name').value.trim();
+      if (!name) { UI.toast('A roster entry needs a name (or TBH).', 'error'); return; }
+      var cs = g('r-cs').value || null, ce = g('r-ce').value || null;
+      if (cs && ce && ce < cs) { UI.toast('The contract ends before it starts.', 'error'); return; }
+      var payload = {
+        employee_name: name,
+        position_id: g('r-pos').value || null,
+        employee_status: g('r-status').value || null,
+        allocation: g('r-alloc').value || null,
+        job_rank: g('r-rank').value || null,
+        date_hired: g('r-hired').value || null,
+        contract_start: cs,
+        contract_end: ce,
+        remarks: g('r-rem').value.trim() || null
+      };
+      var res;
+      if (r) res = await tolerantWrite(payload, function (x) { return sb().from('manpower_roster').update(x).eq('id', r.id); });
+      else {
+        payload.project_id = pid; payload.created_by = user && user.id;
+        res = await tolerantWrite(payload, function (x) { return sb().from('manpower_roster').insert(x).select(); });
+      }
+      if (!res.ok) { UI.toast('Could not save: ' + (res.error && res.error.message), 'error'); return; }
+      reportDropped(res.dropped);
+      m.close();
+      UI.toast(r ? 'Roster entry updated.' : 'Person added.', 'ok');
+      load();
+    };
+  }
+  async function delRoster(r) {
+    if (!r) return;
+    if (!confirm('Remove ' + r.employee_name + ' from the roster?')) return;
+    if (await persist(sb().from('manpower_roster').delete().eq('id', r.id), 'Could not delete')) {
+      UI.toast('Removed.', 'ok');
+      load();
+    }
+  }
+
+  // ---- Portfolio ------------------------------------------------------------------------
+  // The reason the module exists at portfolio level: one month, every project the user can
+  // open, ranked by how short of its own requirement it is — so a head can be moved from the
+  // project that has spare to the one that is starving.
+  //
+  // ⚠️ TWO reads for the whole portfolio, not one per project. `.in('project_id', ids)` is
+  // chunked at 100 ids because the id list travels in the URL and a portfolio of several
+  // hundred projects would otherwise build a request long enough to be refused by a proxy —
+  // which fails as an opaque network error, not as a message anyone can act on.
+  async function loadPortfolio() {
+    if (portReading) return;
+    portReading = true;
+    var ids = PROJECTS.map(function (p) { return p.id; });
+    var iso = mkey(portAsOf || CUTOFF || mFloor(new Date()));
+    showLoading('Reading ' + ids.length + ' project(s)…');
+    try {
+      var posRows = [], loadRows = [];
+      for (var i = 0; i < ids.length; i += 100) {
+        var chunk = ids.slice(i, i + 100);
+        posRows = posRows.concat(await PDb.selectAll('manpower_positions',
+          (function (c) { return function (q) { return q.in('project_id', c); }; })(chunk),
+          'id,project_id,workforce,department,position_title'));
+        loadRows = loadRows.concat(await PDb.selectAll('manpower_loading',
+          (function (c) { return function (q) { return q.in('project_id', c).eq('period', iso); }; })(chunk),
+          'position_id,project_id,planned_qty,approved_qty,forecast_qty,actual_qty'));
+      }
+      var posById2 = {};
+      posRows.forEach(function (p) { posById2[p.id] = p; });
+      var by = {};
+      PROJECTS.forEach(function (p) {
+        by[p.id] = { id: p.id, name: p.name || p.id, lines: 0, req: 0, act: 0, hasReq: false, hasAct: false,
+                     staff: { req: 0, act: 0, has: false }, skilled: { req: 0, act: 0, has: false } };
+      });
+      posRows.forEach(function (p) { if (by[p.project_id]) by[p.project_id].lines++; });
+      loadRows.forEach(function (r) {
+        var b = by[r.project_id]; if (!b) return;
+        var p = posById2[r.position_id]; if (!p) return;
+        var w = (p.workforce === 'Skilled') ? 'skilled' : 'staff';
+        if (portWork && p.workforce !== portWork) return;
+        var a = num(r.approved_qty), pl = num(r.planned_qty);
+        var req = a != null ? a : pl;
+        var act = num(r.actual_qty);
+        if (req != null) { b.req += req; b.hasReq = true; b[w].req += req; b[w].has = true; }
+        if (act != null) { b.act += act; b.hasAct = true; b[w].act += act; b[w].has = true; }
+      });
+      PORT = { iso: iso, rows: Object.keys(by).map(function (k) { return by[k]; }) };
+    } catch (err) {
+      if (/manpower_positions|manpower_loading|schema cache/i.test(err.message || '')) {
+        PORT = { iso: iso, rows: [], missing: true };
+      } else {
+        UI.toast('Could not read the portfolio: ' + (err.message || err), 'error');
+        PORT = null;
+      }
+    }
+    hideLoading();
+    portReading = false;
+    renderPortfolio();
+  }
+
+  function renderPortfolio() {
+    var tbl = document.getElementById('mp-p-tbl'), kp = document.getElementById('mp-p-kpis'),
+        note = document.getElementById('mp-p-note');
+    if (!tbl) return;
+    if (note) note.textContent = PORT ? ('As of ' + monLabel(pd_(PORT.iso)) + ' · ' + PORT.rows.length + ' project(s) readable') :
+      'Press "Read every project" — this is the only view that queries outside the selected project.';
+    if (!PORT) {
+      tbl.innerHTML = '<tbody><tr><td><div class="mp-empty">Nothing read yet.</div></td></tr></tbody>';
+      if (kp) kp.innerHTML = '';
+      return;
+    }
+    if (PORT.missing) {
+      tbl.innerHTML = '<tbody><tr><td><div class="mp-empty">The manpower tables do not exist yet. Run <b>' + MP_MIGRATION + '</b> in the Supabase SQL editor.</div></td></tr></tbody>';
+      if (kp) kp.innerHTML = '';
+      return;
+    }
+    // Projects with no requirement in this month are reported separately, never as 0% filled —
+    // "no manpower plan for this month" and "planned nobody" are different facts, and ranking
+    // the first as the most critical would bury the projects that really are short.
+    var live = PORT.rows.filter(function (r) { return r.hasReq && r.req > 0; });
+    var quiet = PORT.rows.filter(function (r) { return !(r.hasReq && r.req > 0); });
+    live.forEach(function (r) {
+      r.gap = r.hasAct ? (r.act - r.req) : null;
+      r.fill = r.hasAct ? (r.act / r.req) : null;
+    });
+    // Ranked by fill: the emptiest project first. Projects that have not reported an actual
+    // for the month sort after the ones that have — an unknown is not a crisis.
+    live.sort(function (a, b) {
+      if ((a.fill == null) !== (b.fill == null)) return a.fill == null ? 1 : -1;
+      if (a.fill == null) return String(a.name).localeCompare(String(b.name));
+      return a.fill - b.fill;
+    });
+    var totReq = 0, totAct = 0, nShort = 0, nSpare = 0, biggest = null;
+    live.forEach(function (r) {
+      totReq += r.req; if (r.hasAct) totAct += r.act;
+      if (r.gap != null && r.gap < 0) { nShort++; if (!biggest || r.gap < biggest.gap) biggest = r; }
+      if (r.gap != null && r.gap > 0) nSpare++;
+    });
+    if (kp) {
+      function k(v, l, cls) { return '<div class="mp-kpi"><div class="mp-kpi-v' + (cls ? ' ' + cls : '') + '">' + v + '</div><div class="mp-kpi-l">' + l + '</div></div>'; }
+      kp.innerHTML =
+        k(live.length, 'Projects with a plan this month') +
+        k(fnum(totReq), 'Total requirement') +
+        k(fnum(totAct), 'Total deployed') +
+        k(totReq ? Math.round(totAct / totReq * 100) + '%' : '—', 'Portfolio fill rate', totReq && (totAct / totReq) < 0.85 ? 'mp-bad' : '') +
+        k(nShort, 'Projects short', nShort ? 'mp-bad' : '') +
+        k(nSpare, 'Projects with spare', nSpare ? 'mp-good' : '') +
+        k(biggest ? fnum(-biggest.gap) : '—', biggest ? ('Worst shortfall · ' + biggest.name) : 'Worst shortfall', biggest ? 'mp-bad' : '');
+    }
+    var h = ['<thead><tr><th>#</th><th>Project</th><th class="num">Requirement</th><th class="num">Deployed</th>' +
+      '<th class="num">Variance</th><th>Fill</th><th class="num">Staff (req / act)</th><th class="num">Skilled (req / act)</th><th>Read</th></tr></thead><tbody>'];
+    live.forEach(function (r, i) {
+      var pctN = r.fill == null ? null : Math.round(r.fill * 100);
+      var sev = r.fill == null ? '' : (r.fill < 0.8 ? 'crit' : (r.fill < 0.95 ? 'warn' : 'ok'));
+      var barCol = r.fill == null ? 'var(--pd-line)' : (r.fill < 0.8 ? 'var(--pd-bad)' : (r.fill < 0.95 ? 'var(--pd-warn)' : 'var(--pd-ok)'));
+      h.push('<tr' + (String(r.id) === String(pid) ? ' style="outline:2px solid var(--pd-red);outline-offset:-2px;"' : '') + '>' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><b>' + esc(r.name) + '</b><div class="mp-note">' + r.lines + ' position line(s)</div></td>' +
+        '<td class="num">' + fnum(r.req) + '</td>' +
+        '<td class="num">' + (r.hasAct ? fnum(r.act) : '<span class="mp-note">not reported</span>') + '</td>' +
+        '<td class="num mp-sev ' + sev + '">' + (r.gap == null ? '—' : (r.gap > 0 ? '+' : '') + fnum(r.gap)) + '</td>' +
+        '<td><div class="mp-bar"><i style="width:' + (pctN == null ? 0 : Math.min(100, pctN)) + '%;background:' + barCol + '"></i></div>' +
+          '<div class="mp-note mp-sev ' + sev + '">' + (pctN == null ? 'unknown' : pctN + '%') + '</div></td>' +
+        '<td class="num">' + (r.staff.has ? fnum(r.staff.req) + ' / ' + fnum(r.staff.act) : '—') + '</td>' +
+        '<td class="num">' + (r.skilled.has ? fnum(r.skilled.req) + ' / ' + fnum(r.skilled.act) : '—') + '</td>' +
+        '<td><button class="mp-btn-sm" data-open="' + esc(r.id) + '">Open</button></td></tr>');
+    });
+    if (quiet.length) {
+      h.push('<tr class="mp-grp"><td colspan="9">No manpower plan for ' + esc(monLabel(pd_(PORT.iso))) + ' — ' + quiet.length + ' project(s)</td></tr>');
+      quiet.forEach(function (r) {
+        h.push('<tr><td></td><td>' + esc(r.name) + '</td><td colspan="6" class="mp-note">' +
+          (r.lines ? r.lines + ' position line(s) exist, but no quantity is recorded for this month.' : 'No positions recorded at all.') +
+          '</td><td><button class="mp-btn-sm" data-open="' + esc(r.id) + '">Open</button></td></tr>');
+      });
+    }
+    h.push('</tbody>');
+    tbl.innerHTML = h.join('');
+    tbl.querySelectorAll('[data-open]').forEach(function (b) {
+      b.onclick = function () {
+        var sel = document.getElementById('mp-project');
+        sel.value = b.dataset.open;
+        // ⚠️ Dispatched, not called: the shared project picker wraps the select and listens
+        // for the event, so assigning .value alone would leave its own button showing the old
+        // project's name while the module loaded a different one.
+        sel.dispatchEvent(new Event('change'));
+        var tab = document.querySelector('.mp-tab[data-view="loading"]');
+        if (tab) switchView('loading', tab);
+      };
+    });
+  }
+
+  // ---- Excel ----------------------------------------------------------------------------
+  function projName() {
+    var s = document.getElementById('mp-project');
+    return s && s.selectedOptions[0] ? s.selectedOptions[0].textContent : '';
+  }
+  function exportXlsx() {
+    if (!window.XLSX) { UI.toast('Spreadsheet library not loaded.', 'error'); return; }
+    var ag = aggregate(), months = SPAN.months;
+    var monHead = months.map(function (m) { return MON3[m.d.getMonth()] + ' ' + m.d.getFullYear(); });
+
+    // Sheet 1 — the loading grid, in the same shape the module imports back.
+    var rows = [['Code', 'Workforce', 'Department', 'Position', 'Series'].concat(monHead)];
+    rows.push(['', '', '', 'PROJECT PHASE', ''].concat(months.map(function (m) { return phaseOf(m.iso); })));
+    ag.items.forEach(function (p) {
+      SERIES.forEach(function (s) {
+        rows.push([p.code || '', p.workforce || '', p.department || '', p.position_title, s.short]
+          .concat(months.map(function (m) { var v = qtyOf(p, m.iso, s.k); return v == null ? '' : v; })));
+      });
+    });
+    ag.depts.forEach(function (d) {
+      SERIES.forEach(function (s) {
+        rows.push(['', '', d, d + ' (total)', s.short]
+          .concat(months.map(function (m) { var c = ag.byDept[d][m.iso]; return c.has[s.k] ? c[s.k] : ''; })));
+      });
+    });
+    SERIES.forEach(function (s) {
+      rows.push(['', '', '', 'OVERALL', s.short]
+        .concat(months.map(function (m) { var t = ag.total[m.iso]; return t.has[s.k] ? t[s.k] : ''; })));
+    });
+    rows.push(['', '', '', 'OVERALL', 'Requirement']
+      .concat(months.map(function (m) { var t = ag.total[m.iso]; return t.has.gov ? t.gov : ''; })));
+    SERIES.forEach(function (s) {
+      rows.push(['', '', '', 'COST', s.short]
+        .concat(months.map(function (m) { var c = costOf(ag, m.iso, s.k); return c.v == null ? '' : c.v; })));
+    });
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 18 }, { wch: 30 }, { wch: 11 }].concat(months.map(function () { return { wch: 10 }; }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Manpower Loading');
+
+    // Sheet 2 — the roster, which is what HRD actually maintains.
+    var rr = [['Name', 'Code', 'Position', 'Workforce', 'Status', 'Allocation', 'Rank', 'Date hired', 'Contract start', 'Contract end', 'Remarks']];
+    ROSTER.forEach(function (r) {
+      var p = r.position_id ? posById(r.position_id) : null;
+      rr.push([r.employee_name, p ? (p.code || '') : '', p ? p.position_title : '', p ? (p.workforce || '') : '',
+        r.employee_status || '', r.allocation || '', r.job_rank || '',
+        r.date_hired || '', r.contract_start || '', r.contract_end || '', r.remarks || '']);
+    });
+    var ws2 = XLSX.utils.aoa_to_sheet(rr);
+    ws2['!cols'] = [{ wch: 26 }, { wch: 9 }, { wch: 28 }, { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 13 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Roster');
+
+    XLSX.writeFile(wb, 'Manpower Loading - ' + (projName() || pid) + '.xlsx');
+  }
+
+  // Import the module's own export back. ⚠️ Round-trip only, and the dialog says so: this
+  // reads the sheet THIS module writes, not the HRD workbook — that one carries a merged
+  // header block and a year band above the month row, and a reader that guessed at them
+  // would import a project's headcount into the wrong months without ever failing.
+  //
+  // ⚠️ Matched on CODE first and only then on department + title. A code is the thing a
+  // planner keeps stable; a title gets re-typed ("QA/QC Engineer" vs "QAQC Engineer") and
+  // matching on it alone silently creates a duplicate position line.
+  function importXlsx(file) {
+    var fr = new FileReader();
+    fr.onload = async function () {
+      var wb;
+      try { wb = XLSX.read(new Uint8Array(fr.result), { type: 'array' }); }
+      catch (e) { UI.toast('Could not read that file: ' + e.message, 'error'); return; }
+      var sh = wb.Sheets['Manpower Loading'] || wb.Sheets[wb.SheetNames[0]];
+      if (!sh) { UI.toast('No sheet found in that workbook.', 'error'); return; }
+      var aoa = XLSX.utils.sheet_to_json(sh, { header: 1, raw: true });
+      if (!aoa.length) { UI.toast('That sheet is empty.', 'error'); return; }
+      var head = aoa[0].map(function (x) { return String(x == null ? '' : x).trim(); });
+      if (head[4] !== 'Series') {
+        UI.toast('That is not a Manpower Loading export — export one first, fill it in, then import it back.', 'error');
+        return;
+      }
+      // Month columns, resolved from the header text against the axis we actually have.
+      var colIso = {};
+      for (var c = 5; c < head.length; c++) {
+        var mm = /^([A-Za-z]{3})\w*\s+(\d{4})$/.exec(head[c]);
+        if (!mm) continue;
+        var mi = MON3.map(function (x) { return x.toLowerCase(); }).indexOf(mm[1].toLowerCase());
+        if (mi < 0) continue;
+        colIso[c] = mkey(new Date(+mm[2], mi, 1));
+      }
+      var shortToKey = {};
+      SERIES.forEach(function (s) { shortToKey[s.short.toLowerCase()] = s.k; });
+      var byCode = {}, byTitle = {};
+      POS.forEach(function (p) {
+        if (p.code) byCode[String(p.code).trim().toLowerCase()] = p;
+        byTitle[(String(p.department || '') + '|' + String(p.position_title || '')).trim().toLowerCase()] = p;
+      });
+      var jobs = {}, phases = {}, unknown = {}, skipped = 0;
+      for (var r = 1; r < aoa.length; r++) {
+        var row = aoa[r] || [];
+        var title = String(row[3] == null ? '' : row[3]).trim();
+        var ser = String(row[4] == null ? '' : row[4]).trim().toLowerCase();
+        if (title === 'PROJECT PHASE') {
+          for (var pc in colIso) if (row[pc] != null && String(row[pc]).trim() !== '') phases[colIso[pc]] = String(row[pc]).trim();
+          continue;
+        }
+        // Derived rows in the export — never imported back, or a department total would be
+        // written on top of the positions that produced it.
+        if (!title || /\(total\)$/i.test(title) || title === 'OVERALL' || title === 'COST') continue;
+        var k = shortToKey[ser];
+        if (!k) { skipped++; continue; }
+        var code = String(row[0] == null ? '' : row[0]).trim().toLowerCase();
+        var dept = String(row[2] == null ? '' : row[2]).trim();
+        var p2 = (code && byCode[code]) || byTitle[(dept + '|' + title).toLowerCase()];
+        if (!p2) { unknown[(row[0] ? row[0] + ' · ' : '') + title] = 1; continue; }
+        for (var cc in colIso) {
+          var raw = row[cc];
+          if (raw === undefined) continue;                       // column absent on this row
+          var v = (raw === null || String(raw).trim() === '') ? null : num(raw);
+          if (v === null && String(raw).trim() !== '') continue;  // unparseable — leave the stored value alone
+          var iso = colIso[cc];
+          var cur = (LOAD[p2.id] || {})[iso];
+          var had = cur ? num(cur[SER_BY_K[k].col]) : null;
+          if (had === v) continue;
+          var key = p2.id + '|' + iso;
+          (jobs[key] = jobs[key] || { posId: p2.id, iso: iso, cur: cur || null, set: {} }).set[SER_BY_K[k].col] = v;
+        }
+      }
+      var jobList = Object.keys(jobs).map(function (x) { return jobs[x]; });
+      var unk = Object.keys(unknown);
+      var msg = jobList.length + ' month cell group(s) to write' +
+        (Object.keys(phases).length ? ', ' + Object.keys(phases).length + ' phase label(s)' : '') +
+        (unk.length ? '.\n\n' + unk.length + ' row(s) match no position on this project and will be SKIPPED:\n  ' + unk.slice(0, 8).join('\n  ') + (unk.length > 8 ? '\n  …' : '') : '.') +
+        (skipped ? '\n\n' + skipped + ' row(s) had an unrecognised Series label and were skipped.' : '');
+      if (!jobList.length && !Object.keys(phases).length) { UI.toast('Nothing in that file differs from what is already stored.', 'ok'); return; }
+      if (!confirm('Import into ' + (projName() || pid) + '?\n\n' + msg)) return;
+      showLoading('Importing…');
+      var failed = 0, done = 0;
+      for (var i = 0; i < jobList.length; i++) {
+        var j = jobList[i], res;
+        if (j.cur) res = await tolerantWrite(j.set, (function (id) { return function (x) { return sb().from('manpower_loading').update(x).eq('id', id); }; })(j.cur.id));
+        else {
+          var ins = { project_id: pid, position_id: j.posId, period: j.iso, source: 'hand', created_by: user && user.id };
+          for (var kk in j.set) ins[kk] = j.set[kk];
+          res = await tolerantWrite(ins, function (x) { return sb().from('manpower_loading').insert(x).select(); });
+        }
+        if (res.ok) done++; else failed++;
+      }
+      var pk = Object.keys(phases);
+      for (var q = 0; q < pk.length; q++) {
+        if (phaseOf(pk[q]) === phases[pk[q]]) continue;
+        await setMonthFieldQuiet(pk[q], 'phase', phases[pk[q]]);
+      }
+      hideLoading();
+      if (failed) UI.toast(done + ' written, ' + failed + ' failed.', 'error');
+      else UI.toast(done + ' month group(s) imported.', 'ok');
+      load();
+    };
+    fr.readAsArrayBuffer(file);
+  }
+  // Same write as setMonthField without the repaint — the import repaints once at the end.
+  async function setMonthFieldQuiet(iso, col, v) {
+    var cur = MONTHS[iso], patch = {};
+    patch[col] = v;
+    if (cur) { var r = await tolerantWrite(patch, function (x) { return sb().from('manpower_months').update(x).eq('id', cur.id); }); return r.ok; }
+    var row = { project_id: pid, period: iso, created_by: user && user.id };
+    row[col] = v;
+    var r2 = await tolerantWrite(row, function (x) { return sb().from('manpower_months').insert(x).select(); });
+    if (r2.ok && r2.data && r2.data[0]) MONTHS[iso] = r2.data[0];
+    return r2.ok;
+  }
+
+  // ---- Render ---------------------------------------------------------------------------
+  function renderMigrateBanner() {
+    var mg = document.getElementById('mp-migrate'); if (!mg) return;
+    if (needsMigration) {
+      mg.style.display = 'block';
+      mg.innerHTML = 'Manpower Loading needs its tables. Run <b>' + MP_MIGRATION + '</b> in the Supabase SQL editor, then refresh.';
+    } else if (mpPendingMig) {
+      mg.style.display = 'block';
+      mg.innerHTML = 'Some fields are not being saved because the database is behind. Run <b>' + MP_MIGRATION +
+        '</b> in the Supabase SQL editor, then refresh this page.';
+    } else { mg.style.display = 'none'; mg.innerHTML = ''; }
+  }
+  function renderSeriesChecks() {
+    var host = document.getElementById('mp-series'); if (!host) return;
+    host.innerHTML = SERIES.map(function (s) {
+      return '<label title="' + esc(s.label) + '"><input type="checkbox" data-ser="' + s.k + '"' + (shown[s.k] ? ' checked' : '') + '>' +
+        '<span class="sw" style="background:' + s.color + '"></span>' + esc(s.label) + '</label>';
+    }).join('');
+    host.querySelectorAll('input[data-ser]').forEach(function (c) {
+      c.onchange = function () { shown[c.dataset.ser] = c.checked; renderAll(); };
+    });
+  }
+  function renderAll() {
+    renderMigrateBanner();
+    if (!SPAN) return;
+    syncFilters();
+    renderSeriesChecks();
+    var ag = aggregate();
+    renderKpis(ag); renderChart(ag); renderMatrix(ag); renderRegister(); renderRoster(); renderPortfolio();
+    if (window.Icons) Icons.hydrate(document.body);
+  }
+  function syncFilters() {
+    var d = document.getElementById('mp-f-dept');
+    if (d) {
+      var cur = fDept;
+      d.innerHTML = '<option value="">All departments</option>' +
+        deptOptions().map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
+      // ⚠️ A filter whose stored value has since been deleted must RESET, not silently narrow
+      // the whole view to a department that no longer exists. A <select> whose value is not
+      // among its options reports the first option instead — this app has lost a stored value
+      // that way three times.
+      if (cur && d.value !== cur) { fDept = ''; d.value = ''; }
+    }
+    var w = document.getElementById('mp-f-work'); if (w && w.value !== fWork) w.value = fWork;
+    var sc = document.getElementById('mp-show-cost'); if (sc) sc.checked = showCost;
+    var pm = document.getElementById('mp-p-month');
+    if (pm && !pm.value && portAsOf) pm.value = portAsOf.getFullYear() + '-' + String(portAsOf.getMonth() + 1).padStart(2, '0');
+  }
+  function switchView(v, btn) {
+    view = v;
+    document.querySelectorAll('.mp-tab').forEach(function (b) { b.classList.toggle('active', b === btn); });
+    ['loading', 'register', 'roster', 'portfolio'].forEach(function (k) {
+      var el = document.getElementById('mp-view-' + k); if (el) el.style.display = (k === v ? 'block' : 'none');
+    });
+    // The add button means a different thing on each tab; on Portfolio it means nothing at
+    // all, because that tab writes to no project.
+    var add = document.getElementById('mp-add');
+    if (add) add.style.display = (v === 'portfolio') ? 'none' : '';
+    var seed = document.getElementById('mp-seed');
+    if (seed) seed.style.display = (v === 'portfolio' || v === 'roster') ? 'none' : '';
+    // ⚠️ The portfolio is NOT read automatically on the way in. It is the only view that
+    // queries every project the user can open, and firing several hundred rows of read every
+    // time somebody clicks a tab is a cost nobody asked for. The button says so.
+  }
+
+  // ---- Init -----------------------------------------------------------------------------
+  async function init(u, prof) {
+    user = u; profile = prof;
+    UI.renderUserBar(prof);
+    if (UI.initModuleTopbar) UI.initModuleTopbar();
+    document.querySelectorAll('.mp-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view, b); }; });
+    document.querySelectorAll('#mp-detail button').forEach(function (b) {
+      b.onclick = function () {
+        detail = b.dataset.det;
+        document.querySelectorAll('#mp-detail button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        renderAll();
+      };
+    });
+    document.querySelectorAll('#mp-mode button').forEach(function (b) {
+      b.onclick = function () {
+        mode = b.dataset.mode;
+        document.querySelectorAll('#mp-mode button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        renderAll();
+      };
+    });
+    document.getElementById('mp-f-work').onchange = function (e) { fWork = e.target.value; renderAll(); };
+    document.getElementById('mp-f-dept').onchange = function (e) { fDept = e.target.value; renderAll(); };
+    document.getElementById('mp-show-cost').onchange = function (e) { showCost = e.target.checked; renderAll(); };
+    document.getElementById('mp-add').onclick = function () {
+      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+      if (view === 'roster') openRosterForm(null); else openForm(null);
+    };
+    document.getElementById('mp-add-person').onclick = function () {
+      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+      openRosterForm(null);
+    };
+    document.getElementById('mp-seed').onclick = function () { if (!pid) { UI.toast('Pick a project first.', 'error'); return; } openSeed(); };
+    document.getElementById('mp-refresh').onclick = function () { load(true); };
+    document.getElementById('mp-export').onclick = exportXlsx;
+    var fileIn = document.createElement('input');
+    fileIn.type = 'file'; fileIn.accept = '.xlsx,.xls'; fileIn.style.display = 'none';
+    document.body.appendChild(fileIn);
+    fileIn.onchange = function () { if (fileIn.files && fileIn.files[0]) importXlsx(fileIn.files[0]); };
+    document.getElementById('mp-import').onclick = function () {
+      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+      if (!POS.length) { UI.toast('Add or seed the positions first — the import matches rows to positions that already exist.', 'error'); return; }
+      fileIn.value = ''; fileIn.click();
+    };
+    document.getElementById('mp-r-search').oninput = function (e) { rSearch = e.target.value; renderRoster(); };
+    document.getElementById('mp-r-work').onchange = function (e) { rWork = e.target.value; renderRoster(); };
+    document.getElementById('mp-p-work').onchange = function (e) { portWork = e.target.value; if (PORT) loadPortfolio(); };
+    document.getElementById('mp-p-month').onchange = function (e) {
+      var v = e.target.value;
+      var mm = /^(\d{4})-(\d{2})$/.exec(v || '');
+      portAsOf = mm ? new Date(+mm[1], +mm[2] - 1, 1) : (CUTOFF || mFloor(new Date()));
+      if (PORT) loadPortfolio();
+    };
+    document.getElementById('mp-p-run').onclick = function () { loadPortfolio(); };
+
+    var sel = document.getElementById('mp-project');
+    var projects = await PDb.getProjects();
+    projects = projects.filter(function (p) { return AppAuth.canAccessProject(prof, p.id); });
+    PROJECTS = projects;
+    sel.innerHTML = projects.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
+    var saved = sessionStorage.getItem('pd_project');
+    if (saved && projects.some(function (p) { return p.id === saved; })) sel.value = saved;
+    pid = sel.value || null;
+    if (UI.enhanceProjectSelect) UI.enhanceProjectSelect(sel);
+    sel.onchange = function () {
+      pid = sel.value || null;
+      try { sessionStorage.setItem('pd_project', pid || ''); } catch (_e) {}
+      fDept = ''; rSearch = '';
+      var rs = document.getElementById('mp-r-search'); if (rs) rs.value = '';
+      load(true);
+    };
+    await load(true);
+  }
+
+  AppAuth.requireLogin(init);
+})();
+</script>
+</body>
+</html>
