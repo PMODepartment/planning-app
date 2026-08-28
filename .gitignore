@@ -20,3 +20,5 @@ node_modules/
 
 # Supabase CLI local state
 supabase/.temp/
+__pycache__/
+*.pyc

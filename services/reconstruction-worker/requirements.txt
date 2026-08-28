@@ -1,0 +1,8 @@
+# Deliberately minimal. COLMAP/OpenSplat/ffmpeg are compiled binaries baked
+# into the image by the Dockerfile, not Python packages -- no supabase-py
+# client either, since handler.py talks to the Storage REST API directly
+# with `requests` (one PUT per result file; pulling in a full client library
+# for that would be needless weight and a needless version-mismatch risk
+# against the JS client the rest of this app uses).
+runpod>=1.6.2
+requests>=2.31.0
