@@ -9913,3 +9913,59 @@ appearing. ⚠️ **No `MODULE_V` bump**: the page is new, so no browser holds a
 would force every returning user to re-fetch all 13 module pages for nothing. ⚠️ Fixed a split of my
 own making — the new module had copied `db.js?v=20260827b` while the other 19 pages serve `c`; every
 shared asset is now at one version each.
+
+### 2026-08-28 (b) — Manpower Loading: a profile, and its contract duration drives the months
+
+Owner, after running the migration: *"Does this follow similar to the equipment loading by adding an
+equipment. But this time it will add a profile of a manpower. The manpower profile should consider its
+contract duration."*
+
+⚠️ **It did not, and the gap was total.** `contract_start` / `contract_end` were stored and displayed
+but read by exactly one thing — the vacancy count. They did not touch the loading grid, so Equipment
+Loading's whole point — an item's schedule link **deriving** its monthly quantities — had no manpower
+equivalent, and the months were typed by hand beside a roster that already knew the answer. **No
+migration**: every column this needs already exists. Detail: `modules/manpower-loading/CLAUDE.md`.
+
+**A profile is now the module's primary object** — "+ Add manpower" from every tab, with a **Contract
+duration** section carrying a live readout that names what it will contribute before anything is saved
+(*"12 months · Jan 2026 – Dec 2026 · Adds 1 head to Field Engineer for each of those months"*) and a
+months → end-date helper. A **derive** action writes those months into `manpower_loading`, and a
+read-only drift banner reports when a contract has moved since.
+
+**The rules, each because the other way is wrong.** ⚠️ **Actual stops at the cut-off** whatever the
+contract says; forward series fill the whole span. ⚠️ **An open-ended contract is skipped for a forward
+series, never run to the schedule's end** — that would invent a commitment. ⚠️ **TBH is excluded from
+every series** — nobody is deployed against an unfilled slot, and adding it to a planned one would
+double-count the requirement. ⚠️ **One profile is one head whatever `allocation` says** — `SHARED`
+records no fraction, and 0.5 would be invented precision. ⚠️ **A hand-typed month survives**, ownership
+being `source='roster:<series>'`; editing that cell hands it to `hand` permanently, while **editing a
+different column must not release ownership** (source is per row, and a row can carry a derived actual
+beside a hand-typed plan). ⚠️ **Take-over is an explicit tick, off by default, with the count printed
+on it** — found because a derive on a project that already has typed actuals correctly does *nothing*
+and says so, which is safe but a dead end without a way through. ⚠️ **Months outside the schedule's
+axis are written, not clipped** — the axis is the programme's and the contract is HR's, and dropping
+them hides the disagreement. ⚠️ **One upsert per 400 months**, keyed on the `(position_id, period)`
+unique index, with the release and write passes merged into one payload per month so an upsert can
+never touch a row twice.
+
+**Verified: 131 checks** (91 → 131) executing the shipped functions. ⚠️ **The suite cannot load against
+the pre-change file at all**, so the section is genuinely new behaviour. **Driven end to end in a
+browser**: 160 months derived and KPIs moving 31 → 19 as the roster takes over; a hand edit taking its
+cell over and the next derive reporting it as kept and leaving it; a shortened contract raising the
+drift banner at 7 months and the re-derive taking that position 15 → 8; the form's readout correct in
+all four states with **12 months from 1 Jan ending 31 Dec** — the inclusive off-by-one that would
+otherwise add a month of headcount to every profile. Chart↔matrix alignment still **0px**, no console
+errors, new surfaces min **7.02 dark / 7.07 light**, 44px controls and no page scroll at 375px.
+**0 functions lost, 17 added.**
+
+⚠️ **A real staleness bug found by testing, not reading:** `setQty` wrote the new `source` to the
+database but not to the in-memory row, so after a hand correction the cell kept its derived marker and
+the next derive still counted it as owned — silently overwriting the correction until a reload.
+
+⚠️ **Two harness artefacts, both of the hidden-tab family this repo has already recorded:** `blur()`
+does not fire `onblur` in a non-focused tab, so the first edit test read as "nothing happened" when the
+commit simply never ran; and the stub needed a real *mutating* `upsert`, or the test would have proved
+the plan was right without proving the button changes anything.
+
+⚠️ **Still not verified signed in — the upsert has never hit PostgREST**, and `onConflict` behaviour is
+the server's, not the stub's. That is the one thing here most worth a live check.

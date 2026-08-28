@@ -102,6 +102,90 @@ Migration, to be run in the Supabase SQL editor:
   vs "QAQC Engineer") and matching on it alone silently creates a duplicate position line. Derived
   rows in the export (department totals, OVERALL, COST) are never imported back.
 
+## 2026-08-28 — A manpower profile, and its contract duration drives the months
+
+Owner: *"Does this follow similar to the equipment loading by adding an equipment. But this time it
+will add a profile of a manpower. The manpower profile should consider its contract duration."*
+
+⚠️ **It did not, and the gap was total.** `contract_start` / `contract_end` were stored and displayed
+but read by exactly one thing — `filledCount`, the vacancy readout. They did not touch the loading
+grid, so Equipment Loading's whole point (an item's schedule link **deriving** its monthly
+quantities) had no manpower equivalent. The months were typed by hand beside a roster that already
+knew the answer.
+
+**A profile is now the module's primary object.** "+ Add manpower" opens it from every tab; a
+position (the requirement) is added from the Positions tab, which now says in one line how the two
+differ. The form leads with a **Contract duration** section carrying a live readout that names what
+the profile will contribute before anything is saved — *"12 months · Jan 2026 – Dec 2026 · Adds 1
+head to Field Engineer for each of those months"* — plus a **months → end date** helper.
+
+**The derivation** (topbar button → dialog) writes those months into `manpower_loading`.
+⚠️ **Written, not computed at render time** — the chart, grid, export, portfolio and dashboard tile
+all read that one table, and a second invisible source of headcount would make them disagree the
+moment anything read it directly. Same call the equipment sync made.
+
+### The rules, each because the other way is wrong
+- ⚠️ **Actual stops at the cut-off, whatever the contract says.** A contract running to December does
+  not report December's deployment. Forward series (Planned / Approved / Forecast) fill the whole
+  span — the dialog states which it is doing and why.
+- ⚠️ **An open-ended contract is skipped for a forward series, never run to the schedule's end.** "No
+  end date recorded" is an unanswered question; projecting it invents a commitment. It still counts
+  toward Actual up to the cut-off, where it is a fact.
+- ⚠️ **TBH is excluded from every series**, not just Actual. Nobody is deployed against an unfilled
+  slot, and adding it to a planned series would double-count it against the requirement the planner
+  already typed. It drives the vacancy figure instead.
+- ⚠️ **One profile is one head, whatever `allocation` says.** `SHARED` records that a person works
+  across projects but records no fraction; turning that into 0.5 would invent precision nobody
+  entered. An `fte` column is the honest fix and is deliberately not guessed at here.
+- ⚠️ **A hand-typed month survives.** The derivation overwrites only a cell it already owns or an
+  empty one. Ownership is `source = 'roster:<series>'`; editing that cell hands it to `'hand'` and it
+  is never touched again. ⚠️ **Editing a DIFFERENT column must not release ownership** — `source` is
+  per row and a row can carry a derived actual beside a hand-typed plan, so `setQty` only downgrades
+  when the edited column is the owned one.
+- ⚠️ **Take-over is an explicit tick, off by default, with the count printed on it.** It is the one
+  setting that can destroy entered data. Found because the derive on a project that already has typed
+  actuals correctly does *nothing* and says so — safe, but a dead end without a way through.
+- ⚠️ **Switching series MOVES the derivation** rather than leaving two: the release pass and the write
+  pass merge into one payload per month, so an upsert can never touch a row twice (which Postgres
+  refuses outright).
+- ⚠️ **Months outside the schedule's axis are written, not clipped.** The axis is the programme's, the
+  contract is HR's; a contract reaching past it means the two disagree, and dropping those months
+  hides exactly that. The count is reported.
+- ⚠️ **The drift banner is read-only and never re-derives by itself** — a derivation that fired on its
+  own would overwrite a grid someone is part-way through explaining.
+- ⚠️ **Re-derives automatically only once a derivation exists.** The first one has to be the planner's
+  explicit act; silently filling the grid the first time somebody adds a person would be a surprise.
+- ⚠️ **One upsert per 400 months, not one write per month** — 27 positions × 18 months is 486
+  sequential requests otherwise. Keyed on the `(position_id, period)` unique index.
+- **No migration**: `contract_start`, `contract_end`, `position_id` and `source` already existed.
+
+### Verified
+**131 checks** (91 → 131) executing the shipped functions, sliced by brace-matching. ⚠️ **The suite
+cannot load against the pre-change file at all** — it throws on the first missing symbol — so the
+whole section is genuinely new behaviour rather than a restatement.
+
+**Driven end to end in a browser** against the shipped page: 160 months derived, KPIs moving 31 → 19
+as the roster takes over, all 160 cells marked in by-position mode (and correctly unmarked in the
+by-department roll-up, where a per-cell marker would be meaningless); a hand edit taking its cell over
+(text `9`, marker gone, 160 → 159) and the next derive reporting it as kept and leaving it; shortening
+a contract raising the drift banner at 7 months and the re-derive taking that position 15 → 8; the
+form's readout correct in all four states with 12 months from 1 Jan ending **31 Dec** (the inclusive
+off-by-one that would otherwise add a month of headcount to every profile). Chart↔matrix alignment
+still **0px** in both modes and after deriving; no console errors; new surfaces min **7.02 dark /
+7.07 light**; at 375px every new control 44px with no page scroll. **0 functions lost, 17 added.**
+
+⚠️ **A real staleness bug found by testing, not reading:** `setQty` wrote the new `source` to the
+database but not to the in-memory row, so after a hand correction the cell kept its derived marker and
+the next derive still counted it as owned — silently overwriting the correction until a reload.
+
+⚠️ **Two harness artefacts, both of the hidden-tab family already recorded in this repo:** `blur()`
+does not fire `onblur` in a non-focused tab, so the first edit test read as "nothing happened" when
+the commit simply never ran (call `onblur` directly); and the stub needed a real mutating `upsert`,
+or the test would have proved the *plan* was right without proving the button changes anything.
+
+⚠️ **Still not verified signed in.** The upsert in particular has never hit PostgREST — it is the one
+thing here most worth a live check, since `onConflict` behaviour is the server's, not the stub's.
+
 ## Verified
 **91 checks executing the SHIPPED functions**, sliced out of `index.html` by brace-matching and never
 reimplemented (`suite.js` + `slice.js` in the session scratchpad): the governing rule incl. the

@@ -107,6 +107,18 @@
     .mp-mx td.mp-edit { cursor:cell; }
     .mp-mx td.mp-edit:hover { outline:2px solid var(--pd-red); outline-offset:-2px; }
     .mp-mx td.mp-phase { font-size:10.5px; color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
+    /* A month the contract-duration derivation wrote. Marked, never locked: a planner may
+       correct a reported month, and taking the cell over is how they say so — the next derive
+       then leaves it alone. Locking it would refuse an edit the data legitimately needs. */
+    .mp-mx td.mp-derived { position:relative; }
+    .mp-mx td.mp-derived::after { content:''; position:absolute; left:3px; top:3px; width:4px; height:4px;
+      border-radius:50%; background:var(--pd-red); opacity:.55; }
+    .mp-drift { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .mp-dur { display:block; margin-top:6px; font-size:12px; font-weight:700; color:var(--pd-ink); }
+    .mp-dur small { display:block; font-weight:500; color:var(--pd-muted); margin-top:2px; }
+    .mp-derivebox { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:4px; }
+    .mp-derivebox ul { margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--pd-muted); }
+    .mp-linkrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .mp-mx input.mp-cellin { width:56px; height:24px; padding:0 4px; font:inherit; font-size:12px;
       text-align:center; border:1px solid var(--pd-red); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); }
     .mp-mx input.mp-cellin.wide { width:80px; text-align:left; }
@@ -207,7 +219,8 @@
         <button class="mp-tab" data-view="portfolio">Portfolio</button>
       </div>
       <div class="mp-topbar-tools">
-        <button class="pd-btn pd-btn-primary mp-tb-labeled" id="mp-add" title="Add a position line">+ Add position</button>
+        <button class="pd-btn pd-btn-primary mp-tb-labeled" id="mp-add" title="Add a manpower profile — a person or a budgeted slot, with its contract duration">+ Add manpower</button>
+        <button class="pd-btn" id="mp-derive" title="Derive the monthly deployment from every profile's contract duration"><span data-ico="users" data-ico-size="16"></span></button>
         <button class="pd-btn" id="mp-seed" title="Seed the standard organisation chart">Seed</button>
         <span class="mp-tb-sep"></span>
         <button class="pd-btn" id="mp-import" title="Import a filled loading sheet"><span data-ico="upload" data-ico-size="16"></span></button>
@@ -218,6 +231,7 @@
     </div>
     <div class="pd-main">
       <div id="mp-migrate" class="mp-warn" style="display:none;"></div>
+      <div id="mp-drift" class="mp-warn mp-drift" style="display:none;"></div>
 
       <!-- LOADING -->
       <div id="mp-view-loading">
@@ -261,6 +275,11 @@
 
       <!-- POSITIONS -->
       <div id="mp-view-register" style="display:none;">
+        <div class="mp-controls">
+          <button class="pd-btn pd-btn-primary" id="mp-add-position" style="height:34px;">+ Add position</button>
+          <span class="mp-tb-sep"></span>
+          <span class="mp-note">A <b>position</b> is the requirement — how many heads the job needs. A <b>manpower profile</b> is the person or budgeted slot filling it, and its contract duration is what puts them on the project in a given month.</span>
+        </div>
         <div class="mp-card" style="padding:0;overflow:auto;">
           <table class="mp-table" id="mp-reg"></table>
         </div>
@@ -269,7 +288,7 @@
       <!-- ROSTER -->
       <div id="mp-view-roster" style="display:none;">
         <div class="mp-controls">
-          <button class="pd-btn pd-btn-primary" id="mp-add-person" style="height:34px;">+ Add person</button>
+          <button class="pd-btn pd-btn-primary" id="mp-add-person" style="height:34px;">+ Add manpower profile</button>
           <span class="mp-tb-sep"></span>
           <label for="mp-r-search" style="font-size:12.5px;">Find</label>
           <input class="pd-input" id="mp-r-search" placeholder="name or position">
@@ -361,6 +380,7 @@
   var view = 'loading', detail = 'dept', mode = 'head';
   var fWork = '', fDept = '', rWork = '', rSearch = '';
   var showCost = false;
+  var DERIVE_KEY = 'actual';      // which series the contract-duration derivation owns
   var PORT = null;                // portfolio rows, once read
   var portAsOf = null;            // Date, month-floored
   var portWork = '';
@@ -506,6 +526,7 @@
     }
     await loadSpan();
     loadCutoff();
+    deriveKeyLoad();
     if (!portAsOf) portAsOf = CUTOFF;
     hideLoading();
     renderAll();
@@ -909,7 +930,12 @@
           if (m.iso === cutIso) c.push('mp-cut');
           if (future) c.push('mp-out');
           if (editId) c.push('mp-edit');
+          // A dot marks a month the contract-duration derivation wrote, so a planner can tell a
+          // derived figure from one somebody typed before deciding to change it.
+          var drv = editId && ownedSeries((rowOf({ id: editId }, m.iso) || {}).source) === ser.k;
+          if (drv) c.push('mp-derived');
           h.push('<td class="' + c.join(' ') + '"' +
+            (drv ? ' title="Derived from contract durations on the roster — type over it to take this month over."' : '') +
             (editId ? ' data-pos="' + esc(editId) + '" data-per="' + m.iso + '" data-ser="' + ser.k + '"' : '') +
             '>' + (future ? '' : (v == null ? '' : fnum(v))) + '</td>');
         });
@@ -1032,10 +1058,18 @@
     var cur = (LOAD[posId] || {})[iso];
     var ok;
     if (cur) {
-      var patch = {}; patch[col] = v; patch.source = 'hand';
+      var patch = {}; patch[col] = v;
+      // ⚠️ Only the column the planner is actually editing changes hands. A row can carry a
+      // contract-derived actual beside a hand-typed plan, and `source` is per ROW — so blanket
+      // 'hand' here would silently orphan the derivation's ownership of the other column and the
+      // next re-derive would stop maintaining it.
+      patch.source = (ownedSeries(cur.source) === k) ? 'hand' : (cur.source || 'hand');
       var r1 = await tolerantWrite(patch, function (p) { return sb().from('manpower_loading').update(p).eq('id', cur.id); });
       ok = r1.ok;
-      if (ok) { cur[col] = v; reportDropped(r1.dropped); }
+      // ⚠️ `source` has to be mirrored into the in-memory row too, not just written. Without it
+      // the cell keeps its derived marker and the next derive still counts it as owned — so a
+      // hand correction would be silently overwritten until the page happened to reload.
+      if (ok) { cur[col] = v; cur.source = patch.source; reportDropped(r1.dropped); }
       else UI.toast('Could not save: ' + (r1.error && r1.error.message), 'error');
     } else {
       var row = { project_id: pid, position_id: posId, period: iso, source: 'hand', created_by: user && user.id };
@@ -1064,6 +1098,277 @@
       else { MONTHS[iso] = r2.data[0]; reportDropped(r2.dropped); ok = true; }
     }
     if (ok) renderAll();
+  }
+
+  // ---- Contract-driven deployment -------------------------------------------------------
+  // A manpower profile is a PERSON (or a budgeted TBH slot) with a contract duration, and that
+  // duration is what puts them on the project in a given month — the same relationship an
+  // equipment item's schedule link has to its monthly quantities. So the months are DERIVED
+  // from the contract rather than typed, and re-deriving after a contract moves is one click.
+  //
+  // ⚠️ The derived months are WRITTEN into manpower_loading, not computed at render time. The
+  // chart, the grid, the export, the portfolio and the dashboard tile all read that one table;
+  // a second invisible source of headcount would make them disagree the moment anything read
+  // the table directly. Same call the equipment sync made.
+  var MAX_DERIVE_MONTHS = 600;
+
+  function deriveKeyLoad() {
+    DERIVE_KEY = 'actual';
+    try { var v = localStorage.getItem('mp_derive_' + pid); if (v && SER_BY_K[v]) DERIVE_KEY = v; } catch (_e) {}
+  }
+  function deriveKeySet(k) {
+    DERIVE_KEY = k;
+    try { localStorage.setItem('mp_derive_' + pid, k); } catch (_e) {}
+  }
+  // 'roster:actual' → 'actual'. Anything else — a planner's 'hand', an import, null — owns
+  // nothing, which is what makes a hand correction survive the next re-derive.
+  function ownedSeries(src) {
+    var m = /^roster:([a-z]+)$/.exec(String(src || ''));
+    return (m && SER_BY_K[m[1]]) ? m[1] : null;
+  }
+  function monthsBetween(a, b) {
+    var out = [], c = mFloor(a), stop = mFloor(b), guard = 0;
+    while (c <= stop && guard++ < MAX_DERIVE_MONTHS) { out.push(mkey(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    return out;
+  }
+  // The months one profile is on the project for, for the series being derived.
+  function profileMonths(r, k) {
+    var s = pd_(r.contract_start);
+    if (!s) return [];
+    var e = r.contract_end ? mFloor(pd_(r.contract_end)) : null;
+    if (k === 'actual') {
+      // ⚠️ Actual stops at the cut-off, always. A contract running to December does not report
+      // December's deployment — "not yet reported" and "nobody was there" are different facts,
+      // and every other surface in this module already draws them differently.
+      var lim = CUTOFF || mFloor(new Date());
+      var end = (e && e < lim) ? e : lim;
+      return monthsBetween(s, end);
+    }
+    // ⚠️ A forward series fills the whole contract — but an OPEN-ENDED contract is SKIPPED, not
+    // run to the end of the schedule. "No end date recorded" is an unanswered question, and
+    // projecting it to the project's last month invents a commitment nobody made.
+    if (!e) return [];
+    return monthsBetween(s, e);
+  }
+  function profileSpanLabel(r) {
+    var s = pd_(r && r.contract_start), e = pd_(r && r.contract_end);
+    if (!s) return null;
+    var n = e ? monthsBetween(s, e).length : null;
+    return { months: n, from: monLabel(mFloor(s)), to: e ? monLabel(mFloor(e)) : null };
+  }
+
+  // One pass over the roster producing { position_id -> { iso -> heads } }, plus everything it
+  // could NOT answer — reported on screen rather than silently dropped, because a profile that
+  // contributes nothing looks identical to one that was never entered.
+  function deriveMap(k) {
+    var map = {}, skip = { tbh: 0, noPos: 0, noStart: 0, openEnded: 0, outside: 0 };
+    ROSTER.forEach(function (r) {
+      // ⚠️ TBH is excluded from EVERY series, not just actual. It is a budgeted-but-unfilled
+      // slot, so nobody is deployed — and adding it to a planned series would double-count it
+      // against the requirement the planner already typed. The vacancy figure is where it counts.
+      if (isTBH(r)) { skip.tbh++; return; }
+      if (!r.position_id) { skip.noPos++; return; }
+      if (!r.contract_start) { skip.noStart++; return; }
+      if (k !== 'actual' && !r.contract_end) { skip.openEnded++; return; }
+      // ⚠️ One profile is ONE head, whatever its allocation says. 'SHARED' records that a person
+      // works across projects but records no fraction, and turning that into 0.5 would be
+      // inventing precision nobody entered. Type the month by hand to say otherwise.
+      profileMonths(r, k).forEach(function (iso) {
+        // ⚠️ Months outside the schedule's axis are NOT clipped away. The axis is the project
+        // schedule's, the contract is HR's; a contract reaching past it means the two disagree,
+        // and silently dropping those months hides exactly that.
+        if (SPAN && (iso < mkey(SPAN.start) || iso > mkey(SPAN.end))) skip.outside++;
+        (map[r.position_id] = map[r.position_id] || {})[iso] = ((map[r.position_id] || {})[iso] || 0) + 1;
+      });
+    });
+    return { map: map, skip: skip };
+  }
+
+  // What a derive would change, without writing anything — shared by the dialog's preview, the
+  // drift banner and the write itself, so the three can never disagree about the count.
+  // takeOver: replace months a planner typed as well. ⚠️ OFF everywhere by default and never
+  // implied — it is the one setting that can destroy entered data, so it is an explicit tick with
+  // the count of what it would replace printed next to it.
+  function derivePlan(k, takeOver) {
+    var col = SER_BY_K[k].col;
+    var d = deriveMap(k), map = d.map;
+    var slots = {}, kept = 0;
+    function slot(posId, iso) {
+      var key = posId + '|' + iso;
+      if (!slots[key]) slots[key] = { project_id: pid, position_id: posId, period: iso, created_by: user && user.id };
+      return slots[key];
+    }
+    // 1) Release every cell this derivation currently owns. The covered ones are re-set below,
+    //    so the net effect on an unchanged month is nothing — and a month that fell out of a
+    //    shortened contract is cleared rather than left asserting a head who has demobilised.
+    Object.keys(LOAD).forEach(function (posId) {
+      Object.keys(LOAD[posId]).forEach(function (iso) {
+        var own = ownedSeries(LOAD[posId][iso].source);
+        if (!own) return;
+        var s = slot(posId, iso);
+        s[SER_BY_K[own].col] = null;
+        s.source = null;
+      });
+    });
+    // 2) Write the covered months.
+    Object.keys(map).forEach(function (posId) {
+      Object.keys(map[posId]).forEach(function (iso) {
+        var cur = (LOAD[posId] || {})[iso];
+        // ⚠️ A hand-typed number survives. The derivation overwrites only a cell it already owns
+        // or an empty one — the equipment sync's rule, and the reason a planner's correction is
+        // not thrown away by the next re-derive.
+        if (cur && num(cur[col]) != null && ownedSeries(cur.source) !== k) {
+          kept++;
+          if (!takeOver) return;
+        }
+        var s = slot(posId, iso);
+        s[col] = map[posId][iso];
+        s.source = 'roster:' + k;
+      });
+    });
+    // 3) Drop the no-ops, or every re-derive would rewrite the whole grid and touch every
+    //    updated_at — the column the register's "last updated" reading comes from.
+    var rows = [];
+    Object.keys(slots).forEach(function (key) {
+      var s = slots[key], cur = (LOAD[s.position_id] || {})[s.period];
+      var diff = false;
+      SERIES.forEach(function (ser) {
+        if (!(ser.col in s)) return;
+        var was = cur ? num(cur[ser.col]) : null;
+        if (was !== s[ser.col]) diff = true;
+      });
+      if ((cur ? (cur.source || null) : null) !== (s.source || null)) diff = true;
+      if (diff) rows.push(s);
+    });
+    return { rows: rows, skip: d.skip, kept: kept, series: k, takeOver: !!takeOver };
+  }
+  function hasDerived() {
+    for (var p in LOAD) for (var i in LOAD[p]) if (ownedSeries(LOAD[p][i].source)) return true;
+    return false;
+  }
+
+  // ⚠️ ONE round-trip per 400 months, not one per month. A real project is ~27 positions over
+  // ~18 months, and a row-at-a-time write is 486 sequential requests. Upsert keys on the
+  // (position_id, period) unique index, so it can only ever land on the intended row.
+  async function tolerantWriteRows(rows, run) {
+    var work = rows.map(function (r) { var c = {}, k; for (k in r) c[k] = r[k]; return c; });
+    var dropped = [];
+    for (var attempt = 0; attempt < 12; attempt++) {
+      var res = await run(work);
+      if (!res || !res.error) return { ok: true, dropped: dropped };
+      var col = missingColumn(res.error);
+      if (!col) return { ok: false, error: res.error, dropped: dropped };
+      var found = false;
+      work.forEach(function (r) { if (col in r) { delete r[col]; found = true; } });
+      if (!found) return { ok: false, error: res.error, dropped: dropped };
+      dropped.push(col);
+    }
+    return { ok: false, error: new Error('too many missing columns'), dropped: dropped };
+  }
+
+  async function deriveFromContracts(k, silent, takeOver) {
+    if (!pid) return false;
+    var plan = derivePlan(k, takeOver);
+    if (!plan.rows.length) { if (!silent) UI.toast('Already up to date — every month matches its contracts.', 'ok'); return true; }
+    if (!silent) showLoading('Deriving ' + plan.rows.length + ' month(s) from contract durations…');
+    var failed = 0, dropped = [];
+    for (var i = 0; i < plan.rows.length; i += 400) {
+      var chunk = plan.rows.slice(i, i + 400);
+      var res = await tolerantWriteRows(chunk, function (w) {
+        return sb().from('manpower_loading').upsert(w, { onConflict: 'position_id,period' }).select();
+      });
+      if (!res.ok) { failed += chunk.length; if (!silent) UI.toast('Could not derive: ' + (res.error && res.error.message), 'error'); break; }
+      res.dropped.forEach(function (c) { if (dropped.indexOf(c) < 0) dropped.push(c); });
+    }
+    if (!silent) hideLoading();
+    if (dropped.length) reportDropped(dropped);
+    if (!failed && !silent) {
+      UI.toast(plan.rows.length + ' month(s) derived from contract durations.' +
+        (plan.kept ? (plan.takeOver ? ' ' + plan.kept + ' hand-typed month(s) replaced.'
+                                    : ' ' + plan.kept + ' hand-typed month(s) left untouched.') : ''), 'ok');
+    }
+    await load();
+    return !failed;
+  }
+
+  // ⚠️ Read-only, and it never re-derives by itself. A derivation that fired on its own would
+  // overwrite a grid someone is part-way through explaining — so it reports and offers a button.
+  function renderDrift() {
+    var el = document.getElementById('mp-drift'); if (!el) return;
+    if (!pid || needsMigration || !hasDerived()) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    var plan = derivePlan(DERIVE_KEY);
+    if (!plan.rows.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'flex';
+    el.innerHTML = '<span><b>' + plan.rows.length + ' month(s)</b> no longer match the contract durations on the roster' +
+      ' — a contract was added, moved or shortened since this was last derived.</span>' +
+      '<button class="pd-btn" id="mp-drift-go" style="height:30px;">Re-derive now</button>';
+    var b = document.getElementById('mp-drift-go');
+    if (b) b.onclick = function () { deriveFromContracts(DERIVE_KEY, false); };
+  }
+
+  function openDerive() {
+    var plan = derivePlan(DERIVE_KEY), s = plan.skip;
+    var notes = [];
+    if (s.tbh) notes.push('<li><b>' + s.tbh + '</b> TBH slot(s) are excluded — nobody is deployed against an unfilled slot, and counting them would double-count the requirement. They drive the vacancy figure instead.</li>');
+    if (s.noPos) notes.push('<li><b>' + s.noPos + '</b> profile(s) are not linked to a position, so there is no line to add them to.</li>');
+    if (s.noStart) notes.push('<li><b>' + s.noStart + '</b> profile(s) have no contract start date.</li>');
+    if (s.openEnded) notes.push('<li><b>' + s.openEnded + '</b> profile(s) are open-ended. A forward series is not projected to the end of the schedule — that would invent a commitment. Give them an end date, or derive to Actual.</li>');
+    if (s.outside) notes.push('<li><b>' + s.outside + '</b> month(s) fall outside the schedule&rsquo;s own axis. They are still written, not dropped — the contract and the programme disagree, and hiding it would hide that.</li>');
+    if (plan.kept) notes.push('<li><b>' + plan.kept + '</b> hand-typed month(s) will be left exactly as they are.</li>');
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>Derive months from contract durations</h2>' +
+      '<button class="pd-modal-close" id="mp-d-x">&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="mp-note">Every manpower profile adds <b>one head</b> to its position for each month its contract spans. This writes those months into the grid, so the curve follows the roster instead of being typed twice.</p>' +
+        '<div class="pd-field" style="margin-top:12px;"><label>Write into which series</label>' +
+          '<select class="pd-select" id="mp-d-ser">' +
+            SERIES.map(function (x) { return '<option value="' + x.k + '"' + (x.k === DERIVE_KEY ? ' selected' : '') + '>' + esc(x.label) + '</option>'; }).join('') +
+          '</select>' +
+          '<span class="mp-note" id="mp-d-hint"></span></div>' +
+        '<div class="mp-derivebox"><b id="mp-d-count"></b>' +
+          '<ul id="mp-d-notes"></ul></div>' +
+        '<label class="mp-checks" style="margin-top:12px;display:flex;">' +
+          '<input type="checkbox" id="mp-d-take"> <span id="mp-d-takelbl"></span></label>' +
+        '<p class="mp-note" style="margin-top:10px;">The derivation owns only the months it writes. A month you type over becomes yours and is never overwritten again &mdash; and switching series moves the derivation rather than leaving two.</p>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="mp-d-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="mp-d-go">Derive</button>' +
+      '</div>', { noBackdropClose: true });
+    var g = function (id) { return m.el.querySelector('#' + id); };
+    function refresh() {
+      var k = g('mp-d-ser').value, take = g('mp-d-take').checked;
+      var p = derivePlan(k, take), base = derivePlan(k, false), sk = p.skip;
+      g('mp-d-takelbl').innerHTML = base.kept
+        ? 'Also replace the <b>' + base.kept + '</b> month(s) somebody typed by hand'
+        : 'Also replace months typed by hand <span class="mp-note">(there are none)</span>';
+      g('mp-d-hint').innerHTML = (k === 'actual')
+        ? 'Actual stops at the cut-off (' + (CUTOFF ? esc(monLabel(CUTOFF)) : 'this month') + '). A contract running past it has not reported those months yet.'
+        : 'A forward series fills the whole contract span. Open-ended contracts are skipped.';
+      g('mp-d-count').textContent = p.rows.length
+        ? p.rows.length + ' month(s) would change.'
+        : 'Nothing would change — the grid already matches the contracts.';
+      var nn = [];
+      if (sk.tbh) nn.push('<li><b>' + sk.tbh + '</b> TBH slot(s) excluded — nobody is deployed against an unfilled slot. They drive the vacancy figure instead.</li>');
+      if (sk.noPos) nn.push('<li><b>' + sk.noPos + '</b> profile(s) are not linked to a position.</li>');
+      if (sk.noStart) nn.push('<li><b>' + sk.noStart + '</b> profile(s) have no contract start date.</li>');
+      if (sk.openEnded) nn.push('<li><b>' + sk.openEnded + '</b> open-ended profile(s) skipped — projecting them to the project&rsquo;s last month would invent a commitment.</li>');
+      if (sk.outside) nn.push('<li><b>' + sk.outside + '</b> month(s) fall outside the schedule&rsquo;s axis; written, not dropped.</li>');
+      if (base.kept) nn.push('<li><b>' + base.kept + '</b> hand-typed month(s) ' +
+        (take ? '<b>will be REPLACED</b> — untick above to keep them.' : 'left untouched.') + '</li>');
+      g('mp-d-notes').innerHTML = nn.join('');
+    }
+    g('mp-d-ser').onchange = refresh;
+    g('mp-d-take').onchange = refresh;
+    refresh();
+    g('mp-d-x').onclick = m.close;
+    g('mp-d-cancel').onclick = m.close;
+    g('mp-d-go').onclick = async function () {
+      var k = g('mp-d-ser').value, take = g('mp-d-take').checked;
+      deriveKeySet(k);
+      m.close();
+      await deriveFromContracts(k, false, take);
+    };
   }
 
   // ---- Positions register ---------------------------------------------------------------
@@ -1404,6 +1709,17 @@
       return (String(r.employee_name || '') + ' ' + (p ? p.position_title : '')).toLowerCase().indexOf(q) >= 0;
     });
   }
+  // What this profile's contract duration actually contributes, stated per row — the number the
+  // derivation acts on, so a profile that contributes nothing says why rather than looking normal.
+  function rosterMonthsCell(r) {
+    if (isTBH(r)) return '<span class="mp-note">vacancy</span>';
+    if (!r.position_id) return '<span class="mp-note">no position</span>';
+    var sp = profileSpanLabel(r);
+    if (!sp) return '<span class="mp-note">no start</span>';
+    if (!sp.months) return '<span class="mp-note">open-ended</span>';
+    return fnum(sp.months);
+  }
+
   function renderRoster() {
     var el = document.getElementById('mp-roster'); if (!el) return;
     var rows = rosterVisible();
@@ -1434,7 +1750,7 @@
       return;
     }
     var h = ['<thead><tr><th>#</th><th>Name</th><th>Position</th><th>Status</th><th>Allocation</th>' +
-      '<th>Hired</th><th>Contract</th><th>Remarks</th><th></th></tr></thead><tbody>'];
+      '<th>Hired</th><th>Contract</th><th class="num">Months</th><th>Remarks</th><th></th></tr></thead><tbody>'];
     rows.forEach(function (r, i) {
       var p = r.position_id ? posById(r.position_id) : null;
       var ce = pd_(r.contract_end);
@@ -1453,6 +1769,7 @@
             ? esc((r.contract_start ? (Fmt.date ? Fmt.date(r.contract_start) : r.contract_start) : '?') + ' → ' +
                   (r.contract_end ? (Fmt.date ? Fmt.date(r.contract_end) : r.contract_end) : 'open'))
             : '—') + '</td>' +
+        '<td class="num">' + rosterMonthsCell(r) + '</td>' +
         '<td>' + esc(r.remarks || '') + '</td>' +
         '<td><div class="mp-actions">' +
           '<button class="mp-btn-sm" data-redit="' + r.id + '">Edit</button>' +
@@ -1505,7 +1822,7 @@
         esc((p.code ? p.code + ' · ' : '') + p.position_title + ' (' + (p.workforce || 'Staff') + ')') + '</option>';
     }).join('');
     var m = UI.modal(
-      '<div class="pd-modal-header"><h2>' + (r ? 'Edit roster entry' : 'Add person') + '</h2>' +
+      '<div class="pd-modal-header"><h2>' + (r ? 'Edit manpower profile' : 'Add manpower profile') + '</h2>' +
       '<button class="pd-modal-close" id="mp-r-x">&times;</button></div>' +
       '<div class="pd-modal-body"><div class="mp-form-grid" style="padding:4px 0 8px;">' +
         '<div class="pd-field"><label>Name</label>' +
@@ -1516,21 +1833,60 @@
         '<div class="pd-field"><label>Allocation</label><select class="pd-select" id="r-alloc"><option value="">—</option>' + selOpts(ALLOCATIONS, r && r.allocation) + '</select></div>' +
         '<div class="pd-field"><label>Date hired (in project)</label><input class="pd-input" id="r-hired" type="date" value="' + esc(r && r.date_hired || '') + '"></div>' +
         '<div class="pd-field"><label>Rank</label><select class="pd-select" id="r-rank"><option value="">—</option>' + selOpts(RANKS, r && r.job_rank) + '</select></div>' +
+        '<div class="mp-form-sec mp-form-full">Contract duration</div>' +
+        '<div class="pd-field mp-form-full" style="margin-bottom:0;"><span class="mp-note">This is what puts the profile on the project: it adds <b>one head</b> to its position for every month the contract spans, and the grid is derived from that rather than typed twice.</span></div>' +
         '<div class="pd-field"><label>Contract start</label><input class="pd-input" id="r-cs" type="date" value="' + esc(r && r.contract_start || '') + '"></div>' +
         '<div class="pd-field"><label>Contract end</label><input class="pd-input" id="r-ce" type="date" value="' + esc(r && r.contract_end || '') + '">' +
-          '<span class="mp-note">Drives the demobilisation summary. Leave blank for open-ended.</span></div>' +
+          '<span class="mp-note">Blank = open-ended. An open-ended profile still counts toward Actual up to the cut-off, but is never projected forward.</span></div>' +
+        '<div class="pd-field mp-form-full"><label>Months</label>' +
+          '<div class="mp-linkrow"><input class="pd-input" id="r-mos" type="number" min="1" step="1" style="max-width:110px;" placeholder="e.g. 12">' +
+            '<button type="button" class="pd-btn" id="r-mos-go" style="height:34px;">Set end date from start</button></div>' +
+          '<span class="mp-dur" id="r-dur"></span></div>' +
         '<div class="pd-field mp-form-full"><label>Remarks</label><input class="pd-input" id="r-rem" value="' + esc(r && r.remarks) + '"></div>' +
       '</div></div>' +
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" id="mp-r-cancel">Cancel</button>' +
-        '<button class="pd-btn pd-btn-primary" id="mp-r-save">' + (r ? 'Save' : 'Add person') + '</button>' +
+        '<button class="pd-btn pd-btn-primary" id="mp-r-save">' + (r ? 'Save' : 'Add profile') + '</button>' +
       '</div>', { noBackdropClose: true });
     var g = function (id) { return m.el.querySelector('#' + id); };
+    // The live readout is what makes "the profile considers its contract duration" visible: it
+    // names the months this profile will contribute before anything is saved.
+    function syncDur() {
+      var el = g('r-dur'); if (!el) return;
+      var draft = { contract_start: g('r-cs').value || null, contract_end: g('r-ce').value || null,
+                    employee_name: g('r-name').value, position_id: g('r-pos').value || null };
+      var sp = profileSpanLabel(draft);
+      if (!sp) { el.innerHTML = '<small>Set a contract start to see the months this profile covers.</small>'; return; }
+      var head = sp.months ? (sp.months + ' month' + (sp.months === 1 ? '' : 's') + ' · ' + sp.from + ' – ' + sp.to)
+                           : ('Open-ended · from ' + sp.from);
+      var why = [];
+      if (isTBH(draft)) why.push('TBH — counted as a vacancy, never as a deployed head.');
+      else if (!draft.position_id) why.push('Not linked to a position, so there is no line to add it to.');
+      else if (!sp.months) why.push('Counts toward Actual up to the cut-off; not projected forward without an end date.');
+      else why.push('Adds 1 head to ' + esc(posTitle(draft.position_id) || 'its position') + ' for each of those months.');
+      el.innerHTML = esc(head) + '<small>' + why.join(' ') + '</small>';
+    }
+    ['r-cs', 'r-ce', 'r-name', 'r-pos'].forEach(function (id) {
+      var el = g(id); if (!el) return;
+      el.oninput = syncDur; el.onchange = syncDur;
+    });
+    g('r-mos-go').onclick = function () {
+      var n = num(g('r-mos').value), s = pd_(g('r-cs').value);
+      if (!s) { UI.toast('Set the contract start first.', 'error'); return; }
+      if (!n || n < 1) { UI.toast('Enter how many months the contract runs.', 'error'); return; }
+      // ⚠️ n months INCLUSIVE of the start month, ending on that month's last day — a 12-month
+      // contract from 1 Jan ends 31 Dec, not 1 Jan the next year. Off by one here silently adds
+      // a month of headcount to every profile it touches.
+      var end = new Date(s.getFullYear(), s.getMonth() + n, 0);
+      g('r-ce').value = end.getFullYear() + '-' + String(end.getMonth() + 1).padStart(2, '0') + '-' + String(end.getDate()).padStart(2, '0');
+      syncDur();
+    };
+    syncDur();
     g('mp-r-x').onclick = m.close;
     g('mp-r-cancel').onclick = m.close;
     g('mp-r-save').onclick = async function () {
       var name = g('r-name').value.trim();
-      if (!name) { UI.toast('A roster entry needs a name (or TBH).', 'error'); return; }
+      if (!name) { UI.toast('A manpower profile needs a name (or TBH for an unfilled slot).', 'error'); return; }
       var cs = g('r-cs').value || null, ce = g('r-ce').value || null;
       if (cs && ce && ce < cs) { UI.toast('The contract ends before it starts.', 'error'); return; }
       var payload = {
@@ -1553,8 +1909,12 @@
       if (!res.ok) { UI.toast('Could not save: ' + (res.error && res.error.message), 'error'); return; }
       reportDropped(res.dropped);
       m.close();
-      UI.toast(r ? 'Roster entry updated.' : 'Person added.', 'ok');
-      load();
+      UI.toast(r ? 'Manpower profile updated.' : 'Manpower profile added.', 'ok');
+      await load();
+      // ⚠️ Re-derives ONLY once a derivation already exists. The first one has to be the
+      // planner's explicit act — which series it writes into is a decision, and silently
+      // filling the grid the first time somebody adds a person would be a surprise.
+      if (hasDerived()) await deriveFromContracts(DERIVE_KEY, true);
     };
   }
   async function delRoster(r) {
@@ -1914,6 +2274,7 @@
     renderSeriesChecks();
     var ag = aggregate();
     renderKpis(ag); renderChart(ag); renderMatrix(ag); renderRegister(); renderRoster(); renderPortfolio();
+    renderDrift();
     if (window.Icons) Icons.hydrate(document.body);
   }
   function syncFilters() {
@@ -1943,6 +2304,8 @@
     // all, because that tab writes to no project.
     var add = document.getElementById('mp-add');
     if (add) add.style.display = (v === 'portfolio') ? 'none' : '';
+    var drv = document.getElementById('mp-derive');
+    if (drv) drv.style.display = (v === 'portfolio') ? 'none' : '';
     var seed = document.getElementById('mp-seed');
     if (seed) seed.style.display = (v === 'portfolio' || v === 'roster') ? 'none' : '';
     // ⚠️ The portfolio is NOT read automatically on the way in. It is the only view that
@@ -1973,9 +2336,22 @@
     document.getElementById('mp-f-work').onchange = function (e) { fWork = e.target.value; renderAll(); };
     document.getElementById('mp-f-dept').onchange = function (e) { fDept = e.target.value; renderAll(); };
     document.getElementById('mp-show-cost').onchange = function (e) { showCost = e.target.checked; renderAll(); };
+    // The primary action adds a MANPOWER PROFILE everywhere. A position is the requirement and
+    // is added from the Positions tab; the profile is the thing with a contract duration, and
+    // it is what the day-to-day work of this module actually is.
     document.getElementById('mp-add').onclick = function () {
       if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
-      if (view === 'roster') openRosterForm(null); else openForm(null);
+      openRosterForm(null);
+    };
+    document.getElementById('mp-add-position').onclick = function () {
+      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+      openForm(null);
+    };
+    document.getElementById('mp-derive').onclick = function () {
+      if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
+      if (!POS.length) { UI.toast('Add or seed the positions first — a profile has to fill one.', 'error'); return; }
+      if (!ROSTER.length) { UI.toast('No manpower profiles yet — use + Add manpower to record one.', 'error'); return; }
+      openDerive();
     };
     document.getElementById('mp-add-person').onclick = function () {
       if (!pid) { UI.toast('Pick a project first.', 'error'); return; }
