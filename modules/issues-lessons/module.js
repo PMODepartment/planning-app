@@ -167,6 +167,20 @@ window.IssuesLessons = (function () {
     canAdd = !!prof && prof.status === 'approved' && prof.role !== 'viewer';
     canWrite = canAdd;
 
+    // ⚠️ Deep link from My Work: ?screen=issues|lessons|mom. Read BEFORE wire()/
+    // syncChrome(), which paint the tab strip from `screen` — set it afterwards and
+    // the strip would say one thing while the module showed another. An unknown or
+    // absent value leaves the default (the minutes) untouched.
+    try {
+      var _q = new URLSearchParams(location.search).get('screen');
+      if (_q === 'issues' || _q === 'lessons' || _q === 'mom') screen = _q;
+    } catch (e) { /* no URLSearchParams / opaque URL — keep the default */ }
+
+    // ⚠️ Tolerant, and NOT awaited-into-failure: `getPeople()` returns [] when the
+    // roster RPC is missing (migration not yet run), so the pickers fall back to
+    // free text rather than the whole module refusing to load over a dropdown.
+    try { PEOPLE = await PDb.getPeople(); } catch (e) { PEOPLE = []; }
+
     await loadProjects();
     wire();
     syncChrome();
@@ -607,9 +621,12 @@ window.IssuesLessons = (function () {
           ilField(_issReport, 'Department', 'il-c-dept',
             '<select class="pd-select pd-input-sm il-if" data-f="department"' + d + '>' +
               opts(DEPARTMENTS, r.department || '', '—') + '</select>', r.department) +
-          ilField(_issReport, 'Champion', 'il-c-champ',
-            '<input class="pd-input pd-input-sm il-if" data-f="champion" list="il-champ-list" value="' +
-              Fmt.esc(r.champion) + '" placeholder="Who owns it"' + d + '>', r.champion) +
+          // ⚠️ The picker replaces the old free-text box but does NOT drop free
+          // text — it carries both, so a champion without an account is still
+          // nameable and no existing value is lost on the next save.
+          ilField(_issReport, 'Champion(s)', 'il-c-champ',
+            peoplePickerHTML('iss-champ', r.champion_ids, r.champion, ro),
+            championText(r.champion_ids, r.champion)) +
           ilField(_issReport, 'Date Presented', 'il-c-pres',
             '<input class="pd-input pd-input-sm il-if" data-f="date_presented" type="date" value="' +
               dateVal(r.date_presented) + '"' + d + '>',
@@ -715,6 +732,11 @@ window.IssuesLessons = (function () {
         f.oninput = f.onchange = function () { _issNew[f.dataset.f] = f.value; };
       });
     }
+    // ⚠️ The Champion picker is not an `.il-if`, so it needs its own draft capture —
+    // otherwise the next re-render would reset it to the draft's stale value.
+    wirePeople(host, function (key, ids, text) {
+      if (key === 'iss-champ' && _issNew) { _issNew.champion_ids = ids; _issNew.champion = text; }
+    });
     // Broadcast the collab cursor for whichever issue is open.
     broadcastCollabSel(_issNew ? null : _issSel, !_issReport);
   }
@@ -727,7 +749,7 @@ window.IssuesLessons = (function () {
     _issNew = {
       status: 'Open',
       department: (profile && profile.department) || '',
-      champion: '', description: '', caused_by: '', corrective_action: '',
+      champion: '', champion_ids: [], description: '', caused_by: '', corrective_action: '',
       date_presented: todayISO(), date_resolved: '',
     };
     _issSel = null; _issMode = 'report'; _issReport = false;
@@ -743,14 +765,30 @@ window.IssuesLessons = (function () {
     return out;
   }
 
+  // Reads the Champion picker out of the DOM. ⚠️ Returns BOTH halves together —
+  // building `champion` from the ids at one call site and the free text at
+  // another is how the two would drift apart.
+  function issChampion() {
+    var host = $('il-issues-view');
+    var root = host && host.querySelector('[data-people="iss-champ"]');
+    if (!root) {                       // reporting view renders text, not a control
+      var r = _issNew || rows.find(function (x) { return x.id === _issSel; }) || {};
+      return { ids: r.champion_ids || [], text: r.champion || '' };
+    }
+    var free = root.querySelector('.il-pp-free');
+    return { ids: idsOf(root), text: free ? free.value.trim() : '' };
+  }
+
   async function saveIssue() {
     var v = issFormValues();
+    var ch = issChampion();
     var data = {
       project_id:        pid,
       type:              'Issue',
       status:            v.status || 'Open',
       department:        v.department || null,
-      champion:          (v.champion || '').trim(),
+      champion_ids:      ch.ids,
+      champion:          championText(ch.ids, ch.text),
       description:       (v.description || '').trim(),
       caused_by:         (v.caused_by || '').trim(),
       corrective_action: (v.corrective_action || '').trim(),
@@ -834,6 +872,240 @@ window.IssuesLessons = (function () {
   // this, running the app before the migration would report a project's whole lessons
   // history as empty — which reads as data loss.
   // ==========================================================================
+
+  // ==========================================================================
+  // PEOPLE PICKER — Champion (issues) and Responsible (meeting action items)
+  // --------------------------------------------------------------------------
+  // ⚠️ HYBRID BY DESIGN: ids AND text, both written on every save.
+  //   * The IDS are what make "show me what I own" answerable. A typed name
+  //     cannot be resolved to an account, and this register already contains
+  //     "Ronquillo, Jules Norman; Agcaoili, Heherson" — no equality test will
+  //     ever match that against a login.
+  //   * The TEXT is kept because not every champion has an account (a
+  //     subcontractor's engineer is named on an issue and will never log in),
+  //     because every existing row's champion is text, and because a printed
+  //     sheet shows names rather than uuids.
+  // The app writes both from one control, so they cannot disagree.
+  //
+  // ⚠️ THE SELECTION LIVES IN THE DOM (`data-ids` on the root), not in a module
+  // variable. Two pickers can be on screen at once (several action items), and
+  // a partial re-render of one must not disturb the other — nor lose text the
+  // planner has typed into a neighbouring field, which a full re-render would.
+  // ==========================================================================
+  var PEOPLE = [];
+
+  function peopleById() {
+    var by = {};
+    PEOPLE.forEach(function (p) { by[p.id] = p; });
+    return by;
+  }
+  // ⚠️ An id that no longer resolves is reported as "Unknown person", never
+  // dropped. It means the person left; showing fewer champions than the row
+  // records would silently misstate who owns the work.
+  function peopleNamesOf(ids) {
+    var by = peopleById();
+    return (ids || []).map(function (id) {
+      var p = by[id]; return (p && p.name) ? p.name : 'Unknown person';
+    });
+  }
+  // The display string the register/PDF/export read. Named people first, then
+  // anyone typed in free text, joined the way the existing data already reads.
+  function championText(ids, extra) {
+    var parts = peopleNamesOf(ids);
+    var t = (extra || '').trim();
+    if (t) parts.push(t);
+    return parts.join('; ');
+  }
+  function idsOf(root) {
+    var v = (root && root.dataset.ids) || '';
+    return v ? v.split(',').filter(Boolean) : [];
+  }
+
+  // ⚠️ The qualifier is the COMPANY for a contact and the DEPARTMENT for an
+  // account. Two people called Cruz are told apart by who they work for, and for
+  // someone outside Megawide the department field is usually empty anyway.
+  function personLabel(p) {
+    var q = (p.kind === 'contact' ? (p.company || p.department) : p.department) || '';
+    return (p.name || '(unnamed)') + (q ? ' · ' + q : '');
+  }
+
+  function peopleOptionsHTML(chosen) {
+    var taken = {}; (chosen || []).forEach(function (i) { taken[i] = 1; });
+    var list = PEOPLE.filter(function (p) { return !taken[p.id]; });
+    // ⚠️ The select is rendered even when the roster is EMPTY, because it now
+    // carries the way to add somebody. Returning '' on an empty list — as it did
+    // before the directory existed — would hide the only route on exactly the
+    // project that most needs it.
+    return '<select class="pd-select pd-input-sm il-pp-add">' +
+      '<option value="">' + (list.length ? '+ add a person…' : '+ add someone…') + '</option>' +
+      list.map(function (p) {
+        return '<option value="' + Fmt.esc(p.id) + '">' + Fmt.esc(personLabel(p)) +
+          (p.kind === 'contact' ? ' (no account)' : '') + '</option>';
+      }).join('') +
+      // ⚠️ Deliberately the LAST option and clearly separated: creating a person is
+      // a real write that everyone else then sees, so it must not be one keystroke
+      // away from picking an existing colleague.
+      '<option disabled>──────────</option>' +
+      '<option value="__new__">＋ Someone without an account…</option>' +
+    '</select>';
+  }
+
+  // The inline "new person" form. ⚠️ Inline, NOT a modal: the surrounding fields
+  // are only read on Save, and this module already learned (the pop-up that was
+  // deleted) that anything which repaints or overlays the form loses whatever the
+  // planner had typed and not yet saved.
+  function newPersonHTML() {
+    return '<div class="il-pp-new">' +
+      '<div class="il-pp-newrow">' +
+        '<input class="pd-input pd-input-sm il-pp-nname" placeholder="Full name" />' +
+        '<input class="pd-input pd-input-sm il-pp-nco" placeholder="Company or department" />' +
+      '</div>' +
+      '<div class="il-pp-newact">' +
+        '<button type="button" class="pd-btn pd-btn-sm pd-btn-primary il-pp-nadd">Add person</button>' +
+        '<button type="button" class="pd-btn pd-btn-sm il-pp-ncancel">Cancel</button>' +
+        '<span class="il-pp-nnote">Saved once and offered to everyone from now on. ' +
+          'They have no login, so this work will not appear on a My Work page.</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // `key` only has to be unique among the pickers rendered at the same time.
+  function peoplePickerHTML(key, ids, text, ro, newOpen) {
+    ids = (ids || []).filter(Boolean);
+    var names = peopleNamesOf(ids);
+    if (ro) {
+      var shown = championText(ids, text);
+      return '<div class="il-mi-val' + (shown ? '' : ' is-empty') + '">' +
+        (shown ? Fmt.esc(shown) : '—') + '</div>';
+    }
+    return '<div class="il-people" data-people="' + Fmt.esc(key) + '" data-ids="' + Fmt.esc(ids.join(',')) + '"' +
+      (newOpen ? ' data-new="1"' : '') + '>' +
+      (ids.length
+        ? '<div class="il-pp-chips">' + (function () {
+            var by = peopleById();
+            return ids.map(function (id, i) {
+              // ⚠️ A person with no account is MARKED on the chip. The planner
+              // assigning the work has to be able to see, at a glance, that this
+              // item will never surface on anyone's personal view — the two kinds
+              // of champion look identical otherwise.
+              var p = by[id] || {};
+              var contact = p.kind === 'contact';
+              return '<span class="il-pp-chip' + (contact ? ' is-contact' : '') + '"' +
+                (contact ? ' title="No account on the dashboard"' : '') + '>' +
+                Fmt.esc(names[i]) +
+                (contact ? '<span class="il-pp-noacct">no account</span>' : '') +
+                '<button type="button" class="il-pp-rm" data-rm="' + Fmt.esc(id) + '" title="Remove">✕</button></span>';
+            }).join('');
+          })() + '</div>'
+        : '') +
+      peopleOptionsHTML(ids) +
+      (newOpen ? newPersonHTML() : '') +
+      // ⚠️ The free-text box is NOT a fallback for a missing roster — it is how
+      // someone without an account gets named. Its own label says so, or a
+      // planner reasonably assumes the dropdown is the only valid route.
+      '<input class="pd-input pd-input-sm il-pp-free" value="' + Fmt.esc(text || '') + '" ' +
+        'placeholder="Others not on the system (typed)">' +
+    '</div>';
+  }
+
+  // Rebuilds ONE picker in place and re-wires it. ⚠️ Never re-renders the whole
+  // form: the surrounding fields are only read on Save, so a full repaint would
+  // discard whatever the planner had typed but not yet saved.
+  function repaintPicker(root, onChange, newOpen) {
+    var key = root.dataset.people;
+    var ids = idsOf(root);
+    var free = root.querySelector('.il-pp-free');
+    var text = free ? free.value : '';
+    // ⚠️ A half-typed new person survives the repaint that removing a chip causes.
+    // Losing it would make the two controls fight each other.
+    var nn = root.querySelector('.il-pp-nname'), nc = root.querySelector('.il-pp-nco');
+    var keepN = nn ? nn.value : '', keepC = nc ? nc.value : '';
+    if (newOpen === undefined) newOpen = root.dataset.new === '1';
+    var holder = document.createElement('div');
+    holder.innerHTML = peoplePickerHTML(key, ids, text, false, newOpen);
+    var fresh = holder.firstChild;
+    root.parentNode.replaceChild(fresh, root);
+    if (newOpen) {
+      var f1 = fresh.querySelector('.il-pp-nname'), f2 = fresh.querySelector('.il-pp-nco');
+      if (f1) { f1.value = keepN; f1.focus(); }
+      if (f2) f2.value = keepC;
+    }
+    wirePeople(fresh.parentNode, onChange);
+    return fresh;
+  }
+
+  function wirePeople(scope, onChange) {
+    if (!scope) return;
+    scope.querySelectorAll('.il-people').forEach(function (root) {
+      if (root._wired) return;
+      root._wired = true;
+      var fire = function () {
+        if (onChange) onChange(root.dataset.people, idsOf(root),
+          (root.querySelector('.il-pp-free') || {}).value || '');
+      };
+      var add = root.querySelector('.il-pp-add');
+      if (add) add.onchange = function () {
+        if (!add.value) return;
+        // ⚠️ Opening the new-person form is NOT a selection — the select is reset
+        // and nothing is added, or the sentinel id would end up in champion_ids
+        // and resolve to "Unknown person" forever.
+        if (add.value === '__new__') {
+          add.value = '';
+          repaintPicker(root, onChange, true);
+          return;
+        }
+        var ids = idsOf(root);
+        if (ids.indexOf(add.value) < 0) ids.push(add.value);
+        root.dataset.ids = ids.join(',');
+        var fresh = repaintPicker(root, onChange);
+        if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
+          (fresh.querySelector('.il-pp-free') || {}).value || '');
+      };
+
+      // ---- The new-person form -------------------------------------------
+      var nadd = root.querySelector('.il-pp-nadd');
+      if (nadd) nadd.onclick = async function () {
+        var nm = (root.querySelector('.il-pp-nname') || {}).value || '';
+        var co = (root.querySelector('.il-pp-nco') || {}).value || '';
+        if (!nm.trim()) { UI.toast('Enter a name for the person.', 'warn'); return; }
+        nadd.disabled = true;
+        var made;
+        try {
+          made = await PDb.createContact(nm, co, '', UID);
+        } catch (e) {
+          nadd.disabled = false;
+          // ⚠️ The form is left OPEN with the typed name intact. Closing it on a
+          // failure would throw the name away and the planner would have to work
+          // out what had happened from a toast that has already gone.
+          UI.toast('Could not add the person: ' + ((e && e.message) || e) +
+            ' — if this names a missing table, run migrations/2026-08-28-people-directory.sql', 'error');
+          return;
+        }
+        var ids = idsOf(root);
+        // ⚠️ createContact returns the EXISTING row when the person is already in
+        // the directory, so guard against adding the same id twice.
+        if (ids.indexOf(made.id) < 0) ids.push(made.id);
+        root.dataset.ids = ids.join(',');
+        var fresh = repaintPicker(root, onChange, false);
+        if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
+          (fresh.querySelector('.il-pp-free') || {}).value || '');
+        UI.toast(made.name + ' added — everyone can pick them now.', 'ok');
+      };
+      var ncan = root.querySelector('.il-pp-ncancel');
+      if (ncan) ncan.onclick = function () { repaintPicker(root, onChange, false); };
+      root.querySelectorAll('.il-pp-rm').forEach(function (b) {
+        b.onclick = function () {
+          root.dataset.ids = idsOf(root).filter(function (i) { return i !== b.dataset.rm; }).join(',');
+          var fresh = repaintPicker(root, onChange);
+          if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
+            (fresh.querySelector('.il-pp-free') || {}).value || '');
+        };
+      });
+      var free = root.querySelector('.il-pp-free');
+      if (free) free.onchange = fire;
+    });
+  }
+
   var LESSON_TABLE = 'lessons_learned';
 
   function lessReset() {
@@ -1887,9 +2159,11 @@ window.IssuesLessons = (function () {
         // Showing `mom_items.status` on a raised action would put a stale word in the
         // record beside a register pill saying something else.
         iss ? (iss.status || 'Open') : (it.status || 'Open')) +
+      // Same roster as the register's Champion, so an action raised into an issue
+      // carries a responsible the personal view can actually resolve.
       momFieldHTML('Responsible', 'il-c-owner',
-        '<input class="pd-input pd-input-sm il-mi" data-f="owner" value="' + Fmt.esc(it.owner || '') + '" placeholder="Who owns it" ' + d + '>',
-        it.owner) +
+        peoplePickerHTML('mom-own-' + it.id, it.owner_ids, it.owner, ro),
+        championText(it.owner_ids, it.owner)) +
       momFieldHTML('Target date', 'il-c-due',
         '<input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '>',
         it.due_date ? Fmt.date(it.due_date) : '') +
@@ -2186,7 +2460,11 @@ window.IssuesLessons = (function () {
     var payload = {
       project_id: pid, type: 'Issue',
       description: act,
+      // ⚠️ The ids travel with the name. Copying only the text would put the issue
+      // in the register with a champion nobody's personal view could resolve —
+      // which is the whole reason the ids exist.
       champion: it.owner || null,
+      champion_ids: it.owner_ids || [],
       status: st,
       date_presented: mom.meeting_date || null,
       caused_by: mom.title ? ('Raised at: ' + mom.title) : null,
@@ -2649,6 +2927,14 @@ window.IssuesLessons = (function () {
     });
     host.querySelectorAll('.il-mi-lesson-open').forEach(function (b) {
       b.onclick = function () { openLesson(b.dataset.lesson); };
+    });
+    // ⚠️ Saves on change, one field at a time — the same rule the rest of this card
+    // follows. A Save button covering the header AND every action is how a half-typed
+    // action gets written.
+    wirePeople(host, function (key, ids, text) {
+      if (key.indexOf('mom-own-') !== 0) return;
+      var id = key.slice('mom-own-'.length);
+      momSaveItem(id, { owner_ids: ids, owner: championText(ids, text) || null });
     });
     host.querySelectorAll('.il-mi-del').forEach(function (b) {
       b.onclick = async function () {

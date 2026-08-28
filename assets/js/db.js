@@ -9,6 +9,9 @@
 (function () {
   function sb() { return window.getSB(); }
 
+  // The people roster, fetched once per page. See PDb.getPeople().
+  var _people = null;
+
   var PDb = {
     // ---- Keyset pagination (shared) ----
     // ⚠️ PostgREST caps a table read at 1000 rows SERVER-side, and a client `.limit()` cannot raise
@@ -433,6 +436,84 @@
         if (!res.error && res.data && res.data.length) out.lastActivity = res.data[0][uc];
       }
       return out;
+    },
+
+    // ---- People roster (any approved user) ----
+    // ⚠️ NOT `getAllUsers()`. That reads `users` directly and, under
+    // `users_self_read` (auth.uid() = id or is_admin()), returns ONLY YOUR OWN
+    // ROW for a non-admin — so a picker built on it would silently offer a
+    // one-person list to every planner. This calls the `app_people()` RPC
+    // (2026-08-26-people-and-assignment.sql), which returns id/name/department
+    // and nothing else: no email, no role, no project assignments.
+    //
+    // ⚠️ Cached for the page's lifetime. The roster changes when someone is
+    // approved in Admin, which is not something a picker needs to see mid-session,
+    // and every module that offers an assignment field would otherwise re-fetch it.
+    async getPeople() {
+      if (_people) return _people;
+      var res = await sb().rpc('app_people');
+      // ⚠️ Tolerant of the un-run migration: no function means no roster, and the
+      // caller falls back to free text rather than losing the whole form.
+      if (res.error) { _people = []; return _people; }
+      _people = res.data || [];
+      return _people;
+    },
+    // ---- Adding a person who has NO account -----------------------------
+    // ⚠️ The backup path for a champion who will never log in (a subcontractor's
+    // engineer, a client's rep). It writes a row to `people_directory`
+    // (2026-08-28-people-directory.sql) so the NEXT planner picks the same person
+    // instead of retyping the name a third way — which is the whole difference
+    // between this and the free-text line beside it.
+    //
+    // ⚠️ Returns the EXISTING row when the name+company is already in the
+    // directory, rather than erroring. The unique index is case-insensitive on
+    // purpose, so "Engr. Cruz" and "engr. cruz" resolve to one person — and a
+    // planner who hits that should get the person, not a failure.
+    async createContact(name, company, department, uid) {
+      var nm = (name || '').trim();
+      if (!nm) throw new Error('A name is required.');
+      var payload = {
+        name: nm,
+        company: (company || '').trim() || null,
+        department: (department || '').trim() || null,
+        created_by: uid || null
+      };
+      var res = await sb().from('people_directory').insert(payload).select().single();
+      if (res.error) {
+        // 23505 = the case-insensitive identity index. Read the existing row back
+        // and hand it over; anything else is a real failure and must be surfaced.
+        if (res.error.code === '23505') {
+          var q = sb().from('people_directory').select('*')
+            .ilike('name', nm).limit(1);
+          var got = await q;
+          if (!got.error && got.data && got.data[0]) {
+            var row = got.data[0];
+            var rec = { id: row.id, name: row.name, department: row.department,
+                        company: row.company, kind: 'contact' };
+            if (_people) _people.push(rec);
+            return rec;
+          }
+        }
+        throw res.error;
+      }
+      var d = res.data;
+      var made = { id: d.id, name: d.name, department: d.department,
+                   company: d.company, kind: 'contact' };
+      // ⚠️ Pushed into the SAME cache the pickers read, so the person is
+      // selectable immediately. Re-fetching the roster here would be a round-trip
+      // that also discards ids other open pickers are mid-way through resolving.
+      if (_people) _people.push(made);
+      return made;
+    },
+
+    // Resolve ids -> display names without a second round-trip. Unknown ids are
+    // reported as such, never dropped: an id that no longer resolves means the
+    // person left, and silently showing fewer champions than the row records
+    // would misstate who owns the work.
+    peopleNames(ids) {
+      var by = {};
+      (_people || []).forEach(function (p) { by[p.id] = p.name || p.id; });
+      return (ids || []).map(function (id) { return by[id] || 'Unknown person'; });
     },
 
     // ---- Users (admin screens) ----

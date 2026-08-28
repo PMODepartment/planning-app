@@ -8,6 +8,7 @@
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Dashboard — Planners Dashboard</title>
   <link rel="stylesheet" href="assets/css/dashboard.css?v=20260827a" />
+  <link rel="stylesheet" href="assets/css/my-work.css?v=20260827a" />
 </head>
 <body>
   <div class="pd-app">
@@ -17,6 +18,7 @@
         <div class="pd-navsec">Portfolio</div>
         <a href="projects.html" title="Projects"><span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>
         <a href="modules/portfolio-overview/index.html" title="Portfolio Overview"><span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Overview</span></a>
+        <a href="my-work.html" title="My Work"><span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">My Work</span></a>
         <div class="pd-navsec">Project</div>
         <a href="dashboard.html" class="active" title="Dashboard"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
         <a href="modules.html" title="Modules"><span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Modules</span></a>
@@ -94,6 +96,13 @@
             where the contract that defines them lives. The schedule, BOQ, procurement and
             engineering all file against them from there.</p>
         </section>
+
+        <!-- ---- My items on this project --------------------------------
+             ⚠️ Rendered by the SAME code as the cross-project My Work page
+             (assets/js/my-work.js), never a second copy of the rules — two
+             screens each computing "my items" their own way is how one page
+             comes to disagree with the other about what a planner owes. -->
+        <section class="mw-sec" id="mw-block"></section>
 
         <!-- ---- Module summaries (A5) ----------------------------------- -->
         <section>
@@ -221,11 +230,12 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/config.js?v=20260826e"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260827b"></script>
+  <script src="assets/js/db.js?v=20260827c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
-  <script src="assets/js/modules-grid.js?v=20260827g"></script>
+  <script src="assets/js/modules-grid.js?v=20260827h"></script>
+  <script src="assets/js/my-work.js?v=20260827a"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
@@ -233,8 +243,10 @@
     if (!pid) { location.replace('projects.html'); return; }
 
     var PROJ = [], GH = [], ghById = {}, curProj = null, canWrite = false;
+    var CURUSER = null;   // the signed-in auth user; My Work needs the id, not the profile
 
     AppAuth.requireLogin(function (user, profile) {
+      CURUSER = user;
       UI.renderUserBar(profile);
       var first = (profile.name || profile.email || '').split(' ')[0];
       document.getElementById('welcome').textContent = first ? ('Welcome, ' + first) : 'Dashboard';
@@ -260,6 +272,10 @@
       loadStatus();
       // Independent of one another: a packages failure must not blank the tiles.
       renderTiles();
+      // ⚠️ Not awaited, and its own failure is contained inside renderBlock —
+      // a personal panel must never be able to stop the project dashboard from
+      // rendering. Base is '' because dashboard.html sits at the app root.
+      MyWork.renderBlock(document.getElementById('mw-block'), CURUSER, pid, '');
     }
 
     // The project's own tag — there is no workspace ancestry to walk any more.

@@ -84,6 +84,92 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-28 — Champion becomes a person: a dropdown, a personal view, and a backup for people with no login
+
+Owner: *"Dropdown for Issues and MOM for Champion. Issues should show in personal dashboard of person
+of that account"*, then — mid-build — *"Let's have a backup in case that the Champion does not have an
+account in the planner's dashboard. Let's have option for typing and inputting a user that can be
+referenced by other users when created."*
+**Run `migrations/2026-08-26-people-and-assignment.sql`, then `migrations/2026-08-28-people-directory.sql`.**
+
+**1. Champion / Responsible are pickers now.** A multi-select of real accounts on the issue detail and
+on every MOM action item, backed by a narrow `app_people()` RPC.
+- ⚠️ **`users_self_read` is NOT widened.** Under it a non-admin reads only their own row, so a picker
+  built on `getAllUsers()` would silently offer a one-person list to every planner. The RPC is
+  `SECURITY DEFINER` with a pinned `search_path` and returns **name, department, company and kind** —
+  never email, role, status or `projects[]`.
+- ⚠️ **`uuid[]`, not a single uuid.** The real register carries several champions on one issue
+  ("A; B"), and a single-id column would drop the second name on the first save — data loss disguised
+  as a schema decision. The free-text column is still written beside the ids, so a printed sheet and a
+  personal view cannot disagree about who owns the item.
+- ⚠️ **No back-fill of existing champion text.** Mapping "Ronquillo, Jules Norman" to an account is a
+  guess, and a wrong guess assigns one person's work to another. Ids fill in as rows are next saved.
+
+**2. My Work** — a cross-project page (`my-work.html`) and a **My items** block on Project Home, both
+rendered by **one** implementation (`assets/js/my-work.js`).
+- ⚠️ **Shared deliberately.** Two screens each computing "my items" their own way is how one page
+  comes to say a planner has 3 open issues while the other says 5 — the drift this module has already
+  been bitten by twice (the mom-app category dropdowns, the two status vocabularies).
+- ⚠️ **Four sources, never summed into one figure**: issues where I am champion · action items where I
+  am responsible · issues I raised · lessons I captured. The first two are what you owe; the last two
+  are what you have put in, and acting on them is different.
+- ⚠️ **Assignment is read from the ID ARRAYS, never the free-text columns.** A typed name cannot be
+  resolved to an account, so a personal view built on a string match would either miss the row or claim
+  someone else's work. A row with no ids simply does not appear — honest, because nobody has said whose
+  it is in a way the database can act on.
+- ⚠️ **`PDb.selectAll`, never a bare select.** This is the one screen where the 1000-row truncation
+  reads as *"you have nothing left to do"*.
+- ⚠️ **No new RLS and none assumed** — same tables, same project-scoped policies. It adds visibility,
+  never access. A failing section degrades alone rather than blanking the page, and the block on
+  Project Home is not awaited, so a personal panel can never stop the dashboard rendering.
+
+**3. The backup: a champion who has no account.** Free text works for printing a sheet and nothing
+else — "Engr. Cruz" on one issue and "R. Cruz" on the next are two strings nobody can group, and the
+second planner cannot *reference* that person at all. New **`people_directory`**, created from the
+picker itself and offered to everyone from then on.
+- ⚠️ **Org-wide, not project-scoped.** A subcontractor's engineer appears on several jobs; scoping the
+  row to one project forces the same person to be created again on each, which is the fragmentation
+  the table exists to end. Identity is a **case-insensitive** unique index on (name, company), so the
+  second planner reaching for "Engr. Cruz" gets the existing row — `createContact` returns it rather
+  than erroring.
+- ⚠️ **NO DELETE POLICY AT ALL, including for planners.** `champion_ids` carries no FK, so a delete
+  cannot cascade or be refused — it silently turns every issue that person owns into an unresolvable
+  id. `active = false` retires them from the picker while history still resolves.
+- ⚠️ **Both kinds come back from the SAME `app_people()` call**, with a `kind` column. A caller cannot
+  read one list and forget the other, which is exactly how a picker ends up offering accounts only.
+  ⚠️ The function had to be **dropped before recreating** — Postgres cannot change a return type with
+  CREATE OR REPLACE, and the error reads like a syntax problem.
+- ⚠️ **A no-account person is MARKED on the chip and in the dropdown**, and the form says so: they have
+  no login, so their work reaches **nobody's** My Work page. That is honest rather than a gap — there
+  is no account to show it to — but the planner assigning it has to see which of the two they picked.
+- ⚠️ **The form is INLINE, not a modal.** The surrounding fields are only read on Save, and this module
+  already learned (from the pop-up that was deleted) that anything which overlays or repaints the form
+  loses whatever was typed and not yet saved. A half-typed name survives the repaint that removing a
+  chip causes, and a failed save leaves the form open with the name intact.
+- ⚠️ **The free-text line is kept.** Someone named once, in passing, should not have to become a
+  permanent directory entry.
+
+**Two defects of my own, both caught by checking rather than reading.** (1) The new-person toasts used
+`'err'` — **no such class exists** (`pd-toast-error` / `-ok` / `-warn` are the only styled ones), so a
+failure would have rendered an unstyled toast that reads as information. (2) An earlier assertion
+required the dropdown to vanish on an empty roster; that was right only while the dropdown could do
+nothing but list accounts, and keeping it would have stranded exactly the project with no roster —
+the assertion now requires the opposite, and says why.
+
+**Verified: 124 checks executing the SHIPPED functions**, sliced out of `module.js` by brace-matching
+and never reimplemented — name resolution across both kinds, unresolvable ids reported rather than
+dropped, all four `championText` combinations, the chip marking, the dropdown ordering, the empty
+roster, read-only emitting no control for either kind, and the inline form's armed/closed states.
+⚠️ **The suite cannot run against the pre-change file at all** (`NOT FOUND`), so it bites.
+**0 functions lost / 11 added**; every edited JS file and both inline blocks parse; 0 NUL bytes;
+CSS braces 231/231; the migration is paren-balanced, `$$`-paired and every policy preceded by a drop.
+
+⚠️ **NOT verified signed in, and neither migration has been run.** No live click-through of a picker,
+a directory write or the My Work page against real data — the anon key has no grants. Until the
+migrations run the pickers fall back to free text and the page names the file to run.
+`db.js?v=` → `20260827c`; new `my-work.css` / `my-work.js?v=20260827a`; `MODULE_V` → `20260827h`;
+issues-lessons `module.css/js?v=` → `20260827a`.
+
 ### 2026-08-26 (g) — Testing the meeting-linked lesson picker found two real defects
 The one path the signed-in pass could not exercise. Built the fixture (a meeting with an action
 item) in the QADEMO sandbox, and the test paid for itself immediately. `MODULE_V` → `20260826o`.

@@ -1,0 +1,47 @@
+/* ============================================================================
+ * My Work — the personal view, shared by TWO hosts: the cross-project page
+ * (my-work.html) and the "My items on this project" block on Project Home
+ * (dashboard.html).
+ *
+ * ⚠️ Its own file rather than dashboard.css deliberately: dashboard.css is loaded
+ * by all 22 pages, so folding these rules in would force a global ?v= bump on
+ * every one of them for two screens' worth of styling. It is also why the block
+ * on Project Home looks identical to the page — one stylesheet, not two that
+ * drift.
+ *
+ * Everything here is on --pd-* tokens so it re-themes; nothing is hard-coded.
+ * ========================================================================== */
+/* ---- My Work -----------------------------------------------------------
+   Cross-project, personal. Everything on this page is scoped to the signed-in
+   account, so there is deliberately NO project selector: the point of the page
+   is what you owe across every job at once. */
+.mw-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:18px; }
+.mw-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; }
+.mw-kpi .n { font-size:26px; font-weight:800; color:var(--pd-ink); line-height:1.15; }
+.mw-kpi .l { font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--pd-muted); margin-top:4px; }
+.mw-kpi.is-hot .n { color:var(--pd-red); }
+.mw-sec { margin-bottom:20px; }
+.mw-sechead { display:flex; align-items:baseline; gap:10px; margin:0 0 8px; }
+.mw-sechead h2 { font-size:15px; margin:0; }
+.mw-sechead .c { font-size:12px; color:var(--pd-muted); }
+.mw-sechead .why { font-size:12px; color:var(--pd-muted); margin-left:auto; }
+.mw-tablewrap { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow-x:auto; }
+.mw-table { width:100%; border-collapse:collapse; min-width:760px; }
+.mw-table th, .mw-table td { padding:9px 12px; text-align:left; font-size:13px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
+.mw-table th { font-size:11px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:var(--pd-muted); background:var(--pd-bg); position:sticky; top:0; }
+.mw-table tbody tr:last-child td { border-bottom:0; }
+.mw-table tbody tr { cursor:pointer; }
+.mw-table tbody tr:hover { background:var(--pd-bg); }
+.mw-proj { font-size:11px; font-weight:700; color:var(--pd-muted); white-space:nowrap; }
+.mw-main { font-weight:600; color:var(--pd-ink); }
+.mw-sub { font-size:12px; color:var(--pd-muted); margin-top:2px; }
+.mw-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid var(--pd-line); background:var(--pd-bg); color:var(--pd-ink); white-space:nowrap; }
+.mw-pill.open { border-color:var(--pd-red); color:var(--pd-red); }
+.mw-age { font-weight:700; white-space:nowrap; }
+.mw-age.is-hot { color:var(--pd-red); }
+.mw-empty { padding:16px; color:var(--pd-muted); font-size:13px; }
+.mw-note { font-size:12px; color:var(--pd-muted); margin:0 0 16px; }
+@media (max-width:700px) {
+  .mw-table { min-width:620px; }
+  .mw-sechead .why { display:none; }
+}

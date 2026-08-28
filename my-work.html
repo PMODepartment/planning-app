@@ -6,8 +6,9 @@
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png" />
   <script src="assets/js/theme.js?v=20260812b"></script>
-  <title>Modules — Planners Dashboard</title>
+  <title>My Work &mdash; Planners Dashboard</title>
   <link rel="stylesheet" href="assets/css/dashboard.css?v=20260827a" />
+  <link rel="stylesheet" href="assets/css/my-work.css?v=20260827a" />
 </head>
 <body>
   <div class="pd-app">
@@ -17,15 +18,13 @@
         <div class="pd-navsec">Portfolio</div>
         <a href="projects.html" title="Projects"><span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>
         <a href="modules/portfolio-overview/index.html" title="Portfolio Overview"><span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Overview</span></a>
-        <a href="my-work.html" title="My Work"><span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">My Work</span></a>
+        <a href="my-work.html" class="active" title="My Work"><span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">My Work</span></a>
         <div class="pd-navsec">Project</div>
         <a href="dashboard.html" title="Dashboard"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
-        <a href="modules.html" class="active" title="Modules"><span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Modules</span></a>
+        <a href="modules.html" title="Modules"><span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Modules</span></a>
         <div class="pd-navsec" id="nav-sys" style="display:none;">System</div>
         <a href="admin.html" id="nav-admin" style="display:none;" title="Admin"><span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>
       </nav>
-      <!-- Cross-app links to sibling apps. Separate Supabase projects /
-           separate logins — open in a new tab rather than navigating away. -->
       <div class="pd-nav-foot">
         <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
           <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
@@ -34,25 +33,24 @@
           <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
         </a>
       </div>
-      <!-- PRC's .sidebar-footer, pinned to the bottom of the panel. -->
       <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
     </aside>
 
     <div class="pd-content">
       <div class="pd-topbar">
         <img class="pd-topbar-mark" src="assets/img/favicon.png" alt="Megawide" />
-        <h1>Modules</h1>
+        <h1>My Work</h1>
+        <button class="pd-btn" id="mw-refresh" style="margin-left:auto;" title="Reload">
+          <span data-ico="refresh" data-ico-size="16"></span></button>
         <div id="user-bar"></div>
       </div>
 
       <div class="pd-main">
-        <section class="pd-tabpanel">
-          <div class="pd-home-head">
-            <h2 id="welcome">Modules</h2>
-            <p id="mod-sub">Select a module to begin working on this project.</p>
-          </div>
-          <div class="pd-module-grid" id="module-grid"></div>
-        </section>
+        <div class="pd-home-head">
+          <h2 id="mw-hello">My Work</h2>
+          <p class="mw-note" id="mw-sub">Everything assigned to your account, across every project you can access.</p>
+        </div>
+        <div id="mw-body"><p class="mw-empty">Loading&hellip;</p></div>
       </div>
     </div>
   </div>
@@ -64,24 +62,23 @@
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
   <script src="assets/js/icons.js?v=20260813a"></script>
-  <script src="assets/js/modules-grid.js?v=20260827h"></script>
+  <script src="assets/js/my-work.js?v=20260827a"></script>
   <script>
   (function () {
-    var pid = sessionStorage.getItem('pd_project');
-    // No project chosen yet → go pick one first (Primavera-style entry).
-    if (!pid) { location.replace('projects.html'); return; }
-
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       if (profile.role === 'admin' || profile.role === 'super_admin') {
         document.getElementById('nav-admin').style.display = '';
         var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = '';
       }
-      var pname = sessionStorage.getItem('pd_project_name') || pid;
-      document.getElementById('nav-proj').textContent = pname;
-      document.getElementById('mod-sub').textContent =
-        'Select a module to begin working on ' + pname + ' (' + pid + ').';
-      ModulesGrid.render(document.getElementById('module-grid'));
+      var pn = sessionStorage.getItem('pd_project_name') || sessionStorage.getItem('pd_project');
+      if (pn) document.getElementById('nav-proj').textContent = pn;
+      var first = (profile.name || '').trim().split(/\s+/)[0] || 'there';
+      document.getElementById('mw-hello').textContent = 'My Work \u2014 ' + first;
+      MyWork.render(document.getElementById('mw-body'), user, profile);
+      document.getElementById('mw-refresh').onclick = function () {
+        MyWork.render(document.getElementById('mw-body'), user, profile);
+      };
     });
   })();
   </script>
