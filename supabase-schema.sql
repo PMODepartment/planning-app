@@ -158,6 +158,60 @@ create table if not exists panoramas (
   updated_at      timestamptz default now()
 );
 create index if not exists panoramas_proj_idx on panoramas (project_id, taken_at desc);
+
+-- 3D Reconstruction Requests (brief 6A / Phase 4) — admin-approval-gated
+-- ahead of a PAID GPU processing step. See
+-- migrations/2026-08-29-reconstruction-requests.sql for the full RLS
+-- rationale — this table is deliberately NOT in the generic module-table
+-- RLS loop below (its update policy must be admin-only, not own-row).
+create table if not exists reconstruction_requests (
+  id                    uuid primary key default gen_random_uuid(),
+  project_id            text references projects(id),
+  location_values       jsonb default '{}'::jsonb,
+  location              text,
+  activity_id           text,
+  activity_name         text,
+  video_url             text,
+  video_source          text default 'ground',
+  requested_note        text,
+  status                text default 'pending_approval',
+  requested_by          uuid references users(id),
+  approved_by           uuid references users(id),
+  approved_at           timestamptz,
+  rejected_reason       text,
+  runpod_job_id         text,
+  webhook_token         text,
+  result_pointcloud_url text,
+  result_splat_url      text,
+  result_stats          jsonb,
+  error_message         text,
+  created_at            timestamptz default now(),
+  updated_at            timestamptz default now()
+);
+create index if not exists reconstruction_requests_proj_idx
+  on reconstruction_requests (project_id, created_at desc);
+create index if not exists reconstruction_requests_status_idx
+  on reconstruction_requests (project_id, status);
+alter table reconstruction_requests enable row level security;
+drop policy if exists reconstruction_requests_read on reconstruction_requests;
+create policy reconstruction_requests_read on reconstruction_requests
+  for select using (can_access_project(project_id));
+drop policy if exists reconstruction_requests_ins on reconstruction_requests;
+create policy reconstruction_requests_ins on reconstruction_requests
+  for insert with check (
+    is_writer() and requested_by = auth.uid() and can_access_project(project_id)
+    and status = 'pending_approval'
+  );
+drop policy if exists reconstruction_requests_upd on reconstruction_requests;
+create policy reconstruction_requests_upd on reconstruction_requests
+  for update using (is_admin() and can_access_project(project_id))
+  with check (is_admin() and can_access_project(project_id));
+drop policy if exists reconstruction_requests_del on reconstruction_requests;
+create policy reconstruction_requests_del on reconstruction_requests
+  for delete using (
+    (is_admin() and can_access_project(project_id))
+    or (requested_by = auth.uid() and status = 'pending_approval')
+  );
 create index if not exists ppr_slides_ppr_idx
   on ppr_slides (ppr_id, slide_no);
 

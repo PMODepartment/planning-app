@@ -2,6 +2,135 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 3D Reconstruction Requests, gated behind admin approval — brief 6A / Phase 4 (2026-08-29)
+
+Continuation of the same unattended overnight build authorized after Phase 3. Owner's
+explicit architecture decision going in: **self-hosted GPU pipeline (COLMAP + OpenSplat on
+RunPod Serverless), not a hosted photogrammetry API** — chosen for cost and because the
+brief calls for open-source tooling. Owner's second explicit requirement, given as this is
+a **paid feature** (a real per-job GPU cost): *"requests to process 3d images should go
+through admins before being processed by runpod."* This entry is the client + database +
+Edge Function half of that pipeline — the RunPod worker itself (Dockerfile/COLMAP/OpenSplat/
+`handler.py`) is a separate, not-yet-built piece; see "What is NOT done" below.
+
+**Run `migrations/2026-08-29-reconstruction-requests.sql`.**
+
+### The admin-approval gate is enforced by the DATABASE, not the UI
+
+This is the part worth getting right, since a UI-only gate is not a gate at all — anyone who
+can see the "Approve" button in DevTools can call the underlying write directly.
+`reconstruction_requests` therefore does **not** use this module's usual generic
+`for all using (is_writer())` RLS shape (used by `panoramas` and every other table here).
+Three separate policies instead:
+
+- **INSERT** — any project writer may create a request, but **`with check` forces
+  `status = 'pending_approval'`** — a client cannot insert a row that is already `'queued'`
+  or `'done'`. This is the only way a row is ever born.
+- **UPDATE** — **admin/super_admin only, in both `using` and `with check`** (mirroring the
+  `with check` lesson already recorded elsewhere in this file for row-ownership updates — a
+  `using`-only rule would let a row be updated *out of* the admin-only state as easily as into
+  it). A non-admin writer can only read their own requests and retract one that is still
+  `pending_approval` (a plain `delete`, not an update).
+- **DELETE** — the requester (their own row) or an admin, and only while `status =
+  'pending_approval'` — once a job is queued, retracting it client-side would leave an
+  orphaned RunPod job with nothing in the database pointing at it.
+
+So even if `recon.js` were deleted entirely and someone drove the REST API directly, a
+non-admin still cannot move a request past `pending_approval`, and the client's own
+`approveRequest()` is not the enforcement — it is only the UI for a workflow the database
+already refuses to let anyone but an admin complete.
+
+### The Edge Functions are the second gate, not the first
+
+`submit-reconstruction` — the **only** path that can ever call RunPod — re-checks the
+caller's role itself (admin/super_admin, read from the `users` table via the JWT's `sub`
+claim, decoded from the token's own base64 payload rather than a GoTrue round-trip) before
+doing anything. This is belt-and-braces on top of the RLS gate above, not a replacement for
+it: if the RLS check were ever weakened, this function's own check still blocks a non-admin
+from reaching RunPod. It:
+
+1. Confirms the request is still `pending_approval` (`.eq('status','pending_approval')` on
+   both the initial read intent and the final `update`'s WHERE clause — the second one is
+   what actually prevents a double-submit race between two admins clicking Approve at once).
+2. Signs a **24-hour short-lived URL** to the video — not the service-role key, not a
+   public URL. This is the narrowest credential RunPod's worker needs to do its one job.
+3. POSTs to RunPod's async job endpoint (`/v2/{endpoint}/run`) with a **webhook URL carrying
+   a per-request random token** (`crypto.randomUUID()`), and stores that same token on the
+   row.
+4. RunPod's API key and endpoint id live only as this function's own secrets
+   (`RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`) — never sent to, or readable from, the browser.
+
+`reconstruction-webhook` — the callback RunPod invokes when the job finishes. ⚠️ **It cannot
+require a Supabase JWT**, because RunPod has no Supabase session to send one — the one
+deliberate exception in this repo to "every Edge Function deploys with JWT verification on."
+Its actual security is the **token check**: the URL RunPod was given carries
+`?request_id=…&token=…`, and the function refuses to write anything unless
+`token === reqRow.webhook_token` for that exact row. Deploy note is written directly into the
+file's header comment (`--no-verify-jwt`) so it can't be missed at deploy time.
+
+### Result viewer
+
+`openResultViewer()` reuses **Three.js r128's official `PLYLoader` addon** (same pinned
+revision as Phase 3's cylinder viewer, one more `<script>` tag, no new library) to render
+the returned point cloud as `THREE.Points`, with a small hand-rolled spherical-orbit camera
+(drag to orbit, scroll to zoom) — not the separate `OrbitControls.js` addon, since a single
+interaction didn't justify pulling in a second file. ⚠️ **The point cloud, not the trained
+splat file, is what's rendered here** — COLMAP's sparse/dense point cloud is what a future
+measurement tool (Phase 5) can actually query point-by-point; the splat file is view-only and
+has no natural "click a point" semantics. `result_splat_url` is stored and falls back as the
+viewer's source if no point cloud was returned, but nothing yet *renders* a real Gaussian
+Splat (that would need a splat-specific renderer, e.g. `gsplat.js` — not pulled in, since
+there is no real splat file to render against yet; see below).
+
+### Verified (2026-08-29)
+
+**Structural / wiring verification is real** (Deno type-checked + a Node harness), but the
+piece that would prove the *pipeline* works — an actual RunPod job — cannot be exercised here.
+Stated plainly rather than left ambiguous:
+
+- **Both Edge Functions type-check cleanly under a real Deno compiler** (`deno check`,
+  Deno 2.9.6/TypeScript 6.0.3, downloaded via a portable no-admin-rights install specifically
+  so this could be checked rather than left as "should be valid TypeScript"). Sanity-gated:
+  the same `deno check` command was first run against a deliberately broken file to confirm
+  it actually fails on a real type error, and against an existing already-shipped function to
+  confirm a clean pass means something.
+- **30 new checks in `test.js` (154 → 184, all green)** covering: the RLS policy shape itself
+  (INSERT forces `pending_approval` via `with check`, UPDATE is admin-only in both `using` and
+  `with check`, DELETE is requester-or-admin and status-gated) is present in the migration
+  text; `submit-reconstruction` re-checks status server-side, signs a short-lived URL (not a
+  broad credential), never leaks the RunPod key to the client, and re-asserts
+  `status='pending_approval'` in its final UPDATE's WHERE clause; `reconstruction-webhook` is
+  documented as needing `--no-verify-jwt` and checks the per-request token **before** any
+  write; and the client never offers a way to bypass the gate — `submit-reconstruction` is
+  called only from `approveRequest()`, never from the insert path, and `rejectRequest`/
+  `retractRequest` never touch it.
+- 0 NUL bytes across every new/touched file; `node --check` clean on `recon.js`; `module.js`/
+  `ppr.js`/`pano.js` are byte-identical to the last commit (0 functions could have been lost —
+  they weren't touched); CSS braces 264/264 balanced.
+
+⚠️ **NOT verified, and this is the real gap**: no RunPod job has ever actually run. Nobody
+has clicked Approve against a live Supabase project, so the whole chain —
+insert→approve→RunPod submission→webhook→viewer — has never executed end to end. That first
+real click is the actual integration test, and it cannot happen without: (a) a RunPod account
+and a deployed serverless endpoint (owner-only — account creation and payment details are
+things this environment is explicitly barred from doing regardless of technical ability),
+(b) the two Edge Functions actually deployed (`supabase functions deploy …`, `supabase
+secrets set …`), and (c) the migration run. Until then the module correctly shows an empty
+approval queue and the 3D tab works structurally with nothing to display.
+
+### What is NOT done — the RunPod GPU worker itself
+
+⚠️ **The single biggest incomplete piece of this whole session's work.** `submit-reconstruction`
+POSTs a job to a RunPod serverless endpoint that does not exist yet — there is no Dockerfile, no
+COLMAP/OpenSplat build, no `handler.py` implementing RunPod's serverless handler contract, and
+no deployed endpoint for `RUNPOD_ENDPOINT_ID` to point at. This is being built next, in
+`services/reconstruction-worker/`, but it will be **written against COLMAP's and OpenSplat's
+documented CLIs and RunPod's documented handler contract, not execution-verified** — this
+environment has no GPU and no Docker (`docker --version` fails; the only GPU present is
+integrated Intel Iris Xe, confirmed via `wmic path win32_VideoController get name`), so the
+worker cannot be built or run here. Flagged explicitly rather than presented with the same
+confidence as the harness-tested client code above.
+
 ## Panoramic Capture — brief Sections 2 & 6 / Phase 3 (2026-08-29)
 
 Owner authorized an extended unattended build session through the rest of the brief's phases,

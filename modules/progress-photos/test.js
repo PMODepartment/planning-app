@@ -10,6 +10,9 @@ const here = (f) => path.join(__dirname, f);
 const migrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-28-photo-keyplan-and-ppr-meeting.sql');
 const tmplMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-ppr-report-templates.sql');
 const panoMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-panoramas.sql');
+const reconMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-reconstruction-requests.sql');
+const submitFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'submit-reconstruction', 'index.ts');
+const webhookFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'reconstruction-webhook', 'index.ts');
 const schemaFile = path.join(__dirname, '..', '..', 'supabase-schema.sql');
 
 let fails = 0, passes = 0;
@@ -180,11 +183,13 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(here('module.js'), 'utf8'), ctx, { filename: 'module.js' });
 vm.runInContext(fs.readFileSync(here('ppr.js'), 'utf8'), ctx, { filename: 'ppr.js' });
 vm.runInContext(fs.readFileSync(here('pano.js'), 'utf8'), ctx, { filename: 'pano.js' });
+vm.runInContext(fs.readFileSync(here('recon.js'), 'utf8'), ctx, { filename: 'recon.js' });
 
-const PP = ctx.ProgressPhotos, PPR = ctx.PPR, PANO = ctx.PANO;
+const PP = ctx.ProgressPhotos, PPR = ctx.PPR, PANO = ctx.PANO, RECON = ctx.RECON;
 ok('module.js exposes ProgressPhotos', !!PP);
 ok('ppr.js exposes PPR', !!PPR);
 ok('pano.js exposes PANO', !!PANO);
+ok('recon.js exposes RECON', !!RECON);
 ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadForPicker === 'function');
 
 // ---------------------------------------------------------- source assertions --
@@ -193,6 +198,7 @@ ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadF
 const mjs = fs.readFileSync(here('module.js'), 'utf8');
 const pjs = fs.readFileSync(here('ppr.js'), 'utf8');
 const pnjs = fs.readFileSync(here('pano.js'), 'utf8');
+const rcjs = fs.readFileSync(here('recon.js'), 'utf8');
 const html = fs.readFileSync(here('index.html'), 'utf8');
 const css = fs.readFileSync(here('module.css'), 'utf8');
 
@@ -511,6 +517,65 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('PANO.init is wired alongside PPR.init', /PANO\.init\(user, profile\)/.test(html));
   ok('setScreen dispatches the pano screen', /isPano = s === 'pano'/.test(html));
   ok('a poor-quality panorama is flagged in the gallery, not hidden', pnjs.includes('pano-badge-warn'));
+
+  // ============================================================ Phase 4 ===
+  // 3D Reconstruction Requests — the PAID feature, gated behind admin
+  // approval per the owner's explicit requirement. The gate itself is a
+  // Postgres RLS policy (Deno/RunPod/GPU can't be executed in this harness),
+  // so what's checked here is that the gate EXISTS and is shaped correctly —
+  // not the generic loop's "own row" shape, which would let a requester
+  // approve themselves — plus that the client never offers to bypass it.
+  console.log('\n[21] Reconstruction Requests: the admin-approval gate itself');
+  const reconSql = fs.readFileSync(reconMigrationFile, 'utf8');
+  ok('migration creates reconstruction_requests', /create table if not exists reconstruction_requests/.test(reconSql));
+  ok('NOT folded into the generic own-row RLS loop', !/'panoramas','reconstruction_requests'/.test(schemaSql));
+  ok('status defaults to pending_approval, never pre-approved', /status\s+text default 'pending_approval'/.test(reconSql));
+  ok('INSERT policy forces status = pending_approval via WITH CHECK (a crafted insert cannot self-approve)',
+     /reconstruction_requests_ins[\s\S]{0,300}status = 'pending_approval'/.test(reconSql));
+  ok('UPDATE policy is admin-only in BOTH using and with check (not "own row or admin")',
+     /reconstruction_requests_upd[\s\S]{0,200}for update using \(is_admin\(\) and can_access_project\(project_id\)\)\s*\n\s*with check \(is_admin\(\) and can_access_project\(project_id\)\)/.test(reconSql));
+  ok('a requester may only DELETE their own row, and only while still pending (no retracting an approved job)',
+     /requested_by = auth\.uid\(\) and status = 'pending_approval'/.test(reconSql));
+  ok('supabase-schema.sql declares reconstruction_requests with the SAME bespoke policies (not the generic loop)',
+     /create table if not exists reconstruction_requests/.test(schemaSql) &&
+     /reconstruction_requests_upd[\s\S]{0,200}for update using \(is_admin\(\)/.test(schemaSql));
+
+  console.log('\n[22] submit-reconstruction / reconstruction-webhook Edge Functions');
+  const submitTs = fs.readFileSync(submitFnFile, 'utf8');
+  const webhookTs = fs.readFileSync(webhookFnFile, 'utf8');
+  ok('submit-reconstruction requires admin/super_admin (tighter than the usual admin/planner set)',
+     /\["super_admin", "admin"\]\.includes\(prof\.role\)/.test(submitTs));
+  ok('submit-reconstruction re-checks status === pending_approval server-side before calling RunPod',
+     /reqRow\.status !== "pending_approval"/.test(submitTs));
+  ok('submit-reconstruction signs a SHORT-LIVED url to the video, not a broad service key, for the worker',
+     /createSignedUrl\(reqRow\.video_url, VIDEO_SIGN_TTL\)/.test(submitTs));
+  ok('the RunPod API key is read from a server-side secret, never sent to or read from the client',
+     /Deno\.env\.get\("RUNPOD_API_KEY"\)/.test(submitTs) && !html.includes('RUNPOD_API_KEY'));
+  ok('the update re-asserts status=pending_approval in the WHERE clause (no double-submit race)',
+     /\.eq\("id", requestId\)\.eq\("status", "pending_approval"\)/.test(submitTs));
+  ok('reconstruction-webhook is documented as needing --no-verify-jwt (RunPod has no Supabase session)',
+     /--no-verify-jwt/.test(webhookTs));
+  ok('reconstruction-webhook checks the per-request token before writing anything', /webhook_token !== token/.test(webhookTs));
+  ok('reconstruction-webhook never trusts an unauthenticated request without the token check running first',
+     webhookTs.indexOf('webhook_token !== token') < webhookTs.indexOf('body?.status'));
+
+  console.log('\n[23] Client UI never offers to bypass the gate');
+  ok('the client calls submit-reconstruction only from an ADMIN action (approveRequest), never on insert',
+     /function approveRequest/.test(rcjs) && !/openRequestForm[\s\S]{0,1500}submit-reconstruction/.test(rcjs));
+  ok('a new request is inserted with status pending_approval, set by the client but enforced by the DB',
+     /status: 'pending_approval'/.test(rcjs));
+  ok('rejectRequest and retractRequest never call submit-reconstruction', !/reject[\s\S]{0,400}submit-reconstruction/.test(rcjs));
+  ok('the approval confirm dialog states this is a real billed job before submitting',
+     /This is a real, billed job/.test(rcjs));
+  ok('index.html has the 3D tab + Request-scan tool + screen host',
+     /data-screen="recon">3D/.test(html) && /id="recon-new"/.test(html) && /id="pp-screen-recon"/.test(html));
+  ok('PLYLoader CDN script present (same pinned Three.js revision as the 360° viewer)',
+     /three@0\.128\.0\/examples\/js\/loaders\/PLYLoader\.js/.test(html));
+  ok('RECON.init is wired alongside the other module inits', /RECON\.init\(user, profile\)/.test(html));
+  ok('setScreen dispatches the recon screen', /isRecon = s === 'recon'/.test(html));
+  ['function openRequestForm', 'function approveRequest', 'function rejectRequest', 'function retractRequest',
+   'function openResultViewer', 'function mountPointCloudViewer'
+  ].forEach((sig) => ok(sig + '() exists in recon.js', rcjs.includes(sig)));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
