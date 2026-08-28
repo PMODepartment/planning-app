@@ -1,3 +1,108 @@
+## Stacking: the trade chips become a multi-select filter (2026-08-27) — fmlozano
+
+`_vsTrade` (a single value) → `_vsTradeSel` (a list) + `_vsTradeOn` / `_vsTradeToggle`.
+
+- ⚠️ **Empty means ALL.** A stored "every trade ticked" would silently exclude a trade the project
+  gains later while the control claimed everything was on. "All trades" clears the selection.
+- ⚠️ **Session-only.** A remembered trade filter reads as missing buildings next week.
+- The **Per trade** scope needed no new view for "side by side" — it already draws one building per
+  trade and was only ever handed one. `towers = tradesShown.map(...)`.
+- ⚠️ `acts` itself is narrowed, so the per-tower and Consolidated models, the warning counts and the
+  time bar all describe the same set the buildings are drawn from. `actsPreTrade` is kept **only** for
+  the chip counts — from the filtered set a hidden trade would read "0 activities".
+- ⚠️ `trades` is collected BEFORE the filter, or selecting one trade would leave the chip row showing
+  only that trade with no way back.
+- ⚠️ The chip row renders in every scope now (was `_vsScope === 'trade'` only).
+- ⚠️ Stale names are dropped per render, so the view cannot filter itself to nothing.
+- ⚠️ **`.ps-vs-chip.on` was brand red as text — 3.75:1 dark, under AA.** Harmless-ish with
+  single-select; with a multi-select the lit chips ARE the filter. Now ink on the red tint (13.45 dark
+  / 14.25 light), red kept as the border. Both stylesheet regions.
+
+**Verified.** 25 checks executing the sliced helpers + the structural assertions; browser-measured
+(two trades at x=12/x=238 on one row, `aria-pressed`, "2 of 5 trades shown side by side", five on one
+row by default, Fit and the time bar unaffected). 0 functions lost, 2 added.
+⚠️ **Test-authoring trap, three times in one pass:** the contrast assertion matched
+`border-color:var(--pd-red)` as `color:` and could never pass, and shell-escaped regexes were mangled
+on the way into the file twice. Guard with `[;{]`, and write test regexes literally (heredoc), never
+through a `node -e` shell round-trip. ⚠️ **Not verified signed in.**
+
+## Stacking: the header trim, and dismissible notices (2026-08-27) — fmlozano
+
+**Header.** New `body.ps-vstack-on` (toggled by `setVStackMode`, both ways) hides `#ps-groupbtn`,
+`#ps-zoom`, `#ps-collapseto`, `#ps-colorsbtn`, `#ps-analyzebtn` while the stacking is open — all five
+act on the grid/Gantt, which is not on screen.
+- ⚠️ Scoped to the stacking, not to `ps-reporting`: they are equally irrelevant to a planner working
+  in the stack.
+- ⚠️ **Kept on purpose:** Layout ▾ (the documented "way out of Reporting view" rule), Open ▾ and
+  Layouts (they change which schedule/filters the stack reads), `#ps-scope` and the search (honoured
+  by the stack), and the view switches. The suite asserts each of these is NOT in the hidden list, so
+  a later tidy-up cannot quietly remove the exit.
+- Reporting view additionally drops `#ps-tb-labeltoggle`, `#ps-help-btn` and `.ps-vs-bar > .ps-vs-note`
+  (the field labels) → bar measured at 32px, one row.
+
+**Dismissible notices.** `_vsWarnWrap(key, html)` wraps all three banners; `_vsWarnKey(kind, n)`.
+- ⚠️ **The count is in the key.** Dismissing "1 activity carries no Level" must not silence "40
+  activities carry no Level" later — different fact, and staying hidden through it would mislead.
+- ⚠️ Per project, localStorage (`ps_vswarn`), never a column — one person's reading preference, not
+  project state, and not something one planner can hide from another. A corrupt store falls back to
+  **showing**.
+- ⚠️ The handler removes the node and calls `_vsApplyPane(host)` — **not** `renderVStack()`, which
+  would rebuild every svg and restart the entrance animation just to close a banner.
+- ⚠️ 30px right padding, not a float: measured 0 of 7 text line-boxes overlapping the × at 430px.
+  Space returned to the buildings: 47px at full width, 82px at 430px.
+
+**Verified.** 27 checks executing the sliced helpers (render, dismiss, persist, count-changed,
+other-project, other-kind, corrupt storage) + the structural assertions above; browser-measured
+against the shipped CSS. 0 functions lost, 4 added.
+⚠️ **Two of my own measurements were wrong first:** the overlap test included the button itself (it is
+a child of the banner), and a contrast check indexed the hex as if it had a leading `#` and printed
+1.76:1 — the banner text is 5.64:1 and untouched by this work. ⚠️ **Not verified signed in.**
+
+## Vertical stacking: the tower key, the fit, and the pane (2026-08-27) — fmlozano
+
+**1. Towers were not detected on a matcher-mapped project.** `_vsTowerOf` read
+`r.location[VS_LOC_TOWER]` — the literal string `'tower'`.
+- ⚠️ **`location` has TWO writers and they use different keys.** `locMapPlan` (the WBS→location
+  matcher) and both importers write `loc[<location_levels.id>]`; only `locMapOf` (the Schedule Builder
+  push) writes the reserved literal `tower`. So every project whose towers came from the matcher
+  reported zero towers — the stack banded Tower 1 / Tower 2 (it reads `LOC_LEVELS` by id) while the
+  picker said "no tower breakdown". Contrast run against the pre-fix function: `[]` vs
+  `['Tower 1','Tower 2']`.
+- New `_vsTowerLevelId()`: the **first** location level, name test (`tower|building|block`) as a
+  tie-breaker only. ⚠️ Order is the primary rule because a level legitimately called "Building" or
+  "Block" is still the tower axis, and a project that named it something else must still resolve to
+  *something* rather than to nothing.
+- ⚠️ The level id wins over the literal key when a project carries both — the matcher is the planner's
+  decision, the push's value is derived.
+- ⚠️ Same class as the Equipment module's `'tower'` literal (2026-08-24). **A jsonb location map is
+  keyed by level id.**
+
+**2. Fit — see the whole building.** `_vsFit` (on, persisted `ps_vsfit`) + `.ps-vs-stage.is-fit`.
+- ⚠️ `width:auto` on the svg is what makes it scale rather than squash: the svg carries explicit
+  width/height **attributes**, and a `max-height` alone with a fixed width distorts it.
+- ⚠️ The fit cap subtracts the tower card's **measured** chrome (`card.height - svg.height`), not a
+  constant. A cap from the body height alone fitted a 469px drawing into a 497px body and the body
+  still scrolled — the card header, padding and border are ~71px.
+
+**3. The time bar stays on screen.** `.ps-vs-pane` (bounded height) › `.ps-vs-body` (scrolls) ›
+`.ps-vs-tl` (`flex:0 0 auto`).
+- ⚠️⚠️ **`position:sticky; bottom:0` was tried first and is a NO-OP here.** Sticky is bounded by its
+  containing block; the bar is the pane's LAST child, so the container's bottom edge *is* the bar's
+  bottom edge and it has zero travel. Measured scrolling away at 0/300/600px with the rule in place.
+  Do not "restore" it.
+- ⚠️ `position:fixed` is also wrong — out of flow it overlaps the last building instead of ending the
+  pane.
+- ⚠️ The toolbar and trade chips are **outside** the scroller; scrolling the buildings must not take
+  the controls with them.
+- ⚠️ `_vsApplyPane` is re-run from the existing debounced `resize` handler — measured geometry goes
+  stale, and a window dragged shorter would hide the bar again. It re-measures rather than
+  re-rendering, so a resize does not restart the entrance animation.
+
+**Verified.** 27 checks executing the sliced functions + the old-vs-new contrast; browser-measured at
+1265px light and dark (fit 420×1400 → 141×452, aspect kept, body no longer scrolls, bar at 703 of
+720; Fit off → full size, body scrolls 948px, bar still on screen; 0 page h-scroll). 0 functions lost,
+3 added. ⚠️ **Not verified signed in.**
+
 ## Vertical stacking: the tower picker becomes a dropdown (2026-08-26) — fmlozano
 
 Owner: a dropdown for which tower, a consolidated option showing every tower side by side, and a
