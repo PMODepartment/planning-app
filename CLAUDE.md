@@ -9969,3 +9969,34 @@ the plan was right without proving the button changes anything.
 
 ⚠️ **Still not verified signed in — the upsert has never hit PostgREST**, and `onConflict` behaviour is
 the server's, not the stub's. That is the one thing here most worth a live check.
+
+### 2026-08-28 (c) — Manpower Loading verified signed in; the upsert is real, and a copy defect it found
+
+Owner: *"Test live via out of app browser."* Driven through the **deployed** site in the owner's own
+signed-in Chrome (super_admin) against **QADEMO — QA Demo (sandbox)**. ⚠️ **No live project was written
+to.** QADEMO held 0/0/0 before and after, and the whole-database row count across all three manpower
+tables was **0 both before and after**, so nothing anywhere else was touched.
+
+**The migration is confirmed applied** and the module loads clean with no migration banner. Exercised
+through the module's own UI: a position saved with its auto-proposed code **FE-01**; three profiles
+saved with contract durations, the live readout correct in all three states; and — ⚠️ **the one thing a
+stub could not prove** — the batched **upsert against real PostgREST**, deriving **Aug = 1, Sep = 2**
+with October (past the cut-off) correctly not written and TBH excluded. ⚠️ **Idempotent against the real
+unique index**: three consecutive derives, row count **2 → 2 → 2**, so `onConflict` updates rather than
+duplicating — the specific failure the harness could not rule out. Hand-editing a derived cell wrote
+`source='hand'` in the database and the next derive left it; shortening a contract through the form
+re-derived automatically, taking September **2 → 1** while the hand-held August stayed at 7. Portfolio
+read all **20 projects** live through the chunked `.in()`.
+
+⚠️ **One real defect found, and only a live run could have surfaced it.** A project with positions and a
+reported actual but no requirement read *"…but no quantity is recorded for this month."* A quantity IS
+recorded — the **requirement** is what is missing, and the wording sends a planner looking for the wrong
+thing. Now three distinct messages. ⚠️ **That fix is not itself live-verified** — it shipped after the
+sandbox was cleaned up.
+
+⚠️ **Not exercised live:** the take-over tick (a fresh sandbox has nothing hand-typed to take over), the
+months-outside-the-axis path, the import and the seed — all suite-covered, none live-written.
+⚠️ **Screenshots were impossible** (`Page.captureScreenshot` timed out every attempt), so every claim is
+a DOM or database read rather than a picture.
+
+`MODULE_V` → `20260828d`.

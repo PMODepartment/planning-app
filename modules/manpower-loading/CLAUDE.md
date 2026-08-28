@@ -159,7 +159,50 @@ moment anything read it directly. Same call the equipment sync made.
   sequential requests otherwise. Keyed on the `(position_id, period)` unique index.
 - **No migration**: `contract_start`, `contract_end`, `position_id` and `source` already existed.
 
-### Verified
+### 2026-08-28 (live) — Signed-in verification on the QADEMO sandbox; the upsert is real
+
+Closes the standing caveat. Driven through the **deployed** site in the owner's own signed-in Chrome
+(super_admin), against **QADEMO — QA Demo (sandbox)**, which held **0 positions / 0 loading / 0 roster**
+before and after. ⚠️ **No live project was written to**; the whole-database count was 0 rows across all
+three tables both before and after, so nothing anywhere else was touched.
+
+**The migration is confirmed applied** — all three tables readable through PostgREST under normal RLS,
+and the module loads with **no "needs its tables" banner**.
+
+**What was exercised end to end, through the module's own UI:**
+- A position saved with its auto-proposed code (**FE-01**) and every field persisted, `monthly_rate`
+  included.
+- Three profiles saved with contract durations, the live readout correct in all three states against
+  real data — a 3-month span, an open-ended one, and a TBH.
+- ⚠️ **THE UPSERT, which was the one thing a stub could not prove.** Contracts Aug–Oct and Sep–open,
+  cut-off Sep: derived **Aug = 1, Sep = 2**, October (past the cut-off) correctly **not written**, TBH
+  excluded and reported, `source = 'roster:actual'`. Exactly the predicted rows.
+- ⚠️ **Idempotent against the real unique index** — three consecutive derives, row count **2 → 2 → 2**,
+  so `onConflict: 'position_id,period'` updates rather than duplicating. This is the specific failure
+  the harness could not rule out.
+- **Ownership:** hand-editing the derived August cell wrote `source='hand'` **in the database**, dropped
+  the derived marker, and the next derive reported *"1 hand-typed month(s) left untouched"* and left it
+  at 7.
+- **Automatic re-derive:** shortening a contract through the roster form took September **2 → 1** on its
+  own, while the hand-held August stayed at 7 — and the drift banner correctly stayed hidden, because
+  the auto re-derive had already resolved it.
+- **Portfolio** read all **20 projects** live through the chunked `.in()`.
+
+⚠️ **One real defect found, and only a live run could have surfaced it.** A project with positions and a
+reported actual but no requirement read *"1 position line(s) exist, but no quantity is recorded for this
+month."* A quantity **is** recorded — it is the **requirement** that is missing, and the wording sends a
+planner looking for the wrong thing. Now three distinct messages: no positions at all · positions and
+N deployed but no requirement to measure against · positions but nothing recorded. ⚠️ **The copy fix
+itself is not live-verified** — it shipped after the sandbox was cleaned up.
+
+⚠️ **Not exercised live:** the take-over tick (nothing hand-typed existed on a fresh sandbox to take
+over), the months-outside-the-axis path, the Excel import, and the seed. All are covered by the suite,
+none by a live write.
+
+⚠️ **Screenshots were impossible** — `Page.captureScreenshot` timed out on every attempt, so every claim
+above is a DOM/database read rather than a picture.
+
+## Verified
 **131 checks** (91 → 131) executing the shipped functions, sliced by brace-matching. ⚠️ **The suite
 cannot load against the pre-change file at all** — it throws on the first missing symbol — so the
 whole section is genuinely new behaviour rather than a restatement.

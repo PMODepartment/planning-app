@@ -2055,8 +2055,16 @@
     if (quiet.length) {
       h.push('<tr class="mp-grp"><td colspan="9">No manpower plan for ' + esc(monLabel(pd_(PORT.iso))) + ' — ' + quiet.length + ' project(s)</td></tr>');
       quiet.forEach(function (r) {
-        h.push('<tr><td></td><td>' + esc(r.name) + '</td><td colspan="6" class="mp-note">' +
-          (r.lines ? r.lines + ' position line(s) exist, but no quantity is recorded for this month.' : 'No positions recorded at all.') +
+        // ⚠️ THREE different reasons a project has no plan, and they send the reader to three
+        // different places. Collapsing them into "no quantity is recorded" is wrong the moment a
+        // project has reported an actual — the quantity IS there, it is the REQUIREMENT that is
+        // missing, and a planner told otherwise goes looking for the wrong thing entirely.
+        var why = !r.lines
+          ? 'No positions recorded at all.'
+          : (r.hasAct
+              ? r.lines + ' position line(s), and ' + fnum(r.act) + ' deployed — but no planned or approved requirement for this month to measure against.'
+              : r.lines + ' position line(s) exist, but no requirement is recorded for this month.');
+        h.push('<tr><td></td><td>' + esc(r.name) + '</td><td colspan="6" class="mp-note">' + why +
           '</td><td><button class="mp-btn-sm" data-open="' + esc(r.id) + '">Open</button></td></tr>');
       });
     }
