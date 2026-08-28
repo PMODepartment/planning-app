@@ -168,6 +168,7 @@ window.ProgressPhotos = (function () {
     try {
       localStorage.setItem(uiKey('view'), view);
       localStorage.setItem(uiKey('collapsed'), JSON.stringify(collapsed));
+      localStorage.setItem(uiKey('gallerygroup'), galleryGroupBy);
     } catch (e) {}
   }
   function restoreUI() {
@@ -175,6 +176,8 @@ window.ProgressPhotos = (function () {
       var v = localStorage.getItem(uiKey('view'));
       if (v === 'list' || v === 'gallery') view = v;
       collapsed = JSON.parse(localStorage.getItem(uiKey('collapsed')) || '{}') || {};
+      var g = localStorage.getItem(uiKey('gallerygroup'));
+      if (['month', 'year', 'location', 'activity'].indexOf(g) >= 0) galleryGroupBy = g;
     } catch (e) { collapsed = {}; }
   }
 
@@ -500,8 +503,12 @@ window.ProgressPhotos = (function () {
   // Batch-sign every photo path in one request rather than one call per row.
   async function signAll() {
     urlCache = {};
-    var paths = rows.map(function (r) { return r.photo_url; })
-                    .filter(function (p) { return !!p; });
+    var seen = {}, paths = [];
+    rows.forEach(function (r) {
+      [r.photo_url, r.key_plan_url].forEach(function (p) {
+        if (p && !seen[p]) { seen[p] = 1; paths.push(p); }
+      });
+    });
     if (!paths.length) return;
     var res = await sb().storage.from(BUCKET).createSignedUrls(paths, SIGN_TTL);
     if (res.error) { UI.toast('Could not load photo previews: ' + res.error.message, 'warn'); return; }
@@ -593,19 +600,45 @@ window.ProgressPhotos = (function () {
     });
     return out.sort();
   }
-  function refreshWorksDatalist(tradeVal) {
-    var dl = $('pp-works-list');
-    if (dl) dl.innerHTML = worksOptions(tradeVal || '').map(function (v) {
-      return '<option value="' + Fmt.esc(v) + '"></option>'; }).join('');
+  // Works is a real, constrained <select> -- not free text -- so the field
+  // actually controls what can be entered (owner feedback: "Works have no
+  // choices, should have choices to control inputs"). Options come from the
+  // schedule + this project's own captured photos (worksOptions()); a
+  // trailing "+ Add new Works value..." escape hatch prevents a hard dead-end
+  // on a brand-new project where the schedule link hasn't resolved yet -- it
+  // still ends up as one of the picker's own choices, not silently-typed text.
+  function worksOptionMarkup(tradeVal, curVal) {
+    var opts = worksOptions(tradeVal || '');
+    if (curVal && opts.indexOf(curVal) < 0) { opts = opts.concat([curVal]); opts.sort(); }
+    return '<option value="">' + (opts.length ? 'Select works…' : 'No Works values yet — add one') + '</option>' +
+      opts.map(function (v) {
+        return '<option value="' + Fmt.esc(v) + '"' + (v === curVal ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>';
+      }).join('') +
+      '<option value="__new__">+ Add new Works value…</option>';
   }
-  // Re-scopes the shared Works datalist to whichever Trade is picked in the
-  // currently-open modal (Add or Edit -- idPrefix's own -trade select), live
-  // on every change, seeded once from its current value on open.
+  function worksSelectHTML(idPrefix, tradeVal, curVal) {
+    return '<select class="pd-select" id="' + idPrefix + '-works" required>' +
+      worksOptionMarkup(tradeVal, curVal) + '</select>';
+  }
+  function refreshWorksSelect(idPrefix, tradeVal) {
+    var sel = $(idPrefix + '-works'); if (!sel) return;
+    var keep = sel.value && sel.value !== '__new__' ? sel.value : '';
+    sel.innerHTML = worksOptionMarkup(tradeVal, keep);
+  }
+  // Re-scopes the Works select to whichever Trade is picked in the currently-
+  // open modal (Add or Edit -- idPrefix's own -trade select), live on every
+  // Trade change; also wires the "+ Add new Works value..." escape hatch.
   function wireTradeWorks(idPrefix) {
-    var trade = $(idPrefix + '-trade');
-    if (!trade) return;
-    refreshWorksDatalist(trade.value);
-    trade.onchange = function () { refreshWorksDatalist(this.value); };
+    var trade = $(idPrefix + '-trade'), works = $(idPrefix + '-works');
+    if (!works) return;
+    if (trade) trade.onchange = function () { refreshWorksSelect(idPrefix, this.value); };
+    works.onchange = function () {
+      if (this.value !== '__new__') return;
+      var v = (window.prompt('New Works value:') || '').trim();
+      var tradeVal = trade ? trade.value : '';
+      this.innerHTML = worksOptionMarkup(tradeVal, v);
+      this.value = v;
+    };
   }
   function fillFilterOptions() {
     function fill(id, list, blank) {
@@ -619,8 +652,6 @@ window.ProgressPhotos = (function () {
     fill('pp-f-trade', distinct('trade'), 'Filter by Trade');
     fill('pp-f-works', distinct('works'), 'Filter by Works');
     renderLocFilterSelects();
-    refreshWorksDatalist('');   // unfiltered baseline; the open modal's own Trade
-                                // select re-scopes this live (see wireTradeWorks)
   }
   // Distinct values already captured at this level, across this project's
   // own photos.
@@ -729,6 +760,49 @@ window.ProgressPhotos = (function () {
     return order.map(function (t) { return { trade: t, items: groups[t] }; });
   }
 
+  // ---- Gallery (tile view) grouping ----------------------------------------
+  // Default = capture month (owner feedback), with Year / Location / Activity
+  // as alternatives. Persisted per project like the trade-group collapse state.
+  var MONTH_NAMES = ['January','February','March','April','May','June','July',
+    'August','September','October','November','December'];
+  var galleryGroupBy = 'month';   // month | year | location | activity
+  function galleryGroupKey(r) {
+    if (galleryGroupBy === 'year') {
+      var y = (r.taken_at || '').slice(0, 4);
+      return y || 'Undated';
+    }
+    if (galleryGroupBy === 'location') return r.location || 'Unassigned';
+    if (galleryGroupBy === 'activity') return r.activity_name || r.works || 'Unassigned';
+    // month (default)
+    var m = (r.taken_at || '').slice(0, 7);   // YYYY-MM
+    return m || 'Undated';
+  }
+  function galleryGroupLabel(key) {
+    if (galleryGroupBy === 'month' && /^\d{4}-\d{2}$/.test(key)) {
+      var parts = key.split('-');
+      return MONTH_NAMES[(+parts[1]) - 1] + ' ' + parts[0];
+    }
+    return key;
+  }
+  function groupForGallery(list) {
+    var groups = {}, order = [];
+    list.forEach(function (r) {
+      var k = galleryGroupKey(r);
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(r);
+    });
+    // Month/year: most recent first. Location/activity: alphabetical, "Unassigned" last.
+    if (galleryGroupBy === 'month' || galleryGroupBy === 'year') {
+      order.sort(function (a, b) { return b.localeCompare(a); });
+    } else {
+      order.sort(function (a, b) {
+        if (a === 'Unassigned') return 1; if (b === 'Unassigned') return -1;
+        return a.localeCompare(b);
+      });
+    }
+    return order.map(function (k) { return { key: k, label: galleryGroupLabel(k), items: groups[k] }; });
+  }
+
   function rowActions(r) {
     return '<div class="pp-rowacts">' +
       '<button class="pp-iconbtn" data-act="download" data-id="' + r.id + '" title="Download photo">' +
@@ -781,29 +855,34 @@ window.ProgressPhotos = (function () {
     return '<div class="pp-grid">' + head + body + '</div>';
   }
 
+  // Tile view: just the photo -- no description/table, no action icons on the
+  // tile itself (owner feedback). Download/view/edit/delete live in the
+  // lightbox once a photo is opened.
   function galleryHTML(list) {
-    return '<div class="pp-gallery">' + list.map(function (r) {
-      return '<figure class="pp-card" data-id="' + r.id + '">' +
-        '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') +
-          '<button class="pp-expand" data-act="open" data-id="' + r.id + '" title="View full size">⤢</button>' +
-        '</div>' +
-        '<figcaption>' +
-          '<table class="pp-cardtable"><tbody>' +
-            trow('Description', r.description) +
-            trow('Trade', r.trade) +
-            trow('Works', r.works) +
-            trow('Location', r.location) +
-            trow('Capture Date', r.taken_at ? Fmt.date(r.taken_at) : '') +
-          '</tbody></table>' +
-          rowActions(r) +
-        '</figcaption></figure>';
-    }).join('') + '</div>';
-  }
-  function trow(k, v) {
-    return '<tr><th>' + Fmt.esc(k) + '</th><td>' + Fmt.esc(v || '—') + '</td></tr>';
+    var bar = '<div class="pp-gallerybar">' +
+      '<label class="pp-groupby">Group by ' +
+        '<select class="pd-select" id="pp-gallery-groupby">' +
+          '<option value="month"' + (galleryGroupBy === 'month' ? ' selected' : '') + '>Month captured</option>' +
+          '<option value="year"' + (galleryGroupBy === 'year' ? ' selected' : '') + '>Year</option>' +
+          '<option value="location"' + (galleryGroupBy === 'location' ? ' selected' : '') + '>Location</option>' +
+          '<option value="activity"' + (galleryGroupBy === 'activity' ? ' selected' : '') + '>Activity</option>' +
+        '</select></label></div>';
+    var body = groupForGallery(list).map(function (g) {
+      return '<div class="pp-gallerygroup">' +
+        '<div class="pp-gallerygrouphead"><strong>' + Fmt.esc(g.label) + '</strong>' +
+          '<span class="pp-groupcount">' + g.items.length + '</span></div>' +
+        '<div class="pp-gallery">' + g.items.map(function (r) {
+          return '<figure class="pp-card" data-id="' + r.id + '">' +
+            '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + '</div>' +
+          '</figure>';
+        }).join('') + '</div></div>';
+    }).join('');
+    return bar + body;
   }
 
   function wireRows(host) {
+    var gb = $('pp-gallery-groupby');
+    if (gb) gb.onchange = function () { galleryGroupBy = this.value; saveUI(); render(); };
     Array.prototype.forEach.call(host.querySelectorAll('.pp-group'), function (g) {
       g.onclick = function () {
         var t = g.dataset.trade;
@@ -847,6 +926,14 @@ window.ProgressPhotos = (function () {
       '<span>' + Fmt.esc([r.trade, r.works, r.location].filter(Boolean).join(' · ')) +
       (r.taken_at ? ' · ' + Fmt.date(r.taken_at) : '') + '</span>' +
       '<span class="pp-lb-count">' + (lightboxAt + 1) + ' / ' + lightboxIds.length + '</span>';
+    var editBtn = $('pp-lb-edit'), delBtn = $('pp-lb-delete');
+    if (editBtn) editBtn.style.display = canWrite ? '' : 'none';
+    if (delBtn) delBtn.style.display = canWrite ? '' : 'none';
+    if (editBtn) editBtn.onclick = function () { closeLightbox(); openForm(r); };
+    if (delBtn) delBtn.onclick = function () { closeLightbox(); remove(r); };
+    var dlBtn = $('pp-lb-download');
+    if (dlBtn) dlBtn.onclick = function () { download(r); };
+    hydrate($('pp-lightbox'));
   }
 
   async function download(r) {
@@ -1049,8 +1136,9 @@ window.ProgressPhotos = (function () {
           '<div class="pd-field"><label>Trade' + reqMark() + '</label>' +
             '<select class="pd-select" id="pp-trade" required>' + tradeOptions('') + '</select></div>' +
           '<div class="pd-field"><label>Works' + reqMark() + '</label>' +
-            '<input class="pd-input" id="pp-works" list="pp-works-list" placeholder="e.g. Temporary Facilities" required /></div>' +
+            worksSelectHTML('pp', '', '') + '</div>' +
           locationFieldHTML('pp', preset.locationValues || {}, preset.location || '') +
+          keyPlanFieldHTML('pp', '') +
         '</div>' +
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
       '</div>' +
@@ -1062,6 +1150,7 @@ window.ProgressPhotos = (function () {
     var m = openModal(html, 640);
     wireLocationField('pp');
     wireTradeWorks('pp');
+    wireKeyPlanField('pp');
     hydrate(m.el);
     if (preset.walk && $('pp-skip')) $('pp-skip').onclick = function () { m.close(); advanceWalkthrough(); };
     if (preset.walk && $('pp-endwalk')) $('pp-endwalk').onclick = function () {
@@ -1084,17 +1173,18 @@ window.ProgressPhotos = (function () {
         location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
-        tags: readCodeTags('pp')
+        tags: readCodeTags('pp'),
+        key_plan_url: readKeyPlanValue('pp') || null
       };
       this.disabled = true;
       var prog = $('pp-prog'); prog.hidden = false;
-      var done = 0, queued = 0, failed = [];
+      var done = 0, queued = 0, failed = [], newIds = [];
 
       for (var i = 0; i < files.length; i++) {
         prog.textContent = 'Saving ' + (i + 1) + ' of ' + files.length + '…';
         try {
           var r = await saveCapture(files[i], Object.assign({ sort_order: i }, shared));
-          if (r.queued) queued++; else if (r.ok) done++; else failed.push(files[i].name);
+          if (r.queued) queued++; else if (r.ok) { done++; if (r.id) newIds.push(r.id); } else failed.push(files[i].name);
         } catch (err) {
           failed.push(files[i].name + ': ' + (err.message || err));
         }
@@ -1107,6 +1197,7 @@ window.ProgressPhotos = (function () {
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
       if (preset.walk) advanceWalkthrough();
+      if (typeof preset.onDone === 'function') preset.onDone(newIds);
     };
   }
 
@@ -1118,6 +1209,112 @@ window.ProgressPhotos = (function () {
     return path;
   }
 
+  // ---------------------------------------------------- Key Plan (per photo)
+  // Key plan now lives on the PHOTO, not the PPR slide (owner feedback), so
+  // both the Add and Edit photo forms carry a "Key plan" field. Rather than a
+  // bare file input every time, it's a small wizard: pick one already
+  // uploaded to this project, or upload a new one -- an "easy uploading and
+  // selection" flow instead of re-uploading the same key plan for every photo
+  // at that location.
+  async function uploadKeyPlanFile(file) {
+    var safe = file.name.replace(/[^\w.\-]+/g, '_');
+    var path = pid + '/keyplans/' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '_' + safe;
+    var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
+    if (res.error) throw res.error;
+    return path;
+  }
+  function distinctKeyPlans() {
+    var seen = {}, out = [];
+    rows.forEach(function (r) {
+      if (r.key_plan_url && !seen[r.key_plan_url]) { seen[r.key_plan_url] = 1; out.push(r.key_plan_url); }
+    });
+    return out;
+  }
+  function keyPlanFieldHTML(idPrefix, curPath) {
+    return '<div class="pd-field pp-span2 pp-keyplanfield"><label>Key plan <span class="pp-optnote">(optional)</span></label>' +
+      '<input type="hidden" id="' + idPrefix + '-kp-path" value="' + Fmt.esc(curPath || '') + '" />' +
+      '<div class="pp-kppreviewrow">' +
+        '<div class="pp-kppreview" id="' + idPrefix + '-kp-preview"></div>' +
+        '<button type="button" class="pd-btn" id="' + idPrefix + '-kp-btn">' +
+          (curPath ? 'Change key plan…' : 'Set key plan…') + '</button>' +
+        (curPath ? '<button type="button" class="pd-btn" id="' + idPrefix + '-kp-clear">Remove</button>' : '') +
+      '</div></div>';
+  }
+  function paintKeyPlanPreview(idPrefix) {
+    var pathEl = $(idPrefix + '-kp-path');
+    var path = pathEl ? pathEl.value : '';
+    var prev = $(idPrefix + '-kp-preview'); if (!prev) return;
+    var u = path ? urlCache[path] : '';
+    prev.innerHTML = path
+      ? (u ? '<img src="' + Fmt.esc(u) + '" alt="Key plan" />' : '<span class="pp-muted">Key plan set</span>')
+      : '<span class="pp-muted">No key plan set</span>';
+  }
+  function wireKeyPlanField(idPrefix) {
+    paintKeyPlanPreview(idPrefix);
+    var btn = $(idPrefix + '-kp-btn');
+    if (btn) btn.onclick = function () { openKeyPlanWizard(idPrefix); };
+    var clr = $(idPrefix + '-kp-clear');
+    if (clr) clr.onclick = function () {
+      $(idPrefix + '-kp-path').value = '';
+      paintKeyPlanPreview(idPrefix);
+      clr.remove();
+      if (btn) btn.textContent = 'Set key plan…';
+    };
+  }
+  function readKeyPlanValue(idPrefix) {
+    var el = $(idPrefix + '-kp-path');
+    return el ? el.value : '';
+  }
+  function openKeyPlanWizard(idPrefix) {
+    var existing = distinctKeyPlans();
+    var html =
+      '<div class="pd-modal-header"><h3>Key plan</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        (existing.length
+          ? '<p class="pp-hint">Pick one already uploaded to this project, or upload a new one.</p>' +
+            '<div class="pp-kpgrid" id="pp-kp-grid">' + existing.map(function (path) {
+              var u = urlCache[path] || '';
+              return '<button type="button" class="pp-kpitem" data-path="' + Fmt.esc(path) + '">' +
+                (u ? '<img src="' + Fmt.esc(u) + '" alt="" />' : '<span data-ico="camera" data-ico-size="18"></span>') +
+                '</button>';
+            }).join('') + '</div>'
+          : '<p class="pp-hint">No key plans uploaded to this project yet — upload one below.</p>') +
+        '<div class="pd-field"><label>Upload new key plan</label>' +
+          '<input class="pd-input" type="file" id="pp-kp-file" accept="image/*" /></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp-kp-upload" disabled>Upload &amp; use</button></div>';
+    var m = openModal(html, 560);
+    hydrate(m.el);
+    Array.prototype.forEach.call(m.el.querySelectorAll('.pp-kpitem'), function (b) {
+      b.onclick = function () {
+        $(idPrefix + '-kp-path').value = this.dataset.path;
+        paintKeyPlanPreview(idPrefix);
+        var btn = $(idPrefix + '-kp-btn'); if (btn) btn.textContent = 'Change key plan…';
+        m.close();
+      };
+    });
+    var fileInput = $('pp-kp-file'), upBtn = $('pp-kp-upload');
+    fileInput.onchange = function () { upBtn.disabled = !(fileInput.files && fileInput.files[0]); };
+    upBtn.onclick = async function () {
+      var f = fileInput.files && fileInput.files[0]; if (!f) return;
+      this.disabled = true; this.textContent = 'Uploading…';
+      try {
+        var path = await uploadKeyPlanFile(f);
+        var res = await sb().storage.from(BUCKET).createSignedUrl(path, SIGN_TTL);
+        if (res && res.data && res.data.signedUrl) urlCache[path] = res.data.signedUrl;
+        $(idPrefix + '-kp-path').value = path;
+        paintKeyPlanPreview(idPrefix);
+        var btn = $(idPrefix + '-kp-btn'); if (btn) btn.textContent = 'Change key plan…';
+        m.close();
+      } catch (err) {
+        UI.toast('Key plan upload failed: ' + (err.message || err), 'error');
+        this.disabled = false; this.textContent = 'Upload & use';
+      }
+    };
+  }
+
   // ------------------------------------------------------------ tolerant write
   // Every DB write that might carry the new schedule-linkage columns goes
   // through here: routes through the shared PDSync outbox when present (same
@@ -1127,7 +1324,11 @@ window.ProgressPhotos = (function () {
   async function doWrite(job) {
     if (window.PDSync) return PDSync.write(job);
     if (job.op === 'insert') {
-      var ires = await sb().from(job.table).insert(job.patch);
+      // ⚠️ .select() is REQUIRED: supabase-js v2 returns `data: null` on a bare
+      // insert, so without it the new row's id never comes back — which the PPR
+      // slide editor's inline "+ Add photo" depends on to select the photo it
+      // just uploaded.
+      var ires = await sb().from(job.table).insert(job.patch).select();
       return ires.error ? { ok: false, error: ires.error }
         : { ok: true, queued: false, id: ires.data && ires.data[0] && ires.data[0].id };
     }
@@ -1290,8 +1491,9 @@ window.ProgressPhotos = (function () {
           '<div class="pd-field"><label>Trade' + reqMark() + '</label>' +
             '<select class="pd-select" id="pp-e-trade" required>' + tradeOptions(r.trade || '') + '</select></div>' +
           '<div class="pd-field"><label>Works' + reqMark() + '</label>' +
-            '<input class="pd-input" id="pp-e-works" list="pp-works-list" value="' + Fmt.esc(r.works || '') + '" required /></div>' +
+            worksSelectHTML('pp-e', r.trade || '', r.works || '') + '</div>' +
           locationFieldHTML('pp-e', r.location_values || {}, r.location || '') +
+          keyPlanFieldHTML('pp-e', r.key_plan_url || '') +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
@@ -1305,6 +1507,7 @@ window.ProgressPhotos = (function () {
     });
     wireLocationField('pp-e', true);
     wireTradeWorks('pp-e');
+    wireKeyPlanField('pp-e');
     hydrate(m.el);
     // Clear the "editing this photo" cursor on every close path (× / Cancel).
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
@@ -1326,6 +1529,7 @@ window.ProgressPhotos = (function () {
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp-e'),
+        key_plan_url: readKeyPlanValue('pp-e') || null,
         updated_at: new Date().toISOString()
       };
       // Offline-capable metadata edit: apply optimistically, then route through
@@ -1505,6 +1709,12 @@ window.ProgressPhotos = (function () {
     renderRounds: renderRounds,
     _syncChrome: syncChrome,
     _closeLightbox: closeLightbox,
-    _stepLightbox: stepLightbox
+    _stepLightbox: stepLightbox,
+    // Used by the PPR slide editor's "+ Add photos" shortcut: opens the same
+    // Add-photos modal used on the Photos screen; onDone(newIds) fires with
+    // the newly created photo id(s) once the upload completes, so the slide
+    // editor can select the fresh photo without a trip to the Photos tab.
+    openUploadForPicker: function (onDone) { openUpload({ onDone: onDone }); },
+    photoById: byId
   };
 })();
