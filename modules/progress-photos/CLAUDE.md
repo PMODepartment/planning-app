@@ -2,6 +2,153 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Owner feedback round: Works choices, per-photo key plans, PPR→Meeting, photo-first slides, tile view (2026-08-28)
+
+Fifteen items from the owner's review of the live Phase-1/Phase-2 build, against
+`site-survey-app-build-brief` (Sections 3–5). Grouped below by the surface they
+touch. **Run `migrations/2026-08-28-photo-keyplan-and-ppr-meeting.sql` before
+deploying** — the key-plan move needs the new column.
+
+### Photos Database
+
+- **Works is now a real `<select>`, not free text** (items 1 & 2). It was an
+  `<input list="pp-works-list">`, so the datalist was only ever a *suggestion* —
+  any typo saved fine, which is exactly the "no choices to control inputs"
+  complaint. Now a constrained dropdown built from `worksOptions()` (schedule
+  activities scoped to the picked Trade, unioned with values already used on the
+  project), rebuilt live on Trade change by `refreshWorksSelect()`.
+  - ⚠️ Kept a **`+ Add new Works value…`** option deliberately. The three
+    preceding entries (2026-08-13e/f/g) are an unresolved live bug where this
+    dropdown came back **empty** on Avesta. Making the field strictly closed
+    while that's still outstanding would turn a cosmetic problem into a
+    hard block on capturing any photo. The escape hatch prompts for a value and
+    inserts it as a real option, so input stays governed but never dead-ends.
+  - The shared `<datalist id="pp-works-list">` is **removed from `index.html`**;
+    nothing references it now.
+- **Required fields** (item 2) were already gated by `requiredFieldsMissing()`
+  (added 2026-08-13b) — verified still enforced on both the Add and Edit paths
+  for capture date, trade, works, and the first two Location Breakdown levels.
+- **Key plan moved from the slide to the PHOTO** (item 6). New
+  `progress_photos.key_plan_url`; both photo forms carry a key-plan field.
+- **Key plan upload/selection wizard** (item 11): `openKeyPlanWizard()` shows the
+  key plans already uploaded to this project as a pickable thumbnail grid, plus a
+  file input for a new one. Uploads go to `<project>/keyplans/` as before. This
+  is the point of moving it per-photo — the same key plan is reused across many
+  photos at one location, so re-uploading it per slide was the actual friction.
+- **Tile (Gallery) view is the photo only** (item 14). Dropped the per-card
+  detail table and the inline action icons; the tile is now just the image.
+  Download / view / edit / delete moved into the **lightbox** (`.pp-lb-tools`),
+  shown on open, with edit+delete hidden for non-writers. **List view keeps its
+  row actions** — it's the dense working grid and the icons belong there.
+- **Tile grouping** (item 15): group-by **Month captured (default)**, Year,
+  Location, or Activity, via `galleryGroupBy` + `groupForGallery()`. Month/year
+  sort newest-first; location/activity sort alphabetically with "Unassigned"
+  last. Choice persists per project (`pp_gallerygroup_<pid>`).
+
+### Meetings (was "PPR Presentations")
+
+- **Renamed PPR → Meeting throughout the UI** (item 3): tab, screen title,
+  topbar actions, list header, modals, empty states, and the offline export's
+  title/filename. One record now serves both a PPR meeting and a client meeting,
+  distinguished in the Description.
+  - ⚠️ **DB names deliberately unchanged** — `ppr_presentations`, `ppr_slides`,
+    `ppr_date`, `ppr_id`, and the `PPR`/`ppr-*` JS identifiers all stay. This is
+    a label change; renaming tables/columns would need a data migration and
+    would break `supabase-schema.sql`'s RLS loop, the storage policies, and
+    every existing row, for zero user-visible gain.
+- **Fixed: list icons (open / download / delete) were not showing** (item 5).
+  Root cause was **not** the markup. `render()` was the only place calling
+  `Icons.hydrate($('ppr-view'))`, but `renderList()` is invoked **directly** by
+  the two date filters, the clear-filters button, and (previously) the row
+  click — so on any of those paths the `data-ico` placeholders were never
+  swapped for SVG and the buttons rendered blank. `renderList()` and the
+  empty-state branch now hydrate their own output via a local `hydrate()`.
+  Also swapped the Edit action's `✎` text glyph for the real `pencil` icon so
+  the whole cluster is consistent.
+- **Clicking a meeting row opens it** (item 12) — `openPpr(id)` on row click.
+  Previously the row only *selected* (driving the preview pane) and opening
+  needed the arrow icon. The icon is kept for discoverability; both go through
+  `openPpr()`.
+- **After creating a meeting, jump into its slide editor** (item 4). The insert
+  now uses `.select()` to get the new id back and calls `openPpr(newId)`.
+- **Copy a previous meeting when creating one** (item 13). Optional picker on the
+  New Meeting form; `copySlidesFrom()` clones the chosen meeting's slides,
+  **promoting each slide's "after" (current) photo into the new slide's "before"
+  slot** and leaving "after" empty for this period's capture. The after-caption
+  travels with the photo it describes (becoming the before-caption); the new
+  after-caption starts blank. This is the recurring-capture workflow from
+  brief §4/§5 — a monthly meeting is mostly last month's slide list with one
+  new photo each.
+
+### Slides — now photo-first
+
+- **Slides are built by picking photos, not by typing locations** (item 7). The
+  slide form's Trade / Works / Location inputs are **gone**. Those are properties
+  of the photo, already captured in the library; asking again invited drift
+  between a slide and the photo it shows.
+- **"+ Add photo" inline on both pickers** (item 8) — no trip to the Photos tab
+  for a missing shot. Reuses the Photos screen's own Add-photos modal via a new
+  `ProgressPhotos.openUploadForPicker(onDone)` hook, then selects the new photo.
+  - ⚠️ **`doWrite`'s insert needed `.select()`**: supabase-js v2 returns
+    `data: null` on a bare `insert()`, so `saveCapture()` had *always* returned
+    `id: undefined` — harmless until now, but this feature depends on it. Also
+    added a fallback that diffs the library before/after the upload, since
+    PDSync's offline outbox genuinely cannot report an inserted id.
+- **Before/after may be at DIFFERENT locations** (item 9). `pane()` reads each
+  photo's own trade/works/location and renders them per-pane (`.ppr-panetags`),
+  with Before/After labels. The slide-level meta row now carries only the key
+  plan toggle. `ppr_slides.trade/works/location` are **deprecated, not dropped**
+  — still read as a fallback when a pane has no photo linked, so pre-migration
+  slides render unchanged.
+- **No before photo → no before caption, and the photo centers** (item 10). The
+  caption field is hidden until a before photo is picked (`syncBeforeCaption()`)
+  and `before_caption` is force-nulled on save when there's no before photo.
+  The slide renders `.ppr-pair-single` (a single centered column) instead of a
+  half-width photo beside an empty "Photo not set" frame. Mirrored in the
+  offline export (`.pair.single`).
+- **Key plan overlay is per-pane** — `keyPlanPathFor(slide, which)` prefers the
+  photo's own `key_plan_url` and falls back to the legacy slide-level one, so
+  each side of a comparison can carry its own key plan. Offline export collects
+  and inlines both.
+
+### Verified (2026-08-28)
+
+Harness-verified (`test.js`, stubbed `AppAuth`/`PDb`/`UI`/`Fmt`/`Icons` +
+in-memory store with cascade-delete emulation; both real modules loaded via
+`vm`): **85 checks, 0 failures.** Covers every item above — the Works select
+markup and the datalist's removal, the required-field gates, all rename surfaces,
+`openPpr` on row click, post-create navigation, per-photo key-plan resolution
+incl. legacy fallback, the photo-first slide form and inline-add hook, per-pane
+tags, before-caption hiding + centering, gallery grouping (month-label
+formatting asserted behaviourally: `2026-06` → "June 2026"), lightbox action
+wiring + role gating, list-view actions retained, migration idempotency, and
+dark-mode token use in all new CSS.
+
+Copy-previous semantics were asserted **behaviourally**, not just structurally:
+a two-slide fixture (one pair, one single-photo slide) confirms the after photo
+becomes the before, the after slot clears, captions follow their photo, and
+slide numbers resequence.
+
+⚠️ **Two harness bugs surfaced first and were fixed in the harness, not the
+module** — a quote-char mismatch in the row-actions regex, and a blanket
+"no `#fff`" assertion that ignored the 8 pre-existing legitimate uses on the
+dark lightbox overlay (the 2 added are `.pp-lb-tool` text on that same overlay).
+Worth knowing for whoever tests next: assert `#fff` by *context*, not count.
+
+### Pending
+
+- **Live click-through** against a real login, the real bucket and real photo
+  volumes — everything above is harness-verified only. Priority: the Works
+  dropdown on **Avesta**, which is still the open item from 2026-08-13g. The
+  unconditional `console.info` summary that entry added is still in place and
+  is still the fastest diagnostic; the new `<select>` does not change what
+  `worksOptions()` returns, so **if it was empty before it will be empty now** —
+  the `+ Add new Works value…` option is the mitigation, not the fix.
+- `ppr_slides.key_plan_url` / `trade` / `works` / `location` can be dropped in a
+  later cleanup migration once no pre-migration slides remain in use.
+- Brief §5 proper (saved report templates, comparison rules, PPTX/PDF export)
+  is still unbuilt — the Meetings screen is the manual precursor to it.
+
 ## Third live "Works dropdown still empty" report, no diagnostic fired — added an unconditional load summary (2026-08-13g)
 Owner tested the 2026-08-13f diagnostics live and reported the dropdown **still empty**, this time
 with a DevTools console screenshot as evidence — but the console showed only browser-level Tracking

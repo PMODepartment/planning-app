@@ -80,6 +80,9 @@ create table if not exists progress_photos (
   location_values jsonb default '{}'::jsonb,   -- { "<location_level_id>": "value string" } — mirrors
                                        -- project_schedule.location's shape exactly (migrations/2026-08-12-*.sql);
                                        -- Project Schedule's real "Location Breakdown", NOT the wbs_nodes tree
+  key_plan_url text,                  -- Storage path (progress-photos bucket, <project>/keyplans/).
+                                       -- Key plan is per PHOTO, not per PPR slide (migrations/2026-08-28-*.sql):
+                                       -- one comparison can pair two photos with different key plans.
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
