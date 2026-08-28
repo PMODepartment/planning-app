@@ -119,6 +119,46 @@
     .mp-derivebox { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:4px; }
     .mp-derivebox ul { margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--pd-muted); }
     .mp-linkrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+
+    /* ---- Portfolio: curve + people Gantt --------------------------------------------------
+       These share a month grid of their own (44px), independent of the Loading matrix — the
+       portfolio axis is the union of every scoped project's months, not one project's schedule,
+       so it must not be pinned to MX_CELL. */
+    .mp-pv { display:none; }
+    .mp-pv.on { display:block; }
+    .mp-pcurvewrap { overflow-x:auto; }
+    .mp-pcurve { display:block; }
+    .mp-gtwrap { overflow:auto; max-height:66vh; }
+    .mp-gt { border-collapse:collapse; font-size:12px; table-layout:fixed; width:max-content; }
+    .mp-gt th, .mp-gt td { padding:0; border-bottom:1px solid var(--pd-line); text-align:center; white-space:nowrap; }
+    .mp-gt th:not(.mp-g1):not(.mp-g2), .mp-gt td:not(.mp-g1):not(.mp-g2) { width:44px; min-width:44px; max-width:44px; }
+    .mp-gt thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:10.5px;
+      font-weight:700; color:var(--pd-muted); padding:5px 0; }
+    .mp-gt thead tr.mp-gt-yr th { font-weight:800; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
+    .mp-gt thead tr.mp-gt-mo th { border-bottom:2px solid var(--pd-line); }
+    .mp-gt th.mp-g1, .mp-gt td.mp-g1 { position:sticky; left:0; z-index:1; text-align:left; padding:5px 9px;
+      width:210px; min-width:210px; max-width:210px; background:var(--pd-card); overflow:hidden; text-overflow:ellipsis; }
+    .mp-gt th.mp-g2, .mp-gt td.mp-g2 { position:sticky; left:210px; z-index:1; text-align:left; padding:5px 8px;
+      width:150px; min-width:150px; max-width:150px; background:var(--pd-card); color:var(--pd-muted); font-size:11px;
+      overflow:hidden; text-overflow:ellipsis; }
+    .mp-gt thead th.mp-g1, .mp-gt thead th.mp-g2 { z-index:3; background:var(--pd-bg); }
+    .mp-gt tr.mp-gt-grp td { background:var(--pd-bg); font-weight:800; text-align:left; padding:6px 9px;
+      border-top:2px solid var(--pd-line); font-size:11.5px; }
+    .mp-gt td.mp-gt-cell { position:relative; height:26px; }
+    .mp-gt .gbar { position:absolute; left:0; right:0; height:11px; top:50%; transform:translateY(-50%); background:#2F6FBF; }
+    /* ⚠️ The rounded cap is drawn on the END cells only, so a contract running past the axis stays
+       square-ended — a rounded end would assert a finish date the axis is merely not showing. */
+    .mp-gt .gbar.s { left:4px; border-top-left-radius:6px; border-bottom-left-radius:6px; }
+    .mp-gt .gbar.e { right:4px; border-top-right-radius:6px; border-bottom-right-radius:6px; }
+    .mp-gt .gbar.open { background:repeating-linear-gradient(45deg,#2F6FBF,#2F6FBF 4px,#9FC1EA 4px,#9FC1EA 8px); }
+    .mp-gt .gbar.free { background:var(--pd-ok); }
+    .mp-gt td.mp-gt-cell.mp-gap { background:var(--pd-red-light); }
+    .mp-gt td.mp-gt-cell .gq { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      font-size:10px; font-weight:800; color:var(--pd-bad); }
+    .mp-gt td.mp-now { box-shadow:inset 2px 0 0 var(--pd-red), inset -2px 0 0 var(--pd-red); }
+    .mp-gtlegend { display:flex; gap:14px; flex-wrap:wrap; padding:10px 12px; font-size:11.5px; color:var(--pd-muted); }
+    .mp-gtlegend .sw { display:inline-block; width:22px; height:9px; border-radius:5px; vertical-align:-1px; margin-right:5px; }
+    .mp-free { font-weight:700; color:var(--pd-ok); }
     .mp-mx input.mp-cellin { width:56px; height:24px; padding:0 4px; font:inherit; font-size:12px;
       text-align:center; border:1px solid var(--pd-red); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); }
     .mp-mx input.mp-cellin.wide { width:80px; text-align:left; }
@@ -323,11 +363,61 @@
             <option value="Skilled">Skilled only</option>
           </select>
           <button class="pd-btn" id="mp-p-run" style="height:34px;"><span data-ico="refresh" data-ico-size="15"></span> Read every project</button>
+          <span class="mp-seg" id="mp-p-view">
+            <button data-pv="snapshot" class="active">This month</button>
+            <button data-pv="curve">Curve</button>
+            <button data-pv="people">People</button>
+          </span>
           <span class="mp-note" id="mp-p-note" style="margin-left:auto;"></span>
         </div>
-        <div class="mp-kpis" id="mp-p-kpis"></div>
-        <div class="mp-card" style="padding:0;overflow:auto;">
-          <table class="mp-table" id="mp-p-tbl"></table>
+
+        <div class="mp-pv on" id="mp-pv-snapshot">
+          <div class="mp-kpis" id="mp-p-kpis"></div>
+          <div class="mp-card" style="padding:0;overflow:auto;">
+            <table class="mp-table" id="mp-p-tbl"></table>
+          </div>
+        </div>
+
+        <div class="mp-pv" id="mp-pv-curve">
+          <div class="mp-card">
+            <h3>Manpower across projects — requirement vs actual</h3>
+            <div class="mp-pcurvewrap" id="mp-p-curve"></div>
+            <div class="mp-legend" id="mp-p-curve-legend"></div>
+          </div>
+          <div class="mp-card" style="padding:0;overflow:auto;">
+            <table class="mp-table" id="mp-p-curve-tbl"></table>
+          </div>
+        </div>
+
+        <div class="mp-pv" id="mp-pv-people">
+          <div class="mp-controls">
+            <span class="mp-filt-ico" data-ico="users" data-ico-size="15"></span>
+            <label for="mp-pp-free" style="font-size:12.5px;">Coming free</label>
+            <select class="pd-select" id="mp-pp-free">
+              <option value="">Everyone</option>
+              <option value="3">Within 3 months</option>
+              <option value="6">Within 6 months</option>
+              <option value="12">Within 12 months</option>
+              <option value="done">Already off contract</option>
+            </select>
+            <label for="mp-pp-search" style="font-size:12.5px;">Find</label>
+            <input class="pd-input" id="mp-pp-search" placeholder="name, position or project">
+            <span class="mp-note" id="mp-pp-note" style="margin-left:auto;"></span>
+          </div>
+          <div class="mp-card" style="padding:0;overflow:hidden;">
+            <div class="mp-gtwrap" id="mp-p-gaps"></div>
+            <div class="mp-gtlegend">
+              <span>A number is a month where that project&rsquo;s requirement is <b>not covered by anyone under contract</b> — the vacancies a reassignment could fill.</span>
+            </div>
+          </div>
+          <div class="mp-card" style="padding:0;overflow:hidden;">
+            <div class="mp-gtwrap" id="mp-p-people"></div>
+            <div class="mp-gtlegend">
+              <span><span class="sw" style="background:#2F6FBF;"></span>Under contract</span>
+              <span><span class="sw" style="background:repeating-linear-gradient(45deg,#2F6FBF,#2F6FBF 4px,#9FC1EA 4px,#9FC1EA 8px);"></span>Open-ended — no release date recorded</span>
+              <span><span class="sw" style="background:var(--pd-ok);"></span>Free — off contract, available to reassign</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -385,6 +475,10 @@
   var portAsOf = null;            // Date, month-floored
   var portWork = '';
   var portReading = false;
+  var portView = 'snapshot';      // snapshot | curve | people
+  var PORTX = null;               // the full cross-project series behind the curve and the Gantt
+  var ppFree = '', ppSearch = '';
+  var PG_CELL = 44;
 
   // The four bands of the source sheet. `col` is the headcount column, `cost` the
   // project-month cost column that pairs with it.
@@ -1942,15 +2036,21 @@
     var iso = mkey(portAsOf || CUTOFF || mFloor(new Date()));
     showLoading('Reading ' + ids.length + ' project(s)…');
     try {
-      var posRows = [], loadRows = [];
+      var posRows = [], loadRows = [], rosterRows = [];
       for (var i = 0; i < ids.length; i += 100) {
         var chunk = ids.slice(i, i + 100);
         posRows = posRows.concat(await PDb.selectAll('manpower_positions',
           (function (c) { return function (q) { return q.in('project_id', c); }; })(chunk),
           'id,project_id,workforce,department,position_title'));
+        // ⚠️ EVERY month, not just the as-of one — the curve and the people Gantt are the reason
+        // this read exists at portfolio level, and a one-month read cannot answer either. The
+        // snapshot below still narrows to `iso`, so the "this month" table is unchanged.
         loadRows = loadRows.concat(await PDb.selectAll('manpower_loading',
-          (function (c) { return function (q) { return q.in('project_id', c).eq('period', iso); }; })(chunk),
-          'position_id,project_id,planned_qty,approved_qty,forecast_qty,actual_qty'));
+          (function (c) { return function (q) { return q.in('project_id', c); }; })(chunk),
+          'position_id,project_id,period,planned_qty,approved_qty,forecast_qty,actual_qty'));
+        rosterRows = rosterRows.concat(await PDb.selectAll('manpower_roster',
+          (function (c) { return function (q) { return q.in('project_id', c); }; })(chunk),
+          'id,project_id,position_id,employee_name,contract_start,contract_end,employee_status'));
       }
       var posById2 = {};
       posRows.forEach(function (p) { posById2[p.id] = p; });
@@ -1960,7 +2060,7 @@
                      staff: { req: 0, act: 0, has: false }, skilled: { req: 0, act: 0, has: false } };
       });
       posRows.forEach(function (p) { if (by[p.project_id]) by[p.project_id].lines++; });
-      loadRows.forEach(function (r) {
+      loadRows.filter(function (r) { return String(r.period).slice(0, 10) === iso; }).forEach(function (r) {
         var b = by[r.project_id]; if (!b) return;
         var p = posById2[r.position_id]; if (!p) return;
         var w = (p.workforce === 'Skilled') ? 'skilled' : 'staff';
@@ -1972,9 +2072,10 @@
         if (act != null) { b.act += act; b.hasAct = true; b[w].act += act; b[w].has = true; }
       });
       PORT = { iso: iso, rows: Object.keys(by).map(function (k) { return by[k]; }) };
+      PORTX = buildPortSeries(posRows, loadRows, rosterRows);
     } catch (err) {
-      if (/manpower_positions|manpower_loading|schema cache/i.test(err.message || '')) {
-        PORT = { iso: iso, rows: [], missing: true };
+      if (/manpower_positions|manpower_loading|manpower_roster|schema cache/i.test(err.message || '')) {
+        PORT = { iso: iso, rows: [], missing: true }; PORTX = null;
       } else {
         UI.toast('Could not read the portfolio: ' + (err.message || err), 'error');
         PORT = null;
@@ -1983,6 +2084,367 @@
     hideLoading();
     portReading = false;
     renderPortfolio();
+    renderPortCurve();
+    renderPortPeople();
+  }
+
+  // ---- Cross-project series: the curve, and who is free when ---------------------------
+  // ⚠️ The portfolio axis is the UNION of every scoped project's loading months AND every
+  // contract span — not any one project's schedule. A person rolling off in a month no project
+  // has loaded is exactly the person this view exists to surface, and pinning the axis to one
+  // schedule would hide them.
+  function buildPortSeries(posRows, loadRows, rosterRows) {
+    var posById2 = {};
+    posRows.forEach(function (x) { posById2[x.id] = x; });
+    function inScope(p) { return !!p && (!portWork || p.workforce === portWork); }
+
+    var lo = null, hi = null;
+    function span(iso) {
+      if (!iso) return;
+      var k = String(iso).slice(0, 10);
+      if (!lo || k < lo) lo = k;
+      if (!hi || k > hi) hi = k;
+    }
+    loadRows.forEach(function (r) { if (inScope(posById2[r.position_id])) span(r.period); });
+    rosterRows.forEach(function (r) {
+      if (!inScope(posById2[r.position_id])) return;
+      if (r.contract_start) span(mkey(mFloor(pd_(r.contract_start))));
+      if (r.contract_end) span(mkey(mFloor(pd_(r.contract_end))));
+    });
+    if (!lo) return { months: [], byProject: {}, people: [], reportedThrough: null };
+
+    var months = [], c = mFloor(pd_(lo)), stop = mFloor(pd_(hi)), guard = 0;
+    while (c <= stop && guard++ < 600) { months.push({ d: new Date(c), iso: mkey(c) }); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+
+    // Requirement + actual per project per month. Governing is resolved PER POSITION first,
+    // exactly as it is inside a project — the aggregate must not be able to disagree with the
+    // project screen it rolls up.
+    // ⚠️ byProject is SPARSE: a cell exists only for a month that has loading or a contract.
+    // Every reader must guard, and they all do — a dense map over a multi-year union axis for
+    // twenty projects would be tens of thousands of objects to carry a mostly-empty grid.
+    var byProject = {};
+    function cell(pid2, iso) {
+      var b = byProject[pid2] || (byProject[pid2] = {});
+      return b[iso] || (b[iso] = { req: 0, act: 0, hasReq: false, hasAct: false, contracted: 0 });
+    }
+    var lastAct = {};
+    loadRows.forEach(function (r) {
+      var pos = posById2[r.position_id]; if (!inScope(pos)) return;
+      var iso = String(r.period).slice(0, 10);
+      var a = num(r.approved_qty), pl = num(r.planned_qty);
+      var req = a != null ? a : pl, act = num(r.actual_qty);
+      var cl = cell(r.project_id, iso);
+      if (req != null) { cl.req += req; cl.hasReq = true; }
+      if (act != null) {
+        cl.act += act; cl.hasAct = true;
+        if (!lastAct[r.project_id] || iso > lastAct[r.project_id]) lastAct[r.project_id] = iso;
+      }
+    });
+
+    // People, and the months each is under contract. ⚠️ TBH is NOT a person and never appears
+    // here — it is an unfilled requirement, which is what the gap strip above already reports.
+    var people = [];
+    rosterRows.forEach(function (r) {
+      var pos = posById2[r.position_id];
+      if (!inScope(pos)) return;
+      if (isTBH(r)) return;
+      var st = r.contract_start ? mFloor(pd_(r.contract_start)) : null;
+      if (!st) return;
+      var en = r.contract_end ? mFloor(pd_(r.contract_end)) : null;
+      var startIso = mkey(st), endIso = en ? mkey(en) : null;
+      months.forEach(function (m) {
+        if (m.iso < startIso) return;
+        if (endIso && m.iso > endIso) return;
+        cell(r.project_id, m.iso).contracted += 1;
+      });
+      people.push({
+        id: r.id, project_id: r.project_id, name: r.employee_name,
+        position: pos ? pos.position_title : null, workforce: pos ? pos.workforce : null,
+        startIso: startIso, endIso: endIso,
+        // ⚠️ An open-ended contract has NO release month, and is never given one. Treating the
+        // axis end as a release date would invent a availability nobody has agreed.
+        freeFrom: endIso ? mkey(new Date(en.getFullYear(), en.getMonth() + 1, 1)) : null
+      });
+    });
+    people.sort(function (a, b) {
+      var an = a.freeFrom || '9999', bn = b.freeFrom || '9999';
+      if (an !== bn) return an < bn ? -1 : 1;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+
+    // ⚠️ "Reported through" is the EARLIEST cut-off among the projects that carry data, and the
+    // actual line stops there. Summing whatever actuals happen to exist would make the line dip
+    // in the recent months simply because fewer projects have reported yet — a decline that is
+    // not happening, on the chart most likely to be shown to management.
+    var reportedThrough = null, anyProj = false;
+    Object.keys(byProject).forEach(function (pid2) {
+      var v = null;
+      try { v = localStorage.getItem('ps_datadate_' + pid2); } catch (_e) {}
+      var d = pd_(v);
+      // A project with NO declared data date falls back to its OWN LATEST REPORTED MONTH.
+      // Falling back to today asserts "this project has reported everything up to now", which is
+      // the opposite of conservative: it lets the summed line run past what the project actually
+      // filed and reintroduces the very dip this figure exists to prevent. Measured on a
+      // two-project fixture, the last plotted point fell below its neighbour for no real reason.
+      var cut = d ? mkey(mFloor(d)) : (lastAct[pid2] || null);
+      // A project with no data date AND no actuals is EXCLUDED from the minimum rather than
+      // dragging it to the start of time. It contributes 0 in every month equally, so it adds no
+      // dip; letting it set the cut-off would erase the actual line for every other project.
+      if (cut === null) return;
+      anyProj = true;
+      if (reportedThrough === null || cut < reportedThrough) reportedThrough = cut;
+    });
+    if (!anyProj) reportedThrough = null;
+
+    return { months: months, byProject: byProject, people: people, reportedThrough: reportedThrough };
+  }
+
+  function portTotals() {
+    var X = PORTX;
+    if (!X || !X.months.length) return null;
+    var t = {};
+    X.months.forEach(function (m) { t[m.iso] = { req: 0, act: 0, contracted: 0, hasReq: false, hasAct: false }; });
+    Object.keys(X.byProject).forEach(function (pid2) {
+      X.months.forEach(function (m) {
+        var c = X.byProject[pid2][m.iso]; if (!c) return;
+        var d = t[m.iso];
+        if (c.hasReq) { d.req += c.req; d.hasReq = true; }
+        if (c.hasAct) { d.act += c.act; d.hasAct = true; }
+        d.contracted += c.contracted;
+      });
+    });
+    return t;
+  }
+
+  // ---- The curve ------------------------------------------------------------------------
+  function renderPortCurve() {
+    var host = document.getElementById('mp-p-curve'); if (!host) return;
+    var tbl = document.getElementById('mp-p-curve-tbl');
+    var leg = document.getElementById('mp-p-curve-legend');
+    var X = PORTX, t = portTotals();
+    if (!X || !t) {
+      host.innerHTML = '<div class="mp-empty">Press <b>Read every project</b> to build the curve.</div>';
+      if (tbl) tbl.innerHTML = ''; if (leg) leg.innerHTML = '';
+      return;
+    }
+    var months = X.months;
+    if (!months.length) {
+      host.innerHTML = '<div class="mp-empty">No manpower recorded on any readable project yet.</div>';
+      if (tbl) tbl.innerHTML = ''; if (leg) leg.innerHTML = '';
+      return;
+    }
+    var padL = 56, padR = 14, padT = 20, padB = 42, bw = PG_CELL;
+    var W = padL + padR + months.length * bw, H = 300, ph = H - padT - padB;
+    var max = 0;
+    months.forEach(function (m) {
+      var d = t[m.iso];
+      if (d.hasReq) max = Math.max(max, d.req);
+      if (d.hasAct && (!X.reportedThrough || m.iso <= X.reportedThrough)) max = Math.max(max, d.act);
+      max = Math.max(max, d.contracted);
+    });
+    if (max <= 0) max = 1;
+    var step = niceStep(max / 4), top = Math.ceil(max / step) * step;
+    var y = function (v) { return padT + ph - (v / top) * ph; };
+    var g = [];
+    for (var q = 0; q <= top + 1e-9; q += step) {
+      g.push('<line x1="' + padL + '" y1="' + y(q).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(q).toFixed(1) + '" stroke="var(--pd-line)" stroke-dasharray="3 3"/>');
+      g.push('<text x="' + (padL - 6) + '" y="' + (y(q) + 3.5).toFixed(1) + '" text-anchor="end" font-size="9.5" fill="var(--pd-muted)">' + q + '</text>');
+    }
+    function line(pick, colour, dash, stopAt) {
+      var pts = [], dots = [];
+      months.forEach(function (m, i) {
+        if (stopAt && m.iso > stopAt) return;
+        var v = pick(t[m.iso]);
+        if (v == null) return;
+        var cx = padL + i * bw + bw / 2;
+        pts.push(cx.toFixed(1) + ',' + y(v).toFixed(1));
+        dots.push('<circle cx="' + cx.toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="2.6" fill="' + colour + '"/>');
+      });
+      if (pts.length > 1) g.push('<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + colour + '" stroke-width="2.2"' + (dash ? ' stroke-dasharray="6 4"' : '') + ' stroke-linejoin="round"/>');
+      g.push(dots.join(''));
+    }
+    months.forEach(function (m, i) {
+      var cx = padL + i * bw + bw / 2;
+      g.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 15) + '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + MON3[m.d.getMonth()] + '</text>');
+      if (m.d.getMonth() === 0 || i === 0) g.push('<text x="' + cx.toFixed(1) + '" y="' + (padT + ph + 28) + '" text-anchor="middle" font-size="9" font-weight="700" fill="var(--pd-ink)">' + m.d.getFullYear() + '</text>');
+    });
+    line(function (d) { return d.hasReq ? d.req : null; }, '#9A9A9A', false, null);
+    line(function (d) { return d.contracted || null; }, '#2F6FBF', true, null);
+    line(function (d) { return d.hasAct ? d.act : null; }, '#EE3124', false, X.reportedThrough);
+    g.push('<line x1="' + padL + '" y1="' + (padT + ph) + '" x2="' + (W - padR) + '" y2="' + (padT + ph) + '" stroke="var(--pd-line)"/>');
+    host.innerHTML = '<svg class="mp-pcurve" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="Manpower requirement versus actual across projects">' + g.join('') + '</svg>';
+
+    if (leg) {
+      leg.innerHTML =
+        '<span class="mp-lg" style="color:#9A9A9A"><span class="ln"></span><span style="color:var(--pd-muted)">Requirement (B1 else B0)</span></span>' +
+        '<span class="mp-lg" style="color:#2F6FBF"><span class="ln" style="border-top-style:dashed"></span><span style="color:var(--pd-muted)">Under contract (from the roster)</span></span>' +
+        '<span class="mp-lg" style="color:#EE3124"><span class="ln"></span><span style="color:var(--pd-muted)">Actual deployed</span></span>' +
+        '<span class="mp-lg">' + (X.reportedThrough
+          ? 'The actual line stops at ' + esc(monLabel(pd_(X.reportedThrough))) + ' — the earliest cut-off among these projects. Past it not every project has reported, so a summed line would dip for a reason that is not real.'
+          : 'No project has reported an actual yet.') + '</span>';
+    }
+
+    // Per-project contribution at the as-of month, so the curve can be read back to its sources.
+    if (tbl) {
+      var iso = PORT ? PORT.iso : null;
+      var rows = Object.keys(X.byProject).map(function (pid2) {
+        var c = X.byProject[pid2][iso] || { req: 0, act: 0, contracted: 0, hasReq: false, hasAct: false };
+        var pr = PROJECTS.filter(function (x) { return x.id === pid2; })[0];
+        return { id: pid2, name: (pr && pr.name) || pid2, c: c };
+      }).filter(function (r) { return r.c.hasReq || r.c.hasAct || r.c.contracted; });
+      rows.sort(function (a, b) { return (b.c.req - b.c.act) - (a.c.req - a.c.act); });
+      var h = ['<thead><tr><th>Project</th><th class="num">Requirement</th><th class="num">Under contract</th><th class="num">Deployed</th><th class="num">Shortfall</th></tr></thead><tbody>'];
+      if (!rows.length) h.push('<tr><td colspan="5"><div class="mp-empty">Nothing recorded for ' + esc(iso ? monLabel(pd_(iso)) : 'this month') + '.</div></td></tr>');
+      rows.forEach(function (r) {
+        var gap = r.c.hasReq ? Math.max(0, r.c.req - r.c.contracted) : null;
+        h.push('<tr><td><b>' + esc(r.name) + '</b></td>' +
+          '<td class="num">' + (r.c.hasReq ? fnum(r.c.req) : '—') + '</td>' +
+          '<td class="num">' + fnum(r.c.contracted) + '</td>' +
+          '<td class="num">' + (r.c.hasAct ? fnum(r.c.act) : '<span class="mp-note">not reported</span>') + '</td>' +
+          '<td class="num' + (gap ? ' mp-sev crit' : '') + '">' + (gap == null ? '—' : (gap ? fnum(gap) : '0')) + '</td></tr>');
+      });
+      h.push('</tbody>');
+      tbl.innerHTML = h.join('');
+    }
+  }
+
+  // ---- Who is free, and who needs them ---------------------------------------------------
+  // ⚠️ The gap is requirement MINUS PEOPLE UNDER CONTRACT, never minus actual. Actual is history;
+  // reassignment is a forward decision, and a month nobody has reported yet has an actual of
+  // nothing while its contracted cover may already be complete. Using actual here would invent a
+  // vacancy on every future month of every project.
+  function portGapRows() {
+    var X = PORTX; if (!X) return [];
+    return Object.keys(X.byProject).map(function (pid2) {
+      var pr = PROJECTS.filter(function (x) { return x.id === pid2; })[0];
+      var gaps = {}, total = 0;
+      X.months.forEach(function (m) {
+        var c = X.byProject[pid2][m.iso];
+        if (!c || !c.hasReq) return;
+        var gap = Math.max(0, c.req - c.contracted);
+        if (gap) { gaps[m.iso] = gap; total += gap; }
+      });
+      return { id: pid2, name: (pr && pr.name) || pid2, gaps: gaps, total: total };
+    }).filter(function (r) { return r.total > 0; }).sort(function (a, b) { return b.total - a.total; });
+  }
+
+  function ppVisible() {
+    var X = PORTX; if (!X) return [];
+    var q = ppSearch.trim().toLowerCase();
+    var now = mkey(CUTOFF || mFloor(new Date()));
+    return X.people.filter(function (r) {
+      if (q && (String(r.name || '') + ' ' + (r.position || '') + ' ' + projNameOf(r.project_id)).toLowerCase().indexOf(q) < 0) return false;
+      if (!ppFree) return true;
+      // ⚠️ An open-ended contract is excluded from every "coming free" filter rather than treated
+      // as never free OR as free now — nobody has said when it ends, and guessing either way is a
+      // staffing decision made on invented data.
+      if (!r.freeFrom) return false;
+      if (ppFree === 'done') return r.freeFrom <= now;
+      var lim = new Date(pd_(now).getFullYear(), pd_(now).getMonth() + (+ppFree), 1);
+      return r.freeFrom <= mkey(lim);
+    });
+  }
+  function projNameOf(id) {
+    var p = PROJECTS.filter(function (x) { return x.id === id; })[0];
+    return (p && p.name) || id || '';
+  }
+
+  function portMonthHead(months, cutIso, c1, c2) {
+    var yr = [], run = null;
+    months.forEach(function (m) {
+      var y = m.d.getFullYear();
+      if (!run || run.y !== y) { run = { y: y, n: 0 }; yr.push(run); }
+      run.n++;
+    });
+    return '<thead><tr class="mp-gt-yr"><th class="mp-g1"></th><th class="mp-g2"></th>' +
+      yr.map(function (r) { return '<th colspan="' + r.n + '">' + r.y + '</th>'; }).join('') + '</tr>' +
+      '<tr class="mp-gt-mo"><th class="mp-g1">' + c1 + '</th><th class="mp-g2">' + c2 + '</th>' +
+      months.map(function (m) { return '<th' + (m.iso === cutIso ? ' class="mp-now"' : '') + '>' + MON3[m.d.getMonth()] + '</th>'; }).join('') + '</tr></thead>';
+  }
+
+  function renderPortPeople() {
+    var gapHost = document.getElementById('mp-p-gaps'), host = document.getElementById('mp-p-people');
+    if (!host || !gapHost) return;
+    var note = document.getElementById('mp-pp-note');
+    var X = PORTX;
+    if (!X || !X.months.length) {
+      gapHost.innerHTML = '<div class="mp-empty">Press <b>Read every project</b> first.</div>';
+      host.innerHTML = '';
+      if (note) note.textContent = '';
+      return;
+    }
+    var months = X.months, cutIso = mkey(CUTOFF || mFloor(new Date()));
+
+    var gaps = portGapRows();
+    var gh = ['<table class="mp-gt">', portMonthHead(months, cutIso, 'Project', 'Uncovered'), '<tbody>'];
+    if (!gaps.length) {
+      gh.push('<tr><td class="mp-g1">—</td><td class="mp-g2">&nbsp;</td><td colspan="' + months.length + '" style="text-align:left;padding-left:10px;color:var(--pd-muted)">Every project&rsquo;s requirement is covered by people already under contract.</td></tr>');
+    }
+    gaps.forEach(function (r) {
+      gh.push('<tr><td class="mp-g1"><b>' + esc(r.name) + '</b></td><td class="mp-g2">' + fnum(r.total) + ' head-month(s)</td>' +
+        months.map(function (m) {
+          var v = r.gaps[m.iso];
+          return '<td class="mp-gt-cell' + (v ? ' mp-gap' : '') + (m.iso === cutIso ? ' mp-now' : '') + '"' +
+            (v ? ' title="' + esc(r.name + ' is ' + v + ' short in ' + monLabel(m.d)) + '"' : '') +
+            '>' + (v ? '<span class="gq">' + fnum(v) + '</span>' : '') + '</td>';
+        }).join('') + '</tr>');
+    });
+    gh.push('</tbody></table>');
+    gapHost.innerHTML = gh.join('');
+
+    var people = ppVisible();
+    var h = ['<table class="mp-gt">', portMonthHead(months, cutIso, 'Person', 'Free from'), '<tbody>'];
+    if (!people.length) {
+      h.push('<tr><td class="mp-g1">—</td><td class="mp-g2">&nbsp;</td><td colspan="' + months.length + '" style="text-align:left;padding-left:10px;color:var(--pd-muted)">No people match. Open-ended contracts are excluded from the &ldquo;coming free&rdquo; filters, because no release date has been recorded for them.</td></tr>');
+    }
+    var lastProj = null;
+    people.forEach(function (r) {
+      if (r.project_id !== lastProj) {
+        lastProj = r.project_id;
+        h.push('<tr class="mp-gt-grp"><td class="mp-g1">' + esc(projNameOf(r.project_id)) + '</td><td class="mp-g2">&nbsp;</td>' +
+          months.map(function (m) { return '<td' + (m.iso === cutIso ? ' class="mp-now"' : '') + '></td>'; }).join('') + '</tr>');
+      }
+      var freeTxt = r.freeFrom
+        ? (r.freeFrom <= cutIso ? '<span class="mp-free">free now</span>' : esc(monLabel(pd_(r.freeFrom))))
+        : '<span class="mp-note">open-ended</span>';
+      h.push('<tr><td class="mp-g1">' + esc(r.name) + (r.position ? '<div class="mp-note">' + esc(r.position) + '</div>' : '') + '</td>' +
+        '<td class="mp-g2">' + freeTxt + '</td>' +
+        months.map(function (m) {
+          var on = m.iso >= r.startIso && (!r.endIso || m.iso <= r.endIso);
+          var free = r.freeFrom && m.iso >= r.freeFrom;
+          var cls = [], bar = '';
+          if (m.iso === cutIso) cls.push('mp-now');
+          if (on) {
+            var b = ['gbar'];
+            if (m.iso === r.startIso) b.push('s');
+            if (r.endIso && m.iso === r.endIso) b.push('e');
+            if (!r.endIso) b.push('open');
+            bar = '<div class="' + b.join(' ') + '"></div>';
+          } else if (free) {
+            bar = '<div class="gbar free' + (m.iso === r.freeFrom ? ' s' : '') + '"></div>';
+          }
+          return '<td class="mp-gt-cell ' + cls.join(' ') + '"' +
+            (on ? ' title="' + esc(r.name + ' under contract in ' + monLabel(m.d)) + '"' : (free ? ' title="' + esc(r.name + ' available in ' + monLabel(m.d)) + '"' : '')) +
+            '>' + bar + '</td>';
+        }).join('') + '</tr>');
+    });
+    h.push('</tbody></table>');
+    host.innerHTML = h.join('');
+
+    if (note) {
+      var openEnded = X.people.filter(function (r) { return !r.freeFrom; }).length;
+      note.textContent = people.length + ' of ' + X.people.length + ' people' +
+        (openEnded ? ' · ' + openEnded + ' open-ended (no release date)' : '') +
+        ' · ' + gaps.length + ' project(s) with an uncovered requirement';
+    }
+  }
+
+  function switchPortView(v, btn) {
+    portView = v;
+    document.querySelectorAll('#mp-p-view button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+    ['snapshot', 'curve', 'people'].forEach(function (k) {
+      var el = document.getElementById('mp-pv-' + k); if (el) el.classList.toggle('on', k === v);
+    });
   }
 
   function renderPortfolio() {
@@ -2282,6 +2744,7 @@
     renderSeriesChecks();
     var ag = aggregate();
     renderKpis(ag); renderChart(ag); renderMatrix(ag); renderRegister(); renderRoster(); renderPortfolio();
+    renderPortCurve(); renderPortPeople();
     renderDrift();
     if (window.Icons) Icons.hydrate(document.body);
   }
@@ -2387,6 +2850,11 @@
       if (PORT) loadPortfolio();
     };
     document.getElementById('mp-p-run').onclick = function () { loadPortfolio(); };
+    document.querySelectorAll('#mp-p-view button').forEach(function (b) {
+      b.onclick = function () { switchPortView(b.dataset.pv, b); };
+    });
+    document.getElementById('mp-pp-free').onchange = function (e) { ppFree = e.target.value; renderPortPeople(); };
+    document.getElementById('mp-pp-search').oninput = function (e) { ppSearch = e.target.value; renderPortPeople(); };
 
     var sel = document.getElementById('mp-project');
     var projects = await PDb.getProjects();
@@ -2400,7 +2868,7 @@
     sel.onchange = function () {
       pid = sel.value || null;
       try { sessionStorage.setItem('pd_project', pid || ''); } catch (_e) {}
-      fDept = ''; rSearch = '';
+      fDept = ''; rSearch = ''; PORTX = null; PORT = null; ppFree = ''; ppSearch = '';
       var rs = document.getElementById('mp-r-search'); if (rs) rs.value = '';
       load(true);
     };

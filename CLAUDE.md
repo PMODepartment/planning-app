@@ -84,6 +84,64 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-28 (d) — Manpower Loading Portfolio: a cross-project curve, and who comes free
+
+Owner: *"For portfolio I also want a curve showing planned vs actual across different projects to show
+the manpower. There should also be a filter showing the gantt duration of the employee where they can be
+assigned to another project depending on the planned of the selected projects."* **No migration.**
+Detail: `modules/manpower-loading/CLAUDE.md`.
+
+The Portfolio tab gains a **This month / Curve / People** switch. **Curve** sums requirement (grey),
+under-contract (blue dashed) and actual (red) across every readable project on a month axis that is the
+**union of the loading months and every contract span**. **People** puts a gap strip over a Gantt of
+every named person — contract bar, then an **available band** from the month after it ends — with
+coming-free filters (3 / 6 / 12 months, already off contract) and a search.
+
+⚠️ **The gap is requirement MINUS CONTRACTED, never minus actual.** Actual is what was deployed last
+month; the question is what is *committed* going forward, and measuring against actual would report a
+shortfall for every future month of every project — which is not a shortfall, it is the future.
+⚠️ **An open-ended contract is excluded from every coming-free filter and given no release month** —
+treating the axis end as a release date advertises a person as available on a date nobody agreed. They
+still cover their months, and the note says how many there are, so the omission is visible.
+⚠️ **TBH never appears as a person** — it is the unfilled requirement the gap strip already reports.
+⚠️ **`byProject` is SPARSE** (a cell only where there is loading or a contract); a dense map over a
+multi-year axis for twenty projects is tens of thousands of objects for a mostly-empty grid.
+
+⚠️ **A REAL DEFECT the two-project browser run found, which no single-project test could express.**
+`reportedThrough` — the earliest cut-off among contributing projects, where the actual line stops —
+fell back to **today** for a project with no declared data date. That asserts the project has reported
+everything up to now, so the summed line ran a month past what it had actually filed, **reintroducing
+the exact dip the figure exists to prevent**. Measured as the last plotted point falling below its
+neighbour (`prevY 144.9 → lastY 165.8`, higher y being a lower value). It now falls back to that
+project's **own latest reported month**, and a project with neither a data date nor a single actual is
+**excluded from the minimum** rather than dragging it to the start of time and erasing the line for
+everyone else. After: 14 points stopping at Feb 2026, last point **rising** (`153.9 → 144.9`).
+
+⚠️ **AND THE SUITE WAS READING A STALE SNAPSHOT AND PASSING.** It sliced its functions out of `mp.js`,
+a copy of the inline script taken beside it, so the fix landed in `index.html` and **the suite went on
+testing the old code and reporting green** — surfaced only because the new assertion returned a value
+the fixed code cannot produce. The snapshot is deleted; the suite now extracts the inline `<script>`
+from the **shipped `index.html` on every run**. Worth generalising — any harness in this repo that
+copies the file under test can drift the same way.
+
+**Verified: 174 checks** (131 → 174) executing the shipped functions, now extracted from `index.html`
+itself; the four new `reportedThrough` assertions **fail against the pre-fix code**, so they bite.
+**Driven end to end in a browser against a TWO-project fixture** (the first here that has one), stub
+honouring `.eq`/`.in`: 0 console errors, the three views switching correctly, 3 curve series with the
+actual stopping at the named cut-off, the people Gantt's 18-month axis **0px** off the gap strip's, a
+7-month contract rendering exactly 7 bars with an end cap followed by an available band, an open-ended
+person correctly getting none, filters narrowing 15 → 12 → 12 → 8 → 1 with the 3 open-ended people
+never appearing in any window, contrast **min 6.43** across both themes, and at 375px **0 page
+horizontal scroll / 0 controls under 44px** with both charts scrolling inside their own cards.
+**0 functions lost, 13 added**; 0 NUL bytes; the inline block parses.
+
+⚠️ **Not verified signed in** — the cross-project query has never hit PostgREST with these two views on
+screen, and `reportedThrough` depends on `ps_datadate_<pid>` keys only the Project Schedule module
+writes. ⚠️ **No screenshot**; every visual claim is measured DOM/SVG geometry. ⚠️ The fixture's second
+project is synthetic.
+
+`MODULE_V` → `20260828e`.
+
 ### 2026-08-28 (b) — Open issues onto the next agenda; the red panel stops being a slab; five smaller fixes
 
 Owner ran both migrations, then gave six items off live screenshots. `MODULE_V` → `20260828b`;

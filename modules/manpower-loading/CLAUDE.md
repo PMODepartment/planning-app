@@ -102,6 +102,104 @@ Migration, to be run in the Supabase SQL editor:
   vs "QAQC Engineer") and matching on it alone silently creates a duplicate position line. Derived
   rows in the export (department totals, OVERALL, COST) are never imported back.
 
+## 2026-08-28 (d) — Portfolio: a cross-project curve, and a people Gantt that says who comes free
+
+Owner: *"For portfolio I also want a curve showing planned vs actual across different projects to
+show the manpower. There should also be a filter showing the gantt duration of the employee where
+they can be assigned to another project depending on the planned of the selected projects."*
+**No migration** — every column this needs already exists.
+
+The Portfolio tab gains a **This month / Curve / People** switch. The snapshot table is untouched;
+the two new views answer the questions the single-month table could not.
+
+**Curve** — requirement (grey), under contract (blue dashed) and actual deployed (red) summed across
+every readable project, over a month axis that is the **union of the loading months AND every
+contract span**. A per-project table sits beneath it (requirement / under contract / deployed /
+shortfall).
+
+**People** — a gap strip (uncovered head-months per project per month) above a Gantt of every named
+person: their contract bar, then an **available band** from the month after it ends, so "who can move
+to another project, and when" is read off the picture. Filters: coming free within 3 / 6 / 12 months,
+already off contract, plus a search over person, position and project name.
+
+### The rules, each because the other way is wrong
+- ⚠️ **The gap is requirement MINUS CONTRACTED, never minus actual.** Actual is what was deployed last
+  month; the question here is what is *committed* going forward, and a person under contract but not
+  yet mobilised is covered. Measuring against actual would report a shortfall for every future month
+  of every project, which is not a shortfall, it is the future.
+- ⚠️ **An open-ended contract is excluded from every "coming free" filter and given NO release month.**
+  A blank end date is an unanswered question; treating the axis end as a release date would advertise
+  a person as available on a date nobody agreed. They are still counted as covering their months, and
+  the note says how many there are, so the omission is visible rather than silent.
+- ⚠️ **TBH never appears in the people Gantt.** It is an unfilled requirement, which is exactly what
+  the gap strip above it already reports — listing it as a person would double-count the vacancy and
+  offer a placeholder for reassignment.
+- ⚠️ **`byProject` is SPARSE by design** — a cell exists only where there is loading or a contract. A
+  dense map over a multi-year union axis for twenty projects is tens of thousands of objects to carry
+  a mostly-empty grid. Every consumer guards, and the contract is stated at the code.
+- ⚠️ **The requirement is resolved PER POSITION (`approved ?? planned`) and only then summed**, the
+  same rule as inside a project — the aggregate must not be able to disagree with the project screen
+  it rolls up.
+- ⚠️ **The actual line stops at `reportedThrough`** and the chart says so. Summing whatever actuals
+  happen to exist makes the line dip in recent months simply because fewer projects have filed yet —
+  a decline that is not happening, on the chart most likely to be shown to management.
+
+### ⚠️ A real defect the two-project browser run found, which no single-project test could
+
+`reportedThrough` is the earliest cut-off among contributing projects. Its fallback for a project with
+**no declared data date** was **today** — which asserts that project has reported everything up to
+now. That is the opposite of conservative: it let the summed line run a month past what a project had
+actually filed, **reintroducing the exact dip the figure exists to prevent**.
+
+Measured in the browser as the last plotted point of the actual line falling below its neighbour
+(`prevY 144.9 → lastY 165.8`; higher y is a lower value). The fallback is now that project's **own
+latest reported month**, and a project with neither a data date nor a single actual is **excluded from
+the minimum** rather than dragging it to the start of time and erasing the line for everybody else.
+After: 14 points stopping at Feb 2026, and the last point **rises** (`153.9 → 144.9`).
+
+⚠️ **This is the class of defect a one-project fixture cannot express at all** — the whole rule is
+about disagreement *between* projects.
+
+### ⚠️ The suite was reading a stale snapshot and passing
+
+`suite.js` sliced its functions out of `mp.js`, a copy of the module's inline script taken beside it.
+The fix above landed in `index.html` and **the suite went on testing the old code and reporting
+green** — it only surfaced because the new assertion failed against a value the fixed code cannot
+produce. The snapshot is deleted; `slice.js` gained `extractInline()` and the suite now pulls the
+inline `<script>` out of the **shipped `index.html` on every run**, so it cannot go stale again.
+
+## Verified
+**174 checks** (131 → 174) executing the shipped functions, now extracted from `index.html` itself.
+The four new `reportedThrough` assertions **fail against the pre-fix code** (they returned Apr 2026
+where the fix returns Feb 2026), so the section bites.
+
+**Driven end to end in a real browser against a TWO-project fixture** (the first harness here that
+has one), with only the shared app scripts stubbed and the stub honouring `.eq` / `.in`:
+- 0 console errors; the three portfolio views switch correctly (`snapshot`/`curve` `display:none`,
+  `people` block).
+- Curve: 3 series, requirement and contracted 18 points each, actual 14 stopping at the cut-off, and
+  the note naming **Feb 2026** as the earliest cut-off.
+- People Gantt: 18-month axis **identical to the gap strip's, max column offset 0px**; Bravo, B's
+  contract Jul 2025–Jun 2026 renders exactly 12 bars at indices 6–17 with a start cap; Bravo, A's
+  7-month contract renders 6–12 with an end cap, then an `available` band 13–17; the open-ended person
+  correctly gets no available band; the cut-off month carries `mp-now`.
+- Filters narrow monotonically 15 → 12 → 12 → 8 → 1, and the **3 open-ended people never appear in
+  any coming-free window** (no filter reaches past 12 of 15). Search "bravo" returns that project's
+  group plus its three people.
+- Contrast on the new surfaces: **min 6.43** across both themes (light 6.43–14.82, dark 7.02–14.85).
+- Phone at 375px: media query matched, **0 page horizontal scroll**, **0 controls under 44px**, the
+  Gantt scrolling inside its own 353px wrap and the curve holding its 862px minimum inside a 321px
+  card rather than shrinking its labels.
+
+**0 functions lost, 13 added**; 0 NUL bytes; the inline block parses.
+
+## NOT verified
+⚠️ **Not verified signed in.** The portfolio's real cross-project query has never hit PostgREST with
+these two views on screen; the browser run is against a stub, and `reportedThrough` in particular
+depends on `ps_datadate_<pid>` keys that only the Project Schedule module writes.
+⚠️ **No screenshot** — every visual claim above is measured DOM/SVG geometry.
+⚠️ The fixture's second project is synthetic; no real multi-project portfolio has been read.
+
 ## 2026-08-28 — A manpower profile, and its contract duration drives the months
 
 Owner: *"Does this follow similar to the equipment loading by adding an equipment. But this time it
