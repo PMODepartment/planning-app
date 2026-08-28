@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260827a" />
-  <link rel="stylesheet" href="module.css?v=20260829a" />
+  <link rel="stylesheet" href="module.css?v=20260829b" />
 </head>
 <body>
   <div class="pd-app">
@@ -30,6 +30,7 @@
           <button class="pp-tab active" data-screen="photos">Photos</button>
           <button class="pp-tab" data-screen="rounds">Rounds</button>
           <button class="pp-tab" data-screen="ppr">Meetings</button>
+          <button class="pp-tab" data-screen="pano">360&deg;</button>
         </div>
 
         <!-- Tool cluster beside the profile: one labelled primary action per
@@ -47,6 +48,9 @@
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-tmpl-new" title="Create a report template" style="display:none;">+ New template</button>
           <button class="pd-btn pp-tb-labeled" id="ppr-back" title="Back to the meeting list" style="display:none;">
             <span data-ico="arrowLeft" data-ico-size="16"></span> Meetings list</button>
+          <!-- 360° screen tools -->
+          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pano-new" title="Capture a 360° panorama" style="display:none;">+ Capture 360&deg;</button>
+          <button class="pd-btn pp-tb-labeled" id="pano-compare-btn" title="Compare two captures over time" style="display:none;">Compare over time</button>
         </div>
         <!-- Offline capture queue — visible on every screen (Rounds captures queue too) -->
         <button class="pd-btn pp-syncbtn" id="pp-sync" title="Sync photos captured while offline" hidden>
@@ -114,6 +118,11 @@
                ordinary meeting rather than being its own kind of record. -->
           <div id="ppr-tmpl-wrap" hidden><div id="ppr-tmpl-view"></div></div>
         </div>
+
+        <!-- ================= Panoramic Capture (brief Section 6 / Phase 3) ================= -->
+        <div id="pp-screen-pano" hidden>
+          <div id="pano-view"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -138,6 +147,12 @@
        single pinned-version <script> tag, no build step. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <!-- Panoramic capture (brief Section 6 / Phase 3): OpenCV.js for client-side
+       feature-matching/stitching (WASM, ~10MB — loaded only on this module's
+       page, never blocks any other module), Three.js for the 360° viewer.
+       Both pinned versions, verified to resolve before committing to them. -->
+  <script src="https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="../../assets/js/config.js?v=20260828b"></script>
   <script src="../../assets/js/auth.js?v=20260814a"></script>
   <script src="../../assets/js/db.js?v=20260827c"></script>
@@ -147,13 +162,15 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260829a"></script>
-  <script src="ppr.js?v=20260829a"></script>
+  <script src="module.js?v=20260829b"></script>
+  <script src="ppr.js?v=20260829b"></script>
+  <script src="pano.js?v=20260829b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       ProgressPhotos.init(user, profile);
       PPR.init(user, profile);
+      PANO.init(user, profile);
 
       document.getElementById('pp-lb-close').onclick = ProgressPhotos._closeLightbox;
       document.getElementById('pp-lb-prev').onclick  = function () { ProgressPhotos._stepLightbox(-1); };
@@ -168,15 +185,18 @@
         });
       }
       function setScreen(s) {
-        var isPpr = s === 'ppr', isRounds = s === 'rounds', isPhotos = !isPpr && !isRounds;
+        var isPpr = s === 'ppr', isRounds = s === 'rounds', isPano = s === 'pano';
+        var isPhotos = !isPpr && !isRounds && !isPano;
         document.getElementById('pp-screen-photos').hidden = !isPhotos;
         document.getElementById('pp-screen-rounds').hidden = !isRounds;
         document.getElementById('pp-screen-ppr').hidden = !isPpr;
+        document.getElementById('pp-screen-pano').hidden = !isPano;
         document.getElementById('pp-screen-title').textContent =
-          isPpr ? 'Meetings' : isRounds ? "Today's Rounds" : 'Photos Database';
+          isPpr ? 'Meetings' : isRounds ? "Today's Rounds" : isPano ? '360° Panoramas' : 'Photos Database';
         show(PHOTO_TOOLS, isPhotos);
         // Each module re-asserts its own tools' visibility (role + inner screen).
         PPR._syncTools(isPpr);
+        PANO._syncTools(isPano);
         if (isPhotos) ProgressPhotos._syncChrome();
         if (isRounds) ProgressPhotos.renderRounds();
         Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
@@ -189,7 +209,7 @@
       });
       var saved = 'photos';
       try { saved = localStorage.getItem('pp_screen') || 'photos'; } catch (e) {}
-      setScreen(saved === 'ppr' ? 'ppr' : (saved === 'rounds' ? 'rounds' : 'photos'));
+      setScreen(['ppr', 'rounds', 'pano'].indexOf(saved) >= 0 ? saved : 'photos');
     });
   </script>
 </body>

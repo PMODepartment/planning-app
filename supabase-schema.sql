@@ -139,6 +139,25 @@ create table if not exists ppr_report_templates (
 );
 create index if not exists ppr_report_templates_proj_idx
   on ppr_report_templates (project_id, name);
+
+-- Panoramic Capture (brief Section 6 / Phase 3). See
+-- migrations/2026-08-29-panoramas.sql for the full design rationale.
+create table if not exists panoramas (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id),
+  location_values jsonb default '{}'::jsonb,
+  location        text,
+  activity_id     text,
+  activity_name   text,
+  pano_url        text,
+  frame_count     integer,
+  stitch_quality  text default 'ok',
+  taken_at        date,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+create index if not exists panoramas_proj_idx on panoramas (project_id, taken_at desc);
 create index if not exists ppr_slides_ppr_idx
   on ppr_slides (ppr_id, slide_no);
 
@@ -603,7 +622,7 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'progress_photos','ppr_presentations','ppr_slides','ppr_report_templates',
+    'progress_photos','ppr_presentations','ppr_slides','ppr_report_templates','panoramas',
     'issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
     'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve',

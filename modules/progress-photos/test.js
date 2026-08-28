@@ -9,6 +9,7 @@ const path = require('path');
 const here = (f) => path.join(__dirname, f);
 const migrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-28-photo-keyplan-and-ppr-meeting.sql');
 const tmplMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-ppr-report-templates.sql');
+const panoMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-panoramas.sql');
 const schemaFile = path.join(__dirname, '..', '..', 'supabase-schema.sql');
 
 let fails = 0, passes = 0;
@@ -178,10 +179,12 @@ vm.createContext(ctx);
 // ---------------------------------------------------------------- load module --
 vm.runInContext(fs.readFileSync(here('module.js'), 'utf8'), ctx, { filename: 'module.js' });
 vm.runInContext(fs.readFileSync(here('ppr.js'), 'utf8'), ctx, { filename: 'ppr.js' });
+vm.runInContext(fs.readFileSync(here('pano.js'), 'utf8'), ctx, { filename: 'pano.js' });
 
-const PP = ctx.ProgressPhotos, PPR = ctx.PPR;
+const PP = ctx.ProgressPhotos, PPR = ctx.PPR, PANO = ctx.PANO;
 ok('module.js exposes ProgressPhotos', !!PP);
 ok('ppr.js exposes PPR', !!PPR);
+ok('pano.js exposes PANO', !!PANO);
 ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadForPicker === 'function');
 
 // ---------------------------------------------------------- source assertions --
@@ -189,6 +192,7 @@ ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadF
 // which is how this module's earlier rounds were verified for render output.
 const mjs = fs.readFileSync(here('module.js'), 'utf8');
 const pjs = fs.readFileSync(here('ppr.js'), 'utf8');
+const pnjs = fs.readFileSync(here('pano.js'), 'utf8');
 const html = fs.readFileSync(here('index.html'), 'utf8');
 const css = fs.readFileSync(here('module.css'), 'utf8');
 
@@ -348,7 +352,7 @@ console.log('\n[misc] insert().select() returns the new row id');
   while ((rm = ruleRe.exec(css))) fffRules.push(rm[1].trim());
   // Each entry pairs #fff with a rule that ALSO sets a solid brand background
   // (--pd-red / --pd-bad) — confirmed against the shipped CSS, not assumed.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover/;
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -474,6 +478,39 @@ console.log('\n[misc] insert().select() returns the new row id');
      'Tower A · 5th Floor (from schedule)');
   ok('allLocationCombos: a photo-only location still appears', merged.some((c) => c.key === 'B'));
   eq('allLocationCombos: exactly one entry per key (no duplicate)', merged.length, 2);
+
+  // ============================================================ Phase 3 ===
+  // Panoramic Capture (brief Section 6). Structural checks below; the actual
+  // OpenCV.js stitching pipeline (ORB -> BFMatcher -> findHomography ->
+  // warpPerspective) and the Three.js cylinder viewer were run FOR REAL in a
+  // browser against the shipped source (sliced verbatim into a throwaway
+  // harness, WASM/WebGL genuinely executed, not simulated) — see
+  // modules/progress-photos/CLAUDE.md for the measured results. That's a
+  // stronger verification than Node can offer here (no WASM/WebGL in this
+  // harness), so it isn't repeated as a Node assertion.
+  console.log('\n[20] Panoramic Capture: schema + wiring');
+  const panoSql = fs.readFileSync(panoMigrationFile, 'utf8');
+  ok('migration creates panoramas', /create table if not exists panoramas/.test(panoSql));
+  ok('stitch_quality defaults to ok, flagged not hidden on failure', /stitch_quality\s+text default 'ok'/.test(panoSql));
+  ok('supabase-schema.sql declares panoramas too', /create table if not exists panoramas/.test(schemaSql));
+  ok('panoramas folded into the generic module-table RLS loop',
+     /'ppr_report_templates','panoramas'/.test(schemaSql));
+  ok('pano.js: cv.Stitcher is explicitly known to be unavailable (documented, not assumed)',
+     /browser builds of OpenCV\.js do NOT expose `cv\.Stitcher`/.test(pnjs));
+  ['function extractFrames', 'function stitchFrames', 'function homographyBetween',
+   'function mountCylinderViewer', 'function openCaptureModal', 'function openCompareModal',
+   'function ensureOpenCV', 'function allLocationCombos'
+  ].forEach((sig) => ok(sig + '() exists in pano.js', pnjs.includes(sig)));
+  ok('a low-match pair flags the whole panorama poor, not silently kept "ok"',
+     /matches < MIN_GOOD_MATCHES \|\| !H\) \{ quality = 'poor'/.test(pnjs));
+  ok('index.html has the 360° tab', /data-screen="pano">360/.test(html));
+  ok('index.html has the Capture 360° / Compare topbar tools', /id="pano-new"/.test(html) && /id="pano-compare-btn"/.test(html));
+  ok('index.html has the 360° screen host', /id="pp-screen-pano"/.test(html));
+  ok('OpenCV.js CDN script present (pinned version)', /opencv-js@4\.10\.0-release\.1\/dist\/opencv\.js/.test(html));
+  ok('Three.js CDN script present (pinned, classic global build not the ES-module-only r150\\+)', /three@0\.128\.0\/build\/three\.min\.js/.test(html));
+  ok('PANO.init is wired alongside PPR.init', /PANO\.init\(user, profile\)/.test(html));
+  ok('setScreen dispatches the pano screen', /isPano = s === 'pano'/.test(html));
+  ok('a poor-quality panorama is flagged in the gallery, not hidden', pnjs.includes('pano-badge-warn'));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

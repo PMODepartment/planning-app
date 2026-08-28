@@ -2,6 +2,100 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Panoramic Capture — brief Sections 2 & 6 / Phase 3 (2026-08-29)
+
+Owner authorized an extended unattended build session through the rest of the brief's phases,
+after settling Phase 4's architecture (self-hosted RunPod GPU worker) in discussion. Starting with
+Phase 3, the piece that fits entirely inside this app's existing client-side/Supabase stack with no
+new infrastructure — genuinely buildable and, unusually for this build, **genuinely testable**: the
+Browser pane here can execute real WASM/WebGL, which most of this session's other work cannot rely on.
+
+**Run `migrations/2026-08-29-panoramas.sql`.**
+
+### The pipeline, and where it deliberately falls short of the brief's literal wording
+
+Capture (new "360°" screen): pick a location (same `locCombos()`/`photoLocCombos()` union already
+built for Report Templates), then either record via `getUserMedia`+`MediaRecorder` or upload a
+pre-recorded video (kept as a first-class path, not just a fallback — camera access is unreliable
+to exercise outside a real phone, and it's a legitimate capture method on its own). Frames are
+pulled client-side from a hidden `<video>` + canvas at evenly-spaced timestamps — no ffmpeg needed.
+
+⚠️ **Standard browser builds of OpenCV.js do NOT expose `cv.Stitcher`** — confirmed live (see
+Verified, below): loading the real CDN bundle and checking `typeof cv.Stitcher` returns
+`"undefined"`. Its JS bindings were never added to the default build whitelist; this is a known,
+documented limitation, not something specific to the package chosen here. So stitching is built
+from OpenCV.js's lower-level primitives instead — ORB feature detection, BFMatcher (Hamming) with a
+ratio test, `cv.findHomography` (RANSAC), `cv.warpPerspective` — composited sequentially, frame N
+onto the mosaic already built from frames 1..N-1.
+
+⚠️ **The output is a PLANAR mosaic on a Three.js CYLINDER, not a true spherical/equirectangular
+panorama**, despite the brief's literal wording ("stitch frames into a single equirectangular
+panorama"). True equirectangular reprojection needs known camera intrinsics and a rotation-only
+motion model between frames — a real, separate piece of computer-vision work, not a small addition
+to what's built here. A cylinder handles the brief's actual described use case well (standing in
+place and spinning horizontally) without claiming the vertical (up/down) coverage a full sphere
+would promise; "optionally tilting up/down once" is captured in the source frames but isn't given
+true spherical placement in this version. Stated here plainly rather than silently shipping a
+simplified pipeline under the brief's more ambitious name.
+
+⚠️ **Quality is flagged, never hidden.** If any consecutive frame pair matches fewer than
+`MIN_GOOD_MATCHES` (12) keypoints, `stitch_quality` is set `'poor'` and the panorama still saves
+(better than losing the walkthrough) but carries a visible "Low confidence" badge in the gallery —
+brief 6.2's explicit requirement ("flag sessions with poor stitching quality... rather than silently
+publishing a bad panorama").
+
+### Viewer and comparison
+
+360° viewer: a Three.js cylinder, texture mapped inward, camera at the centre, drag to look around
+(mouse + touch). **Compare over time**: picks two captures at the same location and blends between
+them via a slider. ⚠️ **A discrete texture swap at the 50% crossover, not a true per-pixel GL
+cross-fade** — a real cross-fade needs a custom shader (two texture samplers blended in a fragment
+shader), which is a reasonable next increment but wasn't built here; a discrete swap still answers
+"did this change?", just without the smooth blend the brief's "opacity slider" phrasing implies.
+Split-screen dual-viewer (the brief's other suggested option) was not built — a single shared camera
+guarantees both panoramas look the same direction, which two independently-dragged viewers cannot.
+
+### Schema
+
+`panoramas` mirrors `progress_photos`' location tagging exactly (`location_values` jsonb +
+`location` display cache + `activity_id`/`activity_name` snapshot) so it reuses the same picker and
+combo logic with no new location model. Folded into the generic module-table RLS loop — no special
+approval gate (unlike the paid Phase 4 reconstruction feature going in next).
+
+### Verified (2026-08-29) — genuinely executed, not just written
+
+⚠️ **This is the one part of this session's Phases 3-6 work with REAL execution verification of the
+novel algorithmic code**, not just structural regex checks — the Browser pane here runs actual
+Chromium with WASM/WebGL, unlike the GPU worker (Phase 4), which needs hardware this environment
+doesn't have. Built three throwaway test pages (not committed — scratch only), served over a local
+Node static server, and drove them with the real shipped CDN libraries:
+
+1. **The stitching pipeline against 5 synthetic overlapping frames** (a rich checkerboard+circles+
+   lines pattern, panned across 5 crops): `cv.Stitcher` confirmed `undefined`; ORB+BFMatcher+
+   findHomography+warpPerspective produced a correctly-aligned 2000×300 mosaic in 1.78s, matches per
+   pair 164–402 (well above the 12-match floor), `quality: 'ok'`. **Screenshotted** — the checkerboard
+   squares, circles and diagonal lines all continue coherently across the full width with no visible
+   tearing or misalignment.
+2. **The 'poor' quality flag against 4 genuinely disjoint (pure-noise, no shared content) frames**:
+   0 matches on every pair, `quality: 'poor'` — confirming the failure-detection path actually
+   triggers rather than only existing in the code.
+3. **The Three.js cylinder viewer**: real WebGL 2.0 context created, a texture mounted and rendered,
+   `gl.readPixels` confirmed the exact texture colour (`0x3366aa` → `51,102,170`) came back at the
+   render target — proving the geometry/texture/render pipeline genuinely works, not just parses.
+
+**154 checks in `test.js`** (up from 131) cover the structural/wiring side — schema, RLS-loop
+inclusion, every new function present, the CDN scripts pinned and correctly named, the screen
+dispatch wired, the quality-flag logic pattern present in source. 0 functions lost in `module.js`/
+`ppr.js` (pano.js is new, so nothing to diff there). 0 NUL bytes; CSS braces 249/249; the new
+`#fff` use (`.pano-badge-warn`, white text on the solid `--pd-warn` background) added to the
+context-based allow-list this module's own harness now uses.
+
+⚠️ **Not verified**: real device camera capture (`getUserMedia`/`MediaRecorder` — needs a real phone
+or a browser with camera permissions granted, neither available here), a real multi-minute walkthrough
+video (only synthetic frames were tested), and signed-in click-through against real Supabase (no login
+available in this environment). The gap between "the algorithm works" (verified) and "the whole
+feature works end-to-end against a real capture" (not yet) is real and should be the first live test.
+
 ## Report Templates + real PPTX/PDF export — brief Section 5 / Phase 2 completed (2026-08-29)
 
 Owner asked to confirm all 15 items from the 2026-08-28 feedback round were captured (they were —
