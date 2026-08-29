@@ -2,6 +2,228 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 18-item feedback round, Batch B: Trade/Works multi-select, Location label dropped (2026-08-29)
+
+**Run `migrations/2026-08-29-photo-trades-works-multi.sql`.** Item 2 of the owner's feedback:
+*"Trades can also be multiple"*; the schedule-linked Works dropdown stays constrained-choice but
+also goes multi-select; the redundant free-text "Location label" input is removed.
+
+### Trade / Works: single `<select>` → checkbox-group multi-select
+
+- **New columns** `progress_photos.trades text[]` and `works_multi text[]`. The existing
+  singular `trade`/`works` text columns are **kept, deprecated** — populated with the
+  first-selected value as a display-cache fallback, same "kept in step, never re-derived"
+  convention this file already uses for `location` and `ppr_slides`' legacy fields. Nothing
+  reads the singular columns as authoritative going forward; they exist purely so an older code
+  path (or a not-yet-migrated database) still sees something sensible.
+- **UI**: `tradesOverlayHTML`/`worksOverlayHTML` replace the old `tradeOptions`/`worksSelectHTML`
+  single-`<select>` pair, following the **exact visual pattern this file already had** for the
+  Activity Code overlay (`codeOverlayHTML`/`readCodeTags`) rather than inventing a third
+  component — a checkbox group, read back via a new generic `readMultiCheck(idPrefix, field)`.
+  ⚠️ **4 functions deliberately removed** (`tradeOptions`, `worksOptionMarkup`,
+  `worksSelectHTML`, `refreshWorksSelect`), replaced by 10 new ones — an intentional
+  architectural swap, not an accidental loss (confirmed via the same function-diff check this
+  session uses everywhere, which correctly reports "4 lost" here rather than "0").
+- **Works stays schedule-constrained and Trade-scoped, now across MULTIPLE checked trades** —
+  `worksOptions(tradeFilter)` was widened to accept either the old single-string call shape
+  (untouched call sites elsewhere keep working) or an array, OR'd across
+  `workTypeMatchesTrade()` per entry via a new `tradesAsArray()` normalizer. Unchecking down to
+  zero trades correctly falls back to "offer everything," matching the old blank-trade behavior.
+  ⚠️ The "+ Add new Works value…" `<option>` escape hatch (a stale-select-then-prompt flow)
+  became **"+ Add custom Works value…"**, a real button that appends a new checked checkbox to
+  the group and re-renders it — a cleaner fit for a checkbox group than reusing a dropdown's
+  own "special option" trick.
+- **Filters (`pp-f-trade`/`pp-f-works` on the Gallery screen) now match "any of the row's
+  values,"** not exact single-value equality — `tradesOf(r)`/`worksOf(r)` (the same
+  legacy-fallback readers the save path uses) back both the filter predicate and the dropdown's
+  own distinct-values listing (`distinctMulti`), so a photo tagged Structural **and**
+  Architectural is findable by filtering on either one. ⚠️ **Deliberately NOT built**: a true
+  multi-value filter control (pick 2+ trades and OR them in the filter itself) — the filter
+  dropdown stays single-pick for now; what changed is that a multi-tagged photo is no longer
+  invisible to a filter matching only one of its tags. A real multi-select filter UI is a
+  reasonable follow-up, not attempted here to keep this batch's scope proportionate.
+- Every **display surface** updated to show the full set, not just the first value: the List
+  view's Trade/Works cells, the group-by-Trade heading (still groups by the row's *first* trade
+  only — a photo appearing in two groups at once would break the "one row, one place" assumption
+  List view's collapse state relies on — but the row itself lists every trade it carries), and
+  the lightbox caption.
+- ⚠️ `tolerantWrite()` (the existing "strip the column and retry" mechanism used for
+  `location_values`/`activity_id`/`activity_name` pre-migration) gained a **second, separate**
+  strip rule for `trades`/`works_multi` — a save still lands with usable (first-value-only)
+  data even before this migration runs, rather than failing outright.
+
+### "Location label" removed (item 2 — "redundant")
+
+The separate free-text input (`-loctxt`) that sat below the Location Breakdown picker is gone.
+`location` (the display-cache text column read by search/grouping/PPR) is now **always**
+`locBreadcrumb(locVals)` — never a manual override. `locationFieldHTML()` dropped its third
+`locText` parameter; both call sites (Add and Edit forms) updated to match. ⚠️ This was already
+**mostly true in practice** — the picker's breadcrumb was never auto-filled into the label field
+(a deliberate earlier decision, so a resolved schedule path was never mistaken for a typed
+caption) — this change just removes the now-pointless second field entirely rather than leaving
+an input that did nothing useful next to the breadcrumb that already shows the real value.
+
+### Verified
+
+**236 checks, 0 failures** (`test.js`, up from 221) — a new `[2b]` section covering the overlay
+functions, the removed `-loctxt` field, the save payload's array+fallback shape, and the
+tolerant-write strip rule; plus a `[2c]` section that **genuinely executes**
+`tradesOf`/`worksOf` (exported as test-only hooks, `PP._tradesOf`/`PP._worksOf`, the same
+convention as `bim.js`'s `_zoomAnchor`) against all four real data shapes — migrated-with-array,
+pre-migration-legacy-only, neither, and the one edge case worth documenting explicitly: an
+**empty** `trades` array still falls back to the legacy column (matching `null`'s behavior)
+rather than being treated as "deliberately cleared," because `requiredFieldsMissing` already
+makes a real zero-trades save unreachable through this module's own UI — that state can only
+exist from data written outside this app, where falling back to whatever's known beats nothing.
+
+0 NUL bytes across every touched file; CSS braces 284/284 balanced; function-diff shows
+**4 deliberate removals / 10 additions** in `module.js` (explained above, not a regression).
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module.
+
+## 18-item feedback round, Batch A: default Gallery view + label renames (2026-08-29)
+
+Owner reviewed the live build and gave 18 pieces of feedback spanning the Photos screen, the
+Meetings screen, and the Floor Plan screen, plus several genuinely new subsystems (photo
+markup, a floor-plan map view, a photo vertical-stacking view, top-view-to-floor-plan image
+registration). **Explored the codebase with 3 parallel Explore agents before planning** (the
+exact current data model, and whether any multi-select/rotation/registration pattern already
+existed anywhere in this repo — confirmed none did), then entered Plan Mode given the size and
+number of real architectural forks, and got the owner's sign-off on a lettered batch sequence
+(A through H) before writing any code. The full plan — including the three foundational
+decisions confirmed with the owner (keep 3 tables + merge client-side for the unified Gallery;
+real point-based image registration via OpenCV.js for the floor-plan overlay; real thumbnail
+files generated at upload time) and 6 more items folded in mid-implementation — is preserved at
+`C:\Users\gwsia\.claude\plans\elegant-mixing-mitten.md` for reference across the remaining
+batches (B–H, not yet built).
+
+**This entry covers Batch A only** — quick wins with no schema change:
+- **Item 1**: Gallery (tile) is now the default landing view (`view = 'gallery'`, was `'list'`).
+  ⚠️ A returning user's own explicit List choice still overrides this — `restoreUI()`'s
+  `if (v === 'list' || v === 'gallery') view = v;` is untouched, so this only changes what a
+  *first-ever* visit (or a project with no saved preference) lands on.
+- **Item 7**: "Before"/"After" renamed to "Previous"/"Current" everywhere it's **displayed** —
+  the slide-editor pane labels, the offline HTML/PDF/PPTX export labels, the copy-from-previous
+  hint text, the field labels ("Previous photo", "Caption for the previous photo"). ⚠️
+  **Deliberately NOT renamed**: the DB columns (`before_photo_id`/`after_photo_id`/
+  `before_caption`/`after_caption`) and the internal `which === 'before'|'after'` discriminator
+  string used throughout `ppr.js` (`pane()`, `keyPlanPathFor()`, `slideFigureHTML()`, the
+  `#ppr-s-before`/`#ppr-s-after` field ids) — renaming ~30 internal call sites for a value never
+  shown to a user would be pure risk for zero visible benefit, the same no-rename-the-column
+  convention already used for the PPR→Meeting label change.
+- **Tab/screen-title renames**: "Photos"→**"Gallery"**, "Meetings"→**"Presentations"**,
+  "Floor Plan"→**"Plans"** — applied as a careful whole-word, case-preserving find/replace
+  across both `ppr.js` and `index.html` (`\bMeeting\b` etc., which — because `\b` treats
+  underscore as a word character — safely skips `meeting_type`, the DB column, with zero special
+  casing needed). ⚠️ **`data-screen` values and every table/column name are unchanged**
+  (`ppr_presentations`, `ppr_slides`, `meeting_type` all stay exactly as they are) — this is a
+  label-only rename, matching the PPR→Meeting precedent from the same file's own earlier entry.
+  Renamed the **Photos** tab to **Gallery** now, ahead of Batch C's actual 360°/3D/video
+  unification into that screen — a short-lived naming-ahead-of-function gap, acceptable since
+  Batches A–C are being built in the same session.
+
+### Follow-up feedback, received mid-Batch-A (folded into later batches, not re-planned)
+
+Six more items arrived while Batch A was in progress. None introduced a new architectural fork,
+so they were folded into the existing approved batch structure rather than triggering a second
+planning pass:
+- **Presentations-list row icons need left padding** — done immediately, scoped to `.ppr-acts`
+  only (NOT the shared `.pp-iconbtn` class other screens' icon buttons also use).
+- Presentations row actions become **Download / Preview / Archive** (row-click already opens
+  the presentation) → folded into **Batch D**. "Archive" needs a soft-delete `archived boolean`
+  column on `ppr_presentations`, `progress_photos`, `panoramas` and `reconstruction_requests`
+  alike (the Gallery batch-archive item below needs the same concept).
+- **Download asks for a format** (HTML/PPTX/PDF) before downloading → folded into **Batch D**.
+- **A shared location tile** when both photos in a slide share a location (instead of repeating
+  the tag on both panes), applied to **all three export formats**, plus **PPTX centered
+  vertically+horizontally** and **PDF strictly one slide per A4 page** → folded into **Batch D**
+  (same `pane()`/`slideFigureHTML()` functions Batch D already touches).
+- **Gallery multi-select + batch actions** (Download/Archive/Add to Presentation) → folded into
+  **Batch C**, mirroring the selection-bar pattern already used elsewhere in this app (Rounds'
+  walkthrough checkboxes, Drawing Register's bulk-select bar) rather than inventing a new one.
+- **A copy-from-previous-presentation wizard** — step through each slide, Current photo required
+  before advancing, nothing saved to `ppr_slides` until every slide has one → folded into
+  **Batch D**, reinforcing item 10's "no Previous without a Current" rule at the copy-flow level
+  too, not just the ordinary add-slide form.
+
+### Verified
+
+**221 checks, 0 failures** (`test.js`, up from 217) — a new `[0]` section for the two genuinely
+new behaviors (default view, icon padding), plus 6 pre-existing assertions from earlier phases
+that hardcoded the old "Meeting"/"Before"/"After" strings **updated in place** (not deleted) to
+assert the new labels — e.g. `panes are labelled Previous/Current (was Before/After)`. This is
+expected, healthy churn from an intentional rename, not a regression: each updated assertion
+still fails against the pre-rename file and passes against the current one. 0 NUL bytes across
+every touched file; CSS braces 281/281 balanced; **0 functions lost** in `module.js`/`ppr.js`
+against the last commit (a two-line default-value change and a careful text-only bulk rename,
+so no function should have been touched — confirmed, not assumed).
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module.
+
+## Reconstruction worker rewritten (pycolmap + gsplat); Phase 3 & Gaussian Splatting put on hold (2026-08-29)
+
+Owner reconsidered RunPod's per-job cost and asked to run through free/cheaper hosting
+options. Two real, checked (not asserted from memory) products came up and were both ruled
+out for different reasons: **Convert3D API** turned out to be a pure 3D-file-FORMAT
+converter (FBX↔OBJ↔GLTF etc.) with no photogrammetry/reconstruction capability at all —
+looked up directly rather than assumed, given this exact file's own prior lesson about
+inventing a fact instead of checking one. **vid2scene** (a real, Apache-2.0, video→Gaussian-
+Splat project) turned out to have shut down its free hosted service in June 2026 — but its
+open-source code led to a genuinely useful finding.
+
+⚠️ **Standalone GLOMAP (the fast global-SfM solver) was merged into COLMAP 4.0 and the
+standalone repo was archived on 2026-03-09** — confirmed via COLMAP's own changelog and the
+GitHub PR (colmap/colmap#4228) that added `pycolmap.global_mapping()`. Even vid2scene's own
+worker still builds the now-archived standalone `glomap` from source. This means the
+original from-source COLMAP+OpenSplat worker was not just expensive to build, it was also
+about to be built on top of a project that had just been deprecated.
+
+**`services/reconstruction-worker/` was rewritten, requested explicitly, as groundwork —
+not to be deployed right now.** Owner: *"let's put gaussian splatting and 360 on hold."*
+No UI change was made (nothing from this branch is merged/deployed yet, so there's no live
+tab to hide); Phase 3 (360° panoramas) and Phase 4's Gaussian Splatting deployment are
+simply not being pushed further until the owner says to resume.
+
+**What changed in the worker**, each fact checked via WebSearch/WebFetch before being
+written down, not recalled from training data:
+- **No more from-source COLMAP build.** `pycolmap-cuda12` — a real, prebuilt CUDA-enabled
+  Python wheel, added in COLMAP 3.13.0 — replaces compiling COLMAP's full C++ stack
+  (including Qt/CGAL GUI dependencies this worker never used). `run_reconstruction()` now
+  calls `pycolmap.extract_features()` / `match_exhaustive()` / `global_mapping()` /
+  `undistort_images()` / `reconstruction.export_PLY()` directly as Python, not CLI subprocess
+  calls to a self-built `colmap` binary.
+- **OpenSplat (AGPL-3.0) replaced with gsplat (Apache-2.0)** —
+  [nerfstudio-project/gsplat](https://github.com/nerfstudio-project/gsplat)'s license
+  confirmed directly from its LICENSE file. AGPL's network-copyleft implications are a real
+  consideration for running this as an internal service; Apache-2.0 carries none of that.
+  Training now runs via gsplat's own vendored `examples/simple_trainer.py` (git-cloned at
+  build time from a pinned tag, not reimplemented) instead of a compiled OpenSplat binary.
+- **Base image switched to `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel`** (following
+  vid2scene's own proven choice) — ships a matching PyTorch+CUDA build gsplat needs, removing
+  the separate LibTorch zip download the OpenSplat-based version required.
+- ⚠️ **New, explicitly flagged unknowns from this rewrite** (none of this has been run):
+  whether `pycolmap-cuda12>=4.0.0` resolves to a real wheel at all — the only version+CUDA
+  combination directly confirmed is `3.13.0`, which predates the 4.0 `global_mapping`
+  binding this worker calls; the exact keyword-argument names on the four `pycolmap`
+  functions above, synthesized from documentation summaries rather than a signature
+  inspection; and `pycolmap.global_mapping`'s return type, handled defensively (accepts
+  either a dict of reconstructions, mirroring the documented `incremental_mapping`, or a
+  single `Reconstruction` returned directly) since neither was confirmed by execution.
+- `GSPLAT_MAX_STEPS` starts at 5,000, deliberately far below gsplat's own 30,000-step
+  research-benchmark default — a site walkthrough is a smaller, more constrained scene than
+  gsplat's benchmark scenes, and RunPod bills per second, so a lower cost-conscious default
+  was chosen over copying a number meant for a different kind of scene.
+
+**Cost/hosting options were laid out but NOT decided** — recorded in the worker's own
+README (self-hosted-on-owned-hardware, drop Gaussian Splatting for a CPU-only point cloud,
+free/manual community tools, or RunPod/Modal pay-per-second) rather than in this changelog,
+since it's an infrastructure decision the code doesn't yet reflect a choice on.
+
+⚠️ **Verified**: `handler.py` re-passes `py_compile`; 0 NUL bytes across all four touched
+files. **Not verified**: none of the `pycolmap`/`gsplat` API calls have been executed —
+same standing caveat as before this rewrite, now narrower in scope since the largest single
+prior risk (compiling COLMAP's C++ stack from source) no longer exists in this file at all.
+
 ## Floor Plan pin navigator + drone provenance — brief 6B/6C / Phase 5 & 6 (2026-08-29)
 
 Final two phases of the same unattended overnight build. This closes out the site-survey

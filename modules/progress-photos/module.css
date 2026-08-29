@@ -313,6 +313,16 @@
 .pp-codegroup-name { font-weight: 700; color: var(--pd-muted); min-width: 70px; }
 .pp-codechk { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; }
 
+/* Trade / Works multi-select checkbox groups (2026-08-29 feedback item 2) —
+   same visual language as .pp-codetags/.pp-codechk above, just without the
+   per-group name label (Trade and Works are each a single flat group). */
+.pp-multichk {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 10px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius); background: var(--pd-bg);
+}
+.pp-mchk { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 400; }
+.pp-addworksbtn { margin-top: 6px; font-size: 12.5px; padding: 5px 10px; }
+
 /* ============================================================================
    Today's Rounds (streamlined repeat-visit capture — Phase 1)
    ============================================================================ */
@@ -373,7 +383,7 @@
 }
 .ppr-date { font-weight: 600; font-variant-numeric: tabular-nums; }
 .ppr-num { text-align: center; }
-.ppr-acts { display: flex; gap: 3px; align-items: center; }
+.ppr-acts { display: flex; gap: 3px; align-items: center; padding-left: 10px; }
 
 /* ---- Report Templates (brief Section 5) ---------------------------------- */
 /* ⚠️ .ppr-head/.ppr-row's base grid-template-columns is 4 tracks, sized for

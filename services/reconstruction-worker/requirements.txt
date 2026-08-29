@@ -1,8 +1,13 @@
-# Deliberately minimal. COLMAP/OpenSplat/ffmpeg are compiled binaries baked
-# into the image by the Dockerfile, not Python packages -- no supabase-py
-# client either, since handler.py talks to the Storage REST API directly
-# with `requests` (one PUT per result file; pulling in a full client library
-# for that would be needless weight and a needless version-mismatch risk
-# against the JS client the rest of this app uses).
+# Deliberately minimal. ffmpeg is a compiled binary installed via apt in the
+# Dockerfile, not a Python package. `pycolmap-cuda12` and `gsplat` are ALSO
+# installed directly in the Dockerfile (not listed here) -- pycolmap-cuda12
+# because its version needs a build-time comment about checking for a CUDA
+# wheel that includes COLMAP 4.0's global_mapping binding (see the
+# Dockerfile's header), and gsplat because it sits next to the git-clone
+# step that vendors its `simple_trainer.py` script, so both live together.
+# No supabase-py client either -- handler.py talks to the Storage REST API
+# directly with `requests` (one PUT per result file; pulling in a full
+# client library for that would be needless weight and a needless
+# version-mismatch risk against the JS client the rest of this app uses).
 runpod>=1.6.2
 requests>=2.31.0

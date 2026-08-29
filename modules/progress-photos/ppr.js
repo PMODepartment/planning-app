@@ -138,7 +138,7 @@ window.PPR = (function () {
 
   // Tolerant of the migration not having run yet — same convention as every
   // other optional table this module reads (e.g. location_levels). Templates
-  // are a management concern of the Meetings screen, so they load alongside
+  // are a management concern of the Presentations screen, so they load alongside
   // everything else rather than lazily on first visit to that screen.
   async function loadTemplates() {
     tmplTableMissing = false;
@@ -226,8 +226,8 @@ window.PPR = (function () {
     else renderList();
   }
 
-  // The topbar tools follow the Meetings screen's own state: "+ New Meeting"
-  // and "Templates" belong to the list, "Meetings list" (back) belongs to the
+  // The topbar tools follow the Presentations screen's own state: "+ New Presentation"
+  // and "Templates" belong to the list, "Presentations list" (back) belongs to the
   // slides/templates views, "+ New template" belongs to the templates view.
   // `visible` is false while the Photos screen is showing, which hides all of
   // them — they never share a row with each other, so no divider is needed.
@@ -266,9 +266,9 @@ window.PPR = (function () {
     if (!pprs.length) {
       host.innerHTML = '<div class="pp-empty">' +
         '<span data-ico="clipboard" data-ico-size="34"></span>' +
-        '<p>No meetings yet for this project.</p>' +
-        (canWrite ? '<p class="pp-hint">Use <strong>+ New Meeting</strong> to create one, then add ' +
-                    'before/after slides from the Photos Database.</p>' : '') +
+        '<p>No presentations yet for this project.</p>' +
+        (canWrite ? '<p class="pp-hint">Use <strong>+ New Presentation</strong> to create one, then add ' +
+                    'previous/current slides from the Photos Database.</p>' : '') +
         '</div>';
       hydrate();
       return;
@@ -277,13 +277,13 @@ window.PPR = (function () {
     var rows = list.map(function (p) {
       var n = slides(p.id).length;
       return '<div class="ppr-row' + (p.id === selId ? ' sel' : '') + '" data-id="' + p.id + '" ' +
-        'title="Open this meeting\'s slides">' +
+        'title="Open this presentation\'s slides">' +
         '<div class="ppr-cell ppr-date">' + esc(longDate(p.ppr_date)) + '</div>' +
         '<div class="ppr-cell">' + esc(p.description || '—') + '</div>' +
         '<div class="ppr-cell ppr-num">' + n + '</div>' +
         '<div class="ppr-cell ppr-acts">' +
           '<button class="pp-iconbtn" data-act="download" data-id="' + p.id + '" ' +
-            'title="Download an offline copy of this meeting (opens with no network)">' +
+            'title="Download an offline copy of this presentation (opens with no network)">' +
             '<span data-ico="download" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn" data-act="pdf" data-id="' + p.id + '" title="Download as PDF">' +
             '<span data-ico="clipboard" data-ico-size="15"></span></button>' +
@@ -291,24 +291,24 @@ window.PPR = (function () {
             '<span data-ico="layers" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn" data-act="open" data-id="' + p.id + '" title="Open slides">' +
             '<span data-ico="arrowRight" data-ico-size="15"></span></button>' +
-          (canWrite ? '<button class="pp-iconbtn" data-act="edit" data-id="' + p.id + '" title="Edit meeting details">' +
+          (canWrite ? '<button class="pp-iconbtn" data-act="edit" data-id="' + p.id + '" title="Edit presentation details">' +
                       '<span data-ico="pencil" data-ico-size="15"></span></button>' +
-                      '<button class="pp-iconbtn pp-del" data-act="del" data-id="' + p.id + '" title="Delete meeting">' +
+                      '<button class="pp-iconbtn pp-del" data-act="del" data-id="' + p.id + '" title="Delete presentation">' +
                       '<span data-ico="trash" data-ico-size="15"></span></button>' : '') +
         '</div></div>';
     }).join('');
 
     var table = '<div class="ppr-table">' +
-      '<div class="ppr-head"><div>Meeting Date</div><div>Description</div>' +
+      '<div class="ppr-head"><div>Presentation Date</div><div>Description</div>' +
       '<div class="ppr-num">No. of Slides</div><div></div></div>' +
-      (list.length ? rows : '<div class="pp-empty" style="border:0;">No meetings in this date range.</div>') +
+      (list.length ? rows : '<div class="pp-empty" style="border:0;">No presentations in this date range.</div>') +
       '</div>';
 
     host.innerHTML = '<div class="ppr-split">' + table +
       '<div class="ppr-preview"><div class="ppr-preview-head">Preview</div>' +
       '<div id="ppr-preview-body"></div></div></div>';
 
-    // Clicking anywhere on the row OPENS the meeting (owner feedback: no need to
+    // Clicking anywhere on the row OPENS the presentation (owner feedback: no need to
     // press an icon just to open it). Selecting-without-opening is no longer a
     // separate gesture — the preview pane is driven by whatever is open, and
     // hovering a row is enough to see its slide count in the list itself.
@@ -349,7 +349,7 @@ window.PPR = (function () {
     var s = selId ? slides(selId) : [];
     if (!selId || !s.length) {
       body.innerHTML = '<div class="ppr-noslides">' +
-        (selId ? 'No slides to show.' : 'Select a meeting to preview its slides.') + '</div>';
+        (selId ? 'No slides to show.' : 'Select a presentation to preview its slides.') + '</div>';
       return;
     }
     body.innerHTML = '<div class="ppr-thumbs">' + s.map(function (sl, i) {
@@ -384,7 +384,7 @@ window.PPR = (function () {
     var header =
       '<div class="ppr-slidehead">' +
         '<div class="ppr-hfield"><label>Project</label><span>' + esc(projName || pid) + '</span></div>' +
-        '<div class="ppr-hfield"><label>Meeting Date</label><span>' + esc(longDate(p.ppr_date)) + '</span></div>' +
+        '<div class="ppr-hfield"><label>Presentation Date</label><span>' + esc(longDate(p.ppr_date)) + '</span></div>' +
         '<div class="ppr-hfield"><label>Description</label><span>' + esc(p.description || '—') + '</span></div>' +
         '<div class="ppr-hfield"><label>Slides</label><span class="ppr-nav">' +
           '<button class="ppr-navbtn" id="ppr-prev" ' + (slideAt <= 0 ? 'disabled' : '') + '>‹</button>' +
@@ -394,7 +394,7 @@ window.PPR = (function () {
       '</div>';
 
     if (!s.length) {
-      host.innerHTML = header + '<div class="pp-empty"><p>This meeting has no slides yet.</p>' +
+      host.innerHTML = header + '<div class="pp-empty"><p>This presentation has no slides yet.</p>' +
         (canWrite ? '<p class="pp-hint">Add a slide by picking this period\'s photo, optionally ' +
                     'paired with an earlier one to compare against.</p>' +
                     '<p><button class="pd-btn pd-btn-primary" id="ppr-slide-add">+ Add slide</button></p>'
@@ -462,7 +462,13 @@ window.PPR = (function () {
     var tags = ph ? [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ')
                   : [sl.trade, sl.works, sl.location].filter(Boolean).join(' · ');
     return '<figure class="ppr-pane">' +
-      '<div class="ppr-panelabel">' + (which === 'before' ? 'Before' : 'After') + '</div>' +
+      // "Previous"/"Current" is the user-facing label (owner feedback, item 7:
+      // less ambiguous than Before/After for a recurring capture). The
+      // internal `which` discriminator stays 'before'/'after' throughout this
+      // file — it's a private parameter value, never displayed, and renaming
+      // it everywhere (this function, keyPlanPathFor, slideFigureHTML, the
+      // form field ids) would touch ~30 call sites for no user-visible gain.
+      '<div class="ppr-panelabel">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
       '<div class="ppr-imgwrap">' +
         (u ? '<img class="ppr-img" src="' + esc(u) + '" alt="' + esc(cap) + '" />'
            : '<div class="ppr-img pp-noimg"><span>Photo not set</span></div>') +
@@ -480,28 +486,28 @@ window.PPR = (function () {
     if ($('ppr-next')) $('ppr-next').onclick = function () { if (slideAt < s.length - 1) { slideAt++; renderSlides(); } };
   }
 
-  // -------------------------------------------------------- Meeting CRUD ----
-  // Renamed from "PPR" to "Meeting" (owner feedback): the same record now backs
-  // both a PPR meeting and a client meeting, distinguished in the description.
+  // -------------------------------------------------------- Presentation CRUD ----
+  // Renamed from "PPR" to "Presentation" (owner feedback): the same record now backs
+  // both a PPR presentation and a client presentation, distinguished in the description.
   // The DB table/columns keep their `ppr_*` names — renaming them would break
   // every existing row and the migration isn't worth it for a label change.
   function openPprForm(p) {
     var isNew = !p; p = p || {};
-    // Copy-previous: pre-selects the most recent EARLIER meeting so a new one
+    // Copy-previous: pre-selects the most recent EARLIER presentation so a new one
     // starts from last period's slides, with its "after" photos promoted to
     // "before" (see copySlidesFrom below).
     var prior = pprs.filter(function (x) { return x.id !== p.id; });
     var html =
-      '<div class="pd-modal-header"><h3>' + (isNew ? 'New Meeting' : 'Edit Meeting') + '</h3>' +
+      '<div class="pd-modal-header"><h3>' + (isNew ? 'New Presentation' : 'Edit Presentation') + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form"><div class="pp-form2">' +
-        '<div class="pd-field"><label>Meeting date</label>' +
+        '<div class="pd-field"><label>Presentation date</label>' +
           '<input class="pd-input" type="date" id="ppr-f-date" value="' + esc(p.ppr_date || '') + '" /></div>' +
         '<div class="pd-field"><label>Description</label>' +
-          '<input class="pd-input" id="ppr-f-desc" placeholder="e.g. PPR ftm of June 2026 / Client Meeting" value="' +
+          '<input class="pd-input" id="ppr-f-desc" placeholder="e.g. PPR ftm of June 2026 / Client Presentation" value="' +
           esc(p.description || '') + '" /></div>' +
         (isNew && prior.length
-          ? '<div class="pd-field pp-span2"><label>Copy from a previous meeting ' +
+          ? '<div class="pd-field pp-span2"><label>Copy from a previous presentation ' +
               '<span class="pp-optnote">(optional)</span></label>' +
               '<select class="pd-select" id="ppr-f-copy"><option value="">— start empty —</option>' +
               prior.map(function (x) {
@@ -509,8 +515,8 @@ window.PPR = (function () {
                   (x.description ? ' — ' + esc(x.description) : '') +
                   ' (' + slides(x.id).length + ' slide' + (slides(x.id).length === 1 ? '' : 's') + ')</option>';
               }).join('') + '</select>' +
-              '<p class="pp-hint">Copies that meeting\'s slides across, moving each slide\'s ' +
-              '<strong>current photo into the &ldquo;before&rdquo; position</strong> so you only ' +
+              '<p class="pp-hint">Copies that presentation\'s slides across, moving each slide\'s ' +
+              '<strong>current photo into the &ldquo;previous&rdquo; position</strong> so you only ' +
               'need to add this period\'s new photo.</p></div>'
           : '') +
       '</div></div>' +
@@ -519,7 +525,7 @@ window.PPR = (function () {
     var m = openModal(html, 560);
     $('ppr-f-save').onclick = async function () {
       var date = $('ppr-f-date').value;
-      if (!date) { UI.toast('A meeting date is required', 'warn'); return; }
+      if (!date) { UI.toast('A presentation date is required', 'warn'); return; }
       this.disabled = true;
       var data = { ppr_date: date, description: $('ppr-f-desc').value.trim() };
       var res, newId = null;
@@ -539,14 +545,14 @@ window.PPR = (function () {
       var copyFrom = $('ppr-f-copy') ? $('ppr-f-copy').value : '';
       if (isNew && newId && copyFrom) {
         try { copied = await copySlidesFrom(copyFrom, newId); }
-        catch (err) { UI.toast('Meeting created, but copying slides failed: ' +
+        catch (err) { UI.toast('Presentation created, but copying slides failed: ' +
           (err.message || err), 'warn'); }
       }
 
       m.close();
       UI.toast(isNew
-        ? ('Meeting created' + (copied ? ' with ' + copied + ' slide' + (copied === 1 ? '' : 's') + ' copied' : ''))
-        : 'Meeting updated', 'ok');
+        ? ('Presentation created' + (copied ? ' with ' + copied + ' slide' + (copied === 1 ? '' : 's') + ' copied' : ''))
+        : 'Presentation updated', 'ok');
       await load();
       // After creating, go straight into the slides editor (owner feedback:
       // "after adding PPR, it should go to PPR edit") rather than dropping the
@@ -580,12 +586,12 @@ window.PPR = (function () {
   async function removePpr(p) {
     var n = slides(p.id).length;
     var html =
-      '<div class="pd-modal-header"><h3>Delete Meeting</h3>' +
+      '<div class="pd-modal-header"><h3>Delete Presentation</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form"><p>Delete <strong>' + esc(p.description || longDate(p.ppr_date)) +
         '</strong> and its <strong>' + n + '</strong> slide' + (n === 1 ? '' : 's') + '?</p>' +
         '<p class="pp-hint">The photos themselves stay in the Photos Database — only the ' +
-        'meeting and its slide pairings are removed.</p></div>' +
+        'presentation and its slide pairings are removed.</p></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-danger" id="ppr-d-yes">Delete</button></div>';
     var m = openModal(html, 460);
@@ -594,7 +600,7 @@ window.PPR = (function () {
       // ppr_slides.ppr_id is ON DELETE CASCADE, so the slides go with it.
       var res = await sb().from(T_PPR).delete().eq('id', p.id);
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
-      m.close(); UI.toast('Meeting deleted', 'ok');
+      m.close(); UI.toast('Presentation deleted', 'ok');
       if (selId === p.id) selId = null;
       await load();
     };
@@ -629,7 +635,7 @@ window.PPR = (function () {
           'its own trade, works, location and key plan with it.</p>' +
         '<div class="pp-form2">' +
 
-          '<div class="pd-field pp-span2"><label>Current photo (the &ldquo;after&rdquo; shot)</label>' +
+          '<div class="pd-field pp-span2"><label>Current photo</label>' +
             '<div class="ppr-pickrow">' +
               '<select class="pd-select" id="ppr-s-after">' + photoOptions(sl.after_photo_id) + '</select>' +
               '<button type="button" class="pd-btn" id="ppr-s-after-add" title="Upload a new photo and use it here">+ Add photo</button>' +
@@ -639,7 +645,7 @@ window.PPR = (function () {
             '<input class="pd-input" id="ppr-s-acap" placeholder="e.g. Aerial View facing Marikina River ftm of June 2026." value="' +
             esc(sl.after_caption || '') + '" /></div>' +
 
-          '<div class="pd-field pp-span2"><label>Before photo <span class="pp-optnote">(optional — leave empty to show the current photo on its own)</span></label>' +
+          '<div class="pd-field pp-span2"><label>Previous photo <span class="pp-optnote">(optional — leave empty to show the current photo on its own)</span></label>' +
             '<div class="ppr-pickrow">' +
               '<select class="pd-select" id="ppr-s-before">' + photoOptions(sl.before_photo_id) + '</select>' +
               '<button type="button" class="pd-btn" id="ppr-s-before-add" title="Upload a new photo and use it here">+ Add photo</button>' +
@@ -649,7 +655,7 @@ window.PPR = (function () {
           // feedback: "when there is no added before photo, no need to ask for
           // before photo description").
           '<div class="pd-field pp-span2" id="ppr-s-bcap-field" style="display:none;">' +
-            '<label>Caption for the before photo</label>' +
+            '<label>Caption for the previous photo</label>' +
             '<input class="pd-input" id="ppr-s-bcap" placeholder="e.g. Aerial View facing Marikina River ftm of May 2026." value="' +
             esc(sl.before_caption || '') + '" /></div>' +
         '</div>' +
@@ -787,7 +793,7 @@ window.PPR = (function () {
   }
 
   // ------------------------------------------------- offline export (.html) --
-  // Why a self-contained file: a PPR is presented in a meeting where the photo
+  // Why a self-contained file: a PPR is presented in a presentation where the photo
   // library may load slowly (connectivity, or sheer volume of photos). Every
   // image is inlined as a downscaled data URI, so the file opens instantly with
   // no network and no dependency on Supabase being reachable.
@@ -817,7 +823,7 @@ window.PPR = (function () {
     });
   }
 
-  // Every image a meeting's slides reference (photos + per-pane key plans),
+  // Every image a presentation's slides reference (photos + per-pane key plans),
   // embedded as a downscaled data URI — shared by the offline HTML export,
   // the PDF export and the PPTX export, so the three formats can never
   // embed a different picture of the same slide. `onProgress(i, total)` is
@@ -847,7 +853,7 @@ window.PPR = (function () {
 
   async function exportOffline(p) {
     var s = slides(p.id);
-    if (!s.length) { UI.toast('This meeting has no slides to export', 'warn'); return; }
+    if (!s.length) { UI.toast('This presentation has no slides to export', 'warn'); return; }
 
     var m = openModal(
       '<div class="pd-modal-header"><h3>Preparing offline copy</h3></div>' +
@@ -866,7 +872,7 @@ window.PPR = (function () {
     var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'Meeting ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.html';
+    a.download = 'Presentation ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.html';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
 
@@ -896,7 +902,7 @@ window.PPR = (function () {
                : '<div class="' + cls + ' missing">Image unavailable</div>';
     }
     return '<figure>' +
-      '<div class="lbl">' + (which === 'before' ? 'Before' : 'After') + '</div>' +
+      '<div class="lbl">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
       '<div class="phwrap">' + im(phUrl, 'ph', cap) +
         (kp && imgs[kp] ? im(kp, 'kpimg', 'Key plan') : '') + '</div>' +
       '<figcaption><div class="d">' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
@@ -915,7 +921,7 @@ window.PPR = (function () {
         '</div></section>';
     }).join('');
     return '<header><h1>' + esc(projName || pid) + ' — Progress Photos</h1>' +
-      '<p>' + esc(p.description || '') + ' · Meeting Date: ' + esc(longDate(p.ppr_date)) +
+      '<p>' + esc(p.description || '') + ' · Presentation Date: ' + esc(longDate(p.ppr_date)) +
       ' · ' + s.length + ' slide' + (s.length === 1 ? '' : 's') + '</p></header>' +
       '<div class="wrap">' + slidesHTML + '</div>' +
       '<footer>Generated ' + esc(longDate(new Date().toISOString().slice(0, 10))) +
@@ -962,13 +968,13 @@ window.PPR = (function () {
 
   // ------------------------------------------------------------- PDF export ---
   // Brief Section 5: "exportable as a slide deck (PPTX) or PDF suitable for
-  // presenting directly in a meeting." Reuses the SAME slidesBodyHTML/EXPORT_CSS
+  // presenting directly in a presentation." Reuses the SAME slidesBodyHTML/EXPORT_CSS
   // as the offline HTML export, rasterised by html2pdf — so the on-screen
   // slides, the offline copy and the PDF can never show three different layouts
-  // of one meeting.
+  // of one presentation.
   async function exportPdf(p) {
     var s = slides(p.id);
-    if (!s.length) { UI.toast('This meeting has no slides to export', 'warn'); return; }
+    if (!s.length) { UI.toast('This presentation has no slides to export', 'warn'); return; }
     if (typeof html2pdf !== 'function') {
       UI.toast('The PDF library did not load — check the connection and reload.', 'error'); return;
     }
@@ -997,7 +1003,7 @@ window.PPR = (function () {
       holder.appendChild(wrap);
       document.body.appendChild(holder);
 
-      var filename = 'Meeting ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pdf';
+      var filename = 'Presentation ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pdf';
       await html2pdf().set({
         margin: [8, 8, 8, 8],
         filename: filename,
@@ -1025,7 +1031,7 @@ window.PPR = (function () {
   // widescreen layout matches the offline export's own wide, image-led look.
   async function exportPptx(p) {
     var s = slides(p.id);
-    if (!s.length) { UI.toast('This meeting has no slides to export', 'warn'); return; }
+    if (!s.length) { UI.toast('This presentation has no slides to export', 'warn'); return; }
     if (typeof PptxGenJS !== 'function') {
       UI.toast('The PowerPoint library did not load — check the connection and reload.', 'error'); return;
     }
@@ -1059,7 +1065,7 @@ window.PPR = (function () {
         var tags = ph ? [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ') : '';
         var url = urlOfPhoto(ph && ph.id);
         var data = url ? imgs[url] : '';
-        slide.addText(which === 'before' ? 'BEFORE' : 'AFTER',
+        slide.addText(which === 'before' ? 'PREVIOUS' : 'CURRENT',
           { x: x, y: 0.35, w: w, h: 0.35, fontSize: 11, bold: true, color: '6B6B6B', charSpacing: 1 });
         if (data) slide.addImage({ data: stripDataPrefix(data), x: x, y: 0.75, w: w, h: 4.6, sizing: { type: 'contain', w: w, h: 4.6 } });
         else slide.addText('Photo not set', { x: x, y: 0.75, w: w, h: 4.6, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
@@ -1080,7 +1086,7 @@ window.PPR = (function () {
       });
 
       m.close();
-      await pptx.writeFile({ fileName: 'Meeting ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pptx' });
+      await pptx.writeFile({ fileName: 'Presentation ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pptx' });
       UI.toast('PowerPoint downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
         res.failed ? 'warn' : 'ok');
     } catch (e) {
@@ -1090,7 +1096,7 @@ window.PPR = (function () {
 
   // ----------------------------------------------------- Report Templates ---
   // Brief Section 5 / Phase 2: a saved, re-runnable report definition. Running
-  // it ("Generate") produces an ordinary Meeting with slides auto-populated
+  // it ("Generate") produces an ordinary Presentation with slides auto-populated
   // from the CURRENT photo library — the template itself never holds photos.
   function renderTemplates() {
     var host = $('ppr-tmpl-view');
@@ -1108,7 +1114,7 @@ window.PPR = (function () {
         '<p>No report templates yet for this project.</p>' +
         (canWrite ? '<p class="pp-hint">A template is a saved, reusable definition — pick the ' +
           'locations to include once, in order, then press <strong>Generate</strong> each time you ' +
-          'need a fresh before/after report at those same locations.</p>' : '') +
+          'need a fresh previous/current report at those same locations.</p>' : '') +
         '</div>';
       hydrate(); return;
     }
@@ -1143,7 +1149,7 @@ window.PPR = (function () {
   }
 
   async function runTemplate(t, btn) {
-    // Non-destructive (only ever creates a new meeting), so this runs
+    // Non-destructive (only ever creates a new presentation), so this runs
     // immediately rather than behind a confirm — the button disables itself
     // for the duration to guard against a double-click double-generating.
     if (btn) btn.disabled = true;
@@ -1178,7 +1184,7 @@ window.PPR = (function () {
       .insert(Object.assign({ ppr_date: today, description: desc }, { project_id: pid, created_by: uid })).select();
     if (ires.error) { UI.toast(ires.error.message, 'error'); return; }
     var newId = ires.data && ires.data[0] && ires.data[0].id;
-    if (!newId) { UI.toast('Meeting created, but its id could not be read back', 'error'); await load(); return; }
+    if (!newId) { UI.toast('Presentation created, but its id could not be read back', 'error'); await load(); return; }
 
     var payload = picks.map(function (x, i) {
       return {
@@ -1194,7 +1200,7 @@ window.PPR = (function () {
     });
     var sres = await sb().from(T_SLIDE).insert(payload);
     if (sres.error) {
-      UI.toast('Meeting created, but its slides failed: ' + sres.error.message, 'error');
+      UI.toast('Presentation created, but its slides failed: ' + sres.error.message, 'error');
       await load(); return;
     }
 
@@ -1254,7 +1260,7 @@ window.PPR = (function () {
         '<div class="pd-field"><label>Name</label>' +
           '<input class="pd-input" id="tmpl-f-name" placeholder="e.g. Weekly Client Update — Tower B" ' +
           'value="' + esc(tmpl.name || '') + '" /></div>' +
-        '<div class="pd-field"><label>Meeting type</label>' +
+        '<div class="pd-field"><label>Presentation type</label>' +
           '<select class="pd-select" id="tmpl-f-type">' +
             '<option value="client"' + (tmpl.meeting_type !== 'internal' ? ' selected' : '') + '>Client</option>' +
             '<option value="internal"' + (tmpl.meeting_type === 'internal' ? ' selected' : '') + '>Internal</option>' +
@@ -1350,7 +1356,7 @@ window.PPR = (function () {
   async function removeTemplate(t) {
     var html =
       '<div class="pd-modal-header"><h3>Delete template</h3><button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form"><p>Delete <strong>' + esc(t.name) + '</strong>? Meetings it has already ' +
+      '<div class="pp-form"><p>Delete <strong>' + esc(t.name) + '</strong>? Presentations it has already ' +
       'generated are not affected.</p></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-danger" id="tmpl-d-yes">Delete</button></div>';
