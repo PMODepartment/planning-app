@@ -687,81 +687,62 @@ window.ProgressPhotos = (function () {
     });
     return out.sort();
   }
-  // ---- Trade / Works: multi-select checkbox groups -------------------------
-  // 2026-08-29 feedback item 2: "Trades can also be multiple" — both fields
-  // moved from a single-value <select> to a checkbox group, following the
-  // SAME visual pattern this file already uses for the Activity Code overlay
-  // (`codeOverlayHTML`/`readCodeTags`), rather than inventing a third
-  // component. Options still control what CAN be entered (owner feedback,
-  // 2026-08-13: "Works have no choices, should have choices to control
-  // inputs") — nothing about that constraint is loosened by going multi.
-  function multiCheckHTML(idPrefix, field, options, existingVals, emptyNote) {
-    existingVals = existingVals || [];
-    if (!options.length) return '<p class="pp-hint">' + Fmt.esc(emptyNote) + '</p>';
-    return '<div class="pp-multichk" id="' + idPrefix + '-' + field + '">' +
-      options.map(function (v) {
-        return '<label class="pp-mchk"><input type="checkbox" value="' + Fmt.esc(v) + '"' +
-               (existingVals.indexOf(v) >= 0 ? ' checked' : '') + '/> ' + Fmt.esc(v) + '</label>';
-      }).join('') +
-    '</div>';
-  }
-  function readMultiCheck(idPrefix, field) {
-    var wrap = $(idPrefix + '-' + field); if (!wrap) return [];
-    return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
-  }
-  function tradesOverlayHTML(idPrefix, existingTrades) {
-    return multiCheckHTML(idPrefix, 'trades', TRADES, existingTrades, 'No trades configured.');
-  }
+  // ---- Works: a single schedule-derived tag -------------------------------
+  // 2026-08-29 feedback item 9: "instead of selecting trades and works as
+  // multiple selection, add a works tag to the media, get the works choices
+  // from the schedule module" — REVERSES the multi-select checkbox groups
+  // this same file shipped earlier the same day (item 2 below, now retired).
+  // Trade is no longer a field the planner fills in at all: it's DERIVED from
+  // whichever schedule activity the picked Works value names, via
+  // `deriveTradeForWorks` — so grouping/filtering by trade (unchanged
+  // elsewhere in this file) keeps working without asking the question twice.
   // A photo's trades/works, tolerant of pre-migration rows that only ever
-  // had the singular `trade`/`works` text columns filled in.
+  // had the singular `trade`/`works` text columns filled in, AND of the
+  // multi-select era's rows (which may carry more than one value in the
+  // array columns) — both still read correctly here.
   function tradesOf(r) { return (r.trades && r.trades.length) ? r.trades : (r.trade ? [r.trade] : []); }
   function worksOf(r) { return (r.works_multi && r.works_multi.length) ? r.works_multi : (r.works ? [r.works] : []); }
-  // Works options are schedule-derived per the CURRENTLY CHECKED trades
-  // (unioned across all of them — same fallback-to-everything-when-none-
-  // picked rule `worksOptions('')` already had). `existingWorks` values not
-  // in the derived list (e.g. a custom value typed earlier, or a value whose
-  // owning trade got unchecked) are still shown and checked — a re-render
-  // must never silently drop a value the row already has.
-  function worksOverlayHTML(idPrefix, tradeVals, existingWorks) {
-    existingWorks = existingWorks || [];
-    var opts = worksOptions(tradeVals);
-    existingWorks.forEach(function (w) { if (w && opts.indexOf(w) < 0) opts.push(w); });
+  // Reverse of workTypeMatchesTrade: given a Works value, find the schedule
+  // activity it names and report which Trade its work_type belongs to. No
+  // match (a custom/free-text Works value, or one that predates the
+  // schedule) returns null — the photo simply carries no trade, rather than
+  // a guessed one.
+  function deriveTradeForWorks(worksValue) {
+    if (!worksValue) return null;
+    var v = String(worksValue).trim().toLowerCase();
+    var act = SCHED_ACTS.filter(function (a) { return (a.activity_name || '').trim().toLowerCase() === v; })[0];
+    if (!act || !act.work_type) return null;
+    return TRADES.filter(function (t) { return workTypeMatchesTrade(act.work_type, t); })[0] || null;
+  }
+  var WORKS_CUSTOM = '__custom__';
+  function worksTagFieldHTML(idPrefix, existingVal) {
+    existingVal = existingVal || '';
+    var opts = worksOptions();
+    if (existingVal && opts.indexOf(existingVal) < 0) opts.push(existingVal);
     opts.sort();
-    var body = opts.length
-      ? multiCheckHTML(idPrefix, 'works', opts, existingWorks, '')
-      : '<p class="pp-hint">No Works values yet — add one below.</p>';
-    return body +
-      '<button type="button" class="pd-btn pp-addworksbtn" id="' + idPrefix + '-works-add">+ Add custom Works value…</button>';
+    return '<select class="pd-select" id="' + idPrefix + '-workstag">' +
+      '<option value="">— Select —</option>' +
+      opts.map(function (v) {
+        return '<option value="' + Fmt.esc(v) + '"' + (v === existingVal ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>';
+      }).join('') +
+      '<option value="' + WORKS_CUSTOM + '">+ Add custom value…</option>' +
+    '</select>';
   }
-  function refreshWorksOverlay(idPrefix) {
-    var host = $(idPrefix + '-workshost'); if (!host) return;
-    var tradeVals = readMultiCheck(idPrefix, 'trades');
-    var keep = readMultiCheck(idPrefix, 'works');   // preserve whatever's already checked through the re-render
-    host.innerHTML = worksOverlayHTML(idPrefix, tradeVals, keep);
-    wireWorksAddButton(idPrefix);
-  }
-  function wireWorksAddButton(idPrefix) {
-    var btn = $(idPrefix + '-works-add'); if (!btn) return;
-    btn.onclick = function () {
+  function wireWorksTagField(idPrefix) {
+    var sel = $(idPrefix + '-workstag'); if (!sel) return;
+    sel.onchange = function () {
+      if (sel.value !== WORKS_CUSTOM) return;
       var v = (window.prompt('New Works value:') || '').trim();
-      if (!v) return;
-      var tradeVals = readMultiCheck(idPrefix, 'trades');
-      var keep = readMultiCheck(idPrefix, 'works');
-      if (keep.indexOf(v) < 0) keep.push(v);
-      var host = $(idPrefix + '-workshost');
-      if (host) { host.innerHTML = worksOverlayHTML(idPrefix, tradeVals, keep); wireWorksAddButton(idPrefix); }
+      if (!v) { sel.value = ''; return; }
+      var opt = document.createElement('option');
+      opt.value = v; opt.textContent = v; opt.selected = true;
+      sel.insertBefore(opt, sel.lastElementChild);
     };
   }
-  // Re-scopes the Works checkbox group to whichever Trades are checked in the
-  // currently-open modal, live on every Trade toggle.
-  function wireTradeWorks(idPrefix) {
-    var tradesWrap = $(idPrefix + '-trades');
-    if (tradesWrap) {
-      Array.prototype.forEach.call(tradesWrap.querySelectorAll('input[type=checkbox]'), function (c) {
-        c.onchange = function () { refreshWorksOverlay(idPrefix); };
-      });
-    }
-    wireWorksAddButton(idPrefix);
+  function readWorksTag(idPrefix) {
+    var sel = $(idPrefix + '-workstag');
+    var v = sel ? sel.value : '';
+    return v === WORKS_CUSTOM ? '' : v;
   }
   function fillFilterOptions() {
     function fill(id, list, blank) {
@@ -1857,18 +1838,16 @@ window.ProgressPhotos = (function () {
 
   // --------------------------------------------------------------- upload ---
   function reqMark() { return ' <span class="pp-req">*</span>'; }
-  // Capture date / Trade / Works / Location Breakdown are required. These
-  // fields live in a plain <div>, not a <form>, so the native `required`
-  // attribute is a visual/semantic cue only -- this is the actual gate,
-  // called before either the Add or Edit save handler proceeds.
-  // ⚠️ Trade/Works are checkbox groups now (multi-select) -- "required" means
-  // at least one box checked, read via readMultiCheck rather than a select's
-  // own .value.
+  // Capture date / Works / Location Breakdown are required. These fields
+  // live in a plain <div>, not a <form>, so the native `required` attribute
+  // is a visual/semantic cue only -- this is the actual gate, called before
+  // either the Add or Edit save handler proceeds. Trade is no longer a
+  // field of its own (item 9) -- it's derived from the Works value chosen,
+  // so there is nothing to require separately.
   function requiredFieldsMissing(idPrefix) {
     var date = $(idPrefix + '-date');
     if (!date || !date.value) return 'Capture date is required.';
-    if (!readMultiCheck(idPrefix, 'trades').length) return 'At least one Trade is required.';
-    if (!readMultiCheck(idPrefix, 'works').length) return 'At least one Works value is required.';
+    if (!readWorksTag(idPrefix)) return 'A Works value is required.';
     var need = locRequiredLevels();
     if (need.length) {
       var vals = currentLocValues(idPrefix);
@@ -2035,6 +2014,14 @@ window.ProgressPhotos = (function () {
   // tooltip, since Gaussian Splatting/RunPod are on hold; they route to
   // pano.js/recon.js's own real capture flows (unchanged) once re-enabled,
   // never re-implemented here.
+  // 2026-08-29 feedback item 17: four options -- Photo / Video / 360° / 3D --
+  // with only 3D greyed out (3D reconstruction is the one still on hold; 360°
+  // capture is being fixed in the same round, item 18, so it comes back as a
+  // real choice here). Picking Photo/Video stays in THIS form (they share
+  // every other field); picking 360° hands off to pano.js's own real capture
+  // flow instead -- a 360° capture is a fundamentally different pipeline
+  // (record/stitch into a `panoramas` row, not a plain file into
+  // `progress_photos`), so it is delegated to, never reimplemented here.
   function mediaTypeSelectorHTML(idPrefix, cur) {
     cur = cur || 'photo';
     return '<div class="pd-field pp-span2"><label>Type</label>' +
@@ -2043,8 +2030,8 @@ window.ProgressPhotos = (function () {
           '" data-mtype="photo" id="' + idPrefix + '-mtype-photo">Photo</button>' +
         '<button type="button" class="pp-mtype' + (cur === 'video' ? ' active' : '') +
           '" data-mtype="video" id="' + idPrefix + '-mtype-video">Video</button>' +
-        '<button type="button" class="pp-mtype" disabled title="360° and 3D capture are on hold — see the Photos screen\'s own 360°/3D tools">' +
-          '360° / 3D</button>' +
+        '<button type="button" class="pp-mtype" id="' + idPrefix + '-mtype-360">360°</button>' +
+        '<button type="button" class="pp-mtype" disabled title="3D reconstruction is on hold">3D</button>' +
       '</div></div>';
   }
   function wireMediaTypeSelector(idPrefix, onChange) {
@@ -2085,12 +2072,10 @@ window.ProgressPhotos = (function () {
             '<input class="pd-input" id="pp-desc" placeholder="e.g. Model Unit" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-date" value="' + today + '" required /></div>' +
-          '<div class="pd-field pp-span2"><label>Trade' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
-            tradesOverlayHTML('pp', []) + '</div>' +
-          '<div class="pd-field pp-span2"><label>Works' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
-            '<div id="pp-workshost">' + worksOverlayHTML('pp', [], []) + '</div></div>' +
+          '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
+            worksTagFieldHTML('pp', '') + '</div>' +
           locationFieldHTML('pp', preset.locationValues || {}) +
-          keyPlanFieldHTML('pp', '') +
+          (window.BIM ? BIM.pinFieldHTML('pp', null) : '') +
         '</div>' +
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
       '</div>' +
@@ -2100,11 +2085,19 @@ window.ProgressPhotos = (function () {
 
     var m = openModal(html, 640);
     wireLocationField('pp');
-    wireTradeWorks('pp');
-    wireKeyPlanField('pp');
+    wireWorksTagField('pp');
+    if (window.BIM) BIM.wirePinField('pp');
     var mtype = wireMediaTypeSelector('pp', function (t) {
       var fld = $('pp-filesfield'); if (fld) fld.querySelector('label').textContent = t === 'video' ? 'Videos' : 'Photos';
     });
+    // 360° hands off to pano.js's own real capture flow (item 17) — this
+    // modal closes rather than trying to represent a recording/stitching
+    // pipeline inside the same form as a plain file upload.
+    if ($('pp-mtype-360')) $('pp-mtype-360').onclick = function () {
+      m.close();
+      if (window.PANO && PANO.openCapture) PANO.openCapture();
+      else UI.toast('360° capture is not available', 'error');
+    };
     hydrate(m.el);
 
     $('pp-save').onclick = async function () {
@@ -2115,26 +2108,28 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
       var act = resolveActivity(locVals);
-      var tradesVal = readMultiCheck('pp', 'trades');
-      var worksVal = readMultiCheck('pp', 'works');
+      // Item 9: Works is now a single schedule-derived tag; Trade is DERIVED
+      // from it, never picked directly. `trades`/`works_multi` stay the real
+      // array columns (at most one element each now) so every downstream
+      // reader (grouping, filters, `tradesOf`/`worksOf`) keeps working
+      // unchanged; `trade`/`works` stay populated too as the singular
+      // display-cache fallback, same "deprecated but kept in step"
+      // convention this file already uses for `location`.
+      var worksVal = readWorksTag('pp');
+      var tradeVal = deriveTradeForWorks(worksVal);
+      var pinData = window.BIM ? BIM.readPinField('pp') : null;   // item 11
       var shared = {
         description: $('pp-desc').value.trim(),
         taken_at: $('pp-date').value || null,
-        // `trades`/`works_multi` are the real multi-value columns (2026-08-29
-        // feedback item 2); `trade`/`works` stay populated too, as a
-        // first-selected display-cache fallback for any older code path that
-        // still reads the singular column -- same "deprecated but kept in
-        // step" convention this file already uses for `location`.
-        trades: tradesVal,
-        works_multi: worksVal,
-        trade: tradesVal[0] || null,
-        works: worksVal[0] || null,
+        trades: tradeVal ? [tradeVal] : [],
+        works_multi: worksVal ? [worksVal] : [],
+        trade: tradeVal,
+        works: worksVal || null,
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp'),
-        key_plan_url: readKeyPlanValue('pp') || null,
         media_type: kind
       };
       this.disabled = true;
@@ -2157,20 +2152,13 @@ window.ProgressPhotos = (function () {
       if (queued) UI.toast(queued + ' photo' + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
-      // Floor-plan pin + direction as a "best practice" follow-up (18-item
-      // list, Batch E) — NON-BLOCKING by design: the plan's own wording
-      // ("gains a REQUIRED floor-plan step") would turn every capture,
-      // everywhere, into a hard gate on the Plans module even existing yet
-      // for this project. Making an already-shipped, well-tested critical
-      // path (Add photos) newly blockable on an unrelated module's state is
-      // a bigger behaviour change than "best practice" calls for — so this
-      // offers the capability right after a successful upload instead,
-      // skippable, using the FIRST uploaded item to represent the whole
-      // batch (a pin is fundamentally ONE point; a set of photos captured
-      // together is well represented by one).
-      if (newIds.length && window.BIM && BIM.hasPlans && BIM.hasPlans() && BIM.openPinPickerFor) {
-        BIM.openPinPickerFor('photo', newIds[0],
-          newIds.length > 1 ? newIds.length + ' photos' : 'this photo', function () {});
+      // Item 11: pin + direction is now captured INLINE, in the same form as
+      // the upload itself, rather than a separate popup shown after the
+      // fact -- so it's saved for every uploaded item that shares this one
+      // camera position, not just a single representative photo. A no-op
+      // when the planner left the field blank (readPinField returned null).
+      if (pinData && window.BIM && BIM.savePinForItem) {
+        for (var pi = 0; pi < newIds.length; pi++) await BIM.savePinForItem('photo', newIds[pi], pinData);
       }
       if (typeof preset.onDone === 'function') preset.onDone(newIds);
     };
@@ -2185,110 +2173,15 @@ window.ProgressPhotos = (function () {
   }
 
   // ---------------------------------------------------- Key Plan (per photo)
-  // Key plan now lives on the PHOTO, not the PPR slide (owner feedback), so
-  // both the Add and Edit photo forms carry a "Key plan" field. Rather than a
-  // bare file input every time, it's a small wizard: pick one already
-  // uploaded to this project, or upload a new one -- an "easy uploading and
-  // selection" flow instead of re-uploading the same key plan for every photo
-  // at that location.
-  async function uploadKeyPlanFile(file) {
-    var safe = file.name.replace(/[^\w.\-]+/g, '_');
-    var path = pid + '/keyplans/' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '_' + safe;
-    var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
-    if (res.error) throw res.error;
-    return path;
-  }
-  function distinctKeyPlans() {
-    var seen = {}, out = [];
-    rows.forEach(function (r) {
-      if (r.key_plan_url && !seen[r.key_plan_url]) { seen[r.key_plan_url] = 1; out.push(r.key_plan_url); }
-    });
-    return out;
-  }
-  function keyPlanFieldHTML(idPrefix, curPath) {
-    return '<div class="pd-field pp-span2 pp-keyplanfield"><label>Key plan <span class="pp-optnote">(optional)</span></label>' +
-      '<input type="hidden" id="' + idPrefix + '-kp-path" value="' + Fmt.esc(curPath || '') + '" />' +
-      '<div class="pp-kppreviewrow">' +
-        '<div class="pp-kppreview" id="' + idPrefix + '-kp-preview"></div>' +
-        '<button type="button" class="pd-btn" id="' + idPrefix + '-kp-btn">' +
-          (curPath ? 'Change key plan…' : 'Set key plan…') + '</button>' +
-        (curPath ? '<button type="button" class="pd-btn" id="' + idPrefix + '-kp-clear">Remove</button>' : '') +
-      '</div></div>';
-  }
-  function paintKeyPlanPreview(idPrefix) {
-    var pathEl = $(idPrefix + '-kp-path');
-    var path = pathEl ? pathEl.value : '';
-    var prev = $(idPrefix + '-kp-preview'); if (!prev) return;
-    var u = path ? urlCache[path] : '';
-    prev.innerHTML = path
-      ? (u ? '<img src="' + Fmt.esc(u) + '" alt="Key plan" />' : '<span class="pp-muted">Key plan set</span>')
-      : '<span class="pp-muted">No key plan set</span>';
-  }
-  function wireKeyPlanField(idPrefix) {
-    paintKeyPlanPreview(idPrefix);
-    var btn = $(idPrefix + '-kp-btn');
-    if (btn) btn.onclick = function () { openKeyPlanWizard(idPrefix); };
-    var clr = $(idPrefix + '-kp-clear');
-    if (clr) clr.onclick = function () {
-      $(idPrefix + '-kp-path').value = '';
-      paintKeyPlanPreview(idPrefix);
-      clr.remove();
-      if (btn) btn.textContent = 'Set key plan…';
-    };
-  }
-  function readKeyPlanValue(idPrefix) {
-    var el = $(idPrefix + '-kp-path');
-    return el ? el.value : '';
-  }
-  function openKeyPlanWizard(idPrefix) {
-    var existing = distinctKeyPlans();
-    var html =
-      '<div class="pd-modal-header"><h3>Key plan</h3>' +
-        '<button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form">' +
-        (existing.length
-          ? '<p class="pp-hint">Pick one already uploaded to this project, or upload a new one.</p>' +
-            '<div class="pp-kpgrid" id="pp-kp-grid">' + existing.map(function (path) {
-              var u = urlCache[path] || '';
-              return '<button type="button" class="pp-kpitem" data-path="' + Fmt.esc(path) + '">' +
-                (u ? '<img src="' + Fmt.esc(u) + '" alt="" />' : '<span data-ico="camera" data-ico-size="18"></span>') +
-                '</button>';
-            }).join('') + '</div>'
-          : '<p class="pp-hint">No key plans uploaded to this project yet — upload one below.</p>') +
-        '<div class="pd-field"><label>Upload new key plan</label>' +
-          '<input class="pd-input" type="file" id="pp-kp-file" accept="image/*" /></div>' +
-      '</div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
-        '<button class="pd-btn pd-btn-primary" id="pp-kp-upload" disabled>Upload &amp; use</button></div>';
-    var m = openModal(html, 560);
-    hydrate(m.el);
-    Array.prototype.forEach.call(m.el.querySelectorAll('.pp-kpitem'), function (b) {
-      b.onclick = function () {
-        $(idPrefix + '-kp-path').value = this.dataset.path;
-        paintKeyPlanPreview(idPrefix);
-        var btn = $(idPrefix + '-kp-btn'); if (btn) btn.textContent = 'Change key plan…';
-        m.close();
-      };
-    });
-    var fileInput = $('pp-kp-file'), upBtn = $('pp-kp-upload');
-    fileInput.onchange = function () { upBtn.disabled = !(fileInput.files && fileInput.files[0]); };
-    upBtn.onclick = async function () {
-      var f = fileInput.files && fileInput.files[0]; if (!f) return;
-      this.disabled = true; this.textContent = 'Uploading…';
-      try {
-        var path = await uploadKeyPlanFile(f);
-        var res = await sb().storage.from(BUCKET).createSignedUrl(path, SIGN_TTL);
-        if (res && res.data && res.data.signedUrl) urlCache[path] = res.data.signedUrl;
-        $(idPrefix + '-kp-path').value = path;
-        paintKeyPlanPreview(idPrefix);
-        var btn = $(idPrefix + '-kp-btn'); if (btn) btn.textContent = 'Change key plan…';
-        m.close();
-      } catch (err) {
-        UI.toast('Key plan upload failed: ' + (err.message || err), 'error');
-        this.disabled = false; this.textContent = 'Upload & use';
-      }
-    };
-  }
+  // RETIRED (2026-08-29 feedback item 11): this ad-hoc "upload your own key
+  // plan image every time" wizard is superseded by BIM.pinFieldHTML/
+  // wirePinField/readPinField/savePinForItem, which pick from the project's
+  // REAL floor_plans database (the Plans tab) and additionally capture WHERE
+  // on that plan the camera stood and which way it faced — the two things a
+  // bare reference image never recorded. `progress_photos.key_plan_url`
+  // stays in the schema for any pre-existing row that still carries one
+  // (nothing reads or displays it going forward); no migration needed to
+  // remove a column nothing new writes to.
 
   // ------------------------------------------------------------ tolerant write
   // Every DB write that might carry the new schedule-linkage columns goes
@@ -2494,6 +2387,7 @@ window.ProgressPhotos = (function () {
   // ----------------------------------------------------------- edit/delete ---
   function openForm(r) {
     broadcastCollabSel(r.id, true);   // tell other viewers I'm editing this photo
+    var existingPinInfo = (window.BIM && BIM.pinInfoFor) ? BIM.pinInfoFor('photo', r.id) : null;
     var html =
       '<div class="pd-modal-header"><h3>Edit photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
@@ -2504,12 +2398,10 @@ window.ProgressPhotos = (function () {
             '<input class="pd-input" id="pp-e-desc" value="' + Fmt.esc(r.description || '') + '" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-e-date" value="' + Fmt.esc(r.taken_at || '') + '" required /></div>' +
-          '<div class="pd-field pp-span2"><label>Trade' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
-            tradesOverlayHTML('pp-e', tradesOf(r)) + '</div>' +
-          '<div class="pd-field pp-span2"><label>Works' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
-            '<div id="pp-e-workshost">' + worksOverlayHTML('pp-e', tradesOf(r), worksOf(r)) + '</div></div>' +
+          '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
+            worksTagFieldHTML('pp-e', worksOf(r)[0] || '') + '</div>' +
           locationFieldHTML('pp-e', r.location_values || {}) +
-          keyPlanFieldHTML('pp-e', r.key_plan_url || '') +
+          (window.BIM ? BIM.pinFieldHTML('pp-e', existingPinInfo ? existingPinInfo.pin : null) : '') +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
@@ -2522,8 +2414,8 @@ window.ProgressPhotos = (function () {
       c.checked = (r.tags || []).indexOf(c.value) >= 0;
     });
     wireLocationField('pp-e', true);
-    wireTradeWorks('pp-e');
-    wireKeyPlanField('pp-e');
+    wireWorksTagField('pp-e');
+    if (window.BIM) BIM.wirePinField('pp-e');
     hydrate(m.el);
     // Clear the "editing this photo" cursor on every close path (× / Cancel).
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
@@ -2535,21 +2427,21 @@ window.ProgressPhotos = (function () {
       this.disabled = true;
       var locVals = currentLocValues('pp-e');
       var act = resolveActivity(locVals);
-      var tradesVal = readMultiCheck('pp-e', 'trades');
-      var worksVal = readMultiCheck('pp-e', 'works');
+      var worksVal = readWorksTag('pp-e');
+      var tradeVal = deriveTradeForWorks(worksVal);
+      var pinData = window.BIM ? BIM.readPinField('pp-e') : null;   // item 11 -- read before the modal closes
       var patch = {
         description: $('pp-e-desc').value.trim(),
         taken_at: $('pp-e-date').value || null,
-        trades: tradesVal,
-        works_multi: worksVal,
-        trade: tradesVal[0] || null,
-        works: worksVal[0] || null,
+        trades: tradeVal ? [tradeVal] : [],
+        works_multi: worksVal ? [worksVal] : [],
+        trade: tradeVal,
+        works: worksVal || null,
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp-e'),
-        key_plan_url: readKeyPlanValue('pp-e') || null,
         updated_at: new Date().toISOString()
       };
       // Offline-capable metadata edit: apply optimistically, then route through
@@ -2563,6 +2455,7 @@ window.ProgressPhotos = (function () {
       if (!w.ok) { UI.toast(w.error ? w.error.message : 'Save failed', 'error'); return; }
       UI.toast(w.queued ? 'Saved on this device — will sync when you reconnect' : 'Photo updated', 'ok');
       if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);
+      if (pinData && window.BIM && BIM.savePinForItem) await BIM.savePinForItem('photo', r.id, pinData);
     };
 
     // Autosave (metadata only — no re-upload involved): debounced re-use of the
@@ -2700,6 +2593,19 @@ window.ProgressPhotos = (function () {
     // trades on every pre-migration row.
     _tradesOf: function (r) { return tradesOf(r); },
     _worksOf: function (r) { return worksOf(r); },
+    // Item 9 (2026-08-29, second feedback round): worth genuinely executing
+    // for the same reason — a wrong reverse-lookup here silently mislabels
+    // every photo's trade for a group-by/filter that reads it, with nothing
+    // in the UI to catch a subtly wrong match. Saves/restores SCHED_ACTS
+    // around the call (same save/restore-closure-state convention bim.js's
+    // own _stackGrid test hook already uses) so a test can inject a fixture
+    // schedule without touching this module's real load path.
+    _deriveTradeForWorks: function (worksValue, schedActs) {
+      var saved = SCHED_ACTS;
+      SCHED_ACTS = schedActs || [];
+      try { return deriveTradeForWorks(worksValue); }
+      finally { SCHED_ACTS = saved; }
+    },
     // Test-only hooks for the Batch C (2026-08-29) 360°/3D media strip — lets
     // test.js genuinely execute the location/date/search filter match and
     // the panorama+reconstruction merge, rather than only regex-checking the

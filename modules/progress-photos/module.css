@@ -458,16 +458,6 @@
 .pp-codegroup-name { font-weight: 700; color: var(--pd-muted); min-width: 70px; }
 .pp-codechk { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; }
 
-/* Trade / Works multi-select checkbox groups (2026-08-29 feedback item 2) —
-   same visual language as .pp-codetags/.pp-codechk above, just without the
-   per-group name label (Trade and Works are each a single flat group). */
-.pp-multichk {
-  display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 10px;
-  border: 1px solid var(--pd-line); border-radius: var(--pd-radius); background: var(--pd-bg);
-}
-.pp-mchk { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 400; }
-.pp-addworksbtn { margin-top: 6px; font-size: 12.5px; padding: 5px 10px; }
-
 /* ============================================================================
    Selection-mode topbar tools (item 3, 2026-08-29 follow-up)
    ⚠️ The batch-select bar this section used to style (.pp-selbar, a boxed row
@@ -664,28 +654,9 @@
   border: 1px solid var(--pd-line); border-radius: 3px;
 }
 
-/* Key plan field on the Add/Edit PHOTO forms (key plans are per-photo now) */
-.pp-kppreviewrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-.pp-kppreview {
-  width: 92px; height: 62px; flex: 0 0 auto; display: flex;
-  align-items: center; justify-content: center; overflow: hidden;
-  background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 3px;
-  font-size: 11px; text-align: center;
-}
-.pp-kppreview img { width: 100%; height: 100%; object-fit: contain; display: block; }
-/* Key plan selection wizard */
-.pp-kpgrid {
-  display: grid; gap: 9px; margin-bottom: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-}
-.pp-kpitem {
-  padding: 0; cursor: pointer; overflow: hidden; height: 84px;
-  background: var(--pd-bg); border: 1px solid var(--pd-line);
-  border-radius: 3px; color: var(--pd-muted);
-  display: flex; align-items: center; justify-content: center;
-}
-.pp-kpitem:hover { border-color: var(--pd-red); }
-.pp-kpitem img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* The old per-photo "upload your own key plan" wizard (.pp-kp*) is retired
+   (2026-08-29 item 11) — superseded by .bim-pinfield/.bim-pinstage-* above,
+   which picks from the real floor_plans database instead. */
 .ppr-imgwrap { position: relative; }
 .ppr-img {
   width: 100%; display: block; background: var(--pd-bg);
@@ -873,6 +844,18 @@
 /* Direction-drag widget (pin picker + Gallery pin flow) */
 .bim-dirwidget { display: flex; align-items: center; gap: 14px; }
 .bim-dirwidget svg { touch-action: none; }
+
+/* Embeddable camera-position field (18-item list item 11) — the Add/Edit
+   Photo form's own plan-select + click-to-pin stage, same visual language
+   as the pin picker modal but inline. */
+.bim-pinfield select.pd-select { margin-bottom: 8px; }
+.bim-pinstage-imgwrap { position: relative; max-width: 100%; }
+.bim-pinstage-imgwrap img { width: 100%; display: block; cursor: crosshair; border-radius: var(--pd-radius); }
+.bim-pinstage-dot {
+  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border-radius: 50%; background: var(--pd-red); border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--pd-red); pointer-events: none;
+}
 
 /* Plan / Map segmented toggle + map clustering (Batch G) */
 .bim-viewtoggle { display: flex; gap: 6px; }

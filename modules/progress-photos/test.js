@@ -214,34 +214,40 @@ ok('a returning user\'s explicit List choice still overrides the new default (re
 ok('the Presentations-list row-action icons carry left padding (follow-up item 2)',
    /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
 
-console.log('\n[1/2] Works is a real dropdown, not free text (checkbox group as of Batch B, 2026-08-29)');
+console.log('\n[1/2] Works is a real dropdown, not free text (a single schedule-derived tag as of item 9, 2026-08-29)');
 ok('no <input list="pp-works-list"> left anywhere', !/list="pp-works-list"/.test(mjs + pjs));
 ok('shared works datalist removed from index.html', !/pp-works-list/.test(html));
-ok('"+ Add custom Works value" escape hatch present (was "+ Add new Works value…" in the old <select>)',
-   /Add custom Works value/.test(mjs));
-ok('Add form uses the Works overlay', /worksOverlayHTML\('pp',/.test(mjs));
-ok('Edit form uses the Works overlay', /worksOverlayHTML\('pp-e',/.test(mjs));
+ok('"+ Add custom value…" escape hatch present as a select option', /Add custom value…/.test(mjs));
+ok('Add form uses the Works tag field', /worksTagFieldHTML\('pp',/.test(mjs));
+ok('Edit form uses the Works tag field', /worksTagFieldHTML\('pp-e',/.test(mjs));
 
-console.log('\n[2] Capture date / trade / works / location required');
+console.log('\n[2] Capture date / works / location required');
 ok('requiredFieldsMissing gates date', /Capture date is required/.test(mjs));
-ok('requiredFieldsMissing gates trade', /At least one Trade is required/.test(mjs));
-ok('requiredFieldsMissing gates works', /At least one Works value is required/.test(mjs));
+ok('requiredFieldsMissing gates works', /A Works value is required/.test(mjs));
+ok('Trade is no longer gated on its own — it is derived from Works (item 9)',
+   !/At least one Trade is required/.test(mjs));
 ok('Add save calls the gate', /requiredFieldsMissing\('pp'\)/.test(mjs));
 ok('Edit save calls the gate', /requiredFieldsMissing\('pp-e'\)/.test(mjs));
 
-console.log('\n[2b] Batch B (2026-08-29 feedback item 2) — Trade/Works multi-select, Location label dropped');
-ok('TRADES checkbox overlay function exists', /function tradesOverlayHTML/.test(mjs));
-ok('Works checkbox overlay function exists (schedule-derived, trade-scoped, unioned across checked trades)',
-   /function worksOverlayHTML/.test(mjs));
-ok('multiCheckHTML renders one checkbox per option, checking the ones already selected',
-   /function multiCheckHTML[\s\S]{0,400}existingVals\.indexOf\(v\) >= 0 \? ' checked'/.test(mjs));
-ok('readMultiCheck reads back only the :checked boxes', /function readMultiCheck[\s\S]{0,200}:checked/.test(mjs));
+console.log('\n[2b] Item 9 (2026-08-29 second feedback round) — Works becomes ONE schedule-derived tag, Trade is derived not picked');
+ok('the old TRADES/Works checkbox-overlay machinery is gone (superseded)',
+   !/function tradesOverlayHTML/.test(mjs) && !/function worksOverlayHTML/.test(mjs) &&
+   !/function multiCheckHTML/.test(mjs) && !/function readMultiCheck/.test(mjs) &&
+   !/function wireTradeWorks/.test(mjs));
+ok('deriveTradeForWorks looks up the schedule activity by name and reverse-resolves its Trade',
+   /function deriveTradeForWorks[\s\S]{0,400}workTypeMatchesTrade/.test(mjs));
+ok('a Works value with no matching schedule activity derives no trade (never a guess)',
+   /if \(!act \|\| !act\.work_type\) return null;/.test(mjs));
+ok('worksTagFieldHTML renders a single <select>, not a checkbox group',
+   /function worksTagFieldHTML[\s\S]{0,400}<select class="pd-select"/.test(mjs));
+ok('readWorksTag treats the custom-value sentinel as "nothing chosen yet"',
+   /function readWorksTag[\s\S]{0,200}v === WORKS_CUSTOM \? '' : v/.test(mjs));
 ok('the "Location label" free-text input is gone (item 2 — "redundant")', !/-loctxt/.test(mjs));
 ok('locationFieldHTML no longer takes a locText parameter', /function locationFieldHTML\(idPrefix, existingValues\) \{/.test(mjs));
 ok('location is derived purely from the breakdown breadcrumb on save (both Add and Edit)',
    (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 2);
-ok('the insert/update payload carries both the new arrays and the legacy first-selected fallback',
-   /trades: tradesVal,[\s\S]{0,60}works_multi: worksVal,[\s\S]{0,60}trade: tradesVal\[0\] \|\| null,[\s\S]{0,60}works: worksVal\[0\] \|\| null,/.test(mjs));
+ok('the insert/update payload carries the derived trade + the single works value in the array columns',
+   /trades: tradeVal \? \[tradeVal\] : \[\],[\s\S]{0,60}works_multi: worksVal \? \[worksVal\] : \[\],[\s\S]{0,60}trade: tradeVal,[\s\S]{0,60}works: worksVal \|\| null,/.test(mjs));
 ok('tolerantWrite also retries without trades/works_multi if that migration has not run yet',
    /'trades' in job\.patch \|\| 'works_multi' in job\.patch/.test(mjs));
 ok('the Gallery filters match a photo by ANY of its trades/works, not an exact single-value equality',
@@ -302,7 +308,12 @@ console.log('\n[6] Key plan is per photo, not per slide');
 ok('migration adds progress_photos.key_plan_url', /alter table progress_photos add column if not exists key_plan_url text/.test(fs.readFileSync(migrationFile, 'utf8')));
 ok('keyPlanPathFor reads the photo first', /function keyPlanPathFor[\s\S]{0,240}ph && ph\.key_plan_url/.test(pjs));
 ok('legacy slide key_plan_url still honoured', /ph && ph\.key_plan_url\) \|\| sl\.key_plan_url/.test(pjs));
-ok('photo forms carry a key plan field', /keyPlanFieldHTML\('pp',/.test(mjs) && /keyPlanFieldHTML\('pp-e',/.test(mjs));
+// The old key_plan_url form field is retired (item 11) in favour of a real
+// floor-plan pin — ppr.js's OWN read side (keyPlanPathFor, tested above)
+// is untouched, so any photo captured before this change still shows its
+// key plan in a presentation; only the write side moved.
+ok('photo forms carry the pin+direction field instead of the retired key-plan wizard',
+   /BIM\.pinFieldHTML\('pp', null\)/.test(mjs) && /BIM\.pinFieldHTML\('pp-e',/.test(mjs));
 ok('slide form no longer uploads a key plan', !/ppr-s-kp/.test(pjs));
 ok('signAll signs photo key plans', /if \(p\.key_plan_url\) paths\[p\.key_plan_url\] = 1;/.test(pjs));
 
@@ -341,11 +352,10 @@ ok('single-photo slide uses ppr-pair-single', /ppr-pair ppr-pair-single/.test(pj
 ok('ppr-pair-single centers the photo', /\.ppr-pair-single \{[^}]*justify-content: center/.test(css));
 ok('offline export centers single too', /\.pair\.single\{grid-template-columns:minmax\(0,760px\);justify-content:center\}/.test(pjs));
 
-console.log('\n[11] Key plan upload/selection wizard');
-ok('openKeyPlanWizard exists', /function openKeyPlanWizard/.test(mjs));
-ok('wizard offers already-uploaded key plans', /distinctKeyPlans\(\)/.test(mjs));
-ok('wizard offers a fresh upload', /pp-kp-upload/.test(mjs));
-ok('wizard grid styled', /\.pp-kpgrid \{/.test(css));
+console.log('\n[11] Key plan upload/selection wizard — RETIRED, superseded by the pin field (item 11)');
+ok('the old upload-your-own-key-plan wizard is gone', !/function openKeyPlanWizard/.test(mjs));
+ok('nothing in module.js still calls distinctKeyPlans/uploadKeyPlanFile', !/distinctKeyPlans\(\)/.test(mjs) && !/function uploadKeyPlanFile/.test(mjs));
+ok('its dead CSS (.pp-kpgrid/.pp-kpitem/.pp-kppreview*) was cleaned up alongside the JS', !/\.pp-kpgrid \{/.test(css) && !/\.pp-kpitem \{/.test(css));
 
 console.log('\n[12] Clicking a meeting row opens it');
 ok('row onclick calls openPpr', /r\.onclick = function \(\) \{ openPpr\(r\.dataset\.id\); \};/.test(pjs));
@@ -458,7 +468,11 @@ console.log('\n[misc] insert().select() returns the new row id');
   // solid brand-red badge/dot (.pp-pinpreview-dot, .bim-cluster, .ppr-mktool
   // — a dark translucent toolbar over an arbitrary photo, .ppr-sortno — a
   // solid-red slide-order badge, same family as .ppr-tmpl-locorder).
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.bim-cluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active/;
+  // .bim-pinstage-dot (item 11, same day) is the SAME shape as .bim-pin
+  // itself — a solid-red marker with a white ring over an arbitrary floor
+  // plan image, deliberately theme-independent since the plan's own colours
+  // are unpredictable.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.bim-cluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -996,8 +1010,12 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('openPinPickerFor exists — the Gallery-triggered pin flow that does not disturb the Plans screen state',
      /function openPinPickerFor\(itemType, itemId, itemLabel, onDone\)/.test(bmjs) &&
      !/openPinPickerFor[\s\S]{0,400}activePlanId = /.test(bmjs));
-  ok('module.js offers the pin-picker follow-up after a successful upload, non-blocking',
-     /BIM\.openPinPickerFor/.test(mjs));
+  // Superseded 2026-08-29 (item 11): the pin is now captured INLINE in the
+  // same Add/Edit Photo form (BIM.pinFieldHTML/wirePinField/readPinField),
+  // not as a separate modal shown after the upload completes — checked in
+  // the [item 11] section further down, not here.
+  ok('module.js no longer opens the after-the-fact pin-picker modal from the upload flow',
+     !/BIM\.openPinPickerFor/.test(mjs));
   ok('Gallery tiles with a pin show an expandable icon (item 8), never on tiles without one',
      /pinInfoFor\('photo', r\.id\)/.test(mjs) && /pp-pinbtn/.test(mjs));
   ok('openPinPreview exists for the tile-icon crop-zoom overlay', /function openPinPreview\(photoId\)/.test(mjs));
@@ -1305,6 +1323,54 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('the old buggy .pp-selbar element (display:flex beating the hidden attribute) no longer exists in module.css',
      !/^\.pp-selbar \{/m.test(css));
   ok('the fix is explained in module.css, not just silently removed', /always won\s+regardless of the `hidden` attribute/.test(css));
+
+  console.log('\n[31] Second feedback round (items 9, 11, 17) — Works becomes a schedule tag, camera pin+direction moves inline, 360° re-enabled');
+
+  // --- Item 9: Works is a single schedule-derived tag, Trade is derived -----
+  eq('a Works value matching a Structural schedule activity derives Structural Works',
+     PP._deriveTradeForWorks('Rebar Installation',
+       [{ activity_name: 'Rebar Installation', work_type: 'Structural' }]),
+     'Structural Works');
+  eq('case/whitespace-insensitive match against the schedule activity name',
+     PP._deriveTradeForWorks('  rebar installation  ',
+       [{ activity_name: 'Rebar Installation', work_type: 'Structural' }]),
+     'Structural Works');
+  eq('a Works value with no matching schedule activity derives no trade (never a guess)',
+     PP._deriveTradeForWorks('Some custom value typed by hand', []), null);
+  eq('a matching activity with no work_type derives no trade either', PP._deriveTradeForWorks('Site Clearing',
+     [{ activity_name: 'Site Clearing', work_type: '' }]), null);
+  eq('a blank Works value derives no trade', PP._deriveTradeForWorks('', [{ activity_name: '', work_type: 'MEPF' }]), null);
+
+  // --- Item 11: camera pin + direction move INLINE, key plan wizard retired --
+  ok('BIM exports the embeddable pin field API (pinFieldHTML/wirePinField/readPinField/savePinForItem)',
+     /pinFieldHTML: pinFieldHTML/.test(bmjs) && /wirePinField: wirePinField/.test(bmjs) &&
+     /readPinField: readPinField/.test(bmjs) && /savePinForItem: savePinForItem/.test(bmjs));
+  ok('pinFieldHTML degrades to a hint (never a broken picker) when the project has no floor plans yet',
+     /function pinFieldHTML[\s\S]{0,400}if \(!plans\.length\)/.test(bmjs));
+  ok('readPinField returns null (a no-op) rather than a half-filled object when nothing is picked',
+     /function readPinField[\s\S]{0,400}if \(!planId \|\| x === '' \|\| y === ''\) return null;/.test(bmjs));
+  ok('savePinForItem is a no-op on null pinData — it can never delete a pin the planner did not ask to touch',
+     /async function savePinForItem\(itemType, itemId, pinData\) \{\s*if \(!pinData\) return;/.test(bmjs));
+  ok('savePinForItem UPDATES an existing pin rather than inserting a duplicate for the same item',
+     /var existing = pinsByItem\(itemType, itemId\)\[0\] \|\| null;[\s\S]{0,500}existing\s*\?\s*await sb\(\)\.from\(T_PIN\)\.update/.test(bmjs));
+  ok('the Add form reads the pin field ONCE and applies it to every uploaded item sharing that camera position',
+     /var pinData = window\.BIM \? BIM\.readPinField\('pp'\) : null;/.test(mjs) &&
+     /for \(var pi = 0; pi < newIds\.length; pi\+\+\) await BIM\.savePinForItem\('photo', newIds\[pi\], pinData\);/.test(mjs));
+  ok('the Edit form pre-fills the pin field from the photo\'s existing pin, via BIM.pinInfoFor',
+     /var existingPinInfo = \(window\.BIM && BIM\.pinInfoFor\) \? BIM\.pinInfoFor\('photo', r\.id\) : null;/.test(mjs));
+  ok('the Edit form reads the pin field BEFORE the modal closes (the DOM is gone after)',
+     /var pinData = window\.BIM \? BIM\.readPinField\('pp-e'\) : null;[\s\S]{0,1100}broadcastCollabSel\(null\); m\.close\(\);/.test(mjs));
+
+  // --- Item 17: 4-way media type, only 3D stays disabled ---------------------
+  ok('the type selector offers Photo / Video / 360° / 3D as four distinct buttons',
+     /id="' \+ idPrefix \+ '-mtype-360">360°<\/button>/.test(mjs) &&
+     /disabled title="3D reconstruction is on hold">3D<\/button>/.test(mjs));
+  ok('360° is NOT disabled (item 17 re-enables it — item 18 fixes the flow it delegates to)',
+     !/id="' \+ idPrefix \+ '-mtype-360"[^>]*disabled/.test(mjs));
+  ok('picking 360° closes the Add Media modal and hands off to pano.js\'s real capture flow',
+     /\$\('pp-mtype-360'\)\.onclick = function \(\) \{[\s\S]{0,150}m\.close\(\);[\s\S]{0,80}PANO\.openCapture\(\)/.test(mjs));
+  ok('pano.js exposes openCapture — its capture flow\'s only reachable entry point now that #pano-new is gone',
+     /openCapture: function \(\) \{ openCaptureModal\(\); \}/.test(pnjs));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

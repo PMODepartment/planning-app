@@ -2,6 +2,119 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Second feedback round, part 1 (items 9, 11, 17): Works becomes one schedule tag, camera pin+direction move inline, 360° re-enabled (2026-08-29)
+
+Owner sent a further 10-item list (numbered 9–18, continuing the prior round). This entry covers
+the three items landed first; the rest follow in later entries the same day.
+
+### Item 9 — Works is now ONE schedule-derived tag; Trade is derived, not picked
+
+⚠️ **Reverses this same day's earlier Batch B**, which had turned Trade and Works into two
+multi-select checkbox groups. The owner tried that shape and asked for the opposite: *"instead of
+selecting trades and works as multiple selection, add a works tag to the media, get the works
+choices from the schedule module."* `tradesOverlayHTML`/`worksOverlayHTML`/`multiCheckHTML`/
+`readMultiCheck`/`wireTradeWorks`/`refreshWorksOverlay`/`wireWorksAddButton` are all deleted —
+superseded, not left dormant.
+
+- **Works is one `<select>`** (`worksTagFieldHTML`), sourced from `worksOptions()` — the SAME
+  schedule-derived + previously-captured union that fed the old checkbox group, just rendered as a
+  single choice instead of many. A trailing "+ Add custom value…" option still escapes to a
+  free-text prompt for anything the schedule doesn't know about yet.
+- **Trade is no longer a field at all.** `deriveTradeForWorks(worksValue)` reverse-looks-up the
+  picked Works value against the project's own schedule activities (case/whitespace-insensitive
+  name match), reads that activity's `work_type`, and resolves it to a Trade via the SAME
+  `workTypeMatchesTrade`/`TRADE_WORK_TERMS` table the schedule-scoping code already used. ⚠️ **No
+  match derives no trade** — a custom/free-text Works value, or one typed before the schedule
+  existed, correctly carries no trade rather than a guessed one.
+- `trades`/`works_multi` (the real array columns) still get written — just with at most one
+  element now — so every downstream reader (`tradesOf`/`worksOf`, Gallery's trade/location
+  grouping, the trade/works filters) keeps working completely unchanged. `requiredFieldsMissing`
+  drops its separate Trade check; Works alone is required.
+
+### Item 10 — location choices from the schedule module: already true, confirmed rather than rebuilt
+
+Checked before touching anything: `distinctLocValues(levelId, priorVals)` already scans
+`SCHED_ACTS` (the project's own `project_schedule.location` jsonb, loaded in `loadSchedule()`) to
+build each level's datalist suggestions — location has been schedule-derived since before this
+feedback round. Left as an `<input>` + `<datalist>` per level (not a hard `<select>`), matching
+Project Schedule's own documented convention for this exact feature: typing an unlisted value must
+stay possible, or a genuinely new location (not yet in the schedule) could never be recorded. No
+code change for this item.
+
+### Item 11 — camera pin + direction move INLINE into the Add/Edit Photo form
+
+Owner: *"for key plans, save plans in the floor plan tab; once the floor plan is uploaded, get
+floor plans from that database; then in the add media workflow, add location of camera as well as
+the direction and angle of the POV."*
+
+⚠️ **This retires a whole prior mechanism, not just adds a new one.** The Add/Edit Photo form had
+its own ad-hoc "Key plan" field (`keyPlanFieldHTML`/`uploadKeyPlanFile`/`distinctKeyPlans`/
+`openKeyPlanWizard`) that re-uploaded a bare reference IMAGE per photo, with no notion of a
+position or a facing direction, and was entirely separate from `bim.js`'s real `floor_plans`
+database. That whole block is deleted. `progress_photos.key_plan_url` stays in the schema
+untouched (no migration) — nothing new writes to it, but `ppr.js`'s own `keyPlanPathFor` still
+reads it, so a presentation slide built from a photo captured **before** this change still shows
+its key-plan overlay exactly as before; only the write path moved forward.
+
+- **New embeddable field, in `bim.js` (`pinFieldHTML`/`wirePinField`/`readPinField`/
+  `savePinForItem`)** — the SAME capability `openPinPickerFor`'s modal already had (pick one of the
+  project's real floor plans, click a point, drag a direction via the existing
+  `directionWidgetHTML`/`wireDirectionWidget`/`directionDegFromDrag`), but rendered as HTML embedded
+  directly into module.js's own form instead of a popup shown after the fact. `openPinPickerFor`
+  itself is untouched and still reachable — only the Add/Edit Photo flow stopped calling it.
+- ⚠️ **Captured ONCE per upload batch and applied to every uploaded item**, not just the first — a
+  batch of photos taken from one spot all share that camera position, and now that the field lives
+  in the form (rather than being an afterthought representing "the whole batch" via a single
+  photo), there's no reason to shortchange the rest of the batch.
+- ⚠️ **`readPinField` returning `null` is a no-op, deliberately** — the field has no "clear the
+  pin" affordance (add-or-move only), so a blank field can only honestly mean "the planner didn't
+  set one," never "please delete the existing pin." `savePinForItem` therefore never deletes;
+  editing a photo that already has a pin can move it but not remove it through this form.
+- `savePinForItem(itemType, itemId, pinData)` is an **upsert** — it looks up any existing pin for
+  that item first and UPDATEs it rather than inserting a second row, so re-opening Edit and moving
+  the pin doesn't accumulate duplicate `floor_plan_pins` rows for one photo.
+- The Edit form pre-fills from `BIM.pinInfoFor('photo', r.id)` and — important ordering detail —
+  reads the field's live value **before** `m.close()` runs, since the modal's DOM (and the pin
+  field inside it) is gone the instant it closes.
+- `pinFieldHTML` degrades to a plain hint ("upload one on the Plans tab") when the project has no
+  floor plans yet, rather than rendering a picker with nothing to pick from.
+
+### Item 17 — Add Media offers Photo / Video / 360° / 3D; only 3D stays disabled
+
+Was Photo/Video plus a single disabled "360° / 3D" button. Now four distinct buttons — 3D alone is
+disabled ("3D reconstruction is on hold"); 360° is live, since item 18 (next entry) fixes the
+capture flow it delegates to.
+
+- ⚠️ **Picking 360° does not try to represent a recording/stitching pipeline inside this form.** It
+  closes the Add Media modal and calls `PANO.openCapture()` — a new one-line export
+  (`openCapture: function () { openCaptureModal(); }`) that is, as of this change, **the only
+  reachable entry point into 360° capture at all**: the earlier Gallery-simplification pass removed
+  the standalone `#pano-new` topbar button entirely, leaving `openCaptureModal` unreachable from
+  the UI until this delegation was wired back up.
+
+### Verified
+
+**440 checks green** (was 423), new `[31]` section covering all three items, plus updates to the
+now-superseded Batch B ([1/2], [2], [2b]) and key-plan-wizard ([6], [11]) sections rather than
+deleting them outright — the same "healthy churn from an intentional change" precedent this file
+already follows. Genuinely EXECUTED via test-only hooks (not just regex-matched): `deriveTradeForWorks`
+against five cases (a real schedule match, case/whitespace insensitivity, no match, a matched
+activity with no `work_type`, and a blank Works value) — the exact kind of silent-wrong-data risk
+(`directionDegFromDrag`'s own comment states the same principle) that deserves genuine execution
+rather than only being read. Function-set diff against the pre-change commit: `module.js` **14 lost
+/ 4 added** (all losses are the retired checkbox-overlay and key-plan-wizard machinery, all
+intentional); `bim.js` **0 lost / 7 added**; `pano.js` **0 lost / 0 added** (the new export is a
+property, not a named `function` declaration). 0 NUL bytes across every touched file, CSS braces
+balanced (374/374, two dead rule blocks removed alongside their JS), 0 duplicate `id=` attributes.
+
+⚠️ **Not verified signed in** — no live Supabase login in this environment, same standing caveat as
+the rest of this module. In particular: the pin field's real click-to-place + drag-to-direction
+interaction, the schedule-name reverse-lookup against a real project's activities, and the 360°
+delegation's actual hand-off are all verified structurally/by genuine unit execution, not by
+driving the real DOM.
+
+`MODULE_V` → `20260829k`; `module.css/js` / `bim.js` / `pano.js` → `?v=20260829k`.
+
 ## Gallery screenshot follow-up: toolbar simplification, a real `.pp-selbar` bug, download formats, unified grouping, mobile filters (2026-08-29)
 
 Owner sent a phone screenshot of the Gallery screen with eight numbered items. Two of them

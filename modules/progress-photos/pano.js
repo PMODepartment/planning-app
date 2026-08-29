@@ -579,6 +579,11 @@ window.PANO = (function () {
     // needs this module's data loaded and its signed thumbnail URLs — both
     // exposed here rather than duplicating the fetch+sign logic in module.js.
     ensureLoaded: async function () { if (!panoramas.length) await load(); },
-    urlOf: function (p) { return p ? urlOf(p.pano_url) : ''; }
+    urlOf: function (p) { return p ? urlOf(p.pano_url) : ''; },
+    // 2026-08-29 item 17 — the Add Media type selector's "360°" button
+    // delegates to the real capture flow rather than reimplementing it; this
+    // is that flow's only remaining entry point now that its own topbar
+    // button (#pano-new) is gone (folded into the Gallery screen, item 2).
+    openCapture: function () { openCaptureModal(); }
   };
 })();

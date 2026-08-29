@@ -1108,11 +1108,125 @@ window.BIM = (function () {
     };
   }
 
+  // --------------------------------------------------- embeddable pin field ---
+  // 2026-08-29 feedback item 11: "in the add media workflow, add location of
+  // camera as well as the direction and angle of the POV" — same capability
+  // as openPinPickerFor above (pick a floor plan from THIS project's real
+  // `floor_plans` database, click a point on it, drag out a direction), but
+  // as HTML embedded directly into module.js's own Add/Edit Photo form
+  // instead of a modal shown after the fact. Replaces that form's old ad-hoc
+  // "upload your own key plan image" field, which had no notion of a
+  // position or a facing direction at all. idPrefix-scoped ('pp' for Add,
+  // 'pp-e' for Edit) so the two forms can never collide.
+  function pinFieldHTML(idPrefix, existing) {
+    if (!plans.length) {
+      return '<div class="pd-field pp-span2"><label>Camera position <span class="pp-optnote">(optional)</span></label>' +
+        '<p class="pp-hint">No floor plans yet — upload one on the Plans tab to record where this was captured.</p></div>';
+    }
+    var chosenId = (existing && existing.floor_plan_id) || activePlanId || plans[0].id;
+    return '<div class="pd-field pp-span2 bim-pinfield" id="' + idPrefix + '-pinfield">' +
+      '<label>Camera position <span class="pp-optnote">(optional — click the plan to place a pin)</span></label>' +
+      (plans.length > 1
+        ? '<select class="pd-select" id="' + idPrefix + '-pin-plan">' +
+            plans.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === chosenId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
+          '</select>'
+        : '<input type="hidden" id="' + idPrefix + '-pin-plan" value="' + esc(chosenId) + '" />') +
+      '<div id="' + idPrefix + '-pin-imgwrap" class="bim-pinstage"></div>' +
+      '<p class="pp-hint" id="' + idPrefix + '-pin-status">' +
+        (existing ? 'Point picked — click the plan to move it.' : 'No point picked yet.') + '</p>' +
+      directionWidgetHTML(idPrefix + '-pindir', existing ? existing.direction_deg : null) +
+      '<input type="hidden" id="' + idPrefix + '-pin-x" value="' + (existing ? existing.x_norm : '') + '" />' +
+      '<input type="hidden" id="' + idPrefix + '-pin-y" value="' + (existing ? existing.y_norm : '') + '" />' +
+    '</div>';
+  }
+  function wirePinField(idPrefix) {
+    var field = $(idPrefix + '-pinfield'); if (!field) return;   // no plans yet — nothing to wire
+    wireDirectionWidget(idPrefix + '-pindir');
+    var planSel = $(idPrefix + '-pin-plan');
+    function currentPicked() {
+      var xEl = $(idPrefix + '-pin-x'), yEl = $(idPrefix + '-pin-y');
+      var x = xEl ? xEl.value : '', y = yEl ? yEl.value : '';
+      return (x !== '' && y !== '') ? { x: +x, y: +y } : null;
+    }
+    function stageHTML(planId, picked) {
+      var plan = planById(planId), url = planUrl(plan);
+      if (!url) return '<div class="pp-empty">Plan image not available</div>';
+      var dot = picked ? '<div class="bim-pinstage-dot" style="left:' + (picked.x * 100) + '%;top:' + (picked.y * 100) + '%"></div>' : '';
+      return '<div class="bim-pinstage-imgwrap"><img id="' + idPrefix + '-pin-img" src="' + esc(url) + '" draggable="false" />' + dot + '</div>';
+    }
+    function repaint() {
+      var wrap = $(idPrefix + '-pin-imgwrap'); if (!wrap) return;
+      wrap.innerHTML = stageHTML(planSel ? planSel.value : plans[0].id, currentPicked());
+      var img = $(idPrefix + '-pin-img'); if (!img) return;
+      img.onclick = function (e) {
+        var rect = img.getBoundingClientRect();
+        var xNorm = (e.clientX - rect.left) / rect.width, yNorm = (e.clientY - rect.top) / rect.height;
+        $(idPrefix + '-pin-x').value = xNorm; $(idPrefix + '-pin-y').value = yNorm;
+        var st = $(idPrefix + '-pin-status');
+        if (st) st.textContent = 'Point picked (' + (xNorm * 100).toFixed(0) + '%, ' + (yNorm * 100).toFixed(0) + '%) — click again to move it.';
+        repaint();
+      };
+    }
+    if (planSel) planSel.onchange = function () {
+      $(idPrefix + '-pin-x').value = ''; $(idPrefix + '-pin-y').value = '';
+      var st = $(idPrefix + '-pin-status'); if (st) st.textContent = 'No point picked yet.';
+      repaint();
+    };
+    repaint();
+  }
+  function readPinField(idPrefix) {
+    var field = $(idPrefix + '-pinfield'); if (!field) return null;
+    var planSel = $(idPrefix + '-pin-plan');
+    var planId = planSel ? planSel.value : null;
+    var xEl = $(idPrefix + '-pin-x'), yEl = $(idPrefix + '-pin-y');
+    var x = xEl ? xEl.value : '', y = yEl ? yEl.value : '';
+    if (!planId || x === '' || y === '') return null;   // planner left it blank — nothing to save
+    var dirEl = $(idPrefix + '-pindir-val');
+    var dir = (dirEl && dirEl.value !== '') ? +dirEl.value : null;
+    return { floor_plan_id: planId, x_norm: +x, y_norm: +y, direction_deg: dir };
+  }
+  // Insert-or-update the ONE pin for an item — module.js's Add/Edit Photo
+  // form calls this once per saved photo id, right inside its own save flow
+  // (item 11: "in the add media workflow", not a separate popup afterward).
+  // `pinData === null` is a no-op: the planner left the field blank, and
+  // that must never delete/disturb a pin the item already had (this form has
+  // no "clear the pin" affordance — only add-or-move — so there is nothing
+  // else a blank field could honestly mean here).
+  async function savePinForItem(itemType, itemId, pinData) {
+    if (!pinData) return;
+    var existing = pinsByItem(itemType, itemId)[0] || null;
+    var row = {
+      floor_plan_id: pinData.floor_plan_id, project_id: pid, item_type: itemType, item_id: itemId,
+      x_norm: pinData.x_norm, y_norm: pinData.y_norm, direction_deg: pinData.direction_deg,
+      created_by: uid
+    };
+    var res = existing
+      ? await sb().from(T_PIN).update(row).eq('id', existing.id)
+      : await sb().from(T_PIN).insert(row);
+    if (res.error && /column .* does not exist|schema cache/i.test(res.error.message || '') && 'direction_deg' in row) {
+      var stripped = Object.assign({}, row); delete stripped.direction_deg;
+      res = existing
+        ? await sb().from(T_PIN).update(stripped).eq('id', existing.id)
+        : await sb().from(T_PIN).insert(stripped);
+    }
+    if (res.error) { UI.toast('Camera position not saved: ' + res.error.message, 'warn'); return; }
+    await loadAllPins();
+    if (activePlanId === row.floor_plan_id) await loadPins();
+  }
+
   return {
     init: init,
     _syncTools: syncTools,
     // Gallery upload follow-up (Batch E) — see openPinPickerFor's own comment.
     openPinPickerFor: openPinPickerFor,
+    // 2026-08-29 item 11 — the embeddable form field, see pinFieldHTML's own
+    // comment above for why this superseded openPinPickerFor's after-the-fact
+    // popup for the ordinary Add/Edit Photo flow (openPinPickerFor itself is
+    // left in place — still reachable, just no longer called from there).
+    pinFieldHTML: pinFieldHTML,
+    wirePinField: wirePinField,
+    readPinField: readPinField,
+    savePinForItem: savePinForItem,
     hasPlans: function () { return plans.length > 0; },
     // Item-8 lookup: does this photo have a pin, and if so where/on what plan
     // — used to render the Gallery tile's expandable key-plan-style icon.
