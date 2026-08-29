@@ -19,7 +19,7 @@ window.ProgressPhotos = (function () {
 
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
-  var view = 'list';                 // list | gallery
+  var view = 'gallery';               // list | gallery — gallery is the default landing view (item 1, 2026-08-29 feedback)
   var filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '' };
   var collapsed = {};                // trade -> true
   var urlCache = {};                 // storage path -> signed URL

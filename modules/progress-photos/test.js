@@ -206,6 +206,13 @@ const bmjs = fs.readFileSync(here('bim.js'), 'utf8');
 const html = fs.readFileSync(here('index.html'), 'utf8');
 const css = fs.readFileSync(here('module.css'), 'utf8');
 
+console.log('\n[0] Batch A (2026-08-29 18-item feedback) — Gallery default view + row-icon padding');
+ok('Gallery (tile) view is the default landing view (item 1) — was list', /var view = 'gallery';/.test(mjs));
+ok('a returning user\'s explicit List choice still overrides the new default (restoreUI unchanged)',
+   /if \(v === 'list' \|\| v === 'gallery'\) view = v;/.test(mjs));
+ok('the Presentations-list row-action icons carry left padding (follow-up item 2)',
+   /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
+
 console.log('\n[1/2] Works is a real dropdown, not free text');
 ok('worksSelectHTML emits a <select>', /function worksSelectHTML[\s\S]{0,400}<select/.test(mjs));
 ok('no <input list="pp-works-list"> left anywhere', !/list="pp-works-list"/.test(mjs + pjs));
@@ -221,12 +228,14 @@ ok('requiredFieldsMissing gates works', /Works is required/.test(mjs));
 ok('Add save calls the gate', /requiredFieldsMissing\('pp'\)/.test(mjs));
 ok('Edit save calls the gate', /requiredFieldsMissing\('pp-e'\)/.test(mjs));
 
-console.log('\n[3] PPR renamed to Meeting');
-ok('tab label is Meetings', /data-screen="ppr">Meetings</.test(html));
-ok('primary action is + New Meeting', /\+ New Meeting/.test(html));
-ok('screen title is Meetings', /isPpr \? 'Meetings'/.test(html));
-ok('modal header New Meeting', /'New Meeting' : 'Edit Meeting'/.test(pjs));
-ok('list column header is Meeting Date', /<div>Meeting Date<\/div>/.test(pjs));
+console.log('\n[3] PPR renamed to Meeting, then to Presentation (2026-08-29 feedback item 3)');
+ok('tab label is Presentations', /data-screen="ppr">Presentations</.test(html));
+ok('primary action is + New Presentation', /\+ New Presentation/.test(html));
+ok('screen title is Presentations', /isPpr \? 'Presentations'/.test(html));
+ok('Plans/Gallery screen titles renamed too (2026-08-29 tab-label pass)',
+   /isBim \? 'Plans' : 'Gallery'/.test(html));
+ok('modal header New Presentation', /'New Presentation' : 'Edit Presentation'/.test(pjs));
+ok('list column header is Presentation Date', /<div>Presentation Date<\/div>/.test(pjs));
 // Strip // comments before asserting on user-facing copy — a stale comment
 // mentioning the old label is not a user-visible string.
 const pjsCode = pjs.replace(/^\s*\/\/.*$/gm, '');
@@ -262,7 +271,8 @@ ok('picked photo tags echoed read-only', /function paintInfo/.test(pjs));
 console.log('\n[9] Before/after may be different locations');
 ok('pane() reads each photo\'s own tags', /var tags = ph \? \[ph\.trade, ph\.works, ph\.location\]/.test(pjs));
 ok('slide-level meta row no longer shows location', !/ppr-meta[\s\S]{0,400}<label>Location<\/label>/.test(pjs));
-ok('panes are labelled Before/After', /ppr-panelabel/.test(pjs) && /'Before' : 'After'/.test(pjs));
+ok('panes are labelled Previous/Current (2026-08-29 feedback item 7 — was Before/After)',
+   /ppr-panelabel/.test(pjs) && /'Previous' : 'Current'/.test(pjs));
 
 console.log('\n[10] No before photo → no before caption, photo centered');
 ok('before caption field starts hidden', /id="ppr-s-bcap-field" style="display:none;"/.test(pjs));
@@ -280,7 +290,7 @@ ok('wizard grid styled', /\.pp-kpgrid \{/.test(css));
 
 console.log('\n[12] Clicking a meeting row opens it');
 ok('row onclick calls openPpr', /r\.onclick = function \(\) \{ openPpr\(r\.dataset\.id\); \};/.test(pjs));
-ok('row advertises the action via title', /title="Open this meeting\\'s slides"/.test(pjs));
+ok('row advertises the action via title', /title="Open this presentation\\'s slides"/.test(pjs));
 
 console.log('\n[13] Copy previous meeting, promoting after → before');
 ok('copy select rendered on new meetings', /ppr-f-copy/.test(pjs));
@@ -603,8 +613,8 @@ console.log('\n[misc] insert().select() returns the new row id');
    'function wireStageInteractions', 'function pinMarkerHTML'
   ].forEach((sig) => ok(sig + '() exists in bim.js', bmjs.includes(sig)));
 
-  ok('index.html has the Floor Plan tab + tools + screen host',
-     /data-screen="bim">Floor Plan/.test(html) && /id="bim-new"/.test(html) &&
+  ok('index.html has the Plans tab (renamed from Floor Plan, 2026-08-29) + tools + screen host',
+     /data-screen="bim">Plans</.test(html) && /id="bim-new"/.test(html) &&
      /id="bim-place"/.test(html) && /id="pp-screen-bim"/.test(html));
   ok('bim.js is loaded and BIM.init is wired alongside the other module inits',
      /src="bim\.js/.test(html) && /BIM\.init\(user, profile\)/.test(html));

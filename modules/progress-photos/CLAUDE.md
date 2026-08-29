@@ -2,6 +2,85 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 18-item feedback round, Batch A: default Gallery view + label renames (2026-08-29)
+
+Owner reviewed the live build and gave 18 pieces of feedback spanning the Photos screen, the
+Meetings screen, and the Floor Plan screen, plus several genuinely new subsystems (photo
+markup, a floor-plan map view, a photo vertical-stacking view, top-view-to-floor-plan image
+registration). **Explored the codebase with 3 parallel Explore agents before planning** (the
+exact current data model, and whether any multi-select/rotation/registration pattern already
+existed anywhere in this repo — confirmed none did), then entered Plan Mode given the size and
+number of real architectural forks, and got the owner's sign-off on a lettered batch sequence
+(A through H) before writing any code. The full plan — including the three foundational
+decisions confirmed with the owner (keep 3 tables + merge client-side for the unified Gallery;
+real point-based image registration via OpenCV.js for the floor-plan overlay; real thumbnail
+files generated at upload time) and 6 more items folded in mid-implementation — is preserved at
+`C:\Users\gwsia\.claude\plans\elegant-mixing-mitten.md` for reference across the remaining
+batches (B–H, not yet built).
+
+**This entry covers Batch A only** — quick wins with no schema change:
+- **Item 1**: Gallery (tile) is now the default landing view (`view = 'gallery'`, was `'list'`).
+  ⚠️ A returning user's own explicit List choice still overrides this — `restoreUI()`'s
+  `if (v === 'list' || v === 'gallery') view = v;` is untouched, so this only changes what a
+  *first-ever* visit (or a project with no saved preference) lands on.
+- **Item 7**: "Before"/"After" renamed to "Previous"/"Current" everywhere it's **displayed** —
+  the slide-editor pane labels, the offline HTML/PDF/PPTX export labels, the copy-from-previous
+  hint text, the field labels ("Previous photo", "Caption for the previous photo"). ⚠️
+  **Deliberately NOT renamed**: the DB columns (`before_photo_id`/`after_photo_id`/
+  `before_caption`/`after_caption`) and the internal `which === 'before'|'after'` discriminator
+  string used throughout `ppr.js` (`pane()`, `keyPlanPathFor()`, `slideFigureHTML()`, the
+  `#ppr-s-before`/`#ppr-s-after` field ids) — renaming ~30 internal call sites for a value never
+  shown to a user would be pure risk for zero visible benefit, the same no-rename-the-column
+  convention already used for the PPR→Meeting label change.
+- **Tab/screen-title renames**: "Photos"→**"Gallery"**, "Meetings"→**"Presentations"**,
+  "Floor Plan"→**"Plans"** — applied as a careful whole-word, case-preserving find/replace
+  across both `ppr.js` and `index.html` (`\bMeeting\b` etc., which — because `\b` treats
+  underscore as a word character — safely skips `meeting_type`, the DB column, with zero special
+  casing needed). ⚠️ **`data-screen` values and every table/column name are unchanged**
+  (`ppr_presentations`, `ppr_slides`, `meeting_type` all stay exactly as they are) — this is a
+  label-only rename, matching the PPR→Meeting precedent from the same file's own earlier entry.
+  Renamed the **Photos** tab to **Gallery** now, ahead of Batch C's actual 360°/3D/video
+  unification into that screen — a short-lived naming-ahead-of-function gap, acceptable since
+  Batches A–C are being built in the same session.
+
+### Follow-up feedback, received mid-Batch-A (folded into later batches, not re-planned)
+
+Six more items arrived while Batch A was in progress. None introduced a new architectural fork,
+so they were folded into the existing approved batch structure rather than triggering a second
+planning pass:
+- **Presentations-list row icons need left padding** — done immediately, scoped to `.ppr-acts`
+  only (NOT the shared `.pp-iconbtn` class other screens' icon buttons also use).
+- Presentations row actions become **Download / Preview / Archive** (row-click already opens
+  the presentation) → folded into **Batch D**. "Archive" needs a soft-delete `archived boolean`
+  column on `ppr_presentations`, `progress_photos`, `panoramas` and `reconstruction_requests`
+  alike (the Gallery batch-archive item below needs the same concept).
+- **Download asks for a format** (HTML/PPTX/PDF) before downloading → folded into **Batch D**.
+- **A shared location tile** when both photos in a slide share a location (instead of repeating
+  the tag on both panes), applied to **all three export formats**, plus **PPTX centered
+  vertically+horizontally** and **PDF strictly one slide per A4 page** → folded into **Batch D**
+  (same `pane()`/`slideFigureHTML()` functions Batch D already touches).
+- **Gallery multi-select + batch actions** (Download/Archive/Add to Presentation) → folded into
+  **Batch C**, mirroring the selection-bar pattern already used elsewhere in this app (Rounds'
+  walkthrough checkboxes, Drawing Register's bulk-select bar) rather than inventing a new one.
+- **A copy-from-previous-presentation wizard** — step through each slide, Current photo required
+  before advancing, nothing saved to `ppr_slides` until every slide has one → folded into
+  **Batch D**, reinforcing item 10's "no Previous without a Current" rule at the copy-flow level
+  too, not just the ordinary add-slide form.
+
+### Verified
+
+**221 checks, 0 failures** (`test.js`, up from 217) — a new `[0]` section for the two genuinely
+new behaviors (default view, icon padding), plus 6 pre-existing assertions from earlier phases
+that hardcoded the old "Meeting"/"Before"/"After" strings **updated in place** (not deleted) to
+assert the new labels — e.g. `panes are labelled Previous/Current (was Before/After)`. This is
+expected, healthy churn from an intentional rename, not a regression: each updated assertion
+still fails against the pre-rename file and passes against the current one. 0 NUL bytes across
+every touched file; CSS braces 281/281 balanced; **0 functions lost** in `module.js`/`ppr.js`
+against the last commit (a two-line default-value change and a careful text-only bulk rename,
+so no function should have been touched — confirmed, not assumed).
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module.
+
 ## Reconstruction worker rewritten (pycolmap + gsplat); Phase 3 & Gaussian Splatting put on hold (2026-08-29)
 
 Owner reconsidered RunPod's per-job cost and asked to run through free/cheaper hosting

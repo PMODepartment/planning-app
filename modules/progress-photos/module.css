@@ -373,7 +373,7 @@
 }
 .ppr-date { font-weight: 600; font-variant-numeric: tabular-nums; }
 .ppr-num { text-align: center; }
-.ppr-acts { display: flex; gap: 3px; align-items: center; }
+.ppr-acts { display: flex; gap: 3px; align-items: center; padding-left: 10px; }
 
 /* ---- Report Templates (brief Section 5) ---------------------------------- */
 /* ⚠️ .ppr-head/.ppr-row's base grid-template-columns is 4 tracks, sized for
