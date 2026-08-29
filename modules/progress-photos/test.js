@@ -209,8 +209,11 @@ const css = fs.readFileSync(here('module.css'), 'utf8');
 
 console.log('\n[0] Batch A (2026-08-29 18-item feedback) — Gallery default view + row-icon padding');
 ok('Gallery (tile) view is the default landing view (item 1) — was list', /var view = 'gallery';/.test(mjs));
-ok('a returning user\'s explicit List choice still overrides the new default (restoreUI unchanged)',
-   /if \(v === 'list' \|\| v === 'gallery'\) view = v;/.test(mjs));
+// Widened item 16 (2026-08-29 second round) to admit 'plan'/'stack' too —
+// a returning user's explicit choice of ANY of the four views still
+// overrides the default.
+ok('a returning user\'s explicit view choice still overrides the new default (restoreUI, widened for item 16)',
+   /if \(\['list', 'gallery', 'plan', 'stack'\]\.indexOf\(v\) >= 0\) view = v;/.test(mjs));
 ok('the Presentations-list row-action icons carry left padding (follow-up item 2)',
    /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
 
@@ -478,7 +481,10 @@ console.log('\n[misc] insert().select() returns the new row id');
   // are unpredictable. .pano-recind/#pano-c-record.is-active (item 18) are
   // the same family again: a fixed dark scrim over live camera video, and a
   // solid brand-red "recording" button state — neither is an app surface.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.bim-cluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active/;
+  // .pp-plancluster (item 16) is .bim-cluster relocated/renamed, same shape
+  // unchanged — a solid brand-red badge with a white ring over an arbitrary
+  // floor plan image.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -1125,20 +1131,11 @@ console.log('\n[misc] insert().select() returns the new row id');
     eq('markupHitTest: a click far from everything hits nothing (-1)', PP._markupHitTest(objs, 0.5, 0.02, 400, 300), -1);
   })();
 
-  // --- Batch G: floor-plan map/clustering view -----------------------------
-  // Structural only — mapClusters/renderMapBody depend on module-internal
-  // plan/pin state populated by load(), same DOM/auth-stack limitation this
-  // module has flagged for every other client-only surface (Phase 3's OpenCV
-  // stitching is the one exception, and that needed a real browser).
-  ok('the Plan/Map toggle exists in bim.js\'s render(), dispatching to a dedicated map body',
-     /screen2 ===? 'map'/.test(bmjs) && /function renderMapBody\(\)/.test(bmjs));
-  ok('map clustering + the month-scrub/play controls exist, mirroring Vertical Stacking\'s own null-is-live pattern',
-     /function mapClusters\(monthCutoff\)/.test(bmjs) && /function wireMapView\(\)/.test(bmjs) &&
-     /function stopMapPlay\(\)/.test(bmjs) && /mapPlaying/.test(bmjs));
-  ok('a cluster resolves the visible item\'s date via itemDateFor, cumulative up to the scrubbed month',
-     /function itemDateFor\(pin\)/.test(bmjs));
-  ok('clicking a cluster opens its member list rather than jumping straight into one item (ambiguous which one)',
-     /function openClusterList\(cluster\)/.test(bmjs));
+  // --- Batch G's map/clustering view: RELOCATED to module.js, item 16 ------
+  // (2026-08-29, second feedback round) — see the dedicated section below,
+  // not here. bim.js keeps only Plan-mode browsing/pinning (item 15).
+  ok('bim.js no longer carries the Map/Stack toggle or their render bodies (item 15 — "only all plans")',
+     !/screen2/.test(bmjs) && !/function renderMapBody/.test(bmjs) && !/function renderStackBody/.test(bmjs));
 
   // --- Batch H: top-view photo -> floor plan registration ------------------
   const regMigration = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plan-registration.sql'), 'utf8');
@@ -1159,80 +1156,116 @@ console.log('\n[misc] insert().select() returns the new row id');
   // REAL wiring bug this pass found: the Map (and now Stack) toggle button was
   // completely dead from the DEFAULT Plan view, because the Plan-mode render
   // branch never called wireMapView() at all.
-  console.log('\n[29] Batch G item 16 (Vertical Stacking) + the Map/Stack toggle wiring fix');
+  console.log('\n[29] Item 15/16 (second feedback round) — Map/Stack RELOCATED to the Gallery as Plan/Stack, plus the new floor stepper');
 
-  ok('bim.js exports locLevels() from module.js for the stacking view to read the same level DEFINITIONS the Location Breakdown picker uses',
-     /locLevels: function \(\) \{ return LOC_LEVELS\.slice\(\); \}/.test(mjs));
-  ok('render() calls wireMapView() from EVERY reachable branch — stack, no-plans, map, AND plan (the bug: plan mode never did)',
-     (function () {
-       // Count call sites, not just presence: the fix specifically ADDED the
-       // plan-branch call, so this must be at least 4 (was 1: only the map
-       // branch called it, before this pass).
-       const calls = (bmjs.match(/wireMapView\(\);/g) || []).length;
-       return calls >= 4;
-     })());
-  ok('the Plan-branch fix is commented as a found-and-fixed defect, not silently patched', /REAL BUG this pass found and fixed/.test(bmjs));
-  ok('viewToggleHTML() now renders Plan / Map / Stack as one shared three-button toggle, used by all three render() branches',
-     /function viewToggleHTML\(\)/.test(bmjs) && (bmjs.match(/viewToggleHTML\(\)/g) || []).length >= 4);
-  ok('Stack is reachable even with ZERO floor plans uploaded (unlike Map, which needs a plan\'s own pins by definition)',
-     /if \(screen2 === 'stack'\) \{[\s\S]{0,300}return;\s*\}\s*\n\s*if \(!plans\.length\)/.test(bmjs));
-  ok('switching to Stack stops the Map play timer and vice versa (no orphaned setInterval running in the background)',
-     /stopMapPlay\(\); screen2 = 'stack'/.test(bmjs) && /stopStackPlay\(\); screen2 = 'map'/.test(bmjs));
-  ok('renderStackBody/wireStackView/stopStackPlay exist, and the empty state names WHERE to build a Location Breakdown',
-     /function renderStackBody\(\)/.test(bmjs) && /function wireStackView\(\)/.test(bmjs) && /function stopStackPlay\(\)/.test(bmjs) &&
-     /Location Breakdown&hellip;/.test(bmjs));
+  // --- Item 15: bim.js keeps only Plan browsing/pinning ---------------------
+  ok('bim.js\'s render() no longer has a Map/Stack branch — just plans/no-plans (item 15)',
+     !/function renderMapBody/.test(bmjs) && !/function renderStackBody/.test(bmjs) && !/viewToggleHTML/.test(bmjs));
+  ok('bim.js exports read accessors for module.js\'s Plan view instead: plans()/planUrl()/pinsForPlan()',
+     /plans: function \(\) \{ return plans\.slice\(\)/.test(bmjs) &&
+     /planUrl: function \(plan\) \{ return planUrl\(plan\); \}/.test(bmjs) &&
+     /pinsForPlan: function \(planId\) \{ return allPins\.filter/.test(bmjs));
+
+  // --- Item 16: Plan view (floor + month stepping) --------------------------
+  ok('the Gallery view toggle gains Plan and Stack buttons alongside List/Tile',
+     /data-view="plan"/.test(html) && /data-view="stack"/.test(html));
+  ok('render() dispatches to renderPlanView/renderStackView for those two views, reading PROJECT-WIDE data, not the filtered list',
+     /if \(view === 'plan' \|\| view === 'stack'\) \{[\s\S]{0,200}renderPlanView\(\)[\s\S]{0,100}renderStackView\(\)/.test(mjs));
+  ok('a floor STEPPER exists (prev/next/animate) — the genuinely NEW capability the old bim.js Map view never had (only a bare <select>)',
+     /id="pp-plan-floorprev"/.test(mjs) && /id="pp-plan-floornext"/.test(mjs) && /id="pp-plan-floorplay"/.test(mjs) &&
+     /planFloorId = fs\[i \+ 1\]\.id;/.test(mjs));
+  ok('the month stepper is ported from bim.js\'s old mapClusters/itemDateFor cutoff logic, cumulative up to the scrubbed month',
+     /function planClusters\(pins, monthCutoff\)/.test(mjs) && /function itemDateForPin\(pin\)/.test(mjs) &&
+     /if \(monthCutoff && \(!d \|\| d\.slice\(0, 7\) > monthCutoff\)\) return;/.test(mjs));
+  ok('floor animation and month animation never run at once — each stops the other before starting',
+     /stopPlanMonthPlay\(\);   \/\/ never both animations running at once/.test(mjs) &&
+     /planFloorPlaying = true;[\s\S]{0,450}\}, 1200\);/.test(mjs));
+  ok('clicking a cluster opens its member list rather than jumping straight into one item (ambiguous which one)',
+     /function openPlanClusterList\(cluster\)/.test(mjs));
+  ok('Group-by is hidden in Plan/Stack (it has no meaning there) rather than left visible and silently inert',
+     /gbField\.style\.display = \(view === 'plan' \|\| view === 'stack'\) \? 'none' : '';/.test(mjs));
+
+  // --- Item 16: Stack view — combine-by-default, step-through opt-in --------
+  ok('Stack defaults to COMBINE (every photo at a location, across all months) — REVERSES bim.js\'s old single-most-recent default',
+     /var stackStepMode = false;/.test(mjs) && /REVERSES bim\.js's old Stack default/.test(mjs));
+  ok('a "Step through months instead" toggle exists, switching to the old cutoff-driven single-photo-per-cell behaviour',
+     /id="pp-stack-stepmode"/.test(mjs) && /stackStepMode = this\.checked; stopStackPlay\(\); render\(\);/.test(mjs));
+  ok('combined mode caps thumbnails per cell and reports the overflow as "+N more" rather than silently truncating with no sign',
+     /var STACK_COMBINE_MAX = 6;/.test(mjs) && /pp-stackmore/.test(mjs) && /c\.photos\.length - STACK_COMBINE_MAX/.test(mjs));
+  ok('combined-mode thumbnails open the ordinary lightbox on click; step-mode keeps the hover-magnifier instead',
+     /im\.onclick = function \(\) \{ openLightbox\(this\.dataset\.open\); \};/.test(mjs) &&
+     /mag\.hidden = false;/.test(mjs));
   ok('only the first-picked row level and a SEPARATE column level drive the grid — a level can never be picked as both axes',
-     /levels\.filter\(function \(l\) \{ return l\.id !== \(stackRowLevel\(\) && stackRowLevel\(\)\.id\); \}\)/.test(bmjs));
+     /levels\.filter\(function \(l\) \{ return l\.id !== \(stackRowLevel\(\) && stackRowLevel\(\)\.id\); \}\)/.test(mjs));
   ok('a single-level project collapses columns to one shared "All" bucket rather than repeating the row axis',
-     /if \(!colNames\.length\) colNames = \[''\];/.test(bmjs) && /esc\(c \|\| 'All'\)/.test(bmjs));
-  ok('the hover-magnifier is a simple src-swap into a docked panel, per the plan\'s own "simpler than the SVG-clone version" note',
-     /bim-stack-mag/.test(bmjs) && /magImg\.src = im\.dataset\.magnify/.test(bmjs));
-  ok('scope note: only the first TWO location levels drive the grid, stated rather than silently limited', /Scope reduction, stated rather than silently shipped/.test(bmjs.split('vertical stacking')[1] || ''));
+     /if \(!colNames\.length\) colNames = \[''\];  \/\/ single-level project/.test(mjs) && /Fmt\.esc\(c \|\| 'All'\)/.test(mjs));
 
-  // Genuine execution of the "as of" cell rule — the exact class of bug this
-  // module has already been bitten by once (the vendor-performance /
-  // reportedThrough family): a wrong fallback here reports a photo as
-  // existing at a location before it was actually taken, or hides one that
-  // should already be visible.
+  // Genuine execution of the "as of" cell rule, ported into module.js — the
+  // exact class of bug this module has already been bitten by once (the
+  // vendor-performance / reportedThrough family): a wrong fallback here
+  // reports a photo as existing at a location before it was actually taken,
+  // or hides one that should already be visible.
   (function () {
     const photos = [
       { id: 'p1', taken_at: '2026-01-15' },
       { id: 'p2', taken_at: '2026-03-10' },
       { id: 'p3', taken_at: '2026-05-01' },
     ];
-    eq('mostRecentAsOf: no cutoff returns the single latest photo', BIM._mostRecentAsOf(photos, null).id, 'p3');
-    eq('mostRecentAsOf: cutoff mid-way returns the latest photo AT OR BEFORE it, never a later one', BIM._mostRecentAsOf(photos, '2026-03').id, 'p2');
-    eq('mostRecentAsOf: cutoff before every photo returns null, never the earliest by mistake', BIM._mostRecentAsOf(photos, '2025-12'), null);
-    eq('mostRecentAsOf: an empty candidate list (no photo at this cell) returns null, not a crash', BIM._mostRecentAsOf([], '2026-06'), null);
+    eq('mostRecentAsOf: no cutoff returns the single latest photo', PP._mostRecentAsOf(photos, null).id, 'p3');
+    eq('mostRecentAsOf: cutoff mid-way returns the latest photo AT OR BEFORE it, never a later one', PP._mostRecentAsOf(photos, '2026-03').id, 'p2');
+    eq('mostRecentAsOf: cutoff before every photo returns null, never the earliest by mistake', PP._mostRecentAsOf(photos, '2025-12'), null);
+    eq('mostRecentAsOf: an empty candidate list (no photo at this cell) returns null, not a crash', PP._mostRecentAsOf([], '2026-06'), null);
   })();
 
   // Genuine execution of the full row/column grid builder against a small,
   // hand-checked fixture — two towers, two floors each, one cell deliberately
   // left with no photo at all (must read as empty, never invent a neighbour).
+  // Also confirms `photos` (item 16's combined list) is populated alongside
+  // the legacy `photo` (step-mode's single resolved one).
   (function () {
     const levels = [{ id: 'lvl-tower', name: 'Tower', sort_order: 1 }, { id: 'lvl-floor', name: 'Floor', sort_order: 2 }];
     const photos = [
       { id: 'a1', taken_at: '2026-01-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },
-      { id: 'a2', taken_at: '2026-02-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },  // supersedes a1
+      { id: 'a2', taken_at: '2026-02-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },  // combines with a1; supersedes it in step mode
       { id: 'b1', taken_at: '2026-01-15', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 2' } },
       { id: 'c1', taken_at: '2026-01-20', location_values: { 'lvl-tower': 'Tower 2', 'lvl-floor': 'Floor 1' } },
       // Tower 2 / Floor 2: deliberately NO photo at all.
     ];
-    const g = BIM._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', null);
+    const g = PP._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', null);
     eq('stackGrid: rows are the distinct ROW-level values, sorted', g.rows.map((r) => r.row), ['Tower 1', 'Tower 2']);
     eq('stackGrid: columns are the distinct COLUMN-level values, sorted', g.cols, ['Floor 1', 'Floor 2']);
-    eq('stackGrid: Tower 1 / Floor 1 resolves to the LATEST of the two competing photos (a2, not a1)',
+    eq('stackGrid: Tower 1 / Floor 1 COMBINES both competing photos (item 16 default)', g.rows[0].cells[0].photos.map((p) => p.id).sort(), ['a1', 'a2']);
+    eq('stackGrid: Tower 1 / Floor 1 step-mode field still resolves to the LATEST (a2, not a1) for the opt-in toggle',
        g.rows[0].cells[0].photo.id, 'a2');
     eq('stackGrid: Tower 1 / Floor 2 resolves to its one photo', g.rows[0].cells[1].photo.id, 'b1');
     eq('stackGrid: Tower 2 / Floor 1 resolves to its one photo', g.rows[1].cells[0].photo.id, 'c1');
     eq('stackGrid: Tower 2 / Floor 2 (no photo at all) is null, never borrowed from a neighbouring cell',
        g.rows[1].cells[1].photo, null);
-    // As-of cutoff applied through the WHOLE grid, not just one cell.
-    const gCutoff = BIM._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', '2026-01');
-    eq('stackGrid with a cutoff: Tower 1 / Floor 1 falls back to a1 (a2 is in the future relative to the cutoff)',
+    eq('stackGrid: Tower 2 / Floor 2 combined list is empty, not null/undefined', g.rows[1].cells[1].photos, []);
+    // As-of cutoff applied through the WHOLE grid, not just one cell (step mode only).
+    const gCutoff = PP._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', '2026-01');
+    eq('stackGrid with a cutoff: Tower 1 / Floor 1 step-mode falls back to a1 (a2 is in the future relative to the cutoff)',
        gCutoff.rows[0].cells[0].photo.id, 'a1');
     eq('stackGrid: a project with only ONE level collapses columns to a single shared bucket',
-       BIM._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
+       PP._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
+  })();
+
+  // Genuine execution of the cluster grouping (grid-snap by ~5% cell, ported
+  // verbatim from bim.js's mapClusters) and the pin-date resolution. Grouping
+  // by POSITION does not depend on date resolution succeeding, so it is
+  // checked with no photo-date cutoff (null) — plain position clustering.
+  (function () {
+    const pins = [
+      { id: 'pin1', item_type: 'photo', item_id: 'p1', x_norm: 0.20, y_norm: 0.30 },
+      { id: 'pin2', item_type: 'photo', item_id: 'p2', x_norm: 0.21, y_norm: 0.31 },  // same ~5% cell as pin1
+      { id: 'pin3', item_type: 'photo', item_id: 'p3', x_norm: 0.80, y_norm: 0.80 },  // a different cell
+    ];
+    eq('itemDateForPin resolves a photo pin\'s date from the injected photo list',
+       PP._itemDateForPin(pins[0], [{ id: 'p1', taken_at: '2026-02-01' }]), '2026-02-01');
+    const clusters = PP._planClusters(pins, null);
+    eq('planClusters: two pins within the same ~5% cell cluster together (2 clusters total for 3 pins)', clusters.length, 2);
+    eq('planClusters: the larger cluster holds both nearby pins',
+       clusters.slice().sort((a, b) => b.pins.length - a.pins.length)[0].pins.length, 2);
   })();
 
   // =========================================================== [30] =========

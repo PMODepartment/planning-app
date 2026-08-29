@@ -2,6 +2,95 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Second feedback round, part 5 (items 15, 16): Map/Stack RELOCATED from the Plans tab to the Gallery, floor-stepping added, Stack re-defaulted to combine (2026-08-29)
+
+Owner: *"In the Plans tab, no need for the map and the stack. this should only be all plans"* and
+*"In the Gallery tab, aside from List View and Tile View, this is where we should app Plan View and
+Stack View… choose month, step through months, animate through months… choose floor, step through
+floors, animate through floors… \[Stack\] default is that the photos in the same location combine
+across all months, but there should also be option to step through and animate through months."*
+
+⚠️ **This is a relocation, not a rebuild.** Batch G's earlier Map/Stack modes (bim.js's `screen2`
+toggle) already did most of what's asked — they are moved wholesale into module.js as two new
+Gallery view modes, and only then extended with the genuinely new pieces (floor stepping; the
+combine-by-default reversal). Function-diff confirms it: `bim.js` **19 functions lost, module.js 20
+gained**, all matched relocations.
+
+### Item 15 — bim.js's Plans tab goes back to being just plans
+
+`screen2`, `viewToggleHTML`, and the whole Map/Stack render branches are deleted from bim.js.
+`render()` is back to two states: "no plans yet" and the ordinary Plan browsing/pinning/pan-zoom/
+registration view — exactly what the screen's own name says. `openPinPickerFor` (the Gallery
+upload-time pin picker), the pin+direction field (item 11), and Batch H's registration flow are all
+untouched — item 15 only asked to remove Map/Stack, nothing else on this screen.
+
+- **New read-only exports** so module.js can reach floor-plan data without disturbing this screen's
+  own state (`activePlanId`, pan/zoom) — the same "self-contained, never touches this screen's
+  state" rule `openPinPickerFor` already follows: `plans()` (sorted by `level_order`), `planUrl(plan)`,
+  `pinsForPlan(planId)` (reads the project-wide `allPins`, already loaded on every project switch
+  regardless of which tab is open).
+
+### Item 16 — Plan view and Stack view join List/Tile in the Gallery
+
+`view` gains `'plan'`/`'stack'` alongside `'list'`/`'gallery'` (the `.pd-viewtoggle` row gains two
+buttons). Both read **project-wide** data (every pin / every location-tagged photo), not the
+Gallery's own filtered `list` — the same scope their bim.js originals always had — so `render()`
+branches to them BEFORE the row/filter empty-state checks that describe the filtered grid.
+Group-by is hidden while either is active (it has no meaning for a floor-plan cluster or a
+Location-Breakdown grid).
+
+**Plan view** — ported `mapClusters`/`itemDateFor`/the month stepper verbatim (grid-snap clustering
+at ~5% cells, deliberately not proximity/k-means, for the same frame-to-frame stability reason);
+`openClusterList` opens a member list rather than jumping into one item (ambiguous which one a
+multi-item cluster "means"), same as before.
+- ⚠️ **The floor stepper is the genuinely NEW capability** the old Map view never had — it only ever
+  showed one plan, chosen from a bare `<select>`, with no way to step or animate between them.
+  Prev/next buttons plus an "Animate floors" play button now step through `BIM.plans()`'s own
+  `level_order` sequence. Floor animation and month animation are mutually exclusive — starting one
+  stops the other, so there is never more than one `setInterval` ticking in the background, the same
+  discipline the original Map/Stack toggle enforced between each other.
+- Clicking a cluster's item dispatches by type: a photo opens THIS module's own lightbox directly
+  (no round-trip through bim.js); panoramas/reconstructions still go through `PANO.open`/
+  `RECON.openById`, unchanged.
+
+**Stack view** — ⚠️ **the default is REVERSED from bim.js's original.** The old Stack always showed
+the single most-recent-as-of-cutoff photo per Location Breakdown cell (`mostRecentAsOf`). The owner's
+own wording — *"the photos in the same location combine across all months"* — asks for the opposite
+as the default: every cell now shows every matching photo (capped at `STACK_COMBINE_MAX = 6`
+thumbnails with an explicit **"+N more"**, never a silent truncation), and month step-through is
+demoted to an opt-in **"Step through months instead"** checkbox that restores the old cutoff-driven
+single-photo behaviour (with its own prev/next/play stepper and hover-magnifier, ported unchanged).
+- ⚠️ `stackGrid`'s cell now carries BOTH `photos` (the full combined list, item 16's default) and
+  `photo` (the step-mode single resolution) — computed together so switching the toggle needs no
+  re-derivation, and so a regression in one can never silently break the other without a test noticing.
+- Combined-mode thumbnails open the ordinary lightbox on click (consistent with every other photo
+  thumbnail in this module); step-mode keeps the read-only hover-magnifier, since a single "the"
+  photo for a cell is a different kind of view than a list of several to pick from.
+- Row/column level pickers, the single-level "All" column collapse, and the "only the first TWO
+  location levels drive the grid" scope note are all unchanged from the original.
+
+### Verified
+
+**483 checks green** (was 477), section `[29]` rewritten in full against the relocated `PP.*` hooks
+(`_mostRecentAsOf`, `_stackGrid` — now additionally asserting the combined `photos` field alongside
+the legacy `photo` field, `_planClusters`, `_itemDateForPin`) rather than the retired `BIM.*` ones;
+`[28]`'s old Batch-G map subsection replaced with a one-line confirmation that bim.js no longer
+carries any of it. Function-diff against HEAD: `bim.js` **19 lost / 0 added** (`viewToggleHTML`,
+`itemDateFor`, `activePlanPins`, `mapMonthsAvailable`, `mapClusters`, `renderMapBody`, `wireMapView`,
+`stopMapPlay`, `openClusterList`, `stackLevels`, `stackRowLevel`, `stackColLevel`, `stackPhotos`,
+`stackMonthsAvailable`, `mostRecentAsOf`, `stackGrid`, `renderStackBody`, `wireStackView`,
+`stopStackPlay` — every one relocated, none simply deleted); `module.js` **0 lost / 20 added**. 0 NUL
+bytes across every touched file, CSS braces balanced (394/394 — the old `.bim-viewtoggle`/
+`.bim-cluster`/`.bim-stack*` rules renamed to `.pp-plan*`/`.pp-stack*` in place, no orphaned dead CSS
+left behind), 0 duplicate `id=` attributes in `index.html` (72 total, up from 67).
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module. In particular: the
+floor-stepper's real click-through against a project with several floor plans, the combined Stack
+cell's real thumbnail layout, and both animation timers' actual on-screen behaviour are verified
+structurally and by genuine unit execution of the pure logic, not by driving the real DOM.
+
+`MODULE_V` → `20260829o`; `module.css/js` / `bim.js` → `?v=20260829o`.
+
 ## Second feedback round, part 4 (item 13b confirmed, item 14 built): Presentations multi-select + batch Download/Archive/Merge, combined preview (2026-08-29)
 
 Owner's item 13b — *"in the presentation list view, by default no presentation should be selected;

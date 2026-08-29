@@ -181,7 +181,7 @@ window.ProgressPhotos = (function () {
   function restoreUI() {
     try {
       var v = localStorage.getItem(uiKey('view'));
-      if (v === 'list' || v === 'gallery') view = v;
+      if (['list', 'gallery', 'plan', 'stack'].indexOf(v) >= 0) view = v;
       collapsed = JSON.parse(localStorage.getItem(uiKey('collapsed')) || '{}') || {};
       var g = localStorage.getItem(uiKey('gallerygroup'));
       if (['month', 'trade', 'location'].indexOf(g) >= 0) galleryGroupBy = g;
@@ -839,12 +839,31 @@ window.ProgressPhotos = (function () {
     // Keep the shared group-by select in step — restoreUI() can change
     // galleryGroupBy on a project switch after wire()'s one-time setup ran.
     if ($('pp-groupby')) $('pp-groupby').value = galleryGroupBy;
+    // Group-by has no meaning in Plan (clustered by floor-plan position) or
+    // Stack (already grouped by Location Breakdown) — hidden rather than
+    // left visible and silently inert.
+    var gbField = $('pp-groupby') && $('pp-groupby').closest('.pp-groupby');
+    if (gbField) gbField.style.display = (view === 'plan' || view === 'stack') ? 'none' : '';
 
     // Clear-filters only shows when a filter is actually set (no orphan button).
     var anyFilter = ['from', 'to', 'trade', 'works', 'search'].some(function (k) { return filters[k]; }) ||
       Object.keys(filters.locValues || {}).some(function (k) { return filters.locValues[k]; });
     var clr = $('pp-clearfilters');
     if (clr) clr.hidden = !anyFilter;
+
+    // Plan/Stack read PROJECT-WIDE data (every pin / every location-tagged
+    // photo), not the filtered `list` above — the same scope their bim.js
+    // originals always had. They bypass the row/filter empty-states below,
+    // which describe the filtered Gallery grid and don't apply here (a
+    // project can have zero photos matching the current filter and still
+    // have a floor plan worth showing, or vice versa).
+    if (view === 'plan' || view === 'stack') {
+      host.innerHTML = view === 'plan' ? renderPlanView() : renderStackView();
+      hydrate(host);
+      if (view === 'plan') wirePlanView(); else wireStackView();
+      syncChrome();
+      return;
+    }
 
     if (!rows.length) {
       host.innerHTML = '<div class="pp-empty">' +
@@ -880,6 +899,26 @@ window.ProgressPhotos = (function () {
   var MONTH_NAMES = ['January','February','March','April','May','June','July',
     'August','September','October','November','December'];
   var galleryGroupBy = 'month';   // month (default) | trade | location
+
+  // ---- Plan / Stack views (item 16 — relocated here from the Plans tab's
+  // own Map/Stack modes, item 15 having removed them from there). Both read
+  // project-wide data (every pin / every location-tagged photo), NOT the
+  // Gallery's own filtered `list` — the same scope the originals in bim.js
+  // always had (they read ProgressPhotos.allPhotos()/locLevels(), which from
+  // inside this file is simply `rows`/`LOC_LEVELS` directly).
+  var planFloorId = null;                 // which floor_plans row Plan view is showing
+  var planMonth = null;                   // 'YYYY-MM' | null = latest month with any pin
+  var planPlaying = false, planPlayTimer = null;
+  var planFloorPlaying = false, planFloorPlayTimer = null;
+  var stackRowLevelId = null, stackColLevelId = null;
+  // Item 16: "default is that the photos in the same location combine across
+  // all months, but there should also be option to step through and animate
+  // through months as well" — REVERSES bim.js's old Stack default (one
+  // most-recent-as-of-cutoff photo per cell). Combine is now the default;
+  // step-through is an opt-in toggle.
+  var stackStepMode = false;
+  var stackMonth = null;
+  var stackPlaying = false, stackPlayTimer = null;
   function groupKeyOf(r) {
     if (galleryGroupBy === 'trade') {
       // A photo can carry several trades now; it's grouped under its FIRST
@@ -921,6 +960,358 @@ window.ProgressPhotos = (function () {
       return galleryGroupBy === 'month' ? b.localeCompare(a) : a.localeCompare(b);
     });
     return order.map(function (k) { return { key: k, label: groupLabelOf(k), items: groups[k] }; });
+  }
+
+  // ---------------------------------------------------------- Plan view ----
+  // A pin carries no date of its own — it points AT a photo/panorama/3D-scan,
+  // and it's THAT item's own capture date that "as of month T" filters on.
+  // Ported from bim.js's old itemDateFor (Batch G); photos resolve directly
+  // against this file's own `rows`/`byId` rather than through
+  // ProgressPhotos.allPhotos(), since this now IS that file.
+  function itemDateForPin(pin) {
+    var r;
+    if (pin.item_type === 'photo') {
+      r = byId(pin.item_id);
+      return r ? (r.taken_at || (r.created_at || '').slice(0, 10)) : '';
+    }
+    if (pin.item_type === 'panorama') {
+      var pl = (window.PANO && PANO.list) ? PANO.list() : [];
+      r = pl.filter(function (x) { return x.id === pin.item_id; })[0];
+      return r ? (r.taken_at || (r.created_at || '').slice(0, 10)) : '';
+    }
+    if (pin.item_type === 'reconstruction') {
+      var rl = (window.RECON && RECON.doneList) ? RECON.doneList() : [];
+      r = rl.filter(function (x) { return x.id === pin.item_id; })[0];
+      return r ? (r.approved_at || r.created_at || '').slice(0, 10) : '';
+    }
+    return '';
+  }
+  // Grid-snap clustering, ported verbatim from bim.js's mapClusters — pins
+  // within the same ~5% cell of the plan cluster together, deliberately NOT
+  // proximity/k-means (a fixed grid is stable frame-to-frame as the month
+  // slider moves, so a cluster doesn't visually jump as items enter/leave it).
+  var PLAN_CELL = 0.05;
+  function planMonthsAvailable(pins) {
+    var set = {};
+    pins.forEach(function (p) { var d = itemDateForPin(p); if (d) set[d.slice(0, 7)] = true; });
+    return Object.keys(set).sort();
+  }
+  function planClusters(pins, monthCutoff) {
+    var byCell = {};
+    pins.forEach(function (p) {
+      var d = itemDateForPin(p);
+      if (monthCutoff && (!d || d.slice(0, 7) > monthCutoff)) return; // "as of" — cumulative up to and including the selected month
+      var cx = Math.round(p.x_norm / PLAN_CELL) * PLAN_CELL, cy = Math.round(p.y_norm / PLAN_CELL) * PLAN_CELL;
+      var key = cx.toFixed(2) + ',' + cy.toFixed(2);
+      (byCell[key] = byCell[key] || { x: cx, y: cy, pins: [] }).pins.push(p);
+    });
+    return Object.keys(byCell).map(function (k) { return byCell[k]; });
+  }
+  function planPin(pinId, pins) { return pins.filter(function (p) { return p.id === pinId; })[0] || null; }
+  function openPlanPin(pin) {
+    if (!pin) return;
+    if (pin.item_type === 'panorama') { if (window.PANO && PANO.open) PANO.open(pin.item_id); }
+    else if (pin.item_type === 'reconstruction') { if (window.RECON && RECON.openById) RECON.openById(pin.item_id); }
+    else if (pin.item_type === 'photo') { openLightbox(pin.item_id); }
+  }
+  function openPlanClusterList(cluster) {
+    if (!cluster) return;
+    var html =
+      '<div class="pd-modal-header"><h3>' + cluster.pins.length + ' item' + (cluster.pins.length === 1 ? '' : 's') + ' here</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><div class="ppr-tmpl-picklist">' +
+        cluster.pins.map(function (p) {
+          return '<button type="button" class="ppr-tmpl-pickrow" data-open="' + p.id + '">' +
+            Fmt.esc(p.label || (p.item_type === 'panorama' ? '360° panorama' : p.item_type === 'reconstruction' ? '3D reconstruction' : 'Photo')) +
+            (itemDateForPin(p) ? ' — ' + Fmt.esc(itemDateForPin(p)) : '') + '</button>';
+        }).join('') +
+      '</div></div>';
+    var m = openModal(html, 420);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-open]'), function (b) {
+      b.onclick = function () { m.close(); openPlanPin(planPin(this.dataset.open, cluster.pins)); };
+    });
+  }
+  // "choose a floor, step through floors, animate through floors" (item 16) —
+  // the genuinely NEW capability the old bim.js Map view didn't have (it only
+  // ever showed ONE plan at a time, chosen from a bare <select>, with no
+  // stepper). Floors step through BIM.plans()' own order (level_order).
+  function planFloors() { return window.BIM ? BIM.plans() : []; }
+  function stopPlanFloorPlay() { planFloorPlaying = false; if (planFloorPlayTimer) { clearInterval(planFloorPlayTimer); planFloorPlayTimer = null; } }
+  function stopPlanMonthPlay() { planPlaying = false; if (planPlayTimer) { clearInterval(planPlayTimer); planPlayTimer = null; } }
+  function renderPlanView() {
+    var floors = planFloors();
+    if (!floors.length) {
+      return '<div class="pp-empty"><span data-ico="compass" data-ico-size="34"></span>' +
+        '<p>No floor plans uploaded yet.</p>' +
+        (canWrite ? '<p class="pp-hint">Upload one on the <strong>Plans</strong> tab, then place pins linking it ' +
+          'to your photos, 360° captures and 3D scans — they\'ll show up here.</p>' : '') + '</div>';
+    }
+    if (!planFloorId || !floors.some(function (p) { return p.id === planFloorId; })) planFloorId = floors[0].id;
+    var floor = floors.filter(function (p) { return p.id === planFloorId; })[0];
+    var pins = window.BIM ? BIM.pinsForPlan(planFloorId) : [];
+    var months = planMonthsAvailable(pins);
+    var cutoff = planMonth || (months.length ? months[months.length - 1] : null);
+    var clusters = planClusters(pins, cutoff);
+    var url = window.BIM ? BIM.planUrl(floor) : '';
+    var aspect = (floor && floor.width_px && floor.height_px) ? (floor.height_px / floor.width_px) : 0.75;
+    var pinCount = clusters.reduce(function (n, c) { return n + c.pins.length; }, 0);
+    return '<div class="pp-plantoolbar">' +
+      '<div class="pp-planfloorbar">' +
+        '<label class="pp-planfloorlabel">Floor ' +
+          '<select class="pd-select" id="pp-plan-floor">' +
+            floors.map(function (p) { return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === planFloorId ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>'; }).join('') +
+          '</select></label>' +
+        '<button class="pp-iconbtn" id="pp-plan-floorprev" title="Previous floor">‹</button>' +
+        '<button class="pp-iconbtn" id="pp-plan-floornext" title="Next floor">›</button>' +
+        '<button class="pd-btn" id="pp-plan-floorplay">' + (planFloorPlaying ? 'Stop' : '▶ Animate floors') + '</button>' +
+      '</div>' +
+      (months.length
+        ? '<div class="pp-planmonthbar">' +
+            '<button class="pp-iconbtn" id="pp-plan-mprev" title="Earlier month">‹</button>' +
+            '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
+            '<button class="pp-iconbtn" id="pp-plan-mnext" title="Later month">›</button>' +
+            '<button class="pd-btn" id="pp-plan-mplay">' + (planPlaying ? 'Stop' : '▶ Play') + '</button>' +
+            '<span class="pp-hint">as of the end of this month · ' + pinCount + ' pinned item' + (pinCount === 1 ? '' : 's') + '</span>' +
+          '</div>'
+        : '<p class="pp-hint">No dated captures pinned on this floor yet.</p>') +
+    '</div>' +
+    '<div class="pp-planstage">' +
+      '<div class="pp-planimgwrap" style="padding-bottom:' + (aspect * 100) + '%;">' +
+        (url ? '<img src="' + Fmt.esc(url) + '" draggable="false" />' : '<div class="pp-empty" style="position:absolute;inset:0;">Plan image not available</div>') +
+        clusters.map(function (c, i) {
+          return '<button class="pp-plancluster" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;">' + c.pins.length + '</button>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+  }
+  function wirePlanView() {
+    var floors = planFloors();
+    if (!floors.length) return;
+    var idx = floors.map(function (p) { return p.id; }).indexOf(planFloorId);
+    if ($('pp-plan-floor')) $('pp-plan-floor').onchange = function () { planFloorId = this.value; planMonth = null; render(); };
+    if ($('pp-plan-floorprev')) $('pp-plan-floorprev').onclick = function () {
+      planFloorId = floors[Math.max(0, idx - 1)].id; planMonth = null; render();
+    };
+    if ($('pp-plan-floornext')) $('pp-plan-floornext').onclick = function () {
+      planFloorId = floors[Math.min(floors.length - 1, idx + 1)].id; planMonth = null; render();
+    };
+    if ($('pp-plan-floorplay')) $('pp-plan-floorplay').onclick = function () {
+      if (planFloorPlaying) { stopPlanFloorPlay(); render(); return; }
+      stopPlanMonthPlay();   // never both animations running at once
+      planFloorPlaying = true;
+      planFloorPlayTimer = setInterval(function () {
+        var fs = planFloors();
+        var i = fs.map(function (p) { return p.id; }).indexOf(planFloorId);
+        if (i >= fs.length - 1) { stopPlanFloorPlay(); render(); return; } // auto-stop at the end, same convention as every other time-scrub view in this app
+        planFloorId = fs[i + 1].id; planMonth = null; render();
+      }, 1200);
+      render();
+    };
+    var pins = window.BIM ? BIM.pinsForPlan(planFloorId) : [];
+    var months = planMonthsAvailable(pins);
+    var cutoff = planMonth || (months.length ? months[months.length - 1] : null);
+    var clusters = planClusters(pins, cutoff);
+    if ($('pp-plan-mprev')) $('pp-plan-mprev').onclick = function () {
+      var i = months.indexOf(cutoff); planMonth = months[Math.max(0, i - 1)]; render();
+    };
+    if ($('pp-plan-mnext')) $('pp-plan-mnext').onclick = function () {
+      var i = months.indexOf(cutoff); planMonth = months[Math.min(months.length - 1, i + 1)]; render();
+    };
+    if ($('pp-plan-mplay')) $('pp-plan-mplay').onclick = function () {
+      if (planPlaying) { stopPlanMonthPlay(); render(); return; }
+      stopPlanFloorPlay();
+      planPlaying = true;
+      planPlayTimer = setInterval(function () {
+        var ms = planMonthsAvailable(pins);
+        var i = ms.indexOf(planMonth || (ms.length ? ms[ms.length - 1] : null));
+        if (i >= ms.length - 1) { stopPlanMonthPlay(); render(); return; }
+        planMonth = ms[i + 1]; render();
+      }, 900);
+      render();
+    };
+    Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-cluster]'), function (btn) {
+      btn.onclick = function () { openPlanClusterList(clusters[+this.dataset.cluster]); };
+    });
+  }
+
+  // --------------------------------------------------------- Stack view ----
+  // Independent of floor plans entirely — bands come from the project's
+  // Location Breakdown (LOC_LEVELS), the same schedule-derived Tower/Level/
+  // Zone hierarchy the Add-photo form cascades through. Reachable even with
+  // zero floor plans uploaded.
+  function stackLevels() { return LOC_LEVELS.slice(); }
+  function stackRowLevel() {
+    var levels = stackLevels();
+    return levels.filter(function (l) { return l.id === stackRowLevelId; })[0] || levels[0] || null;
+  }
+  function stackColLevel() {
+    var levels = stackLevels();
+    var picked = levels.filter(function (l) { return l.id === stackColLevelId; })[0];
+    if (picked) return picked;
+    return levels.filter(function (l) { return l.id !== (stackRowLevel() && stackRowLevel().id); })[0] || null;
+  }
+  function stackMonthsAvailable() {
+    var set = {};
+    rows.forEach(function (p) { if (p.taken_at) set[String(p.taken_at).slice(0, 7)] = true; });
+    return Object.keys(set).sort();
+  }
+  // Pure — the actual "as of" decision for one grid cell in step mode, worth
+  // genuinely EXECUTING (same reasoning as planClusters' own cutoff filter):
+  // given photos already narrowed to one location cell, returns the most
+  // recent one at-or-before `cutoff` ('YYYY-MM', or null = latest overall),
+  // or null when nothing in the list qualifies.
+  function mostRecentAsOf(list, cutoff) {
+    var best = null;
+    list.forEach(function (p) {
+      if (!p.taken_at) return;
+      if (cutoff && String(p.taken_at).slice(0, 7) > cutoff) return;
+      if (!best || String(p.taken_at) > String(best.taken_at)) best = p;
+    });
+    return best;
+  }
+  // A cell reports EVERY matching photo (item 16's combined default) plus,
+  // when step mode is on, which one of those is "the" photo as of `cutoff`.
+  function stackGrid(cutoff) {
+    var rowLevel = stackRowLevel(), colLevel = stackColLevel();
+    if (!rowLevel) return { rowLevel: null, colLevel: null, cols: [], rows: [] };
+    var rowVals = {}, colVals = {};
+    rows.forEach(function (p) {
+      var lv = p.location_values || {};
+      var rv = lv[rowLevel.id]; if (rv) rowVals[rv] = true;
+      if (colLevel) { var cv = lv[colLevel.id]; if (cv) colVals[cv] = true; }
+    });
+    var rowNames = Object.keys(rowVals).sort();
+    var colNames = colLevel ? Object.keys(colVals).sort() : [];
+    if (!colNames.length) colNames = [''];  // single-level project — one shared "All" column
+    var gridRows = rowNames.map(function (rv) {
+      return {
+        row: rv,
+        cells: colNames.map(function (cv) {
+          var candidates = rows.filter(function (p) {
+            var lv = p.location_values || {};
+            if ((lv[rowLevel.id] || '') !== rv) return false;
+            if (colLevel && cv && (lv[colLevel.id] || '') !== cv) return false;
+            return true;
+          });
+          return { col: cv, photos: candidates, photo: mostRecentAsOf(candidates, cutoff) };
+        })
+      };
+    });
+    return { rowLevel: rowLevel, colLevel: colLevel, cols: colNames, rows: gridRows };
+  }
+  var STACK_COMBINE_MAX = 6;   // thumbnails shown per cell before "+N more"
+  function renderStackView() {
+    var levels = stackLevels();
+    if (!levels.length) {
+      return '<div class="pp-empty"><p>No Location Breakdown set up for this project yet — build it in ' +
+        'Project Schedule (Group menu &rarr; Location Breakdown&hellip;), then photos tagged against it ' +
+        'will stack here.</p></div>';
+    }
+    var months = stackMonthsAvailable();
+    var cutoff = stackMonth || (months.length ? months[months.length - 1] : null);
+    var g = stackGrid(cutoff);
+    var levelPickers =
+      '<div class="pp-stacklevels">' +
+        '<label>Rows <select class="pd-select" id="pp-stack-rowlvl">' +
+          levels.map(function (l) { return '<option value="' + Fmt.esc(l.id) + '"' + (g.rowLevel && l.id === g.rowLevel.id ? ' selected' : '') + '>' + Fmt.esc(l.name) + '</option>'; }).join('') +
+        '</select></label>' +
+        (levels.length > 1 ? '<label>Columns <select class="pd-select" id="pp-stack-collvl">' +
+          levels.map(function (l) { return '<option value="' + Fmt.esc(l.id) + '"' + (g.colLevel && l.id === g.colLevel.id ? ' selected' : '') + '>' + Fmt.esc(l.name) + '</option>'; }).join('') +
+        '</select></label>' : '') +
+        '<label class="ppr-allloc" style="display:inline-flex;align-items:center;gap:5px;margin:0;">' +
+          '<input type="checkbox" id="pp-stack-stepmode"' + (stackStepMode ? ' checked' : '') + ' /> Step through months instead</label>' +
+      '</div>';
+    var stepper = stackStepMode
+      ? (months.length
+          ? '<div class="pp-planmonthbar">' +
+              '<button class="pp-iconbtn" id="pp-stack-mprev" title="Earlier month">‹</button>' +
+              '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
+              '<button class="pp-iconbtn" id="pp-stack-mnext" title="Later month">›</button>' +
+              '<button class="pd-btn" id="pp-stack-mplay">' + (stackPlaying ? 'Stop' : '▶ Play') + '</button>' +
+              '<span class="pp-hint">as of the end of this month</span></div>'
+          : '<p class="pp-hint">No dated, location-tagged photos yet.</p>')
+      : '<p class="pp-hint">Every photo captured at each location, combined across all months.</p>';
+    if (!g.rows.length) {
+      return levelPickers + stepper + '<div class="pp-empty"><p>No photos have been tagged at this Location Breakdown level yet.</p></div>';
+    }
+    var table =
+      '<div class="pp-stackwrap"><table class="pp-stacktable"><thead><tr><th></th>' +
+        g.cols.map(function (c) { return '<th>' + Fmt.esc(c || 'All') + '</th>'; }).join('') +
+      '</tr></thead><tbody>' +
+      g.rows.map(function (r) {
+        return '<tr><th>' + Fmt.esc(r.row) + '</th>' +
+          r.cells.map(function (c) {
+            if (stackStepMode) {
+              if (!c.photo) return '<td class="pp-stackcell pp-stackcell-empty">—</td>';
+              var url = urlOf(c.photo);
+              var cap = r.row + (c.col ? ' · ' + c.col : '') + ' — ' + (c.photo.taken_at || '');
+              return '<td class="pp-stackcell">' +
+                (url ? '<img class="pp-stackthumb" data-magnify="' + Fmt.esc(url) + '" data-cap="' + Fmt.esc(cap) + '" src="' + Fmt.esc(url) + '" alt="" />' : '—') +
+              '</td>';
+            }
+            // Combined default (item 16) — every matching photo, not just the latest one.
+            if (!c.photos.length) return '<td class="pp-stackcell pp-stackcell-empty">—</td>';
+            var shown = c.photos.slice(0, STACK_COMBINE_MAX);
+            return '<td class="pp-stackcell"><div class="pp-stackcellphotos">' +
+              shown.map(function (p) {
+                var u = urlOf(p);
+                return u ? '<img class="pp-stackthumb pp-stackthumb-sm" data-open="' + p.id + '" src="' + Fmt.esc(u) + '" alt="" title="' + Fmt.esc(p.taken_at || '') + '" />' : '';
+              }).join('') +
+              (c.photos.length > STACK_COMBINE_MAX ? '<span class="pp-stackmore">+' + (c.photos.length - STACK_COMBINE_MAX) + '</span>' : '') +
+            '</div></td>';
+          }).join('') +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      (stackStepMode
+        // A basic hover-magnifier — deliberately simpler than Project
+        // Schedule's own SVG-clone version: these cells are plain <img>
+        // thumbnails, so swapping a larger src into a docked panel is enough.
+        ? '<div class="pp-stackmag" id="pp-stack-mag" hidden><img id="pp-stack-magimg" alt="" /><div class="pp-stackmagcap" id="pp-stack-magcap"></div></div>'
+        : '');
+    return levelPickers + stepper + table;
+  }
+  function stopStackPlay() { stackPlaying = false; if (stackPlayTimer) { clearInterval(stackPlayTimer); stackPlayTimer = null; } }
+  function wireStackView() {
+    if ($('pp-stack-rowlvl')) $('pp-stack-rowlvl').onchange = function () { stackRowLevelId = this.value; render(); };
+    if ($('pp-stack-collvl')) $('pp-stack-collvl').onchange = function () { stackColLevelId = this.value; render(); };
+    if ($('pp-stack-stepmode')) $('pp-stack-stepmode').onchange = function () {
+      stackStepMode = this.checked; stopStackPlay(); render();
+    };
+    if (stackStepMode) {
+      var months = stackMonthsAvailable();
+      var cutoff = stackMonth || (months.length ? months[months.length - 1] : null);
+      if ($('pp-stack-mprev')) $('pp-stack-mprev').onclick = function () {
+        var i = months.indexOf(cutoff); stackMonth = months[Math.max(0, i - 1)]; render();
+      };
+      if ($('pp-stack-mnext')) $('pp-stack-mnext').onclick = function () {
+        var i = months.indexOf(cutoff); stackMonth = months[Math.min(months.length - 1, i + 1)]; render();
+      };
+      if ($('pp-stack-mplay')) $('pp-stack-mplay').onclick = function () {
+        if (stackPlaying) { stopStackPlay(); render(); return; }
+        stackPlaying = true;
+        stackPlayTimer = setInterval(function () {
+          var ms = stackMonthsAvailable();
+          var i = ms.indexOf(stackMonth || (ms.length ? ms[ms.length - 1] : null));
+          if (i >= ms.length - 1) { stopStackPlay(); render(); return; } // auto-stop at the end
+          stackMonth = ms[i + 1]; render();
+        }, 900);
+        render();
+      };
+      var mag = $('pp-stack-mag'), magImg = $('pp-stack-magimg'), magCap = $('pp-stack-magcap');
+      if (mag) {
+        Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-magnify]'), function (im) {
+          im.addEventListener('mouseenter', function () { magImg.src = im.dataset.magnify; magCap.textContent = im.dataset.cap || ''; mag.hidden = false; });
+          im.addEventListener('mouseleave', function () { mag.hidden = true; });
+        });
+      }
+    } else {
+      // Combined mode — each thumbnail opens the ordinary lightbox, same as
+      // every other photo thumbnail in this module.
+      Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-open]'), function (im) {
+        im.onclick = function () { openLightbox(this.dataset.open); };
+      });
+    }
   }
 
   function thumb(r, cls) {
@@ -2620,6 +3011,24 @@ window.ProgressPhotos = (function () {
     // type — the one way to tell "drew a rect" from "silently did nothing".
     _drawMarkupObjects: function (ctx, objs, w, h) { drawMarkupObjects(ctx, objs, w, h); },
     _markupHitTest: function (objs, nx, ny, w, h) { return markupHitTest(objs, nx, ny, w, h); },
+    // Item 16 (2026-08-29, second round) — Plan/Stack views relocated here
+    // from bim.js. Genuinely EXECUTE the same "as of" cell rule and grid
+    // builder bim.js's own tests already proved out, now against THIS
+    // file's versions, plus the cluster grouping. Save/restore closure state
+    // around each call, same convention as _stackGrid's bim.js predecessor.
+    _mostRecentAsOf: function (list, cutoff) { return mostRecentAsOf(list, cutoff); },
+    _planClusters: function (pins, monthCutoff) { return planClusters(pins, monthCutoff); },
+    _itemDateForPin: function (pin, photosArr) {
+      var saved = rows; if (photosArr) rows = photosArr;
+      try { return itemDateForPin(pin); } finally { rows = saved; }
+    },
+    _stackGrid: function (levels, photosArr, rowId, colId, cutoff) {
+      var savedLevels = LOC_LEVELS, savedRows = rows;
+      LOC_LEVELS = levels; rows = photosArr;
+      stackRowLevelId = rowId || null; stackColLevelId = colId || null;
+      try { return stackGrid(cutoff); }
+      finally { LOC_LEVELS = savedLevels; rows = savedRows; stackRowLevelId = null; stackColLevelId = null; }
+    },
     // Test-only hook for the unified List+Gallery grouping (2026-08-29
     // follow-up item 6) — genuinely executes groupRows() with an INJECTED
     // mode, rather than only regex-checking the source, the same convention
