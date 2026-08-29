@@ -2,6 +2,70 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Reconstruction worker rewritten (pycolmap + gsplat); Phase 3 & Gaussian Splatting put on hold (2026-08-29)
+
+Owner reconsidered RunPod's per-job cost and asked to run through free/cheaper hosting
+options. Two real, checked (not asserted from memory) products came up and were both ruled
+out for different reasons: **Convert3D API** turned out to be a pure 3D-file-FORMAT
+converter (FBX↔OBJ↔GLTF etc.) with no photogrammetry/reconstruction capability at all —
+looked up directly rather than assumed, given this exact file's own prior lesson about
+inventing a fact instead of checking one. **vid2scene** (a real, Apache-2.0, video→Gaussian-
+Splat project) turned out to have shut down its free hosted service in June 2026 — but its
+open-source code led to a genuinely useful finding.
+
+⚠️ **Standalone GLOMAP (the fast global-SfM solver) was merged into COLMAP 4.0 and the
+standalone repo was archived on 2026-03-09** — confirmed via COLMAP's own changelog and the
+GitHub PR (colmap/colmap#4228) that added `pycolmap.global_mapping()`. Even vid2scene's own
+worker still builds the now-archived standalone `glomap` from source. This means the
+original from-source COLMAP+OpenSplat worker was not just expensive to build, it was also
+about to be built on top of a project that had just been deprecated.
+
+**`services/reconstruction-worker/` was rewritten, requested explicitly, as groundwork —
+not to be deployed right now.** Owner: *"let's put gaussian splatting and 360 on hold."*
+No UI change was made (nothing from this branch is merged/deployed yet, so there's no live
+tab to hide); Phase 3 (360° panoramas) and Phase 4's Gaussian Splatting deployment are
+simply not being pushed further until the owner says to resume.
+
+**What changed in the worker**, each fact checked via WebSearch/WebFetch before being
+written down, not recalled from training data:
+- **No more from-source COLMAP build.** `pycolmap-cuda12` — a real, prebuilt CUDA-enabled
+  Python wheel, added in COLMAP 3.13.0 — replaces compiling COLMAP's full C++ stack
+  (including Qt/CGAL GUI dependencies this worker never used). `run_reconstruction()` now
+  calls `pycolmap.extract_features()` / `match_exhaustive()` / `global_mapping()` /
+  `undistort_images()` / `reconstruction.export_PLY()` directly as Python, not CLI subprocess
+  calls to a self-built `colmap` binary.
+- **OpenSplat (AGPL-3.0) replaced with gsplat (Apache-2.0)** —
+  [nerfstudio-project/gsplat](https://github.com/nerfstudio-project/gsplat)'s license
+  confirmed directly from its LICENSE file. AGPL's network-copyleft implications are a real
+  consideration for running this as an internal service; Apache-2.0 carries none of that.
+  Training now runs via gsplat's own vendored `examples/simple_trainer.py` (git-cloned at
+  build time from a pinned tag, not reimplemented) instead of a compiled OpenSplat binary.
+- **Base image switched to `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel`** (following
+  vid2scene's own proven choice) — ships a matching PyTorch+CUDA build gsplat needs, removing
+  the separate LibTorch zip download the OpenSplat-based version required.
+- ⚠️ **New, explicitly flagged unknowns from this rewrite** (none of this has been run):
+  whether `pycolmap-cuda12>=4.0.0` resolves to a real wheel at all — the only version+CUDA
+  combination directly confirmed is `3.13.0`, which predates the 4.0 `global_mapping`
+  binding this worker calls; the exact keyword-argument names on the four `pycolmap`
+  functions above, synthesized from documentation summaries rather than a signature
+  inspection; and `pycolmap.global_mapping`'s return type, handled defensively (accepts
+  either a dict of reconstructions, mirroring the documented `incremental_mapping`, or a
+  single `Reconstruction` returned directly) since neither was confirmed by execution.
+- `GSPLAT_MAX_STEPS` starts at 5,000, deliberately far below gsplat's own 30,000-step
+  research-benchmark default — a site walkthrough is a smaller, more constrained scene than
+  gsplat's benchmark scenes, and RunPod bills per second, so a lower cost-conscious default
+  was chosen over copying a number meant for a different kind of scene.
+
+**Cost/hosting options were laid out but NOT decided** — recorded in the worker's own
+README (self-hosted-on-owned-hardware, drop Gaussian Splatting for a CPU-only point cloud,
+free/manual community tools, or RunPod/Modal pay-per-second) rather than in this changelog,
+since it's an infrastructure decision the code doesn't yet reflect a choice on.
+
+⚠️ **Verified**: `handler.py` re-passes `py_compile`; 0 NUL bytes across all four touched
+files. **Not verified**: none of the `pycolmap`/`gsplat` API calls have been executed —
+same standing caveat as before this rewrite, now narrower in scope since the largest single
+prior risk (compiling COLMAP's C++ stack from source) no longer exists in this file at all.
+
 ## Floor Plan pin navigator + drone provenance — brief 6B/6C / Phase 5 & 6 (2026-08-29)
 
 Final two phases of the same unattended overnight build. This closes out the site-survey

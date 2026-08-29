@@ -1,20 +1,42 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# RunPod Serverless handler: video walkthrough -> COLMAP sparse reconstruction
-# -> OpenSplat Gaussian Splat training -> results uploaded to Supabase Storage.
+# RunPod Serverless handler: video walkthrough -> pycolmap (COLMAP's own
+# integrated global mapper, GLOMAP's successor) sparse reconstruction ->
+# gsplat Gaussian Splat training -> results uploaded to Supabase Storage.
 #
 # ------------------------------------------------------------------------------
-# ⚠️ WRITTEN, NOT EXECUTED. This code follows RunPod's documented serverless
-# handler contract and COLMAP's/OpenSplat's documented CLI usage as closely as
-# possible, but no GPU or Docker is available in the environment that wrote it
-# (confirmed: `docker --version` fails; only an integrated Intel Iris Xe GPU is
-# present, no discrete NVIDIA card to test CUDA against). The exact OpenSplat
-# CLI flags in particular should be checked against `opensplat --help` on the
-# actual built image before the first real job is submitted — see the
-# CHECK-BEFORE-FIRST-RUN comments below. Only `handler.py`'s own Python syntax
-# has been verified (py_compile), and only the request/response SHAPE this
-# module's Edge Functions expect has been cross-checked against
-# `supabase/functions/reconstruction-webhook/index.ts`.
+# ⚠️ WRITTEN, NOT EXECUTED. Same disclosure as the original version of this
+# file: no GPU/Docker in the environment that wrote it. What changed in this
+# rewrite (requested after reconsidering cost/licensing) and WHY, in order of
+# confidence -- see the Dockerfile's header for the full research trail:
+#
+#   CONFIRMED, high confidence:
+#   - Standalone GLOMAP was merged into COLMAP 4.0 and archived 2026-03-09;
+#     `pycolmap.global_mapping(...)` is COLMAP's own replacement.
+#   - `pycolmap-cuda12` is a real, prebuilt CUDA-enabled wheel (added in
+#     COLMAP 3.13.0) -- no source build of COLMAP needed at all now.
+#   - gsplat (github.com/nerfstudio-project/gsplat) is Apache-2.0 and
+#     pip-installable; its `examples/simple_trainer.py` (vendored into this
+#     image by the Dockerfile) is the real, documented training entry point,
+#     confirmed to accept `--data-dir / --data-factor / --result-dir /
+#     --max-steps / --save-ply` and to read a COLMAP-format project directory.
+#
+#   NOT independently run, best-available synthesis of documentation -- the
+#   single most likely source of a first-run failure, in this order:
+#   1. `pycolmap.global_mapping`'s exact return type (a dict of
+#      {index: Reconstruction}, mirroring `incremental_mapping`, is ASSUMED
+#      below and handled defensively -- if it turns out to return a single
+#      Reconstruction directly, the `isinstance` branch below already covers
+#      that case too).
+#   2. The exact keyword argument names on `pycolmap.extract_features`,
+#      `pycolmap.match_exhaustive`, and `pycolmap.undistort_images` --
+#      written from a documentation summary, not a signature inspection.
+#      Run `python -c "import pycolmap; help(pycolmap.extract_features)"`
+#      (and the same for the other two) inside the built image FIRST, before
+#      submitting a real job, and adjust the keyword names below if they
+#      differ. This is the standard "check the installed version's own
+#      docstring" step this repo already uses elsewhere (e.g. checking
+#      `opensplat --help` was the equivalent step for the previous version).
 #
 # INPUT (event["input"], set by submit-reconstruction):
 #   { "request_id": str, "project_id": str, "video_url": str (signed, 24h),
@@ -31,11 +53,10 @@
 #   file this app stores (drawing_register.file_url, progress_photos.photo_url).
 # ==============================================================================
 
-import json
-import math
 import os
 import shutil
 import subprocess
+import sys
 import time
 import traceback
 from pathlib import Path
@@ -46,10 +67,10 @@ import runpod
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 BUCKET = "progress-photos"
+GSPLAT_TRAINER = "/app/gsplat_examples/simple_trainer.py"
 
-# Target frame count for the extraction pass. COLMAP's sequential matcher
-# scales roughly linearly with frame count and a walkthrough video can run
-# several minutes — too many frames makes the mapper stage impractically slow
+# Target frame count for the extraction pass. A walkthrough video can run
+# several minutes — too many frames makes reconstruction impractically slow
 # on a single GPU worker, too few starves it of overlap to match against.
 # 150-300 is the commonly recommended range for SfM+3DGS pipelines of this
 # kind; not tuned against real footage here.
@@ -57,14 +78,14 @@ TARGET_FRAMES = 220
 MIN_FPS = 1.0
 MAX_FPS = 6.0
 
-# OpenSplat training iterations. OpenSplat's own defaults/examples commonly
-# use a few thousand for a reasonable quality/time trade-off on a single GPU;
-# left generous rather than tuned, since no real timing data exists yet from
-# this environment. ⚠️ CHECK-BEFORE-FIRST-RUN: confirm this is still a
-# sensible number against the actual wall-clock time of a real job — RunPod
-# bills per second, and this is the single biggest cost lever in the whole
-# pipeline.
-OPENSPLAT_ITERATIONS = 3000
+# gsplat training iterations. gsplat's own `simple_trainer.py` example
+# defaults to 30,000 for its benchmark scenes (large outdoor/object scenes
+# meant for research comparisons) -- deliberately NOT used here. A site
+# walkthrough is a smaller, more constrained scene, and RunPod bills per
+# second: this starts at a much lower budget as a cost-conscious default.
+# ⚠️ CHECK-BEFORE-FIRST-RUN: this is the single biggest cost/quality lever
+# in the whole pipeline and has no real timing data behind it yet.
+GSPLAT_MAX_STEPS = 5000
 
 
 def run(cmd, cwd=None, timeout=None):
@@ -117,107 +138,121 @@ def extract_frames(video_path, out_dir):
     return frames
 
 
-def run_colmap(project_dir, images_dir):
-    """Structure-from-Motion via COLMAP's own documented CLI pipeline
-    (feature_extractor -> sequential_matcher -> mapper -> image_undistorter).
-    Sequential matcher, not exhaustive, since walkthrough frames are ordered
-    and overlap mostly with their near neighbours in time -- exhaustive
-    matching on 200+ frames would be needlessly slow.
+def run_reconstruction(project_dir, images_dir):
+    """Structure-from-Motion entirely via pycolmap's Python API (no COLMAP
+    CLI binary at all -- see the module header for why this replaced the
+    original from-source COLMAP CLI build): extract_features -> match_exhaustive
+    -> global_mapping (COLMAP 4.0's integrated GLOMAP successor) ->
+    undistort_images -> export a plain-PLY point cloud.
     """
+    import pycolmap  # deferred import so a missing/mismatched wheel fails
+                      # inside handler(), reported as a job error, not a
+                      # container crash-loop on start.
+
     db_path = project_dir / "database.db"
     sparse_dir = project_dir / "sparse"
     sparse_dir.mkdir(parents=True, exist_ok=True)
     dense_dir = project_dir / "dense"
 
-    run([
-        "colmap", "feature_extractor",
-        "--database_path", str(db_path),
-        "--image_path", str(images_dir),
-        "--ImageReader.camera_model", "SIMPLE_RADIAL",
-        "--ImageReader.single_camera", "1",
-        "--SiftExtraction.use_gpu", "1",
-    ])
-    run([
-        "colmap", "sequential_matcher",
-        "--database_path", str(db_path),
-        "--SiftMatching.use_gpu", "1",
-    ])
-    run([
-        "colmap", "mapper",
-        "--database_path", str(db_path),
-        "--image_path", str(images_dir),
-        "--output_path", str(sparse_dir),
-    ])
+    print("[worker] extracting SIFT features (GPU)...", flush=True)
+    pycolmap.extract_features(
+        database_path=str(db_path),
+        image_path=str(images_dir),
+        camera_model="SIMPLE_RADIAL",
+        sift_options={"use_gpu": True},
+    )
 
-    model_dirs = sorted([p for p in sparse_dir.iterdir() if p.is_dir()])
-    if not model_dirs:
+    print("[worker] matching features (exhaustive)...", flush=True)
+    # ⚠️ Exhaustive, not sequential -- a sequential/windowed matcher was
+    # searched for in pycolmap's Python bindings and NOT found documented
+    # anywhere. Exhaustive is O(n^2) pairs rather than O(n) for ~220 ordered
+    # video frames -- slower, not incorrect. Revisit if pycolmap.match_from_pairs
+    # (mentioned in COLMAP 4.0's release notes for GPU custom-pair matching)
+    # turns out to expose a documented way to build a sequential-window pair
+    # list once its actual signature is confirmed.
+    pycolmap.match_exhaustive(database_path=str(db_path))
+
+    print("[worker] running COLMAP's integrated global mapper...", flush=True)
+    pipeline_opts = pycolmap.GlobalPipelineOptions()
+    recs = pycolmap.global_mapping(
+        database_path=str(db_path),
+        image_root=str(images_dir),
+        sparse_path=str(sparse_dir),
+        pipeline_opts=pipeline_opts,
+    )
+
+    # Defensive handling of the return shape -- see the module header's
+    # "NOT independently run" note #1. `incremental_mapping` (the older,
+    # confirmed-documented sibling function) returns a dict of
+    # {index: Reconstruction}; global_mapping is assumed to follow the same
+    # convention, but a single Reconstruction returned directly is also
+    # handled so this doesn't hard-crash on the first real run over a naming
+    # assumption alone.
+    if hasattr(recs, "items"):
+        if not recs:
+            raise RuntimeError(
+                "COLMAP's global mapper produced no reconstructed model at all -- "
+                "the footage likely doesn't have enough overlap or texture to register."
+            )
+        reconstruction = max(recs.values(), key=lambda r: r.num_reg_images())
+    elif recs is not None:
+        reconstruction = recs
+    else:
         raise RuntimeError(
-            "COLMAP's mapper produced no reconstructed model at all -- the "
-            "footage likely doesn't have enough overlap or texture to register."
+            "COLMAP's global mapper produced no reconstructed model at all -- "
+            "the footage likely doesn't have enough overlap or texture to register."
         )
-    model_dir = model_dirs[0]  # COLMAP names the largest/first reconstructed model "0"
 
-    # Undistort against a PINHOLE model -- OpenSplat's documented input formats
-    # (COLMAP / nerfstudio / OpenSfM) expect undistorted images, and
-    # SIMPLE_RADIAL carries real lens distortion the raw frames still have.
-    run([
-        "colmap", "image_undistorter",
-        "--image_path", str(images_dir),
-        "--input_path", str(model_dir),
-        "--output_path", str(dense_dir),
-        "--output_type", "COLMAP",
-    ])
+    model_dir = sparse_dir / "0"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    reconstruction.write(str(model_dir))
+
+    registered = reconstruction.num_reg_images()
+
+    # Undistort against a PINHOLE model -- gsplat's dataset parser (like
+    # OpenSplat's before it) expects undistorted images, and SIMPLE_RADIAL
+    # carries real lens distortion the raw frames still have.
+    print("[worker] undistorting images...", flush=True)
+    pycolmap.undistort_images(
+        output_path=str(dense_dir),
+        input_path=str(model_dir),
+        image_path=str(images_dir),
+    )
 
     # Export the sparse point cloud as a plain PLY -- this is what the
     # client's PLYLoader viewer renders directly (recon.js's
-    # mountPointCloudViewer), independent of whatever OpenSplat produces.
+    # mountPointCloudViewer), independent of whatever gsplat produces.
     pointcloud_ply = project_dir / "sparse_pointcloud.ply"
-    run([
-        "colmap", "model_converter",
-        "--input_path", str(model_dir),
-        "--output_path", str(pointcloud_ply),
-        "--output_type", "PLY",
-    ])
+    reconstruction.export_PLY(str(pointcloud_ply))
 
-    return dense_dir, pointcloud_ply, model_dir
+    return dense_dir, pointcloud_ply, registered
 
 
-def run_opensplat(dense_dir, out_dir):
-    """Train a Gaussian Splat from the undistorted COLMAP project.
-    ⚠️ CHECK-BEFORE-FIRST-RUN: OpenSplat's CLI (as of the pinned v1.2.1 tag in
-    the Dockerfile) is documented as
-        opensplat <input-path> -n <iterations> -o <output.ply>
-    where <input-path> is a directory containing a COLMAP-style project
-    (images/ + sparse/ or cameras.bin/images.bin/points3D.bin at its root).
-    Confirm this against `opensplat --help` on the built image -- if the flag
-    names or the expected directory layout have moved since this was written,
-    this is the single most likely place a real job's first run fails.
+def run_gsplat_training(dense_dir, out_dir):
+    """Train a Gaussian Splat via gsplat's own vendored `simple_trainer.py`
+    (copied into the image by the Dockerfile from
+    github.com/nerfstudio-project/gsplat's `examples/` folder — the exact,
+    documented, versioned entry point, not a reimplementation of the
+    training loop). Confirmed CLI shape: `--data-dir / --data-factor /
+    --result-dir / --max-steps / --save-ply`, input is a COLMAP-format
+    project directory (exactly what pycolmap.undistort_images produced).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    splat_ply = out_dir / "splat.ply"
     run([
-        "opensplat", str(dense_dir),
-        "-n", str(OPENSPLAT_ITERATIONS),
-        "-o", str(splat_ply),
+        sys.executable, GSPLAT_TRAINER,
+        "--data-dir", str(dense_dir),
+        "--data-factor", "1",   # our own frames are already downscaled at extraction; don't downscale again
+        "--result-dir", str(out_dir),
+        "--max-steps", str(GSPLAT_MAX_STEPS),
+        "--save-ply",
+        "--disable-video",      # skip the benchmark fly-through video render -- pure cost, no use to us
     ], timeout=60 * 90)  # generous cap so a stuck job doesn't run (and bill) forever
-    if not splat_ply.exists():
-        raise RuntimeError("OpenSplat completed without producing an output file.")
-    return splat_ply
 
-
-def count_registered_images(model_dir):
-    """A cheap reconstruction-quality signal: how many of the input frames
-    COLMAP actually managed to register (localise) into the model, vs. how
-    many were fed in. A low ratio is the honest sign of a poor walkthrough
-    (too fast a pan, not enough texture/overlap) -- surfaced in `stats` rather
-    than silently hidden behind a technically-"done" status."""
-    images_txt = model_dir / "images.txt"
-    if images_txt.exists():
-        # COLMAP's images.txt has one non-comment header line per registered
-        # image, followed by a POINTS2D line -- every other non-comment line.
-        lines = [l for l in images_txt.read_text(errors="ignore").splitlines() if l and not l.startswith("#")]
-        return len(lines) // 2
-    return None
+    ply_dir = out_dir / "ply"
+    plys = sorted(ply_dir.glob("*.ply")) if ply_dir.exists() else []
+    if not plys:
+        raise RuntimeError(f"gsplat training completed without producing a PLY file in {ply_dir}.")
+    return plys[-1]  # the highest-step checkpoint, per --ply-steps naming
 
 
 def upload_to_storage(local_path, object_path):
@@ -271,11 +306,10 @@ def handler(event):
 
         colmap_project = work_dir / "colmap"
         colmap_project.mkdir()
-        dense_dir, pointcloud_ply, model_dir = run_colmap(colmap_project, images_dir)
+        dense_dir, pointcloud_ply, registered = run_reconstruction(colmap_project, images_dir)
 
-        registered = count_registered_images(model_dir)
         quality_note = None
-        if registered is not None and len(frames) > 0:
+        if len(frames) > 0:
             ratio = registered / len(frames)
             if ratio < 0.5:
                 quality_note = (
@@ -285,7 +319,7 @@ def handler(event):
                 )
 
         splat_dir = work_dir / "splat_out"
-        splat_ply = run_opensplat(dense_dir, splat_dir)
+        splat_ply = run_gsplat_training(dense_dir, splat_dir)
 
         pointcloud_object_path = f"{result_prefix}pointcloud.ply"
         splat_object_path = f"{result_prefix}splat.ply"
@@ -296,7 +330,7 @@ def handler(event):
         stats = {
             "frame_count": len(frames),
             "registered_images": registered,
-            "opensplat_iterations": OPENSPLAT_ITERATIONS,
+            "gsplat_max_steps": GSPLAT_MAX_STEPS,
             "processing_seconds": round(elapsed, 1),
         }
         if quality_note:
