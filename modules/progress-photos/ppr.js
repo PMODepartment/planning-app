@@ -20,6 +20,7 @@ window.PPR = (function () {
   var T_PPR    = 'ppr_presentations';
   var T_SLIDE  = 'ppr_slides';
   var T_PHOTO  = 'progress_photos';
+  var T_TMPL   = 'ppr_report_templates';
   var BUCKET   = 'progress-photos';
   var SIGN_TTL = 3600;
 
@@ -28,10 +29,12 @@ window.PPR = (function () {
   var pprs = [];                 // presentations for this project
   var slidesOf = {};             // ppr_id -> [slide]
   var photos = [];               // the project's photo library (for picking)
+  var templates = [];            // saved report templates for this project
+  var tmplTableMissing = false;  // migrations/2026-08-29-ppr-report-templates.sql not run yet
   var urlCache = {};             // storage path -> signed URL
   var selId = null;              // selected PPR (drives the preview pane)
   var filters = { from: '', to: '' };
-  var screen = 'list';           // list | slides
+  var screen = 'list';           // list | slides | templates
   var viewPprId = null, slideAt = 0, keyPlanOpen = false;
 
   function sb() { return AppAuth.getSB(); }
@@ -90,6 +93,8 @@ window.PPR = (function () {
     };
     $('ppr-new').onclick = function () { openPprForm(null); };
     $('ppr-back').onclick = function () { screen = 'list'; render(); };
+    if ($('ppr-templates')) $('ppr-templates').onclick = function () { screen = 'templates'; render(); };
+    if ($('ppr-tmpl-new')) $('ppr-tmpl-new').onclick = function () { openTemplateForm(null); };
   }
 
   // ------------------------------------------------------------------ load ---
@@ -126,8 +131,24 @@ window.PPR = (function () {
       photos.sort(function (a, b) { return String(b.taken_at || '').localeCompare(String(a.taken_at || '')); });
     } catch (e) { photos = []; }
 
+    await loadTemplates();
     await signAll();
     render();
+  }
+
+  // Tolerant of the migration not having run yet — same convention as every
+  // other optional table this module reads (e.g. location_levels). Templates
+  // are a management concern of the Meetings screen, so they load alongside
+  // everything else rather than lazily on first visit to that screen.
+  async function loadTemplates() {
+    tmplTableMissing = false;
+    try {
+      templates = await PDb.selectAll(T_TMPL, function (q) { return q.eq('project_id', pid); });
+      templates.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
+    } catch (e) {
+      templates = [];
+      if (/schema cache|does not exist/i.test((e && e.message) || '')) tmplTableMissing = true;
+    }
   }
 
   // Every image on screen (photos + key plans) signed in one round-trip.
@@ -157,26 +178,66 @@ window.PPR = (function () {
   function urlOfPath(path) { return path ? (urlCache[path] || '') : ''; }
   function slides(pprId) { return (slidesOf[pprId] || []).slice().sort(function (a, b) { return (a.slide_no || 0) - (b.slide_no || 0); }); }
   function pprById(id) { return pprs.filter(function (p) { return p.id === id; })[0] || null; }
+  function tmplById(id) { return templates.filter(function (t) { return t.id === id; })[0] || null; }
+
+  // Every photo AT (a superset of) this set of location values, newest first.
+  // Same subset-equality rule as module.js's resolveActivity()/lastCaptureAt()
+  // — restated here rather than shared, because this file holds its own
+  // independently-loaded copy of the photo library (established pattern:
+  // module.js and ppr.js each load progress_photos on their own).
+  function photosAtLocation(values) {
+    var keys = Object.keys(values || {}).filter(function (k) { return values[k]; });
+    if (!keys.length) return [];
+    return photos.filter(function (p) {
+      var lv = p.location_values || {};
+      return keys.every(function (k) { return (lv[k] || '') === values[k]; });
+    }).sort(function (a, b) { return String(b.taken_at || '').localeCompare(String(a.taken_at || '')); });
+  }
+
+  // The universe of locations a template can be built from: everywhere the
+  // SCHEDULE says work is happening, unioned with everywhere a PHOTO has
+  // already been captured. Schedule-derived wins on a key collision (it's the
+  // more current source); photo-only locations fill in what the schedule
+  // doesn't (or no longer) know about, e.g. a completed zone already dropped
+  // from the schedule, or a shot taken before its zone existed there.
+  function allLocationCombos() {
+    var byKey = {};
+    (window.ProgressPhotos && ProgressPhotos.locCombos ? ProgressPhotos.locCombos() : [])
+      .forEach(function (c) { byKey[c.key] = c; });
+    (window.ProgressPhotos && ProgressPhotos.photoLocCombos ? ProgressPhotos.photoLocCombos() : [])
+      .forEach(function (c) { if (!byKey[c.key]) byKey[c.key] = c; });
+    return Object.keys(byKey).map(function (k) { return byKey[k]; })
+      .sort(function (a, b) { return a.label.localeCompare(b.label); });
+  }
 
   // ---------------------------------------------------------------- render ---
   function hydrate() { if (window.Icons && Icons.hydrate) Icons.hydrate($('ppr-view')); }
 
   function render() {
-    // Filters + count belong to the list only — the slides view is its own screen.
+    // Filters + count belong to the list only — the slides/templates views are
+    // each their own screen.
     $('ppr-listbar').style.display = screen === 'list' ? '' : 'none';
     $('ppr-countbar').style.display = screen === 'list' ? '' : 'none';
+    if ($('ppr-tmpl-wrap')) $('ppr-tmpl-wrap').hidden = screen !== 'templates';
+    if ($('ppr-view')) $('ppr-view').hidden = screen === 'templates';
     syncTools(true);
-    if (screen === 'slides') renderSlides(); else renderList();
+    if (screen === 'slides') renderSlides();
+    else if (screen === 'templates') renderTemplates();
+    else renderList();
   }
 
   // The topbar tools follow the Meetings screen's own state: "+ New Meeting"
-  // belongs to the list, "Meetings list" (back) belongs to the slides view.
-  // `visible` is false while the Photos screen is showing, which hides both.
-  // They're never both on screen, so no divider is needed between them.
+  // and "Templates" belong to the list, "Meetings list" (back) belongs to the
+  // slides/templates views, "+ New template" belongs to the templates view.
+  // `visible` is false while the Photos screen is showing, which hides all of
+  // them — they never share a row with each other, so no divider is needed.
   function syncTools(visible) {
-    var back = $('ppr-back'), neu = $('ppr-new');
-    if (back) back.style.display = (visible && screen === 'slides') ? '' : 'none';
-    if (neu) neu.style.display = (visible && screen === 'list' && canWrite) ? '' : 'none';
+    var back = $('ppr-back'), neu = $('ppr-new'), tmplBtn = $('ppr-templates'), tmplNew = $('ppr-tmpl-new');
+    var onList = screen === 'list', onTmpl = screen === 'templates';
+    if (back) back.style.display = (visible && (screen === 'slides' || onTmpl)) ? '' : 'none';
+    if (neu) neu.style.display = (visible && onList && canWrite) ? '' : 'none';
+    if (tmplBtn) tmplBtn.style.display = (visible && onList) ? '' : 'none';
+    if (tmplNew) tmplNew.style.display = (visible && onTmpl && canWrite) ? '' : 'none';
   }
 
   function visiblePprs() {
@@ -222,8 +283,12 @@ window.PPR = (function () {
         '<div class="ppr-cell ppr-num">' + n + '</div>' +
         '<div class="ppr-cell ppr-acts">' +
           '<button class="pp-iconbtn" data-act="download" data-id="' + p.id + '" ' +
-            'title="Download an offline copy of this meeting">' +
+            'title="Download an offline copy of this meeting (opens with no network)">' +
             '<span data-ico="download" data-ico-size="15"></span></button>' +
+          '<button class="pp-iconbtn" data-act="pdf" data-id="' + p.id + '" title="Download as PDF">' +
+            '<span data-ico="clipboard" data-ico-size="15"></span></button>' +
+          '<button class="pp-iconbtn" data-act="pptx" data-id="' + p.id + '" title="Download as PowerPoint (.pptx)">' +
+            '<span data-ico="layers" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn" data-act="open" data-id="' + p.id + '" title="Open slides">' +
             '<span data-ico="arrowRight" data-ico-size="15"></span></button>' +
           (canWrite ? '<button class="pp-iconbtn" data-act="edit" data-id="' + p.id + '" title="Edit meeting details">' +
@@ -257,6 +322,8 @@ window.PPR = (function () {
         var a = el.dataset.act;
         if (a === 'open') openPpr(p.id);
         else if (a === 'download') exportOffline(p);
+        else if (a === 'pdf') exportPdf(p);
+        else if (a === 'pptx') exportPptx(p);
         else if (a === 'edit') openPprForm(p);
         else if (a === 'del') removePpr(p);
       };
@@ -750,18 +817,13 @@ window.PPR = (function () {
     });
   }
 
-  async function exportOffline(p) {
-    var s = slides(p.id);
-    if (!s.length) { UI.toast('This meeting has no slides to export', 'warn'); return; }
-
-    var m = openModal(
-      '<div class="pd-modal-header"><h3>Preparing offline copy</h3></div>' +
-      '<div class="pp-form"><p id="ppr-x-msg">Embedding images…</p>' +
-      '<p class="pp-hint">Every photo is embedded in the file so it opens without a network ' +
-      'connection. Large PPRs take a moment.</p></div>', 480);
-    var msg = $('ppr-x-msg');
-
-    var imgs = {}, failed = 0, step = 0;
+  // Every image a meeting's slides reference (photos + per-pane key plans),
+  // embedded as a downscaled data URI — shared by the offline HTML export,
+  // the PDF export and the PPTX export, so the three formats can never
+  // embed a different picture of the same slide. `onProgress(i, total)` is
+  // optional, called before each fetch so each caller can show its own message.
+  async function collectSlideImages(s, onProgress) {
+    var imgs = {}, failed = 0;
     var jobs = [];
     s.forEach(function (sl) {
       [sl.before_photo_id, sl.after_photo_id].forEach(function (id) {
@@ -775,12 +837,29 @@ window.PPR = (function () {
     jobs = jobs.filter(function (u, i) { return jobs.indexOf(u) === i; });
 
     for (var i = 0; i < jobs.length; i++) {
-      msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + jobs.length + '…';
+      if (onProgress) onProgress(i, jobs.length);
       try { imgs[jobs[i]] = await toDataURL(jobs[i]); }
       catch (e) { failed++; console.warn('PPR: could not embed an image —', e && e.message); }
       await new Promise(function (r) { setTimeout(r, 0); });
-      step++;
     }
+    return { imgs: imgs, failed: failed };
+  }
+
+  async function exportOffline(p) {
+    var s = slides(p.id);
+    if (!s.length) { UI.toast('This meeting has no slides to export', 'warn'); return; }
+
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing offline copy</h3></div>' +
+      '<div class="pp-form"><p id="ppr-x-msg">Embedding images…</p>' +
+      '<p class="pp-hint">Every photo is embedded in the file so it opens without a network ' +
+      'connection. Large PPRs take a moment.</p></div>', 480);
+    var msg = $('ppr-x-msg');
+
+    var res = await collectSlideImages(s, function (i, total) {
+      msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+    });
+    var imgs = res.imgs, failed = res.failed;
 
     msg.textContent = 'Building file…';
     var html = offlineHTML(p, s, imgs);
@@ -797,76 +876,492 @@ window.PPR = (function () {
       (failed ? ' — ' + failed + ' image(s) could not be embedded' : ''), failed ? 'warn' : 'ok');
   }
 
-  // A standalone page: inline CSS, inline images, no scripts, no external refs.
-  function offlineHTML(p, s, imgs) {
+  // Renders one <figure> per pane, mirroring the in-app slides view: tags and
+  // the key plan are per PHOTO, and a slide with no before photo renders the
+  // single photo centered rather than beside an empty frame. Shared by the
+  // offline HTML export and the PDF export (built into a real DOM node rather
+  // than a string there, but from the SAME figure/slide markup) so the two
+  // documents can never show a different layout of the same slide.
+  function slideFigureHTML(sl, which, imgs) {
+    var ph = photoById(which === 'before' ? sl.before_photo_id : sl.after_photo_id);
+    var cap = (which === 'before' ? sl.before_caption : sl.after_caption) ||
+              (ph && ph.description) || '';
+    var tags = ph ? [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ')
+                  : [sl.trade, sl.works, sl.location].filter(Boolean).join(' · ');
+    var kp = urlOfPath(keyPlanPathFor(sl, which));
+    var phUrl = urlOfPhoto(ph && ph.id);
     function im(url, cls, alt) {
       var d = url ? imgs[url] : '';
       return d ? '<img class="' + cls + '" src="' + d + '" alt="' + esc(alt || '') + '" />'
                : '<div class="' + cls + ' missing">Image unavailable</div>';
     }
-    // Mirrors the in-app slides view: tags + key plan are per PHOTO, and a slide
-    // with no before photo prints the single photo centered rather than beside
-    // an empty frame.
-    function figure(sl, which) {
-      var ph = photoById(which === 'before' ? sl.before_photo_id : sl.after_photo_id);
-      var cap = (which === 'before' ? sl.before_caption : sl.after_caption) ||
-                (ph && ph.description) || '';
-      var tags = ph ? [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ')
-                    : [sl.trade, sl.works, sl.location].filter(Boolean).join(' · ');
-      var kp = urlOfPath(keyPlanPathFor(sl, which));
-      return '<figure>' +
-        '<div class="lbl">' + (which === 'before' ? 'Before' : 'After') + '</div>' +
-        '<div class="phwrap">' + im(urlOfPhoto(ph && ph.id), 'ph', cap) +
-          (kp && imgs[kp] ? im(kp, 'kpimg', 'Key plan') : '') + '</div>' +
-        '<figcaption><div class="d">' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
-        '<div class="c">' + esc(cap) + '</div>' +
-        (tags ? '<div class="t">' + esc(tags) + '</div>' : '') +
-        '</figcaption></figure>';
-    }
+    return '<figure>' +
+      '<div class="lbl">' + (which === 'before' ? 'Before' : 'After') + '</div>' +
+      '<div class="phwrap">' + im(phUrl, 'ph', cap) +
+        (kp && imgs[kp] ? im(kp, 'kpimg', 'Key plan') : '') + '</div>' +
+      '<figcaption><div class="d">' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
+      '<div class="c">' + esc(cap) + '</div>' +
+      (tags ? '<div class="t">' + esc(tags) + '</div>' : '') +
+      '</figcaption></figure>';
+  }
+
+  function slidesBodyHTML(p, s, imgs) {
     var slidesHTML = s.map(function (sl, i) {
       var hasBefore = !!sl.before_photo_id;
       return '<section class="slide">' +
         '<div class="meta"><span class="no">Slide ' + (i + 1) + ' of ' + s.length + '</span></div>' +
         '<div class="pair' + (hasBefore ? '' : ' single') + '">' +
-          (hasBefore ? figure(sl, 'before') : '') + figure(sl, 'after') +
+          (hasBefore ? slideFigureHTML(sl, 'before', imgs) : '') + slideFigureHTML(sl, 'after', imgs) +
         '</div></section>';
     }).join('');
-
-    return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
-      '<title>' + esc(projName || pid) + ' — ' + esc(longDate(p.ppr_date)) + '</title><style>' +
-      'body{margin:0;font-family:Montserrat,Segoe UI,Arial,sans-serif;color:#231F20;background:#F4F4F4}' +
-      'header{background:#EE3124;color:#fff;padding:16px 22px}' +
-      'header h1{margin:0;font-size:19px;letter-spacing:.02em}' +
-      'header p{margin:4px 0 0;font-size:13px;opacity:.92}' +
-      '.wrap{max-width:1180px;margin:0 auto;padding:18px}' +
-      '.slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:14px;margin-bottom:16px;position:relative}' +
-      '.meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;margin-bottom:10px;align-items:baseline}' +
-      '.meta .no{font-weight:700;color:#EE3124}' +
-      '.meta b{color:#6b6b6b;font-weight:600;margin-right:4px}' +
-      '.phwrap{position:relative}' +
-      '.kpimg{position:absolute;top:8px;right:8px;width:150px;border:1px solid #DCDBDB;display:block;box-shadow:0 1px 4px rgba(0,0,0,.25)}' +
-      '.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}' +
-      '.pair.single{grid-template-columns:minmax(0,760px);justify-content:center}' +
-      'figure{margin:0}' +
-      '.lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b6b6b;margin-bottom:4px}' +
-      'figcaption .t{font-size:11.5px;color:#6b6b6b;margin-top:3px}' +
-      '.ph{width:100%;display:block;border:1px solid #DCDBDB;background:#F4F4F4}' +
-      '.missing{padding:40px;text-align:center;color:#9a9a9a;font-size:13px}' +
-      'figcaption{text-align:center;margin-top:6px}' +
-      'figcaption .d{font-size:13px}' +
-      'figcaption .c{font-style:italic;font-size:12.5px;color:#4a4a4a;margin-top:2px}' +
-      'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +
-      '@media print{body{background:#fff}.slide{page-break-after:always;border:0}}' +
-      '@media (max-width:820px){.pair,.pair.single{grid-template-columns:1fr}.kpimg{width:110px}}' +
-      '</style></head><body>' +
-      '<header><h1>' + esc(projName || pid) + ' — Progress Photos</h1>' +
+    return '<header><h1>' + esc(projName || pid) + ' — Progress Photos</h1>' +
       '<p>' + esc(p.description || '') + ' · Meeting Date: ' + esc(longDate(p.ppr_date)) +
       ' · ' + s.length + ' slide' + (s.length === 1 ? '' : 's') + '</p></header>' +
       '<div class="wrap">' + slidesHTML + '</div>' +
-      '<footer>Offline copy generated ' + esc(longDate(new Date().toISOString().slice(0, 10))) +
-      ' from the Planners Dashboard · Megawide Construction Corporation</footer>' +
+      '<footer>Generated ' + esc(longDate(new Date().toISOString().slice(0, 10))) +
+      ' from the Planners Dashboard · Megawide Construction Corporation</footer>';
+  }
+
+  // Shared by the offline HTML export (in a real <style> tag) and the PDF
+  // export (injected into the same detached DOM node html2pdf rasterises).
+  var EXPORT_CSS =
+    'body{margin:0;font-family:Montserrat,Segoe UI,Arial,sans-serif;color:#231F20;background:#F4F4F4}' +
+    'header{background:#EE3124;color:#fff;padding:16px 22px}' +
+    'header h1{margin:0;font-size:19px;letter-spacing:.02em}' +
+    'header p{margin:4px 0 0;font-size:13px;opacity:.92}' +
+    '.wrap{max-width:1180px;margin:0 auto;padding:18px}' +
+    '.slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:14px;margin-bottom:16px;position:relative}' +
+    '.meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;margin-bottom:10px;align-items:baseline}' +
+    '.meta .no{font-weight:700;color:#EE3124}' +
+    '.meta b{color:#6b6b6b;font-weight:600;margin-right:4px}' +
+    '.phwrap{position:relative}' +
+    '.kpimg{position:absolute;top:8px;right:8px;width:150px;border:1px solid #DCDBDB;display:block;box-shadow:0 1px 4px rgba(0,0,0,.25)}' +
+    '.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}' +
+    '.pair.single{grid-template-columns:minmax(0,760px);justify-content:center}' +
+    'figure{margin:0}' +
+    '.lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b6b6b;margin-bottom:4px}' +
+    'figcaption .t{font-size:11.5px;color:#6b6b6b;margin-top:3px}' +
+    '.ph{width:100%;display:block;border:1px solid #DCDBDB;background:#F4F4F4}' +
+    '.missing{padding:40px;text-align:center;color:#9a9a9a;font-size:13px}' +
+    'figcaption{text-align:center;margin-top:6px}' +
+    'figcaption .d{font-size:13px}' +
+    'figcaption .c{font-style:italic;font-size:12.5px;color:#4a4a4a;margin-top:2px}' +
+    'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +
+    '@media print{body{background:#fff}.slide{page-break-after:always;border:0}}' +
+    '@media (max-width:820px){.pair,.pair.single{grid-template-columns:1fr}.kpimg{width:110px}}';
+
+  // A standalone page: inline CSS, inline images, no scripts, no external refs.
+  function offlineHTML(p, s, imgs) {
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
+      '<title>' + esc(projName || pid) + ' — ' + esc(longDate(p.ppr_date)) + '</title>' +
+      '<style>' + EXPORT_CSS + '</style></head><body>' +
+      slidesBodyHTML(p, s, imgs) +
       '</body></html>';
+  }
+
+  // ------------------------------------------------------------- PDF export ---
+  // Brief Section 5: "exportable as a slide deck (PPTX) or PDF suitable for
+  // presenting directly in a meeting." Reuses the SAME slidesBodyHTML/EXPORT_CSS
+  // as the offline HTML export, rasterised by html2pdf — so the on-screen
+  // slides, the offline copy and the PDF can never show three different layouts
+  // of one meeting.
+  async function exportPdf(p) {
+    var s = slides(p.id);
+    if (!s.length) { UI.toast('This meeting has no slides to export', 'warn'); return; }
+    if (typeof html2pdf !== 'function') {
+      UI.toast('The PDF library did not load — check the connection and reload.', 'error'); return;
+    }
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing PDF</h3></div>' +
+      '<div class="pp-form"><p id="ppr-x-msg">Embedding images…</p></div>', 420);
+    var msg = $('ppr-x-msg');
+    var holder = null;
+    try {
+      var res = await collectSlideImages(s, function (i, total) {
+        msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+      });
+      msg.textContent = 'Building PDF…';
+
+      // ⚠️ THE CAPTURED ELEMENT MUST STAY IN NORMAL FLOW (issues-lessons
+      // 2026-08-22 found this the hard way: `position:fixed`/`absolute` on the
+      // node html2pdf renders gives html2canvas a real WIDTH but a height of
+      // ZERO — every previous PDF export in this repo that made that mistake
+      // produced a byte-identical blank page with no error. The OFF-SCREEN
+      // PARKING goes on a HOLDER; `wrap` sits in normal flow inside it.
+      holder = document.createElement('div');
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;';
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'width:1180px;';
+      wrap.innerHTML = '<style>' + EXPORT_CSS + '</style>' + slidesBodyHTML(p, s, res.imgs);
+      holder.appendChild(wrap);
+      document.body.appendChild(holder);
+
+      var filename = 'Meeting ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pdf';
+      await html2pdf().set({
+        margin: [8, 8, 8, 8],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#F4F4F4' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+        pagebreak: { mode: ['css'] }
+      }).from(wrap).save();
+
+      m.close();
+      UI.toast('PDF downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
+        res.failed ? 'warn' : 'ok');
+    } catch (e) {
+      m.close(); UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
+    } finally {
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+    }
+  }
+
+  // ------------------------------------------------------------ PPTX export ---
+  // PptxGenJS builds slides via its own API (not from HTML), so this walks the
+  // same photo/pane data slideFigureHTML() reads — one PptxGenJS slide per
+  // report slide, before pane on the left half when present, after pane on the
+  // right (or centered alone). Units are inches (its native unit); a 13.33x7.5
+  // widescreen layout matches the offline export's own wide, image-led look.
+  async function exportPptx(p) {
+    var s = slides(p.id);
+    if (!s.length) { UI.toast('This meeting has no slides to export', 'warn'); return; }
+    if (typeof PptxGenJS !== 'function') {
+      UI.toast('The PowerPoint library did not load — check the connection and reload.', 'error'); return;
+    }
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing PowerPoint</h3></div>' +
+      '<div class="pp-form"><p id="ppr-x-msg">Embedding images…</p></div>', 420);
+    var msg = $('ppr-x-msg');
+    try {
+      var res = await collectSlideImages(s, function (i, total) {
+        msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+      });
+      msg.textContent = 'Building file…';
+      var imgs = res.imgs;
+
+      var pptx = new PptxGenJS();
+      pptx.defineLayout({ name: 'PP_WIDE', width: 13.33, height: 7.5 });
+      pptx.layout = 'PP_WIDE';
+
+      var title = pptx.addSlide();
+      title.background = { color: 'EE3124' };
+      title.addText(projName || pid, { x: 0.6, y: 2.6, w: 12, h: 0.8, fontSize: 28, bold: true, color: 'FFFFFF' });
+      title.addText((p.description || 'Progress Photos') + '\n' + longDate(p.ppr_date),
+        { x: 0.6, y: 3.5, w: 12, h: 1, fontSize: 16, color: 'FFFFFF' });
+
+      // PptxGenJS's `data` option takes the payload WITHOUT the `data:` prefix
+      // that canvas.toDataURL() (collectSlideImages' own source) always adds.
+      function stripDataPrefix(uri) { return uri ? uri.replace(/^data:/, '') : ''; }
+      function pptxPane(slide, sl, which, x, w) {
+        var ph = photoById(which === 'before' ? sl.before_photo_id : sl.after_photo_id);
+        var cap = (which === 'before' ? sl.before_caption : sl.after_caption) || (ph && ph.description) || '';
+        var tags = ph ? [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ') : '';
+        var url = urlOfPhoto(ph && ph.id);
+        var data = url ? imgs[url] : '';
+        slide.addText(which === 'before' ? 'BEFORE' : 'AFTER',
+          { x: x, y: 0.35, w: w, h: 0.35, fontSize: 11, bold: true, color: '6B6B6B', charSpacing: 1 });
+        if (data) slide.addImage({ data: stripDataPrefix(data), x: x, y: 0.75, w: w, h: 4.6, sizing: { type: 'contain', w: w, h: 4.6 } });
+        else slide.addText('Photo not set', { x: x, y: 0.75, w: w, h: 4.6, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
+        var capLines = [ph && ph.taken_at ? capDate(ph.taken_at) : '—', cap, tags].filter(Boolean).join('\n');
+        slide.addText(capLines, { x: x, y: 5.45, w: w, h: 0.9, fontSize: 10, color: '4A4A4A', align: 'center' });
+      }
+
+      s.forEach(function (sl, i) {
+        var slide = pptx.addSlide();
+        slide.addText('Slide ' + (i + 1) + ' of ' + s.length, { x: 0.4, y: 0.05, w: 6, h: 0.3, fontSize: 10, bold: true, color: 'EE3124' });
+        var hasBefore = !!sl.before_photo_id;
+        if (hasBefore) {
+          pptxPane(slide, sl, 'before', 0.4, 6.1);
+          pptxPane(slide, sl, 'after', 6.8, 6.1);
+        } else {
+          pptxPane(slide, sl, 'after', 3.4, 6.5);
+        }
+      });
+
+      m.close();
+      await pptx.writeFile({ fileName: 'Meeting ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pptx' });
+      UI.toast('PowerPoint downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
+        res.failed ? 'warn' : 'ok');
+    } catch (e) {
+      m.close(); UI.toast('PowerPoint error: ' + ((e && e.message) || e), 'error');
+    }
+  }
+
+  // ----------------------------------------------------- Report Templates ---
+  // Brief Section 5 / Phase 2: a saved, re-runnable report definition. Running
+  // it ("Generate") produces an ordinary Meeting with slides auto-populated
+  // from the CURRENT photo library — the template itself never holds photos.
+  function renderTemplates() {
+    var host = $('ppr-tmpl-view');
+    if (!host) return;
+    if (tmplTableMissing) {
+      host.innerHTML = '<div class="pp-empty"><p>Report templates need a table this project ' +
+        'does not have yet.</p><p class="pp-hint">Run ' +
+        '<code>migrations/2026-08-29-ppr-report-templates.sql</code> in the Supabase SQL editor, ' +
+        'then reload.</p></div>';
+      hydrate(); return;
+    }
+    if (!templates.length) {
+      host.innerHTML = '<div class="pp-empty">' +
+        '<span data-ico="layers" data-ico-size="34"></span>' +
+        '<p>No report templates yet for this project.</p>' +
+        (canWrite ? '<p class="pp-hint">A template is a saved, reusable definition — pick the ' +
+          'locations to include once, in order, then press <strong>Generate</strong> each time you ' +
+          'need a fresh before/after report at those same locations.</p>' : '') +
+        '</div>';
+      hydrate(); return;
+    }
+    var rows = templates.map(function (t) {
+      var locs = t.locations || [];
+      return '<div class="ppr-row" data-id="' + esc(t.id) + '">' +
+        '<div class="ppr-cell">' + esc(t.name) + '</div>' +
+        '<div class="ppr-cell">' + esc(t.meeting_type === 'internal' ? 'Internal' : 'Client') + '</div>' +
+        '<div class="ppr-cell ppr-num">' + locs.length + '</div>' +
+        '<div class="ppr-cell">' + (t.comparison_rule === 'baseline' ? 'Latest vs baseline' : 'Latest vs previous') + '</div>' +
+        '<div class="ppr-cell ppr-acts">' +
+          '<button class="pd-btn pd-btn-primary" data-tact="run" data-id="' + esc(t.id) + '">Generate</button>' +
+          (canWrite ? '<button class="pp-iconbtn" data-tact="edit" data-id="' + esc(t.id) + '" title="Edit template">' +
+                      '<span data-ico="pencil" data-ico-size="15"></span></button>' +
+                      '<button class="pp-iconbtn pp-del" data-tact="del" data-id="' + esc(t.id) + '" title="Delete template">' +
+                      '<span data-ico="trash" data-ico-size="15"></span></button>' : '') +
+        '</div></div>';
+    }).join('');
+    host.innerHTML = '<div class="ppr-table ppr-tmpl-table">' +
+      '<div class="ppr-head"><div>Name</div><div>Type</div><div class="ppr-num">Locations</div>' +
+      '<div>Comparison</div><div></div></div>' + rows + '</div>';
+    Array.prototype.forEach.call(host.querySelectorAll('[data-tact]'), function (el) {
+      el.onclick = function () {
+        var t = tmplById(el.dataset.id); if (!t) return;
+        var a = el.dataset.tact;
+        if (a === 'run') runTemplate(t, el);
+        else if (a === 'edit') openTemplateForm(t);
+        else if (a === 'del') removeTemplate(t);
+      };
+    });
+    hydrate();
+  }
+
+  async function runTemplate(t, btn) {
+    // Non-destructive (only ever creates a new meeting), so this runs
+    // immediately rather than behind a confirm — the button disables itself
+    // for the duration to guard against a double-click double-generating.
+    if (btn) btn.disabled = true;
+    try { await generateFromTemplate(t); }
+    finally { if (btn) btn.disabled = false; }
+  }
+
+  async function generateFromTemplate(tmpl) {
+    var locs = tmpl.locations || [];
+    if (!locs.length) { UI.toast('This template has no locations to include', 'warn'); return; }
+
+    var picks = locs.map(function (entry) {
+      var candidates = photosAtLocation(entry.values || {});
+      var after = candidates[0] || null;
+      var before = null, missingBaseline = false;
+      if (tmpl.comparison_rule === 'baseline') {
+        before = entry.baseline_photo_id ? photoById(entry.baseline_photo_id) : null;
+        missingBaseline = !!entry.baseline_photo_id && !before;
+      } else {
+        before = candidates[1] || null;
+      }
+      return { entry: entry, before: before, after: after, missingBaseline: missingBaseline };
+    });
+
+    if (!picks.some(function (x) { return x.after; })) {
+      UI.toast('None of this template\'s locations have a photo yet', 'warn'); return;
+    }
+
+    var today = new Date().toISOString().slice(0, 10);
+    var desc = tmpl.name + ' — ' + longDate(today);
+    var ires = await sb().from(T_PPR)
+      .insert(Object.assign({ ppr_date: today, description: desc }, { project_id: pid, created_by: uid })).select();
+    if (ires.error) { UI.toast(ires.error.message, 'error'); return; }
+    var newId = ires.data && ires.data[0] && ires.data[0].id;
+    if (!newId) { UI.toast('Meeting created, but its id could not be read back', 'error'); await load(); return; }
+
+    var payload = picks.map(function (x, i) {
+      return {
+        ppr_id: newId, project_id: pid, created_by: uid, slide_no: i + 1,
+        before_photo_id: x.before ? x.before.id : null,
+        after_photo_id: x.after ? x.after.id : null,
+        before_caption: null, after_caption: null,
+        // Legacy fallback tag only — panes read each photo's own fields when
+        // a photo is present. Kept so an EMPTY pane (nothing captured here
+        // yet) still names which location the slide is for.
+        location: x.entry.label || null
+      };
+    });
+    var sres = await sb().from(T_SLIDE).insert(payload);
+    if (sres.error) {
+      UI.toast('Meeting created, but its slides failed: ' + sres.error.message, 'error');
+      await load(); return;
+    }
+
+    // Flagged rather than hidden: a location on the report with no photo yet,
+    // or a baseline photo that has since been deleted, is information the
+    // planner needs before presenting this, not a reason to drop it silently.
+    var noPhoto = picks.filter(function (x) { return !x.after; }).length;
+    var noBaseline = picks.filter(function (x) { return x.missingBaseline; }).length;
+    var note = [];
+    if (noPhoto) note.push(noPhoto + ' location' + (noPhoto === 1 ? '' : 's') + ' still ha' + (noPhoto === 1 ? 's' : 've') + ' no photo');
+    if (noBaseline) note.push(noBaseline + ' baseline photo' + (noBaseline === 1 ? '' : 's') + ' no longer exist' + (noBaseline === 1 ? 's' : ''));
+    UI.toast('Generated ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's') +
+      ' for "' + tmpl.name + '"' + (note.length ? ' — ' + note.join('; ') : ''), note.length ? 'warn' : 'ok');
+    await load();
+    openPpr(newId);
+  }
+
+  function openTemplateForm(tmpl) {
+    var isNew = !tmpl;
+    tmpl = tmpl ? JSON.parse(JSON.stringify(tmpl)) : { id: null, name: '', meeting_type: 'client', comparison_rule: 'previous', locations: [] };
+    var draftLocs = (tmpl.locations || []).slice();
+
+    function photoOptionsFor(values, sel) {
+      var cands = photosAtLocation(values || {});
+      if (!cands.length) return '<option value="">— no photos captured here yet —</option>';
+      return '<option value="">— none —</option>' + cands.map(function (p) {
+        var label = [capDate(p.taken_at), p.description].filter(Boolean).join(' · ');
+        return '<option value="' + esc(p.id) + '"' + (sel === p.id ? ' selected' : '') + '>' + esc(label) + '</option>';
+      }).join('');
+    }
+
+    function locRowHTML(entry, i) {
+      var needsBaseline = tmpl.comparison_rule === 'baseline';
+      return '<div class="ppr-tmpl-locrow" data-i="' + i + '">' +
+        '<span class="ppr-tmpl-locorder">' + (i + 1) + '</span>' +
+        '<span class="ppr-tmpl-loclabel">' + esc(entry.label || '(untitled location)') + '</span>' +
+        (needsBaseline
+          ? '<select class="pd-select ppr-tmpl-baseline" data-i="' + i + '">' +
+            photoOptionsFor(entry.values, entry.baseline_photo_id) + '</select>'
+          : '') +
+        '<span class="ppr-tmpl-locbtns">' +
+          '<button type="button" class="pp-iconbtn" data-locact="up" data-i="' + i + '"' + (i === 0 ? ' disabled' : '') + '>&uarr;</button>' +
+          '<button type="button" class="pp-iconbtn" data-locact="down" data-i="' + i + '"' + (i === draftLocs.length - 1 ? ' disabled' : '') + '>&darr;</button>' +
+          '<button type="button" class="pp-iconbtn pp-del" data-locact="remove" data-i="' + i + '">' +
+            '<span data-ico="x" data-ico-size="13"></span></button>' +
+        '</span></div>';
+    }
+    function locsHTML() {
+      return draftLocs.length ? draftLocs.map(locRowHTML).join('')
+        : '<p class="pp-hint">No locations added yet.</p>';
+    }
+
+    var html =
+      '<div class="pd-modal-header"><h3>' + (isNew ? 'New report template' : 'Edit report template') + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><div class="pp-form2">' +
+        '<div class="pd-field"><label>Name</label>' +
+          '<input class="pd-input" id="tmpl-f-name" placeholder="e.g. Weekly Client Update — Tower B" ' +
+          'value="' + esc(tmpl.name || '') + '" /></div>' +
+        '<div class="pd-field"><label>Meeting type</label>' +
+          '<select class="pd-select" id="tmpl-f-type">' +
+            '<option value="client"' + (tmpl.meeting_type !== 'internal' ? ' selected' : '') + '>Client</option>' +
+            '<option value="internal"' + (tmpl.meeting_type === 'internal' ? ' selected' : '') + '>Internal</option>' +
+          '</select></div>' +
+        '<div class="pd-field pp-span2"><label>Comparison</label>' +
+          '<select class="pd-select" id="tmpl-f-cmp">' +
+            '<option value="previous"' + (tmpl.comparison_rule !== 'baseline' ? ' selected' : '') +
+              '>Latest photo vs. the one before it (always current)</option>' +
+            '<option value="baseline"' + (tmpl.comparison_rule === 'baseline' ? ' selected' : '') +
+              '>Latest photo vs. a fixed baseline photo per location</option>' +
+          '</select></div>' +
+        '<div class="pd-field pp-span2"><label>Locations, in report order</label>' +
+          '<div id="tmpl-f-locs">' + locsHTML() + '</div>' +
+          (canWrite ? '<button type="button" class="pd-btn" id="tmpl-f-addloc">+ Add location</button>' : '') +
+        '</div>' +
+      '</div></div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="tmpl-f-save">Save</button></div>';
+    var m = openModal(html, 640);
+
+    function wireLocRows() {
+      Array.prototype.forEach.call(m.el.querySelectorAll('[data-locact]'), function (b) {
+        b.onclick = function () {
+          var i = +b.dataset.i, a = b.dataset.locact;
+          if (a === 'remove') draftLocs.splice(i, 1);
+          else if (a === 'up' && i > 0) { var t0 = draftLocs[i - 1]; draftLocs[i - 1] = draftLocs[i]; draftLocs[i] = t0; }
+          else if (a === 'down' && i < draftLocs.length - 1) { var t1 = draftLocs[i + 1]; draftLocs[i + 1] = draftLocs[i]; draftLocs[i] = t1; }
+          refreshLocs();
+        };
+      });
+      Array.prototype.forEach.call(m.el.querySelectorAll('.ppr-tmpl-baseline'), function (sel) {
+        sel.onchange = function () { draftLocs[+this.dataset.i].baseline_photo_id = this.value || null; };
+      });
+    }
+    function refreshLocs() { $('tmpl-f-locs').innerHTML = locsHTML(); wireLocRows(); if (window.Icons) Icons.hydrate($('tmpl-f-locs')); }
+    wireLocRows();
+
+    $('tmpl-f-cmp').onchange = function () { tmpl.comparison_rule = this.value; refreshLocs(); };
+    if ($('tmpl-f-addloc')) $('tmpl-f-addloc').onclick = function () {
+      openLocationPicker(draftLocs, function (picked) { draftLocs.push(picked); refreshLocs(); });
+    };
+
+    $('tmpl-f-save').onclick = async function () {
+      var name = $('tmpl-f-name').value.trim();
+      if (!name) { UI.toast('A name is required', 'warn'); return; }
+      if (!draftLocs.length) { UI.toast('Add at least one location', 'warn'); return; }
+      this.disabled = true;
+      var data = {
+        name: name,
+        meeting_type: $('tmpl-f-type').value,
+        comparison_rule: $('tmpl-f-cmp').value,
+        locations: draftLocs
+      };
+      var res = isNew
+        ? await sb().from(T_TMPL).insert(Object.assign(data, { project_id: pid, created_by: uid }))
+        : await sb().from(T_TMPL).update(Object.assign(data, { updated_at: new Date().toISOString() })).eq('id', tmpl.id);
+      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      m.close(); UI.toast(isNew ? 'Template created' : 'Template updated', 'ok');
+      await loadTemplates(); renderTemplates();
+    };
+  }
+
+  function openLocationPicker(alreadyAdded, onPick) {
+    var used = {}; alreadyAdded.forEach(function (e) { used[e.key] = 1; });
+    var all = allLocationCombos().filter(function (c) { return !used[c.key]; });
+    var html =
+      '<div class="pd-modal-header"><h3>Add a location</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<input class="pd-input" id="loc-pick-search" placeholder="Search locations…" style="margin-bottom:10px;width:100%;box-sizing:border-box;" />' +
+        '<div id="loc-pick-list" class="ppr-tmpl-picklist"></div>' +
+        (!all.length ? '<p class="pp-hint">No locations available — locations come from Project ' +
+          'Schedule\'s Location Breakdown, or from wherever a photo has already been captured.</p>' : '') +
+      '</div>';
+    var m = openModal(html, 480);
+    function paint(q) {
+      q = (q || '').toLowerCase();
+      var list = all.filter(function (c) { return !q || c.label.toLowerCase().indexOf(q) >= 0; });
+      $('loc-pick-list').innerHTML = list.map(function (c) {
+        return '<button type="button" class="ppr-tmpl-pickrow" data-key="' + esc(c.key) + '">' + esc(c.label) + '</button>';
+      }).join('') || '<p class="pp-hint">No matches.</p>';
+      Array.prototype.forEach.call($('loc-pick-list').querySelectorAll('[data-key]'), function (b) {
+        b.onclick = function () {
+          var c = list.filter(function (x) { return x.key === b.dataset.key; })[0]; if (!c) return;
+          m.close();
+          onPick({ key: c.key, label: c.label, values: c.values, baseline_photo_id: null });
+        };
+      });
+    }
+    paint('');
+    if ($('loc-pick-search')) $('loc-pick-search').oninput = function () { paint(this.value); };
+  }
+
+  async function removeTemplate(t) {
+    var html =
+      '<div class="pd-modal-header"><h3>Delete template</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p>Delete <strong>' + esc(t.name) + '</strong>? Meetings it has already ' +
+      'generated are not affected.</p></div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-danger" id="tmpl-d-yes">Delete</button></div>';
+    var m = openModal(html, 420);
+    $('tmpl-d-yes').onclick = async function () {
+      this.disabled = true;
+      var res = await sb().from(T_TMPL).delete().eq('id', t.id);
+      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      m.close(); UI.toast('Template deleted', 'ok');
+      await loadTemplates(); renderTemplates();
+    };
   }
 
   return {

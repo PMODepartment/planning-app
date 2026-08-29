@@ -2,6 +2,471 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Floor Plan pin navigator + drone provenance — brief 6B/6C / Phase 5 & 6 (2026-08-29)
+
+Final two phases of the same unattended overnight build. This closes out the site-survey
+brief's phase list end to end — every phase now has *something* built, though several
+(this entry's Phase 5 most of all) are deliberately reduced in scope from the brief's more
+ambitious wording, and each reduction is stated rather than glossed over. **Run
+`migrations/2026-08-29-floor-plans.sql`.**
+
+### Phase 5 — Floor Plan overlay, NOT a real BIM/IFC viewer
+
+⚠️ **Read this before assuming "BIM Model Overlay" means what the phrase usually implies.**
+What's built is a **2D floor-plan pin navigator**: upload a floor plan image, place pins on
+it, each pin points at a panorama / 3D reconstruction / progress photo, clicking a pin opens
+that capture. It does **not** import or register against an authored BIM/IFC model, and it
+does **not** attempt true registration of a reconstruction's point cloud onto the floor
+plan's coordinate frame — that needs known camera poses relative to the floor plan, a real
+separate computer-vision problem, not a small addition here. Same honest-scope-reduction
+pattern as Phase 3's cylinder-instead-of-equirectangular panorama; stated in `bim.js`'s own
+header comment as well as here.
+
+**New module `bim.js`, new tables `floor_plans` + `floor_plan_pins`.**
+
+- **A pin is a polymorphic reference** (`item_type` ∈ panorama/reconstruction/photo +
+  `item_id`), not three nullable FK columns — a pin's target kind never changes after
+  placement, so one pair of columns is enough and avoids the "which of the three FKs is
+  non-null this time" question a real schema reader would otherwise have to answer.
+  ⚠️ **Deliberately no hard FK to any of the three target tables.** A pin surviving its
+  target's deletion (rendered as a still-visible, removable marker) is safer than a
+  cross-table trigger this module would have to hand-maintain across three other tables it
+  doesn't own the lifecycle of.
+- **Coordinates are normalized 0..1**, read directly off the *rendered* `<img>` element's own
+  `getBoundingClientRect()` at click time — deliberately not an SVG viewBox/CTM matrix
+  approach. Because the image sits inside a plain CSS-transformed wrapper
+  (`translate(panX,panY) scale(zoom)`), its own bounding rect already reflects the current
+  pan/zoom, so `(clickX - rect.left) / rect.width` is resolution- and zoom-independent with
+  no matrix math to get wrong. A pin's on-screen position at any zoom level is then just
+  `x_norm * 100%` positioned **inside the untransformed image box**, so it scales and pans
+  together with the image for free.
+- **Pan/zoom**: Ctrl+scroll to zoom (anchored on the cursor so the point under it stays
+  visually still), plain drag to pan — the same convention already used elsewhere in this
+  app's site-plan viewers (plain scroll is left for the page, matching that precedent).
+  ⚠️ **The zoom-anchor arithmetic is exported as a pure function (`BIM._zoomAnchor`)
+  specifically so it could be genuinely executed and checked, not just read as source** — a
+  wrong sign here makes the image visibly "run away" from the cursor while zooming, which no
+  regex check on the surrounding code could ever catch.
+- **Opening a pin never re-implements a viewer** — it calls back into whichever module owns
+  that capture type (`PANO.open(id)`, `RECON.openById(id)`, `ProgressPhotos.openPhotoById(id)`),
+  so there is exactly one 360° viewer, one 3D viewer, one lightbox in the whole app, each
+  reachable from either its own screen or a floor-plan pin. Each of those three functions is
+  new/adjusted this pass specifically to be **callable standalone**, independent of whatever
+  that module's own screen currently has loaded (`PANO.open` lazy-loads `panoramas` if empty;
+  `RECON.openById` falls back to a direct row fetch if the request isn't in its local cache;
+  `ProgressPhotos.openPhotoById` sets a fresh single-item `lightboxIds` rather than reusing
+  the Photos screen's own filtered array, whose plain `openLightbox(id)` silently falls back
+  to index 0 on a miss — exactly the wrong behaviour for a cross-screen deep link).
+- **RLS**: read-all-approved / write-writers-only, the generic module-table shape, kept
+  explicit in both the migration and `supabase-schema.sql` (two tables sharing one rule,
+  rather than folded into the generic single-table RLS loop).
+
+### Phase 6 — Drone capture
+
+⚠️ **Scoped from a reconstructed understanding of this phase, not the brief's exact
+original wording** — the source PDF's literal Phase 6 text was not available when this was
+written (summarised out of an earlier, now-compacted part of this session), so this is a
+best-guess interpretation consistent with the user's explicit standing instruction to answer
+based on the best available assumption rather than pause to ask.
+
+`reconstruction_requests.video_source` (`'ground' | 'drone'`, built in Phase 4) already let a
+3D-scan request be flagged as drone-sourced, with a **Drone** badge and a source picker on the
+request form. This pass extends the **same field name and the same UI convention** to
+**panoramas** — a 360° walkthrough can equally be captured by a drone, and having Phase 4's
+provenance tag but not Phase 3's would have been an arbitrary gap. `panoramas.source` (new,
+`default 'ground'`), a Ground/Drone select on the capture form, and the same Drone badge style
+in the gallery.
+
+⚠️ **The insert is tolerant of the column not being migrated yet** — the SAME pattern used
+throughout this module for every schema-dependent field: on a "column does not exist" error
+the insert retries once with `source` stripped, so a capture is never lost over one optional
+provenance tag.
+
+⚠️ **Nothing beyond the tag was built** — no flight-path/altitude metadata, no drone-specific
+capture flow (the video is still uploaded the same way a phone-recorded one is; this app has
+no access to a drone's own flight-controller data), and Equipment Loading's separate drone
+inventory (if any) is untouched. If the original brief's Phase 6 asked for more than
+provenance tagging, that gap should be checked against the actual PDF text once it's back in
+context.
+
+### Verified (2026-08-29)
+
+**217 checks, 0 failures** (`test.js`, up from 184) — 30 new checks for Phase 5 (the scope
+note is present in source; both tables' shape, constraints, cascade rule, and RLS; every new
+`bim.js` function exists; the tab/tools/screen-host/init-call/setScreen wiring in `index.html`;
+a pin never gets three separate FK columns; opening a pin calls back into the OWNING module
+rather than re-implementing a viewer; only done reconstructions are offered when placing a
+pin) plus **3 genuinely EXECUTED checks of the zoom-anchor math** — `bim.js` has no top-level
+side effects, so it was loaded into the same Node `vm` context already used to execute
+`module.js`/`ppr.js`, and `BIM._zoomAnchor` was called with real numbers and its output
+checked against the actual geometric invariant (the cursor's world point maps back to itself
+after a zoom change; a full zoom-in-then-zoom-out round-trip returns the exact original pan
+with no drift; a same-to-same zoom is a no-op) — not just matched against a regex pattern in
+the surrounding source. 7 new checks for Phase 6 (column declared + folded into schema.sql,
+form field present, value threaded into the save, tolerant-retry present, badge present, and
+that it's the same field-name convention Phase 4 already established).
+
+0 NUL bytes across every touched/new file; `node --check` clean on `bim.js` (new),
+`pano.js`, `recon.js`, `module.js`, `test.js`; CSS braces 281/281; **0 functions lost** from
+`module.js`/`pano.js`/`recon.js` against the last commit (a small function-name-set diff
+under-counts functions added as anonymous property values — e.g. `allPhotos: function(){}` —
+but a name that DISAPPEARS from that set is unambiguous, and none did).
+
+⚠️ **NOT verified**: no signed-in click-through of any of this — uploading a real floor plan,
+placing a real pin, and opening it back up to confirm the right viewer opens with the right
+item have only been checked as source-level wiring + the one piece of pure math that could be
+executed without a DOM/auth stack. The migration has not been run. This is consistent with
+every other client-only surface built this session (Phase 3's stitching pipeline is the one
+exception, verified in a real browser) — flagged plainly rather than left ambiguous.
+
+## 3D Reconstruction Requests, gated behind admin approval — brief 6A / Phase 4 (2026-08-29)
+
+Continuation of the same unattended overnight build authorized after Phase 3. Owner's
+explicit architecture decision going in: **self-hosted GPU pipeline (COLMAP + OpenSplat on
+RunPod Serverless), not a hosted photogrammetry API** — chosen for cost and because the
+brief calls for open-source tooling. Owner's second explicit requirement, given as this is
+a **paid feature** (a real per-job GPU cost): *"requests to process 3d images should go
+through admins before being processed by runpod."* This entry is the client + database +
+Edge Function half of that pipeline — the RunPod worker itself (Dockerfile/COLMAP/OpenSplat/
+`handler.py`) is a separate, not-yet-built piece; see "What is NOT done" below.
+
+**Run `migrations/2026-08-29-reconstruction-requests.sql`.**
+
+### The admin-approval gate is enforced by the DATABASE, not the UI
+
+This is the part worth getting right, since a UI-only gate is not a gate at all — anyone who
+can see the "Approve" button in DevTools can call the underlying write directly.
+`reconstruction_requests` therefore does **not** use this module's usual generic
+`for all using (is_writer())` RLS shape (used by `panoramas` and every other table here).
+Three separate policies instead:
+
+- **INSERT** — any project writer may create a request, but **`with check` forces
+  `status = 'pending_approval'`** — a client cannot insert a row that is already `'queued'`
+  or `'done'`. This is the only way a row is ever born.
+- **UPDATE** — **admin/super_admin only, in both `using` and `with check`** (mirroring the
+  `with check` lesson already recorded elsewhere in this file for row-ownership updates — a
+  `using`-only rule would let a row be updated *out of* the admin-only state as easily as into
+  it). A non-admin writer can only read their own requests and retract one that is still
+  `pending_approval` (a plain `delete`, not an update).
+- **DELETE** — the requester (their own row) or an admin, and only while `status =
+  'pending_approval'` — once a job is queued, retracting it client-side would leave an
+  orphaned RunPod job with nothing in the database pointing at it.
+
+So even if `recon.js` were deleted entirely and someone drove the REST API directly, a
+non-admin still cannot move a request past `pending_approval`, and the client's own
+`approveRequest()` is not the enforcement — it is only the UI for a workflow the database
+already refuses to let anyone but an admin complete.
+
+### The Edge Functions are the second gate, not the first
+
+`submit-reconstruction` — the **only** path that can ever call RunPod — re-checks the
+caller's role itself (admin/super_admin, read from the `users` table via the JWT's `sub`
+claim, decoded from the token's own base64 payload rather than a GoTrue round-trip) before
+doing anything. This is belt-and-braces on top of the RLS gate above, not a replacement for
+it: if the RLS check were ever weakened, this function's own check still blocks a non-admin
+from reaching RunPod. It:
+
+1. Confirms the request is still `pending_approval` (`.eq('status','pending_approval')` on
+   both the initial read intent and the final `update`'s WHERE clause — the second one is
+   what actually prevents a double-submit race between two admins clicking Approve at once).
+2. Signs a **24-hour short-lived URL** to the video — not the service-role key, not a
+   public URL. This is the narrowest credential RunPod's worker needs to do its one job.
+3. POSTs to RunPod's async job endpoint (`/v2/{endpoint}/run`) with a **webhook URL carrying
+   a per-request random token** (`crypto.randomUUID()`), and stores that same token on the
+   row.
+4. RunPod's API key and endpoint id live only as this function's own secrets
+   (`RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`) — never sent to, or readable from, the browser.
+
+`reconstruction-webhook` — the callback RunPod invokes when the job finishes. ⚠️ **It cannot
+require a Supabase JWT**, because RunPod has no Supabase session to send one — the one
+deliberate exception in this repo to "every Edge Function deploys with JWT verification on."
+Its actual security is the **token check**: the URL RunPod was given carries
+`?request_id=…&token=…`, and the function refuses to write anything unless
+`token === reqRow.webhook_token` for that exact row. Deploy note is written directly into the
+file's header comment (`--no-verify-jwt`) so it can't be missed at deploy time.
+
+### Result viewer
+
+`openResultViewer()` reuses **Three.js r128's official `PLYLoader` addon** (same pinned
+revision as Phase 3's cylinder viewer, one more `<script>` tag, no new library) to render
+the returned point cloud as `THREE.Points`, with a small hand-rolled spherical-orbit camera
+(drag to orbit, scroll to zoom) — not the separate `OrbitControls.js` addon, since a single
+interaction didn't justify pulling in a second file. ⚠️ **The point cloud, not the trained
+splat file, is what's rendered here** — COLMAP's sparse/dense point cloud is what a future
+measurement tool (Phase 5) can actually query point-by-point; the splat file is view-only and
+has no natural "click a point" semantics. `result_splat_url` is stored and falls back as the
+viewer's source if no point cloud was returned, but nothing yet *renders* a real Gaussian
+Splat (that would need a splat-specific renderer, e.g. `gsplat.js` — not pulled in, since
+there is no real splat file to render against yet; see below).
+
+### Verified (2026-08-29)
+
+**Structural / wiring verification is real** (Deno type-checked + a Node harness), but the
+piece that would prove the *pipeline* works — an actual RunPod job — cannot be exercised here.
+Stated plainly rather than left ambiguous:
+
+- **Both Edge Functions type-check cleanly under a real Deno compiler** (`deno check`,
+  Deno 2.9.6/TypeScript 6.0.3, downloaded via a portable no-admin-rights install specifically
+  so this could be checked rather than left as "should be valid TypeScript"). Sanity-gated:
+  the same `deno check` command was first run against a deliberately broken file to confirm
+  it actually fails on a real type error, and against an existing already-shipped function to
+  confirm a clean pass means something.
+- **30 new checks in `test.js` (154 → 184, all green)** covering: the RLS policy shape itself
+  (INSERT forces `pending_approval` via `with check`, UPDATE is admin-only in both `using` and
+  `with check`, DELETE is requester-or-admin and status-gated) is present in the migration
+  text; `submit-reconstruction` re-checks status server-side, signs a short-lived URL (not a
+  broad credential), never leaks the RunPod key to the client, and re-asserts
+  `status='pending_approval'` in its final UPDATE's WHERE clause; `reconstruction-webhook` is
+  documented as needing `--no-verify-jwt` and checks the per-request token **before** any
+  write; and the client never offers a way to bypass the gate — `submit-reconstruction` is
+  called only from `approveRequest()`, never from the insert path, and `rejectRequest`/
+  `retractRequest` never touch it.
+- 0 NUL bytes across every new/touched file; `node --check` clean on `recon.js`; `module.js`/
+  `ppr.js`/`pano.js` are byte-identical to the last commit (0 functions could have been lost —
+  they weren't touched); CSS braces 264/264 balanced.
+
+⚠️ **NOT verified, and this is the real gap**: no RunPod job has ever actually run. Nobody
+has clicked Approve against a live Supabase project, so the whole chain —
+insert→approve→RunPod submission→webhook→viewer — has never executed end to end. That first
+real click is the actual integration test, and it cannot happen without: (a) a RunPod account
+and a deployed serverless endpoint (owner-only — account creation and payment details are
+things this environment is explicitly barred from doing regardless of technical ability),
+(b) the two Edge Functions actually deployed (`supabase functions deploy …`, `supabase
+secrets set …`), and (c) the migration run. Until then the module correctly shows an empty
+approval queue and the 3D tab works structurally with nothing to display.
+
+### What is NOT done — the RunPod GPU worker itself
+
+⚠️ **The single biggest incomplete piece of this whole session's work.** `submit-reconstruction`
+POSTs a job to a RunPod serverless endpoint that does not exist yet — there is no Dockerfile, no
+COLMAP/OpenSplat build, no `handler.py` implementing RunPod's serverless handler contract, and
+no deployed endpoint for `RUNPOD_ENDPOINT_ID` to point at. This is being built next, in
+`services/reconstruction-worker/`, but it will be **written against COLMAP's and OpenSplat's
+documented CLIs and RunPod's documented handler contract, not execution-verified** — this
+environment has no GPU and no Docker (`docker --version` fails; the only GPU present is
+integrated Intel Iris Xe, confirmed via `wmic path win32_VideoController get name`), so the
+worker cannot be built or run here. Flagged explicitly rather than presented with the same
+confidence as the harness-tested client code above.
+
+## Panoramic Capture — brief Sections 2 & 6 / Phase 3 (2026-08-29)
+
+Owner authorized an extended unattended build session through the rest of the brief's phases,
+after settling Phase 4's architecture (self-hosted RunPod GPU worker) in discussion. Starting with
+Phase 3, the piece that fits entirely inside this app's existing client-side/Supabase stack with no
+new infrastructure — genuinely buildable and, unusually for this build, **genuinely testable**: the
+Browser pane here can execute real WASM/WebGL, which most of this session's other work cannot rely on.
+
+**Run `migrations/2026-08-29-panoramas.sql`.**
+
+### The pipeline, and where it deliberately falls short of the brief's literal wording
+
+Capture (new "360°" screen): pick a location (same `locCombos()`/`photoLocCombos()` union already
+built for Report Templates), then either record via `getUserMedia`+`MediaRecorder` or upload a
+pre-recorded video (kept as a first-class path, not just a fallback — camera access is unreliable
+to exercise outside a real phone, and it's a legitimate capture method on its own). Frames are
+pulled client-side from a hidden `<video>` + canvas at evenly-spaced timestamps — no ffmpeg needed.
+
+⚠️ **Standard browser builds of OpenCV.js do NOT expose `cv.Stitcher`** — confirmed live (see
+Verified, below): loading the real CDN bundle and checking `typeof cv.Stitcher` returns
+`"undefined"`. Its JS bindings were never added to the default build whitelist; this is a known,
+documented limitation, not something specific to the package chosen here. So stitching is built
+from OpenCV.js's lower-level primitives instead — ORB feature detection, BFMatcher (Hamming) with a
+ratio test, `cv.findHomography` (RANSAC), `cv.warpPerspective` — composited sequentially, frame N
+onto the mosaic already built from frames 1..N-1.
+
+⚠️ **The output is a PLANAR mosaic on a Three.js CYLINDER, not a true spherical/equirectangular
+panorama**, despite the brief's literal wording ("stitch frames into a single equirectangular
+panorama"). True equirectangular reprojection needs known camera intrinsics and a rotation-only
+motion model between frames — a real, separate piece of computer-vision work, not a small addition
+to what's built here. A cylinder handles the brief's actual described use case well (standing in
+place and spinning horizontally) without claiming the vertical (up/down) coverage a full sphere
+would promise; "optionally tilting up/down once" is captured in the source frames but isn't given
+true spherical placement in this version. Stated here plainly rather than silently shipping a
+simplified pipeline under the brief's more ambitious name.
+
+⚠️ **Quality is flagged, never hidden.** If any consecutive frame pair matches fewer than
+`MIN_GOOD_MATCHES` (12) keypoints, `stitch_quality` is set `'poor'` and the panorama still saves
+(better than losing the walkthrough) but carries a visible "Low confidence" badge in the gallery —
+brief 6.2's explicit requirement ("flag sessions with poor stitching quality... rather than silently
+publishing a bad panorama").
+
+### Viewer and comparison
+
+360° viewer: a Three.js cylinder, texture mapped inward, camera at the centre, drag to look around
+(mouse + touch). **Compare over time**: picks two captures at the same location and blends between
+them via a slider. ⚠️ **A discrete texture swap at the 50% crossover, not a true per-pixel GL
+cross-fade** — a real cross-fade needs a custom shader (two texture samplers blended in a fragment
+shader), which is a reasonable next increment but wasn't built here; a discrete swap still answers
+"did this change?", just without the smooth blend the brief's "opacity slider" phrasing implies.
+Split-screen dual-viewer (the brief's other suggested option) was not built — a single shared camera
+guarantees both panoramas look the same direction, which two independently-dragged viewers cannot.
+
+### Schema
+
+`panoramas` mirrors `progress_photos`' location tagging exactly (`location_values` jsonb +
+`location` display cache + `activity_id`/`activity_name` snapshot) so it reuses the same picker and
+combo logic with no new location model. Folded into the generic module-table RLS loop — no special
+approval gate (unlike the paid Phase 4 reconstruction feature going in next).
+
+### Verified (2026-08-29) — genuinely executed, not just written
+
+⚠️ **This is the one part of this session's Phases 3-6 work with REAL execution verification of the
+novel algorithmic code**, not just structural regex checks — the Browser pane here runs actual
+Chromium with WASM/WebGL, unlike the GPU worker (Phase 4), which needs hardware this environment
+doesn't have. Built three throwaway test pages (not committed — scratch only), served over a local
+Node static server, and drove them with the real shipped CDN libraries:
+
+1. **The stitching pipeline against 5 synthetic overlapping frames** (a rich checkerboard+circles+
+   lines pattern, panned across 5 crops): `cv.Stitcher` confirmed `undefined`; ORB+BFMatcher+
+   findHomography+warpPerspective produced a correctly-aligned 2000×300 mosaic in 1.78s, matches per
+   pair 164–402 (well above the 12-match floor), `quality: 'ok'`. **Screenshotted** — the checkerboard
+   squares, circles and diagonal lines all continue coherently across the full width with no visible
+   tearing or misalignment.
+2. **The 'poor' quality flag against 4 genuinely disjoint (pure-noise, no shared content) frames**:
+   0 matches on every pair, `quality: 'poor'` — confirming the failure-detection path actually
+   triggers rather than only existing in the code.
+3. **The Three.js cylinder viewer**: real WebGL 2.0 context created, a texture mounted and rendered,
+   `gl.readPixels` confirmed the exact texture colour (`0x3366aa` → `51,102,170`) came back at the
+   render target — proving the geometry/texture/render pipeline genuinely works, not just parses.
+
+**154 checks in `test.js`** (up from 131) cover the structural/wiring side — schema, RLS-loop
+inclusion, every new function present, the CDN scripts pinned and correctly named, the screen
+dispatch wired, the quality-flag logic pattern present in source. 0 functions lost in `module.js`/
+`ppr.js` (pano.js is new, so nothing to diff there). 0 NUL bytes; CSS braces 249/249; the new
+`#fff` use (`.pano-badge-warn`, white text on the solid `--pd-warn` background) added to the
+context-based allow-list this module's own harness now uses.
+
+⚠️ **Not verified**: real device camera capture (`getUserMedia`/`MediaRecorder` — needs a real phone
+or a browser with camera permissions granted, neither available here), a real multi-minute walkthrough
+video (only synthetic frames were tested), and signed-in click-through against real Supabase (no login
+available in this environment). The gap between "the algorithm works" (verified) and "the whole
+feature works end-to-end against a real capture" (not yet) is real and should be the first live test.
+
+## Report Templates + real PPTX/PDF export — brief Section 5 / Phase 2 completed (2026-08-29)
+
+Owner asked to confirm all 15 items from the 2026-08-28 feedback round were captured (they were —
+re-verified directly against the shipped code, not just the changelog), then to continue through
+every remaining phase of the site-survey-app brief. Phase 1 (schedule integration + streamlined
+capture) is built but not yet live-verified; Phase 3+ (360° panoramas, 3D/Gaussian Splatting, BIM
+overlay, drone capture) need new infrastructure this app's stack doesn't have and are being taken
+one verified increment at a time, starting here with the piece that fits the existing stack
+cleanly: **Phase 2, Reporting.** The Meetings/slides screen already covered slide *assembly*; what
+Section 5 actually asks for — a **saved, re-runnable report definition** with a comparison rule,
+and **PPTX/PDF export**, not just the offline HTML copy — was still missing.
+
+**Run `migrations/2026-08-29-ppr-report-templates.sql`.**
+
+### Report Templates (`ppr_report_templates`)
+
+A template is a saved definition — name, meeting type, an ordered list of locations, and a
+comparison rule — reached from a new **Templates** button on the Meetings screen (a sub-view of it,
+not a fourth top-level tab: running a template produces an ordinary Meeting, so it belongs where
+Meetings live, not beside them).
+
+- **`locations` is a JSONB array, not a join table** — the same call as `equipment_site_plan.plan`
+  (2026-08-24): a template's location list is read and written as ONE ordered list in a single
+  builder screen, never queried location-by-location, so a relational table would only add
+  round-trips for no query benefit. Each entry: `{key, label, values, baseline_photo_id}` — `values`
+  is a `location_values` map, matched the exact way `resolveActivity()`/`lastCaptureAt()` already
+  do (superset equality on every non-empty key), so a template location resolves photos by the same
+  rule as everywhere else in this module.
+- **The location picker's universe is the UNION of two sources**, not just one. `locCombos()`
+  (module.js) only enumerates locations the **schedule** currently declares — a real photographed
+  location that the schedule no longer lists (a completed zone already dropped from it, or a shot
+  taken before its zone existed there) would otherwise be un-pickable for a template even though
+  real photos exist. New `photoLocCombos()` derives the same shape from the **photo library**
+  instead, and ppr.js's `allLocationCombos()` merges them — schedule wins on a key collision (more
+  current source), photo-only locations fill in what the schedule doesn't know about. Both are new,
+  minimal exports off `ProgressPhotos` (module.js), keeping `LOC_LEVELS`/`locBreadcrumb` in one file.
+- **Comparison is TEMPLATE-LEVEL, not per-location** — matches the brief's own phrasing ("the
+  comparison window… this week vs last week, or this week vs baseline"), one rule for the whole
+  report. Two modes:
+  - **`previous`** — always live: latest photo at a location vs. the one captured before it.
+  - **`baseline`** — latest vs. a photo **pinned once per location**, picked in the builder from a
+    dropdown scoped to photos already captured there. ⚠️ **`baseline_photo_id` is a SOFT reference —
+    no FK, since it's inside jsonb** — resolved at generate time and **flagged, not silently
+    dropped**, if the photo has since been deleted.
+- **Generate ("Run") never destroys anything** — it only ever creates a NEW meeting, so there's no
+  confirm step; the button just disables itself for the duration to block a double-click from
+  double-generating.
+- ⚠️ **A location with no photo yet still gets a slide, deliberately** (`after_photo_id: null`,
+  rendering the existing "Photo not set" placeholder) — omitting it would make a location on the
+  report list silently vanish, which reads as "nobody noticed it was missing" rather than "nobody
+  has shot it yet." Same for a deleted baseline photo: reported in the completion toast
+  ("2 locations still have no photo; 1 baseline photo no longer exists"), never hidden.
+- **If nothing at all has a photo, no meeting is created** — an entirely empty report has nothing to
+  present and would just be clutter in the Meetings list.
+- After a successful generate, the new meeting opens straight into its slide editor — the same rule
+  item 4 established on 2026-08-28 ("after adding PPR, it should go to PPR edit").
+
+### Real PPTX and PDF export (the offline HTML copy was never actually either format)
+
+The existing "Download" button produces a self-contained offline `.html` — useful, but not what
+Section 5 asks for ("exportable as a slide deck (PPTX) or PDF suitable for presenting directly in a
+meeting"). Two new buttons on every meeting row.
+
+- **PDF** — `html2pdf.js@0.10.1`, the exact pinned version `issues-lessons` already loads for its
+  MoM export, loaded the same way (a single CDN `<script>` tag, no build step). ⚠️ **Followed that
+  module's own hard-won rule to the letter: the captured element must stay in NORMAL FLOW.**
+  `issues-lessons`' 2026-08-22 entry documents shipping a PDF export with `position:fixed` on the
+  rendered node and it producing a **byte-identical blank page on every export, with no error** —
+  html2pdf clones the source into its own container to measure it, and an out-of-flow element
+  contributes nothing to that container's height, so html2canvas gets the right width and a height
+  of **zero**. The off-screen parking here lives on a **holder**; the captured `wrap` sits in
+  normal flow inside it — verified structurally (asserted in `test.js`) so this can't quietly
+  regress into the same bug the way that module's first attempt did.
+- **PPTX** — `pptxgenjs@3.12.0`, loaded from `cdn.jsdelivr.net/npm/…` (verified resolvable and
+  confirmed a real UMD bundle before committing to it — jsdelivr's npm-pinned CDN is already this
+  app's own convention for `@supabase/supabase-js`, not a new vendor). One slide per report slide,
+  before pane left / after pane right (or centered alone with no before photo). ⚠️ **PptxGenJS's
+  `data` option for `addImage()` takes the base64 payload WITHOUT the `data:` prefix**
+  (`"image/jpeg;base64,…"`, not `"data:image/jpeg;base64,…"`) — verified against the library's own
+  documented example before writing `stripDataPrefix()`, since `canvas.toDataURL()` (this module's
+  own `toDataURL()`) always includes that prefix and passing it through unstripped would have
+  produced a deck with broken images in every slide, silently.
+- **All three formats — offline HTML, PDF, PPTX — now share ONE image-collection function**
+  (`collectSlideImages()`, extracted from what used to be `exportOffline()`'s own inline loop) and
+  one slide-markup function (`slideFigureHTML()`/`slidesBodyHTML()`, extracted from the old private
+  `figure()`/the body of `offlineHTML()`). Three formats each embedding images their own way is
+  exactly how one export ends up showing a different picture of the same slide than another —
+  this closes that off structurally, not by convention.
+
+### A harness fragility this round tripped over, and fixed properly
+
+Adding one legitimate new `#fff` use (`.ppr-tmpl-locorder`, white text on a solid `--pd-red` badge —
+the same class of exception as the lightbox overlay) broke the 2026-08-28 harness's
+`fffTotal === 10` assertion — exactly the fragility that entry's own closing note warned about
+("assert `#fff` by context, not count"). Fixed properly rather than bumping the magic number:
+the check now extracts every CSS rule containing `#fff`/`#ffffff` and asserts each one's **selector**
+matches a documented allow-list of fixed-brand-background contexts (the lightbox family, the new
+badge, and — found only by fixing this — three more pre-existing legitimate uses the old total had
+been silently including all along: `.pp-tab.active`, `.pd-btn-primary`, `.pp-del:hover`,
+`.pp-syncbtn:hover`, each confirmed to pair `#fff` with `background: var(--pd-red)`/`var(--pd-bad)`
+before being allow-listed). A genuinely stray `#fff` on a real light surface still fails; a new
+*legitimate* one no longer requires touching this assertion at all.
+
+### Verified (2026-08-29)
+
+**131 checks, 0 failures** (`test.js`, up from 85) — every item above, plus a behavioural
+cross-check of the resolution algorithm itself (same style as 2026-08-28's copy-previous check):
+`previous` vs `baseline` picks, a first-ever capture correctly leaving `before` null instead of
+guessing, a deleted baseline correctly flagged rather than silently reassigned, a location with no
+photos yet still producing a (empty) slide, and `allLocationCombos()`'s schedule-wins-on-collision /
+photo-only-fills-gaps merge rule. **0 functions lost in `module.js`; ppr.js lost exactly one
+(`figure`, promoted from a private nested function to the module-level, reused `slideFigureHTML`) —
+deliberate, not a regression.** 0 NUL bytes across every touched file; CSS braces 227/227; the new
+migration's own `create table` also appears in `supabase-schema.sql`'s per-module RLS array.
+`node -c` clean on `module.js`, `ppr.js`, `test.js`.
+
+⚠️ **Not verified signed in** — no live click-through of Generate against real Supabase, and neither
+the PDF nor the PPTX has been opened as a produced file (unlike `issues-lessons`' PDF fix, which was
+verified by inspecting the actual bytes of a generated PDF — that level of verification needs a real
+browser with the CDN libraries actually loaded, which this environment doesn't have). The CDN URLs
+for both libraries were fetched and confirmed to resolve to real UMD bundles before being committed
+to, and the `data:`-prefix behaviour was checked against PptxGenJS's own documented example — but
+neither substitutes for opening an actual exported file. **Priority for the next live pass**:
+generate a template against a real project with photos at 2+ locations, and open both exported files.
+
 ## Owner feedback round: Works choices, per-photo key plans, PPR→Meeting, photo-first slides, tile view (2026-08-28)
 
 Fifteen items from the owner's review of the live Phase-1/Phase-2 build, against

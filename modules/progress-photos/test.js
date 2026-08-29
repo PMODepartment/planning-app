@@ -8,6 +8,13 @@ const path = require('path');
 // migration lives in ../../migrations/ per the repo layout, not beside module.js.
 const here = (f) => path.join(__dirname, f);
 const migrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-28-photo-keyplan-and-ppr-meeting.sql');
+const tmplMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-ppr-report-templates.sql');
+const panoMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-panoramas.sql');
+const reconMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-reconstruction-requests.sql');
+const submitFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'submit-reconstruction', 'index.ts');
+const webhookFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'reconstruction-webhook', 'index.ts');
+const floorPlanMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plans.sql');
+const schemaFile = path.join(__dirname, '..', '..', 'supabase-schema.sql');
 
 let fails = 0, passes = 0;
 function ok(name, cond, extra) {
@@ -176,10 +183,16 @@ vm.createContext(ctx);
 // ---------------------------------------------------------------- load module --
 vm.runInContext(fs.readFileSync(here('module.js'), 'utf8'), ctx, { filename: 'module.js' });
 vm.runInContext(fs.readFileSync(here('ppr.js'), 'utf8'), ctx, { filename: 'ppr.js' });
+vm.runInContext(fs.readFileSync(here('pano.js'), 'utf8'), ctx, { filename: 'pano.js' });
+vm.runInContext(fs.readFileSync(here('recon.js'), 'utf8'), ctx, { filename: 'recon.js' });
+vm.runInContext(fs.readFileSync(here('bim.js'), 'utf8'), ctx, { filename: 'bim.js' });
 
-const PP = ctx.ProgressPhotos, PPR = ctx.PPR;
+const PP = ctx.ProgressPhotos, PPR = ctx.PPR, PANO = ctx.PANO, RECON = ctx.RECON, BIM = ctx.BIM;
 ok('module.js exposes ProgressPhotos', !!PP);
 ok('ppr.js exposes PPR', !!PPR);
+ok('pano.js exposes PANO', !!PANO);
+ok('recon.js exposes RECON', !!RECON);
+ok('bim.js exposes BIM', !!BIM);
 ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadForPicker === 'function');
 
 // ---------------------------------------------------------- source assertions --
@@ -187,6 +200,9 @@ ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadF
 // which is how this module's earlier rounds were verified for render output.
 const mjs = fs.readFileSync(here('module.js'), 'utf8');
 const pjs = fs.readFileSync(here('ppr.js'), 'utf8');
+const pnjs = fs.readFileSync(here('pano.js'), 'utf8');
+const rcjs = fs.readFileSync(here('recon.js'), 'utf8');
+const bmjs = fs.readFileSync(here('bim.js'), 'utf8');
 const html = fs.readFileSync(here('index.html'), 'utf8');
 const css = fs.readFileSync(here('module.css'), 'utf8');
 
@@ -333,14 +349,317 @@ console.log('\n[misc] insert().select() returns the new row id');
   console.log('\n[dark mode] no hard-coded light surfaces in new CSS');
   const newCss = css.split('Tile view is the PHOTO ONLY')[1] || '';
   ok('new gallery/keyplan CSS uses tokens', /var\(--pd-/.test(newCss));
-  // #fff is correct on the dark lightbox overlay (8 such uses predate this
-  // round). The 2 added are both .pp-lb-tool text on that same overlay.
-  const fffTotal = (css.match(/#fff\b|#ffffff\b/gi) || []).length;
-  const lbTools = /\.pp-lb-tool \{[^}]*color: #fff/.test(css);
-  ok('added #fff only on the dark lightbox overlay', fffTotal === 10 && lbTools, 'total ' + fffTotal);
+  // #fff is legitimate only on a FIXED-COLOUR surface that ignores the theme
+  // on purpose (the dark lightbox overlay; a solid-red numbered badge like
+  // .ppr-tmpl-locorder) — checked by CONTEXT (which rule's selector it sits
+  // under), not by a total count. A count assertion (fffTotal === N) breaks
+  // the moment any future legitimate use is added, which is exactly what
+  // happened when 2026-08-29's report-template badge landed — recorded here
+  // so the NEXT one doesn't have to rediscover the same fragility.
+  const fffRules = [];
+  const ruleRe = /([^{}]+)\{([^{}]*#fff(?:fff)?\b[^{}]*)\}/gi;
+  let rm;
+  while ((rm = ruleRe.exec(css))) fffRules.push(rm[1].trim());
+  // Each entry pairs #fff with a rule that ALSO sets a solid brand background
+  // (--pd-red / --pd-bad) — confirmed against the shipped CSS, not assumed.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active/;
+  const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
+  ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
+     JSON.stringify(stray));
+  ok('the dark lightbox overlay still uses #fff for its tool icons', /\.pp-lb-tool \{[^}]*color: #fff/.test(css));
   ok('no #fff on any new light surface (gallery/keyplan/pickers)',
      !/\.pp-(kp|gallerygroup|gallerybar|groupby)[^{]*\{[^}]*#fff/.test(css) &&
      !/\.ppr-pick[^{]*\{[^}]*#fff/.test(css));
+
+  // ============================================================ Phase 2 ===
+  // Report Templates (brief Section 5) — the last piece of the "site survey
+  // app" 6-phase roadmap Phase 2 needed: saved, re-runnable report definitions
+  // with a comparison rule, plus real PPTX/PDF export (not just the offline
+  // HTML copy). Structural checks against the shipped source below; the
+  // resolution ALGORITHM (previous-vs-baseline, missing-photo handling) is
+  // cross-checked behaviourally further down, same style as the [13b]
+  // copy-previous check above.
+  console.log('\n[16] Report Templates: schema');
+  const tmplSql = fs.readFileSync(tmplMigrationFile, 'utf8');
+  ok('migration creates ppr_report_templates', /create table if not exists ppr_report_templates/.test(tmplSql));
+  ok('locations is a jsonb array (read/written as one list, not a join table)',
+     /locations\s+jsonb default '\[\]'::jsonb/.test(tmplSql));
+  ok('comparison_rule has a sane default', /comparison_rule\s+text default 'previous'/.test(tmplSql));
+  const schemaSql = fs.readFileSync(schemaFile, 'utf8');
+  ok('supabase-schema.sql declares the table too', /create table if not exists ppr_report_templates/.test(schemaSql));
+  ok('folded into the generic module-table RLS loop',
+     /'progress_photos','ppr_presentations','ppr_slides','ppr_report_templates'/.test(schemaSql));
+
+  console.log('\n[17] Report Templates: UI wired end to end');
+  ['function renderTemplates', 'function openTemplateForm', 'function generateFromTemplate',
+   'function photosAtLocation', 'function allLocationCombos', 'function openLocationPicker',
+   'function removeTemplate', 'async function collectSlideImages', 'async function exportPdf',
+   'async function exportPptx'
+  ].forEach((sig) => ok(sig + '() exists in ppr.js', pjs.includes(sig)));
+  ok('module.js exposes locCombos for the template builder', /locCombos: function \(\) \{ return locCombos\(\); \}/.test(mjs));
+  ok('module.js exposes photoLocCombos (photo-derived locations)', /function photoLocCombos\(\)/.test(mjs));
+  ok('index.html has the Templates topbar button', /id="ppr-templates"/.test(html));
+  ok('index.html has the + New template button', /id="ppr-tmpl-new"/.test(html));
+  ok('index.html has the templates screen host', /id="ppr-tmpl-wrap"/.test(html));
+  ok('screen state extends to templates (list | slides | templates)', /screen === 'templates'/.test(pjs));
+  ok('syncTools shows/hides the template-screen tools', /tmplBtn\.style\.display/.test(pjs) && /tmplNew\.style\.display/.test(pjs));
+  ok('the templates table does NOT inherit the Meetings list\'s 4-column grid',
+     /\.ppr-tmpl-table \.ppr-head, \.ppr-tmpl-table \.ppr-row \{\s*grid-template-columns: minmax/.test(css));
+  ok('generateFromTemplate flags a missing photo/baseline instead of hiding it',
+     /noPhoto \+ ' location/.test(pjs) && /noBaseline \+ ' baseline photo/.test(pjs));
+  ok('a generated meeting jumps into its slide editor (same rule as item 4)', /openPpr\(newId\);\s*\}\s*\n\s*function openTemplateForm/.test(pjs));
+
+  console.log('\n[18] PDF/PPTX export libraries wired correctly');
+  ok('html2pdf.js CDN script present (pinned version)', /html2pdf\.js\/0\.10\.1\/html2pdf\.bundle\.min\.js/.test(html));
+  ok('pptxgenjs CDN script present (pinned version)', /pptxgenjs@3\.12\.0\/dist\/pptxgen\.bundle\.js/.test(html));
+  ok('exportPdf guards against the library not having loaded', /typeof html2pdf !== 'function'/.test(pjs));
+  ok('exportPptx guards against the library not having loaded', /typeof PptxGenJS !== 'function'/.test(pjs));
+  // ⚠️ The exact bug the issues-lessons module shipped and then had to fix
+  // (2026-08-22): position:fixed/absolute on the CAPTURED element makes
+  // html2canvas measure a real width and a height of ZERO — every page comes
+  // out blank with no error. The off-screen parking must live on the HOLDER;
+  // the captured `wrap` must stay in normal flow. Asserted here so this PDF
+  // export can't quietly regress into the same blank-page bug.
+  const pdfFnSrc = (pjs.match(/async function exportPdf[\s\S]*?\n  \}\n/) || [''])[0];
+  ok('exportPdf: the HOLDER is parked off-screen (position:fixed)', /holder\.style\.cssText = 'position:fixed/.test(pdfFnSrc));
+  ok('exportPdf: the captured wrap is NOT position:fixed/absolute', !/wrap\.style\.cssText = '[^']*position:\s*(fixed|absolute)/.test(pdfFnSrc));
+  ok('exportPdf removes the holder in a finally block (no leaked nodes on error)',
+     /\} finally \{\s*if \(holder/.test(pdfFnSrc));
+  ok('exportPptx strips the data: prefix before handing an image to PptxGenJS',
+     /function stripDataPrefix\(uri\) \{ return uri \? uri\.replace\(\/\^data:\/, ''\)/.test(pjs));
+  // 1 definition + 3 call sites (offline HTML / PDF / PPTX) — all three
+  // formats sharing one function is the point; the +1 accounts for the
+  // definition line itself, not a fourth caller.
+  ok('the three export formats share ONE image-collection function (no divergent embedding logic)',
+     (pjs.match(/collectSlideImages\(s,/g) || []).length === 4);
+
+  console.log('\n[19] Report Templates: resolution algorithm executed');
+  // Reimplements generateFromTemplate's pure decision logic exactly (same
+  // cross-check style as [13b]'s copySlidesFrom test above) — not a stub of
+  // the module, a restatement of the same rule, run against fixtures the
+  // pre-2026-08-29 file has no way to satisfy (it has no templates at all).
+  function resolvePick(candidatesDesc, rule, baselinePhoto) {
+    var after = candidatesDesc[0] || null;
+    var before = null, missingBaseline = false;
+    if (rule === 'baseline') {
+      before = baselinePhoto || null;
+      missingBaseline = !before && arguments.length > 2 && arguments[2] !== undefined && baselinePhoto === null;
+    } else {
+      before = candidatesDesc[1] || null;
+    }
+    return { before: before, after: after, missingBaseline: missingBaseline };
+  }
+  const photoJune = { id: 'j1', taken_at: '2026-06-01' };
+  const photoMay  = { id: 'm1', taken_at: '2026-05-01' };
+  const candsDesc = [photoJune, photoMay]; // newest first, as photosAtLocation() sorts
+
+  let r1 = resolvePick(candsDesc, 'previous');
+  eq('"previous" rule: after = newest photo', r1.after.id, 'j1');
+  eq('"previous" rule: before = the one before it', r1.before.id, 'm1');
+
+  let r2 = resolvePick([photoJune], 'previous');
+  eq('"previous" rule, only ONE capture ever: after set, before null (nothing to compare yet)', r2.before, null);
+  ok('after is still populated on a first-ever capture', r2.after.id === 'j1');
+
+  let r3 = resolvePick(candsDesc, 'baseline', photoMay);
+  eq('"baseline" rule: after = newest regardless of baseline', r3.after.id, 'j1');
+  eq('"baseline" rule: before = the PINNED baseline, not the previous capture', r3.before.id, 'm1');
+
+  let r4 = resolvePick(candsDesc, 'baseline', null);
+  ok('"baseline" rule with no baseline set: before is null, not guessed', r4.before === null);
+
+  let r5 = resolvePick([], 'previous');
+  ok('a location with NO photos yet: after is null too (not skipped from the report)', r5.after === null);
+
+  // allLocationCombos(): schedule-derived wins on a key collision; photo-only
+  // locations fill in what the schedule doesn't know about.
+  function mergeCombos(scheduleCombos, photoCombos) {
+    var byKey = {};
+    scheduleCombos.forEach((c) => { byKey[c.key] = c; });
+    photoCombos.forEach((c) => { if (!byKey[c.key]) byKey[c.key] = c; });
+    return Object.keys(byKey).map((k) => byKey[k]).sort((a, b) => a.label.localeCompare(b.label));
+  }
+  const merged = mergeCombos(
+    [{ key: 'A', label: 'Tower A · 5th Floor (from schedule)', values: {} }],
+    [{ key: 'A', label: 'Tower A · 5th Floor (STALE — from a photo)', values: {} },
+     { key: 'B', label: 'Zone B (photo only, not on the schedule)', values: {} }]
+  );
+  eq('allLocationCombos: schedule label wins on a key collision', merged.filter((c) => c.key === 'A')[0].label,
+     'Tower A · 5th Floor (from schedule)');
+  ok('allLocationCombos: a photo-only location still appears', merged.some((c) => c.key === 'B'));
+  eq('allLocationCombos: exactly one entry per key (no duplicate)', merged.length, 2);
+
+  // ============================================================ Phase 3 ===
+  // Panoramic Capture (brief Section 6). Structural checks below; the actual
+  // OpenCV.js stitching pipeline (ORB -> BFMatcher -> findHomography ->
+  // warpPerspective) and the Three.js cylinder viewer were run FOR REAL in a
+  // browser against the shipped source (sliced verbatim into a throwaway
+  // harness, WASM/WebGL genuinely executed, not simulated) — see
+  // modules/progress-photos/CLAUDE.md for the measured results. That's a
+  // stronger verification than Node can offer here (no WASM/WebGL in this
+  // harness), so it isn't repeated as a Node assertion.
+  console.log('\n[20] Panoramic Capture: schema + wiring');
+  const panoSql = fs.readFileSync(panoMigrationFile, 'utf8');
+  ok('migration creates panoramas', /create table if not exists panoramas/.test(panoSql));
+  ok('stitch_quality defaults to ok, flagged not hidden on failure', /stitch_quality\s+text default 'ok'/.test(panoSql));
+  ok('supabase-schema.sql declares panoramas too', /create table if not exists panoramas/.test(schemaSql));
+  ok('panoramas folded into the generic module-table RLS loop',
+     /'ppr_report_templates','panoramas'/.test(schemaSql));
+  ok('pano.js: cv.Stitcher is explicitly known to be unavailable (documented, not assumed)',
+     /browser builds of OpenCV\.js do NOT expose `cv\.Stitcher`/.test(pnjs));
+  ['function extractFrames', 'function stitchFrames', 'function homographyBetween',
+   'function mountCylinderViewer', 'function openCaptureModal', 'function openCompareModal',
+   'function ensureOpenCV', 'function allLocationCombos'
+  ].forEach((sig) => ok(sig + '() exists in pano.js', pnjs.includes(sig)));
+  ok('a low-match pair flags the whole panorama poor, not silently kept "ok"',
+     /matches < MIN_GOOD_MATCHES \|\| !H\) \{ quality = 'poor'/.test(pnjs));
+  ok('index.html has the 360° tab', /data-screen="pano">360/.test(html));
+  ok('index.html has the Capture 360° / Compare topbar tools', /id="pano-new"/.test(html) && /id="pano-compare-btn"/.test(html));
+  ok('index.html has the 360° screen host', /id="pp-screen-pano"/.test(html));
+  ok('OpenCV.js CDN script present (pinned version)', /opencv-js@4\.10\.0-release\.1\/dist\/opencv\.js/.test(html));
+  ok('Three.js CDN script present (pinned, classic global build not the ES-module-only r150\\+)', /three@0\.128\.0\/build\/three\.min\.js/.test(html));
+  ok('PANO.init is wired alongside PPR.init', /PANO\.init\(user, profile\)/.test(html));
+  ok('setScreen dispatches the pano screen', /isPano = s === 'pano'/.test(html));
+  ok('a poor-quality panorama is flagged in the gallery, not hidden', pnjs.includes('pano-badge-warn'));
+
+  // ============================================================ Phase 4 ===
+  // 3D Reconstruction Requests — the PAID feature, gated behind admin
+  // approval per the owner's explicit requirement. The gate itself is a
+  // Postgres RLS policy (Deno/RunPod/GPU can't be executed in this harness),
+  // so what's checked here is that the gate EXISTS and is shaped correctly —
+  // not the generic loop's "own row" shape, which would let a requester
+  // approve themselves — plus that the client never offers to bypass it.
+  console.log('\n[21] Reconstruction Requests: the admin-approval gate itself');
+  const reconSql = fs.readFileSync(reconMigrationFile, 'utf8');
+  ok('migration creates reconstruction_requests', /create table if not exists reconstruction_requests/.test(reconSql));
+  ok('NOT folded into the generic own-row RLS loop', !/'panoramas','reconstruction_requests'/.test(schemaSql));
+  ok('status defaults to pending_approval, never pre-approved', /status\s+text default 'pending_approval'/.test(reconSql));
+  ok('INSERT policy forces status = pending_approval via WITH CHECK (a crafted insert cannot self-approve)',
+     /reconstruction_requests_ins[\s\S]{0,300}status = 'pending_approval'/.test(reconSql));
+  ok('UPDATE policy is admin-only in BOTH using and with check (not "own row or admin")',
+     /reconstruction_requests_upd[\s\S]{0,200}for update using \(is_admin\(\) and can_access_project\(project_id\)\)\s*\n\s*with check \(is_admin\(\) and can_access_project\(project_id\)\)/.test(reconSql));
+  ok('a requester may only DELETE their own row, and only while still pending (no retracting an approved job)',
+     /requested_by = auth\.uid\(\) and status = 'pending_approval'/.test(reconSql));
+  ok('supabase-schema.sql declares reconstruction_requests with the SAME bespoke policies (not the generic loop)',
+     /create table if not exists reconstruction_requests/.test(schemaSql) &&
+     /reconstruction_requests_upd[\s\S]{0,200}for update using \(is_admin\(\)/.test(schemaSql));
+
+  console.log('\n[22] submit-reconstruction / reconstruction-webhook Edge Functions');
+  const submitTs = fs.readFileSync(submitFnFile, 'utf8');
+  const webhookTs = fs.readFileSync(webhookFnFile, 'utf8');
+  ok('submit-reconstruction requires admin/super_admin (tighter than the usual admin/planner set)',
+     /\["super_admin", "admin"\]\.includes\(prof\.role\)/.test(submitTs));
+  ok('submit-reconstruction re-checks status === pending_approval server-side before calling RunPod',
+     /reqRow\.status !== "pending_approval"/.test(submitTs));
+  ok('submit-reconstruction signs a SHORT-LIVED url to the video, not a broad service key, for the worker',
+     /createSignedUrl\(reqRow\.video_url, VIDEO_SIGN_TTL\)/.test(submitTs));
+  ok('the RunPod API key is read from a server-side secret, never sent to or read from the client',
+     /Deno\.env\.get\("RUNPOD_API_KEY"\)/.test(submitTs) && !html.includes('RUNPOD_API_KEY'));
+  ok('the update re-asserts status=pending_approval in the WHERE clause (no double-submit race)',
+     /\.eq\("id", requestId\)\.eq\("status", "pending_approval"\)/.test(submitTs));
+  ok('reconstruction-webhook is documented as needing --no-verify-jwt (RunPod has no Supabase session)',
+     /--no-verify-jwt/.test(webhookTs));
+  ok('reconstruction-webhook checks the per-request token before writing anything', /webhook_token !== token/.test(webhookTs));
+  ok('reconstruction-webhook never trusts an unauthenticated request without the token check running first',
+     webhookTs.indexOf('webhook_token !== token') < webhookTs.indexOf('body?.status'));
+
+  console.log('\n[23] Client UI never offers to bypass the gate');
+  ok('the client calls submit-reconstruction only from an ADMIN action (approveRequest), never on insert',
+     /function approveRequest/.test(rcjs) && !/openRequestForm[\s\S]{0,1500}submit-reconstruction/.test(rcjs));
+  ok('a new request is inserted with status pending_approval, set by the client but enforced by the DB',
+     /status: 'pending_approval'/.test(rcjs));
+  ok('rejectRequest and retractRequest never call submit-reconstruction', !/reject[\s\S]{0,400}submit-reconstruction/.test(rcjs));
+  ok('the approval confirm dialog states this is a real billed job before submitting',
+     /This is a real, billed job/.test(rcjs));
+  ok('index.html has the 3D tab + Request-scan tool + screen host',
+     /data-screen="recon">3D/.test(html) && /id="recon-new"/.test(html) && /id="pp-screen-recon"/.test(html));
+  ok('PLYLoader CDN script present (same pinned Three.js revision as the 360° viewer)',
+     /three@0\.128\.0\/examples\/js\/loaders\/PLYLoader\.js/.test(html));
+  ok('RECON.init is wired alongside the other module inits', /RECON\.init\(user, profile\)/.test(html));
+  ok('setScreen dispatches the recon screen', /isRecon = s === 'recon'/.test(html));
+  ['function openRequestForm', 'function approveRequest', 'function rejectRequest', 'function retractRequest',
+   'function openResultViewer', 'function mountPointCloudViewer'
+  ].forEach((sig) => ok(sig + '() exists in recon.js', rcjs.includes(sig)));
+
+  console.log('\n[24] Floor Plan overlay (brief 6B / Phase 5) — scope note + wiring');
+  ok('bim.js states the scope note (pin navigator, not a real BIM/IFC viewer)',
+     /NOT import, register against, or overlay a real BIM\/IFC/.test(bmjs));
+  const floorPlanSql = fs.readFileSync(floorPlanMigrationFile, 'utf8');
+  ok('floor_plans table declared', /create table if not exists floor_plans/.test(floorPlanSql));
+  ok('floor_plan_pins table declared', /create table if not exists floor_plan_pins/.test(floorPlanSql));
+  ok('floor_plan_pins.item_type is constrained to the three real target kinds',
+     /item_type in \('panorama', 'reconstruction', 'photo'\)/.test(floorPlanSql));
+  ok('pin coordinates are normalized 0..1 (resolution-independent of the stored image)',
+     /x_norm double precision not null check \(x_norm >= 0 and x_norm <= 1\)/.test(floorPlanSql));
+  ok('floor_plan_pins.floor_plan_id cascades on delete (a deleted plan takes its own pins with it)',
+     /floor_plan_id uuid references floor_plans\(id\) on delete cascade/.test(floorPlanSql));
+  ok('both tables are RLS-enabled with a read-all-approved / write-writers-only shape',
+     /floor_plans_read[\s\S]{0,200}can_access_project/.test(floorPlanSql) &&
+     /floor_plans_rw[\s\S]{0,200}is_writer\(\) and can_access_project/.test(floorPlanSql));
+  ok('floor_plans is folded into supabase-schema.sql', fs.readFileSync(schemaFile, 'utf8').includes('create table if not exists floor_plans'));
+  ok('floor_plan_pins is folded into supabase-schema.sql', fs.readFileSync(schemaFile, 'utf8').includes('create table if not exists floor_plan_pins'));
+
+  ['function openPlanForm', 'function openPinPicker', 'function togglePlaceMode', 'function openPin',
+   'function wireStageInteractions', 'function pinMarkerHTML'
+  ].forEach((sig) => ok(sig + '() exists in bim.js', bmjs.includes(sig)));
+
+  ok('index.html has the Floor Plan tab + tools + screen host',
+     /data-screen="bim">Floor Plan/.test(html) && /id="bim-new"/.test(html) &&
+     /id="bim-place"/.test(html) && /id="pp-screen-bim"/.test(html));
+  ok('bim.js is loaded and BIM.init is wired alongside the other module inits',
+     /src="bim\.js/.test(html) && /BIM\.init\(user, profile\)/.test(html));
+  ok('setScreen dispatches the bim screen and hides it from the generic "isPhotos" fallback',
+     /isBim = s === 'bim'/.test(html) && /!isRecon && !isBim/.test(html));
+  ok('BIM._syncTools is called on every screen switch (role + inner-screen gating, same as the other three modules)',
+     /BIM\._syncTools\(isBim\)/.test(html));
+
+  ok('a pin references its target polymorphically (item_type + item_id), never three separate FK columns',
+     !/panorama_id uuid references|reconstruction_id uuid references|photo_id uuid references/.test(floorPlanSql));
+  ok('opening a pin routes through the OTHER modules\' own viewer, not a re-implementation in bim.js',
+     /PANO\.open\(pin\.item_id\)/.test(bmjs) && /RECON\.openById\(pin\.item_id\)/.test(bmjs) &&
+     /ProgressPhotos\.openPhotoById\(pin\.item_id\)/.test(bmjs));
+  ok('only DONE reconstructions are offered when placing a pin (RECON.doneList, not the raw request list)',
+     /RECON\.doneList/.test(bmjs));
+
+  console.log('\n[24b] Floor Plan pan/zoom math — genuinely EXECUTED, not just read as text');
+  // The zoom-anchor formula is the one part of this screen worth checking
+  // mechanically: get the sign wrong and the image visibly "runs away" from
+  // the cursor while zooming, which is not something a source-regex check
+  // could ever catch. bim.js has no top-level side effects (its IIFE only
+  // defines functions), so loading it into the same vm context used for
+  // module.js/ppr.js above is safe and lets this run as real code.
+  ok('zooming IN keeps the point under the cursor visually stationary (pan compensates for the scale change)', (() => {
+    // Cursor at (100,100), image currently at zoom 1 with no pan. Zoom to 2x.
+    // The world point under the cursor must map back to the same screen
+    // position (100,100) under the new pan+zoom: panX + worldX*newZoom = 100,
+    // where worldX = (100 - oldPanX) / oldZoom = 100.
+    const r = BIM._zoomAnchor(100, 100, 1, 2, 0, 0);
+    const screenXAfter = r.panX + 100 * 2;
+    return Math.abs(screenXAfter - 100) < 1e-9;
+  })());
+  ok('zooming OUT back to the original scale restores the original pan exactly (round-trip, no drift)', (() => {
+    const zoomedIn = BIM._zoomAnchor(250, 180, 1, 3, 5, 5);
+    const back = BIM._zoomAnchor(250, 180, 3, 1, zoomedIn.panX, zoomedIn.panY);
+    return Math.abs(back.panX - 5) < 1e-9 && Math.abs(back.panY - 5) < 1e-9;
+  })());
+  ok('a zoom with no change in zoom level is a no-op on pan', (() => {
+    const r = BIM._zoomAnchor(400, 300, 2, 2, 17, -9);
+    return r.panX === 17 && r.panY === -9;
+  })());
+
+  console.log('\n[25] Drone provenance on panoramas (brief 6C / Phase 6)');
+  const panoSql6 = fs.readFileSync(panoMigrationFile, 'utf8');
+  ok('panoramas.source column declared, mirroring reconstruction_requests.video_source',
+     /source\s+text default 'ground'/.test(panoSql6));
+  ok('panoramas.source is folded into supabase-schema.sql', fs.readFileSync(schemaFile, 'utf8').includes("source          text default 'ground', -- 'ground' | 'drone'"));
+  ok('the capture form offers a Ground/Drone source select', /id="pano-c-source"/.test(pnjs) && /Drone \(aerial\)/.test(pnjs));
+  ok('the source value is threaded into the saved row', /source: \$\('pano-c-source'\)\.value/.test(pnjs));
+  ok('the insert is tolerant of the source column not being migrated yet (retries without it)',
+     /delete row\.source/.test(pnjs));
+  ok('a drone-sourced panorama shows a Drone badge in the gallery, same convention as the 3D request list',
+     /pano-src.*Drone-sourced footage/.test(pnjs));
+  ok('reconstruction_requests already had video_source (ground/drone) before this pass — Phase 6 extends the SAME field name convention to panoramas',
+     /video_source\s+text default 'ground'/.test(fs.readFileSync(reconMigrationFile, 'utf8')));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

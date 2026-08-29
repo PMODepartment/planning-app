@@ -122,6 +122,147 @@ create table if not exists ppr_slides (
 
 create index if not exists ppr_presentations_proj_date_idx
   on ppr_presentations (project_id, ppr_date desc);
+
+-- Report Templates (brief Section 5 / Phase 2) — a saved, re-runnable report
+-- definition. See migrations/2026-08-29-ppr-report-templates.sql for the full
+-- design rationale (jsonb locations array, comparison_rule semantics).
+create table if not exists ppr_report_templates (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id),
+  name            text not null,
+  meeting_type    text default 'client',
+  comparison_rule text default 'previous',
+  locations       jsonb default '[]'::jsonb,
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+create index if not exists ppr_report_templates_proj_idx
+  on ppr_report_templates (project_id, name);
+
+-- Panoramic Capture (brief Section 6 / Phase 3). See
+-- migrations/2026-08-29-panoramas.sql for the full design rationale.
+create table if not exists panoramas (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      text references projects(id),
+  location_values jsonb default '{}'::jsonb,
+  location        text,
+  activity_id     text,
+  activity_name   text,
+  pano_url        text,
+  frame_count     integer,
+  stitch_quality  text default 'ok',
+  taken_at        date,
+  source          text default 'ground', -- 'ground' | 'drone' (brief 6C / Phase 6)
+  created_by      uuid references users(id),
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+create index if not exists panoramas_proj_idx on panoramas (project_id, taken_at desc);
+
+-- 3D Reconstruction Requests (brief 6A / Phase 4) — admin-approval-gated
+-- ahead of a PAID GPU processing step. See
+-- migrations/2026-08-29-reconstruction-requests.sql for the full RLS
+-- rationale — this table is deliberately NOT in the generic module-table
+-- RLS loop below (its update policy must be admin-only, not own-row).
+create table if not exists reconstruction_requests (
+  id                    uuid primary key default gen_random_uuid(),
+  project_id            text references projects(id),
+  location_values       jsonb default '{}'::jsonb,
+  location              text,
+  activity_id           text,
+  activity_name         text,
+  video_url             text,
+  video_source          text default 'ground',
+  requested_note        text,
+  status                text default 'pending_approval',
+  requested_by          uuid references users(id),
+  approved_by           uuid references users(id),
+  approved_at           timestamptz,
+  rejected_reason       text,
+  runpod_job_id         text,
+  webhook_token         text,
+  result_pointcloud_url text,
+  result_splat_url      text,
+  result_stats          jsonb,
+  error_message         text,
+  created_at            timestamptz default now(),
+  updated_at            timestamptz default now()
+);
+create index if not exists reconstruction_requests_proj_idx
+  on reconstruction_requests (project_id, created_at desc);
+create index if not exists reconstruction_requests_status_idx
+  on reconstruction_requests (project_id, status);
+alter table reconstruction_requests enable row level security;
+drop policy if exists reconstruction_requests_read on reconstruction_requests;
+create policy reconstruction_requests_read on reconstruction_requests
+  for select using (can_access_project(project_id));
+drop policy if exists reconstruction_requests_ins on reconstruction_requests;
+create policy reconstruction_requests_ins on reconstruction_requests
+  for insert with check (
+    is_writer() and requested_by = auth.uid() and can_access_project(project_id)
+    and status = 'pending_approval'
+  );
+drop policy if exists reconstruction_requests_upd on reconstruction_requests;
+create policy reconstruction_requests_upd on reconstruction_requests
+  for update using (is_admin() and can_access_project(project_id))
+  with check (is_admin() and can_access_project(project_id));
+drop policy if exists reconstruction_requests_del on reconstruction_requests;
+create policy reconstruction_requests_del on reconstruction_requests
+  for delete using (
+    (is_admin() and can_access_project(project_id))
+    or (requested_by = auth.uid() and status = 'pending_approval')
+  );
+
+-- Floor Plan overlay (brief Section 6B / Phase 5). See
+-- migrations/2026-08-29-floor-plans.sql for the scope note (pin navigator,
+-- not true BIM/IFC registration). Read-all-approved / write-writers-only,
+-- like the generic module-table shape, but kept explicit here (not folded
+-- into the generic RLS loop below) since it's two tables sharing one rule
+-- rather than one table matching the loop's single-table assumption.
+create table if not exists floor_plans (
+  id           uuid primary key default gen_random_uuid(),
+  project_id   text references projects(id),
+  name         text not null,
+  level_order  integer default 0,
+  image_url    text,
+  width_px     integer,
+  height_px    integer,
+  created_by   uuid references users(id),
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+create index if not exists idx_floor_plans_project on floor_plans(project_id);
+alter table floor_plans enable row level security;
+drop policy if exists floor_plans_read on floor_plans;
+create policy floor_plans_read on floor_plans for select using (can_access_project(project_id));
+drop policy if exists floor_plans_rw on floor_plans;
+create policy floor_plans_rw on floor_plans for all
+  using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
+
+create table if not exists floor_plan_pins (
+  id            uuid primary key default gen_random_uuid(),
+  floor_plan_id uuid references floor_plans(id) on delete cascade,
+  project_id    text references projects(id),
+  item_type     text not null check (item_type in ('panorama', 'reconstruction', 'photo')),
+  item_id       uuid not null,
+  x_norm        double precision not null check (x_norm >= 0 and x_norm <= 1),
+  y_norm        double precision not null check (y_norm >= 0 and y_norm <= 1),
+  label         text,
+  created_by    uuid references users(id),
+  created_at    timestamptz default now()
+);
+create index if not exists idx_floor_plan_pins_plan on floor_plan_pins(floor_plan_id);
+create index if not exists idx_floor_plan_pins_project on floor_plan_pins(project_id);
+alter table floor_plan_pins enable row level security;
+drop policy if exists floor_plan_pins_read on floor_plan_pins;
+create policy floor_plan_pins_read on floor_plan_pins for select using (can_access_project(project_id));
+drop policy if exists floor_plan_pins_rw on floor_plan_pins;
+create policy floor_plan_pins_rw on floor_plan_pins for all
+  using (is_writer() and can_access_project(project_id))
+  with check (is_writer() and can_access_project(project_id));
+
 create index if not exists ppr_slides_ppr_idx
   on ppr_slides (ppr_id, slide_no);
 
@@ -586,7 +727,7 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'progress_photos','ppr_presentations','ppr_slides',
+    'progress_photos','ppr_presentations','ppr_slides','ppr_report_templates','panoramas',
     'issues_lessons','contracts_claims','risk_register',
     'stakeholder_map','drawing_register','material_submittal',
     'project_schedule','resource_loading','productivity_rates','cash_flow','s_curve',

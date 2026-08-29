@@ -1607,6 +1607,25 @@ window.ProgressPhotos = (function () {
     return out;
   }
 
+  // Same derivation as locCombos(), sourced from the PHOTO LIBRARY's own
+  // location_values instead of the schedule's. A location that was captured
+  // before its schedule zone existed (or after the zone was removed) would
+  // otherwise be un-pickable by the Report Templates builder (2026-08-29,
+  // brief Section 5) even though real photos exist there.
+  function photoLocCombos() {
+    var seen = {}, out = [];
+    rows.forEach(function (r) {
+      var lv = r.location_values || {}, values = {}, any = false;
+      LOC_LEVELS.forEach(function (l) { var v = lv[l.id]; if (v) { values[l.id] = v; any = true; } });
+      if (!any) return;
+      var key = LOC_LEVELS.map(function (l) { return values[l.id] || ''; }).join('␟');
+      if (seen[key]) return;
+      seen[key] = 1;
+      out.push({ key: key, values: values, label: locBreadcrumb(values) });
+    });
+    return out;
+  }
+
   function renderRounds() {
     var host = $('pp-rounds-view');
     if (!host) return;
@@ -1715,6 +1734,23 @@ window.ProgressPhotos = (function () {
     // the newly created photo id(s) once the upload completes, so the slide
     // editor can select the fresh photo without a trip to the Photos tab.
     openUploadForPicker: function (onDone) { openUpload({ onDone: onDone }); },
-    photoById: byId
+    photoById: byId,
+    // Read by the Report Templates builder (ppr.js) to offer a location picker
+    // without duplicating LOC_LEVELS/locBreadcrumb in a second closure.
+    locCombos: function () { return locCombos(); },
+    photoLocCombos: function () { return photoLocCombos(); },
+    // Read by the Floor Plan pin picker (bim.js / Phase 5) to offer a photo
+    // to pin without a second fetch of the same project's library.
+    allPhotos: function () { return rows.slice(); },
+    // Opens a SPECIFIC photo's lightbox regardless of whatever the Photos
+    // screen's own filtered view currently holds in `lightboxIds` — plain
+    // openLightbox(id) falls back to index 0 on a miss, which would silently
+    // show the wrong photo when called from a screen (Floor Plan) that never
+    // populated that array itself.
+    openPhotoById: function (id) {
+      if (!byId(id)) { UI.toast('That photo could not be found', 'warn'); return; }
+      lightboxIds = [id];
+      openLightbox(id);
+    }
   };
 })();

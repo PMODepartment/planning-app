@@ -373,7 +373,43 @@
 }
 .ppr-date { font-weight: 600; font-variant-numeric: tabular-nums; }
 .ppr-num { text-align: center; }
-.ppr-acts { display: flex; gap: 3px; }
+.ppr-acts { display: flex; gap: 3px; align-items: center; }
+
+/* ---- Report Templates (brief Section 5) ---------------------------------- */
+/* ⚠️ .ppr-head/.ppr-row's base grid-template-columns is 4 tracks, sized for
+   the Meetings list (Date/Description/Slides/Actions). The templates table
+   has 5 columns (Name/Type/Locations/Comparison/Actions) — never let it
+   silently inherit the Meetings list's column count (the exact class of
+   defect this app's own history has been bitten by more than once). */
+.ppr-tmpl-table .ppr-head, .ppr-tmpl-table .ppr-row {
+  grid-template-columns: minmax(140px, 1.4fr) 90px 100px 160px 210px;
+}
+.ppr-tmpl-table .ppr-row { cursor: default; }
+.ppr-tmpl-table .ppr-acts { justify-content: flex-end; }
+
+.ppr-tmpl-locrow {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  background: var(--pd-bg); margin-bottom: 6px;
+}
+.ppr-tmpl-locorder {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--pd-red); color: #fff; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.ppr-tmpl-loclabel { flex: 1 1 auto; font-size: 13px; color: var(--pd-ink); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ppr-tmpl-baseline { flex: 0 0 220px; max-width: 220px; }
+.ppr-tmpl-locbtns { flex: 0 0 auto; display: flex; gap: 2px; }
+.ppr-tmpl-locbtns .pp-iconbtn { width: 26px; height: 26px; }
+
+.ppr-tmpl-picklist { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.ppr-tmpl-pickrow {
+  text-align: left; padding: 8px 10px; border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); background: var(--pd-card); color: var(--pd-ink);
+  font-size: 13px; cursor: pointer;
+}
+.ppr-tmpl-pickrow:hover { background: var(--pd-bg); border-color: var(--pd-red); }
 
 /* ---- Preview pane -------------------------------------------------------- */
 .ppr-preview {
@@ -491,6 +527,96 @@
 .ppr-captxt { font-style: italic; font-size: 12.5px; color: var(--pd-muted); margin-top: 2px; }
 .ppr-slideacts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 
+/* ---- Panoramic Capture (brief Section 6 / Phase 3) ----------------------- */
+.pano-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.pano-card {
+  margin: 0; background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); overflow: hidden; display: flex; flex-direction: column;
+}
+.pano-thumb { position: relative; background: var(--pd-bg); height: 160px; }
+.pano-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pano-thumb .pp-noimg { height: 160px; }
+.pano-badge {
+  position: absolute; top: 8px; left: 8px; padding: 3px 8px; border-radius: 3px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+.pano-badge-warn { background: var(--pd-warn); color: #fff; }
+.pano-meta { padding: 10px 12px 4px; }
+.pano-loc { font-size: 13.5px; font-weight: 600; color: var(--pd-ink); }
+.pano-date { font-size: 12px; color: var(--pd-muted); margin-top: 2px; }
+.pano-acts { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 12px 12px; }
+
+.pano-viewerwrap { position: relative; text-align: center; }
+.pano-viewerwrap canvas { width: 100%; max-width: 100%; height: auto; border-radius: var(--pd-radius); cursor: grab; background: #000; }
+.pano-viewerwrap canvas:active { cursor: grabbing; }
+.pano-viewerhint { font-size: 11.5px; color: var(--pd-muted); margin-top: 6px; }
+
+.pano-capturearea { margin-top: 12px; }
+.pano-camwrap { margin: 10px 0; }
+.pano-camwrap video { width: 100%; max-width: 420px; border-radius: var(--pd-radius); background: #000; display: block; }
+.pano-capturebtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.pano-cmp-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 10px; font-size: 12.5px; color: var(--pd-muted); }
+.pano-cmp-controls label { display: flex; align-items: center; gap: 6px; }
+.pano-cmp-controls select { min-width: 160px; }
+.pano-src { font-size: 11px; padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); margin-left: 6px; vertical-align: middle; }
+
+/* ---- 3D Reconstruction Requests (brief 6A / Phase 4) --------------------- */
+.recon-section { margin-bottom: 20px; }
+.recon-sectitle { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin: 0 0 8px; }
+.recon-row {
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.recon-rowmain { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.recon-loc { font-size: 13.5px; font-weight: 600; color: var(--pd-ink); }
+.recon-date { font-size: 12px; color: var(--pd-muted); margin-left: auto; }
+.recon-src { font-size: 11px; padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); }
+.recon-note { font-size: 12.5px; color: var(--pd-muted); margin-top: 6px; }
+.recon-note-bad { color: var(--pd-bad); }
+.recon-acts { display: flex; gap: 8px; margin-top: 10px; }
+.recon-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 3px; letter-spacing: .02em; }
+/* Each pairs the token's own OWN colour as text with a tint of that SAME
+   token as background (the proven .pd-pill-ok pattern from dashboard.css) —
+   every one of --pd-warn/--pd-red/--pd-ok/--pd-bad already carries a paired
+   dark-mode remap, so this re-themes correctly with no extra work here. */
+.recon-badge-pending { background: color-mix(in srgb, var(--pd-warn) 18%, var(--pd-card)); color: var(--pd-warn); }
+.recon-badge-mid { background: color-mix(in srgb, var(--pd-red) 12%, var(--pd-card)); color: var(--pd-red); }
+.recon-badge-ok { background: color-mix(in srgb, var(--pd-ok) 16%, var(--pd-card)); color: var(--pd-ok); }
+.recon-badge-bad { background: color-mix(in srgb, var(--pd-bad) 14%, var(--pd-card)); color: var(--pd-bad); }
+
+/* ---- Floor Plan overlay (brief 6B / Phase 5) ------------------------------
+   Pin-navigator over a 2D image, not a true BIM/IFC viewer — see bim.js's own
+   header comment for the scope note. Plain CSS transform pan/zoom (translate
+   + scale on .bim-stage-inner) rather than an SVG viewBox — a pin's on-screen
+   position never needs recomputing on zoom because it's placed as a % inside
+   the UNTRANSFORMED image box and the whole box (image + pins) is scaled
+   together by the parent transform. */
+.bim-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 10px; }
+.bim-placebadge {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  padding: 3px 9px; border-radius: 3px;
+  background: color-mix(in srgb, var(--pd-red) 14%, var(--pd-card)); color: var(--pd-red);
+}
+.bim-stage-outer {
+  position: relative; overflow: hidden; border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  background: var(--pd-bg); height: min(70vh, 640px); cursor: grab;
+}
+.bim-stage-outer:active { cursor: grabbing; }
+.bim-stage-inner { position: absolute; top: 0; left: 0; transform-origin: 0 0; width: 100%; }
+.bim-imgwrap { position: relative; width: 100%; height: 0; } /* aspect box via padding-bottom, set inline per plan */
+.bim-imgwrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
+.bim-pin {
+  position: absolute; transform: translate(-50%, -100%);
+  width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform-origin: center;
+  background: var(--pd-red); color: #fff; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+}
+.bim-pin span { transform: rotate(45deg); } /* undo the teardrop rotation for the icon glyph itself */
+.bim-pin-panorama { background: var(--pd-red); }
+.bim-pin-reconstruction { background: var(--pd-dark); }
+.bim-pin-photo { background: var(--pd-ok); }
+#bim-place.is-active { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
+
 /* ---- Responsive ---------------------------------------------------------- */
 /* Title collapses to icon-only, same breakpoint as Drawing Register */
 @media (max-width: 1150px) {
@@ -517,6 +643,10 @@
    must also drop `white-space:nowrap` or they ellipsize to nothing.
    -------------------------------------------------------------------------- */
 @media (max-width: 700px) {
+  .bim-stage-outer { height: 60vh; }
+  .bim-toolbar { flex-direction: column; align-items: stretch; }
+  .bim-pin { width: 32px; height: 32px; } /* touch target */
+
   /* Rows carry their own labels now, so the sticky header is redundant. */
   .pp-grid-head { display: none; }
   .pp-grid { overflow-x: visible; }
