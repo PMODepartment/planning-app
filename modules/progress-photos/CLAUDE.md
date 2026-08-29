@@ -2,6 +2,44 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Second feedback round, part 3 (items 12, 13a): markup was already fully built — the entry point wasn't discoverable (2026-08-29)
+
+Owner: *"you also still havent added the option to add mark-up including pencil, eraser, shapes,
+common icons, text boxes to the media"* and *"mark-ups for photos in presentation should also be
+possible but presentation should not directly attach to the photo."*
+
+⚠️ **Checked the actual shipped code before building anything, and both asks were already fully
+satisfied** — by the earlier same-day Batch F (see the `[28]` entry below): `openMarkupEditor`
+offers exactly `pen` / `rect` / `circle` / `arrow` / `text` / `icon` (four stamps: warn/arrow/
+person/equip) / `erase` (a real vector hit-test-and-remove, not a paint-transparent hack), and
+`ppr_slide_markups` is a table SEPARATE from `progress_photos.markup`, keyed by `(ppr_slide_id,
+pane)` — exactly "should not directly attach to the photo." Nothing to build.
+
+**So why did it read as missing?** The most likely explanation, given this button's placement: the
+photo-level editor's ONLY entry point was a bare palette icon, one of five crammed into the
+lightbox's top-left toolbar, with nothing but a hover tooltip. Two other candidate explanations
+were considered and are the standing caveats of this whole module — a stale cached build (this
+repo's single most common false-alarm "missing feature" report, per its own extensive history),
+and the button's `canWrite`-gated visibility (only `super_admin`/`admin`/`planner` roles ever see
+it, matching every other edit affordance here) — but the icon-only presentation is the one thing
+worth fixing regardless of which was the actual cause.
+
+- **`#pp-lb-markupedit` now carries a visible "Markup" text label** (`.pp-lb-tool-labeled`, widened
+  from the fixed 38×38 icon square), with a fuller tooltip naming the toolset. The presentation
+  pane's own smaller markup buttons (`.ppr-mktool`, 26px, one per pane corner) are left icon-only —
+  adding a label there risks overflowing a narrow pane, and they sit directly under an already
+  prominent "Previous"/"Current" label, a materially less crowded context than the lightbox's
+  five-icon row.
+
+### Verified
+
+**458 checks green** (was 451), new `[33]` section reconfirming the full tool coverage against the
+shipped source (genuinely nothing missing) plus the new label. CSS braces balanced (381/381), 0 NUL
+bytes, 67 `id=` attributes in `index.html` (unchanged count — only an existing button's content
+grew).
+
+`MODULE_V` → `20260829m`; `module.css` → `?v=20260829m`.
+
 ## Second feedback round, part 2 (item 18): fixing the 360° recording UX (2026-08-29)
 
 Owner: *"the 360 feature of the app is also not working well, I can't take videos very easily. Please

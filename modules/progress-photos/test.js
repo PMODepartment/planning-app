@@ -1395,6 +1395,26 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var cancelled = false;/.test(pnjs) && /async function processVideo\(blob\) \{\s*if \(cancelled\) return;/.test(pnjs));
   ok('stopCameraStream always stops every track — never leaves the camera light on', /function stopCameraStream\(\)[\s\S]{0,120}getTracks\(\)\.forEach/.test(pnjs));
 
+  console.log('\n[33] Items 12/13(a) — markup coverage confirmed already complete; the lightbox entry point made discoverable');
+  // Both items describe capability already shipped in Batch F (2026-08-29,
+  // "[28]" above) — reconfirmed here rather than rebuilt, plus the ONE real
+  // gap found: the edit entry point was a bare icon among five in the
+  // lightbox toolbar, easy to miss entirely, which is the most likely
+  // explanation for "you still haven't added markup".
+  ok('all five requested tools exist on the photo\'s own markup editor: pencil, eraser, shapes, common icons, text',
+     /\['pen', 'rect', 'circle', 'arrow', 'text', 'icon', 'erase'\]/.test(mjs));
+  ok('four common icon stamps exist (warn/arrow/person/equip)', /\['warn', 'arrow', 'person', 'equip'\]/.test(mjs));
+  ok('erase is a real removal (vector hit-test + splice), not a no-op or a paint-transparent hack',
+     /objs\.splice\(idx, 1\); pushHistory\(\); redraw\(\);/.test(mjs));
+  ok('presentation markup is a SEPARATE store, keyed by (slide, pane) — never attached to the photo itself',
+     /function markupKey\(slideId, pane\) \{ return slideId \+ '\|' \+ pane; \}/.test(pjs));
+  ok('the presentation pane reuses the SAME editor rather than re-implementing drawing a second time',
+     /ProgressPhotos\.openMarkupEditor\(u, markupFor\(cur\.id, which\), function \(objs\) \{/.test(pjs));
+  ok('the lightbox\'s markup-edit button now carries a visible text label, not just an icon',
+     /pp-lb-tool-labeled" id="pp-lb-markupedit"[\s\S]{0,200}<span>Markup<\/span>/.test(html));
+  ok('the label styling widens the button rather than forcing text into a 38px square',
+     /\.pp-lb-tool-labeled \{ width: auto;/.test(css));
+
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
 })();
