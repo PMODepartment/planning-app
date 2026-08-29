@@ -24,11 +24,22 @@ create table if not exists panoramas (
   -- publishing a bad panorama."
   stitch_quality  text default 'ok',
   taken_at        date,
+  -- 'ground' | 'drone' (brief 6C / Phase 6) — mirrors
+  -- reconstruction_requests.video_source. A panorama's stitching pipeline is
+  -- identical either way; this is purely a provenance tag shown as a badge,
+  -- same convention as the 3D request list's Drone badge.
+  source          text default 'ground',
   created_by      uuid references users(id),
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
 );
 create index if not exists panoramas_proj_idx on panoramas (project_id, taken_at desc);
+
+-- Idempotent add for a project where this migration already ran before the
+-- `source` column existed (this migration is being edited in place while
+-- still un-run everywhere — but add-if-missing costs nothing and protects
+-- against exactly that race).
+alter table panoramas add column if not exists source text default 'ground';
 
 -- RLS: folded into supabase-schema.sql's generic module-table loop (same
 -- read/write shape as progress_photos — no special approval gate here, unlike

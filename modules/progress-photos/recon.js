@@ -348,5 +348,26 @@ window.RECON = (function () {
     applyCam(); renderer.render(scene, camera);
   }
 
-  return { init: init, _syncTools: syncTools };
+  return {
+    init: init,
+    _syncTools: syncTools,
+    // Read by the Floor Plan pin picker (bim.js / Phase 5) — only DONE
+    // requests can be pinned, since anything earlier has no result to open.
+    doneList: function () { return requests.filter(function (r) { return r.status === 'done'; }).slice(); },
+    // Opens the 3D viewer for a specific request id, independent of whatever
+    // this screen's own `requests` cache currently holds — used by the Floor
+    // Plan pin navigator, which may be the first thing to touch this module
+    // in a session (its own `load()` hasn't necessarily run yet).
+    openById: async function (id) {
+      var r = reqById(id);
+      if (!r) {
+        try {
+          var res = await AppAuth.getSB().from(T_REQ).select('*').eq('id', id).maybeSingle();
+          r = res.data;
+        } catch (e) { r = null; }
+      }
+      if (!r) { UI.toast('That 3D reconstruction could not be found', 'warn'); return; }
+      openResultViewer(r);
+    }
+  };
 })();

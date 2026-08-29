@@ -558,6 +558,7 @@
 .pano-cmp-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 10px; font-size: 12.5px; color: var(--pd-muted); }
 .pano-cmp-controls label { display: flex; align-items: center; gap: 6px; }
 .pano-cmp-controls select { min-width: 160px; }
+.pano-src { font-size: 11px; padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); margin-left: 6px; vertical-align: middle; }
 
 /* ---- 3D Reconstruction Requests (brief 6A / Phase 4) --------------------- */
 .recon-section { margin-bottom: 20px; }
@@ -582,6 +583,39 @@
 .recon-badge-mid { background: color-mix(in srgb, var(--pd-red) 12%, var(--pd-card)); color: var(--pd-red); }
 .recon-badge-ok { background: color-mix(in srgb, var(--pd-ok) 16%, var(--pd-card)); color: var(--pd-ok); }
 .recon-badge-bad { background: color-mix(in srgb, var(--pd-bad) 14%, var(--pd-card)); color: var(--pd-bad); }
+
+/* ---- Floor Plan overlay (brief 6B / Phase 5) ------------------------------
+   Pin-navigator over a 2D image, not a true BIM/IFC viewer — see bim.js's own
+   header comment for the scope note. Plain CSS transform pan/zoom (translate
+   + scale on .bim-stage-inner) rather than an SVG viewBox — a pin's on-screen
+   position never needs recomputing on zoom because it's placed as a % inside
+   the UNTRANSFORMED image box and the whole box (image + pins) is scaled
+   together by the parent transform. */
+.bim-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 10px; }
+.bim-placebadge {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  padding: 3px 9px; border-radius: 3px;
+  background: color-mix(in srgb, var(--pd-red) 14%, var(--pd-card)); color: var(--pd-red);
+}
+.bim-stage-outer {
+  position: relative; overflow: hidden; border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  background: var(--pd-bg); height: min(70vh, 640px); cursor: grab;
+}
+.bim-stage-outer:active { cursor: grabbing; }
+.bim-stage-inner { position: absolute; top: 0; left: 0; transform-origin: 0 0; width: 100%; }
+.bim-imgwrap { position: relative; width: 100%; height: 0; } /* aspect box via padding-bottom, set inline per plan */
+.bim-imgwrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
+.bim-pin {
+  position: absolute; transform: translate(-50%, -100%);
+  width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform-origin: center;
+  background: var(--pd-red); color: #fff; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+}
+.bim-pin span { transform: rotate(45deg); } /* undo the teardrop rotation for the icon glyph itself */
+.bim-pin-panorama { background: var(--pd-red); }
+.bim-pin-reconstruction { background: var(--pd-dark); }
+.bim-pin-photo { background: var(--pd-ok); }
+#bim-place.is-active { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
 
 /* ---- Responsive ---------------------------------------------------------- */
 /* Title collapses to icon-only, same breakpoint as Drawing Register */
@@ -609,6 +643,10 @@
    must also drop `white-space:nowrap` or they ellipsize to nothing.
    -------------------------------------------------------------------------- */
 @media (max-width: 700px) {
+  .bim-stage-outer { height: 60vh; }
+  .bim-toolbar { flex-direction: column; align-items: stretch; }
+  .bim-pin { width: 32px; height: 32px; } /* touch target */
+
   /* Rows carry their own labels now, so the sticky header is redundant. */
   .pp-grid-head { display: none; }
   .pp-grid { overflow-x: visible; }

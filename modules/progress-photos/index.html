@@ -32,6 +32,7 @@
           <button class="pp-tab" data-screen="ppr">Meetings</button>
           <button class="pp-tab" data-screen="pano">360&deg;</button>
           <button class="pp-tab" data-screen="recon">3D</button>
+          <button class="pp-tab" data-screen="bim">Floor Plan</button>
         </div>
 
         <!-- Tool cluster beside the profile: one labelled primary action per
@@ -54,6 +55,9 @@
           <button class="pd-btn pp-tb-labeled" id="pano-compare-btn" title="Compare two captures over time" style="display:none;">Compare over time</button>
           <!-- 3D screen tools -->
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="recon-new" title="Request a 3D reconstruction" style="display:none;">+ Request 3D scan</button>
+          <!-- Floor Plan screen tools -->
+          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="bim-new" title="Upload a floor plan" style="display:none;">+ Upload floor plan</button>
+          <button class="pd-btn pp-tb-labeled" id="bim-place" title="Toggle pin-placement mode" style="display:none;">Place pin</button>
         </div>
         <!-- Offline capture queue — visible on every screen (Rounds captures queue too) -->
         <button class="pd-btn pp-syncbtn" id="pp-sync" title="Sync photos captured while offline" hidden>
@@ -131,6 +135,11 @@
         <div id="pp-screen-recon" hidden>
           <div id="recon-view"></div>
         </div>
+
+        <!-- ================= Floor Plan overlay (brief 6B / Phase 5) ================= -->
+        <div id="pp-screen-bim" hidden>
+          <div id="bim-view"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -178,6 +187,7 @@
   <script src="ppr.js?v=20260829c"></script>
   <script src="pano.js?v=20260829c"></script>
   <script src="recon.js?v=20260829c"></script>
+  <script src="bim.js?v=20260829a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -185,6 +195,7 @@
       PPR.init(user, profile);
       PANO.init(user, profile);
       RECON.init(user, profile);
+      BIM.init(user, profile);
 
       document.getElementById('pp-lb-close').onclick = ProgressPhotos._closeLightbox;
       document.getElementById('pp-lb-prev').onclick  = function () { ProgressPhotos._stepLightbox(-1); };
@@ -199,21 +210,23 @@
         });
       }
       function setScreen(s) {
-        var isPpr = s === 'ppr', isRounds = s === 'rounds', isPano = s === 'pano', isRecon = s === 'recon';
-        var isPhotos = !isPpr && !isRounds && !isPano && !isRecon;
+        var isPpr = s === 'ppr', isRounds = s === 'rounds', isPano = s === 'pano', isRecon = s === 'recon', isBim = s === 'bim';
+        var isPhotos = !isPpr && !isRounds && !isPano && !isRecon && !isBim;
         document.getElementById('pp-screen-photos').hidden = !isPhotos;
         document.getElementById('pp-screen-rounds').hidden = !isRounds;
         document.getElementById('pp-screen-ppr').hidden = !isPpr;
         document.getElementById('pp-screen-pano').hidden = !isPano;
         document.getElementById('pp-screen-recon').hidden = !isRecon;
+        document.getElementById('pp-screen-bim').hidden = !isBim;
         document.getElementById('pp-screen-title').textContent =
           isPpr ? 'Meetings' : isRounds ? "Today's Rounds" : isPano ? '360° Panoramas' :
-          isRecon ? '3D Reconstruction' : 'Photos Database';
+          isRecon ? '3D Reconstruction' : isBim ? 'Floor Plan' : 'Photos Database';
         show(PHOTO_TOOLS, isPhotos);
         // Each module re-asserts its own tools' visibility (role + inner screen).
         PPR._syncTools(isPpr);
         PANO._syncTools(isPano);
         RECON._syncTools(isRecon);
+        BIM._syncTools(isBim);
         if (isPhotos) ProgressPhotos._syncChrome();
         if (isRounds) ProgressPhotos.renderRounds();
         Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
@@ -226,7 +239,7 @@
       });
       var saved = 'photos';
       try { saved = localStorage.getItem('pp_screen') || 'photos'; } catch (e) {}
-      setScreen(['ppr', 'rounds', 'pano', 'recon'].indexOf(saved) >= 0 ? saved : 'photos');
+      setScreen(['ppr', 'rounds', 'pano', 'recon', 'bim'].indexOf(saved) >= 0 ? saved : 'photos');
     });
   </script>
 </body>

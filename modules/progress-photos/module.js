@@ -1738,6 +1738,19 @@ window.ProgressPhotos = (function () {
     // Read by the Report Templates builder (ppr.js) to offer a location picker
     // without duplicating LOC_LEVELS/locBreadcrumb in a second closure.
     locCombos: function () { return locCombos(); },
-    photoLocCombos: function () { return photoLocCombos(); }
+    photoLocCombos: function () { return photoLocCombos(); },
+    // Read by the Floor Plan pin picker (bim.js / Phase 5) to offer a photo
+    // to pin without a second fetch of the same project's library.
+    allPhotos: function () { return rows.slice(); },
+    // Opens a SPECIFIC photo's lightbox regardless of whatever the Photos
+    // screen's own filtered view currently holds in `lightboxIds` — plain
+    // openLightbox(id) falls back to index 0 on a miss, which would silently
+    // show the wrong photo when called from a screen (Floor Plan) that never
+    // populated that array itself.
+    openPhotoById: function (id) {
+      if (!byId(id)) { UI.toast('That photo could not be found', 'warn'); return; }
+      lightboxIds = [id];
+      openLightbox(id);
+    }
   };
 })();

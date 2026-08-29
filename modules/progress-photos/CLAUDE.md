@@ -2,6 +2,123 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Floor Plan pin navigator + drone provenance — brief 6B/6C / Phase 5 & 6 (2026-08-29)
+
+Final two phases of the same unattended overnight build. This closes out the site-survey
+brief's phase list end to end — every phase now has *something* built, though several
+(this entry's Phase 5 most of all) are deliberately reduced in scope from the brief's more
+ambitious wording, and each reduction is stated rather than glossed over. **Run
+`migrations/2026-08-29-floor-plans.sql`.**
+
+### Phase 5 — Floor Plan overlay, NOT a real BIM/IFC viewer
+
+⚠️ **Read this before assuming "BIM Model Overlay" means what the phrase usually implies.**
+What's built is a **2D floor-plan pin navigator**: upload a floor plan image, place pins on
+it, each pin points at a panorama / 3D reconstruction / progress photo, clicking a pin opens
+that capture. It does **not** import or register against an authored BIM/IFC model, and it
+does **not** attempt true registration of a reconstruction's point cloud onto the floor
+plan's coordinate frame — that needs known camera poses relative to the floor plan, a real
+separate computer-vision problem, not a small addition here. Same honest-scope-reduction
+pattern as Phase 3's cylinder-instead-of-equirectangular panorama; stated in `bim.js`'s own
+header comment as well as here.
+
+**New module `bim.js`, new tables `floor_plans` + `floor_plan_pins`.**
+
+- **A pin is a polymorphic reference** (`item_type` ∈ panorama/reconstruction/photo +
+  `item_id`), not three nullable FK columns — a pin's target kind never changes after
+  placement, so one pair of columns is enough and avoids the "which of the three FKs is
+  non-null this time" question a real schema reader would otherwise have to answer.
+  ⚠️ **Deliberately no hard FK to any of the three target tables.** A pin surviving its
+  target's deletion (rendered as a still-visible, removable marker) is safer than a
+  cross-table trigger this module would have to hand-maintain across three other tables it
+  doesn't own the lifecycle of.
+- **Coordinates are normalized 0..1**, read directly off the *rendered* `<img>` element's own
+  `getBoundingClientRect()` at click time — deliberately not an SVG viewBox/CTM matrix
+  approach. Because the image sits inside a plain CSS-transformed wrapper
+  (`translate(panX,panY) scale(zoom)`), its own bounding rect already reflects the current
+  pan/zoom, so `(clickX - rect.left) / rect.width` is resolution- and zoom-independent with
+  no matrix math to get wrong. A pin's on-screen position at any zoom level is then just
+  `x_norm * 100%` positioned **inside the untransformed image box**, so it scales and pans
+  together with the image for free.
+- **Pan/zoom**: Ctrl+scroll to zoom (anchored on the cursor so the point under it stays
+  visually still), plain drag to pan — the same convention already used elsewhere in this
+  app's site-plan viewers (plain scroll is left for the page, matching that precedent).
+  ⚠️ **The zoom-anchor arithmetic is exported as a pure function (`BIM._zoomAnchor`)
+  specifically so it could be genuinely executed and checked, not just read as source** — a
+  wrong sign here makes the image visibly "run away" from the cursor while zooming, which no
+  regex check on the surrounding code could ever catch.
+- **Opening a pin never re-implements a viewer** — it calls back into whichever module owns
+  that capture type (`PANO.open(id)`, `RECON.openById(id)`, `ProgressPhotos.openPhotoById(id)`),
+  so there is exactly one 360° viewer, one 3D viewer, one lightbox in the whole app, each
+  reachable from either its own screen or a floor-plan pin. Each of those three functions is
+  new/adjusted this pass specifically to be **callable standalone**, independent of whatever
+  that module's own screen currently has loaded (`PANO.open` lazy-loads `panoramas` if empty;
+  `RECON.openById` falls back to a direct row fetch if the request isn't in its local cache;
+  `ProgressPhotos.openPhotoById` sets a fresh single-item `lightboxIds` rather than reusing
+  the Photos screen's own filtered array, whose plain `openLightbox(id)` silently falls back
+  to index 0 on a miss — exactly the wrong behaviour for a cross-screen deep link).
+- **RLS**: read-all-approved / write-writers-only, the generic module-table shape, kept
+  explicit in both the migration and `supabase-schema.sql` (two tables sharing one rule,
+  rather than folded into the generic single-table RLS loop).
+
+### Phase 6 — Drone capture
+
+⚠️ **Scoped from a reconstructed understanding of this phase, not the brief's exact
+original wording** — the source PDF's literal Phase 6 text was not available when this was
+written (summarised out of an earlier, now-compacted part of this session), so this is a
+best-guess interpretation consistent with the user's explicit standing instruction to answer
+based on the best available assumption rather than pause to ask.
+
+`reconstruction_requests.video_source` (`'ground' | 'drone'`, built in Phase 4) already let a
+3D-scan request be flagged as drone-sourced, with a **Drone** badge and a source picker on the
+request form. This pass extends the **same field name and the same UI convention** to
+**panoramas** — a 360° walkthrough can equally be captured by a drone, and having Phase 4's
+provenance tag but not Phase 3's would have been an arbitrary gap. `panoramas.source` (new,
+`default 'ground'`), a Ground/Drone select on the capture form, and the same Drone badge style
+in the gallery.
+
+⚠️ **The insert is tolerant of the column not being migrated yet** — the SAME pattern used
+throughout this module for every schema-dependent field: on a "column does not exist" error
+the insert retries once with `source` stripped, so a capture is never lost over one optional
+provenance tag.
+
+⚠️ **Nothing beyond the tag was built** — no flight-path/altitude metadata, no drone-specific
+capture flow (the video is still uploaded the same way a phone-recorded one is; this app has
+no access to a drone's own flight-controller data), and Equipment Loading's separate drone
+inventory (if any) is untouched. If the original brief's Phase 6 asked for more than
+provenance tagging, that gap should be checked against the actual PDF text once it's back in
+context.
+
+### Verified (2026-08-29)
+
+**217 checks, 0 failures** (`test.js`, up from 184) — 30 new checks for Phase 5 (the scope
+note is present in source; both tables' shape, constraints, cascade rule, and RLS; every new
+`bim.js` function exists; the tab/tools/screen-host/init-call/setScreen wiring in `index.html`;
+a pin never gets three separate FK columns; opening a pin calls back into the OWNING module
+rather than re-implementing a viewer; only done reconstructions are offered when placing a
+pin) plus **3 genuinely EXECUTED checks of the zoom-anchor math** — `bim.js` has no top-level
+side effects, so it was loaded into the same Node `vm` context already used to execute
+`module.js`/`ppr.js`, and `BIM._zoomAnchor` was called with real numbers and its output
+checked against the actual geometric invariant (the cursor's world point maps back to itself
+after a zoom change; a full zoom-in-then-zoom-out round-trip returns the exact original pan
+with no drift; a same-to-same zoom is a no-op) — not just matched against a regex pattern in
+the surrounding source. 7 new checks for Phase 6 (column declared + folded into schema.sql,
+form field present, value threaded into the save, tolerant-retry present, badge present, and
+that it's the same field-name convention Phase 4 already established).
+
+0 NUL bytes across every touched/new file; `node --check` clean on `bim.js` (new),
+`pano.js`, `recon.js`, `module.js`, `test.js`; CSS braces 281/281; **0 functions lost** from
+`module.js`/`pano.js`/`recon.js` against the last commit (a small function-name-set diff
+under-counts functions added as anonymous property values — e.g. `allPhotos: function(){}` —
+but a name that DISAPPEARS from that set is unambiguous, and none did).
+
+⚠️ **NOT verified**: no signed-in click-through of any of this — uploading a real floor plan,
+placing a real pin, and opening it back up to confirm the right viewer opens with the right
+item have only been checked as source-level wiring + the one piece of pure math that could be
+executed without a DOM/auth stack. The migration has not been run. This is consistent with
+every other client-only surface built this session (Phase 3's stitching pipeline is the one
+exception, verified in a real browser) — flagged plainly rather than left ambiguous.
+
 ## 3D Reconstruction Requests, gated behind admin approval — brief 6A / Phase 4 (2026-08-29)
 
 Continuation of the same unattended overnight build authorized after Phase 3. Owner's

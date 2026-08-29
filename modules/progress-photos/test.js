@@ -13,6 +13,7 @@ const panoMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-0
 const reconMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-reconstruction-requests.sql');
 const submitFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'submit-reconstruction', 'index.ts');
 const webhookFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'reconstruction-webhook', 'index.ts');
+const floorPlanMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plans.sql');
 const schemaFile = path.join(__dirname, '..', '..', 'supabase-schema.sql');
 
 let fails = 0, passes = 0;
@@ -184,12 +185,14 @@ vm.runInContext(fs.readFileSync(here('module.js'), 'utf8'), ctx, { filename: 'mo
 vm.runInContext(fs.readFileSync(here('ppr.js'), 'utf8'), ctx, { filename: 'ppr.js' });
 vm.runInContext(fs.readFileSync(here('pano.js'), 'utf8'), ctx, { filename: 'pano.js' });
 vm.runInContext(fs.readFileSync(here('recon.js'), 'utf8'), ctx, { filename: 'recon.js' });
+vm.runInContext(fs.readFileSync(here('bim.js'), 'utf8'), ctx, { filename: 'bim.js' });
 
-const PP = ctx.ProgressPhotos, PPR = ctx.PPR, PANO = ctx.PANO, RECON = ctx.RECON;
+const PP = ctx.ProgressPhotos, PPR = ctx.PPR, PANO = ctx.PANO, RECON = ctx.RECON, BIM = ctx.BIM;
 ok('module.js exposes ProgressPhotos', !!PP);
 ok('ppr.js exposes PPR', !!PPR);
 ok('pano.js exposes PANO', !!PANO);
 ok('recon.js exposes RECON', !!RECON);
+ok('bim.js exposes BIM', !!BIM);
 ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadForPicker === 'function');
 
 // ---------------------------------------------------------- source assertions --
@@ -199,6 +202,7 @@ const mjs = fs.readFileSync(here('module.js'), 'utf8');
 const pjs = fs.readFileSync(here('ppr.js'), 'utf8');
 const pnjs = fs.readFileSync(here('pano.js'), 'utf8');
 const rcjs = fs.readFileSync(here('recon.js'), 'utf8');
+const bmjs = fs.readFileSync(here('bim.js'), 'utf8');
 const html = fs.readFileSync(here('index.html'), 'utf8');
 const css = fs.readFileSync(here('module.css'), 'utf8');
 
@@ -358,7 +362,7 @@ console.log('\n[misc] insert().select() returns the new row id');
   while ((rm = ruleRe.exec(css))) fffRules.push(rm[1].trim());
   // Each entry pairs #fff with a rule that ALSO sets a solid brand background
   // (--pd-red / --pd-bad) — confirmed against the shipped CSS, not assumed.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn/;
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -576,6 +580,86 @@ console.log('\n[misc] insert().select() returns the new row id');
   ['function openRequestForm', 'function approveRequest', 'function rejectRequest', 'function retractRequest',
    'function openResultViewer', 'function mountPointCloudViewer'
   ].forEach((sig) => ok(sig + '() exists in recon.js', rcjs.includes(sig)));
+
+  console.log('\n[24] Floor Plan overlay (brief 6B / Phase 5) — scope note + wiring');
+  ok('bim.js states the scope note (pin navigator, not a real BIM/IFC viewer)',
+     /NOT import, register against, or overlay a real BIM\/IFC/.test(bmjs));
+  const floorPlanSql = fs.readFileSync(floorPlanMigrationFile, 'utf8');
+  ok('floor_plans table declared', /create table if not exists floor_plans/.test(floorPlanSql));
+  ok('floor_plan_pins table declared', /create table if not exists floor_plan_pins/.test(floorPlanSql));
+  ok('floor_plan_pins.item_type is constrained to the three real target kinds',
+     /item_type in \('panorama', 'reconstruction', 'photo'\)/.test(floorPlanSql));
+  ok('pin coordinates are normalized 0..1 (resolution-independent of the stored image)',
+     /x_norm double precision not null check \(x_norm >= 0 and x_norm <= 1\)/.test(floorPlanSql));
+  ok('floor_plan_pins.floor_plan_id cascades on delete (a deleted plan takes its own pins with it)',
+     /floor_plan_id uuid references floor_plans\(id\) on delete cascade/.test(floorPlanSql));
+  ok('both tables are RLS-enabled with a read-all-approved / write-writers-only shape',
+     /floor_plans_read[\s\S]{0,200}can_access_project/.test(floorPlanSql) &&
+     /floor_plans_rw[\s\S]{0,200}is_writer\(\) and can_access_project/.test(floorPlanSql));
+  ok('floor_plans is folded into supabase-schema.sql', fs.readFileSync(schemaFile, 'utf8').includes('create table if not exists floor_plans'));
+  ok('floor_plan_pins is folded into supabase-schema.sql', fs.readFileSync(schemaFile, 'utf8').includes('create table if not exists floor_plan_pins'));
+
+  ['function openPlanForm', 'function openPinPicker', 'function togglePlaceMode', 'function openPin',
+   'function wireStageInteractions', 'function pinMarkerHTML'
+  ].forEach((sig) => ok(sig + '() exists in bim.js', bmjs.includes(sig)));
+
+  ok('index.html has the Floor Plan tab + tools + screen host',
+     /data-screen="bim">Floor Plan/.test(html) && /id="bim-new"/.test(html) &&
+     /id="bim-place"/.test(html) && /id="pp-screen-bim"/.test(html));
+  ok('bim.js is loaded and BIM.init is wired alongside the other module inits',
+     /src="bim\.js/.test(html) && /BIM\.init\(user, profile\)/.test(html));
+  ok('setScreen dispatches the bim screen and hides it from the generic "isPhotos" fallback',
+     /isBim = s === 'bim'/.test(html) && /!isRecon && !isBim/.test(html));
+  ok('BIM._syncTools is called on every screen switch (role + inner-screen gating, same as the other three modules)',
+     /BIM\._syncTools\(isBim\)/.test(html));
+
+  ok('a pin references its target polymorphically (item_type + item_id), never three separate FK columns',
+     !/panorama_id uuid references|reconstruction_id uuid references|photo_id uuid references/.test(floorPlanSql));
+  ok('opening a pin routes through the OTHER modules\' own viewer, not a re-implementation in bim.js',
+     /PANO\.open\(pin\.item_id\)/.test(bmjs) && /RECON\.openById\(pin\.item_id\)/.test(bmjs) &&
+     /ProgressPhotos\.openPhotoById\(pin\.item_id\)/.test(bmjs));
+  ok('only DONE reconstructions are offered when placing a pin (RECON.doneList, not the raw request list)',
+     /RECON\.doneList/.test(bmjs));
+
+  console.log('\n[24b] Floor Plan pan/zoom math — genuinely EXECUTED, not just read as text');
+  // The zoom-anchor formula is the one part of this screen worth checking
+  // mechanically: get the sign wrong and the image visibly "runs away" from
+  // the cursor while zooming, which is not something a source-regex check
+  // could ever catch. bim.js has no top-level side effects (its IIFE only
+  // defines functions), so loading it into the same vm context used for
+  // module.js/ppr.js above is safe and lets this run as real code.
+  ok('zooming IN keeps the point under the cursor visually stationary (pan compensates for the scale change)', (() => {
+    // Cursor at (100,100), image currently at zoom 1 with no pan. Zoom to 2x.
+    // The world point under the cursor must map back to the same screen
+    // position (100,100) under the new pan+zoom: panX + worldX*newZoom = 100,
+    // where worldX = (100 - oldPanX) / oldZoom = 100.
+    const r = BIM._zoomAnchor(100, 100, 1, 2, 0, 0);
+    const screenXAfter = r.panX + 100 * 2;
+    return Math.abs(screenXAfter - 100) < 1e-9;
+  })());
+  ok('zooming OUT back to the original scale restores the original pan exactly (round-trip, no drift)', (() => {
+    const zoomedIn = BIM._zoomAnchor(250, 180, 1, 3, 5, 5);
+    const back = BIM._zoomAnchor(250, 180, 3, 1, zoomedIn.panX, zoomedIn.panY);
+    return Math.abs(back.panX - 5) < 1e-9 && Math.abs(back.panY - 5) < 1e-9;
+  })());
+  ok('a zoom with no change in zoom level is a no-op on pan', (() => {
+    const r = BIM._zoomAnchor(400, 300, 2, 2, 17, -9);
+    return r.panX === 17 && r.panY === -9;
+  })());
+
+  console.log('\n[25] Drone provenance on panoramas (brief 6C / Phase 6)');
+  const panoSql6 = fs.readFileSync(panoMigrationFile, 'utf8');
+  ok('panoramas.source column declared, mirroring reconstruction_requests.video_source',
+     /source\s+text default 'ground'/.test(panoSql6));
+  ok('panoramas.source is folded into supabase-schema.sql', fs.readFileSync(schemaFile, 'utf8').includes("source          text default 'ground', -- 'ground' | 'drone'"));
+  ok('the capture form offers a Ground/Drone source select', /id="pano-c-source"/.test(pnjs) && /Drone \(aerial\)/.test(pnjs));
+  ok('the source value is threaded into the saved row', /source: \$\('pano-c-source'\)\.value/.test(pnjs));
+  ok('the insert is tolerant of the source column not being migrated yet (retries without it)',
+     /delete row\.source/.test(pnjs));
+  ok('a drone-sourced panorama shows a Drone badge in the gallery, same convention as the 3D request list',
+     /pano-src.*Drone-sourced footage/.test(pnjs));
+  ok('reconstruction_requests already had video_source (ground/drone) before this pass — Phase 6 extends the SAME field name convention to panoramas',
+     /video_source\s+text default 'ground'/.test(fs.readFileSync(reconMigrationFile, 'utf8')));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

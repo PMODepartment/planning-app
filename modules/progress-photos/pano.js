@@ -131,7 +131,8 @@ window.PANO = (function () {
           (p.stitch_quality === 'poor' ? '<span class="pano-badge pano-badge-warn" title="Some frames did not stitch cleanly — consider re-capturing">Low confidence</span>' : '') +
         '</div>' +
         '<div class="pano-meta">' +
-          '<div class="pano-loc">' + esc(p.location || 'Unassigned') + '</div>' +
+          '<div class="pano-loc">' + esc(p.location || 'Unassigned') +
+            (p.source === 'drone' ? ' <span class="pano-src" title="Drone-sourced footage">Drone</span>' : '') + '</div>' +
           '<div class="pano-date">' + esc(Fmt.date(p.taken_at)) + (p.activity_name ? ' · ' + esc(p.activity_name) : '') + '</div>' +
         '</div>' +
         '<div class="pano-acts">' +
@@ -320,6 +321,11 @@ window.PANO = (function () {
           '</select></div>' +
         '<div class="pd-field"><label>Capture date</label>' +
           '<input class="pd-input" type="date" id="pano-c-date" value="' + new Date().toISOString().slice(0, 10) + '" /></div>' +
+        '<div class="pd-field"><label>Source</label>' +
+          '<select class="pd-select" id="pano-c-source">' +
+            '<option value="ground">Ground (staff phone)</option>' +
+            '<option value="drone">Drone (aerial)</option>' +
+          '</select></div>' +
         '<div class="pano-capturearea">' +
           '<p class="pp-hint">Stand at the location and slowly spin around while recording (optionally ' +
           'tilt up/down once), OR upload a walkthrough video recorded earlier.</p>' +
@@ -387,9 +393,16 @@ window.PANO = (function () {
           project_id: pid, created_by: uid,
           location_values: combo ? combo.values : {}, location: combo ? combo.label : null,
           pano_url: path, frame_count: frames.length,
-          stitch_quality: result.quality, taken_at: date
+          stitch_quality: result.quality, taken_at: date,
+          source: $('pano-c-source').value
         };
         var ires = await sb().from(T_PANO).insert(row);
+        if (ires.error && /column .*source.* does not exist|schema cache/i.test(ires.error.message || '')) {
+          // Phase 6's `source` column may not be migrated yet — retry without
+          // it rather than losing the whole capture over one optional field.
+          delete row.source;
+          ires = await sb().from(T_PANO).insert(row);
+        }
         if (ires.error) throw ires.error;
         m.close();
         UI.toast('Panorama saved' + (result.quality === 'poor' ? ' — some frames matched poorly; consider re-capturing' : ''),
@@ -551,6 +564,16 @@ window.PANO = (function () {
     _syncTools: syncTools,
     // Exposed for the client-side calibration/measurement work (Phase 5),
     // which needs to read a project's saved panoramas without a second fetch.
-    list: function () { return panoramas.slice(); }
+    list: function () { return panoramas.slice(); },
+    // Opens a specific panorama's viewer by id — used by the Floor Plan pin
+    // navigator (bim.js), which may open this before the 360° screen itself
+    // has ever loaded (so `panoramas` here could be empty; openViewer already
+    // does its own byId lookup via panoById, which reads this closure's own
+    // `panoramas` array — if that's empty because this screen was never
+    // visited, load() is called first so the lookup has something to find).
+    open: async function (id) {
+      if (!panoramas.length) await load();
+      openViewer(id);
+    }
   };
 })();
