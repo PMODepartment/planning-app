@@ -109,9 +109,12 @@
 .pp-grid-head, .pp-row {
   display: grid;
   /* last column holds up to 4 row-action buttons (download/view/edit/delete):
-     4×27px + gaps + padding ≈ 150px, so 118px clipped the delete button. */
-  grid-template-columns: 120px minmax(180px, 1.4fr) 150px 150px 160px 120px 158px;
-  min-width: 1016px; align-items: center;
+     4×27px + gaps + padding ≈ 150px, so 118px clipped the delete button.
+     Leading 34px column added for the batch-select checkbox (follow-up
+     feedback item 5) — the header/row column-count-must-match rule this
+     module already keeps (see the comment at listHTML's head markup). */
+  grid-template-columns: 34px 120px minmax(180px, 1.4fr) 150px 150px 160px 120px 158px;
+  min-width: 1050px; align-items: center;
 }
 .pp-grid-head {
   position: sticky; top: 0; z-index: 2;
@@ -140,6 +143,9 @@
 .pp-row { border-bottom: 1px solid var(--pd-line); }
 .pp-row:last-child { border-bottom: 0; }
 .pp-row:hover { background: var(--pd-bg); }
+.pp-row.pp-selrow { background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
+.pp-selcell { display: flex; align-items: center; justify-content: center; }
+.pp-selcell input, .pp-cardsel input { width: 16px; height: 16px; cursor: pointer; }
 .pp-cell {
   padding: 8px 10px; font-size: 13px; color: var(--pd-ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -180,9 +186,18 @@
    (2026-08-28 owner feedback). Details + download/view/edit/delete all live in
    the lightbox, opened by clicking the tile. */
 .pp-card {
-  margin: 0; background: var(--pd-card);
+  position: relative; margin: 0; background: var(--pd-card);
   border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
   overflow: hidden; display: flex; flex-direction: column;
+}
+.pp-card.pp-selrow { border-color: var(--pd-red); }
+/* Batch-select checkbox overlay (follow-up feedback item 5) — top-left
+   corner of the tile, above the photo, not inside the clickable <img> so it
+   never triggers the lightbox open. */
+.pp-cardsel {
+  position: absolute; top: 6px; left: 6px; z-index: 1;
+  background: rgba(0, 0, 0, .55); border-radius: 3px; padding: 3px;
+  display: flex; align-items: center; justify-content: center;
 }
 .pp-cardimg { position: relative; background: var(--pd-bg); }
 .pp-cardphoto {
@@ -364,34 +379,22 @@
 .pp-addworksbtn { margin-top: 6px; font-size: 12.5px; padding: 5px 10px; }
 
 /* ============================================================================
-   Today's Rounds (streamlined repeat-visit capture — Phase 1)
+   Batch select bar (Gallery follow-up feedback item 5)
+   ⚠️ Today's Rounds (the feature this block was originally built for) was
+   removed entirely in Batch C (2026-08-29) — index.html/module.js's Rounds
+   markup and functions are gone, but this CSS rule survived because its
+   shape (a count + a row of action buttons) is EXACTLY what the new Gallery
+   batch-select bar needed, so it's reused rather than rebuilt. The other
+   Rounds-only rules that used to sit here (.pp-round-row/-chk/-thumb/-info/
+   -loc/-act/-last, plus their phone overrides below) had no such second use
+   and are deleted along with the feature.
    ============================================================================ */
-.pp-round-sec {
-  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--pd-muted); margin: 16px 4px 8px;
-}
-.pp-round-sec:first-child { margin-top: 4px; }
 .pp-selbar {
   display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600;
   color: var(--pd-ink); padding: 10px 12px; margin-bottom: 10px;
   background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card));
   border: 1px solid var(--pd-red); border-radius: var(--pd-radius);
 }
-.pp-round-row {
-  display: flex; align-items: center; gap: 12px; padding: 9px 10px;
-  border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  background: var(--pd-card); margin-bottom: 6px;
-}
-.pp-round-chk { width: 16px; height: 16px; flex: none; }
-.pp-round-thumb {
-  width: 62px; height: 44px; object-fit: cover; border-radius: 3px; flex: none;
-  border: 1px solid var(--pd-line); background: var(--pd-bg);
-  display: flex; align-items: center; justify-content: center; color: var(--pd-muted);
-}
-.pp-round-info { flex: 1 1 auto; min-width: 0; }
-.pp-round-loc { font-size: 13.5px; font-weight: 600; color: var(--pd-ink); }
-.pp-round-act { font-size: 12px; color: var(--pd-red); margin-top: 1px; }
-.pp-round-last { font-size: 12px; color: var(--pd-muted); margin-top: 1px; }
 
 /* ============================================================================
    PPR Presentations (the "View PPRs" screens)
@@ -576,6 +579,74 @@
 .ppr-capdate { font-size: 13.5px; color: var(--pd-ink); }
 .ppr-captxt { font-style: italic; font-size: 12.5px; color: var(--pd-muted); margin-top: 2px; }
 .ppr-slideacts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+/* Edit/Delete PRESENTATION, relocated into the slidehead (follow-up feedback
+   item 1 moved the row's own icons to Download/Preview/Archive only). */
+.ppr-hspacer { margin-left: auto; gap: 3px; }
+
+/* Shared-location tile (follow-up feedback items 3/4): one line above the
+   pair when both photos are at the same place, instead of repeating it on
+   each pane's own tags line below. */
+.ppr-sharedloc {
+  display: flex; align-items: center; gap: 6px; justify-content: center;
+  font-size: 12.5px; font-weight: 600; color: var(--pd-ink); margin: -4px 0 12px;
+}
+.ppr-sharedloc span[data-ico] { color: var(--pd-red); }
+
+/* Presentation Download picker (item 1) */
+.ppr-fmtchoices { display: flex; flex-direction: column; gap: 8px; }
+.ppr-fmtchoices button {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 10px 12px; width: 100%; box-sizing: border-box;
+}
+.ppr-fmtchoices small { display: block; color: var(--pd-muted); font-weight: 400; font-size: 11.5px; }
+
+/* Read-only Preview modal — reuses the export markup verbatim (see
+   openPreviewModal), so this just needs to contain it without the export's
+   own body{margin:0} escaping into the surrounding app chrome. */
+.ppr-previewbox { max-height: 74vh; overflow-y: auto; }
+
+/* "Show all locations" override (item 9) */
+.ppr-allloc { display: block; font-size: 12px; color: var(--pd-muted); margin: 4px 0 8px; }
+.ppr-allloc input { margin-right: 5px; }
+
+/* Thumbnail-grid photo picker (18-item list item 6 — replaces the old plain
+   <select>), shared by the slide form and the copy wizard. */
+.ppr-pickgrid {
+  display: grid; gap: 10px; margin-bottom: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  max-height: 420px; overflow-y: auto;
+}
+.ppr-pickitem {
+  display: flex; flex-direction: column; text-align: left; padding: 0;
+  cursor: pointer; background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); overflow: hidden;
+}
+.ppr-pickitem:hover, .ppr-pickitem.sel { border-color: var(--pd-red); }
+.ppr-pickitem img { width: 100%; height: 90px; object-fit: cover; display: block; background: var(--pd-bg); }
+.ppr-picknoimg {
+  width: 100%; height: 90px; display: flex; align-items: center; justify-content: center;
+  color: var(--pd-muted); background: var(--pd-bg);
+}
+.ppr-pickcap { padding: 5px 7px; font-size: 11px; color: var(--pd-muted); line-height: 1.35; }
+.ppr-pickcap .d { font-weight: 700; color: var(--pd-ink); display: block; }
+
+/* The "photo chosen" button that replaces the old <select> once a photo is
+   picked — a bigger thumbnail + its own tags, since this is now the primary
+   way a planner confirms what a slide will show before saving. */
+.ppr-pickchosen {
+  display: flex; gap: 10px; align-items: center; text-align: left;
+  padding: 8px; width: 100%; box-sizing: border-box; cursor: pointer;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+}
+.ppr-pickchosen:hover { border-color: var(--pd-red); }
+.ppr-pickchosen img { width: 78px; height: 58px; object-fit: cover; border-radius: 3px; flex: 0 0 auto; background: var(--pd-bg); }
+.ppr-pickchosen span { font-size: 12px; color: var(--pd-muted); line-height: 1.4; }
+.ppr-pickchosen em { color: var(--pd-red); font-style: normal; font-weight: 600; }
+
+/* Copy-presentation wizard (item 6) */
+.ppr-wizstep { font-size: 12px; color: var(--pd-muted); margin: 0 0 10px; text-align: center; }
+.ppr-wizpane { display: flex; flex-direction: column; gap: 6px; }
+.ppr-wizpane .ppr-img { max-height: 220px; object-fit: contain; }
 
 /* ---- Panoramic Capture (brief Section 6 / Phase 3) ----------------------- */
 .pano-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
@@ -703,6 +774,7 @@
   .pp-group { min-width: 0; padding: 10px; }
 
   .pp-row {
+    position: relative;
     grid-template-columns: 104px minmax(0, 1fr);
     column-gap: 12px; row-gap: 3px;
     min-width: 0; padding: 10px; align-items: start;
@@ -711,7 +783,15 @@
      be >= the number of stacked cells (6); extra rows collapse harmlessly. */
   .pp-row .pp-thumbcell { grid-column: 1; grid-row: 1 / span 6; padding: 0; }
   .pp-row .pp-thumb { width: 104px; height: 78px; }
-  .pp-row .pp-cell:not(.pp-thumbcell) {
+  /* The batch-select checkbox overlays the thumbnail's corner instead of
+     joining the stacked label rows — it has no data-l value to label it, so
+     stacking it there would just be an unexplained checkbox floating alone. */
+  .pp-row .pp-selcell {
+    position: absolute; top: 16px; left: 16px; z-index: 1; padding: 0;
+    grid-column: unset; grid-row: unset;
+  }
+  .pp-row .pp-selcell input { width: 22px; height: 22px; }
+  .pp-row .pp-cell:not(.pp-thumbcell):not(.pp-selcell) {
     grid-column: 2; padding: 0; font-size: 12.5px;
     white-space: normal; overflow: visible; text-overflow: clip;
   }
@@ -740,10 +820,5 @@
 
   .pp-gallery { grid-template-columns: 1fr; gap: 12px; }
 
-  /* Rounds: touch-sized checkbox/capture button, thumb readable at 40px+ */
-  .pp-round-row { flex-wrap: wrap; }
-  .pp-round-chk { width: 22px; height: 22px; }
-  .pp-round-info { flex: 1 1 100%; order: 3; }
-  .pp-round-row .pd-btn { min-height: 40px; }
   .pp-selbar { flex-wrap: wrap; }
 }

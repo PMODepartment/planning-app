@@ -14,6 +14,7 @@ const reconMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-
 const submitFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'submit-reconstruction', 'index.ts');
 const webhookFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'reconstruction-webhook', 'index.ts');
 const floorPlanMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plans.sql');
+const archiveMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-archive-flag.sql');
 const schemaFile = path.join(__dirname, '..', '..', 'supabase-schema.sql');
 
 let fails = 0, passes = 0;
@@ -291,7 +292,11 @@ ok('insert uses .select() to return the id', /\.insert\(Object\.assign\(data, \{
 console.log('\n[5] Meeting list icons hydrate');
 ok('renderList hydrates its own output', /renderPreview\(\);[\s\S]{0,600}hydrate\(\);\n  \}/.test(pjs));
 ok('empty-state path hydrates too', /hydrate\(\);\n      return;/.test(pjs));
-ok('edit action uses an icon, not a ✎ glyph', /data-act="edit"[\s\S]{0,120}data-ico="pencil"/.test(pjs));
+// Row-level edit/delete are GONE (Batch D follow-up item 1: row actions are
+// Download/Preview/Archive only) — relocated into the opened presentation's
+// own header, still icon-based, never a bare glyph.
+ok('row no longer has an edit action', !/data-act="edit"/.test(pjs));
+ok('relocated presentation edit/delete use icons, not glyphs', /ppr-pres-edit[\s\S]{0,80}data-ico="pencil"/.test(pjs) && /ppr-pres-del[\s\S]{0,120}data-ico="trash"/.test(pjs));
 
 console.log('\n[6] Key plan is per photo, not per slide');
 ok('migration adds progress_photos.key_plan_url', /alter table progress_photos add column if not exists key_plan_url text/.test(fs.readFileSync(migrationFile, 'utf8')));
@@ -308,18 +313,30 @@ ok('slide form has no location field', !/ppr-s-loc"/.test(pjs));
 ok('after-photo picker has + Add photo', /ppr-s-after-add/.test(pjs));
 ok('before-photo picker has + Add photo', /ppr-s-before-add/.test(pjs));
 ok('inline add calls openUploadForPicker', /ProgressPhotos\.openUploadForPicker/.test(pjs));
-ok('picked photo tags echoed read-only', /function paintInfo/.test(pjs));
+// paintInfo()'s plain-<select>-echo was replaced by a thumbnail PICKER
+// (18-item list item 6) — pickBtnHTML renders the chosen photo's thumb+tags
+// directly on the picker button, so there's no separate read-only echo box
+// to paint any more.
+ok('picked photo shows as a thumbnail button, not a plain <select>', /function pickBtnHTML/.test(pjs) && !/function paintInfo/.test(pjs));
+// ⚠️ Matched on the exact old signature, not a bare /function photoOptions/ —
+// that substring also matches the unrelated, still-live photoOptionsFor()
+// (Report Templates' baseline picker), which would make this a false FAIL.
+ok('the old plain <select> photo list is gone', !/function photoOptions\(sel\)/.test(pjs));
 
 console.log('\n[9] Before/after may be different locations');
-ok('pane() reads each photo\'s own tags', /var tags = ph \? \[ph\.trade, ph\.works, ph\.location\]/.test(pjs));
+ok('pane() reads each photo\'s own trade/works/location', /var fields = ph \? \[ph\.trade, ph\.works, hideLocation \? null : ph\.location\]/.test(pjs));
 ok('slide-level meta row no longer shows location', !/ppr-meta[\s\S]{0,400}<label>Location<\/label>/.test(pjs));
 ok('panes are labelled Previous/Current (2026-08-29 feedback item 7 — was Before/After)',
    /ppr-panelabel/.test(pjs) && /'Previous' : 'Current'/.test(pjs));
 
-console.log('\n[10] No before photo → no before caption, photo centered');
+console.log('\n[10] No before photo → no before caption, photo centered; Current is now required (item 9/10)');
 ok('before caption field starts hidden', /id="ppr-s-bcap-field" style="display:none;"/.test(pjs));
-ok('syncBeforeCaption toggles it', /function syncBeforeCaption[\s\S]{0,200}display = has \? '' : 'none'/.test(pjs));
+ok('the before FIELD (not just the caption) starts hidden until Current is picked (item 10)',
+   /id="ppr-s-before-field" style="display:none;"/.test(pjs));
+ok('syncVisibility toggles both the before field and its caption', /function syncVisibility[\s\S]{0,220}display = beforeId \? '' : 'none'/.test(pjs));
 ok('before_caption nulled when no before photo', /before_caption: beforeId \? \(\$\('ppr-s-bcap'\)\.value\.trim\(\) \|\| null\) : null/.test(pjs));
+ok('Current photo is now required to save a slide (was: "at least one of the two")',
+   /if \(!afterId\) \{ UI\.toast\('Pick a current photo for this slide'/.test(pjs));
 ok('single-photo slide uses ppr-pair-single', /ppr-pair ppr-pair-single/.test(pjs));
 ok('ppr-pair-single centers the photo', /\.ppr-pair-single \{[^}]*justify-content: center/.test(css));
 ok('offline export centers single too', /\.pair\.single\{grid-template-columns:minmax\(0,760px\);justify-content:center\}/.test(pjs));
@@ -334,11 +351,18 @@ console.log('\n[12] Clicking a meeting row opens it');
 ok('row onclick calls openPpr', /r\.onclick = function \(\) \{ openPpr\(r\.dataset\.id\); \};/.test(pjs));
 ok('row advertises the action via title', /title="Open this presentation\\'s slides"/.test(pjs));
 
-console.log('\n[13] Copy previous meeting, promoting after → before');
+console.log('\n[13] Copy previous meeting → a WIZARD (follow-up feedback item 6), not an immediate blind copy');
 ok('copy select rendered on new meetings', /ppr-f-copy/.test(pjs));
-ok('copySlidesFrom promotes after into before', /before_photo_id: sl\.after_photo_id \|\| sl\.before_photo_id \|\| null/.test(pjs));
-ok('new after slot left empty', /after_photo_id: null/.test(pjs));
-ok('after caption not carried into the new after', /after_caption: null/.test(pjs));
+ok('choosing a copy source routes to the wizard instead of creating the presentation immediately',
+   /if \(isNew && copyFrom\) \{[\s\S]{0,120}openCopyWizard\(/.test(pjs));
+ok('the OLD immediate copySlidesFrom() is gone', !/function copySlidesFrom/.test(pjs));
+ok('buildCopyDrafts promotes after into before, the same rule copySlidesFrom used',
+   /before_photo_id: s\.after_photo_id \|\| s\.before_photo_id \|\| null/.test(pjs));
+ok('new after slot left empty in the draft', /after_photo_id: null,\n        after_caption: ''/.test(pjs));
+ok('Finish is disabled until every draft has a current photo',
+   /drafts\.some\(function \(d\) \{ return !d\.after_photo_id; \}\)/.test(pjs));
+ok('the presentation row is created inside finish() — never before the wizard completes',
+   /async function finish\(\) \{[\s\S]{0,400}T_PPR\)\s*\n?\s*\.insert/.test(pjs));
 
 console.log('\n[14] Tile view = photo only, actions in the lightbox');
 ok('gallery card has no caption table', !/pp-cardtable/.test(mjs));
@@ -772,6 +796,131 @@ console.log('\n[misc] insert().select() returns the new row id');
      PP._mediaStripMatches({ location_values: {}, taken_at: '2026-03-01', location: 'Tower 1' }));
   ok('_mediaStripItems() runs against the real PANO/RECON closures with no throw, and returns [] before either has loaded anything',
      JSON.stringify(PP._mediaStripItems()) === '[]');
+
+  console.log('\n[27] Deployment plan — Presentations row (Download/Preview/Archive), shared location, PPTX/PDF fixes, wizard, Gallery batch select');
+
+  // --- Migration --------------------------------------------------------
+  const archiveSql = fs.readFileSync(archiveMigrationFile, 'utf8');
+  ok('migration adds archived to all four tables', [
+    'progress_photos', 'ppr_presentations', 'panoramas', 'reconstruction_requests'
+  ].every((t) => new RegExp('alter table ' + t + '\\s+add column if not exists archived boolean default false').test(archiveSql)));
+  ok('supabase-schema.sql carries the archived column at least 4 times (one per table)',
+     (schemaSql.match(/archived\s+boolean default false/g) || []).length >= 4);
+
+  // --- Row actions: Download / Preview / Archive (item 1) ----------------
+  ok('the row no longer has pdf/pptx/open as separate icons', !/data-act="pdf"/.test(pjs) && !/data-act="pptx"/.test(pjs) && !/data-act="open"/.test(pjs));
+  ok('the row has exactly download/preview/archive actions', /data-act="download"/.test(pjs) && /data-act="preview"/.test(pjs) && /data-act="archive"/.test(pjs));
+  ok('download opens a format-choice modal instead of exporting directly', /function openDownloadChoice/.test(pjs) && /data-fmt="html"/.test(pjs) && /data-fmt="pptx"/.test(pjs) && /data-fmt="pdf"/.test(pjs));
+  ok('the format choice dispatches to all three real export functions', /if \(fmt === 'html'\) exportOffline\(p\);/.test(pjs) && /else if \(fmt === 'pptx'\) exportPptx\(p\);/.test(pjs) && /else if \(fmt === 'pdf'\) exportPdf\(p\);/.test(pjs));
+  ok('preview reuses slidesBodyHTML/EXPORT_CSS verbatim, not a re-implementation', /function openPreviewModal[\s\S]{0,700}slidesBodyHTML\(p, s, identityImgs\(s\)\)/.test(pjs));
+  ok('preview does not re-embed images as data URIs — it reuses the already-signed URLs', /function identityImgs[\s\S]{0,220}imgs\[u\] = u;/.test(pjs));
+  ok('icon left-padding on the row (re-confirmed; already shipped in Batch A)', /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
+
+  // --- Archive filter + toggle (item 1) -----------------------------------
+  ok('archived is hidden unless the toggle is on, never both at once', /!!p\.archived !== !!filters\.archived/.test(pjs) && /!!r\.archived !== !!filters\.archived/.test(mjs));
+  ok('index.html has a "Show archived" toggle on both the Presentations and Gallery filter bars', (html.match(/Show archived/g) || []).length === 2);
+  ok('toggling archive is tolerant of the migration not having run yet', /migrations\/2026-08-29-archive-flag\.sql/.test(pjs) && /migrations\/2026-08-29-archive-flag\.sql/.test(mjs));
+  ok('Clear filters does NOT reset the archived toggle — it is a separate view, not a search filter',
+     /filters = \{ from: '', to: '', archived: filters\.archived \};/.test(pjs) &&
+     /filters = \{ from: '', to: '', trade: '', works: '', locValues: \{\}, search: '', archived: filters\.archived \};/.test(mjs));
+
+  // --- Edit/Delete presentation relocated (item 1) ------------------------
+  ok('wirePresActs wires the relocated edit/delete buttons to the same openPprForm/removePpr', /function wirePresActs\(p\)[\s\S]{0,200}openPprForm\(p\)[\s\S]{0,100}removePpr\(p\)/.test(pjs));
+  ok('wirePresActs is called on BOTH the empty-slides and normal render paths (not just one)',
+     (pjs.match(/wireSlideNav\(s\); wirePresActs\(p\);/g) || []).length === 2);
+
+  // --- Shared location tile (items 3/4) — genuinely EXECUTED --------------
+  eq('two photos at the same location share a tile', PPR._sameLocation({ location: 'Tower 1 - L5' }, { location: 'Tower 1 - L5' }), true);
+  eq('different locations do not share a tile', PPR._sameLocation({ location: 'Tower 1 - L5' }, { location: 'Tower 2 - L5' }), false);
+  eq('a blank location on either side never counts as shared', PPR._sameLocation({ location: '' }, { location: '' }), false);
+  eq('sharedLocationOf resolves through both photo ids', PPR._sharedLocationOf({ before_photo_id: null, after_photo_id: null }), '');
+  ok('renderSlides omits the location from each pane when it is shown as one shared tile',
+     /pane\(cur, 'before', !!sharedLoc\)/.test(pjs) && /pane\(cur, 'after', !!sharedLoc\)/.test(pjs));
+  ok('slideFigureHTML (HTML+PDF export) takes the same hideLocation flag', /function slideFigureHTML\(sl, which, imgs, hideLocation\)/.test(pjs));
+  ok('slidesBodyHTML computes the shared location per slide for the exported files too',
+     /var sharedLoc = hasBefore \? sharedLocationOf\(sl\) : '';/.test(pjs) && /class="sharedloc"/.test(pjs));
+  ok('PPTX renders the same shared-location tile (item 4: "apply to all formats")',
+     /var sharedLoc = hasBefore \? sharedLocationOf\(sl\) : '';[\s\S]{0,400}slide\.addText\(sharedLoc,/.test(pjs));
+
+  // --- PPTX vertical centering (item 4) ------------------------------------
+  ok('pane vertical position is now COMPUTED (paneTopFor), not a hardcoded y:0.35/0.75/5.45',
+     /function paneTopFor\(topBand\)/.test(pjs) && !/y: 0\.35,.*y: 0\.75,.*y: 5\.45,/.test(pjs));
+  ok('centering formula centers the pane block in the space below the top band',
+     /Math\.max\(0, \(SLIDE_H - topBand - PANE_H\) \/ 2\)/.test(pjs));
+  (function () {
+    // Genuinely execute the same arithmetic paneTopFor uses (it's a small
+    // closure local to exportPptx, not exported — restated here rather than
+    // adding an export just for this one small formula, since correctness is
+    // easy to eyeball: the pane block must fit entirely within the slide).
+    var SLIDE_H = 7.5, LABEL_H = 0.35, IMG_H = 4.6, CAP_H = 0.9;
+    var PANE_H = LABEL_H + IMG_H + CAP_H;
+    function paneTopFor(topBand) { return topBand + Math.max(0, (SLIDE_H - topBand - PANE_H) / 2); }
+    var top = paneTopFor(0.4);
+    ok('the pane block (label+image+caption) fits within the slide height with no shared-location bar',
+       top >= 0.4 && (top + PANE_H) <= SLIDE_H);
+    var topWithLoc = paneTopFor(0.75);
+    ok('a shared-location bar pushes the pane block down and it still fits',
+       topWithLoc > top && (topWithLoc + PANE_H) <= SLIDE_H);
+  })();
+
+  // --- PDF one-slide-per-A4 fix (item 4) ------------------------------------
+  ok('the page-break rule is no longer trapped inside @media print (the html2canvas capture never matches it there)',
+     !/@media print\{body\{background:#fff\}\.slide\{page-break-after:always/.test(pjs));
+  ok('break-after/page-break-after now apply unconditionally, with break-inside:avoid alongside them',
+     /\.slide\{break-inside:avoid;page-break-inside:avoid\}/.test(pjs) &&
+     /\.slide:not\(:last-of-type\)\{break-after:page;page-break-after:always\}/.test(pjs));
+  ok('jsPDF format is still A4, landscape, mm units (unchanged)', /jsPDF: \{ unit: 'mm', format: 'a4', orientation: 'landscape' \}/.test(pjs));
+
+  // --- Copy wizard (item 6) — genuinely EXECUTED ---------------------------
+  eq('buildCopyDrafts promotes each source slide\'s current photo into the new previous slot',
+     PPR._buildCopyDrafts([
+       { after_photo_id: 'pB', before_photo_id: 'pA', after_caption: 'June shot', before_caption: 'May shot' },
+       { after_photo_id: 'pC', before_photo_id: null, after_caption: 'June only', before_caption: null }
+     ]).map((d) => d.before_photo_id), ['pB', 'pC']);
+  eq('every draft starts with NO current photo — the gap the wizard must close before saving',
+     PPR._buildCopyDrafts([{ after_photo_id: 'pB' }]).every((d) => d.after_photo_id === null), true);
+  eq('slide numbers are resequenced from 1', PPR._buildCopyDrafts([{}, {}, {}]).map((d) => d.slide_no), [1, 2, 3]);
+  ok('a source presentation with zero slides skips the wizard entirely (same as "start empty")',
+     /if \(!src\.length\) \{[\s\S]{0,150}createPresentationPlain\(newData\);/.test(pjs));
+
+  // --- Previous/Current eligibility filter (items 5/9) — genuinely EXECUTED --
+  const pJun = { id: 'jun', location: 'Tower 1', taken_at: '2026-06-01' };
+  const pMayA = { id: 'mayA', location: 'Tower 1', taken_at: '2026-05-01' };
+  const pMayB = { id: 'mayB', location: 'Tower 2', taken_at: '2026-05-15' };
+  const pJul = { id: 'jul', location: 'Tower 1', taken_at: '2026-07-01' };
+  const lib = [pJun, pMayA, pMayB, pJul];
+  eq('Previous picker (direction=before): only earlier AND same-location by default',
+     PPR._eligiblePhotos(lib, pJun, 'before', false).map((p) => p.id), ['mayA']);
+  eq('"Show all locations" lifts the location restriction but keeps the date rule',
+     PPR._eligiblePhotos(lib, pJun, 'before', true).map((p) => p.id), ['mayB', 'mayA']);
+  eq('a photo is never offered as its own previous/current', PPR._eligiblePhotos([pJun], pJun, 'before', true), []);
+  eq('Current picker in the wizard (direction=after): only on/after the fixed previous photo',
+     PPR._eligiblePhotos(lib, pMayA, 'after', true).map((p) => p.id), ['jul', 'jun', 'mayB']);
+  eq('no reference photo yet (Current picker with nothing to compare) — every photo is offered',
+     PPR._eligiblePhotos(lib, null, 'before', false).length, 4);
+
+  // --- Thumbnail picker (18-item list item 6) -------------------------------
+  ok('openThumbPicker exists and is reused by both the ordinary slide form and the wizard',
+     /function openThumbPicker\(opts\)/.test(pjs) &&
+     (pjs.match(/openThumbPicker\(\{/g) || []).length >= 2);
+  ok('the picker is a grid of real thumbnails, not a <select>', /class="ppr-pickgrid"/.test(pjs) && /class="ppr-pickitem/.test(pjs));
+  ok('a chosen photo shows as a thumbnail button (pickBtnHTML), not plain text', /function pickBtnHTML\(which, id\)/.test(pjs));
+
+  // --- Gallery batch select (item 5) ---------------------------------------
+  ok('module.js tracks a selection set, scoped to VISIBLE ids for every bulk action',
+     /var selected = \{\};/.test(mjs) && /function visibleSelectedIds\(\)/.test(mjs) &&
+     /var vis = \{\}; visible\(\)\.forEach/.test(mjs));
+  ok('both List and Gallery rows carry a [data-sel] checkbox (one selection set for the whole Gallery screen)',
+     /data-sel="' \+ r\.id \+ '"/.test(mjs) && (mjs.match(/data-sel="/g) || []).length >= 2);
+  ok('the List grid header gained a matching leading column so header/body stay aligned',
+     /<div><\/div><div>Photo<\/div>/.test(mjs));
+  ok('the three batch actions are Download / Add to Presentation / Archive',
+     /pp-sel-download/.test(mjs) && /pp-sel-addppr/.test(mjs) && /pp-sel-archive/.test(mjs));
+  ok('batch archive is tolerant of the pending migration, same as the single-item toggle', /pp-sel-archive'\)\.onclick[\s\S]{0,400}archive-flag\.sql/.test(mjs));
+  ok('index.html has the batch-select bar host, hidden by default', /id="pp-selbar" hidden/.test(html));
+  ok('Add to Presentation calls PPR.addPhotosToPresentation, not a re-implementation of slide-numbering', /PPR\.addPhotosToPresentation\(pprId, photoIds\)/.test(mjs));
+  ok('ppr.js exports addPhotosToPresentation appending AFTER the existing slide count', /var n = slides\(pprId\)\.length;[\s\S]{0,200}slide_no: n \+ i \+ 1,/.test(pjs));
+  ok('ppr.js exports listForPicker, excluding archived presentations from the target list', /listForPicker: function \(\) \{[\s\S]{0,200}!p\.archived/.test(pjs));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

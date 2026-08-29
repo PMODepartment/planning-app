@@ -85,6 +85,7 @@ create table if not exists progress_photos (
   key_plan_url text,                  -- Storage path (progress-photos bucket, <project>/keyplans/).
                                        -- Key plan is per PHOTO, not per PPR slide (migrations/2026-08-28-*.sql):
                                        -- one comparison can pair two photos with different key plans.
+  archived    boolean default false,  -- soft-archive (Gallery batch action, 2026-08-29 follow-up) — never a hard delete
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
@@ -99,6 +100,7 @@ create table if not exists ppr_presentations (
   project_id  text references projects(id),
   ppr_date    date,                  -- PPR meeting date
   description text,                  -- e.g. "PPR ftm of June 2026"
+  archived    boolean default false, -- soft-archive (Presentations-list row action, 2026-08-29 follow-up)
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
@@ -156,6 +158,7 @@ create table if not exists panoramas (
   stitch_quality  text default 'ok',
   taken_at        date,
   source          text default 'ground', -- 'ground' | 'drone' (brief 6C / Phase 6)
+  archived        boolean default false, -- soft-archive (Gallery batch action, 2026-08-29 follow-up)
   created_by      uuid references users(id),
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
@@ -188,6 +191,7 @@ create table if not exists reconstruction_requests (
   result_splat_url      text,
   result_stats          jsonb,
   error_message         text,
+  archived              boolean default false, -- soft-archive (Gallery batch action, 2026-08-29 follow-up)
   created_at            timestamptz default now(),
   updated_at            timestamptz default now()
 );

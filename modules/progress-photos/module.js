@@ -20,12 +20,13 @@ window.ProgressPhotos = (function () {
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
   var view = 'gallery';               // list | gallery — gallery is the default landing view (item 1, 2026-08-29 feedback)
-  var filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '' };
+  var filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '', archived: false };
   var collapsed = {};                // trade -> true
   var urlCache = {};                 // storage path -> signed URL
   var canWrite = false;              // planner+ / admin / super_admin
   var lightboxIds = [], lightboxAt = 0;
   var projectListeners = [];         // PPR screen subscribes; both share one selector
+  var selected = {};                 // id -> true (Gallery batch select, follow-up feedback item 5)
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
   // Locations are read from Project Schedule's real "Location Breakdown" —
@@ -429,8 +430,13 @@ window.ProgressPhotos = (function () {
       if (!el) return;
       el.oninput = el.onchange = function () { filters[k] = this.value; render(); };
     });
+    // Archived (follow-up feedback item 5's "Archive" batch action needs a way
+    // back to what it hid) — not reset by Clear filters, same reasoning as
+    // the Presentations list's own archived toggle: it isn't a search filter,
+    // it's a completely separate view of the same list.
+    if ($('pp-f-archived')) $('pp-f-archived').onchange = function () { filters.archived = this.checked; render(); };
     $('pp-clearfilters').onclick = function () {
-      filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '' };
+      filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '', archived: filters.archived };
       ['from', 'to', 'trade', 'works', 'search'].forEach(function (k) {
         var el = $('pp-f-' + k); if (el) el.value = '';
       });
@@ -440,6 +446,7 @@ window.ProgressPhotos = (function () {
     $('pp-add').onclick = function () { openUpload(); };
     $('pp-refresh').onclick = function () { load(); };
     if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
+    wireSelBar();
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -766,6 +773,9 @@ window.ProgressPhotos = (function () {
   function visible() {
     var q = filters.search.trim().toLowerCase();
     return rows.filter(function (r) {
+      // Archived is hidden unless the toggle is on — same "never both at
+      // once" rule as the Presentations list's own archived filter.
+      if (!!r.archived !== !!filters.archived) return false;
       // A photo now carries MULTIPLE trades/works (2026-08-29 feedback item
       // 2) -- the filter matches if the picked value is ANY of the row's
       // values, checking both the new array column and the legacy singular
@@ -825,16 +835,17 @@ window.ProgressPhotos = (function () {
         '<p>No photos yet for this project.</p>' +
         (canWrite ? '<p class="pp-hint">Use <strong>+ Add photos</strong> to upload the first batch.</p>' : '') +
         '</div>';
-      hydrate(host); return;
+      hydrate(host); refreshSelBar(); return;
     }
     if (!list.length) {
       host.innerHTML = '<div class="pp-empty"><p>No photos match these filters.</p></div>';
-      return;
+      refreshSelBar(); return;
     }
 
     host.innerHTML = (view === 'gallery' ? galleryHTML(list) : listHTML(list));
     hydrate(host);
     wireRows(host);
+    refreshSelBar();
     paintRemote();
   }
 
@@ -920,8 +931,11 @@ window.ProgressPhotos = (function () {
   }
 
   function listHTML(list) {
+    // A leading checkbox column (Gallery batch select, follow-up feedback item
+    // 5) — one more cell in the header AND every row branch below, so the
+    // grid columns stay aligned (this file's own standing rule for its grid).
     var head = '<div class="pp-grid-head">' +
-      '<div>Photo</div><div>Description</div><div>Trade</div><div>Works</div>' +
+      '<div></div><div>Photo</div><div>Description</div><div>Trade</div><div>Works</div>' +
       '<div>Location</div><div>Capture Date</div><div></div></div>';
 
     var body = groupByTrade(list).map(function (g) {
@@ -936,7 +950,9 @@ window.ProgressPhotos = (function () {
         // supplies the headings); at phone width the head is hidden and the row
         // restacks under the thumbnail, where each value needs its own label —
         // module.css renders these via .pp-cell[data-l]::before.
-        return '<div class="pp-row" data-id="' + r.id + '">' +
+        return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
+          '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '"' +
+            (selected[r.id] ? ' checked' : '') + ' /></div>' +
           '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
           '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
           '<div class="pp-cell" data-l="Trade">' + Fmt.esc(tradesOf(r).join(', ') || '—') + '</div>' +
@@ -968,7 +984,9 @@ window.ProgressPhotos = (function () {
         '<div class="pp-gallerygrouphead"><strong>' + Fmt.esc(g.label) + '</strong>' +
           '<span class="pp-groupcount">' + g.items.length + '</span></div>' +
         '<div class="pp-gallery">' + g.items.map(function (r) {
-          return '<figure class="pp-card" data-id="' + r.id + '">' +
+          return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
+            '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '"' +
+              (selected[r.id] ? ' checked' : '') + ' /></span>' +
             '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + '</div>' +
           '</figure>';
         }).join('') + '</div></div>';
@@ -1069,8 +1087,110 @@ window.ProgressPhotos = (function () {
         else if (a === 'del') remove(r);
       };
     });
+    // Batch select (follow-up feedback item 5) — one checkbox per row/tile,
+    // in both List and Gallery views (they're two displays of the same
+    // Gallery screen, so a selection made in one shouldn't be view-specific).
+    Array.prototype.forEach.call(host.querySelectorAll('[data-sel]'), function (cb) {
+      cb.onchange = function () {
+        if (this.checked) selected[this.dataset.sel] = true; else delete selected[this.dataset.sel];
+        var card = this.closest('.pp-row, .pp-card');
+        if (card) card.classList.toggle('pp-selrow', this.checked);
+        refreshSelBar();
+      };
+    });
   }
   function byId(id) { return rows.filter(function (r) { return r.id === id; })[0]; }
+
+  // -------------------------------------------------------- batch select ----
+  // Scoped to the currently VISIBLE (filtered) set, not the raw `selected`
+  // map — a selection made under one filter must not silently act on rows a
+  // since-changed filter no longer shows (Drawing Register's own bulk-select
+  // bar was bitten by exactly this and documents the fix; the same rule
+  // applies here).
+  function visibleSelectedIds() {
+    var vis = {}; visible().forEach(function (r) { vis[r.id] = true; });
+    return Object.keys(selected).filter(function (id) { return vis[id]; });
+  }
+  function refreshSelBar() {
+    var bar = $('pp-selbar'); if (!bar) return;
+    var ids = visibleSelectedIds();
+    bar.hidden = !ids.length;
+    var c = $('pp-selcount'); if (c) c.textContent = ids.length + ' selected';
+  }
+  function wireSelBar() {
+    if ($('pp-sel-clear')) $('pp-sel-clear').onclick = function () { selected = {}; render(); };
+    if ($('pp-sel-download')) $('pp-sel-download').onclick = async function () {
+      var ids = visibleSelectedIds();
+      for (var i = 0; i < ids.length; i++) {
+        var r = byId(ids[i]); if (r) await download(r);
+        // A small stagger between triggers — several near-simultaneous
+        // programmatic downloads from one click are exactly what some
+        // browsers throttle/block as looking automated.
+        await new Promise(function (res) { setTimeout(res, 300); });
+      }
+    };
+    if ($('pp-sel-archive')) $('pp-sel-archive').onclick = async function () {
+      var ids = visibleSelectedIds();
+      if (!ids.length) return;
+      var res = await sb().from(TABLE).update({ archived: true }).in('id', ids);
+      if (res.error) {
+        if (/column .* does not exist|schema cache/i.test(res.error.message || '')) {
+          UI.toast('Archiving needs a pending migration — run migrations/2026-08-29-archive-flag.sql', 'warn');
+        } else UI.toast(res.error.message, 'error');
+        return;
+      }
+      UI.toast(ids.length + ' photo' + (ids.length === 1 ? '' : 's') + ' archived', 'ok');
+      selected = {};
+      await load();
+    };
+    if ($('pp-sel-addppr')) $('pp-sel-addppr').onclick = function () {
+      var ids = visibleSelectedIds();
+      if (!ids.length) return;
+      openAddToPresentation(ids);
+    };
+  }
+
+  // Picks (or creates) a presentation, then adds every selected photo as a
+  // new slide's Current photo via PPR.addPhotosToPresentation — the write
+  // itself lives in ppr.js (the one place that already owns ppr_slides'
+  // shape/numbering), this just supplies which photos and which target.
+  function openAddToPresentation(photoIds) {
+    if (!window.PPR || !PPR.listForPicker) { UI.toast('Presentations are not available right now', 'error'); return; }
+    var list = PPR.listForPicker();
+    var html =
+      '<div class="pd-modal-header"><h3>Add ' + photoIds.length + ' photo' + (photoIds.length === 1 ? '' : 's') +
+        ' to a presentation</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        (list.length
+          ? '<div class="pd-field"><label>Presentation</label>' +
+            '<select class="pd-select" id="pp-a2p-select">' +
+              list.map(function (p) { return '<option value="' + p.id + '">' + Fmt.esc(p.description || p.ppr_date || p.id) + '</option>'; }).join('') +
+            '</select></div>'
+          : '<p class="pp-hint">No presentations yet — one will be created.</p>') +
+        '<div class="pd-field"><label>Or create a new presentation, dated</label>' +
+          '<input class="pd-input" type="date" id="pp-a2p-newdate" value="' + new Date().toISOString().slice(0, 10) + '" /></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp-a2p-go">Add</button></div>';
+    var m = openModal(html, 480);
+    $('pp-a2p-go').onclick = async function () {
+      this.disabled = true;
+      var pprId = $('pp-a2p-select') ? $('pp-a2p-select').value : '';
+      if (!pprId) {
+        var date = $('pp-a2p-newdate').value;
+        if (!date) { UI.toast('Pick a date for the new presentation', 'warn'); this.disabled = false; return; }
+        var ires = await sb().from('ppr_presentations').insert({ ppr_date: date, project_id: pid, created_by: uid }).select();
+        if (ires.error) { UI.toast(ires.error.message, 'error'); this.disabled = false; return; }
+        pprId = ires.data && ires.data[0] && ires.data[0].id;
+      }
+      if (!pprId) { UI.toast('Could not determine a presentation to add to', 'error'); this.disabled = false; return; }
+      var res = await PPR.addPhotosToPresentation(pprId, photoIds);
+      if (!res.ok) { UI.toast(res.error || 'Could not add photos', 'error'); this.disabled = false; return; }
+      m.close();
+      UI.toast(res.count + ' photo' + (res.count === 1 ? '' : 's') + ' added as new slides', 'ok');
+      selected = {}; render();
+    };
+  }
 
   // ------------------------------------------------------------- lightbox ---
   function openLightbox(id) {

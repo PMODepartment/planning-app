@@ -2,6 +2,187 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Deployment plan: Presentations row rework, shared location, PPTX/PDF fixes, copy wizard, Gallery batch select (2026-08-29)
+
+Owner: *"Please already do the Deployment Plan"* with six additional numbered items folded in
+verbatim (Presentations row → Download/Preview/Archive with a format choice; icon padding;
+shared-location tile applied to all three export formats plus PPTX centering and PDF one-slide-
+per-A4; Gallery multi-select + batch actions; a step-through copy wizard that can never save a
+Previous without a Current). This is the full **Batch D** scope from the standing plan
+(`elegant-mixing-mitten.md`) plus the Batch C follow-up items that were deferred to it. **Run
+`migrations/2026-08-29-archive-flag.sql`.**
+
+### Archive (new, shared by Presentations + Gallery)
+
+`archived boolean default false` added to `progress_photos`, `ppr_presentations`, `panoramas`,
+`reconstruction_requests` — the SAME column name/shape on all four, deliberately, so a future
+unified Gallery view could treat them identically. ⚠️ **Soft-delete, not a UI convenience**: the
+FKs `ppr_slides.before_photo_id`/`after_photo_id` are `on delete set null`, so a *hard* delete of a
+cited photo already silently orphans a slide — archiving is the alternative that keeps the record
+intact while getting it out of the everyday view. Hidden by default, both filter bars gain a
+**"Show archived"** toggle that is a separate VIEW, not a search filter — `Clear filters` never
+resets it (same reasoning as the Presentations list's own date filters staying independent of the
+Photos/Presentations screen split). Every archive-toggling call is tolerant of the migration not
+having run yet, warning by name rather than failing opaquely.
+
+### Presentations row: Download / Preview / Archive only (item 1)
+
+The row's six icons (download/pdf/pptx/open/edit/delete) become exactly three. Row-click still
+opens the presentation (unchanged).
+- **Download** opens a small format-choice modal (`openDownloadChoice`) — HTML / PPTX / PDF — that
+  dispatches to the SAME three export functions as before; nothing about the exports' own logic
+  changed by this.
+- **Preview** (`openPreviewModal`) reuses `slidesBodyHTML`/`EXPORT_CSS` **verbatim** — the same
+  markup the HTML/PDF exports produce — rendered in-app rather than downloaded. ⚠️ Deliberately
+  **not** `collectSlideImages`'s downscaled data-URI embedding: a preview stays on screen, so the
+  already-cached SIGNED URLs serve directly via a new `identityImgs()` (an identity map,
+  `imgs[url] === url`) at zero extra fetch cost — only a real export needs the file to be
+  self-contained.
+- **Archive** (`toggleArchive`) is direct, no confirm modal — reversible with one more click,
+  unlike Delete.
+- **Edit/Delete presentation** are NOT removed — relocated into the opened presentation's own
+  header (`renderSlides()`'s `.ppr-slidehead`, via new `wirePresActs`), reachable exactly where a
+  planner already is when they'd want to rename/re-date or remove one. `openPprForm`/`removePpr`
+  are unchanged; only where their buttons live moved.
+- Icon left-padding (item 2) was **already shipped in Batch A** (`.ppr-acts { padding-left: 10px
+  }`) — re-confirmed rather than re-applied.
+
+### Shared location tile, on screen AND in all three exports (items 3/4)
+
+When a slide's Previous and Current photos resolve to the **same** `location` string, it now
+renders **once**, above the pair, instead of once per pane — `sharedLocationOf(sl)` (exact string
+equality, both non-blank) is the single source of truth, read by:
+- the live editor (`renderSlides()` → `pane(sl, which, hideLocation)`),
+- the offline HTML + PDF export (`slidesBodyHTML()` → `slideFigureHTML(sl, which, imgs,
+  hideLocation)`, a new `.meta .sharedloc` line in `EXPORT_CSS`),
+- the PPTX export (`exportPptx()`'s per-slide loop → `pptxPane(..., hideLocation)`, a centered
+  `slide.addText` above both panes).
+
+⚠️ Trade/Works are **not** collapsed the same way — only "the location matches" was asked for, and
+those two are not required to match between Previous and Current.
+
+**PPTX vertical centering.** Horizontal was already effectively centered (the two 6.1"-wide panes
+plus their gap already sum to within 0.03" of the 13.33" slide width — not touched). Vertical was
+not: label/image/caption sat at fixed `y:0.35/0.75/5.45`, leaving ~1.15" of dead space at the
+bottom on every slide. Replaced with `paneTopFor(topBand)`, which centers the whole
+label+image+caption block (`PANE_H` = 5.85") in whatever space is left below the top band — the
+"Slide N of M" row alone (0.4"), or that plus the shared-location line (0.75") when one is shown —
+so a slide **with** a shared-location bar and one **without** both end up visually balanced instead
+of one reading top-heavy.
+
+**PDF one-slide-per-A4, the actual bug.** ⚠️ The existing `.slide{page-break-after:always}` rule
+sat **inside `@media print`**, and html2pdf's `pagebreak:{mode:['css']}` reads
+`getComputedStyle()` during a **normal (screen-context) html2canvas capture** — which never
+matches `@media print`, so the rule was **silently inert** the whole time this export has existed.
+Moved the rule out (unconditional — page-break properties have zero effect on-screen either way,
+so nothing about the live app changed), added `break-inside:avoid` (stops one slide's content being
+sliced across a page boundary purely by height), and scoped the break to `:not(:last-of-type)` so
+the final slide doesn't leave a trailing blank page. `jsPDF: {unit:'mm', format:'a4',
+orientation:'landscape'}` was already correct and is unchanged.
+
+### Copy wizard — a Previous can never be saved without a Current (item 6)
+
+The old `copySlidesFrom()` inserted every copied slide with `after_photo_id: null` immediately —
+exactly the state the owner said must never be allowed. **Removed entirely**, replaced by:
+- `buildCopyDrafts(src)` — the SAME before-photo promotion rule (`before_photo_id:
+  s.after_photo_id || s.before_photo_id || null`), now building **in-memory drafts**, not DB rows.
+- `openCopyWizard(newData, fromPprId)` — steps through the drafts one at a time. Each step shows
+  the (already-fixed) Previous photo read-only and requires picking a Current photo — via
+  `openThumbPicker`, filtered to photos captured **on/after** the fixed Previous (`eligiblePhotos`,
+  `direction:'after'`) — before **Next** unlocks; **Finish** (last step only) is disabled until
+  every draft has a current photo.
+- ⚠️ **`openPprForm`'s save handler no longer creates the presentation row when a copy source is
+  chosen** — it closes its own modal and hands off to the wizard instead. The presentation row and
+  its finished slides are inserted **together, inside `finish()`, only once every slide is
+  complete**. Cancelling the wizard at any point — including before the first photo is picked —
+  leaves **nothing behind**: no orphan presentation, no half-copied slides. (Choosing "start empty"
+  is unaffected — that path still creates the presentation immediately, as before.)
+- Non-blocking duplicate-current warning (18-item list item 11) applies inside the wizard too —
+  checked against the OTHER drafts, not just already-saved slides.
+
+### Thumbnail photo pickers, Previous/Current rules (18-item list items 5/6/9/10/11)
+
+The plain `<select>` (`photoOptions`) is gone, replaced by `openThumbPicker` — a searchable grid of
+real photo thumbnails (`.ppr-pickgrid`/`.ppr-pickitem`), shared by the ordinary slide form AND the
+copy wizard's Current picker. A chosen photo shows as a thumbnail button (`pickBtnHTML`) rather
+than text.
+- **Current is now REQUIRED** on every slide (was: "at least one of the two"); **Previous is
+  hidden entirely** until Current is picked (item 10), via `syncVisibility()` (folds the old
+  `syncBeforeCaption` into one function that also gates the whole Previous field, not just its
+  caption).
+- **Previous defaults to the SAME location as Current and to photos captured strictly earlier**
+  (`eligiblePhotos(refPhoto, 'before', allowAllLocations)`) — the location half is liftable via a
+  **"Show all locations"** checkbox; the date half is a hard rule (a "previous" that comes after
+  the "current" is a fact, not a preference). The reference photo itself is always excluded from
+  its own candidate list.
+- **Changing Current re-validates the already-picked Previous** — if it no longer qualifies (wrong
+  side of the new date, or a different location with the override off), it's cleared with a toast
+  explaining why, rather than silently left as an invalid pairing.
+- **Non-blocking duplicate-Current warning** (item 11): picking a Current already used as another
+  slide's Current in the same presentation toasts a warning but never blocks the save.
+- `reqMark()` had to be **restated locally in ppr.js** — it's private to module.js's own closure
+  (same "each independently-loaded file keeps its own copy of small helpers" convention already
+  used for `allLocationCombos()`); using it un-declared would have thrown at render time. Caught
+  before shipping, not after.
+
+### Gallery batch select: Download / Add to Presentation / Archive (item 5)
+
+`selected` (id → true) added to `module.js`, checkboxes on both List (`.pp-selcell`, a new leading
+grid column) and Gallery (`.pp-cardsel`, corner overlay) rows — **one selection set for the whole
+Gallery screen**, not per-view, since List/Gallery are two displays of the same underlying photos.
+- `visibleSelectedIds()` scopes every batch action to the **currently filtered** set, not the raw
+  `selected` map — the same correctness rule Drawing Register's own bulk-select bar already
+  documents (a selection made under one filter must not silently act on rows a since-changed filter
+  no longer shows).
+- **Download** loops `download(r)` (the existing single-photo function) with a 300ms stagger — a
+  burst of near-simultaneous programmatic downloads from one click is exactly what some browsers
+  throttle or block as automated.
+- **Archive** is a bulk `update({archived:true}).in('id', ids)`, tolerant of the pending migration.
+- **Add to Presentation** (`openAddToPresentation`) picks an existing presentation (via a new
+  `PPR.listForPicker()`, archived ones excluded) or creates a new one, then calls a new
+  `PPR.addPhotosToPresentation(pprId, photoIds)` — each selected photo becomes a **new slide's
+  Current photo**, Previous left blank (exactly like an ordinary "+ Add slide" with nothing picked
+  to compare against), slide numbering continuing from the presentation's existing count. The write
+  lives in `ppr.js` (the one place that already owns `ppr_slides`' shape), not duplicated in
+  `module.js`.
+- **List's grid header gained a matching leading column** (`<div></div>`) so header/body cell
+  counts stay aligned — this file's own standing rule for its grid, restated because it's exactly
+  the kind of thing that silently drifts.
+- ⚠️ **CSS reuse, not a fresh component:** `.pp-selbar` already existed — built for the now-deleted
+  Today's Rounds feature's own "N selected — Start walkthrough" bar. Its shape (a count + a row of
+  buttons) was exactly what this needed, so it's reused rather than rebuilt; the Rounds-only rules
+  that shared that section (`.pp-round-row/-chk/-thumb/-info/-loc/-act/-last` and their phone
+  overrides) had no such second use and are deleted — cleanup Batch C's own removal pass missed
+  because it only touched `module.js`/`index.html`, not `module.css`.
+
+### Verified
+
+**311/311 checks green** (was 253 after Batch C), including new `[27]` section: structural checks
+for every item above, plus genuine EXECUTION via new test-only hooks (`PPR._sameLocation`,
+`_sharedLocationOf`, `_buildCopyDrafts`, `_eligiblePhotos`) — same convention as `_tradesOf`/
+`_mediaStripMatches` — covering the shared-location match, the copy-wizard's promotion+resequencing
+across multiple source slides, and the Previous/Current date+location eligibility filter across a
+5-photo fixture (same-location-and-earlier, all-locations-lifted, self-excluded, on/after-a-fixed-
+previous, no-reference-photo-yet). The PPTX centering formula was re-executed standalone (not
+exported — a small closure local to `exportPptx`) confirming the pane block fits the slide with and
+without a shared-location bar. Function-diff against the pre-batch commit: **4 lost in `ppr.js`**
+(`copySlidesFrom`, `paintInfo`, `photoOptions`, `syncBeforeCaption` — all superseded, all
+intentional), **24 added**; `module.js` **0 lost, 4 added**. 0 NUL bytes across every touched file
+(verified with a raw byte count). CSS braces balanced (312/312). 0 duplicate `id=` attributes in
+`index.html`.
+
+⚠️ **Not verified signed in** — no live Supabase login in this environment, same standing caveat as
+the rest of this module. In particular: the thumbnail picker's real rendering, the copy wizard's
+full click-through, the PPTX/PDF file output (the centering math and the break-CSS fix are verified
+analytically, not by opening a generated file in PowerPoint/a PDF viewer), and the Gallery batch
+actions against real rows are all untested against a live project.
+
+⚠️ **Still open, not attempted in this pass**: Batches E through H of the standing plan (per-photo
+key-plan pin + direction capture, the markup/annotation editor, the slide-sorter view, the
+floor-plan map/vertical-stacking views, and top-view image registration), plus the Add-media type
+selector (Photo/Video/360°/3D) and real Video upload support noted as separately-scoped items in
+the 18-item list.
+
 ## 18-item feedback round, Batch C: Rounds removed, 360°/3D folded into Gallery (2026-08-29)
 
 Owner, reviewing Batch A/B in the live tab bar: *"The Rounds, 360, and 3D are still in the tabs.
