@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260827a" />
-  <link rel="stylesheet" href="module.css?v=20260829e" />
+  <link rel="stylesheet" href="module.css?v=20260829i" />
 </head>
 <body>
   <div class="pd-app">
@@ -25,13 +25,14 @@
           <select class="pd-select pp-project" id="pp-project" title="Project"></select>
         </div>
 
-        <!-- Top-level screens (the Power Apps home: View Photos / View PPRs) -->
+        <!-- Top-level screens. Gallery, Presentations, Plans (Batch C,
+             2026-08-29: Rounds removed per owner feedback; 360°/3D folded
+             into Gallery as media types rather than separate tabs — their
+             screens/code stay in the file, just no longer reachable as a
+             top-level tab, since a capture now lives in the unified feed). -->
         <div class="pp-tabs" role="tablist">
           <button class="pp-tab active" data-screen="photos">Gallery</button>
-          <button class="pp-tab" data-screen="rounds">Rounds</button>
           <button class="pp-tab" data-screen="ppr">Presentations</button>
-          <button class="pp-tab" data-screen="pano">360&deg;</button>
-          <button class="pp-tab" data-screen="recon">3D</button>
           <button class="pp-tab" data-screen="bim">Plans</button>
         </div>
 
@@ -50,11 +51,12 @@
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-tmpl-new" title="Create a report template" style="display:none;">+ New template</button>
           <button class="pd-btn pp-tb-labeled" id="ppr-back" title="Back to the presentation list" style="display:none;">
             <span data-ico="arrowLeft" data-ico-size="16"></span> Presentations list</button>
-          <!-- 360° screen tools -->
-          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pano-new" title="Capture a 360° panorama" style="display:none;">+ Capture 360&deg;</button>
+          <!-- 360°/3D capture (folded into Gallery, 2026-08-29 feedback — no
+               longer their own tabs; these buttons now show on the Gallery
+               screen itself, same as every other Gallery tool). -->
+          <button class="pd-btn pp-tb-labeled" id="pano-new" title="Capture a 360° panorama" style="display:none;">+ Capture 360&deg;</button>
           <button class="pd-btn pp-tb-labeled" id="pano-compare-btn" title="Compare two captures over time" style="display:none;">Compare over time</button>
-          <!-- 3D screen tools -->
-          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="recon-new" title="Request a 3D reconstruction" style="display:none;">+ Request 3D scan</button>
+          <button class="pd-btn pp-tb-labeled" id="recon-new" title="Request a 3D reconstruction" style="display:none;">+ Request 3D scan</button>
           <!-- Floor Plan screen tools -->
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="bim-new" title="Upload a floor plan" style="display:none;">+ Upload floor plan</button>
           <button class="pd-btn pp-tb-labeled" id="bim-place" title="Toggle pin-placement mode" style="display:none;">Place pin</button>
@@ -79,6 +81,7 @@
             <select class="pd-select" id="pp-f-trade"><option value="">Filter by Trade</option></select>
             <select class="pd-select" id="pp-f-works"><option value="">Filter by Works</option></select>
             <div class="pp-locfilters" id="pp-f-loclevels"></div>
+            <label class="ppr-allloc"><input type="checkbox" id="pp-f-archived" /> Show archived</label>
             <button class="pp-clear" id="pp-clearfilters" title="Clear all filters" hidden>
               <span data-ico="x" data-ico-size="14"></span>Clear filters</button>
           </div>
@@ -92,17 +95,23 @@
                 <span data-ico="gridView" data-ico-size="15"></span></button>
             </div>
           </div>
-          <div id="pp-view"></div>
-        </div>
-
-        <!-- ================= Today's Rounds (streamlined repeat capture) ================= -->
-        <div id="pp-screen-rounds" hidden>
-          <div class="pp-filters">
-            <span class="pp-filt-ico" data-ico="filter" data-ico-size="15"></span>
-            <input class="pd-input pp-search" id="pp-rounds-search" placeholder="Search schedule zones…" />
-            <span class="pp-hint">Locations come from Project Schedule's Location Breakdown — build it there to populate this list.</span>
+          <!-- Batch select (18-item list follow-up item 5): hidden until at
+               least one tile is selected; module.js fills in the count and
+               wires the three actions. -->
+          <div class="pp-selbar" id="pp-selbar" hidden>
+            <span id="pp-selcount"></span>
+            <button class="pd-btn pd-btn-sm" id="pp-sel-download">Download</button>
+            <button class="pd-btn pd-btn-sm" id="pp-sel-addppr">Add to Presentation</button>
+            <button class="pd-btn pd-btn-sm" id="pp-sel-archive">Archive</button>
+            <button class="pd-btn pd-btn-sm" id="pp-sel-clear">Clear</button>
           </div>
-          <div id="pp-rounds-view"></div>
+          <div id="pp-view"></div>
+          <!-- 360° panoramas + 3D scans, folded into the Gallery screen
+               (2026-08-29 feedback) rather than kept as separate tabs. This
+               strip lists what's already captured; pano.js/recon.js's own
+               capture flows are unchanged and reached via the "+ Capture
+               360°"/"+ Request 3D scan" buttons in the topbar above. -->
+          <div id="pp-media-strip"></div>
         </div>
 
         <!-- ================= PPR Presentations ================= -->
@@ -113,6 +122,7 @@
               <input class="pd-input" type="date" id="ppr-f-from" title="Filter by presentation date start" /></label>
             <label class="pp-datefield">to
               <input class="pd-input" type="date" id="ppr-f-to" title="Filter by presentation date end" /></label>
+            <label class="ppr-allloc"><input type="checkbox" id="ppr-f-archived" /> Show archived</label>
             <button class="pp-clear" id="ppr-clearfilters" title="Clear all filters" hidden>
               <span data-ico="x" data-ico-size="14"></span>Clear filters</button>
           </div>
@@ -148,12 +158,18 @@
   <div class="pp-lightbox" id="pp-lightbox" hidden>
     <div class="pp-lb-tools" id="pp-lb-tools">
       <button class="pp-lb-tool" id="pp-lb-download" title="Download"><span data-ico="download" data-ico-size="16"></span></button>
+      <button class="pp-lb-tool" id="pp-lb-markuptoggle" title="Show/hide markup"><span data-ico="eye" data-ico-size="16"></span></button>
+      <button class="pp-lb-tool" id="pp-lb-markupedit" title="Edit markup"><span data-ico="palette" data-ico-size="16"></span></button>
       <button class="pp-lb-tool" id="pp-lb-edit" title="Edit details"><span data-ico="pencil" data-ico-size="16"></span></button>
       <button class="pp-lb-tool pp-lb-tool-danger" id="pp-lb-delete" title="Delete"><span data-ico="trash" data-ico-size="16"></span></button>
     </div>
     <button class="pp-lb-close" id="pp-lb-close" title="Close (Esc)">×</button>
     <button class="pp-lb-btn pp-lb-prev" id="pp-lb-prev" title="Previous (←)">‹</button>
-    <img class="pp-lb-img" id="pp-lb-img" alt="" />
+    <div class="pp-lb-imgwrap" id="pp-lb-imgwrap">
+      <img class="pp-lb-img" id="pp-lb-img" alt="" />
+      <video class="pp-lb-img" id="pp-lb-video" controls playsinline hidden></video>
+      <canvas class="pp-lb-markup" id="pp-lb-markup-canvas"></canvas>
+    </div>
     <button class="pp-lb-btn pp-lb-next" id="pp-lb-next" title="Next (→)">›</button>
     <div class="pp-lb-cap" id="pp-lb-cap"></div>
   </div>
@@ -183,11 +199,11 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260829e"></script>
-  <script src="ppr.js?v=20260829d"></script>
-  <script src="pano.js?v=20260829c"></script>
-  <script src="recon.js?v=20260829c"></script>
-  <script src="bim.js?v=20260829a"></script>
+  <script src="module.js?v=20260829i"></script>
+  <script src="ppr.js?v=20260829h"></script>
+  <script src="pano.js?v=20260829d"></script>
+  <script src="recon.js?v=20260829d"></script>
+  <script src="bim.js?v=20260829i"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -210,25 +226,35 @@
         });
       }
       function setScreen(s) {
-        var isPpr = s === 'ppr', isRounds = s === 'rounds', isPano = s === 'pano', isRecon = s === 'recon', isBim = s === 'bim';
-        var isPhotos = !isPpr && !isRounds && !isPano && !isRecon && !isBim;
+        // Rounds is gone entirely (2026-08-29 feedback: "Rounds can be
+        // removed"), and 360°/3D no longer have their own tabs either
+        // ("360 and 3D should be incorporated in the Gallery") — Gallery is
+        // now the only screen besides Presentations and Plans, so a stale
+        // `pp_screen` value from before this change (e.g. 'rounds') must NOT
+        // reach here: ProgressPhotos.renderRounds() no longer exists, and
+        // calling it would throw and break the whole page load for anyone
+        // who had Rounds open when this shipped. The restore-list below
+        // filters that out before setScreen is ever called with it.
+        var isPpr = s === 'ppr', isBim = s === 'bim';
+        var isPhotos = !isPpr && !isBim;
         document.getElementById('pp-screen-photos').hidden = !isPhotos;
-        document.getElementById('pp-screen-rounds').hidden = !isRounds;
         document.getElementById('pp-screen-ppr').hidden = !isPpr;
-        document.getElementById('pp-screen-pano').hidden = !isPano;
-        document.getElementById('pp-screen-recon').hidden = !isRecon;
         document.getElementById('pp-screen-bim').hidden = !isBim;
         document.getElementById('pp-screen-title').textContent =
-          isPpr ? 'Presentations' : isRounds ? "Today's Rounds" : isPano ? '360° Panoramas' :
-          isRecon ? '3D Reconstruction' : isBim ? 'Plans' : 'Gallery';
+          isPpr ? 'Presentations' : isBim ? 'Plans' : 'Gallery';
         show(PHOTO_TOOLS, isPhotos);
         // Each module re-asserts its own tools' visibility (role + inner screen).
         PPR._syncTools(isPpr);
-        PANO._syncTools(isPano);
-        RECON._syncTools(isRecon);
+        // pano.js/recon.js's own screens (#pp-screen-pano/#pp-screen-recon)
+        // stay in the DOM, permanently hidden — their load()/render() both
+        // bail out early if their host div is missing, and PANO.ensureLoaded/
+        // RECON.ensureLoaded (called from ProgressPhotos.load()) depend on
+        // that div existing to populate panoramas/requests for the media
+        // strip below. Their capture buttons now show on Gallery itself.
+        PANO._syncTools(isPhotos);
+        RECON._syncTools(isPhotos);
         BIM._syncTools(isBim);
         if (isPhotos) ProgressPhotos._syncChrome();
-        if (isRounds) ProgressPhotos.renderRounds();
         Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
           b.classList.toggle('active', b.dataset.screen === s);
         });
@@ -239,7 +265,7 @@
       });
       var saved = 'photos';
       try { saved = localStorage.getItem('pp_screen') || 'photos'; } catch (e) {}
-      setScreen(['ppr', 'rounds', 'pano', 'recon', 'bim'].indexOf(saved) >= 0 ? saved : 'photos');
+      setScreen(['ppr', 'bim'].indexOf(saved) >= 0 ? saved : 'photos');
     });
   </script>
 </body>

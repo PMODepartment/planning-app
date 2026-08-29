@@ -2,6 +2,574 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Batch G completed: Vertical Stacking for photos (item 16) — and a real Map/Stack wiring bug found while adding it (2026-08-29)
+
+Owner asked "what else is not done" after the Batches E–H push below. Re-checked the standing plan
+item by item rather than trusting the earlier changelog entry, and found **Batch G was only half
+built**: the plan lists TWO deliverables under it — item 15 (the floor-plan Map/clustering view,
+built) and **item 16, a separate Vertical Stacking view for photos, which was never built at all**
+(`grep -in "stack"` across `bim.js`/`module.js` found nothing but an unrelated undo-stack comment).
+No migration.
+
+### The real defect found in the course of adding it — Map was unreachable from a fresh load
+
+⚠️ **`render()`'s Plan-mode branch never called `wireMapView()`.** That function is what wires the
+Plan/Map toggle buttons themselves, plus "Register a top-view photo…" and the "Actual view"
+checkbox — and it was only ever invoked from the `screen2 === 'map'` branch. Since `screen2`
+**defaults to `'plan'`**, the Map button rendered on every fresh page load with **no click handler
+at all**: pressing it did nothing, so Batch G's Map view (and Batch H's Register/Actual-view
+controls) were **completely unreachable through the UI** despite being fully built and
+structurally test-covered. The structural tests passed because they checked the functions *exist*,
+never that every render path actually *calls* them.
+- Fixed by adding the missing `wireMapView();` call to the Plan branch, and factoring the toggle
+  markup into one `viewToggleHTML()` used by all three render branches so it can't drift again.
+  `wireMapView()` is now called unconditionally from every branch — it already no-ops safely for
+  the map-only stepper logic (`if (screen2 !== 'map') return;`), and each toggle button now stops
+  whichever OTHER view's month-scrub timer might be running, so switching away from a playing
+  Map/Stack view never leaves an orphaned `setInterval` ticking in the background.
+
+### Vertical Stacking (item 16)
+
+A third **Stack** option on the same Plan/Map toggle. ⚠️ **Deliberately independent of floor plans
+entirely** — bands come from the project's own Location Breakdown (`location_levels` — the same
+schedule-derived Tower/Level/Zone hierarchy the Add-photo form cascades through), not from a
+floor-plan image or its pins. That's why it's reachable even when `plans.length === 0`, unlike Map,
+which is meaningless without a plan to place pins on: a project can have Location-Breakdown-tagged
+photos with zero floor plans uploaded, and this view still works for it.
+- **Rows and columns are both PICKERS**, defaulting to the first two configured levels — not
+  hard-coded to "Tower × Floor." ⚠️ **Scope reduction, stated rather than silently shipped:** only
+  two levels ever drive the grid at once; a third (Zone, Orientation, …) is real detail a 2-axis
+  table can't represent, and a project needing that resolution should use the ordinary Location
+  filter on the Gallery grid instead.
+- **A cell is the most-recent photo at that exact `(row, col)` location, "as of" a scrubbed month**
+  — `mostRecentAsOf(list, cutoff)` is the one rule doing real work: cutoff `null` means "no limit,
+  latest overall"; a cutoff month excludes anything captured after it. Pulled out as a small pure
+  function specifically so it could be genuinely EXECUTED by a test, the same reasoning as every
+  other "as-of" cutoff this app has already been bitten by once (the Manpower Loading
+  `reportedThrough` family) — a wrong fallback here would report a photo as existing at a location
+  before it was actually taken, or hide one that should already be visible.
+- **An empty cell is `null`, never borrowed from a neighbouring cell or an earlier/later month** —
+  asserted explicitly in the grid-builder test (a Tower/Floor combination with genuinely no photo
+  stays empty rather than silently inheriting a neighbour's thumbnail).
+- **Month scrub/Play reuses the exact shape** `mapMonth`/`mapPlaying`/`mapPlayTimer` already
+  established for Map (null-is-live, a value is scrubbed, auto-stop-at-the-end) — kept as its own
+  separate `stackMonth`/`stackPlaying` state rather than sharing the Map view's variables, so
+  scrubbing one view's timeline never moves the other's, and switching views can cleanly stop
+  only the timer that's actually running.
+- **The hover-magnifier is a plain src-swap into a docked panel** — deliberately simpler than
+  Project Schedule's own SVG-clone magnifier (2026-08-24), per the plan's own note: these cells are
+  ordinary `<img>` thumbnails, so there's nothing to clone.
+- `module.js` gained one new export, `locLevels()` (a copy of `LOC_LEVELS`), so the stacking view
+  reads the exact same level *definitions* (id/name/sort_order) the Location Breakdown picker
+  itself cascades through — never a second, possibly-drifting copy.
+
+### Verified
+
+**387 checks green** (was 364), new `[29]` section. Genuinely EXECUTED, not just regex-matched, via
+two new test-only hooks:
+- `BIM._mostRecentAsOf` against a 3-photo fixture across four cutoff cases (no cutoff, mid-way,
+  before everything, an empty candidate list) — the exact "as of" decision a wrong fallback would
+  get silently wrong.
+- `BIM._stackGrid` against a hand-built 2-tower/2-floor fixture with one cell deliberately left
+  photo-less: rows/columns sorted correctly, a cell with two competing photos resolves to the
+  *later* one, the empty cell stays `null`, a cutoff correctly falls back to the earlier of two
+  competing photos, and a single-level project collapses columns to one shared bucket.
+
+Also verified structurally: the wiring-bug fix itself (a call-count assertion confirming
+`wireMapView()` is now invoked from all 4 reachable branches, not 1), that Stack is reachable with
+zero plans, and that switching views stops the other view's timer. **0 functions lost** against the
+pre-fix commit (`bim.js` +11, `module.js` +1 — the latter under-counted by the name-set diff since
+it's an object-literal property, not a `function name(` declaration; confirmed present by direct
+read instead). 0 NUL bytes; CSS braces 378/378 (was 364); all four touched files parse.
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module. In particular, the
+Map/Plan/Stack toggle's click-through has never been exercised in a real browser even after this
+fix, since this environment has no live login; the bug was found by reading `render()`'s call
+graph, not by clicking the button. **This is now the single highest-priority thing to click through
+on the first live pass** — it is the one change in this entry that a structural test genuinely
+cannot fully guarantee (DOM event wiring against a real render, not a fake one).
+
+`MODULE_V` → `20260829i`; `module.css/js` / `bim.js` → `?v=20260829i` (`ppr.js`/`pano.js`/`recon.js`
+untouched this pass, left at their prior `?v=`).
+
+## Batches E–H + Add-media type/video: pin+direction, markup+slide-sorter, map view, top-view registration (2026-08-29)
+
+Owner: *"do all the items not done including Batches E to H."* Closes every remaining item from
+the standing plan (`C:\Users\gwsia\.claude\plans\elegant-mixing-mitten.md`) — the two smaller
+follow-ups (the Add-media Photo/Video/360°/3D type selector, real video upload) plus the four
+largest novel builds (E: per-photo pin + direction capture; F: the markup/annotation editor +
+slide-sorter; G: the floor-plan map/clustering view; H: top-view photo → floor-plan registration
+via OpenCV.js homography). **Run all four new migrations**:
+`2026-08-29-photo-media-type.sql`, `2026-08-29-pin-direction.sql`, `2026-08-29-markup.sql`,
+`2026-08-29-floor-plan-registration.sql`.
+
+### Add-media: a real type selector, and video as a first-class kind
+
+The upload modal gains a Photo / Video / 360°/3D segmented picker (`mediaTypeSelectorHTML`/
+`wireMediaTypeSelector`), Photo default. Picking Video swaps the file input's `accept` to
+video mimetypes and reuses **every existing field** (trade/works/location/pins) — a video is a
+plain, unprocessed upload, with `progress_photos.media_type` (`'photo'|'video'`, no CHECK — the
+enum lives in app code, same convention as `ppr_presentations.meeting_type`) the only new thing.
+360°/3D stays visibly present but greyed with a tooltip ("on hold"), routing to the real
+`pano.js`/`recon.js` flows the moment the owner re-enables them — nothing deleted, only gated.
+- **`thumb()` renders a real `<video preload="metadata" muted playsinline>` + a CSS play-triangle
+  overlay** for a video row, never an `<img>` — `preload="metadata"` so a grid of many videos
+  doesn't each fetch its full clip just to show a frame.
+- **The lightbox carries both `<img>` and `<video>` elements**, toggled by `media_type` —
+  ⚠️ wrapped in a new `.pp-lb-imgwrap` (see Batch F below; the markup canvas needed something to
+  position absolutely against, and neither media element had one before).
+
+### Batch E — per-photo pin + direction capture, and the tile-icon preview
+
+Uploading (any media type) can now pick a floor plan, click a point, and drag out a direction —
+all via `bim.js`'s `openPinPickerFor(itemType, itemId, itemLabel, onDone)`, offered as a
+**non-blocking** prompt after a successful upload (`BIM.openPinPickerFor(...)` in `module.js`'s
+save handler). ⚠️ **Deliberately not a hard gate on the upload flow** — the plan's own "best
+practice" wording was weighed against making an already-shipped, well-tested critical path
+(Add photos) newly blockable on a DIFFERENT module's state (a project may have no floor plans at
+all yet), which is a bigger behaviour change than the ask justified.
+- `floor_plan_pins.direction_deg` (nullable, no default — an undirected pin is valid, it just
+  draws no cone). `pinConeHTML(pin)` only renders the CSS `conic-gradient` wedge when a direction
+  is actually recorded; `pinMarkerHTML` always prepends it (a no-op string when absent).
+- **`directionWidgetHTML`/`wireDirectionWidget`** — a small SVG drag-to-set-direction control
+  (pointer events, `setPointerCapture`), reused verbatim by both the in-Plans pin flow and the new
+  Gallery-triggered one, so the two entry points can't disagree about what "0°" means.
+- ⚠️ **The angle math was pulled out into a named pure function,
+  `directionDegFromDrag(dx, dy)` = `(atan2(dx, -dy) * 180/π + 360) % 360`**, specifically so it
+  could be genuinely EXECUTED by a test rather than only read — a flipped sign here is silent (the
+  widget still *looks* interactive; it just records the wrong angle for every future pin) and
+  nothing else in the UI would ever catch it.
+- `openPinPickerFor` is **self-contained** — its own plan-select + click-to-pin static image +
+  direction widget, and it deliberately never touches `activePlanId` or any pan/zoom state, so
+  pinning from the Gallery can't disturb whatever the Plans screen happens to be showing.
+- **Item 8 — the Gallery tile-icon preview.** A tile whose photo has a pin (`BIM.pinInfoFor('photo',
+  r.id)`) shows a small icon (`.pp-pinbtn`, same dark-scrim corner-overlay language as the existing
+  `.pp-cardsel`); clicking it opens `openPinPreview(photoId)` — a Tight/Wide crop-zoom modal
+  centred on the pin, with its cone. ⚠️ Reinterpreted "1/8 or 1/4 of the photo's displayed size"
+  as this Tight/Wide toggle inside a dedicated modal rather than an inline overlay, which would be
+  impractically tiny on a real Gallery thumbnail.
+- **The centring math**: `left:50%;top:50%` on the plan image, then
+  `translate(-x_norm*100%, -y_norm*100%)` — percentages resolve against the TRANSFORMED element's
+  own box, so this exactly centres the pin's fraction-of-image point at the container's centre at
+  any zoom level, with no matrix math to get wrong.
+
+### Batch F — the markup/annotation editor + slide-sorter
+
+**One shared drawing engine, two independent stores.** `module.js` owns the whole vector engine
+(`MARKUP_COLORS`, `drawIconStamp`, `drawMarkupObjects`, `markupHitTest`, `openMarkupEditor`) and
+exports both `openMarkupEditor` and a read-only `drawMarkupOnCanvas(canvas, objs)` wrapper —
+`ppr.js`'s presentation-only overlay reuses BOTH rather than re-implementing per-shape drawing a
+second time, following the same cross-file convention already established for
+`onProject`/`allPhotos`/`openUploadForPicker`.
+- **Format is a JSON array of typed objects** (`pen`/`rect`/`circle`/`arrow`/`text`/`icon`), drawn
+  fresh onto a `<canvas>` on every redraw — never a second rasterized image, so toggling it on/off
+  is lossless and it stays legible at any zoom. Icon stamps (warn/arrow/person/equip) are drawn
+  with hand-rolled Canvas 2D primitives, not reused `icons.js` SVGs — those mix `<path>`/`<circle>`/
+  `<line>`/`<polygon>` elements, incompatible with the single-`d`-string `Path2D` shape this needs.
+  "Erase" is `markupHitTest` (nearest-object) + splice — the vector-layer equivalent of an eraser;
+  there are no pixels to paint transparent.
+- ⚠️ **`progress_photos.markup`** (the photo's own permanent markup — Gallery lightbox, every
+  slide citing it) and **`ppr_slide_markups`** (a SEPARATE presentation-only overlay, keyed by
+  `(ppr_slide_id, pane)`) are two stores on purpose — the owner's own wording was "native only to
+  the presentation, not inherited by the photo." Editing one never touches the other; deleting the
+  photo/slide cascades its own markup only.
+- ⚠️ **`ppr_slide_markups` needed insert-vs-update logic, not a blind insert** — its own
+  `(ppr_slide_id, pane)` unique constraint means a SECOND edit of the same pane must UPDATE the
+  existing row (tracked via a cached `markupRowId`) or the save throws a constraint violation.
+- **Exports never reference the presentation-only overlay** — the offline HTML/PDF/PPTX are the
+  record of what was presented; the live pane toggle/edit toolbar is a viewing aid, not part of
+  that record. (`slideFigureHTML`/`slidesBodyHTML` are untouched by this batch.)
+- **Slide-sorter** (`openSlideSorter`) — a drag-to-reorder grid of slide thumbnails (native HTML5
+  drag events, no library), offered only with 2+ slides (a "Reorder slides" button beside
+  Edit/Delete presentation — nothing to reorder on a 1-slide deck). ⚠️ **Reorders a LOCAL DRAFT
+  first; nothing is written until "Save order,"** mirroring the copy wizard's own "nothing is
+  saved until you're done" rule — cancelling (× / backdrop) discards the reorder entirely. The
+  save loop skips a row whose position didn't actually change, so a small in-place shuffle costs
+  only as many writes as slides that actually moved.
+- The pure reorder step, `moveItem(arr, from, to)`, is a **new array** (never mutates its
+  argument) — exported as `_moveItem` for genuine execution.
+
+### Batch G — floor-plan map/clustering view
+
+`bim.js`'s Plan screen gains a **Plan / Map** toggle. Map mode auto-computes **cluster markers**
+(count badge) per grid-snapped location, filtered to "as of month T" via a month-stepper + Play,
+following **Project Schedule's own confirmed-portable time-scrub shape** (null-is-live,
+a timestamp is scrubbed, `setInterval`-with-auto-stop-at-max) rather than reinventing one.
+⚠️ **Grid-snap clustering (`MAP_CELL`), not proximity/k-means** — chosen specifically for
+frame-to-frame positional STABILITY as the month slider moves; a re-clustered k-means result can
+jump a marker's screen position between adjacent months even when the underlying pins didn't move,
+which reads as noise on exactly the control built to show change over time.
+- `itemDateFor(pin)` resolves which date a pin's underlying item (photo/panorama/reconstruction)
+  was captured on, so "as of month T" means "the most recent item at-or-before T," matching this
+  app's other cumulative-month-cutoff conventions elsewhere.
+- Clicking a cluster opens `openClusterList(cluster)` — its member list, never jumping straight
+  into one item, since which one a multi-item cluster "means" is ambiguous by construction.
+
+### Batch H — top-view photo → floor plan registration
+
+**Real point-based image registration**, not a flat side-by-side toggle, per the plan's own
+foundational decision. `openRegisterFlow()`: click a point on the drawing, click its matching
+point on an uploaded top-view photo, repeat ≥`MIN_REG_POINTS` (4) times; `cv.findHomography(...,
+cv.RANSAC)` computes the 3×3 perspective transform (RANSAC so a few mis-clicked pairs can't wreck
+the whole warp). `paintActualView(reg)` then renders the photo through `cv.warpPerspective` into
+the drawing's own coordinate frame — an **"Actual" view** toggle swaps it in for the drawing image,
+with the exact same pins/clusters rendering identically on top of either, since both share one
+normalized 0..1 coordinate space.
+- **`floor_plan_registrations`** is one row per `(floor_plan_id, photo_id)` pair (unique
+  constraint) — two point-pair sets for the same photo would produce two disagreeing warps of one
+  image, which isn't a state worth representing. The upsert therefore targets
+  `onConflict:'floor_plan_id,photo_id'`, so re-registering REPLACES rather than duplicating.
+- ⚠️ **`homography` is STORED, not recomputed on every render** — `findHomography` is real
+  OpenCV.js work, and re-running it every time the Plans screen paints for no reason is wasted
+  browser-side compute. It's invalidated only by re-running the registration flow.
+- `ensureOpenCV()`/the readiness-check pattern is copied from `pano.js`'s own already-proven
+  implementation (loaded once, globally, via the same CDN script tag from Phase 3) rather than
+  re-derived — this app already has exactly one way to wait for OpenCV.js to be ready.
+
+### Verified (2026-08-29)
+
+**364 checks green** (was 311), new `[28]` section covering every item above. Genuinely EXECUTED,
+not just regex-matched, via new test-only hooks (same convention as `_tradesOf`/`_zoomAnchor`/
+`_buildCopyDrafts`):
+- `BIM._directionDegFromDrag` against all four cardinal drags (0°/90°/180°/270°) — the exact math
+  that, if flipped, would silently point every future pin's cone backwards.
+- `PPR._moveItem` (drag-reorder correctness across first→last, last→first, a no-op move, and
+  non-mutation of the source array) and `PPR._markupKey`'s exact string shape.
+- `PP._drawMarkupObjects` against a **fake Canvas-2D-call-recording context** — the one way to
+  tell "drew a rect" from "silently drew nothing" per shape type: confirms `rect`→`strokeRect`,
+  `circle`→`ellipse`+`stroke`, `arrow`→`stroke`+`fill` (shaft + arrowhead), `text`→`fillText`,
+  `icon`→`save`/`restore`-wrapped, and that every call clears the canvas first.
+- `PP._markupHitTest` against a real 2-object fixture — a click near each object's centre hits its
+  index, a click far from both returns -1 (the eraser's actual "did I hit anything" decision).
+
+Structural (source-level) coverage for everything DOM/state-heavy that the harness's minimal fake
+DOM (`querySelector`/`querySelectorAll` return null/[]; no real `parentElement`) can't drive —
+Batch G's clustering/date-cutoff and Batch H's registration flow depend on `bim.js`'s own
+module-internal plan/pin/photo state populated by a real `load()` against Supabase, the same
+DOM/auth-stack limitation flagged for every other client-only surface this module has shipped
+(Phase 3's OpenCV.js stitching pipeline remains the one exception, verified in a real browser
+with a real WASM/WebGL stack).
+
+**0 functions lost** across `module.js`/`ppr.js`/`bim.js` against the pre-batch commit (16/8/30
+added respectively — bim.js grew from 363 to 938 lines, module.js and ppr.js gained the markup
+engine and its per-file wiring). 0 NUL bytes across every touched file (byte-level check, not
+`grep -c $'\x00'`). CSS braces 364/364 balanced (was 350) — two real new-selector gaps this pass
+found and fixed rather than just patched around: `.pd-modal-header`/`-body`/`-footer` were never
+the issue here, but `.pp-mk-*` (the markup editor's own toolbar/canvas classes) and
+`.pp-lb-imgwrap`/`.pp-lb-markup` (the restructured lightbox) had NO CSS at all until this pass —
+caught before shipping, not after, by checking every id/class the new HTML actually emits against
+what the stylesheet defines. The `#fff` context-allowlist (this file's own documented fragility
+tracker) gained 5 more legitimate entries (`.pp-pinbtn`, `.pp-pinpreview-dot`, `.bim-cluster`,
+`.ppr-mktool`, `.ppr-sortno`, `.pp-mk-tool.active`) — all the same shape as the ones already
+there: a fixed dark scrim or a solid brand-red badge, not a light surface. Both new RLS-carrying
+migrations (`markup.sql`, `floor-plan-registration.sql`) are paren-balanced with every
+`create policy` preceded by a matching `drop policy if exists`.
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module; none of the four
+new migrations have been run, and no click-through exists for the pin-drop flow, the markup
+editor's actual pointer-drawn strokes, the slide-sorter's real drag events, the map view's
+clustering against real photo dates, or the registration flow's `findHomography` against a real
+uploaded top-view photo. Priority for the first live pass: register one real top-view photo
+against a real floor plan and confirm the warped "Actual" view visually lines up — that's the one
+piece here where "the math is right" (execution-verified above) and "it looks correct against a
+real photo" (unverified) are genuinely different claims.
+
+`MODULE_V` → `20260829h`; `module.css/js` / `ppr.js` / `bim.js` → `?v=20260829h`.
+
+## Deployment plan: Presentations row rework, shared location, PPTX/PDF fixes, copy wizard, Gallery batch select (2026-08-29)
+
+Owner: *"Please already do the Deployment Plan"* with six additional numbered items folded in
+verbatim (Presentations row → Download/Preview/Archive with a format choice; icon padding;
+shared-location tile applied to all three export formats plus PPTX centering and PDF one-slide-
+per-A4; Gallery multi-select + batch actions; a step-through copy wizard that can never save a
+Previous without a Current). This is the full **Batch D** scope from the standing plan
+(`elegant-mixing-mitten.md`) plus the Batch C follow-up items that were deferred to it. **Run
+`migrations/2026-08-29-archive-flag.sql`.**
+
+### Archive (new, shared by Presentations + Gallery)
+
+`archived boolean default false` added to `progress_photos`, `ppr_presentations`, `panoramas`,
+`reconstruction_requests` — the SAME column name/shape on all four, deliberately, so a future
+unified Gallery view could treat them identically. ⚠️ **Soft-delete, not a UI convenience**: the
+FKs `ppr_slides.before_photo_id`/`after_photo_id` are `on delete set null`, so a *hard* delete of a
+cited photo already silently orphans a slide — archiving is the alternative that keeps the record
+intact while getting it out of the everyday view. Hidden by default, both filter bars gain a
+**"Show archived"** toggle that is a separate VIEW, not a search filter — `Clear filters` never
+resets it (same reasoning as the Presentations list's own date filters staying independent of the
+Photos/Presentations screen split). Every archive-toggling call is tolerant of the migration not
+having run yet, warning by name rather than failing opaquely.
+
+### Presentations row: Download / Preview / Archive only (item 1)
+
+The row's six icons (download/pdf/pptx/open/edit/delete) become exactly three. Row-click still
+opens the presentation (unchanged).
+- **Download** opens a small format-choice modal (`openDownloadChoice`) — HTML / PPTX / PDF — that
+  dispatches to the SAME three export functions as before; nothing about the exports' own logic
+  changed by this.
+- **Preview** (`openPreviewModal`) reuses `slidesBodyHTML`/`EXPORT_CSS` **verbatim** — the same
+  markup the HTML/PDF exports produce — rendered in-app rather than downloaded. ⚠️ Deliberately
+  **not** `collectSlideImages`'s downscaled data-URI embedding: a preview stays on screen, so the
+  already-cached SIGNED URLs serve directly via a new `identityImgs()` (an identity map,
+  `imgs[url] === url`) at zero extra fetch cost — only a real export needs the file to be
+  self-contained.
+- **Archive** (`toggleArchive`) is direct, no confirm modal — reversible with one more click,
+  unlike Delete.
+- **Edit/Delete presentation** are NOT removed — relocated into the opened presentation's own
+  header (`renderSlides()`'s `.ppr-slidehead`, via new `wirePresActs`), reachable exactly where a
+  planner already is when they'd want to rename/re-date or remove one. `openPprForm`/`removePpr`
+  are unchanged; only where their buttons live moved.
+- Icon left-padding (item 2) was **already shipped in Batch A** (`.ppr-acts { padding-left: 10px
+  }`) — re-confirmed rather than re-applied.
+
+### Shared location tile, on screen AND in all three exports (items 3/4)
+
+When a slide's Previous and Current photos resolve to the **same** `location` string, it now
+renders **once**, above the pair, instead of once per pane — `sharedLocationOf(sl)` (exact string
+equality, both non-blank) is the single source of truth, read by:
+- the live editor (`renderSlides()` → `pane(sl, which, hideLocation)`),
+- the offline HTML + PDF export (`slidesBodyHTML()` → `slideFigureHTML(sl, which, imgs,
+  hideLocation)`, a new `.meta .sharedloc` line in `EXPORT_CSS`),
+- the PPTX export (`exportPptx()`'s per-slide loop → `pptxPane(..., hideLocation)`, a centered
+  `slide.addText` above both panes).
+
+⚠️ Trade/Works are **not** collapsed the same way — only "the location matches" was asked for, and
+those two are not required to match between Previous and Current.
+
+**PPTX vertical centering.** Horizontal was already effectively centered (the two 6.1"-wide panes
+plus their gap already sum to within 0.03" of the 13.33" slide width — not touched). Vertical was
+not: label/image/caption sat at fixed `y:0.35/0.75/5.45`, leaving ~1.15" of dead space at the
+bottom on every slide. Replaced with `paneTopFor(topBand)`, which centers the whole
+label+image+caption block (`PANE_H` = 5.85") in whatever space is left below the top band — the
+"Slide N of M" row alone (0.4"), or that plus the shared-location line (0.75") when one is shown —
+so a slide **with** a shared-location bar and one **without** both end up visually balanced instead
+of one reading top-heavy.
+
+**PDF one-slide-per-A4, the actual bug.** ⚠️ The existing `.slide{page-break-after:always}` rule
+sat **inside `@media print`**, and html2pdf's `pagebreak:{mode:['css']}` reads
+`getComputedStyle()` during a **normal (screen-context) html2canvas capture** — which never
+matches `@media print`, so the rule was **silently inert** the whole time this export has existed.
+Moved the rule out (unconditional — page-break properties have zero effect on-screen either way,
+so nothing about the live app changed), added `break-inside:avoid` (stops one slide's content being
+sliced across a page boundary purely by height), and scoped the break to `:not(:last-of-type)` so
+the final slide doesn't leave a trailing blank page. `jsPDF: {unit:'mm', format:'a4',
+orientation:'landscape'}` was already correct and is unchanged.
+
+### Copy wizard — a Previous can never be saved without a Current (item 6)
+
+The old `copySlidesFrom()` inserted every copied slide with `after_photo_id: null` immediately —
+exactly the state the owner said must never be allowed. **Removed entirely**, replaced by:
+- `buildCopyDrafts(src)` — the SAME before-photo promotion rule (`before_photo_id:
+  s.after_photo_id || s.before_photo_id || null`), now building **in-memory drafts**, not DB rows.
+- `openCopyWizard(newData, fromPprId)` — steps through the drafts one at a time. Each step shows
+  the (already-fixed) Previous photo read-only and requires picking a Current photo — via
+  `openThumbPicker`, filtered to photos captured **on/after** the fixed Previous (`eligiblePhotos`,
+  `direction:'after'`) — before **Next** unlocks; **Finish** (last step only) is disabled until
+  every draft has a current photo.
+- ⚠️ **`openPprForm`'s save handler no longer creates the presentation row when a copy source is
+  chosen** — it closes its own modal and hands off to the wizard instead. The presentation row and
+  its finished slides are inserted **together, inside `finish()`, only once every slide is
+  complete**. Cancelling the wizard at any point — including before the first photo is picked —
+  leaves **nothing behind**: no orphan presentation, no half-copied slides. (Choosing "start empty"
+  is unaffected — that path still creates the presentation immediately, as before.)
+- Non-blocking duplicate-current warning (18-item list item 11) applies inside the wizard too —
+  checked against the OTHER drafts, not just already-saved slides.
+
+### Thumbnail photo pickers, Previous/Current rules (18-item list items 5/6/9/10/11)
+
+The plain `<select>` (`photoOptions`) is gone, replaced by `openThumbPicker` — a searchable grid of
+real photo thumbnails (`.ppr-pickgrid`/`.ppr-pickitem`), shared by the ordinary slide form AND the
+copy wizard's Current picker. A chosen photo shows as a thumbnail button (`pickBtnHTML`) rather
+than text.
+- **Current is now REQUIRED** on every slide (was: "at least one of the two"); **Previous is
+  hidden entirely** until Current is picked (item 10), via `syncVisibility()` (folds the old
+  `syncBeforeCaption` into one function that also gates the whole Previous field, not just its
+  caption).
+- **Previous defaults to the SAME location as Current and to photos captured strictly earlier**
+  (`eligiblePhotos(refPhoto, 'before', allowAllLocations)`) — the location half is liftable via a
+  **"Show all locations"** checkbox; the date half is a hard rule (a "previous" that comes after
+  the "current" is a fact, not a preference). The reference photo itself is always excluded from
+  its own candidate list.
+- **Changing Current re-validates the already-picked Previous** — if it no longer qualifies (wrong
+  side of the new date, or a different location with the override off), it's cleared with a toast
+  explaining why, rather than silently left as an invalid pairing.
+- **Non-blocking duplicate-Current warning** (item 11): picking a Current already used as another
+  slide's Current in the same presentation toasts a warning but never blocks the save.
+- `reqMark()` had to be **restated locally in ppr.js** — it's private to module.js's own closure
+  (same "each independently-loaded file keeps its own copy of small helpers" convention already
+  used for `allLocationCombos()`); using it un-declared would have thrown at render time. Caught
+  before shipping, not after.
+
+### Gallery batch select: Download / Add to Presentation / Archive (item 5)
+
+`selected` (id → true) added to `module.js`, checkboxes on both List (`.pp-selcell`, a new leading
+grid column) and Gallery (`.pp-cardsel`, corner overlay) rows — **one selection set for the whole
+Gallery screen**, not per-view, since List/Gallery are two displays of the same underlying photos.
+- `visibleSelectedIds()` scopes every batch action to the **currently filtered** set, not the raw
+  `selected` map — the same correctness rule Drawing Register's own bulk-select bar already
+  documents (a selection made under one filter must not silently act on rows a since-changed filter
+  no longer shows).
+- **Download** loops `download(r)` (the existing single-photo function) with a 300ms stagger — a
+  burst of near-simultaneous programmatic downloads from one click is exactly what some browsers
+  throttle or block as automated.
+- **Archive** is a bulk `update({archived:true}).in('id', ids)`, tolerant of the pending migration.
+- **Add to Presentation** (`openAddToPresentation`) picks an existing presentation (via a new
+  `PPR.listForPicker()`, archived ones excluded) or creates a new one, then calls a new
+  `PPR.addPhotosToPresentation(pprId, photoIds)` — each selected photo becomes a **new slide's
+  Current photo**, Previous left blank (exactly like an ordinary "+ Add slide" with nothing picked
+  to compare against), slide numbering continuing from the presentation's existing count. The write
+  lives in `ppr.js` (the one place that already owns `ppr_slides`' shape), not duplicated in
+  `module.js`.
+- **List's grid header gained a matching leading column** (`<div></div>`) so header/body cell
+  counts stay aligned — this file's own standing rule for its grid, restated because it's exactly
+  the kind of thing that silently drifts.
+- ⚠️ **CSS reuse, not a fresh component:** `.pp-selbar` already existed — built for the now-deleted
+  Today's Rounds feature's own "N selected — Start walkthrough" bar. Its shape (a count + a row of
+  buttons) was exactly what this needed, so it's reused rather than rebuilt; the Rounds-only rules
+  that shared that section (`.pp-round-row/-chk/-thumb/-info/-loc/-act/-last` and their phone
+  overrides) had no such second use and are deleted — cleanup Batch C's own removal pass missed
+  because it only touched `module.js`/`index.html`, not `module.css`.
+
+### Verified
+
+**311/311 checks green** (was 253 after Batch C), including new `[27]` section: structural checks
+for every item above, plus genuine EXECUTION via new test-only hooks (`PPR._sameLocation`,
+`_sharedLocationOf`, `_buildCopyDrafts`, `_eligiblePhotos`) — same convention as `_tradesOf`/
+`_mediaStripMatches` — covering the shared-location match, the copy-wizard's promotion+resequencing
+across multiple source slides, and the Previous/Current date+location eligibility filter across a
+5-photo fixture (same-location-and-earlier, all-locations-lifted, self-excluded, on/after-a-fixed-
+previous, no-reference-photo-yet). The PPTX centering formula was re-executed standalone (not
+exported — a small closure local to `exportPptx`) confirming the pane block fits the slide with and
+without a shared-location bar. Function-diff against the pre-batch commit: **4 lost in `ppr.js`**
+(`copySlidesFrom`, `paintInfo`, `photoOptions`, `syncBeforeCaption` — all superseded, all
+intentional), **24 added**; `module.js` **0 lost, 4 added**. 0 NUL bytes across every touched file
+(verified with a raw byte count). CSS braces balanced (312/312). 0 duplicate `id=` attributes in
+`index.html`.
+
+⚠️ **Not verified signed in** — no live Supabase login in this environment, same standing caveat as
+the rest of this module. In particular: the thumbnail picker's real rendering, the copy wizard's
+full click-through, the PPTX/PDF file output (the centering math and the break-CSS fix are verified
+analytically, not by opening a generated file in PowerPoint/a PDF viewer), and the Gallery batch
+actions against real rows are all untested against a live project.
+
+⚠️ **Still open, not attempted in this pass**: Batches E through H of the standing plan (per-photo
+key-plan pin + direction capture, the markup/annotation editor, the slide-sorter view, the
+floor-plan map/vertical-stacking views, and top-view image registration), plus the Add-media type
+selector (Photo/Video/360°/3D) and real Video upload support noted as separately-scoped items in
+the 18-item list.
+
+## 18-item feedback round, Batch C: Rounds removed, 360°/3D folded into Gallery (2026-08-29)
+
+Owner, reviewing Batch A/B in the live tab bar: *"The Rounds, 360, and 3D are still in the tabs.
+You haven't applied my previous comment. Rounds can be removed. 360 and 3D should be incorporated
+in the Gallery."* Two distinct asks, handled differently on purpose. **No migration.**
+
+### Rounds — deleted, not gated
+
+Today's Rounds was never asked to stay in any form. Removed outright from `module.js`: the
+module-scope state (`roundsFilter`, `roundsSelected`, `walkState`, `_roundsComboByKey`), the two
+`refreshRoundsIfVisible()` call sites, the `pp-rounds-search` wiring, and the whole
+`renderRounds`/`wireRounds`/`startWalkthrough`/`advanceWalkthrough`/`openWalkStep`/
+`refreshRoundsIfVisible` block (93 lines) — including a nested `function row(it)` helper that
+lived inside `renderRounds` itself, which is why the function-diff check below reports it as its
+own loss. `openUpload(preset)` lost every `preset.walk` branch (modal title, Skip/End-walkthrough
+footer buttons and their wiring). The tab and its screen (`#pp-screen-rounds`,
+`pp-rounds-search`) are gone from `index.html` entirely — not hidden, deleted.
+
+⚠️ **`locCombos()`/`photoLocCombos()` were explicitly checked and kept.** They sit in the same
+region of the file Rounds used, but `bim.js`'s Floor Plan pin picker and `ppr.js`'s location
+picker both call them — deleting them alongside Rounds would have silently broken two other
+screens. A grep for both names across every module file was run before removing anything, not
+after.
+
+⚠️ **A real crash was averted, not just a cosmetic tab removal.** `setScreen()` in `index.html`
+still called `ProgressPhotos.renderRounds()` whenever `isRounds` was true, and that function is
+now GONE from the exported object — so a browser that still had `localStorage['pp_screen'] ===
+'rounds'` from before this shipped (anyone who had used Rounds) would have thrown a
+`TypeError: ProgressPhotos.renderRounds is not a function` on the very next page load, breaking
+the whole module for that user with no way back through the UI. Fixed by narrowing `setScreen`'s
+restore-list to `['ppr', 'bim']` only — any other stored value (including a legacy `'rounds'`,
+`'pano'`, or `'recon'`) now falls back to `'photos'` instead of ever reaching `setScreen('rounds')`.
+
+### 360°/3D — folded into Gallery, not deleted
+
+Per the owner's own distinction ("Rounds can be removed" vs. "360 and 3D should be incorporated"),
+pano.js/recon.js's capture flows and viewers are untouched — only their **top-level tabs** are
+gone. The tab bar is now exactly Gallery / Presentations / Plans.
+
+- **The "+ Capture 360°" / "Compare over time" / "+ Request 3D scan" buttons moved into the
+  Gallery screen's own tool cluster** — `setScreen()` now calls `PANO._syncTools(isPhotos)` /
+  `RECON._syncTools(isPhotos)` (was `isPano`/`isRecon`, screens that no longer exist as tabs).
+  Their `onclick` handlers were already bound unconditionally in each module's own `init()`, so
+  no new wiring was needed — only what controls their **visibility** changed.
+- **A new "360° & 3D captures" strip renders below the photo grid on the Gallery screen**
+  (`#pp-media-strip`, populated by new `mediaStripHTML()`/`wireMediaStrip()`/`renderMediaStrip()`
+  in `module.js`) listing existing panoramas (`PANO.list()`) and done reconstructions
+  (`RECON.doneList()`) as small clickable tiles — clicking one opens the **exact same viewer** the
+  old dedicated tabs used (`PANO.open(id)` / `RECON.openById(id)`), nothing reimplemented. Absent
+  from the DOM entirely when a project has neither, rather than an empty heading.
+- ⚠️ **Deliberately NOT interleaved into the photo grid itself.** A panorama/reconstruction is a
+  different SHAPE of record from a photo (no trade/works, its own open-viewer, no lightbox
+  arrow-navigation), and rewriting `visible()`/`thumb()`/`listHTML()`/`galleryHTML()`/`wireRows()`
+  to be kind-aware would have put the well-tested, already-passing photo rendering pipeline at
+  risk for a presentational preference. A separate strip on the same screen satisfies "no longer a
+  separate tab" without touching that pipeline at all.
+- The strip respects the **same location/date/search filters** the photo grid uses
+  (`mediaStripMatches()`), but never Trade/Works, which don't apply to either kind.
+- ⚠️ **`load()` now awaits `PANO.ensureLoaded()`/`RECON.ensureLoaded()` in parallel** (both new,
+  guarded — `ensureLoaded: async function () { if (!panoramas.length) await load(); }` in each
+  file) right after `signAll()`, so the strip has data to show the first time Gallery paints,
+  without the user ever having visited a "360°" or "3D" screen in this session.
+- ⚠️ **`#pp-screen-pano` and `#pp-screen-recon` are kept in the DOM, permanently hidden — NOT
+  deleted, on purpose.** Both `pano.js`'s and `recon.js`'s `load()`/`render()` bail out
+  (`if (!host) return;`) the moment their screen's host div (`#pano-view`/`#recon-view`) doesn't
+  exist — so `ensureLoaded()` calling `load()` would silently no-op and the media strip would stay
+  permanently empty if those divs were removed. Confirmed by reading both files' `load()` before
+  touching `index.html`, not assumed.
+- `icons.js` already has `compass` and `box` — reused for the panorama/3D tile icons rather than
+  inventing new SVG paths or guessing an icon name exists (this file's own history records that
+  exact mistake once already, with a missing `pencil` icon).
+
+### Verified
+
+**253/253 checks green** (was 239 before this batch), including a new `[26]` section: structural
+assertions that Rounds is completely gone (functions, state, export, tab, screen, search field,
+the walkthrough branch in `openUpload`), that `locCombos`/`photoLocCombos` survive, that the tab
+bar is exactly 3 tabs, that `#pp-media-strip` exists, that `load()` awaits both `ensureLoaded`
+calls, that `render()` calls `renderMediaStrip()` **before** the photo grid's own empty-state
+branches (so it repaints independent of whether the project has any photos), and that a media tile
+dispatches to the real `PANO.open`/`RECON.openById` — plus two genuinely EXECUTED assertions via
+new test-only hooks `ProgressPhotos._mediaStripMatches`/`_mediaStripItems` (same convention as
+`_tradesOf`/`_worksOf`): the filter-match function against a real item object, and the merge
+function running against the real `PANO`/`RECON` closures with no throw.
+
+Two real defects were found and fixed by this pass, not by inspection alone:
+1. A stale `setScreen dispatches the bim screen…` assertion from before this batch still checked
+   for `!isRecon && !isBim`, which no longer exists after simplifying `isPhotos` — updated to match
+   the simpler, correct logic rather than reintroducing the old five-way ternary to satisfy it.
+2. `.pp-mediatile-badge`'s hard-coded `#fff` tripped this file's own "every #fff sits under a
+   documented fixed-colour selector" check — correctly, since it was a genuinely new light-surface
+   risk. Added to the allow-list on the same basis as the already-allowed `.pano-badge-warn`: a
+   solid brand-colour pill background, white text always legible regardless of theme, not a light
+   surface that needs a dark-mode override.
+
+Function-diff against the pre-batch commit: **7 lost** (all Rounds, all intentional — including
+the nested `row` helper), **5 added** (`mediaStripMatches`, `mediaStripItems`, `mediaStripHTML`,
+`wireMediaStrip`, `renderMediaStrip`). 0 NUL bytes across every touched file (verified with a raw
+byte count, not `grep -c $'\x00'` — that command returns nonsense under this environment's Git
+Bash and would have reported hundreds of false positives). CSS braces balanced (293/293).
+
+⚠️ **Not verified signed in** — no live Supabase login in this environment, same standing caveat
+as the rest of this module. In particular, the media strip's real thumbnails (`PANO.urlOf`) and
+click-through to the two viewers have not been exercised against real panorama/reconstruction rows.
+
+⚠️ **Still open from the 18-item list, not attempted in this batch**: Batches D through H (photo
+pickers with thumbnails, per-photo pin + direction capture, the markup/annotation editor, the
+slide-sorter view, the floor-plan map/vertical-stacking views, and top-view image registration) —
+see `C:\Users\gwsia\.claude\plans\elegant-mixing-mitten.md` for the full sequencing. Also not done
+this batch: the "Add media" type selector (Photo/Video/360°/3D) on the upload modal, real Video
+upload support, and Gallery multi-select + batch actions — all separately scoped items from the
+same feedback round, none of which this correction asked for by name.
+
 ## 18-item feedback round, Batch B: Trade/Works multi-select, Location label dropped (2026-08-29)
 
 **Run `migrations/2026-08-29-photo-trades-works-multi.sql`.** Item 2 of the owner's feedback:

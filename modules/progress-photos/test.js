@@ -14,6 +14,7 @@ const reconMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-
 const submitFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'submit-reconstruction', 'index.ts');
 const webhookFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'reconstruction-webhook', 'index.ts');
 const floorPlanMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plans.sql');
+const archiveMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-archive-flag.sql');
 const schemaFile = path.join(__dirname, '..', '..', 'supabase-schema.sql');
 
 let fails = 0, passes = 0;
@@ -146,7 +147,7 @@ const documentStub = {
  'pp-refresh', 'pp-sep-photos', 'pp-sync', 'pp-sync-n', 'pp-presence',
  'pp-lightbox', 'pp-lb-img', 'pp-lb-cap', 'pp-lb-close', 'pp-lb-prev',
  'pp-lb-next', 'pp-lb-download', 'pp-lb-edit', 'pp-lb-delete',
- 'pp-rounds-view', 'pp-rounds-search', 'pp-screen-rounds',
+ 'pp-media-strip',
  'ppr-view', 'ppr-count', 'ppr-listbar', 'ppr-countbar', 'ppr-f-from',
  'ppr-f-to', 'ppr-clearfilters', 'ppr-new', 'ppr-back',
 ].forEach(ensure);
@@ -291,7 +292,11 @@ ok('insert uses .select() to return the id', /\.insert\(Object\.assign\(data, \{
 console.log('\n[5] Meeting list icons hydrate');
 ok('renderList hydrates its own output', /renderPreview\(\);[\s\S]{0,600}hydrate\(\);\n  \}/.test(pjs));
 ok('empty-state path hydrates too', /hydrate\(\);\n      return;/.test(pjs));
-ok('edit action uses an icon, not a ✎ glyph', /data-act="edit"[\s\S]{0,120}data-ico="pencil"/.test(pjs));
+// Row-level edit/delete are GONE (Batch D follow-up item 1: row actions are
+// Download/Preview/Archive only) — relocated into the opened presentation's
+// own header, still icon-based, never a bare glyph.
+ok('row no longer has an edit action', !/data-act="edit"/.test(pjs));
+ok('relocated presentation edit/delete use icons, not glyphs', /ppr-pres-edit[\s\S]{0,80}data-ico="pencil"/.test(pjs) && /ppr-pres-del[\s\S]{0,120}data-ico="trash"/.test(pjs));
 
 console.log('\n[6] Key plan is per photo, not per slide');
 ok('migration adds progress_photos.key_plan_url', /alter table progress_photos add column if not exists key_plan_url text/.test(fs.readFileSync(migrationFile, 'utf8')));
@@ -308,18 +313,30 @@ ok('slide form has no location field', !/ppr-s-loc"/.test(pjs));
 ok('after-photo picker has + Add photo', /ppr-s-after-add/.test(pjs));
 ok('before-photo picker has + Add photo', /ppr-s-before-add/.test(pjs));
 ok('inline add calls openUploadForPicker', /ProgressPhotos\.openUploadForPicker/.test(pjs));
-ok('picked photo tags echoed read-only', /function paintInfo/.test(pjs));
+// paintInfo()'s plain-<select>-echo was replaced by a thumbnail PICKER
+// (18-item list item 6) — pickBtnHTML renders the chosen photo's thumb+tags
+// directly on the picker button, so there's no separate read-only echo box
+// to paint any more.
+ok('picked photo shows as a thumbnail button, not a plain <select>', /function pickBtnHTML/.test(pjs) && !/function paintInfo/.test(pjs));
+// ⚠️ Matched on the exact old signature, not a bare /function photoOptions/ —
+// that substring also matches the unrelated, still-live photoOptionsFor()
+// (Report Templates' baseline picker), which would make this a false FAIL.
+ok('the old plain <select> photo list is gone', !/function photoOptions\(sel\)/.test(pjs));
 
 console.log('\n[9] Before/after may be different locations');
-ok('pane() reads each photo\'s own tags', /var tags = ph \? \[ph\.trade, ph\.works, ph\.location\]/.test(pjs));
+ok('pane() reads each photo\'s own trade/works/location', /var fields = ph \? \[ph\.trade, ph\.works, hideLocation \? null : ph\.location\]/.test(pjs));
 ok('slide-level meta row no longer shows location', !/ppr-meta[\s\S]{0,400}<label>Location<\/label>/.test(pjs));
 ok('panes are labelled Previous/Current (2026-08-29 feedback item 7 — was Before/After)',
    /ppr-panelabel/.test(pjs) && /'Previous' : 'Current'/.test(pjs));
 
-console.log('\n[10] No before photo → no before caption, photo centered');
+console.log('\n[10] No before photo → no before caption, photo centered; Current is now required (item 9/10)');
 ok('before caption field starts hidden', /id="ppr-s-bcap-field" style="display:none;"/.test(pjs));
-ok('syncBeforeCaption toggles it', /function syncBeforeCaption[\s\S]{0,200}display = has \? '' : 'none'/.test(pjs));
+ok('the before FIELD (not just the caption) starts hidden until Current is picked (item 10)',
+   /id="ppr-s-before-field" style="display:none;"/.test(pjs));
+ok('syncVisibility toggles both the before field and its caption', /function syncVisibility[\s\S]{0,220}display = beforeId \? '' : 'none'/.test(pjs));
 ok('before_caption nulled when no before photo', /before_caption: beforeId \? \(\$\('ppr-s-bcap'\)\.value\.trim\(\) \|\| null\) : null/.test(pjs));
+ok('Current photo is now required to save a slide (was: "at least one of the two")',
+   /if \(!afterId\) \{ UI\.toast\('Pick a current photo for this slide'/.test(pjs));
 ok('single-photo slide uses ppr-pair-single', /ppr-pair ppr-pair-single/.test(pjs));
 ok('ppr-pair-single centers the photo', /\.ppr-pair-single \{[^}]*justify-content: center/.test(css));
 ok('offline export centers single too', /\.pair\.single\{grid-template-columns:minmax\(0,760px\);justify-content:center\}/.test(pjs));
@@ -334,11 +351,18 @@ console.log('\n[12] Clicking a meeting row opens it');
 ok('row onclick calls openPpr', /r\.onclick = function \(\) \{ openPpr\(r\.dataset\.id\); \};/.test(pjs));
 ok('row advertises the action via title', /title="Open this presentation\\'s slides"/.test(pjs));
 
-console.log('\n[13] Copy previous meeting, promoting after → before');
+console.log('\n[13] Copy previous meeting → a WIZARD (follow-up feedback item 6), not an immediate blind copy');
 ok('copy select rendered on new meetings', /ppr-f-copy/.test(pjs));
-ok('copySlidesFrom promotes after into before', /before_photo_id: sl\.after_photo_id \|\| sl\.before_photo_id \|\| null/.test(pjs));
-ok('new after slot left empty', /after_photo_id: null/.test(pjs));
-ok('after caption not carried into the new after', /after_caption: null/.test(pjs));
+ok('choosing a copy source routes to the wizard instead of creating the presentation immediately',
+   /if \(isNew && copyFrom\) \{[\s\S]{0,120}openCopyWizard\(/.test(pjs));
+ok('the OLD immediate copySlidesFrom() is gone', !/function copySlidesFrom/.test(pjs));
+ok('buildCopyDrafts promotes after into before, the same rule copySlidesFrom used',
+   /before_photo_id: s\.after_photo_id \|\| s\.before_photo_id \|\| null/.test(pjs));
+ok('new after slot left empty in the draft', /after_photo_id: null,\n        after_caption: ''/.test(pjs));
+ok('Finish is disabled until every draft has a current photo',
+   /drafts\.some\(function \(d\) \{ return !d\.after_photo_id; \}\)/.test(pjs));
+ok('the presentation row is created inside finish() — never before the wizard completes',
+   /async function finish\(\) \{[\s\S]{0,400}T_PPR\)\s*\n?\s*\.insert/.test(pjs));
 
 console.log('\n[14] Tile view = photo only, actions in the lightbox');
 ok('gallery card has no caption table', !/pp-cardtable/.test(mjs));
@@ -414,7 +438,15 @@ console.log('\n[misc] insert().select() returns the new row id');
   while ((rm = ruleRe.exec(css))) fffRules.push(rm[1].trim());
   // Each entry pairs #fff with a rule that ALSO sets a solid brand background
   // (--pd-red / --pd-bad) — confirmed against the shipped CSS, not assumed.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active/;
+  // .pp-mediatile-badge (Batch C, 2026-08-29) added to the list on the same
+  // basis as .pano-badge-warn just above it: a solid-brand-background badge
+  // (color-mix red), white text always readable regardless of theme.
+  // Batches E-H (2026-08-29) add four more, all the same shape: a fixed dark
+  // scrim (.pp-pinbtn — mirrors .pp-cardsel's own dark corner overlay) or a
+  // solid brand-red badge/dot (.pp-pinpreview-dot, .bim-cluster, .ppr-mktool
+  // — a dark translucent toolbar over an arbitrary photo, .ppr-sortno — a
+  // solid-red slide-order badge, same family as .ppr-tmpl-locorder).
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.bim-cluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -565,13 +597,23 @@ console.log('\n[misc] insert().select() returns the new row id');
   ].forEach((sig) => ok(sig + '() exists in pano.js', pnjs.includes(sig)));
   ok('a low-match pair flags the whole panorama poor, not silently kept "ok"',
      /matches < MIN_GOOD_MATCHES \|\| !H\) \{ quality = 'poor'/.test(pnjs));
-  ok('index.html has the 360° tab', /data-screen="pano">360/.test(html));
-  ok('index.html has the Capture 360° / Compare topbar tools', /id="pano-new"/.test(html) && /id="pano-compare-btn"/.test(html));
-  ok('index.html has the 360° screen host', /id="pp-screen-pano"/.test(html));
+  // Batch C (2026-08-29): the standalone 360° tab is GONE — capture and the
+  // existing-panorama list are folded into the Gallery screen itself, per
+  // owner feedback ("360 and 3D should be incorporated in the Gallery").
+  // pano.js's own screen/host div stay in the DOM (permanently hidden) since
+  // load()/render() both key off #pano-view existing — see the "not removed"
+  // assertion below.
+  ok('index.html no longer has a standalone 360° tab', !/data-screen="pano"/.test(html));
+  ok('index.html has the Capture 360° / Compare topbar tools (now on Gallery)', /id="pano-new"/.test(html) && /id="pano-compare-btn"/.test(html));
+  ok('the 360° screen host div is kept (hidden), not deleted — pano.js\'s load()/render() key off it existing',
+     /id="pp-screen-pano" hidden/.test(html));
   ok('OpenCV.js CDN script present (pinned version)', /opencv-js@4\.10\.0-release\.1\/dist\/opencv\.js/.test(html));
   ok('Three.js CDN script present (pinned, classic global build not the ES-module-only r150\\+)', /three@0\.128\.0\/build\/three\.min\.js/.test(html));
   ok('PANO.init is wired alongside PPR.init', /PANO\.init\(user, profile\)/.test(html));
-  ok('setScreen dispatches the pano screen', /isPano = s === 'pano'/.test(html));
+  ok('setScreen folds 360° tools into the Gallery screen (PANO._syncTools(isPhotos), not a dedicated isPano)',
+     /PANO\._syncTools\(isPhotos\)/.test(html) && !/isPano = s === 'pano'/.test(html));
+  ok('pano.js exposes ensureLoaded/urlOf for the unified Gallery media strip (Batch C)',
+     pnjs.includes('ensureLoaded:') && pnjs.includes('urlOf:'));
   ok('a poor-quality panorama is flagged in the gallery, not hidden', pnjs.includes('pano-badge-warn'));
 
   // ============================================================ Phase 4 ===
@@ -623,12 +665,19 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('rejectRequest and retractRequest never call submit-reconstruction', !/reject[\s\S]{0,400}submit-reconstruction/.test(rcjs));
   ok('the approval confirm dialog states this is a real billed job before submitting',
      /This is a real, billed job/.test(rcjs));
-  ok('index.html has the 3D tab + Request-scan tool + screen host',
-     /data-screen="recon">3D/.test(html) && /id="recon-new"/.test(html) && /id="pp-screen-recon"/.test(html));
+  // Batch C (2026-08-29): the standalone 3D tab is GONE, same fold as 360°
+  // above — the Request-scan tool and the screen host div stay (the latter
+  // hidden, kept because recon.js's load()/render() key off it existing).
+  ok('index.html no longer has a standalone 3D tab', !/data-screen="recon"/.test(html));
+  ok('index.html has the Request-scan topbar tool + screen host (kept, hidden)',
+     /id="recon-new"/.test(html) && /id="pp-screen-recon" hidden/.test(html));
   ok('PLYLoader CDN script present (same pinned Three.js revision as the 360° viewer)',
      /three@0\.128\.0\/examples\/js\/loaders\/PLYLoader\.js/.test(html));
   ok('RECON.init is wired alongside the other module inits', /RECON\.init\(user, profile\)/.test(html));
-  ok('setScreen dispatches the recon screen', /isRecon = s === 'recon'/.test(html));
+  ok('setScreen folds 3D tools into the Gallery screen (RECON._syncTools(isPhotos), not a dedicated isRecon)',
+     /RECON\._syncTools\(isPhotos\)/.test(html) && !/isRecon = s === 'recon'/.test(html));
+  ok('recon.js exposes ensureLoaded for the unified Gallery media strip (Batch C)',
+     rcjs.includes('ensureLoaded:'));
   ['function openRequestForm', 'function approveRequest', 'function rejectRequest', 'function retractRequest',
    'function openResultViewer', 'function mountPointCloudViewer'
   ].forEach((sig) => ok(sig + '() exists in recon.js', rcjs.includes(sig)));
@@ -660,8 +709,9 @@ console.log('\n[misc] insert().select() returns the new row id');
      /id="bim-place"/.test(html) && /id="pp-screen-bim"/.test(html));
   ok('bim.js is loaded and BIM.init is wired alongside the other module inits',
      /src="bim\.js/.test(html) && /BIM\.init\(user, profile\)/.test(html));
-  ok('setScreen dispatches the bim screen and hides it from the generic "isPhotos" fallback',
-     /isBim = s === 'bim'/.test(html) && /!isRecon && !isBim/.test(html));
+  ok('setScreen dispatches the bim screen and hides it from the generic "isPhotos" fallback ' +
+     '(simplified to isPpr/isBim only in Batch C, now that pano/recon/rounds are no longer their own screens)',
+     /isBim = s === 'bim'/.test(html) && /isPhotos = !isPpr && !isBim/.test(html));
   ok('BIM._syncTools is called on every screen switch (role + inner-screen gating, same as the other three modules)',
      /BIM\._syncTools\(isBim\)/.test(html));
 
@@ -712,6 +762,417 @@ console.log('\n[misc] insert().select() returns the new row id');
      /pano-src.*Drone-sourced footage/.test(pnjs));
   ok('reconstruction_requests already had video_source (ground/drone) before this pass — Phase 6 extends the SAME field name convention to panoramas',
      /video_source\s+text default 'ground'/.test(fs.readFileSync(reconMigrationFile, 'utf8')));
+
+  console.log('\n[26] Batch C (2026-08-29 follow-up) — Rounds removed, 360°/3D folded into Gallery');
+  // --- Rounds is completely gone, not gated -----------------------------
+  ok('renderRounds/wireRounds/startWalkthrough/advanceWalkthrough/openWalkStep no longer exist in module.js',
+     !/function renderRounds|function wireRounds|function startWalkthrough|function advanceWalkthrough|function openWalkStep/.test(mjs));
+  ok('the Rounds module-scope state vars are gone too (roundsFilter/roundsSelected/walkState/_roundsComboByKey)',
+     !/var roundsFilter|var roundsSelected|var walkState|var _roundsComboByKey/.test(mjs));
+  ok('ProgressPhotos no longer exports renderRounds', !/renderRounds: renderRounds/.test(mjs));
+  ok('the Rounds tab/screen/search field are gone from index.html', !/data-screen="rounds"|pp-screen-rounds|pp-rounds-search/.test(html));
+  ok('openUpload no longer carries any walkthrough branch (preset.walk)', !/preset\.walk/.test(mjs));
+  ok('locCombos/photoLocCombos survive the Rounds removal — bim.js and ppr.js both depend on them',
+     /function locCombos/.test(mjs) && /function photoLocCombos/.test(mjs));
+  ok('setScreen can no longer be handed a Rounds/Pano/Recon screen from stale localStorage (would throw on the deleted renderRounds)',
+     !/\['ppr', 'rounds', 'pano', 'recon', 'bim'\]/.test(html) && /\['ppr', 'bim'\]\.indexOf\(saved\)/.test(html));
+
+  // --- 360°/3D folded into Gallery, not deleted --------------------------
+  ok('the tab bar now has exactly three tabs: Gallery, Presentations, Plans',
+     (html.match(/class="pp-tab[^"]*" data-screen="[a-z]+"/g) || []).length === 3 &&
+     /data-screen="photos">Gallery/.test(html) && /data-screen="ppr">Presentations/.test(html) && /data-screen="bim">Plans/.test(html));
+  ok('the Gallery screen carries a #pp-media-strip host for the folded 360°/3D content', /id="pp-media-strip"/.test(html));
+  ok('module.js loads PANO/RECON data before rendering Gallery, so the strip has something to show without a separate screen visit',
+     /PANO && PANO\.ensureLoaded[\s\S]{0,120}RECON && RECON\.ensureLoaded/.test(mjs));
+  ok('render() calls renderMediaStrip() BEFORE the photo grid\'s own empty-state branches, so it repaints regardless of them',
+     /renderMediaStrip\(\);/.test(mjs) && mjs.indexOf('renderMediaStrip();') < mjs.indexOf('if (!rows.length)'));
+  ok('a media tile opens the SAME viewers as the old dedicated tabs used (PANO.open / RECON.openById), nothing reimplemented',
+     /PANO && PANO\.open\)\s*PANO\.open\(id\)/.test(mjs) && /RECON && RECON\.openById\)\s*RECON\.openById\(id\)/.test(mjs));
+
+  // --- mediaStripMatches genuinely EXECUTED against the real closure -------
+  // `filters` is module-private state, set only via wireFilters()/init() —
+  // never called in this harness (same as every other Batch A/B test above,
+  // which is why [2c] tests tradesOf/worksOf as pure functions instead). At
+  // its untouched default (every field blank) this is still a real assertion
+  // of the function's actual behaviour, not a stub: it proves the ANDed
+  // filter checks all short-circuit to "no restriction" together rather than
+  // one of them silently rejecting everything by default.
+  ok('with every filter at its untouched default, a real item matches',
+     PP._mediaStripMatches({ location_values: {}, taken_at: '2026-03-01', location: 'Tower 1' }));
+  ok('_mediaStripItems() runs against the real PANO/RECON closures with no throw, and returns [] before either has loaded anything',
+     JSON.stringify(PP._mediaStripItems()) === '[]');
+
+  console.log('\n[27] Deployment plan — Presentations row (Download/Preview/Archive), shared location, PPTX/PDF fixes, wizard, Gallery batch select');
+
+  // --- Migration --------------------------------------------------------
+  const archiveSql = fs.readFileSync(archiveMigrationFile, 'utf8');
+  ok('migration adds archived to all four tables', [
+    'progress_photos', 'ppr_presentations', 'panoramas', 'reconstruction_requests'
+  ].every((t) => new RegExp('alter table ' + t + '\\s+add column if not exists archived boolean default false').test(archiveSql)));
+  ok('supabase-schema.sql carries the archived column at least 4 times (one per table)',
+     (schemaSql.match(/archived\s+boolean default false/g) || []).length >= 4);
+
+  // --- Row actions: Download / Preview / Archive (item 1) ----------------
+  ok('the row no longer has pdf/pptx/open as separate icons', !/data-act="pdf"/.test(pjs) && !/data-act="pptx"/.test(pjs) && !/data-act="open"/.test(pjs));
+  ok('the row has exactly download/preview/archive actions', /data-act="download"/.test(pjs) && /data-act="preview"/.test(pjs) && /data-act="archive"/.test(pjs));
+  ok('download opens a format-choice modal instead of exporting directly', /function openDownloadChoice/.test(pjs) && /data-fmt="html"/.test(pjs) && /data-fmt="pptx"/.test(pjs) && /data-fmt="pdf"/.test(pjs));
+  ok('the format choice dispatches to all three real export functions', /if \(fmt === 'html'\) exportOffline\(p\);/.test(pjs) && /else if \(fmt === 'pptx'\) exportPptx\(p\);/.test(pjs) && /else if \(fmt === 'pdf'\) exportPdf\(p\);/.test(pjs));
+  ok('preview reuses slidesBodyHTML/EXPORT_CSS verbatim, not a re-implementation', /function openPreviewModal[\s\S]{0,700}slidesBodyHTML\(p, s, identityImgs\(s\)\)/.test(pjs));
+  ok('preview does not re-embed images as data URIs — it reuses the already-signed URLs', /function identityImgs[\s\S]{0,220}imgs\[u\] = u;/.test(pjs));
+  ok('icon left-padding on the row (re-confirmed; already shipped in Batch A)', /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
+
+  // --- Archive filter + toggle (item 1) -----------------------------------
+  ok('archived is hidden unless the toggle is on, never both at once', /!!p\.archived !== !!filters\.archived/.test(pjs) && /!!r\.archived !== !!filters\.archived/.test(mjs));
+  ok('index.html has a "Show archived" toggle on both the Presentations and Gallery filter bars', (html.match(/Show archived/g) || []).length === 2);
+  ok('toggling archive is tolerant of the migration not having run yet', /migrations\/2026-08-29-archive-flag\.sql/.test(pjs) && /migrations\/2026-08-29-archive-flag\.sql/.test(mjs));
+  ok('Clear filters does NOT reset the archived toggle — it is a separate view, not a search filter',
+     /filters = \{ from: '', to: '', archived: filters\.archived \};/.test(pjs) &&
+     /filters = \{ from: '', to: '', trade: '', works: '', locValues: \{\}, search: '', archived: filters\.archived \};/.test(mjs));
+
+  // --- Edit/Delete presentation relocated (item 1) ------------------------
+  ok('wirePresActs wires the relocated edit/delete buttons to the same openPprForm/removePpr', /function wirePresActs\(p\)[\s\S]{0,200}openPprForm\(p\)[\s\S]{0,100}removePpr\(p\)/.test(pjs));
+  ok('wirePresActs is called on BOTH the empty-slides and normal render paths (not just one)',
+     (pjs.match(/wireSlideNav\(s\); wirePresActs\(p\);/g) || []).length === 2);
+
+  // --- Shared location tile (items 3/4) — genuinely EXECUTED --------------
+  eq('two photos at the same location share a tile', PPR._sameLocation({ location: 'Tower 1 - L5' }, { location: 'Tower 1 - L5' }), true);
+  eq('different locations do not share a tile', PPR._sameLocation({ location: 'Tower 1 - L5' }, { location: 'Tower 2 - L5' }), false);
+  eq('a blank location on either side never counts as shared', PPR._sameLocation({ location: '' }, { location: '' }), false);
+  eq('sharedLocationOf resolves through both photo ids', PPR._sharedLocationOf({ before_photo_id: null, after_photo_id: null }), '');
+  ok('renderSlides omits the location from each pane when it is shown as one shared tile',
+     /pane\(cur, 'before', !!sharedLoc\)/.test(pjs) && /pane\(cur, 'after', !!sharedLoc\)/.test(pjs));
+  ok('slideFigureHTML (HTML+PDF export) takes the same hideLocation flag', /function slideFigureHTML\(sl, which, imgs, hideLocation\)/.test(pjs));
+  ok('slidesBodyHTML computes the shared location per slide for the exported files too',
+     /var sharedLoc = hasBefore \? sharedLocationOf\(sl\) : '';/.test(pjs) && /class="sharedloc"/.test(pjs));
+  ok('PPTX renders the same shared-location tile (item 4: "apply to all formats")',
+     /var sharedLoc = hasBefore \? sharedLocationOf\(sl\) : '';[\s\S]{0,400}slide\.addText\(sharedLoc,/.test(pjs));
+
+  // --- PPTX vertical centering (item 4) ------------------------------------
+  ok('pane vertical position is now COMPUTED (paneTopFor), not a hardcoded y:0.35/0.75/5.45',
+     /function paneTopFor\(topBand\)/.test(pjs) && !/y: 0\.35,.*y: 0\.75,.*y: 5\.45,/.test(pjs));
+  ok('centering formula centers the pane block in the space below the top band',
+     /Math\.max\(0, \(SLIDE_H - topBand - PANE_H\) \/ 2\)/.test(pjs));
+  (function () {
+    // Genuinely execute the same arithmetic paneTopFor uses (it's a small
+    // closure local to exportPptx, not exported — restated here rather than
+    // adding an export just for this one small formula, since correctness is
+    // easy to eyeball: the pane block must fit entirely within the slide).
+    var SLIDE_H = 7.5, LABEL_H = 0.35, IMG_H = 4.6, CAP_H = 0.9;
+    var PANE_H = LABEL_H + IMG_H + CAP_H;
+    function paneTopFor(topBand) { return topBand + Math.max(0, (SLIDE_H - topBand - PANE_H) / 2); }
+    var top = paneTopFor(0.4);
+    ok('the pane block (label+image+caption) fits within the slide height with no shared-location bar',
+       top >= 0.4 && (top + PANE_H) <= SLIDE_H);
+    var topWithLoc = paneTopFor(0.75);
+    ok('a shared-location bar pushes the pane block down and it still fits',
+       topWithLoc > top && (topWithLoc + PANE_H) <= SLIDE_H);
+  })();
+
+  // --- PDF one-slide-per-A4 fix (item 4) ------------------------------------
+  ok('the page-break rule is no longer trapped inside @media print (the html2canvas capture never matches it there)',
+     !/@media print\{body\{background:#fff\}\.slide\{page-break-after:always/.test(pjs));
+  ok('break-after/page-break-after now apply unconditionally, with break-inside:avoid alongside them',
+     /\.slide\{break-inside:avoid;page-break-inside:avoid\}/.test(pjs) &&
+     /\.slide:not\(:last-of-type\)\{break-after:page;page-break-after:always\}/.test(pjs));
+  ok('jsPDF format is still A4, landscape, mm units (unchanged)', /jsPDF: \{ unit: 'mm', format: 'a4', orientation: 'landscape' \}/.test(pjs));
+
+  // --- Copy wizard (item 6) — genuinely EXECUTED ---------------------------
+  eq('buildCopyDrafts promotes each source slide\'s current photo into the new previous slot',
+     PPR._buildCopyDrafts([
+       { after_photo_id: 'pB', before_photo_id: 'pA', after_caption: 'June shot', before_caption: 'May shot' },
+       { after_photo_id: 'pC', before_photo_id: null, after_caption: 'June only', before_caption: null }
+     ]).map((d) => d.before_photo_id), ['pB', 'pC']);
+  eq('every draft starts with NO current photo — the gap the wizard must close before saving',
+     PPR._buildCopyDrafts([{ after_photo_id: 'pB' }]).every((d) => d.after_photo_id === null), true);
+  eq('slide numbers are resequenced from 1', PPR._buildCopyDrafts([{}, {}, {}]).map((d) => d.slide_no), [1, 2, 3]);
+  ok('a source presentation with zero slides skips the wizard entirely (same as "start empty")',
+     /if \(!src\.length\) \{[\s\S]{0,150}createPresentationPlain\(newData\);/.test(pjs));
+
+  // --- Previous/Current eligibility filter (items 5/9) — genuinely EXECUTED --
+  const pJun = { id: 'jun', location: 'Tower 1', taken_at: '2026-06-01' };
+  const pMayA = { id: 'mayA', location: 'Tower 1', taken_at: '2026-05-01' };
+  const pMayB = { id: 'mayB', location: 'Tower 2', taken_at: '2026-05-15' };
+  const pJul = { id: 'jul', location: 'Tower 1', taken_at: '2026-07-01' };
+  const lib = [pJun, pMayA, pMayB, pJul];
+  eq('Previous picker (direction=before): only earlier AND same-location by default',
+     PPR._eligiblePhotos(lib, pJun, 'before', false).map((p) => p.id), ['mayA']);
+  eq('"Show all locations" lifts the location restriction but keeps the date rule',
+     PPR._eligiblePhotos(lib, pJun, 'before', true).map((p) => p.id), ['mayB', 'mayA']);
+  eq('a photo is never offered as its own previous/current', PPR._eligiblePhotos([pJun], pJun, 'before', true), []);
+  eq('Current picker in the wizard (direction=after): only on/after the fixed previous photo',
+     PPR._eligiblePhotos(lib, pMayA, 'after', true).map((p) => p.id), ['jul', 'jun', 'mayB']);
+  eq('no reference photo yet (Current picker with nothing to compare) — every photo is offered',
+     PPR._eligiblePhotos(lib, null, 'before', false).length, 4);
+
+  // --- Thumbnail picker (18-item list item 6) -------------------------------
+  ok('openThumbPicker exists and is reused by both the ordinary slide form and the wizard',
+     /function openThumbPicker\(opts\)/.test(pjs) &&
+     (pjs.match(/openThumbPicker\(\{/g) || []).length >= 2);
+  ok('the picker is a grid of real thumbnails, not a <select>', /class="ppr-pickgrid"/.test(pjs) && /class="ppr-pickitem/.test(pjs));
+  ok('a chosen photo shows as a thumbnail button (pickBtnHTML), not plain text', /function pickBtnHTML\(which, id\)/.test(pjs));
+
+  // --- Gallery batch select (item 5) ---------------------------------------
+  ok('module.js tracks a selection set, scoped to VISIBLE ids for every bulk action',
+     /var selected = \{\};/.test(mjs) && /function visibleSelectedIds\(\)/.test(mjs) &&
+     /var vis = \{\}; visible\(\)\.forEach/.test(mjs));
+  ok('both List and Gallery rows carry a [data-sel] checkbox (one selection set for the whole Gallery screen)',
+     /data-sel="' \+ r\.id \+ '"/.test(mjs) && (mjs.match(/data-sel="/g) || []).length >= 2);
+  ok('the List grid header gained a matching leading column so header/body stay aligned',
+     /<div><\/div><div>Photo<\/div>/.test(mjs));
+  ok('the three batch actions are Download / Add to Presentation / Archive',
+     /pp-sel-download/.test(mjs) && /pp-sel-addppr/.test(mjs) && /pp-sel-archive/.test(mjs));
+  ok('batch archive is tolerant of the pending migration, same as the single-item toggle', /pp-sel-archive'\)\.onclick[\s\S]{0,400}archive-flag\.sql/.test(mjs));
+  ok('index.html has the batch-select bar host, hidden by default', /id="pp-selbar" hidden/.test(html));
+  ok('Add to Presentation calls PPR.addPhotosToPresentation, not a re-implementation of slide-numbering', /PPR\.addPhotosToPresentation\(pprId, photoIds\)/.test(mjs));
+  ok('ppr.js exports addPhotosToPresentation appending AFTER the existing slide count', /var n = slides\(pprId\)\.length;[\s\S]{0,200}slide_no: n \+ i \+ 1,/.test(pjs));
+  ok('ppr.js exports listForPicker, excluding archived presentations from the target list', /listForPicker: function \(\) \{[\s\S]{0,200}!p\.archived/.test(pjs));
+
+  // =========================================================== [28] =========
+  // 18-item list, Batches E-H + Add-media type selector/video (2026-08-29) —
+  // "do all the items not done." Everything the 2026-08-29 status recap
+  // flagged as explicitly NOT done: per-photo pin + direction capture (E),
+  // the markup/annotation editor + slide-sorter (F), the floor-plan
+  // map/vertical-stacking view (G), top-view image registration (H), and the
+  // Add-media type selector + real video upload.
+  console.log('\n[28] Batches E-H: pin+direction, markup+sorter, map view, registration, video');
+
+  // --- Add-media type selector + video (folded in alongside Batch C) -------
+  ok('mediaTypeSelectorHTML/wireMediaTypeSelector exist for the Photo/Video/360°/3D picker',
+     /function mediaTypeSelectorHTML\(idPrefix, cur\)/.test(mjs) && /function wireMediaTypeSelector\(idPrefix, onChange\)/.test(mjs));
+  ok('the upload save payload records which kind was picked', /media_type: kind/.test(mjs));
+  ok('a video renders as a real <video> element, not an <img>, in thumb()',
+     /r\.media_type === 'video'/.test(mjs) && /pp-vidplay/.test(mjs));
+  ok('the lightbox has both an <img> and a <video> element and toggles between them',
+     /id="pp-lb-video"/.test(html) && /var imgEl = \$\('pp-lb-img'\), vidEl = \$\('pp-lb-video'\);/.test(mjs));
+  ok('tolerantWrite gained a strip-rule for media_type, naming the migration file if it is missing',
+     /'media_type' in job\.patch/.test(mjs) && /photo-media-type\.sql/.test(mjs));
+
+  // --- Batch E: per-photo pin + direction capture --------------------------
+  ok('migration adds floor_plan_pins.direction_deg, nullable, folded into schema.sql',
+     /alter table floor_plan_pins add column if not exists direction_deg double precision;/.test(
+       fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-pin-direction.sql'), 'utf8')) &&
+     /direction_deg double precision/.test(fs.readFileSync(schemaFile, 'utf8')));
+  ok('a pin only draws its cone when a direction was actually recorded',
+     /function pinConeHTML\(pin\)/.test(bmjs) && /pin\.direction_deg === null \|\| pin\.direction_deg === undefined/.test(bmjs));
+  ok('directionWidgetHTML/wireDirectionWidget exist (the drag-to-set-direction control)',
+     /function directionWidgetHTML\(idPrefix, curDeg\)/.test(bmjs) && /function wireDirectionWidget\(idPrefix\)/.test(bmjs));
+  ok('openPinPickerFor exists — the Gallery-triggered pin flow that does not disturb the Plans screen state',
+     /function openPinPickerFor\(itemType, itemId, itemLabel, onDone\)/.test(bmjs) &&
+     !/openPinPickerFor[\s\S]{0,400}activePlanId = /.test(bmjs));
+  ok('module.js offers the pin-picker follow-up after a successful upload, non-blocking',
+     /BIM\.openPinPickerFor/.test(mjs));
+  ok('Gallery tiles with a pin show an expandable icon (item 8), never on tiles without one',
+     /pinInfoFor\('photo', r\.id\)/.test(mjs) && /pp-pinbtn/.test(mjs));
+  ok('openPinPreview exists for the tile-icon crop-zoom overlay', /function openPinPreview\(photoId\)/.test(mjs));
+  // Genuine execution — the exact math, not a regex on the surrounding code.
+  // 0° = up, clockwise-positive, matching floor_plan_pins.direction_deg's
+  // documented convention.
+  (function () {
+    const near = (a, b) => Math.abs(a - b) < 0.001;
+    ok('drag straight UP records 0°', near(BIM._directionDegFromDrag(0, -1), 0));
+    ok('drag RIGHT records 90° (clockwise from up)', near(BIM._directionDegFromDrag(1, 0), 90));
+    ok('drag DOWN records 180°', near(BIM._directionDegFromDrag(0, 1), 180));
+    ok('drag LEFT records 270°', near(BIM._directionDegFromDrag(-1, 0), 270));
+  })();
+
+  // --- Batch F: markup/annotation editor + slide-sorter --------------------
+  const markupMigration = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-markup.sql'), 'utf8');
+  ok('migration adds progress_photos.markup (the photo\'s OWN permanent markup)', /progress_photos add column if not exists markup jsonb/.test(markupMigration));
+  ok('migration creates ppr_slide_markups — a SEPARATE, presentation-only store keyed by (ppr_slide_id, pane)',
+     /create table if not exists ppr_slide_markups/.test(markupMigration) &&
+     /unique \(ppr_slide_id, pane\)/.test(markupMigration) &&
+     /pane\s+text not null check \(pane in \('before', 'after'\)\)/.test(markupMigration));
+  ok('both stores folded into supabase-schema.sql', /markup\s+jsonb default '\[\]'::jsonb/.test(fs.readFileSync(schemaFile, 'utf8')) &&
+     /create table if not exists ppr_slide_markups/.test(fs.readFileSync(schemaFile, 'utf8')));
+  ok('module.js exports the markup engine for cross-file reuse (openMarkupEditor + a read-only canvas painter)',
+     /openMarkupEditor: function \(imageUrl, initialMarkup, onSave\)/.test(mjs) &&
+     /drawMarkupOnCanvas: function \(canvas, objs\)/.test(mjs));
+  ok('the lightbox never shows markup controls on Gallery tiles — only in paintMarkupOverlay, opened from openLightbox',
+     /function paintMarkupOverlay\(r\)/.test(mjs) && !/pp-mktoggle/.test(mjs.split('function galleryHTML')[0] || ''));
+  ok('ppr.js loads presentation-only markups tolerant of the migration not having run', /async function loadSlideMarkups\(\)/.test(pjs) && /markupTableMissing/.test(pjs));
+  ok('saveSlideMarkup UPDATEs an existing row (by cached row id) rather than violating the (ppr_slide_id,pane) unique constraint with a second INSERT',
+     /async function saveSlideMarkup\(slideId, pane, objs\)/.test(pjs) && /if \(rowId\) \{/.test(pjs));
+  ok('each pane renders its own toggle/edit toolbar + overlay canvas, wired by wirePaneMarkup after render',
+     /ppr-panetools/.test(pjs) && /function wirePaneMarkup\(cur\)/.test(pjs) && /wirePaneMarkup\(cur\);/.test(pjs));
+  ok('exports (offline HTML/PDF/PPTX) never reference the presentation-only markup overlay — it is a live viewing aid, not part of the record',
+     (function () {
+       const exportSlice = (pjs.split('function slideFigureHTML')[1] || '').split('var EXPORT_CSS')[0];
+       return !/ppr_slide_markups|ppr-mktool|ppr-mkcanvas/.test(exportSlice);
+     })());
+  ok('slide-sorter: "Reorder slides" only offered with 2+ slides (nothing to reorder otherwise)',
+     /s\.length > 1 \? '<button class="pp-iconbtn" id="ppr-sort"/.test(pjs));
+  ok('openSlideSorter saves nothing until "Save order" is clicked (drag only mutates a local draft copy)',
+     /function openSlideSorter\(p\)/.test(pjs) && /var draft = slides\(p\.id\);/.test(pjs) &&
+     /skip the round-trip/.test(pjs));
+  // Genuine execution — moveItem is pure and this is exactly the kind of
+  // off-by-one-prone array surgery worth actually running.
+  (function () {
+    const src = ['a', 'b', 'c', 'd'];
+    eq('moveItem: drag the first slide to the end', PPR._moveItem(src, 0, 3), ['b', 'c', 'd', 'a']);
+    eq('moveItem: drag the last slide to the front', PPR._moveItem(src, 3, 0), ['d', 'a', 'b', 'c']);
+    eq('moveItem: a no-op move (same position) changes nothing', PPR._moveItem(src, 1, 1), ['a', 'b', 'c', 'd']);
+    eq('moveItem never mutates its argument (the caller reassigns `draft` from the return value)', src, ['a', 'b', 'c', 'd']);
+  })();
+  eq('markupKey is "<slideId>|<pane>" — the exact shape both the load and the save paths key their caches by',
+     PPR._markupKey('slide-9', 'after'), 'slide-9|after');
+  // Genuine execution of the shared drawing engine via a fake canvas-2D
+  // recorder — the one way to tell "drew a rect" from "silently drew nothing"
+  // for each shape type, rather than only checking the source mentions them.
+  (function () {
+    function fakeCtx() {
+      const calls = [];
+      return {
+        calls,
+        save() { calls.push('save'); }, restore() { calls.push('restore'); },
+        beginPath() { calls.push('beginPath'); }, closePath() { calls.push('closePath'); },
+        moveTo() { calls.push('moveTo'); }, lineTo() { calls.push('lineTo'); },
+        stroke() { calls.push('stroke'); }, fill() { calls.push('fill'); },
+        strokeRect() { calls.push('strokeRect'); }, fillRect() { calls.push('fillRect'); },
+        ellipse() { calls.push('ellipse'); }, arc() { calls.push('arc'); },
+        fillText() { calls.push('fillText'); }, measureText: () => ({ width: 40 }),
+        clearRect() { calls.push('clearRect'); },
+        set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {},
+      };
+    }
+    let c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'rect', x0: 0.1, y0: 0.1, x1: 0.4, y1: 0.4, color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: a rect object actually calls strokeRect', c.calls.includes('strokeRect'));
+    c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'circle', x0: 0.1, y0: 0.1, x1: 0.4, y1: 0.4, color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: a circle object actually calls ellipse+stroke', c.calls.includes('ellipse') && c.calls.includes('stroke'));
+    c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'arrow', x0: 0, y0: 0, x1: 1, y1: 1, color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: an arrow calls both stroke (shaft) and fill (arrowhead)', c.calls.includes('stroke') && c.calls.includes('fill'));
+    c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'text', x: 0.5, y: 0.5, text: 'Note', color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: a text object actually calls fillText', c.calls.includes('fillText'));
+    c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'icon', x: 0.5, y: 0.5, icon: 'warn', color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: an icon stamp uses save/restore around its own drawing (drawIconStamp)', c.calls.includes('save') && c.calls.includes('restore'));
+    ok('drawMarkupObjects always clears the canvas first (an old markup can never bleed through a redraw)', (function () {
+      const c2 = fakeCtx(); PP._drawMarkupObjects(c2, [], 200, 100); return c2.calls[0] === 'clearRect';
+    })());
+  })();
+  // Genuine execution of the eraser's nearest-object hit test.
+  (function () {
+    const objs = [
+      { type: 'rect', x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.3 },   // centre ~ (0.2, 0.2)
+      { type: 'icon', x: 0.8, y: 0.8, icon: 'warn' },
+    ];
+    eq('markupHitTest: a click near the rect\'s centre hits the rect (index 0)', PP._markupHitTest(objs, 0.2, 0.2, 400, 300), 0);
+    eq('markupHitTest: a click near the icon hits the icon (index 1)', PP._markupHitTest(objs, 0.8, 0.8, 400, 300), 1);
+    eq('markupHitTest: a click far from everything hits nothing (-1)', PP._markupHitTest(objs, 0.5, 0.02, 400, 300), -1);
+  })();
+
+  // --- Batch G: floor-plan map/clustering view -----------------------------
+  // Structural only — mapClusters/renderMapBody depend on module-internal
+  // plan/pin state populated by load(), same DOM/auth-stack limitation this
+  // module has flagged for every other client-only surface (Phase 3's OpenCV
+  // stitching is the one exception, and that needed a real browser).
+  ok('the Plan/Map toggle exists in bim.js\'s render(), dispatching to a dedicated map body',
+     /screen2 ===? 'map'/.test(bmjs) && /function renderMapBody\(\)/.test(bmjs));
+  ok('map clustering + the month-scrub/play controls exist, mirroring Vertical Stacking\'s own null-is-live pattern',
+     /function mapClusters\(monthCutoff\)/.test(bmjs) && /function wireMapView\(\)/.test(bmjs) &&
+     /function stopMapPlay\(\)/.test(bmjs) && /mapPlaying/.test(bmjs));
+  ok('a cluster resolves the visible item\'s date via itemDateFor, cumulative up to the scrubbed month',
+     /function itemDateFor\(pin\)/.test(bmjs));
+  ok('clicking a cluster opens its member list rather than jumping straight into one item (ambiguous which one)',
+     /function openClusterList\(cluster\)/.test(bmjs));
+
+  // --- Batch H: top-view photo -> floor plan registration ------------------
+  const regMigration = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plan-registration.sql'), 'utf8');
+  ok('migration creates floor_plan_registrations, one row per (floor_plan, photo) pair', /unique \(floor_plan_id, photo_id\)/.test(regMigration));
+  ok('point_pairs + the computed homography are both stored (never recomputed on every render)', /point_pairs\s+jsonb/.test(regMigration) && /homography\s+jsonb/.test(regMigration));
+  ok('folded into supabase-schema.sql', /create table if not exists floor_plan_registrations/.test(fs.readFileSync(schemaFile, 'utf8')));
+  ok('bim.js reuses the SAME OpenCV.js readiness pattern pano.js already proved working, not a re-implementation',
+     /function ensureOpenCV\(\)/.test(bmjs) && /_cvReady/.test(bmjs));
+  ok('the registration UI requires at least MIN_REG_POINTS=4 point pairs before it will compute a homography',
+     /var MIN_REG_POINTS = 4;/.test(bmjs) && /pairs\.length < MIN_REG_POINTS/.test(bmjs));
+  ok('openRegisterFlow calls cv.findHomography with RANSAC (a few mismatched clicks must not wreck the whole warp)',
+     /cv\.findHomography\([\s\S]{0,200}cv\.RANSAC/.test(bmjs));
+  ok('the registration upsert keys on (floor_plan_id, photo_id) — a re-register REPLACES, never duplicates', /onConflict:\s*'floor_plan_id,photo_id'/.test(bmjs));
+  ok('paintActualView renders the WARPED photo via cv.warpPerspective, swapped in for the drawing image', /function paintActualView\(reg\)/.test(bmjs) && /cv\.warpPerspective/.test(bmjs));
+
+  // =========================================================== [29] =========
+  // Batch G, the missed half (item 16 — Vertical Stacking for photos), plus a
+  // REAL wiring bug this pass found: the Map (and now Stack) toggle button was
+  // completely dead from the DEFAULT Plan view, because the Plan-mode render
+  // branch never called wireMapView() at all.
+  console.log('\n[29] Batch G item 16 (Vertical Stacking) + the Map/Stack toggle wiring fix');
+
+  ok('bim.js exports locLevels() from module.js for the stacking view to read the same level DEFINITIONS the Location Breakdown picker uses',
+     /locLevels: function \(\) \{ return LOC_LEVELS\.slice\(\); \}/.test(mjs));
+  ok('render() calls wireMapView() from EVERY reachable branch — stack, no-plans, map, AND plan (the bug: plan mode never did)',
+     (function () {
+       // Count call sites, not just presence: the fix specifically ADDED the
+       // plan-branch call, so this must be at least 4 (was 1: only the map
+       // branch called it, before this pass).
+       const calls = (bmjs.match(/wireMapView\(\);/g) || []).length;
+       return calls >= 4;
+     })());
+  ok('the Plan-branch fix is commented as a found-and-fixed defect, not silently patched', /REAL BUG this pass found and fixed/.test(bmjs));
+  ok('viewToggleHTML() now renders Plan / Map / Stack as one shared three-button toggle, used by all three render() branches',
+     /function viewToggleHTML\(\)/.test(bmjs) && (bmjs.match(/viewToggleHTML\(\)/g) || []).length >= 4);
+  ok('Stack is reachable even with ZERO floor plans uploaded (unlike Map, which needs a plan\'s own pins by definition)',
+     /if \(screen2 === 'stack'\) \{[\s\S]{0,300}return;\s*\}\s*\n\s*if \(!plans\.length\)/.test(bmjs));
+  ok('switching to Stack stops the Map play timer and vice versa (no orphaned setInterval running in the background)',
+     /stopMapPlay\(\); screen2 = 'stack'/.test(bmjs) && /stopStackPlay\(\); screen2 = 'map'/.test(bmjs));
+  ok('renderStackBody/wireStackView/stopStackPlay exist, and the empty state names WHERE to build a Location Breakdown',
+     /function renderStackBody\(\)/.test(bmjs) && /function wireStackView\(\)/.test(bmjs) && /function stopStackPlay\(\)/.test(bmjs) &&
+     /Location Breakdown&hellip;/.test(bmjs));
+  ok('only the first-picked row level and a SEPARATE column level drive the grid — a level can never be picked as both axes',
+     /levels\.filter\(function \(l\) \{ return l\.id !== \(stackRowLevel\(\) && stackRowLevel\(\)\.id\); \}\)/.test(bmjs));
+  ok('a single-level project collapses columns to one shared "All" bucket rather than repeating the row axis',
+     /if \(!colNames\.length\) colNames = \[''\];/.test(bmjs) && /esc\(c \|\| 'All'\)/.test(bmjs));
+  ok('the hover-magnifier is a simple src-swap into a docked panel, per the plan\'s own "simpler than the SVG-clone version" note',
+     /bim-stack-mag/.test(bmjs) && /magImg\.src = im\.dataset\.magnify/.test(bmjs));
+  ok('scope note: only the first TWO location levels drive the grid, stated rather than silently limited', /Scope reduction, stated rather than silently shipped/.test(bmjs.split('vertical stacking')[1] || ''));
+
+  // Genuine execution of the "as of" cell rule — the exact class of bug this
+  // module has already been bitten by once (the vendor-performance /
+  // reportedThrough family): a wrong fallback here reports a photo as
+  // existing at a location before it was actually taken, or hides one that
+  // should already be visible.
+  (function () {
+    const photos = [
+      { id: 'p1', taken_at: '2026-01-15' },
+      { id: 'p2', taken_at: '2026-03-10' },
+      { id: 'p3', taken_at: '2026-05-01' },
+    ];
+    eq('mostRecentAsOf: no cutoff returns the single latest photo', BIM._mostRecentAsOf(photos, null).id, 'p3');
+    eq('mostRecentAsOf: cutoff mid-way returns the latest photo AT OR BEFORE it, never a later one', BIM._mostRecentAsOf(photos, '2026-03').id, 'p2');
+    eq('mostRecentAsOf: cutoff before every photo returns null, never the earliest by mistake', BIM._mostRecentAsOf(photos, '2025-12'), null);
+    eq('mostRecentAsOf: an empty candidate list (no photo at this cell) returns null, not a crash', BIM._mostRecentAsOf([], '2026-06'), null);
+  })();
+
+  // Genuine execution of the full row/column grid builder against a small,
+  // hand-checked fixture — two towers, two floors each, one cell deliberately
+  // left with no photo at all (must read as empty, never invent a neighbour).
+  (function () {
+    const levels = [{ id: 'lvl-tower', name: 'Tower', sort_order: 1 }, { id: 'lvl-floor', name: 'Floor', sort_order: 2 }];
+    const photos = [
+      { id: 'a1', taken_at: '2026-01-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },
+      { id: 'a2', taken_at: '2026-02-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },  // supersedes a1
+      { id: 'b1', taken_at: '2026-01-15', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 2' } },
+      { id: 'c1', taken_at: '2026-01-20', location_values: { 'lvl-tower': 'Tower 2', 'lvl-floor': 'Floor 1' } },
+      // Tower 2 / Floor 2: deliberately NO photo at all.
+    ];
+    const g = BIM._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', null);
+    eq('stackGrid: rows are the distinct ROW-level values, sorted', g.rows.map((r) => r.row), ['Tower 1', 'Tower 2']);
+    eq('stackGrid: columns are the distinct COLUMN-level values, sorted', g.cols, ['Floor 1', 'Floor 2']);
+    eq('stackGrid: Tower 1 / Floor 1 resolves to the LATEST of the two competing photos (a2, not a1)',
+       g.rows[0].cells[0].photo.id, 'a2');
+    eq('stackGrid: Tower 1 / Floor 2 resolves to its one photo', g.rows[0].cells[1].photo.id, 'b1');
+    eq('stackGrid: Tower 2 / Floor 1 resolves to its one photo', g.rows[1].cells[0].photo.id, 'c1');
+    eq('stackGrid: Tower 2 / Floor 2 (no photo at all) is null, never borrowed from a neighbouring cell',
+       g.rows[1].cells[1].photo, null);
+    // As-of cutoff applied through the WHOLE grid, not just one cell.
+    const gCutoff = BIM._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', '2026-01');
+    eq('stackGrid with a cutoff: Tower 1 / Floor 1 falls back to a1 (a2 is in the future relative to the cutoff)',
+       gCutoff.rows[0].cells[0].photo.id, 'a1');
+    eq('stackGrid: a project with only ONE level collapses columns to a single shared bucket',
+       BIM._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
+  })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

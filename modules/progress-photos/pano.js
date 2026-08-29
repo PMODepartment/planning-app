@@ -574,6 +574,11 @@ window.PANO = (function () {
     open: async function (id) {
       if (!panoramas.length) await load();
       openViewer(id);
-    }
+    },
+    // Batch C (2026-08-29): 360°/3D fold into the unified Gallery feed, which
+    // needs this module's data loaded and its signed thumbnail URLs — both
+    // exposed here rather than duplicating the fetch+sign logic in module.js.
+    ensureLoaded: async function () { if (!panoramas.length) await load(); },
+    urlOf: function (p) { return p ? urlOf(p.pano_url) : ''; }
   };
 })();

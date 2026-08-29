@@ -21,6 +21,7 @@ window.PPR = (function () {
   var T_SLIDE  = 'ppr_slides';
   var T_PHOTO  = 'progress_photos';
   var T_TMPL   = 'ppr_report_templates';
+  var T_MARKUP = 'ppr_slide_markups';
   var BUCKET   = 'progress-photos';
   var SIGN_TTL = 3600;
 
@@ -32,14 +33,30 @@ window.PPR = (function () {
   var templates = [];            // saved report templates for this project
   var tmplTableMissing = false;  // migrations/2026-08-29-ppr-report-templates.sql not run yet
   var urlCache = {};             // storage path -> signed URL
+  // Presentation-only markup (18-item list item 14) — a SEPARATE store from
+  // the photo's own permanent markup (progress_photos.markup), keyed by
+  // "<ppr_slide_id>|<pane>" so a Previous pane and a Current pane on the same
+  // slide never share a drawing. markupCache holds the vector array (what's
+  // drawn); markupRowId holds the underlying row id so a second edit UPDATEs
+  // in place instead of violating ppr_slide_markups' own (ppr_slide_id,pane)
+  // unique constraint with a second INSERT. showMarkup is a per-pane, session-
+  // only visibility toggle — never persisted, since "am I looking at the
+  // overlay right now" is a viewing preference, not presentation content.
+  var markupCache = {}, markupRowId = {}, showMarkup = {};
+  var markupTableMissing = false;  // migrations/2026-08-29-markup.sql not run yet
   var selId = null;              // selected PPR (drives the preview pane)
-  var filters = { from: '', to: '' };
+  var filters = { from: '', to: '', archived: false };  // archived: false = hide archived (default)
   var screen = 'list';           // list | slides | templates
   var viewPprId = null, slideAt = 0, keyPlanOpen = false;
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
   function esc(s) { return Fmt.esc(s); }
+  // module.js's own reqMark() is private to ITS closure — restated here
+  // rather than exported/shared, matching this file's existing convention of
+  // keeping small independently-loaded helpers in step across files (see
+  // allLocationCombos()'s own comment on the same call).
+  function reqMark() { return ' <span class="pp-req">*</span>'; }
 
   // The PPR screens are presentation surfaces, so they use the app's long date
   // ("13 July 2026") rather than the dashboard's compact Fmt.date.
@@ -86,8 +103,12 @@ window.PPR = (function () {
       var el = $('ppr-f-' + k);
       if (el) el.onchange = el.oninput = function () { filters[k] = this.value; renderList(); };
     });
+    // Archive (follow-up feedback, 2026-08-29): a soft-delete, hidden from the
+    // default list — this checkbox is the ONLY way back to see one, same rule
+    // as the Gallery's own archived items.
+    if ($('ppr-f-archived')) $('ppr-f-archived').onchange = function () { filters.archived = this.checked; renderList(); };
     $('ppr-clearfilters').onclick = function () {
-      filters = { from: '', to: '' };
+      filters = { from: '', to: '', archived: filters.archived };  // the archived toggle is not a "filter" to clear
       ['from', 'to'].forEach(function (k) { var el = $('ppr-f-' + k); if (el) el.value = ''; });
       renderList();
     };
@@ -132,8 +153,27 @@ window.PPR = (function () {
     } catch (e) { photos = []; }
 
     await loadTemplates();
+    await loadSlideMarkups();
     await signAll();
     render();
+  }
+
+  // Tolerant of the migration not having run yet, same convention as
+  // loadTemplates(). Loaded whole-project, not per-slide-open — the same
+  // "small dataset, load it all up front" call already made for pprs/slides.
+  async function loadSlideMarkups() {
+    markupTableMissing = false;
+    markupCache = {}; markupRowId = {};
+    try {
+      var rows = await PDb.selectAll(T_MARKUP, function (q) { return q.eq('project_id', pid); });
+      rows.forEach(function (r) {
+        var key = r.ppr_slide_id + '|' + r.pane;
+        markupCache[key] = r.markup || [];
+        markupRowId[key] = r.id;
+      });
+    } catch (e) {
+      if (/schema cache|does not exist/i.test((e && e.message) || '')) markupTableMissing = true;
+    }
   }
 
   // Tolerant of the migration not having run yet — same convention as every
@@ -179,6 +219,38 @@ window.PPR = (function () {
   function slides(pprId) { return (slidesOf[pprId] || []).slice().sort(function (a, b) { return (a.slide_no || 0) - (b.slide_no || 0); }); }
   function pprById(id) { return pprs.filter(function (p) { return p.id === id; })[0] || null; }
   function tmplById(id) { return templates.filter(function (t) { return t.id === id; })[0] || null; }
+
+  function markupKey(slideId, pane) { return slideId + '|' + pane; }
+  function markupFor(slideId, pane) { return markupCache[markupKey(slideId, pane)] || []; }
+
+  // Insert-or-update by (ppr_slide_id, pane) — markupRowId tells which, so a
+  // second edit of the same pane UPDATEs the existing row rather than hitting
+  // the table's own unique constraint with a second INSERT.
+  async function saveSlideMarkup(slideId, pane, objs) {
+    var key = markupKey(slideId, pane);
+    var rowId = markupRowId[key];
+    try {
+      var res;
+      if (rowId) {
+        res = await sb().from(T_MARKUP).update({ markup: objs, updated_at: new Date().toISOString() }).eq('id', rowId);
+      } else {
+        res = await sb().from(T_MARKUP).insert({
+          ppr_slide_id: slideId, project_id: pid, pane: pane, markup: objs, created_by: uid
+        }).select();
+      }
+      if (res.error) throw res.error;
+      markupCache[key] = objs;
+      if (!rowId && res.data && res.data[0]) markupRowId[key] = res.data[0].id;
+      showMarkup[key] = true;
+      UI.toast('Markup saved', 'ok');
+    } catch (e) {
+      var msg = /schema cache|does not exist/i.test((e && e.message) || '')
+        ? 'Markup could not be saved — run migrations/2026-08-29-markup.sql'
+        : ('Could not save markup: ' + ((e && e.message) || e));
+      UI.toast(msg, 'warn');
+    }
+    renderSlides();
+  }
 
   // Every photo AT (a superset of) this set of location values, newest first.
   // Same subset-equality rule as module.js's resolveActivity()/lastCaptureAt()
@@ -242,6 +314,10 @@ window.PPR = (function () {
 
   function visiblePprs() {
     return pprs.filter(function (p) {
+      // Archived is hidden unless the toggle is explicitly on — never both at
+      // once ("show archived" means ONLY archived, so an archived item found
+      // via a date filter can't silently reappear in the everyday list).
+      if (!!p.archived !== !!filters.archived) return false;
       if (filters.from && (!p.ppr_date || p.ppr_date < filters.from)) return false;
       if (filters.to && (!p.ppr_date || p.ppr_date > filters.to)) return false;
       return true;
@@ -252,10 +328,15 @@ window.PPR = (function () {
     var host = $('ppr-view');
     var list = visiblePprs();
 
+    // The denominator matches the archived toggle's OWN scope (not
+    // pprs.length as a whole) — otherwise "3 of 12" while 9 are archived and
+    // simply not being shown reads as 9 presentations having vanished.
+    var scope = pprs.filter(function (p) { return !!p.archived === !!filters.archived; });
     var count = $('ppr-count');
     if (count) {
       count.textContent = pprs.length
-        ? 'Showing ' + list.length + ' of ' + pprs.length + ' PPR' + (pprs.length === 1 ? '' : 's')
+        ? 'Showing ' + list.length + ' of ' + scope.length + ' PPR' + (scope.length === 1 ? '' : 's') +
+          (filters.archived ? ' (archived)' : '')
         : '';
     }
     $('ppr-countbar').style.visibility = pprs.length ? '' : 'hidden';
@@ -276,32 +357,32 @@ window.PPR = (function () {
 
     var rows = list.map(function (p) {
       var n = slides(p.id).length;
+      // Row actions are Download / Preview / Archive only (follow-up feedback,
+      // 2026-08-29, item 1) — the row click already opens the presentation, so
+      // "open" is gone as an icon; Edit/Delete-presentation moved into the
+      // opened presentation's own header (renderSlides()), not lost, just
+      // relocated to where you're already looking at the thing you'd edit.
       return '<div class="ppr-row' + (p.id === selId ? ' sel' : '') + '" data-id="' + p.id + '" ' +
         'title="Open this presentation\'s slides">' +
         '<div class="ppr-cell ppr-date">' + esc(longDate(p.ppr_date)) + '</div>' +
         '<div class="ppr-cell">' + esc(p.description || '—') + '</div>' +
         '<div class="ppr-cell ppr-num">' + n + '</div>' +
         '<div class="ppr-cell ppr-acts">' +
-          '<button class="pp-iconbtn" data-act="download" data-id="' + p.id + '" ' +
-            'title="Download an offline copy of this presentation (opens with no network)">' +
+          '<button class="pp-iconbtn" data-act="download" data-id="' + p.id + '" title="Download…">' +
             '<span data-ico="download" data-ico-size="15"></span></button>' +
-          '<button class="pp-iconbtn" data-act="pdf" data-id="' + p.id + '" title="Download as PDF">' +
-            '<span data-ico="clipboard" data-ico-size="15"></span></button>' +
-          '<button class="pp-iconbtn" data-act="pptx" data-id="' + p.id + '" title="Download as PowerPoint (.pptx)">' +
-            '<span data-ico="layers" data-ico-size="15"></span></button>' +
-          '<button class="pp-iconbtn" data-act="open" data-id="' + p.id + '" title="Open slides">' +
-            '<span data-ico="arrowRight" data-ico-size="15"></span></button>' +
-          (canWrite ? '<button class="pp-iconbtn" data-act="edit" data-id="' + p.id + '" title="Edit presentation details">' +
-                      '<span data-ico="pencil" data-ico-size="15"></span></button>' +
-                      '<button class="pp-iconbtn pp-del" data-act="del" data-id="' + p.id + '" title="Delete presentation">' +
-                      '<span data-ico="trash" data-ico-size="15"></span></button>' : '') +
+          '<button class="pp-iconbtn" data-act="preview" data-id="' + p.id + '" title="Preview">' +
+            '<span data-ico="eye" data-ico-size="15"></span></button>' +
+          (canWrite ? '<button class="pp-iconbtn" data-act="archive" data-id="' + p.id + '" ' +
+                      'title="' + (p.archived ? 'Restore from archive' : 'Archive') + '">' +
+                      '<span data-ico="folder" data-ico-size="15"></span></button>' : '') +
         '</div></div>';
     }).join('');
 
     var table = '<div class="ppr-table">' +
       '<div class="ppr-head"><div>Presentation Date</div><div>Description</div>' +
       '<div class="ppr-num">No. of Slides</div><div></div></div>' +
-      (list.length ? rows : '<div class="pp-empty" style="border:0;">No presentations in this date range.</div>') +
+      (list.length ? rows : '<div class="pp-empty" style="border:0;">' +
+        (filters.archived ? 'No archived presentations.' : 'No presentations in this date range.') + '</div>') +
       '</div>';
 
     host.innerHTML = '<div class="ppr-split">' + table +
@@ -312,6 +393,9 @@ window.PPR = (function () {
     // press an icon just to open it). Selecting-without-opening is no longer a
     // separate gesture — the preview pane is driven by whatever is open, and
     // hovering a row is enough to see its slide count in the list itself.
+    // ⚠️ An ARCHIVED row still opens on click — archiving hides it from the
+    // default LIST, it doesn't lock the presentation itself; a planner may
+    // still need to open an old one to re-download it.
     Array.prototype.forEach.call(host.querySelectorAll('.ppr-row'), function (r) {
       r.onclick = function () { openPpr(r.dataset.id); };
     });
@@ -320,12 +404,9 @@ window.PPR = (function () {
         e.stopPropagation();
         var p = pprById(el.dataset.id); if (!p) return;
         var a = el.dataset.act;
-        if (a === 'open') openPpr(p.id);
-        else if (a === 'download') exportOffline(p);
-        else if (a === 'pdf') exportPdf(p);
-        else if (a === 'pptx') exportPptx(p);
-        else if (a === 'edit') openPprForm(p);
-        else if (a === 'del') removePpr(p);
+        if (a === 'download') openDownloadChoice(p);
+        else if (a === 'preview') openPreviewModal(p);
+        else if (a === 'archive') toggleArchive(p);
       };
     });
     renderPreview();
@@ -335,6 +416,91 @@ window.PPR = (function () {
     // delete icons were reported missing — the markup was correct, but the
     // `data-ico` placeholders were never swapped for SVG on those paths.
     hydrate();
+  }
+
+  // Archive is a soft-delete: a presentation's history (and any Gallery photos
+  // it cites) must survive being retired, unlike Delete (still reachable from
+  // the opened presentation's own header, see renderSlides() below), which
+  // removes the row and cascades its slides. Direct action, no confirm modal
+  // — reversible with one more click via the same button.
+  async function toggleArchive(p) {
+    var next = !p.archived;
+    var res = await sb().from(T_PPR).update({ archived: next, updated_at: new Date().toISOString() }).eq('id', p.id);
+    if (res.error) {
+      // Tolerant of the 2026-08-29-archive-flag.sql migration not having run
+      // yet — same "strip the column, warn, retry" convention as every other
+      // not-yet-migrated column in this module.
+      if (/column .* does not exist|schema cache/i.test(res.error.message || '')) {
+        UI.toast('Archiving needs a pending migration — run migrations/2026-08-29-archive-flag.sql', 'warn');
+        return;
+      }
+      UI.toast(res.error.message, 'error'); return;
+    }
+    p.archived = next;
+    UI.toast(next ? 'Presentation archived' : 'Presentation restored', 'ok');
+    renderList();
+  }
+
+  // Read-only view of the exported look, without downloading a file — reuses
+  // slidesBodyHTML/EXPORT_CSS (the SAME markup the offline HTML/PDF exports
+  // produce) so what you preview can never look different from what you'd get.
+  // ⚠️ Deliberately NOT collectSlideImages()'s downscaled data-URI embedding —
+  // this stays on screen, so the already-cached SIGNED URLs serve directly
+  // (an identity map: imgs[url] === url), at zero extra fetch/embed cost.
+  function identityImgs(s) {
+    var imgs = {};
+    s.forEach(function (sl) {
+      [sl.before_photo_id, sl.after_photo_id].forEach(function (id) {
+        var u = urlOfPhoto(id); if (u) imgs[u] = u;
+      });
+      ['before', 'after'].forEach(function (which) {
+        var k = urlOfPath(keyPlanPathFor(sl, which)); if (k) imgs[k] = k;
+      });
+    });
+    return imgs;
+  }
+  function openPreviewModal(p) {
+    var s = slides(p.id);
+    if (!s.length) { UI.toast('This presentation has no slides to preview', 'warn'); return; }
+    var html =
+      '<div class="pd-modal-header"><h3>Preview — ' + esc(p.description || longDate(p.ppr_date)) + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="ppr-previewbox">' +
+        '<style>' + EXPORT_CSS + '</style>' + slidesBodyHTML(p, s, identityImgs(s)) +
+      '</div>';
+    openModal(html, 1000);
+  }
+
+  // The three export formats, behind one button — "Download…" alone doesn't
+  // say which file you'll get, and the three were previously three separate
+  // row icons (follow-up feedback item 1: "ask user if format is HTML, PPTX,
+  // or PDF").
+  function openDownloadChoice(p) {
+    var html =
+      '<div class="pd-modal-header"><h3>Download presentation</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p class="pp-hint">Choose a format.</p>' +
+        '<div class="ppr-fmtchoices">' +
+          '<button type="button" class="pd-btn" data-fmt="html">' +
+            '<span data-ico="download" data-ico-size="16"></span> Offline HTML' +
+            '<small>Opens with no network — best for presenting on-site.</small></button>' +
+          '<button type="button" class="pd-btn" data-fmt="pptx">' +
+            '<span data-ico="layers" data-ico-size="16"></span> PowerPoint (.pptx)' +
+            '<small>Editable slide deck.</small></button>' +
+          '<button type="button" class="pd-btn" data-fmt="pdf">' +
+            '<span data-ico="clipboard" data-ico-size="16"></span> PDF' +
+            '<small>One slide per A4 page, ready to print.</small></button>' +
+        '</div></div>';
+    var m = openModal(html, 460);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-fmt]'), function (b) {
+      b.onclick = function () {
+        var fmt = this.dataset.fmt;
+        m.close();
+        if (fmt === 'html') exportOffline(p);
+        else if (fmt === 'pptx') exportPptx(p);
+        else if (fmt === 'pdf') exportPdf(p);
+      };
+    });
   }
 
   function openPpr(id) {
@@ -391,6 +557,20 @@ window.PPR = (function () {
           '<strong>' + (s.length ? slideAt + 1 : 0) + '</strong> of ' + s.length +
           '<button class="ppr-navbtn" id="ppr-next" ' + (slideAt >= s.length - 1 ? 'disabled' : '') + '>›</button>' +
         '</span></div>' +
+        // Edit/Delete PRESENTATION relocated here (follow-up feedback moved the
+        // row's own icons to Download/Preview/Archive only) — this is the
+        // screen you're already on when you'd want to rename/re-date it or
+        // remove it entirely, so nothing was actually lost.
+        (canWrite ? '<span class="ppr-hfield ppr-hspacer">' +
+          // Slide-sorter (18-item list item 12) — only worth offering with
+          // something to reorder; a 1-slide (or empty) presentation has no
+          // possible order to change.
+          (s.length > 1 ? '<button class="pp-iconbtn" id="ppr-sort" title="Reorder slides">' +
+            '<span data-ico="layout" data-ico-size="15"></span></button>' : '') +
+          '<button class="pp-iconbtn" id="ppr-pres-edit" ' +
+          'title="Edit presentation details"><span data-ico="pencil" data-ico-size="15"></span></button>' +
+          '<button class="pp-iconbtn pp-del" id="ppr-pres-del" title="Delete presentation">' +
+          '<span data-ico="trash" data-ico-size="15"></span></button></span>' : '') +
       '</div>';
 
     if (!s.length) {
@@ -399,7 +579,7 @@ window.PPR = (function () {
                     'paired with an earlier one to compare against.</p>' +
                     '<p><button class="pd-btn pd-btn-primary" id="ppr-slide-add">+ Add slide</button></p>'
                   : '') + '</div>';
-      wireSlideNav(s);
+      wireSlideNav(s); wirePresActs(p);
       if ($('ppr-slide-add')) $('ppr-slide-add').onclick = function () { openSlideForm(null); };
       return;
     }
@@ -421,25 +601,147 @@ window.PPR = (function () {
         '</div>' +
       '</div>';
 
+    // If both photos are at the SAME location, show it ONCE above the pair
+    // instead of repeating it on each pane (follow-up feedback item 3) — the
+    // location bar is omitted (never rendered twice, never guessed at) when
+    // there's no before photo, or the two disagree, or either is blank.
+    var sharedLoc = hasBefore ? sharedLocationOf(cur) : '';
+    var sharedLocHTML = sharedLoc
+      ? '<div class="ppr-sharedloc"><span data-ico="mapPin" data-ico-size="14"></span>' + esc(sharedLoc) + '</div>'
+      : '';
+
     // No before photo → don't render an empty "Photo not set" frame beside it;
     // show just the current photo, centered (owner feedback).
     var pairHTML = hasBefore
-      ? '<div class="ppr-pair">' + pane(cur, 'before') + pane(cur, 'after') + '</div>'
-      : '<div class="ppr-pair ppr-pair-single">' + pane(cur, 'after') + '</div>';
+      ? '<div class="ppr-pair">' + pane(cur, 'before', !!sharedLoc) + pane(cur, 'after', !!sharedLoc) + '</div>'
+      : '<div class="ppr-pair ppr-pair-single">' + pane(cur, 'after', false) + '</div>';
 
-    host.innerHTML = header + meta + pairHTML +
+    host.innerHTML = header + meta + sharedLocHTML + pairHTML +
       (canWrite ? '<div class="ppr-slideacts">' +
         '<button class="pd-btn pd-btn-primary" id="ppr-slide-add">+ Add slide</button>' +
         '<button class="pd-btn" id="ppr-slide-edit">Edit slide</button>' +
         '<button class="pd-btn pd-btn-danger" id="ppr-slide-del">Delete slide</button></div>' : '');
 
-    wireSlideNav(s);
+    wireSlideNav(s); wirePresActs(p);
     if ($('ppr-slide-add')) $('ppr-slide-add').onclick = function () { openSlideForm(null); };
     var kp = $('ppr-kp');
     if (kp) kp.onclick = function () { keyPlanOpen = !keyPlanOpen; renderSlides(); };
     if ($('ppr-slide-edit')) $('ppr-slide-edit').onclick = function () { openSlideForm(cur); };
     if ($('ppr-slide-del')) $('ppr-slide-del').onclick = function () { removeSlide(cur); };
+    wirePaneMarkup(cur);
     hydrate();
+  }
+
+  function wirePresActs(p) {
+    if ($('ppr-pres-edit')) $('ppr-pres-edit').onclick = function () { openPprForm(p); };
+    if ($('ppr-pres-del')) $('ppr-pres-del').onclick = function () { removePpr(p); };
+    if ($('ppr-sort')) $('ppr-sort').onclick = function () { openSlideSorter(p); };
+  }
+
+  // ------------------------------------------------------ slide-sorter (item 12) ---
+  // A grid of slide thumbnails (each slide's Current photo, matching the
+  // preview pane's own headline-image rule) that reorders on native HTML5
+  // drag-and-drop, writing the new order back to ppr_slides.slide_no.
+  // ⚠️ Reordered in a LOCAL COPY of the array first — nothing is written until
+  // the sequence is settled, and cancelling the modal (× / backdrop) discards
+  // it entirely, leaving the saved order untouched. This mirrors the copy
+  // wizard's own "nothing is saved until you're done" rule (2026-08-29), just
+  // for a reorder instead of a multi-step build.
+  // Pure — splices `from` out and reinserts at `to`, returning a NEW array
+  // (never mutates its argument) so it can be genuinely executed by a test
+  // without needing a real drag event. Exported as a test-only hook.
+  function moveItem(arr, from, to) {
+    var copy = arr.slice();
+    var moved = copy.splice(from, 1)[0];
+    copy.splice(to, 0, moved);
+    return copy;
+  }
+
+  function openSlideSorter(p) {
+    var draft = slides(p.id);       // local working copy, index = current position
+    var dragFrom = -1;
+
+    function thumbHTML(sl, i) {
+      var u = urlOfPhoto(sl.after_photo_id) || urlOfPhoto(sl.before_photo_id);
+      return '<div class="ppr-sortitem" draggable="true" data-i="' + i + '">' +
+        '<span class="ppr-sortno">' + (i + 1) + '</span>' +
+        (u ? '<img class="ppr-sortthumb" src="' + esc(u) + '" alt="Slide ' + (i + 1) + '" />'
+           : '<div class="ppr-sortthumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
+        '</div>';
+    }
+
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Reorder slides</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<p class="pp-hint">Drag a slide to move it. Numbers update as you go — nothing is saved until you click Save order.</p>' +
+        '<div class="ppr-sortgrid" id="ppr-sortgrid"></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="ppr-sort-save">Save order</button>' +
+      '</div>', 720);
+
+    function paint() {
+      var grid = m.el.querySelector('#ppr-sortgrid');
+      grid.innerHTML = draft.map(thumbHTML).join('');
+      if (window.Icons && Icons.hydrate) Icons.hydrate(grid);
+      Array.prototype.forEach.call(grid.querySelectorAll('.ppr-sortitem'), function (el) {
+        el.ondragstart = function (ev) {
+          dragFrom = +el.dataset.i;
+          el.classList.add('is-dragging');
+          if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; try { ev.dataTransfer.setData('text/plain', String(dragFrom)); } catch (e) {} }
+        };
+        el.ondragend = function () { el.classList.remove('is-dragging'); };
+        el.ondragover = function (ev) { ev.preventDefault(); el.classList.add('is-dragover'); };
+        el.ondragleave = function () { el.classList.remove('is-dragover'); };
+        el.ondrop = function (ev) {
+          ev.preventDefault(); el.classList.remove('is-dragover');
+          var to = +el.dataset.i;
+          if (dragFrom < 0 || dragFrom === to) return;
+          draft = moveItem(draft, dragFrom, to);
+          dragFrom = -1;
+          paint();
+        };
+      });
+    }
+    paint();
+
+    m.el.querySelector('#ppr-sort-save').onclick = async function () {
+      var btn = m.el.querySelector('#ppr-sort-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        // Sequential, small N (a presentation's slide count) — same per-row
+        // update convention already used throughout this file rather than a
+        // single bulk statement supabase-js has no clean way to express here.
+        for (var i = 0; i < draft.length; i++) {
+          if ((draft[i].slide_no || 0) === i + 1) continue;   // unchanged position, skip the round-trip
+          var res = await sb().from(T_SLIDE).update({ slide_no: i + 1 }).eq('id', draft[i].id);
+          if (res.error) throw res.error;
+          draft[i].slide_no = i + 1;
+        }
+        slidesOf[p.id] = draft;
+        slideAt = 0;
+        m.close();
+        renderSlides();
+        UI.toast('Slide order saved', 'ok');
+      } catch (e) {
+        UI.toast('Could not save the new order: ' + ((e && e.message) || e), 'error');
+        btn.disabled = false; btn.textContent = 'Save order';
+      }
+    };
+  }
+
+  // A slide's two photos are only required to be at the SAME location often
+  // enough that repeating the tag on both panes reads as redundant, but they
+  // are NOT required to match — comparing progress across two different spots
+  // is a real, supported use of "previous vs current". Exact string equality
+  // on the already-resolved `location` display field (both photos' own
+  // breadcrumb) — not location_values, which can carry keys one photo's
+  // breakdown never reached (a deeper level filled in over time).
+  function sharedLocationOf(sl) {
+    var b = photoById(sl.before_photo_id), a = photoById(sl.after_photo_id);
+    if (!b || !a || !b.location || !a.location) return '';
+    return b.location === a.location ? b.location : '';
   }
 
   // Key plan is per PHOTO now (progress_photos.key_plan_url), with the legacy
@@ -450,7 +752,11 @@ window.PPR = (function () {
     return (ph && ph.key_plan_url) || sl.key_plan_url || '';
   }
 
-  function pane(sl, which) {
+  // `hideLocation` is true when renderSlides() already printed the two photos'
+  // shared location once, above the pair (follow-up feedback item 3) — the
+  // per-pane tags line then shows only Trade/Works, so the location isn't
+  // said twice.
+  function pane(sl, which, hideLocation) {
     var photoId = which === 'before' ? sl.before_photo_id : sl.after_photo_id;
     var ph = photoById(photoId);
     var u = urlOfPhoto(photoId);
@@ -459,8 +765,22 @@ window.PPR = (function () {
     var kp = keyPlanOpen ? urlOfPath(keyPlanPathFor(sl, which)) : '';
     // Each pane carries its own Trade · Works · Location, since the two photos
     // are no longer required to share a location.
-    var tags = ph ? [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ')
-                  : [sl.trade, sl.works, sl.location].filter(Boolean).join(' · ');
+    var fields = ph ? [ph.trade, ph.works, hideLocation ? null : ph.location]
+                    : [sl.trade, sl.works, hideLocation ? null : sl.location];
+    var tags = fields.filter(Boolean).join(' · ');
+    // Presentation-only markup (item 14) — never on the offline/PDF/PPTX
+    // exports (those are the record of what was PRESENTED; this overlay is a
+    // live annotation aid), and never shown at all without an actual photo.
+    var mk = u ? markupFor(sl.id, which) : [];
+    var mkKey = markupKey(sl.id, which);
+    var mkVisible = showMarkup[mkKey] !== false;
+    var mkTools = u ? '<div class="ppr-panetools">' +
+      (mk.length ? '<button class="ppr-mktool' + (mkVisible ? ' is-active' : '') + '" ' +
+        'id="ppr-mktoggle-' + which + '" title="Show/hide markup">' +
+        '<span data-ico="eye" data-ico-size="13"></span></button>' : '') +
+      (canWrite ? '<button class="ppr-mktool" id="ppr-mkedit-' + which + '" title="Edit markup">' +
+        '<span data-ico="palette" data-ico-size="13"></span></button>' : '') +
+      '</div>' : '';
     return '<figure class="ppr-pane">' +
       // "Previous"/"Current" is the user-facing label (owner feedback, item 7:
       // less ambiguous than Before/After for a recurring capture). The
@@ -472,6 +792,8 @@ window.PPR = (function () {
       '<div class="ppr-imgwrap">' +
         (u ? '<img class="ppr-img" src="' + esc(u) + '" alt="' + esc(cap) + '" />'
            : '<div class="ppr-img pp-noimg"><span>Photo not set</span></div>') +
+        (u && mk.length && mkVisible ? '<canvas class="ppr-mkcanvas" id="ppr-mkcanvas-' + which + '"></canvas>' : '') +
+        mkTools +
         (kp ? '<img class="ppr-keyplan" src="' + esc(kp) + '" alt="Key plan" />' : '') +
       '</div>' +
       '<figcaption>' +
@@ -479,6 +801,46 @@ window.PPR = (function () {
         '<div class="ppr-captxt">' + esc(cap || '—') + '</div>' +
         (tags ? '<div class="ppr-panetags">' + esc(tags) + '</div>' : '') +
       '</figcaption></figure>';
+  }
+
+  // Called after renderSlides() paints — sizes each pane's overlay canvas to
+  // the image's own rendered box (a canvas has no intrinsic size of its own)
+  // and paints it via the SHARED drawing routine module.js exports, then
+  // wires the toggle/edit buttons. `cur` is the slide object currently shown.
+  function wirePaneMarkup(cur) {
+    ['before', 'after'].forEach(function (which) {
+      var photoId = which === 'before' ? cur.before_photo_id : cur.after_photo_id;
+      var cv = $('ppr-mkcanvas-' + which);
+      if (cv) {
+        var wrap = cv.parentElement;
+        var paint = function () {
+          var w = wrap.clientWidth, h = wrap.clientHeight;
+          if (!w || !h) return;
+          cv.width = w; cv.height = h;
+          if (window.ProgressPhotos && ProgressPhotos.drawMarkupOnCanvas) {
+            ProgressPhotos.drawMarkupOnCanvas(cv, markupFor(cur.id, which));
+          }
+        };
+        var img = wrap.querySelector('img.ppr-img');
+        if (img && img.complete && img.naturalWidth) paint();
+        else if (img) img.addEventListener('load', paint, { once: true });
+        else paint();
+      }
+      var tgl = $('ppr-mktoggle-' + which);
+      if (tgl) tgl.onclick = function () {
+        var key = markupKey(cur.id, which);
+        showMarkup[key] = !(showMarkup[key] !== false);
+        renderSlides();
+      };
+      var edt = $('ppr-mkedit-' + which);
+      if (edt) edt.onclick = function () {
+        var u = urlOfPhoto(photoId);
+        if (!u) { UI.toast('Pick a photo for this pane before adding markup', 'warn'); return; }
+        ProgressPhotos.openMarkupEditor(u, markupFor(cur.id, which), function (objs) {
+          saveSlideMarkup(cur.id, which, objs);
+        });
+      };
+    });
   }
 
   function wireSlideNav(s) {
@@ -526,12 +888,28 @@ window.PPR = (function () {
     $('ppr-f-save').onclick = async function () {
       var date = $('ppr-f-date').value;
       if (!date) { UI.toast('A presentation date is required', 'warn'); return; }
+      var desc = $('ppr-f-desc').value.trim();
+      var copyFrom = $('ppr-f-copy') ? $('ppr-f-copy').value : '';
+
+      // Copying from a previous presentation now goes through a wizard
+      // (follow-up feedback item 6) that REQUIRES a current photo on every
+      // slide before anything is written — so the presentation itself is not
+      // created here at all in that case; the wizard creates BOTH the
+      // presentation row and its finished slides together, in one place, only
+      // once every slide has been given a current photo. Cancelling the
+      // wizard leaves NOTHING behind: no orphan presentation, no half-copied
+      // slides.
+      if (isNew && copyFrom) {
+        m.close();
+        openCopyWizard({ ppr_date: date, description: desc }, copyFrom);
+        return;
+      }
+
       this.disabled = true;
-      var data = { ppr_date: date, description: $('ppr-f-desc').value.trim() };
+      var data = { ppr_date: date, description: desc };
       var res, newId = null;
       if (isNew) {
-        // .select() so the new id comes back — needed to copy slides into it and
-        // to jump straight to its editor.
+        // .select() so the new id comes back — needed to jump straight to its editor.
         res = await sb().from(T_PPR)
           .insert(Object.assign(data, { project_id: pid, created_by: uid })).select();
         if (!res.error) newId = res.data && res.data[0] && res.data[0].id;
@@ -541,46 +919,14 @@ window.PPR = (function () {
       }
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
 
-      var copied = 0;
-      var copyFrom = $('ppr-f-copy') ? $('ppr-f-copy').value : '';
-      if (isNew && newId && copyFrom) {
-        try { copied = await copySlidesFrom(copyFrom, newId); }
-        catch (err) { UI.toast('Presentation created, but copying slides failed: ' +
-          (err.message || err), 'warn'); }
-      }
-
       m.close();
-      UI.toast(isNew
-        ? ('Presentation created' + (copied ? ' with ' + copied + ' slide' + (copied === 1 ? '' : 's') + ' copied' : ''))
-        : 'Presentation updated', 'ok');
+      UI.toast(isNew ? 'Presentation created' : 'Presentation updated', 'ok');
       await load();
       // After creating, go straight into the slides editor (owner feedback:
       // "after adding PPR, it should go to PPR edit") rather than dropping the
       // user back on the list with nothing obviously to do next.
       if (isNew && newId) openPpr(newId);
     };
-  }
-
-  // Copies every slide of `fromPprId` into `toPprId`, PROMOTING each source
-  // slide's "after" (current) photo into the new slide's "before" slot and
-  // leaving "after" empty for this period's fresh capture. Captions move with
-  // the photo they describe; the after caption is deliberately NOT carried over
-  // (it described last period's photo, which is now the before).
-  async function copySlidesFrom(fromPprId, toPprId) {
-    var src = slides(fromPprId);
-    if (!src.length) return 0;
-    var payload = src.map(function (sl, i) {
-      return {
-        ppr_id: toPprId, project_id: pid, created_by: uid, slide_no: i + 1,
-        before_photo_id: sl.after_photo_id || sl.before_photo_id || null,
-        after_photo_id: null,
-        before_caption: sl.after_caption || sl.before_caption || null,
-        after_caption: null
-      };
-    });
-    var res = await sb().from(T_SLIDE).insert(payload);
-    if (res.error) throw res.error;
-    return payload.length;
   }
 
   async function removePpr(p) {
@@ -607,50 +953,132 @@ window.PPR = (function () {
   }
 
   // ----------------------------------------------------------- slide CRUD ---
-  // Photo pickers are populated from the project's own library (contract: the
-  // Photos Database is the single source of truth for imagery).
-  function photoOptions(sel) {
-    return '<option value="">— none —</option>' + photos.map(function (p) {
-      var label = [p.description || '(no description)', p.location, capDate(p.taken_at)]
-        .filter(Boolean).join(' · ');
-      return '<option value="' + esc(p.id) + '"' + (sel === p.id ? ' selected' : '') + '>' +
-             esc(label) + '</option>';
-    }).join('');
+  // Two photos are "at the same location" when their own resolved `location`
+  // breadcrumbs match exactly — the same field sharedLocationOf() compares.
+  function sameLocation(a, b) { return !!(a && b && a.location && b.location && a.location === b.location); }
+
+  // The candidate set for a picker, relative to a fixed reference photo:
+  // `direction` 'before' keeps only photos captured STRICTLY EARLIER than
+  // `refPhoto` (used for the Previous picker, item 5: "previous photo's
+  // capture date must be before current's"); 'after' keeps only photos
+  // captured ON OR AFTER it (used by the copy wizard, which fixes Previous
+  // first and needs a LATER Current). No `refPhoto`, or either side missing a
+  // capture date, skips the date test entirely — comparing against "unknown"
+  // would just as likely hide the right photo as the wrong one.
+  // `allowAllLocations` lifts the same-location restriction (item 9's
+  // override checkbox); the reference photo itself is always excluded (a
+  // slide comparing a photo to itself is never a real "previous vs current").
+  function eligiblePhotos(refPhoto, direction, allowAllLocations) {
+    return photos.filter(function (cand) {
+      if (refPhoto && cand.id === refPhoto.id) return false;
+      if (refPhoto && refPhoto.taken_at && cand.taken_at) {
+        if (direction === 'before' && !(cand.taken_at < refPhoto.taken_at)) return false;
+        if (direction === 'after' && !(cand.taken_at >= refPhoto.taken_at)) return false;
+      }
+      if (refPhoto && !allowAllLocations && !sameLocation(cand, refPhoto)) return false;
+      return true;
+    }).sort(function (a, b) { return String(b.taken_at || '').localeCompare(String(a.taken_at || '')); });
+  }
+
+  // A searchable grid of photo THUMBNAILS (item 6 of the original 18-item
+  // list: "photo pickers should show thumbnails, not plain text"), reused by
+  // both the ordinary slide form below and the copy wizard's per-step Current
+  // picker. `opts`: title, candidates (already filtered/sorted), currentId,
+  // allowNone (Previous only — Current is always required), emptyHint,
+  // onPick(idOrNull).
+  function openThumbPicker(opts) {
+    var html =
+      '<div class="pd-modal-header"><h3>' + esc(opts.title) + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<input class="pd-input" id="ppr-pp-search" placeholder="Search description, location, trade…" ' +
+          'style="margin-bottom:10px;width:100%;box-sizing:border-box;" />' +
+        (opts.allowNone ? '<button type="button" class="pd-btn" id="ppr-pp-none" style="margin-bottom:10px;">' +
+          '— None (clear) —</button>' : '') +
+        '<div class="ppr-pickgrid" id="ppr-pp-grid"></div>' +
+      '</div>';
+    var m = openModal(html, 660);
+    function paint(q) {
+      q = (q || '').toLowerCase();
+      var list = opts.candidates.filter(function (p) {
+        if (!q) return true;
+        var hay = [p.description, p.location, p.trade, p.works].filter(Boolean).join(' ').toLowerCase();
+        return hay.indexOf(q) >= 0;
+      });
+      var grid = $('ppr-pp-grid');
+      grid.innerHTML = list.length ? list.map(function (p) {
+        var u = urlOfPhoto(p.id);
+        var cap = [capDate(p.taken_at), p.description].filter(Boolean).join(' · ');
+        return '<button type="button" class="ppr-pickitem' + (p.id === opts.currentId ? ' sel' : '') +
+          '" data-id="' + esc(p.id) + '">' +
+          (u ? '<img src="' + esc(u) + '" alt="" />' :
+               '<div class="ppr-picknoimg"><span data-ico="camera" data-ico-size="18"></span></div>') +
+          '<span class="ppr-pickcap"><span class="d">' + esc(cap || '(no description)') + '</span>' +
+          (p.location ? '<br>' + esc(p.location) : '') + '</span></button>';
+      }).join('') : '<p class="pp-hint">' + esc(opts.emptyHint || 'No matching photos.') + '</p>';
+      Array.prototype.forEach.call(grid.querySelectorAll('[data-id]'), function (b) {
+        b.onclick = function () { m.close(); opts.onPick(this.dataset.id); };
+      });
+      if (window.Icons) Icons.hydrate(grid);
+    }
+    paint('');
+    if ($('ppr-pp-search')) $('ppr-pp-search').oninput = function () { paint(this.value); };
+    if ($('ppr-pp-none')) $('ppr-pp-none').onclick = function () { m.close(); opts.onPick(null); };
   }
 
   // The slide form is PHOTO-FIRST (owner feedback: "for adding slides, you can
   // add photos instead of selecting locations"). Trade / Works / Location are
   // no longer asked for at all — they're properties of the photo, shown
-  // read-only once one is picked, and rendered per-pane in the slides view. The
-  // two photos may sit at different locations, which the old shared
-  // location field made impossible to express.
+  // read-only once one is picked, and rendered per-pane in the slides view.
+  //
+  // ⚠️ Current is now REQUIRED (was: "at least one of the two"), and Previous
+  // is hidden entirely until Current is set (18-item list, items 9/10/11):
+  // "previous photo should never be allowed without a current photo." The
+  // Previous picker defaults to the SAME location as Current and to photos
+  // captured strictly earlier, both liftable — location via the "Show all
+  // locations" checkbox, date is a hard rule since a "previous" that comes
+  // AFTER the "current" is a fact, not a preference.
   function openSlideForm(sl) {
     var isNew = !sl; sl = sl || {};
+    var afterId = sl.after_photo_id || null;
+    var beforeId = sl.before_photo_id || null;
+    var beforeAllLocs = false;
+
+    function pickBtnHTML(which, id) {
+      var ph = photoById(id);
+      if (!ph) return '<button type="button" class="pd-btn" id="ppr-s-' + which + '-btn">Pick a photo…</button>';
+      var u = urlOfPhoto(ph.id);
+      var tags = [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ');
+      return '<button type="button" class="ppr-pickchosen" id="ppr-s-' + which + '-btn">' +
+        (u ? '<img src="' + esc(u) + '" alt="" />' : '') +
+        '<span><strong>' + esc(ph.description || '(no description)') + '</strong>' +
+        (ph.taken_at ? '<br>' + esc(capDate(ph.taken_at)) : '') +
+        (tags ? '<br>' + esc(tags) : '') + '<br><em>Change…</em></span></button>';
+    }
+
     var html =
       '<div class="pd-modal-header"><h3>' + (isNew ? 'Add slide' : 'Edit slide') + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<p class="pp-hint">Pick this period\'s photo, and optionally an earlier one to compare ' +
-          'it against. The two may be at <strong>different locations</strong>. Each photo brings ' +
-          'its own trade, works, location and key plan with it.</p>' +
+        '<p class="pp-hint">Pick this period\'s photo first, then optionally an earlier one to ' +
+          'compare it against. The two may be at <strong>different locations</strong>. Each photo ' +
+          'brings its own trade, works, location and key plan with it.</p>' +
         '<div class="pp-form2">' +
 
-          '<div class="pd-field pp-span2"><label>Current photo</label>' +
-            '<div class="ppr-pickrow">' +
-              '<select class="pd-select" id="ppr-s-after">' + photoOptions(sl.after_photo_id) + '</select>' +
+          '<div class="pd-field pp-span2"><label>Current photo' + reqMark() + '</label>' +
+            '<div class="ppr-pickrow"><span id="ppr-s-after-slot">' + pickBtnHTML('after', afterId) + '</span>' +
               '<button type="button" class="pd-btn" id="ppr-s-after-add" title="Upload a new photo and use it here">+ Add photo</button>' +
-            '</div>' +
-            '<div class="ppr-pickinfo" id="ppr-s-after-info"></div></div>' +
+            '</div></div>' +
           '<div class="pd-field pp-span2"><label>Caption for the current photo</label>' +
             '<input class="pd-input" id="ppr-s-acap" placeholder="e.g. Aerial View facing Marikina River ftm of June 2026." value="' +
             esc(sl.after_caption || '') + '" /></div>' +
 
-          '<div class="pd-field pp-span2"><label>Previous photo <span class="pp-optnote">(optional — leave empty to show the current photo on its own)</span></label>' +
-            '<div class="ppr-pickrow">' +
-              '<select class="pd-select" id="ppr-s-before">' + photoOptions(sl.before_photo_id) + '</select>' +
+          '<div class="pd-field pp-span2" id="ppr-s-before-field" style="display:none;">' +
+            '<label>Previous photo <span class="pp-optnote">(optional — leave empty to show the current photo on its own)</span></label>' +
+            '<label class="ppr-allloc"><input type="checkbox" id="ppr-s-alllocs" /> Show all locations, not just the current photo\'s</label>' +
+            '<div class="ppr-pickrow"><span id="ppr-s-before-slot">' + pickBtnHTML('before', beforeId) + '</span>' +
               '<button type="button" class="pd-btn" id="ppr-s-before-add" title="Upload a new photo and use it here">+ Add photo</button>' +
-            '</div>' +
-            '<div class="ppr-pickinfo" id="ppr-s-before-info"></div></div>' +
+            '</div></div>' +
           // Only rendered/shown when a before photo is actually set (owner
           // feedback: "when there is no added before photo, no need to ask for
           // before photo description").
@@ -667,39 +1095,68 @@ window.PPR = (function () {
 
     var m = openModal(html, 660);
 
-    // Read-only echo of the picked photo's own tags, so the planner can see
-    // what the slide will show without any field to fill in.
-    function paintInfo(which) {
-      var sel = $('ppr-s-' + which), box = $('ppr-s-' + which + '-info');
-      if (!sel || !box) return;
-      var ph = photoById(sel.value);
-      if (!ph) { box.innerHTML = '<span class="pp-muted">No photo selected.</span>'; return; }
-      var tags = [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ');
-      var u = urlOfPhoto(ph.id);
-      box.innerHTML =
-        (u ? '<img class="ppr-pickthumb" src="' + esc(u) + '" alt="" />' : '') +
-        '<span>' + esc(tags || 'No tags on this photo') +
-        (ph.taken_at ? '<br>' + esc(capDate(ph.taken_at)) : '') +
-        (ph.key_plan_url ? '<br>Key plan attached' : '') + '</span>';
+    function syncVisibility() {
+      $('ppr-s-before-field').style.display = afterId ? '' : 'none';
+      $('ppr-s-bcap-field').style.display = beforeId ? '' : 'none';
     }
-    // The before caption field only exists as a question once there's a before
-    // photo to describe.
-    function syncBeforeCaption() {
-      var has = !!$('ppr-s-before').value;
-      $('ppr-s-bcap-field').style.display = has ? '' : 'none';
+    function repaintPickBtn(which) {
+      $('ppr-s-' + which + '-slot').innerHTML = pickBtnHTML(which, which === 'after' ? afterId : beforeId);
+      wirePickBtn(which);
+      if (window.Icons) Icons.hydrate($('ppr-s-' + which + '-slot'));
+    }
+    function wirePickBtn(which) {
+      var btn = $('ppr-s-' + which + '-btn'); if (!btn) return;
+      btn.onclick = function () { openPickerFor(which); };
+    }
+    function openPickerFor(which) {
+      if (which === 'after') {
+        openThumbPicker({
+          title: 'Pick the current photo', candidates: eligiblePhotos(null, null, true),
+          currentId: afterId, allowNone: false, onPick: setAfter
+        });
+      } else {
+        var afterPh = photoById(afterId);
+        openThumbPicker({
+          title: 'Pick the previous photo',
+          candidates: eligiblePhotos(afterPh, 'before', beforeAllLocs),
+          currentId: beforeId, allowNone: true,
+          emptyHint: beforeAllLocs
+            ? 'No earlier photos exist for this project.'
+            : 'No earlier photos at the current photo\'s location. Tick "Show all locations" above to see every earlier photo.',
+          onPick: setBefore
+        });
+      }
+    }
+    function setAfter(id) {
+      afterId = id;
+      var ph = photoById(id);
+      if (ph && !$('ppr-s-acap').value) $('ppr-s-acap').value = ph.description || '';
+      // A Previous photo picked under the OLD current photo may no longer be a
+      // valid pairing (wrong side of the new date, or a different location
+      // with "Show all locations" off) — cleared rather than silently kept.
+      if (beforeId) {
+        var stillOk = eligiblePhotos(ph, 'before', beforeAllLocs).some(function (p) { return p.id === beforeId; });
+        if (!stillOk) {
+          beforeId = null;
+          UI.toast('The previous photo no longer matches the new current photo and was cleared', 'warn');
+        }
+      }
+      // Non-blocking duplicate warning (18-item list, item 11) — checked
+      // against every OTHER slide of this presentation, not this one being
+      // edited.
+      var dup = slides(viewPprId).some(function (s2) { return s2.id !== sl.id && s2.after_photo_id === id; });
+      if (dup) UI.toast('This photo is already the current photo on another slide in this presentation', 'warn');
+      repaintPickBtn('after'); repaintPickBtn('before'); syncVisibility();
+    }
+    function setBefore(id) {
+      beforeId = id;
+      var ph = photoById(id);
+      if (ph && !$('ppr-s-bcap').value) $('ppr-s-bcap').value = ph.description || '';
+      repaintPickBtn('before'); syncVisibility();
     }
 
-    $('ppr-s-after').onchange = function () {
-      var ph = photoById(this.value);
-      if (ph && !$('ppr-s-acap').value) $('ppr-s-acap').value = ph.description || '';
-      paintInfo('after');
-    };
-    $('ppr-s-before').onchange = function () {
-      var ph = photoById(this.value);
-      if (ph && !$('ppr-s-bcap').value) $('ppr-s-bcap').value = ph.description || '';
-      syncBeforeCaption();
-      paintInfo('before');
-    };
+    wirePickBtn('after'); wirePickBtn('before'); syncVisibility();
+    if ($('ppr-s-alllocs')) $('ppr-s-alllocs').onchange = function () { beforeAllLocs = this.checked; };
 
     // "+ Add photo" right here — no trip to the Photos tab to upload a shot
     // that's missing (owner feedback). Reuses the Photos screen's own Add-photos
@@ -718,25 +1175,15 @@ window.PPR = (function () {
             return before.indexOf(p.id) < 0;
           }).map(function (p) { return p.id; })[0];
           if (!pickId) return;                 // queued offline — nothing to pick yet
-          var sel = $('ppr-s-' + which);
-          if (!sel) return;                    // modal was closed meanwhile
-          sel.innerHTML = photoOptions(pickId);
-          sel.value = pickId;
-          var ph = photoById(pickId);
-          var capEl = $('ppr-s-' + (which === 'after' ? 'acap' : 'bcap'));
-          if (ph && capEl && !capEl.value) capEl.value = ph.description || '';
-          if (which === 'before') syncBeforeCaption();
-          paintInfo(which);
+          if (!$('ppr-s-' + which + '-btn') && !$('ppr-s-' + which + '-slot')) return;   // modal was closed meanwhile
+          if (which === 'after') setAfter(pickId); else setBefore(pickId);
         });
       };
     });
 
-    paintInfo('after'); paintInfo('before'); syncBeforeCaption();
-
     $('ppr-s-save').onclick = async function () {
-      var afterId = $('ppr-s-after').value || null;
-      var beforeId = $('ppr-s-before').value || null;
-      if (!afterId && !beforeId) { UI.toast('Pick at least one photo for this slide', 'warn'); return; }
+      if (!afterId) { UI.toast('Pick a current photo for this slide', 'warn'); return; }
+      if (beforeId && !afterId) { UI.toast('A slide needs a current photo before a previous one can be added', 'warn'); return; }
       this.disabled = true;
       var data = {
         before_photo_id: beforeId,
@@ -759,6 +1206,148 @@ window.PPR = (function () {
       await load();
       screen = 'slides'; render();
     };
+  }
+
+  // ------------------------------------------------------- copy-from wizard --
+  // Follow-up feedback item 6: copying a previous presentation must never
+  // produce a slide with a Previous photo and no Current — the OLD immediate
+  // copySlidesFrom() (removed) inserted every slide with `after_photo_id:
+  // null`, which is exactly that state. Nothing is written until every draft
+  // slide has been given a current photo; cancelling at any point leaves NO
+  // trace at all — not even the presentation row, which this function creates
+  // itself only on Finish (openPprForm's save handler no longer creates it
+  // when a copy source is chosen).
+  // Each draft PROMOTES the source slide's current photo into the new slide's
+  // previous slot (same rule the old copySlidesFrom used) and starts with no
+  // current photo — that's the gap the wizard exists to close before
+  // anything saves. A standalone function (not inlined into openCopyWizard)
+  // so it can be genuinely executed by test.js, the same way _tradesOf/
+  // _mediaStripMatches are — this is exactly the kind of "off-by-one in the
+  // promotion" mistake worth actually running rather than only reading.
+  function buildCopyDrafts(src) {
+    return src.map(function (s, i) {
+      return {
+        slide_no: i + 1,
+        before_photo_id: s.after_photo_id || s.before_photo_id || null,
+        before_caption: s.after_caption || s.before_caption || null,
+        after_photo_id: null,
+        after_caption: ''
+      };
+    });
+  }
+
+  function openCopyWizard(newData, fromPprId) {
+    var src = slides(fromPprId);
+    if (!src.length) {
+      // Nothing to copy from — same as "start empty", no wizard needed.
+      createPresentationPlain(newData);
+      return;
+    }
+    var drafts = buildCopyDrafts(src);
+    var step = 0;
+
+    function paneReadOnlyHTML(photoId, label) {
+      var ph = photoById(photoId);
+      if (!ph) return '<div class="ppr-wizpane"><div class="ppr-panelabel">' + esc(label) + '</div>' +
+        '<div class="ppr-img pp-noimg"><span>Photo not set</span></div></div>';
+      var u = urlOfPhoto(ph.id);
+      return '<div class="ppr-wizpane"><div class="ppr-panelabel">' + esc(label) + '</div>' +
+        (u ? '<img class="ppr-img" src="' + esc(u) + '" alt="" />' : '') +
+        '<div class="ppr-captxt">' + esc(ph.description || '—') +
+        (ph.taken_at ? ' · ' + esc(capDate(ph.taken_at)) : '') + '</div></div>';
+    }
+
+    function render() {
+      var d = drafts[step];
+      var afterPh = photoById(d.after_photo_id);
+      var body =
+        '<p class="ppr-wizstep">Slide ' + (step + 1) + ' of ' + drafts.length + '</p>' +
+        '<div class="ppr-pair">' + paneReadOnlyHTML(d.before_photo_id, 'Previous') +
+          '<div class="ppr-wizpane">' +
+            '<div class="ppr-panelabel">Current' + reqMark() + '</div>' +
+            (afterPh
+              ? ('<img class="ppr-img" src="' + esc(urlOfPhoto(afterPh.id)) + '" alt="" />' +
+                 '<div class="ppr-captxt">' + esc(afterPh.description || '—') +
+                 (afterPh.taken_at ? ' · ' + esc(capDate(afterPh.taken_at)) : '') + '</div>')
+              : '<div class="ppr-img pp-noimg"><span>Not picked yet</span></div>') +
+            '<button type="button" class="pd-btn" id="ppr-wiz-pick">' +
+              (afterPh ? 'Change current photo…' : 'Pick current photo…') + '</button>' +
+          '</div></div>' +
+        '<div class="pd-field pp-span2"><label>Caption for the current photo</label>' +
+          '<input class="pd-input" id="ppr-wiz-cap" value="' + esc(d.after_caption || '') + '" /></div>';
+      var html =
+        '<div class="pd-modal-header"><h3>Copy presentation — pick this period\'s photos</h3>' +
+          '<button class="pd-modal-close" data-close>×</button></div>' +
+        '<div class="pp-form">' + body + '</div>' +
+        '<div class="pd-modal-footer">' +
+          '<button class="pd-btn" data-close>Cancel</button>' +
+          (step > 0 ? '<button class="pd-btn" id="ppr-wiz-prev">‹ Back</button>' : '') +
+          (step < drafts.length - 1
+            ? '<button class="pd-btn pd-btn-primary" id="ppr-wiz-next" ' + (afterPh ? '' : 'disabled') + '>Next ›</button>'
+            : '<button class="pd-btn pd-btn-primary" id="ppr-wiz-finish" ' + (afterPh ? '' : 'disabled') + '>Finish</button>') +
+        '</div>';
+      if (m) { m.el.querySelector('.pd-modal').innerHTML = html; wire(); if (window.Icons) Icons.hydrate(m.el); }
+      else { m = openModal(html, 640); wire(); }
+    }
+    function wire() {
+      $('ppr-wiz-cap').oninput = function () { drafts[step].after_caption = this.value; };
+      $('ppr-wiz-pick').onclick = function () {
+        var beforePh = photoById(drafts[step].before_photo_id);
+        openThumbPicker({
+          title: 'Pick this period\'s photo', candidates: eligiblePhotos(beforePh, 'after', false),
+          currentId: drafts[step].after_photo_id, allowNone: false,
+          emptyHint: 'No later photos at the previous photo\'s location yet.',
+          onPick: function (id) {
+            drafts[step].after_photo_id = id;
+            var ph = photoById(id);
+            if (ph && !drafts[step].after_caption) drafts[step].after_caption = ph.description || '';
+            var dup = drafts.some(function (d2, i2) { return i2 !== step && d2.after_photo_id === id; });
+            if (dup) UI.toast('This photo is already picked as the current photo on another slide', 'warn');
+            render();
+          }
+        });
+      };
+      Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) { b.onclick = m.close; });
+      if ($('ppr-wiz-prev')) $('ppr-wiz-prev').onclick = function () { step--; render(); };
+      if ($('ppr-wiz-next')) $('ppr-wiz-next').onclick = function () { step++; render(); };
+      if ($('ppr-wiz-finish')) $('ppr-wiz-finish').onclick = finish;
+    }
+    async function finish() {
+      if (drafts.some(function (d) { return !d.after_photo_id; })) {
+        UI.toast('Every slide needs a current photo before this can be saved', 'warn'); return;
+      }
+      $('ppr-wiz-finish').disabled = true;
+      var res = await sb().from(T_PPR)
+        .insert(Object.assign({}, newData, { project_id: pid, created_by: uid })).select();
+      if (res.error) { UI.toast(res.error.message, 'error'); $('ppr-wiz-finish').disabled = false; return; }
+      var newId = res.data && res.data[0] && res.data[0].id;
+      var payload = drafts.map(function (d) {
+        return Object.assign({}, d, { ppr_id: newId, project_id: pid, created_by: uid,
+          before_caption: d.before_caption || null, after_caption: d.after_caption || null });
+      });
+      var res2 = await sb().from(T_SLIDE).insert(payload);
+      if (res2.error) {
+        // The presentation row exists but has no slides — surfaced honestly
+        // rather than silently discarded; the planner can still open it and
+        // add slides one at a time (openSlideForm), or delete it and retry.
+        UI.toast('Presentation created, but slides failed to save: ' + res2.error.message, 'error');
+        m.close(); await load(); openPpr(newId); return;
+      }
+      m.close();
+      UI.toast('Presentation created with ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's') + ' copied', 'ok');
+      await load(); openPpr(newId);
+    }
+    var m = null;
+    render();
+  }
+
+  async function createPresentationPlain(data) {
+    var res = await sb().from(T_PPR).insert(Object.assign({}, data, { project_id: pid, created_by: uid })).select();
+    if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    UI.toast('Presentation created', 'ok');
+    await load();
+    var newId = res.data && res.data[0] && res.data[0].id;
+    if (newId) openPpr(newId);
   }
 
   // Re-reads just the photo library + signs any new paths — used after an
@@ -888,12 +1477,17 @@ window.PPR = (function () {
   // offline HTML export and the PDF export (built into a real DOM node rather
   // than a string there, but from the SAME figure/slide markup) so the two
   // documents can never show a different layout of the same slide.
-  function slideFigureHTML(sl, which, imgs) {
+  // `hideLocation` — see pane()'s own comment; kept in step across the live
+  // editor and all three export formats (follow-up feedback item 4: "apply
+  // comment #3 for all formats") so a slide can't show the shared-location
+  // tile on screen but repeat it in the downloaded file, or vice versa.
+  function slideFigureHTML(sl, which, imgs, hideLocation) {
     var ph = photoById(which === 'before' ? sl.before_photo_id : sl.after_photo_id);
     var cap = (which === 'before' ? sl.before_caption : sl.after_caption) ||
               (ph && ph.description) || '';
-    var tags = ph ? [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ')
-                  : [sl.trade, sl.works, sl.location].filter(Boolean).join(' · ');
+    var fields = ph ? [ph.trade, ph.works, hideLocation ? null : ph.location]
+                    : [sl.trade, sl.works, hideLocation ? null : sl.location];
+    var tags = fields.filter(Boolean).join(' · ');
     var kp = urlOfPath(keyPlanPathFor(sl, which));
     var phUrl = urlOfPhoto(ph && ph.id);
     function im(url, cls, alt) {
@@ -914,10 +1508,13 @@ window.PPR = (function () {
   function slidesBodyHTML(p, s, imgs) {
     var slidesHTML = s.map(function (sl, i) {
       var hasBefore = !!sl.before_photo_id;
+      var sharedLoc = hasBefore ? sharedLocationOf(sl) : '';
       return '<section class="slide">' +
-        '<div class="meta"><span class="no">Slide ' + (i + 1) + ' of ' + s.length + '</span></div>' +
+        '<div class="meta"><span class="no">Slide ' + (i + 1) + ' of ' + s.length + '</span>' +
+        (sharedLoc ? '<span class="sharedloc">' + esc(sharedLoc) + '</span>' : '') + '</div>' +
         '<div class="pair' + (hasBefore ? '' : ' single') + '">' +
-          (hasBefore ? slideFigureHTML(sl, 'before', imgs) : '') + slideFigureHTML(sl, 'after', imgs) +
+          (hasBefore ? slideFigureHTML(sl, 'before', imgs, !!sharedLoc) : '') +
+          slideFigureHTML(sl, 'after', imgs, !!sharedLoc) +
         '</div></section>';
     }).join('');
     return '<header><h1>' + esc(projName || pid) + ' — Progress Photos</h1>' +
@@ -937,9 +1534,26 @@ window.PPR = (function () {
     'header p{margin:4px 0 0;font-size:13px;opacity:.92}' +
     '.wrap{max-width:1180px;margin:0 auto;padding:18px}' +
     '.slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:14px;margin-bottom:16px;position:relative}' +
+    // ⚠️ page-break-after/inside must NOT sit inside @media print: html2pdf's
+    // pagebreak:{mode:['css']} reads getComputedStyle() during a NORMAL
+    // (screen-context) html2canvas capture, which never matches @media print
+    // — so a rule scoped there is silently inert during export. It has no
+    // effect on-screen either way (browsers ignore page-break properties
+    // outside print/pagination contexts), so moving it out changes nothing
+    // visually and fixes the export. `:not(:last-of-type)` avoids a trailing
+    // blank page after the final slide; break-inside:avoid stops one slide's
+    // pane from ever being sliced across two pages by height alone (the CSS
+    // page-break-after rule only starts the NEXT page — it can't shrink a
+    // slide that's already taller than one).
+    '.slide{break-inside:avoid;page-break-inside:avoid}' +
+    '.slide:not(:last-of-type){break-after:page;page-break-after:always}' +
     '.meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;margin-bottom:10px;align-items:baseline}' +
     '.meta .no{font-weight:700;color:#EE3124}' +
     '.meta b{color:#6b6b6b;font-weight:600;margin-right:4px}' +
+    // Shared-location tile (follow-up feedback item 3/4): one line above the
+    // pair when both photos are at the same place, instead of repeating it in
+    // each figcaption below.
+    '.meta .sharedloc{font-weight:600;color:#4a4a4a}' +
     '.phwrap{position:relative}' +
     '.kpimg{position:absolute;top:8px;right:8px;width:150px;border:1px solid #DCDBDB;display:block;box-shadow:0 1px 4px rgba(0,0,0,.25)}' +
     '.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}' +
@@ -953,7 +1567,7 @@ window.PPR = (function () {
     'figcaption .d{font-size:13px}' +
     'figcaption .c{font-style:italic;font-size:12.5px;color:#4a4a4a;margin-top:2px}' +
     'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +
-    '@media print{body{background:#fff}.slide{page-break-after:always;border:0}}' +
+    '@media print{body{background:#fff}.slide{border:0}}' +
     '@media (max-width:820px){.pair,.pair.single{grid-template-columns:1fr}.kpimg{width:110px}}';
 
   // A standalone page: inline CSS, inline images, no scripts, no external refs.
@@ -1059,29 +1673,54 @@ window.PPR = (function () {
       // PptxGenJS's `data` option takes the payload WITHOUT the `data:` prefix
       // that canvas.toDataURL() (collectSlideImages' own source) always adds.
       function stripDataPrefix(uri) { return uri ? uri.replace(/^data:/, '') : ''; }
-      function pptxPane(slide, sl, which, x, w) {
+
+      // Vertical centering (follow-up feedback item 4: "center the items
+      // vertically and horizontally" — horizontal was already centered, since
+      // the two 6.1"-wide panes plus their gap sum to the slide width; nothing
+      // there needed to change). LABEL_H/IMG_H/CAP_H are the same three block
+      // heights the old fixed y:0.35/0.75/5.45 offsets used — only the STARTING
+      // y moves, computed so the whole pane block sits centered in whatever
+      // vertical space is left below the top band (slide number, + the shared-
+      // location line on the slides that have one).
+      var SLIDE_H = 7.5, LABEL_H = 0.35, IMG_H = 4.6, CAP_H = 0.9;
+      var PANE_H = LABEL_H + IMG_H + CAP_H;
+      function paneTopFor(topBand) { return topBand + Math.max(0, (SLIDE_H - topBand - PANE_H) / 2); }
+
+      function pptxPane(slide, sl, which, x, w, paneTop, hideLocation) {
         var ph = photoById(which === 'before' ? sl.before_photo_id : sl.after_photo_id);
         var cap = (which === 'before' ? sl.before_caption : sl.after_caption) || (ph && ph.description) || '';
-        var tags = ph ? [ph.trade, ph.works, ph.location].filter(Boolean).join(' · ') : '';
+        var tagFields = ph ? [ph.trade, ph.works, hideLocation ? null : ph.location] : [];
+        var tags = tagFields.filter(Boolean).join(' · ');
         var url = urlOfPhoto(ph && ph.id);
         var data = url ? imgs[url] : '';
+        var labelY = paneTop, imgY = paneTop + LABEL_H, capY = imgY + IMG_H;
         slide.addText(which === 'before' ? 'PREVIOUS' : 'CURRENT',
-          { x: x, y: 0.35, w: w, h: 0.35, fontSize: 11, bold: true, color: '6B6B6B', charSpacing: 1 });
-        if (data) slide.addImage({ data: stripDataPrefix(data), x: x, y: 0.75, w: w, h: 4.6, sizing: { type: 'contain', w: w, h: 4.6 } });
-        else slide.addText('Photo not set', { x: x, y: 0.75, w: w, h: 4.6, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
+          { x: x, y: labelY, w: w, h: LABEL_H, fontSize: 11, bold: true, color: '6B6B6B', charSpacing: 1 });
+        if (data) slide.addImage({ data: stripDataPrefix(data), x: x, y: imgY, w: w, h: IMG_H, sizing: { type: 'contain', w: w, h: IMG_H } });
+        else slide.addText('Photo not set', { x: x, y: imgY, w: w, h: IMG_H, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
         var capLines = [ph && ph.taken_at ? capDate(ph.taken_at) : '—', cap, tags].filter(Boolean).join('\n');
-        slide.addText(capLines, { x: x, y: 5.45, w: w, h: 0.9, fontSize: 10, color: '4A4A4A', align: 'center' });
+        slide.addText(capLines, { x: x, y: capY, w: w, h: CAP_H, fontSize: 10, color: '4A4A4A', align: 'center' });
       }
 
       s.forEach(function (sl, i) {
         var slide = pptx.addSlide();
         slide.addText('Slide ' + (i + 1) + ' of ' + s.length, { x: 0.4, y: 0.05, w: 6, h: 0.3, fontSize: 10, bold: true, color: 'EE3124' });
         var hasBefore = !!sl.before_photo_id;
+        var sharedLoc = hasBefore ? sharedLocationOf(sl) : '';
+        var topBand = 0.4;
+        if (sharedLoc) {
+          // Same shared-location tile as the live editor / HTML+PDF exports
+          // (follow-up feedback items 3/4) — one centered line, whole slide
+          // width, above both panes.
+          slide.addText(sharedLoc, { x: 0.4, y: 0.4, w: 12.53, h: 0.3, fontSize: 11, bold: true, color: '4A4A4A', align: 'center' });
+          topBand = 0.75;
+        }
+        var paneTop = paneTopFor(topBand);
         if (hasBefore) {
-          pptxPane(slide, sl, 'before', 0.4, 6.1);
-          pptxPane(slide, sl, 'after', 6.8, 6.1);
+          pptxPane(slide, sl, 'before', 0.4, 6.1, paneTop, !!sharedLoc);
+          pptxPane(slide, sl, 'after', 6.8, 6.1, paneTop, !!sharedLoc);
         } else {
-          pptxPane(slide, sl, 'after', 3.4, 6.5);
+          pptxPane(slide, sl, 'after', 3.4, 6.5, paneTop, false);
         }
       });
 
@@ -1370,10 +2009,61 @@ window.PPR = (function () {
     };
   }
 
+  // Exposed for the Gallery's "Add to Presentation" batch action (follow-up
+  // feedback item 5). Each selected photo becomes a NEW slide's CURRENT
+  // photo, appended after whatever slides the presentation already has —
+  // Previous is left blank, exactly like an ordinary "+ Add slide" with
+  // nothing picked to compare against; the planner can add one afterward from
+  // the presentation's own editor. Slide numbering continues from the
+  // existing count so re-running this on the same presentation never
+  // collides with slide_no.
+  async function addPhotosToPresentation(pprId, photoIds) {
+    var n = slides(pprId).length;
+    var payload = photoIds.map(function (id, i) {
+      return {
+        ppr_id: pprId, project_id: pid, created_by: uid, slide_no: n + i + 1,
+        after_photo_id: id, before_photo_id: null
+      };
+    });
+    var res = await sb().from(T_SLIDE).insert(payload);
+    if (res.error) return { ok: false, error: res.error.message };
+    await load();
+    return { ok: true, count: payload.length };
+  }
+
   return {
     init: init,
     _syncTools: syncTools,
     _addSlide: function () { openSlideForm(null); },
-    _screen: function () { return screen; }
+    _screen: function () { return screen; },
+    // Archived presentations are excluded — a retired one is not a sensible
+    // target for newly-batched photos, same reasoning as the list itself
+    // hiding them by default.
+    listForPicker: function () {
+      return pprs.filter(function (p) { return !p.archived; }).slice()
+        .sort(function (a, b) { return String(b.ppr_date || '').localeCompare(String(a.ppr_date || '')); });
+    },
+    addPhotosToPresentation: addPhotosToPresentation,
+    // Test-only hook (same convention as module.js's _tradesOf/
+    // _mediaStripMatches) — genuinely executes the copy-wizard's draft
+    // promotion instead of only regex-checking the source.
+    _buildCopyDrafts: function (src) { return buildCopyDrafts(src); },
+    // More test-only hooks, same convention — the shared-location match and
+    // the Previous/Current eligibility filter are exactly the kind of
+    // off-by-one-prone logic (item 3/4's location comparison, item 5/9's
+    // date/location filter) worth genuinely running against real photo
+    // objects rather than only reading.
+    _sameLocation: function (a, b) { return sameLocation(a, b); },
+    _sharedLocationOf: function (sl) { return sharedLocationOf(sl); },
+    _eligiblePhotos: function (photosArr, refPhoto, direction, allowAllLocations) {
+      var saved = photos; photos = photosArr;
+      try { return eligiblePhotos(refPhoto, direction, allowAllLocations); }
+      finally { photos = saved; }
+    },
+    // Test-only hooks for the slide-sorter (item 12) and the presentation-only
+    // markup overlay (item 14) — same convention as the hooks above.
+    // moveItem is pure and needs no closure state; markupKey likewise.
+    _moveItem: function (arr, from, to) { return moveItem(arr, from, to); },
+    _markupKey: function (slideId, pane) { return markupKey(slideId, pane); }
   };
 })();

@@ -20,12 +20,13 @@ window.ProgressPhotos = (function () {
   var profile = null, uid = null, pid = null, projName = '';
   var rows = [];
   var view = 'gallery';               // list | gallery — gallery is the default landing view (item 1, 2026-08-29 feedback)
-  var filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '' };
+  var filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '', archived: false };
   var collapsed = {};                // trade -> true
   var urlCache = {};                 // storage path -> signed URL
   var canWrite = false;              // planner+ / admin / super_admin
   var lightboxIds = [], lightboxAt = 0;
   var projectListeners = [];         // PPR screen subscribes; both share one selector
+  var selected = {};                 // id -> true (Gallery batch select, follow-up feedback item 5)
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
   // Locations are read from Project Schedule's real "Location Breakdown" —
@@ -73,10 +74,15 @@ window.ProgressPhotos = (function () {
   }
   var migrationWarned = false;             // warn once per session, not per save
   var migrationWarnedMulti = false;        // same, for the 2026-08-29 trades/works_multi columns
-  var roundsFilter = '';
-  var roundsSelected = {};                 // location-combo key -> true (walkthrough queue)
-  var walkState = null;                    // {queue:[comboKey,...], at:0} while a walkthrough modal chain is open
-  var _roundsComboByKey = {};              // comboKey -> {key, values, label}, refreshed each renderRounds()
+  var migrationWarnedMedia = false;        // same, for the 2026-08-29 media_type column (video upload)
+  var migrationWarnedMarkup = false;       // same, for the 2026-08-29 markup column (Batch F)
+  // Today's Rounds (the streamlined-walkthrough screen) was removed entirely
+  // per owner feedback (2026-08-29, "Rounds can be removed") — its state vars
+  // (roundsFilter/roundsSelected/walkState/_roundsComboByKey) and its render/
+  // wire/walkthrough functions are gone with it. locCombos()/photoLocCombos()
+  // further down are NOT part of that removal — they're the shared location-
+  // enumeration helpers bim.js's pin picker and ppr.js's Report Templates
+  // builder both depend on, and stay exactly where they were.
 
   // ===== live collaboration (presence + "who's editing this photo") =========
   // Shared PDCollab layer (Supabase Realtime): topbar avatars, a colored flag on
@@ -411,7 +417,6 @@ window.ProgressPhotos = (function () {
       await loadSchedule();
       fillFilterOptions();
       await refreshQueueBadge();
-      refreshRoundsIfVisible();
       joinCollab();
     };
     // List/Gallery is the shared .pd-viewtoggle. NB: `.pp-tab` now means the
@@ -427,8 +432,13 @@ window.ProgressPhotos = (function () {
       if (!el) return;
       el.oninput = el.onchange = function () { filters[k] = this.value; render(); };
     });
+    // Archived (follow-up feedback item 5's "Archive" batch action needs a way
+    // back to what it hid) — not reset by Clear filters, same reasoning as
+    // the Presentations list's own archived toggle: it isn't a search filter,
+    // it's a completely separate view of the same list.
+    if ($('pp-f-archived')) $('pp-f-archived').onchange = function () { filters.archived = this.checked; render(); };
     $('pp-clearfilters').onclick = function () {
-      filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '' };
+      filters = { from: '', to: '', trade: '', works: '', locValues: {}, search: '', archived: filters.archived };
       ['from', 'to', 'trade', 'works', 'search'].forEach(function (k) {
         var el = $('pp-f-' + k); if (el) el.value = '';
       });
@@ -438,7 +448,7 @@ window.ProgressPhotos = (function () {
     $('pp-add').onclick = function () { openUpload(); };
     $('pp-refresh').onclick = function () { load(); };
     if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
-    if ($('pp-rounds-search')) $('pp-rounds-search').oninput = function () { roundsFilter = this.value; renderRounds(); };
+    wireSelBar();
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -497,6 +507,15 @@ window.ProgressPhotos = (function () {
     if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);   // keep the offline cache current
 
     await signAll();
+    // Batch C (2026-08-29): the Gallery feed is now UNIFIED (photos/videos +
+    // panoramas + done 3D reconstructions, one grid) — load the other two
+    // modules' data alongside this module's own so the merge has something
+    // to merge. Each call is a no-op once already loaded, so switching
+    // between screens and back doesn't re-fetch every time.
+    await Promise.all([
+      (window.PANO && PANO.ensureLoaded) ? PANO.ensureLoaded() : Promise.resolve(),
+      (window.RECON && RECON.ensureLoaded) ? RECON.ensureLoaded() : Promise.resolve()
+    ]);
     fillFilterOptions();
     render();
   }
@@ -756,6 +775,9 @@ window.ProgressPhotos = (function () {
   function visible() {
     var q = filters.search.trim().toLowerCase();
     return rows.filter(function (r) {
+      // Archived is hidden unless the toggle is on — same "never both at
+      // once" rule as the Presentations list's own archived filter.
+      if (!!r.archived !== !!filters.archived) return false;
       // A photo now carries MULTIPLE trades/works (2026-08-29 feedback item
       // 2) -- the filter matches if the picked value is ANY of the row's
       // values, checking both the new array column and the legacy singular
@@ -783,10 +805,14 @@ window.ProgressPhotos = (function () {
 
   // --------------------------------------------------------------- render ---
   function render() {
-    refreshRoundsIfVisible();   // keep Rounds live-consistent with load()/remote changes too
     var host = $('pp-view');
     var list = visible();
     lightboxIds = list.map(function (r) { return r.id; });
+    // Independent of the photo grid's own empty-state branches below (a
+    // project can have panoramas/3D scans with zero regular photos, or vice
+    // versa), so this runs unconditionally rather than only on the final
+    // "has photos" path.
+    renderMediaStrip();
 
     // The count + view toggle live in the static list bar (Drawing Register's
     // .dr-listbar pattern), so they don't get rebuilt on every render.
@@ -811,16 +837,17 @@ window.ProgressPhotos = (function () {
         '<p>No photos yet for this project.</p>' +
         (canWrite ? '<p class="pp-hint">Use <strong>+ Add photos</strong> to upload the first batch.</p>' : '') +
         '</div>';
-      hydrate(host); return;
+      hydrate(host); refreshSelBar(); return;
     }
     if (!list.length) {
       host.innerHTML = '<div class="pp-empty"><p>No photos match these filters.</p></div>';
-      return;
+      refreshSelBar(); return;
     }
 
     host.innerHTML = (view === 'gallery' ? galleryHTML(list) : listHTML(list));
     hydrate(host);
     wireRows(host);
+    refreshSelBar();
     paintRemote();
   }
 
@@ -899,15 +926,27 @@ window.ProgressPhotos = (function () {
 
   function thumb(r, cls) {
     var u = urlOf(r);
+    var isVideo = r.media_type === 'video';
     if (!u) return '<div class="' + cls + ' pp-noimg" title="Preview unavailable">' +
                    '<span data-ico="camera" data-ico-size="18"></span></div>';
+    if (isVideo) {
+      // preload="metadata" shows the video's first frame as a thumbnail at
+      // negligible bandwidth cost, without playing dozens of clips at once in
+      // a grid — real playback only happens once opened in the lightbox.
+      return '<span class="pp-vidthumb ' + cls + '-wrap" data-act="open" data-id="' + r.id + '">' +
+        '<video class="' + cls + '" preload="metadata" muted playsinline src="' + Fmt.esc(u) + '"></video>' +
+        '<span class="pp-vidplay"></span></span>';
+    }
     return '<img class="' + cls + '" src="' + Fmt.esc(u) + '" loading="lazy" ' +
            'alt="' + Fmt.esc(r.description || 'Progress photo') + '" data-act="open" data-id="' + r.id + '" />';
   }
 
   function listHTML(list) {
+    // A leading checkbox column (Gallery batch select, follow-up feedback item
+    // 5) — one more cell in the header AND every row branch below, so the
+    // grid columns stay aligned (this file's own standing rule for its grid).
     var head = '<div class="pp-grid-head">' +
-      '<div>Photo</div><div>Description</div><div>Trade</div><div>Works</div>' +
+      '<div></div><div>Photo</div><div>Description</div><div>Trade</div><div>Works</div>' +
       '<div>Location</div><div>Capture Date</div><div></div></div>';
 
     var body = groupByTrade(list).map(function (g) {
@@ -922,7 +961,9 @@ window.ProgressPhotos = (function () {
         // supplies the headings); at phone width the head is hidden and the row
         // restacks under the thumbnail, where each value needs its own label —
         // module.css renders these via .pp-cell[data-l]::before.
-        return '<div class="pp-row" data-id="' + r.id + '">' +
+        return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
+          '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '"' +
+            (selected[r.id] ? ' checked' : '') + ' /></div>' +
           '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
           '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
           '<div class="pp-cell" data-l="Trade">' + Fmt.esc(tradesOf(r).join(', ') || '—') + '</div>' +
@@ -954,12 +995,142 @@ window.ProgressPhotos = (function () {
         '<div class="pp-gallerygrouphead"><strong>' + Fmt.esc(g.label) + '</strong>' +
           '<span class="pp-groupcount">' + g.items.length + '</span></div>' +
         '<div class="pp-gallery">' + g.items.map(function (r) {
-          return '<figure class="pp-card" data-id="' + r.id + '">' +
+          // Batch E item 8: a small expand icon appears ONLY when this photo
+          // has a floor-plan pin — never shown speculatively, since most
+          // photos won't have one and an always-present-but-usually-inert
+          // icon reads as broken. BIM.pinInfoFor may not have data yet on the
+          // very first paint (its own project load races this one) — the
+          // icon simply appears on the next render once it does, same
+          // trade-off this module already accepts for the 360°/3D strip.
+          var hasPin = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor('photo', r.id);
+          return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
+            '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '"' +
+              (selected[r.id] ? ' checked' : '') + ' /></span>' +
+            (hasPin ? '<button type="button" class="pp-pinbtn" data-pinpreview="' + r.id + '" ' +
+              'title="Show this photo\'s position on the floor plan">' +
+              '<span data-ico="mapPin" data-ico-size="13"></span></button>' : '') +
             '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + '</div>' +
           '</figure>';
         }).join('') + '</div></div>';
     }).join('');
     return bar + body;
+  }
+
+  // Batch E item 8 — a cropped/zoomed view of the floor plan centred on this
+  // photo's pin, with a Tight/Wide toggle (interpreted as two crop levels,
+  // since a literal "1/8 or 1/4 of the tile's own pixel size" would render an
+  // impractically tiny overlay on a small Gallery thumbnail). The centring
+  // math: an image positioned at left:50%/top:50% of the container, then
+  // translated by -(x_norm*100%, y_norm*100%) of ITS OWN box (not the
+  // container's — percentage transforms are always relative to the
+  // transformed element itself), places the point at (x_norm,y_norm) of the
+  // image exactly at the container's centre regardless of zoom level.
+  function openPinPreview(photoId) {
+    if (!window.BIM || !BIM.pinInfoFor) return;
+    var info = BIM.pinInfoFor('photo', photoId);
+    if (!info || !info.planUrl) { UI.toast('That floor plan image is not available', 'warn'); return; }
+    var tight = true;
+    function bodyHTML() {
+      var zoomPct = tight ? 700 : 350;
+      var dir = info.pin.direction_deg;
+      var hasDir = dir !== null && dir !== undefined;
+      return '<div class="pp-pinpreview-box">' +
+        '<img src="' + Fmt.esc(info.planUrl) + '" style="position:absolute;left:50%;top:50%;width:' + zoomPct +
+          '%;max-width:none;transform:translate(-' + (info.pin.x_norm * 100) + '%,-' + (info.pin.y_norm * 100) + '%);" alt="" />' +
+        (hasDir ? '<div class="pp-pinpreview-cone" style="transform:translate(-50%,-100%) rotate(' + dir + 'deg);"></div>' : '') +
+        '<div class="pp-pinpreview-dot"></div>' +
+      '</div>';
+    }
+    var html =
+      '<div class="pd-modal-header"><h3>' + Fmt.esc(info.planName || 'Floor plan') + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<div id="pp-pinpreview-host">' + bodyHTML() + '</div>' +
+        '<div class="pp-pinpreview-zoom">' +
+          '<button type="button" class="pd-btn' + (tight ? ' pd-btn-primary' : '') + '" id="pp-pinpreview-tight">Tight</button>' +
+          '<button type="button" class="pd-btn' + (!tight ? ' pd-btn-primary' : '') + '" id="pp-pinpreview-wide">Wide</button>' +
+        '</div>' +
+      '</div>';
+    var m = openModal(html, 420);
+    function refresh() {
+      $('pp-pinpreview-host').innerHTML = bodyHTML();
+      $('pp-pinpreview-tight').classList.toggle('pd-btn-primary', tight);
+      $('pp-pinpreview-wide').classList.toggle('pd-btn-primary', !tight);
+    }
+    $('pp-pinpreview-tight').onclick = function () { tight = true; refresh(); };
+    $('pp-pinpreview-wide').onclick = function () { tight = false; refresh(); };
+  }
+
+  // -------------------------------------------------------- 360°/3D media strip
+  // Folded into the Gallery screen (2026-08-29 feedback: "Rounds can be
+  // removed. 360 and 3D should be incorporated in the Gallery") rather than
+  // interleaved into the photo grid itself. Panoramas and reconstructions are
+  // a different SHAPE of record (no trade/works, a different open-viewer of
+  // their own, no lightbox arrow-navigation), so merging them into
+  // visible()/thumb()/wireRows() would risk the well-tested photo pipeline
+  // for a presentational preference. This strip renders below the photo grid
+  // -- same screen, same scroll, no separate tab -- reads the SAME
+  // location/date/search filters as the grid (never Trade/Works, which don't
+  // apply to either kind), and is entirely absent from the DOM when there's
+  // nothing to show rather than an empty heading. PANO.list()/RECON.doneList()
+  // and PANO.ensureLoaded/RECON.ensureLoaded (called from load(), below) are
+  // what make this possible without a second fetch cycle owned by this file.
+  function mediaStripMatches(item) {
+    var lv = item.location_values || {};
+    var locOk = Object.keys(filters.locValues || {}).every(function (lid) {
+      var want = filters.locValues[lid];
+      return !want || (lv[lid] || '') === want;
+    });
+    if (!locOk) return false;
+    var d = item.taken_at || (item.created_at || '').slice(0, 10);
+    if (filters.from && (!d || d < filters.from)) return false;
+    if (filters.to && (!d || d > filters.to)) return false;
+    var q = filters.search.trim().toLowerCase();
+    if (q && (item.location || '').toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  }
+  function mediaStripItems() {
+    var panos = (window.PANO && PANO.list ? PANO.list() : []).filter(mediaStripMatches)
+      .map(function (p) { return { _kind: 'panorama', _src: p }; });
+    var recons = (window.RECON && RECON.doneList ? RECON.doneList() : []).filter(mediaStripMatches)
+      .map(function (r) { return { _kind: 'reconstruction', _src: r }; });
+    return panos.concat(recons);
+  }
+  function mediaStripHTML() {
+    var items = mediaStripItems();
+    if (!items.length) return '';
+    return '<div class="pp-mediastrip">' +
+      '<div class="pp-mediastriphead"><strong>360&deg; &amp; 3D captures</strong>' +
+        '<span class="pp-groupcount">' + items.length + '</span></div>' +
+      '<div class="pp-mediastripgrid">' + items.map(function (it) {
+        var r = it._src;
+        var isPano = it._kind === 'panorama';
+        var u = isPano && window.PANO && PANO.urlOf ? PANO.urlOf(r) : '';
+        var label = isPano ? '360° panorama' : '3D scan';
+        var date = r.taken_at || r.created_at || '';
+        return '<button type="button" class="pp-mediatile" data-kind="' + it._kind + '" data-id="' + Fmt.esc(r.id) + '" title="' + Fmt.esc(label) + '">' +
+          (u ? '<img src="' + Fmt.esc(u) + '" alt="" />' :
+               '<span class="pp-mediatile-ico" data-ico="' + (isPano ? 'compass' : 'box') + '" data-ico-size="22"></span>') +
+          '<span class="pp-mediatile-badge">' + Fmt.esc(isPano ? '360°' : '3D') + '</span>' +
+          '<span class="pp-mediatile-cap">' + Fmt.esc(r.location || 'Unassigned') + (date ? ' · ' + Fmt.esc(Fmt.date(date)) : '') + '</span>' +
+          '</button>';
+      }).join('') + '</div></div>';
+  }
+  function wireMediaStrip(host) {
+    Array.prototype.forEach.call(host.querySelectorAll('.pp-mediatile'), function (b) {
+      b.onclick = function () {
+        var id = this.dataset.id;
+        if (this.dataset.kind === 'panorama') { if (window.PANO && PANO.open) PANO.open(id); }
+        else { if (window.RECON && RECON.openById) RECON.openById(id); }
+      };
+    });
+  }
+  function renderMediaStrip() {
+    var host = $('pp-media-strip');
+    if (!host) return;
+    host.innerHTML = mediaStripHTML();
+    hydrate(host);
+    wireMediaStrip(host);
   }
 
   function wireRows(host) {
@@ -983,8 +1154,114 @@ window.ProgressPhotos = (function () {
         else if (a === 'del') remove(r);
       };
     });
+    // Batch E item 8 — the expandable key-plan-style pin icon on a Gallery tile.
+    Array.prototype.forEach.call(host.querySelectorAll('[data-pinpreview]'), function (btn) {
+      btn.onclick = function (e) { e.stopPropagation(); openPinPreview(this.dataset.pinpreview); };
+    });
+    // Batch select (follow-up feedback item 5) — one checkbox per row/tile,
+    // in both List and Gallery views (they're two displays of the same
+    // Gallery screen, so a selection made in one shouldn't be view-specific).
+    Array.prototype.forEach.call(host.querySelectorAll('[data-sel]'), function (cb) {
+      cb.onchange = function () {
+        if (this.checked) selected[this.dataset.sel] = true; else delete selected[this.dataset.sel];
+        var card = this.closest('.pp-row, .pp-card');
+        if (card) card.classList.toggle('pp-selrow', this.checked);
+        refreshSelBar();
+      };
+    });
   }
   function byId(id) { return rows.filter(function (r) { return r.id === id; })[0]; }
+
+  // -------------------------------------------------------- batch select ----
+  // Scoped to the currently VISIBLE (filtered) set, not the raw `selected`
+  // map — a selection made under one filter must not silently act on rows a
+  // since-changed filter no longer shows (Drawing Register's own bulk-select
+  // bar was bitten by exactly this and documents the fix; the same rule
+  // applies here).
+  function visibleSelectedIds() {
+    var vis = {}; visible().forEach(function (r) { vis[r.id] = true; });
+    return Object.keys(selected).filter(function (id) { return vis[id]; });
+  }
+  function refreshSelBar() {
+    var bar = $('pp-selbar'); if (!bar) return;
+    var ids = visibleSelectedIds();
+    bar.hidden = !ids.length;
+    var c = $('pp-selcount'); if (c) c.textContent = ids.length + ' selected';
+  }
+  function wireSelBar() {
+    if ($('pp-sel-clear')) $('pp-sel-clear').onclick = function () { selected = {}; render(); };
+    if ($('pp-sel-download')) $('pp-sel-download').onclick = async function () {
+      var ids = visibleSelectedIds();
+      for (var i = 0; i < ids.length; i++) {
+        var r = byId(ids[i]); if (r) await download(r);
+        // A small stagger between triggers — several near-simultaneous
+        // programmatic downloads from one click are exactly what some
+        // browsers throttle/block as looking automated.
+        await new Promise(function (res) { setTimeout(res, 300); });
+      }
+    };
+    if ($('pp-sel-archive')) $('pp-sel-archive').onclick = async function () {
+      var ids = visibleSelectedIds();
+      if (!ids.length) return;
+      var res = await sb().from(TABLE).update({ archived: true }).in('id', ids);
+      if (res.error) {
+        if (/column .* does not exist|schema cache/i.test(res.error.message || '')) {
+          UI.toast('Archiving needs a pending migration — run migrations/2026-08-29-archive-flag.sql', 'warn');
+        } else UI.toast(res.error.message, 'error');
+        return;
+      }
+      UI.toast(ids.length + ' photo' + (ids.length === 1 ? '' : 's') + ' archived', 'ok');
+      selected = {};
+      await load();
+    };
+    if ($('pp-sel-addppr')) $('pp-sel-addppr').onclick = function () {
+      var ids = visibleSelectedIds();
+      if (!ids.length) return;
+      openAddToPresentation(ids);
+    };
+  }
+
+  // Picks (or creates) a presentation, then adds every selected photo as a
+  // new slide's Current photo via PPR.addPhotosToPresentation — the write
+  // itself lives in ppr.js (the one place that already owns ppr_slides'
+  // shape/numbering), this just supplies which photos and which target.
+  function openAddToPresentation(photoIds) {
+    if (!window.PPR || !PPR.listForPicker) { UI.toast('Presentations are not available right now', 'error'); return; }
+    var list = PPR.listForPicker();
+    var html =
+      '<div class="pd-modal-header"><h3>Add ' + photoIds.length + ' photo' + (photoIds.length === 1 ? '' : 's') +
+        ' to a presentation</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        (list.length
+          ? '<div class="pd-field"><label>Presentation</label>' +
+            '<select class="pd-select" id="pp-a2p-select">' +
+              list.map(function (p) { return '<option value="' + p.id + '">' + Fmt.esc(p.description || p.ppr_date || p.id) + '</option>'; }).join('') +
+            '</select></div>'
+          : '<p class="pp-hint">No presentations yet — one will be created.</p>') +
+        '<div class="pd-field"><label>Or create a new presentation, dated</label>' +
+          '<input class="pd-input" type="date" id="pp-a2p-newdate" value="' + new Date().toISOString().slice(0, 10) + '" /></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp-a2p-go">Add</button></div>';
+    var m = openModal(html, 480);
+    $('pp-a2p-go').onclick = async function () {
+      this.disabled = true;
+      var pprId = $('pp-a2p-select') ? $('pp-a2p-select').value : '';
+      if (!pprId) {
+        var date = $('pp-a2p-newdate').value;
+        if (!date) { UI.toast('Pick a date for the new presentation', 'warn'); this.disabled = false; return; }
+        var ires = await sb().from('ppr_presentations').insert({ ppr_date: date, project_id: pid, created_by: uid }).select();
+        if (ires.error) { UI.toast(ires.error.message, 'error'); this.disabled = false; return; }
+        pprId = ires.data && ires.data[0] && ires.data[0].id;
+      }
+      if (!pprId) { UI.toast('Could not determine a presentation to add to', 'error'); this.disabled = false; return; }
+      var res = await PPR.addPhotosToPresentation(pprId, photoIds);
+      if (!res.ok) { UI.toast(res.error || 'Could not add photos', 'error'); this.disabled = false; return; }
+      m.close();
+      UI.toast(res.count + ' photo' + (res.count === 1 ? '' : 's') + ' added as new slides', 'ok');
+      selected = {}; render();
+    };
+  }
 
   // ------------------------------------------------------------- lightbox ---
   function openLightbox(id) {
@@ -993,7 +1270,10 @@ window.ProgressPhotos = (function () {
     paintLightbox();
     $('pp-lightbox').hidden = false;
   }
-  function closeLightbox() { $('pp-lightbox').hidden = true; }
+  function closeLightbox() {
+    $('pp-lightbox').hidden = true;
+    var vidEl = $('pp-lb-video'); if (vidEl) { vidEl.pause(); vidEl.src = ''; }
+  }
   function stepLightbox(d) {
     if (!lightboxIds.length) return;
     lightboxAt = (lightboxAt + d + lightboxIds.length) % lightboxIds.length;
@@ -1002,7 +1282,15 @@ window.ProgressPhotos = (function () {
   function paintLightbox() {
     var r = byId(lightboxIds[lightboxAt]); if (!r) return;
     var u = urlOf(r);
-    $('pp-lb-img').src = u || '';
+    var isVideo = r.media_type === 'video';
+    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video');
+    if (isVideo) {
+      if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
+      if (vidEl) { vidEl.hidden = false; vidEl.src = u || ''; }
+    } else {
+      if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
+      if (imgEl) { imgEl.hidden = false; imgEl.src = u || ''; }
+    }
     $('pp-lb-cap').innerHTML =
       '<strong>' + Fmt.esc(r.description || 'Progress photo') + '</strong>' +
       '<span>' + Fmt.esc(tradesOf(r).concat(worksOf(r), [r.location]).filter(Boolean).join(' · ')) +
@@ -1015,7 +1303,45 @@ window.ProgressPhotos = (function () {
     if (delBtn) delBtn.onclick = function () { closeLightbox(); remove(r); };
     var dlBtn = $('pp-lb-download');
     if (dlBtn) dlBtn.onclick = function () { download(r); };
+    // Markup (18-item list item 13) — hidden on Gallery tiles by contract,
+    // shown here only. Visibility is a per-session UI toggle (not persisted
+    // per photo — "show it right now" is a viewing preference, not data).
+    var mkBtn = $('pp-lb-markuptoggle'), mkEditBtn = $('pp-lb-markupedit');
+    if (mkEditBtn) mkEditBtn.style.display = canWrite ? '' : 'none';
+    if (mkBtn) mkBtn.onclick = function () { lightboxMarkupVisible = !lightboxMarkupVisible; paintMarkupOverlay(r); };
+    if (mkEditBtn) mkEditBtn.onclick = function () {
+      openMarkupEditor(u, r.markup || [], async function (newMarkup) {
+        r.markup = newMarkup;
+        lightboxMarkupVisible = true;
+        var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: { markup: newMarkup, updated_at: new Date().toISOString() } });
+        if (!w.ok) UI.toast(w.error && w.error.message || 'Could not save markup', 'error');
+        paintMarkupOverlay(r);
+      });
+    };
+    lightboxMarkupVisible = true;
+    paintMarkupOverlay(r);
     hydrate($('pp-lightbox'));
+  }
+  var lightboxMarkupVisible = true;
+  function paintMarkupOverlay(r) {
+    var canvas = $('pp-lb-markup-canvas'); if (!canvas) return;
+    var imgEl = r.media_type === 'video' ? $('pp-lb-video') : $('pp-lb-img');
+    var show = lightboxMarkupVisible && r.markup && r.markup.length;
+    canvas.style.display = show ? '' : 'none';
+    var mkBtn = $('pp-lb-markuptoggle');
+    if (mkBtn) mkBtn.classList.toggle('is-active', lightboxMarkupVisible);
+    if (!show || !imgEl) return;
+    // Sized to match whichever media element is currently visible — a photo
+    // and a video report their box differently but both are the SAME element
+    // the markup coordinates (normalized 0..1) are relative to.
+    function fit() {
+      var rect = imgEl.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      canvas.width = rect.width; canvas.height = rect.height;
+      canvas.style.width = rect.width + 'px'; canvas.style.height = rect.height + 'px';
+      drawMarkupObjects(canvas.getContext('2d'), r.markup, canvas.width, canvas.height);
+    }
+    if (imgEl.complete !== false) fit(); else imgEl.onload = fit;
   }
 
   async function download(r) {
@@ -1025,6 +1351,237 @@ window.ProgressPhotos = (function () {
     a.href = u;
     a.download = (r.photo_url || 'photo').split('/').pop();
     document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ------------------------------------------------------- markup editor ---
+  // 18-item list item 13/14: a vector annotation layer (pencil, eraser,
+  // shapes, text, icon stamps), hidden on Gallery tiles, shown only when a
+  // photo/slide is opened. ONE engine, exposed publicly (openMarkupEditor
+  // below) so ppr.js's presentation-only overlay (item 14 — "native only to
+  // the presentation, not shared with the photo") reuses it rather than a
+  // second canvas implementation: ppr.js already depends on ProgressPhotos
+  // being loaded first (onProject/openUploadForPicker/allPhotos all work the
+  // same way), so this follows the same established cross-file convention.
+  //
+  // Storage format is a plain JS array of objects — never a second rasterised
+  // image — so it stays small, can be toggled on/off losslessly, and
+  // re-renders correctly at any canvas size:
+  //   {type:'pen', points:[[x,y],...], color}
+  //   {type:'rect'|'circle'|'arrow', x0,y0,x1,y1, color}   (all in 0..1 of the image)
+  //   {type:'text', x,y, text, color}
+  //   {type:'icon', x,y, icon, color}                       (icon: 'warn'|'arrow'|'person'|'equip')
+  // Coordinates are normalized 0..1 of the image's own box, exactly like
+  // floor_plan_pins' x_norm/y_norm — the same reason: re-renders correctly
+  // regardless of the canvas's actual pixel size.
+  var MARKUP_COLORS = ['#EE3124', '#231F20', '#FFC400', '#1E88E5', '#43A047'];
+  // Hand-drawn on the canvas rather than reused from icons.js — that file's
+  // glyphs mix <path>/<circle>/<line>/<polygon> elements, which Path2D (the
+  // only way to paint an SVG path onto a 2D canvas) cannot parse as a single
+  // 'd' string. Four simple primitives cover the ask.
+  function drawIconStamp(ctx, name, cx, cy, size, color) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = Math.max(2, size * 0.08);
+    var r = size / 2;
+    if (name === 'warn') {
+      ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy + r); ctx.lineTo(cx - r, cy + r); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.35); ctx.lineTo(cx, cy + r * 0.25); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy + r * 0.55, size * 0.05, 0, Math.PI * 2); ctx.fill();
+    } else if (name === 'arrow') {
+      ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r * 0.5, cy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + r, cy); ctx.lineTo(cx + r * 0.3, cy - r * 0.5); ctx.lineTo(cx + r * 0.3, cy + r * 0.5); ctx.closePath(); ctx.fill();
+    } else if (name === 'person') {
+      ctx.beginPath(); ctx.arc(cx, cy - r * 0.5, r * 0.35, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.1); ctx.lineTo(cx, cy + r * 0.5); ctx.moveTo(cx - r * 0.4, cy + r * 0.9); ctx.lineTo(cx, cy + r * 0.5); ctx.lineTo(cx + r * 0.4, cy + r * 0.9);
+      ctx.moveTo(cx - r * 0.35, cy + r * 0.05); ctx.lineTo(cx, cy + r * 0.25); ctx.lineTo(cx + r * 0.35, cy + r * 0.05); ctx.stroke();
+    } else { // 'equip'
+      ctx.strokeRect(cx - r * 0.7, cy - r * 0.5, r * 1.4, r);
+      ctx.beginPath(); ctx.moveTo(cx - r * 0.35, cy - r * 0.5); ctx.lineTo(cx - r * 0.35, cy - r * 0.85); ctx.lineTo(cx + r * 0.35, cy - r * 0.85); ctx.lineTo(cx + r * 0.35, cy - r * 0.5); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawMarkupObjects(ctx, objs, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    objs.forEach(function (o) {
+      ctx.strokeStyle = o.color || MARKUP_COLORS[0]; ctx.fillStyle = o.color || MARKUP_COLORS[0]; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (o.type === 'pen' && o.points && o.points.length) {
+        ctx.beginPath();
+        o.points.forEach(function (p, i) { var x = p[0] * w, y = p[1] * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+        ctx.stroke();
+      } else if (o.type === 'rect') {
+        ctx.strokeRect(o.x0 * w, o.y0 * h, (o.x1 - o.x0) * w, (o.y1 - o.y0) * h);
+      } else if (o.type === 'circle') {
+        var cx = (o.x0 + o.x1) / 2 * w, cy = (o.y0 + o.y1) / 2 * h;
+        var rx = Math.abs(o.x1 - o.x0) / 2 * w, ry = Math.abs(o.y1 - o.y0) / 2 * h;
+        ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+      } else if (o.type === 'arrow') {
+        var x0 = o.x0 * w, y0 = o.y0 * h, x1 = o.x1 * w, y1 = o.y1 * h;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+        var ang = Math.atan2(y1 - y0, x1 - x0), head = 14;
+        ctx.beginPath(); ctx.moveTo(x1, y1);
+        ctx.lineTo(x1 - head * Math.cos(ang - Math.PI / 7), y1 - head * Math.sin(ang - Math.PI / 7));
+        ctx.lineTo(x1 - head * Math.cos(ang + Math.PI / 7), y1 - head * Math.sin(ang + Math.PI / 7));
+        ctx.closePath(); ctx.fill();
+      } else if (o.type === 'text') {
+        ctx.font = '700 18px Montserrat, Arial, sans-serif';
+        ctx.textBaseline = 'top';
+        var tx = o.x * w, ty = o.y * h;
+        var metrics = ctx.measureText(o.text || '');
+        ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(tx - 3, ty - 2, metrics.width + 6, 22);
+        ctx.fillStyle = o.color || MARKUP_COLORS[0];
+        ctx.fillText(o.text || '', tx, ty);
+      } else if (o.type === 'icon') {
+        drawIconStamp(ctx, o.icon, o.x * w, o.y * h, 34, o.color || MARKUP_COLORS[0]);
+      }
+    });
+  }
+  // Nearest-object hit test for the eraser — "erase" on a vector layer means
+  // REMOVE THE OBJECT, not paint pixels transparent (there are no pixels);
+  // this is the vector equivalent the plan itself calls for ("eraser as a
+  // path-hit-test removal").
+  function markupHitTest(objs, nx, ny, w, h) {
+    var best = -1, bestDist = 26; // px tolerance
+    objs.forEach(function (o, i) {
+      var d = Infinity;
+      if (o.type === 'pen') {
+        o.points.forEach(function (p) { d = Math.min(d, Math.hypot((p[0] - nx) * w, (p[1] - ny) * h)); });
+      } else if (o.type === 'text' || o.type === 'icon') {
+        d = Math.hypot((o.x - nx) * w, (o.y - ny) * h);
+      } else {
+        var cx = (o.x0 + o.x1) / 2, cy = (o.y0 + o.y1) / 2;
+        d = Math.hypot((cx - nx) * w, (cy - ny) * h);
+      }
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  }
+
+  // Opens the shared markup editor. `imageUrl` is any already-signed URL
+  // (a photo, or a PPR pane's photo — the caller resolves that);
+  // `initialMarkup` is the existing array (or []); `onSave(newMarkup)` is
+  // called with the finished array on Save, never called on Cancel.
+  function openMarkupEditor(imageUrl, initialMarkup, onSave) {
+    var objs = (initialMarkup || []).map(function (o) { return Object.assign({}, o); }); // work on a copy — Cancel must leave the original untouched
+    var tool = 'pen', color = MARKUP_COLORS[0], iconChoice = 'warn';
+    var undone = []; // undo stack of removed/added ops, simple whole-array snapshots (this layer is small — dozens of objects at most)
+    var history = [objs.map(function (o) { return Object.assign({}, o); })];
+
+    var html =
+      '<div class="pd-modal-header"><h3>Markup</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<div class="pp-mk-toolbar">' +
+          '<div class="pp-mk-tools" role="tablist">' +
+            ['pen', 'rect', 'circle', 'arrow', 'text', 'icon', 'erase'].map(function (t) {
+              var lbl = { pen: 'Pen', rect: 'Rect', circle: 'Circle', arrow: 'Arrow', text: 'Text', icon: 'Icon', erase: 'Eraser' }[t];
+              return '<button type="button" class="pp-mk-tool' + (t === tool ? ' active' : '') + '" data-tool="' + t + '">' + lbl + '</button>';
+            }).join('') +
+          '</div>' +
+          '<div class="pp-mk-icons" id="pp-mk-icons" style="display:none;">' +
+            ['warn', 'arrow', 'person', 'equip'].map(function (ic) {
+              return '<button type="button" class="pp-mk-tool' + (ic === iconChoice ? ' active' : '') + '" data-icon="' + ic + '">' + ic + '</button>';
+            }).join('') +
+          '</div>' +
+          '<div class="pp-mk-colors">' + MARKUP_COLORS.map(function (c) {
+            return '<button type="button" class="pp-mk-swatch' + (c === color ? ' active' : '') + '" data-color="' + c + '" style="background:' + c + ';"></button>';
+          }).join('') + '</div>' +
+          '<button type="button" class="pd-btn" id="pp-mk-undo">Undo</button>' +
+          '<button type="button" class="pd-btn" id="pp-mk-clear">Clear all</button>' +
+        '</div>' +
+        '<div class="pp-mk-canvaswrap" id="pp-mk-canvaswrap">' +
+          '<img id="pp-mk-img" src="' + Fmt.esc(imageUrl) + '" alt="" />' +
+          '<canvas id="pp-mk-canvas"></canvas>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp-mk-save">Save markup</button></div>';
+    var m = openModal(html, 900);
+
+    var canvas = $('pp-mk-canvas'), ctx = canvas.getContext('2d'), img = $('pp-mk-img');
+    function sizeCanvas() {
+      var r = img.getBoundingClientRect();
+      canvas.width = r.width; canvas.height = r.height;
+      canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
+      redraw();
+    }
+    function redraw() { drawMarkupObjects(ctx, objs, canvas.width, canvas.height); }
+    function pushHistory() { history.push(objs.map(function (o) { return Object.assign({}, o); })); undone = []; }
+    if (img.complete) sizeCanvas(); else img.onload = sizeCanvas;
+    window.addEventListener('resize', sizeCanvas);
+
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-tool]'), function (b) {
+      b.onclick = function () {
+        tool = this.dataset.tool;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-tool]'), function (x) { x.classList.toggle('active', x.dataset.tool === tool); });
+        $('pp-mk-icons').style.display = tool === 'icon' ? '' : 'none';
+      };
+    });
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-icon]'), function (b) {
+      b.onclick = function () {
+        iconChoice = this.dataset.icon;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-icon]'), function (x) { x.classList.toggle('active', x.dataset.icon === iconChoice); });
+      };
+    });
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (b) {
+      b.onclick = function () {
+        color = this.dataset.color;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (x) { x.classList.toggle('active', x.dataset.color === color); });
+      };
+    });
+    $('pp-mk-undo').onclick = function () {
+      if (history.length < 2) return;
+      undone.push(history.pop());
+      objs = history[history.length - 1].map(function (o) { return Object.assign({}, o); });
+      redraw();
+    };
+    $('pp-mk-clear').onclick = function () { objs = []; pushHistory(); redraw(); };
+
+    var drawing = false, penPoints = null, shapeStart = null;
+    function toNorm(e) {
+      var r = canvas.getBoundingClientRect();
+      return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+    }
+    canvas.addEventListener('pointerdown', function (e) {
+      canvas.setPointerCapture(e.pointerId);
+      var p = toNorm(e);
+      if (tool === 'erase') {
+        var idx = markupHitTest(objs, p[0], p[1], canvas.width, canvas.height);
+        if (idx >= 0) { objs.splice(idx, 1); pushHistory(); redraw(); }
+        return;
+      }
+      if (tool === 'text') {
+        var text = prompt('Text:'); if (!text) return;
+        objs.push({ type: 'text', x: p[0], y: p[1], text: text, color: color });
+        pushHistory(); redraw(); return;
+      }
+      if (tool === 'icon') {
+        objs.push({ type: 'icon', x: p[0], y: p[1], icon: iconChoice, color: color });
+        pushHistory(); redraw(); return;
+      }
+      drawing = true;
+      if (tool === 'pen') { penPoints = [p]; objs.push({ type: 'pen', points: penPoints, color: color }); }
+      else { shapeStart = p; objs.push({ type: tool, x0: p[0], y0: p[1], x1: p[0], y1: p[1], color: color }); }
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!drawing) return;
+      var p = toNorm(e);
+      if (tool === 'pen') { penPoints.push(p); }
+      else { var last = objs[objs.length - 1]; last.x1 = p[0]; last.y1 = p[1]; }
+      redraw();
+    });
+    ['pointerup', 'pointercancel'].forEach(function (ev) {
+      canvas.addEventListener(ev, function () {
+        if (!drawing) return;
+        drawing = false; pushHistory();
+      });
+    });
+
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
+      b.onclick = function () { window.removeEventListener('resize', sizeCanvas); m.close(); };
+    });
+    $('pp-mk-save').onclick = function () {
+      window.removeEventListener('resize', sizeCanvas);
+      m.close();
+      if (onSave) onSave(objs);
+    };
   }
 
   // --------------------------------------------------------------- upload ---
@@ -1199,17 +1756,58 @@ window.ProgressPhotos = (function () {
     hydrate(ctx);
   }
 
+  // Add-media type selector (18-item list item 4). Photo is the default and
+  // the only kind this form has ever produced; Video is a plain,
+  // unprocessed upload sharing every other field (trade/works/location/key
+  // plan all apply the same way to a clip). 360°/3D are shown, not hidden —
+  // so a planner can SEE the capability exists — but disabled with a
+  // tooltip, since Gaussian Splatting/RunPod are on hold; they route to
+  // pano.js/recon.js's own real capture flows (unchanged) once re-enabled,
+  // never re-implemented here.
+  function mediaTypeSelectorHTML(idPrefix, cur) {
+    cur = cur || 'photo';
+    return '<div class="pd-field pp-span2"><label>Type</label>' +
+      '<div class="pp-mtypesel" role="tablist">' +
+        '<button type="button" class="pp-mtype' + (cur === 'photo' ? ' active' : '') +
+          '" data-mtype="photo" id="' + idPrefix + '-mtype-photo">Photo</button>' +
+        '<button type="button" class="pp-mtype' + (cur === 'video' ? ' active' : '') +
+          '" data-mtype="video" id="' + idPrefix + '-mtype-video">Video</button>' +
+        '<button type="button" class="pp-mtype" disabled title="360° and 3D capture are on hold — see the Photos screen\'s own 360°/3D tools">' +
+          '360° / 3D</button>' +
+      '</div></div>';
+  }
+  function wireMediaTypeSelector(idPrefix, onChange) {
+    var cur = 'photo';
+    var fileInput = $(idPrefix + '-files');
+    function apply() {
+      if (fileInput) fileInput.accept = cur === 'video' ? 'video/*' : 'image/*';
+      if (fileInput) fileInput.removeAttribute('capture');
+      var pBtn = $(idPrefix + '-mtype-photo'), vBtn = $(idPrefix + '-mtype-video');
+      if (pBtn) pBtn.classList.toggle('active', cur === 'photo');
+      if (vBtn) vBtn.classList.toggle('active', cur === 'video');
+      var lbl = document.querySelector('label[for="' + idPrefix + '-files"]');
+      if (onChange) onChange(cur);
+    }
+    ['photo', 'video'].forEach(function (t) {
+      var btn = $(idPrefix + '-mtype-' + t);
+      if (btn) btn.onclick = function () { cur = t; apply(); };
+    });
+    apply();
+    return { get: function () { return cur; } };
+  }
+
   function openUpload(preset) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
     preset = preset || {};
     var today = new Date().toISOString().slice(0, 10);
     var html =
-      '<div class="pd-modal-header"><h3>' + (preset.walk ? 'Capture — ' + preset.walk.at + ' of ' + preset.walk.total : 'Add photos') + '</h3>' +
+      '<div class="pd-modal-header"><h3>Add media</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<p class="pp-hint">Fields below apply to every photo in this batch — edit any ' +
-          'individual photo afterwards.</p>' +
-        '<div class="pd-field"><label>Photos</label>' +
+        '<p class="pp-hint">Fields below apply to every file in this batch — edit any ' +
+          'individual item afterwards.</p>' +
+        mediaTypeSelectorHTML('pp') +
+        '<div class="pd-field" id="pp-filesfield"><label>Photos</label>' +
           '<input class="pd-input" type="file" id="pp-files" accept="image/*" capture="environment" multiple /></div>' +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
@@ -1226,23 +1824,22 @@ window.ProgressPhotos = (function () {
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
-        (preset.walk ? '<button class="pd-btn" id="pp-skip">Skip this location</button>' +
-          '<button class="pd-btn" id="pp-endwalk">End walkthrough</button>' : '<button class="pd-btn" data-close>Cancel</button>') +
+        '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-save">Upload</button></div>';
 
     var m = openModal(html, 640);
     wireLocationField('pp');
     wireTradeWorks('pp');
     wireKeyPlanField('pp');
+    var mtype = wireMediaTypeSelector('pp', function (t) {
+      var fld = $('pp-filesfield'); if (fld) fld.querySelector('label').textContent = t === 'video' ? 'Videos' : 'Photos';
+    });
     hydrate(m.el);
-    if (preset.walk && $('pp-skip')) $('pp-skip').onclick = function () { m.close(); advanceWalkthrough(); };
-    if (preset.walk && $('pp-endwalk')) $('pp-endwalk').onclick = function () {
-      m.close(); walkState = null; roundsSelected = {}; renderRounds();
-    };
 
     $('pp-save').onclick = async function () {
       var files = $('pp-files').files;
-      if (!files || !files.length) { UI.toast('Choose at least one photo', 'warn'); return; }
+      var kind = mtype.get();
+      if (!files || !files.length) { UI.toast('Choose at least one ' + (kind === 'video' ? 'video' : 'photo'), 'warn'); return; }
       var reqErr = requiredFieldsMissing('pp');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
@@ -1266,7 +1863,8 @@ window.ProgressPhotos = (function () {
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp'),
-        key_plan_url: readKeyPlanValue('pp') || null
+        key_plan_url: readKeyPlanValue('pp') || null,
+        media_type: kind
       };
       this.disabled = true;
       var prog = $('pp-prog'); prog.hidden = false;
@@ -1284,11 +1882,25 @@ window.ProgressPhotos = (function () {
       }
 
       m.close();
-      if (done) UI.toast(done + ' photo' + (done === 1 ? '' : 's') + ' uploaded', 'ok');
+      if (done) UI.toast(done + ' ' + (kind === 'video' ? 'video' : 'photo') + (done === 1 ? '' : 's') + ' uploaded', 'ok');
       if (queued) UI.toast(queued + ' photo' + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
-      if (preset.walk) advanceWalkthrough();
+      // Floor-plan pin + direction as a "best practice" follow-up (18-item
+      // list, Batch E) — NON-BLOCKING by design: the plan's own wording
+      // ("gains a REQUIRED floor-plan step") would turn every capture,
+      // everywhere, into a hard gate on the Plans module even existing yet
+      // for this project. Making an already-shipped, well-tested critical
+      // path (Add photos) newly blockable on an unrelated module's state is
+      // a bigger behaviour change than "best practice" calls for — so this
+      // offers the capability right after a successful upload instead,
+      // skippable, using the FIRST uploaded item to represent the whole
+      // batch (a pin is fundamentally ONE point; a set of photos captured
+      // together is well represented by one).
+      if (newIds.length && window.BIM && BIM.hasPlans && BIM.hasPlans() && BIM.openPinPickerFor) {
+        BIM.openPinPickerFor('photo', newIds[0],
+          newIds.length > 1 ? newIds.length + ' photos' : 'this photo', function () {});
+      }
       if (typeof preset.onDone === 'function') preset.onDone(newIds);
     };
   }
@@ -1455,6 +2067,33 @@ window.ProgressPhotos = (function () {
         UI.toast('Saved with only the first Trade/Works value — run the pending migration for multi-select', 'warn');
       }
       return await doWrite(Object.assign({}, job, { patch: stripped2 }));
+    }
+    // Same tolerance for media_type (18-item list item 4, video upload) — a
+    // pre-migration save still lands, just without knowing it's a video (it
+    // renders as a broken <img>, no worse than before this feature existed).
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('media_type' in job.patch)) {
+      var stripped3 = Object.assign({}, job.patch);
+      delete stripped3.media_type;
+      if (!migrationWarnedMedia) {
+        migrationWarnedMedia = true;
+        UI.toast('Saved, but video type not stored — run migrations/2026-08-29-photo-media-type.sql', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped3 }));
+    }
+    // Same tolerance for markup (Batch F) — a pre-migration save drops the
+    // just-drawn annotation rather than failing the whole update; the modal
+    // has already closed by the time this runs, so the warning is the only
+    // way the planner learns the markup didn't actually persist.
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('markup' in job.patch)) {
+      var stripped4 = Object.assign({}, job.patch);
+      delete stripped4.markup;
+      if (!migrationWarnedMarkup) {
+        migrationWarnedMarkup = true;
+        UI.toast('Markup could not be saved — run migrations/2026-08-29-markup.sql', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped4 }));
     }
     return w;
   }
@@ -1689,17 +2328,6 @@ window.ProgressPhotos = (function () {
     };
   }
 
-  // ------------------------------------------------------- Today's Rounds ---
-  // The streamlined repeat-visit capture flow: a checklist of distinct
-  // location-value COMBINATIONS drawn from the schedule's own activities
-  // (not a separate location list), ranked by recent capture history, each
-  // showing its last photo + current activity, single-tap capture or
-  // multi-select into a sequential walkthrough.
-  function refreshRoundsIfVisible() {
-    var h = document.getElementById('pp-screen-rounds');
-    if (h && !h.hidden) renderRounds();
-  }
-
   // Every distinct combination of location values that appears on at least
   // one schedule activity -- these are the "places to visit", the same
   // generalization WBS leaves used to be, now over Location Breakdown values.
@@ -1736,106 +2364,12 @@ window.ProgressPhotos = (function () {
     return out;
   }
 
-  function renderRounds() {
-    var host = $('pp-rounds-view');
-    if (!host) return;
-    if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project.</div>'; return; }
-    if (!LOC_LEVELS.length) {
-      host.innerHTML = '<div class="pp-empty"><p>No Location Breakdown set up for this project yet.</p>' +
-        '<p class="pp-hint">Build it in Project Schedule (Group menu &rarr; Location Breakdown&hellip;), or use ' +
-        '<strong>+ Add photos</strong> on the Photos tab for an untracked location in the meantime.</p></div>';
-      return;
-    }
-    var combos = locCombos();
-    _roundsComboByKey = {};
-    combos.forEach(function (c) { _roundsComboByKey[c.key] = c; });
-    if (!combos.length) {
-      host.innerHTML = '<div class="pp-empty"><p>No activities have a Location Breakdown value assigned yet in Project Schedule.</p></div>';
-      return;
-    }
-    var q = roundsFilter.trim().toLowerCase();
-    var items = combos.map(function (c) { return { combo: c, last: lastCaptureAt(c.values), act: resolveActivity(c.values) }; });
-    if (q) items = items.filter(function (it) { return it.combo.label.toLowerCase().indexOf(q) >= 0; });
-
-    var visited = items.filter(function (it) { return it.last; })
-      .sort(function (a, b) { return (b.last.taken_at || '').localeCompare(a.last.taken_at || ''); });
-    var unvisited = items.filter(function (it) { return !it.last; })
-      .sort(function (a, b) { return a.combo.label.localeCompare(b.combo.label); });
-
-    var selCount = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; }).length;
-    var bar = selCount ? ('<div class="pp-selbar">' + selCount + ' location' + (selCount === 1 ? '' : 's') +
-      ' selected <button class="pd-btn pd-btn-primary" id="pp-startwalk">Start walkthrough</button>' +
-      '<button class="pd-btn" id="pp-clearsel">Clear</button></div>') : '';
-
-    function row(it) {
-      var u = it.last ? urlOf(it.last) : '';
-      return '<div class="pp-round-row">' +
-        '<input type="checkbox" class="pp-round-chk" data-key="' + Fmt.esc(it.combo.key) + '"' +
-          (roundsSelected[it.combo.key] ? ' checked' : '') + ' />' +
-        (u ? '<img class="pp-round-thumb" src="' + Fmt.esc(u) + '" alt="" />' :
-             '<div class="pp-round-thumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
-        '<div class="pp-round-info">' +
-          '<div class="pp-round-loc">' + Fmt.esc(it.combo.label) + '</div>' +
-          (it.act ? '<div class="pp-round-act">' + Fmt.esc(it.act.name || it.act.id) + '</div>' : '') +
-          (it.last ? '<div class="pp-round-last">Last captured ' + Fmt.date(it.last.taken_at) + '</div>' :
-                     '<div class="pp-round-last pp-muted">Not yet captured</div>') +
-        '</div>' +
-        '<button class="pd-btn" data-cap="' + Fmt.esc(it.combo.key) + '">Capture</button>' +
-        '</div>';
-    }
-
-    var html = bar;
-    if (visited.length) html += '<div class="pp-round-sec">Recent rounds</div>' + visited.map(row).join('');
-    if (unvisited.length) html += '<div class="pp-round-sec">Other schedule locations</div>' + unvisited.map(row).join('');
-    if (!visited.length && !unvisited.length) html += '<div class="pp-empty"><p>No locations match this search.</p></div>';
-    host.innerHTML = html;
-    hydrate(host);
-    wireRounds(host);
-  }
-
-  function wireRounds(host) {
-    if ($('pp-startwalk')) $('pp-startwalk').onclick = startWalkthrough;
-    if ($('pp-clearsel')) $('pp-clearsel').onclick = function () { roundsSelected = {}; renderRounds(); };
-    Array.prototype.forEach.call(host.querySelectorAll('.pp-round-chk'), function (c) {
-      c.onchange = function () { roundsSelected[this.dataset.key] = this.checked; renderRounds(); };
-    });
-    Array.prototype.forEach.call(host.querySelectorAll('[data-cap]'), function (b) {
-      b.onclick = function () {
-        var combo = _roundsComboByKey[this.dataset.cap];
-        openUpload({ locationValues: combo ? combo.values : {}, location: combo ? combo.label : '' });
-      };
-    });
-  }
-
-  function startWalkthrough() {
-    var keys = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; });
-    if (!keys.length) { UI.toast('Select at least one location first', 'warn'); return; }
-    walkState = { queue: keys, at: 0, total: keys.length };
-    openWalkStep();
-  }
-  function advanceWalkthrough() {
-    if (!walkState) return;
-    walkState.at++;
-    openWalkStep();
-  }
-  function openWalkStep() {
-    if (!walkState || walkState.at >= walkState.queue.length) {
-      if (walkState) UI.toast('Walkthrough complete', 'ok');
-      walkState = null; roundsSelected = {}; renderRounds();
-      return;
-    }
-    var key = walkState.queue[walkState.at];
-    var combo = _roundsComboByKey[key];
-    openUpload({ locationValues: combo ? combo.values : {}, location: combo ? combo.label : '',
-      walk: { at: walkState.at + 1, total: walkState.total } });
-  }
 
   return {
     init: init,
     // The PPR screen shares this module's project selector + trade vocabulary.
     onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); },
     trades: function () { return TRADES.slice(); },
-    renderRounds: renderRounds,
     _syncChrome: syncChrome,
     _closeLightbox: closeLightbox,
     _stepLightbox: stepLightbox,
@@ -1849,9 +2383,35 @@ window.ProgressPhotos = (function () {
     // without duplicating LOC_LEVELS/locBreadcrumb in a second closure.
     locCombos: function () { return locCombos(); },
     photoLocCombos: function () { return photoLocCombos(); },
+    // Read by bim.js's Vertical Stacking view (Batch G, item 16) — the same
+    // ordered level DEFINITIONS (id/name/sort_order) the Location Breakdown
+    // picker itself cascades through, so a stacking band means the same
+    // thing there as it does on the Add-photo form.
+    locLevels: function () { return LOC_LEVELS.slice(); },
     // Read by the Floor Plan pin picker (bim.js / Phase 5) to offer a photo
     // to pin without a second fetch of the same project's library.
     allPhotos: function () { return rows.slice(); },
+    // Signed URL for an arbitrary photo id — used by bim.js's Batch H image
+    // registration (it needs the actual pixels of a top-view photo, not just
+    // the row) and available generally for the same reason allPhotos() is.
+    urlOfPhotoId: function (id) { var r = byId(id); return r ? urlOf(r) : ''; },
+    // Shared markup engine (18-item list item 13/14) — ppr.js's own
+    // presentation-only overlay reuses this instead of a second canvas
+    // implementation. See openMarkupEditor's own comment for the format.
+    openMarkupEditor: function (imageUrl, initialMarkup, onSave) { openMarkupEditor(imageUrl, initialMarkup, onSave); },
+    // Read-only render of a markup array onto an already-sized <canvas> — used
+    // by ppr.js's own presentation-only overlay (a SEPARATE store, keyed by
+    // ppr_slide_id+pane) so it never has to duplicate drawMarkupObjects'
+    // per-shape drawing code just to display something someone already drew.
+    // The canvas's own pixel size (set by the caller from its wrapper's
+    // rendered size) is read directly, not assumed — a markup drawn against
+    // one aspect ratio must scale correctly onto whatever size the caller
+    // gives it, since normalized 0..1 coordinates are all that's stored.
+    drawMarkupOnCanvas: function (canvas, objs) {
+      if (!canvas || !canvas.getContext) return;
+      var ctx = canvas.getContext('2d');
+      drawMarkupObjects(ctx, objs || [], canvas.width, canvas.height);
+    },
     // Opens a SPECIFIC photo's lightbox regardless of whatever the Photos
     // screen's own filtered view currently holds in `lightboxIds` — plain
     // openLightbox(id) falls back to index 0 on a miss, which would silently
@@ -1868,6 +2428,20 @@ window.ProgressPhotos = (function () {
     // subtly wrong empty-array-vs-null check would silently hide a photo's
     // trades on every pre-migration row.
     _tradesOf: function (r) { return tradesOf(r); },
-    _worksOf: function (r) { return worksOf(r); }
+    _worksOf: function (r) { return worksOf(r); },
+    // Test-only hooks for the Batch C (2026-08-29) 360°/3D media strip — lets
+    // test.js genuinely execute the location/date/search filter match and
+    // the panorama+reconstruction merge, rather than only regex-checking the
+    // source, the same way _tradesOf/_worksOf are exercised above.
+    _mediaStripMatches: function (item) { return mediaStripMatches(item); },
+    _mediaStripItems: function () { return mediaStripItems(); },
+    // Test-only hooks for the markup engine (Batch F, 2026-08-29) — the same
+    // convention as every hook above: genuinely EXECUTE the per-shape canvas
+    // drawing and the eraser's nearest-object hit test against real objects,
+    // rather than only regex-matching the source. A fake ctx recorder (built
+    // in test.js) captures which canvas 2D calls actually fired per shape
+    // type — the one way to tell "drew a rect" from "silently did nothing".
+    _drawMarkupObjects: function (ctx, objs, w, h) { drawMarkupObjects(ctx, objs, w, h); },
+    _markupHitTest: function (objs, nx, ny, w, h) { return markupHitTest(objs, nx, ny, w, h); }
   };
 })();
