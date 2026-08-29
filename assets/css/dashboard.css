@@ -739,11 +739,26 @@ body { overflow-x: clip; }
   .pd-input, .pd-select, .pd-textarea { padding: 10px 12px; }
   .pd-input-sm { height: 40px; padding: 8px 10px; }
 
-  /* Touch targets */
-  .pd-btn { padding: 10px 14px; min-height: var(--pd-tap); }
+  /* Touch targets — 44px is the accessibility MINIMUM, not a visual target.
+     min-height/min-width alone already guarantee it; everything below this
+     is trimming visual bulk (padding, corner radius) that was piling ON TOP
+     of that minimum and reading as "chunky", not making the tap area itself
+     any smaller. Do not remove the min-height/min-width lines below 44px. */
+  .pd-btn { padding: 8px 12px; min-height: var(--pd-tap); border-radius: 7px; }
   .pd-btn-sm { min-height: 36px; }
-  .pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle { min-width: var(--pd-tap); min-height: var(--pd-tap); }
+  .pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle {
+    min-width: var(--pd-tap); min-height: var(--pd-tap); border-radius: 8px;
+  }
   .pd-avatar { width: 40px; height: 40px; }
+  /* A modal's footer buttons no longer stretch to fill the row — Cancel/Save
+     used to expand equally to half the modal's width each, which is most of
+     what read as "chunky" on a phone (a normal-sized label inside a huge
+     pill). They now size to their own content, still ≥44px tall via .pd-btn
+     above, and still full-width when there's genuinely only one of them
+     (nothing else to line up against, so filling the row reads as intentional
+     rather than bloated). */
+  .pd-modal-footer .pd-btn { flex: 0 1 auto; justify-content: center; }
+  .pd-modal-footer .pd-btn:only-child { flex: 1 1 auto; }
 
   /* Toolbars stack; search takes a full row instead of being squeezed out. */
   .pd-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
@@ -766,8 +781,13 @@ body { overflow-x: clip; }
   /* ⚠️ Recomputed for the phone chrome: the modal is 92dvh with 18px padding here, and a
      footer that wraps to two rows is normal at this width. */
   .pd-modal-body { max-height: calc(92dvh - 175px); }
-  .pd-modal-footer .pd-btn { flex: 1 1 auto; justify-content: center; }
-  .pd-modal-close { width: var(--pd-tap); height: var(--pd-tap); }
+  /* ⚠️ The footer-button sizing rule lives ONCE, up in the "Touch targets"
+     block above (.pd-modal-footer .pd-btn / :only-child) — a second copy
+     used to sit here with `flex: 1 1 auto`, and being LATER in the same
+     media query at equal specificity, it silently overrode the un-stretch
+     fix every time. Removed rather than duplicated; do not re-add a footer-
+     button rule here. */
+  .pd-modal-close { width: var(--pd-tap); height: var(--pd-tap); border-radius: 8px; }
 
   /* Dropdown popovers: anchor to the viewport instead of running off-screen. */
   .pd-psel-pop, .pd-projsw-menu, .pd-add-menu {

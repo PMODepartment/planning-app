@@ -135,7 +135,10 @@
      card there is no column to align to, so it reads as a stray indent. */
   .sm-table td.sm-num { text-align: left; }
   .sm-table td.sm-rowacts { display: flex; gap: 8px; margin-top: 8px; white-space: normal !important; }
-  .sm-table td.sm-rowacts .pd-btn { flex: 1 1 auto; justify-content: center; }
+  /* Sized to content, not stretched to fill the row — same fix as
+     risk-register's identical pattern (they were copied from one another). */
+  .sm-table td.sm-rowacts .pd-btn { flex: 0 1 auto; justify-content: center; }
+  .sm-table td.sm-rowacts .pd-btn:only-child { flex: 1 1 auto; }
   .sm-table td[colspan] { text-align: center; }
   .sm-filters { flex-wrap: wrap; gap: 8px; }
   .sm-filters > * { flex: 1 1 100%; min-width: 0; }

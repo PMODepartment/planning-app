@@ -72,6 +72,16 @@
   background: var(--pd-card); border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius); padding: 8px 12px;
 }
+/* Item 8 — filters collapsed by default on a phone ("filter options should
+   be hidden by default to make a cleaner UI"). `display:contents` is the
+   same trick this app's own module-topbar wrapping already relies on
+   (assets/css/dashboard.css's .pd-tb-main/.pd-tb-tools): on desktop the
+   wrapper is invisible to layout, so .pp-filters-body's children lay out
+   directly inside .pp-filters exactly as if this div didn't exist — nothing
+   above the phone breakpoint changes. The toggle button itself is
+   desktop-hidden below. */
+.pp-filters-body { display: contents; }
+.pp-filttoggle { display: none; }
 .pp-filt-ico { color: var(--pd-muted); flex: none; }
 .pp-filters .pd-input, .pp-filters .pd-select { height: 34px; font-size: 13px; }
 .pp-filters .pp-search { flex: 1 1 300px; min-width: 180px; }
@@ -108,13 +118,13 @@
 }
 .pp-grid-head, .pp-row {
   display: grid;
-  /* last column holds up to 4 row-action buttons (download/view/edit/delete):
-     4×27px + gaps + padding ≈ 150px, so 118px clipped the delete button.
-     Leading 34px column added for the batch-select checkbox (follow-up
-     feedback item 5) — the header/row column-count-must-match rule this
-     module already keeps (see the comment at listHTML's head markup). */
-  grid-template-columns: 34px 120px minmax(180px, 1.4fr) 150px 150px 160px 120px 158px;
-  min-width: 1050px; align-items: center;
+  /* Leading 34px column is the batch-select checkbox (the header cell is the
+     select-all/unselect-all tickbox, item 4) — the header/row column-count-
+     must-match rule this module already keeps (see the comment at
+     listHTML's head markup). No trailing actions column any more (item 7 —
+     per-row icons removed; the lightbox covers download/edit/delete now). */
+  grid-template-columns: 34px 120px minmax(180px, 1.4fr) 150px 150px 160px 120px;
+  min-width: 920px; align-items: center;
 }
 .pp-grid-head {
   position: sticky; top: 0; z-index: 2;
@@ -140,7 +150,9 @@
   border-radius: 999px; padding: 1px 8px;
 }
 
-.pp-row { border-bottom: 1px solid var(--pd-line); }
+/* cursor:pointer — the whole row opens the lightbox now (item 7: no more
+   per-row action icons; download/edit/delete live in the lightbox). */
+.pp-row { border-bottom: 1px solid var(--pd-line); cursor: pointer; }
 .pp-row:last-child { border-bottom: 0; }
 .pp-row:hover { background: var(--pd-bg); }
 .pp-row.pp-selrow { background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
@@ -162,10 +174,7 @@
   color: var(--pd-muted); cursor: default;
 }
 
-/* ---- Row actions --------------------------------------------------------- */
-/* The actions cell must never clip its buttons (unlike text cells, which ellipsize). */
-.pp-actcell { overflow: visible; }
-.pp-rowacts { display: flex; gap: 3px; padding: 0 6px; justify-content: flex-end; }
+/* ---- Icon buttons (used by the lightbox tools + PPR's own row actions) --- */
 .pp-iconbtn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 27px; height: 27px; cursor: pointer; font-size: 13px;
@@ -241,9 +250,6 @@
   border-color: transparent transparent transparent rgba(255, 255, 255, .92);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6));
 }
-.pp-thumb-wrap { width: 96px; height: 62px; }
-.pp-cardphoto-wrap { width: 100%; height: 210px; }
-
 /* Add-media type selector (Photo / Video / 360°-3D-on-hold) */
 .pp-mtypesel { display: flex; gap: 6px; }
 .pp-mtype {
@@ -254,8 +260,9 @@
 .pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
 .pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
 
-/* Group-by control + month/year/location/activity group headings */
-.pp-gallerybar { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+/* Group-by control (item 6 — now ONE shared selector living in .pp-listbar,
+   not a per-view bar of its own) + the group headings both List and Gallery
+   render from it. */
 .pp-groupby {
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 12.5px; color: var(--pd-muted);
@@ -316,6 +323,11 @@
 }
 .pp-empty p { margin: 8px 0 0; }
 .pp-hint { font-size: 12.5px; color: var(--pd-muted); }
+/* Audit fix: used in module.js/ppr.js (e.g. Stack's "+N more" note, the
+   merge wizard's per-presentation slide count) but was never defined here
+   at all — those spans were rendering as plain unstyled ink instead of
+   the secondary/de-emphasised text they're meant to read as. */
+.pp-muted { color: var(--pd-muted); }
 
 /* ---- Lightbox ------------------------------------------------------------ */
 .pp-lightbox {
@@ -367,6 +379,11 @@
 .pp-lb-tool:hover { background: rgba(255, 255, 255, .28); }
 .pp-lb-tool-danger:hover { background: var(--pd-red); }
 .pp-lb-tool.is-active { background: var(--pd-red); }
+/* Item 12 follow-up — the markup editor already existed but was one bare
+   icon among five crammed into the lightbox toolbar, easy to miss entirely.
+   A text label makes "this is where you add markup" unambiguous without
+   restyling the other icon-only tools. */
+.pp-lb-tool-labeled { width: auto; padding: 0 12px 0 10px; gap: 6px; font-size: 12.5px; font-weight: 600; }
 
 /* ---- Markup editor (18-item list item 13/14) ------------------------------
    A vector annotation layer over an <img>: toolbar (shape/pen/eraser/icon
@@ -448,33 +465,18 @@
 .pp-codegroup-name { font-weight: 700; color: var(--pd-muted); min-width: 70px; }
 .pp-codechk { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; }
 
-/* Trade / Works multi-select checkbox groups (2026-08-29 feedback item 2) —
-   same visual language as .pp-codetags/.pp-codechk above, just without the
-   per-group name label (Trade and Works are each a single flat group). */
-.pp-multichk {
-  display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 10px;
-  border: 1px solid var(--pd-line); border-radius: var(--pd-radius); background: var(--pd-bg);
-}
-.pp-mchk { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 400; }
-.pp-addworksbtn { margin-top: 6px; font-size: 12.5px; padding: 5px 10px; }
-
 /* ============================================================================
-   Batch select bar (Gallery follow-up feedback item 5)
-   ⚠️ Today's Rounds (the feature this block was originally built for) was
-   removed entirely in Batch C (2026-08-29) — index.html/module.js's Rounds
-   markup and functions are gone, but this CSS rule survived because its
-   shape (a count + a row of action buttons) is EXACTLY what the new Gallery
-   batch-select bar needed, so it's reused rather than rebuilt. The other
-   Rounds-only rules that used to sit here (.pp-round-row/-chk/-thumb/-info/
-   -loc/-act/-last, plus their phone overrides below) had no such second use
-   and are deleted along with the feature.
+   Selection-mode topbar tools (item 3, 2026-08-29 follow-up)
+   ⚠️ The batch-select bar this section used to style (.pp-selbar, a boxed row
+   below the filters) is GONE — it always rendered "0 selected" because
+   `.pp-selbar { display:flex }` sat at the same specificity as the UA's
+   `[hidden] { display:none }` and, being an author rule, always won
+   regardless of the `hidden` attribute module.js set. Fixed by moving these
+   actions into the topbar tools row (#pp-topbar-tools) and toggling them with
+   an explicit style.display in syncChrome() instead of the `hidden`
+   attribute — see wireSelBar()'s own comment in module.js.
    ============================================================================ */
-.pp-selbar {
-  display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600;
-  color: var(--pd-ink); padding: 10px 12px; margin-bottom: 10px;
-  background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card));
-  border: 1px solid var(--pd-red); border-radius: var(--pd-radius);
-}
+.pp-selcount-tb { font-size: 12.5px; font-weight: 600; color: var(--pd-muted); padding: 0 4px; }
 
 /* ============================================================================
    PPR Presentations (the "View PPRs" screens)
@@ -487,7 +489,9 @@
   background: var(--pd-card); overflow: hidden; align-self: start;
 }
 .ppr-head, .ppr-row {
-  display: grid; grid-template-columns: 150px minmax(120px, 1fr) 110px 118px;
+  /* Leading 34px track is the item-14 select checkbox — the base 4 tracks
+     (Date/Description/Slides/Actions) are unchanged, just pushed over one. */
+  display: grid; grid-template-columns: 34px 150px minmax(120px, 1fr) 110px 118px;
   align-items: center;
 }
 .ppr-head {
@@ -527,7 +531,12 @@
 }
 .ppr-tmpl-locorder {
   flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
-  background: var(--pd-red); color: #fff; font-size: 11px; font-weight: 700;
+  /* Audit fix (WCAG AA): plain white-on-var(--pd-red) measures 4.12:1 at
+     this size (11px bold is well under the "large text" exemption) —
+     below the 4.5:1 threshold. Same darkening this app already uses
+     elsewhere for the identical brand-red-as-a-small-badge case; measures
+     5.44:1, unchanged in dark mode since --pd-red itself doesn't remap. */
+  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff; font-size: 11px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
 }
 .ppr-tmpl-loclabel { flex: 1 1 auto; font-size: 13px; color: var(--pd-ink); min-width: 0;
@@ -569,6 +578,18 @@
   border: 1px solid var(--pd-line); border-radius: 3px; background: var(--pd-bg);
   display: block;
 }
+/* Item 14 combined preview (2+ presentations checked) — one group per
+   presentation, oldest first, reusing .ppr-thumbs for each group's own row. */
+.ppr-combined { padding: 4px 0 10px; }
+.ppr-combined-group + .ppr-combined-group { border-top: 1px solid var(--pd-line); margin-top: 4px; }
+.ppr-combined-head {
+  padding: 10px 14px 0; font-size: 12.5px; font-weight: 700; color: var(--pd-ink);
+}
+/* No click handler on these thumbs (which of several open presentations a
+   click should land in is ambiguous) — the zoom cursor would falsely
+   advertise one. */
+.ppr-combined .ppr-thumb { cursor: default; }
+.ppr-combined .ppr-noslides { padding: 8px 14px 14px; text-align: left; font-size: 13px; }
 
 /* ---- Slides view --------------------------------------------------------- */
 .ppr-slidehead, .ppr-meta {
@@ -641,7 +662,9 @@
 .ppr-sortno {
   position: absolute; top: 5px; left: 5px; min-width: 20px; height: 20px; padding: 0 5px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--pd-red); color: #fff; font-size: 11.5px; font-weight: 700;
+  /* Audit fix (WCAG AA) — same reasoning/measurement as .ppr-tmpl-locorder
+     above: 4.12:1 plain, 5.44:1 darkened. */
+  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff; font-size: 11.5px; font-weight: 700;
   border-radius: 10px; pointer-events: none;
 }
 
@@ -650,37 +673,9 @@
 .ppr-pickrow { display: flex; gap: 7px; align-items: center; }
 .ppr-pickrow .pd-select { flex: 1 1 auto; min-width: 0; }
 .ppr-pickrow .pd-btn { flex: 0 0 auto; white-space: nowrap; }
-.ppr-pickinfo {
-  display: flex; align-items: center; gap: 9px; margin-top: 7px;
-  font-size: 12px; color: var(--pd-muted); line-height: 1.45;
-}
-.ppr-pickthumb {
-  width: 62px; height: 46px; object-fit: cover; flex: 0 0 auto;
-  border: 1px solid var(--pd-line); border-radius: 3px;
-}
-
-/* Key plan field on the Add/Edit PHOTO forms (key plans are per-photo now) */
-.pp-kppreviewrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-.pp-kppreview {
-  width: 92px; height: 62px; flex: 0 0 auto; display: flex;
-  align-items: center; justify-content: center; overflow: hidden;
-  background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 3px;
-  font-size: 11px; text-align: center;
-}
-.pp-kppreview img { width: 100%; height: 100%; object-fit: contain; display: block; }
-/* Key plan selection wizard */
-.pp-kpgrid {
-  display: grid; gap: 9px; margin-bottom: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-}
-.pp-kpitem {
-  padding: 0; cursor: pointer; overflow: hidden; height: 84px;
-  background: var(--pd-bg); border: 1px solid var(--pd-line);
-  border-radius: 3px; color: var(--pd-muted);
-  display: flex; align-items: center; justify-content: center;
-}
-.pp-kpitem:hover { border-color: var(--pd-red); }
-.pp-kpitem img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* The old per-photo "upload your own key plan" wizard (.pp-kp*) is retired
+   (2026-08-29 item 11) — superseded by .bim-pinfield/.bim-pinstage-* above,
+   which picks from the real floor_plans database instead. */
 .ppr-imgwrap { position: relative; }
 .ppr-img {
   width: 100%; display: block; background: var(--pd-bg);
@@ -717,6 +712,9 @@
   padding: 10px 12px; width: 100%; box-sizing: border-box;
 }
 .ppr-fmtchoices small { display: block; color: var(--pd-muted); font-weight: 400; font-size: 11.5px; }
+/* Merge wizard's source list (item 14) */
+.pp-mergelist { margin: 0 0 14px; padding-left: 20px; font-size: 13px; }
+.pp-mergelist li { margin-bottom: 4px; }
 
 /* Read-only Preview modal — reuses the export markup verbatim (see
    openPreviewModal), so this just needs to contain it without the export's
@@ -791,9 +789,24 @@
 .pano-viewerhint { font-size: 11.5px; color: var(--pd-muted); margin-top: 6px; }
 
 .pano-capturearea { margin-top: 12px; }
-.pano-camwrap { margin: 10px 0; }
+.pano-camwrap { margin: 10px 0; position: relative; max-width: 420px; }
 .pano-camwrap video { width: 100%; max-width: 420px; border-radius: var(--pd-radius); background: #000; display: block; }
-.pano-capturebtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.pano-capturebtns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* Recording indicator (item 18) — a fixed dark/red overlay on the camera
+   preview, deliberately theme-independent: it sits on top of live camera
+   video, not an app surface, and a "you are recording" cue must read the
+   same regardless of light/dark mode. */
+.pano-recind {
+  position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: 7px;
+  padding: 4px 10px 4px 8px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff;
+  font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.pano-recdot {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--pd-red);
+  animation: pano-recpulse 1s ease-in-out infinite;
+}
+@keyframes pano-recpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+#pano-c-record.is-active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 .pano-cmp-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 10px; font-size: 12.5px; color: var(--pd-muted); }
 .pano-cmp-controls label { display: flex; align-items: center; gap: 6px; }
 .pano-cmp-controls select { min-width: 160px; }
@@ -869,16 +882,31 @@
 .bim-dirwidget { display: flex; align-items: center; gap: 14px; }
 .bim-dirwidget svg { touch-action: none; }
 
-/* Plan / Map segmented toggle + map clustering (Batch G) */
-.bim-viewtoggle { display: flex; gap: 6px; }
-.bim-vtbtn {
-  padding: 6px 12px; cursor: pointer; font-size: 12.5px; font-weight: 600;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius); color: var(--pd-ink);
+/* Embeddable camera-position field (18-item list item 11) — the Add/Edit
+   Photo form's own plan-select + click-to-pin stage, same visual language
+   as the pin picker modal but inline. */
+.bim-pinfield select.pd-select { margin-bottom: 8px; }
+.bim-pinstage-imgwrap { position: relative; max-width: 100%; }
+.bim-pinstage-imgwrap img { width: 100%; display: block; cursor: crosshair; border-radius: var(--pd-radius); }
+.bim-pinstage-dot {
+  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border-radius: 50%; background: var(--pd-red); border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--pd-red); pointer-events: none;
 }
-.bim-vtbtn.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
-.bim-mapstepper { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
-.bim-mapstepper strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
-.bim-cluster {
+
+/* Gallery Plan view (item 16 — relocated + extended from bim.js's old Map
+   mode; the floor-stepper is genuinely new). */
+.pp-plantoolbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.pp-planfloorbar, .pp-planmonthbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
+}
+.pp-planfloorlabel { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pd-muted); }
+.pp-planfloorlabel .pd-select { width: auto; min-width: 140px; }
+.pp-planmonthbar strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+.pp-planstage { position: relative; }
+.pp-planimgwrap { position: relative; width: 100%; height: 0; }
+.pp-planimgwrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
+.pp-plancluster {
   position: absolute; transform: translate(-50%, -50%);
   min-width: 30px; height: 30px; padding: 0 6px; border-radius: 999px;
   background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff;
@@ -887,28 +915,35 @@
   display: flex; align-items: center; justify-content: center;
 }
 
-/* Vertical Stacking (Batch G, item 16) — Location Breakdown grid + magnifier */
-.bim-stacklevels { display: flex; gap: 16px; margin-bottom: 10px; flex-wrap: wrap; }
-.bim-stacklevels label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pd-muted); }
-.bim-stacklevels .pd-select { width: auto; min-width: 140px; }
-.bim-stackwrap { overflow-x: auto; }
-.bim-stacktable { border-collapse: collapse; width: 100%; }
-.bim-stacktable th, .bim-stacktable td { border: 1px solid var(--pd-line); padding: 4px; text-align: center; }
-.bim-stacktable thead th { background: var(--pd-bg); font-size: 11.5px; color: var(--pd-muted); font-weight: 600; white-space: nowrap; }
-.bim-stacktable tbody th {
+/* Gallery Stack view (item 16 — relocated + re-defaulted from bim.js's old
+   Stack mode: "combine across all months" is now the default, step-through
+   is opt-in). Location Breakdown grid + magnifier (step mode only). */
+.pp-stacklevels { display: flex; gap: 16px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+.pp-stacklevels label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pd-muted); }
+.pp-stacklevels .pd-select { width: auto; min-width: 140px; }
+.pp-stackwrap { overflow-x: auto; }
+.pp-stacktable { border-collapse: collapse; width: 100%; }
+.pp-stacktable th, .pp-stacktable td { border: 1px solid var(--pd-line); padding: 4px; text-align: center; }
+.pp-stacktable thead th { background: var(--pd-bg); font-size: 11.5px; color: var(--pd-muted); font-weight: 600; white-space: nowrap; }
+.pp-stacktable tbody th {
   background: var(--pd-bg); font-size: 12.5px; font-weight: 600; text-align: left;
   padding: 4px 10px; white-space: nowrap; position: sticky; left: 0;
 }
-.bim-stackcell { width: 70px; height: 52px; padding: 0 !important; }
-.bim-stackcell-empty { color: var(--pd-muted); font-size: 12px; }
-.bim-stackthumb { width: 100%; height: 52px; object-fit: cover; display: block; cursor: zoom-in; }
-.bim-stackmag {
+.pp-stackcell { width: 70px; height: 52px; padding: 0 !important; }
+.pp-stackcell-empty { color: var(--pd-muted); font-size: 12px; }
+.pp-stackthumb { width: 100%; height: 52px; object-fit: cover; display: block; cursor: zoom-in; }
+/* Combined-mode cell — several small thumbnails instead of one, since a
+   location can hold many months of photos at once by default now. */
+.pp-stackcellphotos { display: flex; gap: 2px; height: 52px; align-items: center; justify-content: center; overflow: hidden; }
+.pp-stackthumb-sm { width: 24px; height: 46px; object-fit: cover; cursor: pointer; border-radius: 2px; flex: 0 0 auto; }
+.pp-stackmore { font-size: 10.5px; color: var(--pd-muted); flex: 0 0 auto; padding-left: 2px; }
+.pp-stackmag {
   position: fixed; right: 24px; bottom: 24px; z-index: 50; width: 280px;
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
   box-shadow: 0 6px 24px rgba(0, 0, 0, .3); overflow: hidden; pointer-events: none;
 }
-.bim-stackmag img { width: 100%; height: 200px; object-fit: cover; display: block; }
-.bim-stackmagcap { padding: 6px 9px; font-size: 11.5px; color: var(--pd-muted); }
+.pp-stackmag img { width: 100%; height: 200px; object-fit: cover; display: block; }
+.pp-stackmagcap { padding: 6px 9px; font-size: 11.5px; color: var(--pd-muted); }
 
 /* Registration flow (Batch H) — drawing/photo side by side, each clickable */
 .bim-regpair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
@@ -943,6 +978,11 @@
   .bim-stage-outer { height: 60vh; }
   .bim-toolbar { flex-direction: column; align-items: stretch; }
   .bim-pin { width: 32px; height: 32px; } /* touch target */
+  /* Audit fix: same touch-target reasoning as .bim-pin above, applied to
+     the Plan view's own cluster markers and the Stack view's combined-mode
+     thumbnails, neither of which had a phone-width rule before this pass. */
+  .pp-plancluster { min-width: 40px; height: 40px; }
+  .pp-stackthumb-sm { width: 40px; height: 46px; }
 
   /* Rows carry their own labels now, so the sticky header is redundant. */
   .pp-grid-head { display: none; }
@@ -975,16 +1015,27 @@
     content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600;
   }
   .pp-row .pp-desc { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
-  .pp-row .pp-actcell { margin-top: 6px; }
-  .pp-rowacts { padding: 0; gap: 6px; }
   .pp-iconbtn { width: 40px; height: 40px; border-color: var(--pd-line); }
 
-  /* Filters stack into full-width rows rather than a cramped single line. */
-  .pp-filters { flex-wrap: wrap; gap: 8px; }
-  .pp-filters > * { flex: 1 1 100%; min-width: 0; }
+  /* Filters (item 8) — collapsed by default; the toggle button replaces the
+     desktop-only decorative icon and reveals .pp-filters-body on tap. Once
+     open, the controls stack into full-width rows rather than a cramped
+     single line (was `.pp-filters > *`, now scoped to the body's own
+     children since .pp-filters' direct children are just the toggle + body
+     now). */
+  .pp-filters { flex-wrap: wrap; gap: 8px; padding: 6px 12px; }
   .pp-filt-ico { display: none; }
+  .pp-filttoggle {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    background: none; border: 0; padding: 8px 0; color: var(--pd-ink);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .pp-filters-body { display: none; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .pp-filters.open .pp-filters-body { display: flex; }
+  .pp-filters-body > * { flex: 1 1 100%; min-width: 0; }
   .pp-datefield { flex: 1 1 calc(50% - 4px); }
   .pp-listbar { flex-wrap: wrap; gap: 8px; }
+  .pp-groupby { flex: 1 1 100%; }
 
   /* Lightbox: give the photo the screen and keep the controls thumb-sized. */
   .pp-lb-img { max-width: 96vw; max-height: 66vh; border-width: 2px; }
@@ -995,6 +1046,4 @@
   .pp-lb-cap { padding: 0 12px; }
 
   .pp-gallery { grid-template-columns: 1fr; gap: 12px; }
-
-  .pp-selbar { flex-wrap: wrap; }
 }

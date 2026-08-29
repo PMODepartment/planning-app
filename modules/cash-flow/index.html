@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260827a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260829a" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -257,7 +257,10 @@
            them out of its start. Wrap instead, and drop the auto margin. */
         .cf-controls { flex-wrap: wrap; overflow-x: visible; }
         .cf-actions { flex-wrap: wrap; margin-left: 0; flex: 1 1 100%; }
-        .cf-actions .pd-btn { flex: 1 1 auto; min-height: 44px; }
+        /* Sized to content, not stretched to fill the row — five buttons
+           (Refresh/Sync/Export/Actuals/Assumptions) each expanding equally
+           reads as an oversized wall of pills; still >=44px tall. */
+        .cf-actions .pd-btn { flex: 0 1 auto; min-height: 44px; }
         .cf-viewbar { flex: 1 1 100%; min-width: 0; }
       }
     </style>

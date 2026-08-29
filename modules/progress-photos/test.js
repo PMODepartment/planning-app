@@ -31,6 +31,10 @@ const store = {
   ppr_slides: [],
   location_levels: [],
   project_schedule: [],
+  floor_plans: [],
+  floor_plan_pins: [],
+  floor_plan_registrations: [],
+  reconstruction_requests: [],
 };
 let idSeq = 1;
 const nid = (p) => p + '-' + (idSeq++);
@@ -39,7 +43,7 @@ function makeQuery(table) {
   let rowsSel = store[table].slice();
   const filters = [];
   const q = {
-    select() { return q; },
+    select() { q.__select = true; return q; },
     eq(col, val) { filters.push([col, val]); return q; },
     neq() { return q; },
     in() { return q; },
@@ -79,12 +83,15 @@ function makeQuery(table) {
         const ids = del.map((d) => d.id);
         store.ppr_slides = store.ppr_slides.filter((s) => !ids.includes(s.ppr_id));
       }
-      return { data: null, error: null };
+      // Real Supabase-js .delete().select() returns the rows it actually
+      // deleted — recon.js's retractRequest (audit fix M5) relies on THIS
+      // exact contract to tell "genuinely retracted" apart from "matched
+      // nothing because it was concurrently approved" (a plain .delete()
+      // with no matching row succeeds with 0 rows affected, not an error).
+      return { data: q.__select ? del : null, error: null };
     }
     return { data: apply(rowsSel), error: null };
   }
-  // make select() awaitable too
-  q.select = function () { return q; };
   return q;
 }
 
@@ -148,16 +155,45 @@ const documentStub = {
  'pp-lightbox', 'pp-lb-img', 'pp-lb-cap', 'pp-lb-close', 'pp-lb-prev',
  'pp-lb-next', 'pp-lb-download', 'pp-lb-edit', 'pp-lb-delete',
  'pp-media-strip',
+ // The selection-mode toolbar (audit section [35]) — syncChrome() and
+ // _leavePhotosScreen() both toggle these by id.
+ 'pp-selcount', 'pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive',
  'ppr-view', 'ppr-count', 'ppr-listbar', 'ppr-countbar', 'ppr-f-from',
  'ppr-f-to', 'ppr-clearfilters', 'ppr-new', 'ppr-back',
+ // bim.js's own screen host (audit section [35]'s _load hook needs it, or
+ // load() bails at its very first line before exercising anything).
+ 'bim-view',
+ // ppr.js's preview pane (audit section [35]'s _renderPreviewWithState hook).
+ 'ppr-preview-body',
 ].forEach(ensure);
 
 // ------------------------------------------------------------------- globals --
+// window.addEventListener/removeEventListener are real, TRACKED no-ops (not
+// missing) — bim.js's stage pan/zoom binds window-level mousemove/mouseup
+// listeners, and a stub that simply doesn't exist would make render() throw
+// the moment it's genuinely executed (masking that path from ever running
+// under test), while a stub that exists but never records anything would
+// hide the exact leak class this audit is checking for (a listener re-bound
+// on every render with nothing ever removed).
+const winListeners = [];
+function winAddEventListener(type, fn) { winListeners.push({ type, fn }); }
+function winRemoveEventListener(type, fn) {
+  const i = winListeners.findIndex((l) => l.type === type && l.fn === fn);
+  if (i !== -1) winListeners.splice(i, 1);
+}
 const ctx = {
   console, Promise, JSON, Math, Date, String, Number, Object, Array, Boolean,
   setTimeout, clearTimeout, isNaN, parseInt, parseFloat, encodeURIComponent,
   document: documentStub,
   window: {},
+  addEventListener: winAddEventListener,
+  removeEventListener: winRemoveEventListener,
+  // recon.js's retractRequest and pano.js's removePano both gate on a bare
+  // confirm(...) — genuinely exercising either (section [35]'s M5 test)
+  // needs this to resolve, same reasoning as the addEventListener stubs
+  // above: a missing global would make the throw itself the finding,
+  // masking the real behaviour under test.
+  confirm: () => true,
   navigator: { onLine: true },
   localStorage: { _d: {}, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; } },
   sessionStorage: { _d: { pd_project: 'DEMO01' }, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); } },
@@ -209,39 +245,48 @@ const css = fs.readFileSync(here('module.css'), 'utf8');
 
 console.log('\n[0] Batch A (2026-08-29 18-item feedback) — Gallery default view + row-icon padding');
 ok('Gallery (tile) view is the default landing view (item 1) — was list', /var view = 'gallery';/.test(mjs));
-ok('a returning user\'s explicit List choice still overrides the new default (restoreUI unchanged)',
-   /if \(v === 'list' \|\| v === 'gallery'\) view = v;/.test(mjs));
+// Widened item 16 (2026-08-29 second round) to admit 'plan'/'stack' too —
+// a returning user's explicit choice of ANY of the four views still
+// overrides the default.
+ok('a returning user\'s explicit view choice still overrides the new default (restoreUI, widened for item 16)',
+   /if \(\['list', 'gallery', 'plan', 'stack'\]\.indexOf\(v\) >= 0\) view = v;/.test(mjs));
 ok('the Presentations-list row-action icons carry left padding (follow-up item 2)',
    /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
 
-console.log('\n[1/2] Works is a real dropdown, not free text (checkbox group as of Batch B, 2026-08-29)');
+console.log('\n[1/2] Works is a real dropdown, not free text (a single schedule-derived tag as of item 9, 2026-08-29)');
 ok('no <input list="pp-works-list"> left anywhere', !/list="pp-works-list"/.test(mjs + pjs));
 ok('shared works datalist removed from index.html', !/pp-works-list/.test(html));
-ok('"+ Add custom Works value" escape hatch present (was "+ Add new Works value…" in the old <select>)',
-   /Add custom Works value/.test(mjs));
-ok('Add form uses the Works overlay', /worksOverlayHTML\('pp',/.test(mjs));
-ok('Edit form uses the Works overlay', /worksOverlayHTML\('pp-e',/.test(mjs));
+ok('"+ Add custom value…" escape hatch present as a select option', /Add custom value…/.test(mjs));
+ok('Add form uses the Works tag field', /worksTagFieldHTML\('pp',/.test(mjs));
+ok('Edit form uses the Works tag field', /worksTagFieldHTML\('pp-e',/.test(mjs));
 
-console.log('\n[2] Capture date / trade / works / location required');
+console.log('\n[2] Capture date / works / location required');
 ok('requiredFieldsMissing gates date', /Capture date is required/.test(mjs));
-ok('requiredFieldsMissing gates trade', /At least one Trade is required/.test(mjs));
-ok('requiredFieldsMissing gates works', /At least one Works value is required/.test(mjs));
+ok('requiredFieldsMissing gates works', /A Works value is required/.test(mjs));
+ok('Trade is no longer gated on its own — it is derived from Works (item 9)',
+   !/At least one Trade is required/.test(mjs));
 ok('Add save calls the gate', /requiredFieldsMissing\('pp'\)/.test(mjs));
 ok('Edit save calls the gate', /requiredFieldsMissing\('pp-e'\)/.test(mjs));
 
-console.log('\n[2b] Batch B (2026-08-29 feedback item 2) — Trade/Works multi-select, Location label dropped');
-ok('TRADES checkbox overlay function exists', /function tradesOverlayHTML/.test(mjs));
-ok('Works checkbox overlay function exists (schedule-derived, trade-scoped, unioned across checked trades)',
-   /function worksOverlayHTML/.test(mjs));
-ok('multiCheckHTML renders one checkbox per option, checking the ones already selected',
-   /function multiCheckHTML[\s\S]{0,400}existingVals\.indexOf\(v\) >= 0 \? ' checked'/.test(mjs));
-ok('readMultiCheck reads back only the :checked boxes', /function readMultiCheck[\s\S]{0,200}:checked/.test(mjs));
+console.log('\n[2b] Item 9 (2026-08-29 second feedback round) — Works becomes ONE schedule-derived tag, Trade is derived not picked');
+ok('the old TRADES/Works checkbox-overlay machinery is gone (superseded)',
+   !/function tradesOverlayHTML/.test(mjs) && !/function worksOverlayHTML/.test(mjs) &&
+   !/function multiCheckHTML/.test(mjs) && !/function readMultiCheck/.test(mjs) &&
+   !/function wireTradeWorks/.test(mjs));
+ok('deriveTradeForWorks looks up the schedule activity by name and reverse-resolves its Trade',
+   /function deriveTradeForWorks[\s\S]{0,400}workTypeMatchesTrade/.test(mjs));
+ok('a Works value with no matching schedule activity derives no trade (never a guess)',
+   /if \(!act \|\| !act\.work_type\) return null;/.test(mjs));
+ok('worksTagFieldHTML renders a single <select>, not a checkbox group',
+   /function worksTagFieldHTML[\s\S]{0,400}<select class="pd-select"/.test(mjs));
+ok('readWorksTag treats the custom-value sentinel as "nothing chosen yet"',
+   /function readWorksTag[\s\S]{0,200}v === WORKS_CUSTOM \? '' : v/.test(mjs));
 ok('the "Location label" free-text input is gone (item 2 — "redundant")', !/-loctxt/.test(mjs));
 ok('locationFieldHTML no longer takes a locText parameter', /function locationFieldHTML\(idPrefix, existingValues\) \{/.test(mjs));
 ok('location is derived purely from the breakdown breadcrumb on save (both Add and Edit)',
    (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 2);
-ok('the insert/update payload carries both the new arrays and the legacy first-selected fallback',
-   /trades: tradesVal,[\s\S]{0,60}works_multi: worksVal,[\s\S]{0,60}trade: tradesVal\[0\] \|\| null,[\s\S]{0,60}works: worksVal\[0\] \|\| null,/.test(mjs));
+ok('the insert/update payload carries the derived trade + the single works value in the array columns',
+   /trades: tradeVal \? \[tradeVal\] : \[\],[\s\S]{0,60}works_multi: worksVal \? \[worksVal\] : \[\],[\s\S]{0,60}trade: tradeVal,[\s\S]{0,60}works: worksVal \|\| null,/.test(mjs));
 ok('tolerantWrite also retries without trades/works_multi if that migration has not run yet',
    /'trades' in job\.patch \|\| 'works_multi' in job\.patch/.test(mjs));
 ok('the Gallery filters match a photo by ANY of its trades/works, not an exact single-value equality',
@@ -302,7 +347,12 @@ console.log('\n[6] Key plan is per photo, not per slide');
 ok('migration adds progress_photos.key_plan_url', /alter table progress_photos add column if not exists key_plan_url text/.test(fs.readFileSync(migrationFile, 'utf8')));
 ok('keyPlanPathFor reads the photo first', /function keyPlanPathFor[\s\S]{0,240}ph && ph\.key_plan_url/.test(pjs));
 ok('legacy slide key_plan_url still honoured', /ph && ph\.key_plan_url\) \|\| sl\.key_plan_url/.test(pjs));
-ok('photo forms carry a key plan field', /keyPlanFieldHTML\('pp',/.test(mjs) && /keyPlanFieldHTML\('pp-e',/.test(mjs));
+// The old key_plan_url form field is retired (item 11) in favour of a real
+// floor-plan pin — ppr.js's OWN read side (keyPlanPathFor, tested above)
+// is untouched, so any photo captured before this change still shows its
+// key plan in a presentation; only the write side moved.
+ok('photo forms carry the pin+direction field instead of the retired key-plan wizard',
+   /BIM\.pinFieldHTML\('pp', null\)/.test(mjs) && /BIM\.pinFieldHTML\('pp-e',/.test(mjs));
 ok('slide form no longer uploads a key plan', !/ppr-s-kp/.test(pjs));
 ok('signAll signs photo key plans', /if \(p\.key_plan_url\) paths\[p\.key_plan_url\] = 1;/.test(pjs));
 
@@ -341,14 +391,17 @@ ok('single-photo slide uses ppr-pair-single', /ppr-pair ppr-pair-single/.test(pj
 ok('ppr-pair-single centers the photo', /\.ppr-pair-single \{[^}]*justify-content: center/.test(css));
 ok('offline export centers single too', /\.pair\.single\{grid-template-columns:minmax\(0,760px\);justify-content:center\}/.test(pjs));
 
-console.log('\n[11] Key plan upload/selection wizard');
-ok('openKeyPlanWizard exists', /function openKeyPlanWizard/.test(mjs));
-ok('wizard offers already-uploaded key plans', /distinctKeyPlans\(\)/.test(mjs));
-ok('wizard offers a fresh upload', /pp-kp-upload/.test(mjs));
-ok('wizard grid styled', /\.pp-kpgrid \{/.test(css));
+console.log('\n[11] Key plan upload/selection wizard — RETIRED, superseded by the pin field (item 11)');
+ok('the old upload-your-own-key-plan wizard is gone', !/function openKeyPlanWizard/.test(mjs));
+ok('nothing in module.js still calls distinctKeyPlans/uploadKeyPlanFile', !/distinctKeyPlans\(\)/.test(mjs) && !/function uploadKeyPlanFile/.test(mjs));
+ok('its dead CSS (.pp-kpgrid/.pp-kpitem/.pp-kppreview*) was cleaned up alongside the JS', !/\.pp-kpgrid \{/.test(css) && !/\.pp-kpitem \{/.test(css));
 
 console.log('\n[12] Clicking a meeting row opens it');
-ok('row onclick calls openPpr', /r\.onclick = function \(\) \{ openPpr\(r\.dataset\.id\); \};/.test(pjs));
+// Item 14: the row's onclick gained a guard so ticking the new select
+// checkbox never also opens the presentation — same shape as the Gallery's
+// own [data-rowopen] guard in module.js.
+ok('row onclick calls openPpr, but not when the click started on the select checkbox',
+   /r\.onclick = function \(e\) \{\s*if \(e\.target\.closest\('\.pp-selcell'\)\) return;\s*openPpr\(r\.dataset\.id\);/.test(pjs));
 ok('row advertises the action via title', /title="Open this presentation\\'s slides"/.test(pjs));
 
 console.log('\n[13] Copy previous meeting → a WIZARD (follow-up feedback item 6), not an immediate blind copy');
@@ -371,14 +424,26 @@ ok('no expand button on tiles', !/pp-expand/.test(mjs + css));
 ok('lightbox has download/edit/delete', /pp-lb-download/.test(html) && /pp-lb-edit/.test(html) && /pp-lb-delete/.test(html));
 ok('lightbox buttons wired', /pp-lb-edit'\)[\s\S]{0,400}openForm\(r\)/.test(mjs));
 ok('edit/delete hidden for readers', /editBtn\.style\.display = canWrite/.test(mjs));
-ok('list view keeps its row actions', /pp-actcell">' \+ rowActions\(r\)/.test(mjs));
+// 2026-08-29 follow-up item 7 supersedes the earlier "List keeps its row
+// actions" design: no per-row icons anywhere any more, in EITHER view — the
+// lightbox (already asserted above) is the only place they live now.
+ok('list view has NO per-row action icons (item 7 — superseded design)',
+   !/pp-actcell/.test(mjs) && !/function rowActions/.test(mjs));
+ok('clicking a List row opens the lightbox instead', /data-rowopen="' \+ r\.id/.test(mjs) &&
+   /openLightbox\(this\.dataset\.rowopen\)/.test(mjs));
 
-console.log('\n[15] Tile grouping: month default + year/location/activity');
+console.log('\n[15] Grouping: month default, unified across List AND Gallery (item 6)');
 ok('default group is month', /var galleryGroupBy = 'month'/.test(mjs));
-ok('year grouping', /galleryGroupBy === 'year'/.test(mjs));
+ok('trade grouping (replaces List\'s old always-on, ungroupable Trade default)', /galleryGroupBy === 'trade'/.test(mjs));
 ok('location grouping', /galleryGroupBy === 'location'/.test(mjs));
-ok('activity grouping', /galleryGroupBy === 'activity'/.test(mjs));
-ok('group-by select rendered', /pp-gallery-groupby/.test(mjs));
+// "both no need for the group by year" — Year AND Activity are both gone,
+// not just Year; neither was named in the owner's Month/Trade/Location ask.
+ok('year grouping REMOVED', !/galleryGroupBy === 'year'/.test(mjs));
+ok('activity grouping REMOVED', !/galleryGroupBy === 'activity'/.test(mjs));
+ok('ONE shared group-by function feeds both listHTML and galleryHTML (not two mechanisms)',
+   /function groupRows\(list\)/.test(mjs) && (mjs.match(/groupRows\(list\)/g) || []).length >= 3);
+ok('the group-by select is a single static control in index.html\'s list bar, not rebuilt per view',
+   /id="pp-groupby"/.test(html) && !/pp-gallery-groupby/.test(mjs));
 ok('choice persisted per project', /uiKey\('gallerygroup'\)/.test(mjs));
 
 // ------------------------------------------------- behavioural: grouping logic --
@@ -446,7 +511,16 @@ console.log('\n[misc] insert().select() returns the new row id');
   // solid brand-red badge/dot (.pp-pinpreview-dot, .bim-cluster, .ppr-mktool
   // — a dark translucent toolbar over an arbitrary photo, .ppr-sortno — a
   // solid-red slide-order badge, same family as .ppr-tmpl-locorder).
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.bim-cluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active/;
+  // .bim-pinstage-dot (item 11, same day) is the SAME shape as .bim-pin
+  // itself — a solid-red marker with a white ring over an arbitrary floor
+  // plan image, deliberately theme-independent since the plan's own colours
+  // are unpredictable. .pano-recind/#pano-c-record.is-active (item 18) are
+  // the same family again: a fixed dark scrim over live camera video, and a
+  // solid brand-red "recording" button state — neither is an app surface.
+  // .pp-plancluster (item 16) is .bim-cluster relocated/renamed, same shape
+  // unchanged — a solid brand-red badge with a white ring over an arbitrary
+  // floor plan image.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -604,14 +678,22 @@ console.log('\n[misc] insert().select() returns the new row id');
   // load()/render() both key off #pano-view existing — see the "not removed"
   // assertion below.
   ok('index.html no longer has a standalone 360° tab', !/data-screen="pano"/.test(html));
-  ok('index.html has the Capture 360° / Compare topbar tools (now on Gallery)', /id="pano-new"/.test(html) && /id="pano-compare-btn"/.test(html));
+  // 2026-08-29 follow-up item 2: "I only need the add media button... no
+  // need for the capture 360, compare over time" — the dedicated capture/
+  // compare buttons are REMOVED from the topbar entirely (superseding the
+  // earlier "folded onto Gallery" state, which had them showing there).
+  // pano.js's own openCaptureModal/openCompareModal are left defined but are
+  // now unreachable from the UI, the same "on hold" treatment 360°/3D
+  // already gets in the Add-media type picker.
+  ok('index.html no longer has the Capture 360° / Compare topbar buttons',
+     !/id="pano-new"/.test(html) && !/id="pano-compare-btn"/.test(html));
   ok('the 360° screen host div is kept (hidden), not deleted — pano.js\'s load()/render() key off it existing',
      /id="pp-screen-pano" hidden/.test(html));
   ok('OpenCV.js CDN script present (pinned version)', /opencv-js@4\.10\.0-release\.1\/dist\/opencv\.js/.test(html));
   ok('Three.js CDN script present (pinned, classic global build not the ES-module-only r150\\+)', /three@0\.128\.0\/build\/three\.min\.js/.test(html));
   ok('PANO.init is wired alongside PPR.init', /PANO\.init\(user, profile\)/.test(html));
-  ok('setScreen folds 360° tools into the Gallery screen (PANO._syncTools(isPhotos), not a dedicated isPano)',
-     /PANO\._syncTools\(isPhotos\)/.test(html) && !/isPano = s === 'pano'/.test(html));
+  ok('setScreen no longer calls PANO._syncTools — nothing left in the DOM for it to toggle',
+     !/PANO\._syncTools\(/.test(html));
   ok('pano.js exposes ensureLoaded/urlOf for the unified Gallery media strip (Batch C)',
      pnjs.includes('ensureLoaded:') && pnjs.includes('urlOf:'));
   ok('a poor-quality panorama is flagged in the gallery, not hidden', pnjs.includes('pano-badge-warn'));
@@ -669,13 +751,15 @@ console.log('\n[misc] insert().select() returns the new row id');
   // above — the Request-scan tool and the screen host div stay (the latter
   // hidden, kept because recon.js's load()/render() key off it existing).
   ok('index.html no longer has a standalone 3D tab', !/data-screen="recon"/.test(html));
-  ok('index.html has the Request-scan topbar tool + screen host (kept, hidden)',
-     /id="recon-new"/.test(html) && /id="pp-screen-recon" hidden/.test(html));
+  // Same removal as the 360° buttons above (item 2) — the screen host stays,
+  // the capture button is gone.
+  ok('index.html no longer has the Request-scan topbar button', !/id="recon-new"/.test(html));
+  ok('the 3D screen host div is kept (hidden), not deleted', /id="pp-screen-recon" hidden/.test(html));
   ok('PLYLoader CDN script present (same pinned Three.js revision as the 360° viewer)',
      /three@0\.128\.0\/examples\/js\/loaders\/PLYLoader\.js/.test(html));
   ok('RECON.init is wired alongside the other module inits', /RECON\.init\(user, profile\)/.test(html));
-  ok('setScreen folds 3D tools into the Gallery screen (RECON._syncTools(isPhotos), not a dedicated isRecon)',
-     /RECON\._syncTools\(isPhotos\)/.test(html) && !/isRecon = s === 'recon'/.test(html));
+  ok('setScreen no longer calls RECON._syncTools — nothing left in the DOM for it to toggle',
+     !/RECON\._syncTools\(/.test(html));
   ok('recon.js exposes ensureLoaded for the unified Gallery media strip (Batch C)',
      rcjs.includes('ensureLoaded:'));
   ['function openRequestForm', 'function approveRequest', 'function rejectRequest', 'function retractRequest',
@@ -755,7 +839,13 @@ console.log('\n[misc] insert().select() returns the new row id');
      /source\s+text default 'ground'/.test(panoSql6));
   ok('panoramas.source is folded into supabase-schema.sql', fs.readFileSync(schemaFile, 'utf8').includes("source          text default 'ground', -- 'ground' | 'drone'"));
   ok('the capture form offers a Ground/Drone source select', /id="pano-c-source"/.test(pnjs) && /Drone \(aerial\)/.test(pnjs));
-  ok('the source value is threaded into the saved row', /source: \$\('pano-c-source'\)\.value/.test(pnjs));
+  ok('the source value is threaded into the saved row',
+     // Read into a hoisted `source` variable at the TOP of processVideo, not
+     // a late $('pano-c-source').value re-lookup (audit fix H2 — see
+     // section [35]) — so it's captured before extraction/OpenCV/stitching/
+     // upload can run for several seconds and the modal (and its form
+     // fields) can be dismissed out from under a still-in-flight read.
+     /var source = \$\('pano-c-source'\)\.value;/.test(pnjs) && /source: source/.test(pnjs));
   ok('the insert is tolerant of the source column not being migrated yet (retries without it)',
      /delete row\.source/.test(pnjs));
   ok('a drone-sourced panorama shows a Drone badge in the gallery, same convention as the 3D request list',
@@ -917,12 +1007,27 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var vis = \{\}; visible\(\)\.forEach/.test(mjs));
   ok('both List and Gallery rows carry a [data-sel] checkbox (one selection set for the whole Gallery screen)',
      /data-sel="' \+ r\.id \+ '"/.test(mjs) && (mjs.match(/data-sel="/g) || []).length >= 2);
-  ok('the List grid header gained a matching leading column so header/body stay aligned',
-     /<div><\/div><div>Photo<\/div>/.test(mjs));
+  // 2026-08-29 follow-up item 4: the leading header cell is now a REAL
+  // select-all/unselect-all checkbox (replacing the separate "Clear" button),
+  // not a blank spacer div.
+  ok('the List grid header\'s leading cell is a select-all checkbox, not a blank spacer',
+     /id="pp-selall"/.test(mjs) && /<div>Photo<\/div>/.test(mjs));
+  ok('the select-all checkbox toggles every VISIBLE row, matching visibleSelectedIds\' own scoping rule',
+     /selAll\.onchange = function \(\) \{[\s\S]{0,200}visible\(\)\.forEach/.test(mjs));
   ok('the three batch actions are Download / Add to Presentation / Archive',
      /pp-sel-download/.test(mjs) && /pp-sel-addppr/.test(mjs) && /pp-sel-archive/.test(mjs));
+  // Item 4 also REMOVES the separate "Clear" action — the header checkbox
+  // covers deselecting everything.
+  ok('the old separate "Clear" selection button is gone (item 4)', !/pp-sel-clear/.test(mjs) && !/pp-sel-clear/.test(html));
   ok('batch archive is tolerant of the pending migration, same as the single-item toggle', /pp-sel-archive'\)\.onclick[\s\S]{0,400}archive-flag\.sql/.test(mjs));
-  ok('index.html has the batch-select bar host, hidden by default', /id="pp-selbar" hidden/.test(html));
+  // Item 3: the whole separate boxed "selection bar" is GONE — its actions
+  // moved into the topbar tools row, toggled via syncChrome()'s explicit
+  // style.display (see [29]'s own note on why: `hidden` never worked here).
+  ok('the old standalone #pp-selbar box no longer exists in index.html', !/id="pp-selbar"/.test(html));
+  ok('the selection actions now live in the topbar tools row, hidden by default via inline style',
+     /id="pp-sel-download" style="display:none;"/.test(html) && /id="pp-selcount" style="display:none;"/.test(html));
+  ok('syncChrome() swaps "+ Add media"/Refresh for the selection tools based on visibleSelectedIds().length',
+     /function syncChrome\(\)[\s\S]{0,700}var has = ids\.length > 0;/.test(mjs));
   ok('Add to Presentation calls PPR.addPhotosToPresentation, not a re-implementation of slide-numbering', /PPR\.addPhotosToPresentation\(pprId, photoIds\)/.test(mjs));
   ok('ppr.js exports addPhotosToPresentation appending AFTER the existing slide count', /var n = slides\(pprId\)\.length;[\s\S]{0,200}slide_no: n \+ i \+ 1,/.test(pjs));
   ok('ppr.js exports listForPicker, excluding archived presentations from the target list', /listForPicker: function \(\) \{[\s\S]{0,200}!p\.archived/.test(pjs));
@@ -959,8 +1064,12 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('openPinPickerFor exists — the Gallery-triggered pin flow that does not disturb the Plans screen state',
      /function openPinPickerFor\(itemType, itemId, itemLabel, onDone\)/.test(bmjs) &&
      !/openPinPickerFor[\s\S]{0,400}activePlanId = /.test(bmjs));
-  ok('module.js offers the pin-picker follow-up after a successful upload, non-blocking',
-     /BIM\.openPinPickerFor/.test(mjs));
+  // Superseded 2026-08-29 (item 11): the pin is now captured INLINE in the
+  // same Add/Edit Photo form (BIM.pinFieldHTML/wirePinField/readPinField),
+  // not as a separate modal shown after the upload completes — checked in
+  // the [item 11] section further down, not here.
+  ok('module.js no longer opens the after-the-fact pin-picker modal from the upload flow',
+     !/BIM\.openPinPickerFor/.test(mjs));
   ok('Gallery tiles with a pin show an expandable icon (item 8), never on tiles without one',
      /pinInfoFor\('photo', r\.id\)/.test(mjs) && /pp-pinbtn/.test(mjs));
   ok('openPinPreview exists for the tile-icon crop-zoom overlay', /function openPinPreview\(photoId\)/.test(mjs));
@@ -1064,20 +1173,11 @@ console.log('\n[misc] insert().select() returns the new row id');
     eq('markupHitTest: a click far from everything hits nothing (-1)', PP._markupHitTest(objs, 0.5, 0.02, 400, 300), -1);
   })();
 
-  // --- Batch G: floor-plan map/clustering view -----------------------------
-  // Structural only — mapClusters/renderMapBody depend on module-internal
-  // plan/pin state populated by load(), same DOM/auth-stack limitation this
-  // module has flagged for every other client-only surface (Phase 3's OpenCV
-  // stitching is the one exception, and that needed a real browser).
-  ok('the Plan/Map toggle exists in bim.js\'s render(), dispatching to a dedicated map body',
-     /screen2 ===? 'map'/.test(bmjs) && /function renderMapBody\(\)/.test(bmjs));
-  ok('map clustering + the month-scrub/play controls exist, mirroring Vertical Stacking\'s own null-is-live pattern',
-     /function mapClusters\(monthCutoff\)/.test(bmjs) && /function wireMapView\(\)/.test(bmjs) &&
-     /function stopMapPlay\(\)/.test(bmjs) && /mapPlaying/.test(bmjs));
-  ok('a cluster resolves the visible item\'s date via itemDateFor, cumulative up to the scrubbed month',
-     /function itemDateFor\(pin\)/.test(bmjs));
-  ok('clicking a cluster opens its member list rather than jumping straight into one item (ambiguous which one)',
-     /function openClusterList\(cluster\)/.test(bmjs));
+  // --- Batch G's map/clustering view: RELOCATED to module.js, item 16 ------
+  // (2026-08-29, second feedback round) — see the dedicated section below,
+  // not here. bim.js keeps only Plan-mode browsing/pinning (item 15).
+  ok('bim.js no longer carries the Map/Stack toggle or their render bodies (item 15 — "only all plans")',
+     !/screen2/.test(bmjs) && !/function renderMapBody/.test(bmjs) && !/function renderStackBody/.test(bmjs));
 
   // --- Batch H: top-view photo -> floor plan registration ------------------
   const regMigration = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plan-registration.sql'), 'utf8');
@@ -1098,81 +1198,780 @@ console.log('\n[misc] insert().select() returns the new row id');
   // REAL wiring bug this pass found: the Map (and now Stack) toggle button was
   // completely dead from the DEFAULT Plan view, because the Plan-mode render
   // branch never called wireMapView() at all.
-  console.log('\n[29] Batch G item 16 (Vertical Stacking) + the Map/Stack toggle wiring fix');
+  console.log('\n[29] Item 15/16 (second feedback round) — Map/Stack RELOCATED to the Gallery as Plan/Stack, plus the new floor stepper');
 
-  ok('bim.js exports locLevels() from module.js for the stacking view to read the same level DEFINITIONS the Location Breakdown picker uses',
-     /locLevels: function \(\) \{ return LOC_LEVELS\.slice\(\); \}/.test(mjs));
-  ok('render() calls wireMapView() from EVERY reachable branch — stack, no-plans, map, AND plan (the bug: plan mode never did)',
-     (function () {
-       // Count call sites, not just presence: the fix specifically ADDED the
-       // plan-branch call, so this must be at least 4 (was 1: only the map
-       // branch called it, before this pass).
-       const calls = (bmjs.match(/wireMapView\(\);/g) || []).length;
-       return calls >= 4;
-     })());
-  ok('the Plan-branch fix is commented as a found-and-fixed defect, not silently patched', /REAL BUG this pass found and fixed/.test(bmjs));
-  ok('viewToggleHTML() now renders Plan / Map / Stack as one shared three-button toggle, used by all three render() branches',
-     /function viewToggleHTML\(\)/.test(bmjs) && (bmjs.match(/viewToggleHTML\(\)/g) || []).length >= 4);
-  ok('Stack is reachable even with ZERO floor plans uploaded (unlike Map, which needs a plan\'s own pins by definition)',
-     /if \(screen2 === 'stack'\) \{[\s\S]{0,300}return;\s*\}\s*\n\s*if \(!plans\.length\)/.test(bmjs));
-  ok('switching to Stack stops the Map play timer and vice versa (no orphaned setInterval running in the background)',
-     /stopMapPlay\(\); screen2 = 'stack'/.test(bmjs) && /stopStackPlay\(\); screen2 = 'map'/.test(bmjs));
-  ok('renderStackBody/wireStackView/stopStackPlay exist, and the empty state names WHERE to build a Location Breakdown',
-     /function renderStackBody\(\)/.test(bmjs) && /function wireStackView\(\)/.test(bmjs) && /function stopStackPlay\(\)/.test(bmjs) &&
-     /Location Breakdown&hellip;/.test(bmjs));
+  // --- Item 15: bim.js keeps only Plan browsing/pinning ---------------------
+  ok('bim.js\'s render() no longer has a Map/Stack branch — just plans/no-plans (item 15)',
+     !/function renderMapBody/.test(bmjs) && !/function renderStackBody/.test(bmjs) && !/viewToggleHTML/.test(bmjs));
+  ok('bim.js exports read accessors for module.js\'s Plan view instead: plans()/planUrl()/pinsForPlan()',
+     /plans: function \(\) \{ return plans\.slice\(\)/.test(bmjs) &&
+     /planUrl: function \(plan\) \{ return planUrl\(plan\); \}/.test(bmjs) &&
+     /pinsForPlan: function \(planId\) \{ return allPins\.filter/.test(bmjs));
+
+  // --- Item 16: Plan view (floor + month stepping) --------------------------
+  ok('the Gallery view toggle gains Plan and Stack buttons alongside List/Tile',
+     /data-view="plan"/.test(html) && /data-view="stack"/.test(html));
+  ok('render() dispatches to renderPlanView/renderStackView for those two views, reading PROJECT-WIDE data, not the filtered list',
+     /if \(view === 'plan' \|\| view === 'stack'\) \{[\s\S]{0,200}renderPlanView\(\)[\s\S]{0,100}renderStackView\(\)/.test(mjs));
+  ok('a floor STEPPER exists (prev/next/animate) — the genuinely NEW capability the old bim.js Map view never had (only a bare <select>)',
+     /id="pp-plan-floorprev"/.test(mjs) && /id="pp-plan-floornext"/.test(mjs) && /id="pp-plan-floorplay"/.test(mjs) &&
+     /planFloorId = fs\[i \+ 1\]\.id;/.test(mjs));
+  ok('the month stepper is ported from bim.js\'s old mapClusters/itemDateFor cutoff logic, cumulative up to the scrubbed month',
+     /function planClusters\(pins, monthCutoff\)/.test(mjs) && /function itemDateForPin\(pin\)/.test(mjs) &&
+     /if \(monthCutoff && \(!d \|\| d\.slice\(0, 7\) > monthCutoff\)\) return;/.test(mjs));
+  ok('floor animation and month animation never run at once — each stops the other before starting',
+     /stopPlanMonthPlay\(\);   \/\/ never both animations running at once/.test(mjs) &&
+     /planFloorPlaying = true;[\s\S]{0,450}\}, 1200\);/.test(mjs));
+  ok('clicking a cluster opens its member list rather than jumping straight into one item (ambiguous which one)',
+     /function openPlanClusterList\(cluster\)/.test(mjs));
+  ok('Group-by is hidden in Plan/Stack (it has no meaning there) rather than left visible and silently inert',
+     /gbField\.style\.display = \(view === 'plan' \|\| view === 'stack'\) \? 'none' : '';/.test(mjs));
+
+  // --- Item 16: Stack view — combine-by-default, step-through opt-in --------
+  ok('Stack defaults to COMBINE (every photo at a location, across all months) — REVERSES bim.js\'s old single-most-recent default',
+     /var stackStepMode = false;/.test(mjs) && /REVERSES bim\.js's old Stack default/.test(mjs));
+  ok('a "Step through months instead" toggle exists, switching to the old cutoff-driven single-photo-per-cell behaviour',
+     /id="pp-stack-stepmode"/.test(mjs) && /stackStepMode = this\.checked; stopStackPlay\(\); render\(\);/.test(mjs));
+  ok('combined mode caps thumbnails per cell and reports the overflow as "+N more" rather than silently truncating with no sign',
+     /var STACK_COMBINE_MAX = 6;/.test(mjs) && /pp-stackmore/.test(mjs) && /c\.photos\.length - STACK_COMBINE_MAX/.test(mjs));
+  ok('combined-mode thumbnails open the ordinary lightbox on click; step-mode keeps the hover-magnifier instead',
+     // Routes through openPhotoById (audit fix), NOT a raw openLightbox(id) —
+     // Stack/Plan read project-wide data, so a clicked photo can be one the
+     // Gallery's own active filter excludes; a bare openLightbox(id) falls
+     // back to index 0 on a miss and silently shows a DIFFERENT photo. See
+     // section [35]'s structural checks for the shared openPhotoById guard.
+     /im\.onclick = function \(\) \{ openPhotoById\(this\.dataset\.open\); \};/.test(mjs) &&
+     /mag\.hidden = false;/.test(mjs));
   ok('only the first-picked row level and a SEPARATE column level drive the grid — a level can never be picked as both axes',
-     /levels\.filter\(function \(l\) \{ return l\.id !== \(stackRowLevel\(\) && stackRowLevel\(\)\.id\); \}\)/.test(bmjs));
+     /levels\.filter\(function \(l\) \{ return l\.id !== \(stackRowLevel\(\) && stackRowLevel\(\)\.id\); \}\)/.test(mjs));
   ok('a single-level project collapses columns to one shared "All" bucket rather than repeating the row axis',
-     /if \(!colNames\.length\) colNames = \[''\];/.test(bmjs) && /esc\(c \|\| 'All'\)/.test(bmjs));
-  ok('the hover-magnifier is a simple src-swap into a docked panel, per the plan\'s own "simpler than the SVG-clone version" note',
-     /bim-stack-mag/.test(bmjs) && /magImg\.src = im\.dataset\.magnify/.test(bmjs));
-  ok('scope note: only the first TWO location levels drive the grid, stated rather than silently limited', /Scope reduction, stated rather than silently shipped/.test(bmjs.split('vertical stacking')[1] || ''));
+     /if \(!colNames\.length\) colNames = \[''\];  \/\/ single-level project/.test(mjs) && /Fmt\.esc\(c \|\| 'All'\)/.test(mjs));
 
-  // Genuine execution of the "as of" cell rule — the exact class of bug this
-  // module has already been bitten by once (the vendor-performance /
-  // reportedThrough family): a wrong fallback here reports a photo as
-  // existing at a location before it was actually taken, or hides one that
-  // should already be visible.
+  // Genuine execution of the "as of" cell rule, ported into module.js — the
+  // exact class of bug this module has already been bitten by once (the
+  // vendor-performance / reportedThrough family): a wrong fallback here
+  // reports a photo as existing at a location before it was actually taken,
+  // or hides one that should already be visible.
   (function () {
     const photos = [
       { id: 'p1', taken_at: '2026-01-15' },
       { id: 'p2', taken_at: '2026-03-10' },
       { id: 'p3', taken_at: '2026-05-01' },
     ];
-    eq('mostRecentAsOf: no cutoff returns the single latest photo', BIM._mostRecentAsOf(photos, null).id, 'p3');
-    eq('mostRecentAsOf: cutoff mid-way returns the latest photo AT OR BEFORE it, never a later one', BIM._mostRecentAsOf(photos, '2026-03').id, 'p2');
-    eq('mostRecentAsOf: cutoff before every photo returns null, never the earliest by mistake', BIM._mostRecentAsOf(photos, '2025-12'), null);
-    eq('mostRecentAsOf: an empty candidate list (no photo at this cell) returns null, not a crash', BIM._mostRecentAsOf([], '2026-06'), null);
+    eq('mostRecentAsOf: no cutoff returns the single latest photo', PP._mostRecentAsOf(photos, null).id, 'p3');
+    eq('mostRecentAsOf: cutoff mid-way returns the latest photo AT OR BEFORE it, never a later one', PP._mostRecentAsOf(photos, '2026-03').id, 'p2');
+    eq('mostRecentAsOf: cutoff before every photo returns null, never the earliest by mistake', PP._mostRecentAsOf(photos, '2025-12'), null);
+    eq('mostRecentAsOf: an empty candidate list (no photo at this cell) returns null, not a crash', PP._mostRecentAsOf([], '2026-06'), null);
   })();
 
   // Genuine execution of the full row/column grid builder against a small,
   // hand-checked fixture — two towers, two floors each, one cell deliberately
   // left with no photo at all (must read as empty, never invent a neighbour).
+  // Also confirms `photos` (item 16's combined list) is populated alongside
+  // the legacy `photo` (step-mode's single resolved one).
   (function () {
     const levels = [{ id: 'lvl-tower', name: 'Tower', sort_order: 1 }, { id: 'lvl-floor', name: 'Floor', sort_order: 2 }];
     const photos = [
       { id: 'a1', taken_at: '2026-01-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },
-      { id: 'a2', taken_at: '2026-02-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },  // supersedes a1
+      { id: 'a2', taken_at: '2026-02-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },  // combines with a1; supersedes it in step mode
       { id: 'b1', taken_at: '2026-01-15', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 2' } },
       { id: 'c1', taken_at: '2026-01-20', location_values: { 'lvl-tower': 'Tower 2', 'lvl-floor': 'Floor 1' } },
       // Tower 2 / Floor 2: deliberately NO photo at all.
     ];
-    const g = BIM._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', null);
+    const g = PP._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', null);
     eq('stackGrid: rows are the distinct ROW-level values, sorted', g.rows.map((r) => r.row), ['Tower 1', 'Tower 2']);
     eq('stackGrid: columns are the distinct COLUMN-level values, sorted', g.cols, ['Floor 1', 'Floor 2']);
-    eq('stackGrid: Tower 1 / Floor 1 resolves to the LATEST of the two competing photos (a2, not a1)',
+    eq('stackGrid: Tower 1 / Floor 1 COMBINES both competing photos (item 16 default)', g.rows[0].cells[0].photos.map((p) => p.id).sort(), ['a1', 'a2']);
+    eq('stackGrid: Tower 1 / Floor 1 step-mode field still resolves to the LATEST (a2, not a1) for the opt-in toggle',
        g.rows[0].cells[0].photo.id, 'a2');
     eq('stackGrid: Tower 1 / Floor 2 resolves to its one photo', g.rows[0].cells[1].photo.id, 'b1');
     eq('stackGrid: Tower 2 / Floor 1 resolves to its one photo', g.rows[1].cells[0].photo.id, 'c1');
     eq('stackGrid: Tower 2 / Floor 2 (no photo at all) is null, never borrowed from a neighbouring cell',
        g.rows[1].cells[1].photo, null);
-    // As-of cutoff applied through the WHOLE grid, not just one cell.
-    const gCutoff = BIM._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', '2026-01');
-    eq('stackGrid with a cutoff: Tower 1 / Floor 1 falls back to a1 (a2 is in the future relative to the cutoff)',
+    eq('stackGrid: Tower 2 / Floor 2 combined list is empty, not null/undefined', g.rows[1].cells[1].photos, []);
+    // As-of cutoff applied through the WHOLE grid, not just one cell (step mode only).
+    const gCutoff = PP._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', '2026-01');
+    eq('stackGrid with a cutoff: Tower 1 / Floor 1 step-mode falls back to a1 (a2 is in the future relative to the cutoff)',
        gCutoff.rows[0].cells[0].photo.id, 'a1');
     eq('stackGrid: a project with only ONE level collapses columns to a single shared bucket',
-       BIM._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
+       PP._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
   })();
+
+  // Genuine execution of the cluster grouping (grid-snap by ~5% cell, ported
+  // verbatim from bim.js's mapClusters) and the pin-date resolution. Grouping
+  // by POSITION does not depend on date resolution succeeding, so it is
+  // checked with no photo-date cutoff (null) — plain position clustering.
+  (function () {
+    const pins = [
+      { id: 'pin1', item_type: 'photo', item_id: 'p1', x_norm: 0.20, y_norm: 0.30 },
+      { id: 'pin2', item_type: 'photo', item_id: 'p2', x_norm: 0.21, y_norm: 0.31 },  // same ~5% cell as pin1
+      { id: 'pin3', item_type: 'photo', item_id: 'p3', x_norm: 0.80, y_norm: 0.80 },  // a different cell
+    ];
+    eq('itemDateForPin resolves a photo pin\'s date from the injected photo list',
+       PP._itemDateForPin(pins[0], [{ id: 'p1', taken_at: '2026-02-01' }]), '2026-02-01');
+    const clusters = PP._planClusters(pins, null);
+    eq('planClusters: two pins within the same ~5% cell cluster together (2 clusters total for 3 pins)', clusters.length, 2);
+    eq('planClusters: the larger cluster holds both nearby pins',
+       clusters.slice().sort((a, b) => b.pins.length - a.pins.length)[0].pins.length, 2);
+  })();
+
+  // =========================================================== [30] =========
+  // Screenshot follow-up (2026-08-29): Gallery toolbar simplification, the
+  // selection-mode swap, select-all, batch download formats, and the
+  // mobile filter collapse.
+  console.log('\n[30] Gallery toolbar simplification, selection-mode swap, download formats, mobile filters');
+
+  ok('the "+ Add photos" button is renamed "+ Add media" (item 2 — covers photo/video/360/3D from one button)',
+     /id="pp-add" title="Upload photos, video, or other media">\+ Add media</.test(html));
+  ok('a comment explains WHY the capture buttons are gone and where their code still lives',
+     /openCaptureModal\/openCompareModal\/openRequestForm/.test(html));
+
+  // --- Item 3: selection-mode swap in the topbar tools row -------------------
+  // Structural, not executed: `rows`/`filters`/`selected`/`canWrite` are
+  // private to module.js's own closure (the whole point of the IIFE
+  // pattern) and this harness exposes no setter for them — genuinely
+  // driving syncChrome() would need PP.init() against a fake user/session,
+  // which risks disturbing every OTHER section's assumptions about shared
+  // module state. Same trade-off this file already accepts for Batch G's
+  // map/clustering (structural-only, state-heavy internals).
+  ok('syncChrome computes `has` from visibleSelectedIds().length, feeding every toggle below it',
+     /function syncChrome\(\) \{[\s\S]{0,300}var has = ids\.length > 0;/.test(mjs));
+  ok('"+ Add media"/its divider hide when EITHER a selection is active OR the user cannot write',
+     /\(has \|\| !canWrite\) \? 'none' : ''/.test(mjs));
+  ok('Refresh hides only while a selection is active (no role gate — everyone can refresh)',
+     /refresh\.style\.display = has \? 'none' : '';/.test(mjs));
+  ok('the count text and all three selection buttons are driven by the SAME `has` flag, so they can never disagree',
+     (mjs.match(/= has \? '' : 'none'/g) || []).length >= 1 &&
+     /\['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'\]\.forEach/.test(mjs));
+
+  // --- Item 4: select-all header checkbox ------------------------------------
+  ok('the select-all checkbox reflects "every visible row already checked" on render',
+     /var allSelected = vis\.length > 0 && vis\.every\(function \(r\) \{ return selected\[r\.id\]; \}\);/.test(mjs));
+
+  // --- Item 5: batch download format choice ----------------------------------
+  ok('openBatchDownloadChoice offers exactly HTML / PPTX / PDF, reusing ppr.js\'s own .ppr-fmtchoices visual language',
+     /function openBatchDownloadChoice\(ids\)/.test(mjs) && /ppr-fmtchoices/.test(mjs) &&
+     /data-fmt="html"/.test(mjs) && /data-fmt="pptx"/.test(mjs) && /data-fmt="pdf"/.test(mjs));
+  ok('exportSelectedPhotos dispatches to exactly one of three format-specific exporters', /function exportSelectedPhotos\(ids, fmt\)/.test(mjs) &&
+     /return exportSelectedPdf\(list\)/.test(mjs) && /return exportSelectedPptx\(list\)/.test(mjs) && /return exportSelectedOffline\(list\)/.test(mjs));
+  ok('all three formats share ONE image-collection function, so they can never embed a different picture of the same selection',
+     /function collectPhotoImages\(list, onProgress\)/.test(mjs) &&
+     (mjs.match(/collectPhotoImages\(list, function/g) || []).length >= 3);
+  ok('the PDF export keeps its captured element in NORMAL FLOW (the issues-lessons 2026-08-22 lesson — position:fixed on the captured node gives html2canvas a real width and a height of ZERO)',
+     /holder\.style\.cssText = 'position:fixed;left:-10000px;top:0;'/.test(mjs) && /holder\.appendChild\(wrap\)/.test(mjs));
+  ok('PPTX embedding strips the data: URI prefix (canvas.toDataURL always adds it; PptxGenJS\'s `data` option must not have it)',
+     /function stripDataPrefix\(uri\)/.test(mjs));
+  ok('the download-choice modal never fires for an empty selection', /function openBatchDownloadChoice\(ids\) \{\s*\n\s*if \(!ids\.length\) return;/.test(mjs));
+  // Genuine execution — the caption block every format reads.
+  eq('dlCaptionLines: description, then trade·works·location, then the date',
+     PP._dlCaptionLines({ description: 'Slab pour', trades: ['Structural'], works_multi: ['Formworks'], location: 'Tower 1', taken_at: '2026-03-15' }),
+     // Fmt.date is a bare passthrough stub in this harness (real formatting
+     // lives in the shared ui.js, not this module) — the ISO string is the
+     // correct expectation here, not a formatted date.
+     ['Slab pour', 'Structural · Formworks · Tower 1', '2026-03-15']);
+  eq('dlCaptionLines: blank fields are dropped, never rendered as empty lines',
+     PP._dlCaptionLines({ description: '', trades: [], works_multi: [], location: '', taken_at: '' }), []);
+
+  // --- Item 6: unified grouping, genuinely executed ---------------------------
+  (function () {
+    const photos = [
+      { id: 'p1', taken_at: '2026-06-01', trades: ['Structural'], location: 'Tower 1' },
+      { id: 'p2', taken_at: '2026-06-15', trades: ['Structural'], location: 'Tower 2' },
+      { id: 'p3', taken_at: '2026-07-01', trades: ['Architectural'], location: 'Tower 1' },
+      { id: 'p4', taken_at: '', trades: [], location: '' },
+    ];
+    const byMonth = PP._groupRows(photos, 'month');
+    eq('month grouping: newest month first', byMonth.map((g) => g.key), ['2026-07', '2026-06', 'Undated']);
+    eq('month grouping: the July label reads "July 2026"', byMonth[0].label, 'July 2026');
+    const byTrade = PP._groupRows(photos, 'trade');
+    eq('trade grouping: alphabetical, "Untagged" last', byTrade.map((g) => g.key), ['Architectural', 'Structural', 'Untagged']);
+    const byLoc = PP._groupRows(photos, 'location');
+    eq('location grouping: alphabetical, "Unassigned" last', byLoc.map((g) => g.key), ['Tower 1', 'Tower 2', 'Unassigned']);
+    eq('location grouping: Tower 1 holds both its photos regardless of trade', byLoc[0].items.map((r) => r.id), ['p1', 'p3']);
+  })();
+
+  // --- Item 7: no per-row action icons; the row itself opens the lightbox ----
+  ok('rowActions()/the per-row icon-button function is gone entirely (superseded design)', !/function rowActions/.test(mjs));
+  ok('the List grid dropped its trailing actions column (7 cells now, not 8)',
+     /grid-template-columns: 34px 120px minmax\(180px, 1\.4fr\) 150px 150px 160px 120px;/.test(css) &&
+     !/34px 120px minmax\(180px, 1\.4fr\) 150px 150px 160px 120px 158px/.test(css));
+
+  // --- Item 8: mobile filter collapse ------------------------------------------
+  ok('a "Filters" toggle button exists, desktop-invisible (display:none outside the phone media query)',
+     /id="pp-filttoggle"/.test(html) && /\.pp-filttoggle \{ display: none; \}/.test(css));
+  ok('the filter controls are wrapped in .pp-filters-body, which is display:contents on desktop (the SAME trick dashboard.css already uses for the module topbar wrap)',
+     /id="pp-filters-body"/.test(html) && /\.pp-filters-body \{ display: contents; \}/.test(css));
+  ok('on a phone the body is hidden until .pp-filters carries .open',
+     /\.pp-filters-body \{ display: none;/.test(css) && /\.pp-filters\.open \.pp-filters-body \{ display: flex; \}/.test(css));
+  ok('the toggle click handler toggles the .open class on #pp-filters', /\$\('pp-filters'\); if \(wrap\) wrap\.classList\.toggle\('open'\)/.test(mjs));
+
+  // --- The actual .pp-selbar[hidden] bug the screenshot exposed --------------
+  ok('the old buggy .pp-selbar element (display:flex beating the hidden attribute) no longer exists in module.css',
+     !/^\.pp-selbar \{/m.test(css));
+  ok('the fix is explained in module.css, not just silently removed', /always won\s+regardless of the `hidden` attribute/.test(css));
+
+  console.log('\n[31] Second feedback round (items 9, 11, 17) — Works becomes a schedule tag, camera pin+direction moves inline, 360° re-enabled');
+
+  // --- Item 9: Works is a single schedule-derived tag, Trade is derived -----
+  eq('a Works value matching a Structural schedule activity derives Structural Works',
+     PP._deriveTradeForWorks('Rebar Installation',
+       [{ activity_name: 'Rebar Installation', work_type: 'Structural' }]),
+     'Structural Works');
+  eq('case/whitespace-insensitive match against the schedule activity name',
+     PP._deriveTradeForWorks('  rebar installation  ',
+       [{ activity_name: 'Rebar Installation', work_type: 'Structural' }]),
+     'Structural Works');
+  eq('a Works value with no matching schedule activity derives no trade (never a guess)',
+     PP._deriveTradeForWorks('Some custom value typed by hand', []), null);
+  eq('a matching activity with no work_type derives no trade either', PP._deriveTradeForWorks('Site Clearing',
+     [{ activity_name: 'Site Clearing', work_type: '' }]), null);
+  eq('a blank Works value derives no trade', PP._deriveTradeForWorks('', [{ activity_name: '', work_type: 'MEPF' }]), null);
+
+  // --- Item 11: camera pin + direction move INLINE, key plan wizard retired --
+  ok('BIM exports the embeddable pin field API (pinFieldHTML/wirePinField/readPinField/savePinForItem)',
+     /pinFieldHTML: pinFieldHTML/.test(bmjs) && /wirePinField: wirePinField/.test(bmjs) &&
+     /readPinField: readPinField/.test(bmjs) && /savePinForItem: savePinForItem/.test(bmjs));
+  ok('pinFieldHTML degrades to a hint (never a broken picker) when the project has no floor plans yet',
+     /function pinFieldHTML[\s\S]{0,400}if \(!plans\.length\)/.test(bmjs));
+  ok('readPinField returns null (a no-op) rather than a half-filled object when nothing is picked',
+     /function readPinField[\s\S]{0,400}if \(!planId \|\| x === '' \|\| y === ''\) return null;/.test(bmjs));
+  ok('savePinForItem is a no-op on null pinData — it can never delete a pin the planner did not ask to touch',
+     /async function savePinForItem\(itemType, itemId, pinData\) \{\s*if \(!pinData\) return;/.test(bmjs));
+  ok('savePinForItem UPDATES an existing pin rather than inserting a duplicate for the same item',
+     /var existing = pinsByItem\(itemType, itemId\)\[0\] \|\| null;[\s\S]{0,500}existing\s*\?\s*await sb\(\)\.from\(T_PIN\)\.update/.test(bmjs));
+  ok('the Add form reads the pin field ONCE and applies it to every uploaded item sharing that camera position',
+     /var pinData = window\.BIM \? BIM\.readPinField\('pp'\) : null;/.test(mjs) &&
+     /for \(var pi = 0; pi < newIds\.length; pi\+\+\) await BIM\.savePinForItem\('photo', newIds\[pi\], pinData\);/.test(mjs));
+  ok('the Edit form pre-fills the pin field from the photo\'s existing pin, via BIM.pinInfoFor',
+     /var existingPinInfo = \(window\.BIM && BIM\.pinInfoFor\) \? BIM\.pinInfoFor\('photo', r\.id\) : null;/.test(mjs));
+  ok('the Edit form reads the pin field BEFORE the modal closes (the DOM is gone after)',
+     /var pinData = window\.BIM \? BIM\.readPinField\('pp-e'\) : null;[\s\S]{0,1100}m\.close\(\);   \/\/ onClose \(passed to openModal above\) clears the collab cursor/.test(mjs));
+
+  // --- Item 17: 4-way media type, only 3D stays disabled ---------------------
+  ok('the type selector offers Photo / Video / 360° / 3D as four distinct buttons',
+     /id="' \+ idPrefix \+ '-mtype-360">360°<\/button>/.test(mjs) &&
+     /disabled title="3D reconstruction is on hold">3D<\/button>/.test(mjs));
+  ok('360° is NOT disabled (item 17 re-enables it — item 18 fixes the flow it delegates to)',
+     !/id="' \+ idPrefix \+ '-mtype-360"[^>]*disabled/.test(mjs));
+  ok('picking 360° closes the Add Media modal and hands off to pano.js\'s real capture flow',
+     /\$\('pp-mtype-360'\)\.onclick = function \(\) \{[\s\S]{0,150}m\.close\(\);[\s\S]{0,80}PANO\.openCapture\(\)/.test(mjs));
+  ok('pano.js exposes openCapture — its capture flow\'s only reachable entry point now that #pano-new is gone',
+     /openCapture: function \(\) \{ openCaptureModal\(\); \}/.test(pnjs));
+
+  console.log('\n[32] Item 18 — 360° capture UX fix ("I can\'t take videos very easily")');
+  ok('the separate "Use camera" step is gone — one button both requests the camera AND starts recording',
+     !/pano-c-startcam/.test(pnjs) && /id="pano-c-record" type="button">Start recording</.test(pnjs));
+  ok('a visible recording indicator exists (pulsing dot + a running mm:ss timer), not just a button-label change',
+     /pano-recind/.test(pnjs) && /pano-recdot/.test(pnjs) && /function fmtTime\(s\)/.test(pnjs));
+  ok('the timer starts hidden and is shown only once recording actually begins',
+     /id="pano-recind" hidden/.test(pnjs) && /function startRecTimer\(\)[\s\S]{0,200}ind\.hidden = false;/.test(pnjs));
+  ok('recording auto-stops after a generous cap, so a forgotten recording cannot run forever',
+     /var MAX_REC_SECONDS = 90;/.test(pnjs) && /recSeconds >= MAX_REC_SECONDS/.test(pnjs));
+  ok('a Switch camera control exists, toggling facingMode between environment and user',
+     /pano-c-switchcam/.test(pnjs) && /facing = facing === 'environment' \? 'user' : 'environment';/.test(pnjs));
+  ok('switching cameras is refused while a recording is in progress', /if \(recorder\) return;[\s\S]{0,850}facing = facing/.test(pnjs));
+  ok('audit fix: switching cameras is ALSO refused while an earlier switch is still in flight (a rapid double-tap used to be able to start a second getUserMedia before the first had assigned `stream`, orphaning a live camera track with nothing left to stop it)',
+     /if \(this\.disabled\) return;\s*this\.disabled = true;\s*facing = facing === 'environment' \? 'user' : 'environment';\s*stopCameraStream\(\);\s*await startCamera\(\);\s*this\.disabled = false;/.test(pnjs));
+  ok('a camera-access failure explicitly names the upload fallback, not just a bare error', /you can upload a video instead/.test(pnjs));
+  ok('the Start-recording button visibly shows it is armed (adds/removes .is-active)',
+     /btn\.classList\.add\('is-active'\)/.test(pnjs) && /btn\.classList\.remove\('is-active'\)/.test(pnjs));
+  ok('Cancel/× stop any live stream, recorder AND the timer — the camera cannot keep running after the modal closes',
+     /if \(recorder\) \{ try \{ recorder\.stop\(\); \} catch \(e\) \{\} recorder = null; \}[\s\S]{0,80}stopRecTimer\(\); stopCameraStream\(\);/.test(pnjs));
+  ok('a forced stop-on-cancel cannot still write a panorama afterwards (processVideo bails on the cancelled flag)',
+     /var cancelled = false;/.test(pnjs) && /async function processVideo\(blob\) \{\s*if \(cancelled\) return;/.test(pnjs));
+  ok('stopCameraStream always stops every track — never leaves the camera light on', /function stopCameraStream\(\)[\s\S]{0,120}getTracks\(\)\.forEach/.test(pnjs));
+
+  console.log('\n[33] Items 12/13(a) — markup coverage confirmed already complete; the lightbox entry point made discoverable');
+  // Both items describe capability already shipped in Batch F (2026-08-29,
+  // "[28]" above) — reconfirmed here rather than rebuilt, plus the ONE real
+  // gap found: the edit entry point was a bare icon among five in the
+  // lightbox toolbar, easy to miss entirely, which is the most likely
+  // explanation for "you still haven't added markup".
+  ok('all five requested tools exist on the photo\'s own markup editor: pencil, eraser, shapes, common icons, text',
+     /\['pen', 'rect', 'circle', 'arrow', 'text', 'icon', 'erase'\]/.test(mjs));
+  ok('four common icon stamps exist (warn/arrow/person/equip)', /\['warn', 'arrow', 'person', 'equip'\]/.test(mjs));
+  ok('erase is a real removal (vector hit-test + splice), not a no-op or a paint-transparent hack',
+     /objs\.splice\(idx, 1\); pushHistory\(\); redraw\(\);/.test(mjs));
+  ok('presentation markup is a SEPARATE store, keyed by (slide, pane) — never attached to the photo itself',
+     /function markupKey\(slideId, pane\) \{ return slideId \+ '\|' \+ pane; \}/.test(pjs));
+  ok('the presentation pane reuses the SAME editor rather than re-implementing drawing a second time',
+     /ProgressPhotos\.openMarkupEditor\(u, markupFor\(cur\.id, which\), function \(objs\) \{/.test(pjs));
+  ok('the lightbox\'s markup-edit button now carries a visible text label, not just an icon',
+     /pp-lb-tool-labeled" id="pp-lb-markupedit"[\s\S]{0,200}<span>Markup<\/span>/.test(html));
+  ok('the label styling widens the button rather than forcing text into a 38px square',
+     /\.pp-lb-tool-labeled \{ width: auto;/.test(css));
+
+  console.log('\n[34] Item 14 — Presentations multi-select + batch Download / Archive / Merge, combined preview');
+  ok('a select checkbox is added to every presentation row, reusing the shared .pp-selcell sizing',
+     /pp-selcell"><input type="checkbox" data-sel=/.test(pjs));
+  ok('a header select-all\\/unselect-all tickbox exists, mirroring the Gallery\'s own List header (item 4)',
+     /id="ppr-selall"/.test(pjs) && /var selAll = host\.querySelector\('#ppr-selall'\);/.test(pjs));
+  ok('the checkbox set is SEPARATE from selId — selecting for batch actions never opens a presentation',
+     /var selectedPprs = \{\};/.test(pjs) && /function selectedPprIds\(\)/.test(pjs));
+  ok('batch actions are scoped to the VISIBLE (filtered) selection, not the raw map',
+     /function visibleSelectedPprIds\(\)[\s\S]{0,200}return selectedPprIds\(\)\.filter/.test(pjs));
+  ok('the selection toolbar swaps in for "+ New Presentation" the same way the Gallery\'s own tools swap',
+     /var hasSel = visible && onList && selIds\.length > 0;/.test(pjs));
+  ok('Merge is offered only once 2 or more are selected — a single "selection" is not a merge candidate',
+     /if \(mg\) mg\.style\.display = \(hasSel && canWrite && selIds\.length >= 2\) \? '' : 'none';/.test(pjs));
+  ok('checking 2+ presentations combines their slides in the preview pane, grouped per presentation',
+     /if \(selIds\.length >= 2\) \{ renderCombinedPreview\(body, selIds\); return; \}/.test(pjs));
+  (function () {
+    var start = pjs.indexOf('function renderCombinedPreview');
+    var end = pjs.indexOf('// ---------------------------------------------------- slides view/editor ---', start);
+    var body = pjs.slice(start, end);
+    ok('the combined preview groups oldest-first', /sort\(function \(a, b\)/.test(body));
+    ok('the combined preview never opens an editor on click (ambiguous which of several presentations it would be)',
+       !/im\.onclick|data-slide/.test(body));
+  })();
+  ok('batch download loops the SAME three exporters a single presentation uses, staggered like the Gallery\'s own',
+     /var exportFn = fmt === 'html' \? exportOffline : fmt === 'pptx' \? exportPptx : exportPdf;/.test(pjs) &&
+     /setTimeout\(function \(\) \{ exportFn\(p\); \}, i \* 300\);/.test(pjs));
+  ok('merge copies slides by REFERENCE (photo ids/captions), never duplicating a photo — item 13a\'s own rule',
+     /before_photo_id: sl\.before_photo_id, after_photo_id: sl\.after_photo_id,/.test(pjs));
+  ok('merge renumbers slide_no CONTINUOUSLY across all source presentations, not reset per source',
+     /n\+\+;[\s\S]{0,120}slide_no: n,/.test(pjs));
+  ok('merge ARCHIVES the sources afterward — it never deletes, so a merge cannot lose history',
+     /var ares = await sb\(\)\.from\(T_PPR\)\.update\(\{ archived: true,/.test(pjs));
+  ok('merge is tolerant of the slide-copy step failing AFTER the presentation was created — it reports rather than leaving a silently empty deck',
+     /Presentation created, but copying slides failed:/.test(pjs));
+  ok('a completed merge opens the new presentation directly, same as an ordinary "+ New Presentation" does',
+     /await load\(\);\s*openPpr\(newId\);\s*\};\s*\}\s*\n\s*\/\/ Item 14 — batch download/.test(pjs));
+  // Genuine execution of the reversible archive/restore direction — the
+  // exact kind of silent-wrong-data risk this module's own convention
+  // (directionDegFromDrag, deriveTradeForWorks) says deserves real running,
+  // not just a regex read.
+  eq('all active -> archive (the common case: batch-archiving a finished set)',
+     PPR._archiveDirectionFor([{ archived: false }, { archived: false }, { archived: false }]), true);
+  eq('all already archived -> restore', PPR._archiveDirectionFor([{ archived: true }, { archived: true }]), false);
+  eq('a tied 50/50 split -> archive (the majority-or-tie rule, stated in the code)',
+     PPR._archiveDirectionFor([{ archived: false }, { archived: true }]), true);
+  eq('a 2-of-3 archived majority -> restore', PPR._archiveDirectionFor([{ archived: true }, { archived: true }, { archived: false }]), false);
+
+  // =========================================================== [35] =========
+  // Full-module audit (2026-08-30) — two real bugs found and fixed:
+  // (a) Plan/Stack clicks opened the ordinary lightbox by raw id, which
+  //     falls back to index 0 on a miss — Plan/Stack read PROJECT-WIDE data
+  //     (every pin / every location-tagged photo) while the lightbox's own
+  //     `lightboxIds` is scoped to the Gallery's currently FILTERED list, so
+  //     a photo excluded by the active filter (archived, wrong trade, wrong
+  //     date range, …) would silently open a DIFFERENT photo with no
+  //     warning — and a Delete from there would hit the wrong record.
+  // (b) selecting photos on Gallery, then switching to Presentations/Plans,
+  //     left the four selection-only toolbar buttons (count/Download/Add to
+  //     Presentation/Archive) visible on top of whichever screen opened
+  //     next, because index.html's setScreen() only ever called syncChrome()
+  //     when ENTERING the Photos screen, never when leaving it.
+  console.log('\n[35] Full-module audit — safe cross-screen photo lookup + the selection-leak fix');
+
+  ok('openPhotoById is a single NAMED function, not duplicated inline at each call site',
+     /function openPhotoById\(id\) \{/.test(mjs));
+  ok('a miss (id not in this project\'s rows) toasts a warning and returns — it never falls through to opening SOMETHING anyway',
+     /if \(!byId\(id\)\) \{ UI\.toast\('That photo could not be found', 'warn'\); return; \}/.test(mjs));
+  ok('a hit re-scopes lightboxIds to JUST that one photo before opening it, so prev\/next\/delete can\'t drift onto a filtered-out neighbour',
+     /lightboxIds = \[id\];\s*openLightbox\(id\);\s*\}/.test(mjs));
+  ok('the exported openPhotoById (what bim.js\'s own Plans-tab pins call) delegates to the SAME named function — no second, unguarded copy for external callers',
+     /openPhotoById: function \(id\) \{ return openPhotoById\(id\); \}/.test(mjs));
+  ok('Plan pin clicks on a photo route through openPhotoById, never a raw openLightbox(id)',
+     /else if \(pin\.item_type === 'photo'\) \{ openPhotoById\(pin\.item_id\); \}/.test(mjs));
+  ok('bim.js\'s own pin-click dispatch (Plans tab) calls the exported, guarded ProgressPhotos.openPhotoById — cross-checked against section [24]\'s own assertion of this same line',
+     /ProgressPhotos\.openPhotoById\(pin\.item_id\)/.test(bmjs));
+
+  // Genuine execution of the miss-guard: `rows` starts (and, since this
+  // harness never calls PP.init()/load(), stays) empty for the whole run —
+  // see the [30] comment on why syncChrome-style state-mutating init is
+  // deliberately not driven here — so a lookup against a made-up id is
+  // GUARANTEED to miss, letting the toast-and-no-op path run for real
+  // rather than only be read as text.
+  (function () {
+    const before = (ctx.__toasts || []).length;
+    let threw = null;
+    try { PP.openPhotoById('audit-bogus-photo-id-does-not-exist'); }
+    catch (e) { threw = e; }
+    ok('openPhotoById on an id nothing resolves to does not throw', threw === null, threw && threw.message);
+    const after = ctx.__toasts || [];
+    ok('…and toasts a "warn" — the caller (a Plan pin, a Stack thumbnail) gets a visible reason rather than the lightbox silently opening the wrong photo',
+       after.length === before + 1 && after[after.length - 1][0] === 'warn' &&
+       after[after.length - 1][1] === 'That photo could not be found');
+  })();
+
+  // --- module.js's openModal gained the same backdrop-close cleanup fix as
+  // pano.js's own (see that section's tests for the reasoning in full) ------
+  ok('module.js\'s openModal disables UI.modal\'s own backdrop listener and installs its own close() that runs an optional onClose before the real close — same mechanism as pano.js\'s, fixing the same bug class here',
+     /function openModal\(html, width, onClose\) \{\s*var m = UI\.modal\(html, \{ noBackdropClose: true \}\);/.test(mjs) &&
+     /function close\(\) \{ if \(onClose\) \{ try \{ onClose\(\); \} catch \(e\) \{\} \} m\.close\(\); \}/.test(mjs));
+  ok('…[data-close] buttons AND a genuine backdrop click both route through that SAME close()',
+     /b\.onclick = close;\s*\}\);\s*m\.el\.addEventListener\('click', function \(e\) \{ if \(e\.target === m\.el\) close\(\); \}\);/.test(mjs));
+  ok('openForm (Edit photo) passes onClose = clear the "editing this photo" collab cursor — previously this only ran on the two [data-close] buttons\' own re-wire (removed), leaving the cursor stuck broadcasting on a backdrop-click dismissal',
+     /var m = openModal\(html, 560, function \(\) \{ broadcastCollabSel\(null\); \}\);/.test(mjs) &&
+     // the old, backdrop-blind [data-close] re-wire must actually be gone,
+     // not just superseded-but-left-behind duplicating the cleanup
+     !/Clear the "editing this photo" cursor on every close path \(× \/ Cancel\)\./.test(mjs));
+  ok('openMarkupEditor passes onClose = remove the window resize listener — same fix, same reasoning; its own old [data-close] re-wire is likewise gone rather than left duplicating the cleanup',
+     /var m = openModal\(html, 900, function \(\) \{ window\.removeEventListener\('resize', sizeCanvas\); \}\);/.test(mjs) &&
+     !/b\.onclick = function \(\) \{ window\.removeEventListener\('resize', sizeCanvas\); m\.close\(\); \};/.test(mjs));
+  ok('the markup editor\'s Save button no longer needs its own removeEventListener either — m.close() already runs onClose',
+     /\$\('pp-mk-save'\)\.onclick = function \(\) \{\s*m\.close\(\);\s*if \(onSave\) onSave\(objs\);\s*\};/.test(mjs));
+  ok('every OTHER openModal call in this file still passes only (html, width) — onClose is opt-in, so nothing else in the file silently changed behaviour',
+     (mjs.match(/openModal\(/g) || []).length >= 8 &&
+     (mjs.match(/openModal\(html, \d+\);/g) || []).length >= 6);
+
+  // --- the toolbar-leak fix ---------------------------------------------------
+  ok('_leavePhotosScreen clears the selection state',
+     /_leavePhotosScreen: function \(\) \{\s*selected = \{\};/.test(mjs));
+  ok('_leavePhotosScreen is DELIBERATELY NOT a call to the full syncChrome() — that function\'s own `has` branch for pp-add\/pp-sep-photos\/pp-refresh would re-show them the instant the selection is cleared, undoing index.html\'s own show(PHOTO_TOOLS, false) for the screen being left',
+     (function () {
+       const m = /_leavePhotosScreen: function \(\) \{([\s\S]*?)\n    \},/.exec(mjs);
+       return !!m && !/syncChrome\(\)/.test(m[1]);
+     })());
+  ok('_leavePhotosScreen hides all four selection-only toolbar controls by id',
+     /_leavePhotosScreen: function \(\) \{[\s\S]{0,120}pp-selcount[\s\S]{0,260}pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'\]\.forEach/.test(mjs));
+  ok('…and resets the (still-mounted, merely hidden) grid\'s own checkbox\/highlight residue, so a returning planner never sees stale checked boxes the cleared toolbar already disagrees with',
+     /Array\.prototype\.forEach\.call\(host\.querySelectorAll\('\[data-sel\]'\), function \(cb\) \{\s*cb\.checked = false;/.test(mjs) &&
+     /card\.classList\.remove\('pp-selrow'\)/.test(mjs) &&
+     /var selAll = host\.querySelector\('#pp-selall'\);\s*if \(selAll\) selAll\.checked = false;/.test(mjs));
+
+  // Genuine execution: with rows/selected pristine, this must be a safe,
+  // silent no-op (no throw) whether or not #pp-view/the toolbar ids exist —
+  // it's called on every non-Photos screen entry, including before the
+  // module's own load() has ever populated the grid.
+  (function () {
+    let threw = null;
+    try { PP._leavePhotosScreen(); } catch (e) { threw = e; }
+    ok('_leavePhotosScreen runs cleanly with an empty/pristine gallery (called on every tab switch, not just after a real selection)', threw === null, threw && threw.message);
+    ok('…and actually leaves the four selection buttons hidden afterward',
+       ['pp-selcount', 'pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'].every((id) => ctx.document.getElementById(id).style.display === 'none'));
+  })();
+
+  ok('index.html wires the fix: setScreen calls _leavePhotosScreen() on every screen OTHER than Photos, paired with the existing _syncChrome() call on entry',
+     /if \(isPhotos\) ProgressPhotos\._syncChrome\(\);\s*else ProgressPhotos\._leavePhotosScreen\(\);/.test(html));
+  ok('…and it runs AFTER show(PHOTO_TOOLS, isPhotos) — ordering matters, since _leavePhotosScreen must never race a state that show() hasn\'t applied yet',
+     /show\(PHOTO_TOOLS, isPhotos\);[\s\S]{0,1500}else ProgressPhotos\._leavePhotosScreen\(\);/.test(html));
+
+  // --- bim.js load()'s one un-guarded await -----------------------------------
+  ok('load() no longer awaits signPlanUrls() bare — a real network failure there used to throw straight out of load() (fire-and-forget from onProject, no .catch anywhere) and permanently freeze the Plans screen on "Loading floor plans…"',
+     /try \{ await signPlanUrls\(\); \} catch \(e\) \{ planUrlCache = \{\}; \}/.test(bmjs));
+  ok('…and every OTHER await in load() is still (as it always was) individually try/caught — this fix closes the one gap rather than wrapping the whole function in one catch, which would also have swallowed the plans-fetch\'s own schema-cache handling',
+     (bmjs.match(/await load\(\)|async function load\(\)[\s\S]{0,900}?\n  \}/)) &&
+     (function () {
+       const m = /async function load\(\) \{([\s\S]*?)\n  \}\n/.exec(bmjs);
+       if (!m) return false;
+       const body = m[1];
+       // every top-level await line in load() is either the try/catch'd
+       // plans fetch, the now-fixed signPlanUrls, or delegates to a
+       // function (loadAllPins/loadRegistrations/loadPins) that is ITSELF
+       // try/caught internally — never a second bare await slipping in.
+       return /try \{\s*plans = await PDb\.selectAll/.test(body) &&
+         /try \{ await signPlanUrls\(\); \} catch/.test(body) &&
+         /await loadAllPins\(\);/.test(body) && /await loadRegistrations\(\);/.test(body) && /await loadPins\(\);/.test(body);
+     })());
+
+  // Genuine execution: force createSignedUrls to REJECT (a real network
+  // failure — not a Supabase {error} response, which signPlanUrls already
+  // tolerated before this fix) and prove load() recovers instead of hanging.
+  await (async function () {
+    store.floor_plans.push({ id: 'plan-audit-1', project_id: 'DEMO01', name: 'Ground Floor', image_url: 'ground.png', level_order: 1 });
+    const realFrom = sbStub.storage.from;
+    sbStub.storage.from = () => ({
+      createSignedUrls: async () => { throw new Error('network unreachable'); },
+      createSignedUrl: realFrom().createSignedUrl,
+      upload: realFrom().upload,
+      remove: realFrom().remove,
+    });
+    let threw = null;
+    try { await BIM._load('DEMO01'); }
+    catch (e) { threw = e; }
+    finally { sbStub.storage.from = realFrom; }
+    ok('a real signed-URL network failure no longer throws out of load()', threw === null, threw && threw.message);
+    ok('…and the rest of load() still ran (the plan itself loaded fine — only its IMAGE URL failed to sign) rather than the whole screen freezing on "Loading floor plans…"',
+       BIM.hasPlans() === true);
+    const bimHost = ctx.document.getElementById('bim-view');
+    ok('…and the host was actually re-rendered past its initial loading placeholder',
+       !!bimHost && !/Loading floor plans…/.test(bimHost.innerHTML));
+  })();
+
+  // Genuine execution of the wireStageInteractions() window-listener leak
+  // fix: every load() above already exercised render() -> wireStageInteractions()
+  // at least once (there's a real plan in the store), so window mousemove/
+  // mouseup listeners already exist from those calls. Drive load() a few
+  // more times (a plan switch, a resize, any re-render all hit the same
+  // path in the real app) and prove the count does NOT grow — before this
+  // fix, EVERY one of these calls added one more permanent mousemove and
+  // one more permanent mouseup listener to `window`, none ever removed.
+  await (async function () {
+    await BIM._load('DEMO01');
+    const before = {
+      mousemove: winListeners.filter((l) => l.type === 'mousemove').length,
+      mouseup: winListeners.filter((l) => l.type === 'mouseup').length,
+    };
+    ok('exactly one window mousemove listener exists after the first render (not zero — it must actually be wired)', before.mousemove === 1);
+    ok('exactly one window mouseup listener exists after the first render', before.mouseup === 1);
+    await BIM._load('DEMO01');
+    await BIM._load('DEMO01');
+    await BIM._load('DEMO01');
+    const after = {
+      mousemove: winListeners.filter((l) => l.type === 'mousemove').length,
+      mouseup: winListeners.filter((l) => l.type === 'mouseup').length,
+    };
+    ok('…and STILL exactly one after three more loads/re-renders — before this fix each one added a fresh, never-removed pair',
+       after.mousemove === 1 && after.mouseup === 1);
+  })();
+
+  // --- pano.js H1/H2 — structural only. Genuinely driving these would need
+  // navigator.mediaDevices.getUserMedia + a global MediaRecorder + a fake
+  // <video> that fires onloadedmetadata on demand, none of which this
+  // harness stubs (nor did it before this pass — the whole recording flow
+  // has only ever been verified by reading its source, same trade-off this
+  // file already accepts for BIM's map/clustering and syncChrome's
+  // state-heavy internals). What IS checked here is exact and load-bearing:
+  // the precise guard shape that turns a silent freeze/orphan into a
+  // recoverable, user-visible failure.
+  ok('H1: MediaRecorder construction/wiring/start() is now wrapped in try/catch — a codec failure used to reject the async onclick handler with nobody awaiting it, leaving the button stuck on "Starting camera…" forever with no error shown',
+     /try \{\s*var mime = MediaRecorder\.isTypeSupported/.test(pnjs) &&
+     /recorder\.start\(\);\s*\} catch \(e\) \{\s*recorder = null;\s*btn\.textContent = 'Start recording';\s*UI\.toast\('Could not start recording: '/.test(pnjs));
+  ok('H1: the failure path resets the button text AND bails out (return) rather than falling through to mark the (nonexistent) recording as started',
+     /UI\.toast\('Could not start recording: ' \+ \(e\.message \|\| e\) \+ ' — you can upload a video instead\.', 'error'\);\s*return;\s*\}\s*btn\.textContent = 'Stop recording';/.test(pnjs));
+  ok('H2: source/combo/date are ALL read into local variables before the FIRST await, not re-looked-up mid-pipeline once the modal\'s DOM may already be gone',
+     /var combo = combosByKey\[\$\('pano-c-loc'\)\.value\] \|\| null;\s*var date = \$\('pano-c-date'\)\.value[\s\S]{0,120};\s*var source = \$\('pano-c-source'\)\.value;\s*var uploadedPath = null;\s*try \{/.test(pnjs));
+  ok('H2: `cancelled` is now re-checked after EVERY major async stage (extract/OpenCV/stitch/toBlob/upload), not only once at function entry',
+     (pnjs.match(/if \(cancelled\) return;/g) || []).length >= 5);
+  ok('H2: a cancellation detected right after the upload succeeds removes the now-orphaned object from Storage instead of leaving it there forever with no DB row ever pointing at it',
+     /uploadedPath = path;\s*if \(cancelled\) \{[\s\S]{0,320}remove\(\[uploadedPath\]\);[\s\S]{0,40}return;\s*\}/.test(pnjs));
+  ok('H2: the catch block no longer reports a cancellation as an error toast — a user who successfully cancelled must not see "Could not build the panorama"',
+     /catch \(e\) \{\s*\/\/ A cancellation is not a failure[\s\S]{0,150}if \(cancelled\) \{ if \(uploadedPath\) \{ try \{ await sb\(\)\.storage\.from\(BUCKET\)\.remove\(\[uploadedPath\]\); \} catch \(e2\) \{\} \} return; \}/.test(pnjs));
+
+  // --- recon.js H3 (structural — same reasoning as pano.js's, above) ---------
+  ok('H3: recon.js\'s request form gained the same cancellation guard pano.js\'s capture modal already has (it had NONE before this fix)',
+     /var cancelled = false;\s*var closeOrig = m\.close;\s*Array\.prototype\.forEach\.call\(m\.el\.querySelectorAll\('\[data-close\]'\), function \(b\) \{\s*b\.onclick = function \(\) \{ cancelled = true; closeOrig\(\); \};/.test(rcjs));
+  ok('H3: location\/source\/note are read into local variables BEFORE the upload await, not re-looked-up afterward',
+     /var combo = combosByKey\[\$\('recon-c-loc'\)\.value\] \|\| null;\s*var videoSource = \$\('recon-c-source'\)\.value;\s*var note = \$\('recon-c-note'\)\.value\.trim\(\) \|\| null;\s*var uploadedPath = null;/.test(rcjs));
+  ok('H3: a cancellation caught right after the upload removes the now-orphaned video from Storage before the request row is ever inserted',
+     /uploadedPath = path;\s*if \(cancelled\) \{\s*try \{ await sb\(\)\.storage\.from\(BUCKET\)\.remove\(\[uploadedPath\]\); \} catch \(e2\) \{\}\s*return;\s*\}/.test(rcjs));
+
+  // --- pano.js: openModal gained an onClose run on every dismissal path,
+  // and openViewer's single-panorama WebGL viewer now uses it. Structural
+  // only — this harness's DOM stub's querySelectorAll always returns []
+  // (confirmed elsewhere in this file), so it fundamentally cannot drive a
+  // click on markup assigned via innerHTML; there is no faithful way to
+  // simulate "the backdrop was clicked" without rebuilding a real DOM here.
+  ok('openModal accepts an onClose callback, disables UI.modal\'s OWN backdrop listener (which bypasses a later m.close reassignment — the bug this mirrors from module.js\'s forms), and installs its own that runs onClose before the real close',
+     /function openModal\(html, width, onClose\) \{\s*var m = UI\.modal\(html, \{ noBackdropClose: true \}\);/.test(pnjs) &&
+     /function close\(\) \{ if \(onClose\) \{ try \{ onClose\(\); \} catch \(e\) \{\} \} m\.close\(\); \}/.test(pnjs));
+  ok('…both dismissal paths — the [data-close] buttons AND a genuine backdrop click (target === the overlay itself, not a descendant) — route through the SAME close(), so they can never disagree about running cleanup',
+     /b\.onclick = close;\s*\}\);\s*m\.el\.addEventListener\('click', function \(e\) \{ if \(e\.target === m\.el\) close\(\); \}\);/.test(pnjs));
+  ok('openViewer captures mountCylinderViewer\'s return value (it used to be discarded outright) and passes a dispose callback as onClose — a real WebGL context can no longer leak on every single-panorama view',
+     /var viewer = null;\s*var m = openModal\(html, 900, function \(\) \{ if \(viewer\) viewer\.dispose\(\); \}\);/.test(pnjs) &&
+     /viewer = mountCylinderViewer\(canvas, u\);/.test(pnjs));
+  ok('mountCylinderViewer\'s own dispose really does release the renderer\'s WebGL context (unchanged by this fix — confirming the handle openViewer now keeps a reference to is the right one)',
+     /dispose: function \(\) \{ try \{ renderer\.dispose\(\); \} catch \(e\) \{\} \}/.test(pnjs));
+
+  // --- bim.js OpenCV cv.Mat leaks — structural only. Genuinely proving this
+  // needs a fake `cv` global tracking live/deleted WASM Mat handles across
+  // imread/matFromArray/findHomography/warpPerspective, which is a bigger
+  // simulation than this specific mechanical try/finally wrap justifies —
+  // same proportionality call as pano.js's H1/H2 above. What's checked here
+  // is exact: each Mat is declared OUTSIDE the try (so `var` hoisting keeps
+  // it safely `undefined`, not a ReferenceError, if its own creation line
+  // never ran) and deleted, conditionally, in a finally that runs whether
+  // the block throws or not.
+  ok('paintActualView: src/dst/M are declared before the try and deleted in a finally, so a warpPerspective/imshow throw can no longer skip cleanup',
+     /var src, dst, M;\s*try \{\s*src = cv\.imread\(srcCanvas\);\s*dst = new cv\.Mat\(\);/.test(bmjs) &&
+     /\} finally \{\s*if \(src\) src\.delete\(\);\s*if \(dst\) dst\.delete\(\);\s*if \(M\) M\.delete\(\);\s*\}/.test(bmjs));
+  ok('registration save: srcMat/dstMat/H are likewise cleaned up in a finally — H.empty() is a real cv.Mat needing .delete() even on the "not enough spread" friendly-error path, which used to throw before any of the three were ever deleted',
+     /var srcMat, dstMat, H, hArr;\s*try \{/.test(bmjs) &&
+     /if \(H\.empty\(\)\) throw new Error\('Could not compute a transform from these points[\s\S]{0,40}\);\s*hArr = \[\];/.test(bmjs) &&
+     /\} finally \{\s*if \(srcMat\) srcMat\.delete\(\);\s*if \(dstMat\) dstMat\.delete\(\);\s*if \(H\) H\.delete\(\);\s*\}/.test(bmjs));
+
+  // --- recon.js M5 — genuine execution (order-of-operations race) -----------
+  // The bug: the storage remove() ran BEFORE the DB delete's own
+  // .eq('status','pending_approval') guard was even checked, so a request a
+  // concurrent admin had *just* approved would have its video deleted out
+  // from under the now-accepted job, while the delete matched 0 rows (no
+  // error — Supabase reports that as success) and the UI still claimed
+  // "Request retracted" as if it had worked.
+  await (async function () {
+    let removed = [];
+    const realFrom = sbStub.storage.from;
+    sbStub.storage.from = () => ({
+      createSignedUrls: async (paths) => ({ data: paths.map((p) => ({ path: p, signedUrl: 'signed://' + p })), error: null }),
+      createSignedUrl: async (p) => ({ data: { signedUrl: 'signed://' + p }, error: null }),
+      upload: async (p) => ({ data: { path: p }, error: null }),
+      remove: async (paths) => { removed.push(...paths); return { error: null }; },
+    });
+
+    // Scenario 1: genuinely still pending — the ordinary, successful case.
+    const r1 = { id: nid('reconstruction_requests'), project_id: 'DEMO01', status: 'pending_approval', video_url: 'vid-1.mp4' };
+    store.reconstruction_requests.push(r1);
+    await RECON._retractRequest(r1);
+    ok('M5 (still pending): the row is genuinely deleted', !store.reconstruction_requests.some((r) => r.id === r1.id));
+    ok('M5 (still pending): its video IS removed from Storage — the normal, safe case', removed.includes('vid-1.mp4'));
+    eq('M5 (still pending): toasts real success', ctx.__toasts[ctx.__toasts.length - 1], ['ok', 'Request retracted']);
+
+    // Scenario 2: a concurrent admin has ALREADY approved it (the race) — the
+    // .eq('status','pending_approval') guard on the delete must now match
+    // nothing, and the video must survive because the accepted job needs it.
+    removed = [];
+    const r2 = { id: nid('reconstruction_requests'), project_id: 'DEMO01', status: 'approved', video_url: 'vid-2.mp4' };
+    store.reconstruction_requests.push(r2);
+    await RECON._retractRequest(r2);
+    sbStub.storage.from = realFrom;
+    ok('M5 (raced — already approved): the delete matches nothing, so the row SURVIVES', store.reconstruction_requests.some((r) => r.id === r2.id));
+    ok('M5 (raced — already approved): its video is NEVER removed — the fix\'s whole point', !removed.includes('vid-2.mp4'));
+    eq('M5 (raced — already approved): reports the truth (could not retract), never the false "Request retracted"',
+       ctx.__toasts[ctx.__toasts.length - 1], ['warn', 'This request could not be retracted — it may have just been approved']);
+    store.reconstruction_requests = store.reconstruction_requests.filter((r) => r.id !== r2.id);
+  })();
+
+  // --- ppr.js: merge-wizard orphan-on-slide-copy-failure --------------------
+  ok('openMergeWizard\'s slide-copy failure now recovers the SAME way openCopyWizard.finish()\'s identical failure already does — close the wizard, reload, and open the (slide-less) new presentation directly, instead of leaving an invisible orphan behind a still-open wizard that would create ANOTHER one on retry',
+     /if \(sres\.error\) \{[\s\S]{0,850}m\.close\(\); await load\(\); openPpr\(newId\); return;\s*\}/.test(pjs));
+  ok('…the fix sits inside openMergeWizard specifically (not just anywhere reusing this phrase — cross-checked against the failure message it wraps)',
+     (function () {
+       const i = pjs.indexOf('function openMergeWizard(');
+       const j = pjs.indexOf('function openBatchDownloadChoice(');
+       const body = pjs.slice(i, j);
+       return /Presentation created, but copying slides failed:/.test(body) &&
+         /m\.close\(\); await load\(\); openPpr\(newId\); return;/.test(body);
+     })());
+
+  // --- ppr.js: stale preview after archiving/filtering out the current selId -
+  ok('renderPreview\'s single-selection path now re-validates selId against visiblePprs() before using it — the same scoping visibleSelectedPprIds() already gave the combined (2+) path',
+     /if \(selId && !visiblePprs\(\)\.some\(function \(p\) \{ return p\.id === selId; \}\)\) selId = null;/.test(pjs));
+
+  // Genuine execution via the save/restore hook (same convention as
+  // _eligiblePhotos): drives the REAL renderPreview() against an injected
+  // presentation/filter/selId combination.
+  (function () {
+    const pAct = { id: 'ppr-active', archived: false, ppr_date: '2026-01-01' };
+    const pArc = { id: 'ppr-gone', archived: true, ppr_date: '2026-02-01' };
+    const slidesMap = {
+      'ppr-active': [{ id: 's1', ppr_id: 'ppr-active', slide_no: 1, after_photo_id: null, before_photo_id: null }],
+      'ppr-gone': [{ id: 's2', ppr_id: 'ppr-gone', slide_no: 1, after_photo_id: null, before_photo_id: null }],
+    };
+    let r = PPR._renderPreviewWithState([pAct, pArc], { archived: false }, 'ppr-active', slidesMap);
+    ok('selId pointing at a VISIBLE presentation is left alone', r.selIdAfter === 'ppr-active');
+    ok('…and its slides render (the ordinary case still works)', /ppr-thumbwrap/.test(r.bodyHtml));
+
+    r = PPR._renderPreviewWithState([pAct, pArc], { archived: false }, 'ppr-gone', slidesMap);
+    ok('selId pointing at a presentation the CURRENT filter no longer shows (here: it got archived while filters.archived stayed false) is cleared to null — this is the exact bug: without the fix this stayed \'ppr-gone\' and kept rendering its slide thumbnails',
+       r.selIdAfter === null);
+    ok('…and the pane falls back to the "select a presentation" hint rather than silently keeping the stale thumbnails on screen',
+       /Select a presentation to preview its slides\./.test(r.bodyHtml) && !/ppr-thumbwrap/.test(r.bodyHtml));
+
+    r = PPR._renderPreviewWithState([pAct], {}, 'ppr-deleted-entirely', slidesMap);
+    ok('the same self-correction applies to a selId that no longer exists in `pprs` at all (a hard delete), not only an archived-but-still-present row',
+       r.selIdAfter === null && /Select a presentation to preview its slides\./.test(r.bodyHtml));
+  })();
+
+  // --- module.css: the missing .pp-muted rule + two real WCAG AA failures ---
+  const cssFile = fs.readFileSync(here('module.css'), 'utf8');
+  ok('.pp-muted is DEFINED now (used in module.js/ppr.js but had no rule anywhere in this file at all — rendered as plain unstyled ink)',
+     /\.pp-muted \{ color: var\(--pd-muted\); \}/.test(cssFile));
+
+  // Genuine execution: compute the REAL contrast ratio from the actual CSS
+  // declaration (parsed, not assumed) — the same math WCAG itself uses
+  // (relative luminance -> (L1+0.05)/(L2+0.05)), against the codebase's own
+  // documented brand-red hex. Confirms both the OLD value genuinely fails
+  // and the NEW one genuinely passes, rather than trusting the percentage
+  // in the CSS was chosen correctly by eye.
+  (function () {
+    function srgbToLin(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+    function relLum([r, g, b]) { return 0.2126 * srgbToLin(r) + 0.7152 * srgbToLin(g) + 0.0722 * srgbToLin(b); }
+    function contrast(a, b) {
+      const l1 = relLum(a), l2 = relLum(b);
+      const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+      return (hi + 0.05) / (lo + 0.05);
+    }
+    const RED = [0xEE, 0x31, 0x24]; // assets/css/dashboard.css's --pd-red, fixed across both themes
+    const BLACK = [0, 0, 0], WHITE = [255, 255, 255];
+    function mix(pct) { return RED.map((v, i) => Math.round(v * pct / 100 + BLACK[i] * (1 - pct / 100))); }
+
+    ok('white text on the OLD plain var(--pd-red) genuinely fails WCAG AA at this size (< 4.5:1) — confirming the finding, not just asserting a fix exists',
+       contrast(WHITE, RED) < 4.5);
+
+    ['ppr-tmpl-locorder', 'ppr-sortno'].forEach(function (cls) {
+      const re = new RegExp('\\.' + cls + ' \\{[\\s\\S]*?background: color-mix\\(in srgb, var\\(--pd-red\\) (\\d+)%, black\\);');
+      const m = re.exec(cssFile);
+      ok(cls + ': now uses color-mix(in srgb, var(--pd-red) N%, black) rather than the plain fill', !!m);
+      if (m) {
+        const pct = +m[1];
+        ok(cls + ': the ACTUAL darkened colour genuinely passes WCAG AA with white text (>= 4.5:1) — computed from the real percentage in the file, not assumed',
+           contrast(WHITE, mix(pct)) >= 4.5);
+      }
+    });
+  })();
+
+  // --- Batch 3: small cleanup items — dead code, escaping, wording, aria ----
+  console.log('\n[36] Batch 3 cleanup — dead code, escaping, wording, accessibility, mobile touch targets');
+
+  ok('bim.js: the dead #bim-plan-select binding in wire() (element does not exist at init() time — wirePlan() has the real, working one) is gone rather than left as inert dead code',
+     !/function wire\(\) \{[\s\S]{0,300}bim-plan-select[\s\S]{0,20}onchange/.test(bmjs));
+  ok('…wirePlan() still has the one real, working binding (nothing was lost, only the dead duplicate)',
+     /function wirePlan\(\) \{\s*if \(\$\('bim-plan-select'\)\) \$\('bim-plan-select'\)\.onchange = function \(\) \{/.test(bmjs));
+
+  ok('wireMediaTypeSelector: capture="environment" is preserved in Photo mode and only removed in Video mode (it used to be stripped unconditionally on every call, including the very first — so it never actually took effect even in Photo mode)',
+     /if \(cur === 'video'\) fileInput\.removeAttribute\('capture'\);\s*else fileInput\.setAttribute\('capture', 'environment'\);/.test(mjs));
+  ok('…and the unused `lbl` variable (looked up, never referenced) is gone',
+     !/var lbl = document\.querySelector\('label\[for="' \+ idPrefix \+ '-files"\]'\);/.test(mjs));
+
+  ok('the offline "queued" toast now names the real media kind, matching the "uploaded" toast right above it (it used to hardcode "photo" even for a batch of videos)',
+     /if \(queued\) UI\.toast\(queued \+ ' ' \+ \(kind === 'video' \? 'video' : 'photo'\) \+ \(queued === 1 \? '' : 's'\) \+ ' queued/.test(mjs));
+
+  ok('openAddToPresentation escapes p.id in the option value, not just the visible label',
+     /'<option value="' \+ Fmt\.esc\(p\.id\) \+ '">'/.test(mjs));
+
+  ok('both Gallery selection checkboxes (List row + Gallery card) now carry an aria-label naming the photo, not just a bare unlabelled checkbox',
+     (mjs.match(/aria-label="Select ' \+\s*Fmt\.esc\(r\.description \|\| 'this photo'\) \+ '"/g) || []).length >= 2);
+  ok('Plan view cluster markers now carry an aria-label describing what they are — previously the only accessible content was the bare pin count',
+     /aria-label="' \+ c\.pins\.length \+ ' item' \+ \(c\.pins\.length === 1 \? '' : 's'\) \+ ' at this location/.test(mjs));
+
+  ok('module.css: the four confirmed-orphaned selectors are gone (.pp-thumb-wrap, .pp-cardphoto-wrap, .ppr-pickinfo, .ppr-pickthumb — zero references anywhere in the JS/HTML before this pass)',
+     !/\.pp-thumb-wrap \{/.test(cssFile) && !/\.pp-cardphoto-wrap \{/.test(cssFile) &&
+     !/\.ppr-pickinfo \{/.test(cssFile) && !/\.ppr-pickthumb \{/.test(cssFile));
+  ok('module.css: .pp-plancluster and .pp-stackthumb-sm gain a phone-width touch-target bump (neither had one at all before — every dimension was under 44px on a touch device)',
+     /@media \(max-width: 700px\) \{[\s\S]{0,400}\.pp-plancluster \{ min-width: 40px; height: 40px; \}\s*\.pp-stackthumb-sm \{ width: 40px; height: 46px; \}/.test(cssFile));
+
+  ok('ppr.js: slides() no longer re-sorts on every call — slidesOf[k] is already kept sorted at both of its two write sites (load()\'s explicit sort, and the slide-sorter\'s renumber-to-match-array-order before assigning), so the per-call .sort() was pure wasted work',
+     /function slides\(pprId\) \{ return \(slidesOf\[pprId\] \|\| \[\]\)\.slice\(\); \}/.test(pjs) &&
+     !/function slides\(pprId\) \{ return \(slidesOf\[pprId\] \|\| \[\]\)\.slice\(\)\.sort/.test(pjs));
+  ok('ppr.js: reloadPhotos() no longer fails completely silently — its only caller is the slide editor\'s "+ Add photo" flow, where a failed re-read used to leave a just-uploaded photo invisibly unpickable with no explanation',
+     /async function reloadPhotos\(\) \{[\s\S]{0,700}UI\.toast\('Could not refresh the photo library: ' \+ \(\(e && e\.message\) \|\| e\), 'error'\);\s*return;\s*\}/.test(pjs));
+
+  ok('pano.js: seekTo() times out (3s) and resolves anyway rather than hanging forever — a malformed video or the "already at that time" seeked-never-fires browser quirk used to permanently stall the entire extractFrames() loop with no error at all',
+     /var timer = setTimeout\(finish, 3000\);/.test(pnjs) &&
+     /function finish\(\) \{\s*if \(done\) return;\s*done = true;\s*video\.removeEventListener\('seeked', onSeeked\);\s*clearTimeout\(timer\);\s*resolve\(\);\s*\}/.test(pnjs));
+  ok('pano.js: recording and file-upload are now mutually exclusive in the SAME capture modal (both controls are visible at once; nothing stopped a user from doing both, letting two processVideo() runs fight over one status element or create two panorama rows from one session)',
+     /var processing = false;/.test(pnjs) &&
+     /if \(processing\) \{ UI\.toast\('An earlier capture is still processing — wait for it to finish first', 'warn'\); return; \}/.test(pnjs) &&
+     /if \(recorder\) \{ UI\.toast\('Stop the current recording first', 'warn'\); this\.value = ''; return; \}/.test(pnjs));
+  ok('…processing is set at processVideo\'s entry and cleared in a finally — guaranteed to reset on every exit path (success, error, or an early cancellation return) so a single stuck path can never permanently lock out every future attempt',
+     /async function processVideo\(blob\) \{\s*if \(cancelled\) return;\s*processing = true;/.test(pnjs) &&
+     /\} finally \{[\s\S]{0,340}processing = false;\s*\}/.test(pnjs));
+
+  // --- pano.js: the per-frame OpenCV Mat leaks in the stitching loop ---------
+  // ⚠️ Worse than the bim.js Mat leaks fixed earlier: homographyBetween's two
+  // detectAndCompute() mask args were anonymous `new cv.Mat()` literals with
+  // NO variable ever pointing at them, so they leaked on EVERY call —
+  // success or failure, no exception needed. This function also had no
+  // try/finally at all, unlike stitchFrames' own outer-loop prevMat/curMat
+  // handling.
+  ok('homographyBetween: the two detectAndCompute() mask arguments are now named variables (mask1/mask2), not untrackable anonymous cv.Mat() literals that leaked unconditionally on every single call',
+     /mask1 = new cv\.Mat\(\); mask2 = new cv\.Mat\(\);/.test(pnjs) &&
+     /orb\.detectAndCompute\(g1, mask1, kp1, des1\);/.test(pnjs) &&
+     /orb\.detectAndCompute\(g2, mask2, kp2, des2\);/.test(pnjs) &&
+     !/new cv\.Mat\(\), kp1, des1\)/.test(pnjs));
+  ok('homographyBetween: the whole body is now wrapped in try/finally — a throw from ANY intermediate cv call (cvtColor/detectAndCompute/knnMatch/findHomography) used to skip cleanup of every Mat already created',
+     /function homographyBetween\(prevMat, curMat\) \{\s*var orb, kp1, kp2, des1, des2, g1, g2, mask1, mask2;/.test(pnjs) &&
+     /\} finally \{[\s\S]{0,400}\[orb, kp1, kp2, des1, des2, g1, g2, mask1, mask2, bf, knn, srcMat, dstMat, mask\]\.forEach\(function \(x\) \{\s*if \(x\) x\.delete\(\);\s*\}\);/.test(pnjs));
+  ok('…and the returned H (when a real homography was found) is deliberately EXCLUDED from that cleanup list — it is handed to the caller, who owns and deletes it (stitchFrames composes it then deletes it, or discards it on a poor-match frame); double-deleting it here would crash the very next call that tries to use it',
+     (function () {
+       const m = /function homographyBetween\(prevMat, curMat\) \{([\s\S]*?)\n  \}/.exec(pnjs);
+       return !!m && !/\[.*\bH\b.*\]\.forEach/.test(m[1]);
+     })());
+
+  ok('stitchFrames: srcMat/dstMat/Hmat (the per-frame warpPerspective inputs/output) are now wrapped in try/finally too — the same fix, same reasoning, for the loop\'s OTHER Mat trio',
+     /var srcMat, dstMat, Hmat;\s*try \{\s*srcMat = cv\.imread\(frameCanvases\[i\]\);/.test(pnjs) &&
+     /\} finally \{\s*if \(srcMat\) srcMat\.delete\(\);\s*if \(dstMat\) dstMat\.delete\(\);\s*if \(Hmat\) Hmat\.delete\(\);\s*\}/.test(pnjs));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

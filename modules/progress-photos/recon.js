@@ -183,23 +183,46 @@ window.RECON = (function () {
         '<button class="pd-btn pd-btn-primary" id="recon-c-save">Submit for approval</button></div>';
     var m = openModal(html, 560);
     var combosByKey = {}; combos.forEach(function (c) { combosByKey[c.key] = c; });
+    // ⚠️ Audit fix (H3, same class as pano.js's own H2): this modal had ZERO
+    // cancellation-awareness — Cancel/× was left on openModal's default
+    // m.close, which removes the modal's DOM immediately. The upload below
+    // can take a while (a 3D-reconstruction walkthrough is a longer video
+    // than a 360° spin), and a cancel mid-upload used to crash on a LATE
+    // $('recon-c-loc'/'recon-c-source'/'recon-c-note').value re-lookup —
+    // all three are read up front now — while also leaving the just-uploaded
+    // video permanently orphaned in Storage (the crash happened before the
+    // T_REQ insert that would reference it) and showing the user a confusing
+    // "Could not submit" error for a request they had already cancelled.
+    var cancelled = false;
+    var closeOrig = m.close;
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
+      b.onclick = function () { cancelled = true; closeOrig(); };
+    });
 
     $('recon-c-save').onclick = async function () {
       var f = $('recon-c-file').files && $('recon-c-file').files[0];
       if (!f) { UI.toast('Choose a video file', 'warn'); return; }
       var status = $('recon-c-status');
+      var combo = combosByKey[$('recon-c-loc').value] || null;
+      var videoSource = $('recon-c-source').value;
+      var note = $('recon-c-note').value.trim() || null;
+      var uploadedPath = null;
       this.disabled = true;
       try {
         status.textContent = 'Uploading video…';
         var path = pid + '/reconstructions/pending/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '_' + f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
         var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || 'video/mp4' });
         if (up.error) throw up.error;
-        var combo = combosByKey[$('recon-c-loc').value] || null;
+        uploadedPath = path;
+        if (cancelled) {
+          try { await sb().storage.from(BUCKET).remove([uploadedPath]); } catch (e2) {}
+          return;
+        }
         var row = {
           project_id: pid, requested_by: uid, status: 'pending_approval',
           location_values: combo ? combo.values : {}, location: combo ? combo.label : null,
-          video_url: path, video_source: $('recon-c-source').value,
-          requested_note: $('recon-c-note').value.trim() || null
+          video_url: path, video_source: videoSource,
+          requested_note: note
         };
         var ires = await sb().from(T_REQ).insert(row);
         if (ires.error) throw ires.error;
@@ -207,6 +230,7 @@ window.RECON = (function () {
         UI.toast('Request submitted — an admin will review it before processing begins', 'ok');
         await load();
       } catch (e) {
+        if (cancelled) { if (uploadedPath) { try { await sb().storage.from(BUCKET).remove([uploadedPath]); } catch (e2) {} } return; }
         status.textContent = '';
         UI.toast('Could not submit the request: ' + (e.message || e), 'error');
         this.disabled = false;
@@ -265,9 +289,26 @@ window.RECON = (function () {
 
   async function retractRequest(r) {
     if (!confirm('Retract this request? It has not been approved yet.')) return;
-    if (r.video_url) await sb().storage.from(BUCKET).remove([r.video_url]);
-    var res = await sb().from(T_REQ).delete().eq('id', r.id).eq('status', 'pending_approval');
+    // ⚠️ Audit fix (M5): the storage remove() used to run FIRST,
+    // unconditionally — so a concurrent admin approval landing between the
+    // confirm() dialog and this call could have its video deleted out from
+    // under an already-approved (or already-processing) job, while the DB
+    // delete's OWN .eq('status','pending_approval') guard below would then
+    // correctly match zero rows and silently no-op — Supabase reports that
+    // as success (data: [], error: null), so this used to report "Request
+    // retracted" regardless, even though nothing was actually retracted and
+    // the video the accepted job needs is now gone. The DB delete runs
+    // FIRST now, with .select() so the affected row(s) are visible, and the
+    // storage object is only removed once we've confirmed a still-pending
+    // row was genuinely deleted.
+    var res = await sb().from(T_REQ).delete().eq('id', r.id).eq('status', 'pending_approval').select();
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (!res.data || !res.data.length) {
+      UI.toast('This request could not be retracted — it may have just been approved', 'warn');
+      await load();
+      return;
+    }
+    if (r.video_url) { try { await sb().storage.from(BUCKET).remove([r.video_url]); } catch (e) {} }
     UI.toast('Request retracted', 'ok');
     await load();
   }
@@ -371,6 +412,11 @@ window.RECON = (function () {
     },
     // Batch C (2026-08-29): the unified Gallery feed needs this module's
     // requests loaded before it can include any done reconstructions.
-    ensureLoaded: async function () { if (!requests.length) await load(); }
+    ensureLoaded: async function () { if (!requests.length) await load(); },
+    // Test-only hook (same convention as bim.js's _load) — retractRequest is
+    // otherwise unreachable from outside its row-menu click handler, and the
+    // audit fix (M5, a delete/storage-remove ordering race) is worth
+    // genuinely executing rather than only reading as text.
+    _retractRequest: function (r) { return retractRequest(r); }
   };
 })();

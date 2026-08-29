@@ -39,12 +39,26 @@ window.PANO = (function () {
   function $(id) { return document.getElementById(id); }
   function esc(s) { return Fmt.esc(s); }
 
-  function openModal(html, width) {
-    var m = UI.modal(html);
+  // ⚠️ Audit fix: `onClose` (optional) is run on EVERY way this modal can
+  // be dismissed — the × / Cancel [data-close] buttons AND a backdrop
+  // click. UI.modal()'s own backdrop listener closes over a PRIVATE `close`
+  // variable, not the returned `m.close` PROPERTY — so a caller reassigning
+  // `m.close` (or, as here, just wiring [data-close] to something extra)
+  // is silently bypassed on backdrop dismissal specifically. Passing
+  // {noBackdropClose:true} disables that internal listener so this
+  // function's own — which DOES route through the same `close()` used by
+  // [data-close] — is the only one active. Callers that don't need cleanup
+  // (most of pano.js's modals) simply omit `onClose` and get the previous
+  // behaviour unchanged.
+  function openModal(html, width, onClose) {
+    var m = UI.modal(html, { noBackdropClose: true });
     var box = m.el.querySelector('.pd-modal');
     if (box && width) box.style.maxWidth = width + 'px';
-    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) { b.onclick = m.close; });
+    function close() { if (onClose) { try { onClose(); } catch (e) {} } m.close(); }
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) { b.onclick = close; });
+    m.el.addEventListener('click', function (e) { if (e.target === m.el) close(); });
     if (window.Icons && Icons.hydrate) Icons.hydrate(m.el);
+    m.close = close;
     return m;
   }
 
@@ -174,10 +188,20 @@ window.PANO = (function () {
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pano-viewerwrap"><canvas id="pano-canvas"></canvas>' +
       '<p class="pano-viewerhint">Drag to look around</p></div>';
-    var m = openModal(html, 900);
+    // ⚠️ Audit fix: mountCylinderViewer()'s return value used to be
+    // discarded entirely — its `dispose` handle (which releases the
+    // WebGL context) was dropped, so every single-panorama view leaked a
+    // real WebGL context. Browsers cap simultaneous contexts (commonly
+    // 8-16), so opening enough panoramas without ever freeing one
+    // eventually makes every FURTHER WebGL context creation on the page —
+    // not just this viewer — silently fail. `onClose` (passed to
+    // openModal, see its own comment above) now runs `viewer.dispose()`
+    // on every dismissal path: ×, Cancel, and backdrop click alike.
+    var viewer = null;
+    var m = openModal(html, 900, function () { if (viewer) viewer.dispose(); });
     var canvas = m.el.querySelector('#pano-canvas');
     canvas.width = 820; canvas.height = 520;
-    mountCylinderViewer(canvas, u);
+    viewer = mountCylinderViewer(canvas, u);
   }
 
   // Shared by the single viewer and the compare (opacity-blend) viewer: builds
@@ -327,12 +351,15 @@ window.PANO = (function () {
             '<option value="drone">Drone (aerial)</option>' +
           '</select></div>' +
         '<div class="pano-capturearea">' +
-          '<p class="pp-hint">Stand at the location and slowly spin around while recording (optionally ' +
-          'tilt up/down once), OR upload a walkthrough video recorded earlier.</p>' +
-          '<div class="pano-camwrap"><video id="pano-cam-preview" autoplay muted playsinline hidden></video></div>' +
+          '<p class="pp-hint">Tap "Start recording" and slowly spin around (optionally tilt up/down ' +
+          'once), OR upload a walkthrough video recorded earlier.</p>' +
+          '<div class="pano-camwrap">' +
+            '<video id="pano-cam-preview" autoplay muted playsinline hidden></video>' +
+            '<div class="pano-recind" id="pano-recind" hidden><span class="pano-recdot"></span><span id="pano-rectime">0:00</span></div>' +
+          '</div>' +
           '<div class="pano-capturebtns">' +
-            '<button class="pd-btn" id="pano-c-startcam" type="button">Use camera</button>' +
-            '<button class="pd-btn" id="pano-c-record" type="button" hidden>Start recording</button>' +
+            '<button class="pd-btn pd-btn-primary" id="pano-c-record" type="button">Start recording</button>' +
+            '<button class="pd-btn" id="pano-c-switchcam" type="button" hidden>Switch camera</button>' +
             '<label class="pd-btn" for="pano-c-file">Upload video<input type="file" id="pano-c-file" accept="video/*" hidden /></label>' +
           '</div>' +
           '<p id="pano-c-status" class="pp-hint"></p>' +
@@ -342,59 +369,205 @@ window.PANO = (function () {
     var m = openModal(html, 560);
     var combosByKey = {}; combos.forEach(function (c) { combosByKey[c.key] = c; });
     var stream = null, recorder = null, chunks = [];
+    var facing = 'environment';
+    // Item 18 — "I can't take videos very easily": recording had no visible
+    // "you are recording" cue at all (only a button LABEL changed), and
+    // required TWO deliberate taps (Use camera, then Start recording) before
+    // anything happened. Both are fixed below: one button now does both
+    // (getUserMedia's permission prompt IS a valid user gesture on its own,
+    // so requesting it from "Start recording"'s own click handler works),
+    // and a pulsing dot + running timer make "recording is active" visible
+    // without reading the button text.
+    var recTimer = null, recSeconds = 0;
+    var MAX_REC_SECONDS = 90;   // a generous cap for a slow spin — auto-stops
+                                // a recording nobody remembered to stop, per
+                                // friction point "no duration guidance at all"
+    // ⚠️ Audit fix: no mutual exclusion existed between recording and
+    // uploading a file — both controls are visible in the same modal at
+    // once, so a user could start a recording, then ALSO pick an uploaded
+    // file (or vice versa) while the first was still mid-pipeline. Two
+    // concurrent processVideo() runs would fight over the SAME status text
+    // element and could create two separate panorama rows from one
+    // session. Set for the whole span of processVideo() (not just the
+    // upload path), so it also blocks starting a NEW recording while an
+    // earlier upload is still extracting/stitching/uploading.
+    var processing = false;
 
-    $('pano-c-startcam').onclick = async function () {
+    function fmtTime(s) {
+      var mm = Math.floor(s / 60), ss = s % 60;
+      return mm + ':' + (ss < 10 ? '0' : '') + ss;
+    }
+    function stopCameraStream() {
+      if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    }
+    async function startCamera() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        var v = $('pano-cam-preview'); v.hidden = false; v.srcObject = stream;
-        $('pano-c-startcam').hidden = true; $('pano-c-record').hidden = false;
-      } catch (e) { UI.toast('Could not access the camera: ' + (e.message || e), 'error'); }
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
+        var v = $('pano-cam-preview'); if (v) { v.hidden = false; v.srcObject = stream; }
+        var sw = $('pano-c-switchcam'); if (sw) sw.hidden = false;
+        return true;
+      } catch (e) {
+        // Named as its own friction point: a bare error with no next step
+        // left the planner stuck. Every camera failure now names the escape
+        // hatch that is guaranteed to work.
+        UI.toast('Could not access the camera: ' + (e.message || e) + ' — you can upload a video instead.', 'error');
+        return false;
+      }
+    }
+    function startRecTimer() {
+      recSeconds = 0;
+      var t = $('pano-rectime'); if (t) t.textContent = fmtTime(0);
+      var ind = $('pano-recind'); if (ind) ind.hidden = false;
+      recTimer = setInterval(function () {
+        recSeconds++;
+        var t2 = $('pano-rectime'); if (t2) t2.textContent = fmtTime(recSeconds);
+        if (recSeconds >= MAX_REC_SECONDS) {
+          UI.toast('Recording stopped automatically after ' + fmtTime(MAX_REC_SECONDS), 'warn');
+          $('pano-c-record').click();
+        }
+      }, 1000);
+    }
+    function stopRecTimer() {
+      if (recTimer) { clearInterval(recTimer); recTimer = null; }
+      var ind = $('pano-recind'); if (ind) ind.hidden = true;
+    }
+    $('pano-c-switchcam').onclick = async function () {
+      if (recorder) return;   // never swap cameras mid-recording
+      // ⚠️ Audit fix: no re-entrancy guard at all — a rapid double-tap
+      // (or an impatient click while getUserMedia's permission prompt is
+      // still pending) could start a SECOND stopCameraStream()/startCamera()
+      // pair before the first `await startCamera()` had assigned its own
+      // `stream`. Whichever call's assignment lands last wins, silently
+      // dropping the OTHER call's already-live MediaStream with no
+      // reference left to stop its tracks — an orphaned camera that stays
+      // on (and keeps the hardware light lit) even after this modal closes,
+      // since the close handler's stopCameraStream() only ever sees
+      // whichever stream `stream` currently points to.
+      if (this.disabled) return;
+      this.disabled = true;
+      facing = facing === 'environment' ? 'user' : 'environment';
+      stopCameraStream();
+      await startCamera();
+      this.disabled = false;
     };
-    $('pano-c-record').onclick = function () {
+    $('pano-c-record').onclick = async function () {
+      var btn = this;
       if (!recorder) {
+        if (processing) { UI.toast('An earlier capture is still processing — wait for it to finish first', 'warn'); return; }
+        if (!stream) {
+          btn.disabled = true; btn.textContent = 'Starting camera…';
+          var ok = await startCamera();
+          btn.disabled = false;
+          if (!ok) { btn.textContent = 'Start recording'; return; }
+        }
         chunks = [];
-        var mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : '';
-        recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-        recorder.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
-        recorder.onstop = function () {
-          var blob = new Blob(chunks, { type: 'video/webm' });
-          stream.getTracks().forEach(function (t) { t.stop(); });
-          processVideo(blob);
-        };
-        recorder.start();
-        $('pano-c-record').textContent = 'Stop recording';
+        // ⚠️ Audit fix (H1): construction/wiring/start() had NO try/catch —
+        // a codec or MediaRecorder-support failure here (thrown by the
+        // constructor or by .start()) rejected this async onclick handler
+        // with nobody awaiting it, so it surfaced only as a silent unhandled
+        // rejection in the console. The camera preview was already live (it
+        // succeeded above), so the button was left stuck reading "Starting
+        // camera…" forever with no error shown and no way to tell recording
+        // never actually armed.
+        try {
+          var mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : '';
+          recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+          recorder.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
+          recorder.onstop = function () {
+            var blob = new Blob(chunks, { type: 'video/webm' });
+            stopCameraStream();
+            processVideo(blob);
+          };
+          recorder.start();
+        } catch (e) {
+          recorder = null;
+          btn.textContent = 'Start recording';
+          UI.toast('Could not start recording: ' + (e.message || e) + ' — you can upload a video instead.', 'error');
+          return;
+        }
+        btn.textContent = 'Stop recording'; btn.classList.add('is-active');
+        startRecTimer();
       } else {
         recorder.stop(); recorder = null;
-        $('pano-c-record').textContent = 'Start recording';
+        btn.textContent = 'Start recording'; btn.classList.remove('is-active');
+        stopRecTimer();
       }
     };
     $('pano-c-file').onchange = function () {
+      if (recorder) { UI.toast('Stop the current recording first', 'warn'); this.value = ''; return; }
+      if (processing) { UI.toast('An earlier capture is still processing — wait for it to finish first', 'warn'); this.value = ''; return; }
       var f = this.files && this.files[0]; if (f) processVideo(f);
     };
+    // Cancel/× must stop a live camera stream + recorder + timer, or the
+    // camera silently keeps running after the planner walks away from a
+    // capture they abandoned — openModal binds these to the ORIGINAL m.close
+    // before any of the above existed, so they're re-wired here. `cancelled`
+    // guards processVideo: forcing recorder.stop() here still fires its
+    // async onstop -> processVideo(blob) AFTER the modal (and its #pano-c-*
+    // elements) are already gone, which would otherwise throw reaching for
+    // a null `status` element mid-write.
+    var cancelled = false;
+    var closeOrig = m.close;
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
+      b.onclick = function () {
+        cancelled = true;
+        if (recorder) { try { recorder.stop(); } catch (e) {} recorder = null; }
+        stopRecTimer(); stopCameraStream();
+        closeOrig();
+      };
+    });
 
     async function processVideo(blob) {
+      if (cancelled) return;
+      processing = true;
       var status = $('pano-c-status');
+      // ⚠️ Audit fix (H2): all THREE form reads are hoisted here, before any
+      // async work begins — `source` used to be read at the very end, after
+      // frame extraction/OpenCV/stitching/upload had all already run. Those
+      // stages can take many seconds, and Cancel/× REMOVES the modal's DOM
+      // (openModal -> UI.modal -> overlay.remove()) without aborting this
+      // in-flight pipeline (`cancelled` was only ever checked once, right
+      // here, at function entry) — so a late $('pano-c-source') resolved to
+      // null and threw, AFTER the stitched JPEG had already been uploaded to
+      // Storage, leaving it permanently orphaned (the crash happened before
+      // the DB row that would reference it was ever inserted) and showing
+      // the user a confusing "Could not build the panorama" error for
+      // something they had already successfully cancelled.
       var combo = combosByKey[$('pano-c-loc').value] || null;
       var date = $('pano-c-date').value || new Date().toISOString().slice(0, 10);
+      var source = $('pano-c-source').value;
+      var uploadedPath = null;
       try {
         status.textContent = 'Extracting frames…';
         var frames = await extractFrames(blob, FRAME_COUNT, function (i, n) { status.textContent = 'Extracting frame ' + (i + 1) + ' of ' + n + '…'; });
+        if (cancelled) return;
         if (frames.length < 3) throw new Error('Not enough distinct frames in this video to stitch.');
         status.textContent = 'Loading the vision library (first time only)…';
         await ensureOpenCV();
+        if (cancelled) return;
         status.textContent = 'Stitching…';
         var result = await stitchFrames(frames, function (i, n) { status.textContent = 'Stitching frame ' + (i + 1) + ' of ' + n + '…'; });
+        if (cancelled) return;
         status.textContent = 'Uploading…';
         var jpegBlob = await new Promise(function (res) { result.canvas.toBlob(res, 'image/jpeg', 0.9); });
+        if (cancelled) return;
         var path = pid + '/panoramas/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.jpg';
         var up = await sb().storage.from(BUCKET).upload(path, jpegBlob, { contentType: 'image/jpeg' });
         if (up.error) throw up.error;
+        uploadedPath = path;
+        if (cancelled) {
+          // The upload can't be un-awaited, but the row it would belong to
+          // can still be skipped — clean up the now-orphaned object rather
+          // than leaving it in Storage forever with nothing pointing at it.
+          try { await sb().storage.from(BUCKET).remove([uploadedPath]); } catch (e2) {}
+          return;
+        }
         var row = {
           project_id: pid, created_by: uid,
           location_values: combo ? combo.values : {}, location: combo ? combo.label : null,
           pano_url: path, frame_count: frames.length,
           stitch_quality: result.quality, taken_at: date,
-          source: $('pano-c-source').value
+          source: source
         };
         var ires = await sb().from(T_PANO).insert(row);
         if (ires.error && /column .*source.* does not exist|schema cache/i.test(ires.error.message || '')) {
@@ -409,8 +582,17 @@ window.PANO = (function () {
           result.quality === 'poor' ? 'warn' : 'ok');
         await load();
       } catch (e) {
+        // A cancellation is not a failure — nothing to report, and reporting
+        // it as one is exactly the confusing "error" the user never caused.
+        if (cancelled) { if (uploadedPath) { try { await sb().storage.from(BUCKET).remove([uploadedPath]); } catch (e2) {} } return; }
         status.textContent = '';
         UI.toast('Could not build the panorama: ' + (e.message || e), 'error');
+      } finally {
+        // Runs on every exit path — success, error, or an early `return`
+        // inside the try (cancellation) — so the record/upload mutual
+        // exclusion above can never get permanently stuck refusing every
+        // future attempt because one path forgot to clear it.
+        processing = false;
       }
     }
   }
@@ -441,9 +623,28 @@ window.PANO = (function () {
       video.onerror = function () { reject(new Error('Could not read this video file.')); };
     });
   }
+  // ⚠️ Audit fix: no timeout at all — a malformed video, or the known
+  // browser quirk where 'seeked' can fail to fire when currentTime is set
+  // to a value the video is already effectively at, left this Promise
+  // permanently unresolved. extractFrames() awaits this sequentially for
+  // every one of FRAME_COUNT frames, so one stuck seek hung the ENTIRE
+  // capture pipeline forever with no error and no way out short of closing
+  // the tab. Timing out and resolving anyway (not rejecting) is deliberate:
+  // whatever frame the video is currently showing is still a usable,
+  // approximately-correct frame — failing the whole capture over one
+  // imperfect seek would be a worse outcome than a slightly-off frame.
   function seekTo(video, t) {
     return new Promise(function (resolve) {
-      function onSeeked() { video.removeEventListener('seeked', onSeeked); resolve(); }
+      var done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        video.removeEventListener('seeked', onSeeked);
+        clearTimeout(timer);
+        resolve();
+      }
+      function onSeeked() { finish(); }
+      var timer = setTimeout(finish, 3000);
       video.addEventListener('seeked', onSeeked);
       video.currentTime = t;
     });
@@ -496,15 +697,24 @@ window.PANO = (function () {
       accumTransform = mul3(accumTransform, H.data64F ? Array.from(H.data64F) : matToArray(H));
       H.delete();
 
-      var srcMat = cv.imread(frameCanvases[i]);
-      var dstMat = new cv.Mat();
-      var Hmat = cv.matFromArray(3, 3, cv.CV_64F, accumTransform);
-      var dsize = new cv.Size(base.width, base.height);
-      cv.warpPerspective(srcMat, dstMat, Hmat, dsize, cv.INTER_LINEAR, cv.BORDER_TRANSPARENT);
-      var tmp = document.createElement('canvas'); tmp.width = base.width; tmp.height = base.height;
-      cv.imshow(tmp, dstMat);
-      bctx.drawImage(tmp, 0, 0);
-      srcMat.delete(); dstMat.delete(); Hmat.delete();
+      // ⚠️ Audit fix: srcMat/dstMat/Hmat were only ever .delete()'d on the
+      // happy path — a throw from warpPerspective/imshow (same class as
+      // bim.js's own cv.Mat fixes above) leaked all three per failed frame.
+      var srcMat, dstMat, Hmat;
+      try {
+        srcMat = cv.imread(frameCanvases[i]);
+        dstMat = new cv.Mat();
+        Hmat = cv.matFromArray(3, 3, cv.CV_64F, accumTransform);
+        var dsize = new cv.Size(base.width, base.height);
+        cv.warpPerspective(srcMat, dstMat, Hmat, dsize, cv.INTER_LINEAR, cv.BORDER_TRANSPARENT);
+        var tmp = document.createElement('canvas'); tmp.width = base.width; tmp.height = base.height;
+        cv.imshow(tmp, dstMat);
+        bctx.drawImage(tmp, 0, 0);
+      } finally {
+        if (srcMat) srcMat.delete();
+        if (dstMat) dstMat.delete();
+        if (Hmat) Hmat.delete();
+      }
       await new Promise(function (res) { setTimeout(res, 0); }); // yield so the UI can update the status line
     }
     return { canvas: base, quality: quality };
@@ -513,43 +723,64 @@ window.PANO = (function () {
   // ORB keypoints + BFMatcher(Hamming) + ratio test + RANSAC homography.
   // Returns { H: cv.Mat|null, matches: number } — H maps points in `curMat`
   // into `prevMat`'s coordinate frame.
+  // ⚠️ Audit fix: this function had NO try/finally at all, and its two
+  // detectAndCompute() mask arguments were anonymous `new cv.Mat()`
+  // literals with no variable to ever call .delete() on — a GUARANTEED
+  // leak of 2 WASM Mats on every single call, success or failure alike
+  // (9 calls per 10-frame capture = 18 leaked Mats per capture, before
+  // even considering an error path). Every other Mat here was cleaned up
+  // only at the very end, unconditionally reached — so any throw from an
+  // intermediate cv call (a corrupt/blank frame is a real possibility)
+  // skipped that cleanup entirely and leaked whichever of orb/kp1/kp2/
+  // des1/des2/g1/g2/bf/knn/srcMat/dstMat/mask had already been created.
   function homographyBetween(prevMat, curMat) {
-    var orb = new cv.ORB(800);
-    var kp1 = new cv.KeyPointVector(), kp2 = new cv.KeyPointVector();
-    var des1 = new cv.Mat(), des2 = new cv.Mat();
-    var g1 = new cv.Mat(), g2 = new cv.Mat();
-    cv.cvtColor(prevMat, g1, cv.COLOR_RGBA2GRAY);
-    cv.cvtColor(curMat, g2, cv.COLOR_RGBA2GRAY);
-    orb.detectAndCompute(g1, new cv.Mat(), kp1, des1);
-    orb.detectAndCompute(g2, new cv.Mat(), kp2, des2);
-
+    var orb, kp1, kp2, des1, des2, g1, g2, mask1, mask2;
+    var bf, knn, srcMat, dstMat, mask;
     var result = { H: null, matches: 0 };
-    if (des1.rows > 0 && des2.rows > 0) {
-      var bf = new cv.BFMatcher(cv.NORM_HAMMING, false);
-      var knn = new cv.DMatchVectorVector();
-      bf.knnMatch(des2, des1, knn, 2); // match cur -> prev
-      var good = [];
-      for (var i = 0; i < knn.size(); i++) {
-        var m = knn.get(i);
-        if (m.size() >= 2 && m.get(0).distance < 0.75 * m.get(1).distance) good.push(m.get(0));
+    try {
+      orb = new cv.ORB(800);
+      kp1 = new cv.KeyPointVector(); kp2 = new cv.KeyPointVector();
+      des1 = new cv.Mat(); des2 = new cv.Mat();
+      g1 = new cv.Mat(); g2 = new cv.Mat();
+      mask1 = new cv.Mat(); mask2 = new cv.Mat();
+      cv.cvtColor(prevMat, g1, cv.COLOR_RGBA2GRAY);
+      cv.cvtColor(curMat, g2, cv.COLOR_RGBA2GRAY);
+      orb.detectAndCompute(g1, mask1, kp1, des1);
+      orb.detectAndCompute(g2, mask2, kp2, des2);
+
+      if (des1.rows > 0 && des2.rows > 0) {
+        bf = new cv.BFMatcher(cv.NORM_HAMMING, false);
+        knn = new cv.DMatchVectorVector();
+        bf.knnMatch(des2, des1, knn, 2); // match cur -> prev
+        var good = [];
+        for (var i = 0; i < knn.size(); i++) {
+          var m = knn.get(i);
+          if (m.size() >= 2 && m.get(0).distance < 0.75 * m.get(1).distance) good.push(m.get(0));
+        }
+        if (good.length >= 4) {
+          var srcPts = [], dstPts = [];
+          good.forEach(function (mm) {
+            srcPts.push(kp2.get(mm.queryIdx).pt.x, kp2.get(mm.queryIdx).pt.y);
+            dstPts.push(kp1.get(mm.trainIdx).pt.x, kp1.get(mm.trainIdx).pt.y);
+          });
+          srcMat = cv.matFromArray(good.length, 1, cv.CV_32FC2, srcPts);
+          dstMat = cv.matFromArray(good.length, 1, cv.CV_32FC2, dstPts);
+          mask = new cv.Mat();
+          var H = cv.findHomography(srcMat, dstMat, cv.RANSAC, 5, mask);
+          if (!H.empty()) result = { H: H, matches: good.length }; else H.delete();
+        }
       }
-      if (good.length >= 4) {
-        var srcPts = [], dstPts = [];
-        good.forEach(function (mm) {
-          srcPts.push(kp2.get(mm.queryIdx).pt.x, kp2.get(mm.queryIdx).pt.y);
-          dstPts.push(kp1.get(mm.trainIdx).pt.x, kp1.get(mm.trainIdx).pt.y);
-        });
-        var srcMat = cv.matFromArray(good.length, 1, cv.CV_32FC2, srcPts);
-        var dstMat = cv.matFromArray(good.length, 1, cv.CV_32FC2, dstPts);
-        var mask = new cv.Mat();
-        var H = cv.findHomography(srcMat, dstMat, cv.RANSAC, 5, mask);
-        if (!H.empty()) result = { H: H, matches: good.length }; else H.delete();
-        srcMat.delete(); dstMat.delete(); mask.delete();
-      }
-      bf.delete(); knn.delete();
+      return result;
+    } finally {
+      // result.H (when set) is now owned by the CALLER (stitchFrames deletes
+      // it once composed, or the caller discards it) — every other Mat/
+      // vector created above is local to this call and is cleaned up here,
+      // unconditionally, regardless of which branch was reached or whether
+      // something threw partway through.
+      [orb, kp1, kp2, des1, des2, g1, g2, mask1, mask2, bf, knn, srcMat, dstMat, mask].forEach(function (x) {
+        if (x) x.delete();
+      });
     }
-    orb.delete(); kp1.delete(); kp2.delete(); des1.delete(); des2.delete(); g1.delete(); g2.delete();
-    return result;
   }
 
   function matToArray(m) { var out = []; for (var r = 0; r < 3; r++) for (var c = 0; c < 3; c++) out.push(m.doubleAt(r, c)); return out; }
@@ -579,6 +810,11 @@ window.PANO = (function () {
     // needs this module's data loaded and its signed thumbnail URLs — both
     // exposed here rather than duplicating the fetch+sign logic in module.js.
     ensureLoaded: async function () { if (!panoramas.length) await load(); },
-    urlOf: function (p) { return p ? urlOf(p.pano_url) : ''; }
+    urlOf: function (p) { return p ? urlOf(p.pano_url) : ''; },
+    // 2026-08-29 item 17 — the Add Media type selector's "360°" button
+    // delegates to the real capture flow rather than reimplementing it; this
+    // is that flow's only remaining entry point now that its own topbar
+    // button (#pano-new) is gone (folded into the Gallery screen, item 2).
+    openCapture: function () { openCaptureModal(); }
   };
 })();

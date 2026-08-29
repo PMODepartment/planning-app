@@ -158,14 +158,29 @@ window.ProgressPhotos = (function () {
 
   // UI.modal() takes no width and doesn't wire close buttons, so do both here
   // rather than touching the shared ui.js (module contract §1).
-  function openModal(html, width) {
-    var m = UI.modal(html);
+  // ⚠️ Audit fix: `onClose` (optional) now runs on EVERY way this modal can
+  // be dismissed — the × / Cancel [data-close] buttons AND a backdrop
+  // click. UI.modal()'s own backdrop listener closes over a PRIVATE `close`
+  // variable, not the returned `m.close` PROPERTY, so a caller reassigning
+  // `m.close` (or re-wiring [data-close], as openForm/openMarkupEditor both
+  // did) was silently bypassed on backdrop dismissal specifically — the
+  // "editing this photo" collab cursor and the markup editor's window
+  // resize listener could both be left stuck/leaking that way. Passing
+  // {noBackdropClose:true} disables UI.modal's internal listener so this
+  // function's own — which DOES route through the same close() used by
+  // [data-close] — is the only one active. Callers that don't need cleanup
+  // simply omit `onClose` and get the previous behaviour unchanged.
+  function openModal(html, width, onClose) {
+    var m = UI.modal(html, { noBackdropClose: true });
     var box = m.el.querySelector('.pd-modal');
     if (box && width) box.style.maxWidth = width + 'px';
+    function close() { if (onClose) { try { onClose(); } catch (e) {} } m.close(); }
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
-      b.onclick = m.close;
+      b.onclick = close;
     });
+    m.el.addEventListener('click', function (e) { if (e.target === m.el) close(); });
     if (window.Icons && Icons.hydrate) Icons.hydrate(m.el);
+    m.close = close;
     return m;
   }
 
@@ -181,10 +196,10 @@ window.ProgressPhotos = (function () {
   function restoreUI() {
     try {
       var v = localStorage.getItem(uiKey('view'));
-      if (v === 'list' || v === 'gallery') view = v;
+      if (['list', 'gallery', 'plan', 'stack'].indexOf(v) >= 0) view = v;
       collapsed = JSON.parse(localStorage.getItem(uiKey('collapsed')) || '{}') || {};
       var g = localStorage.getItem(uiKey('gallerygroup'));
-      if (['month', 'year', 'location', 'activity'].indexOf(g) >= 0) galleryGroupBy = g;
+      if (['month', 'trade', 'location'].indexOf(g) >= 0) galleryGroupBy = g;
     } catch (e) { collapsed = {}; }
   }
 
@@ -419,6 +434,20 @@ window.ProgressPhotos = (function () {
       await refreshQueueBadge();
       joinCollab();
     };
+    // Shared group-by (item 6) — a static, persistent select in the list bar
+    // (outside #pp-view), wired ONCE here rather than rebuilt by wireRows()
+    // on every render, unlike the row/tile markup itself.
+    if ($('pp-groupby')) {
+      $('pp-groupby').value = galleryGroupBy;
+      $('pp-groupby').onchange = function () { galleryGroupBy = this.value; saveUI(); render(); };
+    }
+    // Item 8 — filters collapsed by default on a phone; the toggle button is
+    // desktop-invisible (module.css), so this handler is harmless dead
+    // weight above the phone breakpoint rather than something that needs
+    // its own guard.
+    if ($('pp-filttoggle')) $('pp-filttoggle').onclick = function () {
+      var wrap = $('pp-filters'); if (wrap) wrap.classList.toggle('open');
+    };
     // List/Gallery is the shared .pd-viewtoggle. NB: `.pp-tab` now means the
     // topbar's Photos|PPRs screen tabs — don't select on it here.
     Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
@@ -458,13 +487,30 @@ window.ProgressPhotos = (function () {
     });
   }
 
+  // The single source of truth for what the Photos-screen tool row shows —
+  // called on every render AND on every selection change, so the two states
+  // (normal tools vs. selection tools) can never both be visible or both be
+  // hidden at once. Previously this only handled role-based visibility; the
+  // selection-mode swap (item 3: "when selecting photos, the download, add
+  // to presentation, and archive buttons then show up in the taskbar") is
+  // folded in here rather than a second parallel function, so there is one
+  // place that decides "+ Add media" vs. "N selected" for this row.
   function syncChrome() {
     Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
       b.classList.toggle('active', b.dataset.view === view);
     });
-    // The upload action + its divider are planner+ only.
+    var ids = visibleSelectedIds();
+    var has = ids.length > 0;
+    // The upload action + its divider are planner+ only, AND hidden while a
+    // selection is active.
     ['pp-add', 'pp-sep-photos'].forEach(function (id) {
-      var el = $(id); if (el) el.style.display = canWrite ? '' : 'none';
+      var el = $(id); if (el) el.style.display = (has || !canWrite) ? 'none' : '';
+    });
+    var refresh = $('pp-refresh'); if (refresh) refresh.style.display = has ? 'none' : '';
+    var count = $('pp-selcount');
+    if (count) { count.style.display = has ? '' : 'none'; count.textContent = ids.length + ' selected'; }
+    ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'].forEach(function (id) {
+      var el = $(id); if (el) el.style.display = has ? '' : 'none';
     });
   }
 
@@ -656,81 +702,62 @@ window.ProgressPhotos = (function () {
     });
     return out.sort();
   }
-  // ---- Trade / Works: multi-select checkbox groups -------------------------
-  // 2026-08-29 feedback item 2: "Trades can also be multiple" — both fields
-  // moved from a single-value <select> to a checkbox group, following the
-  // SAME visual pattern this file already uses for the Activity Code overlay
-  // (`codeOverlayHTML`/`readCodeTags`), rather than inventing a third
-  // component. Options still control what CAN be entered (owner feedback,
-  // 2026-08-13: "Works have no choices, should have choices to control
-  // inputs") — nothing about that constraint is loosened by going multi.
-  function multiCheckHTML(idPrefix, field, options, existingVals, emptyNote) {
-    existingVals = existingVals || [];
-    if (!options.length) return '<p class="pp-hint">' + Fmt.esc(emptyNote) + '</p>';
-    return '<div class="pp-multichk" id="' + idPrefix + '-' + field + '">' +
-      options.map(function (v) {
-        return '<label class="pp-mchk"><input type="checkbox" value="' + Fmt.esc(v) + '"' +
-               (existingVals.indexOf(v) >= 0 ? ' checked' : '') + '/> ' + Fmt.esc(v) + '</label>';
-      }).join('') +
-    '</div>';
-  }
-  function readMultiCheck(idPrefix, field) {
-    var wrap = $(idPrefix + '-' + field); if (!wrap) return [];
-    return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
-  }
-  function tradesOverlayHTML(idPrefix, existingTrades) {
-    return multiCheckHTML(idPrefix, 'trades', TRADES, existingTrades, 'No trades configured.');
-  }
+  // ---- Works: a single schedule-derived tag -------------------------------
+  // 2026-08-29 feedback item 9: "instead of selecting trades and works as
+  // multiple selection, add a works tag to the media, get the works choices
+  // from the schedule module" — REVERSES the multi-select checkbox groups
+  // this same file shipped earlier the same day (item 2 below, now retired).
+  // Trade is no longer a field the planner fills in at all: it's DERIVED from
+  // whichever schedule activity the picked Works value names, via
+  // `deriveTradeForWorks` — so grouping/filtering by trade (unchanged
+  // elsewhere in this file) keeps working without asking the question twice.
   // A photo's trades/works, tolerant of pre-migration rows that only ever
-  // had the singular `trade`/`works` text columns filled in.
+  // had the singular `trade`/`works` text columns filled in, AND of the
+  // multi-select era's rows (which may carry more than one value in the
+  // array columns) — both still read correctly here.
   function tradesOf(r) { return (r.trades && r.trades.length) ? r.trades : (r.trade ? [r.trade] : []); }
   function worksOf(r) { return (r.works_multi && r.works_multi.length) ? r.works_multi : (r.works ? [r.works] : []); }
-  // Works options are schedule-derived per the CURRENTLY CHECKED trades
-  // (unioned across all of them — same fallback-to-everything-when-none-
-  // picked rule `worksOptions('')` already had). `existingWorks` values not
-  // in the derived list (e.g. a custom value typed earlier, or a value whose
-  // owning trade got unchecked) are still shown and checked — a re-render
-  // must never silently drop a value the row already has.
-  function worksOverlayHTML(idPrefix, tradeVals, existingWorks) {
-    existingWorks = existingWorks || [];
-    var opts = worksOptions(tradeVals);
-    existingWorks.forEach(function (w) { if (w && opts.indexOf(w) < 0) opts.push(w); });
+  // Reverse of workTypeMatchesTrade: given a Works value, find the schedule
+  // activity it names and report which Trade its work_type belongs to. No
+  // match (a custom/free-text Works value, or one that predates the
+  // schedule) returns null — the photo simply carries no trade, rather than
+  // a guessed one.
+  function deriveTradeForWorks(worksValue) {
+    if (!worksValue) return null;
+    var v = String(worksValue).trim().toLowerCase();
+    var act = SCHED_ACTS.filter(function (a) { return (a.activity_name || '').trim().toLowerCase() === v; })[0];
+    if (!act || !act.work_type) return null;
+    return TRADES.filter(function (t) { return workTypeMatchesTrade(act.work_type, t); })[0] || null;
+  }
+  var WORKS_CUSTOM = '__custom__';
+  function worksTagFieldHTML(idPrefix, existingVal) {
+    existingVal = existingVal || '';
+    var opts = worksOptions();
+    if (existingVal && opts.indexOf(existingVal) < 0) opts.push(existingVal);
     opts.sort();
-    var body = opts.length
-      ? multiCheckHTML(idPrefix, 'works', opts, existingWorks, '')
-      : '<p class="pp-hint">No Works values yet — add one below.</p>';
-    return body +
-      '<button type="button" class="pd-btn pp-addworksbtn" id="' + idPrefix + '-works-add">+ Add custom Works value…</button>';
+    return '<select class="pd-select" id="' + idPrefix + '-workstag">' +
+      '<option value="">— Select —</option>' +
+      opts.map(function (v) {
+        return '<option value="' + Fmt.esc(v) + '"' + (v === existingVal ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>';
+      }).join('') +
+      '<option value="' + WORKS_CUSTOM + '">+ Add custom value…</option>' +
+    '</select>';
   }
-  function refreshWorksOverlay(idPrefix) {
-    var host = $(idPrefix + '-workshost'); if (!host) return;
-    var tradeVals = readMultiCheck(idPrefix, 'trades');
-    var keep = readMultiCheck(idPrefix, 'works');   // preserve whatever's already checked through the re-render
-    host.innerHTML = worksOverlayHTML(idPrefix, tradeVals, keep);
-    wireWorksAddButton(idPrefix);
-  }
-  function wireWorksAddButton(idPrefix) {
-    var btn = $(idPrefix + '-works-add'); if (!btn) return;
-    btn.onclick = function () {
+  function wireWorksTagField(idPrefix) {
+    var sel = $(idPrefix + '-workstag'); if (!sel) return;
+    sel.onchange = function () {
+      if (sel.value !== WORKS_CUSTOM) return;
       var v = (window.prompt('New Works value:') || '').trim();
-      if (!v) return;
-      var tradeVals = readMultiCheck(idPrefix, 'trades');
-      var keep = readMultiCheck(idPrefix, 'works');
-      if (keep.indexOf(v) < 0) keep.push(v);
-      var host = $(idPrefix + '-workshost');
-      if (host) { host.innerHTML = worksOverlayHTML(idPrefix, tradeVals, keep); wireWorksAddButton(idPrefix); }
+      if (!v) { sel.value = ''; return; }
+      var opt = document.createElement('option');
+      opt.value = v; opt.textContent = v; opt.selected = true;
+      sel.insertBefore(opt, sel.lastElementChild);
     };
   }
-  // Re-scopes the Works checkbox group to whichever Trades are checked in the
-  // currently-open modal, live on every Trade toggle.
-  function wireTradeWorks(idPrefix) {
-    var tradesWrap = $(idPrefix + '-trades');
-    if (tradesWrap) {
-      Array.prototype.forEach.call(tradesWrap.querySelectorAll('input[type=checkbox]'), function (c) {
-        c.onchange = function () { refreshWorksOverlay(idPrefix); };
-      });
-    }
-    wireWorksAddButton(idPrefix);
+  function readWorksTag(idPrefix) {
+    var sel = $(idPrefix + '-workstag');
+    var v = sel ? sel.value : '';
+    return v === WORKS_CUSTOM ? '' : v;
   }
   function fillFilterOptions() {
     function fill(id, list, blank) {
@@ -824,6 +851,14 @@ window.ProgressPhotos = (function () {
     }
     var listbar = document.querySelector('.pp-listbar');
     if (listbar) listbar.style.visibility = rows.length ? '' : 'hidden';
+    // Keep the shared group-by select in step — restoreUI() can change
+    // galleryGroupBy on a project switch after wire()'s one-time setup ran.
+    if ($('pp-groupby')) $('pp-groupby').value = galleryGroupBy;
+    // Group-by has no meaning in Plan (clustered by floor-plan position) or
+    // Stack (already grouped by Location Breakdown) — hidden rather than
+    // left visible and silently inert.
+    var gbField = $('pp-groupby') && $('pp-groupby').closest('.pp-groupby');
+    if (gbField) gbField.style.display = (view === 'plan' || view === 'stack') ? 'none' : '';
 
     // Clear-filters only shows when a filter is actually set (no orphan button).
     var anyFilter = ['from', 'to', 'trade', 'works', 'search'].some(function (k) { return filters[k]; }) ||
@@ -831,97 +866,487 @@ window.ProgressPhotos = (function () {
     var clr = $('pp-clearfilters');
     if (clr) clr.hidden = !anyFilter;
 
+    // Plan/Stack read PROJECT-WIDE data (every pin / every location-tagged
+    // photo), not the filtered `list` above — the same scope their bim.js
+    // originals always had. They bypass the row/filter empty-states below,
+    // which describe the filtered Gallery grid and don't apply here (a
+    // project can have zero photos matching the current filter and still
+    // have a floor plan worth showing, or vice versa).
+    if (view === 'plan' || view === 'stack') {
+      host.innerHTML = view === 'plan' ? renderPlanView() : renderStackView();
+      hydrate(host);
+      if (view === 'plan') wirePlanView(); else wireStackView();
+      syncChrome();
+      return;
+    }
+
     if (!rows.length) {
       host.innerHTML = '<div class="pp-empty">' +
         '<span data-ico="camera" data-ico-size="34"></span>' +
         '<p>No photos yet for this project.</p>' +
-        (canWrite ? '<p class="pp-hint">Use <strong>+ Add photos</strong> to upload the first batch.</p>' : '') +
+        (canWrite ? '<p class="pp-hint">Use <strong>+ Add media</strong> to upload the first batch.</p>' : '') +
         '</div>';
-      hydrate(host); refreshSelBar(); return;
+      hydrate(host); syncChrome(); return;
     }
     if (!list.length) {
       host.innerHTML = '<div class="pp-empty"><p>No photos match these filters.</p></div>';
-      refreshSelBar(); return;
+      syncChrome(); return;
     }
 
     host.innerHTML = (view === 'gallery' ? galleryHTML(list) : listHTML(list));
     hydrate(host);
     wireRows(host);
-    refreshSelBar();
+    syncChrome();
     paintRemote();
   }
 
   function hydrate(host) { if (window.Icons && Icons.hydrate) Icons.hydrate(host); }
 
-  function groupByTrade(list) {
-    var groups = {}, order = [];
-    list.forEach(function (r) {
-      // A photo can carry several trades now; it's grouped under its FIRST
-      // one only (a row appearing in several groups at once would break the
-      // "one row, one place" assumption List view's collapse state relies
-      // on) — the row itself still shows every trade it carries (see the
-      // Trade cell below), so nothing about the multi-select is hidden.
-      var t = (tradesOf(r)[0] || '').trim() || 'Untagged';
-      if (!groups[t]) { groups[t] = []; order.push(t); }
-      groups[t].push(r);
-    });
-    order.sort();
-    return order.map(function (t) { return { trade: t, items: groups[t] }; });
-  }
-
-  // ---- Gallery (tile view) grouping ----------------------------------------
-  // Default = capture month (owner feedback), with Year / Location / Activity
-  // as alternatives. Persisted per project like the trade-group collapse state.
+  // ---- Grouping — SHARED by List and Gallery views (2026-08-29 follow-up) --
+  // Previously List always grouped by Trade (its own groupByTrade()) and
+  // Gallery had a separate Month/Year/Location/Activity picker
+  // (groupForGallery()) — two mechanisms, two states, and List's grouping
+  // couldn't be changed at all. Owner feedback: "provide option to group by
+  // trade or by location or by month... same grouping as the tile view...
+  // both no need for the group by year." Year AND Activity are dropped
+  // (neither was asked for); Month/Trade/Location now drive BOTH views from
+  // one persisted setting, via one #pp-groupby selector in the list bar.
   var MONTH_NAMES = ['January','February','March','April','May','June','July',
     'August','September','October','November','December'];
-  var galleryGroupBy = 'month';   // month | year | location | activity
-  function galleryGroupKey(r) {
-    if (galleryGroupBy === 'year') {
-      var y = (r.taken_at || '').slice(0, 4);
-      return y || 'Undated';
+  var galleryGroupBy = 'month';   // month (default) | trade | location
+
+  // ---- Plan / Stack views (item 16 — relocated here from the Plans tab's
+  // own Map/Stack modes, item 15 having removed them from there). Both read
+  // project-wide data (every pin / every location-tagged photo), NOT the
+  // Gallery's own filtered `list` — the same scope the originals in bim.js
+  // always had (they read ProgressPhotos.allPhotos()/locLevels(), which from
+  // inside this file is simply `rows`/`LOC_LEVELS` directly).
+  var planFloorId = null;                 // which floor_plans row Plan view is showing
+  var planMonth = null;                   // 'YYYY-MM' | null = latest month with any pin
+  var planPlaying = false, planPlayTimer = null;
+  var planFloorPlaying = false, planFloorPlayTimer = null;
+  var stackRowLevelId = null, stackColLevelId = null;
+  // Item 16: "default is that the photos in the same location combine across
+  // all months, but there should also be option to step through and animate
+  // through months as well" — REVERSES bim.js's old Stack default (one
+  // most-recent-as-of-cutoff photo per cell). Combine is now the default;
+  // step-through is an opt-in toggle.
+  var stackStepMode = false;
+  var stackMonth = null;
+  var stackPlaying = false, stackPlayTimer = null;
+  function groupKeyOf(r) {
+    if (galleryGroupBy === 'trade') {
+      // A photo can carry several trades now; it's grouped under its FIRST
+      // one only (a row appearing in several groups at once would break the
+      // "one row, one place" assumption the collapse state relies on) — the
+      // row itself still shows every trade it carries.
+      return (tradesOf(r)[0] || '').trim() || 'Untagged';
     }
     if (galleryGroupBy === 'location') return r.location || 'Unassigned';
-    if (galleryGroupBy === 'activity') return r.activity_name || r.works || 'Unassigned';
     // month (default)
     var m = (r.taken_at || '').slice(0, 7);   // YYYY-MM
     return m || 'Undated';
   }
-  function galleryGroupLabel(key) {
+  function groupLabelOf(key) {
     if (galleryGroupBy === 'month' && /^\d{4}-\d{2}$/.test(key)) {
       var parts = key.split('-');
       return MONTH_NAMES[(+parts[1]) - 1] + ' ' + parts[0];
     }
     return key;
   }
-  function groupForGallery(list) {
+  function groupRows(list) {
     var groups = {}, order = [];
     list.forEach(function (r) {
-      var k = galleryGroupKey(r);
+      var k = groupKeyOf(r);
       if (!groups[k]) { groups[k] = []; order.push(k); }
       groups[k].push(r);
     });
-    // Month/year: most recent first. Location/activity: alphabetical, "Unassigned" last.
-    if (galleryGroupBy === 'month' || galleryGroupBy === 'year') {
-      order.sort(function (a, b) { return b.localeCompare(a); });
-    } else {
-      order.sort(function (a, b) {
-        if (a === 'Unassigned') return 1; if (b === 'Unassigned') return -1;
-        return a.localeCompare(b);
-      });
-    }
-    return order.map(function (k) { return { key: k, label: galleryGroupLabel(k), items: groups[k] }; });
+    // Month: most recent first, "Undated" always trailing (⚠️ a real,
+    // pre-existing bug this file's own test found: a plain string sort put
+    // "Undated" FIRST, since 'U' sorts after every digit — an undated bucket
+    // has no place in a recency ordering and reading it as "most recent"
+    // is exactly backwards). Trade/Location: alphabetical, the "nothing
+    // tagged" bucket ("Untagged"/"Unassigned") always last.
+    var UNTAGGED = { Untagged: 1, Unassigned: 1, Undated: 1 };
+    order.sort(function (a, b) {
+      var au = !!UNTAGGED[a], bu = !!UNTAGGED[b];
+      if (au && !bu) return 1; if (bu && !au) return -1;
+      if (au && bu) return 0;
+      return galleryGroupBy === 'month' ? b.localeCompare(a) : a.localeCompare(b);
+    });
+    return order.map(function (k) { return { key: k, label: groupLabelOf(k), items: groups[k] }; });
   }
 
-  function rowActions(r) {
-    return '<div class="pp-rowacts">' +
-      '<button class="pp-iconbtn" data-act="download" data-id="' + r.id + '" title="Download photo">' +
-        '<span data-ico="download" data-ico-size="15"></span></button>' +
-      '<button class="pp-iconbtn" data-act="open" data-id="' + r.id + '" title="View full size">' +
-        '<span data-ico="eye" data-ico-size="15"></span></button>' +
-      (canWrite ? '<button class="pp-iconbtn" data-act="edit" data-id="' + r.id + '" title="Edit details">✎</button>' +
-                  '<button class="pp-iconbtn pp-del" data-act="del" data-id="' + r.id + '" title="Delete photo">' +
-                  '<span data-ico="trash" data-ico-size="15"></span></button>' : '') +
+  // ---------------------------------------------------------- Plan view ----
+  // A pin carries no date of its own — it points AT a photo/panorama/3D-scan,
+  // and it's THAT item's own capture date that "as of month T" filters on.
+  // Ported from bim.js's old itemDateFor (Batch G); photos resolve directly
+  // against this file's own `rows`/`byId` rather than through
+  // ProgressPhotos.allPhotos(), since this now IS that file.
+  function itemDateForPin(pin) {
+    var r;
+    if (pin.item_type === 'photo') {
+      r = byId(pin.item_id);
+      return r ? (r.taken_at || (r.created_at || '').slice(0, 10)) : '';
+    }
+    if (pin.item_type === 'panorama') {
+      var pl = (window.PANO && PANO.list) ? PANO.list() : [];
+      r = pl.filter(function (x) { return x.id === pin.item_id; })[0];
+      return r ? (r.taken_at || (r.created_at || '').slice(0, 10)) : '';
+    }
+    if (pin.item_type === 'reconstruction') {
+      var rl = (window.RECON && RECON.doneList) ? RECON.doneList() : [];
+      r = rl.filter(function (x) { return x.id === pin.item_id; })[0];
+      return r ? (r.approved_at || r.created_at || '').slice(0, 10) : '';
+    }
+    return '';
+  }
+  // Grid-snap clustering, ported verbatim from bim.js's mapClusters — pins
+  // within the same ~5% cell of the plan cluster together, deliberately NOT
+  // proximity/k-means (a fixed grid is stable frame-to-frame as the month
+  // slider moves, so a cluster doesn't visually jump as items enter/leave it).
+  var PLAN_CELL = 0.05;
+  function planMonthsAvailable(pins) {
+    var set = {};
+    pins.forEach(function (p) { var d = itemDateForPin(p); if (d) set[d.slice(0, 7)] = true; });
+    return Object.keys(set).sort();
+  }
+  function planClusters(pins, monthCutoff) {
+    var byCell = {};
+    pins.forEach(function (p) {
+      var d = itemDateForPin(p);
+      if (monthCutoff && (!d || d.slice(0, 7) > monthCutoff)) return; // "as of" — cumulative up to and including the selected month
+      var cx = Math.round(p.x_norm / PLAN_CELL) * PLAN_CELL, cy = Math.round(p.y_norm / PLAN_CELL) * PLAN_CELL;
+      var key = cx.toFixed(2) + ',' + cy.toFixed(2);
+      (byCell[key] = byCell[key] || { x: cx, y: cy, pins: [] }).pins.push(p);
+    });
+    return Object.keys(byCell).map(function (k) { return byCell[k]; });
+  }
+  function planPin(pinId, pins) { return pins.filter(function (p) { return p.id === pinId; })[0] || null; }
+  // Opens a SPECIFIC photo's lightbox regardless of whatever the Gallery's
+  // own currently-filtered view holds in `lightboxIds`. ⚠️ REAL BUG fixed
+  // here (audit pass): Plan/Stack read PROJECT-WIDE data (every pin / every
+  // location-tagged photo), so a photo pinned/stacked here can easily be one
+  // the active Gallery filter excludes (archived, wrong trade, etc.) — a
+  // plain `openLightbox(id)` falls back to index 0 on a miss and silently
+  // shows a DIFFERENT photo with no warning, and a Delete from there would
+  // hit the wrong record. This is the same fix already exported publicly as
+  // `openPhotoById` for bim.js's own Plan-tab pin clicks; extracted to a
+  // named function here so Plan/Stack's own clicks route through the exact
+  // same safe path instead of duplicating (and this time, missing) the fix.
+  function openPhotoById(id) {
+    if (!byId(id)) { UI.toast('That photo could not be found', 'warn'); return; }
+    lightboxIds = [id];
+    openLightbox(id);
+  }
+  function openPlanPin(pin) {
+    if (!pin) return;
+    if (pin.item_type === 'panorama') { if (window.PANO && PANO.open) PANO.open(pin.item_id); }
+    else if (pin.item_type === 'reconstruction') { if (window.RECON && RECON.openById) RECON.openById(pin.item_id); }
+    else if (pin.item_type === 'photo') { openPhotoById(pin.item_id); }
+  }
+  function openPlanClusterList(cluster) {
+    if (!cluster) return;
+    var html =
+      '<div class="pd-modal-header"><h3>' + cluster.pins.length + ' item' + (cluster.pins.length === 1 ? '' : 's') + ' here</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><div class="ppr-tmpl-picklist">' +
+        cluster.pins.map(function (p) {
+          return '<button type="button" class="ppr-tmpl-pickrow" data-open="' + p.id + '">' +
+            Fmt.esc(p.label || (p.item_type === 'panorama' ? '360° panorama' : p.item_type === 'reconstruction' ? '3D reconstruction' : 'Photo')) +
+            (itemDateForPin(p) ? ' — ' + Fmt.esc(itemDateForPin(p)) : '') + '</button>';
+        }).join('') +
+      '</div></div>';
+    var m = openModal(html, 420);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-open]'), function (b) {
+      b.onclick = function () { m.close(); openPlanPin(planPin(this.dataset.open, cluster.pins)); };
+    });
+  }
+  // "choose a floor, step through floors, animate through floors" (item 16) —
+  // the genuinely NEW capability the old bim.js Map view didn't have (it only
+  // ever showed ONE plan at a time, chosen from a bare <select>, with no
+  // stepper). Floors step through BIM.plans()' own order (level_order).
+  function planFloors() { return window.BIM ? BIM.plans() : []; }
+  function stopPlanFloorPlay() { planFloorPlaying = false; if (planFloorPlayTimer) { clearInterval(planFloorPlayTimer); planFloorPlayTimer = null; } }
+  function stopPlanMonthPlay() { planPlaying = false; if (planPlayTimer) { clearInterval(planPlayTimer); planPlayTimer = null; } }
+  function renderPlanView() {
+    var floors = planFloors();
+    if (!floors.length) {
+      return '<div class="pp-empty"><span data-ico="compass" data-ico-size="34"></span>' +
+        '<p>No floor plans uploaded yet.</p>' +
+        (canWrite ? '<p class="pp-hint">Upload one on the <strong>Plans</strong> tab, then place pins linking it ' +
+          'to your photos, 360° captures and 3D scans — they\'ll show up here.</p>' : '') + '</div>';
+    }
+    if (!planFloorId || !floors.some(function (p) { return p.id === planFloorId; })) planFloorId = floors[0].id;
+    var floor = floors.filter(function (p) { return p.id === planFloorId; })[0];
+    var pins = window.BIM ? BIM.pinsForPlan(planFloorId) : [];
+    var months = planMonthsAvailable(pins);
+    var cutoff = planMonth || (months.length ? months[months.length - 1] : null);
+    var clusters = planClusters(pins, cutoff);
+    var url = window.BIM ? BIM.planUrl(floor) : '';
+    var aspect = (floor && floor.width_px && floor.height_px) ? (floor.height_px / floor.width_px) : 0.75;
+    var pinCount = clusters.reduce(function (n, c) { return n + c.pins.length; }, 0);
+    return '<div class="pp-plantoolbar">' +
+      '<div class="pp-planfloorbar">' +
+        '<label class="pp-planfloorlabel">Floor ' +
+          '<select class="pd-select" id="pp-plan-floor">' +
+            floors.map(function (p) { return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === planFloorId ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>'; }).join('') +
+          '</select></label>' +
+        '<button class="pp-iconbtn" id="pp-plan-floorprev" title="Previous floor">‹</button>' +
+        '<button class="pp-iconbtn" id="pp-plan-floornext" title="Next floor">›</button>' +
+        '<button class="pd-btn" id="pp-plan-floorplay">' + (planFloorPlaying ? 'Stop' : '▶ Animate floors') + '</button>' +
+      '</div>' +
+      (months.length
+        ? '<div class="pp-planmonthbar">' +
+            '<button class="pp-iconbtn" id="pp-plan-mprev" title="Earlier month">‹</button>' +
+            '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
+            '<button class="pp-iconbtn" id="pp-plan-mnext" title="Later month">›</button>' +
+            '<button class="pd-btn" id="pp-plan-mplay">' + (planPlaying ? 'Stop' : '▶ Play') + '</button>' +
+            '<span class="pp-hint">as of the end of this month · ' + pinCount + ' pinned item' + (pinCount === 1 ? '' : 's') + '</span>' +
+          '</div>'
+        : '<p class="pp-hint">No dated captures pinned on this floor yet.</p>') +
+    '</div>' +
+    '<div class="pp-planstage">' +
+      '<div class="pp-planimgwrap" style="padding-bottom:' + (aspect * 100) + '%;">' +
+        (url ? '<img src="' + Fmt.esc(url) + '" draggable="false" />' : '<div class="pp-empty" style="position:absolute;inset:0;">Plan image not available</div>') +
+        clusters.map(function (c, i) {
+          // ⚠️ Audit fix: the only visible content was the bare pin count,
+          // which a screen reader announces as just a number with no sense
+          // of what the button does.
+          return '<button class="pp-plancluster" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;" ' +
+            'aria-label="' + c.pins.length + ' item' + (c.pins.length === 1 ? '' : 's') + ' at this location — view">' + c.pins.length + '</button>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+  }
+  function wirePlanView() {
+    var floors = planFloors();
+    if (!floors.length) return;
+    var idx = floors.map(function (p) { return p.id; }).indexOf(planFloorId);
+    if ($('pp-plan-floor')) $('pp-plan-floor').onchange = function () { planFloorId = this.value; planMonth = null; render(); };
+    if ($('pp-plan-floorprev')) $('pp-plan-floorprev').onclick = function () {
+      planFloorId = floors[Math.max(0, idx - 1)].id; planMonth = null; render();
+    };
+    if ($('pp-plan-floornext')) $('pp-plan-floornext').onclick = function () {
+      planFloorId = floors[Math.min(floors.length - 1, idx + 1)].id; planMonth = null; render();
+    };
+    if ($('pp-plan-floorplay')) $('pp-plan-floorplay').onclick = function () {
+      if (planFloorPlaying) { stopPlanFloorPlay(); render(); return; }
+      stopPlanMonthPlay();   // never both animations running at once
+      planFloorPlaying = true;
+      planFloorPlayTimer = setInterval(function () {
+        var fs = planFloors();
+        var i = fs.map(function (p) { return p.id; }).indexOf(planFloorId);
+        if (i >= fs.length - 1) { stopPlanFloorPlay(); render(); return; } // auto-stop at the end, same convention as every other time-scrub view in this app
+        planFloorId = fs[i + 1].id; planMonth = null; render();
+      }, 1200);
+      render();
+    };
+    var pins = window.BIM ? BIM.pinsForPlan(planFloorId) : [];
+    var months = planMonthsAvailable(pins);
+    var cutoff = planMonth || (months.length ? months[months.length - 1] : null);
+    var clusters = planClusters(pins, cutoff);
+    if ($('pp-plan-mprev')) $('pp-plan-mprev').onclick = function () {
+      var i = months.indexOf(cutoff); planMonth = months[Math.max(0, i - 1)]; render();
+    };
+    if ($('pp-plan-mnext')) $('pp-plan-mnext').onclick = function () {
+      var i = months.indexOf(cutoff); planMonth = months[Math.min(months.length - 1, i + 1)]; render();
+    };
+    if ($('pp-plan-mplay')) $('pp-plan-mplay').onclick = function () {
+      if (planPlaying) { stopPlanMonthPlay(); render(); return; }
+      stopPlanFloorPlay();
+      planPlaying = true;
+      planPlayTimer = setInterval(function () {
+        var ms = planMonthsAvailable(pins);
+        var i = ms.indexOf(planMonth || (ms.length ? ms[ms.length - 1] : null));
+        if (i >= ms.length - 1) { stopPlanMonthPlay(); render(); return; }
+        planMonth = ms[i + 1]; render();
+      }, 900);
+      render();
+    };
+    Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-cluster]'), function (btn) {
+      btn.onclick = function () { openPlanClusterList(clusters[+this.dataset.cluster]); };
+    });
+  }
+
+  // --------------------------------------------------------- Stack view ----
+  // Independent of floor plans entirely — bands come from the project's
+  // Location Breakdown (LOC_LEVELS), the same schedule-derived Tower/Level/
+  // Zone hierarchy the Add-photo form cascades through. Reachable even with
+  // zero floor plans uploaded.
+  function stackLevels() { return LOC_LEVELS.slice(); }
+  function stackRowLevel() {
+    var levels = stackLevels();
+    return levels.filter(function (l) { return l.id === stackRowLevelId; })[0] || levels[0] || null;
+  }
+  function stackColLevel() {
+    var levels = stackLevels();
+    var picked = levels.filter(function (l) { return l.id === stackColLevelId; })[0];
+    if (picked) return picked;
+    return levels.filter(function (l) { return l.id !== (stackRowLevel() && stackRowLevel().id); })[0] || null;
+  }
+  function stackMonthsAvailable() {
+    var set = {};
+    rows.forEach(function (p) { if (p.taken_at) set[String(p.taken_at).slice(0, 7)] = true; });
+    return Object.keys(set).sort();
+  }
+  // Pure — the actual "as of" decision for one grid cell in step mode, worth
+  // genuinely EXECUTING (same reasoning as planClusters' own cutoff filter):
+  // given photos already narrowed to one location cell, returns the most
+  // recent one at-or-before `cutoff` ('YYYY-MM', or null = latest overall),
+  // or null when nothing in the list qualifies.
+  function mostRecentAsOf(list, cutoff) {
+    var best = null;
+    list.forEach(function (p) {
+      if (!p.taken_at) return;
+      if (cutoff && String(p.taken_at).slice(0, 7) > cutoff) return;
+      if (!best || String(p.taken_at) > String(best.taken_at)) best = p;
+    });
+    return best;
+  }
+  // A cell reports EVERY matching photo (item 16's combined default) plus,
+  // when step mode is on, which one of those is "the" photo as of `cutoff`.
+  function stackGrid(cutoff) {
+    var rowLevel = stackRowLevel(), colLevel = stackColLevel();
+    if (!rowLevel) return { rowLevel: null, colLevel: null, cols: [], rows: [] };
+    var rowVals = {}, colVals = {};
+    rows.forEach(function (p) {
+      var lv = p.location_values || {};
+      var rv = lv[rowLevel.id]; if (rv) rowVals[rv] = true;
+      if (colLevel) { var cv = lv[colLevel.id]; if (cv) colVals[cv] = true; }
+    });
+    var rowNames = Object.keys(rowVals).sort();
+    var colNames = colLevel ? Object.keys(colVals).sort() : [];
+    if (!colNames.length) colNames = [''];  // single-level project — one shared "All" column
+    var gridRows = rowNames.map(function (rv) {
+      return {
+        row: rv,
+        cells: colNames.map(function (cv) {
+          var candidates = rows.filter(function (p) {
+            var lv = p.location_values || {};
+            if ((lv[rowLevel.id] || '') !== rv) return false;
+            if (colLevel && cv && (lv[colLevel.id] || '') !== cv) return false;
+            return true;
+          });
+          return { col: cv, photos: candidates, photo: mostRecentAsOf(candidates, cutoff) };
+        })
+      };
+    });
+    return { rowLevel: rowLevel, colLevel: colLevel, cols: colNames, rows: gridRows };
+  }
+  var STACK_COMBINE_MAX = 6;   // thumbnails shown per cell before "+N more"
+  function renderStackView() {
+    var levels = stackLevels();
+    if (!levels.length) {
+      return '<div class="pp-empty"><p>No Location Breakdown set up for this project yet — build it in ' +
+        'Project Schedule (Group menu &rarr; Location Breakdown&hellip;), then photos tagged against it ' +
+        'will stack here.</p></div>';
+    }
+    var months = stackMonthsAvailable();
+    var cutoff = stackMonth || (months.length ? months[months.length - 1] : null);
+    var g = stackGrid(cutoff);
+    var levelPickers =
+      '<div class="pp-stacklevels">' +
+        '<label>Rows <select class="pd-select" id="pp-stack-rowlvl">' +
+          levels.map(function (l) { return '<option value="' + Fmt.esc(l.id) + '"' + (g.rowLevel && l.id === g.rowLevel.id ? ' selected' : '') + '>' + Fmt.esc(l.name) + '</option>'; }).join('') +
+        '</select></label>' +
+        (levels.length > 1 ? '<label>Columns <select class="pd-select" id="pp-stack-collvl">' +
+          levels.map(function (l) { return '<option value="' + Fmt.esc(l.id) + '"' + (g.colLevel && l.id === g.colLevel.id ? ' selected' : '') + '>' + Fmt.esc(l.name) + '</option>'; }).join('') +
+        '</select></label>' : '') +
+        '<label class="ppr-allloc" style="display:inline-flex;align-items:center;gap:5px;margin:0;">' +
+          '<input type="checkbox" id="pp-stack-stepmode"' + (stackStepMode ? ' checked' : '') + ' /> Step through months instead</label>' +
       '</div>';
+    var stepper = stackStepMode
+      ? (months.length
+          ? '<div class="pp-planmonthbar">' +
+              '<button class="pp-iconbtn" id="pp-stack-mprev" title="Earlier month">‹</button>' +
+              '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
+              '<button class="pp-iconbtn" id="pp-stack-mnext" title="Later month">›</button>' +
+              '<button class="pd-btn" id="pp-stack-mplay">' + (stackPlaying ? 'Stop' : '▶ Play') + '</button>' +
+              '<span class="pp-hint">as of the end of this month</span></div>'
+          : '<p class="pp-hint">No dated, location-tagged photos yet.</p>')
+      : '<p class="pp-hint">Every photo captured at each location, combined across all months.</p>';
+    if (!g.rows.length) {
+      return levelPickers + stepper + '<div class="pp-empty"><p>No photos have been tagged at this Location Breakdown level yet.</p></div>';
+    }
+    var table =
+      '<div class="pp-stackwrap"><table class="pp-stacktable"><thead><tr><th></th>' +
+        g.cols.map(function (c) { return '<th>' + Fmt.esc(c || 'All') + '</th>'; }).join('') +
+      '</tr></thead><tbody>' +
+      g.rows.map(function (r) {
+        return '<tr><th>' + Fmt.esc(r.row) + '</th>' +
+          r.cells.map(function (c) {
+            if (stackStepMode) {
+              if (!c.photo) return '<td class="pp-stackcell pp-stackcell-empty">—</td>';
+              var url = urlOf(c.photo);
+              var cap = r.row + (c.col ? ' · ' + c.col : '') + ' — ' + (c.photo.taken_at || '');
+              return '<td class="pp-stackcell">' +
+                (url ? '<img class="pp-stackthumb" data-magnify="' + Fmt.esc(url) + '" data-cap="' + Fmt.esc(cap) + '" src="' + Fmt.esc(url) + '" alt="" />' : '—') +
+              '</td>';
+            }
+            // Combined default (item 16) — every matching photo, not just the latest one.
+            if (!c.photos.length) return '<td class="pp-stackcell pp-stackcell-empty">—</td>';
+            var shown = c.photos.slice(0, STACK_COMBINE_MAX);
+            return '<td class="pp-stackcell"><div class="pp-stackcellphotos">' +
+              shown.map(function (p) {
+                var u = urlOf(p);
+                return u ? '<img class="pp-stackthumb pp-stackthumb-sm" data-open="' + p.id + '" src="' + Fmt.esc(u) + '" alt="" title="' + Fmt.esc(p.taken_at || '') + '" />' : '';
+              }).join('') +
+              (c.photos.length > STACK_COMBINE_MAX ? '<span class="pp-stackmore">+' + (c.photos.length - STACK_COMBINE_MAX) + '</span>' : '') +
+            '</div></td>';
+          }).join('') +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      (stackStepMode
+        // A basic hover-magnifier — deliberately simpler than Project
+        // Schedule's own SVG-clone version: these cells are plain <img>
+        // thumbnails, so swapping a larger src into a docked panel is enough.
+        ? '<div class="pp-stackmag" id="pp-stack-mag" hidden><img id="pp-stack-magimg" alt="" /><div class="pp-stackmagcap" id="pp-stack-magcap"></div></div>'
+        : '');
+    return levelPickers + stepper + table;
+  }
+  function stopStackPlay() { stackPlaying = false; if (stackPlayTimer) { clearInterval(stackPlayTimer); stackPlayTimer = null; } }
+  function wireStackView() {
+    if ($('pp-stack-rowlvl')) $('pp-stack-rowlvl').onchange = function () { stackRowLevelId = this.value; render(); };
+    if ($('pp-stack-collvl')) $('pp-stack-collvl').onchange = function () { stackColLevelId = this.value; render(); };
+    if ($('pp-stack-stepmode')) $('pp-stack-stepmode').onchange = function () {
+      stackStepMode = this.checked; stopStackPlay(); render();
+    };
+    if (stackStepMode) {
+      var months = stackMonthsAvailable();
+      var cutoff = stackMonth || (months.length ? months[months.length - 1] : null);
+      if ($('pp-stack-mprev')) $('pp-stack-mprev').onclick = function () {
+        var i = months.indexOf(cutoff); stackMonth = months[Math.max(0, i - 1)]; render();
+      };
+      if ($('pp-stack-mnext')) $('pp-stack-mnext').onclick = function () {
+        var i = months.indexOf(cutoff); stackMonth = months[Math.min(months.length - 1, i + 1)]; render();
+      };
+      if ($('pp-stack-mplay')) $('pp-stack-mplay').onclick = function () {
+        if (stackPlaying) { stopStackPlay(); render(); return; }
+        stackPlaying = true;
+        stackPlayTimer = setInterval(function () {
+          var ms = stackMonthsAvailable();
+          var i = ms.indexOf(stackMonth || (ms.length ? ms[ms.length - 1] : null));
+          if (i >= ms.length - 1) { stopStackPlay(); render(); return; } // auto-stop at the end
+          stackMonth = ms[i + 1]; render();
+        }, 900);
+        render();
+      };
+      var mag = $('pp-stack-mag'), magImg = $('pp-stack-magimg'), magCap = $('pp-stack-magcap');
+      if (mag) {
+        Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-magnify]'), function (im) {
+          im.addEventListener('mouseenter', function () { magImg.src = im.dataset.magnify; magCap.textContent = im.dataset.cap || ''; mag.hidden = false; });
+          im.addEventListener('mouseleave', function () { mag.hidden = true; });
+        });
+      }
+    } else {
+      // Combined mode — each thumbnail opens the ordinary lightbox, same as
+      // every other photo thumbnail in this module.
+      Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-open]'), function (im) {
+        im.onclick = function () { openPhotoById(this.dataset.open); };
+      });
+    }
   }
 
   function thumb(r, cls) {
@@ -942,18 +1367,25 @@ window.ProgressPhotos = (function () {
   }
 
   function listHTML(list) {
-    // A leading checkbox column (Gallery batch select, follow-up feedback item
-    // 5) — one more cell in the header AND every row branch below, so the
-    // grid columns stay aligned (this file's own standing rule for its grid).
+    // A leading select-all checkbox (item 4 — replaces the old separate
+    // "Clear" button in the removed selection bar) plus one cell per data
+    // column. The trailing action-icons column is GONE (item 7: "no need for
+    // the buttons per row... upon opening the photo, the photos should be
+    // fine" — the lightbox's own download/edit/delete cluster covers it),
+    // so the header and every row branch below now share 7 cells, not 8.
+    var vis = list.filter(function (r) { return !!r; });
+    var allSelected = vis.length > 0 && vis.every(function (r) { return selected[r.id]; });
     var head = '<div class="pp-grid-head">' +
-      '<div></div><div>Photo</div><div>Description</div><div>Trade</div><div>Works</div>' +
-      '<div>Location</div><div>Capture Date</div><div></div></div>';
+      '<div class="pp-cell pp-selcell"><input type="checkbox" id="pp-selall"' +
+        (allSelected ? ' checked' : '') + ' title="Select all shown" /></div>' +
+      '<div>Photo</div><div>Description</div><div>Trade</div><div>Works</div>' +
+      '<div>Location</div><div>Capture Date</div></div>';
 
-    var body = groupByTrade(list).map(function (g) {
-      var isCol = !!collapsed[g.trade];
-      var header = '<div class="pp-group" data-trade="' + Fmt.esc(g.trade) + '">' +
+    var body = groupRows(list).map(function (g) {
+      var isCol = !!collapsed[g.key];
+      var header = '<div class="pp-group" data-group="' + Fmt.esc(g.key) + '">' +
         '<span class="pp-caret" data-ico="' + (isCol ? 'chevronRight' : 'chevronDown') + '" data-ico-size="14"></span>' +
-        '<strong>' + Fmt.esc(g.trade) + '</strong>' +
+        '<strong>' + Fmt.esc(g.label) + '</strong>' +
         '<span class="pp-groupcount">' + g.items.length + '</span></div>';
       if (isCol) return header;
       return header + g.items.map(function (r) {
@@ -961,8 +1393,11 @@ window.ProgressPhotos = (function () {
         // supplies the headings); at phone width the head is hidden and the row
         // restacks under the thumbnail, where each value needs its own label —
         // module.css renders these via .pp-cell[data-l]::before.
-        return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
-          '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '"' +
+        // Clicking the row opens the lightbox (item 7); the checkbox stops that
+        // click from bubbling (wired in wireRows) so selecting never opens it.
+        return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '" data-rowopen="' + r.id + '">' +
+          '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
+            Fmt.esc(r.description || 'this photo') + '"' +
             (selected[r.id] ? ' checked' : '') + ' /></div>' +
           '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
           '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
@@ -970,7 +1405,6 @@ window.ProgressPhotos = (function () {
           '<div class="pp-cell" data-l="Works">' + Fmt.esc(worksOf(r).join(', ') || '—') + '</div>' +
           '<div class="pp-cell" data-l="Location">' + Fmt.esc(r.location || '—') + '</div>' +
           '<div class="pp-cell pp-date" data-l="Captured">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
-          '<div class="pp-cell pp-actcell">' + rowActions(r) + '</div>' +
           '</div>';
       }).join('');
     }).join('');
@@ -980,17 +1414,11 @@ window.ProgressPhotos = (function () {
 
   // Tile view: just the photo -- no description/table, no action icons on the
   // tile itself (owner feedback). Download/view/edit/delete live in the
-  // lightbox once a photo is opened.
+  // lightbox once a photo is opened. Grouping is picked from the SHARED
+  // #pp-groupby selector in the list bar (index.html) now, not a picker of
+  // its own — see groupRows()'s own comment.
   function galleryHTML(list) {
-    var bar = '<div class="pp-gallerybar">' +
-      '<label class="pp-groupby">Group by ' +
-        '<select class="pd-select" id="pp-gallery-groupby">' +
-          '<option value="month"' + (galleryGroupBy === 'month' ? ' selected' : '') + '>Month captured</option>' +
-          '<option value="year"' + (galleryGroupBy === 'year' ? ' selected' : '') + '>Year</option>' +
-          '<option value="location"' + (galleryGroupBy === 'location' ? ' selected' : '') + '>Location</option>' +
-          '<option value="activity"' + (galleryGroupBy === 'activity' ? ' selected' : '') + '>Activity</option>' +
-        '</select></label></div>';
-    var body = groupForGallery(list).map(function (g) {
+    var body = groupRows(list).map(function (g) {
       return '<div class="pp-gallerygroup">' +
         '<div class="pp-gallerygrouphead"><strong>' + Fmt.esc(g.label) + '</strong>' +
           '<span class="pp-groupcount">' + g.items.length + '</span></div>' +
@@ -1004,7 +1432,8 @@ window.ProgressPhotos = (function () {
           // trade-off this module already accepts for the 360°/3D strip.
           var hasPin = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor('photo', r.id);
           return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
-            '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '"' +
+            '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
+              Fmt.esc(r.description || 'this photo') + '"' +
               (selected[r.id] ? ' checked' : '') + ' /></span>' +
             (hasPin ? '<button type="button" class="pp-pinbtn" data-pinpreview="' + r.id + '" ' +
               'title="Show this photo\'s position on the floor plan">' +
@@ -1013,7 +1442,7 @@ window.ProgressPhotos = (function () {
           '</figure>';
         }).join('') + '</div></div>';
     }).join('');
-    return bar + body;
+    return body;
   }
 
   // Batch E item 8 — a cropped/zoomed view of the floor plan centred on this
@@ -1134,12 +1563,10 @@ window.ProgressPhotos = (function () {
   }
 
   function wireRows(host) {
-    var gb = $('pp-gallery-groupby');
-    if (gb) gb.onchange = function () { galleryGroupBy = this.value; saveUI(); render(); };
     Array.prototype.forEach.call(host.querySelectorAll('.pp-group'), function (g) {
       g.onclick = function () {
-        var t = g.dataset.trade;
-        collapsed[t] = !collapsed[t];
+        var k = g.dataset.group;
+        collapsed[k] = !collapsed[k];
         saveUI(); render();
       };
     });
@@ -1154,6 +1581,17 @@ window.ProgressPhotos = (function () {
         else if (a === 'del') remove(r);
       };
     });
+    // Item 7 — the List row itself opens the lightbox (per-row action icons
+    // are gone: "upon opening the photo, the photos should be fine" — the
+    // lightbox's own download/edit/delete cluster covers what those icons
+    // used to). Clicks starting on the select checkbox are excluded so
+    // ticking a box never also opens the photo.
+    Array.prototype.forEach.call(host.querySelectorAll('[data-rowopen]'), function (row) {
+      row.onclick = function (e) {
+        if (e.target.closest('.pp-selcell')) return;
+        openLightbox(this.dataset.rowopen);
+      };
+    });
     // Batch E item 8 — the expandable key-plan-style pin icon on a Gallery tile.
     Array.prototype.forEach.call(host.querySelectorAll('[data-pinpreview]'), function (btn) {
       btn.onclick = function (e) { e.stopPropagation(); openPinPreview(this.dataset.pinpreview); };
@@ -1166,9 +1604,19 @@ window.ProgressPhotos = (function () {
         if (this.checked) selected[this.dataset.sel] = true; else delete selected[this.dataset.sel];
         var card = this.closest('.pp-row, .pp-card');
         if (card) card.classList.toggle('pp-selrow', this.checked);
-        refreshSelBar();
+        syncChrome();
       };
     });
+    // Item 4 — select/unselect ALL currently visible rows, replacing the old
+    // separate "Clear" button. Scoped to visible() (the same filtered set
+    // the header checkbox's own "all checked?" state reflects), not the
+    // raw `selected` map, matching visibleSelectedIds()' own rule.
+    var selAll = host.querySelector('#pp-selall');
+    if (selAll) selAll.onchange = function () {
+      var on = this.checked;
+      visible().forEach(function (r) { if (on) selected[r.id] = true; else delete selected[r.id]; });
+      render();
+    };
   }
   function byId(id) { return rows.filter(function (r) { return r.id === id; })[0]; }
 
@@ -1182,23 +1630,21 @@ window.ProgressPhotos = (function () {
     var vis = {}; visible().forEach(function (r) { vis[r.id] = true; });
     return Object.keys(selected).filter(function (id) { return vis[id]; });
   }
-  function refreshSelBar() {
-    var bar = $('pp-selbar'); if (!bar) return;
-    var ids = visibleSelectedIds();
-    bar.hidden = !ids.length;
-    var c = $('pp-selcount'); if (c) c.textContent = ids.length + ' selected';
-  }
+  // ⚠️ There used to be a separate refreshSelBar()/#pp-selbar element toggled
+  // via the `hidden` ATTRIBUTE, but `.pp-selbar { display: flex }` in
+  // module.css sat at the SAME specificity as the UA's `[hidden] {
+  // display:none }` rule and, being an AUTHOR rule, always won regardless of
+  // `hidden` — so the bar showed "0 selected" permanently no matter what the
+  // JS did (screenshot: 2026-08-29). The whole element is gone now (moved
+  // into the topbar tools row, toggled via syncChrome()'s explicit
+  // `style.display`, never the `hidden` attribute), which sidesteps that bug
+  // class entirely rather than just patching this one instance of it.
   function wireSelBar() {
-    if ($('pp-sel-clear')) $('pp-sel-clear').onclick = function () { selected = {}; render(); };
-    if ($('pp-sel-download')) $('pp-sel-download').onclick = async function () {
-      var ids = visibleSelectedIds();
-      for (var i = 0; i < ids.length; i++) {
-        var r = byId(ids[i]); if (r) await download(r);
-        // A small stagger between triggers — several near-simultaneous
-        // programmatic downloads from one click are exactly what some
-        // browsers throttle/block as looking automated.
-        await new Promise(function (res) { setTimeout(res, 300); });
-      }
+    // Item 5: choose a format instead of downloading each raw file — mirrors
+    // ppr.js's own openDownloadChoice for presentations, so "Download" means
+    // the same thing (pick HTML/PDF/PPTX) everywhere in this module.
+    if ($('pp-sel-download')) $('pp-sel-download').onclick = function () {
+      openBatchDownloadChoice(visibleSelectedIds());
     };
     if ($('pp-sel-archive')) $('pp-sel-archive').onclick = async function () {
       var ids = visibleSelectedIds();
@@ -1235,7 +1681,7 @@ window.ProgressPhotos = (function () {
         (list.length
           ? '<div class="pd-field"><label>Presentation</label>' +
             '<select class="pd-select" id="pp-a2p-select">' +
-              list.map(function (p) { return '<option value="' + p.id + '">' + Fmt.esc(p.description || p.ppr_date || p.id) + '</option>'; }).join('') +
+              list.map(function (p) { return '<option value="' + Fmt.esc(p.id) + '">' + Fmt.esc(p.description || p.ppr_date || p.id) + '</option>'; }).join('') +
             '</select></div>'
           : '<p class="pp-hint">No presentations yet — one will be created.</p>') +
         '<div class="pd-field"><label>Or create a new presentation, dated</label>' +
@@ -1351,6 +1797,240 @@ window.ProgressPhotos = (function () {
     a.href = u;
     a.download = (r.photo_url || 'photo').split('/').pop();
     document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // -------------------------------------------------- batch download (item 5) --
+  // "when clicking download, app should ask what format: html, pdf, or
+  // pptx" — mirrors ppr.js's own openDownloadChoice for presentations
+  // exactly, so "Download" asks the same three-way question everywhere in
+  // this module rather than silently downloading N raw files.
+  function openBatchDownloadChoice(ids) {
+    if (!ids.length) return;
+    // Reuses ppr.js's own .ppr-fmtchoices markup/CSS verbatim (its
+    // openDownloadChoice for presentations) — one shared visual language for
+    // "pick a download format" everywhere in this module.
+    var html =
+      '<div class="pd-modal-header"><h3>Download ' + ids.length + ' photo' + (ids.length === 1 ? '' : 's') + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p class="pp-hint">Choose a format.</p>' +
+        '<div class="ppr-fmtchoices">' +
+          '<button type="button" class="pd-btn" data-fmt="html">' +
+            '<span data-ico="download" data-ico-size="16"></span> Offline HTML' +
+            '<small>Opens with no network — best for viewing on-site.</small></button>' +
+          '<button type="button" class="pd-btn" data-fmt="pptx">' +
+            '<span data-ico="layers" data-ico-size="16"></span> PowerPoint (.pptx)' +
+            '<small>One photo per slide.</small></button>' +
+          '<button type="button" class="pd-btn" data-fmt="pdf">' +
+            '<span data-ico="clipboard" data-ico-size="16"></span> PDF' +
+            '<small>One photo per page, ready to print.</small></button>' +
+        '</div></div>';
+    var m = openModal(html, 460);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-fmt]'), function (b) {
+      b.onclick = function () { var fmt = this.dataset.fmt; m.close(); exportSelectedPhotos(ids, fmt); };
+    });
+  }
+
+  // Image-embedding helpers — a small, self-contained copy of ppr.js's own
+  // toDataURL/blobToImage/collectSlideImages (this file's established
+  // convention: small helpers are restated per independently-loaded file
+  // rather than reached into another file's private closure — see reqMark()'s
+  // own comment). Downscaling keeps a multi-photo export from becoming an
+  // enormous file full of untouched full-resolution site photos.
+  var DL_MAXW = 1600, DL_JPEG_Q = 0.82;
+  function dlBlobToImage(blob) {
+    return new Promise(function (resolve, reject) {
+      var u = URL.createObjectURL(blob);
+      var im = new Image();
+      im.onload = function () { URL.revokeObjectURL(u); resolve(im); };
+      im.onerror = function () { URL.revokeObjectURL(u); reject(new Error('decode failed')); };
+      im.src = u;
+    });
+  }
+  async function dlToDataURL(url) {
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var blob = await resp.blob();
+    var img = await dlBlobToImage(blob);
+    var scale = Math.min(1, DL_MAXW / (img.naturalWidth || DL_MAXW));
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round((img.naturalWidth || DL_MAXW) * scale));
+    c.height = Math.max(1, Math.round((img.naturalHeight || DL_MAXW) * scale));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', DL_JPEG_Q);
+  }
+  // Every selected photo's image, embedded as a downscaled data URI — shared
+  // by all three export formats below so they can never show a different
+  // picture of the same selection. `onProgress(i,total)` is optional.
+  async function collectPhotoImages(list, onProgress) {
+    var imgs = {}, failed = 0;
+    var jobs = list.map(function (r) { return urlOf(r); }).filter(function (u, i, arr) {
+      return u && arr.indexOf(u) === i;
+    });
+    for (var i = 0; i < jobs.length; i++) {
+      if (onProgress) onProgress(i, jobs.length);
+      try { imgs[jobs[i]] = await dlToDataURL(jobs[i]); }
+      catch (e) { failed++; console.warn('progress-photos: could not embed an image —', e && e.message); }
+      await new Promise(function (r) { setTimeout(r, 0); });
+    }
+    return { imgs: imgs, failed: failed };
+  }
+  // Caption block shared across all three formats — description, then
+  // trade/works/location, then the capture date, exactly the fields the
+  // List/Gallery views themselves show for a photo.
+  function dlCaptionLines(r) {
+    var tags = [tradesOf(r).join(', '), worksOf(r).join(', '), r.location].filter(Boolean).join(' · ');
+    return [r.description || '', tags, r.taken_at ? Fmt.date(r.taken_at) : ''].filter(Boolean);
+  }
+  var DL_CSS =
+    'body{margin:0;font-family:Montserrat,Segoe UI,Arial,sans-serif;color:#231F20;background:#F4F4F4}' +
+    'header{background:#EE3124;color:#fff;padding:16px 22px}' +
+    'header h1{margin:0;font-size:19px;letter-spacing:.02em}' +
+    '.wrap{max-width:900px;margin:0 auto;padding:18px}' +
+    '.item{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:14px;margin-bottom:16px}' +
+    '.item{break-inside:avoid;page-break-inside:avoid}' +
+    '.item:not(:last-of-type){break-after:page;page-break-after:always}' +
+    '.item img{width:100%;display:block;border:1px solid #DCDBDB;background:#F4F4F4}' +
+    '.missing{padding:40px;text-align:center;color:#9a9a9a;font-size:13px;border:1px solid #DCDBDB}' +
+    '.cap{margin-top:8px;font-size:13px;color:#4a4a4a}' +
+    'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +
+    '@media print{body{background:#fff}.item{border:0}}';
+  function dlItemHTML(r, imgs) {
+    var u = urlOf(r);
+    var d = u ? imgs[u] : '';
+    var img = d ? '<img src="' + d + '" alt="' + Fmt.esc(r.description || '') + '" />'
+                : '<div class="missing">Image unavailable</div>';
+    var cap = dlCaptionLines(r).map(function (l) { return Fmt.esc(l); }).join('<br/>');
+    return '<section class="item">' + img + (cap ? '<div class="cap">' + cap + '</div>' : '') + '</section>';
+  }
+  function dlBodyHTML(list, imgs) {
+    return '<header><h1>' + Fmt.esc(projName || pid) + ' — Progress Photos</h1></header>' +
+      '<div class="wrap">' + list.map(function (r) { return dlItemHTML(r, imgs); }).join('') + '</div>' +
+      '<footer>Generated ' + Fmt.esc(Fmt.date(new Date().toISOString().slice(0, 10))) +
+      ' from the Planners Dashboard · Megawide Construction Corporation</footer>';
+  }
+
+  async function exportSelectedPhotos(ids, fmt) {
+    var list = ids.map(byId).filter(Boolean);
+    if (!list.length) { UI.toast('Nothing to download', 'warn'); return; }
+    if (fmt === 'pdf') return exportSelectedPdf(list);
+    if (fmt === 'pptx') return exportSelectedPptx(list);
+    return exportSelectedOffline(list);
+  }
+
+  async function exportSelectedOffline(list) {
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing offline copy</h3></div>' +
+      '<div class="pp-form"><p id="pp-dl-msg">Embedding images…</p></div>', 420);
+    var msg = $('pp-dl-msg');
+    var res = await collectPhotoImages(list, function (i, total) {
+      if (msg) msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+    });
+    var html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
+      '<title>' + Fmt.esc(projName || pid) + ' — Progress Photos</title>' +
+      '<style>' + DL_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs) + '</body></html>';
+    var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'Photos ' + (projName || pid) + '.html';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    m.close();
+    UI.toast('Offline copy downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
+      res.failed ? 'warn' : 'ok');
+  }
+
+  async function exportSelectedPdf(list) {
+    if (typeof html2pdf !== 'function') {
+      UI.toast('The PDF library did not load — check the connection and reload.', 'error'); return;
+    }
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing PDF</h3></div>' +
+      '<div class="pp-form"><p id="pp-dl-msg">Embedding images…</p></div>', 420);
+    var msg = $('pp-dl-msg');
+    var holder = null;
+    try {
+      var res = await collectPhotoImages(list, function (i, total) {
+        if (msg) msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+      });
+      if (msg) msg.textContent = 'Building PDF…';
+      // ⚠️ Same rule ppr.js's own exportPdf documents (issues-lessons,
+      // 2026-08-22): the captured element must stay in NORMAL FLOW, or
+      // html2canvas gets a real width and a height of ZERO — a byte-identical
+      // blank PDF with no error. Off-screen parking goes on a HOLDER; `wrap`
+      // sits in normal flow inside it.
+      holder = document.createElement('div');
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;';
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'width:900px;';
+      wrap.innerHTML = '<style>' + DL_CSS + '</style>' + dlBodyHTML(list, res.imgs);
+      holder.appendChild(wrap);
+      document.body.appendChild(holder);
+
+      await html2pdf().set({
+        margin: [8, 8, 8, 8],
+        filename: 'Photos ' + (projName || pid) + '.pdf',
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#F4F4F4' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css'] }
+      }).from(wrap).save();
+
+      m.close();
+      UI.toast('PDF downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
+        res.failed ? 'warn' : 'ok');
+    } catch (e) {
+      m.close(); UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
+    } finally {
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+    }
+  }
+
+  async function exportSelectedPptx(list) {
+    if (typeof PptxGenJS !== 'function') {
+      UI.toast('The PowerPoint library did not load — check the connection and reload.', 'error'); return;
+    }
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing PowerPoint</h3></div>' +
+      '<div class="pp-form"><p id="pp-dl-msg">Embedding images…</p></div>', 420);
+    var msg = $('pp-dl-msg');
+    try {
+      var res = await collectPhotoImages(list, function (i, total) {
+        if (msg) msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+      });
+      if (msg) msg.textContent = 'Building file…';
+      var imgs = res.imgs;
+
+      var pptx = new PptxGenJS();
+      pptx.defineLayout({ name: 'PP_WIDE', width: 13.33, height: 7.5 });
+      pptx.layout = 'PP_WIDE';
+
+      var title = pptx.addSlide();
+      title.background = { color: 'EE3124' };
+      title.addText(projName || pid, { x: 0.6, y: 2.6, w: 12, h: 0.8, fontSize: 28, bold: true, color: 'FFFFFF' });
+      title.addText(list.length + ' photo' + (list.length === 1 ? '' : 's'),
+        { x: 0.6, y: 3.5, w: 12, h: 1, fontSize: 16, color: 'FFFFFF' });
+
+      // PptxGenJS's `data` option takes the payload WITHOUT the `data:`
+      // prefix canvas.toDataURL() always adds (same as ppr.js's own exporter).
+      function stripDataPrefix(uri) { return uri ? uri.replace(/^data:/, '') : ''; }
+
+      list.forEach(function (r) {
+        var slide = pptx.addSlide();
+        var u = urlOf(r), data = u ? imgs[u] : '';
+        if (data) slide.addImage({ data: stripDataPrefix(data), x: 1.67, y: 0.4, w: 10, h: 5.6, sizing: { type: 'contain', w: 10, h: 5.6 } });
+        else slide.addText('Photo not set', { x: 1.67, y: 0.4, w: 10, h: 5.6, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
+        var cap = dlCaptionLines(r).join('   ·   ');
+        slide.addText(cap, { x: 0.6, y: 6.15, w: 12.13, h: 0.8, fontSize: 11, color: '4A4A4A', align: 'center' });
+      });
+
+      m.close();
+      await pptx.writeFile({ fileName: 'Photos ' + (projName || pid) + '.pptx' });
+      UI.toast('PowerPoint downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
+        res.failed ? 'warn' : 'ok');
+    } catch (e) {
+      m.close(); UI.toast('PowerPoint error: ' + ((e && e.message) || e), 'error');
+    }
   }
 
   // ------------------------------------------------------- markup editor ---
@@ -1493,7 +2173,11 @@ window.ProgressPhotos = (function () {
       '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-mk-save">Save markup</button></div>';
-    var m = openModal(html, 900);
+    // ⚠️ Audit fix: onClose now covers × / Cancel AND a backdrop click alike
+    // (previously only the [data-close] re-wiring further down did, so
+    // dismissing via backdrop click left this listener on `window` forever
+    // — see openModal's own comment for the mechanism).
+    var m = openModal(html, 900, function () { window.removeEventListener('resize', sizeCanvas); });
 
     var canvas = $('pp-mk-canvas'), ctx = canvas.getContext('2d'), img = $('pp-mk-img');
     function sizeCanvas() {
@@ -1574,11 +2258,12 @@ window.ProgressPhotos = (function () {
       });
     });
 
-    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
-      b.onclick = function () { window.removeEventListener('resize', sizeCanvas); m.close(); };
-    });
+    // ⚠️ Audit fix: the [data-close] re-wire that used to live here is
+    // gone — openModal's own onClose (passed above) now removes the
+    // resize listener on EVERY dismissal path, including backdrop click,
+    // which this per-button re-wire never covered. m.close() below already
+    // runs it, so no separate removeEventListener call is needed here either.
     $('pp-mk-save').onclick = function () {
-      window.removeEventListener('resize', sizeCanvas);
       m.close();
       if (onSave) onSave(objs);
     };
@@ -1586,18 +2271,16 @@ window.ProgressPhotos = (function () {
 
   // --------------------------------------------------------------- upload ---
   function reqMark() { return ' <span class="pp-req">*</span>'; }
-  // Capture date / Trade / Works / Location Breakdown are required. These
-  // fields live in a plain <div>, not a <form>, so the native `required`
-  // attribute is a visual/semantic cue only -- this is the actual gate,
-  // called before either the Add or Edit save handler proceeds.
-  // ⚠️ Trade/Works are checkbox groups now (multi-select) -- "required" means
-  // at least one box checked, read via readMultiCheck rather than a select's
-  // own .value.
+  // Capture date / Works / Location Breakdown are required. These fields
+  // live in a plain <div>, not a <form>, so the native `required` attribute
+  // is a visual/semantic cue only -- this is the actual gate, called before
+  // either the Add or Edit save handler proceeds. Trade is no longer a
+  // field of its own (item 9) -- it's derived from the Works value chosen,
+  // so there is nothing to require separately.
   function requiredFieldsMissing(idPrefix) {
     var date = $(idPrefix + '-date');
     if (!date || !date.value) return 'Capture date is required.';
-    if (!readMultiCheck(idPrefix, 'trades').length) return 'At least one Trade is required.';
-    if (!readMultiCheck(idPrefix, 'works').length) return 'At least one Works value is required.';
+    if (!readWorksTag(idPrefix)) return 'A Works value is required.';
     var need = locRequiredLevels();
     if (need.length) {
       var vals = currentLocValues(idPrefix);
@@ -1764,6 +2447,14 @@ window.ProgressPhotos = (function () {
   // tooltip, since Gaussian Splatting/RunPod are on hold; they route to
   // pano.js/recon.js's own real capture flows (unchanged) once re-enabled,
   // never re-implemented here.
+  // 2026-08-29 feedback item 17: four options -- Photo / Video / 360° / 3D --
+  // with only 3D greyed out (3D reconstruction is the one still on hold; 360°
+  // capture is being fixed in the same round, item 18, so it comes back as a
+  // real choice here). Picking Photo/Video stays in THIS form (they share
+  // every other field); picking 360° hands off to pano.js's own real capture
+  // flow instead -- a 360° capture is a fundamentally different pipeline
+  // (record/stitch into a `panoramas` row, not a plain file into
+  // `progress_photos`), so it is delegated to, never reimplemented here.
   function mediaTypeSelectorHTML(idPrefix, cur) {
     cur = cur || 'photo';
     return '<div class="pd-field pp-span2"><label>Type</label>' +
@@ -1772,8 +2463,8 @@ window.ProgressPhotos = (function () {
           '" data-mtype="photo" id="' + idPrefix + '-mtype-photo">Photo</button>' +
         '<button type="button" class="pp-mtype' + (cur === 'video' ? ' active' : '') +
           '" data-mtype="video" id="' + idPrefix + '-mtype-video">Video</button>' +
-        '<button type="button" class="pp-mtype" disabled title="360° and 3D capture are on hold — see the Photos screen\'s own 360°/3D tools">' +
-          '360° / 3D</button>' +
+        '<button type="button" class="pp-mtype" id="' + idPrefix + '-mtype-360">360°</button>' +
+        '<button type="button" class="pp-mtype" disabled title="3D reconstruction is on hold">3D</button>' +
       '</div></div>';
   }
   function wireMediaTypeSelector(idPrefix, onChange) {
@@ -1781,11 +2472,20 @@ window.ProgressPhotos = (function () {
     var fileInput = $(idPrefix + '-files');
     function apply() {
       if (fileInput) fileInput.accept = cur === 'video' ? 'video/*' : 'image/*';
-      if (fileInput) fileInput.removeAttribute('capture');
+      // ⚠️ Audit fix: this used to run unconditionally on every call
+      // (including the very FIRST, before the user touches anything), so
+      // the markup's own `capture="environment"` — meant to hint mobile
+      // browsers to open the rear camera directly for a photo — was
+      // stripped on arrival and never actually took effect in Photo mode
+      // either. It's removed only in Video mode now, and restored when
+      // switching back to Photo, so toggling between the two is reversible.
+      if (fileInput) {
+        if (cur === 'video') fileInput.removeAttribute('capture');
+        else fileInput.setAttribute('capture', 'environment');
+      }
       var pBtn = $(idPrefix + '-mtype-photo'), vBtn = $(idPrefix + '-mtype-video');
       if (pBtn) pBtn.classList.toggle('active', cur === 'photo');
       if (vBtn) vBtn.classList.toggle('active', cur === 'video');
-      var lbl = document.querySelector('label[for="' + idPrefix + '-files"]');
       if (onChange) onChange(cur);
     }
     ['photo', 'video'].forEach(function (t) {
@@ -1814,12 +2514,10 @@ window.ProgressPhotos = (function () {
             '<input class="pd-input" id="pp-desc" placeholder="e.g. Model Unit" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-date" value="' + today + '" required /></div>' +
-          '<div class="pd-field pp-span2"><label>Trade' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
-            tradesOverlayHTML('pp', []) + '</div>' +
-          '<div class="pd-field pp-span2"><label>Works' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
-            '<div id="pp-workshost">' + worksOverlayHTML('pp', [], []) + '</div></div>' +
+          '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
+            worksTagFieldHTML('pp', '') + '</div>' +
           locationFieldHTML('pp', preset.locationValues || {}) +
-          keyPlanFieldHTML('pp', '') +
+          (window.BIM ? BIM.pinFieldHTML('pp', null) : '') +
         '</div>' +
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
       '</div>' +
@@ -1829,11 +2527,19 @@ window.ProgressPhotos = (function () {
 
     var m = openModal(html, 640);
     wireLocationField('pp');
-    wireTradeWorks('pp');
-    wireKeyPlanField('pp');
+    wireWorksTagField('pp');
+    if (window.BIM) BIM.wirePinField('pp');
     var mtype = wireMediaTypeSelector('pp', function (t) {
       var fld = $('pp-filesfield'); if (fld) fld.querySelector('label').textContent = t === 'video' ? 'Videos' : 'Photos';
     });
+    // 360° hands off to pano.js's own real capture flow (item 17) — this
+    // modal closes rather than trying to represent a recording/stitching
+    // pipeline inside the same form as a plain file upload.
+    if ($('pp-mtype-360')) $('pp-mtype-360').onclick = function () {
+      m.close();
+      if (window.PANO && PANO.openCapture) PANO.openCapture();
+      else UI.toast('360° capture is not available', 'error');
+    };
     hydrate(m.el);
 
     $('pp-save').onclick = async function () {
@@ -1844,26 +2550,28 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
       var act = resolveActivity(locVals);
-      var tradesVal = readMultiCheck('pp', 'trades');
-      var worksVal = readMultiCheck('pp', 'works');
+      // Item 9: Works is now a single schedule-derived tag; Trade is DERIVED
+      // from it, never picked directly. `trades`/`works_multi` stay the real
+      // array columns (at most one element each now) so every downstream
+      // reader (grouping, filters, `tradesOf`/`worksOf`) keeps working
+      // unchanged; `trade`/`works` stay populated too as the singular
+      // display-cache fallback, same "deprecated but kept in step"
+      // convention this file already uses for `location`.
+      var worksVal = readWorksTag('pp');
+      var tradeVal = deriveTradeForWorks(worksVal);
+      var pinData = window.BIM ? BIM.readPinField('pp') : null;   // item 11
       var shared = {
         description: $('pp-desc').value.trim(),
         taken_at: $('pp-date').value || null,
-        // `trades`/`works_multi` are the real multi-value columns (2026-08-29
-        // feedback item 2); `trade`/`works` stay populated too, as a
-        // first-selected display-cache fallback for any older code path that
-        // still reads the singular column -- same "deprecated but kept in
-        // step" convention this file already uses for `location`.
-        trades: tradesVal,
-        works_multi: worksVal,
-        trade: tradesVal[0] || null,
-        works: worksVal[0] || null,
+        trades: tradeVal ? [tradeVal] : [],
+        works_multi: worksVal ? [worksVal] : [],
+        trade: tradeVal,
+        works: worksVal || null,
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp'),
-        key_plan_url: readKeyPlanValue('pp') || null,
         media_type: kind
       };
       this.disabled = true;
@@ -1883,23 +2591,19 @@ window.ProgressPhotos = (function () {
 
       m.close();
       if (done) UI.toast(done + ' ' + (kind === 'video' ? 'video' : 'photo') + (done === 1 ? '' : 's') + ' uploaded', 'ok');
-      if (queued) UI.toast(queued + ' photo' + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
+      // ⚠️ Audit fix: hardcoded "photo" regardless of kind, unlike the
+      // "uploaded" toast right above it — a batch of videos queued offline
+      // reported itself as photos.
+      if (queued) UI.toast(queued + ' ' + (kind === 'video' ? 'video' : 'photo') + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
-      // Floor-plan pin + direction as a "best practice" follow-up (18-item
-      // list, Batch E) — NON-BLOCKING by design: the plan's own wording
-      // ("gains a REQUIRED floor-plan step") would turn every capture,
-      // everywhere, into a hard gate on the Plans module even existing yet
-      // for this project. Making an already-shipped, well-tested critical
-      // path (Add photos) newly blockable on an unrelated module's state is
-      // a bigger behaviour change than "best practice" calls for — so this
-      // offers the capability right after a successful upload instead,
-      // skippable, using the FIRST uploaded item to represent the whole
-      // batch (a pin is fundamentally ONE point; a set of photos captured
-      // together is well represented by one).
-      if (newIds.length && window.BIM && BIM.hasPlans && BIM.hasPlans() && BIM.openPinPickerFor) {
-        BIM.openPinPickerFor('photo', newIds[0],
-          newIds.length > 1 ? newIds.length + ' photos' : 'this photo', function () {});
+      // Item 11: pin + direction is now captured INLINE, in the same form as
+      // the upload itself, rather than a separate popup shown after the
+      // fact -- so it's saved for every uploaded item that shares this one
+      // camera position, not just a single representative photo. A no-op
+      // when the planner left the field blank (readPinField returned null).
+      if (pinData && window.BIM && BIM.savePinForItem) {
+        for (var pi = 0; pi < newIds.length; pi++) await BIM.savePinForItem('photo', newIds[pi], pinData);
       }
       if (typeof preset.onDone === 'function') preset.onDone(newIds);
     };
@@ -1914,110 +2618,15 @@ window.ProgressPhotos = (function () {
   }
 
   // ---------------------------------------------------- Key Plan (per photo)
-  // Key plan now lives on the PHOTO, not the PPR slide (owner feedback), so
-  // both the Add and Edit photo forms carry a "Key plan" field. Rather than a
-  // bare file input every time, it's a small wizard: pick one already
-  // uploaded to this project, or upload a new one -- an "easy uploading and
-  // selection" flow instead of re-uploading the same key plan for every photo
-  // at that location.
-  async function uploadKeyPlanFile(file) {
-    var safe = file.name.replace(/[^\w.\-]+/g, '_');
-    var path = pid + '/keyplans/' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '_' + safe;
-    var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
-    if (res.error) throw res.error;
-    return path;
-  }
-  function distinctKeyPlans() {
-    var seen = {}, out = [];
-    rows.forEach(function (r) {
-      if (r.key_plan_url && !seen[r.key_plan_url]) { seen[r.key_plan_url] = 1; out.push(r.key_plan_url); }
-    });
-    return out;
-  }
-  function keyPlanFieldHTML(idPrefix, curPath) {
-    return '<div class="pd-field pp-span2 pp-keyplanfield"><label>Key plan <span class="pp-optnote">(optional)</span></label>' +
-      '<input type="hidden" id="' + idPrefix + '-kp-path" value="' + Fmt.esc(curPath || '') + '" />' +
-      '<div class="pp-kppreviewrow">' +
-        '<div class="pp-kppreview" id="' + idPrefix + '-kp-preview"></div>' +
-        '<button type="button" class="pd-btn" id="' + idPrefix + '-kp-btn">' +
-          (curPath ? 'Change key plan…' : 'Set key plan…') + '</button>' +
-        (curPath ? '<button type="button" class="pd-btn" id="' + idPrefix + '-kp-clear">Remove</button>' : '') +
-      '</div></div>';
-  }
-  function paintKeyPlanPreview(idPrefix) {
-    var pathEl = $(idPrefix + '-kp-path');
-    var path = pathEl ? pathEl.value : '';
-    var prev = $(idPrefix + '-kp-preview'); if (!prev) return;
-    var u = path ? urlCache[path] : '';
-    prev.innerHTML = path
-      ? (u ? '<img src="' + Fmt.esc(u) + '" alt="Key plan" />' : '<span class="pp-muted">Key plan set</span>')
-      : '<span class="pp-muted">No key plan set</span>';
-  }
-  function wireKeyPlanField(idPrefix) {
-    paintKeyPlanPreview(idPrefix);
-    var btn = $(idPrefix + '-kp-btn');
-    if (btn) btn.onclick = function () { openKeyPlanWizard(idPrefix); };
-    var clr = $(idPrefix + '-kp-clear');
-    if (clr) clr.onclick = function () {
-      $(idPrefix + '-kp-path').value = '';
-      paintKeyPlanPreview(idPrefix);
-      clr.remove();
-      if (btn) btn.textContent = 'Set key plan…';
-    };
-  }
-  function readKeyPlanValue(idPrefix) {
-    var el = $(idPrefix + '-kp-path');
-    return el ? el.value : '';
-  }
-  function openKeyPlanWizard(idPrefix) {
-    var existing = distinctKeyPlans();
-    var html =
-      '<div class="pd-modal-header"><h3>Key plan</h3>' +
-        '<button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form">' +
-        (existing.length
-          ? '<p class="pp-hint">Pick one already uploaded to this project, or upload a new one.</p>' +
-            '<div class="pp-kpgrid" id="pp-kp-grid">' + existing.map(function (path) {
-              var u = urlCache[path] || '';
-              return '<button type="button" class="pp-kpitem" data-path="' + Fmt.esc(path) + '">' +
-                (u ? '<img src="' + Fmt.esc(u) + '" alt="" />' : '<span data-ico="camera" data-ico-size="18"></span>') +
-                '</button>';
-            }).join('') + '</div>'
-          : '<p class="pp-hint">No key plans uploaded to this project yet — upload one below.</p>') +
-        '<div class="pd-field"><label>Upload new key plan</label>' +
-          '<input class="pd-input" type="file" id="pp-kp-file" accept="image/*" /></div>' +
-      '</div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
-        '<button class="pd-btn pd-btn-primary" id="pp-kp-upload" disabled>Upload &amp; use</button></div>';
-    var m = openModal(html, 560);
-    hydrate(m.el);
-    Array.prototype.forEach.call(m.el.querySelectorAll('.pp-kpitem'), function (b) {
-      b.onclick = function () {
-        $(idPrefix + '-kp-path').value = this.dataset.path;
-        paintKeyPlanPreview(idPrefix);
-        var btn = $(idPrefix + '-kp-btn'); if (btn) btn.textContent = 'Change key plan…';
-        m.close();
-      };
-    });
-    var fileInput = $('pp-kp-file'), upBtn = $('pp-kp-upload');
-    fileInput.onchange = function () { upBtn.disabled = !(fileInput.files && fileInput.files[0]); };
-    upBtn.onclick = async function () {
-      var f = fileInput.files && fileInput.files[0]; if (!f) return;
-      this.disabled = true; this.textContent = 'Uploading…';
-      try {
-        var path = await uploadKeyPlanFile(f);
-        var res = await sb().storage.from(BUCKET).createSignedUrl(path, SIGN_TTL);
-        if (res && res.data && res.data.signedUrl) urlCache[path] = res.data.signedUrl;
-        $(idPrefix + '-kp-path').value = path;
-        paintKeyPlanPreview(idPrefix);
-        var btn = $(idPrefix + '-kp-btn'); if (btn) btn.textContent = 'Change key plan…';
-        m.close();
-      } catch (err) {
-        UI.toast('Key plan upload failed: ' + (err.message || err), 'error');
-        this.disabled = false; this.textContent = 'Upload & use';
-      }
-    };
-  }
+  // RETIRED (2026-08-29 feedback item 11): this ad-hoc "upload your own key
+  // plan image every time" wizard is superseded by BIM.pinFieldHTML/
+  // wirePinField/readPinField/savePinForItem, which pick from the project's
+  // REAL floor_plans database (the Plans tab) and additionally capture WHERE
+  // on that plan the camera stood and which way it faced — the two things a
+  // bare reference image never recorded. `progress_photos.key_plan_url`
+  // stays in the schema for any pre-existing row that still carries one
+  // (nothing reads or displays it going forward); no migration needed to
+  // remove a column nothing new writes to.
 
   // ------------------------------------------------------------ tolerant write
   // Every DB write that might carry the new schedule-linkage columns goes
@@ -2223,6 +2832,7 @@ window.ProgressPhotos = (function () {
   // ----------------------------------------------------------- edit/delete ---
   function openForm(r) {
     broadcastCollabSel(r.id, true);   // tell other viewers I'm editing this photo
+    var existingPinInfo = (window.BIM && BIM.pinInfoFor) ? BIM.pinInfoFor('photo', r.id) : null;
     var html =
       '<div class="pd-modal-header"><h3>Edit photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
@@ -2233,52 +2843,52 @@ window.ProgressPhotos = (function () {
             '<input class="pd-input" id="pp-e-desc" value="' + Fmt.esc(r.description || '') + '" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-e-date" value="' + Fmt.esc(r.taken_at || '') + '" required /></div>' +
-          '<div class="pd-field pp-span2"><label>Trade' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
-            tradesOverlayHTML('pp-e', tradesOf(r)) + '</div>' +
-          '<div class="pd-field pp-span2"><label>Works' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
-            '<div id="pp-e-workshost">' + worksOverlayHTML('pp-e', tradesOf(r), worksOf(r)) + '</div></div>' +
+          '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
+            worksTagFieldHTML('pp-e', worksOf(r)[0] || '') + '</div>' +
           locationFieldHTML('pp-e', r.location_values || {}) +
-          keyPlanFieldHTML('pp-e', r.key_plan_url || '') +
+          (window.BIM ? BIM.pinFieldHTML('pp-e', existingPinInfo ? existingPinInfo.pin : null) : '') +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-e-save">Save</button></div>';
 
-    var m = openModal(html, 560);
+    // ⚠️ Audit fix: onClose now clears the "editing this photo" collab
+    // cursor on EVERY close path — × / Cancel AND a backdrop click alike.
+    // The old comment here ("on every close path (× / Cancel)") was only
+    // ever true of the two [data-close] buttons; a backdrop click bypassed
+    // the m.close reassignment those relied on and left the cursor
+    // broadcasting "still editing" to every other viewer indefinitely.
+    var m = openModal(html, 560, function () { broadcastCollabSel(null); });
     var codeWrap = $('pp-e-codes');
     if (codeWrap) Array.prototype.forEach.call(codeWrap.querySelectorAll('input[type=checkbox]'), function (c) {
       c.checked = (r.tags || []).indexOf(c.value) >= 0;
     });
     wireLocationField('pp-e', true);
-    wireTradeWorks('pp-e');
-    wireKeyPlanField('pp-e');
+    wireWorksTagField('pp-e');
+    if (window.BIM) BIM.wirePinField('pp-e');
     hydrate(m.el);
-    // Clear the "editing this photo" cursor on every close path (× / Cancel).
-    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
-      b.onclick = function () { broadcastCollabSel(null); m.close(); };
-    });
     $('pp-e-save').onclick = async function () {
       var reqErr = requiredFieldsMissing('pp-e');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       this.disabled = true;
       var locVals = currentLocValues('pp-e');
       var act = resolveActivity(locVals);
-      var tradesVal = readMultiCheck('pp-e', 'trades');
-      var worksVal = readMultiCheck('pp-e', 'works');
+      var worksVal = readWorksTag('pp-e');
+      var tradeVal = deriveTradeForWorks(worksVal);
+      var pinData = window.BIM ? BIM.readPinField('pp-e') : null;   // item 11 -- read before the modal closes
       var patch = {
         description: $('pp-e-desc').value.trim(),
         taken_at: $('pp-e-date').value || null,
-        trades: tradesVal,
-        works_multi: worksVal,
-        trade: tradesVal[0] || null,
-        works: worksVal[0] || null,
+        trades: tradeVal ? [tradeVal] : [],
+        works_multi: worksVal ? [worksVal] : [],
+        trade: tradeVal,
+        works: worksVal || null,
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp-e'),
-        key_plan_url: readKeyPlanValue('pp-e') || null,
         updated_at: new Date().toISOString()
       };
       // Offline-capable metadata edit: apply optimistically, then route through
@@ -2286,12 +2896,13 @@ window.ProgressPhotos = (function () {
       // on reconnect, and retries once without the schedule-link columns if the
       // migration hasn't run). Only metadata changes here — the image is untouched.
       Object.assign(r, patch);
-      broadcastCollabSel(null); m.close();
+      m.close();   // onClose (passed to openModal above) clears the collab cursor
       fillFilterOptions(); render();
       var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: patch });
       if (!w.ok) { UI.toast(w.error ? w.error.message : 'Save failed', 'error'); return; }
       UI.toast(w.queued ? 'Saved on this device — will sync when you reconnect' : 'Photo updated', 'ok');
       if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);
+      if (pinData && window.BIM && BIM.savePinForItem) await BIM.savePinForItem('photo', r.id, pinData);
     };
 
     // Autosave (metadata only — no re-upload involved): debounced re-use of the
@@ -2371,6 +2982,48 @@ window.ProgressPhotos = (function () {
     onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); },
     trades: function () { return TRADES.slice(); },
     _syncChrome: syncChrome,
+    // ⚠️ REAL BUG fixed here (audit pass): index.html's setScreen() only ever
+    // called syncChrome() when ENTERING the Photos screen, never when
+    // LEAVING it — so the four selection-mode toolbar buttons (Download/
+    // Add to Presentation/Archive + the count) stayed visible on top of
+    // whichever OTHER screen's own tools were showing (e.g. Presentations'
+    // "+ New Presentation"), for as long as a selection was active. Clearing
+    // the selection on leaving is also the more honest behaviour — a batch
+    // selection is a live, in-progress action tied to being on this screen,
+    // not something that should silently survive a tab switch and be acted
+    // on later with the planner having forgotten what was checked.
+    // ⚠️ Deliberately NOT a call to the full syncChrome(): index.html's
+    // setScreen() already runs `show(PHOTO_TOOLS, isPhotos)` to hide
+    // pp-add/pp-sep-photos/pp-refresh when leaving — syncChrome()'s OWN
+    // `has` branch for those same three ids re-shows them whenever there is
+    // no active selection (the normal in-screen "selection just cleared"
+    // case), which on leaving would silently UNDO that `show()` call and
+    // leave the Photos screen's own Add/Refresh buttons visible on top of
+    // whichever other screen is now showing. This only clears the selection
+    // state and hides the four selection-only controls, nothing else.
+    _leavePhotosScreen: function () {
+      selected = {};
+      var count = $('pp-selcount'); if (count) count.style.display = 'none';
+      ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'].forEach(function (id) {
+        var el = $(id); if (el) el.style.display = 'none';
+      });
+      // #pp-view isn't destroyed when leaving (its screen container is only
+      // `hidden`, not emptied), so a checked box or highlighted row from a
+      // now-cleared selection would otherwise sit there stale until the
+      // grid's next unrelated re-render — visible again the moment the
+      // planner comes back, even though `selected` (and the toolbar above)
+      // both already correctly read "nothing selected".
+      var host = $('pp-view');
+      if (host) {
+        Array.prototype.forEach.call(host.querySelectorAll('[data-sel]'), function (cb) {
+          cb.checked = false;
+          var card = cb.closest('.pp-row, .pp-card');
+          if (card) card.classList.remove('pp-selrow');
+        });
+        var selAll = host.querySelector('#pp-selall');
+        if (selAll) selAll.checked = false;
+      }
+    },
     _closeLightbox: closeLightbox,
     _stepLightbox: stepLightbox,
     // Used by the PPR slide editor's "+ Add photos" shortcut: opens the same
@@ -2413,15 +3066,11 @@ window.ProgressPhotos = (function () {
       drawMarkupObjects(ctx, objs || [], canvas.width, canvas.height);
     },
     // Opens a SPECIFIC photo's lightbox regardless of whatever the Photos
-    // screen's own filtered view currently holds in `lightboxIds` — plain
-    // openLightbox(id) falls back to index 0 on a miss, which would silently
-    // show the wrong photo when called from a screen (Floor Plan) that never
-    // populated that array itself.
-    openPhotoById: function (id) {
-      if (!byId(id)) { UI.toast('That photo could not be found', 'warn'); return; }
-      lightboxIds = [id];
-      openLightbox(id);
-    },
+    // screen's own filtered view currently holds in `lightboxIds` — see
+    // openPhotoById's own definition above (Plan/Stack views use it directly
+    // from within this closure; this is the same function, exported for
+    // bim.js's own Plans-tab pin clicks).
+    openPhotoById: function (id) { return openPhotoById(id); },
     // Test-only hooks (same convention as bim.js's _zoomAnchor) — the
     // legacy-fallback logic in tradesOf/worksOf is exactly the kind of thing
     // worth genuinely EXECUTING rather than only regex-checking, since a
@@ -2429,6 +3078,19 @@ window.ProgressPhotos = (function () {
     // trades on every pre-migration row.
     _tradesOf: function (r) { return tradesOf(r); },
     _worksOf: function (r) { return worksOf(r); },
+    // Item 9 (2026-08-29, second feedback round): worth genuinely executing
+    // for the same reason — a wrong reverse-lookup here silently mislabels
+    // every photo's trade for a group-by/filter that reads it, with nothing
+    // in the UI to catch a subtly wrong match. Saves/restores SCHED_ACTS
+    // around the call (same save/restore-closure-state convention bim.js's
+    // own _stackGrid test hook already uses) so a test can inject a fixture
+    // schedule without touching this module's real load path.
+    _deriveTradeForWorks: function (worksValue, schedActs) {
+      var saved = SCHED_ACTS;
+      SCHED_ACTS = schedActs || [];
+      try { return deriveTradeForWorks(worksValue); }
+      finally { SCHED_ACTS = saved; }
+    },
     // Test-only hooks for the Batch C (2026-08-29) 360°/3D media strip — lets
     // test.js genuinely execute the location/date/search filter match and
     // the panorama+reconstruction merge, rather than only regex-checking the
@@ -2442,6 +3104,38 @@ window.ProgressPhotos = (function () {
     // in test.js) captures which canvas 2D calls actually fired per shape
     // type — the one way to tell "drew a rect" from "silently did nothing".
     _drawMarkupObjects: function (ctx, objs, w, h) { drawMarkupObjects(ctx, objs, w, h); },
-    _markupHitTest: function (objs, nx, ny, w, h) { return markupHitTest(objs, nx, ny, w, h); }
+    _markupHitTest: function (objs, nx, ny, w, h) { return markupHitTest(objs, nx, ny, w, h); },
+    // Item 16 (2026-08-29, second round) — Plan/Stack views relocated here
+    // from bim.js. Genuinely EXECUTE the same "as of" cell rule and grid
+    // builder bim.js's own tests already proved out, now against THIS
+    // file's versions, plus the cluster grouping. Save/restore closure state
+    // around each call, same convention as _stackGrid's bim.js predecessor.
+    _mostRecentAsOf: function (list, cutoff) { return mostRecentAsOf(list, cutoff); },
+    _planClusters: function (pins, monthCutoff) { return planClusters(pins, monthCutoff); },
+    _itemDateForPin: function (pin, photosArr) {
+      var saved = rows; if (photosArr) rows = photosArr;
+      try { return itemDateForPin(pin); } finally { rows = saved; }
+    },
+    _stackGrid: function (levels, photosArr, rowId, colId, cutoff) {
+      var savedLevels = LOC_LEVELS, savedRows = rows;
+      LOC_LEVELS = levels; rows = photosArr;
+      stackRowLevelId = rowId || null; stackColLevelId = colId || null;
+      try { return stackGrid(cutoff); }
+      finally { LOC_LEVELS = savedLevels; rows = savedRows; stackRowLevelId = null; stackColLevelId = null; }
+    },
+    // Test-only hook for the unified List+Gallery grouping (2026-08-29
+    // follow-up item 6) — genuinely executes groupRows() with an INJECTED
+    // mode, rather than only regex-checking the source, the same convention
+    // as every hook above. Saves/restores the real galleryGroupBy so this
+    // can't leak state into any other test that runs after it.
+    _groupRows: function (list, mode) {
+      var saved = galleryGroupBy; galleryGroupBy = mode;
+      try { return groupRows(list); } finally { galleryGroupBy = saved; }
+    },
+    // Test-only hook for the batch-download caption block (item 5) — the
+    // exact three lines (desc / trade·works·location / date) every one of
+    // the three export formats reads, so a change here provably affects all
+    // three rather than only the one format someone happened to test by eye.
+    _dlCaptionLines: function (r) { return dlCaptionLines(r); }
   };
 })();

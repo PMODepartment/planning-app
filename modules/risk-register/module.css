@@ -92,7 +92,11 @@
   .rr-table td.rr-c-title { font-size: 14px; padding-bottom: 6px; }
   .rr-table td.rr-c-code { font-size: 11px; color: var(--pd-muted); }
   .rr-table td.rr-rowacts { display: flex; gap: 8px; margin-top: 8px; white-space: normal !important; }
-  .rr-table td.rr-rowacts .pd-btn { flex: 1 1 auto; justify-content: center; }
+  /* Sized to content, not stretched to fill the row — two buttons each
+     expanding to half the card width read as oversized pills for a short
+     label; still >=44px tall via the shared .pd-btn phone rule. */
+  .rr-table td.rr-rowacts .pd-btn { flex: 0 1 auto; justify-content: center; }
+  .rr-table td.rr-rowacts .pd-btn:only-child { flex: 1 1 auto; }
   .rr-table td[colspan] { text-align: center; }
   .rr-filters { flex-wrap: wrap; gap: 8px; }
   .rr-filters > * { flex: 1 1 100%; min-width: 0; }
