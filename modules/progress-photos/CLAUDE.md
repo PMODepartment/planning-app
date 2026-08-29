@@ -2,6 +2,54 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Second feedback round, part 2 (item 18): fixing the 360° recording UX (2026-08-29)
+
+Owner: *"the 360 feature of the app is also not working well, I can't take videos very easily. Please
+fix."* Investigated the actual `openCaptureModal` recording step (not the stitching pipeline, which
+was never the complaint) and found the friction was real, structural, and fixable without touching
+anything downstream of the recorded blob:
+
+- ⚠️ **Two deliberate taps where one would do.** "Use camera" only requested permission and showed a
+  preview; a SECOND, previously-hidden "Start recording" button then had to be tapped separately.
+  Collapsed into one: `getUserMedia`'s permission prompt is itself triggered from the SAME click
+  handler as `MediaRecorder.start()`, since the click that fires it already is a valid user gesture —
+  there's no reason two gestures were ever needed.
+- ⚠️ **No visible "you are recording" cue at all** — the only signal was the button's text flipping
+  from "Start recording" to "Stop recording". A pulsing red dot + a running `mm:ss` timer
+  (`.pano-recind`, `fmtTime`) now overlay the camera preview the whole time recording is active.
+- ⚠️ **No duration guidance, so a forgotten recording could run indefinitely.** `MAX_REC_SECONDS = 90`
+  auto-stops it (generous for a slow spin) with a toast naming why, rather than letting a raw 20-minute
+  clip reach the frame-extraction step and fail confusingly downstream.
+- **A camera-switch control** (`facing` toggling `'environment'`/`'user'`) — the old flow hard-coded
+  the rear camera with no way to pick the front one. Refused mid-recording (swapping the underlying
+  `MediaStream` under an active `MediaRecorder` would silently corrupt the capture).
+- **Camera-access failures now name the escape hatch** ("… you can upload a video instead") rather
+  than a bare error with no next step.
+- ⚠️ **Real pre-existing bug fixed as part of this: Cancel/× never stopped the camera.**
+  `openModal()`'s `[data-close]` buttons were bound to the plain `m.close` before any stream/recorder/
+  timer existed, so cancelling mid-capture left the camera running in the background with no way back
+  through the UI short of reloading the page. The buttons are now re-wired to stop the stream, the
+  recorder, and the timer first. ⚠️ **That fix introduced its own hazard, caught before shipping**:
+  forcing `recorder.stop()` on cancel still fires its async `onstop` → `processVideo(blob)` handler
+  AFTER the modal (and its `#pano-c-status` element) are gone, which would throw reaching for a null
+  element mid-write. A `cancelled` flag makes `processVideo` bail immediately in that case.
+
+### Verified
+
+**451 checks green** (was 440), new `[32]` section — structural, matching this module's own
+established limitation for `getUserMedia`/`MediaRecorder`-dependent code (no fake DOM here can drive
+a real camera stream; Phase 3's OpenCV.js stitching remains the one piece of this module verified in
+a real browser with a real WASM/WebGL stack). Function-diff against HEAD: `pano.js` **0 lost / 5
+added** (`fmtTime`, `stopCameraStream`, `startCamera`, `startRecTimer`, `stopRecTimer`). 0 NUL bytes,
+CSS braces balanced (380/380).
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module; in particular, the
+actual recording UX (does starting the camera really feel like one tap now, does the pulsing
+indicator read clearly on a real phone screen in daylight) needs a real device to confirm, not just
+source-level checks.
+
+`MODULE_V` → `20260829l`; `module.css/js` / `pano.js` → `?v=20260829l`.
+
 ## Second feedback round, part 1 (items 9, 11, 17): Works becomes one schedule tag, camera pin+direction move inline, 360° re-enabled (2026-08-29)
 
 Owner sent a further 10-item list (numbered 9–18, continuing the prior round). This entry covers

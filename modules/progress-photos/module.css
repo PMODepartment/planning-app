@@ -767,9 +767,24 @@
 .pano-viewerhint { font-size: 11.5px; color: var(--pd-muted); margin-top: 6px; }
 
 .pano-capturearea { margin-top: 12px; }
-.pano-camwrap { margin: 10px 0; }
+.pano-camwrap { margin: 10px 0; position: relative; max-width: 420px; }
 .pano-camwrap video { width: 100%; max-width: 420px; border-radius: var(--pd-radius); background: #000; display: block; }
-.pano-capturebtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.pano-capturebtns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* Recording indicator (item 18) — a fixed dark/red overlay on the camera
+   preview, deliberately theme-independent: it sits on top of live camera
+   video, not an app surface, and a "you are recording" cue must read the
+   same regardless of light/dark mode. */
+.pano-recind {
+  position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: 7px;
+  padding: 4px 10px 4px 8px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff;
+  font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.pano-recdot {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--pd-red);
+  animation: pano-recpulse 1s ease-in-out infinite;
+}
+@keyframes pano-recpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+#pano-c-record.is-active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 .pano-cmp-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 10px; font-size: 12.5px; color: var(--pd-muted); }
 .pano-cmp-controls label { display: flex; align-items: center; gap: 6px; }
 .pano-cmp-controls select { min-width: 160px; }

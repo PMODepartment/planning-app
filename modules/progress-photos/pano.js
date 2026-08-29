@@ -327,12 +327,15 @@ window.PANO = (function () {
             '<option value="drone">Drone (aerial)</option>' +
           '</select></div>' +
         '<div class="pano-capturearea">' +
-          '<p class="pp-hint">Stand at the location and slowly spin around while recording (optionally ' +
-          'tilt up/down once), OR upload a walkthrough video recorded earlier.</p>' +
-          '<div class="pano-camwrap"><video id="pano-cam-preview" autoplay muted playsinline hidden></video></div>' +
+          '<p class="pp-hint">Tap "Start recording" and slowly spin around (optionally tilt up/down ' +
+          'once), OR upload a walkthrough video recorded earlier.</p>' +
+          '<div class="pano-camwrap">' +
+            '<video id="pano-cam-preview" autoplay muted playsinline hidden></video>' +
+            '<div class="pano-recind" id="pano-recind" hidden><span class="pano-recdot"></span><span id="pano-rectime">0:00</span></div>' +
+          '</div>' +
           '<div class="pano-capturebtns">' +
-            '<button class="pd-btn" id="pano-c-startcam" type="button">Use camera</button>' +
-            '<button class="pd-btn" id="pano-c-record" type="button" hidden>Start recording</button>' +
+            '<button class="pd-btn pd-btn-primary" id="pano-c-record" type="button">Start recording</button>' +
+            '<button class="pd-btn" id="pano-c-switchcam" type="button" hidden>Switch camera</button>' +
             '<label class="pd-btn" for="pano-c-file">Upload video<input type="file" id="pano-c-file" accept="video/*" hidden /></label>' +
           '</div>' +
           '<p id="pano-c-status" class="pp-hint"></p>' +
@@ -342,37 +345,115 @@ window.PANO = (function () {
     var m = openModal(html, 560);
     var combosByKey = {}; combos.forEach(function (c) { combosByKey[c.key] = c; });
     var stream = null, recorder = null, chunks = [];
+    var facing = 'environment';
+    // Item 18 — "I can't take videos very easily": recording had no visible
+    // "you are recording" cue at all (only a button LABEL changed), and
+    // required TWO deliberate taps (Use camera, then Start recording) before
+    // anything happened. Both are fixed below: one button now does both
+    // (getUserMedia's permission prompt IS a valid user gesture on its own,
+    // so requesting it from "Start recording"'s own click handler works),
+    // and a pulsing dot + running timer make "recording is active" visible
+    // without reading the button text.
+    var recTimer = null, recSeconds = 0;
+    var MAX_REC_SECONDS = 90;   // a generous cap for a slow spin — auto-stops
+                                // a recording nobody remembered to stop, per
+                                // friction point "no duration guidance at all"
 
-    $('pano-c-startcam').onclick = async function () {
+    function fmtTime(s) {
+      var mm = Math.floor(s / 60), ss = s % 60;
+      return mm + ':' + (ss < 10 ? '0' : '') + ss;
+    }
+    function stopCameraStream() {
+      if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    }
+    async function startCamera() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        var v = $('pano-cam-preview'); v.hidden = false; v.srcObject = stream;
-        $('pano-c-startcam').hidden = true; $('pano-c-record').hidden = false;
-      } catch (e) { UI.toast('Could not access the camera: ' + (e.message || e), 'error'); }
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
+        var v = $('pano-cam-preview'); if (v) { v.hidden = false; v.srcObject = stream; }
+        var sw = $('pano-c-switchcam'); if (sw) sw.hidden = false;
+        return true;
+      } catch (e) {
+        // Named as its own friction point: a bare error with no next step
+        // left the planner stuck. Every camera failure now names the escape
+        // hatch that is guaranteed to work.
+        UI.toast('Could not access the camera: ' + (e.message || e) + ' — you can upload a video instead.', 'error');
+        return false;
+      }
+    }
+    function startRecTimer() {
+      recSeconds = 0;
+      var t = $('pano-rectime'); if (t) t.textContent = fmtTime(0);
+      var ind = $('pano-recind'); if (ind) ind.hidden = false;
+      recTimer = setInterval(function () {
+        recSeconds++;
+        var t2 = $('pano-rectime'); if (t2) t2.textContent = fmtTime(recSeconds);
+        if (recSeconds >= MAX_REC_SECONDS) {
+          UI.toast('Recording stopped automatically after ' + fmtTime(MAX_REC_SECONDS), 'warn');
+          $('pano-c-record').click();
+        }
+      }, 1000);
+    }
+    function stopRecTimer() {
+      if (recTimer) { clearInterval(recTimer); recTimer = null; }
+      var ind = $('pano-recind'); if (ind) ind.hidden = true;
+    }
+    $('pano-c-switchcam').onclick = async function () {
+      if (recorder) return;   // never swap cameras mid-recording
+      facing = facing === 'environment' ? 'user' : 'environment';
+      stopCameraStream();
+      await startCamera();
     };
-    $('pano-c-record').onclick = function () {
+    $('pano-c-record').onclick = async function () {
+      var btn = this;
       if (!recorder) {
+        if (!stream) {
+          btn.disabled = true; btn.textContent = 'Starting camera…';
+          var ok = await startCamera();
+          btn.disabled = false;
+          if (!ok) { btn.textContent = 'Start recording'; return; }
+        }
         chunks = [];
         var mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : '';
         recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
         recorder.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
         recorder.onstop = function () {
           var blob = new Blob(chunks, { type: 'video/webm' });
-          stream.getTracks().forEach(function (t) { t.stop(); });
+          stopCameraStream();
           processVideo(blob);
         };
         recorder.start();
-        $('pano-c-record').textContent = 'Stop recording';
+        btn.textContent = 'Stop recording'; btn.classList.add('is-active');
+        startRecTimer();
       } else {
         recorder.stop(); recorder = null;
-        $('pano-c-record').textContent = 'Start recording';
+        btn.textContent = 'Start recording'; btn.classList.remove('is-active');
+        stopRecTimer();
       }
     };
     $('pano-c-file').onchange = function () {
       var f = this.files && this.files[0]; if (f) processVideo(f);
     };
+    // Cancel/× must stop a live camera stream + recorder + timer, or the
+    // camera silently keeps running after the planner walks away from a
+    // capture they abandoned — openModal binds these to the ORIGINAL m.close
+    // before any of the above existed, so they're re-wired here. `cancelled`
+    // guards processVideo: forcing recorder.stop() here still fires its
+    // async onstop -> processVideo(blob) AFTER the modal (and its #pano-c-*
+    // elements) are already gone, which would otherwise throw reaching for
+    // a null `status` element mid-write.
+    var cancelled = false;
+    var closeOrig = m.close;
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
+      b.onclick = function () {
+        cancelled = true;
+        if (recorder) { try { recorder.stop(); } catch (e) {} recorder = null; }
+        stopRecTimer(); stopCameraStream();
+        closeOrig();
+      };
+    });
 
     async function processVideo(blob) {
+      if (cancelled) return;
       var status = $('pano-c-status');
       var combo = combosByKey[$('pano-c-loc').value] || null;
       var date = $('pano-c-date').value || new Date().toISOString().slice(0, 10);

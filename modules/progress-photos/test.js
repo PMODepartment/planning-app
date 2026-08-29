@@ -471,8 +471,10 @@ console.log('\n[misc] insert().select() returns the new row id');
   // .bim-pinstage-dot (item 11, same day) is the SAME shape as .bim-pin
   // itself — a solid-red marker with a white ring over an arbitrary floor
   // plan image, deliberately theme-independent since the plan's own colours
-  // are unpredictable.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.bim-cluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active/;
+  // are unpredictable. .pano-recind/#pano-c-record.is-active (item 18) are
+  // the same family again: a fixed dark scrim over live camera video, and a
+  // solid brand-red "recording" button state — neither is an app surface.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.bim-cluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -1371,6 +1373,27 @@ console.log('\n[misc] insert().select() returns the new row id');
      /\$\('pp-mtype-360'\)\.onclick = function \(\) \{[\s\S]{0,150}m\.close\(\);[\s\S]{0,80}PANO\.openCapture\(\)/.test(mjs));
   ok('pano.js exposes openCapture — its capture flow\'s only reachable entry point now that #pano-new is gone',
      /openCapture: function \(\) \{ openCaptureModal\(\); \}/.test(pnjs));
+
+  console.log('\n[32] Item 18 — 360° capture UX fix ("I can\'t take videos very easily")');
+  ok('the separate "Use camera" step is gone — one button both requests the camera AND starts recording',
+     !/pano-c-startcam/.test(pnjs) && /id="pano-c-record" type="button">Start recording</.test(pnjs));
+  ok('a visible recording indicator exists (pulsing dot + a running mm:ss timer), not just a button-label change',
+     /pano-recind/.test(pnjs) && /pano-recdot/.test(pnjs) && /function fmtTime\(s\)/.test(pnjs));
+  ok('the timer starts hidden and is shown only once recording actually begins',
+     /id="pano-recind" hidden/.test(pnjs) && /function startRecTimer\(\)[\s\S]{0,200}ind\.hidden = false;/.test(pnjs));
+  ok('recording auto-stops after a generous cap, so a forgotten recording cannot run forever',
+     /var MAX_REC_SECONDS = 90;/.test(pnjs) && /recSeconds >= MAX_REC_SECONDS/.test(pnjs));
+  ok('a Switch camera control exists, toggling facingMode between environment and user',
+     /pano-c-switchcam/.test(pnjs) && /facing = facing === 'environment' \? 'user' : 'environment';/.test(pnjs));
+  ok('switching cameras is refused while a recording is in progress', /if \(recorder\) return;[^\n]*\n\s*facing = facing/.test(pnjs));
+  ok('a camera-access failure explicitly names the upload fallback, not just a bare error', /you can upload a video instead/.test(pnjs));
+  ok('the Start-recording button visibly shows it is armed (adds/removes .is-active)',
+     /btn\.classList\.add\('is-active'\)/.test(pnjs) && /btn\.classList\.remove\('is-active'\)/.test(pnjs));
+  ok('Cancel/× stop any live stream, recorder AND the timer — the camera cannot keep running after the modal closes',
+     /if \(recorder\) \{ try \{ recorder\.stop\(\); \} catch \(e\) \{\} recorder = null; \}[\s\S]{0,80}stopRecTimer\(\); stopCameraStream\(\);/.test(pnjs));
+  ok('a forced stop-on-cancel cannot still write a panorama afterwards (processVideo bails on the cancelled flag)',
+     /var cancelled = false;/.test(pnjs) && /async function processVideo\(blob\) \{\s*if \(cancelled\) return;/.test(pnjs));
+  ok('stopCameraStream always stops every track — never leaves the camera light on', /function stopCameraStream\(\)[\s\S]{0,120}getTracks\(\)\.forEach/.test(pnjs));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
