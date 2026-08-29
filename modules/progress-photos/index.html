@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260829a" />
-  <link rel="stylesheet" href="module.css?v=20260829o" />
+  <link rel="stylesheet" href="module.css?v=20260830a" />
 </head>
 <body>
   <div class="pd-app">
@@ -236,11 +236,11 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260829o"></script>
-  <script src="ppr.js?v=20260829n"></script>
-  <script src="pano.js?v=20260829l"></script>
-  <script src="recon.js?v=20260829d"></script>
-  <script src="bim.js?v=20260829o"></script>
+  <script src="module.js?v=20260830a"></script>
+  <script src="ppr.js?v=20260830a"></script>
+  <script src="pano.js?v=20260830a"></script>
+  <script src="recon.js?v=20260830a"></script>
+  <script src="bim.js?v=20260830a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -293,7 +293,13 @@
         // page (2026-08-29 feedback item 2); calling it would just be a
         // harmless no-op, but there is nothing left for it to do.
         BIM._syncTools(isBim);
+        // ⚠️ Audit fix: a batch selection made on Gallery used to survive a
+        // tab switch — its selection-only toolbar (count/Download/Add to
+        // Presentation/Archive) stayed visible on top of whichever screen
+        // opened next, and the checkboxes stayed silently checked in memory
+        // for a planner who had moved on and forgotten what was selected.
         if (isPhotos) ProgressPhotos._syncChrome();
+        else ProgressPhotos._leavePhotosScreen();
         Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
           b.classList.toggle('active', b.dataset.screen === s);
         });

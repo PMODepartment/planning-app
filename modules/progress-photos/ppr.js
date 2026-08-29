@@ -235,7 +235,15 @@ window.PPR = (function () {
   function photoById(id) { return photos.filter(function (p) { return p.id === id; })[0] || null; }
   function urlOfPhoto(id) { var p = photoById(id); return p && p.photo_url ? (urlCache[p.photo_url] || '') : ''; }
   function urlOfPath(path) { return path ? (urlCache[path] || '') : ''; }
-  function slides(pprId) { return (slidesOf[pprId] || []).slice().sort(function (a, b) { return (a.slide_no || 0) - (b.slide_no || 0); }); }
+  // ⚠️ Audit fix: slidesOf[k] is ALREADY kept sorted by slide_no at both of
+  // its only two write sites — load() explicitly sorts it once, and the
+  // slide-sorter's own save handler renumbers slide_no sequentially to
+  // MATCH the array's own order before assigning it here — so re-sorting on
+  // every single call (this function is called constantly during render)
+  // was pure wasted work, not a correctness guard against anything that can
+  // actually happen. .slice() is kept: callers must still get their own
+  // copy, since some (e.g. the slide-sorter's own drag reorder) mutate it.
+  function slides(pprId) { return (slidesOf[pprId] || []).slice(); }
   function pprById(id) { return pprs.filter(function (p) { return p.id === id; })[0] || null; }
   function tmplById(id) { return templates.filter(function (t) { return t.id === id; })[0] || null; }
 
@@ -598,7 +606,19 @@ window.PPR = (function () {
       });
       if (payload.length) {
         var sres = await sb().from(T_SLIDE).insert(payload);
-        if (sres.error) { UI.toast('Presentation created, but copying slides failed: ' + sres.error.message, 'error'); this.disabled = false; return; }
+        if (sres.error) {
+          // ⚠️ Audit fix — same recovery as openCopyWizard.finish()'s
+          // identical failure mode, below: the presentation row already
+          // exists (created above) and was being left invisible behind a
+          // still-open wizard whose button was merely re-enabled — retrying
+          // Merge from there would insert a SECOND orphaned presentation on
+          // top of the first, compounding rather than fixing it. Closing
+          // the wizard and opening the (currently slide-less) new
+          // presentation directly puts the planner exactly where they can
+          // see what happened and add slides one at a time instead.
+          UI.toast('Presentation created, but copying slides failed: ' + sres.error.message, 'error');
+          m.close(); await load(); openPpr(newId); return;
+        }
       }
       var ares = await sb().from(T_PPR).update({ archived: true, updated_at: new Date().toISOString() }).in('id', ids);
       if (ares.error) UI.toast('Merged, but could not archive the originals: ' + ares.error.message, 'warn');
@@ -726,6 +746,16 @@ window.PPR = (function () {
     // preview below with no special-casing needed.
     var selIds = visibleSelectedPprIds();
     if (selIds.length >= 2) { renderCombinedPreview(body, selIds); return; }
+    // ⚠️ Audit fix: unlike the combined path above (which is already scoped
+    // to visiblePprs() via visibleSelectedPprIds()), `selId` here was never
+    // re-checked against the current visible set — so archiving (or a date
+    // filter change hiding) the very presentation currently in the preview
+    // pane left its slide thumbnails on screen, disagreeing with a list that
+    // no longer shows it at all. slides(selId) still resolves fine (the rows
+    // aren't deleted, only the parent's `archived` flag flips), so nothing
+    // here would have thrown — it would just have kept quietly showing a
+    // preview of something the list says isn't there.
+    if (selId && !visiblePprs().some(function (p) { return p.id === selId; })) selId = null;
     var s = selId ? slides(selId) : [];
     if (!selId || !s.length) {
       body.innerHTML = '<div class="ppr-noslides">' +
@@ -1600,7 +1630,15 @@ window.PPR = (function () {
     try {
       photos = await PDb.selectAll(T_PHOTO, function (q) { return q.eq('project_id', pid); });
       photos.sort(function (a, b) { return String(b.taken_at || '').localeCompare(String(a.taken_at || '')); });
-    } catch (e) { return; }
+    } catch (e) {
+      // ⚠️ Audit fix: this was a completely silent failure, no toast at all.
+      // Its only caller is the slide editor's "+ Add photo" flow — a user
+      // just uploaded a photo through the picker and expects it to become
+      // selectable immediately; a failed re-read here left it invisible
+      // with nothing telling the planner why their new photo isn't there.
+      UI.toast('Could not refresh the photo library: ' + ((e && e.message) || e), 'error');
+      return;
+    }
     await signAll();
   }
 
@@ -2310,6 +2348,30 @@ window.PPR = (function () {
     _markupKey: function (slideId, pane) { return markupKey(slideId, pane); },
     // Item 14 — see archiveDirectionFor's own comment on why this is worth
     // genuinely executing rather than only regex-checked.
-    _archiveDirectionFor: function (ps) { return archiveDirectionFor(ps); }
+    _archiveDirectionFor: function (ps) { return archiveDirectionFor(ps); },
+    // Test-only hook (same save/restore convention as _eligiblePhotos) for
+    // the audit fix to renderPreview()'s single-selection path: injects a
+    // presentation list/filter/slide set and a candidate `selId`, runs the
+    // REAL renderPreview(), and reports what selId ended up as plus what
+    // the pane actually shows — proving the self-correction (an archived
+    // or filtered-out selId must be cleared, not silently kept showing its
+    // stale slides) rather than only reading the guard as text.
+    _renderPreviewWithState: function (pprsArr, filtersPatch, testSelId, slidesMap) {
+      var savedPprs = pprs, savedFilters = filters, savedSelId = selId, savedSlidesOf = slidesOf, savedSel = selectedPprs;
+      // Forced empty so visibleSelectedPprIds() can never accidentally take
+      // the >= 2 combined-preview branch instead of the single-select path
+      // this hook exists to exercise (selectedPprs is unrelated leftover
+      // checkbox state from whatever the caller last selected in the UI).
+      selectedPprs = {};
+      pprs = pprsArr; filters = Object.assign({}, filters, filtersPatch); selId = testSelId;
+      if (slidesMap) slidesOf = slidesMap;
+      try {
+        renderPreview();
+        var body = $('ppr-preview-body');
+        return { selIdAfter: selId, bodyHtml: body ? body.innerHTML : '' };
+      } finally {
+        pprs = savedPprs; filters = savedFilters; selId = savedSelId; slidesOf = savedSlidesOf; selectedPprs = savedSel;
+      }
+    }
   };
 })();

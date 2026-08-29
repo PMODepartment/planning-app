@@ -2,6 +2,220 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Full-module audit — review, test, performance/UI/UX pass across all 8 files (2026-08-30)
+
+Owner: *"please review all the code. add more test cases and make sure everything works 100% of
+the time. review, optimize the performance, UI, and UX of the progress photos module."* No signed-in
+Supabase session exists in this environment, so "100%" here means: every code path reviewed, every
+finding either fixed-and-genuinely-tested or explicitly documented with a reason it wasn't touched —
+never silently assumed passing. Three parallel review agents covered module.js/index.html,
+ppr.js+pano.js+recon.js, and bim.js+module.css respectively; findings were triaged and fixed in
+severity order. Suite grew **483 → 568** (85 new checks), several via genuine execution against the
+real functions, not just regex reads.
+
+### High severity — real bugs, not just untidiness
+
+- ⚠️ **Plan/Stack views could open the WRONG photo.** They read PROJECT-WIDE data (every pin / every
+  location-tagged photo), while the lightbox's own `openLightbox(id)` falls back to index 0 on a miss
+  against the Gallery's currently FILTERED list — so a photo excluded by the active filter (archived,
+  wrong trade, wrong date range) silently opened a DIFFERENT photo with no warning, and a Delete from
+  there would hit the wrong record. New named `openPhotoById(id)` (module.js) checks `byId(id)` first,
+  toasts *"That photo could not be found"* and returns on a miss, re-scopes `lightboxIds = [id]` on a
+  hit — both `openPlanPin`'s photo branch and Stack's combined-mode click now route through it, and
+  it's the same function the exported `ProgressPhotos.openPhotoById` (bim.js's own Plans-tab pins)
+  already called, so there's no second, divergent, unguarded copy.
+- ⚠️ **A batch selection survived a tab switch.** `index.html`'s `setScreen()` only ever called
+  `ProgressPhotos._syncChrome()` when ENTERING the Photos screen, never when leaving it — so
+  selecting photos, then switching to Presentations/Plans, left the four selection-only toolbar
+  buttons (count/Download/Add to Presentation/Archive) visible on top of whichever screen opened
+  next. New `_leavePhotosScreen()` clears the selection and hides those four controls specifically —
+  ⚠️ **deliberately NOT a call to the full `syncChrome()`**: that function's own `has`-false branch
+  would re-show `pp-add`/`pp-sep-photos`/`pp-refresh`, undoing `index.html`'s own
+  `show(PHOTO_TOOLS, false)` for the screen being left. It also resets the (still-mounted, merely
+  `hidden`) grid's own checkbox/`.pp-selrow` residue, so a returning planner never sees stale checked
+  boxes the cleared toolbar already disagrees with.
+- ⚠️ **`bim.js`'s `load()` had one un-guarded `await`** (`signPlanUrls()`) — every sibling fetch in the
+  same function is try/caught; this one wasn't, and `load()` itself runs fire-and-forget from
+  `ProgressPhotos.onProject()` with no `.catch()` anywhere — so a real network failure signing the
+  plan images (not a Supabase `{error}` response, which the function already tolerated) threw
+  straight out and permanently froze the Plans screen on *"Loading floor plans…"*. Now
+  `try { await signPlanUrls(); } catch (e) { planUrlCache = {}; }`. **Genuinely executed**: a new
+  `BIM._load(testPid)` test hook forces `createSignedUrls` to reject and proves `load()` still
+  completes, `BIM.hasPlans()` stays true, and the host repaints past the loading placeholder.
+- ⚠️ **`pano.js` H1 — `MediaRecorder` construction had no try/catch.** A codec/support failure
+  (thrown by the constructor or `.start()`) rejected the async onclick handler with nobody awaiting
+  it — a silent unhandled rejection, leaving the button stuck reading *"Starting camera…"* forever
+  with the camera preview live but no recording ever armed. Now wrapped; on failure the button resets
+  to *"Start recording"* and toasts the escape hatch (*"you can upload a video instead"*).
+- ⚠️ **`pano.js` H2 — the worst of the batch.** `processVideo`'s `combo`/`date`/`source` reads (the
+  last of the three, `source`) were done at the very END, after frame extraction/OpenCV/stitching/
+  Storage upload had all already run — several seconds of async work during which Cancel/× REMOVES
+  the modal's DOM (`overlay.remove()`), and `cancelled` was checked only ONCE, at function entry. A
+  cancel mid-pipeline crashed on `$('pano-c-source').value` against a `null` node, **after** the
+  stitched JPEG had already been uploaded to Storage — permanently orphaning it, since the crash hit
+  before the DB row that would reference it was ever inserted — and showed the user a confusing
+  "Could not build the panorama" error for something they'd already successfully cancelled. Fixed:
+  all three reads hoisted before any `await`; `cancelled` re-checked after every major stage
+  (extract/OpenCV/stitch/toBlob/upload); a cancellation caught right after the upload succeeds
+  removes the now-orphaned object from Storage instead of leaving it there forever.
+- ⚠️ **`recon.js` H3 — the identical class of bug**, in `openRequestForm`'s save handler, which had
+  **ZERO cancellation-awareness at all** (Cancel/× was left on `openModal`'s bare default close).
+  Gained the same `cancelled` flag + hoisted reads + post-upload orphan cleanup as pano.js's H2.
+- ⚠️ **`recon.js` M5 — `retractRequest`'s order-of-operations race.** The storage `remove()` ran
+  BEFORE the DB delete's own `.eq('status','pending_approval')` guard was even checked — so a request
+  a concurrent admin had *just* approved could have its video deleted out from under the now-accepted
+  job, while the delete matched 0 rows (Supabase reports that as success, no error) and the UI still
+  claimed *"Request retracted"* regardless. The delete now runs FIRST, with `.select()`, and the
+  storage object is only removed once a still-pending row is confirmed genuinely deleted; otherwise
+  it toasts *"…it may have just been approved"* and leaves the video alone. **Genuinely executed**
+  both branches (still-pending vs. raced-and-approved) — ⚠️ this ALSO required a real harness fix:
+  the test store's `makeQuery` had a **vestigial `q.select = function () { return q; };`** line
+  running AFTER the object literal, silently clobbering a just-added `select()` override that was
+  meant to set `q.__select` for the delete branch's real Supabase contract (`.delete().select()`
+  returns the deleted rows). Removed; the delete branch now genuinely returns `data: del` only when
+  `.select()` was chained, matching real supabase-js.
+
+### Medium severity
+
+- **`bim.js`'s `wireStageInteractions()` leaked two `window` listeners on every single `render()`.**
+  `outer`'s own listeners are fine (a fresh DOM node each render, discarded with it), but
+  `window.addEventListener('mousemove'/'mouseup', …)` was bound unconditionally every call, with
+  nothing ever removed — each closing over its own now-stale `dragging` flag, permanently firing on
+  every mouse move across the WHOLE PAGE. `dragging`/`lastX`/`lastY`/`moved` hoisted to module scope;
+  the two `window` listeners now wired exactly once, guarded by `_stageWindowListenersWired`.
+  **Genuinely executed**: real tracked `winAddEventListener`/`winRemoveEventListener` stubs added to
+  the harness prove exactly one mousemove + one mouseup listener exist after the first render, and
+  STILL exactly one after three more loads/re-renders.
+- **`bim.js`'s two OpenCV `cv.Mat` leak sites** (`paintActualView`, the registration save handler) —
+  `.delete()` only ran on the happy path; a `warpPerspective`/`imshow` throw, or the deliberate
+  *"not enough spread"* friendly-error (`H.empty()`), skipped cleanup of whichever Mats already
+  existed. Both wrapped in try/finally, each Mat declared outside the try (`var` hoisting keeps it
+  safely `undefined`, not a `ReferenceError`, if its own line never ran) and deleted conditionally.
+- **`ppr.js`'s merge-wizard left an orphaned, invisible presentation on a slide-copy failure** — the
+  `T_PPR` row already existed, but the failure just toasted and re-enabled the button, leaving the
+  wizard open with no reference to what was created; retrying created a SECOND orphan on top of the
+  first. Now recovers exactly like `openCopyWizard.finish()`'s identical failure already does: close
+  the wizard, reload, open the (slide-less) new presentation directly so the planner can see it and
+  add slides one at a time.
+- **`ppr.js`'s single-selection preview went stale after archiving (or filtering out) the very
+  presentation it was showing.** The combined (2+) path was already scoped to `visiblePprs()` via
+  `visibleSelectedPprIds()`; the single-`selId` path never was — `slides(selId)` still resolves fine
+  (the rows aren't deleted, only the parent's `archived` flag flips), so it just kept quietly showing
+  slide thumbnails for something the list no longer displayed at all. `renderPreview()` now clears
+  `selId` when it's no longer in `visiblePprs()`. **Genuinely executed** via a new save/restore test
+  hook (`_renderPreviewWithState`, same convention as `_eligiblePhotos`) across visible/archived/
+  hard-deleted `selId` values.
+- **`pano.js`'s "Switch camera" had no re-entrancy guard** — a rapid double-tap (or an impatient click
+  during the `getUserMedia` permission prompt) could start a second `stopCameraStream()`/
+  `startCamera()` pair before the first had assigned `stream`, dropping the earlier call's already-
+  live `MediaStream` with no reference left to stop its tracks. Now `disabled`-guarded like the
+  record button.
+- **`pano.js`'s single-panorama viewer leaked a WebGL context on every view.** `mountCylinderViewer`'s
+  return value (with its `dispose()` handle) was discarded entirely in `openViewer`. Browsers cap
+  simultaneous WebGL contexts (commonly 8–16); enough un-disposed panorama views eventually make
+  every FURTHER context creation on the page silently fail. Fixed by extending `openModal(html,
+  width, onClose)` with an optional `onClose`, run on **every** dismissal path — `[data-close]` AND a
+  genuine backdrop click alike (previously only `UI.modal`'s own private `close`, bypassing any
+  `m.close` reassignment, handled the backdrop) — and passing `function(){ viewer.dispose(); }`.
+- **The identical backdrop-close cleanup bypass existed in `module.js`'s own `openModal`**, used by
+  `openForm` (Edit Photo) and `openMarkupEditor`. Both had comments claiming their cleanup ran "on
+  every close path (× / Cancel)" — true only of the two `[data-close]` buttons; a backdrop click left
+  the "editing this photo" collab cursor stuck broadcasting, and the markup editor's `window` resize
+  listener permanently attached. `module.js`'s `openModal` gained the exact same `onClose` mechanism
+  as pano.js's; both callers' now-redundant manual `[data-close]` re-wires were removed rather than
+  left duplicating the cleanup.
+
+### Low / cleanup
+
+Dead code removed (`bim.js`'s unreachable `#bim-plan-select` binding in `wire()` — the element
+doesn't exist at `init()` time; `wireMediaTypeSelector`'s unused `lbl` lookup; four confirmed-
+orphaned CSS selectors with zero references anywhere: `.pp-thumb-wrap`, `.pp-cardphoto-wrap`,
+`.ppr-pickinfo`, `.ppr-pickthumb`). Two real WCAG AA failures fixed — `.ppr-tmpl-locorder` and
+`.ppr-sortno` (white text on plain `var(--pd-red)`, 11–11.5px bold) measured **4.12:1**, below
+threshold; now `color-mix(in srgb, var(--pd-red) 85%, black)`, measuring **5.44:1** — **genuinely
+computed** in the test (WCAG's own relative-luminance formula, run against the real CSS's actual
+`color-mix` percentage, confirming both the old failure and the new pass rather than assuming the
+percentage was chosen correctly). `.pp-muted` — used in module.js/ppr.js, defined nowhere in
+`module.css` at all — added. `wireMediaTypeSelector`'s `capture="environment"` was stripped
+unconditionally on every call including the very first, so it never actually took effect even in
+Photo mode; now removed only in Video mode and restored switching back to Photo. The offline-queued
+toast hardcoded "photo" regardless of `kind` (video batches reported themselves as photos) — fixed to
+match the "uploaded" toast beside it. `openAddToPresentation` now escapes `p.id`, not just the label.
+Both Gallery selection checkboxes and the Plan view's cluster markers gained `aria-label`s (the
+cluster button's only prior accessible content was the bare pin count). `.pp-plancluster`/
+`.pp-stackthumb-sm` gained a ≥40px phone touch-target rule (neither had one; every dimension was
+under 44px on a touch device). `ppr.js`'s `slides()` was re-sorting an array `slidesOf[k]` is already
+kept sorted at both its write sites (load()'s explicit sort; the slide-sorter's own renumber-to-
+match-array-order before assigning) — removed the redundant per-call `.sort()`. `reloadPhotos()`'s
+completely silent catch (its only caller is the slide editor's "+ Add photo" flow — a failed re-read
+left a just-uploaded photo invisibly unpickable with no explanation) now toasts. `pano.js`'s
+`seekTo()` had no timeout at all — a malformed video, or the known browser quirk where `seeked` can
+fail to fire when `currentTime` is set to a value the video is already effectively at, permanently
+hung the entire `extractFrames()` loop; now resolves anyway after 3s (deliberately not a rejection —
+a slightly-off frame is a better outcome than failing the whole capture). Recording and file-upload
+gained mutual exclusion in the SAME capture modal (both controls visible at once; nothing stopped
+starting one while the other's `processVideo` pipeline was still running) via a `processing` flag set
+at `processVideo`'s entry and cleared in a `finally` — guaranteed to reset on every exit path so one
+stuck pipeline can never permanently lock out every future attempt.
+
+⚠️ **Found and fixed beyond the original scope, because reading `homographyBetween` while fixing the
+Switch-camera guard surfaced it: worse than the bim.js Mat leaks above.** Its two
+`detectAndCompute()` mask arguments were anonymous `new cv.Mat()` literals with **no variable ever
+pointing at them** — a guaranteed leak of 2 WASM Mats on every single call, success or failure alike,
+no exception needed (9 calls per 10-frame capture = 18 leaked Mats per capture, before any error
+path). The function also had **no try/finally anywhere**, so a throw from any intermediate `cv` call
+skipped the one unconditional cleanup line at the end entirely. Rewritten: every local Mat/vector
+named, the whole body wrapped in try/finally, the returned `H` (when a real homography is found)
+deliberately excluded from that cleanup list since the caller (`stitchFrames`) now owns and deletes
+it. `stitchFrames`'s own per-frame `srcMat`/`dstMat`/`Hmat` trio got the identical fix.
+
+### Deliberately NOT changed, and why
+
+- **`openPinPickerFor`** (bim.js) — flagged as unreachable by the reviewing agent's strict analysis,
+  but this is a documented, deliberate retained-API decision from an earlier prompt the same week
+  (superseded as the Add/Edit Photo flow's own popup, kept reachable for anything that still wants
+  it) — confirmed by `test.js`'s own existing assertion that the function exists. Not removed.
+- **`BIM.hasPlans`** — exported, currently uncalled. A working, harmless, self-contained one-liner;
+  removing it is speculative cleanup with no clear benefit, not a fix. Left alone.
+- **`loadAllPins()`/`loadRegistrations()` (bim.js) and `removeSlide`/`removePano`'s un-checked
+  storage-remove result** — all match this app's own established convention (documented repeatedly
+  elsewhere in this codebase's history): PRIMARY data fetches toast on failure, SECONDARY/supporting
+  fetches and best-effort storage cleanup fail silently, to avoid toast spam when the primary content
+  is what actually matters. Confirmed as the deliberate pattern, not a gap, before leaving them as-is.
+- **`pano.js`'s dead `screen`/`viewPanoId`/`compareIds` state and `openCompareModal`** — the Compare
+  viewer is confirmed fully unreachable (its own topbar button, `#pano-compare-btn`, was removed
+  earlier this week and `test.js` already asserts it's gone), so its own un-disposed viewer and lack
+  of backdrop-close handling can literally never trigger in production. Left as retained-but-dormant
+  code (matching the "greyed out, not deleted" pattern this session already uses for 360°/3D) rather
+  than risked touching for a leak that can't fire.
+- **`recon.js`'s lack of live/polling status updates** — a real completeness gap (a request left open
+  won't reflect a completed job until manual reload), but a genuinely bigger feature, not a bug fix;
+  flagged for a future pass rather than built here.
+
+### Verification
+
+`node --check` clean on all five JS files + `test.js` itself; 0 NUL bytes and CSS braces balanced
+(393/393) on every touched file; 0 duplicate DOM ids in `index.html`; function-set diff against the
+pre-audit commit shows **only the intentional new additions** (`openPhotoById`, and each file's own
+`close`/`finish` helpers) — nothing else lost or duplicated. Suite: **483 → 568** (85 new checks).
+Several fixes are proven by genuine execution, not just structural reads: `openPhotoById`'s miss-and-
+toast path, `_leavePhotosScreen`'s DOM effects, `bim.js`'s `signPlanUrls` network-failure recovery,
+the `wireStageInteractions` listener-count-stays-flat-across-repeated-renders proof, `renderPreview`'s
+stale-`selId` self-correction across three scenarios, `retractRequest`'s full race-condition matrix
+(and the harness bug it caught), and the WCAG contrast maths computed from the real CSS. Where genuine
+execution wasn't proportionate (pano.js's H1/H2, recon.js's H3, the bim.js/pano.js `cv.Mat` fixes —
+each would need a fairly involved fake `MediaRecorder`/`getUserMedia`/`cv` global for marginal
+additional confidence over a precise structural read), that trade-off is stated in the test file
+itself, matching this module's own established convention for exactly this class of limitation.
+
+⚠️ **Standing caveat, unchanged**: no signed-in click-through is possible in this environment — the
+same limitation every prior pass on this module has recorded. Everything above is verified by code
+execution, structural proof, or measured/computed values; nothing here has been confirmed against a
+live Supabase session or a real browser DOM.
+
+`?v=` bumped: `module.css/js`, `bim.js`, `ppr.js`, `pano.js`, `recon.js` → `20260830a`; `MODULE_V`
+(via `modules-grid.js?v=` in `dashboard.html`/`modules.html`) → `20260830a`.
+
 ## Second feedback round, part 5 (items 15, 16): Map/Stack RELOCATED from the Plans tab to the Gallery, floor-stepping added, Stack re-defaulted to combine (2026-08-29)
 
 Owner: *"In the Plans tab, no need for the map and the stack. this should only be all plans"* and

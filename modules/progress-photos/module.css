@@ -250,9 +250,6 @@
   border-color: transparent transparent transparent rgba(255, 255, 255, .92);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6));
 }
-.pp-thumb-wrap { width: 96px; height: 62px; }
-.pp-cardphoto-wrap { width: 100%; height: 210px; }
-
 /* Add-media type selector (Photo / Video / 360°-3D-on-hold) */
 .pp-mtypesel { display: flex; gap: 6px; }
 .pp-mtype {
@@ -326,6 +323,11 @@
 }
 .pp-empty p { margin: 8px 0 0; }
 .pp-hint { font-size: 12.5px; color: var(--pd-muted); }
+/* Audit fix: used in module.js/ppr.js (e.g. Stack's "+N more" note, the
+   merge wizard's per-presentation slide count) but was never defined here
+   at all — those spans were rendering as plain unstyled ink instead of
+   the secondary/de-emphasised text they're meant to read as. */
+.pp-muted { color: var(--pd-muted); }
 
 /* ---- Lightbox ------------------------------------------------------------ */
 .pp-lightbox {
@@ -529,7 +531,12 @@
 }
 .ppr-tmpl-locorder {
   flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
-  background: var(--pd-red); color: #fff; font-size: 11px; font-weight: 700;
+  /* Audit fix (WCAG AA): plain white-on-var(--pd-red) measures 4.12:1 at
+     this size (11px bold is well under the "large text" exemption) —
+     below the 4.5:1 threshold. Same darkening this app already uses
+     elsewhere for the identical brand-red-as-a-small-badge case; measures
+     5.44:1, unchanged in dark mode since --pd-red itself doesn't remap. */
+  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff; font-size: 11px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
 }
 .ppr-tmpl-loclabel { flex: 1 1 auto; font-size: 13px; color: var(--pd-ink); min-width: 0;
@@ -655,7 +662,9 @@
 .ppr-sortno {
   position: absolute; top: 5px; left: 5px; min-width: 20px; height: 20px; padding: 0 5px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--pd-red); color: #fff; font-size: 11.5px; font-weight: 700;
+  /* Audit fix (WCAG AA) — same reasoning/measurement as .ppr-tmpl-locorder
+     above: 4.12:1 plain, 5.44:1 darkened. */
+  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff; font-size: 11.5px; font-weight: 700;
   border-radius: 10px; pointer-events: none;
 }
 
@@ -664,15 +673,6 @@
 .ppr-pickrow { display: flex; gap: 7px; align-items: center; }
 .ppr-pickrow .pd-select { flex: 1 1 auto; min-width: 0; }
 .ppr-pickrow .pd-btn { flex: 0 0 auto; white-space: nowrap; }
-.ppr-pickinfo {
-  display: flex; align-items: center; gap: 9px; margin-top: 7px;
-  font-size: 12px; color: var(--pd-muted); line-height: 1.45;
-}
-.ppr-pickthumb {
-  width: 62px; height: 46px; object-fit: cover; flex: 0 0 auto;
-  border: 1px solid var(--pd-line); border-radius: 3px;
-}
-
 /* The old per-photo "upload your own key plan" wizard (.pp-kp*) is retired
    (2026-08-29 item 11) — superseded by .bim-pinfield/.bim-pinstage-* above,
    which picks from the real floor_plans database instead. */
@@ -978,6 +978,11 @@
   .bim-stage-outer { height: 60vh; }
   .bim-toolbar { flex-direction: column; align-items: stretch; }
   .bim-pin { width: 32px; height: 32px; } /* touch target */
+  /* Audit fix: same touch-target reasoning as .bim-pin above, applied to
+     the Plan view's own cluster markers and the Stack view's combined-mode
+     thumbnails, neither of which had a phone-width rule before this pass. */
+  .pp-plancluster { min-width: 40px; height: 40px; }
+  .pp-stackthumb-sm { width: 40px; height: 46px; }
 
   /* Rows carry their own labels now, so the sticky header is redundant. */
   .pp-grid-head { display: none; }

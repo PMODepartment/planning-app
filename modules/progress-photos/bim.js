@@ -40,6 +40,12 @@ window.BIM = (function () {
   // which already reflects the current zoom/pan — no matrix math needed).
   var zoom = 1, panX = 0, panY = 0;
   var MIN_ZOOM = 0.2, MAX_ZOOM = 6;
+  // ⚠️ Audit fix: shared drag state, hoisted out of wireStageInteractions()
+  // (which used to declare these fresh on every call) so the module-level
+  // window mousemove/mouseup listeners below can be bound ONCE and still
+  // read whatever the CURRENT render's mousedown handler set.
+  var dragging = false, lastX = 0, lastY = 0, moved = false;
+  var _stageWindowListenersWired = false;
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
@@ -64,11 +70,10 @@ window.BIM = (function () {
   function wire() {
     if ($('bim-new')) $('bim-new').onclick = openPlanForm;
     if ($('bim-place')) $('bim-place').onclick = togglePlaceMode;
-    if ($('bim-plan-select')) $('bim-plan-select').onchange = function () {
-      activePlanId = this.value || null;
-      resetView();
-      loadPins();
-    };
+    // ⚠️ Audit cleanup: #bim-plan-select doesn't exist yet at init() time
+    // (it's only created inside render()'s own injected HTML), so a binding
+    // here was always dead — wirePlan() (called from every render()) sets
+    // up the real, working identical handler.
   }
   function syncTools(visible) {
     if ($('bim-new')) $('bim-new').style.display = (visible && canWrite) ? '' : 'none';
@@ -92,7 +97,15 @@ window.BIM = (function () {
     if (!plans.some(function (p) { return p.id === activePlanId; })) {
       activePlanId = plans.length ? plans[0].id : null;
     }
-    await signPlanUrls();
+    // ⚠️ Audit fix: this was the one un-guarded await in load() (every
+    // sibling fetch above/below it is try/caught). load() itself runs
+    // fire-and-forget from ProgressPhotos.onProject() with no .catch(), so a
+    // real network failure here (offline, DNS, a dropped connection — NOT a
+    // Supabase {error} response, which signPlanUrls already tolerates
+    // per-file) used to throw straight out of load(), leaving the host
+    // permanently on "Loading floor plans…" with no way back short of a
+    // full page reload, and an unhandled rejection nobody could see.
+    try { await signPlanUrls(); } catch (e) { planUrlCache = {}; }
     resetView();
     await loadAllPins();
     await loadRegistrations();
@@ -273,7 +286,28 @@ window.BIM = (function () {
   function wireStageInteractions() {
     var outer = $('bim-stage-outer');
     if (!outer) return;
-    var dragging = false, lastX = 0, lastY = 0, moved = false;
+    // ⚠️ Audit fix: `outer` is a fresh DOM node every render() (rebuilt from
+    // host.innerHTML = html), so its OWN listeners below are naturally
+    // discarded with it — no leak there. window.addEventListener is
+    // different: `window` never goes away, so binding these unconditionally
+    // on every render() call (this function's previous behaviour) added TWO
+    // MORE permanent mousemove/mouseup listeners each time, all still firing
+    // on every mouse move across the WHOLE PAGE forever — an unbounded leak
+    // that grew with every plan switch, place-mode toggle or resize-driven
+    // re-render. They're wired exactly once now, reading the shared
+    // dragging/lastX/lastY/moved state that every render's own mousedown
+    // handler (below) sets fresh.
+    if (!_stageWindowListenersWired) {
+      _stageWindowListenersWired = true;
+      window.addEventListener('mousemove', function (e) {
+        if (!dragging) return;
+        var dx = e.clientX - lastX, dy = e.clientY - lastY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        panX += dx; panY += dy; lastX = e.clientX; lastY = e.clientY;
+        applyTransform();
+      });
+      window.addEventListener('mouseup', function () { dragging = false; });
+    }
 
     outer.addEventListener('wheel', function (e) {
       if (!e.ctrlKey && !e.metaKey) return; // plain scroll is left for the page; Ctrl+scroll zooms, matching this app's Equipment Loading site-plan convention
@@ -293,14 +327,6 @@ window.BIM = (function () {
       if (e.target.closest && e.target.closest('[data-pin]')) return;
       dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY;
     });
-    window.addEventListener('mousemove', function (e) {
-      if (!dragging) return;
-      var dx = e.clientX - lastX, dy = e.clientY - lastY;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
-      panX += dx; panY += dy; lastX = e.clientX; lastY = e.clientY;
-      applyTransform();
-    });
-    window.addEventListener('mouseup', function () { dragging = false; });
 
     outer.addEventListener('click', function (e) {
       if (!placeMode || moved) return;
@@ -362,15 +388,27 @@ window.BIM = (function () {
       var planW = (plan && plan.width_px) || 1200, planH = (plan && plan.height_px) || 900;
       var img = await loadImage(photoUrl);
       var srcCanvas = toCanvas(img);
-      var src = cv.imread(srcCanvas);
-      var dst = new cv.Mat();
-      var h = reg.homography;
-      var M = cv.matFromArray(3, 3, cv.CV_64F, h);
-      var dsize = new cv.Size(planW, planH);
-      cv.warpPerspective(src, dst, M, dsize);
-      canvas.width = planW; canvas.height = planH;
-      cv.imshow(canvas, dst);
-      src.delete(); dst.delete(); M.delete();
+      // ⚠️ Audit fix: src/dst/M were only ever .delete()'d on the happy
+      // path — a throw from warpPerspective/imshow (or a malformed
+      // homography from matFromArray) skipped straight to the catch block
+      // below, permanently leaking whichever WASM cv.Mat objects had
+      // already been created. `var` hoisting makes each one safely
+      // `undefined` in the finally block if its own line never ran.
+      var src, dst, M;
+      try {
+        src = cv.imread(srcCanvas);
+        dst = new cv.Mat();
+        var h = reg.homography;
+        M = cv.matFromArray(3, 3, cv.CV_64F, h);
+        var dsize = new cv.Size(planW, planH);
+        cv.warpPerspective(src, dst, M, dsize);
+        canvas.width = planW; canvas.height = planH;
+        cv.imshow(canvas, dst);
+      } finally {
+        if (src) src.delete();
+        if (dst) dst.delete();
+        if (M) M.delete();
+      }
     } catch (e) {
       UI.toast('Could not render the actual view: ' + ((e && e.message) || e), 'error');
     }
@@ -467,13 +505,24 @@ window.BIM = (function () {
           srcPts.push(p.photoX * photoImg.naturalWidth, p.photoY * photoImg.naturalHeight);
           dstPts.push(p.planX * planW, p.planY * planH);
         });
-        var srcMat = cv.matFromArray(pairs.length, 1, cv.CV_32FC2, srcPts);
-        var dstMat = cv.matFromArray(pairs.length, 1, cv.CV_32FC2, dstPts);
-        var H = cv.findHomography(srcMat, dstMat, cv.RANSAC);
-        if (H.empty()) throw new Error('Could not compute a transform from these points — try more spread-out, distinct points');
-        var hArr = [];
-        for (var r = 0; r < 3; r++) for (var c = 0; c < 3; c++) hArr.push(H.doubleAt(r, c));
-        srcMat.delete(); dstMat.delete(); H.delete();
+        // ⚠️ Audit fix: the "not enough spread" friendly-error throw used to
+        // fire BEFORE .delete() ran, leaking srcMat/dstMat/H (H itself is a
+        // real cv.Mat even when .empty() — it still needs deleting) on
+        // exactly the path a planner is most likely to hit while getting
+        // the feel of picking registration points.
+        var srcMat, dstMat, H, hArr;
+        try {
+          srcMat = cv.matFromArray(pairs.length, 1, cv.CV_32FC2, srcPts);
+          dstMat = cv.matFromArray(pairs.length, 1, cv.CV_32FC2, dstPts);
+          H = cv.findHomography(srcMat, dstMat, cv.RANSAC);
+          if (H.empty()) throw new Error('Could not compute a transform from these points — try more spread-out, distinct points');
+          hArr = [];
+          for (var r = 0; r < 3; r++) for (var c = 0; c < 3; c++) hArr.push(H.doubleAt(r, c));
+        } finally {
+          if (srcMat) srcMat.delete();
+          if (dstMat) dstMat.delete();
+          if (H) H.delete();
+        }
 
         var row = {
           floor_plan_id: activePlanId, photo_id: chosenPhotoId, project_id: pid,
@@ -888,6 +937,13 @@ window.BIM = (function () {
     readPinField: readPinField,
     savePinForItem: savePinForItem,
     hasPlans: function () { return plans.length > 0; },
+    // Test-only hook (same convention as _zoomAnchor/_directionDegFromDrag):
+    // drives load() directly with an injected pid, bypassing init()'s
+    // onProject wiring — whose button-binding side effects aren't needed to
+    // exercise load()'s own async error handling (the audit fix: a real
+    // network failure signing the plan images must not leave the screen
+    // stuck on "Loading floor plans…" forever).
+    _load: function (testPid) { if (testPid) pid = testPid; return load(); },
     // Item-8 lookup: does this photo have a pin, and if so where/on what plan
     // — used to render the Gallery tile's expandable key-plan-style icon.
     pinInfoFor: function (itemType, itemId) {

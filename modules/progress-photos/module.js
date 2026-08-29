@@ -158,14 +158,29 @@ window.ProgressPhotos = (function () {
 
   // UI.modal() takes no width and doesn't wire close buttons, so do both here
   // rather than touching the shared ui.js (module contract §1).
-  function openModal(html, width) {
-    var m = UI.modal(html);
+  // ⚠️ Audit fix: `onClose` (optional) now runs on EVERY way this modal can
+  // be dismissed — the × / Cancel [data-close] buttons AND a backdrop
+  // click. UI.modal()'s own backdrop listener closes over a PRIVATE `close`
+  // variable, not the returned `m.close` PROPERTY, so a caller reassigning
+  // `m.close` (or re-wiring [data-close], as openForm/openMarkupEditor both
+  // did) was silently bypassed on backdrop dismissal specifically — the
+  // "editing this photo" collab cursor and the markup editor's window
+  // resize listener could both be left stuck/leaking that way. Passing
+  // {noBackdropClose:true} disables UI.modal's internal listener so this
+  // function's own — which DOES route through the same close() used by
+  // [data-close] — is the only one active. Callers that don't need cleanup
+  // simply omit `onClose` and get the previous behaviour unchanged.
+  function openModal(html, width, onClose) {
+    var m = UI.modal(html, { noBackdropClose: true });
     var box = m.el.querySelector('.pd-modal');
     if (box && width) box.style.maxWidth = width + 'px';
+    function close() { if (onClose) { try { onClose(); } catch (e) {} } m.close(); }
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
-      b.onclick = m.close;
+      b.onclick = close;
     });
+    m.el.addEventListener('click', function (e) { if (e.target === m.el) close(); });
     if (window.Icons && Icons.hydrate) Icons.hydrate(m.el);
+    m.close = close;
     return m;
   }
 
@@ -1008,11 +1023,27 @@ window.ProgressPhotos = (function () {
     return Object.keys(byCell).map(function (k) { return byCell[k]; });
   }
   function planPin(pinId, pins) { return pins.filter(function (p) { return p.id === pinId; })[0] || null; }
+  // Opens a SPECIFIC photo's lightbox regardless of whatever the Gallery's
+  // own currently-filtered view holds in `lightboxIds`. ⚠️ REAL BUG fixed
+  // here (audit pass): Plan/Stack read PROJECT-WIDE data (every pin / every
+  // location-tagged photo), so a photo pinned/stacked here can easily be one
+  // the active Gallery filter excludes (archived, wrong trade, etc.) — a
+  // plain `openLightbox(id)` falls back to index 0 on a miss and silently
+  // shows a DIFFERENT photo with no warning, and a Delete from there would
+  // hit the wrong record. This is the same fix already exported publicly as
+  // `openPhotoById` for bim.js's own Plan-tab pin clicks; extracted to a
+  // named function here so Plan/Stack's own clicks route through the exact
+  // same safe path instead of duplicating (and this time, missing) the fix.
+  function openPhotoById(id) {
+    if (!byId(id)) { UI.toast('That photo could not be found', 'warn'); return; }
+    lightboxIds = [id];
+    openLightbox(id);
+  }
   function openPlanPin(pin) {
     if (!pin) return;
     if (pin.item_type === 'panorama') { if (window.PANO && PANO.open) PANO.open(pin.item_id); }
     else if (pin.item_type === 'reconstruction') { if (window.RECON && RECON.openById) RECON.openById(pin.item_id); }
-    else if (pin.item_type === 'photo') { openLightbox(pin.item_id); }
+    else if (pin.item_type === 'photo') { openPhotoById(pin.item_id); }
   }
   function openPlanClusterList(cluster) {
     if (!cluster) return;
@@ -1079,7 +1110,11 @@ window.ProgressPhotos = (function () {
       '<div class="pp-planimgwrap" style="padding-bottom:' + (aspect * 100) + '%;">' +
         (url ? '<img src="' + Fmt.esc(url) + '" draggable="false" />' : '<div class="pp-empty" style="position:absolute;inset:0;">Plan image not available</div>') +
         clusters.map(function (c, i) {
-          return '<button class="pp-plancluster" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;">' + c.pins.length + '</button>';
+          // ⚠️ Audit fix: the only visible content was the bare pin count,
+          // which a screen reader announces as just a number with no sense
+          // of what the button does.
+          return '<button class="pp-plancluster" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;" ' +
+            'aria-label="' + c.pins.length + ' item' + (c.pins.length === 1 ? '' : 's') + ' at this location — view">' + c.pins.length + '</button>';
         }).join('') +
       '</div>' +
     '</div>';
@@ -1309,7 +1344,7 @@ window.ProgressPhotos = (function () {
       // Combined mode — each thumbnail opens the ordinary lightbox, same as
       // every other photo thumbnail in this module.
       Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-open]'), function (im) {
-        im.onclick = function () { openLightbox(this.dataset.open); };
+        im.onclick = function () { openPhotoById(this.dataset.open); };
       });
     }
   }
@@ -1361,7 +1396,8 @@ window.ProgressPhotos = (function () {
         // Clicking the row opens the lightbox (item 7); the checkbox stops that
         // click from bubbling (wired in wireRows) so selecting never opens it.
         return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '" data-rowopen="' + r.id + '">' +
-          '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '"' +
+          '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
+            Fmt.esc(r.description || 'this photo') + '"' +
             (selected[r.id] ? ' checked' : '') + ' /></div>' +
           '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
           '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
@@ -1396,7 +1432,8 @@ window.ProgressPhotos = (function () {
           // trade-off this module already accepts for the 360°/3D strip.
           var hasPin = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor('photo', r.id);
           return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
-            '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '"' +
+            '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
+              Fmt.esc(r.description || 'this photo') + '"' +
               (selected[r.id] ? ' checked' : '') + ' /></span>' +
             (hasPin ? '<button type="button" class="pp-pinbtn" data-pinpreview="' + r.id + '" ' +
               'title="Show this photo\'s position on the floor plan">' +
@@ -1644,7 +1681,7 @@ window.ProgressPhotos = (function () {
         (list.length
           ? '<div class="pd-field"><label>Presentation</label>' +
             '<select class="pd-select" id="pp-a2p-select">' +
-              list.map(function (p) { return '<option value="' + p.id + '">' + Fmt.esc(p.description || p.ppr_date || p.id) + '</option>'; }).join('') +
+              list.map(function (p) { return '<option value="' + Fmt.esc(p.id) + '">' + Fmt.esc(p.description || p.ppr_date || p.id) + '</option>'; }).join('') +
             '</select></div>'
           : '<p class="pp-hint">No presentations yet — one will be created.</p>') +
         '<div class="pd-field"><label>Or create a new presentation, dated</label>' +
@@ -2136,7 +2173,11 @@ window.ProgressPhotos = (function () {
       '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-mk-save">Save markup</button></div>';
-    var m = openModal(html, 900);
+    // ⚠️ Audit fix: onClose now covers × / Cancel AND a backdrop click alike
+    // (previously only the [data-close] re-wiring further down did, so
+    // dismissing via backdrop click left this listener on `window` forever
+    // — see openModal's own comment for the mechanism).
+    var m = openModal(html, 900, function () { window.removeEventListener('resize', sizeCanvas); });
 
     var canvas = $('pp-mk-canvas'), ctx = canvas.getContext('2d'), img = $('pp-mk-img');
     function sizeCanvas() {
@@ -2217,11 +2258,12 @@ window.ProgressPhotos = (function () {
       });
     });
 
-    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
-      b.onclick = function () { window.removeEventListener('resize', sizeCanvas); m.close(); };
-    });
+    // ⚠️ Audit fix: the [data-close] re-wire that used to live here is
+    // gone — openModal's own onClose (passed above) now removes the
+    // resize listener on EVERY dismissal path, including backdrop click,
+    // which this per-button re-wire never covered. m.close() below already
+    // runs it, so no separate removeEventListener call is needed here either.
     $('pp-mk-save').onclick = function () {
-      window.removeEventListener('resize', sizeCanvas);
       m.close();
       if (onSave) onSave(objs);
     };
@@ -2430,11 +2472,20 @@ window.ProgressPhotos = (function () {
     var fileInput = $(idPrefix + '-files');
     function apply() {
       if (fileInput) fileInput.accept = cur === 'video' ? 'video/*' : 'image/*';
-      if (fileInput) fileInput.removeAttribute('capture');
+      // ⚠️ Audit fix: this used to run unconditionally on every call
+      // (including the very FIRST, before the user touches anything), so
+      // the markup's own `capture="environment"` — meant to hint mobile
+      // browsers to open the rear camera directly for a photo — was
+      // stripped on arrival and never actually took effect in Photo mode
+      // either. It's removed only in Video mode now, and restored when
+      // switching back to Photo, so toggling between the two is reversible.
+      if (fileInput) {
+        if (cur === 'video') fileInput.removeAttribute('capture');
+        else fileInput.setAttribute('capture', 'environment');
+      }
       var pBtn = $(idPrefix + '-mtype-photo'), vBtn = $(idPrefix + '-mtype-video');
       if (pBtn) pBtn.classList.toggle('active', cur === 'photo');
       if (vBtn) vBtn.classList.toggle('active', cur === 'video');
-      var lbl = document.querySelector('label[for="' + idPrefix + '-files"]');
       if (onChange) onChange(cur);
     }
     ['photo', 'video'].forEach(function (t) {
@@ -2540,7 +2591,10 @@ window.ProgressPhotos = (function () {
 
       m.close();
       if (done) UI.toast(done + ' ' + (kind === 'video' ? 'video' : 'photo') + (done === 1 ? '' : 's') + ' uploaded', 'ok');
-      if (queued) UI.toast(queued + ' photo' + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
+      // ⚠️ Audit fix: hardcoded "photo" regardless of kind, unlike the
+      // "uploaded" toast right above it — a batch of videos queued offline
+      // reported itself as photos.
+      if (queued) UI.toast(queued + ' ' + (kind === 'video' ? 'video' : 'photo') + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
       // Item 11: pin + direction is now captured INLINE, in the same form as
@@ -2799,7 +2853,13 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-e-save">Save</button></div>';
 
-    var m = openModal(html, 560);
+    // ⚠️ Audit fix: onClose now clears the "editing this photo" collab
+    // cursor on EVERY close path — × / Cancel AND a backdrop click alike.
+    // The old comment here ("on every close path (× / Cancel)") was only
+    // ever true of the two [data-close] buttons; a backdrop click bypassed
+    // the m.close reassignment those relied on and left the cursor
+    // broadcasting "still editing" to every other viewer indefinitely.
+    var m = openModal(html, 560, function () { broadcastCollabSel(null); });
     var codeWrap = $('pp-e-codes');
     if (codeWrap) Array.prototype.forEach.call(codeWrap.querySelectorAll('input[type=checkbox]'), function (c) {
       c.checked = (r.tags || []).indexOf(c.value) >= 0;
@@ -2808,10 +2868,6 @@ window.ProgressPhotos = (function () {
     wireWorksTagField('pp-e');
     if (window.BIM) BIM.wirePinField('pp-e');
     hydrate(m.el);
-    // Clear the "editing this photo" cursor on every close path (× / Cancel).
-    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
-      b.onclick = function () { broadcastCollabSel(null); m.close(); };
-    });
     $('pp-e-save').onclick = async function () {
       var reqErr = requiredFieldsMissing('pp-e');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
@@ -2840,7 +2896,7 @@ window.ProgressPhotos = (function () {
       // on reconnect, and retries once without the schedule-link columns if the
       // migration hasn't run). Only metadata changes here — the image is untouched.
       Object.assign(r, patch);
-      broadcastCollabSel(null); m.close();
+      m.close();   // onClose (passed to openModal above) clears the collab cursor
       fillFilterOptions(); render();
       var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: patch });
       if (!w.ok) { UI.toast(w.error ? w.error.message : 'Save failed', 'error'); return; }
@@ -2926,6 +2982,48 @@ window.ProgressPhotos = (function () {
     onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); },
     trades: function () { return TRADES.slice(); },
     _syncChrome: syncChrome,
+    // ⚠️ REAL BUG fixed here (audit pass): index.html's setScreen() only ever
+    // called syncChrome() when ENTERING the Photos screen, never when
+    // LEAVING it — so the four selection-mode toolbar buttons (Download/
+    // Add to Presentation/Archive + the count) stayed visible on top of
+    // whichever OTHER screen's own tools were showing (e.g. Presentations'
+    // "+ New Presentation"), for as long as a selection was active. Clearing
+    // the selection on leaving is also the more honest behaviour — a batch
+    // selection is a live, in-progress action tied to being on this screen,
+    // not something that should silently survive a tab switch and be acted
+    // on later with the planner having forgotten what was checked.
+    // ⚠️ Deliberately NOT a call to the full syncChrome(): index.html's
+    // setScreen() already runs `show(PHOTO_TOOLS, isPhotos)` to hide
+    // pp-add/pp-sep-photos/pp-refresh when leaving — syncChrome()'s OWN
+    // `has` branch for those same three ids re-shows them whenever there is
+    // no active selection (the normal in-screen "selection just cleared"
+    // case), which on leaving would silently UNDO that `show()` call and
+    // leave the Photos screen's own Add/Refresh buttons visible on top of
+    // whichever other screen is now showing. This only clears the selection
+    // state and hides the four selection-only controls, nothing else.
+    _leavePhotosScreen: function () {
+      selected = {};
+      var count = $('pp-selcount'); if (count) count.style.display = 'none';
+      ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'].forEach(function (id) {
+        var el = $(id); if (el) el.style.display = 'none';
+      });
+      // #pp-view isn't destroyed when leaving (its screen container is only
+      // `hidden`, not emptied), so a checked box or highlighted row from a
+      // now-cleared selection would otherwise sit there stale until the
+      // grid's next unrelated re-render — visible again the moment the
+      // planner comes back, even though `selected` (and the toolbar above)
+      // both already correctly read "nothing selected".
+      var host = $('pp-view');
+      if (host) {
+        Array.prototype.forEach.call(host.querySelectorAll('[data-sel]'), function (cb) {
+          cb.checked = false;
+          var card = cb.closest('.pp-row, .pp-card');
+          if (card) card.classList.remove('pp-selrow');
+        });
+        var selAll = host.querySelector('#pp-selall');
+        if (selAll) selAll.checked = false;
+      }
+    },
     _closeLightbox: closeLightbox,
     _stepLightbox: stepLightbox,
     // Used by the PPR slide editor's "+ Add photos" shortcut: opens the same
@@ -2968,15 +3066,11 @@ window.ProgressPhotos = (function () {
       drawMarkupObjects(ctx, objs || [], canvas.width, canvas.height);
     },
     // Opens a SPECIFIC photo's lightbox regardless of whatever the Photos
-    // screen's own filtered view currently holds in `lightboxIds` — plain
-    // openLightbox(id) falls back to index 0 on a miss, which would silently
-    // show the wrong photo when called from a screen (Floor Plan) that never
-    // populated that array itself.
-    openPhotoById: function (id) {
-      if (!byId(id)) { UI.toast('That photo could not be found', 'warn'); return; }
-      lightboxIds = [id];
-      openLightbox(id);
-    },
+    // screen's own filtered view currently holds in `lightboxIds` — see
+    // openPhotoById's own definition above (Plan/Stack views use it directly
+    // from within this closure; this is the same function, exported for
+    // bim.js's own Plans-tab pin clicks).
+    openPhotoById: function (id) { return openPhotoById(id); },
     // Test-only hooks (same convention as bim.js's _zoomAnchor) — the
     // legacy-fallback logic in tradesOf/worksOf is exactly the kind of thing
     // worth genuinely EXECUTING rather than only regex-checking, since a
