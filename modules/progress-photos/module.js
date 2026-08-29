@@ -170,11 +170,30 @@ window.ProgressPhotos = (function () {
   // function's own — which DOES route through the same close() used by
   // [data-close] — is the only one active. Callers that don't need cleanup
   // simply omit `onClose` and get the previous behaviour unchanged.
+  // ⚠️ 2026-08-30 REAL BUG FOUND AND FIXED HERE — this is why items 9/10
+  // ("clicking 360 does nothing", "close and cancel don't work") and half of
+  // item 4 ("the markup editor's close/save/cancel buttons don't work") all
+  // happened at once: `m.close = close;` below REASSIGNED the modal's own
+  // `close` property to this wrapper — but the wrapper's BODY calls
+  // `m.close()`, and JS resolves `m.close` at CALL TIME, not at the moment
+  // this function was defined. By the time a button was actually clicked,
+  // `m.close` no longer pointed at UI.modal()'s real DOM-removal function —
+  // it pointed at THIS WRAPPER ITSELF, so `m.close()` called itself,
+  // recursed until the stack overflowed, and threw a silent RangeError
+  // inside the click handler (browsers log this to the console; nothing
+  // reaches the screen). The overlay was never removed, and — critically —
+  // any code AFTER the `m.close()` call in a handler (e.g. the 360° button's
+  // `if (window.PANO...) PANO.openCapture();`, or the markup editor's Save
+  // button calling `onSave(objs)` right after `m.close()`) never ran either,
+  // because the throw happened first. The original close function is now
+  // captured in `rawClose` BEFORE `m.close` is ever reassigned, and the
+  // wrapper calls THAT — never `m.close()` — so it can never call itself.
   function openModal(html, width, onClose) {
     var m = UI.modal(html, { noBackdropClose: true });
     var box = m.el.querySelector('.pd-modal');
     if (box && width) box.style.maxWidth = width + 'px';
-    function close() { if (onClose) { try { onClose(); } catch (e) {} } m.close(); }
+    var rawClose = m.close;
+    function close() { if (onClose) { try { onClose(); } catch (e) {} } rawClose(); }
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
       b.onclick = close;
     });
@@ -702,19 +721,17 @@ window.ProgressPhotos = (function () {
     });
     return out.sort();
   }
-  // ---- Works: a single schedule-derived tag -------------------------------
-  // 2026-08-29 feedback item 9: "instead of selecting trades and works as
-  // multiple selection, add a works tag to the media, get the works choices
-  // from the schedule module" — REVERSES the multi-select checkbox groups
-  // this same file shipped earlier the same day (item 2 below, now retired).
-  // Trade is no longer a field the planner fills in at all: it's DERIVED from
-  // whichever schedule activity the picked Works value names, via
-  // `deriveTradeForWorks` — so grouping/filtering by trade (unchanged
-  // elsewhere in this file) keeps working without asking the question twice.
-  // A photo's trades/works, tolerant of pre-migration rows that only ever
-  // had the singular `trade`/`works` text columns filled in, AND of the
-  // multi-select era's rows (which may carry more than one value in the
-  // array columns) — both still read correctly here.
+  // ---- Works: multi-select from the schedule's activity groups -----------
+  // 2026-08-30 feedback item 6: REVERSES the single schedule-derived tag
+  // (2026-08-29 item 9) back to a genuine multi-select — "remove the
+  // dropdown and replace with an add works button. When clicked, the module
+  // retrieves the activities in the project-defined groups. Users can then
+  // select multiple activities." Trade is still never picked directly — it's
+  // derived from whichever activities are chosen (now unioned across all of
+  // them, since a slide can now legitimately span more than one trade).
+  // A photo's trades/works, tolerant of every era's rows this file has ever
+  // written: pre-migration singular columns, the 2026-08-29 multi-select
+  // checkboxes, and the single-tag era in between — all still read correctly.
   function tradesOf(r) { return (r.trades && r.trades.length) ? r.trades : (r.trade ? [r.trade] : []); }
   function worksOf(r) { return (r.works_multi && r.works_multi.length) ? r.works_multi : (r.works ? [r.works] : []); }
   // Reverse of workTypeMatchesTrade: given a Works value, find the schedule
@@ -729,36 +746,116 @@ window.ProgressPhotos = (function () {
     if (!act || !act.work_type) return null;
     return TRADES.filter(function (t) { return workTypeMatchesTrade(act.work_type, t); })[0] || null;
   }
-  var WORKS_CUSTOM = '__custom__';
-  function worksTagFieldHTML(idPrefix, existingVal) {
-    existingVal = existingVal || '';
-    var opts = worksOptions();
-    if (existingVal && opts.indexOf(existingVal) < 0) opts.push(existingVal);
-    opts.sort();
-    return '<select class="pd-select" id="' + idPrefix + '-workstag">' +
-      '<option value="">— Select —</option>' +
-      opts.map(function (v) {
-        return '<option value="' + Fmt.esc(v) + '"' + (v === existingVal ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>';
-      }).join('') +
-      '<option value="' + WORKS_CUSTOM + '">+ Add custom value…</option>' +
-    '</select>';
+  // Union of every derived trade across a set of chosen Works values — a
+  // photo naming activities from two disciplines now legitimately carries
+  // two trades, rather than only ever the first one's.
+  function deriveTradesForWorksList(list) {
+    var seen = {}, out = [];
+    (list || []).forEach(function (v) {
+      var t = deriveTradeForWorks(v);
+      if (t && !seen[t]) { seen[t] = 1; out.push(t); }
+    });
+    return out;
   }
-  function wireWorksTagField(idPrefix) {
-    var sel = $(idPrefix + '-workstag'); if (!sel) return;
-    sel.onchange = function () {
-      if (sel.value !== WORKS_CUSTOM) return;
-      var v = (window.prompt('New Works value:') || '').trim();
-      if (!v) { sel.value = ''; return; }
-      var opt = document.createElement('option');
-      opt.value = v; opt.textContent = v; opt.selected = true;
-      sel.insertBefore(opt, sel.lastElementChild);
+  // Whether the project's schedule actually offers anything to pick — this is
+  // the "if the schedule has not been set-up" test the Works field's own
+  // required-ness hinges on (requiredFieldsMissing, below): SCHED_ACTS being
+  // empty means there is no schedule integration to speak of, not merely
+  // that today's picked Trade/phase filters narrowed it to nothing.
+  function scheduleHasActivities() { return SCHED_ACTS.length > 0; }
+  // Every distinct schedule activity NAME eligible as a Works value, bucketed
+  // by its work_type ("the project-defined activity groups") — the same
+  // exec/closeout + non-milestone scoping distinctScheduleWorks() already
+  // applies, just grouped instead of flattened into one list. A trailing
+  // "Previously used" bucket carries any value a planner already typed that
+  // matches no live schedule activity (free text from before this
+  // integration, or an activity since renamed/removed) — never silently
+  // dropped from what can still be picked.
+  function worksGroupedOptions() {
+    var byGroup = {}, order = [];
+    SCHED_ACTS.forEach(function (a) {
+      if (a.activity_type === 'Start Milestone' || a.activity_type === 'Finish Milestone') return;
+      if (!inExecOrCloseout(a)) return;
+      var name = (a.activity_name || '').trim();
+      if (!name) return;
+      var group = (a.work_type || '').trim() || 'Other';
+      if (!byGroup[group]) { byGroup[group] = {}; order.push(group); }
+      byGroup[group][name] = true;
+    });
+    var already = {};
+    order.forEach(function (g) { Object.keys(byGroup[g]).forEach(function (n) { already[n] = true; }); });
+    var extra = distinctCapturedWorks().filter(function (v) { return !already[v]; });
+    if (extra.length) {
+      byGroup['Previously used'] = {};
+      extra.forEach(function (v) { byGroup['Previously used'][v] = true; });
+      order.push('Previously used');
+    }
+    return order.map(function (g) { return { group: g, items: Object.keys(byGroup[g]).sort() }; });
+  }
+  // Picker state is in-memory, per idPrefix ('pp' for Add, 'pp-e' for Edit) —
+  // the same scoping convention every other embeddable field in this form
+  // already uses (locFieldsHTML, BIM.pinFieldHTML).
+  var _worksSel = {};
+  function worksSelOf(idPrefix) { return (_worksSel[idPrefix] || []).slice(); }
+  function worksChipsHTML(idPrefix) {
+    var sel = worksSelOf(idPrefix);
+    if (!sel.length) return '<p class="pp-hint">No works selected yet.</p>';
+    return '<div class="pp-workschosen">' + sel.map(function (v) {
+      return '<span class="pp-workschip">' + Fmt.esc(v) +
+        '<button type="button" data-removework="' + Fmt.esc(v) + '" title="Remove" aria-label="Remove ' + Fmt.esc(v) + '">' +
+        '<span data-ico="x" data-ico-size="11"></span></button></span>';
+    }).join('') + '</div>';
+  }
+  function worksMultiFieldHTML(idPrefix, existingWorks) {
+    _worksSel[idPrefix] = (existingWorks || []).slice();
+    return '<div id="' + idPrefix + '-worksfield">' + worksChipsHTML(idPrefix) +
+      '<button type="button" class="pd-btn" id="' + idPrefix + '-worksadd">+ Add works</button></div>';
+  }
+  function repaintWorksChips(idPrefix) {
+    var host = $(idPrefix + '-worksfield'); if (!host) return;
+    host.innerHTML = worksChipsHTML(idPrefix) +
+      '<button type="button" class="pd-btn" id="' + idPrefix + '-worksadd">+ Add works</button>';
+    wireWorksMultiField(idPrefix);
+    hydrate(host);
+  }
+  function openWorksPicker(idPrefix) {
+    var groups = worksGroupedOptions();
+    var chosen = {}; worksSelOf(idPrefix).forEach(function (v) { chosen[v] = true; });
+    var html =
+      '<div class="pd-modal-header"><h3>Add works</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        (groups.length
+          ? '<div class="pp-worksgrid">' + groups.map(function (g) {
+              return '<div class="pp-worksgroup"><span class="pp-worksgroup-name">' + Fmt.esc(g.group) + '</span>' +
+                g.items.map(function (v) {
+                  return '<label class="pp-worksitem"><input type="checkbox" value="' + Fmt.esc(v) + '"' +
+                    (chosen[v] ? ' checked' : '') + ' /> ' + Fmt.esc(v) + '</label>';
+                }).join('') + '</div>';
+            }).join('') + '</div>'
+          : '<p class="pp-hint">No schedule activities are set up for this project yet — Works can be left blank.</p>') +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp-works-done">Done</button></div>';
+    var m = openModal(html, 480);
+    $('pp-works-done').onclick = function () {
+      var picked = Array.prototype.map.call(m.el.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
+      _worksSel[idPrefix] = picked;
+      m.close();
+      repaintWorksChips(idPrefix);
     };
   }
-  function readWorksTag(idPrefix) {
-    var sel = $(idPrefix + '-workstag');
-    var v = sel ? sel.value : '';
-    return v === WORKS_CUSTOM ? '' : v;
+  function wireWorksMultiField(idPrefix) {
+    var addBtn = $(idPrefix + '-worksadd');
+    if (addBtn) addBtn.onclick = function () { openWorksPicker(idPrefix); };
+    var host = $(idPrefix + '-worksfield');
+    if (host) Array.prototype.forEach.call(host.querySelectorAll('[data-removework]'), function (b) {
+      b.onclick = function () {
+        _worksSel[idPrefix] = worksSelOf(idPrefix).filter(function (v) { return v !== b.dataset.removework; });
+        repaintWorksChips(idPrefix);
+      };
+    });
   }
+  function readWorksMulti(idPrefix) { return worksSelOf(idPrefix); }
   function fillFilterOptions() {
     function fill(id, list, blank) {
       var el = $(id); if (!el) return;
@@ -2271,118 +2368,147 @@ window.ProgressPhotos = (function () {
 
   // --------------------------------------------------------------- upload ---
   function reqMark() { return ' <span class="pp-req">*</span>'; }
-  // Capture date / Works / Location Breakdown are required. These fields
-  // live in a plain <div>, not a <form>, so the native `required` attribute
-  // is a visual/semantic cue only -- this is the actual gate, called before
-  // either the Add or Edit save handler proceeds. Trade is no longer a
-  // field of its own (item 9) -- it's derived from the Works value chosen,
-  // so there is nothing to require separately.
+  // Capture date / Works / Location / View name are required, with two
+  // narrow, explicit waivers (2026-08-30 feedback items 6 & 7): Works is
+  // only required when the project's SCHEDULE actually offers activities to
+  // pick from, and Location is only required when the project has a
+  // Location Breakdown configured at all — a project with neither cannot
+  // honestly be made to answer a question it has no data to answer. View
+  // name is ALWAYS required regardless of either. These fields live in a
+  // plain <div>, not a <form>, so the native `required` attribute is a
+  // visual/semantic cue only -- this is the actual gate, called before
+  // either the Add or Edit save handler proceeds.
   function requiredFieldsMissing(idPrefix) {
     var date = $(idPrefix + '-date');
     if (!date || !date.value) return 'Capture date is required.';
-    if (!readWorksTag(idPrefix)) return 'A Works value is required.';
-    var need = locRequiredLevels();
-    if (need.length) {
-      var vals = currentLocValues(idPrefix);
-      var missing = need.filter(function (l) { return !vals[l.id]; });
-      if (missing.length) {
-        return missing.map(function (l) { return l.name; }).join(' and ') + ' ' +
-          (missing.length > 1 ? 'are' : 'is') + ' required.';
-      }
-    }
+    if (scheduleHasActivities() && !readWorksMulti(idPrefix).length) return 'At least one Works value is required.';
+    if (LOC_LEVELS.length && !Object.keys(currentLocValues(idPrefix)).length) return 'A location is required.';
+    var vn = $(idPrefix + '-viewname');
+    if (!vn || !vn.value.trim()) return 'A view name is required.';
     return null;
   }
 
   // ------------------------------------------------- Location Breakdown picker
-  // One free-text input + datalist per location_levels row (Project
-  // Schedule's own convention for this exact feature -- an <input>+<datalist>,
-  // not a <select>, since values are project-specific free text with no
-  // enforced tree). Suggestions soft-cascade: later levels' datalists are
-  // recomputed from only the activities matching everything picked so far,
-  // but typing an unlisted value is always allowed. The resolved path is
-  // shown as its own read-only breadcrumb -- never written into the
-  // separate, purely-optional free-text "Location label". Any Activity Code
-  // types the project has (a separate, unrelated mechanism) get their own
-  // generic overlay checkboxes.
-  function locOptionsHTML(levelId, priorVals) {
-    return distinctLocValues(levelId, priorVals).map(function (v) {
-      return '<option value="' + Fmt.esc(v) + '"></option>';
-    }).join('');
-  }
-  // The first two configured levels (by sort_order -- typically Tower/Building
-  // then Level/Floor) are required; deeper levels (Zone, Orientation, ...) stay
-  // optional, matching the "a capture can stop at any depth" design elsewhere
-  // in this picker.
-  function locRequiredLevels() { return LOC_LEVELS.slice(0, 2); }
-  function locLevelFieldHTML(idPrefix, level, priorVals, curVal, isRequired) {
-    var dlid = idPrefix + '-loclvl-' + level.id + '-dl';
-    return '<div class="pd-field pp-wbslevel"><label>' + Fmt.esc(level.name) +
-      (isRequired ? reqMark() : '') + '</label>' +
-      '<input class="pd-input" id="' + idPrefix + '-loclvl-' + level.id + '" list="' + dlid + '" ' +
-      'data-lvl="' + level.id + '" value="' + Fmt.esc(curVal || '') + '" placeholder="e.g. ..."' +
-      (isRequired ? ' required' : '') + ' />' +
-      '<datalist id="' + dlid + '">' + locOptionsHTML(level.id, priorVals) + '</datalist>' +
-      '</div>';
-  }
-  function locFieldsHTML(idPrefix, existingValues) {
-    existingValues = existingValues || {};
-    if (!LOC_LEVELS.length) return '<p class="pp-hint">No Location Breakdown set up for this project yet -- build it in Project Schedule (Group menu &rarr; Location Breakdown...).</p>';
-    var prior = {};
-    var reqIds = {};
-    locRequiredLevels().forEach(function (l) { reqIds[l.id] = true; });
-    return LOC_LEVELS.map(function (l) {
-      var html = locLevelFieldHTML(idPrefix, l, prior, existingValues[l.id], !!reqIds[l.id]);
-      if (existingValues[l.id]) prior[l.id] = existingValues[l.id];
-      return html;
-    }).join('');
-  }
-  function currentLocValues(idPrefix) {
-    var values = {};
-    LOC_LEVELS.forEach(function (l) {
-      var el = $(idPrefix + '-loclvl-' + l.id);
-      var v = el ? el.value.trim() : '';
-      if (v) values[l.id] = v;
+  // 2026-08-30 feedback item 7: REPLACES the free-text cascading Tower/
+  // Level/Zone inputs with a single "Add field" button that opens the
+  // project's real Location Breakdown as a TREE (built from the schedule's
+  // own distinct values per level, cascaded the same way the old datalists
+  // were) and lets the planner pick exactly ONE node, at ANY depth — "it
+  // should be fine to select tower only". A required, always-asked "view
+  // name" free-text field is added alongside it (progress_photos.view_name)
+  // — the specific name for THIS shot at that location (e.g. "Facing east
+  // stairwell"), required regardless of whether a schedule exists at all.
+  var _locSel = {};   // idPrefix -> {levelId: value} — the ONE picked node's path from the root
+  function locSelOf(idPrefix) { return Object.assign({}, _locSel[idPrefix] || {}); }
+  // Recursive node tree: level 0's distinct values, each carrying the next
+  // level's distinct values SCOPED to it, and so on — the same soft-cascade
+  // distinctLocValues() already computes, just built out as a real tree
+  // instead of flattening straight into <select> options and only when
+  // requested (item 7 asks for a node PICKER, not an always-open cascade).
+  function locTreeLevel(levelIdx, priorVals) {
+    if (levelIdx >= LOC_LEVELS.length) return [];
+    var level = LOC_LEVELS[levelIdx];
+    return distinctLocValues(level.id, priorVals).map(function (v) {
+      var childVals = Object.assign({}, priorVals); childVals[level.id] = v;
+      return { levelId: level.id, levelName: level.name, value: v, values: childVals, children: locTreeLevel(levelIdx + 1, childVals) };
     });
-    return values;
   }
-  function wireLocFields(idPrefix) {
-    LOC_LEVELS.forEach(function (l, i) {
-      var el = $(idPrefix + '-loclvl-' + l.id);
-      if (!el) return;
-      el.oninput = el.onchange = function () {
-        var prior = {};
-        for (var j = 0; j <= i; j++) {
-          var pel = $(idPrefix + '-loclvl-' + LOC_LEVELS[j].id);
-          if (pel && pel.value.trim()) prior[LOC_LEVELS[j].id] = pel.value.trim();
-        }
-        for (var k = i + 1; k < LOC_LEVELS.length; k++) {
-          var nl = LOC_LEVELS[k];
-          var dl = $(idPrefix + '-loclvl-' + nl.id + '-dl');
-          if (dl) dl.innerHTML = locOptionsHTML(nl.id, prior);
-        }
-        paintLocCtx(idPrefix);
+  function locTree() { return locTreeLevel(0, {}); }
+  function locChosenHTML(idPrefix) {
+    var values = locSelOf(idPrefix);
+    var hasAny = Object.keys(values).length > 0;
+    if (!LOC_LEVELS.length) {
+      return '<p class="pp-hint">No Location Breakdown set up for this project yet — build it in Project ' +
+        'Schedule (Group menu &rarr; Location Breakdown&hellip;). Location can be left blank until then.</p>';
+    }
+    return (hasAny
+      ? '<div class="pp-locchosen"><span data-ico="mapPin" data-ico-size="15"></span><strong>' +
+          Fmt.esc(locBreadcrumb(values)) + '</strong></div>'
+      : '<p class="pp-hint">No location selected yet.</p>') +
+      '<button type="button" class="pd-btn" id="' + idPrefix + '-locadd">' + (hasAny ? 'Change location…' : '+ Add field') + '</button>';
+  }
+  function locationFieldHTML(idPrefix, existingValues) {
+    _locSel[idPrefix] = Object.assign({}, existingValues || {});
+    return '<div class="pp-span2 pp-wbssection"><label>Location' + (LOC_LEVELS.length ? reqMark() : '') + '</label>' +
+        '<div id="' + idPrefix + '-locfield">' + locChosenHTML(idPrefix) + '</div>' +
+      '</div>' +
+      '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
+      codeOverlayHTML(idPrefix, []) +
+      '<div class="pd-field pp-span2"><label>View name' + reqMark() +
+        ' <span class="pp-optnote">(what this specific photo/view shows)</span></label>' +
+        '<input class="pd-input" id="' + idPrefix + '-viewname" required /></div>';
+  }
+  function locNodeButtonHTML(node) {
+    return '<button type="button" class="pp-locnode" data-locpick="' + Fmt.esc(node.values ? JSON.stringify(node.values) : '{}') + '">' +
+      '<span class="pp-locnode-lvl">' + Fmt.esc(node.levelName) + '</span>' + Fmt.esc(node.value) + '</button>' +
+      (node.children.length ? '<div style="padding-left:16px;">' + node.children.map(locNodeButtonHTML).join('') + '</div>' : '');
+  }
+  function openLocationPicker(idPrefix) {
+    var tree = locTree();
+    var html =
+      '<div class="pd-modal-header"><h3>Pick a location</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        (tree.length
+          ? '<p class="pp-hint">Pick any node — a single Tower is a valid location on its own; drill in for more detail.</p>' +
+            '<div class="pp-loctree">' + tree.map(locNodeButtonHTML).join('') + '</div>'
+          : '<p class="pp-hint">No Location Breakdown set up for this project yet.</p>') +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>' + (tree.length ? 'Cancel' : 'Close') + '</button>' +
+        (Object.keys(locSelOf(idPrefix)).length
+          ? '<button type="button" class="pd-btn pd-btn-danger" id="pp-loc-clear">Clear location</button>' : '') +
+      '</div>';
+    var m = openModal(html, 460);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-locpick]'), function (b) {
+      b.onclick = function () {
+        _locSel[idPrefix] = JSON.parse(this.dataset.locpick);
+        m.close();
+        repaintLocField(idPrefix);
+      };
+    });
+    if ($('pp-loc-clear')) $('pp-loc-clear').onclick = function () {
+      _locSel[idPrefix] = {};
+      m.close();
+      repaintLocField(idPrefix);
+    };
+  }
+  // Stateless variant of openLocationPicker, for callers OUTSIDE the Add/Edit
+  // Photo form's own idPrefix-scoped state — item 12's floor-plan-upload
+  // form (bim.js) is the first of these: it needs "pick one node from the
+  // schedule's location breakdown" without touching `_locSel` at all, since a
+  // floor plan isn't a photo field and shouldn't share that state. Exported
+  // as `ProgressPhotos.openLocationPicker`.
+  function openGenericLocationPicker(onPick) {
+    var tree = locTree();
+    var html =
+      '<div class="pd-modal-header"><h3>Pick a location</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        (tree.length
+          ? '<p class="pp-hint">Pick any node — a single Tower is a valid location on its own; drill in for more detail.</p>' +
+            '<div class="pp-loctree">' + tree.map(locNodeButtonHTML).join('') + '</div>'
+          : '<p class="pp-hint">No Location Breakdown set up for this project yet.</p>') +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>' + (tree.length ? 'Cancel' : 'Close') + '</button></div>';
+    var m = openModal(html, 460);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-locpick]'), function (b) {
+      b.onclick = function () {
+        var values = JSON.parse(this.dataset.locpick);
+        m.close();
+        onPick(values, locBreadcrumb(values));
       };
     });
   }
-  // The separate free-text "Location label" input was removed (2026-08-29
-  // feedback, item 2 — "No need for the location label as this is
-  // redundant"). `location` (the display-cache text column) is now ALWAYS
-  // derived from `locBreadcrumb(locVals)` — never a manual override — so
-  // the third `locText` parameter this function used to take is gone too;
-  // both call sites below were updated to drop the argument they used to
-  // pass here (it only ever fed the removed input's initial value).
-  function locationFieldHTML(idPrefix, existingValues) {
-    return (
-      '<div class="pp-span2 pp-wbssection"><label>Location Breakdown' +
-        (locRequiredLevels().length ? reqMark() + ' <span class="pp-optnote">(' +
-          Fmt.esc(locRequiredLevels().map(function (l) { return l.name; }).join(' & ')) +
-          ' required)</span>' : '') + '</label>' +
-        '<div class="pp-wbscascade" id="' + idPrefix + '-loclevels">' + locFieldsHTML(idPrefix, existingValues) + '</div>' +
-        '<div class="pp-wbscrumb" id="' + idPrefix + '-crumb"></div>' +
-      '</div>' +
-      '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
-      codeOverlayHTML(idPrefix, [])
-    );
+  function repaintLocField(idPrefix) {
+    var host = $(idPrefix + '-locfield'); if (!host) return;
+    host.innerHTML = locChosenHTML(idPrefix);
+    wireLocationField(idPrefix);
+    hydrate(host);
+    paintLocCtx(idPrefix);
+  }
+  function currentLocValues(idPrefix) { return locSelOf(idPrefix); }
+  function wireLocationField(idPrefix) {
+    var addBtn = $(idPrefix + '-locadd');
+    if (addBtn) addBtn.onclick = function () { openLocationPicker(idPrefix); };
+    paintLocCtx(idPrefix);
   }
   function codeOverlayHTML(idPrefix, existingTags) {
     if (!CODE_TYPES.length) return '';
@@ -2414,14 +2540,9 @@ window.ProgressPhotos = (function () {
     paintLocCtx(idPrefix);
   }
   function paintLocCtx(idPrefix) {
-    var ctx = $(idPrefix + '-actctx'), crumb = $(idPrefix + '-crumb');
+    var ctx = $(idPrefix + '-actctx');
     var values = currentLocValues(idPrefix);
     var hasAny = Object.keys(values).length > 0;
-    if (crumb) {
-      crumb.innerHTML = hasAny
-        ? Fmt.esc(locBreadcrumb(values))
-        : '<span class="pp-muted">No Location Breakdown value selected yet.</span>';
-    }
     if (!ctx) return;
     if (!hasAny) { ctx.innerHTML = ''; return; }
     var act = resolveActivity(values), last = lastCaptureAt(values);
@@ -2500,6 +2621,14 @@ window.ProgressPhotos = (function () {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
     preset = preset || {};
     var today = new Date().toISOString().slice(0, 10);
+    // Item 5: markup is now available AT UPLOAD TIME, before the file is even
+    // saved — one local, in-memory annotation per staged file, keyed by
+    // index, applied to a throwaway object URL (never uploaded anywhere) and
+    // merged into that file's own `markup` column on save. Rebuilt every
+    // time the file input changes (a fresh batch starts with no markup).
+    var pendingMarkup = {};   // file-array index -> markup objects[]
+    var stagedUrls = [];      // parallel array of object URLs, revoked on close/replace
+    function revokeStaged() { stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); stagedUrls = []; }
     var html =
       '<div class="pd-modal-header"><h3>Add media</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
@@ -2509,13 +2638,14 @@ window.ProgressPhotos = (function () {
         mediaTypeSelectorHTML('pp') +
         '<div class="pd-field" id="pp-filesfield"><label>Photos</label>' +
           '<input class="pd-input" type="file" id="pp-files" accept="image/*" capture="environment" multiple /></div>' +
+        '<div class="pp-gallery" id="pp-stagedgrid" style="margin:8px 0;"></div>' +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
             '<input class="pd-input" id="pp-desc" placeholder="e.g. Model Unit" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-date" value="' + today + '" required /></div>' +
           '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
-            worksTagFieldHTML('pp', '') + '</div>' +
+            worksMultiFieldHTML('pp', []) + '</div>' +
           locationFieldHTML('pp', preset.locationValues || {}) +
           (window.BIM ? BIM.pinFieldHTML('pp', null) : '') +
         '</div>' +
@@ -2525,9 +2655,9 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-save">Upload</button></div>';
 
-    var m = openModal(html, 640);
+    var m = openModal(html, 640, revokeStaged);
     wireLocationField('pp');
-    wireWorksTagField('pp');
+    wireWorksMultiField('pp');
     if (window.BIM) BIM.wirePinField('pp');
     var mtype = wireMediaTypeSelector('pp', function (t) {
       var fld = $('pp-filesfield'); if (fld) fld.querySelector('label').textContent = t === 'video' ? 'Videos' : 'Photos';
@@ -2535,10 +2665,45 @@ window.ProgressPhotos = (function () {
     // 360° hands off to pano.js's own real capture flow (item 17) — this
     // modal closes rather than trying to represent a recording/stitching
     // pipeline inside the same form as a plain file upload.
+    // ⚠️ Item 9 fix: wrapped in try/catch and reports the error visibly. The
+    // REAL cause of "clicking 360 does nothing" was a bug in openModal()
+    // itself (fixed above, 2026-08-30) — m.close() used to throw, so
+    // execution never reached PANO.openCapture() at all. This try/catch is
+    // belt-and-braces so a FUTURE failure here (e.g. pano.js not yet loaded)
+    // is visible instead of silent, not a fix for the same bug twice.
     if ($('pp-mtype-360')) $('pp-mtype-360').onclick = function () {
-      m.close();
-      if (window.PANO && PANO.openCapture) PANO.openCapture();
-      else UI.toast('360° capture is not available', 'error');
+      try {
+        m.close();
+        if (window.PANO && PANO.openCapture) PANO.openCapture();
+        else UI.toast('360° capture is not available', 'error');
+      } catch (e) {
+        UI.toast('Could not open 360° capture: ' + ((e && e.message) || e), 'error');
+      }
+    };
+    // Item 5 — a thumbnail + "Markup" button per staged file, appearing the
+    // moment files are chosen (before Upload is ever pressed).
+    if ($('pp-files')) $('pp-files').onchange = function () {
+      revokeStaged();
+      pendingMarkup = {};
+      var files = this.files || [];
+      var grid = $('pp-stagedgrid');
+      if (!grid) return;
+      grid.innerHTML = Array.prototype.map.call(files, function (f, i) {
+        var isImg = /^image\//.test(f.type);
+        var url = isImg ? URL.createObjectURL(f) : '';
+        if (url) stagedUrls[i] = url;
+        return '<figure class="pp-card" data-staged="' + i + '">' +
+          (url ? '<div class="pp-cardimg"><img class="pp-cardphoto" src="' + Fmt.esc(url) + '" alt="" /></div>'
+               : '<div class="pp-cardimg pp-noimg" style="height:210px;">' + Fmt.esc(f.name) + '</div>') +
+          (isImg ? '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>' : '') +
+        '</figure>';
+      }).join('');
+      Array.prototype.forEach.call(grid.querySelectorAll('[data-markupstage]'), function (b) {
+        b.onclick = function () {
+          var i = +this.dataset.markupstage;
+          openMarkupEditor(stagedUrls[i], pendingMarkup[i] || [], function (objs) { pendingMarkup[i] = objs; });
+        };
+      });
     };
     hydrate(m.el);
 
@@ -2550,25 +2715,26 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
       var act = resolveActivity(locVals);
-      // Item 9: Works is now a single schedule-derived tag; Trade is DERIVED
-      // from it, never picked directly. `trades`/`works_multi` stay the real
-      // array columns (at most one element each now) so every downstream
-      // reader (grouping, filters, `tradesOf`/`worksOf`) keeps working
-      // unchanged; `trade`/`works` stay populated too as the singular
-      // display-cache fallback, same "deprecated but kept in step"
-      // convention this file already uses for `location`.
-      var worksVal = readWorksTag('pp');
-      var tradeVal = deriveTradeForWorks(worksVal);
-      var pinData = window.BIM ? BIM.readPinField('pp') : null;   // item 11
+      // Item 6: Works is a multi-select again; Trade is the UNION of every
+      // chosen Works value's own derived trade. `trades`/`works_multi` are
+      // the real array columns; `trade`/`works` stay populated too as the
+      // singular display-cache fallback (first of each array), same
+      // "deprecated but kept in step" convention this file already uses for
+      // `location`.
+      var worksList = readWorksMulti('pp');
+      var tradeList = deriveTradesForWorksList(worksList);
+      var pinData = window.BIM ? BIM.readPinField('pp') : null;
+      var viewNameEl = $('pp-viewname');
       var shared = {
         description: $('pp-desc').value.trim(),
         taken_at: $('pp-date').value || null,
-        trades: tradeVal ? [tradeVal] : [],
-        works_multi: worksVal ? [worksVal] : [],
-        trade: tradeVal,
-        works: worksVal || null,
+        trades: tradeList,
+        works_multi: worksList,
+        trade: tradeList[0] || null,
+        works: worksList[0] || null,
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
+        view_name: viewNameEl ? viewNameEl.value.trim() : null,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp'),
@@ -2581,12 +2747,15 @@ window.ProgressPhotos = (function () {
       for (var i = 0; i < files.length; i++) {
         prog.textContent = 'Saving ' + (i + 1) + ' of ' + files.length + '…';
         try {
-          var r = await saveCapture(files[i], Object.assign({ sort_order: i }, shared));
+          // Item 5: whatever markup was drawn on this staged file travels
+          // with it into the very first insert — never a second write.
+          var perFile = Object.assign({ sort_order: i }, shared);
+          if (pendingMarkup[i] && pendingMarkup[i].length) perFile.markup = pendingMarkup[i];
+          var r = await saveCapture(files[i], perFile);
           if (r.queued) queued++; else if (r.ok) { done++; if (r.id) newIds.push(r.id); } else failed.push(files[i].name);
         } catch (err) {
           failed.push(files[i].name + ': ' + (err.message || err));
         }
-        await new Promise(function (r) { setTimeout(r, 0); });   // let progress paint
       }
 
       m.close();
@@ -2597,13 +2766,15 @@ window.ProgressPhotos = (function () {
       if (queued) UI.toast(queued + ' ' + (kind === 'video' ? 'video' : 'photo') + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
-      // Item 11: pin + direction is now captured INLINE, in the same form as
-      // the upload itself, rather than a separate popup shown after the
-      // fact -- so it's saved for every uploaded item that shares this one
-      // camera position, not just a single representative photo. A no-op
-      // when the planner left the field blank (readPinField returned null).
+      // Item 27/28: pin + cone is captured INLINE, in the same form as the
+      // upload itself -- so it's saved for every uploaded item that shares
+      // this one Key Plan position, not just a single representative photo.
+      // A no-op when the planner left the field blank (readPinField
+      // returned null). Fired in parallel, not one at a time -- these are
+      // independent inserts and awaiting them sequentially only adds
+      // latency with no ordering to protect (item 29: faster saving).
       if (pinData && window.BIM && BIM.savePinForItem) {
-        for (var pi = 0; pi < newIds.length; pi++) await BIM.savePinForItem('photo', newIds[pi], pinData);
+        await Promise.all(newIds.map(function (id) { return BIM.savePinForItem('photo', id, pinData); }));
       }
       if (typeof preset.onDone === 'function') preset.onDone(newIds);
     };
@@ -3036,6 +3207,15 @@ window.ProgressPhotos = (function () {
     // without duplicating LOC_LEVELS/locBreadcrumb in a second closure.
     locCombos: function () { return locCombos(); },
     photoLocCombos: function () { return photoLocCombos(); },
+    // Item 12 — a generic "pick one node from the schedule's Location
+    // Breakdown" picker, for use OUTSIDE the Add/Edit Photo form (bim.js's
+    // floor-plan upload form is the first caller). onPick(values, label).
+    openLocationPicker: function (onPick) { openGenericLocationPicker(onPick); },
+    hasLocationLevels: function () { return LOC_LEVELS.length > 0; },
+    // Item 25 — the raw node tree (not a modal), for bim.js's Plans-page
+    // side panel to render as a persistent tree rather than a one-shot picker.
+    locationTree: function () { return locTree(); },
+    locBreadcrumbOf: function (values) { return locBreadcrumb(values || {}); },
     // Read by bim.js's Vertical Stacking view (Batch G, item 16) — the same
     // ordered level DEFINITIONS (id/name/sort_order) the Location Breakdown
     // picker itself cascades through, so a stacking band means the same

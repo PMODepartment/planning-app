@@ -50,6 +50,16 @@
                treatment the Add-media type picker already gives 360°/3D.
                Existing captures still show and open from the media strip
                below the grid. -->
+          <!-- Item 2: a compact search box + funnel toggle in the topbar,
+               replacing the old always-open filter row. Clicking the funnel
+               (or the search box, via focus) reveals the rest of the filters
+               (date range / trade / works / location / archived) in the
+               docked panel below. -->
+          <div class="pp-topsearch" id="pp-topsearch-wrap">
+            <input class="pd-input" id="pp-topsearch" placeholder="Search photos…" />
+          </div>
+          <button class="pp-topfilttoggle" id="pp-topfilttoggle" title="More filters">
+            <span data-ico="filter" data-ico-size="16"></span></button>
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos, video, or other media">+ Add media</button>
           <span class="pp-tb-sep" id="pp-sep-photos"></span>
           <button class="pd-btn" id="pp-refresh" title="Reload photos">
@@ -62,7 +72,13 @@
           <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-download" style="display:none;">Download</button>
           <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-addppr" style="display:none;">Add to Presentation</button>
           <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-archive" style="display:none;">Archive</button>
-          <!-- PPR-screen tools -->
+          <!-- PPR-screen tools. Item 2 parity: a funnel toggle reveals the
+               same collapsed-by-default filter panel (#ppr-listbar shares
+               the .pp-filters class, so the CSS/behaviour is identical —
+               there's no free-text field to search on this screen, just the
+               date range + archived toggle). -->
+          <button class="pp-topfilttoggle" id="ppr-topfilttoggle" title="More filters" style="display:none;">
+            <span data-ico="filter" data-ico-size="16"></span></button>
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-new" title="Create a presentation" style="display:none;">+ New Presentation</button>
           <button class="pd-btn" id="ppr-templates" title="Report templates (Section 5)" style="display:none;">
             <span data-ico="layers" data-ico-size="16"></span></button>
@@ -77,9 +93,12 @@
           <button class="pd-btn pd-btn-sm pp-tb-labeled" id="ppr-sel-download" style="display:none;">Download</button>
           <button class="pd-btn pd-btn-sm pp-tb-labeled" id="ppr-sel-archive" style="display:none;">Archive</button>
           <button class="pd-btn pd-btn-sm pp-tb-labeled" id="ppr-sel-merge" style="display:none;" title="Merge the selected presentations into one (needs 2 or more)">Merge…</button>
-          <!-- Floor Plan screen tools -->
+          <!-- Floor Plan screen tools. "Place pin" is REMOVED here (item 27:
+               pin placement now happens every time a photo is added, via the
+               Add Media modal's own in-photo cone widget — see bim.js's
+               pinFieldHTML/wirePinField). The Plans screen is upload/browse
+               only. -->
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="bim-new" title="Upload a floor plan" style="display:none;">+ Upload floor plan</button>
-          <button class="pd-btn pp-tb-labeled" id="bim-place" title="Toggle pin-placement mode" style="display:none;">Place pin</button>
         </div>
         <!-- Offline capture queue — visible on every screen (Rounds captures queue too) -->
         <button class="pd-btn pp-syncbtn" id="pp-sync" title="Sync photos captured while offline" hidden>
@@ -91,16 +110,25 @@
       <div class="pd-main">
         <!-- ================= Photos Database ================= -->
         <div id="pp-screen-photos">
-          <!-- Filters (item 8): the toggle button is desktop-invisible and the
-               body is `display:contents` above the phone breakpoint, so this
-               is byte-for-byte the old always-open row on desktop/tablet — on
-               a phone the body starts collapsed and the toggle reveals it. -->
+          <!-- Filters (item 2, 2026-08-30): the panel is closed by default at
+               EVERY viewport size now — opened via the topbar's search box /
+               funnel toggle (#pp-topsearch / #pp-topfilttoggle), wired in
+               module.js. The in-panel #pp-filttoggle button + free-text
+               #pp-f-search stay in the DOM for the phone-width fallback and
+               for any code that still reads #pp-f-search's value, but the
+               VISIBLE search control planners type into now lives in the
+               topbar. -->
           <div class="pp-filters" id="pp-filters">
             <button type="button" class="pp-filttoggle" id="pp-filttoggle" title="Show/hide filters">
               <span data-ico="filter" data-ico-size="15"></span> Filters</button>
             <div class="pp-filters-body" id="pp-filters-body">
               <span class="pp-filt-ico" data-ico="filter" data-ico-size="15"></span>
-              <input class="pd-input pp-search" id="pp-f-search" placeholder="Search description, trade, works, location…" />
+              <!-- The free-text search box now lives in the topbar
+                   (#pp-topsearch, item 2) — this hidden input keeps
+                   filters.search bound for any code path still reading it by
+                   id, but is never shown; the topbar is the one search box a
+                   planner types into. -->
+              <input class="pd-input pp-search" id="pp-f-search" placeholder="Search description, trade, works, location…" hidden />
               <label class="pp-datefield">Captured
                 <input class="pd-input" type="date" id="pp-f-from" title="Filter by capture start" /></label>
               <label class="pp-datefield">to
@@ -128,11 +156,14 @@
                 <option value="location">Location</option>
               </select>
             </label>
+            <!-- Item 3: Tile (Gallery) is the DEFAULT view (module.js's own
+                 `view = 'gallery'`), so its button leads the group — List
+                 moves to second place. -->
             <div class="pd-viewtoggle" role="tablist">
-              <button class="pd-vt active" data-view="list" title="List view">
-                <span data-ico="listView" data-ico-size="15"></span></button>
-              <button class="pd-vt" data-view="gallery" title="Tile view">
+              <button class="pd-vt active" data-view="gallery" title="Tile view">
                 <span data-ico="gridView" data-ico-size="15"></span></button>
+              <button class="pd-vt" data-view="list" title="List view">
+                <span data-ico="listView" data-ico-size="15"></span></button>
               <!-- Item 16 — Plan and Stack move here from the Plans tab (which
                    keeps only "all plans", item 15). -->
               <button class="pd-vt" data-view="plan" title="Plan view — floor plan with photos clustered by location">
@@ -232,7 +263,7 @@
   <script src="../../assets/js/db.js?v=20260827c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
   <script src="../../assets/js/ui.js?v=20260824a"></script>
-  <script src="../../assets/js/icons.js?v=20260813a"></script>
+  <script src="../../assets/js/icons.js?v=20260830a"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
@@ -255,7 +286,7 @@
       document.getElementById('pp-lb-next').onclick  = function () { ProgressPhotos._stepLightbox(1); };
 
       // Top-level screen switch (Photos / PPRs) — each screen owns its own tools.
-      var PHOTO_TOOLS = ['pp-add', 'pp-sep-photos', 'pp-refresh'];
+      var PHOTO_TOOLS = ['pp-add', 'pp-sep-photos', 'pp-refresh', 'pp-topsearch-wrap', 'pp-topfilttoggle'];
       function show(ids, on) {
         ids.forEach(function (id) {
           var el = document.getElementById(id);
