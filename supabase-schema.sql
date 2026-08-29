@@ -69,8 +69,10 @@ create table if not exists progress_photos (
   photo_url   text,                  -- Supabase Storage path
   taken_at    date,                  -- capture date
   location    text,
-  trade       text,                  -- e.g. Site Works, Mechanical Works
-  works       text,                  -- work item within the trade
+  trade       text,                  -- DEPRECATED: first-selected value only, see trades below
+  works       text,                  -- DEPRECATED: first-selected value only, see works_multi below
+  trades      text[] default '{}'::text[],       -- multi-select (2026-08-29 feedback item 2)
+  works_multi text[] default '{}'::text[],        -- multi-select (2026-08-29 feedback item 2)
   sort_order  integer,
   tags        text[],                -- optional Activity Code overlay, "<code type>: <value>"
   wbs_node_id uuid,                   -- legacy (Phase 1 first cut); references wbs_nodes(id) if ever set,

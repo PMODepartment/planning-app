@@ -72,6 +72,7 @@ window.ProgressPhotos = (function () {
     return null;
   }
   var migrationWarned = false;             // warn once per session, not per save
+  var migrationWarnedMulti = false;        // same, for the 2026-08-29 trades/works_multi columns
   var roundsFilter = '';
   var roundsSelected = {};                 // location-combo key -> true (walkthrough queue)
   var walkState = null;                    // {queue:[comboKey,...], at:0} while a walkthrough modal chain is open
@@ -526,6 +527,21 @@ window.ProgressPhotos = (function () {
     });
     return out.sort();
   }
+  // Array-aware distinct-values listing (2026-08-29, Trade/Works multi-select)
+  // -- unions the new array column with the legacy singular column so a
+  // pre-migration row's value still appears in the filter dropdown.
+  function distinctMulti(arrField, singleField) {
+    var seen = {}, out = [];
+    rows.forEach(function (r) {
+      (r[arrField] || []).forEach(function (v) {
+        v = (v || '').trim();
+        if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+      });
+      var s = (r[singleField] || '').trim();
+      if (s && !seen[s]) { seen[s] = 1; out.push(s); }
+    });
+    return out.sort();
+  }
   // Maps THIS module's own Trade vocabulary onto Project Schedule's canonical
   // work_type buckets (see project-schedule's CLAUDE.md, GWORK: work_type is
   // one of General Requirements / Site Works / Structural Works /
@@ -573,23 +589,44 @@ window.ProgressPhotos = (function () {
   // capturing. An activity that resolves to NEITHER a stamped phase NOR a
   // WBS code under the Execution/Close-out root is excluded -- it is not
   // known to be construction work, so it is left out rather than guessed in.
+  // ⚠️ `tradeFilter` accepts EITHER a single trade string (legacy call shape,
+  // kept so nothing else in this file needs to change) OR an array of trades
+  // (2026-08-29 feedback item 2 — Trade is now multi-select). An array is
+  // OR'd across `workTypeMatchesTrade` per entry; an empty array behaves
+  // exactly like the old "no trade picked" case (offers everything).
+  function tradesAsArray(tradeFilter) {
+    if (Array.isArray(tradeFilter)) return tradeFilter;
+    return tradeFilter ? [tradeFilter] : [];
+  }
   function distinctScheduleWorks(tradeFilter) {
+    var trades = tradesAsArray(tradeFilter);
     var seen = {}, out = [];
     SCHED_ACTS.forEach(function (a) {
       if (a.activity_type === 'Start Milestone' || a.activity_type === 'Finish Milestone') return;
       if (!inExecOrCloseout(a)) return;
-      if (!workTypeMatchesTrade(a.work_type, tradeFilter)) return;
+      var matches = !trades.length || trades.some(function (t) { return workTypeMatchesTrade(a.work_type, t); });
+      if (!matches) return;
       var v = (a.activity_name || '').trim();
       if (v && !seen[v]) { seen[v] = 1; out.push(v); }
     });
     return out.sort();
   }
   function distinctCapturedWorks(tradeFilter) {
+    var trades = tradesAsArray(tradeFilter);
     var seen = {}, out = [];
     rows.forEach(function (r) {
-      if (tradeFilter && r.trade !== tradeFilter) return;
+      // Matches either the new `trades` array or the legacy singular `trade`
+      // column, so a pre-migration row's captured Works value still suggests.
+      if (trades.length) {
+        var rowTrades = (r.trades && r.trades.length) ? r.trades : (r.trade ? [r.trade] : []);
+        if (!trades.some(function (t) { return rowTrades.indexOf(t) >= 0; })) return;
+      }
       var v = (r.works || '').trim();
       if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+      (r.works_multi || []).forEach(function (w) {
+        w = (w || '').trim();
+        if (w && !seen[w]) { seen[w] = 1; out.push(w); }
+      });
     });
     return out.sort();
   }
@@ -600,45 +637,81 @@ window.ProgressPhotos = (function () {
     });
     return out.sort();
   }
-  // Works is a real, constrained <select> -- not free text -- so the field
-  // actually controls what can be entered (owner feedback: "Works have no
-  // choices, should have choices to control inputs"). Options come from the
-  // schedule + this project's own captured photos (worksOptions()); a
-  // trailing "+ Add new Works value..." escape hatch prevents a hard dead-end
-  // on a brand-new project where the schedule link hasn't resolved yet -- it
-  // still ends up as one of the picker's own choices, not silently-typed text.
-  function worksOptionMarkup(tradeVal, curVal) {
-    var opts = worksOptions(tradeVal || '');
-    if (curVal && opts.indexOf(curVal) < 0) { opts = opts.concat([curVal]); opts.sort(); }
-    return '<option value="">' + (opts.length ? 'Select works…' : 'No Works values yet — add one') + '</option>' +
-      opts.map(function (v) {
-        return '<option value="' + Fmt.esc(v) + '"' + (v === curVal ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>';
+  // ---- Trade / Works: multi-select checkbox groups -------------------------
+  // 2026-08-29 feedback item 2: "Trades can also be multiple" — both fields
+  // moved from a single-value <select> to a checkbox group, following the
+  // SAME visual pattern this file already uses for the Activity Code overlay
+  // (`codeOverlayHTML`/`readCodeTags`), rather than inventing a third
+  // component. Options still control what CAN be entered (owner feedback,
+  // 2026-08-13: "Works have no choices, should have choices to control
+  // inputs") — nothing about that constraint is loosened by going multi.
+  function multiCheckHTML(idPrefix, field, options, existingVals, emptyNote) {
+    existingVals = existingVals || [];
+    if (!options.length) return '<p class="pp-hint">' + Fmt.esc(emptyNote) + '</p>';
+    return '<div class="pp-multichk" id="' + idPrefix + '-' + field + '">' +
+      options.map(function (v) {
+        return '<label class="pp-mchk"><input type="checkbox" value="' + Fmt.esc(v) + '"' +
+               (existingVals.indexOf(v) >= 0 ? ' checked' : '') + '/> ' + Fmt.esc(v) + '</label>';
       }).join('') +
-      '<option value="__new__">+ Add new Works value…</option>';
+    '</div>';
   }
-  function worksSelectHTML(idPrefix, tradeVal, curVal) {
-    return '<select class="pd-select" id="' + idPrefix + '-works" required>' +
-      worksOptionMarkup(tradeVal, curVal) + '</select>';
+  function readMultiCheck(idPrefix, field) {
+    var wrap = $(idPrefix + '-' + field); if (!wrap) return [];
+    return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
-  function refreshWorksSelect(idPrefix, tradeVal) {
-    var sel = $(idPrefix + '-works'); if (!sel) return;
-    var keep = sel.value && sel.value !== '__new__' ? sel.value : '';
-    sel.innerHTML = worksOptionMarkup(tradeVal, keep);
+  function tradesOverlayHTML(idPrefix, existingTrades) {
+    return multiCheckHTML(idPrefix, 'trades', TRADES, existingTrades, 'No trades configured.');
   }
-  // Re-scopes the Works select to whichever Trade is picked in the currently-
-  // open modal (Add or Edit -- idPrefix's own -trade select), live on every
-  // Trade change; also wires the "+ Add new Works value..." escape hatch.
-  function wireTradeWorks(idPrefix) {
-    var trade = $(idPrefix + '-trade'), works = $(idPrefix + '-works');
-    if (!works) return;
-    if (trade) trade.onchange = function () { refreshWorksSelect(idPrefix, this.value); };
-    works.onchange = function () {
-      if (this.value !== '__new__') return;
+  // A photo's trades/works, tolerant of pre-migration rows that only ever
+  // had the singular `trade`/`works` text columns filled in.
+  function tradesOf(r) { return (r.trades && r.trades.length) ? r.trades : (r.trade ? [r.trade] : []); }
+  function worksOf(r) { return (r.works_multi && r.works_multi.length) ? r.works_multi : (r.works ? [r.works] : []); }
+  // Works options are schedule-derived per the CURRENTLY CHECKED trades
+  // (unioned across all of them — same fallback-to-everything-when-none-
+  // picked rule `worksOptions('')` already had). `existingWorks` values not
+  // in the derived list (e.g. a custom value typed earlier, or a value whose
+  // owning trade got unchecked) are still shown and checked — a re-render
+  // must never silently drop a value the row already has.
+  function worksOverlayHTML(idPrefix, tradeVals, existingWorks) {
+    existingWorks = existingWorks || [];
+    var opts = worksOptions(tradeVals);
+    existingWorks.forEach(function (w) { if (w && opts.indexOf(w) < 0) opts.push(w); });
+    opts.sort();
+    var body = opts.length
+      ? multiCheckHTML(idPrefix, 'works', opts, existingWorks, '')
+      : '<p class="pp-hint">No Works values yet — add one below.</p>';
+    return body +
+      '<button type="button" class="pd-btn pp-addworksbtn" id="' + idPrefix + '-works-add">+ Add custom Works value…</button>';
+  }
+  function refreshWorksOverlay(idPrefix) {
+    var host = $(idPrefix + '-workshost'); if (!host) return;
+    var tradeVals = readMultiCheck(idPrefix, 'trades');
+    var keep = readMultiCheck(idPrefix, 'works');   // preserve whatever's already checked through the re-render
+    host.innerHTML = worksOverlayHTML(idPrefix, tradeVals, keep);
+    wireWorksAddButton(idPrefix);
+  }
+  function wireWorksAddButton(idPrefix) {
+    var btn = $(idPrefix + '-works-add'); if (!btn) return;
+    btn.onclick = function () {
       var v = (window.prompt('New Works value:') || '').trim();
-      var tradeVal = trade ? trade.value : '';
-      this.innerHTML = worksOptionMarkup(tradeVal, v);
-      this.value = v;
+      if (!v) return;
+      var tradeVals = readMultiCheck(idPrefix, 'trades');
+      var keep = readMultiCheck(idPrefix, 'works');
+      if (keep.indexOf(v) < 0) keep.push(v);
+      var host = $(idPrefix + '-workshost');
+      if (host) { host.innerHTML = worksOverlayHTML(idPrefix, tradeVals, keep); wireWorksAddButton(idPrefix); }
     };
+  }
+  // Re-scopes the Works checkbox group to whichever Trades are checked in the
+  // currently-open modal, live on every Trade toggle.
+  function wireTradeWorks(idPrefix) {
+    var tradesWrap = $(idPrefix + '-trades');
+    if (tradesWrap) {
+      Array.prototype.forEach.call(tradesWrap.querySelectorAll('input[type=checkbox]'), function (c) {
+        c.onchange = function () { refreshWorksOverlay(idPrefix); };
+      });
+    }
+    wireWorksAddButton(idPrefix);
   }
   function fillFilterOptions() {
     function fill(id, list, blank) {
@@ -649,8 +722,8 @@ window.ProgressPhotos = (function () {
       }).join('');
       if (list.indexOf(keep) < 0) el.value = '';
     }
-    fill('pp-f-trade', distinct('trade'), 'Filter by Trade');
-    fill('pp-f-works', distinct('works'), 'Filter by Works');
+    fill('pp-f-trade', distinctMulti('trades', 'trade'), 'Filter by Trade');
+    fill('pp-f-works', distinctMulti('works_multi', 'works'), 'Filter by Works');
     renderLocFilterSelects();
   }
   // Distinct values already captured at this level, across this project's
@@ -683,8 +756,12 @@ window.ProgressPhotos = (function () {
   function visible() {
     var q = filters.search.trim().toLowerCase();
     return rows.filter(function (r) {
-      if (filters.trade && r.trade !== filters.trade) return false;
-      if (filters.works && r.works !== filters.works) return false;
+      // A photo now carries MULTIPLE trades/works (2026-08-29 feedback item
+      // 2) -- the filter matches if the picked value is ANY of the row's
+      // values, checking both the new array column and the legacy singular
+      // one (tradesOf/worksOf), not requiring an exact single-value match.
+      if (filters.trade && tradesOf(r).indexOf(filters.trade) < 0) return false;
+      if (filters.works && worksOf(r).indexOf(filters.works) < 0) return false;
       // A location filter is satisfied when every ACTIVE level filter matches
       // the photo's own recorded value at that level (AND across levels).
       var lv = r.location_values || {};
@@ -696,7 +773,7 @@ window.ProgressPhotos = (function () {
       if (filters.from && (!r.taken_at || r.taken_at < filters.from)) return false;
       if (filters.to && (!r.taken_at || r.taken_at > filters.to)) return false;
       if (q) {
-        var hay = [r.description, r.title, r.trade, r.works, r.location]
+        var hay = [r.description, r.title].concat(tradesOf(r), worksOf(r), [r.location])
           .join(' ').toLowerCase();
         if (hay.indexOf(q) < 0) return false;
       }
@@ -752,7 +829,12 @@ window.ProgressPhotos = (function () {
   function groupByTrade(list) {
     var groups = {}, order = [];
     list.forEach(function (r) {
-      var t = (r.trade || '').trim() || 'Untagged';
+      // A photo can carry several trades now; it's grouped under its FIRST
+      // one only (a row appearing in several groups at once would break the
+      // "one row, one place" assumption List view's collapse state relies
+      // on) — the row itself still shows every trade it carries (see the
+      // Trade cell below), so nothing about the multi-select is hidden.
+      var t = (tradesOf(r)[0] || '').trim() || 'Untagged';
       if (!groups[t]) { groups[t] = []; order.push(t); }
       groups[t].push(r);
     });
@@ -843,8 +925,8 @@ window.ProgressPhotos = (function () {
         return '<div class="pp-row" data-id="' + r.id + '">' +
           '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
           '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
-          '<div class="pp-cell" data-l="Trade">' + Fmt.esc(r.trade || '—') + '</div>' +
-          '<div class="pp-cell" data-l="Works">' + Fmt.esc(r.works || '—') + '</div>' +
+          '<div class="pp-cell" data-l="Trade">' + Fmt.esc(tradesOf(r).join(', ') || '—') + '</div>' +
+          '<div class="pp-cell" data-l="Works">' + Fmt.esc(worksOf(r).join(', ') || '—') + '</div>' +
           '<div class="pp-cell" data-l="Location">' + Fmt.esc(r.location || '—') + '</div>' +
           '<div class="pp-cell pp-date" data-l="Captured">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
           '<div class="pp-cell pp-actcell">' + rowActions(r) + '</div>' +
@@ -923,7 +1005,7 @@ window.ProgressPhotos = (function () {
     $('pp-lb-img').src = u || '';
     $('pp-lb-cap').innerHTML =
       '<strong>' + Fmt.esc(r.description || 'Progress photo') + '</strong>' +
-      '<span>' + Fmt.esc([r.trade, r.works, r.location].filter(Boolean).join(' · ')) +
+      '<span>' + Fmt.esc(tradesOf(r).concat(worksOf(r), [r.location]).filter(Boolean).join(' · ')) +
       (r.taken_at ? ' · ' + Fmt.date(r.taken_at) : '') + '</span>' +
       '<span class="pp-lb-count">' + (lightboxAt + 1) + ' / ' + lightboxIds.length + '</span>';
     var editBtn = $('pp-lb-edit'), delBtn = $('pp-lb-delete');
@@ -947,20 +1029,18 @@ window.ProgressPhotos = (function () {
 
   // --------------------------------------------------------------- upload ---
   function reqMark() { return ' <span class="pp-req">*</span>'; }
-  function tradeOptions(val) {
-    return '<option value="">—</option>' + TRADES.map(function (t) {
-      return '<option' + (val === t ? ' selected' : '') + '>' + Fmt.esc(t) + '</option>';
-    }).join('');
-  }
   // Capture date / Trade / Works / Location Breakdown are required. These
   // fields live in a plain <div>, not a <form>, so the native `required`
   // attribute is a visual/semantic cue only -- this is the actual gate,
   // called before either the Add or Edit save handler proceeds.
+  // ⚠️ Trade/Works are checkbox groups now (multi-select) -- "required" means
+  // at least one box checked, read via readMultiCheck rather than a select's
+  // own .value.
   function requiredFieldsMissing(idPrefix) {
-    var date = $(idPrefix + '-date'), trade = $(idPrefix + '-trade'), works = $(idPrefix + '-works');
+    var date = $(idPrefix + '-date');
     if (!date || !date.value) return 'Capture date is required.';
-    if (!trade || !trade.value) return 'Trade is required.';
-    if (!works || !works.value.trim()) return 'Works is required.';
+    if (!readMultiCheck(idPrefix, 'trades').length) return 'At least one Trade is required.';
+    if (!readMultiCheck(idPrefix, 'works').length) return 'At least one Works value is required.';
     var need = locRequiredLevels();
     if (need.length) {
       var vals = currentLocValues(idPrefix);
@@ -1044,7 +1124,14 @@ window.ProgressPhotos = (function () {
       };
     });
   }
-  function locationFieldHTML(idPrefix, existingValues, locText) {
+  // The separate free-text "Location label" input was removed (2026-08-29
+  // feedback, item 2 — "No need for the location label as this is
+  // redundant"). `location` (the display-cache text column) is now ALWAYS
+  // derived from `locBreadcrumb(locVals)` — never a manual override — so
+  // the third `locText` parameter this function used to take is gone too;
+  // both call sites below were updated to drop the argument they used to
+  // pass here (it only ever fed the removed input's initial value).
+  function locationFieldHTML(idPrefix, existingValues) {
     return (
       '<div class="pp-span2 pp-wbssection"><label>Location Breakdown' +
         (locRequiredLevels().length ? reqMark() + ' <span class="pp-optnote">(' +
@@ -1053,10 +1140,6 @@ window.ProgressPhotos = (function () {
         '<div class="pp-wbscascade" id="' + idPrefix + '-loclevels">' + locFieldsHTML(idPrefix, existingValues) + '</div>' +
         '<div class="pp-wbscrumb" id="' + idPrefix + '-crumb"></div>' +
       '</div>' +
-      '<div class="pd-field pp-span2"><label>Location label ' +
-        '<span class="pp-optnote">(optional -- does not replace the Location Breakdown above)</span></label>' +
-        '<input class="pd-input" id="' + idPrefix + '-loctxt" value="' + Fmt.esc(locText || '') +
-        '" placeholder="e.g. Model Unit Entrance" /></div>' +
       '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
       codeOverlayHTML(idPrefix, [])
     );
@@ -1133,11 +1216,11 @@ window.ProgressPhotos = (function () {
             '<input class="pd-input" id="pp-desc" placeholder="e.g. Model Unit" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-date" value="' + today + '" required /></div>' +
-          '<div class="pd-field"><label>Trade' + reqMark() + '</label>' +
-            '<select class="pd-select" id="pp-trade" required>' + tradeOptions('') + '</select></div>' +
-          '<div class="pd-field"><label>Works' + reqMark() + '</label>' +
-            worksSelectHTML('pp', '', '') + '</div>' +
-          locationFieldHTML('pp', preset.locationValues || {}, preset.location || '') +
+          '<div class="pd-field pp-span2"><label>Trade' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
+            tradesOverlayHTML('pp', []) + '</div>' +
+          '<div class="pd-field pp-span2"><label>Works' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
+            '<div id="pp-workshost">' + worksOverlayHTML('pp', [], []) + '</div></div>' +
+          locationFieldHTML('pp', preset.locationValues || {}) +
           keyPlanFieldHTML('pp', '') +
         '</div>' +
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
@@ -1164,12 +1247,21 @@ window.ProgressPhotos = (function () {
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
       var act = resolveActivity(locVals);
+      var tradesVal = readMultiCheck('pp', 'trades');
+      var worksVal = readMultiCheck('pp', 'works');
       var shared = {
         description: $('pp-desc').value.trim(),
         taken_at: $('pp-date').value || null,
-        trade: $('pp-trade').value || null,
-        works: $('pp-works').value.trim() || null,
-        location: $('pp-loctxt').value.trim() || locBreadcrumb(locVals) || null,
+        // `trades`/`works_multi` are the real multi-value columns (2026-08-29
+        // feedback item 2); `trade`/`works` stay populated too, as a
+        // first-selected display-cache fallback for any older code path that
+        // still reads the singular column -- same "deprecated but kept in
+        // step" convention this file already uses for `location`.
+        trades: tradesVal,
+        works_multi: worksVal,
+        trade: tradesVal[0] || null,
+        works: worksVal[0] || null,
+        location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
@@ -1350,6 +1442,20 @@ window.ProgressPhotos = (function () {
       }
       return await doWrite(Object.assign({}, job, { patch: stripped }));
     }
+    // Same tolerance for the 2026-08-29 multi-select Trade/Works columns
+    // (`trades`/`works_multi`) -- the singular `trade`/`works` columns
+    // already exist, so a save still lands with usable data even before the
+    // migration runs, it just falls back to first-selected-only until then.
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('trades' in job.patch || 'works_multi' in job.patch)) {
+      var stripped2 = Object.assign({}, job.patch);
+      delete stripped2.trades; delete stripped2.works_multi;
+      if (!migrationWarnedMulti) {
+        migrationWarnedMulti = true;
+        UI.toast('Saved with only the first Trade/Works value — run the pending migration for multi-select', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped2 }));
+    }
     return w;
   }
 
@@ -1488,11 +1594,11 @@ window.ProgressPhotos = (function () {
             '<input class="pd-input" id="pp-e-desc" value="' + Fmt.esc(r.description || '') + '" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-e-date" value="' + Fmt.esc(r.taken_at || '') + '" required /></div>' +
-          '<div class="pd-field"><label>Trade' + reqMark() + '</label>' +
-            '<select class="pd-select" id="pp-e-trade" required>' + tradeOptions(r.trade || '') + '</select></div>' +
-          '<div class="pd-field"><label>Works' + reqMark() + '</label>' +
-            worksSelectHTML('pp-e', r.trade || '', r.works || '') + '</div>' +
-          locationFieldHTML('pp-e', r.location_values || {}, r.location || '') +
+          '<div class="pd-field pp-span2"><label>Trade' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
+            tradesOverlayHTML('pp-e', tradesOf(r)) + '</div>' +
+          '<div class="pd-field pp-span2"><label>Works' + reqMark() + ' <span class="pp-optnote">(select all that apply)</span></label>' +
+            '<div id="pp-e-workshost">' + worksOverlayHTML('pp-e', tradesOf(r), worksOf(r)) + '</div></div>' +
+          locationFieldHTML('pp-e', r.location_values || {}) +
           keyPlanFieldHTML('pp-e', r.key_plan_url || '') +
         '</div>' +
       '</div>' +
@@ -1519,12 +1625,16 @@ window.ProgressPhotos = (function () {
       this.disabled = true;
       var locVals = currentLocValues('pp-e');
       var act = resolveActivity(locVals);
+      var tradesVal = readMultiCheck('pp-e', 'trades');
+      var worksVal = readMultiCheck('pp-e', 'works');
       var patch = {
         description: $('pp-e-desc').value.trim(),
         taken_at: $('pp-e-date').value || null,
-        trade: $('pp-e-trade').value || null,
-        works: $('pp-e-works').value.trim() || null,
-        location: $('pp-e-loctxt').value.trim() || locBreadcrumb(locVals) || null,
+        trades: tradesVal,
+        works_multi: worksVal,
+        trade: tradesVal[0] || null,
+        works: worksVal[0] || null,
+        location: locBreadcrumb(locVals) || null,
         location_values: locVals,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
@@ -1751,6 +1861,13 @@ window.ProgressPhotos = (function () {
       if (!byId(id)) { UI.toast('That photo could not be found', 'warn'); return; }
       lightboxIds = [id];
       openLightbox(id);
-    }
+    },
+    // Test-only hooks (same convention as bim.js's _zoomAnchor) — the
+    // legacy-fallback logic in tradesOf/worksOf is exactly the kind of thing
+    // worth genuinely EXECUTING rather than only regex-checking, since a
+    // subtly wrong empty-array-vs-null check would silently hide a photo's
+    // trades on every pre-migration row.
+    _tradesOf: function (r) { return tradesOf(r); },
+    _worksOf: function (r) { return worksOf(r); }
   };
 })();

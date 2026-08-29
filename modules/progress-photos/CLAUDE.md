@@ -2,6 +2,85 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 18-item feedback round, Batch B: Trade/Works multi-select, Location label dropped (2026-08-29)
+
+**Run `migrations/2026-08-29-photo-trades-works-multi.sql`.** Item 2 of the owner's feedback:
+*"Trades can also be multiple"*; the schedule-linked Works dropdown stays constrained-choice but
+also goes multi-select; the redundant free-text "Location label" input is removed.
+
+### Trade / Works: single `<select>` → checkbox-group multi-select
+
+- **New columns** `progress_photos.trades text[]` and `works_multi text[]`. The existing
+  singular `trade`/`works` text columns are **kept, deprecated** — populated with the
+  first-selected value as a display-cache fallback, same "kept in step, never re-derived"
+  convention this file already uses for `location` and `ppr_slides`' legacy fields. Nothing
+  reads the singular columns as authoritative going forward; they exist purely so an older code
+  path (or a not-yet-migrated database) still sees something sensible.
+- **UI**: `tradesOverlayHTML`/`worksOverlayHTML` replace the old `tradeOptions`/`worksSelectHTML`
+  single-`<select>` pair, following the **exact visual pattern this file already had** for the
+  Activity Code overlay (`codeOverlayHTML`/`readCodeTags`) rather than inventing a third
+  component — a checkbox group, read back via a new generic `readMultiCheck(idPrefix, field)`.
+  ⚠️ **4 functions deliberately removed** (`tradeOptions`, `worksOptionMarkup`,
+  `worksSelectHTML`, `refreshWorksSelect`), replaced by 10 new ones — an intentional
+  architectural swap, not an accidental loss (confirmed via the same function-diff check this
+  session uses everywhere, which correctly reports "4 lost" here rather than "0").
+- **Works stays schedule-constrained and Trade-scoped, now across MULTIPLE checked trades** —
+  `worksOptions(tradeFilter)` was widened to accept either the old single-string call shape
+  (untouched call sites elsewhere keep working) or an array, OR'd across
+  `workTypeMatchesTrade()` per entry via a new `tradesAsArray()` normalizer. Unchecking down to
+  zero trades correctly falls back to "offer everything," matching the old blank-trade behavior.
+  ⚠️ The "+ Add new Works value…" `<option>` escape hatch (a stale-select-then-prompt flow)
+  became **"+ Add custom Works value…"**, a real button that appends a new checked checkbox to
+  the group and re-renders it — a cleaner fit for a checkbox group than reusing a dropdown's
+  own "special option" trick.
+- **Filters (`pp-f-trade`/`pp-f-works` on the Gallery screen) now match "any of the row's
+  values,"** not exact single-value equality — `tradesOf(r)`/`worksOf(r)` (the same
+  legacy-fallback readers the save path uses) back both the filter predicate and the dropdown's
+  own distinct-values listing (`distinctMulti`), so a photo tagged Structural **and**
+  Architectural is findable by filtering on either one. ⚠️ **Deliberately NOT built**: a true
+  multi-value filter control (pick 2+ trades and OR them in the filter itself) — the filter
+  dropdown stays single-pick for now; what changed is that a multi-tagged photo is no longer
+  invisible to a filter matching only one of its tags. A real multi-select filter UI is a
+  reasonable follow-up, not attempted here to keep this batch's scope proportionate.
+- Every **display surface** updated to show the full set, not just the first value: the List
+  view's Trade/Works cells, the group-by-Trade heading (still groups by the row's *first* trade
+  only — a photo appearing in two groups at once would break the "one row, one place" assumption
+  List view's collapse state relies on — but the row itself lists every trade it carries), and
+  the lightbox caption.
+- ⚠️ `tolerantWrite()` (the existing "strip the column and retry" mechanism used for
+  `location_values`/`activity_id`/`activity_name` pre-migration) gained a **second, separate**
+  strip rule for `trades`/`works_multi` — a save still lands with usable (first-value-only)
+  data even before this migration runs, rather than failing outright.
+
+### "Location label" removed (item 2 — "redundant")
+
+The separate free-text input (`-loctxt`) that sat below the Location Breakdown picker is gone.
+`location` (the display-cache text column read by search/grouping/PPR) is now **always**
+`locBreadcrumb(locVals)` — never a manual override. `locationFieldHTML()` dropped its third
+`locText` parameter; both call sites (Add and Edit forms) updated to match. ⚠️ This was already
+**mostly true in practice** — the picker's breadcrumb was never auto-filled into the label field
+(a deliberate earlier decision, so a resolved schedule path was never mistaken for a typed
+caption) — this change just removes the now-pointless second field entirely rather than leaving
+an input that did nothing useful next to the breadcrumb that already shows the real value.
+
+### Verified
+
+**236 checks, 0 failures** (`test.js`, up from 221) — a new `[2b]` section covering the overlay
+functions, the removed `-loctxt` field, the save payload's array+fallback shape, and the
+tolerant-write strip rule; plus a `[2c]` section that **genuinely executes**
+`tradesOf`/`worksOf` (exported as test-only hooks, `PP._tradesOf`/`PP._worksOf`, the same
+convention as `bim.js`'s `_zoomAnchor`) against all four real data shapes — migrated-with-array,
+pre-migration-legacy-only, neither, and the one edge case worth documenting explicitly: an
+**empty** `trades` array still falls back to the legacy column (matching `null`'s behavior)
+rather than being treated as "deliberately cleared," because `requiredFieldsMissing` already
+makes a real zero-trades save unreachable through this module's own UI — that state can only
+exist from data written outside this app, where falling back to whatever's known beats nothing.
+
+0 NUL bytes across every touched file; CSS braces 284/284 balanced; function-diff shows
+**4 deliberate removals / 10 additions** in `module.js` (explained above, not a regression).
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module.
+
 ## 18-item feedback round, Batch A: default Gallery view + label renames (2026-08-29)
 
 Owner reviewed the live build and gave 18 pieces of feedback spanning the Photos screen, the

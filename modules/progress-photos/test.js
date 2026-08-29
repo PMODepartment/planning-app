@@ -213,20 +213,62 @@ ok('a returning user\'s explicit List choice still overrides the new default (re
 ok('the Presentations-list row-action icons carry left padding (follow-up item 2)',
    /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
 
-console.log('\n[1/2] Works is a real dropdown, not free text');
-ok('worksSelectHTML emits a <select>', /function worksSelectHTML[\s\S]{0,400}<select/.test(mjs));
+console.log('\n[1/2] Works is a real dropdown, not free text (checkbox group as of Batch B, 2026-08-29)');
 ok('no <input list="pp-works-list"> left anywhere', !/list="pp-works-list"/.test(mjs + pjs));
 ok('shared works datalist removed from index.html', !/pp-works-list/.test(html));
-ok('"+ Add new Works value" escape hatch present', /__new__/.test(mjs));
-ok('Add form uses worksSelectHTML', /worksSelectHTML\('pp',/.test(mjs));
-ok('Edit form uses worksSelectHTML', /worksSelectHTML\('pp-e',/.test(mjs));
+ok('"+ Add custom Works value" escape hatch present (was "+ Add new Works value…" in the old <select>)',
+   /Add custom Works value/.test(mjs));
+ok('Add form uses the Works overlay', /worksOverlayHTML\('pp',/.test(mjs));
+ok('Edit form uses the Works overlay', /worksOverlayHTML\('pp-e',/.test(mjs));
 
 console.log('\n[2] Capture date / trade / works / location required');
 ok('requiredFieldsMissing gates date', /Capture date is required/.test(mjs));
-ok('requiredFieldsMissing gates trade', /Trade is required/.test(mjs));
-ok('requiredFieldsMissing gates works', /Works is required/.test(mjs));
+ok('requiredFieldsMissing gates trade', /At least one Trade is required/.test(mjs));
+ok('requiredFieldsMissing gates works', /At least one Works value is required/.test(mjs));
 ok('Add save calls the gate', /requiredFieldsMissing\('pp'\)/.test(mjs));
 ok('Edit save calls the gate', /requiredFieldsMissing\('pp-e'\)/.test(mjs));
+
+console.log('\n[2b] Batch B (2026-08-29 feedback item 2) — Trade/Works multi-select, Location label dropped');
+ok('TRADES checkbox overlay function exists', /function tradesOverlayHTML/.test(mjs));
+ok('Works checkbox overlay function exists (schedule-derived, trade-scoped, unioned across checked trades)',
+   /function worksOverlayHTML/.test(mjs));
+ok('multiCheckHTML renders one checkbox per option, checking the ones already selected',
+   /function multiCheckHTML[\s\S]{0,400}existingVals\.indexOf\(v\) >= 0 \? ' checked'/.test(mjs));
+ok('readMultiCheck reads back only the :checked boxes', /function readMultiCheck[\s\S]{0,200}:checked/.test(mjs));
+ok('the "Location label" free-text input is gone (item 2 — "redundant")', !/-loctxt/.test(mjs));
+ok('locationFieldHTML no longer takes a locText parameter', /function locationFieldHTML\(idPrefix, existingValues\) \{/.test(mjs));
+ok('location is derived purely from the breakdown breadcrumb on save (both Add and Edit)',
+   (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 2);
+ok('the insert/update payload carries both the new arrays and the legacy first-selected fallback',
+   /trades: tradesVal,[\s\S]{0,60}works_multi: worksVal,[\s\S]{0,60}trade: tradesVal\[0\] \|\| null,[\s\S]{0,60}works: worksVal\[0\] \|\| null,/.test(mjs));
+ok('tolerantWrite also retries without trades/works_multi if that migration has not run yet',
+   /'trades' in job\.patch \|\| 'works_multi' in job\.patch/.test(mjs));
+ok('the Gallery filters match a photo by ANY of its trades/works, not an exact single-value equality',
+   /tradesOf\(r\)\.indexOf\(filters\.trade\) < 0/.test(mjs) && /worksOf\(r\)\.indexOf\(filters\.works\) < 0/.test(mjs));
+
+console.log('\n[2c] tradesOf/worksOf legacy fallback — genuinely EXECUTED against all four data shapes');
+// Loaded into the same ctx as module.js above, so this calls the REAL
+// closures via the ProgressPhotos._tradesOf/_worksOf test hooks — not a
+// regex match on the surrounding source.
+eq('a migrated row with real array data returns the array untouched',
+   PP._tradesOf({ trades: ['Structural Works', 'Architectural Works'], trade: 'Structural Works' }),
+   ['Structural Works', 'Architectural Works']);
+eq('a pre-migration row with only the legacy singular column falls back to a 1-item array',
+   PP._tradesOf({ trades: null, trade: 'Civil Works' }), ['Civil Works']);
+eq('a row with neither returns an empty array, never null/undefined',
+   PP._tradesOf({ trades: null, trade: null }), []);
+// ⚠️ An empty `trades` array falls back to the legacy `trade` column, same as
+// null would — this is deliberately fine, not a bug, because the required-
+// field gate (requiredFieldsMissing) already refuses to save zero trades
+// through this module's own UI, so `trades: []` with a real legacy value can
+// only arise from data written outside this app (e.g. direct SQL), where
+// falling back to whatever IS known beats returning nothing.
+eq('an empty trades array still falls back to the legacy column, matching the null case — a state the UI itself cannot produce',
+   PP._tradesOf({ trades: [], trade: 'Civil Works' }), ['Civil Works']);
+eq('worksOf mirrors the same four cases for works_multi/works',
+   PP._worksOf({ works_multi: ['Rebar Installation'], works: 'Formworks' }), ['Rebar Installation']);
+eq('worksOf falls back to the legacy singular column pre-migration',
+   PP._worksOf({ works_multi: null, works: 'Formworks' }), ['Formworks']);
 
 console.log('\n[3] PPR renamed to Meeting, then to Presentation (2026-08-29 feedback item 3)');
 ok('tab label is Presentations', /data-screen="ppr">Presentations</.test(html));
