@@ -2,6 +2,96 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Batch G completed: Vertical Stacking for photos (item 16) — and a real Map/Stack wiring bug found while adding it (2026-08-29)
+
+Owner asked "what else is not done" after the Batches E–H push below. Re-checked the standing plan
+item by item rather than trusting the earlier changelog entry, and found **Batch G was only half
+built**: the plan lists TWO deliverables under it — item 15 (the floor-plan Map/clustering view,
+built) and **item 16, a separate Vertical Stacking view for photos, which was never built at all**
+(`grep -in "stack"` across `bim.js`/`module.js` found nothing but an unrelated undo-stack comment).
+No migration.
+
+### The real defect found in the course of adding it — Map was unreachable from a fresh load
+
+⚠️ **`render()`'s Plan-mode branch never called `wireMapView()`.** That function is what wires the
+Plan/Map toggle buttons themselves, plus "Register a top-view photo…" and the "Actual view"
+checkbox — and it was only ever invoked from the `screen2 === 'map'` branch. Since `screen2`
+**defaults to `'plan'`**, the Map button rendered on every fresh page load with **no click handler
+at all**: pressing it did nothing, so Batch G's Map view (and Batch H's Register/Actual-view
+controls) were **completely unreachable through the UI** despite being fully built and
+structurally test-covered. The structural tests passed because they checked the functions *exist*,
+never that every render path actually *calls* them.
+- Fixed by adding the missing `wireMapView();` call to the Plan branch, and factoring the toggle
+  markup into one `viewToggleHTML()` used by all three render branches so it can't drift again.
+  `wireMapView()` is now called unconditionally from every branch — it already no-ops safely for
+  the map-only stepper logic (`if (screen2 !== 'map') return;`), and each toggle button now stops
+  whichever OTHER view's month-scrub timer might be running, so switching away from a playing
+  Map/Stack view never leaves an orphaned `setInterval` ticking in the background.
+
+### Vertical Stacking (item 16)
+
+A third **Stack** option on the same Plan/Map toggle. ⚠️ **Deliberately independent of floor plans
+entirely** — bands come from the project's own Location Breakdown (`location_levels` — the same
+schedule-derived Tower/Level/Zone hierarchy the Add-photo form cascades through), not from a
+floor-plan image or its pins. That's why it's reachable even when `plans.length === 0`, unlike Map,
+which is meaningless without a plan to place pins on: a project can have Location-Breakdown-tagged
+photos with zero floor plans uploaded, and this view still works for it.
+- **Rows and columns are both PICKERS**, defaulting to the first two configured levels — not
+  hard-coded to "Tower × Floor." ⚠️ **Scope reduction, stated rather than silently shipped:** only
+  two levels ever drive the grid at once; a third (Zone, Orientation, …) is real detail a 2-axis
+  table can't represent, and a project needing that resolution should use the ordinary Location
+  filter on the Gallery grid instead.
+- **A cell is the most-recent photo at that exact `(row, col)` location, "as of" a scrubbed month**
+  — `mostRecentAsOf(list, cutoff)` is the one rule doing real work: cutoff `null` means "no limit,
+  latest overall"; a cutoff month excludes anything captured after it. Pulled out as a small pure
+  function specifically so it could be genuinely EXECUTED by a test, the same reasoning as every
+  other "as-of" cutoff this app has already been bitten by once (the Manpower Loading
+  `reportedThrough` family) — a wrong fallback here would report a photo as existing at a location
+  before it was actually taken, or hide one that should already be visible.
+- **An empty cell is `null`, never borrowed from a neighbouring cell or an earlier/later month** —
+  asserted explicitly in the grid-builder test (a Tower/Floor combination with genuinely no photo
+  stays empty rather than silently inheriting a neighbour's thumbnail).
+- **Month scrub/Play reuses the exact shape** `mapMonth`/`mapPlaying`/`mapPlayTimer` already
+  established for Map (null-is-live, a value is scrubbed, auto-stop-at-the-end) — kept as its own
+  separate `stackMonth`/`stackPlaying` state rather than sharing the Map view's variables, so
+  scrubbing one view's timeline never moves the other's, and switching views can cleanly stop
+  only the timer that's actually running.
+- **The hover-magnifier is a plain src-swap into a docked panel** — deliberately simpler than
+  Project Schedule's own SVG-clone magnifier (2026-08-24), per the plan's own note: these cells are
+  ordinary `<img>` thumbnails, so there's nothing to clone.
+- `module.js` gained one new export, `locLevels()` (a copy of `LOC_LEVELS`), so the stacking view
+  reads the exact same level *definitions* (id/name/sort_order) the Location Breakdown picker
+  itself cascades through — never a second, possibly-drifting copy.
+
+### Verified
+
+**387 checks green** (was 364), new `[29]` section. Genuinely EXECUTED, not just regex-matched, via
+two new test-only hooks:
+- `BIM._mostRecentAsOf` against a 3-photo fixture across four cutoff cases (no cutoff, mid-way,
+  before everything, an empty candidate list) — the exact "as of" decision a wrong fallback would
+  get silently wrong.
+- `BIM._stackGrid` against a hand-built 2-tower/2-floor fixture with one cell deliberately left
+  photo-less: rows/columns sorted correctly, a cell with two competing photos resolves to the
+  *later* one, the empty cell stays `null`, a cutoff correctly falls back to the earlier of two
+  competing photos, and a single-level project collapses columns to one shared bucket.
+
+Also verified structurally: the wiring-bug fix itself (a call-count assertion confirming
+`wireMapView()` is now invoked from all 4 reachable branches, not 1), that Stack is reachable with
+zero plans, and that switching views stops the other view's timer. **0 functions lost** against the
+pre-fix commit (`bim.js` +11, `module.js` +1 — the latter under-counted by the name-set diff since
+it's an object-literal property, not a `function name(` declaration; confirmed present by direct
+read instead). 0 NUL bytes; CSS braces 378/378 (was 364); all four touched files parse.
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module. In particular, the
+Map/Plan/Stack toggle's click-through has never been exercised in a real browser even after this
+fix, since this environment has no live login; the bug was found by reading `render()`'s call
+graph, not by clicking the button. **This is now the single highest-priority thing to click through
+on the first live pass** — it is the one change in this entry that a structural test genuinely
+cannot fully guarantee (DOM event wiring against a real render, not a fake one).
+
+`MODULE_V` → `20260829i`; `module.css/js` / `bim.js` → `?v=20260829i` (`ppr.js`/`pano.js`/`recon.js`
+untouched this pass, left at their prior `?v=`).
+
 ## Batches E–H + Add-media type/video: pin+direction, markup+slide-sorter, map view, top-view registration (2026-08-29)
 
 Owner: *"do all the items not done including Batches E to H."* Closes every remaining item from

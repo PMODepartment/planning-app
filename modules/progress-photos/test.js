@@ -1093,6 +1093,87 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('the registration upsert keys on (floor_plan_id, photo_id) — a re-register REPLACES, never duplicates', /onConflict:\s*'floor_plan_id,photo_id'/.test(bmjs));
   ok('paintActualView renders the WARPED photo via cv.warpPerspective, swapped in for the drawing image', /function paintActualView\(reg\)/.test(bmjs) && /cv\.warpPerspective/.test(bmjs));
 
+  // =========================================================== [29] =========
+  // Batch G, the missed half (item 16 — Vertical Stacking for photos), plus a
+  // REAL wiring bug this pass found: the Map (and now Stack) toggle button was
+  // completely dead from the DEFAULT Plan view, because the Plan-mode render
+  // branch never called wireMapView() at all.
+  console.log('\n[29] Batch G item 16 (Vertical Stacking) + the Map/Stack toggle wiring fix');
+
+  ok('bim.js exports locLevels() from module.js for the stacking view to read the same level DEFINITIONS the Location Breakdown picker uses',
+     /locLevels: function \(\) \{ return LOC_LEVELS\.slice\(\); \}/.test(mjs));
+  ok('render() calls wireMapView() from EVERY reachable branch — stack, no-plans, map, AND plan (the bug: plan mode never did)',
+     (function () {
+       // Count call sites, not just presence: the fix specifically ADDED the
+       // plan-branch call, so this must be at least 4 (was 1: only the map
+       // branch called it, before this pass).
+       const calls = (bmjs.match(/wireMapView\(\);/g) || []).length;
+       return calls >= 4;
+     })());
+  ok('the Plan-branch fix is commented as a found-and-fixed defect, not silently patched', /REAL BUG this pass found and fixed/.test(bmjs));
+  ok('viewToggleHTML() now renders Plan / Map / Stack as one shared three-button toggle, used by all three render() branches',
+     /function viewToggleHTML\(\)/.test(bmjs) && (bmjs.match(/viewToggleHTML\(\)/g) || []).length >= 4);
+  ok('Stack is reachable even with ZERO floor plans uploaded (unlike Map, which needs a plan\'s own pins by definition)',
+     /if \(screen2 === 'stack'\) \{[\s\S]{0,300}return;\s*\}\s*\n\s*if \(!plans\.length\)/.test(bmjs));
+  ok('switching to Stack stops the Map play timer and vice versa (no orphaned setInterval running in the background)',
+     /stopMapPlay\(\); screen2 = 'stack'/.test(bmjs) && /stopStackPlay\(\); screen2 = 'map'/.test(bmjs));
+  ok('renderStackBody/wireStackView/stopStackPlay exist, and the empty state names WHERE to build a Location Breakdown',
+     /function renderStackBody\(\)/.test(bmjs) && /function wireStackView\(\)/.test(bmjs) && /function stopStackPlay\(\)/.test(bmjs) &&
+     /Location Breakdown&hellip;/.test(bmjs));
+  ok('only the first-picked row level and a SEPARATE column level drive the grid — a level can never be picked as both axes',
+     /levels\.filter\(function \(l\) \{ return l\.id !== \(stackRowLevel\(\) && stackRowLevel\(\)\.id\); \}\)/.test(bmjs));
+  ok('a single-level project collapses columns to one shared "All" bucket rather than repeating the row axis',
+     /if \(!colNames\.length\) colNames = \[''\];/.test(bmjs) && /esc\(c \|\| 'All'\)/.test(bmjs));
+  ok('the hover-magnifier is a simple src-swap into a docked panel, per the plan\'s own "simpler than the SVG-clone version" note',
+     /bim-stack-mag/.test(bmjs) && /magImg\.src = im\.dataset\.magnify/.test(bmjs));
+  ok('scope note: only the first TWO location levels drive the grid, stated rather than silently limited', /Scope reduction, stated rather than silently shipped/.test(bmjs.split('vertical stacking')[1] || ''));
+
+  // Genuine execution of the "as of" cell rule — the exact class of bug this
+  // module has already been bitten by once (the vendor-performance /
+  // reportedThrough family): a wrong fallback here reports a photo as
+  // existing at a location before it was actually taken, or hides one that
+  // should already be visible.
+  (function () {
+    const photos = [
+      { id: 'p1', taken_at: '2026-01-15' },
+      { id: 'p2', taken_at: '2026-03-10' },
+      { id: 'p3', taken_at: '2026-05-01' },
+    ];
+    eq('mostRecentAsOf: no cutoff returns the single latest photo', BIM._mostRecentAsOf(photos, null).id, 'p3');
+    eq('mostRecentAsOf: cutoff mid-way returns the latest photo AT OR BEFORE it, never a later one', BIM._mostRecentAsOf(photos, '2026-03').id, 'p2');
+    eq('mostRecentAsOf: cutoff before every photo returns null, never the earliest by mistake', BIM._mostRecentAsOf(photos, '2025-12'), null);
+    eq('mostRecentAsOf: an empty candidate list (no photo at this cell) returns null, not a crash', BIM._mostRecentAsOf([], '2026-06'), null);
+  })();
+
+  // Genuine execution of the full row/column grid builder against a small,
+  // hand-checked fixture — two towers, two floors each, one cell deliberately
+  // left with no photo at all (must read as empty, never invent a neighbour).
+  (function () {
+    const levels = [{ id: 'lvl-tower', name: 'Tower', sort_order: 1 }, { id: 'lvl-floor', name: 'Floor', sort_order: 2 }];
+    const photos = [
+      { id: 'a1', taken_at: '2026-01-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },
+      { id: 'a2', taken_at: '2026-02-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },  // supersedes a1
+      { id: 'b1', taken_at: '2026-01-15', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 2' } },
+      { id: 'c1', taken_at: '2026-01-20', location_values: { 'lvl-tower': 'Tower 2', 'lvl-floor': 'Floor 1' } },
+      // Tower 2 / Floor 2: deliberately NO photo at all.
+    ];
+    const g = BIM._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', null);
+    eq('stackGrid: rows are the distinct ROW-level values, sorted', g.rows.map((r) => r.row), ['Tower 1', 'Tower 2']);
+    eq('stackGrid: columns are the distinct COLUMN-level values, sorted', g.cols, ['Floor 1', 'Floor 2']);
+    eq('stackGrid: Tower 1 / Floor 1 resolves to the LATEST of the two competing photos (a2, not a1)',
+       g.rows[0].cells[0].photo.id, 'a2');
+    eq('stackGrid: Tower 1 / Floor 2 resolves to its one photo', g.rows[0].cells[1].photo.id, 'b1');
+    eq('stackGrid: Tower 2 / Floor 1 resolves to its one photo', g.rows[1].cells[0].photo.id, 'c1');
+    eq('stackGrid: Tower 2 / Floor 2 (no photo at all) is null, never borrowed from a neighbouring cell',
+       g.rows[1].cells[1].photo, null);
+    // As-of cutoff applied through the WHOLE grid, not just one cell.
+    const gCutoff = BIM._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', '2026-01');
+    eq('stackGrid with a cutoff: Tower 1 / Floor 1 falls back to a1 (a2 is in the future relative to the cutoff)',
+       gCutoff.rows[0].cells[0].photo.id, 'a1');
+    eq('stackGrid: a project with only ONE level collapses columns to a single shared bucket',
+       BIM._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
+  })();
+
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
 })();

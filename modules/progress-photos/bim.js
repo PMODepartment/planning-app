@@ -159,18 +159,44 @@ window.BIM = (function () {
 
   function hydrate() { if (window.Icons && Icons.hydrate) Icons.hydrate($('bim-view')); }
 
+  // The Plan / Map / Stack segmented toggle — a plain function, not inlined,
+  // because it now has to render identically from THREE separate render()
+  // branches (Stack, "no plans yet", and the ordinary Plan/Map body). Stack
+  // is reachable from all three: it reads the Location Breakdown + the photo
+  // library directly, not a floor plan or its pins, so — unlike Map, which
+  // is meaningless with zero plans — it works even before any plan is ever
+  // uploaded.
+  function viewToggleHTML() {
+    return '<div class="bim-viewtoggle" role="tablist">' +
+      '<button class="bim-vtbtn' + (screen2 === 'plan' ? ' active' : '') + '" id="bim-vt-plan">Plan</button>' +
+      '<button class="bim-vtbtn' + (screen2 === 'map' ? ' active' : '') + '" id="bim-vt-map">Map</button>' +
+      '<button class="bim-vtbtn' + (screen2 === 'stack' ? ' active' : '') + '" id="bim-vt-stack">Stack</button>' +
+    '</div>';
+  }
+
   function render() {
     var host = $('bim-view');
     if (!host) return;
     syncTools(true);
 
+    if (screen2 === 'stack') {
+      host.innerHTML = '<div class="bim-toolbar">' + viewToggleHTML() + '</div>' + renderStackBody();
+      wireMapView();   // wires the toggle buttons themselves; map-only stepper logic no-ops here
+      wireStackView();
+      hydrate();
+      return;
+    }
+
     if (!plans.length) {
-      host.innerHTML = '<div class="pp-empty">' +
+      host.innerHTML = '<div class="bim-toolbar">' + viewToggleHTML() + '</div>' +
+        '<div class="pp-empty">' +
         '<span data-ico="compass" data-ico-size="34"></span>' +
         '<p>No floor plans uploaded yet for this project.</p>' +
         (canWrite ? '<p class="pp-hint">Press <strong>+ Upload floor plan</strong> to add one, then place pins ' +
-          'linking it to your 360° captures, 3D scans and photos.</p>' : '') +
+          'linking it to your 360° captures, 3D scans and photos — or switch to <strong>Stack</strong> above to ' +
+          'see photos by Location Breakdown without a floor plan.</p>' : '') +
         '</div>';
+      wireMapView();
       return;
     }
 
@@ -178,16 +204,12 @@ window.BIM = (function () {
     var url = planUrl(plan);
     var aspect = (plan && plan.width_px && plan.height_px) ? (plan.height_px / plan.width_px) : 0.75;
 
-    // Batch G: Plan / Map segmented toggle, alongside the plan selector.
     // Batch H: Register… / Actual view controls — only meaningful in Plan
     // mode (Map deliberately doesn't support the warped-photo backdrop; it's
     // a clustering overview, not a per-plan detail view).
     var reg = actualRegistrationFor(activePlanId);
     var toolbarExtra =
-      '<div class="bim-viewtoggle" role="tablist">' +
-        '<button class="bim-vtbtn' + (screen2 === 'plan' ? ' active' : '') + '" id="bim-vt-plan">Plan</button>' +
-        '<button class="bim-vtbtn' + (screen2 === 'map' ? ' active' : '') + '" id="bim-vt-map">Map</button>' +
-      '</div>' +
+      viewToggleHTML() +
       (screen2 === 'plan' && canWrite ? '<button class="pd-btn" id="bim-register">Register a top-view photo…</button>' : '') +
       (screen2 === 'plan' && reg ? '<label class="ppr-allloc" style="display:inline-flex;align-items:center;gap:5px;margin:0;">' +
         '<input type="checkbox" id="bim-actualview"' + (actualView ? ' checked' : '') + ' /> Actual view</label>' : '');
@@ -227,6 +249,15 @@ window.BIM = (function () {
       '</div>';
     host.innerHTML = html;
     wirePlan();
+    // ⚠️ REAL BUG this pass found and fixed: this branch (Plan mode, the
+    // DEFAULT screen2 value) never called wireMapView() before, so the
+    // Map/Stack toggle buttons and the Register/Actual-view controls it
+    // renders here were completely UNWIRED — clicking "Map" from the
+    // default Plan view did nothing at all, making Batch G's map view
+    // unreachable through the UI from a fresh load. wireMapView() itself
+    // no-ops safely for the map-only stepper (`if (screen2 !== 'map')
+    // return;` guards it), so calling it unconditionally here is safe.
+    wireMapView();
     wireStageInteractions();
     hydrate();
     if (actualView && reg && reg.homography) paintActualView(reg);
@@ -405,8 +436,15 @@ window.BIM = (function () {
       '</div>';
   }
   function wireMapView() {
-    if ($('bim-vt-plan')) $('bim-vt-plan').onclick = function () { stopMapPlay(); screen2 = 'plan'; render(); };
-    if ($('bim-vt-map')) $('bim-vt-map').onclick = function () { screen2 = 'map'; render(); };
+    // Now called unconditionally from EVERY render() branch (Stack, no-plans,
+    // Map, and Plan) — see the ⚠️ comment above this fn's Plan-branch call
+    // site for why that matters. Each toggle stops whichever OTHER view's
+    // month-scrub timer might still be running, so switching away from a
+    // playing Map/Stack never leaves an orphaned interval ticking in the
+    // background.
+    if ($('bim-vt-plan')) $('bim-vt-plan').onclick = function () { stopMapPlay(); stopStackPlay(); screen2 = 'plan'; render(); };
+    if ($('bim-vt-map')) $('bim-vt-map').onclick = function () { stopStackPlay(); screen2 = 'map'; render(); };
+    if ($('bim-vt-stack')) $('bim-vt-stack').onclick = function () { stopMapPlay(); screen2 = 'stack'; render(); };
     if ($('bim-register')) $('bim-register').onclick = openRegisterFlow;
     if ($('bim-actualview')) $('bim-actualview').onchange = function () { actualView = this.checked; render(); };
     if (screen2 !== 'map') return;
@@ -452,6 +490,174 @@ window.BIM = (function () {
       b.onclick = function () { m.close(); openPin(this.dataset.open); };
     });
   }
+
+  // ------------------------------------------------- vertical stacking (G, item 16) --
+  // ⚠️ Independent of floor plans entirely — bands come from the project's
+  // Location Breakdown (location_levels), the SAME schedule-derived Tower/
+  // Level/Zone hierarchy the Add-photo form cascades through, not from a
+  // floor-plan image or its pins. That's why this is reachable from render()
+  // even when `plans.length === 0` (see the top of render()): a project can
+  // have Location-Breakdown-tagged photos with zero floor plans uploaded,
+  // and this view should still work for it.
+  // ⚠️ Scope reduction, stated rather than silently shipped: only the first
+  // TWO location levels drive the grid (rows/columns) — a third level (Zone,
+  // Orientation, ...) is real detail this 2-axis grid cannot represent, and
+  // a project needing that resolution should use the ordinary Location
+  // filter on the Gallery grid instead. Both axes are pickers, though, so a
+  // planner can choose ANY two levels, not just the first two by default.
+  var stackRowLevelId = null, stackColLevelId = null;
+  var stackMonth = null;
+  var stackPlaying = false, stackPlayTimer = null;
+
+  function stackLevels() { return (window.ProgressPhotos && ProgressPhotos.locLevels) ? ProgressPhotos.locLevels() : []; }
+  function stackRowLevel() {
+    var levels = stackLevels();
+    return levels.filter(function (l) { return l.id === stackRowLevelId; })[0] || levels[0] || null;
+  }
+  function stackColLevel() {
+    var levels = stackLevels();
+    var picked = levels.filter(function (l) { return l.id === stackColLevelId; })[0];
+    if (picked) return picked;
+    // Default to the SECOND configured level, never the same one as the row
+    // axis, or every row would collapse to one repeated column.
+    return levels.filter(function (l) { return l.id !== (stackRowLevel() && stackRowLevel().id); })[0] || null;
+  }
+  function stackPhotos() { return (window.ProgressPhotos && ProgressPhotos.allPhotos) ? ProgressPhotos.allPhotos() : []; }
+  function stackMonthsAvailable() {
+    var set = {};
+    stackPhotos().forEach(function (p) { if (p.taken_at) set[String(p.taken_at).slice(0, 7)] = true; });
+    return Object.keys(set).sort();
+  }
+  // Pure — the actual "as of" decision for one grid cell, worth genuinely
+  // EXECUTING (same reasoning as mapClusters' own cutoff filter): given
+  // photos already narrowed to one location cell, returns the most recent
+  // one at-or-before `cutoff` ('YYYY-MM', or null for "no limit — latest
+  // overall"), or null when nothing in the list qualifies.
+  function mostRecentAsOf(list, cutoff) {
+    var best = null;
+    list.forEach(function (p) {
+      if (!p.taken_at) return;
+      if (cutoff && String(p.taken_at).slice(0, 7) > cutoff) return;
+      if (!best || String(p.taken_at) > String(best.taken_at)) best = p;
+    });
+    return best;
+  }
+  function stackGrid(cutoff) {
+    var rowLevel = stackRowLevel(), colLevel = stackColLevel();
+    if (!rowLevel) return { rowLevel: null, colLevel: null, cols: [], rows: [] };
+    var photos = stackPhotos();
+    var rowVals = {}, colVals = {};
+    photos.forEach(function (p) {
+      var lv = p.location_values || {};
+      var rv = lv[rowLevel.id]; if (rv) rowVals[rv] = true;
+      if (colLevel) { var cv = lv[colLevel.id]; if (cv) colVals[cv] = true; }
+    });
+    var rowNames = Object.keys(rowVals).sort();
+    var colNames = colLevel ? Object.keys(colVals).sort() : [];
+    if (!colNames.length) colNames = [''];  // single-level project — one shared "All" column
+    var rows = rowNames.map(function (rv) {
+      return {
+        row: rv,
+        cells: colNames.map(function (cv) {
+          var candidates = photos.filter(function (p) {
+            var lv = p.location_values || {};
+            if ((lv[rowLevel.id] || '') !== rv) return false;
+            if (colLevel && cv && (lv[colLevel.id] || '') !== cv) return false;
+            return true;
+          });
+          return { col: cv, photo: mostRecentAsOf(candidates, cutoff) };
+        })
+      };
+    });
+    return { rowLevel: rowLevel, colLevel: colLevel, cols: colNames, rows: rows };
+  }
+  function renderStackBody() {
+    var levels = stackLevels();
+    if (!levels.length) {
+      return '<div class="pp-empty"><p>No Location Breakdown set up for this project yet — build it in ' +
+        'Project Schedule (Group menu &rarr; Location Breakdown&hellip;), then photos tagged against it ' +
+        'will stack here.</p></div>';
+    }
+    var months = stackMonthsAvailable();
+    var cutoff = stackMonth || (months.length ? months[months.length - 1] : null);
+    var g = stackGrid(cutoff);
+    var stepper = months.length ? (
+      '<div class="bim-mapstepper">' +
+        '<button class="pp-iconbtn" id="bim-stack-prev" title="Earlier month">‹</button>' +
+        '<strong>' + (cutoff ? esc(cutoff) : 'All') + '</strong>' +
+        '<button class="pp-iconbtn" id="bim-stack-next" title="Later month">›</button>' +
+        '<button class="pd-btn" id="bim-stack-play">' + (stackPlaying ? 'Stop' : '▶ Play') + '</button>' +
+        '<span class="pp-hint">as of the end of this month</span>' +
+      '</div>') : '<p class="pp-hint">No dated, location-tagged photos yet.</p>';
+    var levelPickers =
+      '<div class="bim-stacklevels">' +
+        '<label>Rows <select class="pd-select" id="bim-stack-rowlvl">' +
+          levels.map(function (l) { return '<option value="' + esc(l.id) + '"' + (g.rowLevel && l.id === g.rowLevel.id ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
+        '</select></label>' +
+        (levels.length > 1 ? '<label>Columns <select class="pd-select" id="bim-stack-collvl">' +
+          levels.map(function (l) { return '<option value="' + esc(l.id) + '"' + (g.colLevel && l.id === g.colLevel.id ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
+        '</select></label>' : '') +
+      '</div>';
+    if (!g.rows.length) {
+      return levelPickers + stepper + '<div class="pp-empty"><p>No photos have been tagged at this Location Breakdown level yet.</p></div>';
+    }
+    var table =
+      '<div class="bim-stackwrap"><table class="bim-stacktable"><thead><tr><th></th>' +
+        g.cols.map(function (c) { return '<th>' + esc(c || 'All') + '</th>'; }).join('') +
+      '</tr></thead><tbody>' +
+      g.rows.map(function (r) {
+        return '<tr><th>' + esc(r.row) + '</th>' +
+          r.cells.map(function (c) {
+            if (!c.photo) return '<td class="bim-stackcell bim-stackcell-empty">—</td>';
+            var url = (window.ProgressPhotos && ProgressPhotos.urlOfPhotoId) ? ProgressPhotos.urlOfPhotoId(c.photo.id) : '';
+            var cap = r.row + (c.col ? ' · ' + c.col : '') + ' — ' + (c.photo.taken_at || '');
+            return '<td class="bim-stackcell">' +
+              (url ? '<img class="bim-stackthumb" data-magnify="' + esc(url) + '" data-cap="' + esc(cap) + '" src="' + esc(url) + '" alt="" />' : '—') +
+            '</td>';
+          }).join('') +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+      // A basic hover-magnifier — deliberately simpler than Project
+      // Schedule's own SVG-clone version: these cells are plain <img>
+      // thumbnails, so swapping a larger src into a docked panel is enough.
+      '<div class="bim-stackmag" id="bim-stack-mag" hidden><img id="bim-stack-magimg" alt="" /><div class="bim-stackmagcap" id="bim-stack-magcap"></div></div>';
+    return levelPickers + stepper + table;
+  }
+  function wireStackView() {
+    if ($('bim-stack-rowlvl')) $('bim-stack-rowlvl').onchange = function () { stackRowLevelId = this.value; render(); };
+    if ($('bim-stack-collvl')) $('bim-stack-collvl').onchange = function () { stackColLevelId = this.value; render(); };
+    if (screen2 !== 'stack') return;
+    var months = stackMonthsAvailable();
+    var cutoff = stackMonth || (months.length ? months[months.length - 1] : null);
+    if ($('bim-stack-prev')) $('bim-stack-prev').onclick = function () {
+      var i = months.indexOf(cutoff); stackMonth = months[Math.max(0, i - 1)]; render();
+    };
+    if ($('bim-stack-next')) $('bim-stack-next').onclick = function () {
+      var i = months.indexOf(cutoff); stackMonth = months[Math.min(months.length - 1, i + 1)]; render();
+    };
+    if ($('bim-stack-play')) $('bim-stack-play').onclick = function () {
+      if (stackPlaying) { stopStackPlay(); render(); return; }
+      stackPlaying = true;
+      stackPlayTimer = setInterval(function () {
+        var ms = stackMonthsAvailable();
+        var i = ms.indexOf(stackMonth || (ms.length ? ms[ms.length - 1] : null));
+        if (i >= ms.length - 1) { stopStackPlay(); render(); return; }  // auto-stop at the end, same convention as the map view and every other time-scrub view in this app
+        stackMonth = ms[i + 1]; render();
+      }, 900);
+      render();
+    };
+    var mag = $('bim-stack-mag'), magImg = $('bim-stack-magimg'), magCap = $('bim-stack-magcap');
+    if (!mag) return;
+    Array.prototype.forEach.call($('bim-view').querySelectorAll('[data-magnify]'), function (im) {
+      im.addEventListener('mouseenter', function () {
+        magImg.src = im.dataset.magnify; magCap.textContent = im.dataset.cap || '';
+        mag.hidden = false;
+      });
+      im.addEventListener('mouseleave', function () { mag.hidden = true; });
+    });
+  }
+  function stopStackPlay() { stackPlaying = false; if (stackPlayTimer) { clearInterval(stackPlayTimer); stackPlayTimer = null; } }
 
   // --------------------------------------------------- registration (H) ----
   var _cvReady = null;
@@ -933,6 +1139,18 @@ window.BIM = (function () {
     // math is worth genuinely executing, not just reading, since a flipped
     // sign is silent (the widget still LOOKS interactive; it just records the
     // wrong angle for every future pin).
-    _directionDegFromDrag: function (dx, dy) { return directionDegFromDrag(dx, dy); }
+    _directionDegFromDrag: function (dx, dy) { return directionDegFromDrag(dx, dy); },
+    // Vertical Stacking (Batch G, item 16) — genuinely execute the "as of"
+    // cell-resolution rule and the row/column grid builder against injected
+    // state, the same convention as every other test-only hook here.
+    _mostRecentAsOf: function (list, cutoff) { return mostRecentAsOf(list, cutoff); },
+    _stackGrid: function (levels, photosArr, rowId, colId, cutoff) {
+      var savedLevels = stackLevels, savedPhotos = stackPhotos;
+      stackLevels = function () { return levels; };
+      stackPhotos = function () { return photosArr; };
+      stackRowLevelId = rowId || null; stackColLevelId = colId || null;
+      try { return stackGrid(cutoff); }
+      finally { stackLevels = savedLevels; stackPhotos = savedPhotos; stackRowLevelId = null; stackColLevelId = null; }
+    }
   };
 })();

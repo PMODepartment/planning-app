@@ -2383,6 +2383,11 @@ window.ProgressPhotos = (function () {
     // without duplicating LOC_LEVELS/locBreadcrumb in a second closure.
     locCombos: function () { return locCombos(); },
     photoLocCombos: function () { return photoLocCombos(); },
+    // Read by bim.js's Vertical Stacking view (Batch G, item 16) — the same
+    // ordered level DEFINITIONS (id/name/sort_order) the Location Breakdown
+    // picker itself cascades through, so a stacking band means the same
+    // thing there as it does on the Add-photo form.
+    locLevels: function () { return LOC_LEVELS.slice(); },
     // Read by the Floor Plan pin picker (bim.js / Phase 5) to offer a photo
     // to pin without a second fetch of the same project's library.
     allPhotos: function () { return rows.slice(); },
