@@ -160,13 +160,15 @@ a:hover { text-decoration: underline; }
 .pd-sidebar-toggle:hover { background: var(--pd-bg); }
 .pd-sidebar-toggle:hover span { background: var(--pd-red); }
 
-/* ---- Top bar ---- */
+/* ---- Top bar ----
+   Height + title sized to PRC's .topbar/.page-title (60px / 15px·700) — the
+   Planners topbar used an 18px/800 <h1>, visibly heavier than the reference app. */
 .pd-topbar {
   background: var(--pd-card); border-bottom: 1px solid var(--pd-line);
-  padding: 12px 22px; display: flex; align-items: center; gap: 14px;
+  padding: 10px 22px; min-height: 58px; display: flex; align-items: center; gap: 12px;
   position: sticky; top: 0; z-index: 20;
 }
-.pd-topbar h1 { font-size: 18px; margin: 0; font-weight: 800; letter-spacing: -.01em; }
+.pd-topbar h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .pd-topbar-mark { height: 26px; width: auto; display: block; object-fit: contain; flex-shrink: 0; }  /* PRC .topbar-logo */
 #user-bar { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .pd-userbar-name { font-weight: 600; }
@@ -256,22 +258,26 @@ a:hover { text-decoration: underline; }
   background: var(--pd-bg); color: var(--pd-muted); padding: 3px 9px; border-radius: 999px;
 }
 
-/* ---- Buttons ---- */
-.pd-btn { display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
-  border: 1px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
-  padding: 9px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; }
-.pd-btn:hover { background: var(--pd-bg); text-decoration: none; }
+/* ---- Buttons ----
+   Sized to PRC's .btn (7px 14px / 12.5px / 600 weight) — the Planners buttons
+   used to run 14px/500 with 9x16 padding, visibly heavier and less "clean" than
+   the reference app at every size (toolbars, modals, tables all inherit this). */
+.pd-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  border: 1.5px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
+  padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }
+.pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-red); color: var(--pd-red); text-decoration: none; }
 .pd-btn-primary { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
-.pd-btn-primary:hover { background: var(--pd-red-dark); }
+.pd-btn-primary:hover { background: var(--pd-red-dark); border-color: var(--pd-red-dark); color: #fff; }
 .pd-btn-danger { background: transparent; border-color: var(--pd-bad); color: var(--pd-bad); }
 .pd-btn-danger:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 
 /* ---- Forms ---- */
 .pd-field { margin-bottom: 14px; }
-.pd-field label { display: block; font-size: 12px; font-weight: 600; color: var(--pd-muted); margin-bottom: 5px; }
+.pd-field label { display: block; font-size: 11px; font-weight: 600; color: var(--pd-muted); margin-bottom: 5px;
+  text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
-  width: 100%; padding: 9px 11px; border: 1px solid var(--pd-line); border-radius: 8px;
-  font-size: 14px; font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
+  width: 100%; padding: 7px 10px; border: 1.5px solid var(--pd-line); border-radius: 8px;
+  font-size: 13px; font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
 .pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 
@@ -530,6 +536,29 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-proj-card-meta span { display: block; font-size: 11px; font-weight: 500; color: var(--pd-muted); }
 .pd-proj-card-loc { margin-top: 10px; font-size: 12px; color: var(--pd-muted); }
 
+/* Landing choice on Projects (item 2): a project below, or a portfolio-wide view here. */
+.pd-landing-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.pd-landing-card {
+  display: flex; align-items: center; gap: 12px; background: var(--pd-sidebar-bg); color: #fff;
+  border-radius: 12px; padding: 16px 18px; text-decoration: none; transition: background .15s, transform .1s;
+}
+.pd-landing-card:hover { background: #333; transform: translateY(-1px); text-decoration: none; }
+.pd-landing-ic { flex: none; color: var(--pd-red); }
+.pd-landing-card strong { display: block; font-size: 14px; font-weight: 600; }
+.pd-landing-card small { display: block; font-size: 12px; color: rgba(255,255,255,.55); margin-top: 2px; }
+.pd-landing-arrow { margin-left: auto; flex: none; color: rgba(255,255,255,.5); }
+
+/* Manage Group Heads modal (item 6) */
+.pd-ghm-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--pd-line); border-radius: 10px; }
+.pd-ghm-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--pd-line); }
+.pd-ghm-row:last-child { border-bottom: none; }
+.pd-ghm-order { display: flex; flex-direction: column; gap: 0; flex: none; }
+.pd-ghm-order .pd-icon-btn { font-size: 14px; padding: 0; height: 18px; }
+.pd-ghm-name { flex: 1; min-width: 0; }
+.pd-ghm-name strong { display: block; font-size: 13px; }
+.pd-ghm-name small { display: block; color: var(--pd-muted); font-size: 11.5px; margin-top: 1px; }
+.pd-ghm-name small code { background: var(--pd-bg); padding: 0 4px; border-radius: 4px; }
+
 .pd-empty { padding: 40px; text-align: center; color: var(--pd-muted);
   background: var(--pd-card); border: 1px dashed var(--pd-line); border-radius: var(--pd-radius); }
 
@@ -562,6 +591,10 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-projsw-menu button small { color: var(--pd-muted); font-size: 11.5px; }
 .pd-projsw-all { display: block; padding: 11px 14px; color: var(--pd-red); font-weight: 600; font-size: 13px; }
 .pd-projsw-all:hover { background: var(--pd-bg); }
+/* The pinned "Portfolio" entry at the top of the shared switcher (UI.renderSwitcher) —
+   set apart from the project list beneath it, since it is a mode, not a project. */
+.pd-projsw-menu > button[data-goto-portfolio] { border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
+.pd-projsw-menu > button[data-goto-portfolio] strong { color: var(--pd-red); }
 
 .pd-tabbar { display: flex; gap: 2px; padding: 0 24px; background: var(--pd-card);
   border-bottom: 1px solid var(--pd-line); }

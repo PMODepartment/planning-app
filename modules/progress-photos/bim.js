@@ -68,7 +68,11 @@ window.BIM = (function () {
   }
 
   function wire() {
-    if ($('bim-new')) $('bim-new').onclick = openPlanForm;
+    // ⚠️ Called with no args, deliberately not `= openPlanForm` directly —
+    // `openPlanForm` now takes an optional `presetValues` object (item 25),
+    // and a bare assignment would pass the click MouseEvent as that
+    // argument instead.
+    if ($('bim-new')) $('bim-new').onclick = function () { openPlanForm(); };
     if ($('bim-place')) $('bim-place').onclick = togglePlaceMode;
     // ⚠️ Audit cleanup: #bim-plan-select doesn't exist yet at init() time
     // (it's only created inside render()'s own injected HTML), so a binding
@@ -175,19 +179,87 @@ window.BIM = (function () {
   // renderPlanView/renderStackView), rebuilt there against the photo/pin
   // data those views actually need. This screen goes back to being exactly
   // what its name says: upload, browse, and pin a floor plan.
+  // Item 25: "instead of a dropdown, it would be better to have a location
+  // tree (no floor plans for the location should be grayed out) as a side
+  // tile/panel." Matches a floor_plans row to a schedule tree node by exact
+  // value-map equality — a plan uploaded against "Tower 3" alone shows as
+  // available for the "Tower 3" node itself, not for deeper nodes under it,
+  // which is the same "pick exactly one node, any depth" rule item 7 uses
+  // for photos, applied symmetrically here.
+  function locKey(values) {
+    var keys = Object.keys(values || {}).sort();
+    return keys.map(function (k) { return k + '=' + values[k]; }).join('&');
+  }
+  function planForValues(values) {
+    var key = locKey(values);
+    return plans.filter(function (p) { return locKey(p.location_values || {}) === key; })[0] || null;
+  }
+  function planTreeNodeHTML(node) {
+    var plan = planForValues(node.values);
+    return '<button type="button" class="bim-plantree-item' + (plan ? '' : ' no-plan') +
+      (plan && plan.id === activePlanId ? ' active' : '') + '" data-treenode="' + esc(JSON.stringify(node.values)) +
+      '" title="' + (plan ? esc(plan.name) : 'No floor plan yet — click to upload one here') + '">' +
+      '<span class="bim-plantree-dot"></span>' + esc(node.value) + '</button>' +
+      (node.children.length ? '<div style="padding-left:14px;">' + node.children.map(planTreeNodeHTML).join('') + '</div>' : '');
+  }
+  function collectMatchedIds(nodes, out) {
+    nodes.forEach(function (n) {
+      var p = planForValues(n.values);
+      if (p) out[p.id] = true;
+      collectMatchedIds(n.children, out);
+    });
+    return out;
+  }
+  function planTreePanelHTML() {
+    var tree = (window.ProgressPhotos && ProgressPhotos.locationTree) ? ProgressPhotos.locationTree() : [];
+    if (!tree.length) return '';
+    var matched = collectMatchedIds(tree, {});
+    var unmatched = plans.filter(function (p) { return !matched[p.id]; });
+    return '<div class="bim-plantree">' + tree.map(planTreeNodeHTML).join('') +
+      (unmatched.length
+        ? '<div style="border-top:1px solid var(--pd-line);margin-top:4px;">' + unmatched.map(function (p) {
+            return '<button type="button" class="bim-plantree-item' + (p.id === activePlanId ? ' active' : '') +
+              '" data-planid="' + esc(p.id) + '"><span class="bim-plantree-dot"></span>' + esc(p.name) + '</button>';
+          }).join('') + '</div>'
+        : '') +
+    '</div>';
+  }
+  function wirePlanTree() {
+    var host = $('bim-view'); if (!host) return;
+    Array.prototype.forEach.call(host.querySelectorAll('[data-treenode]'), function (b) {
+      b.onclick = function () {
+        var values = JSON.parse(this.dataset.treenode);
+        var plan = planForValues(values);
+        if (plan) { activePlanId = plan.id; resetView(); loadPins(); }
+        else if (canWrite) { openPlanForm(values); }
+        else UI.toast('No floor plan uploaded for this location yet', 'warn');
+      };
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-planid]'), function (b) {
+      b.onclick = function () { activePlanId = this.dataset.planid; resetView(); loadPins(); };
+    });
+  }
+
   function render() {
     var host = $('bim-view');
     if (!host) return;
     syncTools(true);
 
     if (!plans.length) {
+      // Even with zero plans uploaded, a project WITH a Location Breakdown
+      // still shows the tree (every node grey) so the planner can see
+      // exactly which locations need one — the same "show the skeleton even
+      // with nothing assigned yet" principle item 30 applies to Stack view.
+      var emptyTree = planTreePanelHTML();
       host.innerHTML =
-        '<div class="pp-empty">' +
+        (emptyTree ? '<div class="bim-withtree">' + emptyTree + '<div class="pp-empty">' : '<div class="pp-empty">') +
         '<span data-ico="compass" data-ico-size="34"></span>' +
         '<p>No floor plans uploaded yet for this project.</p>' +
-        (canWrite ? '<p class="pp-hint">Press <strong>+ Upload floor plan</strong> to add one, then place pins ' +
-          'linking it to your 360° captures, 3D scans and photos.</p>' : '') +
-        '</div>';
+        (canWrite ? '<p class="pp-hint">' + (emptyTree ? 'Click a location on the left, or press' : 'Press') +
+          ' <strong>+ Upload floor plan</strong> to add one, then a pin is placed for it the next time a ' +
+          'photo is added there.</p>' : '') +
+        '</div>' + (emptyTree ? '</div>' : '');
+      if (emptyTree) wirePlanTree();
       return;
     }
 
@@ -203,27 +275,39 @@ window.BIM = (function () {
         '<input type="checkbox" id="bim-actualview"' + (actualView ? ' checked' : '') + ' /> Actual view</label>' : '');
 
     var actualUrl = (actualView && reg && reg.homography) ? '' : url; // Actual view swaps in a <canvas> instead of the <img>, painted after render()
-    var html =
-      '<div class="bim-toolbar">' +
-        '<select class="pd-select" id="bim-plan-select">' +
-          plans.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === activePlanId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
-        '</select>' + toolbarExtra +
-        '<span class="pp-hint">Ctrl+scroll to zoom · drag to pan' + (placeMode ? ' · click the plan to place a pin' : '') + '</span>' +
-        (placeMode ? '<span class="bim-placebadge">Place-pin mode is ON</span>' : '') +
+    var treePanel = planTreePanelHTML();
+    var stageHTML =
+      '<div>' +
+      '<div class="bim-toolbar">' + toolbarExtra +
+        '<span class="pp-hint">Ctrl+scroll to zoom · drag to pan</span>' +
         (actualView && reg ? '<span class="bim-placebadge" style="background:color-mix(in srgb, var(--pd-ink) 14%, var(--pd-card));color:var(--pd-ink);">Actual view — warped photo, not the drawing</span>' : '') +
       '</div>' +
       '<div class="bim-stage-outer" id="bim-stage-outer">' +
         '<div class="bim-stage-inner" id="bim-stage-inner" style="transform:translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ');">' +
           '<div class="bim-imgwrap" id="bim-imgwrap" style="padding-bottom:' + (aspect * 100) + '%;">' +
-            (actualUrl ? '<img id="bim-img" src="' + esc(actualUrl) + '" draggable="false" />' :
-              (actualView && reg ? '<canvas id="bim-actual-canvas" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>' :
+            (actualUrl
+              ? (isPdfPlan(plan)
+                  // Item 11 — a PDF plan renders via the browser's native PDF
+                  // viewer instead of <img> (which cannot display a PDF at
+                  // all). ⚠️ Known limitation: some browsers' built-in PDF
+                  // viewer captures pointer events itself, so click-to-pin
+                  // may not register reliably over an embedded PDF — an
+                  // image floor plan remains the more dependable choice.
+                  ? '<embed id="bim-img" src="' + esc(actualUrl) + '" type="application/pdf" style="position:absolute;inset:0;width:100%;height:100%;border:0;" />'
+                  : '<img id="bim-img" src="' + esc(actualUrl) + '" draggable="false" />')
+              : (actualView && reg ? '<canvas id="bim-actual-canvas" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>' :
               '<div class="pp-empty" style="position:absolute;inset:0;">Plan image not available</div>')) +
             pins.map(pinMarkerHTML).join('') +
           '</div>' +
         '</div>' +
+      '</div>' +
       '</div>';
-    host.innerHTML = html;
+    host.innerHTML = treePanel ? '<div class="bim-withtree">' + treePanel + stageHTML + '</div>' : stageHTML;
+    // wirePlan() still wires the [data-pin] MARKER clicks on the stage
+    // itself (its own #bim-plan-select wiring is now a harmless no-op — that
+    // control is gone, replaced by the tree panel wired below).
     wirePlan();
+    wirePlanTree();
     if ($('bim-register')) $('bim-register').onclick = openRegisterFlow;
     if ($('bim-actualview')) $('bim-actualview').onchange = function () { actualView = this.checked; render(); };
     wireStageInteractions();
@@ -276,6 +360,16 @@ window.BIM = (function () {
     else if (pin.item_type === 'photo') { if (window.ProgressPhotos && ProgressPhotos.openPhotoById) ProgressPhotos.openPhotoById(pin.item_id); }
   }
 
+  // ⚠️ RETIRED IN PLACE (2026-08-30 feedback item 27): "Place pin should not
+  // be done in the floor plans page — place pin should be done every time a
+  // photo is added." The #bim-place toolbar button that used to call this is
+  // removed from index.html, so `placeMode` can now never become true and
+  // every branch below that checks it is dead code — left defined (not
+  // deleted) per this module's own established convention for superseded
+  // code, since openPinPicker's "point a pin at an EXISTING panorama/3D scan"
+  // capability may still be worth a future button elsewhere. The real,
+  // per-photo pin+cone workflow now lives entirely in pinFieldHTML/
+  // wirePinField/readPinField below, driven from module.js's Add/Edit form.
   function togglePlaceMode() {
     placeMode = !placeMode;
     if ($('bim-place')) $('bim-place').classList.toggle('is-active', placeMode);
@@ -448,8 +542,10 @@ window.BIM = (function () {
           photos.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(photoLabel(p)) + '</option>'; }).join('') +
         '</select></div>' +
         '<div class="bim-regpair">' +
-          '<div class="bim-regside"><div class="pp-hint">Drawing</div><img id="bim-reg-plan" src="' + esc(planImgUrl) + '" style="width:100%;cursor:crosshair;" draggable="false" /></div>' +
-          '<div class="bim-regside"><div class="pp-hint">Photo</div><img id="bim-reg-photo-img" src="" style="width:100%;cursor:crosshair;" draggable="false" /></div>' +
+          '<div class="bim-regside"><div class="pp-hint">Drawing</div><img id="bim-reg-plan" src="' + esc(planImgUrl) + '" style="width:100%;cursor:crosshair;" draggable="false" />' +
+            '<div id="bim-reg-plan-pts"></div></div>' +
+          '<div class="bim-regside"><div class="pp-hint">Photo</div><img id="bim-reg-photo-img" src="" style="width:100%;cursor:crosshair;" draggable="false" />' +
+            '<div id="bim-reg-photo-pts"></div></div>' +
         '</div>' +
         '<p class="pp-hint" id="bim-reg-status"></p>' +
       '</div>' +
@@ -468,9 +564,25 @@ window.BIM = (function () {
       chosenPhotoId = this.value; pairs = []; pendingPlanPt = null;
       setPhotoImg(); refresh();
     };
+    // Item 26: "the points cannot be seen. points should be visible for
+    // easier verification." Every already-picked pair renders as a numbered
+    // green dot on BOTH images (so a planner can visually confirm the
+    // Nth point on the drawing lines up with the Nth on the photo), and a
+    // point picked on the drawing but not yet matched on the photo shows as
+    // a pulsing amber dot on the drawing side only.
+    function paintPoints() {
+      var planHost = $('bim-reg-plan-pts'), photoHost = $('bim-reg-photo-pts');
+      if (planHost) planHost.innerHTML = pairs.map(function (p, i) {
+        return '<span class="bim-regpt" style="left:' + (p.planX * 100) + '%;top:' + (p.planY * 100) + '%;">' + (i + 1) + '</span>';
+      }).join('') + (pendingPlanPt ? '<span class="bim-regpt is-pending" style="left:' + (pendingPlanPt.planX * 100) + '%;top:' + (pendingPlanPt.planY * 100) + '%;">?</span>' : '');
+      if (photoHost) photoHost.innerHTML = pairs.map(function (p, i) {
+        return '<span class="bim-regpt" style="left:' + (p.photoX * 100) + '%;top:' + (p.photoY * 100) + '%;">' + (i + 1) + '</span>';
+      }).join('');
+    }
     function refresh() {
       if ($('bim-reg-status')) $('bim-reg-status').textContent = statusText();
       if ($('bim-reg-save')) $('bim-reg-save').disabled = pairs.length < MIN_REG_POINTS;
+      paintPoints();
     }
     $('bim-reg-plan').onclick = function (e) {
       if (pendingPlanPt) { UI.toast('Click the matching point on the PHOTO first', 'warn'); return; }
@@ -543,35 +655,80 @@ window.BIM = (function () {
   }
 
   // ------------------------------------------------------------- forms -----
-  function openPlanForm() {
+  // 2026-08-30 feedback item 12: "aside from the floor plan itself, the app
+  // should just ask for the location based on the schedule app location
+  // set-up... no need to ask for the name and the level order as the
+  // locations defined in the schedule app should already cover this." The
+  // plan's NAME is now DERIVED from the picked location's own breadcrumb
+  // (falling back to a manual name only when no Location Breakdown exists
+  // at all, matching the same "waived only when the schedule truly has
+  // nothing to offer" rule the Add-Media form applies to Works/Location);
+  // level_order is derived from the picked location's OWN depth/order in
+  // the tree by matching it against `location_levels.sort_order`, so floors
+  // still sort sensibly without asking the planner to type a number.
+  var _planLocPicked = null;   // {values, label} — set by the picker, read on save
+  // `presetValues` (item 25) — clicking a grey "no plan yet" node in the
+  // Plans-page tree opens this form with that exact location already chosen,
+  // so uploading a plan for it is one click plus a file, not a second trip
+  // through the picker.
+  function openPlanForm(presetValues) {
+    var hasLoc = window.ProgressPhotos && ProgressPhotos.hasLocationLevels && ProgressPhotos.hasLocationLevels();
+    _planLocPicked = (presetValues && Object.keys(presetValues).length)
+      ? { values: presetValues, label: ProgressPhotos.locBreadcrumbOf(presetValues) } : null;
     var html =
       '<div class="pd-modal-header"><h3>Upload a floor plan</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<div class="pd-field"><label>Name</label><input class="pd-input" id="bim-p-name" placeholder="e.g. Ground Floor" /></div>' +
-        '<div class="pd-field"><label>Level order <span class="pp-optnote">(lower = shown first)</span></label>' +
-          '<input class="pd-input" type="number" id="bim-p-order" value="0" /></div>' +
-        '<div class="pd-field"><label>Floor plan image</label><input type="file" id="bim-p-file" accept="image/*" /></div>' +
+        (hasLoc
+          ? '<div class="pd-field"><label>Location <span class="pp-req">*</span></label>' +
+              '<div id="bim-p-locchosen">' + (_planLocPicked
+                ? '<div class="pp-locchosen"><span data-ico="mapPin" data-ico-size="15"></span><strong>' + esc(_planLocPicked.label) + '</strong></div>'
+                : '<p class="pp-hint">No location selected yet.</p>') + '</div>' +
+              '<button type="button" class="pd-btn" id="bim-p-locadd">Pick a location…</button></div>'
+          : '<div class="pd-field"><label>Name</label><input class="pd-input" id="bim-p-name" placeholder="e.g. Ground Floor" /></div>') +
+        // Item 11 — image OR PDF.
+        '<div class="pd-field"><label>Floor plan file</label><input type="file" id="bim-p-file" accept="image/*,application/pdf" /></div>' +
       '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="bim-p-save">Upload</button></div>';
     var m = openModal(html, 480);
+    if ($('bim-p-locadd')) $('bim-p-locadd').onclick = function () {
+      ProgressPhotos.openLocationPicker(function (values, label) {
+        _planLocPicked = { values: values, label: label };
+        var host = $('bim-p-locchosen');
+        if (host) host.innerHTML = '<div class="pp-locchosen"><span data-ico="mapPin" data-ico-size="15"></span><strong>' + esc(label) + '</strong></div>';
+        if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+      });
+    };
     $('bim-p-save').onclick = async function () {
       var f = $('bim-p-file').files && $('bim-p-file').files[0];
-      var name = $('bim-p-name').value.trim();
+      var nameEl = $('bim-p-name');
+      var name = nameEl ? nameEl.value.trim() : (_planLocPicked ? _planLocPicked.label : '');
+      if (hasLoc && !_planLocPicked) { UI.toast('Pick a location first', 'warn'); return; }
       if (!name) { UI.toast('Name is required', 'warn'); return; }
-      if (!f) { UI.toast('Choose an image file', 'warn'); return; }
+      if (!f) { UI.toast('Choose an image or PDF file', 'warn'); return; }
       this.disabled = true;
       try {
-        var dims = await imageDims(f);
+        var isPdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
+        var dims = isPdf ? { w: null, h: null } : await imageDims(f);
         var path = pid + '/floorplans/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '_' + f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || 'image/jpeg' });
+        var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || (isPdf ? 'application/pdf' : 'image/jpeg') });
         if (up.error) throw up.error;
         var row = {
-          project_id: pid, name: name, level_order: parseInt($('bim-p-order').value, 10) || 0,
-          image_url: path, width_px: dims.w, height_px: dims.h, created_by: uid
+          project_id: pid, name: name, level_order: 0,
+          image_url: path, width_px: dims.w, height_px: dims.h, created_by: uid,
+          location_values: _planLocPicked ? _planLocPicked.values : {}
         };
         var ires = await sb().from(T_PLAN).insert(row).select();
-        if (ires.error) throw ires.error;
+        if (ires.error) {
+          // Tolerant of migrations/2026-08-30-photos-round2.sql not having
+          // run yet (floor_plans.location_values is new).
+          if (/column .* does not exist|schema cache/i.test(ires.error.message || '')) {
+            var stripped = Object.assign({}, row); delete stripped.location_values;
+            ires = await sb().from(T_PLAN).insert(stripped).select();
+            if (!ires.error) UI.toast('Uploaded without the schedule location link — run migrations/2026-08-30-photos-round2.sql', 'warn');
+          }
+          if (ires.error) throw ires.error;
+        }
         m.close();
         UI.toast('Floor plan uploaded', 'ok');
         activePlanId = (ires.data && ires.data[0] && ires.data[0].id) || activePlanId;
@@ -583,7 +740,12 @@ window.BIM = (function () {
     };
   }
 
+  // ⚠️ PDFs have no natural pixel size the browser can measure the same way
+  // an <img> can — width/height are left null for a PDF (the render layer
+  // shows it via an <embed>, which sizes to its container regardless), so no
+  // fake dimensions are invented and asserted as fact.
   function imageDims(file) {
+    if (/pdf$/i.test(file.type) || /\.pdf$/i.test(file.name)) return Promise.resolve({ w: null, h: null });
     return new Promise(function (resolve) {
       var img = new Image();
       var url = URL.createObjectURL(file);
@@ -592,6 +754,11 @@ window.BIM = (function () {
       img.src = url;
     });
   }
+  // Whether a stored floor-plan file is a PDF, purely from its path's
+  // extension (uploaded paths always keep the original filename's
+  // extension, see the upload path-building above) — used by the renderer to
+  // choose <embed> over <img>.
+  function isPdfPlan(plan) { return !!(plan && plan.image_url && /\.pdf(\?|$)/i.test(plan.image_url)); }
 
   function openPinPicker(xNorm, yNorm) {
     var panos = (window.PANO && PANO.list) ? PANO.list() : [];
@@ -818,85 +985,258 @@ window.BIM = (function () {
   }
 
   // --------------------------------------------------- embeddable pin field ---
-  // 2026-08-29 feedback item 11: "in the add media workflow, add location of
-  // camera as well as the direction and angle of the POV" — same capability
-  // as openPinPickerFor above (pick a floor plan from THIS project's real
-  // `floor_plans` database, click a point on it, drag out a direction), but
-  // as HTML embedded directly into module.js's own Add/Edit Photo form
-  // instead of a modal shown after the fact. Replaces that form's old ad-hoc
-  // "upload your own key plan image" field, which had no notion of a
-  // position or a facing direction at all. idPrefix-scoped ('pp' for Add,
-  // 'pp-e' for Edit) so the two forms can never collide.
+  // 2026-08-30 feedback items 8/27/28. Renamed "Camera position" → "Key
+  // Plan" and made REQUIRED (item 8); "Place pin" is gone from the Plans
+  // page entirely — this is now the ONLY place a pin is ever placed (item
+  // 27); and the direction/range interaction moves from a separate circular
+  // widget BELOW the plan image to a field-of-view CONE drawn directly ON
+  // the image itself, anchored to the pin (item 28): click the image to drop
+  // a pin → a default cone appears facing the image's own centre → drag
+  // either of its two end-point handles to reshape angle/range → double-
+  // click the cone to mark "does not apply" for a top-view photo, where a
+  // facing direction is meaningless. idPrefix-scoped ('pp' / 'pp-e') exactly
+  // like every other embeddable field in this form.
+  //
+  // Geometry, pure and testable (same reasoning as _zoomAnchor/
+  // _directionDegFromDrag above — a wrong sign here is silent: the widget
+  // still looks interactive, it just draws the cone facing the wrong way).
+  // Both take/return coordinates in one consistent unit (pixels OR
+  // normalized 0..1 — the caller's choice, since bearing/offset math is
+  // scale-free) so the same functions serve both the default-cone placement
+  // (computed once in real rendered pixels, then divided down to 0..1 for
+  // storage) and any future re-use.
+  function bearingFromTo(px, py, qx, qy) { return (Math.atan2(qx - px, -(qy - py)) * 180 / Math.PI + 360) % 360; }
+  function pointAtBearing(px, py, bearingDeg, dist) {
+    var rad = bearingDeg * Math.PI / 180;
+    return { x: px + dist * Math.sin(rad), y: py - dist * Math.cos(rad) };
+  }
+  var CONE_DEFAULT_FOV = 50;       // degrees between the two default edges
+  var CONE_DEFAULT_REACH = 0.22;   // fraction of min(imgW,imgH) the default edges reach
+  // The default cone for a freshly-placed pin: faces the image's own centre,
+  // spread symmetrically. `xNorm,yNorm` are the pin's own normalized
+  // position; `w,h` the image's REAL rendered pixel box (so the reach is a
+  // consistent visual distance regardless of the image's aspect ratio).
+  // Exported as `_defaultCone` for direct execution by the test harness.
+  function defaultCone(xNorm, yNorm, w, h) {
+    var px = xNorm * w, py = yNorm * h;
+    var bearing = bearingFromTo(px, py, w / 2, h / 2);
+    var reach = CONE_DEFAULT_REACH * Math.min(w, h);
+    var e1 = pointAtBearing(px, py, bearing - CONE_DEFAULT_FOV / 2, reach);
+    var e2 = pointAtBearing(px, py, bearing + CONE_DEFAULT_FOV / 2, reach);
+    return { edge1_x: e1.x / w, edge1_y: e1.y / h, edge2_x: e2.x / w, edge2_y: e2.y / h };
+  }
+  // The bisector bearing between two edge points, relative to the pin —
+  // kept as `direction_deg` purely so the OLDER renderers that already read
+  // that one column (the Plans-page marker cone, the Gallery's key-plan
+  // preview popup) keep drawing something sensible without being rewritten
+  // to understand the new two-edge shape.
+  function bisectorBearing(pinXNorm, pinYNorm, e1x, e1y, e2x, e2y, w, h) {
+    var mx = ((e1x + e2x) / 2) * w, my = ((e1y + e2y) / 2) * h;
+    return bearingFromTo(pinXNorm * w, pinYNorm * h, mx, my);
+  }
+
   function pinFieldHTML(idPrefix, existing) {
     if (!plans.length) {
-      return '<div class="pd-field pp-span2"><label>Camera position <span class="pp-optnote">(optional)</span></label>' +
-        '<p class="pp-hint">No floor plans yet — upload one on the Plans tab to record where this was captured.</p></div>';
+      // Item 8: upload a floor plan RIGHT HERE rather than sending the
+      // planner away to the Plans tab and losing whatever else they'd
+      // already filled in on this form.
+      return '<div class="pd-field pp-span2"><label>Key Plan' + reqMarkHTML() + '</label>' +
+        '<p class="pp-hint">No floor plans uploaded yet for this project.</p>' +
+        '<div class="pp-inlineplanform" id="' + idPrefix + '-inlineplan">' +
+          '<input class="pd-input" id="' + idPrefix + '-inlineplan-name" placeholder="Floor plan name, e.g. Ground Floor" />' +
+          '<input type="file" id="' + idPrefix + '-inlineplan-file" accept="image/*,application/pdf" />' +
+          '<button type="button" class="pd-btn" id="' + idPrefix + '-inlineplan-go">Upload</button>' +
+        '</div></div>';
     }
     var chosenId = (existing && existing.floor_plan_id) || activePlanId || plans[0].id;
     return '<div class="pd-field pp-span2 bim-pinfield" id="' + idPrefix + '-pinfield">' +
-      '<label>Camera position <span class="pp-optnote">(optional — click the plan to place a pin)</span></label>' +
+      '<label>Key Plan' + reqMarkHTML() + ' <span class="pp-optnote">(click the plan to place a pin)</span></label>' +
       (plans.length > 1
         ? '<select class="pd-select" id="' + idPrefix + '-pin-plan">' +
             plans.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === chosenId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
           '</select>'
         : '<input type="hidden" id="' + idPrefix + '-pin-plan" value="' + esc(chosenId) + '" />') +
-      '<div id="' + idPrefix + '-pin-imgwrap" class="bim-pinstage"></div>' +
+      '<div id="' + idPrefix + '-pin-imgwrap"></div>' +
       '<p class="pp-hint" id="' + idPrefix + '-pin-status">' +
-        (existing ? 'Point picked — click the plan to move it.' : 'No point picked yet.') + '</p>' +
-      directionWidgetHTML(idPrefix + '-pindir', existing ? existing.direction_deg : null) +
+        (existing ? 'Pin placed — click the plan to move it.' : 'Click the plan to drop a pin.') + '</p>' +
+      (existing && existing.direction_na ? '<p class="bim-conena-badge" id="' + idPrefix + '-pin-nabadge">' +
+        '<span data-ico="eyeOff" data-ico-size="12"></span> Marked "does not apply" (top-view photo)</p>' : '') +
+      '<p class="bim-conehint">Drag either handle to adjust the camera\'s angle and range. Double-click the ' +
+        'shaded area if this is a top-view photo with no facing direction.</p>' +
       '<input type="hidden" id="' + idPrefix + '-pin-x" value="' + (existing ? existing.x_norm : '') + '" />' +
       '<input type="hidden" id="' + idPrefix + '-pin-y" value="' + (existing ? existing.y_norm : '') + '" />' +
+      '<input type="hidden" id="' + idPrefix + '-pin-e1x" value="' + (existing ? existing.edge1_x : '') + '" />' +
+      '<input type="hidden" id="' + idPrefix + '-pin-e1y" value="' + (existing ? existing.edge1_y : '') + '" />' +
+      '<input type="hidden" id="' + idPrefix + '-pin-e2x" value="' + (existing ? existing.edge2_x : '') + '" />' +
+      '<input type="hidden" id="' + idPrefix + '-pin-e2y" value="' + (existing ? existing.edge2_y : '') + '" />' +
+      '<input type="hidden" id="' + idPrefix + '-pin-na" value="' + (existing && existing.direction_na ? '1' : '') + '" />' +
     '</div>';
   }
+  // module.js's own reqMark() is private to its closure — restated here
+  // rather than exported, same cross-file convention ppr.js already
+  // documents for its own local reqMark().
+  function reqMarkHTML() { return ' <span class="pp-req">*</span>'; }
+
   function wirePinField(idPrefix) {
-    var field = $(idPrefix + '-pinfield'); if (!field) return;   // no plans yet — nothing to wire
-    wireDirectionWidget(idPrefix + '-pindir');
-    var planSel = $(idPrefix + '-pin-plan');
-    function currentPicked() {
-      var xEl = $(idPrefix + '-pin-x'), yEl = $(idPrefix + '-pin-y');
-      var x = xEl ? xEl.value : '', y = yEl ? yEl.value : '';
-      return (x !== '' && y !== '') ? { x: +x, y: +y } : null;
+    var inlineWrap = $(idPrefix + '-inlineplan');
+    if (inlineWrap) {
+      // Item 8: upload a plan without leaving the Add/Edit Photo form. Once
+      // saved, the pin field ITSELF is repainted in place (module.js never
+      // re-renders the whole modal for this), so the planner can place a pin
+      // on the plan they just uploaded without reopening anything.
+      $(idPrefix + '-inlineplan-go').onclick = async function () {
+        var name = $(idPrefix + '-inlineplan-name').value.trim();
+        var f = $(idPrefix + '-inlineplan-file').files && $(idPrefix + '-inlineplan-file').files[0];
+        if (!name) { UI.toast('Name the floor plan first', 'warn'); return; }
+        if (!f) { UI.toast('Choose an image or PDF file', 'warn'); return; }
+        this.disabled = true;
+        try {
+          var isPdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
+          var dims = isPdf ? { w: null, h: null } : await imageDims(f);
+          var path = pid + '/floorplans/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '_' + f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || (isPdf ? 'application/pdf' : 'image/jpeg') });
+          if (up.error) throw up.error;
+          var row = { project_id: pid, name: name, level_order: 0, image_url: path, width_px: dims.w, height_px: dims.h, created_by: uid };
+          var ires = await sb().from(T_PLAN).insert(row).select();
+          if (ires.error) throw ires.error;
+          UI.toast('Floor plan uploaded', 'ok');
+          activePlanId = (ires.data && ires.data[0] && ires.data[0].id) || activePlanId;
+          await load();   // repopulates plans[]/planUrlCache
+          var field = $(idPrefix + '-pinfield-host') || $(idPrefix + '-inlineplan');
+          if (field && field.parentElement) field.parentElement.innerHTML = pinFieldHTML(idPrefix, null);
+          hydrateIfPossible();
+          wirePinField(idPrefix);
+        } catch (e) {
+          UI.toast('Could not upload: ' + ((e && e.message) || e), 'error');
+          this.disabled = false;
+        }
+      };
+      return;
     }
-    function stageHTML(planId, picked) {
+    var field = $(idPrefix + '-pinfield'); if (!field) return;   // no plans yet and nothing was wired above either
+    var planSel = $(idPrefix + '-pin-plan');
+    function state() {
+      var g = function (id) { var el = $(id); return el ? el.value : ''; };
+      var x = g(idPrefix + '-pin-x'), y = g(idPrefix + '-pin-y');
+      if (x === '' || y === '') return null;
+      return {
+        x: +x, y: +y,
+        e1x: +g(idPrefix + '-pin-e1x') || 0, e1y: +g(idPrefix + '-pin-e1y') || 0,
+        e2x: +g(idPrefix + '-pin-e2x') || 0, e2y: +g(idPrefix + '-pin-e2y') || 0,
+        na: g(idPrefix + '-pin-na') === '1'
+      };
+    }
+    function setState(s) {
+      $(idPrefix + '-pin-x').value = s ? s.x : ''; $(idPrefix + '-pin-y').value = s ? s.y : '';
+      $(idPrefix + '-pin-e1x').value = s ? s.e1x : ''; $(idPrefix + '-pin-e1y').value = s ? s.e1y : '';
+      $(idPrefix + '-pin-e2x').value = s ? s.e2x : ''; $(idPrefix + '-pin-e2y').value = s ? s.e2y : '';
+      $(idPrefix + '-pin-na').value = s && s.na ? '1' : '';
+      var st = $(idPrefix + '-pin-status');
+      if (st) st.textContent = s ? 'Pin placed — click the plan to move it.' : 'Click the plan to drop a pin.';
+    }
+    function stageHTML(planId, s) {
       var plan = planById(planId), url = planUrl(plan);
       if (!url) return '<div class="pp-empty">Plan image not available</div>';
-      var dot = picked ? '<div class="bim-pinstage-dot" style="left:' + (picked.x * 100) + '%;top:' + (picked.y * 100) + '%"></div>' : '';
-      return '<div class="bim-pinstage-imgwrap"><img id="' + idPrefix + '-pin-img" src="' + esc(url) + '" draggable="false" />' + dot + '</div>';
+      // Item 11: a PDF plan can still be pinned — pins land on the browser's
+      // rendered PDF viewport the same way they land on an <img>, though (as
+      // noted on the Plans-page renderer) some browsers' native PDF viewer
+      // may intercept the click before it ever reaches this handler.
+      var body = isPdfPlan(plan)
+        ? '<embed id="' + idPrefix + '-pin-img" src="' + esc(url) + '" type="application/pdf" style="width:100%;height:320px;border:0;display:block;" />'
+        : '<img id="' + idPrefix + '-pin-img" src="' + esc(url) + '" draggable="false" />';
+      if (s) {
+        var pts = (s.x * 100) + ',' + (s.y * 100) + ' ' + (s.e1x * 100) + ',' + (s.e1y * 100) + ' ' + (s.e2x * 100) + ',' + (s.e2y * 100);
+        body += '<svg viewBox="0 0 100 100" preserveAspectRatio="none">' +
+          '<polygon class="bim-conewedge' + (s.na ? ' is-na' : '') + '" id="' + idPrefix + '-pin-wedge" points="' + pts + '"></polygon>' +
+        '</svg>' +
+        '<div class="bim-pinstage-dot" style="left:' + (s.x * 100) + '%;top:' + (s.y * 100) + '%"></div>' +
+        '<div class="bim-conehandle-el" data-h="1" style="left:' + (s.e1x * 100) + '%;top:' + (s.e1y * 100) + '%"></div>' +
+        '<div class="bim-conehandle-el" data-h="2" style="left:' + (s.e2x * 100) + '%;top:' + (s.e2y * 100) + '%"></div>';
+      }
+      return '<div class="bim-conestage">' + body + '</div>';
     }
     function repaint() {
       var wrap = $(idPrefix + '-pin-imgwrap'); if (!wrap) return;
-      wrap.innerHTML = stageHTML(planSel ? planSel.value : plans[0].id, currentPicked());
+      var s = state();
+      wrap.innerHTML = stageHTML(planSel ? planSel.value : plans[0].id, s);
+      wireStage(s);
+    }
+    function toNorm(img, clientX, clientY) {
+      var rect = img.getBoundingClientRect();
+      return { x: (clientX - rect.left) / rect.width, y: (clientY - rect.top) / rect.height };
+    }
+    function wireStage(s) {
       var img = $(idPrefix + '-pin-img'); if (!img) return;
+      // Clicking the BARE image (no pin yet, or clicking outside the
+      // existing handles) drops/moves the pin and re-seeds a fresh default
+      // cone facing the image's centre.
       img.onclick = function (e) {
         var rect = img.getBoundingClientRect();
-        var xNorm = (e.clientX - rect.left) / rect.width, yNorm = (e.clientY - rect.top) / rect.height;
-        $(idPrefix + '-pin-x').value = xNorm; $(idPrefix + '-pin-y').value = yNorm;
-        var st = $(idPrefix + '-pin-status');
-        if (st) st.textContent = 'Point picked (' + (xNorm * 100).toFixed(0) + '%, ' + (yNorm * 100).toFixed(0) + '%) — click again to move it.';
+        var n = toNorm(img, e.clientX, e.clientY);
+        var cone = defaultCone(n.x, n.y, rect.width, rect.height);
+        setState({ x: n.x, y: n.y, e1x: cone.edge1_x, e1y: cone.edge1_y, e2x: cone.edge2_x, e2y: cone.edge2_y, na: false });
         repaint();
       };
+      var wedge = $(idPrefix + '-pin-wedge');
+      if (wedge) wedge.ondblclick = function (e) {
+        e.stopPropagation();
+        var cur = state(); if (!cur) return;
+        cur.na = !cur.na; setState(cur);
+        var b = $(idPrefix + '-pin-wedge'); if (b) b.classList.toggle('is-na', cur.na);
+      };
+      // Drag either endpoint handle — free-form (independent angle AND
+      // range per handle, per the literal ask: "drag the end points... to
+      // adjust angle and range"), redrawing the wedge live on every move.
+      Array.prototype.forEach.call((wrap_or_doc()).querySelectorAll('[data-h]'), function (h) {
+        h.onpointerdown = function (e) {
+          e.stopPropagation();
+          h.setPointerCapture(e.pointerId);
+          var which = h.dataset.h;
+          function move(ev) {
+            var n = toNorm(img, ev.clientX, ev.clientY);
+            var cur = state(); if (!cur) return;
+            if (which === '1') { cur.e1x = n.x; cur.e1y = n.y; } else { cur.e2x = n.x; cur.e2y = n.y; }
+            setState(cur);
+            h.style.left = (n.x * 100) + '%'; h.style.top = (n.y * 100) + '%';
+            var w2 = $(idPrefix + '-pin-wedge');
+            if (w2) w2.setAttribute('points', (cur.x * 100) + ',' + (cur.y * 100) + ' ' + (cur.e1x * 100) + ',' + (cur.e1y * 100) + ' ' + (cur.e2x * 100) + ',' + (cur.e2y * 100));
+          }
+          function up() {
+            h.onpointermove = null;
+            window.removeEventListener('pointerup', up);
+          }
+          h.onpointermove = move;
+          window.addEventListener('pointerup', up);
+        };
+      });
+      function wrap_or_doc() { return $(idPrefix + '-pin-imgwrap') || document; }
     }
-    if (planSel) planSel.onchange = function () {
-      $(idPrefix + '-pin-x').value = ''; $(idPrefix + '-pin-y').value = '';
-      var st = $(idPrefix + '-pin-status'); if (st) st.textContent = 'No point picked yet.';
-      repaint();
-    };
+    if (planSel) planSel.onchange = function () { setState(null); repaint(); };
     repaint();
   }
   function readPinField(idPrefix) {
+    var inlineWrap = $(idPrefix + '-inlineplan');
+    if (inlineWrap) return null;   // no plans exist yet — nothing to read
     var field = $(idPrefix + '-pinfield'); if (!field) return null;
     var planSel = $(idPrefix + '-pin-plan');
     var planId = planSel ? planSel.value : null;
-    var xEl = $(idPrefix + '-pin-x'), yEl = $(idPrefix + '-pin-y');
-    var x = xEl ? xEl.value : '', y = yEl ? yEl.value : '';
+    var g = function (id) { var el = $(id); return el ? el.value : ''; };
+    var x = g(idPrefix + '-pin-x'), y = g(idPrefix + '-pin-y');
     if (!planId || x === '' || y === '') return null;   // planner left it blank — nothing to save
-    var dirEl = $(idPrefix + '-pindir-val');
-    var dir = (dirEl && dirEl.value !== '') ? +dirEl.value : null;
-    return { floor_plan_id: planId, x_norm: +x, y_norm: +y, direction_deg: dir };
+    var e1x = g(idPrefix + '-pin-e1x'), e1y = g(idPrefix + '-pin-e1y'), e2x = g(idPrefix + '-pin-e2x'), e2y = g(idPrefix + '-pin-e2y');
+    var na = g(idPrefix + '-pin-na') === '1';
+    var dir = na ? null : bisectorBearing(+x, +y, +e1x, +e1y, +e2x, +e2y, 1, 1);
+    return {
+      floor_plan_id: planId, x_norm: +x, y_norm: +y,
+      edge1_x: e1x === '' ? null : +e1x, edge1_y: e1y === '' ? null : +e1y,
+      edge2_x: e2x === '' ? null : +e2x, edge2_y: e2y === '' ? null : +e2y,
+      direction_na: na, direction_deg: dir
+    };
   }
+  function hydrateIfPossible() { if (window.Icons && Icons.hydrate) Icons.hydrate($('bim-view') || document.body); }
   // Insert-or-update the ONE pin for an item — module.js's Add/Edit Photo
   // form calls this once per saved photo id, right inside its own save flow
-  // (item 11: "in the add media workflow", not a separate popup afterward).
+  // (item 27/28: pin placement lives HERE, not on the Plans page).
   // `pinData === null` is a no-op: the planner left the field blank, and
   // that must never delete/disturb a pin the item already had (this form has
   // no "clear the pin" affordance — only add-or-move — so there is nothing
@@ -907,18 +1247,24 @@ window.BIM = (function () {
     var row = {
       floor_plan_id: pinData.floor_plan_id, project_id: pid, item_type: itemType, item_id: itemId,
       x_norm: pinData.x_norm, y_norm: pinData.y_norm, direction_deg: pinData.direction_deg,
-      created_by: uid
+      edge1_x: pinData.edge1_x, edge1_y: pinData.edge1_y, edge2_x: pinData.edge2_x, edge2_y: pinData.edge2_y,
+      direction_na: pinData.direction_na, created_by: uid
     };
     var res = existing
       ? await sb().from(T_PIN).update(row).eq('id', existing.id)
       : await sb().from(T_PIN).insert(row);
-    if (res.error && /column .* does not exist|schema cache/i.test(res.error.message || '') && 'direction_deg' in row) {
-      var stripped = Object.assign({}, row); delete stripped.direction_deg;
+    if (res.error && /column .* does not exist|schema cache/i.test(res.error.message || '')) {
+      // Tolerant of migrations/2026-08-30-photos-round2.sql not having run
+      // yet — same "strip the new columns, warn, retry" convention every
+      // not-yet-migrated column in this module family already follows.
+      var stripped = Object.assign({}, row);
+      delete stripped.edge1_x; delete stripped.edge1_y; delete stripped.edge2_x; delete stripped.edge2_y; delete stripped.direction_na;
       res = existing
         ? await sb().from(T_PIN).update(stripped).eq('id', existing.id)
         : await sb().from(T_PIN).insert(stripped);
+      if (!res.error) UI.toast('Pin saved without its cone shape — run migrations/2026-08-30-photos-round2.sql', 'warn');
     }
-    if (res.error) { UI.toast('Camera position not saved: ' + res.error.message, 'warn'); return; }
+    if (res.error) { UI.toast('Key Plan pin not saved: ' + res.error.message, 'warn'); return; }
     await loadAllPins();
     if (activePlanId === row.floor_plan_id) await loadPins();
   }
@@ -970,6 +1316,11 @@ window.BIM = (function () {
     // sign is silent (the widget still LOOKS interactive; it just records the
     // wrong angle for every future pin).
     _directionDegFromDrag: function (dx, dy) { return directionDegFromDrag(dx, dy); },
+    // Item 28 — the in-photo cone geometry, same reasoning: a wrong sign or
+    // a wrong reach fraction is silent (the widget still looks interactive).
+    _defaultCone: function (xNorm, yNorm, w, h) { return defaultCone(xNorm, yNorm, w, h); },
+    _bearingFromTo: function (px, py, qx, qy) { return bearingFromTo(px, py, qx, qy); },
+    _bisectorBearing: function (px, py, e1x, e1y, e2x, e2y, w, h) { return bisectorBearing(px, py, e1x, e1y, e2x, e2y, w, h); },
     // Read accessors for module.js's own Gallery Plan/Stack views (item 16,
     // which relocated Map/Stack out of this screen per item 15). Plan view
     // needs to browse every floor plan and its pins without disturbing this

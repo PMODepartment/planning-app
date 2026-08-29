@@ -210,6 +210,138 @@
     return api;
   }
 
+  // ---- Mode-aware sidebar nav + top-bar context switcher --------------------
+  // The shell used to show BOTH the Portfolio group and the Project group in
+  // the sidebar at once, all the time — and switching projects only lived on
+  // dashboard.html's own bespoke topbar control. Both are replaced by ONE
+  // pair of shared renderers so every shell page (dashboard/projects/modules/
+  // admin/my-work/portfolio-overview) behaves identically:
+  //   UI.renderNav(navEl, mode, ctx)      — sidebar contents for the mode
+  //   UI.renderSwitcher(mountEl, opts)    — topbar "Portfolio ▾ / <Project> ▾"
+  // `mode` is never a separately-persisted flag — it is simply which of the
+  // two page families you are on, so it can never desync from what the page
+  // actually shows. 'portfolio' = projects.html / admin.html / my-work.html /
+  // portfolio-overview. 'project' = dashboard.html / modules.html.
+  function renderNav(navEl, mode, ctx) {
+    if (!navEl) return;
+    ctx = ctx || {};
+    var base = ctx.base || '';
+    var active = ctx.active || '';
+    function cls(key) { return active === key ? ' class="active"' : ''; }
+    var html;
+    if (mode === 'portfolio') {
+      html = '<div class="pd-navsec">Portfolio</div>' +
+        '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
+          '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
+        '<a href="' + base + 'modules/portfolio-overview/index.html"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
+          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
+        '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
+          '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Personal Dashboard</span></a>' +
+        (ctx.isAdmin
+          ? '<div class="pd-navsec">System</div>' +
+            '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Admin">' +
+              '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>'
+          : '');
+    } else {
+      var mods = (ctx.modules || []).filter(function (m) { return m.enabled; });
+      html = '<div class="pd-navsec">Project</div>' +
+        '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
+          '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard' +
+          (ctx.pname ? '<small class="pd-nav-sub">' + esc(ctx.pname) + '</small>' : '') + '</span></a>' +
+        mods.map(function (m) {
+          var href = window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path;
+          return '<a href="' + href + '"' + cls(m.key) + ' title="' + esc(m.name) + '">' +
+            '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
+        }).join('');
+    }
+    navEl.innerHTML = html;
+    if (window.Icons) Icons.hydrate(navEl);
+  }
+
+  // Shared cache for both the project selector and the switcher below — one
+  // load per page, not one per instance.
+  var _pdSwProj = null, _pdSwGh = null;
+  async function ensureSwitcherData() {
+    if (!_pdSwProj) { try { _pdSwProj = await PDb.getProjects(); } catch (e) { _pdSwProj = []; } }
+    if (!_pdSwGh) { try { _pdSwGh = await PDb.getGroupHeads(); } catch (e) { _pdSwGh = []; } }
+  }
+
+  function renderSwitcher(mount, opts) {
+    if (!mount) return;
+    opts = opts || {};
+    var base = opts.base || '';
+    var mode = opts.mode || 'project';
+    var pid = opts.pid || null;
+
+    mount.classList.add('pd-projsw');
+    mount.innerHTML =
+      '<button class="pd-projsw-btn" type="button">' +
+        '<span class="pd-projsw-ic" data-ico="' + (mode === 'portfolio' ? 'barChart' : 'project') + '" data-ico-size="16"></span>' +
+        '<span class="pd-projsw-txt"><strong>' + esc(mode === 'portfolio' ? 'Portfolio' : (opts.pname || 'Select a project')) + '</strong>' +
+          (opts.ghLabel ? '<small>' + esc(opts.ghLabel) + '</small>' : '') + '</span>' +
+        '<span class="pd-projsw-caret" data-ico="chevronDown" data-ico-size="13"></span>' +
+      '</button>' +
+      '<div class="pd-projsw-menu"></div>';
+    if (window.Icons) Icons.hydrate(mount);
+
+    var btn = mount.querySelector('.pd-projsw-btn');
+    var menu = mount.querySelector('.pd-projsw-menu');
+    function close() { menu.classList.remove('open'); }
+    function ghNameOf(p) {
+      if (!p || !p.group_head_id) return '';
+      var g = (_pdSwGh || []).filter(function (x) { return x.id === p.group_head_id; })[0];
+      return g ? g.name : '';
+    }
+    function renderMenu() {
+      var groups = window.PDProgram ? PDProgram.groups(_pdSwProj || []) : (_pdSwProj || []).map(function (p) {
+        return { key: p.id, label: p.name || p.id, members: [p] };
+      });
+      var items =
+        '<button data-goto-portfolio="1"' + (mode === 'portfolio' ? ' class="cur"' : '') + '>' +
+          '<strong>' + esc('Portfolio') + '</strong><small>Projects &middot; Portfolio Dashboard &middot; Personal Dashboard</small></button>' +
+        '<div class="pd-projsw-menu-head">Switch project</div>' +
+        groups.map(function (g) {
+          var grouped = g.members.length > 1;
+          var kids = g.members.map(function (p) {
+            var gh = ghNameOf(p);
+            return '<button data-pick="' + esc(p.id) + '"' + (p.id === pid ? ' class="cur"' : '') + '>' +
+              '<strong>' + esc(p.name || p.id) + '</strong><small>' + esc(p.id) + (gh ? ' &middot; ' + esc(gh) : '') + '</small></button>';
+          }).join('');
+          return grouped
+            ? '<div class="pd-projsw-group">' + esc(g.label) + '</div><div class="pd-projsw-kids">' + kids + '</div>'
+            : kids;
+        }).join('') +
+        '<a class="pd-projsw-all" href="' + base + 'projects.html">' + (window.Icons ? Icons.svg('arrowRight', 15) : '') + ' All projects / selector</a>';
+      menu.innerHTML = items;
+      if (window.Icons) Icons.hydrate(menu);
+      var g1 = menu.querySelector('[data-goto-portfolio]');
+      if (g1) g1.onclick = function () { location.href = base + 'projects.html'; };
+      menu.querySelectorAll('[data-pick]').forEach(function (b) {
+        b.onclick = function () {
+          var id = b.dataset.pick;
+          var p = (_pdSwProj || []).filter(function (x) { return x.id === id; })[0];
+          sessionStorage.setItem('pd_project', id);
+          sessionStorage.setItem('pd_project_name', (p && p.name) || id);
+          sessionStorage.setItem('pd_group_head', (p && p.group_head_id) || '');
+          // ⚠️ A package belongs to the OLD project — carrying it across would
+          // scope the shell to a package this project does not contain.
+          sessionStorage.removeItem('pd_package');
+          sessionStorage.removeItem('pd_package_name');
+          location.href = base + 'dashboard.html';
+        };
+      });
+    }
+    async function open() {
+      menu.innerHTML = '<div class="pd-projsw-menu-head">Loading&hellip;</div>';
+      menu.classList.add('open');
+      await ensureSwitcherData();
+      renderMenu();
+    }
+    btn.onclick = function (e) { e.stopPropagation(); menu.classList.contains('open') ? close() : open(); };
+    document.addEventListener('click', function (e) { if (!mount.contains(e.target)) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  }
+
   // ---- Collapsible sidebar / mobile drawer ----
   // Auto-injects a hamburger toggle into the topbar of any shell page (a page
   // with both .pd-sidebar and .pd-topbar).
@@ -228,9 +360,6 @@
     var sidebar = document.querySelector('.pd-sidebar');
     var topbar = document.querySelector('.pd-topbar');
     if (!app || !sidebar || !topbar) return;
-    // Fill the "Project Home" sub-caption with the current project (if the nav has that slot).
-    var np = document.getElementById('nav-proj');
-    if (np) { var pn = sessionStorage.getItem('pd_project_name') || sessionStorage.getItem('pd_project'); np.textContent = pn || 'None selected'; }
     if (topbar.querySelector('.pd-sidebar-toggle')) return;
 
     // Default to collapsed for a clean entry; only an explicit '0' keeps it open.
@@ -382,5 +511,6 @@
 
   window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell,
                 enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar,
-                acceptSuggestOnTab: acceptSuggestOnTab };
+                acceptSuggestOnTab: acceptSuggestOnTab,
+                renderNav: renderNav, renderSwitcher: renderSwitcher };
 })();

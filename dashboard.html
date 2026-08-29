@@ -14,17 +14,8 @@
   <div class="pd-app">
     <aside class="pd-sidebar">
       <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
-      <nav>
-        <div class="pd-navsec">Portfolio</div>
-        <a href="projects.html" title="Projects"><span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>
-        <a href="modules/portfolio-overview/index.html" title="Portfolio Overview"><span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Overview</span></a>
-        <a href="my-work.html" title="My Work"><span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">My Work</span></a>
-        <div class="pd-navsec">Project</div>
-        <a href="dashboard.html" class="active" title="Dashboard"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
-        <a href="modules.html" title="Modules"><span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Modules</span></a>
-        <div class="pd-navsec" id="nav-sys" style="display:none;">System</div>
-        <a href="admin.html" id="nav-admin" style="display:none;" title="Admin"><span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>
-      </nav>
+      <!-- Contents depend on the current mode (Project here) — rendered by UI.renderNav. -->
+      <nav id="side-nav"></nav>
       <!-- Cross-app links to sibling apps. Separate Supabase projects /
            separate logins — open in a new tab rather than navigating away. -->
       <div class="pd-nav-foot">
@@ -41,16 +32,8 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
-        <img class="pd-topbar-mark" src="assets/img/favicon.png" alt="Megawide" />
-        <!-- Project switcher -->
-        <div class="pd-projsw" id="projsw">
-          <button class="pd-projsw-btn" id="projsw-btn" type="button">
-            <span class="pd-projsw-ic" data-ico="project" data-ico-size="20"></span>
-            <span class="pd-projsw-txt"><strong id="projsw-name">Project</strong><small id="projsw-path"></small></span>
-            <span class="pd-projsw-caret">▾</span>
-          </button>
-          <div class="pd-projsw-menu" id="projsw-menu"></div>
-        </div>
+        <!-- Portfolio ⇄ Project switcher, shared across every shell page. -->
+        <div id="ctx-switcher"></div>
         <div id="user-bar"></div>
       </div>
 
@@ -233,7 +216,7 @@
   <script src="assets/js/db.js?v=20260827c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
-  <script src="assets/js/icons.js?v=20260813a"></script>
+  <script src="assets/js/icons.js?v=20260830a"></script>
   <script src="assets/js/modules-grid.js?v=20260830a"></script>
   <script src="assets/js/my-work.js?v=20260827a"></script>
   <script>
@@ -242,7 +225,7 @@
     // No project chosen yet → go pick one first (Primavera-style entry).
     if (!pid) { location.replace('projects.html'); return; }
 
-    var PROJ = [], GH = [], ghById = {}, curProj = null, canWrite = false;
+    var PROJ = [], GH = [], ghById = {}, curProj = null, canWrite = false, isAdmin = false;
     var CURUSER = null;   // the signed-in auth user; My Work needs the id, not the profile
 
     AppAuth.requireLogin(function (user, profile) {
@@ -251,10 +234,14 @@
       var first = (profile.name || profile.email || '').split(' ')[0];
       document.getElementById('welcome').textContent = first ? ('Welcome, ' + first) : 'Dashboard';
       canWrite = ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1;
-      if (profile.role === 'admin' || profile.role === 'super_admin') {
-        document.getElementById('nav-admin').style.display = '';
-        var ns = document.getElementById('nav-sys'); if (ns) ns.style.display = '';
-      }
+      isAdmin = ['admin', 'super_admin'].indexOf(profile.role) !== -1;
+      // Draw the shell immediately from what's already known (sessionStorage) —
+      // the network round-trip below only refines the label/group-head text.
+      var pnameNow = sessionStorage.getItem('pd_project_name') || pid;
+      UI.renderNav(document.getElementById('side-nav'), 'project', {
+        active: 'dashboard', base: '', isAdmin: isAdmin, pname: pnameNow, modules: APP_CONFIG.MODULES,
+      });
+      UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'project', base: '', pid: pid, pname: pnameNow });
       boot();
     });
 
@@ -267,7 +254,6 @@
       curProj = PROJ.find(function (p) { return p.id === pid; }) ||
         { id: pid, name: sessionStorage.getItem('pd_project_name') || pid };
       renderHeader();
-      renderSwitcherMenu();
       renderKpis();
       loadStatus();
       // Independent of one another: a packages failure must not blank the tiles.
@@ -288,53 +274,17 @@
     }
     function renderHeader() {
       var label = (curProj.name || curProj.id) + ' (' + curProj.id + ')';
-      document.getElementById('projsw-name').textContent = label;
       var gh = groupHead(curProj);
-      document.getElementById('projsw-path').textContent = gh ? ('Group Head: ' + gh) : '';
-      document.getElementById('nav-proj').textContent = curProj.name || curProj.id;
       document.getElementById('dash-sub').textContent = label;
-    }
-
-    function renderSwitcherMenu() {
-      var menu = document.getElementById('projsw-menu');
-      /* Grouped by PARENT PROJECT, so the sibling projects of one development sit
-         together — switching from AVR101 to AVR102 is the most common switch there is,
-         and a flat alphabetical list scatters them among unrelated jobs.
-         ⚠️ A parent of ONE renders flat, with no heading: a heading above a single
-            project invents a hierarchy that is not there. See assets/js/program.js. */
-      var items = PDProgram.groups(PROJ).map(function (g) {
-        /* ⚠️ The members are WRAPPED, not merely preceded by a heading. Indenting them
-           with a CSS sibling selector would also indent every project rendered after the
-           group — including a later group-of-one, which has no parent at all. */
-        var grouped = g.members.length > 1;
-        var kids = g.members.map(function (p) {
-          var gh = groupHead(p);
-          return '<button data-pick="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' class="cur"' : '') + '>' +
-            '<strong>' + Fmt.esc(p.name || p.id) + '</strong><small>' + Fmt.esc(p.id) + (gh ? ' · ' + Fmt.esc(gh) : '') + '</small></button>';
-        }).join('');
-        return grouped
-          ? '<div class="pd-projsw-group">' + Fmt.esc(g.label) + '</div>' +
-            '<div class="pd-projsw-kids">' + kids + '</div>'
-          : kids;
-      }).join('');
-      menu.innerHTML = '<div class="pd-projsw-menu-head">Switch project</div>' + items +
-        '<a class="pd-projsw-all" href="projects.html">' + Icons.svg('arrowRight', 15) + ' All projects / selector</a>';
-      menu.querySelectorAll('[data-pick]').forEach(function (b) {
-        b.onclick = function () {
-          var np = PROJ.find(function (x) { return x.id === b.dataset.pick; });
-          sessionStorage.setItem('pd_project', np.id);
-          sessionStorage.setItem('pd_project_name', np.name || np.id);
-          sessionStorage.setItem('pd_group_head', np.group_head_id || '');
-          // ⚠️ The package belongs to the OLD project. Carrying it across would
-          // leave the shell scoped to a package this project does not contain.
-          sessionStorage.removeItem('pd_package');
-          sessionStorage.removeItem('pd_package_name');
-          location.reload();
-        };
+      // Re-render the switcher + nav now that the authoritative name/group head
+      // are in — cheap, and the first pass above already made the shell usable.
+      UI.renderSwitcher(document.getElementById('ctx-switcher'), {
+        mode: 'project', base: '', pid: pid, pname: curProj.name || curProj.id,
+        ghLabel: gh ? ('Group Head: ' + gh) : '',
       });
-      var btn = document.getElementById('projsw-btn');
-      btn.onclick = function (e) { e.stopPropagation(); menu.classList.toggle('open'); };
-      document.addEventListener('click', function (e) { if (!menu.contains(e.target) && !btn.contains(e.target)) menu.classList.remove('open'); });
+      UI.renderNav(document.getElementById('side-nav'), 'project', {
+        active: 'dashboard', base: '', isAdmin: isAdmin, pname: curProj.name || curProj.id, modules: APP_CONFIG.MODULES,
+      });
     }
 
     // ---- Project facts ----

@@ -23,17 +23,8 @@
   <div class="pd-app">
     <aside class="pd-sidebar">
       <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
-      <nav>
-        <div class="pd-navsec">Portfolio</div>
-        <a href="projects.html" title="Projects"><span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>
-        <a href="modules/portfolio-overview/index.html" title="Portfolio Overview"><span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Overview</span></a>
-        <a href="my-work.html" title="My Work"><span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">My Work</span></a>
-        <div class="pd-navsec">Project</div>
-        <a href="dashboard.html" title="Dashboard"><span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard<small class="pd-nav-sub" id="nav-proj">None selected</small></span></a>
-        <a href="modules.html" title="Modules"><span class="pd-navico" data-ico="layout"></span><span class="pd-navtxt">Modules</span></a>
-        <div class="pd-navsec">System</div>
-        <a href="admin.html" class="active" title="Admin"><span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>
-      </nav>
+      <!-- Contents depend on the current mode (Portfolio here) — rendered by UI.renderNav. -->
+      <nav id="side-nav"></nav>
       <!-- Cross-app links to sibling apps. Separate Supabase projects /
            separate logins — open in a new tab rather than navigating away. -->
       <div class="pd-nav-foot">
@@ -48,7 +39,7 @@
       <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
     </aside>
     <div class="pd-content">
-      <div class="pd-topbar"><h1>Admin</h1><div id="user-bar"></div></div>
+      <div class="pd-topbar"><div id="ctx-switcher"></div><h1>Admin</h1><div id="user-bar"></div></div>
       <div class="pd-main">
         <div class="pd-tabs">
           <div class="pd-tab active" data-tab="users">Users</div>
@@ -77,13 +68,16 @@
   <script src="assets/js/db.js?v=20260827c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260824a"></script>
-  <script src="assets/js/icons.js?v=20260813a"></script>
+  <script src="assets/js/icons.js?v=20260830a"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
 
     AppAuth.requireAdmin(function (user, profile) {
       ME = profile;
       UI.renderUserBar(profile);
+      // requireAdmin already gated the page, so isAdmin is always true here.
+      UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'admin', base: '', isAdmin: true });
+      UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'portfolio', base: '' });
       wireTabs();
       loadUsers();
       loadProjects();

@@ -75,7 +75,10 @@
     palette:     '<circle cx="13.5" cy="6.5" r="1"/><circle cx="17" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12" r="1"/><path d="M12 22a10 10 0 1 1 10-10c0 2.2-1.8 3-3.2 3H16a2 2 0 0 0-1.4 3.4c.3.3.4.7.4 1.1A2 2 0 0 1 12 22z"/>',
     eye:         '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
     folder:      '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-    eyeOff:      '<path d="M9.9 5.2A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.6 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.4-1M3 3l18 18"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'
+    eyeOff:      '<path d="M9.9 5.2A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.6 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.4-1M3 3l18 18"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+    // Two opposing arrows — used for "swap/reorder" actions (e.g. Progress
+    // Photos' reorder-slides button, item 20 of the 2026-08-30 feedback).
+    swap:        '<path d="M4 8h13"/><polyline points="13 4 17 8 13 12"/><path d="M20 16H7"/><polyline points="11 20 7 16 11 12"/>'
   };
 
   function svg(name, size) {
