@@ -48,6 +48,21 @@ window.PPR = (function () {
   var filters = { from: '', to: '', archived: false };  // archived: false = hide archived (default)
   var screen = 'list';           // list | slides | templates
   var viewPprId = null, slideAt = 0, keyPlanOpen = false;
+  // Multi-select batch actions (item 14) — deliberately SEPARATE from `selId`.
+  // `selId` means "this ONE presentation is open/being previewed"; `selectedPprs`
+  // is a checkbox set for Download/Archive/Merge, and when 2+ are checked it
+  // ALSO drives the preview pane to show their slides combined end-to-end
+  // ("previews will then combine all the PPRs" — the owner's own wording).
+  var selectedPprs = {};
+  function selectedPprIds() { return Object.keys(selectedPprs).filter(function (id) { return selectedPprs[id]; }); }
+  // Scoped to the currently VISIBLE (filtered) set, not the raw map — a
+  // selection made before toggling "Show archived" must not silently let a
+  // batch action reach a presentation the list no longer shows. Same rule
+  // Gallery's own visibleSelectedIds() already documents in module.js.
+  function visibleSelectedPprIds() {
+    var vis = {}; visiblePprs().forEach(function (p) { vis[p.id] = true; });
+    return selectedPprIds().filter(function (id) { return vis[id]; });
+  }
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
@@ -93,7 +108,7 @@ window.PPR = (function () {
     wire();
     ProgressPhotos.onProject(function (p, name) {
       pid = p; projName = name;
-      screen = 'list'; selId = null;
+      screen = 'list'; selId = null; selectedPprs = {};
       load();
     });
   }
@@ -116,6 +131,10 @@ window.PPR = (function () {
     $('ppr-back').onclick = function () { screen = 'list'; render(); };
     if ($('ppr-templates')) $('ppr-templates').onclick = function () { screen = 'templates'; render(); };
     if ($('ppr-tmpl-new')) $('ppr-tmpl-new').onclick = function () { openTemplateForm(null); };
+    // Item 14 — multi-select batch actions.
+    if ($('ppr-sel-download')) $('ppr-sel-download').onclick = function () { openBatchDownloadChoice(visibleSelectedPprIds()); };
+    if ($('ppr-sel-archive')) $('ppr-sel-archive').onclick = function () { archiveSelectedPprs(visibleSelectedPprIds()); };
+    if ($('ppr-sel-merge')) $('ppr-sel-merge').onclick = function () { openMergeWizard(visibleSelectedPprIds()); };
   }
 
   // ------------------------------------------------------------------ load ---
@@ -303,13 +322,26 @@ window.PPR = (function () {
   // slides/templates views, "+ New template" belongs to the templates view.
   // `visible` is false while the Photos screen is showing, which hides all of
   // them — they never share a row with each other, so no divider is needed.
+  var toolsVisible = false;   // last-known value passed to syncTools by index.html's setScreen
   function syncTools(visible) {
+    toolsVisible = visible;
     var back = $('ppr-back'), neu = $('ppr-new'), tmplBtn = $('ppr-templates'), tmplNew = $('ppr-tmpl-new');
     var onList = screen === 'list', onTmpl = screen === 'templates';
+    var selIds = visibleSelectedPprIds();
+    // Same swap-in shape as the Gallery's own syncChrome: exactly one of
+    // "the normal list tools" or "the selection batch tools" is ever visible.
+    var hasSel = visible && onList && selIds.length > 0;
     if (back) back.style.display = (visible && (screen === 'slides' || onTmpl)) ? '' : 'none';
-    if (neu) neu.style.display = (visible && onList && canWrite) ? '' : 'none';
-    if (tmplBtn) tmplBtn.style.display = (visible && onList) ? '' : 'none';
+    if (neu) neu.style.display = (visible && onList && canWrite && !hasSel) ? '' : 'none';
+    if (tmplBtn) tmplBtn.style.display = (visible && onList && !hasSel) ? '' : 'none';
     if (tmplNew) tmplNew.style.display = (visible && onTmpl && canWrite) ? '' : 'none';
+    var cnt = $('ppr-selcount'), dl = $('ppr-sel-download'), ar = $('ppr-sel-archive'), mg = $('ppr-sel-merge');
+    if (cnt) { cnt.style.display = hasSel ? '' : 'none'; cnt.textContent = selIds.length + ' selected'; }
+    if (dl) dl.style.display = hasSel ? '' : 'none';
+    if (ar) ar.style.display = (hasSel && canWrite) ? '' : 'none';
+    // Merging needs at least two presentations — one "selected" is just a
+    // single row, not a merge candidate.
+    if (mg) mg.style.display = (hasSel && canWrite && selIds.length >= 2) ? '' : 'none';
   }
 
   function visiblePprs() {
@@ -362,8 +394,12 @@ window.PPR = (function () {
       // "open" is gone as an icon; Edit/Delete-presentation moved into the
       // opened presentation's own header (renderSlides()), not lost, just
       // relocated to where you're already looking at the thing you'd edit.
+      // The leading checkbox cell is item 14's multi-select — reuses the
+      // shared .pp-selcell sizing/centering the Gallery grid already defines.
       return '<div class="ppr-row' + (p.id === selId ? ' sel' : '') + '" data-id="' + p.id + '" ' +
         'title="Open this presentation\'s slides">' +
+        '<div class="ppr-cell pp-selcell"><input type="checkbox" data-sel="' + p.id + '"' +
+          (selectedPprs[p.id] ? ' checked' : '') + ' /></div>' +
         '<div class="ppr-cell ppr-date">' + esc(longDate(p.ppr_date)) + '</div>' +
         '<div class="ppr-cell">' + esc(p.description || '—') + '</div>' +
         '<div class="ppr-cell ppr-num">' + n + '</div>' +
@@ -378,8 +414,14 @@ window.PPR = (function () {
         '</div></div>';
     }).join('');
 
+    // Header select-all/unselect-all tickbox (item 14 — same pattern this
+    // module already uses for the Gallery's own List header, item 4).
+    var visIds = {}; list.forEach(function (p) { visIds[p.id] = true; });
+    var allChecked = list.length > 0 && list.every(function (p) { return !!selectedPprs[p.id]; });
     var table = '<div class="ppr-table">' +
-      '<div class="ppr-head"><div>Presentation Date</div><div>Description</div>' +
+      '<div class="ppr-head"><div class="pp-selcell"><input type="checkbox" id="ppr-selall"' +
+        (allChecked ? ' checked' : '') + ' title="Select/unselect all shown" /></div>' +
+        '<div>Presentation Date</div><div>Description</div>' +
       '<div class="ppr-num">No. of Slides</div><div></div></div>' +
       (list.length ? rows : '<div class="pp-empty" style="border:0;">' +
         (filters.archived ? 'No archived presentations.' : 'No presentations in this date range.') + '</div>') +
@@ -395,9 +437,13 @@ window.PPR = (function () {
     // hovering a row is enough to see its slide count in the list itself.
     // ⚠️ An ARCHIVED row still opens on click — archiving hides it from the
     // default LIST, it doesn't lock the presentation itself; a planner may
-    // still need to open an old one to re-download it.
+    // still need to open an old one to re-download it. Clicks starting on the
+    // select checkbox are excluded so ticking a box never also opens it.
     Array.prototype.forEach.call(host.querySelectorAll('.ppr-row'), function (r) {
-      r.onclick = function () { openPpr(r.dataset.id); };
+      r.onclick = function (e) {
+        if (e.target.closest('.pp-selcell')) return;
+        openPpr(r.dataset.id);
+      };
     });
     Array.prototype.forEach.call(host.querySelectorAll('[data-act]'), function (el) {
       el.onclick = function (e) {
@@ -409,6 +455,24 @@ window.PPR = (function () {
         else if (a === 'archive') toggleArchive(p);
       };
     });
+    // Item 14 — the checkbox set (separate gesture from opening a row).
+    Array.prototype.forEach.call(host.querySelectorAll('[data-sel]'), function (cb) {
+      cb.onchange = function () {
+        if (this.checked) selectedPprs[this.dataset.sel] = true; else delete selectedPprs[this.dataset.sel];
+        syncTools(toolsVisible);
+        renderPreview();
+      };
+    });
+    var selAll = host.querySelector('#ppr-selall');
+    if (selAll) selAll.onchange = function () {
+      var on = this.checked;
+      Object.keys(visIds).forEach(function (id) { if (on) selectedPprs[id] = true; else delete selectedPprs[id]; });
+      renderList();
+    };
+    // Re-synced on every list render (not only on a checkbox click) — toggling
+    // "Show archived" changes what's VISIBLE without touching selectedPprs
+    // itself, and the toolbar must reflect the visible-selection count either way.
+    syncTools(toolsVisible);
     renderPreview();
     // ⚠️ hydrate() must happen HERE, not only in render(): renderList() is called
     // DIRECTLY by the date filters, the clear-filters button and (previously) the
@@ -439,6 +503,148 @@ window.PPR = (function () {
     p.archived = next;
     UI.toast(next ? 'Presentation archived' : 'Presentation restored', 'ok');
     renderList();
+  }
+
+  // Item 14 — batch archive. Toggles every selected presentation the SAME
+  // direction as the majority of the selection is currently in (archive if
+  // most are active, restore if most are already archived) rather than a
+  // per-row toggle, which a batch action of this shape can't express cleanly
+  // — a mixed selection with no clear "next state" would be a worse UX than
+  // just picking the more useful direction and letting a planner re-select
+  // any stragglers.
+  // Pure, pulled out so it can be genuinely EXECUTED by a test rather than
+  // only read — a flipped comparison here would silently restore an archive
+  // request (or vice versa) with nothing in the UI to catch it, the same
+  // class of risk this module already documents for directionDegFromDrag.
+  function archiveDirectionFor(ps) {
+    var archivedCount = ps.filter(function (p) { return p.archived; }).length;
+    return archivedCount <= ps.length / 2;   // majority active -> archive; majority archived -> restore
+  }
+  async function archiveSelectedPprs(ids) {
+    if (!ids.length) return;
+    var ps = ids.map(pprById).filter(Boolean);
+    var next = archiveDirectionFor(ps);
+    var res = await sb().from(T_PPR).update({ archived: next, updated_at: new Date().toISOString() }).in('id', ids);
+    if (res.error) {
+      if (/column .* does not exist|schema cache/i.test(res.error.message || '')) {
+        UI.toast('Archiving needs a pending migration — run migrations/2026-08-29-archive-flag.sql', 'warn');
+        return;
+      }
+      UI.toast(res.error.message, 'error'); return;
+    }
+    ps.forEach(function (p) { p.archived = next; });
+    selectedPprs = {};
+    UI.toast(ps.length + ' presentation' + (ps.length === 1 ? '' : 's') + (next ? ' archived' : ' restored'), 'ok');
+    renderList();
+  }
+
+  // Item 14 — merge. Copies every selected presentation's slides, IN DATE
+  // ORDER, into one NEW presentation (renumbered continuously so the merged
+  // deck reads front-to-back with no gaps); the source presentations are
+  // ARCHIVED afterward, never deleted — a merge should not be able to lose
+  // history, and archiving keeps them reachable via "Show archived" the same
+  // way every other retirement in this module already works. Slides are
+  // copied by REFERENCE (before/after_photo_id, trade/works/location,
+  // captions) — no photo is duplicated, matching item 13a's own rule that a
+  // presentation never owns a copy of the photo.
+  function openMergeWizard(ids) {
+    if (ids.length < 2) return;
+    var ps = ids.map(pprById).filter(Boolean)
+      .sort(function (a, b) { return String(a.ppr_date || '').localeCompare(String(b.ppr_date || '')); });
+    var totalSlides = ps.reduce(function (n, p) { return n + slides(p.id).length; }, 0);
+    var html =
+      '<div class="pd-modal-header"><h3>Merge ' + ps.length + ' presentations</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<p class="pp-hint">Combines ' + totalSlides + ' slide' + (totalSlides === 1 ? '' : 's') +
+          ' from ' + ps.length + ' presentations into one new presentation, in date order. ' +
+          'The originals are archived afterward, not deleted.</p>' +
+        '<ul class="pp-mergelist">' + ps.map(function (p) {
+          return '<li>' + esc(longDate(p.ppr_date)) + (p.description ? ' — ' + esc(p.description) : '') +
+            ' <span class="pp-muted">(' + slides(p.id).length + ' slide' + (slides(p.id).length === 1 ? '' : 's') + ')</span></li>';
+        }).join('') + '</ul>' +
+        '<div class="pp-form2">' +
+          '<div class="pd-field"><label>Merged presentation date' + reqMark() + '</label>' +
+            '<input class="pd-input" type="date" id="ppr-mg-date" value="' + esc(ps[ps.length - 1].ppr_date || '') + '" /></div>' +
+          '<div class="pd-field"><label>Description</label>' +
+            '<input class="pd-input" id="ppr-mg-desc" placeholder="e.g. Q3 combined progress" value="" /></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="ppr-mg-go">Merge</button></div>';
+    var m = openModal(html, 560);
+    $('ppr-mg-go').onclick = async function () {
+      var date = $('ppr-mg-date').value;
+      if (!date) { UI.toast('A presentation date is required', 'warn'); return; }
+      this.disabled = true;
+      var desc = $('ppr-mg-desc').value.trim();
+      var ires = await sb().from(T_PPR)
+        .insert({ ppr_date: date, description: desc, project_id: pid, created_by: uid }).select();
+      if (ires.error) { UI.toast(ires.error.message, 'error'); this.disabled = false; return; }
+      var newId = ires.data && ires.data[0] && ires.data[0].id;
+      if (!newId) { UI.toast('Could not create the merged presentation', 'error'); this.disabled = false; return; }
+      var n = 0;
+      var payload = [];
+      ps.forEach(function (p) {
+        slides(p.id).forEach(function (sl) {
+          n++;
+          payload.push({
+            ppr_id: newId, project_id: pid, created_by: uid, slide_no: n,
+            before_photo_id: sl.before_photo_id, after_photo_id: sl.after_photo_id,
+            before_caption: sl.before_caption, after_caption: sl.after_caption,
+            trade: sl.trade, works: sl.works, location: sl.location
+          });
+        });
+      });
+      if (payload.length) {
+        var sres = await sb().from(T_SLIDE).insert(payload);
+        if (sres.error) { UI.toast('Presentation created, but copying slides failed: ' + sres.error.message, 'error'); this.disabled = false; return; }
+      }
+      var ares = await sb().from(T_PPR).update({ archived: true, updated_at: new Date().toISOString() }).in('id', ids);
+      if (ares.error) UI.toast('Merged, but could not archive the originals: ' + ares.error.message, 'warn');
+      else ps.forEach(function (p) { p.archived = true; });
+      m.close();
+      selectedPprs = {};
+      UI.toast('Merged into one presentation of ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's'), 'ok');
+      await load();
+      openPpr(newId);
+    };
+  }
+
+  // Item 14 — batch download. Loops the SAME three exporters a single
+  // presentation's own Download button uses, one format chosen for the
+  // whole batch — mirrors the Gallery's own openBatchDownloadChoice exactly
+  // (a 300ms stagger, since a burst of near-simultaneous programmatic
+  // downloads is exactly what some browsers throttle or block).
+  function openBatchDownloadChoice(ids) {
+    if (!ids.length) return;
+    var html =
+      '<div class="pd-modal-header"><h3>Download ' + ids.length + ' presentation' + (ids.length === 1 ? '' : 's') + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p class="pp-hint">Choose a format.</p>' +
+        '<div class="ppr-fmtchoices">' +
+          '<button type="button" class="pd-btn" data-fmt="html">' +
+            '<span data-ico="download" data-ico-size="16"></span> Offline HTML' +
+            '<small>Opens with no network — best for presenting on-site.</small></button>' +
+          '<button type="button" class="pd-btn" data-fmt="pptx">' +
+            '<span data-ico="layers" data-ico-size="16"></span> PowerPoint (.pptx)' +
+            '<small>Editable slide deck.</small></button>' +
+          '<button type="button" class="pd-btn" data-fmt="pdf">' +
+            '<span data-ico="clipboard" data-ico-size="16"></span> PDF' +
+            '<small>One slide per A4 page, ready to print.</small></button>' +
+        '</div></div>';
+    var m = openModal(html, 460);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-fmt]'), function (b) {
+      b.onclick = function () {
+        var fmt = this.dataset.fmt;
+        m.close();
+        var exportFn = fmt === 'html' ? exportOffline : fmt === 'pptx' ? exportPptx : exportPdf;
+        ids.forEach(function (id, i) {
+          var p = pprById(id); if (!p) return;
+          setTimeout(function () { exportFn(p); }, i * 300);
+        });
+      };
+    });
   }
 
   // Read-only view of the exported look, without downloading a file — reuses
@@ -512,6 +718,14 @@ window.PPR = (function () {
 
   function renderPreview() {
     var body = $('ppr-preview-body'); if (!body) return;
+    // Item 14 — "there should also be option to select multiple PPRs;
+    // previews will then combine all the PPRs". Deliberately a SEPARATE
+    // trigger from `selId`: checking 2+ boxes takes over the preview even
+    // if one of them also happens to be `selId`, and un-checking back down
+    // to 0/1 falls straight through to the ordinary single-presentation
+    // preview below with no special-casing needed.
+    var selIds = visibleSelectedPprIds();
+    if (selIds.length >= 2) { renderCombinedPreview(body, selIds); return; }
     var s = selId ? slides(selId) : [];
     if (!selId || !s.length) {
       body.innerHTML = '<div class="ppr-noslides">' +
@@ -535,6 +749,35 @@ window.PPR = (function () {
         openPpr(selId); slideAt = at; renderSlides();
       };
     });
+    if (window.Icons && Icons.hydrate) Icons.hydrate(body);
+  }
+
+  // Item 14's combined preview — each selected presentation's own slides,
+  // grouped under its own date/description heading, oldest first (reading
+  // order for "how this progressed"). A read-only overview: clicking a
+  // thumbnail here does not jump into an editor, unlike the single-
+  // presentation preview above, since which of several open presentations a
+  // click should land in is ambiguous by construction.
+  function renderCombinedPreview(body, ids) {
+    var ordered = ids.map(pprById).filter(Boolean)
+      .sort(function (a, b) { return String(a.ppr_date || '').localeCompare(String(b.ppr_date || '')); });
+    body.innerHTML = '<div class="ppr-combined">' + ordered.map(function (p) {
+      var s = slides(p.id);
+      return '<div class="ppr-combined-group">' +
+        '<div class="ppr-combined-head">' + esc(longDate(p.ppr_date)) +
+          (p.description ? ' — ' + esc(p.description) : '') +
+          ' <span class="pp-muted">(' + s.length + ' slide' + (s.length === 1 ? '' : 's') + ')</span></div>' +
+        (s.length
+          ? '<div class="ppr-thumbs">' + s.map(function (sl, i) {
+              var u = urlOfPhoto(sl.after_photo_id) || urlOfPhoto(sl.before_photo_id);
+              return '<div class="ppr-thumbwrap"><span class="ppr-thumbno">' + (i + 1) + '</span>' +
+                (u ? '<img class="ppr-thumb" src="' + esc(u) + '" alt="Slide ' + (i + 1) + '" />'
+                   : '<div class="ppr-thumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
+              '</div>';
+            }).join('') + '</div>'
+          : '<div class="ppr-noslides">No slides.</div>') +
+      '</div>';
+    }).join('') + '</div>';
     if (window.Icons && Icons.hydrate) Icons.hydrate(body);
   }
 
@@ -2064,6 +2307,9 @@ window.PPR = (function () {
     // markup overlay (item 14) — same convention as the hooks above.
     // moveItem is pure and needs no closure state; markupKey likewise.
     _moveItem: function (arr, from, to) { return moveItem(arr, from, to); },
-    _markupKey: function (slideId, pane) { return markupKey(slideId, pane); }
+    _markupKey: function (slideId, pane) { return markupKey(slideId, pane); },
+    // Item 14 — see archiveDirectionFor's own comment on why this is worth
+    // genuinely executing rather than only regex-checked.
+    _archiveDirectionFor: function (ps) { return archiveDirectionFor(ps); }
   };
 })();

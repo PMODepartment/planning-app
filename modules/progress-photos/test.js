@@ -358,7 +358,11 @@ ok('nothing in module.js still calls distinctKeyPlans/uploadKeyPlanFile', !/dist
 ok('its dead CSS (.pp-kpgrid/.pp-kpitem/.pp-kppreview*) was cleaned up alongside the JS', !/\.pp-kpgrid \{/.test(css) && !/\.pp-kpitem \{/.test(css));
 
 console.log('\n[12] Clicking a meeting row opens it');
-ok('row onclick calls openPpr', /r\.onclick = function \(\) \{ openPpr\(r\.dataset\.id\); \};/.test(pjs));
+// Item 14: the row's onclick gained a guard so ticking the new select
+// checkbox never also opens the presentation — same shape as the Gallery's
+// own [data-rowopen] guard in module.js.
+ok('row onclick calls openPpr, but not when the click started on the select checkbox',
+   /r\.onclick = function \(e\) \{\s*if \(e\.target\.closest\('\.pp-selcell'\)\) return;\s*openPpr\(r\.dataset\.id\);/.test(pjs));
 ok('row advertises the action via title', /title="Open this presentation\\'s slides"/.test(pjs));
 
 console.log('\n[13] Copy previous meeting → a WIZARD (follow-up feedback item 6), not an immediate blind copy');
@@ -1414,6 +1418,53 @@ console.log('\n[misc] insert().select() returns the new row id');
      /pp-lb-tool-labeled" id="pp-lb-markupedit"[\s\S]{0,200}<span>Markup<\/span>/.test(html));
   ok('the label styling widens the button rather than forcing text into a 38px square',
      /\.pp-lb-tool-labeled \{ width: auto;/.test(css));
+
+  console.log('\n[34] Item 14 — Presentations multi-select + batch Download / Archive / Merge, combined preview');
+  ok('a select checkbox is added to every presentation row, reusing the shared .pp-selcell sizing',
+     /pp-selcell"><input type="checkbox" data-sel=/.test(pjs));
+  ok('a header select-all\\/unselect-all tickbox exists, mirroring the Gallery\'s own List header (item 4)',
+     /id="ppr-selall"/.test(pjs) && /var selAll = host\.querySelector\('#ppr-selall'\);/.test(pjs));
+  ok('the checkbox set is SEPARATE from selId — selecting for batch actions never opens a presentation',
+     /var selectedPprs = \{\};/.test(pjs) && /function selectedPprIds\(\)/.test(pjs));
+  ok('batch actions are scoped to the VISIBLE (filtered) selection, not the raw map',
+     /function visibleSelectedPprIds\(\)[\s\S]{0,200}return selectedPprIds\(\)\.filter/.test(pjs));
+  ok('the selection toolbar swaps in for "+ New Presentation" the same way the Gallery\'s own tools swap',
+     /var hasSel = visible && onList && selIds\.length > 0;/.test(pjs));
+  ok('Merge is offered only once 2 or more are selected — a single "selection" is not a merge candidate',
+     /if \(mg\) mg\.style\.display = \(hasSel && canWrite && selIds\.length >= 2\) \? '' : 'none';/.test(pjs));
+  ok('checking 2+ presentations combines their slides in the preview pane, grouped per presentation',
+     /if \(selIds\.length >= 2\) \{ renderCombinedPreview\(body, selIds\); return; \}/.test(pjs));
+  (function () {
+    var start = pjs.indexOf('function renderCombinedPreview');
+    var end = pjs.indexOf('// ---------------------------------------------------- slides view/editor ---', start);
+    var body = pjs.slice(start, end);
+    ok('the combined preview groups oldest-first', /sort\(function \(a, b\)/.test(body));
+    ok('the combined preview never opens an editor on click (ambiguous which of several presentations it would be)',
+       !/im\.onclick|data-slide/.test(body));
+  })();
+  ok('batch download loops the SAME three exporters a single presentation uses, staggered like the Gallery\'s own',
+     /var exportFn = fmt === 'html' \? exportOffline : fmt === 'pptx' \? exportPptx : exportPdf;/.test(pjs) &&
+     /setTimeout\(function \(\) \{ exportFn\(p\); \}, i \* 300\);/.test(pjs));
+  ok('merge copies slides by REFERENCE (photo ids/captions), never duplicating a photo — item 13a\'s own rule',
+     /before_photo_id: sl\.before_photo_id, after_photo_id: sl\.after_photo_id,/.test(pjs));
+  ok('merge renumbers slide_no CONTINUOUSLY across all source presentations, not reset per source',
+     /n\+\+;[\s\S]{0,120}slide_no: n,/.test(pjs));
+  ok('merge ARCHIVES the sources afterward — it never deletes, so a merge cannot lose history',
+     /var ares = await sb\(\)\.from\(T_PPR\)\.update\(\{ archived: true,/.test(pjs));
+  ok('merge is tolerant of the slide-copy step failing AFTER the presentation was created — it reports rather than leaving a silently empty deck',
+     /Presentation created, but copying slides failed:/.test(pjs));
+  ok('a completed merge opens the new presentation directly, same as an ordinary "+ New Presentation" does',
+     /await load\(\);\s*openPpr\(newId\);\s*\};\s*\}\s*\n\s*\/\/ Item 14 — batch download/.test(pjs));
+  // Genuine execution of the reversible archive/restore direction — the
+  // exact kind of silent-wrong-data risk this module's own convention
+  // (directionDegFromDrag, deriveTradeForWorks) says deserves real running,
+  // not just a regex read.
+  eq('all active -> archive (the common case: batch-archiving a finished set)',
+     PPR._archiveDirectionFor([{ archived: false }, { archived: false }, { archived: false }]), true);
+  eq('all already archived -> restore', PPR._archiveDirectionFor([{ archived: true }, { archived: true }]), false);
+  eq('a tied 50/50 split -> archive (the majority-or-tie rule, stated in the code)',
+     PPR._archiveDirectionFor([{ archived: false }, { archived: true }]), true);
+  eq('a 2-of-3 archived majority -> restore', PPR._archiveDirectionFor([{ archived: true }, { archived: true }, { archived: false }]), false);
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

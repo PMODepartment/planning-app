@@ -487,7 +487,9 @@
   background: var(--pd-card); overflow: hidden; align-self: start;
 }
 .ppr-head, .ppr-row {
-  display: grid; grid-template-columns: 150px minmax(120px, 1fr) 110px 118px;
+  /* Leading 34px track is the item-14 select checkbox — the base 4 tracks
+     (Date/Description/Slides/Actions) are unchanged, just pushed over one. */
+  display: grid; grid-template-columns: 34px 150px minmax(120px, 1fr) 110px 118px;
   align-items: center;
 }
 .ppr-head {
@@ -569,6 +571,18 @@
   border: 1px solid var(--pd-line); border-radius: 3px; background: var(--pd-bg);
   display: block;
 }
+/* Item 14 combined preview (2+ presentations checked) — one group per
+   presentation, oldest first, reusing .ppr-thumbs for each group's own row. */
+.ppr-combined { padding: 4px 0 10px; }
+.ppr-combined-group + .ppr-combined-group { border-top: 1px solid var(--pd-line); margin-top: 4px; }
+.ppr-combined-head {
+  padding: 10px 14px 0; font-size: 12.5px; font-weight: 700; color: var(--pd-ink);
+}
+/* No click handler on these thumbs (which of several open presentations a
+   click should land in is ambiguous) — the zoom cursor would falsely
+   advertise one. */
+.ppr-combined .ppr-thumb { cursor: default; }
+.ppr-combined .ppr-noslides { padding: 8px 14px 14px; text-align: left; font-size: 13px; }
 
 /* ---- Slides view --------------------------------------------------------- */
 .ppr-slidehead, .ppr-meta {
@@ -698,6 +712,9 @@
   padding: 10px 12px; width: 100%; box-sizing: border-box;
 }
 .ppr-fmtchoices small { display: block; color: var(--pd-muted); font-weight: 400; font-size: 11.5px; }
+/* Merge wizard's source list (item 14) */
+.pp-mergelist { margin: 0 0 14px; padding-left: 20px; font-size: 13px; }
+.pp-mergelist li { margin-bottom: 4px; }
 
 /* Read-only Preview modal — reuses the export markup verbatim (see
    openPreviewModal), so this just needs to contain it without the export's

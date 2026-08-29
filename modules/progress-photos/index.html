@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260829a" />
-  <link rel="stylesheet" href="module.css?v=20260829m" />
+  <link rel="stylesheet" href="module.css?v=20260829n" />
 </head>
 <body>
   <div class="pd-app">
@@ -69,6 +69,14 @@
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-tmpl-new" title="Create a report template" style="display:none;">+ New template</button>
           <button class="pd-btn pp-tb-labeled" id="ppr-back" title="Back to the presentation list" style="display:none;">
             <span data-ico="arrowLeft" data-ico-size="16"></span> Presentations list</button>
+          <!-- PPR multi-select batch actions (item 14) — same swap-in pattern as
+               the Gallery's own selection tools: replace "+ New Presentation"
+               the moment 1+ rows are checked, restored by
+               PPR._syncSelChrome() the moment the selection empties. -->
+          <span class="pp-selcount-tb" id="ppr-selcount" style="display:none;"></span>
+          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="ppr-sel-download" style="display:none;">Download</button>
+          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="ppr-sel-archive" style="display:none;">Archive</button>
+          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="ppr-sel-merge" style="display:none;" title="Merge the selected presentations into one (needs 2 or more)">Merge…</button>
           <!-- Floor Plan screen tools -->
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="bim-new" title="Upload a floor plan" style="display:none;">+ Upload floor plan</button>
           <button class="pd-btn pp-tb-labeled" id="bim-place" title="Toggle pin-placement mode" style="display:none;">Place pin</button>
@@ -223,7 +231,7 @@
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <script src="module.js?v=20260829l"></script>
-  <script src="ppr.js?v=20260829h"></script>
+  <script src="ppr.js?v=20260829n"></script>
   <script src="pano.js?v=20260829l"></script>
   <script src="recon.js?v=20260829d"></script>
   <script src="bim.js?v=20260829k"></script>

@@ -2,6 +2,72 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Second feedback round, part 4 (item 13b confirmed, item 14 built): Presentations multi-select + batch Download/Archive/Merge, combined preview (2026-08-29)
+
+Owner's item 13b — *"in the presentation list view, by default no presentation should be selected;
+if a presentation is selected, only then should the preview show up"* — was already true, confirmed
+by reading `selId`'s only assignment (inside `openPpr`, i.e. on open, never on a bare row hover) and
+`renderPreview`'s own guard (`!selId` → "Select a presentation to preview its slides."). No change.
+
+**Item 14** — *"there should also be option to select multiple PPRs. previews will then combine all
+the PPRs. in a task bar, there should [be] the option to batch download, archive, merge"* — genuinely
+new, built from scratch.
+
+- **A checkbox per row, plus a header select-all/unselect-all tickbox** — the exact same shape this
+  module already uses for the Gallery's own List header (item 4), reusing `.pp-selcell`'s sizing/
+  centering rather than a near-duplicate class. ⚠️ **Deliberately a SEPARATE state from `selId`** —
+  `selId` means "this one presentation is open"; `selectedPprs` is the batch-action set, and checking
+  one never opens it (the checkbox click stops propagation via the row's own `.pp-selcell` guard, the
+  same pattern Gallery's `[data-rowopen]` handler already documents).
+- ⚠️ **Scoped to the currently VISIBLE (filtered) set, not the raw map** — `visibleSelectedPprIds()`
+  intersects the selection with `visiblePprs()`, so toggling "Show archived" can never let a batch
+  action silently reach a presentation the list no longer shows. Same rule Gallery's own
+  `visibleSelectedIds()` documents, applied here for the first time in ppr.js.
+- **The selection toolbar swaps in for "+ New Presentation"** exactly like the Gallery's own
+  selection-mode swap (`syncChrome`) — one `hasSel` flag drives every element, so the two states can
+  never both show. Re-synced on every `renderList()`, not only on a checkbox click, since a filter
+  toggle changes what's visible without touching the selection map itself.
+- **Checking 2+ presentations takes over the preview pane**, showing every selected presentation's
+  slides grouped under its own date/description heading, oldest first — `renderCombinedPreview`.
+  ⚠️ **Deliberately read-only**: clicking a thumbnail here does nothing (no `data-slide`/`onclick`),
+  since which of several open presentations a click should land in is ambiguous by construction; the
+  single-presentation preview below it keeps its click-to-jump-to-slide behaviour unchanged.
+- **Batch Download** loops the SAME three exporters (`exportOffline`/`exportPptx`/`exportPdf`) a
+  single presentation's own Download button already uses, one format chosen for the whole batch, with
+  the same 300ms stagger the Gallery's own batch download already established (a burst of
+  near-simultaneous programmatic downloads is exactly what some browsers throttle or block).
+- **Batch Archive toggles the whole selection ONE direction** (`archiveDirectionFor` — majority-or-tie
+  active → archive, majority archived → restore) rather than a per-row toggle, which has no single
+  well-defined "next state" for a mixed selection. Genuinely executed by a test across four cases
+  (all-active, all-archived, a 50/50 tie, a 2-of-3 majority) — the exact class of silently-flippable
+  logic this module's `directionDegFromDrag`/`deriveTradeForWorks` already earn the same treatment for.
+- **Merge** copies every selected presentation's slides — **by reference** (`before_photo_id`/
+  `after_photo_id`/captions/trade/works/location), never duplicating a photo, matching item 13a's own
+  rule that a presentation never owns a copy of a photo — into ONE new presentation, in date order,
+  renumbered **continuously** across all sources (never reset per source, so the merged deck reads
+  front-to-back with no numbering gaps). ⚠️ **The source presentations are ARCHIVED afterward, never
+  deleted** — a merge must not be able to lose history, and archiving is the retirement mechanism this
+  module already uses everywhere else. A slide-copy failure AFTER the new presentation was already
+  created is reported by name rather than silently leaving an empty deck behind. A completed merge
+  opens the new presentation directly, the same courtesy an ordinary "+ New Presentation" already gives.
+
+### Verified
+
+**477 checks green** (was 458), new `[34]` section — structural coverage of the whole flow, plus
+genuine execution of `archiveDirectionFor` across four cases (the one piece of new logic here that is
+silently reversible with nothing in the UI to catch a flipped comparison). One pre-existing test
+updated for the row-click guard's new shape (excluding clicks that start on the new checkbox), the
+same "healthy churn from an intentional change" this file's own log already follows. Function-diff
+against HEAD: `ppr.js` **0 lost / 7 added** (`selectedPprIds`, `visibleSelectedPprIds`,
+`archiveDirectionFor`, `archiveSelectedPprs`, `openMergeWizard`, `openBatchDownloadChoice`,
+`renderCombinedPreview`). 0 NUL bytes, CSS braces balanced (388/388), 0 duplicate `id=` attributes.
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module; the merge's real
+DB writes (creating a presentation, copying N slides, archiving M sources) and the combined preview's
+actual layout are verified structurally, not against a live project.
+
+`MODULE_V` → `20260829n`; `module.css` / `ppr.js` → `?v=20260829n`.
+
 ## Second feedback round, part 3 (items 12, 13a): markup was already fully built — the entry point wasn't discoverable (2026-08-29)
 
 Owner: *"you also still havent added the option to add mark-up including pencil, eraser, shapes,
