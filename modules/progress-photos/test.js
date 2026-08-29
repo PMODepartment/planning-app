@@ -371,14 +371,26 @@ ok('no expand button on tiles', !/pp-expand/.test(mjs + css));
 ok('lightbox has download/edit/delete', /pp-lb-download/.test(html) && /pp-lb-edit/.test(html) && /pp-lb-delete/.test(html));
 ok('lightbox buttons wired', /pp-lb-edit'\)[\s\S]{0,400}openForm\(r\)/.test(mjs));
 ok('edit/delete hidden for readers', /editBtn\.style\.display = canWrite/.test(mjs));
-ok('list view keeps its row actions', /pp-actcell">' \+ rowActions\(r\)/.test(mjs));
+// 2026-08-29 follow-up item 7 supersedes the earlier "List keeps its row
+// actions" design: no per-row icons anywhere any more, in EITHER view — the
+// lightbox (already asserted above) is the only place they live now.
+ok('list view has NO per-row action icons (item 7 — superseded design)',
+   !/pp-actcell/.test(mjs) && !/function rowActions/.test(mjs));
+ok('clicking a List row opens the lightbox instead', /data-rowopen="' \+ r\.id/.test(mjs) &&
+   /openLightbox\(this\.dataset\.rowopen\)/.test(mjs));
 
-console.log('\n[15] Tile grouping: month default + year/location/activity');
+console.log('\n[15] Grouping: month default, unified across List AND Gallery (item 6)');
 ok('default group is month', /var galleryGroupBy = 'month'/.test(mjs));
-ok('year grouping', /galleryGroupBy === 'year'/.test(mjs));
+ok('trade grouping (replaces List\'s old always-on, ungroupable Trade default)', /galleryGroupBy === 'trade'/.test(mjs));
 ok('location grouping', /galleryGroupBy === 'location'/.test(mjs));
-ok('activity grouping', /galleryGroupBy === 'activity'/.test(mjs));
-ok('group-by select rendered', /pp-gallery-groupby/.test(mjs));
+// "both no need for the group by year" — Year AND Activity are both gone,
+// not just Year; neither was named in the owner's Month/Trade/Location ask.
+ok('year grouping REMOVED', !/galleryGroupBy === 'year'/.test(mjs));
+ok('activity grouping REMOVED', !/galleryGroupBy === 'activity'/.test(mjs));
+ok('ONE shared group-by function feeds both listHTML and galleryHTML (not two mechanisms)',
+   /function groupRows\(list\)/.test(mjs) && (mjs.match(/groupRows\(list\)/g) || []).length >= 3);
+ok('the group-by select is a single static control in index.html\'s list bar, not rebuilt per view',
+   /id="pp-groupby"/.test(html) && !/pp-gallery-groupby/.test(mjs));
 ok('choice persisted per project', /uiKey\('gallerygroup'\)/.test(mjs));
 
 // ------------------------------------------------- behavioural: grouping logic --
@@ -604,14 +616,22 @@ console.log('\n[misc] insert().select() returns the new row id');
   // load()/render() both key off #pano-view existing — see the "not removed"
   // assertion below.
   ok('index.html no longer has a standalone 360° tab', !/data-screen="pano"/.test(html));
-  ok('index.html has the Capture 360° / Compare topbar tools (now on Gallery)', /id="pano-new"/.test(html) && /id="pano-compare-btn"/.test(html));
+  // 2026-08-29 follow-up item 2: "I only need the add media button... no
+  // need for the capture 360, compare over time" — the dedicated capture/
+  // compare buttons are REMOVED from the topbar entirely (superseding the
+  // earlier "folded onto Gallery" state, which had them showing there).
+  // pano.js's own openCaptureModal/openCompareModal are left defined but are
+  // now unreachable from the UI, the same "on hold" treatment 360°/3D
+  // already gets in the Add-media type picker.
+  ok('index.html no longer has the Capture 360° / Compare topbar buttons',
+     !/id="pano-new"/.test(html) && !/id="pano-compare-btn"/.test(html));
   ok('the 360° screen host div is kept (hidden), not deleted — pano.js\'s load()/render() key off it existing',
      /id="pp-screen-pano" hidden/.test(html));
   ok('OpenCV.js CDN script present (pinned version)', /opencv-js@4\.10\.0-release\.1\/dist\/opencv\.js/.test(html));
   ok('Three.js CDN script present (pinned, classic global build not the ES-module-only r150\\+)', /three@0\.128\.0\/build\/three\.min\.js/.test(html));
   ok('PANO.init is wired alongside PPR.init', /PANO\.init\(user, profile\)/.test(html));
-  ok('setScreen folds 360° tools into the Gallery screen (PANO._syncTools(isPhotos), not a dedicated isPano)',
-     /PANO\._syncTools\(isPhotos\)/.test(html) && !/isPano = s === 'pano'/.test(html));
+  ok('setScreen no longer calls PANO._syncTools — nothing left in the DOM for it to toggle',
+     !/PANO\._syncTools\(/.test(html));
   ok('pano.js exposes ensureLoaded/urlOf for the unified Gallery media strip (Batch C)',
      pnjs.includes('ensureLoaded:') && pnjs.includes('urlOf:'));
   ok('a poor-quality panorama is flagged in the gallery, not hidden', pnjs.includes('pano-badge-warn'));
@@ -669,13 +689,15 @@ console.log('\n[misc] insert().select() returns the new row id');
   // above — the Request-scan tool and the screen host div stay (the latter
   // hidden, kept because recon.js's load()/render() key off it existing).
   ok('index.html no longer has a standalone 3D tab', !/data-screen="recon"/.test(html));
-  ok('index.html has the Request-scan topbar tool + screen host (kept, hidden)',
-     /id="recon-new"/.test(html) && /id="pp-screen-recon" hidden/.test(html));
+  // Same removal as the 360° buttons above (item 2) — the screen host stays,
+  // the capture button is gone.
+  ok('index.html no longer has the Request-scan topbar button', !/id="recon-new"/.test(html));
+  ok('the 3D screen host div is kept (hidden), not deleted', /id="pp-screen-recon" hidden/.test(html));
   ok('PLYLoader CDN script present (same pinned Three.js revision as the 360° viewer)',
      /three@0\.128\.0\/examples\/js\/loaders\/PLYLoader\.js/.test(html));
   ok('RECON.init is wired alongside the other module inits', /RECON\.init\(user, profile\)/.test(html));
-  ok('setScreen folds 3D tools into the Gallery screen (RECON._syncTools(isPhotos), not a dedicated isRecon)',
-     /RECON\._syncTools\(isPhotos\)/.test(html) && !/isRecon = s === 'recon'/.test(html));
+  ok('setScreen no longer calls RECON._syncTools — nothing left in the DOM for it to toggle',
+     !/RECON\._syncTools\(/.test(html));
   ok('recon.js exposes ensureLoaded for the unified Gallery media strip (Batch C)',
      rcjs.includes('ensureLoaded:'));
   ['function openRequestForm', 'function approveRequest', 'function rejectRequest', 'function retractRequest',
@@ -917,12 +939,27 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var vis = \{\}; visible\(\)\.forEach/.test(mjs));
   ok('both List and Gallery rows carry a [data-sel] checkbox (one selection set for the whole Gallery screen)',
      /data-sel="' \+ r\.id \+ '"/.test(mjs) && (mjs.match(/data-sel="/g) || []).length >= 2);
-  ok('the List grid header gained a matching leading column so header/body stay aligned',
-     /<div><\/div><div>Photo<\/div>/.test(mjs));
+  // 2026-08-29 follow-up item 4: the leading header cell is now a REAL
+  // select-all/unselect-all checkbox (replacing the separate "Clear" button),
+  // not a blank spacer div.
+  ok('the List grid header\'s leading cell is a select-all checkbox, not a blank spacer',
+     /id="pp-selall"/.test(mjs) && /<div>Photo<\/div>/.test(mjs));
+  ok('the select-all checkbox toggles every VISIBLE row, matching visibleSelectedIds\' own scoping rule',
+     /selAll\.onchange = function \(\) \{[\s\S]{0,200}visible\(\)\.forEach/.test(mjs));
   ok('the three batch actions are Download / Add to Presentation / Archive',
      /pp-sel-download/.test(mjs) && /pp-sel-addppr/.test(mjs) && /pp-sel-archive/.test(mjs));
+  // Item 4 also REMOVES the separate "Clear" action — the header checkbox
+  // covers deselecting everything.
+  ok('the old separate "Clear" selection button is gone (item 4)', !/pp-sel-clear/.test(mjs) && !/pp-sel-clear/.test(html));
   ok('batch archive is tolerant of the pending migration, same as the single-item toggle', /pp-sel-archive'\)\.onclick[\s\S]{0,400}archive-flag\.sql/.test(mjs));
-  ok('index.html has the batch-select bar host, hidden by default', /id="pp-selbar" hidden/.test(html));
+  // Item 3: the whole separate boxed "selection bar" is GONE — its actions
+  // moved into the topbar tools row, toggled via syncChrome()'s explicit
+  // style.display (see [29]'s own note on why: `hidden` never worked here).
+  ok('the old standalone #pp-selbar box no longer exists in index.html', !/id="pp-selbar"/.test(html));
+  ok('the selection actions now live in the topbar tools row, hidden by default via inline style',
+     /id="pp-sel-download" style="display:none;"/.test(html) && /id="pp-selcount" style="display:none;"/.test(html));
+  ok('syncChrome() swaps "+ Add media"/Refresh for the selection tools based on visibleSelectedIds().length',
+     /function syncChrome\(\)[\s\S]{0,700}var has = ids\.length > 0;/.test(mjs));
   ok('Add to Presentation calls PPR.addPhotosToPresentation, not a re-implementation of slide-numbering', /PPR\.addPhotosToPresentation\(pprId, photoIds\)/.test(mjs));
   ok('ppr.js exports addPhotosToPresentation appending AFTER the existing slide count', /var n = slides\(pprId\)\.length;[\s\S]{0,200}slide_no: n \+ i \+ 1,/.test(pjs));
   ok('ppr.js exports listForPicker, excluding archived presentations from the target list', /listForPicker: function \(\) \{[\s\S]{0,200}!p\.archived/.test(pjs));
@@ -1173,6 +1210,101 @@ console.log('\n[misc] insert().select() returns the new row id');
     eq('stackGrid: a project with only ONE level collapses columns to a single shared bucket',
        BIM._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
   })();
+
+  // =========================================================== [30] =========
+  // Screenshot follow-up (2026-08-29): Gallery toolbar simplification, the
+  // selection-mode swap, select-all, batch download formats, and the
+  // mobile filter collapse.
+  console.log('\n[30] Gallery toolbar simplification, selection-mode swap, download formats, mobile filters');
+
+  ok('the "+ Add photos" button is renamed "+ Add media" (item 2 — covers photo/video/360/3D from one button)',
+     /id="pp-add" title="Upload photos, video, or other media">\+ Add media</.test(html));
+  ok('a comment explains WHY the capture buttons are gone and where their code still lives',
+     /openCaptureModal\/openCompareModal\/openRequestForm/.test(html));
+
+  // --- Item 3: selection-mode swap in the topbar tools row -------------------
+  // Structural, not executed: `rows`/`filters`/`selected`/`canWrite` are
+  // private to module.js's own closure (the whole point of the IIFE
+  // pattern) and this harness exposes no setter for them — genuinely
+  // driving syncChrome() would need PP.init() against a fake user/session,
+  // which risks disturbing every OTHER section's assumptions about shared
+  // module state. Same trade-off this file already accepts for Batch G's
+  // map/clustering (structural-only, state-heavy internals).
+  ok('syncChrome computes `has` from visibleSelectedIds().length, feeding every toggle below it',
+     /function syncChrome\(\) \{[\s\S]{0,300}var has = ids\.length > 0;/.test(mjs));
+  ok('"+ Add media"/its divider hide when EITHER a selection is active OR the user cannot write',
+     /\(has \|\| !canWrite\) \? 'none' : ''/.test(mjs));
+  ok('Refresh hides only while a selection is active (no role gate — everyone can refresh)',
+     /refresh\.style\.display = has \? 'none' : '';/.test(mjs));
+  ok('the count text and all three selection buttons are driven by the SAME `has` flag, so they can never disagree',
+     (mjs.match(/= has \? '' : 'none'/g) || []).length >= 1 &&
+     /\['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'\]\.forEach/.test(mjs));
+
+  // --- Item 4: select-all header checkbox ------------------------------------
+  ok('the select-all checkbox reflects "every visible row already checked" on render',
+     /var allSelected = vis\.length > 0 && vis\.every\(function \(r\) \{ return selected\[r\.id\]; \}\);/.test(mjs));
+
+  // --- Item 5: batch download format choice ----------------------------------
+  ok('openBatchDownloadChoice offers exactly HTML / PPTX / PDF, reusing ppr.js\'s own .ppr-fmtchoices visual language',
+     /function openBatchDownloadChoice\(ids\)/.test(mjs) && /ppr-fmtchoices/.test(mjs) &&
+     /data-fmt="html"/.test(mjs) && /data-fmt="pptx"/.test(mjs) && /data-fmt="pdf"/.test(mjs));
+  ok('exportSelectedPhotos dispatches to exactly one of three format-specific exporters', /function exportSelectedPhotos\(ids, fmt\)/.test(mjs) &&
+     /return exportSelectedPdf\(list\)/.test(mjs) && /return exportSelectedPptx\(list\)/.test(mjs) && /return exportSelectedOffline\(list\)/.test(mjs));
+  ok('all three formats share ONE image-collection function, so they can never embed a different picture of the same selection',
+     /function collectPhotoImages\(list, onProgress\)/.test(mjs) &&
+     (mjs.match(/collectPhotoImages\(list, function/g) || []).length >= 3);
+  ok('the PDF export keeps its captured element in NORMAL FLOW (the issues-lessons 2026-08-22 lesson — position:fixed on the captured node gives html2canvas a real width and a height of ZERO)',
+     /holder\.style\.cssText = 'position:fixed;left:-10000px;top:0;'/.test(mjs) && /holder\.appendChild\(wrap\)/.test(mjs));
+  ok('PPTX embedding strips the data: URI prefix (canvas.toDataURL always adds it; PptxGenJS\'s `data` option must not have it)',
+     /function stripDataPrefix\(uri\)/.test(mjs));
+  ok('the download-choice modal never fires for an empty selection', /function openBatchDownloadChoice\(ids\) \{\s*\n\s*if \(!ids\.length\) return;/.test(mjs));
+  // Genuine execution — the caption block every format reads.
+  eq('dlCaptionLines: description, then trade·works·location, then the date',
+     PP._dlCaptionLines({ description: 'Slab pour', trades: ['Structural'], works_multi: ['Formworks'], location: 'Tower 1', taken_at: '2026-03-15' }),
+     // Fmt.date is a bare passthrough stub in this harness (real formatting
+     // lives in the shared ui.js, not this module) — the ISO string is the
+     // correct expectation here, not a formatted date.
+     ['Slab pour', 'Structural · Formworks · Tower 1', '2026-03-15']);
+  eq('dlCaptionLines: blank fields are dropped, never rendered as empty lines',
+     PP._dlCaptionLines({ description: '', trades: [], works_multi: [], location: '', taken_at: '' }), []);
+
+  // --- Item 6: unified grouping, genuinely executed ---------------------------
+  (function () {
+    const photos = [
+      { id: 'p1', taken_at: '2026-06-01', trades: ['Structural'], location: 'Tower 1' },
+      { id: 'p2', taken_at: '2026-06-15', trades: ['Structural'], location: 'Tower 2' },
+      { id: 'p3', taken_at: '2026-07-01', trades: ['Architectural'], location: 'Tower 1' },
+      { id: 'p4', taken_at: '', trades: [], location: '' },
+    ];
+    const byMonth = PP._groupRows(photos, 'month');
+    eq('month grouping: newest month first', byMonth.map((g) => g.key), ['2026-07', '2026-06', 'Undated']);
+    eq('month grouping: the July label reads "July 2026"', byMonth[0].label, 'July 2026');
+    const byTrade = PP._groupRows(photos, 'trade');
+    eq('trade grouping: alphabetical, "Untagged" last', byTrade.map((g) => g.key), ['Architectural', 'Structural', 'Untagged']);
+    const byLoc = PP._groupRows(photos, 'location');
+    eq('location grouping: alphabetical, "Unassigned" last', byLoc.map((g) => g.key), ['Tower 1', 'Tower 2', 'Unassigned']);
+    eq('location grouping: Tower 1 holds both its photos regardless of trade', byLoc[0].items.map((r) => r.id), ['p1', 'p3']);
+  })();
+
+  // --- Item 7: no per-row action icons; the row itself opens the lightbox ----
+  ok('rowActions()/the per-row icon-button function is gone entirely (superseded design)', !/function rowActions/.test(mjs));
+  ok('the List grid dropped its trailing actions column (7 cells now, not 8)',
+     /grid-template-columns: 34px 120px minmax\(180px, 1\.4fr\) 150px 150px 160px 120px;/.test(css) &&
+     !/34px 120px minmax\(180px, 1\.4fr\) 150px 150px 160px 120px 158px/.test(css));
+
+  // --- Item 8: mobile filter collapse ------------------------------------------
+  ok('a "Filters" toggle button exists, desktop-invisible (display:none outside the phone media query)',
+     /id="pp-filttoggle"/.test(html) && /\.pp-filttoggle \{ display: none; \}/.test(css));
+  ok('the filter controls are wrapped in .pp-filters-body, which is display:contents on desktop (the SAME trick dashboard.css already uses for the module topbar wrap)',
+     /id="pp-filters-body"/.test(html) && /\.pp-filters-body \{ display: contents; \}/.test(css));
+  ok('on a phone the body is hidden until .pp-filters carries .open',
+     /\.pp-filters-body \{ display: none;/.test(css) && /\.pp-filters\.open \.pp-filters-body \{ display: flex; \}/.test(css));
+  ok('the toggle click handler toggles the .open class on #pp-filters', /\$\('pp-filters'\); if \(wrap\) wrap\.classList\.toggle\('open'\)/.test(mjs));
+
+  // --- The actual .pp-selbar[hidden] bug the screenshot exposed --------------
+  ok('the old buggy .pp-selbar element (display:flex beating the hidden attribute) no longer exists in module.css',
+     !/^\.pp-selbar \{/m.test(css));
+  ok('the fix is explained in module.css, not just silently removed', /always won\s+regardless of the `hidden` attribute/.test(css));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

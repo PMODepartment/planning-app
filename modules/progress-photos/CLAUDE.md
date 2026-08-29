@@ -2,6 +2,146 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Gallery screenshot follow-up: toolbar simplification, a real `.pp-selbar` bug, download formats, unified grouping, mobile filters (2026-08-29)
+
+Owner sent a phone screenshot of the Gallery screen with eight numbered items. Two of them
+(items 3 and 4) turned out to explain a real defect visible right there in the screenshot — the
+selection bar reading "0 selected" with nothing selected — rather than being pure feature asks.
+
+### Item 2 — one "+ Add media" button, capture buttons removed
+
+`+ Capture 360°`, `Compare over time` and `+ Request 3D scan` are gone from the topbar entirely.
+⚠️ **This is a further step past the 2026-08-29 "folded into Gallery" change**, which had moved
+those three buttons FROM their own tabs ONTO this row — the owner's follow-up says the row itself
+should only ever need one button. `pano.js`/`recon.js`'s capture functions
+(`openCaptureModal`/`openCompareModal`/`openRequestForm`) are left defined but are now
+**unreachable from the UI**, the same "on hold" treatment 360°/3D already gets in the Add-media
+type picker's disabled option. Existing captures still show and open from the media strip below
+the grid — only the ability to start a *new* one from this row is gone. `PANO._syncTools`/
+`RECON._syncTools` are no longer called (the buttons they toggled don't exist any more); the
+functions themselves are untouched in case 360°/3D work resumes and needs them again.
+
+### Items 3 + 4 — the selection bar's real bug, and its move into the topbar
+
+⚠️ **The screenshot's "0 selected" was not a display-logic bug — it was a CSS specificity trap.**
+`refreshSelBar()` correctly did `bar.hidden = !ids.length`, but `.pp-selbar { display: flex; ... }`
+in module.css sat at the exact same specificity as the browser's own `[hidden] { display: none }`
+rule — and an **author** stylesheet rule always wins over a **user-agent** one at equal
+specificity, regardless of what the `hidden` *attribute* says. So the bar rendered "0 selected"
+permanently no matter what the JS did. Confirmed by reading the actual CSS, not guessed.
+
+Fixed by removing the whole boxed bar and moving its three actions (Download / Add to
+Presentation / Archive) into the topbar tools row instead — toggled via an explicit
+`style.display` in `syncChrome()`, never the `hidden` attribute, which sidesteps the entire bug
+class rather than patching this one instance of it. `syncChrome()` (previously role-visibility
+only) now also decides, from one `has = visibleSelectedIds().length > 0` flag: **0 selected** →
+"+ Add media" + Refresh show, the selection tools hide; **N selected** → the reverse, plus a
+"N selected" count. Exactly one of the two states is ever visible, because both are driven off
+the same flag in the same function.
+
+### Item 4 (continued) — select-all/unselect-all replaces "Clear"
+
+The List grid's leading header cell (previously a blank spacer, kept only so header/body column
+counts matched) is now a real `#pp-selall` checkbox: checked when every currently-visible row is
+already selected, and toggling it selects/deselects the whole **visible** set — the same scoping
+rule `visibleSelectedIds()` already enforces elsewhere in this file, so a selection made under one
+filter can't be silently bulk-cleared by a header checkbox acting on a since-changed filter's full
+row set. The separate `pp-sel-clear` button is gone; this replaces it. Gallery/tile view has no
+equivalent header (there's no header row concept for a tile grid) — deselecting there is still
+per-tile, matching what was actually asked ("the table column header").
+
+### Item 5 — batch Download asks HTML / PDF / PPTX
+
+The old batch Download looped the single-photo `download(r)` (raw file downloads, one per
+selected photo, staggered 300ms apart). It's now `openBatchDownloadChoice(ids)` — reusing
+ppr.js's own `.ppr-fmtchoices` markup/CSS **verbatim** (its `openDownloadChoice` for
+presentations) so "pick a format" looks and behaves identically everywhere in this module — then
+one of three new exporters: `exportSelectedOffline` (self-contained HTML), `exportSelectedPdf`
+(html2pdf, one photo per A4 page), `exportSelectedPptx` (PptxGenJS, one photo per slide).
+- **A lean, self-contained copy of ppr.js's own image-embedding machinery**
+  (`dlToDataURL`/`dlBlobToImage`/downscale-to-1600px-JPEG-q0.82), not a cross-file reach into
+  ppr.js's private closure — this file's own established convention (see `reqMark()`'s comment)
+  for small helpers restated per independently-loaded file. All three formats share ONE
+  `collectPhotoImages(list, onProgress)`, so they can never embed a different picture of the same
+  selection.
+- ⚠️ **The PDF export's captured element stays in NORMAL FLOW**, following issues-lessons'
+  2026-08-22 lesson to the letter: `position:fixed`/`absolute` on the node html2pdf rasterises
+  gives html2canvas a real width and a height of **zero** — a byte-identical blank PDF with no
+  error. The off-screen parking lives on a `holder`; the captured `wrap` sits in normal flow
+  inside it.
+- ⚠️ **PptxGenJS's `data` option takes the payload WITHOUT the `data:` prefix**
+  `canvas.toDataURL()` always adds — `stripDataPrefix()`, same fix ppr.js's own PPTX exporter
+  already needed.
+- The caption block (`dlCaptionLines`) is one function feeding all three formats: description,
+  then trade·works·location, then the capture date — blank fields dropped rather than rendered as
+  empty lines.
+
+### Item 6 — List and Gallery share ONE grouping mechanism
+
+Previously List always grouped by Trade (fixed, no picker) and Gallery had its own separate
+Month/Year/Location/Activity picker — two mechanisms, two states. Owner: *"provide option to
+group by trade or by location or by month... same grouping as the tile view... both no need for
+the group by year."* Unified into one `groupRows(list)` fed by one persisted `galleryGroupBy`
+(`month` default | `trade` | `location`) and ONE static `#pp-groupby` selector living in the
+shared list bar — **Year and Activity are both dropped**, not just Year (neither was named in the
+owner's three-option list). `groupByTrade`/`galleryGroupKey`/`galleryGroupLabel`/
+`groupForGallery` are gone, replaced by `groupKeyOf`/`groupLabelOf`/`groupRows`.
+- ⚠️ **A real, pre-existing bug found by this pass's own genuine-execution test**: the month/year
+  sort was a plain `b.localeCompare(a)` with no "Undated" exclusion, so an undated photo's bucket
+  — starting with 'U', which sorts after every digit — came out **first** in a "newest month
+  first" ordering, reading as the most recent capture when it is actually unknown. This existed in
+  the ORIGINAL `groupForGallery` too, just never caught because no prior test's month-mode fixture
+  included an undated photo. Fixed: `Undated`/`Untagged`/`Unassigned` are now one shared trailing
+  set across all three modes, checked before the mode-specific comparator ever runs.
+
+### Item 7 — List loses its per-row action icons; the row itself opens the lightbox
+
+The trailing actions column (download/view/edit/delete icons, one `rowActions(r)` call per row)
+is gone — `rowActions()` itself is deleted. The List grid drops from 8 columns to 7
+(`grid-template-columns` trimmed to match; `min-width` reduced accordingly). Clicking anywhere on
+a row (except the checkbox cell) now opens the lightbox, whose existing download/edit/delete
+cluster covers what the row icons used to. This matches Gallery/tile view's own 2026-08-28 rule
+("no inline action icons... download/view/edit/delete all live in the lightbox") — the two views
+are consistent again.
+
+### Item 8 — filters collapsed by default on a phone
+
+`.pp-filters` gained a `#pp-filttoggle` button (desktop-invisible) and a `#pp-filters-body` wrapper
+around the actual controls. ⚠️ **`display: contents` on the wrapper is the SAME trick this app's
+own module-topbar wrapping already relies on** (`dashboard.css`'s `.pd-tb-main`/`.pd-tb-tools`) —
+on desktop/tablet the wrapper is invisible to layout, so this is byte-for-byte the old always-open
+row above the phone breakpoint; only below 700px does the body default to `display:none` until
+`.pp-filters` carries `.open` (toggled by a plain click handler).
+
+### Verified
+
+**423 checks green** (was 395 before fixing 10 assertions this batch's changes correctly broke,
+then adding new coverage — see below). Ten pre-existing assertions were UPDATED, not just made to
+pass: each encoded a behaviour this pass deliberately changed (row actions existing, Year/Activity
+grouping, the pano/recon topbar buttons, the blank header spacer, the boxed `#pp-selbar`) — the
+same "healthy churn from an intentional change" this file's own 2026-08-29 rename entry already
+established as the right way to read a batch of assertions changing at once.
+
+New `[30]` section covers every item above, genuinely EXECUTED where the logic is pure — via new
+test-only hooks `_groupRows(list, mode)` (save/restore `galleryGroupBy` around an injected mode)
+and `_dlCaptionLines(r)` — plus structural checks for everything DOM/state-heavy that would need
+`PP.init()` against a fake session to drive for real (the selection-mode swap's `syncChrome()` in
+particular; same trade-off this file already accepts for Batch G's map/clustering).
+
+Function-diff against the pre-batch commit: **6 lost, all deliberate** (`groupByTrade`,
+`galleryGroupKey`, `galleryGroupLabel`, `groupForGallery`, `rowActions`, `refreshSelBar` — each
+superseded by name above), **15 added**. 0 NUL bytes; CSS braces 380/380; all four touched files
+parse; 0 duplicate `id=` attributes in `index.html`.
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module. In particular:
+the three export formats have never had their output opened in a real viewer (only the embedding/
+flow-safety logic is verified, the same gap this file's PPR export work has always had), the
+mobile filter toggle's actual tap behaviour hasn't been seen on a real phone viewport, and the
+select-all checkbox's real DOM interaction (vs. the structural regex check here) is unverified.
+
+`MODULE_V` → `20260829j`; `module.css/js` → `?v=20260829j` (`ppr.js`/`pano.js`/`recon.js`/`bim.js`
+untouched this pass, left at their prior `?v=`).
+
 ## Batch G completed: Vertical Stacking for photos (item 16) — and a real Map/Stack wiring bug found while adding it (2026-08-29)
 
 Owner asked "what else is not done" after the Batches E–H push below. Re-checked the standing plan

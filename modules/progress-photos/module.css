@@ -72,6 +72,16 @@
   background: var(--pd-card); border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius); padding: 8px 12px;
 }
+/* Item 8 — filters collapsed by default on a phone ("filter options should
+   be hidden by default to make a cleaner UI"). `display:contents` is the
+   same trick this app's own module-topbar wrapping already relies on
+   (assets/css/dashboard.css's .pd-tb-main/.pd-tb-tools): on desktop the
+   wrapper is invisible to layout, so .pp-filters-body's children lay out
+   directly inside .pp-filters exactly as if this div didn't exist — nothing
+   above the phone breakpoint changes. The toggle button itself is
+   desktop-hidden below. */
+.pp-filters-body { display: contents; }
+.pp-filttoggle { display: none; }
 .pp-filt-ico { color: var(--pd-muted); flex: none; }
 .pp-filters .pd-input, .pp-filters .pd-select { height: 34px; font-size: 13px; }
 .pp-filters .pp-search { flex: 1 1 300px; min-width: 180px; }
@@ -108,13 +118,13 @@
 }
 .pp-grid-head, .pp-row {
   display: grid;
-  /* last column holds up to 4 row-action buttons (download/view/edit/delete):
-     4×27px + gaps + padding ≈ 150px, so 118px clipped the delete button.
-     Leading 34px column added for the batch-select checkbox (follow-up
-     feedback item 5) — the header/row column-count-must-match rule this
-     module already keeps (see the comment at listHTML's head markup). */
-  grid-template-columns: 34px 120px minmax(180px, 1.4fr) 150px 150px 160px 120px 158px;
-  min-width: 1050px; align-items: center;
+  /* Leading 34px column is the batch-select checkbox (the header cell is the
+     select-all/unselect-all tickbox, item 4) — the header/row column-count-
+     must-match rule this module already keeps (see the comment at
+     listHTML's head markup). No trailing actions column any more (item 7 —
+     per-row icons removed; the lightbox covers download/edit/delete now). */
+  grid-template-columns: 34px 120px minmax(180px, 1.4fr) 150px 150px 160px 120px;
+  min-width: 920px; align-items: center;
 }
 .pp-grid-head {
   position: sticky; top: 0; z-index: 2;
@@ -140,7 +150,9 @@
   border-radius: 999px; padding: 1px 8px;
 }
 
-.pp-row { border-bottom: 1px solid var(--pd-line); }
+/* cursor:pointer — the whole row opens the lightbox now (item 7: no more
+   per-row action icons; download/edit/delete live in the lightbox). */
+.pp-row { border-bottom: 1px solid var(--pd-line); cursor: pointer; }
 .pp-row:last-child { border-bottom: 0; }
 .pp-row:hover { background: var(--pd-bg); }
 .pp-row.pp-selrow { background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
@@ -162,10 +174,7 @@
   color: var(--pd-muted); cursor: default;
 }
 
-/* ---- Row actions --------------------------------------------------------- */
-/* The actions cell must never clip its buttons (unlike text cells, which ellipsize). */
-.pp-actcell { overflow: visible; }
-.pp-rowacts { display: flex; gap: 3px; padding: 0 6px; justify-content: flex-end; }
+/* ---- Icon buttons (used by the lightbox tools + PPR's own row actions) --- */
 .pp-iconbtn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 27px; height: 27px; cursor: pointer; font-size: 13px;
@@ -254,8 +263,9 @@
 .pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
 .pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
 
-/* Group-by control + month/year/location/activity group headings */
-.pp-gallerybar { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+/* Group-by control (item 6 — now ONE shared selector living in .pp-listbar,
+   not a per-view bar of its own) + the group headings both List and Gallery
+   render from it. */
 .pp-groupby {
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 12.5px; color: var(--pd-muted);
@@ -459,22 +469,17 @@
 .pp-addworksbtn { margin-top: 6px; font-size: 12.5px; padding: 5px 10px; }
 
 /* ============================================================================
-   Batch select bar (Gallery follow-up feedback item 5)
-   ⚠️ Today's Rounds (the feature this block was originally built for) was
-   removed entirely in Batch C (2026-08-29) — index.html/module.js's Rounds
-   markup and functions are gone, but this CSS rule survived because its
-   shape (a count + a row of action buttons) is EXACTLY what the new Gallery
-   batch-select bar needed, so it's reused rather than rebuilt. The other
-   Rounds-only rules that used to sit here (.pp-round-row/-chk/-thumb/-info/
-   -loc/-act/-last, plus their phone overrides below) had no such second use
-   and are deleted along with the feature.
+   Selection-mode topbar tools (item 3, 2026-08-29 follow-up)
+   ⚠️ The batch-select bar this section used to style (.pp-selbar, a boxed row
+   below the filters) is GONE — it always rendered "0 selected" because
+   `.pp-selbar { display:flex }` sat at the same specificity as the UA's
+   `[hidden] { display:none }` and, being an author rule, always won
+   regardless of the `hidden` attribute module.js set. Fixed by moving these
+   actions into the topbar tools row (#pp-topbar-tools) and toggling them with
+   an explicit style.display in syncChrome() instead of the `hidden`
+   attribute — see wireSelBar()'s own comment in module.js.
    ============================================================================ */
-.pp-selbar {
-  display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600;
-  color: var(--pd-ink); padding: 10px 12px; margin-bottom: 10px;
-  background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card));
-  border: 1px solid var(--pd-red); border-radius: var(--pd-radius);
-}
+.pp-selcount-tb { font-size: 12.5px; font-weight: 600; color: var(--pd-muted); padding: 0 4px; }
 
 /* ============================================================================
    PPR Presentations (the "View PPRs" screens)
@@ -975,16 +980,27 @@
     content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600;
   }
   .pp-row .pp-desc { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
-  .pp-row .pp-actcell { margin-top: 6px; }
-  .pp-rowacts { padding: 0; gap: 6px; }
   .pp-iconbtn { width: 40px; height: 40px; border-color: var(--pd-line); }
 
-  /* Filters stack into full-width rows rather than a cramped single line. */
-  .pp-filters { flex-wrap: wrap; gap: 8px; }
-  .pp-filters > * { flex: 1 1 100%; min-width: 0; }
+  /* Filters (item 8) — collapsed by default; the toggle button replaces the
+     desktop-only decorative icon and reveals .pp-filters-body on tap. Once
+     open, the controls stack into full-width rows rather than a cramped
+     single line (was `.pp-filters > *`, now scoped to the body's own
+     children since .pp-filters' direct children are just the toggle + body
+     now). */
+  .pp-filters { flex-wrap: wrap; gap: 8px; padding: 6px 12px; }
   .pp-filt-ico { display: none; }
+  .pp-filttoggle {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    background: none; border: 0; padding: 8px 0; color: var(--pd-ink);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .pp-filters-body { display: none; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .pp-filters.open .pp-filters-body { display: flex; }
+  .pp-filters-body > * { flex: 1 1 100%; min-width: 0; }
   .pp-datefield { flex: 1 1 calc(50% - 4px); }
   .pp-listbar { flex-wrap: wrap; gap: 8px; }
+  .pp-groupby { flex: 1 1 100%; }
 
   /* Lightbox: give the photo the screen and keep the controls thumb-sized. */
   .pp-lb-img { max-width: 96vw; max-height: 66vh; border-width: 2px; }
@@ -995,6 +1011,4 @@
   .pp-lb-cap { padding: 0 12px; }
 
   .pp-gallery { grid-template-columns: 1fr; gap: 12px; }
-
-  .pp-selbar { flex-wrap: wrap; }
 }

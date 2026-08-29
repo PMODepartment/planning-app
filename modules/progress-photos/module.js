@@ -184,7 +184,7 @@ window.ProgressPhotos = (function () {
       if (v === 'list' || v === 'gallery') view = v;
       collapsed = JSON.parse(localStorage.getItem(uiKey('collapsed')) || '{}') || {};
       var g = localStorage.getItem(uiKey('gallerygroup'));
-      if (['month', 'year', 'location', 'activity'].indexOf(g) >= 0) galleryGroupBy = g;
+      if (['month', 'trade', 'location'].indexOf(g) >= 0) galleryGroupBy = g;
     } catch (e) { collapsed = {}; }
   }
 
@@ -419,6 +419,20 @@ window.ProgressPhotos = (function () {
       await refreshQueueBadge();
       joinCollab();
     };
+    // Shared group-by (item 6) — a static, persistent select in the list bar
+    // (outside #pp-view), wired ONCE here rather than rebuilt by wireRows()
+    // on every render, unlike the row/tile markup itself.
+    if ($('pp-groupby')) {
+      $('pp-groupby').value = galleryGroupBy;
+      $('pp-groupby').onchange = function () { galleryGroupBy = this.value; saveUI(); render(); };
+    }
+    // Item 8 — filters collapsed by default on a phone; the toggle button is
+    // desktop-invisible (module.css), so this handler is harmless dead
+    // weight above the phone breakpoint rather than something that needs
+    // its own guard.
+    if ($('pp-filttoggle')) $('pp-filttoggle').onclick = function () {
+      var wrap = $('pp-filters'); if (wrap) wrap.classList.toggle('open');
+    };
     // List/Gallery is the shared .pd-viewtoggle. NB: `.pp-tab` now means the
     // topbar's Photos|PPRs screen tabs — don't select on it here.
     Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
@@ -458,13 +472,30 @@ window.ProgressPhotos = (function () {
     });
   }
 
+  // The single source of truth for what the Photos-screen tool row shows —
+  // called on every render AND on every selection change, so the two states
+  // (normal tools vs. selection tools) can never both be visible or both be
+  // hidden at once. Previously this only handled role-based visibility; the
+  // selection-mode swap (item 3: "when selecting photos, the download, add
+  // to presentation, and archive buttons then show up in the taskbar") is
+  // folded in here rather than a second parallel function, so there is one
+  // place that decides "+ Add media" vs. "N selected" for this row.
   function syncChrome() {
     Array.prototype.forEach.call(document.querySelectorAll('.pd-vt[data-view]'), function (b) {
       b.classList.toggle('active', b.dataset.view === view);
     });
-    // The upload action + its divider are planner+ only.
+    var ids = visibleSelectedIds();
+    var has = ids.length > 0;
+    // The upload action + its divider are planner+ only, AND hidden while a
+    // selection is active.
     ['pp-add', 'pp-sep-photos'].forEach(function (id) {
-      var el = $(id); if (el) el.style.display = canWrite ? '' : 'none';
+      var el = $(id); if (el) el.style.display = (has || !canWrite) ? 'none' : '';
+    });
+    var refresh = $('pp-refresh'); if (refresh) refresh.style.display = has ? 'none' : '';
+    var count = $('pp-selcount');
+    if (count) { count.style.display = has ? '' : 'none'; count.textContent = ids.length + ' selected'; }
+    ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'].forEach(function (id) {
+      var el = $(id); if (el) el.style.display = has ? '' : 'none';
     });
   }
 
@@ -824,6 +855,9 @@ window.ProgressPhotos = (function () {
     }
     var listbar = document.querySelector('.pp-listbar');
     if (listbar) listbar.style.visibility = rows.length ? '' : 'hidden';
+    // Keep the shared group-by select in step — restoreUI() can change
+    // galleryGroupBy on a project switch after wire()'s one-time setup ran.
+    if ($('pp-groupby')) $('pp-groupby').value = galleryGroupBy;
 
     // Clear-filters only shows when a filter is actually set (no orphan button).
     var anyFilter = ['from', 'to', 'trade', 'works', 'search'].some(function (k) { return filters[k]; }) ||
@@ -835,93 +869,77 @@ window.ProgressPhotos = (function () {
       host.innerHTML = '<div class="pp-empty">' +
         '<span data-ico="camera" data-ico-size="34"></span>' +
         '<p>No photos yet for this project.</p>' +
-        (canWrite ? '<p class="pp-hint">Use <strong>+ Add photos</strong> to upload the first batch.</p>' : '') +
+        (canWrite ? '<p class="pp-hint">Use <strong>+ Add media</strong> to upload the first batch.</p>' : '') +
         '</div>';
-      hydrate(host); refreshSelBar(); return;
+      hydrate(host); syncChrome(); return;
     }
     if (!list.length) {
       host.innerHTML = '<div class="pp-empty"><p>No photos match these filters.</p></div>';
-      refreshSelBar(); return;
+      syncChrome(); return;
     }
 
     host.innerHTML = (view === 'gallery' ? galleryHTML(list) : listHTML(list));
     hydrate(host);
     wireRows(host);
-    refreshSelBar();
+    syncChrome();
     paintRemote();
   }
 
   function hydrate(host) { if (window.Icons && Icons.hydrate) Icons.hydrate(host); }
 
-  function groupByTrade(list) {
-    var groups = {}, order = [];
-    list.forEach(function (r) {
-      // A photo can carry several trades now; it's grouped under its FIRST
-      // one only (a row appearing in several groups at once would break the
-      // "one row, one place" assumption List view's collapse state relies
-      // on) — the row itself still shows every trade it carries (see the
-      // Trade cell below), so nothing about the multi-select is hidden.
-      var t = (tradesOf(r)[0] || '').trim() || 'Untagged';
-      if (!groups[t]) { groups[t] = []; order.push(t); }
-      groups[t].push(r);
-    });
-    order.sort();
-    return order.map(function (t) { return { trade: t, items: groups[t] }; });
-  }
-
-  // ---- Gallery (tile view) grouping ----------------------------------------
-  // Default = capture month (owner feedback), with Year / Location / Activity
-  // as alternatives. Persisted per project like the trade-group collapse state.
+  // ---- Grouping — SHARED by List and Gallery views (2026-08-29 follow-up) --
+  // Previously List always grouped by Trade (its own groupByTrade()) and
+  // Gallery had a separate Month/Year/Location/Activity picker
+  // (groupForGallery()) — two mechanisms, two states, and List's grouping
+  // couldn't be changed at all. Owner feedback: "provide option to group by
+  // trade or by location or by month... same grouping as the tile view...
+  // both no need for the group by year." Year AND Activity are dropped
+  // (neither was asked for); Month/Trade/Location now drive BOTH views from
+  // one persisted setting, via one #pp-groupby selector in the list bar.
   var MONTH_NAMES = ['January','February','March','April','May','June','July',
     'August','September','October','November','December'];
-  var galleryGroupBy = 'month';   // month | year | location | activity
-  function galleryGroupKey(r) {
-    if (galleryGroupBy === 'year') {
-      var y = (r.taken_at || '').slice(0, 4);
-      return y || 'Undated';
+  var galleryGroupBy = 'month';   // month (default) | trade | location
+  function groupKeyOf(r) {
+    if (galleryGroupBy === 'trade') {
+      // A photo can carry several trades now; it's grouped under its FIRST
+      // one only (a row appearing in several groups at once would break the
+      // "one row, one place" assumption the collapse state relies on) — the
+      // row itself still shows every trade it carries.
+      return (tradesOf(r)[0] || '').trim() || 'Untagged';
     }
     if (galleryGroupBy === 'location') return r.location || 'Unassigned';
-    if (galleryGroupBy === 'activity') return r.activity_name || r.works || 'Unassigned';
     // month (default)
     var m = (r.taken_at || '').slice(0, 7);   // YYYY-MM
     return m || 'Undated';
   }
-  function galleryGroupLabel(key) {
+  function groupLabelOf(key) {
     if (galleryGroupBy === 'month' && /^\d{4}-\d{2}$/.test(key)) {
       var parts = key.split('-');
       return MONTH_NAMES[(+parts[1]) - 1] + ' ' + parts[0];
     }
     return key;
   }
-  function groupForGallery(list) {
+  function groupRows(list) {
     var groups = {}, order = [];
     list.forEach(function (r) {
-      var k = galleryGroupKey(r);
+      var k = groupKeyOf(r);
       if (!groups[k]) { groups[k] = []; order.push(k); }
       groups[k].push(r);
     });
-    // Month/year: most recent first. Location/activity: alphabetical, "Unassigned" last.
-    if (galleryGroupBy === 'month' || galleryGroupBy === 'year') {
-      order.sort(function (a, b) { return b.localeCompare(a); });
-    } else {
-      order.sort(function (a, b) {
-        if (a === 'Unassigned') return 1; if (b === 'Unassigned') return -1;
-        return a.localeCompare(b);
-      });
-    }
-    return order.map(function (k) { return { key: k, label: galleryGroupLabel(k), items: groups[k] }; });
-  }
-
-  function rowActions(r) {
-    return '<div class="pp-rowacts">' +
-      '<button class="pp-iconbtn" data-act="download" data-id="' + r.id + '" title="Download photo">' +
-        '<span data-ico="download" data-ico-size="15"></span></button>' +
-      '<button class="pp-iconbtn" data-act="open" data-id="' + r.id + '" title="View full size">' +
-        '<span data-ico="eye" data-ico-size="15"></span></button>' +
-      (canWrite ? '<button class="pp-iconbtn" data-act="edit" data-id="' + r.id + '" title="Edit details">✎</button>' +
-                  '<button class="pp-iconbtn pp-del" data-act="del" data-id="' + r.id + '" title="Delete photo">' +
-                  '<span data-ico="trash" data-ico-size="15"></span></button>' : '') +
-      '</div>';
+    // Month: most recent first, "Undated" always trailing (⚠️ a real,
+    // pre-existing bug this file's own test found: a plain string sort put
+    // "Undated" FIRST, since 'U' sorts after every digit — an undated bucket
+    // has no place in a recency ordering and reading it as "most recent"
+    // is exactly backwards). Trade/Location: alphabetical, the "nothing
+    // tagged" bucket ("Untagged"/"Unassigned") always last.
+    var UNTAGGED = { Untagged: 1, Unassigned: 1, Undated: 1 };
+    order.sort(function (a, b) {
+      var au = !!UNTAGGED[a], bu = !!UNTAGGED[b];
+      if (au && !bu) return 1; if (bu && !au) return -1;
+      if (au && bu) return 0;
+      return galleryGroupBy === 'month' ? b.localeCompare(a) : a.localeCompare(b);
+    });
+    return order.map(function (k) { return { key: k, label: groupLabelOf(k), items: groups[k] }; });
   }
 
   function thumb(r, cls) {
@@ -942,18 +960,25 @@ window.ProgressPhotos = (function () {
   }
 
   function listHTML(list) {
-    // A leading checkbox column (Gallery batch select, follow-up feedback item
-    // 5) — one more cell in the header AND every row branch below, so the
-    // grid columns stay aligned (this file's own standing rule for its grid).
+    // A leading select-all checkbox (item 4 — replaces the old separate
+    // "Clear" button in the removed selection bar) plus one cell per data
+    // column. The trailing action-icons column is GONE (item 7: "no need for
+    // the buttons per row... upon opening the photo, the photos should be
+    // fine" — the lightbox's own download/edit/delete cluster covers it),
+    // so the header and every row branch below now share 7 cells, not 8.
+    var vis = list.filter(function (r) { return !!r; });
+    var allSelected = vis.length > 0 && vis.every(function (r) { return selected[r.id]; });
     var head = '<div class="pp-grid-head">' +
-      '<div></div><div>Photo</div><div>Description</div><div>Trade</div><div>Works</div>' +
-      '<div>Location</div><div>Capture Date</div><div></div></div>';
+      '<div class="pp-cell pp-selcell"><input type="checkbox" id="pp-selall"' +
+        (allSelected ? ' checked' : '') + ' title="Select all shown" /></div>' +
+      '<div>Photo</div><div>Description</div><div>Trade</div><div>Works</div>' +
+      '<div>Location</div><div>Capture Date</div></div>';
 
-    var body = groupByTrade(list).map(function (g) {
-      var isCol = !!collapsed[g.trade];
-      var header = '<div class="pp-group" data-trade="' + Fmt.esc(g.trade) + '">' +
+    var body = groupRows(list).map(function (g) {
+      var isCol = !!collapsed[g.key];
+      var header = '<div class="pp-group" data-group="' + Fmt.esc(g.key) + '">' +
         '<span class="pp-caret" data-ico="' + (isCol ? 'chevronRight' : 'chevronDown') + '" data-ico-size="14"></span>' +
-        '<strong>' + Fmt.esc(g.trade) + '</strong>' +
+        '<strong>' + Fmt.esc(g.label) + '</strong>' +
         '<span class="pp-groupcount">' + g.items.length + '</span></div>';
       if (isCol) return header;
       return header + g.items.map(function (r) {
@@ -961,7 +986,9 @@ window.ProgressPhotos = (function () {
         // supplies the headings); at phone width the head is hidden and the row
         // restacks under the thumbnail, where each value needs its own label —
         // module.css renders these via .pp-cell[data-l]::before.
-        return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
+        // Clicking the row opens the lightbox (item 7); the checkbox stops that
+        // click from bubbling (wired in wireRows) so selecting never opens it.
+        return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '" data-rowopen="' + r.id + '">' +
           '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '"' +
             (selected[r.id] ? ' checked' : '') + ' /></div>' +
           '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
@@ -970,7 +997,6 @@ window.ProgressPhotos = (function () {
           '<div class="pp-cell" data-l="Works">' + Fmt.esc(worksOf(r).join(', ') || '—') + '</div>' +
           '<div class="pp-cell" data-l="Location">' + Fmt.esc(r.location || '—') + '</div>' +
           '<div class="pp-cell pp-date" data-l="Captured">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
-          '<div class="pp-cell pp-actcell">' + rowActions(r) + '</div>' +
           '</div>';
       }).join('');
     }).join('');
@@ -980,17 +1006,11 @@ window.ProgressPhotos = (function () {
 
   // Tile view: just the photo -- no description/table, no action icons on the
   // tile itself (owner feedback). Download/view/edit/delete live in the
-  // lightbox once a photo is opened.
+  // lightbox once a photo is opened. Grouping is picked from the SHARED
+  // #pp-groupby selector in the list bar (index.html) now, not a picker of
+  // its own — see groupRows()'s own comment.
   function galleryHTML(list) {
-    var bar = '<div class="pp-gallerybar">' +
-      '<label class="pp-groupby">Group by ' +
-        '<select class="pd-select" id="pp-gallery-groupby">' +
-          '<option value="month"' + (galleryGroupBy === 'month' ? ' selected' : '') + '>Month captured</option>' +
-          '<option value="year"' + (galleryGroupBy === 'year' ? ' selected' : '') + '>Year</option>' +
-          '<option value="location"' + (galleryGroupBy === 'location' ? ' selected' : '') + '>Location</option>' +
-          '<option value="activity"' + (galleryGroupBy === 'activity' ? ' selected' : '') + '>Activity</option>' +
-        '</select></label></div>';
-    var body = groupForGallery(list).map(function (g) {
+    var body = groupRows(list).map(function (g) {
       return '<div class="pp-gallerygroup">' +
         '<div class="pp-gallerygrouphead"><strong>' + Fmt.esc(g.label) + '</strong>' +
           '<span class="pp-groupcount">' + g.items.length + '</span></div>' +
@@ -1013,7 +1033,7 @@ window.ProgressPhotos = (function () {
           '</figure>';
         }).join('') + '</div></div>';
     }).join('');
-    return bar + body;
+    return body;
   }
 
   // Batch E item 8 — a cropped/zoomed view of the floor plan centred on this
@@ -1134,12 +1154,10 @@ window.ProgressPhotos = (function () {
   }
 
   function wireRows(host) {
-    var gb = $('pp-gallery-groupby');
-    if (gb) gb.onchange = function () { galleryGroupBy = this.value; saveUI(); render(); };
     Array.prototype.forEach.call(host.querySelectorAll('.pp-group'), function (g) {
       g.onclick = function () {
-        var t = g.dataset.trade;
-        collapsed[t] = !collapsed[t];
+        var k = g.dataset.group;
+        collapsed[k] = !collapsed[k];
         saveUI(); render();
       };
     });
@@ -1154,6 +1172,17 @@ window.ProgressPhotos = (function () {
         else if (a === 'del') remove(r);
       };
     });
+    // Item 7 — the List row itself opens the lightbox (per-row action icons
+    // are gone: "upon opening the photo, the photos should be fine" — the
+    // lightbox's own download/edit/delete cluster covers what those icons
+    // used to). Clicks starting on the select checkbox are excluded so
+    // ticking a box never also opens the photo.
+    Array.prototype.forEach.call(host.querySelectorAll('[data-rowopen]'), function (row) {
+      row.onclick = function (e) {
+        if (e.target.closest('.pp-selcell')) return;
+        openLightbox(this.dataset.rowopen);
+      };
+    });
     // Batch E item 8 — the expandable key-plan-style pin icon on a Gallery tile.
     Array.prototype.forEach.call(host.querySelectorAll('[data-pinpreview]'), function (btn) {
       btn.onclick = function (e) { e.stopPropagation(); openPinPreview(this.dataset.pinpreview); };
@@ -1166,9 +1195,19 @@ window.ProgressPhotos = (function () {
         if (this.checked) selected[this.dataset.sel] = true; else delete selected[this.dataset.sel];
         var card = this.closest('.pp-row, .pp-card');
         if (card) card.classList.toggle('pp-selrow', this.checked);
-        refreshSelBar();
+        syncChrome();
       };
     });
+    // Item 4 — select/unselect ALL currently visible rows, replacing the old
+    // separate "Clear" button. Scoped to visible() (the same filtered set
+    // the header checkbox's own "all checked?" state reflects), not the
+    // raw `selected` map, matching visibleSelectedIds()' own rule.
+    var selAll = host.querySelector('#pp-selall');
+    if (selAll) selAll.onchange = function () {
+      var on = this.checked;
+      visible().forEach(function (r) { if (on) selected[r.id] = true; else delete selected[r.id]; });
+      render();
+    };
   }
   function byId(id) { return rows.filter(function (r) { return r.id === id; })[0]; }
 
@@ -1182,23 +1221,21 @@ window.ProgressPhotos = (function () {
     var vis = {}; visible().forEach(function (r) { vis[r.id] = true; });
     return Object.keys(selected).filter(function (id) { return vis[id]; });
   }
-  function refreshSelBar() {
-    var bar = $('pp-selbar'); if (!bar) return;
-    var ids = visibleSelectedIds();
-    bar.hidden = !ids.length;
-    var c = $('pp-selcount'); if (c) c.textContent = ids.length + ' selected';
-  }
+  // ⚠️ There used to be a separate refreshSelBar()/#pp-selbar element toggled
+  // via the `hidden` ATTRIBUTE, but `.pp-selbar { display: flex }` in
+  // module.css sat at the SAME specificity as the UA's `[hidden] {
+  // display:none }` rule and, being an AUTHOR rule, always won regardless of
+  // `hidden` — so the bar showed "0 selected" permanently no matter what the
+  // JS did (screenshot: 2026-08-29). The whole element is gone now (moved
+  // into the topbar tools row, toggled via syncChrome()'s explicit
+  // `style.display`, never the `hidden` attribute), which sidesteps that bug
+  // class entirely rather than just patching this one instance of it.
   function wireSelBar() {
-    if ($('pp-sel-clear')) $('pp-sel-clear').onclick = function () { selected = {}; render(); };
-    if ($('pp-sel-download')) $('pp-sel-download').onclick = async function () {
-      var ids = visibleSelectedIds();
-      for (var i = 0; i < ids.length; i++) {
-        var r = byId(ids[i]); if (r) await download(r);
-        // A small stagger between triggers — several near-simultaneous
-        // programmatic downloads from one click are exactly what some
-        // browsers throttle/block as looking automated.
-        await new Promise(function (res) { setTimeout(res, 300); });
-      }
+    // Item 5: choose a format instead of downloading each raw file — mirrors
+    // ppr.js's own openDownloadChoice for presentations, so "Download" means
+    // the same thing (pick HTML/PDF/PPTX) everywhere in this module.
+    if ($('pp-sel-download')) $('pp-sel-download').onclick = function () {
+      openBatchDownloadChoice(visibleSelectedIds());
     };
     if ($('pp-sel-archive')) $('pp-sel-archive').onclick = async function () {
       var ids = visibleSelectedIds();
@@ -1351,6 +1388,240 @@ window.ProgressPhotos = (function () {
     a.href = u;
     a.download = (r.photo_url || 'photo').split('/').pop();
     document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // -------------------------------------------------- batch download (item 5) --
+  // "when clicking download, app should ask what format: html, pdf, or
+  // pptx" — mirrors ppr.js's own openDownloadChoice for presentations
+  // exactly, so "Download" asks the same three-way question everywhere in
+  // this module rather than silently downloading N raw files.
+  function openBatchDownloadChoice(ids) {
+    if (!ids.length) return;
+    // Reuses ppr.js's own .ppr-fmtchoices markup/CSS verbatim (its
+    // openDownloadChoice for presentations) — one shared visual language for
+    // "pick a download format" everywhere in this module.
+    var html =
+      '<div class="pd-modal-header"><h3>Download ' + ids.length + ' photo' + (ids.length === 1 ? '' : 's') + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p class="pp-hint">Choose a format.</p>' +
+        '<div class="ppr-fmtchoices">' +
+          '<button type="button" class="pd-btn" data-fmt="html">' +
+            '<span data-ico="download" data-ico-size="16"></span> Offline HTML' +
+            '<small>Opens with no network — best for viewing on-site.</small></button>' +
+          '<button type="button" class="pd-btn" data-fmt="pptx">' +
+            '<span data-ico="layers" data-ico-size="16"></span> PowerPoint (.pptx)' +
+            '<small>One photo per slide.</small></button>' +
+          '<button type="button" class="pd-btn" data-fmt="pdf">' +
+            '<span data-ico="clipboard" data-ico-size="16"></span> PDF' +
+            '<small>One photo per page, ready to print.</small></button>' +
+        '</div></div>';
+    var m = openModal(html, 460);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-fmt]'), function (b) {
+      b.onclick = function () { var fmt = this.dataset.fmt; m.close(); exportSelectedPhotos(ids, fmt); };
+    });
+  }
+
+  // Image-embedding helpers — a small, self-contained copy of ppr.js's own
+  // toDataURL/blobToImage/collectSlideImages (this file's established
+  // convention: small helpers are restated per independently-loaded file
+  // rather than reached into another file's private closure — see reqMark()'s
+  // own comment). Downscaling keeps a multi-photo export from becoming an
+  // enormous file full of untouched full-resolution site photos.
+  var DL_MAXW = 1600, DL_JPEG_Q = 0.82;
+  function dlBlobToImage(blob) {
+    return new Promise(function (resolve, reject) {
+      var u = URL.createObjectURL(blob);
+      var im = new Image();
+      im.onload = function () { URL.revokeObjectURL(u); resolve(im); };
+      im.onerror = function () { URL.revokeObjectURL(u); reject(new Error('decode failed')); };
+      im.src = u;
+    });
+  }
+  async function dlToDataURL(url) {
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var blob = await resp.blob();
+    var img = await dlBlobToImage(blob);
+    var scale = Math.min(1, DL_MAXW / (img.naturalWidth || DL_MAXW));
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round((img.naturalWidth || DL_MAXW) * scale));
+    c.height = Math.max(1, Math.round((img.naturalHeight || DL_MAXW) * scale));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', DL_JPEG_Q);
+  }
+  // Every selected photo's image, embedded as a downscaled data URI — shared
+  // by all three export formats below so they can never show a different
+  // picture of the same selection. `onProgress(i,total)` is optional.
+  async function collectPhotoImages(list, onProgress) {
+    var imgs = {}, failed = 0;
+    var jobs = list.map(function (r) { return urlOf(r); }).filter(function (u, i, arr) {
+      return u && arr.indexOf(u) === i;
+    });
+    for (var i = 0; i < jobs.length; i++) {
+      if (onProgress) onProgress(i, jobs.length);
+      try { imgs[jobs[i]] = await dlToDataURL(jobs[i]); }
+      catch (e) { failed++; console.warn('progress-photos: could not embed an image —', e && e.message); }
+      await new Promise(function (r) { setTimeout(r, 0); });
+    }
+    return { imgs: imgs, failed: failed };
+  }
+  // Caption block shared across all three formats — description, then
+  // trade/works/location, then the capture date, exactly the fields the
+  // List/Gallery views themselves show for a photo.
+  function dlCaptionLines(r) {
+    var tags = [tradesOf(r).join(', '), worksOf(r).join(', '), r.location].filter(Boolean).join(' · ');
+    return [r.description || '', tags, r.taken_at ? Fmt.date(r.taken_at) : ''].filter(Boolean);
+  }
+  var DL_CSS =
+    'body{margin:0;font-family:Montserrat,Segoe UI,Arial,sans-serif;color:#231F20;background:#F4F4F4}' +
+    'header{background:#EE3124;color:#fff;padding:16px 22px}' +
+    'header h1{margin:0;font-size:19px;letter-spacing:.02em}' +
+    '.wrap{max-width:900px;margin:0 auto;padding:18px}' +
+    '.item{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:14px;margin-bottom:16px}' +
+    '.item{break-inside:avoid;page-break-inside:avoid}' +
+    '.item:not(:last-of-type){break-after:page;page-break-after:always}' +
+    '.item img{width:100%;display:block;border:1px solid #DCDBDB;background:#F4F4F4}' +
+    '.missing{padding:40px;text-align:center;color:#9a9a9a;font-size:13px;border:1px solid #DCDBDB}' +
+    '.cap{margin-top:8px;font-size:13px;color:#4a4a4a}' +
+    'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +
+    '@media print{body{background:#fff}.item{border:0}}';
+  function dlItemHTML(r, imgs) {
+    var u = urlOf(r);
+    var d = u ? imgs[u] : '';
+    var img = d ? '<img src="' + d + '" alt="' + Fmt.esc(r.description || '') + '" />'
+                : '<div class="missing">Image unavailable</div>';
+    var cap = dlCaptionLines(r).map(function (l) { return Fmt.esc(l); }).join('<br/>');
+    return '<section class="item">' + img + (cap ? '<div class="cap">' + cap + '</div>' : '') + '</section>';
+  }
+  function dlBodyHTML(list, imgs) {
+    return '<header><h1>' + Fmt.esc(projName || pid) + ' — Progress Photos</h1></header>' +
+      '<div class="wrap">' + list.map(function (r) { return dlItemHTML(r, imgs); }).join('') + '</div>' +
+      '<footer>Generated ' + Fmt.esc(Fmt.date(new Date().toISOString().slice(0, 10))) +
+      ' from the Planners Dashboard · Megawide Construction Corporation</footer>';
+  }
+
+  async function exportSelectedPhotos(ids, fmt) {
+    var list = ids.map(byId).filter(Boolean);
+    if (!list.length) { UI.toast('Nothing to download', 'warn'); return; }
+    if (fmt === 'pdf') return exportSelectedPdf(list);
+    if (fmt === 'pptx') return exportSelectedPptx(list);
+    return exportSelectedOffline(list);
+  }
+
+  async function exportSelectedOffline(list) {
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing offline copy</h3></div>' +
+      '<div class="pp-form"><p id="pp-dl-msg">Embedding images…</p></div>', 420);
+    var msg = $('pp-dl-msg');
+    var res = await collectPhotoImages(list, function (i, total) {
+      if (msg) msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+    });
+    var html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
+      '<title>' + Fmt.esc(projName || pid) + ' — Progress Photos</title>' +
+      '<style>' + DL_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs) + '</body></html>';
+    var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'Photos ' + (projName || pid) + '.html';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    m.close();
+    UI.toast('Offline copy downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
+      res.failed ? 'warn' : 'ok');
+  }
+
+  async function exportSelectedPdf(list) {
+    if (typeof html2pdf !== 'function') {
+      UI.toast('The PDF library did not load — check the connection and reload.', 'error'); return;
+    }
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing PDF</h3></div>' +
+      '<div class="pp-form"><p id="pp-dl-msg">Embedding images…</p></div>', 420);
+    var msg = $('pp-dl-msg');
+    var holder = null;
+    try {
+      var res = await collectPhotoImages(list, function (i, total) {
+        if (msg) msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+      });
+      if (msg) msg.textContent = 'Building PDF…';
+      // ⚠️ Same rule ppr.js's own exportPdf documents (issues-lessons,
+      // 2026-08-22): the captured element must stay in NORMAL FLOW, or
+      // html2canvas gets a real width and a height of ZERO — a byte-identical
+      // blank PDF with no error. Off-screen parking goes on a HOLDER; `wrap`
+      // sits in normal flow inside it.
+      holder = document.createElement('div');
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;';
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'width:900px;';
+      wrap.innerHTML = '<style>' + DL_CSS + '</style>' + dlBodyHTML(list, res.imgs);
+      holder.appendChild(wrap);
+      document.body.appendChild(holder);
+
+      await html2pdf().set({
+        margin: [8, 8, 8, 8],
+        filename: 'Photos ' + (projName || pid) + '.pdf',
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#F4F4F4' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css'] }
+      }).from(wrap).save();
+
+      m.close();
+      UI.toast('PDF downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
+        res.failed ? 'warn' : 'ok');
+    } catch (e) {
+      m.close(); UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
+    } finally {
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+    }
+  }
+
+  async function exportSelectedPptx(list) {
+    if (typeof PptxGenJS !== 'function') {
+      UI.toast('The PowerPoint library did not load — check the connection and reload.', 'error'); return;
+    }
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Preparing PowerPoint</h3></div>' +
+      '<div class="pp-form"><p id="pp-dl-msg">Embedding images…</p></div>', 420);
+    var msg = $('pp-dl-msg');
+    try {
+      var res = await collectPhotoImages(list, function (i, total) {
+        if (msg) msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
+      });
+      if (msg) msg.textContent = 'Building file…';
+      var imgs = res.imgs;
+
+      var pptx = new PptxGenJS();
+      pptx.defineLayout({ name: 'PP_WIDE', width: 13.33, height: 7.5 });
+      pptx.layout = 'PP_WIDE';
+
+      var title = pptx.addSlide();
+      title.background = { color: 'EE3124' };
+      title.addText(projName || pid, { x: 0.6, y: 2.6, w: 12, h: 0.8, fontSize: 28, bold: true, color: 'FFFFFF' });
+      title.addText(list.length + ' photo' + (list.length === 1 ? '' : 's'),
+        { x: 0.6, y: 3.5, w: 12, h: 1, fontSize: 16, color: 'FFFFFF' });
+
+      // PptxGenJS's `data` option takes the payload WITHOUT the `data:`
+      // prefix canvas.toDataURL() always adds (same as ppr.js's own exporter).
+      function stripDataPrefix(uri) { return uri ? uri.replace(/^data:/, '') : ''; }
+
+      list.forEach(function (r) {
+        var slide = pptx.addSlide();
+        var u = urlOf(r), data = u ? imgs[u] : '';
+        if (data) slide.addImage({ data: stripDataPrefix(data), x: 1.67, y: 0.4, w: 10, h: 5.6, sizing: { type: 'contain', w: 10, h: 5.6 } });
+        else slide.addText('Photo not set', { x: 1.67, y: 0.4, w: 10, h: 5.6, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
+        var cap = dlCaptionLines(r).join('   ·   ');
+        slide.addText(cap, { x: 0.6, y: 6.15, w: 12.13, h: 0.8, fontSize: 11, color: '4A4A4A', align: 'center' });
+      });
+
+      m.close();
+      await pptx.writeFile({ fileName: 'Photos ' + (projName || pid) + '.pptx' });
+      UI.toast('PowerPoint downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
+        res.failed ? 'warn' : 'ok');
+    } catch (e) {
+      m.close(); UI.toast('PowerPoint error: ' + ((e && e.message) || e), 'error');
+    }
   }
 
   // ------------------------------------------------------- markup editor ---
@@ -2442,6 +2713,20 @@ window.ProgressPhotos = (function () {
     // in test.js) captures which canvas 2D calls actually fired per shape
     // type — the one way to tell "drew a rect" from "silently did nothing".
     _drawMarkupObjects: function (ctx, objs, w, h) { drawMarkupObjects(ctx, objs, w, h); },
-    _markupHitTest: function (objs, nx, ny, w, h) { return markupHitTest(objs, nx, ny, w, h); }
+    _markupHitTest: function (objs, nx, ny, w, h) { return markupHitTest(objs, nx, ny, w, h); },
+    // Test-only hook for the unified List+Gallery grouping (2026-08-29
+    // follow-up item 6) — genuinely executes groupRows() with an INJECTED
+    // mode, rather than only regex-checking the source, the same convention
+    // as every hook above. Saves/restores the real galleryGroupBy so this
+    // can't leak state into any other test that runs after it.
+    _groupRows: function (list, mode) {
+      var saved = galleryGroupBy; galleryGroupBy = mode;
+      try { return groupRows(list); } finally { galleryGroupBy = saved; }
+    },
+    // Test-only hook for the batch-download caption block (item 5) — the
+    // exact three lines (desc / trade·works·location / date) every one of
+    // the three export formats reads, so a change here provably affects all
+    // three rather than only the one format someone happened to test by eye.
+    _dlCaptionLines: function (r) { return dlCaptionLines(r); }
   };
 })();
