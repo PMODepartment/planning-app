@@ -73,10 +73,13 @@ window.ProgressPhotos = (function () {
   }
   var migrationWarned = false;             // warn once per session, not per save
   var migrationWarnedMulti = false;        // same, for the 2026-08-29 trades/works_multi columns
-  var roundsFilter = '';
-  var roundsSelected = {};                 // location-combo key -> true (walkthrough queue)
-  var walkState = null;                    // {queue:[comboKey,...], at:0} while a walkthrough modal chain is open
-  var _roundsComboByKey = {};              // comboKey -> {key, values, label}, refreshed each renderRounds()
+  // Today's Rounds (the streamlined-walkthrough screen) was removed entirely
+  // per owner feedback (2026-08-29, "Rounds can be removed") — its state vars
+  // (roundsFilter/roundsSelected/walkState/_roundsComboByKey) and its render/
+  // wire/walkthrough functions are gone with it. locCombos()/photoLocCombos()
+  // further down are NOT part of that removal — they're the shared location-
+  // enumeration helpers bim.js's pin picker and ppr.js's Report Templates
+  // builder both depend on, and stay exactly where they were.
 
   // ===== live collaboration (presence + "who's editing this photo") =========
   // Shared PDCollab layer (Supabase Realtime): topbar avatars, a colored flag on
@@ -411,7 +414,6 @@ window.ProgressPhotos = (function () {
       await loadSchedule();
       fillFilterOptions();
       await refreshQueueBadge();
-      refreshRoundsIfVisible();
       joinCollab();
     };
     // List/Gallery is the shared .pd-viewtoggle. NB: `.pp-tab` now means the
@@ -438,7 +440,6 @@ window.ProgressPhotos = (function () {
     $('pp-add').onclick = function () { openUpload(); };
     $('pp-refresh').onclick = function () { load(); };
     if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
-    if ($('pp-rounds-search')) $('pp-rounds-search').oninput = function () { roundsFilter = this.value; renderRounds(); };
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -497,6 +498,15 @@ window.ProgressPhotos = (function () {
     if (window.PDSync) PDSync.cachePut('pp:' + pid, rows);   // keep the offline cache current
 
     await signAll();
+    // Batch C (2026-08-29): the Gallery feed is now UNIFIED (photos/videos +
+    // panoramas + done 3D reconstructions, one grid) — load the other two
+    // modules' data alongside this module's own so the merge has something
+    // to merge. Each call is a no-op once already loaded, so switching
+    // between screens and back doesn't re-fetch every time.
+    await Promise.all([
+      (window.PANO && PANO.ensureLoaded) ? PANO.ensureLoaded() : Promise.resolve(),
+      (window.RECON && RECON.ensureLoaded) ? RECON.ensureLoaded() : Promise.resolve()
+    ]);
     fillFilterOptions();
     render();
   }
@@ -783,10 +793,14 @@ window.ProgressPhotos = (function () {
 
   // --------------------------------------------------------------- render ---
   function render() {
-    refreshRoundsIfVisible();   // keep Rounds live-consistent with load()/remote changes too
     var host = $('pp-view');
     var list = visible();
     lightboxIds = list.map(function (r) { return r.id; });
+    // Independent of the photo grid's own empty-state branches below (a
+    // project can have panoramas/3D scans with zero regular photos, or vice
+    // versa), so this runs unconditionally rather than only on the final
+    // "has photos" path.
+    renderMediaStrip();
 
     // The count + view toggle live in the static list bar (Drawing Register's
     // .dr-listbar pattern), so they don't get rebuilt on every render.
@@ -960,6 +974,78 @@ window.ProgressPhotos = (function () {
         }).join('') + '</div></div>';
     }).join('');
     return bar + body;
+  }
+
+  // -------------------------------------------------------- 360°/3D media strip
+  // Folded into the Gallery screen (2026-08-29 feedback: "Rounds can be
+  // removed. 360 and 3D should be incorporated in the Gallery") rather than
+  // interleaved into the photo grid itself. Panoramas and reconstructions are
+  // a different SHAPE of record (no trade/works, a different open-viewer of
+  // their own, no lightbox arrow-navigation), so merging them into
+  // visible()/thumb()/wireRows() would risk the well-tested photo pipeline
+  // for a presentational preference. This strip renders below the photo grid
+  // -- same screen, same scroll, no separate tab -- reads the SAME
+  // location/date/search filters as the grid (never Trade/Works, which don't
+  // apply to either kind), and is entirely absent from the DOM when there's
+  // nothing to show rather than an empty heading. PANO.list()/RECON.doneList()
+  // and PANO.ensureLoaded/RECON.ensureLoaded (called from load(), below) are
+  // what make this possible without a second fetch cycle owned by this file.
+  function mediaStripMatches(item) {
+    var lv = item.location_values || {};
+    var locOk = Object.keys(filters.locValues || {}).every(function (lid) {
+      var want = filters.locValues[lid];
+      return !want || (lv[lid] || '') === want;
+    });
+    if (!locOk) return false;
+    var d = item.taken_at || (item.created_at || '').slice(0, 10);
+    if (filters.from && (!d || d < filters.from)) return false;
+    if (filters.to && (!d || d > filters.to)) return false;
+    var q = filters.search.trim().toLowerCase();
+    if (q && (item.location || '').toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  }
+  function mediaStripItems() {
+    var panos = (window.PANO && PANO.list ? PANO.list() : []).filter(mediaStripMatches)
+      .map(function (p) { return { _kind: 'panorama', _src: p }; });
+    var recons = (window.RECON && RECON.doneList ? RECON.doneList() : []).filter(mediaStripMatches)
+      .map(function (r) { return { _kind: 'reconstruction', _src: r }; });
+    return panos.concat(recons);
+  }
+  function mediaStripHTML() {
+    var items = mediaStripItems();
+    if (!items.length) return '';
+    return '<div class="pp-mediastrip">' +
+      '<div class="pp-mediastriphead"><strong>360&deg; &amp; 3D captures</strong>' +
+        '<span class="pp-groupcount">' + items.length + '</span></div>' +
+      '<div class="pp-mediastripgrid">' + items.map(function (it) {
+        var r = it._src;
+        var isPano = it._kind === 'panorama';
+        var u = isPano && window.PANO && PANO.urlOf ? PANO.urlOf(r) : '';
+        var label = isPano ? '360° panorama' : '3D scan';
+        var date = r.taken_at || r.created_at || '';
+        return '<button type="button" class="pp-mediatile" data-kind="' + it._kind + '" data-id="' + Fmt.esc(r.id) + '" title="' + Fmt.esc(label) + '">' +
+          (u ? '<img src="' + Fmt.esc(u) + '" alt="" />' :
+               '<span class="pp-mediatile-ico" data-ico="' + (isPano ? 'compass' : 'box') + '" data-ico-size="22"></span>') +
+          '<span class="pp-mediatile-badge">' + Fmt.esc(isPano ? '360°' : '3D') + '</span>' +
+          '<span class="pp-mediatile-cap">' + Fmt.esc(r.location || 'Unassigned') + (date ? ' · ' + Fmt.esc(Fmt.date(date)) : '') + '</span>' +
+          '</button>';
+      }).join('') + '</div></div>';
+  }
+  function wireMediaStrip(host) {
+    Array.prototype.forEach.call(host.querySelectorAll('.pp-mediatile'), function (b) {
+      b.onclick = function () {
+        var id = this.dataset.id;
+        if (this.dataset.kind === 'panorama') { if (window.PANO && PANO.open) PANO.open(id); }
+        else { if (window.RECON && RECON.openById) RECON.openById(id); }
+      };
+    });
+  }
+  function renderMediaStrip() {
+    var host = $('pp-media-strip');
+    if (!host) return;
+    host.innerHTML = mediaStripHTML();
+    hydrate(host);
+    wireMediaStrip(host);
   }
 
   function wireRows(host) {
@@ -1204,7 +1290,7 @@ window.ProgressPhotos = (function () {
     preset = preset || {};
     var today = new Date().toISOString().slice(0, 10);
     var html =
-      '<div class="pd-modal-header"><h3>' + (preset.walk ? 'Capture — ' + preset.walk.at + ' of ' + preset.walk.total : 'Add photos') + '</h3>' +
+      '<div class="pd-modal-header"><h3>Add photos</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
         '<p class="pp-hint">Fields below apply to every photo in this batch — edit any ' +
@@ -1226,8 +1312,7 @@ window.ProgressPhotos = (function () {
         '<div class="pp-progress" id="pp-prog" hidden></div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
-        (preset.walk ? '<button class="pd-btn" id="pp-skip">Skip this location</button>' +
-          '<button class="pd-btn" id="pp-endwalk">End walkthrough</button>' : '<button class="pd-btn" data-close>Cancel</button>') +
+        '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-save">Upload</button></div>';
 
     var m = openModal(html, 640);
@@ -1235,10 +1320,6 @@ window.ProgressPhotos = (function () {
     wireTradeWorks('pp');
     wireKeyPlanField('pp');
     hydrate(m.el);
-    if (preset.walk && $('pp-skip')) $('pp-skip').onclick = function () { m.close(); advanceWalkthrough(); };
-    if (preset.walk && $('pp-endwalk')) $('pp-endwalk').onclick = function () {
-      m.close(); walkState = null; roundsSelected = {}; renderRounds();
-    };
 
     $('pp-save').onclick = async function () {
       var files = $('pp-files').files;
@@ -1288,7 +1369,6 @@ window.ProgressPhotos = (function () {
       if (queued) UI.toast(queued + ' photo' + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
-      if (preset.walk) advanceWalkthrough();
       if (typeof preset.onDone === 'function') preset.onDone(newIds);
     };
   }
@@ -1689,17 +1769,6 @@ window.ProgressPhotos = (function () {
     };
   }
 
-  // ------------------------------------------------------- Today's Rounds ---
-  // The streamlined repeat-visit capture flow: a checklist of distinct
-  // location-value COMBINATIONS drawn from the schedule's own activities
-  // (not a separate location list), ranked by recent capture history, each
-  // showing its last photo + current activity, single-tap capture or
-  // multi-select into a sequential walkthrough.
-  function refreshRoundsIfVisible() {
-    var h = document.getElementById('pp-screen-rounds');
-    if (h && !h.hidden) renderRounds();
-  }
-
   // Every distinct combination of location values that appears on at least
   // one schedule activity -- these are the "places to visit", the same
   // generalization WBS leaves used to be, now over Location Breakdown values.
@@ -1736,106 +1805,12 @@ window.ProgressPhotos = (function () {
     return out;
   }
 
-  function renderRounds() {
-    var host = $('pp-rounds-view');
-    if (!host) return;
-    if (!pid) { host.innerHTML = '<div class="pp-empty">Select a project.</div>'; return; }
-    if (!LOC_LEVELS.length) {
-      host.innerHTML = '<div class="pp-empty"><p>No Location Breakdown set up for this project yet.</p>' +
-        '<p class="pp-hint">Build it in Project Schedule (Group menu &rarr; Location Breakdown&hellip;), or use ' +
-        '<strong>+ Add photos</strong> on the Photos tab for an untracked location in the meantime.</p></div>';
-      return;
-    }
-    var combos = locCombos();
-    _roundsComboByKey = {};
-    combos.forEach(function (c) { _roundsComboByKey[c.key] = c; });
-    if (!combos.length) {
-      host.innerHTML = '<div class="pp-empty"><p>No activities have a Location Breakdown value assigned yet in Project Schedule.</p></div>';
-      return;
-    }
-    var q = roundsFilter.trim().toLowerCase();
-    var items = combos.map(function (c) { return { combo: c, last: lastCaptureAt(c.values), act: resolveActivity(c.values) }; });
-    if (q) items = items.filter(function (it) { return it.combo.label.toLowerCase().indexOf(q) >= 0; });
-
-    var visited = items.filter(function (it) { return it.last; })
-      .sort(function (a, b) { return (b.last.taken_at || '').localeCompare(a.last.taken_at || ''); });
-    var unvisited = items.filter(function (it) { return !it.last; })
-      .sort(function (a, b) { return a.combo.label.localeCompare(b.combo.label); });
-
-    var selCount = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; }).length;
-    var bar = selCount ? ('<div class="pp-selbar">' + selCount + ' location' + (selCount === 1 ? '' : 's') +
-      ' selected <button class="pd-btn pd-btn-primary" id="pp-startwalk">Start walkthrough</button>' +
-      '<button class="pd-btn" id="pp-clearsel">Clear</button></div>') : '';
-
-    function row(it) {
-      var u = it.last ? urlOf(it.last) : '';
-      return '<div class="pp-round-row">' +
-        '<input type="checkbox" class="pp-round-chk" data-key="' + Fmt.esc(it.combo.key) + '"' +
-          (roundsSelected[it.combo.key] ? ' checked' : '') + ' />' +
-        (u ? '<img class="pp-round-thumb" src="' + Fmt.esc(u) + '" alt="" />' :
-             '<div class="pp-round-thumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
-        '<div class="pp-round-info">' +
-          '<div class="pp-round-loc">' + Fmt.esc(it.combo.label) + '</div>' +
-          (it.act ? '<div class="pp-round-act">' + Fmt.esc(it.act.name || it.act.id) + '</div>' : '') +
-          (it.last ? '<div class="pp-round-last">Last captured ' + Fmt.date(it.last.taken_at) + '</div>' :
-                     '<div class="pp-round-last pp-muted">Not yet captured</div>') +
-        '</div>' +
-        '<button class="pd-btn" data-cap="' + Fmt.esc(it.combo.key) + '">Capture</button>' +
-        '</div>';
-    }
-
-    var html = bar;
-    if (visited.length) html += '<div class="pp-round-sec">Recent rounds</div>' + visited.map(row).join('');
-    if (unvisited.length) html += '<div class="pp-round-sec">Other schedule locations</div>' + unvisited.map(row).join('');
-    if (!visited.length && !unvisited.length) html += '<div class="pp-empty"><p>No locations match this search.</p></div>';
-    host.innerHTML = html;
-    hydrate(host);
-    wireRounds(host);
-  }
-
-  function wireRounds(host) {
-    if ($('pp-startwalk')) $('pp-startwalk').onclick = startWalkthrough;
-    if ($('pp-clearsel')) $('pp-clearsel').onclick = function () { roundsSelected = {}; renderRounds(); };
-    Array.prototype.forEach.call(host.querySelectorAll('.pp-round-chk'), function (c) {
-      c.onchange = function () { roundsSelected[this.dataset.key] = this.checked; renderRounds(); };
-    });
-    Array.prototype.forEach.call(host.querySelectorAll('[data-cap]'), function (b) {
-      b.onclick = function () {
-        var combo = _roundsComboByKey[this.dataset.cap];
-        openUpload({ locationValues: combo ? combo.values : {}, location: combo ? combo.label : '' });
-      };
-    });
-  }
-
-  function startWalkthrough() {
-    var keys = Object.keys(roundsSelected).filter(function (k) { return roundsSelected[k]; });
-    if (!keys.length) { UI.toast('Select at least one location first', 'warn'); return; }
-    walkState = { queue: keys, at: 0, total: keys.length };
-    openWalkStep();
-  }
-  function advanceWalkthrough() {
-    if (!walkState) return;
-    walkState.at++;
-    openWalkStep();
-  }
-  function openWalkStep() {
-    if (!walkState || walkState.at >= walkState.queue.length) {
-      if (walkState) UI.toast('Walkthrough complete', 'ok');
-      walkState = null; roundsSelected = {}; renderRounds();
-      return;
-    }
-    var key = walkState.queue[walkState.at];
-    var combo = _roundsComboByKey[key];
-    openUpload({ locationValues: combo ? combo.values : {}, location: combo ? combo.label : '',
-      walk: { at: walkState.at + 1, total: walkState.total } });
-  }
 
   return {
     init: init,
     // The PPR screen shares this module's project selector + trade vocabulary.
     onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); },
     trades: function () { return TRADES.slice(); },
-    renderRounds: renderRounds,
     _syncChrome: syncChrome,
     _closeLightbox: closeLightbox,
     _stepLightbox: stepLightbox,
@@ -1868,6 +1843,12 @@ window.ProgressPhotos = (function () {
     // subtly wrong empty-array-vs-null check would silently hide a photo's
     // trades on every pre-migration row.
     _tradesOf: function (r) { return tradesOf(r); },
-    _worksOf: function (r) { return worksOf(r); }
+    _worksOf: function (r) { return worksOf(r); },
+    // Test-only hooks for the Batch C (2026-08-29) 360°/3D media strip — lets
+    // test.js genuinely execute the location/date/search filter match and
+    // the panorama+reconstruction merge, rather than only regex-checking the
+    // source, the same way _tradesOf/_worksOf are exercised above.
+    _mediaStripMatches: function (item) { return mediaStripMatches(item); },
+    _mediaStripItems: function () { return mediaStripItems(); }
   };
 })();

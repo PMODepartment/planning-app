@@ -146,7 +146,7 @@ const documentStub = {
  'pp-refresh', 'pp-sep-photos', 'pp-sync', 'pp-sync-n', 'pp-presence',
  'pp-lightbox', 'pp-lb-img', 'pp-lb-cap', 'pp-lb-close', 'pp-lb-prev',
  'pp-lb-next', 'pp-lb-download', 'pp-lb-edit', 'pp-lb-delete',
- 'pp-rounds-view', 'pp-rounds-search', 'pp-screen-rounds',
+ 'pp-media-strip',
  'ppr-view', 'ppr-count', 'ppr-listbar', 'ppr-countbar', 'ppr-f-from',
  'ppr-f-to', 'ppr-clearfilters', 'ppr-new', 'ppr-back',
 ].forEach(ensure);
@@ -414,7 +414,10 @@ console.log('\n[misc] insert().select() returns the new row id');
   while ((rm = ruleRe.exec(css))) fffRules.push(rm[1].trim());
   // Each entry pairs #fff with a rule that ALSO sets a solid brand background
   // (--pd-red / --pd-bad) — confirmed against the shipped CSS, not assumed.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active/;
+  // .pp-mediatile-badge (Batch C, 2026-08-29) added to the list on the same
+  // basis as .pano-badge-warn just above it: a solid-brand-background badge
+  // (color-mix red), white text always readable regardless of theme.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active|\.pp-mediatile-badge/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -565,13 +568,23 @@ console.log('\n[misc] insert().select() returns the new row id');
   ].forEach((sig) => ok(sig + '() exists in pano.js', pnjs.includes(sig)));
   ok('a low-match pair flags the whole panorama poor, not silently kept "ok"',
      /matches < MIN_GOOD_MATCHES \|\| !H\) \{ quality = 'poor'/.test(pnjs));
-  ok('index.html has the 360° tab', /data-screen="pano">360/.test(html));
-  ok('index.html has the Capture 360° / Compare topbar tools', /id="pano-new"/.test(html) && /id="pano-compare-btn"/.test(html));
-  ok('index.html has the 360° screen host', /id="pp-screen-pano"/.test(html));
+  // Batch C (2026-08-29): the standalone 360° tab is GONE — capture and the
+  // existing-panorama list are folded into the Gallery screen itself, per
+  // owner feedback ("360 and 3D should be incorporated in the Gallery").
+  // pano.js's own screen/host div stay in the DOM (permanently hidden) since
+  // load()/render() both key off #pano-view existing — see the "not removed"
+  // assertion below.
+  ok('index.html no longer has a standalone 360° tab', !/data-screen="pano"/.test(html));
+  ok('index.html has the Capture 360° / Compare topbar tools (now on Gallery)', /id="pano-new"/.test(html) && /id="pano-compare-btn"/.test(html));
+  ok('the 360° screen host div is kept (hidden), not deleted — pano.js\'s load()/render() key off it existing',
+     /id="pp-screen-pano" hidden/.test(html));
   ok('OpenCV.js CDN script present (pinned version)', /opencv-js@4\.10\.0-release\.1\/dist\/opencv\.js/.test(html));
   ok('Three.js CDN script present (pinned, classic global build not the ES-module-only r150\\+)', /three@0\.128\.0\/build\/three\.min\.js/.test(html));
   ok('PANO.init is wired alongside PPR.init', /PANO\.init\(user, profile\)/.test(html));
-  ok('setScreen dispatches the pano screen', /isPano = s === 'pano'/.test(html));
+  ok('setScreen folds 360° tools into the Gallery screen (PANO._syncTools(isPhotos), not a dedicated isPano)',
+     /PANO\._syncTools\(isPhotos\)/.test(html) && !/isPano = s === 'pano'/.test(html));
+  ok('pano.js exposes ensureLoaded/urlOf for the unified Gallery media strip (Batch C)',
+     pnjs.includes('ensureLoaded:') && pnjs.includes('urlOf:'));
   ok('a poor-quality panorama is flagged in the gallery, not hidden', pnjs.includes('pano-badge-warn'));
 
   // ============================================================ Phase 4 ===
@@ -623,12 +636,19 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('rejectRequest and retractRequest never call submit-reconstruction', !/reject[\s\S]{0,400}submit-reconstruction/.test(rcjs));
   ok('the approval confirm dialog states this is a real billed job before submitting',
      /This is a real, billed job/.test(rcjs));
-  ok('index.html has the 3D tab + Request-scan tool + screen host',
-     /data-screen="recon">3D/.test(html) && /id="recon-new"/.test(html) && /id="pp-screen-recon"/.test(html));
+  // Batch C (2026-08-29): the standalone 3D tab is GONE, same fold as 360°
+  // above — the Request-scan tool and the screen host div stay (the latter
+  // hidden, kept because recon.js's load()/render() key off it existing).
+  ok('index.html no longer has a standalone 3D tab', !/data-screen="recon"/.test(html));
+  ok('index.html has the Request-scan topbar tool + screen host (kept, hidden)',
+     /id="recon-new"/.test(html) && /id="pp-screen-recon" hidden/.test(html));
   ok('PLYLoader CDN script present (same pinned Three.js revision as the 360° viewer)',
      /three@0\.128\.0\/examples\/js\/loaders\/PLYLoader\.js/.test(html));
   ok('RECON.init is wired alongside the other module inits', /RECON\.init\(user, profile\)/.test(html));
-  ok('setScreen dispatches the recon screen', /isRecon = s === 'recon'/.test(html));
+  ok('setScreen folds 3D tools into the Gallery screen (RECON._syncTools(isPhotos), not a dedicated isRecon)',
+     /RECON\._syncTools\(isPhotos\)/.test(html) && !/isRecon = s === 'recon'/.test(html));
+  ok('recon.js exposes ensureLoaded for the unified Gallery media strip (Batch C)',
+     rcjs.includes('ensureLoaded:'));
   ['function openRequestForm', 'function approveRequest', 'function rejectRequest', 'function retractRequest',
    'function openResultViewer', 'function mountPointCloudViewer'
   ].forEach((sig) => ok(sig + '() exists in recon.js', rcjs.includes(sig)));
@@ -660,8 +680,9 @@ console.log('\n[misc] insert().select() returns the new row id');
      /id="bim-place"/.test(html) && /id="pp-screen-bim"/.test(html));
   ok('bim.js is loaded and BIM.init is wired alongside the other module inits',
      /src="bim\.js/.test(html) && /BIM\.init\(user, profile\)/.test(html));
-  ok('setScreen dispatches the bim screen and hides it from the generic "isPhotos" fallback',
-     /isBim = s === 'bim'/.test(html) && /!isRecon && !isBim/.test(html));
+  ok('setScreen dispatches the bim screen and hides it from the generic "isPhotos" fallback ' +
+     '(simplified to isPpr/isBim only in Batch C, now that pano/recon/rounds are no longer their own screens)',
+     /isBim = s === 'bim'/.test(html) && /isPhotos = !isPpr && !isBim/.test(html));
   ok('BIM._syncTools is called on every screen switch (role + inner-screen gating, same as the other three modules)',
      /BIM\._syncTools\(isBim\)/.test(html));
 
@@ -712,6 +733,45 @@ console.log('\n[misc] insert().select() returns the new row id');
      /pano-src.*Drone-sourced footage/.test(pnjs));
   ok('reconstruction_requests already had video_source (ground/drone) before this pass — Phase 6 extends the SAME field name convention to panoramas',
      /video_source\s+text default 'ground'/.test(fs.readFileSync(reconMigrationFile, 'utf8')));
+
+  console.log('\n[26] Batch C (2026-08-29 follow-up) — Rounds removed, 360°/3D folded into Gallery');
+  // --- Rounds is completely gone, not gated -----------------------------
+  ok('renderRounds/wireRounds/startWalkthrough/advanceWalkthrough/openWalkStep no longer exist in module.js',
+     !/function renderRounds|function wireRounds|function startWalkthrough|function advanceWalkthrough|function openWalkStep/.test(mjs));
+  ok('the Rounds module-scope state vars are gone too (roundsFilter/roundsSelected/walkState/_roundsComboByKey)',
+     !/var roundsFilter|var roundsSelected|var walkState|var _roundsComboByKey/.test(mjs));
+  ok('ProgressPhotos no longer exports renderRounds', !/renderRounds: renderRounds/.test(mjs));
+  ok('the Rounds tab/screen/search field are gone from index.html', !/data-screen="rounds"|pp-screen-rounds|pp-rounds-search/.test(html));
+  ok('openUpload no longer carries any walkthrough branch (preset.walk)', !/preset\.walk/.test(mjs));
+  ok('locCombos/photoLocCombos survive the Rounds removal — bim.js and ppr.js both depend on them',
+     /function locCombos/.test(mjs) && /function photoLocCombos/.test(mjs));
+  ok('setScreen can no longer be handed a Rounds/Pano/Recon screen from stale localStorage (would throw on the deleted renderRounds)',
+     !/\['ppr', 'rounds', 'pano', 'recon', 'bim'\]/.test(html) && /\['ppr', 'bim'\]\.indexOf\(saved\)/.test(html));
+
+  // --- 360°/3D folded into Gallery, not deleted --------------------------
+  ok('the tab bar now has exactly three tabs: Gallery, Presentations, Plans',
+     (html.match(/class="pp-tab[^"]*" data-screen="[a-z]+"/g) || []).length === 3 &&
+     /data-screen="photos">Gallery/.test(html) && /data-screen="ppr">Presentations/.test(html) && /data-screen="bim">Plans/.test(html));
+  ok('the Gallery screen carries a #pp-media-strip host for the folded 360°/3D content', /id="pp-media-strip"/.test(html));
+  ok('module.js loads PANO/RECON data before rendering Gallery, so the strip has something to show without a separate screen visit',
+     /PANO && PANO\.ensureLoaded[\s\S]{0,120}RECON && RECON\.ensureLoaded/.test(mjs));
+  ok('render() calls renderMediaStrip() BEFORE the photo grid\'s own empty-state branches, so it repaints regardless of them',
+     /renderMediaStrip\(\);/.test(mjs) && mjs.indexOf('renderMediaStrip();') < mjs.indexOf('if (!rows.length)'));
+  ok('a media tile opens the SAME viewers as the old dedicated tabs used (PANO.open / RECON.openById), nothing reimplemented',
+     /PANO && PANO\.open\)\s*PANO\.open\(id\)/.test(mjs) && /RECON && RECON\.openById\)\s*RECON\.openById\(id\)/.test(mjs));
+
+  // --- mediaStripMatches genuinely EXECUTED against the real closure -------
+  // `filters` is module-private state, set only via wireFilters()/init() —
+  // never called in this harness (same as every other Batch A/B test above,
+  // which is why [2c] tests tradesOf/worksOf as pure functions instead). At
+  // its untouched default (every field blank) this is still a real assertion
+  // of the function's actual behaviour, not a stub: it proves the ANDed
+  // filter checks all short-circuit to "no restriction" together rather than
+  // one of them silently rejecting everything by default.
+  ok('with every filter at its untouched default, a real item matches',
+     PP._mediaStripMatches({ location_values: {}, taken_at: '2026-03-01', location: 'Tower 1' }));
+  ok('_mediaStripItems() runs against the real PANO/RECON closures with no throw, and returns [] before either has loaded anything',
+     JSON.stringify(PP._mediaStripItems()) === '[]');
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

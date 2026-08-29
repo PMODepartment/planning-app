@@ -204,6 +204,46 @@
   font-size: 13.5px; color: var(--pd-ink);
 }
 
+/* ---- 360°/3D media strip (Batch C, 2026-08-29) --------------------------- */
+/* Folded into the Gallery screen rather than kept as separate tabs — sits
+   below the photo grid, same card/spacing language as the gallery-group
+   heading above, and is simply absent from the DOM (module.js) when a
+   project has neither panoramas nor done 3D scans. */
+.pp-mediastrip { margin-top: 22px; }
+.pp-mediastriphead {
+  display: flex; align-items: center; gap: 9px; margin: 0 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--pd-line);
+  font-size: 13.5px; color: var(--pd-ink);
+}
+.pp-mediastripgrid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+.pp-mediatile {
+  position: relative; margin: 0; padding: 0; cursor: pointer;
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); overflow: hidden;
+  display: flex; flex-direction: column; text-align: left; font: inherit;
+}
+.pp-mediatile:hover { border-color: var(--pd-red); }
+.pp-mediatile img {
+  width: 100%; height: 110px; object-fit: cover; display: block;
+  background: var(--pd-bg);
+}
+.pp-mediatile-ico {
+  width: 100%; height: 110px; display: flex; align-items: center; justify-content: center;
+  color: var(--pd-muted); background: var(--pd-bg);
+}
+.pp-mediatile-badge {
+  position: absolute; top: 6px; right: 6px; font-size: 10.5px; font-weight: 700;
+  color: #fff; background: color-mix(in srgb, var(--pd-red) 85%, black);
+  border-radius: 999px; padding: 1px 7px;
+}
+.pp-mediatile-cap {
+  padding: 6px 8px; font-size: 11.5px; color: var(--pd-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* ---- Empty / hint states ------------------------------------------------- */
 .pp-empty {
   padding: 46px 20px; text-align: center; color: var(--pd-muted);

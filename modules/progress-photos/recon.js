@@ -368,6 +368,9 @@ window.RECON = (function () {
       }
       if (!r) { UI.toast('That 3D reconstruction could not be found', 'warn'); return; }
       openResultViewer(r);
-    }
+    },
+    // Batch C (2026-08-29): the unified Gallery feed needs this module's
+    // requests loaded before it can include any done reconstructions.
+    ensureLoaded: async function () { if (!requests.length) await load(); }
   };
 })();

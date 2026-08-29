@@ -2,6 +2,119 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 18-item feedback round, Batch C: Rounds removed, 360°/3D folded into Gallery (2026-08-29)
+
+Owner, reviewing Batch A/B in the live tab bar: *"The Rounds, 360, and 3D are still in the tabs.
+You haven't applied my previous comment. Rounds can be removed. 360 and 3D should be incorporated
+in the Gallery."* Two distinct asks, handled differently on purpose. **No migration.**
+
+### Rounds — deleted, not gated
+
+Today's Rounds was never asked to stay in any form. Removed outright from `module.js`: the
+module-scope state (`roundsFilter`, `roundsSelected`, `walkState`, `_roundsComboByKey`), the two
+`refreshRoundsIfVisible()` call sites, the `pp-rounds-search` wiring, and the whole
+`renderRounds`/`wireRounds`/`startWalkthrough`/`advanceWalkthrough`/`openWalkStep`/
+`refreshRoundsIfVisible` block (93 lines) — including a nested `function row(it)` helper that
+lived inside `renderRounds` itself, which is why the function-diff check below reports it as its
+own loss. `openUpload(preset)` lost every `preset.walk` branch (modal title, Skip/End-walkthrough
+footer buttons and their wiring). The tab and its screen (`#pp-screen-rounds`,
+`pp-rounds-search`) are gone from `index.html` entirely — not hidden, deleted.
+
+⚠️ **`locCombos()`/`photoLocCombos()` were explicitly checked and kept.** They sit in the same
+region of the file Rounds used, but `bim.js`'s Floor Plan pin picker and `ppr.js`'s location
+picker both call them — deleting them alongside Rounds would have silently broken two other
+screens. A grep for both names across every module file was run before removing anything, not
+after.
+
+⚠️ **A real crash was averted, not just a cosmetic tab removal.** `setScreen()` in `index.html`
+still called `ProgressPhotos.renderRounds()` whenever `isRounds` was true, and that function is
+now GONE from the exported object — so a browser that still had `localStorage['pp_screen'] ===
+'rounds'` from before this shipped (anyone who had used Rounds) would have thrown a
+`TypeError: ProgressPhotos.renderRounds is not a function` on the very next page load, breaking
+the whole module for that user with no way back through the UI. Fixed by narrowing `setScreen`'s
+restore-list to `['ppr', 'bim']` only — any other stored value (including a legacy `'rounds'`,
+`'pano'`, or `'recon'`) now falls back to `'photos'` instead of ever reaching `setScreen('rounds')`.
+
+### 360°/3D — folded into Gallery, not deleted
+
+Per the owner's own distinction ("Rounds can be removed" vs. "360 and 3D should be incorporated"),
+pano.js/recon.js's capture flows and viewers are untouched — only their **top-level tabs** are
+gone. The tab bar is now exactly Gallery / Presentations / Plans.
+
+- **The "+ Capture 360°" / "Compare over time" / "+ Request 3D scan" buttons moved into the
+  Gallery screen's own tool cluster** — `setScreen()` now calls `PANO._syncTools(isPhotos)` /
+  `RECON._syncTools(isPhotos)` (was `isPano`/`isRecon`, screens that no longer exist as tabs).
+  Their `onclick` handlers were already bound unconditionally in each module's own `init()`, so
+  no new wiring was needed — only what controls their **visibility** changed.
+- **A new "360° & 3D captures" strip renders below the photo grid on the Gallery screen**
+  (`#pp-media-strip`, populated by new `mediaStripHTML()`/`wireMediaStrip()`/`renderMediaStrip()`
+  in `module.js`) listing existing panoramas (`PANO.list()`) and done reconstructions
+  (`RECON.doneList()`) as small clickable tiles — clicking one opens the **exact same viewer** the
+  old dedicated tabs used (`PANO.open(id)` / `RECON.openById(id)`), nothing reimplemented. Absent
+  from the DOM entirely when a project has neither, rather than an empty heading.
+- ⚠️ **Deliberately NOT interleaved into the photo grid itself.** A panorama/reconstruction is a
+  different SHAPE of record from a photo (no trade/works, its own open-viewer, no lightbox
+  arrow-navigation), and rewriting `visible()`/`thumb()`/`listHTML()`/`galleryHTML()`/`wireRows()`
+  to be kind-aware would have put the well-tested, already-passing photo rendering pipeline at
+  risk for a presentational preference. A separate strip on the same screen satisfies "no longer a
+  separate tab" without touching that pipeline at all.
+- The strip respects the **same location/date/search filters** the photo grid uses
+  (`mediaStripMatches()`), but never Trade/Works, which don't apply to either kind.
+- ⚠️ **`load()` now awaits `PANO.ensureLoaded()`/`RECON.ensureLoaded()` in parallel** (both new,
+  guarded — `ensureLoaded: async function () { if (!panoramas.length) await load(); }` in each
+  file) right after `signAll()`, so the strip has data to show the first time Gallery paints,
+  without the user ever having visited a "360°" or "3D" screen in this session.
+- ⚠️ **`#pp-screen-pano` and `#pp-screen-recon` are kept in the DOM, permanently hidden — NOT
+  deleted, on purpose.** Both `pano.js`'s and `recon.js`'s `load()`/`render()` bail out
+  (`if (!host) return;`) the moment their screen's host div (`#pano-view`/`#recon-view`) doesn't
+  exist — so `ensureLoaded()` calling `load()` would silently no-op and the media strip would stay
+  permanently empty if those divs were removed. Confirmed by reading both files' `load()` before
+  touching `index.html`, not assumed.
+- `icons.js` already has `compass` and `box` — reused for the panorama/3D tile icons rather than
+  inventing new SVG paths or guessing an icon name exists (this file's own history records that
+  exact mistake once already, with a missing `pencil` icon).
+
+### Verified
+
+**253/253 checks green** (was 239 before this batch), including a new `[26]` section: structural
+assertions that Rounds is completely gone (functions, state, export, tab, screen, search field,
+the walkthrough branch in `openUpload`), that `locCombos`/`photoLocCombos` survive, that the tab
+bar is exactly 3 tabs, that `#pp-media-strip` exists, that `load()` awaits both `ensureLoaded`
+calls, that `render()` calls `renderMediaStrip()` **before** the photo grid's own empty-state
+branches (so it repaints independent of whether the project has any photos), and that a media tile
+dispatches to the real `PANO.open`/`RECON.openById` — plus two genuinely EXECUTED assertions via
+new test-only hooks `ProgressPhotos._mediaStripMatches`/`_mediaStripItems` (same convention as
+`_tradesOf`/`_worksOf`): the filter-match function against a real item object, and the merge
+function running against the real `PANO`/`RECON` closures with no throw.
+
+Two real defects were found and fixed by this pass, not by inspection alone:
+1. A stale `setScreen dispatches the bim screen…` assertion from before this batch still checked
+   for `!isRecon && !isBim`, which no longer exists after simplifying `isPhotos` — updated to match
+   the simpler, correct logic rather than reintroducing the old five-way ternary to satisfy it.
+2. `.pp-mediatile-badge`'s hard-coded `#fff` tripped this file's own "every #fff sits under a
+   documented fixed-colour selector" check — correctly, since it was a genuinely new light-surface
+   risk. Added to the allow-list on the same basis as the already-allowed `.pano-badge-warn`: a
+   solid brand-colour pill background, white text always legible regardless of theme, not a light
+   surface that needs a dark-mode override.
+
+Function-diff against the pre-batch commit: **7 lost** (all Rounds, all intentional — including
+the nested `row` helper), **5 added** (`mediaStripMatches`, `mediaStripItems`, `mediaStripHTML`,
+`wireMediaStrip`, `renderMediaStrip`). 0 NUL bytes across every touched file (verified with a raw
+byte count, not `grep -c $'\x00'` — that command returns nonsense under this environment's Git
+Bash and would have reported hundreds of false positives). CSS braces balanced (293/293).
+
+⚠️ **Not verified signed in** — no live Supabase login in this environment, same standing caveat
+as the rest of this module. In particular, the media strip's real thumbnails (`PANO.urlOf`) and
+click-through to the two viewers have not been exercised against real panorama/reconstruction rows.
+
+⚠️ **Still open from the 18-item list, not attempted in this batch**: Batches D through H (photo
+pickers with thumbnails, per-photo pin + direction capture, the markup/annotation editor, the
+slide-sorter view, the floor-plan map/vertical-stacking views, and top-view image registration) —
+see `C:\Users\gwsia\.claude\plans\elegant-mixing-mitten.md` for the full sequencing. Also not done
+this batch: the "Add media" type selector (Photo/Video/360°/3D) on the upload modal, real Video
+upload support, and Gallery multi-select + batch actions — all separately scoped items from the
+same feedback round, none of which this correction asked for by name.
+
 ## 18-item feedback round, Batch B: Trade/Works multi-select, Location label dropped (2026-08-29)
 
 **Run `migrations/2026-08-29-photo-trades-works-multi.sql`.** Item 2 of the owner's feedback:
