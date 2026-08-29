@@ -199,11 +199,60 @@
   background: rgba(0, 0, 0, .55); border-radius: 3px; padding: 3px;
   display: flex; align-items: center; justify-content: center;
 }
+/* Expandable key-plan-style pin icon (Batch E item 8) — top-right, mirrors
+   .pp-cardsel's top-left dark scrim so both read as one consistent overlay
+   language rather than two different tile-corner treatments. */
+.pp-pinbtn {
+  position: absolute; top: 6px; right: 6px; z-index: 1; padding: 4px;
+  background: rgba(0, 0, 0, .55); border: 0; border-radius: 3px; color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.pp-pinbtn:hover { background: var(--pd-red); }
+.pp-pinpreview-box {
+  position: relative; overflow: hidden; width: 100%; height: 320px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius); background: var(--pd-bg);
+}
+.pp-pinpreview-dot {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--pd-red); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+}
+.pp-pinpreview-cone {
+  position: absolute; left: 50%; top: 50%; width: 90px; height: 90px; pointer-events: none;
+  background: conic-gradient(from 0deg at 50% 100%, transparent 335deg, color-mix(in srgb, var(--pd-red) 40%, transparent) 335deg 360deg, color-mix(in srgb, var(--pd-red) 40%, transparent) 0deg 25deg, transparent 25deg);
+}
+.pp-pinpreview-zoom { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
 .pp-cardimg { position: relative; background: var(--pd-bg); }
 .pp-cardphoto {
   width: 100%; height: 210px; object-fit: cover; display: block; cursor: zoom-in;
 }
 .pp-cardimg .pp-noimg { height: 210px; }
+
+/* Video thumbnails (18-item list item 4) — same box as a photo thumb, a
+   muted first-frame <video> in place of <img>, with a plain CSS play
+   triangle overlay (no icon dependency — icons.js has no "play" glyph). */
+.pp-vidthumb {
+  position: relative; display: block; background: var(--pd-bg); cursor: zoom-in;
+}
+.pp-vidthumb video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.pp-vidplay {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 0; height: 0; border-style: solid; border-width: 12px 0 12px 20px;
+  border-color: transparent transparent transparent rgba(255, 255, 255, .92);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6));
+}
+.pp-thumb-wrap { width: 96px; height: 62px; }
+.pp-cardphoto-wrap { width: 100%; height: 210px; }
+
+/* Add-media type selector (Photo / Video / 360°-3D-on-hold) */
+.pp-mtypesel { display: flex; gap: 6px; }
+.pp-mtype {
+  flex: 1 1 0; padding: 8px 10px; text-align: center; cursor: pointer;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  color: var(--pd-ink); font-size: 13px; font-weight: 600;
+}
+.pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
+.pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
 
 /* Group-by control + month/year/location/activity group headings */
 .pp-gallerybar { display: flex; justify-content: flex-end; margin: 0 0 10px; }
@@ -275,10 +324,19 @@
   display: flex; align-items: center; justify-content: center; flex-direction: column;
 }
 .pp-lightbox[hidden] { display: none; }
+/* Wraps the img/video/markup-canvas trio (18-item list item 13: markup can
+   overlay either media type) so the canvas has something to position
+   absolutely against — a bare .pp-lb-img with no wrapper had nothing for an
+   overlay to be relative TO. */
+.pp-lb-imgwrap { position: relative; display: flex; max-width: 88vw; max-height: 78vh; }
 .pp-lb-img {
   max-width: 88vw; max-height: 78vh; object-fit: contain;
   border: 3px solid #fff; background: #fff;
 }
+/* Sized/positioned in JS (paintMarkupOverlay) to match the visible media
+   element's exact rendered box in pixels — the CSS only needs to keep it
+   pinned to the wrapper's top-left and out of the way of clicks/drag. */
+.pp-lb-markup { position: absolute; top: 0; left: 0; pointer-events: none; display: none; }
 .pp-lb-cap {
   margin-top: 12px; color: #fff; text-align: center;
   display: flex; flex-direction: column; gap: 3px; font-size: 13px;
@@ -308,6 +366,28 @@
 }
 .pp-lb-tool:hover { background: rgba(255, 255, 255, .28); }
 .pp-lb-tool-danger:hover { background: var(--pd-red); }
+.pp-lb-tool.is-active { background: var(--pd-red); }
+
+/* ---- Markup editor (18-item list item 13/14) ------------------------------
+   A vector annotation layer over an <img>: toolbar (shape/pen/eraser/icon
+   tools + colour swatches) above a canvas overlaying the photo 1:1. */
+.pp-mk-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.pp-mk-tools { display: flex; gap: 4px; flex-wrap: wrap; }
+.pp-mk-tool {
+  padding: 6px 10px; font-size: 12.5px; cursor: pointer;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 3px; color: var(--pd-ink);
+}
+.pp-mk-tool.active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
+.pp-mk-icons { display: flex; gap: 4px; flex-wrap: wrap; }
+.pp-mk-colors { display: flex; gap: 5px; }
+.pp-mk-swatch {
+  width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; padding: 0;
+}
+.pp-mk-swatch.active { border-color: var(--pd-ink); box-shadow: 0 0 0 1px var(--pd-card); }
+.pp-mk-canvaswrap { position: relative; max-width: 100%; line-height: 0; }
+#pp-mk-img { max-width: 100%; max-height: 62vh; display: block; border: 1px solid var(--pd-line); }
+#pp-mk-canvas { position: absolute; top: 0; left: 0; cursor: crosshair; touch-action: none; }
 
 /* ---- Modals -------------------------------------------------------------- */
 .pp-form { padding: 4px 0; }
@@ -527,6 +607,44 @@
 }
 .ppr-panetags { font-size: 11.5px; color: var(--pd-muted); margin-top: 4px; }
 
+/* Presentation-only markup overlay (18-item list item 14) — a SEPARATE store
+   from the photo's own permanent markup (ppr_slide_markups, keyed by
+   ppr_slide_id+pane), toggled/edited per pane, never shown on Gallery tiles. */
+.ppr-panetools {
+  position: absolute; top: 8px; left: 8px; display: flex; gap: 5px; z-index: 2;
+}
+.ppr-mktool {
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; background: rgba(35, 31, 32, .55); border: 0; border-radius: 3px;
+  color: #fff;
+}
+.ppr-mktool:hover { background: var(--pd-red); }
+.ppr-mktool.is-active { background: var(--pd-red); }
+/* Sized in JS to match the image's own rendered box; pointer-events:none so
+   the toolbar buttons above it (and the image below the toolbar's own area)
+   stay clickable — the canvas is purely a paint surface. */
+.ppr-mkcanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* Slide-sorter (18-item list item 12) — drag-to-reorder thumbnail grid */
+.ppr-sortgrid {
+  display: grid; gap: 12px; margin: 4px 0 2px;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+.ppr-sortitem {
+  position: relative; cursor: grab; border: 1px solid var(--pd-line);
+  border-radius: 4px; overflow: hidden; background: var(--pd-bg);
+}
+.ppr-sortitem.is-dragging { opacity: .4; }
+.ppr-sortitem.is-dragover { border-color: var(--pd-red); box-shadow: 0 0 0 2px var(--pd-red) inset; }
+.ppr-sortthumb { width: 100%; height: 96px; object-fit: cover; display: block; }
+.ppr-sortthumb.pp-noimg { display: flex; align-items: center; justify-content: center; color: var(--pd-muted); }
+.ppr-sortno {
+  position: absolute; top: 5px; left: 5px; min-width: 20px; height: 20px; padding: 0 5px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--pd-red); color: #fff; font-size: 11.5px; font-weight: 700;
+  border-radius: 10px; pointer-events: none;
+}
+
 /* Slide form: photo picker + inline "add photo", with a read-only echo of the
    picked photo's own trade/works/location */
 .ppr-pickrow { display: flex; gap: 7px; align-items: center; }
@@ -737,6 +855,41 @@
 .bim-pin-reconstruction { background: var(--pd-dark); }
 .bim-pin-photo { background: var(--pd-ok); }
 #bim-place.is-active { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
+
+/* Direction cone (Batch E) — a CSS conic-gradient wedge, rotated per pin via
+   an inline transform (see pinConeHTML). Positioned/anchored identically to
+   .bim-pin (left/top % + translate(-50%,-100%)) so the cone's tip always
+   sits exactly at the pin's own point. */
+.bim-pincone {
+  position: absolute; width: 70px; height: 70px; pointer-events: none;
+  background: conic-gradient(from 0deg at 50% 100%, transparent 335deg, color-mix(in srgb, var(--pd-red) 35%, transparent) 335deg 360deg, color-mix(in srgb, var(--pd-red) 35%, transparent) 0deg 25deg, transparent 25deg);
+}
+
+/* Direction-drag widget (pin picker + Gallery pin flow) */
+.bim-dirwidget { display: flex; align-items: center; gap: 14px; }
+.bim-dirwidget svg { touch-action: none; }
+
+/* Plan / Map segmented toggle + map clustering (Batch G) */
+.bim-viewtoggle { display: flex; gap: 6px; }
+.bim-vtbtn {
+  padding: 6px 12px; cursor: pointer; font-size: 12.5px; font-weight: 600;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius); color: var(--pd-ink);
+}
+.bim-vtbtn.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
+.bim-mapstepper { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+.bim-mapstepper strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+.bim-cluster {
+  position: absolute; transform: translate(-50%, -50%);
+  min-width: 30px; height: 30px; padding: 0 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff;
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Registration flow (Batch H) — drawing/photo side by side, each clickable */
+.bim-regpair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
+.bim-regside img { border: 1px solid var(--pd-line); border-radius: var(--pd-radius); background: var(--pd-bg); display: block; }
 
 /* ---- Responsive ---------------------------------------------------------- */
 /* Title collapses to icon-only, same breakpoint as Drawing Register */

@@ -21,6 +21,7 @@ window.PPR = (function () {
   var T_SLIDE  = 'ppr_slides';
   var T_PHOTO  = 'progress_photos';
   var T_TMPL   = 'ppr_report_templates';
+  var T_MARKUP = 'ppr_slide_markups';
   var BUCKET   = 'progress-photos';
   var SIGN_TTL = 3600;
 
@@ -32,6 +33,17 @@ window.PPR = (function () {
   var templates = [];            // saved report templates for this project
   var tmplTableMissing = false;  // migrations/2026-08-29-ppr-report-templates.sql not run yet
   var urlCache = {};             // storage path -> signed URL
+  // Presentation-only markup (18-item list item 14) — a SEPARATE store from
+  // the photo's own permanent markup (progress_photos.markup), keyed by
+  // "<ppr_slide_id>|<pane>" so a Previous pane and a Current pane on the same
+  // slide never share a drawing. markupCache holds the vector array (what's
+  // drawn); markupRowId holds the underlying row id so a second edit UPDATEs
+  // in place instead of violating ppr_slide_markups' own (ppr_slide_id,pane)
+  // unique constraint with a second INSERT. showMarkup is a per-pane, session-
+  // only visibility toggle — never persisted, since "am I looking at the
+  // overlay right now" is a viewing preference, not presentation content.
+  var markupCache = {}, markupRowId = {}, showMarkup = {};
+  var markupTableMissing = false;  // migrations/2026-08-29-markup.sql not run yet
   var selId = null;              // selected PPR (drives the preview pane)
   var filters = { from: '', to: '', archived: false };  // archived: false = hide archived (default)
   var screen = 'list';           // list | slides | templates
@@ -141,8 +153,27 @@ window.PPR = (function () {
     } catch (e) { photos = []; }
 
     await loadTemplates();
+    await loadSlideMarkups();
     await signAll();
     render();
+  }
+
+  // Tolerant of the migration not having run yet, same convention as
+  // loadTemplates(). Loaded whole-project, not per-slide-open — the same
+  // "small dataset, load it all up front" call already made for pprs/slides.
+  async function loadSlideMarkups() {
+    markupTableMissing = false;
+    markupCache = {}; markupRowId = {};
+    try {
+      var rows = await PDb.selectAll(T_MARKUP, function (q) { return q.eq('project_id', pid); });
+      rows.forEach(function (r) {
+        var key = r.ppr_slide_id + '|' + r.pane;
+        markupCache[key] = r.markup || [];
+        markupRowId[key] = r.id;
+      });
+    } catch (e) {
+      if (/schema cache|does not exist/i.test((e && e.message) || '')) markupTableMissing = true;
+    }
   }
 
   // Tolerant of the migration not having run yet — same convention as every
@@ -188,6 +219,38 @@ window.PPR = (function () {
   function slides(pprId) { return (slidesOf[pprId] || []).slice().sort(function (a, b) { return (a.slide_no || 0) - (b.slide_no || 0); }); }
   function pprById(id) { return pprs.filter(function (p) { return p.id === id; })[0] || null; }
   function tmplById(id) { return templates.filter(function (t) { return t.id === id; })[0] || null; }
+
+  function markupKey(slideId, pane) { return slideId + '|' + pane; }
+  function markupFor(slideId, pane) { return markupCache[markupKey(slideId, pane)] || []; }
+
+  // Insert-or-update by (ppr_slide_id, pane) — markupRowId tells which, so a
+  // second edit of the same pane UPDATEs the existing row rather than hitting
+  // the table's own unique constraint with a second INSERT.
+  async function saveSlideMarkup(slideId, pane, objs) {
+    var key = markupKey(slideId, pane);
+    var rowId = markupRowId[key];
+    try {
+      var res;
+      if (rowId) {
+        res = await sb().from(T_MARKUP).update({ markup: objs, updated_at: new Date().toISOString() }).eq('id', rowId);
+      } else {
+        res = await sb().from(T_MARKUP).insert({
+          ppr_slide_id: slideId, project_id: pid, pane: pane, markup: objs, created_by: uid
+        }).select();
+      }
+      if (res.error) throw res.error;
+      markupCache[key] = objs;
+      if (!rowId && res.data && res.data[0]) markupRowId[key] = res.data[0].id;
+      showMarkup[key] = true;
+      UI.toast('Markup saved', 'ok');
+    } catch (e) {
+      var msg = /schema cache|does not exist/i.test((e && e.message) || '')
+        ? 'Markup could not be saved — run migrations/2026-08-29-markup.sql'
+        : ('Could not save markup: ' + ((e && e.message) || e));
+      UI.toast(msg, 'warn');
+    }
+    renderSlides();
+  }
 
   // Every photo AT (a superset of) this set of location values, newest first.
   // Same subset-equality rule as module.js's resolveActivity()/lastCaptureAt()
@@ -498,7 +561,13 @@ window.PPR = (function () {
         // row's own icons to Download/Preview/Archive only) — this is the
         // screen you're already on when you'd want to rename/re-date it or
         // remove it entirely, so nothing was actually lost.
-        (canWrite ? '<span class="ppr-hfield ppr-hspacer"><button class="pp-iconbtn" id="ppr-pres-edit" ' +
+        (canWrite ? '<span class="ppr-hfield ppr-hspacer">' +
+          // Slide-sorter (18-item list item 12) — only worth offering with
+          // something to reorder; a 1-slide (or empty) presentation has no
+          // possible order to change.
+          (s.length > 1 ? '<button class="pp-iconbtn" id="ppr-sort" title="Reorder slides">' +
+            '<span data-ico="layout" data-ico-size="15"></span></button>' : '') +
+          '<button class="pp-iconbtn" id="ppr-pres-edit" ' +
           'title="Edit presentation details"><span data-ico="pencil" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn pp-del" id="ppr-pres-del" title="Delete presentation">' +
           '<span data-ico="trash" data-ico-size="15"></span></button></span>' : '') +
@@ -559,12 +628,107 @@ window.PPR = (function () {
     if (kp) kp.onclick = function () { keyPlanOpen = !keyPlanOpen; renderSlides(); };
     if ($('ppr-slide-edit')) $('ppr-slide-edit').onclick = function () { openSlideForm(cur); };
     if ($('ppr-slide-del')) $('ppr-slide-del').onclick = function () { removeSlide(cur); };
+    wirePaneMarkup(cur);
     hydrate();
   }
 
   function wirePresActs(p) {
     if ($('ppr-pres-edit')) $('ppr-pres-edit').onclick = function () { openPprForm(p); };
     if ($('ppr-pres-del')) $('ppr-pres-del').onclick = function () { removePpr(p); };
+    if ($('ppr-sort')) $('ppr-sort').onclick = function () { openSlideSorter(p); };
+  }
+
+  // ------------------------------------------------------ slide-sorter (item 12) ---
+  // A grid of slide thumbnails (each slide's Current photo, matching the
+  // preview pane's own headline-image rule) that reorders on native HTML5
+  // drag-and-drop, writing the new order back to ppr_slides.slide_no.
+  // ⚠️ Reordered in a LOCAL COPY of the array first — nothing is written until
+  // the sequence is settled, and cancelling the modal (× / backdrop) discards
+  // it entirely, leaving the saved order untouched. This mirrors the copy
+  // wizard's own "nothing is saved until you're done" rule (2026-08-29), just
+  // for a reorder instead of a multi-step build.
+  // Pure — splices `from` out and reinserts at `to`, returning a NEW array
+  // (never mutates its argument) so it can be genuinely executed by a test
+  // without needing a real drag event. Exported as a test-only hook.
+  function moveItem(arr, from, to) {
+    var copy = arr.slice();
+    var moved = copy.splice(from, 1)[0];
+    copy.splice(to, 0, moved);
+    return copy;
+  }
+
+  function openSlideSorter(p) {
+    var draft = slides(p.id);       // local working copy, index = current position
+    var dragFrom = -1;
+
+    function thumbHTML(sl, i) {
+      var u = urlOfPhoto(sl.after_photo_id) || urlOfPhoto(sl.before_photo_id);
+      return '<div class="ppr-sortitem" draggable="true" data-i="' + i + '">' +
+        '<span class="ppr-sortno">' + (i + 1) + '</span>' +
+        (u ? '<img class="ppr-sortthumb" src="' + esc(u) + '" alt="Slide ' + (i + 1) + '" />'
+           : '<div class="ppr-sortthumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
+        '</div>';
+    }
+
+    var m = openModal(
+      '<div class="pd-modal-header"><h3>Reorder slides</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<p class="pp-hint">Drag a slide to move it. Numbers update as you go — nothing is saved until you click Save order.</p>' +
+        '<div class="ppr-sortgrid" id="ppr-sortgrid"></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="ppr-sort-save">Save order</button>' +
+      '</div>', 720);
+
+    function paint() {
+      var grid = m.el.querySelector('#ppr-sortgrid');
+      grid.innerHTML = draft.map(thumbHTML).join('');
+      if (window.Icons && Icons.hydrate) Icons.hydrate(grid);
+      Array.prototype.forEach.call(grid.querySelectorAll('.ppr-sortitem'), function (el) {
+        el.ondragstart = function (ev) {
+          dragFrom = +el.dataset.i;
+          el.classList.add('is-dragging');
+          if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; try { ev.dataTransfer.setData('text/plain', String(dragFrom)); } catch (e) {} }
+        };
+        el.ondragend = function () { el.classList.remove('is-dragging'); };
+        el.ondragover = function (ev) { ev.preventDefault(); el.classList.add('is-dragover'); };
+        el.ondragleave = function () { el.classList.remove('is-dragover'); };
+        el.ondrop = function (ev) {
+          ev.preventDefault(); el.classList.remove('is-dragover');
+          var to = +el.dataset.i;
+          if (dragFrom < 0 || dragFrom === to) return;
+          draft = moveItem(draft, dragFrom, to);
+          dragFrom = -1;
+          paint();
+        };
+      });
+    }
+    paint();
+
+    m.el.querySelector('#ppr-sort-save').onclick = async function () {
+      var btn = m.el.querySelector('#ppr-sort-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        // Sequential, small N (a presentation's slide count) — same per-row
+        // update convention already used throughout this file rather than a
+        // single bulk statement supabase-js has no clean way to express here.
+        for (var i = 0; i < draft.length; i++) {
+          if ((draft[i].slide_no || 0) === i + 1) continue;   // unchanged position, skip the round-trip
+          var res = await sb().from(T_SLIDE).update({ slide_no: i + 1 }).eq('id', draft[i].id);
+          if (res.error) throw res.error;
+          draft[i].slide_no = i + 1;
+        }
+        slidesOf[p.id] = draft;
+        slideAt = 0;
+        m.close();
+        renderSlides();
+        UI.toast('Slide order saved', 'ok');
+      } catch (e) {
+        UI.toast('Could not save the new order: ' + ((e && e.message) || e), 'error');
+        btn.disabled = false; btn.textContent = 'Save order';
+      }
+    };
   }
 
   // A slide's two photos are only required to be at the SAME location often
@@ -604,6 +768,19 @@ window.PPR = (function () {
     var fields = ph ? [ph.trade, ph.works, hideLocation ? null : ph.location]
                     : [sl.trade, sl.works, hideLocation ? null : sl.location];
     var tags = fields.filter(Boolean).join(' · ');
+    // Presentation-only markup (item 14) — never on the offline/PDF/PPTX
+    // exports (those are the record of what was PRESENTED; this overlay is a
+    // live annotation aid), and never shown at all without an actual photo.
+    var mk = u ? markupFor(sl.id, which) : [];
+    var mkKey = markupKey(sl.id, which);
+    var mkVisible = showMarkup[mkKey] !== false;
+    var mkTools = u ? '<div class="ppr-panetools">' +
+      (mk.length ? '<button class="ppr-mktool' + (mkVisible ? ' is-active' : '') + '" ' +
+        'id="ppr-mktoggle-' + which + '" title="Show/hide markup">' +
+        '<span data-ico="eye" data-ico-size="13"></span></button>' : '') +
+      (canWrite ? '<button class="ppr-mktool" id="ppr-mkedit-' + which + '" title="Edit markup">' +
+        '<span data-ico="palette" data-ico-size="13"></span></button>' : '') +
+      '</div>' : '';
     return '<figure class="ppr-pane">' +
       // "Previous"/"Current" is the user-facing label (owner feedback, item 7:
       // less ambiguous than Before/After for a recurring capture). The
@@ -615,6 +792,8 @@ window.PPR = (function () {
       '<div class="ppr-imgwrap">' +
         (u ? '<img class="ppr-img" src="' + esc(u) + '" alt="' + esc(cap) + '" />'
            : '<div class="ppr-img pp-noimg"><span>Photo not set</span></div>') +
+        (u && mk.length && mkVisible ? '<canvas class="ppr-mkcanvas" id="ppr-mkcanvas-' + which + '"></canvas>' : '') +
+        mkTools +
         (kp ? '<img class="ppr-keyplan" src="' + esc(kp) + '" alt="Key plan" />' : '') +
       '</div>' +
       '<figcaption>' +
@@ -622,6 +801,46 @@ window.PPR = (function () {
         '<div class="ppr-captxt">' + esc(cap || '—') + '</div>' +
         (tags ? '<div class="ppr-panetags">' + esc(tags) + '</div>' : '') +
       '</figcaption></figure>';
+  }
+
+  // Called after renderSlides() paints — sizes each pane's overlay canvas to
+  // the image's own rendered box (a canvas has no intrinsic size of its own)
+  // and paints it via the SHARED drawing routine module.js exports, then
+  // wires the toggle/edit buttons. `cur` is the slide object currently shown.
+  function wirePaneMarkup(cur) {
+    ['before', 'after'].forEach(function (which) {
+      var photoId = which === 'before' ? cur.before_photo_id : cur.after_photo_id;
+      var cv = $('ppr-mkcanvas-' + which);
+      if (cv) {
+        var wrap = cv.parentElement;
+        var paint = function () {
+          var w = wrap.clientWidth, h = wrap.clientHeight;
+          if (!w || !h) return;
+          cv.width = w; cv.height = h;
+          if (window.ProgressPhotos && ProgressPhotos.drawMarkupOnCanvas) {
+            ProgressPhotos.drawMarkupOnCanvas(cv, markupFor(cur.id, which));
+          }
+        };
+        var img = wrap.querySelector('img.ppr-img');
+        if (img && img.complete && img.naturalWidth) paint();
+        else if (img) img.addEventListener('load', paint, { once: true });
+        else paint();
+      }
+      var tgl = $('ppr-mktoggle-' + which);
+      if (tgl) tgl.onclick = function () {
+        var key = markupKey(cur.id, which);
+        showMarkup[key] = !(showMarkup[key] !== false);
+        renderSlides();
+      };
+      var edt = $('ppr-mkedit-' + which);
+      if (edt) edt.onclick = function () {
+        var u = urlOfPhoto(photoId);
+        if (!u) { UI.toast('Pick a photo for this pane before adding markup', 'warn'); return; }
+        ProgressPhotos.openMarkupEditor(u, markupFor(cur.id, which), function (objs) {
+          saveSlideMarkup(cur.id, which, objs);
+        });
+      };
+    });
   }
 
   function wireSlideNav(s) {
@@ -1840,6 +2059,11 @@ window.PPR = (function () {
       var saved = photos; photos = photosArr;
       try { return eligiblePhotos(refPhoto, direction, allowAllLocations); }
       finally { photos = saved; }
-    }
+    },
+    // Test-only hooks for the slide-sorter (item 12) and the presentation-only
+    // markup overlay (item 14) — same convention as the hooks above.
+    // moveItem is pure and needs no closure state; markupKey likewise.
+    _moveItem: function (arr, from, to) { return moveItem(arr, from, to); },
+    _markupKey: function (slideId, pane) { return markupKey(slideId, pane); }
   };
 })();

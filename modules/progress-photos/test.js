@@ -441,7 +441,12 @@ console.log('\n[misc] insert().select() returns the new row id');
   // .pp-mediatile-badge (Batch C, 2026-08-29) added to the list on the same
   // basis as .pano-badge-warn just above it: a solid-brand-background badge
   // (color-mix red), white text always readable regardless of theme.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active|\.pp-mediatile-badge/;
+  // Batches E-H (2026-08-29) add four more, all the same shape: a fixed dark
+  // scrim (.pp-pinbtn — mirrors .pp-cardsel's own dark corner overlay) or a
+  // solid brand-red badge/dot (.pp-pinpreview-dot, .bim-cluster, .ppr-mktool
+  // — a dark translucent toolbar over an arbitrary photo, .ppr-sortno — a
+  // solid-red slide-order badge, same family as .ppr-tmpl-locorder).
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.bim-cluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -921,6 +926,172 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('Add to Presentation calls PPR.addPhotosToPresentation, not a re-implementation of slide-numbering', /PPR\.addPhotosToPresentation\(pprId, photoIds\)/.test(mjs));
   ok('ppr.js exports addPhotosToPresentation appending AFTER the existing slide count', /var n = slides\(pprId\)\.length;[\s\S]{0,200}slide_no: n \+ i \+ 1,/.test(pjs));
   ok('ppr.js exports listForPicker, excluding archived presentations from the target list', /listForPicker: function \(\) \{[\s\S]{0,200}!p\.archived/.test(pjs));
+
+  // =========================================================== [28] =========
+  // 18-item list, Batches E-H + Add-media type selector/video (2026-08-29) —
+  // "do all the items not done." Everything the 2026-08-29 status recap
+  // flagged as explicitly NOT done: per-photo pin + direction capture (E),
+  // the markup/annotation editor + slide-sorter (F), the floor-plan
+  // map/vertical-stacking view (G), top-view image registration (H), and the
+  // Add-media type selector + real video upload.
+  console.log('\n[28] Batches E-H: pin+direction, markup+sorter, map view, registration, video');
+
+  // --- Add-media type selector + video (folded in alongside Batch C) -------
+  ok('mediaTypeSelectorHTML/wireMediaTypeSelector exist for the Photo/Video/360°/3D picker',
+     /function mediaTypeSelectorHTML\(idPrefix, cur\)/.test(mjs) && /function wireMediaTypeSelector\(idPrefix, onChange\)/.test(mjs));
+  ok('the upload save payload records which kind was picked', /media_type: kind/.test(mjs));
+  ok('a video renders as a real <video> element, not an <img>, in thumb()',
+     /r\.media_type === 'video'/.test(mjs) && /pp-vidplay/.test(mjs));
+  ok('the lightbox has both an <img> and a <video> element and toggles between them',
+     /id="pp-lb-video"/.test(html) && /var imgEl = \$\('pp-lb-img'\), vidEl = \$\('pp-lb-video'\);/.test(mjs));
+  ok('tolerantWrite gained a strip-rule for media_type, naming the migration file if it is missing',
+     /'media_type' in job\.patch/.test(mjs) && /photo-media-type\.sql/.test(mjs));
+
+  // --- Batch E: per-photo pin + direction capture --------------------------
+  ok('migration adds floor_plan_pins.direction_deg, nullable, folded into schema.sql',
+     /alter table floor_plan_pins add column if not exists direction_deg double precision;/.test(
+       fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-pin-direction.sql'), 'utf8')) &&
+     /direction_deg double precision/.test(fs.readFileSync(schemaFile, 'utf8')));
+  ok('a pin only draws its cone when a direction was actually recorded',
+     /function pinConeHTML\(pin\)/.test(bmjs) && /pin\.direction_deg === null \|\| pin\.direction_deg === undefined/.test(bmjs));
+  ok('directionWidgetHTML/wireDirectionWidget exist (the drag-to-set-direction control)',
+     /function directionWidgetHTML\(idPrefix, curDeg\)/.test(bmjs) && /function wireDirectionWidget\(idPrefix\)/.test(bmjs));
+  ok('openPinPickerFor exists — the Gallery-triggered pin flow that does not disturb the Plans screen state',
+     /function openPinPickerFor\(itemType, itemId, itemLabel, onDone\)/.test(bmjs) &&
+     !/openPinPickerFor[\s\S]{0,400}activePlanId = /.test(bmjs));
+  ok('module.js offers the pin-picker follow-up after a successful upload, non-blocking',
+     /BIM\.openPinPickerFor/.test(mjs));
+  ok('Gallery tiles with a pin show an expandable icon (item 8), never on tiles without one',
+     /pinInfoFor\('photo', r\.id\)/.test(mjs) && /pp-pinbtn/.test(mjs));
+  ok('openPinPreview exists for the tile-icon crop-zoom overlay', /function openPinPreview\(photoId\)/.test(mjs));
+  // Genuine execution — the exact math, not a regex on the surrounding code.
+  // 0° = up, clockwise-positive, matching floor_plan_pins.direction_deg's
+  // documented convention.
+  (function () {
+    const near = (a, b) => Math.abs(a - b) < 0.001;
+    ok('drag straight UP records 0°', near(BIM._directionDegFromDrag(0, -1), 0));
+    ok('drag RIGHT records 90° (clockwise from up)', near(BIM._directionDegFromDrag(1, 0), 90));
+    ok('drag DOWN records 180°', near(BIM._directionDegFromDrag(0, 1), 180));
+    ok('drag LEFT records 270°', near(BIM._directionDegFromDrag(-1, 0), 270));
+  })();
+
+  // --- Batch F: markup/annotation editor + slide-sorter --------------------
+  const markupMigration = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-markup.sql'), 'utf8');
+  ok('migration adds progress_photos.markup (the photo\'s OWN permanent markup)', /progress_photos add column if not exists markup jsonb/.test(markupMigration));
+  ok('migration creates ppr_slide_markups — a SEPARATE, presentation-only store keyed by (ppr_slide_id, pane)',
+     /create table if not exists ppr_slide_markups/.test(markupMigration) &&
+     /unique \(ppr_slide_id, pane\)/.test(markupMigration) &&
+     /pane\s+text not null check \(pane in \('before', 'after'\)\)/.test(markupMigration));
+  ok('both stores folded into supabase-schema.sql', /markup\s+jsonb default '\[\]'::jsonb/.test(fs.readFileSync(schemaFile, 'utf8')) &&
+     /create table if not exists ppr_slide_markups/.test(fs.readFileSync(schemaFile, 'utf8')));
+  ok('module.js exports the markup engine for cross-file reuse (openMarkupEditor + a read-only canvas painter)',
+     /openMarkupEditor: function \(imageUrl, initialMarkup, onSave\)/.test(mjs) &&
+     /drawMarkupOnCanvas: function \(canvas, objs\)/.test(mjs));
+  ok('the lightbox never shows markup controls on Gallery tiles — only in paintMarkupOverlay, opened from openLightbox',
+     /function paintMarkupOverlay\(r\)/.test(mjs) && !/pp-mktoggle/.test(mjs.split('function galleryHTML')[0] || ''));
+  ok('ppr.js loads presentation-only markups tolerant of the migration not having run', /async function loadSlideMarkups\(\)/.test(pjs) && /markupTableMissing/.test(pjs));
+  ok('saveSlideMarkup UPDATEs an existing row (by cached row id) rather than violating the (ppr_slide_id,pane) unique constraint with a second INSERT',
+     /async function saveSlideMarkup\(slideId, pane, objs\)/.test(pjs) && /if \(rowId\) \{/.test(pjs));
+  ok('each pane renders its own toggle/edit toolbar + overlay canvas, wired by wirePaneMarkup after render',
+     /ppr-panetools/.test(pjs) && /function wirePaneMarkup\(cur\)/.test(pjs) && /wirePaneMarkup\(cur\);/.test(pjs));
+  ok('exports (offline HTML/PDF/PPTX) never reference the presentation-only markup overlay — it is a live viewing aid, not part of the record',
+     (function () {
+       const exportSlice = (pjs.split('function slideFigureHTML')[1] || '').split('var EXPORT_CSS')[0];
+       return !/ppr_slide_markups|ppr-mktool|ppr-mkcanvas/.test(exportSlice);
+     })());
+  ok('slide-sorter: "Reorder slides" only offered with 2+ slides (nothing to reorder otherwise)',
+     /s\.length > 1 \? '<button class="pp-iconbtn" id="ppr-sort"/.test(pjs));
+  ok('openSlideSorter saves nothing until "Save order" is clicked (drag only mutates a local draft copy)',
+     /function openSlideSorter\(p\)/.test(pjs) && /var draft = slides\(p\.id\);/.test(pjs) &&
+     /skip the round-trip/.test(pjs));
+  // Genuine execution — moveItem is pure and this is exactly the kind of
+  // off-by-one-prone array surgery worth actually running.
+  (function () {
+    const src = ['a', 'b', 'c', 'd'];
+    eq('moveItem: drag the first slide to the end', PPR._moveItem(src, 0, 3), ['b', 'c', 'd', 'a']);
+    eq('moveItem: drag the last slide to the front', PPR._moveItem(src, 3, 0), ['d', 'a', 'b', 'c']);
+    eq('moveItem: a no-op move (same position) changes nothing', PPR._moveItem(src, 1, 1), ['a', 'b', 'c', 'd']);
+    eq('moveItem never mutates its argument (the caller reassigns `draft` from the return value)', src, ['a', 'b', 'c', 'd']);
+  })();
+  eq('markupKey is "<slideId>|<pane>" — the exact shape both the load and the save paths key their caches by',
+     PPR._markupKey('slide-9', 'after'), 'slide-9|after');
+  // Genuine execution of the shared drawing engine via a fake canvas-2D
+  // recorder — the one way to tell "drew a rect" from "silently drew nothing"
+  // for each shape type, rather than only checking the source mentions them.
+  (function () {
+    function fakeCtx() {
+      const calls = [];
+      return {
+        calls,
+        save() { calls.push('save'); }, restore() { calls.push('restore'); },
+        beginPath() { calls.push('beginPath'); }, closePath() { calls.push('closePath'); },
+        moveTo() { calls.push('moveTo'); }, lineTo() { calls.push('lineTo'); },
+        stroke() { calls.push('stroke'); }, fill() { calls.push('fill'); },
+        strokeRect() { calls.push('strokeRect'); }, fillRect() { calls.push('fillRect'); },
+        ellipse() { calls.push('ellipse'); }, arc() { calls.push('arc'); },
+        fillText() { calls.push('fillText'); }, measureText: () => ({ width: 40 }),
+        clearRect() { calls.push('clearRect'); },
+        set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {},
+      };
+    }
+    let c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'rect', x0: 0.1, y0: 0.1, x1: 0.4, y1: 0.4, color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: a rect object actually calls strokeRect', c.calls.includes('strokeRect'));
+    c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'circle', x0: 0.1, y0: 0.1, x1: 0.4, y1: 0.4, color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: a circle object actually calls ellipse+stroke', c.calls.includes('ellipse') && c.calls.includes('stroke'));
+    c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'arrow', x0: 0, y0: 0, x1: 1, y1: 1, color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: an arrow calls both stroke (shaft) and fill (arrowhead)', c.calls.includes('stroke') && c.calls.includes('fill'));
+    c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'text', x: 0.5, y: 0.5, text: 'Note', color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: a text object actually calls fillText', c.calls.includes('fillText'));
+    c = fakeCtx();
+    PP._drawMarkupObjects(c, [{ type: 'icon', x: 0.5, y: 0.5, icon: 'warn', color: '#EE3124' }], 200, 100);
+    ok('drawMarkupObjects: an icon stamp uses save/restore around its own drawing (drawIconStamp)', c.calls.includes('save') && c.calls.includes('restore'));
+    ok('drawMarkupObjects always clears the canvas first (an old markup can never bleed through a redraw)', (function () {
+      const c2 = fakeCtx(); PP._drawMarkupObjects(c2, [], 200, 100); return c2.calls[0] === 'clearRect';
+    })());
+  })();
+  // Genuine execution of the eraser's nearest-object hit test.
+  (function () {
+    const objs = [
+      { type: 'rect', x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.3 },   // centre ~ (0.2, 0.2)
+      { type: 'icon', x: 0.8, y: 0.8, icon: 'warn' },
+    ];
+    eq('markupHitTest: a click near the rect\'s centre hits the rect (index 0)', PP._markupHitTest(objs, 0.2, 0.2, 400, 300), 0);
+    eq('markupHitTest: a click near the icon hits the icon (index 1)', PP._markupHitTest(objs, 0.8, 0.8, 400, 300), 1);
+    eq('markupHitTest: a click far from everything hits nothing (-1)', PP._markupHitTest(objs, 0.5, 0.02, 400, 300), -1);
+  })();
+
+  // --- Batch G: floor-plan map/clustering view -----------------------------
+  // Structural only — mapClusters/renderMapBody depend on module-internal
+  // plan/pin state populated by load(), same DOM/auth-stack limitation this
+  // module has flagged for every other client-only surface (Phase 3's OpenCV
+  // stitching is the one exception, and that needed a real browser).
+  ok('the Plan/Map toggle exists in bim.js\'s render(), dispatching to a dedicated map body',
+     /screen2 ===? 'map'/.test(bmjs) && /function renderMapBody\(\)/.test(bmjs));
+  ok('map clustering + the month-scrub/play controls exist, mirroring Vertical Stacking\'s own null-is-live pattern',
+     /function mapClusters\(monthCutoff\)/.test(bmjs) && /function wireMapView\(\)/.test(bmjs) &&
+     /function stopMapPlay\(\)/.test(bmjs) && /mapPlaying/.test(bmjs));
+  ok('a cluster resolves the visible item\'s date via itemDateFor, cumulative up to the scrubbed month',
+     /function itemDateFor\(pin\)/.test(bmjs));
+  ok('clicking a cluster opens its member list rather than jumping straight into one item (ambiguous which one)',
+     /function openClusterList\(cluster\)/.test(bmjs));
+
+  // --- Batch H: top-view photo -> floor plan registration ------------------
+  const regMigration = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plan-registration.sql'), 'utf8');
+  ok('migration creates floor_plan_registrations, one row per (floor_plan, photo) pair', /unique \(floor_plan_id, photo_id\)/.test(regMigration));
+  ok('point_pairs + the computed homography are both stored (never recomputed on every render)', /point_pairs\s+jsonb/.test(regMigration) && /homography\s+jsonb/.test(regMigration));
+  ok('folded into supabase-schema.sql', /create table if not exists floor_plan_registrations/.test(fs.readFileSync(schemaFile, 'utf8')));
+  ok('bim.js reuses the SAME OpenCV.js readiness pattern pano.js already proved working, not a re-implementation',
+     /function ensureOpenCV\(\)/.test(bmjs) && /_cvReady/.test(bmjs));
+  ok('the registration UI requires at least MIN_REG_POINTS=4 point pairs before it will compute a homography',
+     /var MIN_REG_POINTS = 4;/.test(bmjs) && /pairs\.length < MIN_REG_POINTS/.test(bmjs));
+  ok('openRegisterFlow calls cv.findHomography with RANSAC (a few mismatched clicks must not wreck the whole warp)',
+     /cv\.findHomography\([\s\S]{0,200}cv\.RANSAC/.test(bmjs));
+  ok('the registration upsert keys on (floor_plan_id, photo_id) — a re-register REPLACES, never duplicates', /onConflict:\s*'floor_plan_id,photo_id'/.test(bmjs));
+  ok('paintActualView renders the WARPED photo via cv.warpPerspective, swapped in for the drawing image', /function paintActualView\(reg\)/.test(bmjs) && /cv\.warpPerspective/.test(bmjs));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

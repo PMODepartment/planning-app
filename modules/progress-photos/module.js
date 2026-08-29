@@ -74,6 +74,8 @@ window.ProgressPhotos = (function () {
   }
   var migrationWarned = false;             // warn once per session, not per save
   var migrationWarnedMulti = false;        // same, for the 2026-08-29 trades/works_multi columns
+  var migrationWarnedMedia = false;        // same, for the 2026-08-29 media_type column (video upload)
+  var migrationWarnedMarkup = false;       // same, for the 2026-08-29 markup column (Batch F)
   // Today's Rounds (the streamlined-walkthrough screen) was removed entirely
   // per owner feedback (2026-08-29, "Rounds can be removed") — its state vars
   // (roundsFilter/roundsSelected/walkState/_roundsComboByKey) and its render/
@@ -924,8 +926,17 @@ window.ProgressPhotos = (function () {
 
   function thumb(r, cls) {
     var u = urlOf(r);
+    var isVideo = r.media_type === 'video';
     if (!u) return '<div class="' + cls + ' pp-noimg" title="Preview unavailable">' +
                    '<span data-ico="camera" data-ico-size="18"></span></div>';
+    if (isVideo) {
+      // preload="metadata" shows the video's first frame as a thumbnail at
+      // negligible bandwidth cost, without playing dozens of clips at once in
+      // a grid — real playback only happens once opened in the lightbox.
+      return '<span class="pp-vidthumb ' + cls + '-wrap" data-act="open" data-id="' + r.id + '">' +
+        '<video class="' + cls + '" preload="metadata" muted playsinline src="' + Fmt.esc(u) + '"></video>' +
+        '<span class="pp-vidplay"></span></span>';
+    }
     return '<img class="' + cls + '" src="' + Fmt.esc(u) + '" loading="lazy" ' +
            'alt="' + Fmt.esc(r.description || 'Progress photo') + '" data-act="open" data-id="' + r.id + '" />';
   }
@@ -984,14 +995,70 @@ window.ProgressPhotos = (function () {
         '<div class="pp-gallerygrouphead"><strong>' + Fmt.esc(g.label) + '</strong>' +
           '<span class="pp-groupcount">' + g.items.length + '</span></div>' +
         '<div class="pp-gallery">' + g.items.map(function (r) {
+          // Batch E item 8: a small expand icon appears ONLY when this photo
+          // has a floor-plan pin — never shown speculatively, since most
+          // photos won't have one and an always-present-but-usually-inert
+          // icon reads as broken. BIM.pinInfoFor may not have data yet on the
+          // very first paint (its own project load races this one) — the
+          // icon simply appears on the next render once it does, same
+          // trade-off this module already accepts for the 360°/3D strip.
+          var hasPin = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor('photo', r.id);
           return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
             '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '"' +
               (selected[r.id] ? ' checked' : '') + ' /></span>' +
+            (hasPin ? '<button type="button" class="pp-pinbtn" data-pinpreview="' + r.id + '" ' +
+              'title="Show this photo\'s position on the floor plan">' +
+              '<span data-ico="mapPin" data-ico-size="13"></span></button>' : '') +
             '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + '</div>' +
           '</figure>';
         }).join('') + '</div></div>';
     }).join('');
     return bar + body;
+  }
+
+  // Batch E item 8 — a cropped/zoomed view of the floor plan centred on this
+  // photo's pin, with a Tight/Wide toggle (interpreted as two crop levels,
+  // since a literal "1/8 or 1/4 of the tile's own pixel size" would render an
+  // impractically tiny overlay on a small Gallery thumbnail). The centring
+  // math: an image positioned at left:50%/top:50% of the container, then
+  // translated by -(x_norm*100%, y_norm*100%) of ITS OWN box (not the
+  // container's — percentage transforms are always relative to the
+  // transformed element itself), places the point at (x_norm,y_norm) of the
+  // image exactly at the container's centre regardless of zoom level.
+  function openPinPreview(photoId) {
+    if (!window.BIM || !BIM.pinInfoFor) return;
+    var info = BIM.pinInfoFor('photo', photoId);
+    if (!info || !info.planUrl) { UI.toast('That floor plan image is not available', 'warn'); return; }
+    var tight = true;
+    function bodyHTML() {
+      var zoomPct = tight ? 700 : 350;
+      var dir = info.pin.direction_deg;
+      var hasDir = dir !== null && dir !== undefined;
+      return '<div class="pp-pinpreview-box">' +
+        '<img src="' + Fmt.esc(info.planUrl) + '" style="position:absolute;left:50%;top:50%;width:' + zoomPct +
+          '%;max-width:none;transform:translate(-' + (info.pin.x_norm * 100) + '%,-' + (info.pin.y_norm * 100) + '%);" alt="" />' +
+        (hasDir ? '<div class="pp-pinpreview-cone" style="transform:translate(-50%,-100%) rotate(' + dir + 'deg);"></div>' : '') +
+        '<div class="pp-pinpreview-dot"></div>' +
+      '</div>';
+    }
+    var html =
+      '<div class="pd-modal-header"><h3>' + Fmt.esc(info.planName || 'Floor plan') + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<div id="pp-pinpreview-host">' + bodyHTML() + '</div>' +
+        '<div class="pp-pinpreview-zoom">' +
+          '<button type="button" class="pd-btn' + (tight ? ' pd-btn-primary' : '') + '" id="pp-pinpreview-tight">Tight</button>' +
+          '<button type="button" class="pd-btn' + (!tight ? ' pd-btn-primary' : '') + '" id="pp-pinpreview-wide">Wide</button>' +
+        '</div>' +
+      '</div>';
+    var m = openModal(html, 420);
+    function refresh() {
+      $('pp-pinpreview-host').innerHTML = bodyHTML();
+      $('pp-pinpreview-tight').classList.toggle('pd-btn-primary', tight);
+      $('pp-pinpreview-wide').classList.toggle('pd-btn-primary', !tight);
+    }
+    $('pp-pinpreview-tight').onclick = function () { tight = true; refresh(); };
+    $('pp-pinpreview-wide').onclick = function () { tight = false; refresh(); };
   }
 
   // -------------------------------------------------------- 360°/3D media strip
@@ -1086,6 +1153,10 @@ window.ProgressPhotos = (function () {
         else if (a === 'edit') openForm(r);
         else if (a === 'del') remove(r);
       };
+    });
+    // Batch E item 8 — the expandable key-plan-style pin icon on a Gallery tile.
+    Array.prototype.forEach.call(host.querySelectorAll('[data-pinpreview]'), function (btn) {
+      btn.onclick = function (e) { e.stopPropagation(); openPinPreview(this.dataset.pinpreview); };
     });
     // Batch select (follow-up feedback item 5) — one checkbox per row/tile,
     // in both List and Gallery views (they're two displays of the same
@@ -1199,7 +1270,10 @@ window.ProgressPhotos = (function () {
     paintLightbox();
     $('pp-lightbox').hidden = false;
   }
-  function closeLightbox() { $('pp-lightbox').hidden = true; }
+  function closeLightbox() {
+    $('pp-lightbox').hidden = true;
+    var vidEl = $('pp-lb-video'); if (vidEl) { vidEl.pause(); vidEl.src = ''; }
+  }
   function stepLightbox(d) {
     if (!lightboxIds.length) return;
     lightboxAt = (lightboxAt + d + lightboxIds.length) % lightboxIds.length;
@@ -1208,7 +1282,15 @@ window.ProgressPhotos = (function () {
   function paintLightbox() {
     var r = byId(lightboxIds[lightboxAt]); if (!r) return;
     var u = urlOf(r);
-    $('pp-lb-img').src = u || '';
+    var isVideo = r.media_type === 'video';
+    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video');
+    if (isVideo) {
+      if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
+      if (vidEl) { vidEl.hidden = false; vidEl.src = u || ''; }
+    } else {
+      if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
+      if (imgEl) { imgEl.hidden = false; imgEl.src = u || ''; }
+    }
     $('pp-lb-cap').innerHTML =
       '<strong>' + Fmt.esc(r.description || 'Progress photo') + '</strong>' +
       '<span>' + Fmt.esc(tradesOf(r).concat(worksOf(r), [r.location]).filter(Boolean).join(' · ')) +
@@ -1221,7 +1303,45 @@ window.ProgressPhotos = (function () {
     if (delBtn) delBtn.onclick = function () { closeLightbox(); remove(r); };
     var dlBtn = $('pp-lb-download');
     if (dlBtn) dlBtn.onclick = function () { download(r); };
+    // Markup (18-item list item 13) — hidden on Gallery tiles by contract,
+    // shown here only. Visibility is a per-session UI toggle (not persisted
+    // per photo — "show it right now" is a viewing preference, not data).
+    var mkBtn = $('pp-lb-markuptoggle'), mkEditBtn = $('pp-lb-markupedit');
+    if (mkEditBtn) mkEditBtn.style.display = canWrite ? '' : 'none';
+    if (mkBtn) mkBtn.onclick = function () { lightboxMarkupVisible = !lightboxMarkupVisible; paintMarkupOverlay(r); };
+    if (mkEditBtn) mkEditBtn.onclick = function () {
+      openMarkupEditor(u, r.markup || [], async function (newMarkup) {
+        r.markup = newMarkup;
+        lightboxMarkupVisible = true;
+        var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: { markup: newMarkup, updated_at: new Date().toISOString() } });
+        if (!w.ok) UI.toast(w.error && w.error.message || 'Could not save markup', 'error');
+        paintMarkupOverlay(r);
+      });
+    };
+    lightboxMarkupVisible = true;
+    paintMarkupOverlay(r);
     hydrate($('pp-lightbox'));
+  }
+  var lightboxMarkupVisible = true;
+  function paintMarkupOverlay(r) {
+    var canvas = $('pp-lb-markup-canvas'); if (!canvas) return;
+    var imgEl = r.media_type === 'video' ? $('pp-lb-video') : $('pp-lb-img');
+    var show = lightboxMarkupVisible && r.markup && r.markup.length;
+    canvas.style.display = show ? '' : 'none';
+    var mkBtn = $('pp-lb-markuptoggle');
+    if (mkBtn) mkBtn.classList.toggle('is-active', lightboxMarkupVisible);
+    if (!show || !imgEl) return;
+    // Sized to match whichever media element is currently visible — a photo
+    // and a video report their box differently but both are the SAME element
+    // the markup coordinates (normalized 0..1) are relative to.
+    function fit() {
+      var rect = imgEl.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      canvas.width = rect.width; canvas.height = rect.height;
+      canvas.style.width = rect.width + 'px'; canvas.style.height = rect.height + 'px';
+      drawMarkupObjects(canvas.getContext('2d'), r.markup, canvas.width, canvas.height);
+    }
+    if (imgEl.complete !== false) fit(); else imgEl.onload = fit;
   }
 
   async function download(r) {
@@ -1231,6 +1351,237 @@ window.ProgressPhotos = (function () {
     a.href = u;
     a.download = (r.photo_url || 'photo').split('/').pop();
     document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ------------------------------------------------------- markup editor ---
+  // 18-item list item 13/14: a vector annotation layer (pencil, eraser,
+  // shapes, text, icon stamps), hidden on Gallery tiles, shown only when a
+  // photo/slide is opened. ONE engine, exposed publicly (openMarkupEditor
+  // below) so ppr.js's presentation-only overlay (item 14 — "native only to
+  // the presentation, not shared with the photo") reuses it rather than a
+  // second canvas implementation: ppr.js already depends on ProgressPhotos
+  // being loaded first (onProject/openUploadForPicker/allPhotos all work the
+  // same way), so this follows the same established cross-file convention.
+  //
+  // Storage format is a plain JS array of objects — never a second rasterised
+  // image — so it stays small, can be toggled on/off losslessly, and
+  // re-renders correctly at any canvas size:
+  //   {type:'pen', points:[[x,y],...], color}
+  //   {type:'rect'|'circle'|'arrow', x0,y0,x1,y1, color}   (all in 0..1 of the image)
+  //   {type:'text', x,y, text, color}
+  //   {type:'icon', x,y, icon, color}                       (icon: 'warn'|'arrow'|'person'|'equip')
+  // Coordinates are normalized 0..1 of the image's own box, exactly like
+  // floor_plan_pins' x_norm/y_norm — the same reason: re-renders correctly
+  // regardless of the canvas's actual pixel size.
+  var MARKUP_COLORS = ['#EE3124', '#231F20', '#FFC400', '#1E88E5', '#43A047'];
+  // Hand-drawn on the canvas rather than reused from icons.js — that file's
+  // glyphs mix <path>/<circle>/<line>/<polygon> elements, which Path2D (the
+  // only way to paint an SVG path onto a 2D canvas) cannot parse as a single
+  // 'd' string. Four simple primitives cover the ask.
+  function drawIconStamp(ctx, name, cx, cy, size, color) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = Math.max(2, size * 0.08);
+    var r = size / 2;
+    if (name === 'warn') {
+      ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy + r); ctx.lineTo(cx - r, cy + r); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.35); ctx.lineTo(cx, cy + r * 0.25); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy + r * 0.55, size * 0.05, 0, Math.PI * 2); ctx.fill();
+    } else if (name === 'arrow') {
+      ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r * 0.5, cy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + r, cy); ctx.lineTo(cx + r * 0.3, cy - r * 0.5); ctx.lineTo(cx + r * 0.3, cy + r * 0.5); ctx.closePath(); ctx.fill();
+    } else if (name === 'person') {
+      ctx.beginPath(); ctx.arc(cx, cy - r * 0.5, r * 0.35, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.1); ctx.lineTo(cx, cy + r * 0.5); ctx.moveTo(cx - r * 0.4, cy + r * 0.9); ctx.lineTo(cx, cy + r * 0.5); ctx.lineTo(cx + r * 0.4, cy + r * 0.9);
+      ctx.moveTo(cx - r * 0.35, cy + r * 0.05); ctx.lineTo(cx, cy + r * 0.25); ctx.lineTo(cx + r * 0.35, cy + r * 0.05); ctx.stroke();
+    } else { // 'equip'
+      ctx.strokeRect(cx - r * 0.7, cy - r * 0.5, r * 1.4, r);
+      ctx.beginPath(); ctx.moveTo(cx - r * 0.35, cy - r * 0.5); ctx.lineTo(cx - r * 0.35, cy - r * 0.85); ctx.lineTo(cx + r * 0.35, cy - r * 0.85); ctx.lineTo(cx + r * 0.35, cy - r * 0.5); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawMarkupObjects(ctx, objs, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    objs.forEach(function (o) {
+      ctx.strokeStyle = o.color || MARKUP_COLORS[0]; ctx.fillStyle = o.color || MARKUP_COLORS[0]; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (o.type === 'pen' && o.points && o.points.length) {
+        ctx.beginPath();
+        o.points.forEach(function (p, i) { var x = p[0] * w, y = p[1] * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+        ctx.stroke();
+      } else if (o.type === 'rect') {
+        ctx.strokeRect(o.x0 * w, o.y0 * h, (o.x1 - o.x0) * w, (o.y1 - o.y0) * h);
+      } else if (o.type === 'circle') {
+        var cx = (o.x0 + o.x1) / 2 * w, cy = (o.y0 + o.y1) / 2 * h;
+        var rx = Math.abs(o.x1 - o.x0) / 2 * w, ry = Math.abs(o.y1 - o.y0) / 2 * h;
+        ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+      } else if (o.type === 'arrow') {
+        var x0 = o.x0 * w, y0 = o.y0 * h, x1 = o.x1 * w, y1 = o.y1 * h;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+        var ang = Math.atan2(y1 - y0, x1 - x0), head = 14;
+        ctx.beginPath(); ctx.moveTo(x1, y1);
+        ctx.lineTo(x1 - head * Math.cos(ang - Math.PI / 7), y1 - head * Math.sin(ang - Math.PI / 7));
+        ctx.lineTo(x1 - head * Math.cos(ang + Math.PI / 7), y1 - head * Math.sin(ang + Math.PI / 7));
+        ctx.closePath(); ctx.fill();
+      } else if (o.type === 'text') {
+        ctx.font = '700 18px Montserrat, Arial, sans-serif';
+        ctx.textBaseline = 'top';
+        var tx = o.x * w, ty = o.y * h;
+        var metrics = ctx.measureText(o.text || '');
+        ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(tx - 3, ty - 2, metrics.width + 6, 22);
+        ctx.fillStyle = o.color || MARKUP_COLORS[0];
+        ctx.fillText(o.text || '', tx, ty);
+      } else if (o.type === 'icon') {
+        drawIconStamp(ctx, o.icon, o.x * w, o.y * h, 34, o.color || MARKUP_COLORS[0]);
+      }
+    });
+  }
+  // Nearest-object hit test for the eraser — "erase" on a vector layer means
+  // REMOVE THE OBJECT, not paint pixels transparent (there are no pixels);
+  // this is the vector equivalent the plan itself calls for ("eraser as a
+  // path-hit-test removal").
+  function markupHitTest(objs, nx, ny, w, h) {
+    var best = -1, bestDist = 26; // px tolerance
+    objs.forEach(function (o, i) {
+      var d = Infinity;
+      if (o.type === 'pen') {
+        o.points.forEach(function (p) { d = Math.min(d, Math.hypot((p[0] - nx) * w, (p[1] - ny) * h)); });
+      } else if (o.type === 'text' || o.type === 'icon') {
+        d = Math.hypot((o.x - nx) * w, (o.y - ny) * h);
+      } else {
+        var cx = (o.x0 + o.x1) / 2, cy = (o.y0 + o.y1) / 2;
+        d = Math.hypot((cx - nx) * w, (cy - ny) * h);
+      }
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  }
+
+  // Opens the shared markup editor. `imageUrl` is any already-signed URL
+  // (a photo, or a PPR pane's photo — the caller resolves that);
+  // `initialMarkup` is the existing array (or []); `onSave(newMarkup)` is
+  // called with the finished array on Save, never called on Cancel.
+  function openMarkupEditor(imageUrl, initialMarkup, onSave) {
+    var objs = (initialMarkup || []).map(function (o) { return Object.assign({}, o); }); // work on a copy — Cancel must leave the original untouched
+    var tool = 'pen', color = MARKUP_COLORS[0], iconChoice = 'warn';
+    var undone = []; // undo stack of removed/added ops, simple whole-array snapshots (this layer is small — dozens of objects at most)
+    var history = [objs.map(function (o) { return Object.assign({}, o); })];
+
+    var html =
+      '<div class="pd-modal-header"><h3>Markup</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<div class="pp-mk-toolbar">' +
+          '<div class="pp-mk-tools" role="tablist">' +
+            ['pen', 'rect', 'circle', 'arrow', 'text', 'icon', 'erase'].map(function (t) {
+              var lbl = { pen: 'Pen', rect: 'Rect', circle: 'Circle', arrow: 'Arrow', text: 'Text', icon: 'Icon', erase: 'Eraser' }[t];
+              return '<button type="button" class="pp-mk-tool' + (t === tool ? ' active' : '') + '" data-tool="' + t + '">' + lbl + '</button>';
+            }).join('') +
+          '</div>' +
+          '<div class="pp-mk-icons" id="pp-mk-icons" style="display:none;">' +
+            ['warn', 'arrow', 'person', 'equip'].map(function (ic) {
+              return '<button type="button" class="pp-mk-tool' + (ic === iconChoice ? ' active' : '') + '" data-icon="' + ic + '">' + ic + '</button>';
+            }).join('') +
+          '</div>' +
+          '<div class="pp-mk-colors">' + MARKUP_COLORS.map(function (c) {
+            return '<button type="button" class="pp-mk-swatch' + (c === color ? ' active' : '') + '" data-color="' + c + '" style="background:' + c + ';"></button>';
+          }).join('') + '</div>' +
+          '<button type="button" class="pd-btn" id="pp-mk-undo">Undo</button>' +
+          '<button type="button" class="pd-btn" id="pp-mk-clear">Clear all</button>' +
+        '</div>' +
+        '<div class="pp-mk-canvaswrap" id="pp-mk-canvaswrap">' +
+          '<img id="pp-mk-img" src="' + Fmt.esc(imageUrl) + '" alt="" />' +
+          '<canvas id="pp-mk-canvas"></canvas>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp-mk-save">Save markup</button></div>';
+    var m = openModal(html, 900);
+
+    var canvas = $('pp-mk-canvas'), ctx = canvas.getContext('2d'), img = $('pp-mk-img');
+    function sizeCanvas() {
+      var r = img.getBoundingClientRect();
+      canvas.width = r.width; canvas.height = r.height;
+      canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
+      redraw();
+    }
+    function redraw() { drawMarkupObjects(ctx, objs, canvas.width, canvas.height); }
+    function pushHistory() { history.push(objs.map(function (o) { return Object.assign({}, o); })); undone = []; }
+    if (img.complete) sizeCanvas(); else img.onload = sizeCanvas;
+    window.addEventListener('resize', sizeCanvas);
+
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-tool]'), function (b) {
+      b.onclick = function () {
+        tool = this.dataset.tool;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-tool]'), function (x) { x.classList.toggle('active', x.dataset.tool === tool); });
+        $('pp-mk-icons').style.display = tool === 'icon' ? '' : 'none';
+      };
+    });
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-icon]'), function (b) {
+      b.onclick = function () {
+        iconChoice = this.dataset.icon;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-icon]'), function (x) { x.classList.toggle('active', x.dataset.icon === iconChoice); });
+      };
+    });
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (b) {
+      b.onclick = function () {
+        color = this.dataset.color;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (x) { x.classList.toggle('active', x.dataset.color === color); });
+      };
+    });
+    $('pp-mk-undo').onclick = function () {
+      if (history.length < 2) return;
+      undone.push(history.pop());
+      objs = history[history.length - 1].map(function (o) { return Object.assign({}, o); });
+      redraw();
+    };
+    $('pp-mk-clear').onclick = function () { objs = []; pushHistory(); redraw(); };
+
+    var drawing = false, penPoints = null, shapeStart = null;
+    function toNorm(e) {
+      var r = canvas.getBoundingClientRect();
+      return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+    }
+    canvas.addEventListener('pointerdown', function (e) {
+      canvas.setPointerCapture(e.pointerId);
+      var p = toNorm(e);
+      if (tool === 'erase') {
+        var idx = markupHitTest(objs, p[0], p[1], canvas.width, canvas.height);
+        if (idx >= 0) { objs.splice(idx, 1); pushHistory(); redraw(); }
+        return;
+      }
+      if (tool === 'text') {
+        var text = prompt('Text:'); if (!text) return;
+        objs.push({ type: 'text', x: p[0], y: p[1], text: text, color: color });
+        pushHistory(); redraw(); return;
+      }
+      if (tool === 'icon') {
+        objs.push({ type: 'icon', x: p[0], y: p[1], icon: iconChoice, color: color });
+        pushHistory(); redraw(); return;
+      }
+      drawing = true;
+      if (tool === 'pen') { penPoints = [p]; objs.push({ type: 'pen', points: penPoints, color: color }); }
+      else { shapeStart = p; objs.push({ type: tool, x0: p[0], y0: p[1], x1: p[0], y1: p[1], color: color }); }
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!drawing) return;
+      var p = toNorm(e);
+      if (tool === 'pen') { penPoints.push(p); }
+      else { var last = objs[objs.length - 1]; last.x1 = p[0]; last.y1 = p[1]; }
+      redraw();
+    });
+    ['pointerup', 'pointercancel'].forEach(function (ev) {
+      canvas.addEventListener(ev, function () {
+        if (!drawing) return;
+        drawing = false; pushHistory();
+      });
+    });
+
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-close]'), function (b) {
+      b.onclick = function () { window.removeEventListener('resize', sizeCanvas); m.close(); };
+    });
+    $('pp-mk-save').onclick = function () {
+      window.removeEventListener('resize', sizeCanvas);
+      m.close();
+      if (onSave) onSave(objs);
+    };
   }
 
   // --------------------------------------------------------------- upload ---
@@ -1405,17 +1756,58 @@ window.ProgressPhotos = (function () {
     hydrate(ctx);
   }
 
+  // Add-media type selector (18-item list item 4). Photo is the default and
+  // the only kind this form has ever produced; Video is a plain,
+  // unprocessed upload sharing every other field (trade/works/location/key
+  // plan all apply the same way to a clip). 360°/3D are shown, not hidden —
+  // so a planner can SEE the capability exists — but disabled with a
+  // tooltip, since Gaussian Splatting/RunPod are on hold; they route to
+  // pano.js/recon.js's own real capture flows (unchanged) once re-enabled,
+  // never re-implemented here.
+  function mediaTypeSelectorHTML(idPrefix, cur) {
+    cur = cur || 'photo';
+    return '<div class="pd-field pp-span2"><label>Type</label>' +
+      '<div class="pp-mtypesel" role="tablist">' +
+        '<button type="button" class="pp-mtype' + (cur === 'photo' ? ' active' : '') +
+          '" data-mtype="photo" id="' + idPrefix + '-mtype-photo">Photo</button>' +
+        '<button type="button" class="pp-mtype' + (cur === 'video' ? ' active' : '') +
+          '" data-mtype="video" id="' + idPrefix + '-mtype-video">Video</button>' +
+        '<button type="button" class="pp-mtype" disabled title="360° and 3D capture are on hold — see the Photos screen\'s own 360°/3D tools">' +
+          '360° / 3D</button>' +
+      '</div></div>';
+  }
+  function wireMediaTypeSelector(idPrefix, onChange) {
+    var cur = 'photo';
+    var fileInput = $(idPrefix + '-files');
+    function apply() {
+      if (fileInput) fileInput.accept = cur === 'video' ? 'video/*' : 'image/*';
+      if (fileInput) fileInput.removeAttribute('capture');
+      var pBtn = $(idPrefix + '-mtype-photo'), vBtn = $(idPrefix + '-mtype-video');
+      if (pBtn) pBtn.classList.toggle('active', cur === 'photo');
+      if (vBtn) vBtn.classList.toggle('active', cur === 'video');
+      var lbl = document.querySelector('label[for="' + idPrefix + '-files"]');
+      if (onChange) onChange(cur);
+    }
+    ['photo', 'video'].forEach(function (t) {
+      var btn = $(idPrefix + '-mtype-' + t);
+      if (btn) btn.onclick = function () { cur = t; apply(); };
+    });
+    apply();
+    return { get: function () { return cur; } };
+  }
+
   function openUpload(preset) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
     preset = preset || {};
     var today = new Date().toISOString().slice(0, 10);
     var html =
-      '<div class="pd-modal-header"><h3>Add photos</h3>' +
+      '<div class="pd-modal-header"><h3>Add media</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<p class="pp-hint">Fields below apply to every photo in this batch — edit any ' +
-          'individual photo afterwards.</p>' +
-        '<div class="pd-field"><label>Photos</label>' +
+        '<p class="pp-hint">Fields below apply to every file in this batch — edit any ' +
+          'individual item afterwards.</p>' +
+        mediaTypeSelectorHTML('pp') +
+        '<div class="pd-field" id="pp-filesfield"><label>Photos</label>' +
           '<input class="pd-input" type="file" id="pp-files" accept="image/*" capture="environment" multiple /></div>' +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
@@ -1439,11 +1831,15 @@ window.ProgressPhotos = (function () {
     wireLocationField('pp');
     wireTradeWorks('pp');
     wireKeyPlanField('pp');
+    var mtype = wireMediaTypeSelector('pp', function (t) {
+      var fld = $('pp-filesfield'); if (fld) fld.querySelector('label').textContent = t === 'video' ? 'Videos' : 'Photos';
+    });
     hydrate(m.el);
 
     $('pp-save').onclick = async function () {
       var files = $('pp-files').files;
-      if (!files || !files.length) { UI.toast('Choose at least one photo', 'warn'); return; }
+      var kind = mtype.get();
+      if (!files || !files.length) { UI.toast('Choose at least one ' + (kind === 'video' ? 'video' : 'photo'), 'warn'); return; }
       var reqErr = requiredFieldsMissing('pp');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
@@ -1467,7 +1863,8 @@ window.ProgressPhotos = (function () {
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp'),
-        key_plan_url: readKeyPlanValue('pp') || null
+        key_plan_url: readKeyPlanValue('pp') || null,
+        media_type: kind
       };
       this.disabled = true;
       var prog = $('pp-prog'); prog.hidden = false;
@@ -1485,10 +1882,25 @@ window.ProgressPhotos = (function () {
       }
 
       m.close();
-      if (done) UI.toast(done + ' photo' + (done === 1 ? '' : 's') + ' uploaded', 'ok');
+      if (done) UI.toast(done + ' ' + (kind === 'video' ? 'video' : 'photo') + (done === 1 ? '' : 's') + ' uploaded', 'ok');
       if (queued) UI.toast(queued + ' photo' + (queued === 1 ? '' : 's') + ' queued — offline, will sync automatically', 'warn');
       if (failed.length) UI.toast(failed.length + ' failed — ' + failed[0], 'error');
       await load();
+      // Floor-plan pin + direction as a "best practice" follow-up (18-item
+      // list, Batch E) — NON-BLOCKING by design: the plan's own wording
+      // ("gains a REQUIRED floor-plan step") would turn every capture,
+      // everywhere, into a hard gate on the Plans module even existing yet
+      // for this project. Making an already-shipped, well-tested critical
+      // path (Add photos) newly blockable on an unrelated module's state is
+      // a bigger behaviour change than "best practice" calls for — so this
+      // offers the capability right after a successful upload instead,
+      // skippable, using the FIRST uploaded item to represent the whole
+      // batch (a pin is fundamentally ONE point; a set of photos captured
+      // together is well represented by one).
+      if (newIds.length && window.BIM && BIM.hasPlans && BIM.hasPlans() && BIM.openPinPickerFor) {
+        BIM.openPinPickerFor('photo', newIds[0],
+          newIds.length > 1 ? newIds.length + ' photos' : 'this photo', function () {});
+      }
       if (typeof preset.onDone === 'function') preset.onDone(newIds);
     };
   }
@@ -1655,6 +2067,33 @@ window.ProgressPhotos = (function () {
         UI.toast('Saved with only the first Trade/Works value — run the pending migration for multi-select', 'warn');
       }
       return await doWrite(Object.assign({}, job, { patch: stripped2 }));
+    }
+    // Same tolerance for media_type (18-item list item 4, video upload) — a
+    // pre-migration save still lands, just without knowing it's a video (it
+    // renders as a broken <img>, no worse than before this feature existed).
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('media_type' in job.patch)) {
+      var stripped3 = Object.assign({}, job.patch);
+      delete stripped3.media_type;
+      if (!migrationWarnedMedia) {
+        migrationWarnedMedia = true;
+        UI.toast('Saved, but video type not stored — run migrations/2026-08-29-photo-media-type.sql', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped3 }));
+    }
+    // Same tolerance for markup (Batch F) — a pre-migration save drops the
+    // just-drawn annotation rather than failing the whole update; the modal
+    // has already closed by the time this runs, so the warning is the only
+    // way the planner learns the markup didn't actually persist.
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('markup' in job.patch)) {
+      var stripped4 = Object.assign({}, job.patch);
+      delete stripped4.markup;
+      if (!migrationWarnedMarkup) {
+        migrationWarnedMarkup = true;
+        UI.toast('Markup could not be saved — run migrations/2026-08-29-markup.sql', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped4 }));
     }
     return w;
   }
@@ -1947,6 +2386,27 @@ window.ProgressPhotos = (function () {
     // Read by the Floor Plan pin picker (bim.js / Phase 5) to offer a photo
     // to pin without a second fetch of the same project's library.
     allPhotos: function () { return rows.slice(); },
+    // Signed URL for an arbitrary photo id — used by bim.js's Batch H image
+    // registration (it needs the actual pixels of a top-view photo, not just
+    // the row) and available generally for the same reason allPhotos() is.
+    urlOfPhotoId: function (id) { var r = byId(id); return r ? urlOf(r) : ''; },
+    // Shared markup engine (18-item list item 13/14) — ppr.js's own
+    // presentation-only overlay reuses this instead of a second canvas
+    // implementation. See openMarkupEditor's own comment for the format.
+    openMarkupEditor: function (imageUrl, initialMarkup, onSave) { openMarkupEditor(imageUrl, initialMarkup, onSave); },
+    // Read-only render of a markup array onto an already-sized <canvas> — used
+    // by ppr.js's own presentation-only overlay (a SEPARATE store, keyed by
+    // ppr_slide_id+pane) so it never has to duplicate drawMarkupObjects'
+    // per-shape drawing code just to display something someone already drew.
+    // The canvas's own pixel size (set by the caller from its wrapper's
+    // rendered size) is read directly, not assumed — a markup drawn against
+    // one aspect ratio must scale correctly onto whatever size the caller
+    // gives it, since normalized 0..1 coordinates are all that's stored.
+    drawMarkupOnCanvas: function (canvas, objs) {
+      if (!canvas || !canvas.getContext) return;
+      var ctx = canvas.getContext('2d');
+      drawMarkupObjects(ctx, objs || [], canvas.width, canvas.height);
+    },
     // Opens a SPECIFIC photo's lightbox regardless of whatever the Photos
     // screen's own filtered view currently holds in `lightboxIds` — plain
     // openLightbox(id) falls back to index 0 on a miss, which would silently
@@ -1969,6 +2429,14 @@ window.ProgressPhotos = (function () {
     // the panorama+reconstruction merge, rather than only regex-checking the
     // source, the same way _tradesOf/_worksOf are exercised above.
     _mediaStripMatches: function (item) { return mediaStripMatches(item); },
-    _mediaStripItems: function () { return mediaStripItems(); }
+    _mediaStripItems: function () { return mediaStripItems(); },
+    // Test-only hooks for the markup engine (Batch F, 2026-08-29) — the same
+    // convention as every hook above: genuinely EXECUTE the per-shape canvas
+    // drawing and the eraser's nearest-object hit test against real objects,
+    // rather than only regex-matching the source. A fake ctx recorder (built
+    // in test.js) captures which canvas 2D calls actually fired per shape
+    // type — the one way to tell "drew a rect" from "silently did nothing".
+    _drawMarkupObjects: function (ctx, objs, w, h) { drawMarkupObjects(ctx, objs, w, h); },
+    _markupHitTest: function (objs, nx, ny, w, h) { return markupHitTest(objs, nx, ny, w, h); }
   };
 })();

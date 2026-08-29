@@ -86,6 +86,8 @@ create table if not exists progress_photos (
                                        -- Key plan is per PHOTO, not per PPR slide (migrations/2026-08-28-*.sql):
                                        -- one comparison can pair two photos with different key plans.
   archived    boolean default false,  -- soft-archive (Gallery batch action, 2026-08-29 follow-up) — never a hard delete
+  media_type  text default 'photo',  -- 'photo' | 'video' (18-item list item 4) — never related to 360/3D/Gaussian Splatting
+  markup      jsonb default '[]'::jsonb,  -- vector annotation layer (18-item list item 13), hidden on Gallery tiles
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
@@ -255,12 +257,69 @@ create table if not exists floor_plan_pins (
   item_id       uuid not null,
   x_norm        double precision not null check (x_norm >= 0 and x_norm <= 1),
   y_norm        double precision not null check (y_norm >= 0 and y_norm <= 1),
+  direction_deg double precision, -- camera facing, 0-360 clockwise from up (Batch E) — NULL = not recorded
   label         text,
   created_by    uuid references users(id),
   created_at    timestamptz default now()
 );
 create index if not exists idx_floor_plan_pins_plan on floor_plan_pins(floor_plan_id);
 create index if not exists idx_floor_plan_pins_project on floor_plan_pins(project_id);
+
+-- Top-view photo -> floor plan registration (Batch H). See
+-- migrations/2026-08-29-floor-plan-registration.sql for the full rationale.
+create table if not exists floor_plan_registrations (
+  id             uuid primary key default gen_random_uuid(),
+  floor_plan_id  uuid references floor_plans(id) on delete cascade,
+  photo_id       uuid references progress_photos(id) on delete cascade,
+  project_id     text references projects(id),
+  point_pairs    jsonb not null default '[]'::jsonb,
+  homography     jsonb,
+  created_by     uuid references users(id),
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now(),
+  unique (floor_plan_id, photo_id)
+);
+create index if not exists floor_plan_registrations_plan_idx on floor_plan_registrations (floor_plan_id);
+alter table floor_plan_registrations enable row level security;
+drop policy if exists floor_plan_registrations_read on floor_plan_registrations;
+create policy floor_plan_registrations_read on floor_plan_registrations for select using (can_access_project(project_id));
+drop policy if exists floor_plan_registrations_ins on floor_plan_registrations;
+create policy floor_plan_registrations_ins on floor_plan_registrations for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id));
+drop policy if exists floor_plan_registrations_upd on floor_plan_registrations;
+create policy floor_plan_registrations_upd on floor_plan_registrations for update
+  using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()))
+  with check (is_writer() and can_access_project(project_id));
+drop policy if exists floor_plan_registrations_del on floor_plan_registrations;
+create policy floor_plan_registrations_del on floor_plan_registrations for delete
+  using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
+
+-- Presentation-only markup overlay (Batch F, item 14). See
+-- migrations/2026-08-29-markup.sql for the full rationale — separate from
+-- progress_photos.markup (the photo's own permanent annotation) on purpose.
+create table if not exists ppr_slide_markups (
+  id            uuid primary key default gen_random_uuid(),
+  ppr_slide_id  uuid references ppr_slides(id) on delete cascade,
+  project_id    text references projects(id),
+  pane          text not null check (pane in ('before', 'after')),
+  markup        jsonb default '[]'::jsonb,
+  created_by    uuid references users(id),
+  created_at    timestamptz default now(),
+  updated_at    timestamptz default now(),
+  unique (ppr_slide_id, pane)
+);
+create index if not exists ppr_slide_markups_slide_idx on ppr_slide_markups (ppr_slide_id);
+alter table ppr_slide_markups enable row level security;
+drop policy if exists ppr_slide_markups_read on ppr_slide_markups;
+create policy ppr_slide_markups_read on ppr_slide_markups for select using (can_access_project(project_id));
+drop policy if exists ppr_slide_markups_ins on ppr_slide_markups;
+create policy ppr_slide_markups_ins on ppr_slide_markups for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id));
+drop policy if exists ppr_slide_markups_upd on ppr_slide_markups;
+create policy ppr_slide_markups_upd on ppr_slide_markups for update
+  using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()))
+  with check (is_writer() and can_access_project(project_id));
+drop policy if exists ppr_slide_markups_del on ppr_slide_markups;
+create policy ppr_slide_markups_del on ppr_slide_markups for delete
+  using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
 alter table floor_plan_pins enable row level security;
 drop policy if exists floor_plan_pins_read on floor_plan_pins;
 create policy floor_plan_pins_read on floor_plan_pins for select using (can_access_project(project_id));

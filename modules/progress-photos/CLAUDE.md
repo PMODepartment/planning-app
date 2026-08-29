@@ -2,6 +2,190 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Batches E–H + Add-media type/video: pin+direction, markup+slide-sorter, map view, top-view registration (2026-08-29)
+
+Owner: *"do all the items not done including Batches E to H."* Closes every remaining item from
+the standing plan (`C:\Users\gwsia\.claude\plans\elegant-mixing-mitten.md`) — the two smaller
+follow-ups (the Add-media Photo/Video/360°/3D type selector, real video upload) plus the four
+largest novel builds (E: per-photo pin + direction capture; F: the markup/annotation editor +
+slide-sorter; G: the floor-plan map/clustering view; H: top-view photo → floor-plan registration
+via OpenCV.js homography). **Run all four new migrations**:
+`2026-08-29-photo-media-type.sql`, `2026-08-29-pin-direction.sql`, `2026-08-29-markup.sql`,
+`2026-08-29-floor-plan-registration.sql`.
+
+### Add-media: a real type selector, and video as a first-class kind
+
+The upload modal gains a Photo / Video / 360°/3D segmented picker (`mediaTypeSelectorHTML`/
+`wireMediaTypeSelector`), Photo default. Picking Video swaps the file input's `accept` to
+video mimetypes and reuses **every existing field** (trade/works/location/pins) — a video is a
+plain, unprocessed upload, with `progress_photos.media_type` (`'photo'|'video'`, no CHECK — the
+enum lives in app code, same convention as `ppr_presentations.meeting_type`) the only new thing.
+360°/3D stays visibly present but greyed with a tooltip ("on hold"), routing to the real
+`pano.js`/`recon.js` flows the moment the owner re-enables them — nothing deleted, only gated.
+- **`thumb()` renders a real `<video preload="metadata" muted playsinline>` + a CSS play-triangle
+  overlay** for a video row, never an `<img>` — `preload="metadata"` so a grid of many videos
+  doesn't each fetch its full clip just to show a frame.
+- **The lightbox carries both `<img>` and `<video>` elements**, toggled by `media_type` —
+  ⚠️ wrapped in a new `.pp-lb-imgwrap` (see Batch F below; the markup canvas needed something to
+  position absolutely against, and neither media element had one before).
+
+### Batch E — per-photo pin + direction capture, and the tile-icon preview
+
+Uploading (any media type) can now pick a floor plan, click a point, and drag out a direction —
+all via `bim.js`'s `openPinPickerFor(itemType, itemId, itemLabel, onDone)`, offered as a
+**non-blocking** prompt after a successful upload (`BIM.openPinPickerFor(...)` in `module.js`'s
+save handler). ⚠️ **Deliberately not a hard gate on the upload flow** — the plan's own "best
+practice" wording was weighed against making an already-shipped, well-tested critical path
+(Add photos) newly blockable on a DIFFERENT module's state (a project may have no floor plans at
+all yet), which is a bigger behaviour change than the ask justified.
+- `floor_plan_pins.direction_deg` (nullable, no default — an undirected pin is valid, it just
+  draws no cone). `pinConeHTML(pin)` only renders the CSS `conic-gradient` wedge when a direction
+  is actually recorded; `pinMarkerHTML` always prepends it (a no-op string when absent).
+- **`directionWidgetHTML`/`wireDirectionWidget`** — a small SVG drag-to-set-direction control
+  (pointer events, `setPointerCapture`), reused verbatim by both the in-Plans pin flow and the new
+  Gallery-triggered one, so the two entry points can't disagree about what "0°" means.
+- ⚠️ **The angle math was pulled out into a named pure function,
+  `directionDegFromDrag(dx, dy)` = `(atan2(dx, -dy) * 180/π + 360) % 360`**, specifically so it
+  could be genuinely EXECUTED by a test rather than only read — a flipped sign here is silent (the
+  widget still *looks* interactive; it just records the wrong angle for every future pin) and
+  nothing else in the UI would ever catch it.
+- `openPinPickerFor` is **self-contained** — its own plan-select + click-to-pin static image +
+  direction widget, and it deliberately never touches `activePlanId` or any pan/zoom state, so
+  pinning from the Gallery can't disturb whatever the Plans screen happens to be showing.
+- **Item 8 — the Gallery tile-icon preview.** A tile whose photo has a pin (`BIM.pinInfoFor('photo',
+  r.id)`) shows a small icon (`.pp-pinbtn`, same dark-scrim corner-overlay language as the existing
+  `.pp-cardsel`); clicking it opens `openPinPreview(photoId)` — a Tight/Wide crop-zoom modal
+  centred on the pin, with its cone. ⚠️ Reinterpreted "1/8 or 1/4 of the photo's displayed size"
+  as this Tight/Wide toggle inside a dedicated modal rather than an inline overlay, which would be
+  impractically tiny on a real Gallery thumbnail.
+- **The centring math**: `left:50%;top:50%` on the plan image, then
+  `translate(-x_norm*100%, -y_norm*100%)` — percentages resolve against the TRANSFORMED element's
+  own box, so this exactly centres the pin's fraction-of-image point at the container's centre at
+  any zoom level, with no matrix math to get wrong.
+
+### Batch F — the markup/annotation editor + slide-sorter
+
+**One shared drawing engine, two independent stores.** `module.js` owns the whole vector engine
+(`MARKUP_COLORS`, `drawIconStamp`, `drawMarkupObjects`, `markupHitTest`, `openMarkupEditor`) and
+exports both `openMarkupEditor` and a read-only `drawMarkupOnCanvas(canvas, objs)` wrapper —
+`ppr.js`'s presentation-only overlay reuses BOTH rather than re-implementing per-shape drawing a
+second time, following the same cross-file convention already established for
+`onProject`/`allPhotos`/`openUploadForPicker`.
+- **Format is a JSON array of typed objects** (`pen`/`rect`/`circle`/`arrow`/`text`/`icon`), drawn
+  fresh onto a `<canvas>` on every redraw — never a second rasterized image, so toggling it on/off
+  is lossless and it stays legible at any zoom. Icon stamps (warn/arrow/person/equip) are drawn
+  with hand-rolled Canvas 2D primitives, not reused `icons.js` SVGs — those mix `<path>`/`<circle>`/
+  `<line>`/`<polygon>` elements, incompatible with the single-`d`-string `Path2D` shape this needs.
+  "Erase" is `markupHitTest` (nearest-object) + splice — the vector-layer equivalent of an eraser;
+  there are no pixels to paint transparent.
+- ⚠️ **`progress_photos.markup`** (the photo's own permanent markup — Gallery lightbox, every
+  slide citing it) and **`ppr_slide_markups`** (a SEPARATE presentation-only overlay, keyed by
+  `(ppr_slide_id, pane)`) are two stores on purpose — the owner's own wording was "native only to
+  the presentation, not inherited by the photo." Editing one never touches the other; deleting the
+  photo/slide cascades its own markup only.
+- ⚠️ **`ppr_slide_markups` needed insert-vs-update logic, not a blind insert** — its own
+  `(ppr_slide_id, pane)` unique constraint means a SECOND edit of the same pane must UPDATE the
+  existing row (tracked via a cached `markupRowId`) or the save throws a constraint violation.
+- **Exports never reference the presentation-only overlay** — the offline HTML/PDF/PPTX are the
+  record of what was presented; the live pane toggle/edit toolbar is a viewing aid, not part of
+  that record. (`slideFigureHTML`/`slidesBodyHTML` are untouched by this batch.)
+- **Slide-sorter** (`openSlideSorter`) — a drag-to-reorder grid of slide thumbnails (native HTML5
+  drag events, no library), offered only with 2+ slides (a "Reorder slides" button beside
+  Edit/Delete presentation — nothing to reorder on a 1-slide deck). ⚠️ **Reorders a LOCAL DRAFT
+  first; nothing is written until "Save order,"** mirroring the copy wizard's own "nothing is
+  saved until you're done" rule — cancelling (× / backdrop) discards the reorder entirely. The
+  save loop skips a row whose position didn't actually change, so a small in-place shuffle costs
+  only as many writes as slides that actually moved.
+- The pure reorder step, `moveItem(arr, from, to)`, is a **new array** (never mutates its
+  argument) — exported as `_moveItem` for genuine execution.
+
+### Batch G — floor-plan map/clustering view
+
+`bim.js`'s Plan screen gains a **Plan / Map** toggle. Map mode auto-computes **cluster markers**
+(count badge) per grid-snapped location, filtered to "as of month T" via a month-stepper + Play,
+following **Project Schedule's own confirmed-portable time-scrub shape** (null-is-live,
+a timestamp is scrubbed, `setInterval`-with-auto-stop-at-max) rather than reinventing one.
+⚠️ **Grid-snap clustering (`MAP_CELL`), not proximity/k-means** — chosen specifically for
+frame-to-frame positional STABILITY as the month slider moves; a re-clustered k-means result can
+jump a marker's screen position between adjacent months even when the underlying pins didn't move,
+which reads as noise on exactly the control built to show change over time.
+- `itemDateFor(pin)` resolves which date a pin's underlying item (photo/panorama/reconstruction)
+  was captured on, so "as of month T" means "the most recent item at-or-before T," matching this
+  app's other cumulative-month-cutoff conventions elsewhere.
+- Clicking a cluster opens `openClusterList(cluster)` — its member list, never jumping straight
+  into one item, since which one a multi-item cluster "means" is ambiguous by construction.
+
+### Batch H — top-view photo → floor plan registration
+
+**Real point-based image registration**, not a flat side-by-side toggle, per the plan's own
+foundational decision. `openRegisterFlow()`: click a point on the drawing, click its matching
+point on an uploaded top-view photo, repeat ≥`MIN_REG_POINTS` (4) times; `cv.findHomography(...,
+cv.RANSAC)` computes the 3×3 perspective transform (RANSAC so a few mis-clicked pairs can't wreck
+the whole warp). `paintActualView(reg)` then renders the photo through `cv.warpPerspective` into
+the drawing's own coordinate frame — an **"Actual" view** toggle swaps it in for the drawing image,
+with the exact same pins/clusters rendering identically on top of either, since both share one
+normalized 0..1 coordinate space.
+- **`floor_plan_registrations`** is one row per `(floor_plan_id, photo_id)` pair (unique
+  constraint) — two point-pair sets for the same photo would produce two disagreeing warps of one
+  image, which isn't a state worth representing. The upsert therefore targets
+  `onConflict:'floor_plan_id,photo_id'`, so re-registering REPLACES rather than duplicating.
+- ⚠️ **`homography` is STORED, not recomputed on every render** — `findHomography` is real
+  OpenCV.js work, and re-running it every time the Plans screen paints for no reason is wasted
+  browser-side compute. It's invalidated only by re-running the registration flow.
+- `ensureOpenCV()`/the readiness-check pattern is copied from `pano.js`'s own already-proven
+  implementation (loaded once, globally, via the same CDN script tag from Phase 3) rather than
+  re-derived — this app already has exactly one way to wait for OpenCV.js to be ready.
+
+### Verified (2026-08-29)
+
+**364 checks green** (was 311), new `[28]` section covering every item above. Genuinely EXECUTED,
+not just regex-matched, via new test-only hooks (same convention as `_tradesOf`/`_zoomAnchor`/
+`_buildCopyDrafts`):
+- `BIM._directionDegFromDrag` against all four cardinal drags (0°/90°/180°/270°) — the exact math
+  that, if flipped, would silently point every future pin's cone backwards.
+- `PPR._moveItem` (drag-reorder correctness across first→last, last→first, a no-op move, and
+  non-mutation of the source array) and `PPR._markupKey`'s exact string shape.
+- `PP._drawMarkupObjects` against a **fake Canvas-2D-call-recording context** — the one way to
+  tell "drew a rect" from "silently drew nothing" per shape type: confirms `rect`→`strokeRect`,
+  `circle`→`ellipse`+`stroke`, `arrow`→`stroke`+`fill` (shaft + arrowhead), `text`→`fillText`,
+  `icon`→`save`/`restore`-wrapped, and that every call clears the canvas first.
+- `PP._markupHitTest` against a real 2-object fixture — a click near each object's centre hits its
+  index, a click far from both returns -1 (the eraser's actual "did I hit anything" decision).
+
+Structural (source-level) coverage for everything DOM/state-heavy that the harness's minimal fake
+DOM (`querySelector`/`querySelectorAll` return null/[]; no real `parentElement`) can't drive —
+Batch G's clustering/date-cutoff and Batch H's registration flow depend on `bim.js`'s own
+module-internal plan/pin/photo state populated by a real `load()` against Supabase, the same
+DOM/auth-stack limitation flagged for every other client-only surface this module has shipped
+(Phase 3's OpenCV.js stitching pipeline remains the one exception, verified in a real browser
+with a real WASM/WebGL stack).
+
+**0 functions lost** across `module.js`/`ppr.js`/`bim.js` against the pre-batch commit (16/8/30
+added respectively — bim.js grew from 363 to 938 lines, module.js and ppr.js gained the markup
+engine and its per-file wiring). 0 NUL bytes across every touched file (byte-level check, not
+`grep -c $'\x00'`). CSS braces 364/364 balanced (was 350) — two real new-selector gaps this pass
+found and fixed rather than just patched around: `.pd-modal-header`/`-body`/`-footer` were never
+the issue here, but `.pp-mk-*` (the markup editor's own toolbar/canvas classes) and
+`.pp-lb-imgwrap`/`.pp-lb-markup` (the restructured lightbox) had NO CSS at all until this pass —
+caught before shipping, not after, by checking every id/class the new HTML actually emits against
+what the stylesheet defines. The `#fff` context-allowlist (this file's own documented fragility
+tracker) gained 5 more legitimate entries (`.pp-pinbtn`, `.pp-pinpreview-dot`, `.bim-cluster`,
+`.ppr-mktool`, `.ppr-sortno`, `.pp-mk-tool.active`) — all the same shape as the ones already
+there: a fixed dark scrim or a solid brand-red badge, not a light surface. Both new RLS-carrying
+migrations (`markup.sql`, `floor-plan-registration.sql`) are paren-balanced with every
+`create policy` preceded by a matching `drop policy if exists`.
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module; none of the four
+new migrations have been run, and no click-through exists for the pin-drop flow, the markup
+editor's actual pointer-drawn strokes, the slide-sorter's real drag events, the map view's
+clustering against real photo dates, or the registration flow's `findHomography` against a real
+uploaded top-view photo. Priority for the first live pass: register one real top-view photo
+against a real floor plan and confirm the warped "Actual" view visually lines up — that's the one
+piece here where "the math is right" (execution-verified above) and "it looks correct against a
+real photo" (unverified) are genuinely different claims.
+
+`MODULE_V` → `20260829h`; `module.css/js` / `ppr.js` / `bim.js` → `?v=20260829h`.
+
 ## Deployment plan: Presentations row rework, shared location, PPTX/PDF fixes, copy wizard, Gallery batch select (2026-08-29)
 
 Owner: *"Please already do the Deployment Plan"* with six additional numbered items folded in
