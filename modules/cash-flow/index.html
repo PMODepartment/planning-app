@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260829a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260830c" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -218,7 +218,6 @@
     .cf-bm-row .pd-input, .cf-bm-row .pd-select { padding:5px 7px; font-size:12px; }
 
     /* sidebar-less shell (matches Project Schedule) */
-    .cf-modback { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-right:6px; }
 
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
     .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
@@ -284,8 +283,7 @@
   </aside>
   <div class="pd-content">
     <div class="pd-topbar">
-      <a class="pd-btn cf-modback" href="../../modules.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
-      <h1 style="margin:0;"><span data-ico="cash" data-ico-size="20" style="color:var(--pd-red);vertical-align:-3px;margin-right:6px;"></span>Cash Flow Projection</h1>
+      <h1 class="cf-title" style="margin:0;"><span class="cf-title-ico" data-ico="cash" data-ico-size="20" style="color:var(--pd-red);vertical-align:-3px;margin-right:6px;"></span><span class="cf-title-txt">Cash Flow Projection</span></h1>
       <div class="cf-projctx">
         <select class="pd-select cf-project" id="cf-project" title="Project"></select>
       </div>
@@ -381,7 +379,7 @@
 <script src="../../assets/js/auth.js?v=20260814a"></script>
 <script src="../../assets/js/db.js?v=20260827c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260830a"></script>
+<script src="../../assets/js/ui.js?v=20260830c"></script>
 <script src="../../assets/js/icons.js?v=20260830a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
