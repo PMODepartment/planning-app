@@ -76,6 +76,7 @@ window.ProgressPhotos = (function () {
   var migrationWarnedMulti = false;        // same, for the 2026-08-29 trades/works_multi columns
   var migrationWarnedMedia = false;        // same, for the 2026-08-29 media_type column (video upload)
   var migrationWarnedMarkup = false;       // same, for the 2026-08-29 markup column (Batch F)
+  var migrationWarnedViewName = false;     // same, for the 2026-08-30 view_name column (item 7)
   // Today's Rounds (the streamlined-walkthrough screen) was removed entirely
   // per owner feedback (2026-08-29, "Rounds can be removed") — its state vars
   // (roundsFilter/roundsSelected/walkState/_roundsComboByKey) and its render/
@@ -480,6 +481,19 @@ window.ProgressPhotos = (function () {
       if (!el) return;
       el.oninput = el.onchange = function () { filters[k] = this.value; render(); };
     });
+    // Item 2: the topbar search box IS the real search field now — it drives
+    // `filters.search` directly (the panel's own #pp-f-search stays hidden,
+    // kept only so any other code reading it by id still finds a value).
+    if ($('pp-topsearch')) $('pp-topsearch').oninput = function () {
+      filters.search = this.value;
+      var hidden = $('pp-f-search'); if (hidden) hidden.value = this.value;
+      render();
+    };
+    if ($('pp-topfilttoggle')) $('pp-topfilttoggle').onclick = function () {
+      var wrap = $('pp-filters'); if (!wrap) return;
+      wrap.classList.toggle('open');
+      this.classList.toggle('is-active', wrap.classList.contains('open'));
+    };
     // Archived (follow-up feedback item 5's "Archive" batch action needs a way
     // back to what it hid) — not reset by Clear filters, same reasoning as
     // the Presentations list's own archived toggle: it isn't a search filter,
@@ -490,6 +504,7 @@ window.ProgressPhotos = (function () {
       ['from', 'to', 'trade', 'works', 'search'].forEach(function (k) {
         var el = $('pp-f-' + k); if (el) el.value = '';
       });
+      if ($('pp-topsearch')) $('pp-topsearch').value = '';
       renderLocFilterSelects();
       render();
     };
@@ -586,8 +601,22 @@ window.ProgressPhotos = (function () {
   }
 
   // Batch-sign every photo path in one request rather than one call per row.
+  // Item 14: tile/list previews now request a DOWNSCALED, lower-quality
+  // signed URL (Supabase Storage's image-transform option) instead of the
+  // full-resolution original — the same file transferred at a fraction of
+  // the bytes is most of why the grid felt slow, especially in Tile view
+  // where dozens of full photos load at once just to show a ~290px tile.
+  // The full-resolution URL is still cached separately (`urlCache`) and used
+  // everywhere quality actually matters — the lightbox, the markup editor,
+  // Edit-photo's preview, PPR panes/exports. Image transforms need the
+  // Storage add-on enabled on the project; if it isn't (or the whole call
+  // errors for any reason), `thumbCache` degrades to the SAME full-res URLs
+  // so nothing breaks — the grid just doesn't get the speed-up until the
+  // add-on is available.
+  var thumbCache = {};
+  var THUMB_OPTS = { transform: { width: 480, quality: 55, resize: 'contain' } };
   async function signAll() {
-    urlCache = {};
+    urlCache = {}; thumbCache = {};
     var seen = {}, paths = [];
     rows.forEach(function (r) {
       [r.photo_url, r.key_plan_url].forEach(function (p) {
@@ -600,8 +629,15 @@ window.ProgressPhotos = (function () {
     (res.data || []).forEach(function (d) {
       if (d && d.signedUrl && !d.error) urlCache[d.path] = d.signedUrl;
     });
+    try {
+      var tres = await sb().storage.from(BUCKET).createSignedUrls(paths, SIGN_TTL, THUMB_OPTS);
+      if (!tres.error) {
+        (tres.data || []).forEach(function (d) { if (d && d.signedUrl && !d.error) thumbCache[d.path] = d.signedUrl; });
+      }
+    } catch (e) { /* transform add-on unavailable — thumbOf() falls back to urlCache below */ }
   }
   function urlOf(r) { return r.photo_url ? urlCache[r.photo_url] : ''; }
+  function thumbUrlOf(r) { return r.photo_url ? (thumbCache[r.photo_url] || urlCache[r.photo_url]) : ''; }
 
   function distinct(field) {
     var seen = {}, out = [];
@@ -919,7 +955,7 @@ window.ProgressPhotos = (function () {
       if (filters.from && (!r.taken_at || r.taken_at < filters.from)) return false;
       if (filters.to && (!r.taken_at || r.taken_at > filters.to)) return false;
       if (q) {
-        var hay = [r.description, r.title].concat(tradesOf(r), worksOf(r), [r.location])
+        var hay = [r.description, r.title, r.view_name].concat(tradesOf(r), worksOf(r), [r.location])
           .join(' ').toLowerCase();
         if (hay.indexOf(q) < 0) return false;
       }
@@ -1303,10 +1339,23 @@ window.ProgressPhotos = (function () {
   }
   // A cell reports EVERY matching photo (item 16's combined default) plus,
   // when step mode is on, which one of those is "the" photo as of `cutoff`.
+  // Item 30: "even if no photos have been assigned, we should be able to
+  // show the vertical stacking format" — the schedule ALREADY defines this
+  // structure (it's exactly what the Location Breakdown levels enumerate),
+  // so row/column headers are now the union of the SCHEDULE's own distinct
+  // values at each level (the skeleton, always present once a Location
+  // Breakdown exists) and whatever a photo happens to add beyond that (a
+  // value a planner typed that the schedule doesn't carry, kept rather than
+  // silently dropped). Previously headers came ONLY from photos, so a
+  // freshly-configured project with zero photos rendered as a bare "no
+  // photos tagged" message instead of the empty grid a planner could check
+  // their Location Breakdown against.
   function stackGrid(cutoff) {
     var rowLevel = stackRowLevel(), colLevel = stackColLevel();
     if (!rowLevel) return { rowLevel: null, colLevel: null, cols: [], rows: [] };
     var rowVals = {}, colVals = {};
+    distinctLocValues(rowLevel.id, {}).forEach(function (v) { rowVals[v] = true; });
+    if (colLevel) distinctLocValues(colLevel.id, {}).forEach(function (v) { colVals[v] = true; });
     rows.forEach(function (p) {
       var lv = p.location_values || {};
       var rv = lv[rowLevel.id]; if (rv) rowVals[rv] = true;
@@ -1375,10 +1424,13 @@ window.ProgressPhotos = (function () {
           r.cells.map(function (c) {
             if (stackStepMode) {
               if (!c.photo) return '<td class="pp-stackcell pp-stackcell-empty">—</td>';
-              var url = urlOf(c.photo);
+              // Item 14: the cell shows the small thumbnail; the hover
+              // magnifier (`data-magnify`) still swaps in the full-res image,
+              // since that panel is exactly where quality matters.
+              var url = thumbUrlOf(c.photo), fullUrl = urlOf(c.photo);
               var cap = r.row + (c.col ? ' · ' + c.col : '') + ' — ' + (c.photo.taken_at || '');
               return '<td class="pp-stackcell">' +
-                (url ? '<img class="pp-stackthumb" data-magnify="' + Fmt.esc(url) + '" data-cap="' + Fmt.esc(cap) + '" src="' + Fmt.esc(url) + '" alt="" />' : '—') +
+                (url ? '<img class="pp-stackthumb" data-magnify="' + Fmt.esc(fullUrl) + '" data-cap="' + Fmt.esc(cap) + '" src="' + Fmt.esc(url) + '" alt="" />' : '—') +
               '</td>';
             }
             // Combined default (item 16) — every matching photo, not just the latest one.
@@ -1386,7 +1438,7 @@ window.ProgressPhotos = (function () {
             var shown = c.photos.slice(0, STACK_COMBINE_MAX);
             return '<td class="pp-stackcell"><div class="pp-stackcellphotos">' +
               shown.map(function (p) {
-                var u = urlOf(p);
+                var u = thumbUrlOf(p);
                 return u ? '<img class="pp-stackthumb pp-stackthumb-sm" data-open="' + p.id + '" src="' + Fmt.esc(u) + '" alt="" title="' + Fmt.esc(p.taken_at || '') + '" />' : '';
               }).join('') +
               (c.photos.length > STACK_COMBINE_MAX ? '<span class="pp-stackmore">+' + (c.photos.length - STACK_COMBINE_MAX) + '</span>' : '') +
@@ -1446,8 +1498,12 @@ window.ProgressPhotos = (function () {
     }
   }
 
+  // Item 14: grid/list previews use the DOWNSCALED thumbnail URL, never the
+  // full-resolution one — see signAll()'s own comment for the fallback rule.
+  // Video previews are unaffected (there is no server-side transcode here;
+  // `preload="metadata"` already keeps their bandwidth cost negligible).
   function thumb(r, cls) {
-    var u = urlOf(r);
+    var u = thumbUrlOf(r);
     var isVideo = r.media_type === 'video';
     if (!u) return '<div class="' + cls + ' pp-noimg" title="Preview unavailable">' +
                    '<span data-ico="camera" data-ico-size="18"></span></div>';
@@ -1456,7 +1512,7 @@ window.ProgressPhotos = (function () {
       // negligible bandwidth cost, without playing dozens of clips at once in
       // a grid — real playback only happens once opened in the lightbox.
       return '<span class="pp-vidthumb ' + cls + '-wrap" data-act="open" data-id="' + r.id + '">' +
-        '<video class="' + cls + '" preload="metadata" muted playsinline src="' + Fmt.esc(u) + '"></video>' +
+        '<video class="' + cls + '" preload="metadata" muted playsinline src="' + Fmt.esc(urlOf(r)) + '"></video>' +
         '<span class="pp-vidplay"></span></span>';
     }
     return '<img class="' + cls + '" src="' + Fmt.esc(u) + '" loading="lazy" ' +
@@ -1835,7 +1891,7 @@ window.ProgressPhotos = (function () {
       if (imgEl) { imgEl.hidden = false; imgEl.src = u || ''; }
     }
     $('pp-lb-cap').innerHTML =
-      '<strong>' + Fmt.esc(r.description || 'Progress photo') + '</strong>' +
+      '<strong>' + Fmt.esc(r.view_name || r.description || 'Progress photo') + '</strong>' +
       '<span>' + Fmt.esc(tradesOf(r).concat(worksOf(r), [r.location]).filter(Boolean).join(' · ')) +
       (r.taken_at ? ' · ' + Fmt.date(r.taken_at) : '') + '</span>' +
       '<span class="pp-lb-count">' + (lightboxAt + 1) + ' / ' + lightboxIds.length + '</span>';
@@ -2131,38 +2187,69 @@ window.ProgressPhotos = (function () {
   }
 
   // ------------------------------------------------------- markup editor ---
-  // 18-item list item 13/14: a vector annotation layer (pencil, eraser,
-  // shapes, text, icon stamps), hidden on Gallery tiles, shown only when a
-  // photo/slide is opened. ONE engine, exposed publicly (openMarkupEditor
-  // below) so ppr.js's presentation-only overlay (item 14 — "native only to
-  // the presentation, not shared with the photo") reuses it rather than a
-  // second canvas implementation: ppr.js already depends on ProgressPhotos
-  // being loaded first (onProject/openUploadForPicker/allPhotos all work the
-  // same way), so this follows the same established cross-file convention.
+  // 18-item list item 13/14, rebuilt 2026-08-30 per feedback item 4 into an
+  // iOS-Photos-style tool set: pen, highlighter, ruler, shapes (rect/circle/
+  // arrow), text, signature, a sticker palette (reusing the Equipment
+  // Loading module's own plant pictograms, plus camera/person), and an
+  // eraser. ONE engine, exposed publicly (openMarkupEditor below) so ppr.js's
+  // presentation-only overlay reuses it rather than a second canvas
+  // implementation.
   //
   // Storage format is a plain JS array of objects — never a second rasterised
   // image — so it stays small, can be toggled on/off losslessly, and
   // re-renders correctly at any canvas size:
-  //   {type:'pen', points:[[x,y],...], color}
-  //   {type:'rect'|'circle'|'arrow', x0,y0,x1,y1, color}   (all in 0..1 of the image)
+  //   {type:'pen'|'highlighter'|'signature', points:[[x,y],...], color, width}
+  //   {type:'rect'|'circle'|'ruler'|'arrow', x0,y0,x1,y1, color, width, fill, fillAlpha}
   //   {type:'text', x,y, text, color}
-  //   {type:'icon', x,y, icon, color}                       (icon: 'warn'|'arrow'|'person'|'equip')
+  //   {type:'icon', x,y, icon, color}   (icon: any key in MARKUP_STICKERS)
   // Coordinates are normalized 0..1 of the image's own box, exactly like
   // floor_plan_pins' x_norm/y_norm — the same reason: re-renders correctly
   // regardless of the canvas's actual pixel size.
-  var MARKUP_COLORS = ['#EE3124', '#231F20', '#FFC400', '#1E88E5', '#43A047'];
-  // Hand-drawn on the canvas rather than reused from icons.js — that file's
-  // glyphs mix <path>/<circle>/<line>/<polygon> elements, which Path2D (the
-  // only way to paint an SVG path onto a 2D canvas) cannot parse as a single
-  // 'd' string. Four simple primitives cover the ask.
+  var MARKUP_COLORS = ['#EE3124', '#231F20', '#FFC400', '#1E88E5', '#43A047', '#8E24AA', '#FFFFFF'];
+  var MARKUP_WIDTHS = [2, 4, 7];
+  // Plant pictograms COPIED VERBATIM from modules/equipment-loading/index.html's
+  // own EQ_ICONS (a module cannot import another module's file per the
+  // module contract, so this is a deliberate duplicate, not a shared asset —
+  // each is already a SINGLE SVG path 'd' string on a 24x24 grid, which
+  // Path2D can paint directly onto a canvas, unlike icons.js's multi-element
+  // glyphs). Camera and person are added per item 4's explicit request,
+  // hand-drawn since they're each more than one primitive.
+  var MARKUP_STICKERS = {
+    towercrane: 'M3 4h18M12 4v16M6 20h12M12 7l-7 -3M5 4v3M9 4v3M12 7v2M10.5 9h3',
+    mobilecrane: 'M3 16h11l6 -9M3 16v2h18v-2M6 18a1.6 1.6 0 1 0 3 0M14 18a1.6 1.6 0 1 0 3 0M20 7l-1 5',
+    excavator: 'M3 18h12M3 18a2 2 0 0 1 0 -3h12a2 2 0 0 1 0 3M5 15v-4h6v4M11 12l5 -4 4 3M20 11l-2 4h-4',
+    dozer: 'M3 17h13M3 17a2 2 0 0 1 0 -3h13a2 2 0 0 1 0 3M6 14v-4h6l2 4M20 8v8M20 8l-4 2v4l4 2',
+    roller: 'M3 17a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M15 17a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M9 14h6M8 11h9v3',
+    forklift: 'M4 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M12 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M6 16V8h5l2 8M17 5v13M17 9h4',
+    truck: 'M3 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M3 16V6h10v10M13 10h4l3 3v3',
+    mixer: 'M3 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M14 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M3 16V8h6l1 8M11 7l7 2l-2 7l-6 -2z',
+    pump: 'M3 17h9M3 17a2 2 0 0 1 0 -3h9a2 2 0 0 1 0 3M5 14v-3h5v3M10 11l5 -5h6M15 6v4',
+    pilerig: 'M5 19h9M5 19a2 2 0 0 1 0 -3h9a2 2 0 0 1 0 3M8 16V4h3M11 4v12M14 7h3v9',
+    hoist: 'M6 21V3h4v18M6 3h8M10 7h5M10 12h5M15 5v9M17 21h-6',
+    generator: 'M4 8h16v9H4zM7 17v2M17 17v2M8 11h3l-2 3h3M4 6h5',
+    welder: 'M5 9h9v8H5zM14 12l5 -4M5 17v2M13 17v2M8 12h3',
+    warn: 'M12 3l10 18H2z M12 9v5 M12 16.2v.1'
+  };
+  // The four kinds needing more than one Path2D subpath, drawn by hand.
   function drawIconStamp(ctx, name, cx, cy, size, color) {
     ctx.save();
     ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = Math.max(2, size * 0.08);
     var r = size / 2;
-    if (name === 'warn') {
-      ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy + r); ctx.lineTo(cx - r, cy + r); ctx.closePath(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.35); ctx.lineTo(cx, cy + r * 0.25); ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx, cy + r * 0.55, size * 0.05, 0, Math.PI * 2); ctx.fill();
+    if (MARKUP_STICKERS[name]) {
+      // Everything here is best-effort: translate/scale/Path2D are ordinary
+      // 2D-canvas primitives on every real browser, but wrapped together
+      // (not just the Path2D line) so a stubbed/partial canvas — a test
+      // harness, or a future non-browser render target — degrades to "no
+      // sticker drawn" instead of taking down the whole markup layer.
+      try {
+        ctx.translate(cx - r, cy - r); ctx.scale(size / 24, size / 24);
+        // The scale() above already maps the path's own 24x24 grid onto the
+        // stamp's real on-canvas size, so a CONSTANT line width here (in the
+        // path's own pre-scale units) renders as a visually consistent
+        // stroke regardless of `size`.
+        ctx.lineWidth = 1.9;
+        ctx.stroke(new Path2D(MARKUP_STICKERS[name]));
+      } catch (e) {}
     } else if (name === 'arrow') {
       ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r * 0.5, cy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(cx + r, cy); ctx.lineTo(cx + r * 0.3, cy - r * 0.5); ctx.lineTo(cx + r * 0.3, cy + r * 0.5); ctx.closePath(); ctx.fill();
@@ -2170,33 +2257,83 @@ window.ProgressPhotos = (function () {
       ctx.beginPath(); ctx.arc(cx, cy - r * 0.5, r * 0.35, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.1); ctx.lineTo(cx, cy + r * 0.5); ctx.moveTo(cx - r * 0.4, cy + r * 0.9); ctx.lineTo(cx, cy + r * 0.5); ctx.lineTo(cx + r * 0.4, cy + r * 0.9);
       ctx.moveTo(cx - r * 0.35, cy + r * 0.05); ctx.lineTo(cx, cy + r * 0.25); ctx.lineTo(cx + r * 0.35, cy + r * 0.05); ctx.stroke();
-    } else { // 'equip'
+    } else if (name === 'camera') {
+      ctx.strokeRect(cx - r * 0.75, cy - r * 0.35, r * 1.5, r * 0.9);
+      ctx.beginPath(); ctx.moveTo(cx - r * 0.35, cy - r * 0.35); ctx.lineTo(cx - r * 0.2, cy - r * 0.6); ctx.lineTo(cx + r * 0.25, cy - r * 0.6); ctx.lineTo(cx + r * 0.4, cy - r * 0.35); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy + r * 0.12, r * 0.28, 0, Math.PI * 2); ctx.stroke();
+    } else { // 'equip' fallback
       ctx.strokeRect(cx - r * 0.7, cy - r * 0.5, r * 1.4, r);
       ctx.beginPath(); ctx.moveTo(cx - r * 0.35, cy - r * 0.5); ctx.lineTo(cx - r * 0.35, cy - r * 0.85); ctx.lineTo(cx + r * 0.35, cy - r * 0.85); ctx.lineTo(cx + r * 0.35, cy - r * 0.5); ctx.stroke();
     }
     ctx.restore();
   }
+  var STICKER_NAMES = ['camera', 'person', 'warn', 'arrow'].concat(Object.keys(MARKUP_STICKERS).filter(function (k) { return k !== 'warn'; }));
+  // Item 4: colours apply to BOTH the stroke and an optional, adjustable-
+  // transparency FILL on shapes. hex -> rgba() at a given 0..1 alpha.
+  function hexToRgba(hex, alpha) {
+    var h = (hex || '#000000').replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var r = parseInt(h.slice(0, 2), 16) || 0, g = parseInt(h.slice(2, 4), 16) || 0, b = parseInt(h.slice(4, 6), 16) || 0;
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
   function drawMarkupObjects(ctx, objs, w, h) {
     ctx.clearRect(0, 0, w, h);
     objs.forEach(function (o) {
-      ctx.strokeStyle = o.color || MARKUP_COLORS[0]; ctx.fillStyle = o.color || MARKUP_COLORS[0]; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      var col = o.color || MARKUP_COLORS[0];
+      ctx.strokeStyle = col; ctx.fillStyle = col;
+      ctx.lineWidth = o.width || 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.globalAlpha = 1;
       if (o.type === 'pen' && o.points && o.points.length) {
         ctx.beginPath();
         o.points.forEach(function (p, i) { var x = p[0] * w, y = p[1] * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
         ctx.stroke();
-      } else if (o.type === 'rect') {
-        ctx.strokeRect(o.x0 * w, o.y0 * h, (o.x1 - o.x0) * w, (o.y1 - o.y0) * h);
-      } else if (o.type === 'circle') {
-        var cx = (o.x0 + o.x1) / 2 * w, cy = (o.y0 + o.y1) / 2 * h;
-        var rx = Math.abs(o.x1 - o.x0) / 2 * w, ry = Math.abs(o.y1 - o.y0) / 2 * h;
-        ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
-      } else if (o.type === 'arrow') {
+      } else if (o.type === 'signature' && o.points && o.points.length) {
+        // A thin, dark freehand stroke — visually distinct from an ordinary
+        // pen mark so a signature reads as one on the page.
+        ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.5, (o.width || 2) * 0.6);
+        ctx.beginPath();
+        o.points.forEach(function (p, i) { var x = p[0] * w, y = p[1] * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+        ctx.stroke();
+      } else if (o.type === 'highlighter' && o.points && o.points.length) {
+        // Wide, translucent, drawn UNDER everything else already painted so
+        // far — the classic "highlighter over text" look.
+        ctx.globalAlpha = 0.35; ctx.lineWidth = (o.width || 4) * 4;
+        ctx.beginPath();
+        o.points.forEach(function (p, i) { var x = p[0] * w, y = p[1] * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else if (o.type === 'rect' || o.type === 'circle') {
         var x0 = o.x0 * w, y0 = o.y0 * h, x1 = o.x1 * w, y1 = o.y1 * h;
-        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-        var ang = Math.atan2(y1 - y0, x1 - x0), head = 14;
-        ctx.beginPath(); ctx.moveTo(x1, y1);
-        ctx.lineTo(x1 - head * Math.cos(ang - Math.PI / 7), y1 - head * Math.sin(ang - Math.PI / 7));
-        ctx.lineTo(x1 - head * Math.cos(ang + Math.PI / 7), y1 - head * Math.sin(ang + Math.PI / 7));
+        if (o.fill) { ctx.fillStyle = hexToRgba(col, (o.fillAlpha == null ? 0.3 : o.fillAlpha)); }
+        if (o.type === 'rect') {
+          if (o.fill) ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+          ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+        } else {
+          var cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = Math.abs(x1 - x0) / 2, ry = Math.abs(y1 - y0) / 2;
+          ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+          if (o.fill) ctx.fill();
+          ctx.stroke();
+        }
+      } else if (o.type === 'ruler') {
+        // A straight measuring/reference line with a small perpendicular
+        // tick at each end (iOS Photos' "ruler" tool is a straight-edge
+        // guide, not a unit-labelled measurement).
+        var rx0 = o.x0 * w, ry0 = o.y0 * h, rx1 = o.x1 * w, ry1 = o.y1 * h;
+        var ang2 = Math.atan2(ry1 - ry0, rx1 - rx0), tick = 8;
+        ctx.beginPath(); ctx.moveTo(rx0, ry0); ctx.lineTo(rx1, ry1); ctx.stroke();
+        [[rx0, ry0], [rx1, ry1]].forEach(function (pt) {
+          ctx.beginPath();
+          ctx.moveTo(pt[0] + tick * Math.sin(ang2), pt[1] - tick * Math.cos(ang2));
+          ctx.lineTo(pt[0] - tick * Math.sin(ang2), pt[1] + tick * Math.cos(ang2));
+          ctx.stroke();
+        });
+      } else if (o.type === 'arrow') {
+        var ax0 = o.x0 * w, ay0 = o.y0 * h, ax1 = o.x1 * w, ay1 = o.y1 * h;
+        ctx.beginPath(); ctx.moveTo(ax0, ay0); ctx.lineTo(ax1, ay1); ctx.stroke();
+        var ang = Math.atan2(ay1 - ay0, ax1 - ax0), head = 14;
+        ctx.beginPath(); ctx.moveTo(ax1, ay1);
+        ctx.lineTo(ax1 - head * Math.cos(ang - Math.PI / 7), ay1 - head * Math.sin(ang - Math.PI / 7));
+        ctx.lineTo(ax1 - head * Math.cos(ang + Math.PI / 7), ay1 - head * Math.sin(ang + Math.PI / 7));
         ctx.closePath(); ctx.fill();
       } else if (o.type === 'text') {
         ctx.font = '700 18px Montserrat, Arial, sans-serif';
@@ -2204,12 +2341,13 @@ window.ProgressPhotos = (function () {
         var tx = o.x * w, ty = o.y * h;
         var metrics = ctx.measureText(o.text || '');
         ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(tx - 3, ty - 2, metrics.width + 6, 22);
-        ctx.fillStyle = o.color || MARKUP_COLORS[0];
+        ctx.fillStyle = col;
         ctx.fillText(o.text || '', tx, ty);
       } else if (o.type === 'icon') {
-        drawIconStamp(ctx, o.icon, o.x * w, o.y * h, 34, o.color || MARKUP_COLORS[0]);
+        drawIconStamp(ctx, o.icon, o.x * w, o.y * h, 34, col);
       }
     });
+    ctx.globalAlpha = 1;
   }
   // Nearest-object hit test for the eraser — "erase" on a vector layer means
   // REMOVE THE OBJECT, not paint pixels transparent (there are no pixels);
@@ -2219,8 +2357,8 @@ window.ProgressPhotos = (function () {
     var best = -1, bestDist = 26; // px tolerance
     objs.forEach(function (o, i) {
       var d = Infinity;
-      if (o.type === 'pen') {
-        o.points.forEach(function (p) { d = Math.min(d, Math.hypot((p[0] - nx) * w, (p[1] - ny) * h)); });
+      if (o.type === 'pen' || o.type === 'highlighter' || o.type === 'signature') {
+        (o.points || []).forEach(function (p) { d = Math.min(d, Math.hypot((p[0] - nx) * w, (p[1] - ny) * h)); });
       } else if (o.type === 'text' || o.type === 'icon') {
         d = Math.hypot((o.x - nx) * w, (o.y - ny) * h);
       } else {
@@ -2238,28 +2376,49 @@ window.ProgressPhotos = (function () {
   // called with the finished array on Save, never called on Cancel.
   function openMarkupEditor(imageUrl, initialMarkup, onSave) {
     var objs = (initialMarkup || []).map(function (o) { return Object.assign({}, o); }); // work on a copy — Cancel must leave the original untouched
-    var tool = 'pen', color = MARKUP_COLORS[0], iconChoice = 'warn';
+    var tool = 'pen', color = MARKUP_COLORS[0], iconChoice = 'camera';
+    var strokeWidth = MARKUP_WIDTHS[0], fillOn = false, fillAlpha = 0.3;
     var undone = []; // undo stack of removed/added ops, simple whole-array snapshots (this layer is small — dozens of objects at most)
     var history = [objs.map(function (o) { return Object.assign({}, o); })];
+    var SHAPE_TOOLS = { rect: 1, circle: 1, arrow: 1, ruler: 1 };
+    var STROKE_TOOLS = { pen: 1, highlighter: 1, signature: 1 };
 
+    var TOOL_LABELS = { pen: 'Pen', highlighter: 'Highlighter', ruler: 'Ruler', rect: 'Rect',
+      circle: 'Circle', arrow: 'Arrow', text: 'Text', signature: 'Signature', icon: 'Sticker', erase: 'Eraser' };
     var html =
       '<div class="pd-modal-header"><h3>Markup</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
         '<div class="pp-mk-toolbar">' +
           '<div class="pp-mk-tools" role="tablist">' +
-            ['pen', 'rect', 'circle', 'arrow', 'text', 'icon', 'erase'].map(function (t) {
-              var lbl = { pen: 'Pen', rect: 'Rect', circle: 'Circle', arrow: 'Arrow', text: 'Text', icon: 'Icon', erase: 'Eraser' }[t];
-              return '<button type="button" class="pp-mk-tool' + (t === tool ? ' active' : '') + '" data-tool="' + t + '">' + lbl + '</button>';
+            ['pen', 'highlighter', 'ruler', 'rect', 'circle', 'arrow', 'text', 'signature', 'icon', 'erase'].map(function (t) {
+              return '<button type="button" class="pp-mk-tool' + (t === tool ? ' active' : '') + '" data-tool="' + t + '">' + TOOL_LABELS[t] + '</button>';
             }).join('') +
           '</div>' +
-          '<div class="pp-mk-icons" id="pp-mk-icons" style="display:none;">' +
-            ['warn', 'arrow', 'person', 'equip'].map(function (ic) {
-              return '<button type="button" class="pp-mk-tool' + (ic === iconChoice ? ' active' : '') + '" data-icon="' + ic + '">' + ic + '</button>';
+          '<div class="pp-mk-icons pp-mk-stickers" id="pp-mk-icons" style="display:none;">' +
+            STICKER_NAMES.map(function (ic) {
+              // Camera/person/arrow aren't in MARKUP_STICKERS (they're hand-
+              // drawn on canvas, more than one Path2D subpath) — their PALETTE
+              // preview borrows the closest icons.js glyph instead so the
+              // button isn't blank; the actual canvas stamp still uses
+              // drawIconStamp's own hand-drawn shape, not this glyph.
+              var previewName = { camera: 'camera', person: 'user', arrow: 'arrowRight' }[ic];
+              var previewSvg = previewName && window.Icons ? Icons.svg(previewName, 20)
+                : (MARKUP_STICKERS[ic] ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="' + MARKUP_STICKERS[ic] + '"></path></svg>' : '');
+              return '<button type="button" class="pp-mk-sticker' + (ic === iconChoice ? ' active' : '') + '" data-icon="' + ic + '" title="' + ic + '">' +
+                '<span style="display:inline-block;width:20px;height:20px;">' + previewSvg + '</span></button>';
             }).join('') +
           '</div>' +
           '<div class="pp-mk-colors">' + MARKUP_COLORS.map(function (c) {
             return '<button type="button" class="pp-mk-swatch' + (c === color ? ' active' : '') + '" data-color="' + c + '" style="background:' + c + ';"></button>';
           }).join('') + '</div>' +
+          '<div class="pp-mk-widths" id="pp-mk-widths">' + MARKUP_WIDTHS.map(function (wd, i) {
+            return '<button type="button" class="pp-mk-width' + (wd === strokeWidth ? ' active' : '') + '" data-width="' + wd + '" title="Line weight">' +
+              '<span style="width:' + (4 + i * 4) + 'px;height:' + (4 + i * 4) + 'px;"></span></button>';
+          }).join('') + '</div>' +
+          '<div class="pp-mk-fillrow" id="pp-mk-fillrow" style="display:none;">' +
+            '<label><input type="checkbox" id="pp-mk-fillon"' + (fillOn ? ' checked' : '') + ' /> Fill</label>' +
+            '<input type="range" id="pp-mk-fillalpha" min="0" max="100" value="' + Math.round(fillAlpha * 100) + '" />' +
+          '</div>' +
           '<button type="button" class="pd-btn" id="pp-mk-undo">Undo</button>' +
           '<button type="button" class="pd-btn" id="pp-mk-clear">Clear all</button>' +
         '</div>' +
@@ -2288,11 +2447,13 @@ window.ProgressPhotos = (function () {
     if (img.complete) sizeCanvas(); else img.onload = sizeCanvas;
     window.addEventListener('resize', sizeCanvas);
 
+    function syncFillRow() { var el = $('pp-mk-fillrow'); if (el) el.style.display = SHAPE_TOOLS[tool] && tool !== 'ruler' && tool !== 'arrow' ? '' : 'none'; }
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-tool]'), function (b) {
       b.onclick = function () {
         tool = this.dataset.tool;
         Array.prototype.forEach.call(m.el.querySelectorAll('[data-tool]'), function (x) { x.classList.toggle('active', x.dataset.tool === tool); });
         $('pp-mk-icons').style.display = tool === 'icon' ? '' : 'none';
+        syncFillRow();
       };
     });
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-icon]'), function (b) {
@@ -2307,6 +2468,14 @@ window.ProgressPhotos = (function () {
         Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (x) { x.classList.toggle('active', x.dataset.color === color); });
       };
     });
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-width]'), function (b) {
+      b.onclick = function () {
+        strokeWidth = +this.dataset.width;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-width]'), function (x) { x.classList.toggle('active', +x.dataset.width === strokeWidth); });
+      };
+    });
+    if ($('pp-mk-fillon')) $('pp-mk-fillon').onchange = function () { fillOn = this.checked; };
+    if ($('pp-mk-fillalpha')) $('pp-mk-fillalpha').oninput = function () { fillAlpha = (+this.value) / 100; };
     $('pp-mk-undo').onclick = function () {
       if (history.length < 2) return;
       undone.push(history.pop());
@@ -2338,13 +2507,18 @@ window.ProgressPhotos = (function () {
         pushHistory(); redraw(); return;
       }
       drawing = true;
-      if (tool === 'pen') { penPoints = [p]; objs.push({ type: 'pen', points: penPoints, color: color }); }
-      else { shapeStart = p; objs.push({ type: tool, x0: p[0], y0: p[1], x1: p[0], y1: p[1], color: color }); }
+      if (STROKE_TOOLS[tool]) {
+        penPoints = [p];
+        objs.push({ type: tool, points: penPoints, color: color, width: strokeWidth });
+      } else {
+        shapeStart = p;
+        objs.push({ type: tool, x0: p[0], y0: p[1], x1: p[0], y1: p[1], color: color, width: strokeWidth, fill: fillOn, fillAlpha: fillAlpha });
+      }
     });
     canvas.addEventListener('pointermove', function (e) {
       if (!drawing) return;
       var p = toNorm(e);
-      if (tool === 'pen') { penPoints.push(p); }
+      if (STROKE_TOOLS[tool]) { penPoints.push(p); }
       else { var last = objs[objs.length - 1]; last.x1 = p[0]; last.y1 = p[1]; }
       redraw();
     });
@@ -2427,7 +2601,7 @@ window.ProgressPhotos = (function () {
       : '<p class="pp-hint">No location selected yet.</p>') +
       '<button type="button" class="pd-btn" id="' + idPrefix + '-locadd">' + (hasAny ? 'Change location…' : '+ Add field') + '</button>';
   }
-  function locationFieldHTML(idPrefix, existingValues) {
+  function locationFieldHTML(idPrefix, existingValues, existingViewName) {
     _locSel[idPrefix] = Object.assign({}, existingValues || {});
     return '<div class="pp-span2 pp-wbssection"><label>Location' + (LOC_LEVELS.length ? reqMark() : '') + '</label>' +
         '<div id="' + idPrefix + '-locfield">' + locChosenHTML(idPrefix) + '</div>' +
@@ -2436,7 +2610,7 @@ window.ProgressPhotos = (function () {
       codeOverlayHTML(idPrefix, []) +
       '<div class="pd-field pp-span2"><label>View name' + reqMark() +
         ' <span class="pp-optnote">(what this specific photo/view shows)</span></label>' +
-        '<input class="pd-input" id="' + idPrefix + '-viewname" required /></div>';
+        '<input class="pd-input" id="' + idPrefix + '-viewname" value="' + Fmt.esc(existingViewName || '') + '" required /></div>';
   }
   function locNodeButtonHTML(node) {
     return '<button type="button" class="pp-locnode" data-locpick="' + Fmt.esc(node.values ? JSON.stringify(node.values) : '{}') + '">' +
@@ -2744,19 +2918,35 @@ window.ProgressPhotos = (function () {
       var prog = $('pp-prog'); prog.hidden = false;
       var done = 0, queued = 0, failed = [], newIds = [];
 
-      for (var i = 0; i < files.length; i++) {
-        prog.textContent = 'Saving ' + (i + 1) + ' of ' + files.length + '…';
-        try {
-          // Item 5: whatever markup was drawn on this staged file travels
-          // with it into the very first insert — never a second write.
-          var perFile = Object.assign({ sort_order: i }, shared);
-          if (pendingMarkup[i] && pendingMarkup[i].length) perFile.markup = pendingMarkup[i];
-          var r = await saveCapture(files[i], perFile);
-          if (r.queued) queued++; else if (r.ok) { done++; if (r.id) newIds.push(r.id); } else failed.push(files[i].name);
-        } catch (err) {
-          failed.push(files[i].name + ': ' + (err.message || err));
+      // Item 29: uploads used to run ONE FILE AT A TIME — for a batch of
+      // photos (the normal case here) that's the sum of every file's own
+      // network round-trip. Each file's save is independent (its own
+      // Storage upload + its own row insert), so a small pool of CONCURRENT
+      // uploads (capped, not unbounded — a burst of 30+ simultaneous
+      // requests would just as likely throttle the connection) finishes a
+      // batch in roughly (files ÷ pool size) round-trips instead of one per
+      // file.
+      var POOL = 4;
+      var nextIdx = 0, finishedCount = 0;
+      function updateProg() { prog.textContent = 'Saving ' + finishedCount + ' of ' + files.length + '…'; }
+      updateProg();
+      async function worker() {
+        while (nextIdx < files.length) {
+          var i = nextIdx++;
+          try {
+            // Item 5: whatever markup was drawn on this staged file travels
+            // with it into the very first insert — never a second write.
+            var perFile = Object.assign({ sort_order: i }, shared);
+            if (pendingMarkup[i] && pendingMarkup[i].length) perFile.markup = pendingMarkup[i];
+            var r = await saveCapture(files[i], perFile);
+            if (r.queued) queued++; else if (r.ok) { done++; if (r.id) newIds.push(r.id); } else failed.push(files[i].name);
+          } catch (err) {
+            failed.push(files[i].name + ': ' + (err.message || err));
+          }
+          finishedCount++; updateProg();
         }
       }
+      await Promise.all(Array.from({ length: Math.min(POOL, files.length) }, worker));
 
       m.close();
       if (done) UI.toast(done + ' ' + (kind === 'video' ? 'video' : 'photo') + (done === 1 ? '' : 's') + ' uploaded', 'ok');
@@ -2860,6 +3050,20 @@ window.ProgressPhotos = (function () {
         UI.toast('Saved, but video type not stored — run migrations/2026-08-29-photo-media-type.sql', 'warn');
       }
       return await doWrite(Object.assign({}, job, { patch: stripped3 }));
+    }
+    // Same tolerance for view_name (2026-08-30 item 7) — a pre-migration
+    // save still lands with the rest of the record intact; the required-ness
+    // check is client-side only, so the row is still saved rather than
+    // blocked on a column the database doesn't have yet.
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('view_name' in job.patch)) {
+      var stripped5 = Object.assign({}, job.patch);
+      delete stripped5.view_name;
+      if (!migrationWarnedViewName) {
+        migrationWarnedViewName = true;
+        UI.toast('Saved without the view name — run migrations/2026-08-30-photos-round2.sql', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped5 }));
     }
     // Same tolerance for markup (Batch F) — a pre-migration save drops the
     // just-drawn annotation rather than failing the whole update; the modal
@@ -3015,8 +3219,8 @@ window.ProgressPhotos = (function () {
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-e-date" value="' + Fmt.esc(r.taken_at || '') + '" required /></div>' +
           '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
-            worksTagFieldHTML('pp-e', worksOf(r)[0] || '') + '</div>' +
-          locationFieldHTML('pp-e', r.location_values || {}) +
+            worksMultiFieldHTML('pp-e', worksOf(r)) + '</div>' +
+          locationFieldHTML('pp-e', r.location_values || {}, r.view_name) +
           (window.BIM ? BIM.pinFieldHTML('pp-e', existingPinInfo ? existingPinInfo.pin : null) : '') +
         '</div>' +
       '</div>' +
@@ -3035,8 +3239,8 @@ window.ProgressPhotos = (function () {
     if (codeWrap) Array.prototype.forEach.call(codeWrap.querySelectorAll('input[type=checkbox]'), function (c) {
       c.checked = (r.tags || []).indexOf(c.value) >= 0;
     });
-    wireLocationField('pp-e', true);
-    wireWorksTagField('pp-e');
+    wireLocationField('pp-e');
+    wireWorksMultiField('pp-e');
     if (window.BIM) BIM.wirePinField('pp-e');
     hydrate(m.el);
     $('pp-e-save').onclick = async function () {
@@ -3045,18 +3249,20 @@ window.ProgressPhotos = (function () {
       this.disabled = true;
       var locVals = currentLocValues('pp-e');
       var act = resolveActivity(locVals);
-      var worksVal = readWorksTag('pp-e');
-      var tradeVal = deriveTradeForWorks(worksVal);
-      var pinData = window.BIM ? BIM.readPinField('pp-e') : null;   // item 11 -- read before the modal closes
+      var worksList = readWorksMulti('pp-e');
+      var tradeList = deriveTradesForWorksList(worksList);
+      var pinData = window.BIM ? BIM.readPinField('pp-e') : null;   // read before the modal closes
+      var viewNameEl = $('pp-e-viewname');
       var patch = {
         description: $('pp-e-desc').value.trim(),
         taken_at: $('pp-e-date').value || null,
-        trades: tradeVal ? [tradeVal] : [],
-        works_multi: worksVal ? [worksVal] : [],
-        trade: tradeVal,
-        works: worksVal || null,
+        trades: tradeList,
+        works_multi: worksList,
+        trade: tradeList[0] || null,
+        works: worksList[0] || null,
         location: locBreadcrumb(locVals) || null,
         location_values: locVals,
+        view_name: viewNameEl ? viewNameEl.value.trim() : null,
         activity_id: act ? act.id : null,
         activity_name: act ? act.name : null,
         tags: readCodeTags('pp-e'),
@@ -3232,6 +3438,11 @@ window.ProgressPhotos = (function () {
     // presentation-only overlay reuses this instead of a second canvas
     // implementation. See openMarkupEditor's own comment for the format.
     openMarkupEditor: function (imageUrl, initialMarkup, onSave) { openMarkupEditor(imageUrl, initialMarkup, onSave); },
+    // Test-only hook (2026-08-30 audit fix) — lets the test harness drive
+    // openModal directly against a UI.modal stub shaped like the REAL one
+    // (where m.close is the actual DOM-removal function), to genuinely
+    // execute the close()-recursion fix rather than only regex-checking it.
+    _openModal: function (html, width, onClose) { return openModal(html, width, onClose); },
     // Read-only render of a markup array onto an already-sized <canvas> — used
     // by ppr.js's own presentation-only overlay (a SEPARATE store, keyed by
     // ppr_slide_id+pane) so it never has to duplicate drawMarkupObjects'
@@ -3296,12 +3507,17 @@ window.ProgressPhotos = (function () {
       var saved = rows; if (photosArr) rows = photosArr;
       try { return itemDateForPin(pin); } finally { rows = saved; }
     },
-    _stackGrid: function (levels, photosArr, rowId, colId, cutoff) {
-      var savedLevels = LOC_LEVELS, savedRows = rows;
-      LOC_LEVELS = levels; rows = photosArr;
+    // `schedActsArr` (2026-08-30, item 30) is optional so every EXISTING call
+    // site (which never passed a 6th argument) keeps working unchanged —
+    // stackGrid() now unions the schedule's own distinct location values
+    // with the photos', so the grid's row/column headers are the schedule
+    // skeleton even with zero photos tagged yet, never just "no photos here".
+    _stackGrid: function (levels, photosArr, rowId, colId, cutoff, schedActsArr) {
+      var savedLevels = LOC_LEVELS, savedRows = rows, savedActs = SCHED_ACTS;
+      LOC_LEVELS = levels; rows = photosArr; SCHED_ACTS = schedActsArr || [];
       stackRowLevelId = rowId || null; stackColLevelId = colId || null;
       try { return stackGrid(cutoff); }
-      finally { LOC_LEVELS = savedLevels; rows = savedRows; stackRowLevelId = null; stackColLevelId = null; }
+      finally { LOC_LEVELS = savedLevels; rows = savedRows; SCHED_ACTS = savedActs; stackRowLevelId = null; stackColLevelId = null; }
     },
     // Test-only hook for the unified List+Gallery grouping (2026-08-29
     // follow-up item 6) — genuinely executes groupRows() with an INJECTED

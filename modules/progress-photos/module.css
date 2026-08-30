@@ -523,9 +523,10 @@
   background: var(--pd-card); overflow: hidden; align-self: start;
 }
 .ppr-head, .ppr-row {
-  /* Leading 34px track is the item-14 select checkbox — the base 4 tracks
-     (Date/Description/Slides/Actions) are unchanged, just pushed over one. */
-  display: grid; grid-template-columns: 34px 150px minmax(120px, 1fr) 110px 118px;
+  /* Leading 34px track is the item-14 select checkbox. The trailing Actions
+     track is GONE (item 15 — no per-row icons); 3 data tracks remain
+     (Date/Description/Slides). */
+  display: grid; grid-template-columns: 34px 150px minmax(120px, 1fr) 110px;
   align-items: center;
 }
 .ppr-head {
@@ -693,6 +694,11 @@
 .ppr-sortitem.is-dragover { border-color: var(--pd-red); box-shadow: 0 0 0 2px var(--pd-red) inset; }
 .ppr-sortthumb { width: 100%; height: 96px; object-fit: cover; display: block; }
 .ppr-sortthumb.pp-noimg { display: flex; align-items: center; justify-content: center; color: var(--pd-muted); }
+/* Item 19 — location details per photo, under its thumbnail */
+.ppr-sortloc {
+  padding: 3px 6px; font-size: 10.5px; color: var(--pd-muted); background: var(--pd-bg);
+  border-top: 1px solid var(--pd-line); line-height: 1.3;
+}
 .ppr-sortno {
   position: absolute; top: 5px; left: 5px; min-width: 20px; height: 20px; padding: 0 5px;
   display: flex; align-items: center; justify-content: center;

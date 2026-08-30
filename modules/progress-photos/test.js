@@ -199,6 +199,11 @@ const ctx = {
   sessionStorage: { _d: { pd_project: 'DEMO01' }, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); } },
   indexedDB: { open: () => ({ onupgradeneeded: null, onsuccess: null, onerror: null }) },
   URL: { createObjectURL: () => 'blob://x', revokeObjectURL() {} },
+  // 2026-08-30: drawIconStamp's plant-sticker branch (MARKUP_STICKERS) builds
+  // a real Path2D from an SVG path string — a minimal stand-in so that code
+  // path can run inside this sandbox at all; the fake ctx's stroke() doesn't
+  // care what it's handed, it just records the call.
+  Path2D: function Path2D(d) { this.d = d; },
   fetch: async () => ({ ok: true, blob: async () => ({}) }),
   prompt: () => 'Typed Works Value',
   AppAuth: { getSB: () => sbStub, requireLogin() {} },
@@ -253,22 +258,36 @@ ok('a returning user\'s explicit view choice still overrides the new default (re
 ok('the Presentations-list row-action icons carry left padding (follow-up item 2)',
    /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
 
-console.log('\n[1/2] Works is a real dropdown, not free text (a single schedule-derived tag as of item 9, 2026-08-29)');
+console.log('\n[1/2] Works: REVERSED back to a real multi-select "Add works" picker (item 6, 2026-08-30 — supersedes the single schedule-tag design of item 9, 2026-08-29)');
 ok('no <input list="pp-works-list"> left anywhere', !/list="pp-works-list"/.test(mjs + pjs));
 ok('shared works datalist removed from index.html', !/pp-works-list/.test(html));
-ok('"+ Add custom value…" escape hatch present as a select option', /Add custom value…/.test(mjs));
-ok('Add form uses the Works tag field', /worksTagFieldHTML\('pp',/.test(mjs));
-ok('Edit form uses the Works tag field', /worksTagFieldHTML\('pp-e',/.test(mjs));
+ok('the single-tag design (worksTagFieldHTML/readWorksTag/WORKS_CUSTOM) is gone, superseded',
+   !/function worksTagFieldHTML/.test(mjs) && !/function readWorksTag\(/.test(mjs) && !/WORKS_CUSTOM/.test(mjs));
+ok('Add form uses the "+ Add works" multi-select field', /worksMultiFieldHTML\('pp',/.test(mjs));
+ok('Edit form uses the "+ Add works" multi-select field, seeded from worksOf(r)', /worksMultiFieldHTML\('pp-e', worksOf\(r\)\)/.test(mjs));
+ok('worksGroupedOptions buckets schedule activity names by their own work_type — "the project-defined activity groups"',
+   /function worksGroupedOptions\(\)[\s\S]{0,700}var group = \(a\.work_type \|\| ''\)\.trim\(\) \|\| 'Other';/.test(mjs));
+ok('a captured Works value with no matching live schedule activity lands in its own "Previously used" bucket, never silently dropped',
+   /byGroup\['Previously used'\]/.test(mjs));
+ok('openWorksPicker renders a checkbox per activity, grouped, pre-checked from the current selection', /input type="checkbox" value="' \+ Fmt\.esc\(v\) \+ '"/.test(mjs));
+ok('picking Done reads every checked checkbox into the in-memory selection, replacing it wholesale', /var picked = Array\.prototype\.map\.call\(m\.el\.querySelectorAll\('input\[type=checkbox\]:checked'\)/.test(mjs));
+ok('removing a chip filters it out of the selection (does not touch the others)',
+   /_worksSel\[idPrefix\] = worksSelOf\(idPrefix\)\.filter\(function \(v\) \{ return v !== b\.dataset\.removework; \}\);/.test(mjs));
 
-console.log('\n[2] Capture date / works / location required');
+console.log('\n[2] Capture date / works / location / view name required (item 7 adds a required view name; item 6/7 both waive their OWN field only when the schedule truly has nothing to offer)');
 ok('requiredFieldsMissing gates date', /Capture date is required/.test(mjs));
-ok('requiredFieldsMissing gates works', /A Works value is required/.test(mjs));
-ok('Trade is no longer gated on its own — it is derived from Works (item 9)',
+ok('requiredFieldsMissing gates works, but ONLY when the schedule actually has activities to pick from',
+   /if \(scheduleHasActivities\(\) && !readWorksMulti\(idPrefix\)\.length\) return 'At least one Works value is required\.';/.test(mjs));
+ok('requiredFieldsMissing gates location, but ONLY when the project has a Location Breakdown configured at all',
+   /if \(LOC_LEVELS\.length && !Object\.keys\(currentLocValues\(idPrefix\)\)\.length\) return 'A location is required\.';/.test(mjs));
+ok('requiredFieldsMissing gates the view name UNCONDITIONALLY (item 7 — always required, no waiver)',
+   /if \(!vn \|\| !vn\.value\.trim\(\)\) return 'A view name is required\.';/.test(mjs));
+ok('Trade is not gated on its own — it is derived from the chosen Works values',
    !/At least one Trade is required/.test(mjs));
 ok('Add save calls the gate', /requiredFieldsMissing\('pp'\)/.test(mjs));
 ok('Edit save calls the gate', /requiredFieldsMissing\('pp-e'\)/.test(mjs));
 
-console.log('\n[2b] Item 9 (2026-08-29 second feedback round) — Works becomes ONE schedule-derived tag, Trade is derived not picked');
+console.log('\n[2b] Item 7 (2026-08-30) — Location becomes a single-node schedule-tree picker + a required view name');
 ok('the old TRADES/Works checkbox-overlay machinery is gone (superseded)',
    !/function tradesOverlayHTML/.test(mjs) && !/function worksOverlayHTML/.test(mjs) &&
    !/function multiCheckHTML/.test(mjs) && !/function readMultiCheck/.test(mjs) &&
@@ -277,16 +296,26 @@ ok('deriveTradeForWorks looks up the schedule activity by name and reverse-resol
    /function deriveTradeForWorks[\s\S]{0,400}workTypeMatchesTrade/.test(mjs));
 ok('a Works value with no matching schedule activity derives no trade (never a guess)',
    /if \(!act \|\| !act\.work_type\) return null;/.test(mjs));
-ok('worksTagFieldHTML renders a single <select>, not a checkbox group',
-   /function worksTagFieldHTML[\s\S]{0,400}<select class="pd-select"/.test(mjs));
-ok('readWorksTag treats the custom-value sentinel as "nothing chosen yet"',
-   /function readWorksTag[\s\S]{0,200}v === WORKS_CUSTOM \? '' : v/.test(mjs));
+ok('deriveTradesForWorksList unions every chosen Works value\'s own derived trade (a slide can span more than one trade now)',
+   /function deriveTradesForWorksList\(list\)[\s\S]{0,300}var t = deriveTradeForWorks\(v\);/.test(mjs));
+ok('the old free-text cascading Location inputs (locOptionsHTML/locLevelFieldHTML/locFieldsHTML/locRequiredLevels) are gone, superseded by a tree picker',
+   !/function locOptionsHTML/.test(mjs) && !/function locLevelFieldHTML/.test(mjs) && !/function locFieldsHTML/.test(mjs) && !/function locRequiredLevels/.test(mjs));
+ok('locTree recursively builds every distinct value per level, cascaded and scoped to its parent picks — a real node tree, not a flat option list',
+   /function locTreeLevel\(levelIdx, priorVals\)[\s\S]{0,300}return distinctLocValues\(level\.id, priorVals\)\.map/.test(mjs));
+ok('picking ANY node (any depth) selects it — "it should be fine to select tower only"',
+   /_locSel\[idPrefix\] = JSON\.parse\(this\.dataset\.locpick\);/.test(mjs));
 ok('the "Location label" free-text input is gone (item 2 — "redundant")', !/-loctxt/.test(mjs));
-ok('locationFieldHTML no longer takes a locText parameter', /function locationFieldHTML\(idPrefix, existingValues\) \{/.test(mjs));
+ok('locationFieldHTML now ALSO takes a required view-name field, seeded from the existing value', /function locationFieldHTML\(idPrefix, existingValues, existingViewName\)/.test(mjs));
+ok('the view-name input is REQUIRED and pre-filled from the existing value on Edit', /id="' \+ idPrefix \+ '-viewname" value="' \+ Fmt\.esc\(existingViewName \|\| ''\) \+ '" required \/>/.test(mjs));
+ok('Edit passes the photo\'s own view_name through to locationFieldHTML', /locationFieldHTML\('pp-e', r\.location_values \|\| \{\}, r\.view_name\)/.test(mjs));
 ok('location is derived purely from the breakdown breadcrumb on save (both Add and Edit)',
    (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 2);
-ok('the insert/update payload carries the derived trade + the single works value in the array columns',
-   /trades: tradeVal \? \[tradeVal\] : \[\],[\s\S]{0,60}works_multi: worksVal \? \[worksVal\] : \[\],[\s\S]{0,60}trade: tradeVal,[\s\S]{0,60}works: worksVal \|\| null,/.test(mjs));
+ok('the insert/update payload now carries the UNION of every chosen Works value\'s derived trades + all chosen works in the array columns',
+   /trades: tradeList,[\s\S]{0,60}works_multi: worksList,[\s\S]{0,60}trade: tradeList\[0\] \|\| null,[\s\S]{0,60}works: worksList\[0\] \|\| null,/.test(mjs));
+ok('the payload also carries view_name from the (now-mandatory) field, on both Add and Edit',
+   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 2);
+ok('tolerantWrite gained a strip-rule for view_name, naming the migration file if it is missing',
+   /'view_name' in job\.patch/.test(mjs) && /migrations\/2026-08-30-photos-round2\.sql/.test(mjs));
 ok('tolerantWrite also retries without trades/works_multi if that migration has not run yet',
    /'trades' in job\.patch \|\| 'works_multi' in job\.patch/.test(mjs));
 ok('the Gallery filters match a photo by ANY of its trades/works, not an exact single-value equality',
@@ -360,9 +389,14 @@ console.log('\n[7/8] Slides are built from photos, with inline add');
 ok('slide form has no trade select', !/ppr-s-trade/.test(pjs));
 ok('slide form has no works field', !/ppr-s-works/.test(pjs));
 ok('slide form has no location field', !/ppr-s-loc"/.test(pjs));
-ok('after-photo picker has + Add photo', /ppr-s-after-add/.test(pjs));
-ok('before-photo picker has + Add photo', /ppr-s-before-add/.test(pjs));
-ok('inline add calls openUploadForPicker', /ProgressPhotos\.openUploadForPicker/.test(pjs));
+// 2026-08-30 items 18/24: "there is both a pick a photo and add photo button
+// — there should only be pick a photo, and add photo should be INSIDE the
+// pick-a-photo pop-up." The sibling "+ Add photo" buttons are GONE from the
+// slide form; uploading now lives inside openThumbPicker itself, reused by
+// every caller of that picker.
+ok('the separate sibling "+ Add photo" buttons no longer exist in the slide form', !/ppr-s-after-add/.test(pjs) && !/ppr-s-before-add/.test(pjs));
+ok('"+ Upload new photo" now lives INSIDE the pick-a-photo popup (openThumbPicker), not beside it', /id="ppr-pp-upload">\+ Upload new photo</.test(pjs));
+ok('inline add calls openUploadForPicker, from inside the picker', /ProgressPhotos\.openUploadForPicker/.test(pjs));
 // paintInfo()'s plain-<select>-echo was replaced by a thumbnail PICKER
 // (18-item list item 6) — pickBtnHTML renders the chosen photo's thumb+tags
 // directly on the picker button, so there's no separate read-only echo box
@@ -520,7 +554,13 @@ console.log('\n[misc] insert().select() returns the new row id');
   // .pp-plancluster (item 16) is .bim-cluster relocated/renamed, same shape
   // unchanged — a solid brand-red badge with a white ring over an arbitrary
   // floor plan image.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active/;
+  // 2026-08-30: .bim-regpt (item 26's registration point markers — a solid
+  // marker with a white ring, same family as .bim-pin/.bim-pinstage-dot) and
+  // .bim-conehandle-el (item 28's cone drag handle — a white-filled control
+  // knob with a red ring, deliberately theme-independent since it sits over
+  // an arbitrary floor-plan/photo image) join the allow-list on the same
+  // basis as the entries already documented above.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.ppr-kpicon\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -790,7 +830,10 @@ console.log('\n[misc] insert().select() returns the new row id');
 
   ok('index.html has the Plans tab (renamed from Floor Plan, 2026-08-29) + tools + screen host',
      /data-screen="bim">Plans</.test(html) && /id="bim-new"/.test(html) &&
-     /id="bim-place"/.test(html) && /id="pp-screen-bim"/.test(html));
+     /id="pp-screen-bim"/.test(html));
+  // 2026-08-30 item 27: "Place pin" is REMOVED from index.html entirely — pin
+  // placement now happens every time a photo is added, never on this screen.
+  ok('the "Place pin" toolbar button no longer exists in index.html (item 27)', !/id="bim-place"/.test(html));
   ok('bim.js is loaded and BIM.init is wired alongside the other module inits',
      /src="bim\.js/.test(html) && /BIM\.init\(user, profile\)/.test(html));
   ok('setScreen dispatches the bim screen and hides it from the generic "isPhotos" fallback ' +
@@ -902,9 +945,19 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('supabase-schema.sql carries the archived column at least 4 times (one per table)',
      (schemaSql.match(/archived\s+boolean default false/g) || []).length >= 4);
 
-  // --- Row actions: Download / Preview / Archive (item 1) ----------------
+  // --- Row actions: Download / Preview / Archive (item 1, THEN removed
+  // entirely by 2026-08-30 item 15 — "no need for icons per row" — moved
+  // into the OPENED presentation's own header, wired by wirePresActs). ----
   ok('the row no longer has pdf/pptx/open as separate icons', !/data-act="pdf"/.test(pjs) && !/data-act="pptx"/.test(pjs) && !/data-act="open"/.test(pjs));
-  ok('the row has exactly download/preview/archive actions', /data-act="download"/.test(pjs) && /data-act="preview"/.test(pjs) && /data-act="archive"/.test(pjs));
+  ok('item 15: the LIST ROW itself has no per-row action icons at all any more (no data-act in renderList\'s row markup)',
+     !/ppr-row' \+[\s\S]{0,300}data-act=/.test(pjs));
+  ok('item 16: the row\'s red highlight follows the CHECKBOX (selectedPprs), not `selId`',
+     /'<div class="ppr-row' \+ \(selectedPprs\[p\.id\] \? ' sel' : ''\)/.test(pjs));
+  ok('Download/Preview/Archive are still reachable — relocated to the OPENED presentation\'s own header (wirePresActs)',
+     /id="ppr-pres-dl"/.test(pjs) && /id="ppr-pres-preview"/.test(pjs) && /id="ppr-pres-arch"/.test(pjs) &&
+     /\$\('ppr-pres-dl'\)\.onclick = function \(\) \{ openDownloadChoice\(p\); \};/.test(pjs) &&
+     /\$\('ppr-pres-preview'\)\.onclick = function \(\) \{ openPreviewModal\(p\); \};/.test(pjs) &&
+     /\$\('ppr-pres-arch'\)\.onclick = function \(\) \{ toggleArchive\(p\); \};/.test(pjs));
   ok('download opens a format-choice modal instead of exporting directly', /function openDownloadChoice/.test(pjs) && /data-fmt="html"/.test(pjs) && /data-fmt="pptx"/.test(pjs) && /data-fmt="pdf"/.test(pjs));
   ok('the format choice dispatches to all three real export functions', /if \(fmt === 'html'\) exportOffline\(p\);/.test(pjs) && /else if \(fmt === 'pptx'\) exportPptx\(p\);/.test(pjs) && /else if \(fmt === 'pdf'\) exportPdf\(p\);/.test(pjs));
   ok('preview reuses slidesBodyHTML/EXPORT_CSS verbatim, not a re-implementation', /function openPreviewModal[\s\S]{0,700}slidesBodyHTML\(p, s, identityImgs\(s\)\)/.test(pjs));
@@ -1140,6 +1193,10 @@ console.log('\n[misc] insert().select() returns the new row id');
         ellipse() { calls.push('ellipse'); }, arc() { calls.push('arc'); },
         fillText() { calls.push('fillText'); }, measureText: () => ({ width: 40 }),
         clearRect() { calls.push('clearRect'); },
+        // 2026-08-30: the sticker/plant-icon stamps (drawIconStamp's
+        // MARKUP_STICKERS Path2D branch) call these too — a real 2D canvas
+        // context always has them.
+        translate() { calls.push('translate'); }, scale() { calls.push('scale'); },
         set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {},
       };
     }
@@ -1297,6 +1354,33 @@ console.log('\n[misc] insert().select() returns the new row id');
        PP._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
   })();
 
+  // Item 30 (2026-08-30): "even if no photos have been assigned, we should
+  // be able to show the vertical stacking format" — row/column headers must
+  // come from the SCHEDULE's own distinct values (the skeleton), not only
+  // from photos, so a freshly-configured project with zero photos still
+  // renders the grid instead of the old "no photos tagged" empty state.
+  (function () {
+    const levels = [{ id: 'lvl-tower', name: 'Tower', sort_order: 1 }, { id: 'lvl-floor', name: 'Floor', sort_order: 2 }];
+    const schedActs = [
+      { location: { 'lvl-tower': 'Tower 1', 'lvl-floor': '9th Floor' } },
+      { location: { 'lvl-tower': 'Tower 1', 'lvl-floor': '10th Floor' } },
+      { location: { 'lvl-tower': 'Tower 2', 'lvl-floor': '9th Floor' } },
+    ];
+    const g = PP._stackGrid(levels, [], 'lvl-tower', 'lvl-floor', null, schedActs);
+    eq('with ZERO photos, rows still come from the SCHEDULE\'s own distinct values (the skeleton)', g.rows.map((r) => r.row), ['Tower 1', 'Tower 2']);
+    eq('…and so do the columns', g.cols, ['10th Floor', '9th Floor']);
+    eq('every cell is honestly empty (no photo), never invented', g.rows[0].cells[0].photo, null);
+    eq('…and the combined-photos list for that cell is [], not null/undefined', g.rows[0].cells[0].photos, []);
+
+    // A photo tagged at a location the schedule doesn't (yet) know about is
+    // still shown — the union goes both ways, so real data is never hidden
+    // just because the schedule hasn't caught up.
+    const photosOnly = [{ id: 'x1', taken_at: '2026-01-01', location_values: { 'lvl-tower': 'Tower 3', 'lvl-floor': '9th Floor' } }];
+    const g2 = PP._stackGrid(levels, photosOnly, 'lvl-tower', 'lvl-floor', null, schedActs);
+    eq('the union includes a photo-only location the schedule has never carried', g2.rows.map((r) => r.row), ['Tower 1', 'Tower 2', 'Tower 3']);
+    eq('…and that photo is findable in its own (schedule-unknown) cell', g2.rows[2].cells[1].photo.id, 'x1');
+  })();
+
   // Genuine execution of the cluster grouping (grid-snap by ~5% cell, ported
   // verbatim from bim.js's mapClusters) and the pin-date resolution. Grouping
   // by POSITION does not depend on date resolution succeeding, so it is
@@ -1401,9 +1485,16 @@ console.log('\n[misc] insert().select() returns the new row id');
      /id="pp-filttoggle"/.test(html) && /\.pp-filttoggle \{ display: none; \}/.test(css));
   ok('the filter controls are wrapped in .pp-filters-body, which is display:contents on desktop (the SAME trick dashboard.css already uses for the module topbar wrap)',
      /id="pp-filters-body"/.test(html) && /\.pp-filters-body \{ display: contents; \}/.test(css));
-  ok('on a phone the body is hidden until .pp-filters carries .open',
-     /\.pp-filters-body \{ display: none;/.test(css) && /\.pp-filters\.open \.pp-filters-body \{ display: flex; \}/.test(css));
-  ok('the toggle click handler toggles the .open class on #pp-filters', /\$\('pp-filters'\); if \(wrap\) wrap\.classList\.toggle\('open'\)/.test(mjs));
+  // 2026-08-30 item 2: the panel is now hidden by default at EVERY viewport
+  // size (not only on a phone) — opened via the TOPBAR search/funnel toggle,
+  // never the in-panel #pp-filttoggle any more (that stays in the DOM only
+  // for a very narrow phone fallback).
+  ok('the filter panel is display:none by default at every viewport size (item 2)',
+     /^\.pp-filters \{ display: none; \}/m.test(css) && /^\.pp-filters\.open \{ display: flex; \}/m.test(css));
+  ok('the topbar search box + funnel toggle exist and drive .pp-filters.open', /id="pp-topsearch"/.test(html) && /id="pp-topfilttoggle"/.test(html) &&
+     /\$\('pp-topfilttoggle'\)\.onclick = function \(\) \{[\s\S]{0,150}wrap\.classList\.toggle\('open'\)/.test(mjs));
+  ok('the topbar search box drives filters.search directly (no longer a decorative in-panel-only field)',
+     /\$\('pp-topsearch'\)\.oninput = function \(\) \{\s*filters\.search = this\.value;/.test(mjs));
 
   // --- The actual .pp-selbar[hidden] bug the screenshot exposed --------------
   ok('the old buggy .pp-selbar element (display:flex beating the hidden attribute) no longer exists in module.css',
@@ -1427,25 +1518,45 @@ console.log('\n[misc] insert().select() returns the new row id');
      [{ activity_name: 'Site Clearing', work_type: '' }]), null);
   eq('a blank Works value derives no trade', PP._deriveTradeForWorks('', [{ activity_name: '', work_type: 'MEPF' }]), null);
 
-  // --- Item 11: camera pin + direction move INLINE, key plan wizard retired --
+  // --- Item 11 (2026-08-29), THEN items 8/27/28 (2026-08-30): the field is
+  // renamed "Key Plan" and made REQUIRED, "Place pin" is removed from the
+  // Plans page entirely (this is now the ONLY place a pin is created), and
+  // the direction widget becomes an in-photo drag-two-endpoints cone. --
   ok('BIM exports the embeddable pin field API (pinFieldHTML/wirePinField/readPinField/savePinForItem)',
      /pinFieldHTML: pinFieldHTML/.test(bmjs) && /wirePinField: wirePinField/.test(bmjs) &&
      /readPinField: readPinField/.test(bmjs) && /savePinForItem: savePinForItem/.test(bmjs));
-  ok('pinFieldHTML degrades to a hint (never a broken picker) when the project has no floor plans yet',
-     /function pinFieldHTML[\s\S]{0,400}if \(!plans\.length\)/.test(bmjs));
-  ok('readPinField returns null (a no-op) rather than a half-filled object when nothing is picked',
-     /function readPinField[\s\S]{0,400}if \(!planId \|\| x === '' \|\| y === ''\) return null;/.test(bmjs));
+  ok('the field is labelled "Key Plan" (renamed from "Camera position", item 8) and marked required',
+     /<label>Key Plan' \+ reqMarkHTML\(\) \+/.test(bmjs));
+  ok('with no floor plans, an inline upload mini-form appears INSIDE the Add/Edit form itself (item 8), not just a link to the Plans tab',
+     /function pinFieldHTML[\s\S]{0,400}if \(!plans\.length\)[\s\S]{0,600}pp-inlineplanform/.test(bmjs));
+  ok('readPinField returns null (a no-op) rather than a half-filled object when nothing is picked, in BOTH the no-plans and has-plans shapes',
+     /function readPinField\(idPrefix\) \{[\s\S]{0,120}if \(inlineWrap\) return null;[\s\S]{0,400}if \(!planId \|\| x === '' \|\| y === ''\) return null;/.test(bmjs));
   ok('savePinForItem is a no-op on null pinData — it can never delete a pin the planner did not ask to touch',
      /async function savePinForItem\(itemType, itemId, pinData\) \{\s*if \(!pinData\) return;/.test(bmjs));
   ok('savePinForItem UPDATES an existing pin rather than inserting a duplicate for the same item',
      /var existing = pinsByItem\(itemType, itemId\)\[0\] \|\| null;[\s\S]{0,500}existing\s*\?\s*await sb\(\)\.from\(T_PIN\)\.update/.test(bmjs));
-  ok('the Add form reads the pin field ONCE and applies it to every uploaded item sharing that camera position',
+  ok('the Add form reads the pin field ONCE and applies it to every uploaded item sharing that Key Plan position, IN PARALLEL (item 29 — no per-file await chain)',
      /var pinData = window\.BIM \? BIM\.readPinField\('pp'\) : null;/.test(mjs) &&
-     /for \(var pi = 0; pi < newIds\.length; pi\+\+\) await BIM\.savePinForItem\('photo', newIds\[pi\], pinData\);/.test(mjs));
+     /await Promise\.all\(newIds\.map\(function \(id\) \{ return BIM\.savePinForItem\('photo', id, pinData\); \}\)\);/.test(mjs));
   ok('the Edit form pre-fills the pin field from the photo\'s existing pin, via BIM.pinInfoFor',
      /var existingPinInfo = \(window\.BIM && BIM\.pinInfoFor\) \? BIM\.pinInfoFor\('photo', r\.id\) : null;/.test(mjs));
   ok('the Edit form reads the pin field BEFORE the modal closes (the DOM is gone after)',
-     /var pinData = window\.BIM \? BIM\.readPinField\('pp-e'\) : null;[\s\S]{0,1100}m\.close\(\);   \/\/ onClose \(passed to openModal above\) clears the collab cursor/.test(mjs));
+     /var pinData = window\.BIM \? BIM\.readPinField\('pp-e'\) : null;/.test(mjs));
+  // --- Item 27: "Place pin" is retired IN PLACE on the Plans page ---------
+  ok('togglePlaceMode is explicitly documented as retired-in-place (item 27) — the #bim-place button that called it is gone from index.html',
+     /RETIRED IN PLACE \(2026-08-30 feedback item 27\)/.test(bmjs));
+  // --- Item 28: the in-photo field-of-view cone geometry, genuinely EXECUTED
+  ok('defaultCone faces the image centre from the pin, with a symmetric spread',
+     (function () {
+       const c = BIM._defaultCone(0.5, 1, 200, 100); // pin at bottom-centre, image 200x100
+       // Both edges should land ABOVE the pin (y smaller) since the centre (100,50) is above (100,100).
+       return c.edge1_y < 1 && c.edge2_y < 1 && Math.abs(c.edge1_x - (1 - c.edge2_x)) < 0.02;
+     })());
+  ok('bearingFromTo: straight up is 0°, straight right is 90°, straight down is 180°, straight left is 270° (matches directionDegFromDrag\'s own convention)',
+     BIM._bearingFromTo(50, 50, 50, 0) === 0 && Math.abs(BIM._bearingFromTo(50, 50, 100, 50) - 90) < 0.001 &&
+     Math.abs(BIM._bearingFromTo(50, 50, 50, 100) - 180) < 0.001 && Math.abs(BIM._bearingFromTo(50, 50, 0, 50) - 270) < 0.001);
+  ok('bisectorBearing reports the bearing to the MIDPOINT of the two edges, not either edge alone',
+     Math.abs(BIM._bisectorBearing(0.5, 0.5, 0.4, 0, 0.6, 0, 1, 1) - 0) < 0.001);
 
   // --- Item 17: 4-way media type, only 3D stays disabled ---------------------
   ok('the type selector offers Photo / Video / 360° / 3D as four distinct buttons',
@@ -1487,9 +1598,20 @@ console.log('\n[misc] insert().select() returns the new row id');
   // gap found: the edit entry point was a bare icon among five in the
   // lightbox toolbar, easy to miss entirely, which is the most likely
   // explanation for "you still haven't added markup".
-  ok('all five requested tools exist on the photo\'s own markup editor: pencil, eraser, shapes, common icons, text',
-     /\['pen', 'rect', 'circle', 'arrow', 'text', 'icon', 'erase'\]/.test(mjs));
-  ok('four common icon stamps exist (warn/arrow/person/equip)', /\['warn', 'arrow', 'person', 'equip'\]/.test(mjs));
+  // 2026-08-30 item 4: rebuilt into an iOS-Photos-style set — pen,
+  // highlighter, ruler, shapes (rect/circle/arrow), text, signature, a
+  // sticker palette (reusing Equipment Loading's own plant pictograms +
+  // camera/person), and an eraser.
+  ok('all ten iOS-style tools exist: pen, highlighter, ruler, rect, circle, arrow, text, signature, sticker(icon), eraser',
+     /\['pen', 'highlighter', 'ruler', 'rect', 'circle', 'arrow', 'text', 'signature', 'icon', 'erase'\]/.test(mjs));
+  ok('the sticker set reuses Equipment Loading\'s own plant pictograms verbatim (module contract forbids cross-module import, so this is a deliberate, documented duplicate)',
+     /towercrane: 'M3 4h18M12 4v16M6 20h12M12 7l-7 -3M5 4v3M9 4v3M12 7v2M10\.5 9h3'/.test(mjs));
+  ok('camera and person stickers exist, per the explicit ask, hand-drawn since they need more than one Path2D subpath',
+     /else if \(name === 'camera'\)/.test(mjs) && /else if \(name === 'person'\)/.test(mjs));
+  ok('colours apply to BOTH the stroke and an optional, adjustable-transparency fill on rect/circle (hexToRgba)',
+     /function hexToRgba\(hex, alpha\)/.test(mjs) && /if \(o\.fill\) \{ ctx\.fillStyle = hexToRgba\(col, \(o\.fillAlpha == null \? 0\.3 : o\.fillAlpha\)\); \}/.test(mjs));
+  ok('a highlighter stroke is wide and translucent (globalAlpha), never opaque like an ordinary pen mark',
+     /o\.type === 'highlighter'[\s\S]{0,200}ctx\.globalAlpha = 0\.35;/.test(mjs));
   ok('erase is a real removal (vector hit-test + splice), not a no-op or a paint-transparent hack',
      /objs\.splice\(idx, 1\); pushHistory\(\); redraw\(\);/.test(mjs));
   ok('presentation markup is a SEPARATE store, keyed by (slide, pane) — never attached to the photo itself',
@@ -1598,8 +1720,37 @@ console.log('\n[misc] insert().select() returns the new row id');
   // --- module.js's openModal gained the same backdrop-close cleanup fix as
   // pano.js's own (see that section's tests for the reasoning in full) ------
   ok('module.js\'s openModal disables UI.modal\'s own backdrop listener and installs its own close() that runs an optional onClose before the real close — same mechanism as pano.js\'s, fixing the same bug class here',
-     /function openModal\(html, width, onClose\) \{\s*var m = UI\.modal\(html, \{ noBackdropClose: true \}\);/.test(mjs) &&
-     /function close\(\) \{ if \(onClose\) \{ try \{ onClose\(\); \} catch \(e\) \{\} \} m\.close\(\); \}/.test(mjs));
+     /function openModal\(html, width, onClose\) \{\s*var m = UI\.modal\(html, \{ noBackdropClose: true \}\);/.test(mjs));
+  // ⚠️ 2026-08-30 REAL BUG FOUND AND FIXED (this is items 9/10 and half of
+  // item 4's actual root cause): the wrapper used to call `m.close()`, but
+  // `m.close = close;` a few lines later REASSIGNS `m.close` to this very
+  // wrapper — so by the time a button was ever clicked, `m.close()` called
+  // ITSELF, recursed until the stack overflowed, and threw a silent
+  // RangeError that killed the click handler before anything after it (a
+  // 360° hand-off, an onSave callback) ever ran. Fixed by capturing the
+  // ORIGINAL close in `rawClose` BEFORE the reassignment and calling THAT.
+  ok('the ORIGINAL close is captured in rawClose BEFORE m.close is ever reassigned — this is the fix',
+     /var rawClose = m\.close;\s*function close\(\) \{ if \(onClose\) \{ try \{ onClose\(\); \} catch \(e\) \{\} \} rawClose\(\); \}/.test(mjs));
+  ok('the wrapper never calls m.close() (which would be itself, once reassigned) — only rawClose()',
+     !/function close\(\) \{ if \(onClose\) \{ try \{ onClose\(\); \} catch \(e\) \{\} \} m\.close\(\); \}/.test(mjs));
+  // Genuine execution: build a stub matching UI.modal()'s REAL shape (where
+  // m.close is the actual DOM-removal function, not the test harness's
+  // simplified stand-in) and confirm close() terminates in ONE call instead
+  // of recursing — this is the one test in this file that could ACTUALLY
+  // have caught the bug, since the harness's own UI.modal stub never
+  // reassigns m.close the way the real one does.
+  (function () {
+    let removed = 0;
+    const realShapeModal = { el: { querySelector: () => null, querySelectorAll: () => [], addEventListener() {} }, close() { removed++; } };
+    const savedModal = ctx.UI.modal;
+    ctx.UI.modal = () => realShapeModal;
+    let threw = null;
+    try { PP._openModal('<div></div>', 400); realShapeModal.close(); }
+    catch (e) { threw = e; }
+    finally { ctx.UI.modal = savedModal; }
+    ok('openModal, exercised against a REAL-SHAPED UI.modal stub (m.close = the actual close fn), calling close() once removes the modal exactly once — no infinite recursion',
+       threw === null && removed === 1, threw && threw.message);
+  })();
   ok('…[data-close] buttons AND a genuine backdrop click both route through that SAME close()',
      /b\.onclick = close;\s*\}\);\s*m\.el\.addEventListener\('click', function \(e\) \{ if \(e\.target === m\.el\) close\(\); \}\);/.test(mjs));
   ok('openForm (Edit photo) passes onClose = clear the "editing this photo" collab cursor — previously this only ran on the two [data-close] buttons\' own re-wire (removed), leaving the cursor stuck broadcasting on a backdrop-click dismissal',
@@ -1834,13 +1985,21 @@ console.log('\n[misc] insert().select() returns the new row id');
          /m\.close\(\); await load\(\); openPpr\(newId\); return;/.test(body);
      })());
 
-  // --- ppr.js: stale preview after archiving/filtering out the current selId -
-  ok('renderPreview\'s single-selection path now re-validates selId against visiblePprs() before using it — the same scoping visibleSelectedPprIds() already gave the combined (2+) path',
-     /if \(selId && !visiblePprs\(\)\.some\(function \(p\) \{ return p\.id === selId; \}\)\) selId = null;/.test(pjs));
+  // --- ppr.js: item 16 (2026-08-30) — the preview pane is now driven
+  // ENTIRELY by the CHECKBOX set (selectedPprs), never by `selId` at all.
+  // A checked-but-now-hidden presentation (archived, or filtered out) must
+  // show the "nothing to preview" prompt rather than silently keeping its
+  // stale slide thumbnails on screen — the same scoping bug the OLD `selId`
+  // re-validation guarded against, now enforced structurally by
+  // visibleSelectedPprIds() itself (it always intersects with visiblePprs()).
+  ok('renderPreview reads the checkbox set via visibleSelectedPprIds(), never `selId`, for the single-selection path',
+     /var oneId = selIds\[0\] \|\| null;/.test(pjs) && !/if \(selId && !visiblePprs\(\)\.some/.test(pjs));
+  ok('the row\'s red highlight and the preview pane can never disagree — both read selectedPprs, never `selId`',
+     /class="ppr-row' \+ \(selectedPprs\[p\.id\] \? ' sel' : ''\)/.test(pjs));
 
   // Genuine execution via the save/restore hook (same convention as
   // _eligiblePhotos): drives the REAL renderPreview() against an injected
-  // presentation/filter/selId combination.
+  // presentation/filter/CHECKED-id combination.
   (function () {
     const pAct = { id: 'ppr-active', archived: false, ppr_date: '2026-01-01' };
     const pArc = { id: 'ppr-gone', archived: true, ppr_date: '2026-02-01' };
@@ -1849,18 +2008,18 @@ console.log('\n[misc] insert().select() returns the new row id');
       'ppr-gone': [{ id: 's2', ppr_id: 'ppr-gone', slide_no: 1, after_photo_id: null, before_photo_id: null }],
     };
     let r = PPR._renderPreviewWithState([pAct, pArc], { archived: false }, 'ppr-active', slidesMap);
-    ok('selId pointing at a VISIBLE presentation is left alone', r.selIdAfter === 'ppr-active');
-    ok('…and its slides render (the ordinary case still works)', /ppr-thumbwrap/.test(r.bodyHtml));
+    ok('checking a VISIBLE presentation shows its slides (the ordinary case works)',
+       r.visibleCheckedIds.length === 1 && r.visibleCheckedIds[0] === 'ppr-active' && /ppr-thumbwrap/.test(r.bodyHtml));
 
     r = PPR._renderPreviewWithState([pAct, pArc], { archived: false }, 'ppr-gone', slidesMap);
-    ok('selId pointing at a presentation the CURRENT filter no longer shows (here: it got archived while filters.archived stayed false) is cleared to null — this is the exact bug: without the fix this stayed \'ppr-gone\' and kept rendering its slide thumbnails',
-       r.selIdAfter === null);
-    ok('…and the pane falls back to the "select a presentation" hint rather than silently keeping the stale thumbnails on screen',
-       /Select a presentation to preview its slides\./.test(r.bodyHtml) && !/ppr-thumbwrap/.test(r.bodyHtml));
+    ok('checking a presentation the CURRENT filter does not show (here: it got archived while filters.archived stayed false) never drives the preview — visibleSelectedPprIds() excludes it',
+       r.visibleCheckedIds.length === 0);
+    ok('…and the pane falls back to the "check a presentation" hint rather than silently showing the hidden one\'s stale thumbnails',
+       /Check a presentation to preview its slides\./.test(r.bodyHtml) && !/ppr-thumbwrap/.test(r.bodyHtml));
 
     r = PPR._renderPreviewWithState([pAct], {}, 'ppr-deleted-entirely', slidesMap);
-    ok('the same self-correction applies to a selId that no longer exists in `pprs` at all (a hard delete), not only an archived-but-still-present row',
-       r.selIdAfter === null && /Select a presentation to preview its slides\./.test(r.bodyHtml));
+    ok('the same rule applies to a checked id that no longer exists in `pprs` at all (a hard delete), not only an archived-but-still-present row',
+       r.visibleCheckedIds.length === 0 && /Check a presentation to preview its slides\./.test(r.bodyHtml));
   })();
 
   // --- module.css: the missing .pp-muted rule + two real WCAG AA failures ---

@@ -2,6 +2,315 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Third feedback round: 30 items across Gallery/Add-Media/Markup, Presentations, Plans (2026-08-30)
+
+Owner sent 30 items in one message with an explicit instruction to work unattended overnight
+("don't ask me for answers upto 8AM… please proceed without stopping"). Every item below was acted
+on; where an item conflicted with a design shipped earlier the SAME DAY (Works/Location went from
+multi-select → a single schedule tag → back to multi-select across three feedback rounds), the
+LATEST owner instruction wins and the superseded code is documented as retired, not silently
+deleted where something else might still reasonably reach for it.
+
+**Run `migrations/2026-08-30-photos-round2.sql`.**
+
+### ⚠️ THE ROOT-CAUSE FIND — one bug behind items 9, 10, and half of item 4
+
+Investigating "the 360 button does nothing" and "close/cancel don't work" side by side (both are in
+the Add Media modal) surfaced a single, severe bug in module.js's own `openModal()` wrapper:
+
+```js
+function close() { if (onClose) { ... } m.close(); }   // <-- calls m.close()
+...
+m.close = close;                                        // <-- but THIS reassigns m.close to itself
+```
+
+`m.close = close` overwrites the modal's real DOM-removal function with THIS wrapper. Since JS
+resolves `m.close` at *call time*, by the time any button was ever clicked, `m.close()` inside the
+wrapper referred to **the wrapper itself** — infinite recursion, a silent `RangeError: Maximum call
+stack size exceeded` inside the click handler (logged to console, never shown on screen), and the
+overlay was never removed. Worse: **anything scheduled to run AFTER `m.close()` in a handler never
+ran either**, because the throw happened first — this is exactly why picking "360°" never reached
+`PANO.openCapture()`, and why the markup editor's Save button never reached `onSave(objs)`.
+
+Fixed by capturing the ORIGINAL close in a `rawClose` variable *before* `m.close` is ever reassigned,
+and having the wrapper call `rawClose()` — never `m.close()` — so it can never call itself. This one
+fix repairs every modal opened via module.js's `openModal()`: Add Media, Edit photo, the markup
+editor, the pin-preview popup, and more.
+
+⚠️ **Why the existing test suite never caught it:** the harness's own `UI.modal` stub is a simpler
+shape than the real one in `assets/js/ui.js` — its `close` is a plain closure that never gets
+reassigned the way the real one does, so the reassignment hazard simply doesn't exist in the stub.
+A new test (`_openModal`, section "openModal, exercised against a REAL-SHAPED UI.modal stub…") builds
+a stub matching the real shape on purpose and confirms `close()` terminates in exactly one call; it
+**fails with a stack-overflow throw against the pre-fix code** and passes against the fix.
+
+### Items 1–3: Gallery landing screen
+1. **Already correct** — `ppr-new`/`bim-new` are `display:none` by default and only shown on their
+   own screens (`PPR._syncTools`/`BIM._syncTools`); Gallery never showed them. Verified, no change.
+2. **A topbar search box + funnel toggle** (`#pp-topsearch`/`#pp-topfilttoggle`) replace the old
+   always-open filter row on EVERY viewport, not just on a phone (item 8's old behaviour). Typing in
+   the topbar box drives `filters.search` directly; the funnel reveals the rest (date range, trade,
+   works, location, archived) in the docked panel below, which is now `display:none` by default at
+   every width (`.pp-filters { display:none } .pp-filters.open { display:flex }`). The in-panel
+   `#pp-f-search`/`#pp-filttoggle` stay in the DOM (hidden) as a narrow-phone fallback and so any
+   code still reading `#pp-f-search`'s value finds one. The SAME pattern is applied to Presentations
+   (`#ppr-topfilttoggle`, toggling `#ppr-listbar.open` — it already shared the `.pp-filters` class,
+   so no new CSS was needed there, only the topbar trigger). Plans has no free-text filter to move.
+3. **Tile (Gallery) view button now leads the view-toggle group**, List moved second — matches the
+   module's own default (`view = 'gallery'`).
+
+### Item 4: markup editor rebuilt iOS-Photos-style
+Pen / **highlighter** (wide, translucent, drawn under everything) / **ruler** (a straight reference
+line with end-tick marks) / rect / circle / arrow / text / **signature** (a thinner, distinct stroke
+type) / **sticker** (renamed from "icon") / eraser. Colours now apply to both the STROKE and an
+optional, adjustable-transparency **fill** on rect/circle (`hexToRgba`, a fill checkbox + an opacity
+slider) — never on ruler/arrow, which have no interior to fill. A line-weight picker (3 sizes) was
+added too, since "shapes" implies more than one line thickness.
+
+**Stickers reuse Equipment Loading's own plant pictograms verbatim** — copied, not imported (the
+module contract forbids one module reading another's files; `MARKUP_STICKERS` duplicates
+`EQ_ICONS`'s `d` paths, each already a single Path2D-parseable string), plus **camera** and
+**person**, hand-drawn since they need more than one Path2D subpath. `drawIconStamp` picks the
+Path2D branch when a sticker name is a real plant pictogram, else falls back to the hand-drawn
+warn/arrow/person/camera/equip shapes — all wrapped in one `try/catch` so a canvas missing
+`translate`/`scale`/`Path2D` (a test harness, or some future non-browser render target) degrades to
+"no sticker drawn" instead of taking the whole markup layer down with it (this is exactly what
+crashed the test suite the first time the sticker branch ran against the harness's simplified fake
+canvas — fixed on both sides: the production code now tolerates it, and the harness's `fakeCtx()`
+was widened with `translate`/`scale`, plus a minimal `Path2D` stub added to the sandbox globals, so
+it genuinely models what a real 2D context provides).
+
+### Item 5: markup available at upload time
+The Add Media modal now shows a thumbnail + "Markup" button per staged file the moment files are
+chosen (`#pp-files`'s `onchange`), **before anything is saved** — each staged file gets a throwaway
+`URL.createObjectURL` preview, markup drawn against it is held in memory keyed by file index
+(`pendingMarkup`), and merged into that file's own `markup` column on the very first insert (never a
+second write). Object URLs are revoked on close (`revokeStaged`, wired as `openModal`'s `onClose`) so
+a cancelled upload never leaks them.
+
+### Items 6/7: Works and Location, rebuilt again (REVERSES the 2026-08-29 single-tag design)
+⚠️ The SAME two fields were redesigned three times in one day across feedback rounds (multi-select →
+single schedule-tag → multi-select again). This entry describes the FINAL, currently-shipped shape;
+the single-tag functions (`worksTagFieldHTML`/`readWorksTag`/`WORKS_CUSTOM`) are gone, not left
+alongside, since keeping two competing Works UIs in the same file would be a worse trap than a clean
+supersession.
+
+- **Works** is an "+ Add works" button opening a checkbox picker (`openWorksPicker`) grouped by the
+  schedule's own `work_type` per activity (`worksGroupedOptions()` — "the project-defined activity
+  groups"), multi-select, with a chip row showing what's picked (removable via ×). A trailing
+  "Previously used" bucket carries any value a planner already typed that matches no live schedule
+  activity, so nothing already captured is silently dropped from what can still be picked. Trade is
+  still never chosen directly — `deriveTradesForWorksList` UNIONS the derived trade of every chosen
+  Works value (a slide can now legitimately span more than one trade, e.g. Structural + MEPF work
+  photographed together).
+- **Required only when the schedule has something to offer**: `scheduleHasActivities()` (`SCHED_ACTS
+  .length > 0`) gates Works' requiredness — a project with no schedule integration at all is never
+  asked to answer a question it has no data for.
+- **Location** is now a **single-node picker** over the real schedule tree (`locTree()` /
+  `locTreeLevel()` — recursively built from `distinctLocValues()` at each level, cascaded exactly like
+  the old datalists were, just rendered as a real tree instead of flattened into `<option>`s). Picking
+  ANY node at ANY depth is valid — "it should be fine to select tower only" — via `openLocationPicker`/
+  the generic, stateless `ProgressPhotos.openLocationPicker(onPick)` export (used by bim.js's floor-plan
+  form too, see item 12). Required only when the project has a Location Breakdown configured at all
+  (`LOC_LEVELS.length`).
+- **A new, ALWAYS-required "View name" field** (`progress_photos.view_name`, new migration column) —
+  what this SPECIFIC photo/view shows (e.g. "Facing east stairwell"), distinct from the optional
+  `description` and from the schedule-derived `location` (which names WHERE, not WHAT). Required
+  regardless of whether a schedule exists — this is the one field with no waiver.
+
+### Item 8: "Camera position" → "Key Plan", required, inline floor-plan upload
+Renamed and marked required in the Add/Edit Photo form. When the project has **zero** floor plans,
+`pinFieldHTML` now renders a small inline upload mini-form (`.pp-inlineplanform`: name + file +
+Upload) directly inside the Add Media / Edit Photo modal — no trip to the Plans tab, and whatever
+else was already filled in on the form survives. On success the pin field repaints itself in place
+so a pin can be placed on the just-uploaded plan without reopening anything.
+
+### Items 9/10: 360° does nothing, Close/Cancel don't work
+**Both were the `openModal()` bug above** — fixed at the root. Belt-and-braces: the 360° button's
+handler is now wrapped in its own `try/catch` reporting any FUTURE failure visibly, in case
+`PANO.openCapture` is ever unavailable for a genuinely new reason.
+
+### Item 11: Floor plan upload accepts image OR PDF
+`accept="image/*,application/pdf"` on every floor-plan file input (the Plans-tab upload form, the
+inline Add-Media mini-form, item 12's location-based upload). A PDF has no natural pixel size an
+`<img>` can measure, so `width_px`/`height_px` are left `null` rather than inventing fake dimensions
+— `imageDims()` short-circuits to `{w:null,h:null}` for a `.pdf` file/mime-type. Rendering switches
+from `<img>` to `<embed type="application/pdf">` wherever a plan is displayed (`isPdfPlan(plan)`,
+checked by file extension on the stored path). ⚠️ **Known limitation, stated in the code**: some
+browsers' native PDF viewer intercepts pointer events itself, so click-to-place-a-pin may not
+register reliably over an embedded PDF — an image floor plan remains the more dependable choice.
+
+### Item 12: floor plan upload asks for a SCHEDULE LOCATION, not a name/level-order
+`openPlanForm` (bim.js) now offers a "Pick a location…" button (reusing the item-7 tree picker via
+`ProgressPhotos.openLocationPicker`) instead of typed Name + Level-order fields, when the project has
+a Location Breakdown at all. The plan's `name` is DERIVED from the picked location's own breadcrumb
+(falling back to a manual name field only when no Location Breakdown exists, same waiver rule as
+items 6/7); `level_order` is left at a flat 0 rather than invented. New `floor_plans.location_values`
+jsonb column (same shape as `progress_photos.location_values` — one key, usually).
+
+### Item 13: Gallery/Presentations/Plans tab misalignment
+⚠️ **Root cause: `.pp-tab` had no explicit height** while every sibling topbar control (project
+select, tool buttons, back button) is pinned to 34/36px — `align-items:center` centres each control
+on its OWN box, so a mismatched box height reads as visible misalignment even with nothing literally
+offset. `.pp-tabs`/`.pp-tab` now pinned to 34px, flex-centred internally.
+
+### Item 14: photo loading speed
+Tile/list previews now request a **downscaled, lower-quality signed URL** (Supabase Storage's image
+transform: `{width:480, quality:55, resize:'contain'}`) instead of the full-resolution original —
+`signAll()` now populates a SEPARATE `thumbCache` alongside the existing full-res `urlCache`, and
+`thumb()`/the Stack view's cell thumbnails read `thumbUrlOf(r)` (falling back to the full-res URL if
+no thumbnail exists yet). The lightbox, markup editor, Edit-photo preview, and the Stack view's hover
+magnifier all still use the FULL-res URL — quality matters there. ⚠️ **Depends on the Storage image
+transform add-on being enabled on the Supabase project** — if it isn't, the second `createSignedUrls`
+call (wrapped in try/catch) either errors or returns unusable URLs, and `thumbCache` simply stays
+empty, so `thumbUrlOf` transparently falls back to full-res with no visible breakage, just no speed
+gain until the add-on is available. This is the honest, "try to speed up, never break if unavailable"
+shape the ask calls for.
+
+### Item 15: Presentations List View — no per-row icons
+The `.ppr-cell.ppr-acts` column (Download/Preview/Archive icon buttons) is gone from `renderList()`'s
+row markup entirely; the header grid narrowed from 5 tracks to 4 (`34px 150px minmax(120px,1fr)
+110px`, the trailing 118px Actions track removed). Download/Preview/Archive are NOT lost — they moved
+into the OPENED presentation's own header (`renderSlides()`'s `wirePresActs`, alongside the existing
+Edit/Delete/Reorder icons) — reachable the moment you open a presentation, or via the batch toolbar
+the moment 1+ rows are checked (a check of exactly one row already works as "act on this one").
+
+### Item 16: checkbox-driven selection + preview alignment
+The row's red highlight now follows `selectedPprs[p.id]` (the checkbox), never `selId` ("which
+presentation is currently open in the editor") — a different concept once opening a row navigates
+away from the list screen entirely. `renderPreview()` is now driven ENTIRELY by the checked set:
+0 checked → "Check a presentation to preview its slides."; exactly 1 → that one's slides (still
+clickable into the editor); 2+ → the existing combined preview (item 14, 2026-08-29). The old
+"re-validate `selId` against `visiblePprs()`" guard is superseded structurally — `visibleSelectedPprIds()`
+already scopes to what's visible, so a checked-but-archived/filtered row can never drive a stale
+preview by construction, not by a special-cased re-check.
+
+### Item 17: stacked-photo-card preview thumbnail
+When a slide has BOTH a previous and current photo, its preview thumbnail (`slideThumbHTML`, shared
+by the single and combined preview paths so they can never draw a slide differently) is a
+stacked-photo card — current on top (`.ppr-stack-front`), previous peeking out ~80% visible behind it
+at an offset (`.ppr-stack-back`) — instead of one flat image quietly standing in for the pair. Falls
+back to a plain flat thumbnail when only one photo exists.
+
+### Item 18/24: "Add photo" folded into "Pick a photo"
+The sibling `+ Add photo` buttons beside the Current/Previous "Pick a photo…" buttons are GONE.
+Uploading a new photo now happens via a `+ Upload new photo` button living INSIDE `openThumbPicker`
+itself — reused by every caller of that picker (the slide form's Current AND Previous pickers, and
+the copy wizard's) — so there is exactly one way to attach a photo to a slide, matching the stated
+invariant: 1 current photo, 0–1 previous.
+
+### Item 19: location details in the slide reorder view
+`openSlideSorter`'s `thumbHTML` now prints each slide's current photo's location under its
+thumbnail, plus the previous photo's location (labelled "(previous)") when it differs — since the
+two are no longer required to match.
+
+### Item 20: reorder-slides icon → swap
+New `swap` glyph added to the shared `assets/js/icons.js` (two opposing arrows) — replaces the
+generic `layout` icon on the "Reorder slides" button, which read as unrelated to reordering.
+
+### Items 21/22/23: per-pane Key Plan, moved caption fields, no repeated project name
+- **Item 21**: the shared `.ppr-meta` "Key Plan" toggle above the pair is GONE. Each pane now carries
+  its OWN small icon (top-right of its image, `.ppr-kpicon`) and its OWN popup (`.ppr-kppopup`,
+  anchored under the icon) — shown only when THAT photo actually has a key plan, toggled
+  independently via per-pane state (`keyPlanOpenPane = {before:false, after:false}`).
+- **Item 22**: capture date / description / works moved from a `<figcaption>` BELOW the image to a
+  new `.ppr-panehead` tile ABOVE it. The shared-location tile above the whole pair (already shipped
+  2026-08-29) still fires when both photos agree; when they DIFFER (or only one exists), each pane's
+  own head tile states its own location line — the "split" the ask describes.
+- **Item 23**: the redundant "Project" field is removed from the slide header (`renderSlides()`) —
+  the topbar project selector already names it on every screen of this module.
+- ⚠️ **Scope note**: this redesign applies to the LIVE editor (`pane()`/`renderSlides()`) only. The
+  static export renderer (`slideFigureHTML`/`EXPORT_CSS`, used by the offline HTML/PDF/PPTX
+  downloads) is a separate code path and was NOT rebuilt to match — a deliberate time-boxing choice
+  given the scope of this round, flagged here rather than silently left inconsistent.
+
+### Items 25/26/27/28: Floor Plans — a location tree, visible registration points, pins move to Add Media
+- **Item 25**: the Plans-page plan `<select>` is replaced by a **location tree side panel**
+  (`.bim-plantree`, `planTreePanelHTML()`/`wirePlanTree()`) built from the schedule's own tree
+  (`ProgressPhotos.locationTree()`, a new stateless export). A node with a matching floor plan
+  (matched by exact `location_values` equality, `locKey()`) is clickable to open it; a node with none
+  is greyed out (`.no-plan`) but STILL clickable — for a planner, it opens `openPlanForm(values)`
+  pre-filled with that exact location, so uploading a plan for a gap is one click plus a file. Any
+  plans not matched to a tree node (legacy, or a project with no Location Breakdown) list separately
+  below the tree so nothing becomes unreachable. Even with **zero** plans uploaded, a project with a
+  Location Breakdown still shows the (all-grey) tree, so a planner can see exactly which locations
+  still need one.
+- **Item 26**: registration points are now VISIBLE. Each already-picked pair renders as a numbered
+  green dot (`.bim-regpt`) on BOTH the drawing and the photo side; a point picked on the drawing but
+  not yet matched on the photo shows as a pulsing amber dot on the drawing side only
+  (`.bim-regpt.is-pending`).
+- **Item 27**: "Place pin" is REMOVED from the Plans page entirely (the `#bim-place` toolbar button
+  is gone from index.html). `togglePlaceMode`/`placeMode`/`openPinPicker` are left defined but
+  documented as retired-in-place — the same "superseded code stays, commented, never silently
+  deleted" convention this file already uses elsewhere — since the button that reached them no longer
+  exists and nothing else calls them.
+- **Item 28**: the direction widget moves from a separate circular gadget below the plan image to a
+  field-of-view CONE drawn directly ON the image the pin sits on, anchored to the pin, with two
+  independently-draggable endpoint handles (`.bim-conehandle-el`) — "drag the end points… to adjust
+  angle and range". Clicking the image drops a pin and seeds a DEFAULT cone facing the image's own
+  centre (`defaultCone()`, pure and genuinely executed in tests — bearing math shared with the
+  existing `directionDegFromDrag` convention: 0°=up, clockwise). The cone (`.bim-conewedge`) is
+  rendered at 32% fill opacity — "moderately transparent". Double-clicking the shaded wedge toggles
+  "does not apply" (`direction_na`, a new column — a top-view/aerial photo has no facing direction to
+  record; distinct from simply never having set one). `direction_deg` (existing column) keeps being
+  written as the bisector bearing between the two edges, purely so the two OLDER renderers that only
+  ever read that one column (the Plans-page pin marker, the Gallery's key-plan preview popup) keep
+  drawing a sensible cone without needing to understand the new two-edge shape.
+- New columns (`migrations/2026-08-30-photos-round2.sql`): `floor_plan_pins.edge1_x/edge1_y/edge2_x
+  /edge2_y` (normalized 0..1, same convention as `x_norm`/`y_norm`), `floor_plan_pins.direction_na`,
+  `floor_plans.location_values`, `progress_photos.view_name`. All nullable/defaulted, all read
+  tolerantly by existing code (`savePinForItem`/`openPlanForm` strip-and-retry on a "column does not
+  exist" error, same convention as every other not-yet-migrated column in this module family).
+
+### Item 29: save speed
+Two independent changes, both about ROUND-TRIP COUNT, not payload size:
+- **Batch upload** (`openUpload`'s save loop) now runs a small **capped concurrency pool** (4 workers
+  pulling from a shared index) instead of one file at a time — a batch of N photos now takes roughly
+  `N ÷ 4` round-trips' worth of wall-clock time instead of N. The pool is capped, not unbounded, since
+  a burst of dozens of simultaneous uploads would just as likely throttle the connection as help it.
+- **Key Plan pin saves** (after upload) now fire via `Promise.all` across every newly-uploaded photo
+  sharing one Key Plan position, instead of a sequential `for` loop awaiting each one — these are
+  independent inserts with no ordering to protect.
+- A stray `await new Promise(r => setTimeout(r,0))` per-file progress-paint yield was removed from
+  the old sequential loop (a real, if small, per-file delay that added up over a large batch).
+
+### Item 30: Vertical Stacking shows the schedule skeleton even with zero photos
+⚠️ **Root cause**: `stackGrid()`'s row/column headers were built ONLY from photos' own
+`location_values` — a freshly-configured project's schedule already defines the whole Location
+Breakdown (that's literally what the levels enumerate), but with zero photos tagged yet, the grid
+rendered "No photos have been tagged at this level yet" instead of the empty grid a planner could
+check their breakdown against. Fixed by seeding the row/column value sets from `distinctLocValues()`
+(the SAME schedule-derived enumeration the Add-Media location picker already uses) UNIONED with
+whatever photos add beyond that — a photo tagged at a location the schedule doesn't (yet) know about
+is still shown, never silently dropped either way.
+
+### Verification
+**602 checks green** (was 568 before this round — 34 net new, after removing the ones testing
+designs this round explicitly supersedes and rewriting others to test the CURRENT behaviour rather
+than delete-and-forget). `node --check` clean on every touched file (module.js, ppr.js, bim.js,
+test.js); 0 NUL bytes (verified via a byte-level Python read, not a shell `grep` pattern — a first
+pass using `grep -c $'\0'` under this environment's Git-Bash reported thousands of false "NUL bytes"
+per file, which a raw `open(f,'rb').read().count(b'\x00')` in Python showed was nonsense; recorded
+here because it is exactly the class of tooling trap this repo's own log has flagged before —
+**sanity-gate a scan before trusting it**). 0 duplicate DOM ids in index.html (75 unique). CSS braces
+balanced (481/481). The openModal fix is GENUINELY EXECUTED against a UI.modal stub shaped like the
+real one (see the root-cause section above) — the one test in this file that could actually have
+caught that bug, since the harness's own simplified stub never reassigns `m.close` the way the real
+`assets/js/ui.js` does.
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing caveat for
+this entire module. No live click-through of the topbar search/filter toggle, the works/location
+pickers, the markup sticker palette, the in-photo cone drag interaction, the floor-plan location
+tree, or the concurrent-upload pool against real network conditions. The Storage image-transform
+dependency for item 14 in particular has not been confirmed available on this project's plan.
+
+⚠️ **Function-count diff not claimed this round** — the working tree already carried substantial
+uncommitted changes from earlier in this session before this round of edits began (confirmed via
+`git show HEAD`, which reflects a state that predates even the single-Works-tag design this round
+supersedes), so a function-set diff against `HEAD` would compare against a stale, not-immediately-
+prior baseline and its "0 lost" reading would not honestly mean what it's supposed to. Parse-clean +
+0-NUL + CSS-balanced + the 602-check suite are the verification actually performed and claimed here.
+
 ## Persistent sidebar + Back/Forward steps through Gallery/Presentations/Plans (2026-08-30)
 
 Owner reported the actual trigger for this app-wide change: navigating deep into this module
