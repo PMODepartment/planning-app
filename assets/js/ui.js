@@ -417,23 +417,27 @@
     });
   }
 
-  // ---- Module topbar: two-row restructure for phones/tablets ----
-  // Every module topbar is one flat flex row: back · title · project select ·
-  // view tabs · tool cluster · theme toggle · #user-bar. On a phone that wraps
-  // into four or five full-width rows and eats the whole screen before any
-  // content shows (the tools row, then the avatar alone on its own line).
+  // ---- Module topbar: a permanent two-row split ----
+  // Every module topbar used to be one flat flex row: back · title · project
+  // select · view tabs · tool cluster · theme toggle · #user-bar. That fit on a
+  // wide desktop window, but a real module (several tabs, several action
+  // buttons) routinely overflows a normal laptop width too — the exact
+  // collisions/overlap this was rewritten to fix. It is now ALWAYS two rows,
+  // not just on a phone:
+  //   .pd-tb-main  — hamburger, module icon, project select, theme, #user-bar.
+  //                  App-wide identity + the ONE control that changes which
+  //                  project/portfolio you're looking at. Same shape on every
+  //                  module page.
+  //   .pd-tb-tools — everything module-specific: its own view tabs, its own
+  //                  action buttons (Add/Import/Health/...). This is the
+  //                  "secondary top bar."
   //
-  // Rather than patch 14 modules, wrap the children ONCE into two groups:
-  //   .pd-tb-main  — back button, module icon, <h1>, theme toggle, #user-bar
-  //   .pd-tb-tools — everything else (project select, tabs, buttons)
-  // Both are `display: contents` by default, so on desktop the topbar is still
-  // the exact same flat flex row it always was — the wrappers are invisible to
-  // layout. Only below the mobile breakpoint do they become real rows (identity
-  // on top, a single horizontally-scrolling strip of controls beneath).
+  // ⚠️ No back button is ever bucketed here any more — the browser's own Back
+  // covers it, and every module markup has had its `-modback` anchor removed.
   //
   // Safe because no CSS anywhere targets topbar children with a DIRECT-child
-  // combinator (`.pd-topbar > x`) — those would break under display:contents.
-  // Every module rule is a descendant selector. Check before adding one.
+  // combinator (`.pd-topbar > x`) — every module rule is a descendant selector.
+  // Check before adding one.
   function initModuleTopbar() {
     var topbar = document.querySelector('.pd-topbar');
     if (!topbar || topbar.querySelector(':scope > .pd-tb-main')) return;
@@ -447,31 +451,34 @@
     tools.className = 'pd-tb-tools';
 
     kids.forEach(function (el, i) {
-      // The identity cluster: the leading back button / hamburger, the module
-      // icon + title, and the account controls that must never scroll away.
-      var isLead = i === 0 && (el.tagName === 'A' || el.classList.contains('pd-sidebar-toggle'));
-      // Project Schedule's title is a <button> view-switcher, not an <h1>, so
-      // match on the class name too — otherwise its title scrolls away with the
-      // tools and the identity row is left with just a back arrow and avatar.
-      var isTitle = el.tagName === 'H1' || !!el.querySelector('h1') ||
-                    /(^|[\s-])[\w-]*title/i.test(el.className || '');
-      // The shell pages lead with the Megawide mark instead of a back link.
-      var isMark = el.tagName === 'IMG';
+      var isLead = i === 0 && el.classList.contains('pd-sidebar-toggle');
+      var isMark = el.tagName === 'IMG';   // shell pages lead with the Megawide mark
       var isAccount = el.id === 'user-bar' || el.id === 'pd-theme-toggle';
-      // ⚠️ The project selector stays with the CONTROLS, not the identity row.
-      // It was briefly moved up beside the title, but the two cannot share a
-      // 375px line: back + icon + title + theme + avatar consume ~295px of it,
-      // leaving the selector about 56px — narrow enough to read "Meg…" and
-      // nothing else. Below the title it gets the full width instead.
-      (isLead || isMark || isTitle || isAccount ? main : tools).appendChild(el);
+      // The project selector is app-wide identity now that row 1 has its own
+      // full-width row on every screen size — it is never squeezed beside a
+      // long title any more, so it belongs with the controls that never
+      // change per module, not with the module's own tools.
+      var isProjCtx = /-projctx$/.test(el.className || '') ||
+                      el.id === 'ctx-switcher' || /(^|\s)pd-projsw(\s|$)/.test(el.className || '');
+      // A plain <h1> title (icon + text) stays in row 1, but its text label is
+      // hidden everywhere (see the CSS) — the name of the current screen is
+      // now carried by the tabs in row 2, not repeated as prose above them.
+      var isPlainTitle = el.tagName === 'H1';
+      // Anything else matching /title/ in its class name (e.g. Project
+      // Schedule's `.ps-title-switch`, a BUTTON that opens a view-switcher
+      // menu) falls through to `tools` below — it is functionally the same
+      // thing as another module's `-tabs` strip, just rendered as a dropdown,
+      // so it belongs in row 2 with the other view controls, not row 1's
+      // identity cluster.
+      (isLead || isMark || isAccount || isProjCtx || isPlainTitle ? main : tools).appendChild(el);
     });
 
     topbar.appendChild(main);
     if (tools.children.length) topbar.appendChild(tools);
-    // Marks the topbar as restructured. ⚠️ The mobile CSS keys off THIS class,
-    // never off `.pd-topbar` alone — the column layout assumes the two wrapper
-    // rows exist. Applied to a plain topbar it turns every child into a
-    // full-width row and stretches the logo <img> into a giant red bar.
+    // Marks the topbar as restructured. The CSS keys off THIS class, never off
+    // `.pd-topbar` alone — the column layout assumes the two wrapper rows
+    // exist. Applied to a plain topbar it would turn every child into a
+    // full-width row and stretch the logo <img> into a giant red bar.
     topbar.classList.add('pd-tb-split');
   }
 

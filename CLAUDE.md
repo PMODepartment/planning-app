@@ -84,6 +84,102 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 (d) — App-wide: the module top bar becomes a permanent two-row split, matching PRC
+
+Owner sent screenshots comparing the PRC (Procurement) App's top bar/sidebar against ours and gave
+six concrete asks. Addressed together since they're one restructuring of the same element.
+
+**1–2. Top-bar chrome + the project selector belongs in it.** Re-verified the earlier 2026-08-19 PRC
+sidebar-parity pass (sidebar 240px, brand block 18/20/16 padding, logo `width:100%` no max-width,
+topbar mark 26px) is still intact in `dashboard.css` — those numbers already match PRC exactly. The
+mismatch the screenshots actually showed was inside **module pages**, not the shell: every module's
+own topbar was still ONE flat flex row (icon+title, project select, view tabs, action buttons, all
+competing for one line), which is precisely why it looked cramped/inconsistent next to PRC's clean
+60px bar next to a genuinely separate second control row.
+
+⚠️ **The two-row split already existed in the code — `ui.js`'s `initModuleTopbar()` — but only
+activated below 900px, as an invisible `display:contents` no-op on desktop.** That assumed a desktop
+window always has room for one wide row; it routinely doesn't once a module carries several tabs AND
+several action buttons, which is exactly the "Ronquillo Group" / "Actions ▾ +Add activity" text
+collision visible in the Project Schedule screenshot — two unrelated pieces of content wrapping onto
+the same line at a laptop-ish width with nothing separating them.
+
+- **The split is now unconditional, at every width.** Row 1 (`.pd-tb-main`) = hamburger, module icon,
+  the project/portfolio selector, theme toggle, avatar — identical shape on every module page. Row 2
+  (`.pd-tb-tools`) = the module's own view tabs + its own action buttons ("the secondary top bar",
+  per the ask). `initModuleTopbar()`'s bucketing moved the project selector (`-projctx` suffix, or
+  `#ctx-switcher`/`.pd-projsw` for the shell's cross-page switcher) from row 2 into row 1 — it no
+  longer has to cohabit a line with tabs, so the old "120px basis" compromise for squeezing both onto
+  one mobile row is gone.
+- ⚠️ Removing the `display:contents` trick also removed the reason for the `order:` hack that used to
+  push theme/avatar to the end on desktop (that was purely a `display:contents`-flattening artifact);
+  a plain `margin-left:auto` on the theme toggle does the same job now that main is a real row.
+
+**2 (continued) — the module's title text is retired, not the title element.** "The title of the
+module should come out as a tab instead of a title in the topbar": every module's `<h1>` still opens
+with its brand-red icon (kept — it is the one piece of visual identity row 1 carries), but the
+`[class$="-title-txt"]` label beside it is now hidden **always**, not just re-shown between 900 and
+1250px as before. The current screen is named by the tabs in row 2 instead of being repeated as prose
+above them. Project Schedule's `.ps-title-switch` (a dropdown that switches Schedule / Cost-EVM /
+Planner Cockpit / etc. — functionally the same thing as another module's `-tabs` strip, just rendered
+as a button+menu instead of a button row) is NOT an `<h1>`, so it now buckets into row 2 with the
+other view controls instead of row 1's identity cluster, where it used to sit.
+
+**3. Project selector: grouped by Group Head + searchable.** ⚠️ **Already true everywhere it
+mattered — checked before "fixing" it.** `UI.enhanceProjectSelect` (shared, `ui.js`) already upgrades
+every module's native `<select>` into a one-level popover grouped by Group Head (root = one folder
+per group head with projects here, plus "— No group head —"; drilling in lists that group's projects)
+with a search box that flattens across every group. A first grep only checked `modules/*/index.html`
+and wrongly flagged 8 modules as "missing" it — several keep their logic in a sibling `module.js`
+instead of inline, and a second, corrected check (both files) found **every real module already
+calls it** except Project Schedule (keeps its own bespoke, already-current Group-Head-based
+Workspace-style browser — confirmed it calls `PDb.getGroupHeads()`, not the removed `getWorkspaces`,
+so it's healthy, not stale) and Portfolio Overview (its own searchable multi-select project filter
+already covers the same need at portfolio scope). Nothing left to wire.
+
+**4. No back button, anywhere.** Every module's `<a class="X-modback" href="../../modules.html">`
+(+ its dedicated 36×36 CSS rule where one existed) removed — 12 files, all instances, both the
+one-line and two-line markup shapes. The browser's own Back already worked; the button was
+redundant chrome eating row-1 width for no reason.
+
+**5. Consistent main-bar buttons.** Now structural rather than a convention to remember: row 1's
+CONTENTS are computed by `initModuleTopbar()`'s bucketing rules, not hand-assembled per module, so
+"the main top bar stays the same across modules" is enforced by the shared function rather than by
+every module happening to copy the same markup correctly.
+
+**6. Display bugs at narrower widths.** The permanent split is itself the fix for the general class
+of bug reported — a single unconditional-desktop row could always overflow/wrap unpredictably the
+moment a module had enough tabs+buttons, which is what every "smaller width" collision report traces
+back to. ⚠️ **One SEPARATE, more specific bug found while diagnosing the Project Schedule
+screenshot, NOT fixed here:** `.ps-tb-row` (the "Schedule / File ▾ / Reports ▾ / Health / Colors ▾ /
+Labels / search" row, which lives in `.pd-main`, below `.pd-topbar` entirely) is deliberately
+`flex-wrap:nowrap; overflow:visible` — a comment there explains why (`.ps-menu` dropdowns need to
+escape a wrapping/scrolling container without being clipped). At a narrow-enough width the row's
+later buttons don't wrap; they spill out past the container's right edge and paint over whatever
+sits below/beside them, since `overflow:visible` never clips it. Flagged rather than fixed: changing
+`nowrap`/`overflow` risks reintroducing the menu-clipping bug that rule was written to prevent, and
+this 2.2 MB, actively-developed file cannot be verified live in this environment. The topbar-split
+fix above removes everything that USED to also collide with it (the back button, the title-switch,
+the project browser, the freshness/data-date badges — all now safely in their own row above), which
+should substantially narrow how often this is hit; the `.ps-tb-row` overflow itself is a follow-up.
+
+- `assets/js/ui.js` (`initModuleTopbar` bucketing rewritten) and `assets/css/dashboard.css` (the
+  "MODULE TOPBAR" section rewritten — permanent split, row styling, the title-text hide rule) are
+  the only shared files touched; every module change is markup-only (back-button removal) plus, for
+  `cash-flow`, wrapping its title text in a `<span class="cf-title-txt">` to match every other
+  module's convention (it was the one module with a bare, unwrapped text node, so the new hide rule
+  couldn't reach it).
+- `MODULE_CONTRACT.md`'s "Uniform top bar" section rewritten to document the new required shape, and
+  `modules/_template/` (markup + `module.js`) updated to match it exactly, including wiring
+  `UI.enhanceProjectSelect` (the template's project picker had never called it).
+- Cache-bust: `ui.js` / `dashboard.css` bumped to `?v=20260830c` across all 26 pages that load them.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. Verified structurally: `ui.js` parses; `dashboard.css`
+brace-balanced (423/423 before and after); every `-modback` anchor and its CSS rule confirmed gone
+(0 remaining); every module still carries exactly one `-projctx` (or, for the shell/portfolio
+pages, `#ctx-switcher`) element; `_template`'s script parses.
+
 ### 2026-08-30 — App-wide: persistent module sidebar + Back/Forward steps through in-page views
 
 Owner reported that Progress Photos' browser Back button skipped straight from a drilled-down
