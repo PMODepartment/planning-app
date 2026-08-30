@@ -67,21 +67,107 @@
     return { el: overlay, close: close };
   }
 
-  // ---- Project selector (shared group-head browser) ------------------------
-  // Upgrades a native project <select> into a two-level browser: GROUP HEADS at
-  // the root, their projects one level in (scales to 100s of projects), with a
-  // breadcrumb and a search box that flattens to matching projects across every
-  // group. The <select> stays the source of truth (its value + change events
-  // still fire), so existing `sel.onchange` handlers keep working. The list is
-  // built from PDb.getProjects + PDb.getGroupHeads, but FILTERED to the ids
-  // present in the select's options — so any module-level access filtering
-  // already applied to the options is respected. Safe to call again to refresh.
-  // The trigger button copies the select's classes/inline style so each module's
-  // per-topbar look carries.
+  // ---- Shared nav tree: Portfolio + Group-Head-labelled Projects ------------
+  // ONE list-building function reused by three call sites — the per-module
+  // project-select popover (enhanceProjectSelect, below), the shell-page
+  // topbar switcher (renderSwitcher, below), and the standalone landing page
+  // (home.html) — so "the same dropdown for navigating across portfolio and
+  // projects" is literally true rather than three components that merely
+  // look similar. Always fully expanded (no drill-down/breadcrumb): Portfolio
+  // first (a real destination, not a project), then each Group Head as a
+  // plain, non-clickable label with its projects indented beneath, then any
+  // project with no group head in its own trailing bucket. A search box
+  // flattens across every group.
   //
-  // ⚠️ This replaced a recursive Workspace → Program → Group folder walk. The
-  // depth is fixed at one now, so `path` is a group-head id ('' = root) rather
-  // than an arbitrary node id, and there is no ancestor chain to compute.
+  // renderNavListInto(container, projects, groupHeads, opts) — opts:
+  //   portfolioActive : bool   — highlight the Portfolio row as current
+  //   isSelected(p)    : fn    — highlight this project row as current
+  //   onPortfolio()    : fn    — called when the Portfolio row is picked
+  //   onProject(p)     : fn    — called with the project object when picked
+  // Returns { repaint(), focusSearch() }. Rebuilds `container`'s innerHTML on
+  // every keystroke in its own search box — callers who need STATIC content
+  // alongside the list (e.g. an "All projects" link) must mount their own
+  // wrapper element for it, not rely on the list's own container.
+  var NONE_GH = '__nogh__';   // bucket for projects with no group head
+  function _ntIco(name, size) { return window.Icons ? Icons.svg(name, size) : ''; }
+  function _ntByName(a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); }
+  function navListBody(projects, groupHeads, opts) {
+    opts = opts || {};
+    var P = projects || [];
+    function projRow(p) {
+      return '<div class="pd-nt-proj' + (opts.isSelected && opts.isSelected(p) ? ' sel' : '') + '" data-nt-proj="' + esc(p.id) + '">' +
+        _ntIco('project', 14) + '<span>' + esc(p.name || p.id) + '</span></div>';
+    }
+    var portfolioRow = '<div class="pd-nt-portfolio' + (opts.portfolioActive ? ' sel' : '') + '" data-nt-portfolio="1">' +
+      _ntIco('barChart', 15) + '<span>Portfolio</span></div>';
+    var q = (opts.search || '').trim().toLowerCase(), body;
+    if (q) {
+      var matches = P.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; }).sort(_ntByName);
+      body = matches.length ? matches.map(projRow).join('') : '<div class="pd-nt-empty">No projects match “' + esc(opts.search) + '”.</div>';
+    } else {
+      var pm = {};
+      P.forEach(function (p) { var k = p.group_head_id || NONE_GH; (pm[k] = pm[k] || []).push(p); });
+      var sections = (groupHeads || []).slice().sort(function (a, b) {
+        return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name));
+      }).filter(function (g) { return (pm[g.id] || []).length; }).map(function (g) {
+        return '<div class="pd-nt-ghlabel">' + esc(g.name) + '</div><div class="pd-nt-ghkids">' +
+          (pm[g.id] || []).slice().sort(_ntByName).map(projRow).join('') + '</div>';
+      }).join('');
+      if ((pm[NONE_GH] || []).length) {
+        sections += '<div class="pd-nt-ghlabel pd-nt-ghlabel-none">— No group head —</div><div class="pd-nt-ghkids">' +
+          pm[NONE_GH].slice().sort(_ntByName).map(projRow).join('') + '</div>';
+      }
+      body = sections || '<div class="pd-nt-empty">No projects available.</div>';
+    }
+    return portfolioRow + '<div class="pd-nt-list">' + body + '</div>';
+  }
+  function renderNavListInto(container, projects, groupHeads, opts) {
+    opts = opts || {};
+    var search = '';
+    function paint() {
+      var q = search.trim();
+      container.innerHTML = '<div class="pd-nt-search"><input type="text" class="pd-nt-q" placeholder="Search all projects…" value="' + esc(q) + '"></div>' +
+        navListBody(projects, groupHeads, { search: q, portfolioActive: opts.portfolioActive, isSelected: opts.isSelected });
+      var qi = container.querySelector('.pd-nt-q');
+      if (qi) qi.oninput = function () {
+        var pos = qi.selectionStart; search = qi.value; paint();
+        var q2 = container.querySelector('.pd-nt-q');
+        if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} }
+      };
+      var pf = container.querySelector('[data-nt-portfolio]');
+      if (pf) pf.onclick = function (e) { e.stopPropagation(); if (opts.onPortfolio) opts.onPortfolio(); };
+      container.querySelectorAll('[data-nt-proj]').forEach(function (r) {
+        r.onclick = function (e) {
+          e.stopPropagation();
+          var id = r.dataset.ntProj;
+          var p = (projects || []).filter(function (x) { return x.id === id; })[0] || { id: id };
+          if (opts.onProject) opts.onProject(p);
+        };
+      });
+      if (window.Icons) Icons.hydrate(container);
+    }
+    paint();
+    return {
+      repaint: paint,
+      focusSearch: function () { var qi = container.querySelector('.pd-nt-q'); if (qi) qi.focus(); }
+    };
+  }
+  // Base path back to the app root — modules always live one folder deep
+  // (modules/<key>/index.html), every shell page at the root itself.
+  function appBase() { return location.pathname.indexOf('/modules/') !== -1 ? '../../' : ''; }
+
+  // ---- Project selector (shared group-head browser) ------------------------
+  // Upgrades a native project <select> into a button that opens the shared
+  // nav tree above (Portfolio + Group-Head-grouped projects). The <select>
+  // stays the source of truth (its value + change events still fire) for an
+  // actual project pick, so existing `sel.onchange` handlers keep working;
+  // picking "Portfolio" is a real navigation instead, since Portfolio is not
+  // one of the select's options. The list is built from PDb.getProjects +
+  // PDb.getGroupHeads, but FILTERED to the ids present in the select's
+  // options — so any module-level access filtering already applied to the
+  // options is respected. Safe to call again to refresh. The trigger button
+  // copies the select's classes/inline style so each module's per-topbar look
+  // carries.
   var _pdProjCache = null, _pdGhCache = null;   // per-page (one load), shared across instances
   function enhanceProjectSelect(sel) {
     if (!sel) return null;
@@ -105,8 +191,7 @@
     pop.hidden = true;
     wrap.appendChild(pop);
 
-    var NONE = '__nogh__';                              // bucket for projects with no group head
-    var path = '', search = '', ghs = [], projs = [];   // path = group-head id, '' = root
+    var ghs = [], projs = [];
 
     function labelFor(v) {
       var o = Array.prototype.filter.call(sel.options, function (o) { return o.value === v; })[0];
@@ -119,72 +204,21 @@
         '<span class="pd-psel-caret" data-ico="chevronDown" data-ico-size="14"></span>';
       if (window.Icons) Icons.hydrate(btn);
     }
-    function ico(name, size) { return window.Icons ? Icons.svg(name, size) : ''; }
-    function byName(a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); }
-    function node(id) { return ghs.filter(function (g) { return g.id === id; })[0]; }
-
-    function head(pathId, q) {
-      var cur = pathId ? node(pathId) : null;
-      var curName = cur ? cur.name : (pathId === NONE ? '— No group head —' : '');
-      // One level deep, so the "trail" is at most All › <group head>. At the ROOT
-      // there is nothing to trail back to — an "All" row that does nothing is
-      // just a wasted first row — so the crumb only renders once you've drilled
-      // into a group head, where "All" is then a real click back out of it.
-      var bc = (!q && pathId && curName) ? '<div class="pd-pss-crumbs"><span class="pd-pss-crumb" data-crumb="">All</span>' +
-        '<span class="pd-pss-sep">›</span><span class="pd-pss-crumb" data-crumb="' + esc(pathId) + '">' + esc(curName) + '</span></div>' : '';
-      return '<div class="pd-pss-search"><input type="text" class="pd-pss-q" placeholder="Search all projects…" value="' + esc(q || search) + '">' + bc + '</div>';
+    function choose(id) {
+      if (id !== sel.value) { sel.value = id; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+      syncBtn(); close();
     }
-    function render() {
+    function currentProjects() {
       var ids = {};
       Array.prototype.forEach.call(sel.options, function (o) { if (o.value) ids[o.value] = 1; });
-      var P = projs.filter(function (p) { return ids[p.id]; });
-      // Bucket by group head. NONE is a real bucket, not a silent drop — a
-      // project with no group head must still be selectable.
-      var pm = {}; P.forEach(function (p) { var k = p.group_head_id || NONE; (pm[k] = pm[k] || []).push(p); });
-      function projRow(p) { return '<div class="pd-pss-proj' + (p.id === sel.value ? ' sel' : '') + '" data-proj="' + esc(p.id) + '">' + ico('project', 14) + '<span>' + esc(p.name || p.id) + '</span></div>'; }
-      var q = search.trim().toLowerCase(), body = '';
-      if (q) {
-        var matches = P.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; }).sort(byName);
-        body = matches.length ? matches.map(projRow).join('') : '<div class="pd-pss-empty">No projects match “' + esc(search) + '”.</div>';
-        pop.innerHTML = head('', q) + '<div class="pd-pss-tree">' + body + '</div>';
-      } else if (!path) {
-        // Root: one folder per group head that actually has projects here, plus
-        // the unassigned bucket last. An empty group head is not shown — it
-        // would be a dead end.
-        var folders = ghs.slice().sort(function (a, b) {
-          return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name));
-        }).filter(function (g) { return (pm[g.id] || []).length; });
-        body += folders.map(function (g) {
-          var n = (pm[g.id] || []).length;
-          return '<div class="pd-pss-folder" data-open="' + esc(g.id) + '">' + ico('group', 15) +
-            '<span class="pd-pss-name">' + esc(g.name) + '</span>' +
-            '<span class="pd-pss-badge pd-pss-group">group head</span>' +
-            '<span class="pd-pss-count" title="' + n + ' project' + (n === 1 ? '' : 's') + '">' + n + '</span>' +
-            '<span class="pd-pss-chev">›</span></div>';
-        }).join('');
-        if ((pm[NONE] || []).length) {
-          body += '<div class="pd-pss-folder" data-open="' + NONE + '">' + ico('group', 15) +
-            '<span class="pd-pss-name">— No group head —</span>' +
-            '<span class="pd-pss-count">' + pm[NONE].length + '</span>' +
-            '<span class="pd-pss-chev">›</span></div>';
-        }
-        if (!body) body = '<div class="pd-pss-empty">No projects available.</div>';
-        pop.innerHTML = head('', '') + '<div class="pd-pss-tree">' + body + '</div>';
-      } else {
-        body = (pm[path] || []).slice().sort(byName).map(projRow).join('');
-        if (!body) body = '<div class="pd-pss-empty">No projects in this group.</div>';
-        pop.innerHTML = head(path, '') + '<div class="pd-pss-tree">' + body + '</div>';
-      }
-      var qi = pop.querySelector('.pd-pss-q');
-      if (qi) qi.oninput = function () { var pos = qi.selectionStart; search = qi.value; render(); var q2 = pop.querySelector('.pd-pss-q'); if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} } };
-      pop.querySelectorAll('.pd-pss-crumb').forEach(function (c) { c.onclick = function (e) { e.stopPropagation(); path = c.dataset.crumb || ''; render(); }; });
-      pop.querySelectorAll('.pd-pss-folder').forEach(function (f) { f.onclick = function (e) { e.stopPropagation(); path = f.dataset.open; render(); }; });
-      pop.querySelectorAll('.pd-pss-proj').forEach(function (r) { r.onclick = function (e) { e.stopPropagation(); choose(r.dataset.proj); }; });
-      if (window.Icons) Icons.hydrate(pop);
+      return projs.filter(function (p) { return ids[p.id]; });
     }
-    function choose(v) {
-      if (v !== sel.value) { sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); }
-      syncBtn(); close();
+    function paintPop() {
+      renderNavListInto(pop, currentProjects(), ghs, {
+        isSelected: function (p) { return p.id === sel.value; },
+        onPortfolio: function () { location.href = appBase() + 'modules/portfolio-overview/index.html'; },
+        onProject: function (p) { choose(p.id); }
+      });
     }
     async function ensureData() {
       if (!_pdProjCache) { try { _pdProjCache = await PDb.getProjects(); } catch (e) { _pdProjCache = []; } }
@@ -192,13 +226,10 @@
     }
     async function open() {
       pop.hidden = false; wrap.classList.add('open');
-      if (!projs.length) pop.innerHTML = '<div class="pd-pss-empty">Loading…</div>';
+      if (!projs.length) pop.innerHTML = '<div class="pd-nt-empty">Loading…</div>';
       await ensureData(); projs = _pdProjCache || []; ghs = _pdGhCache || [];
-      search = ''; var cur = projs.filter(function (p) { return p.id === sel.value; })[0];
-      // Open inside the current project's group so it is visible immediately.
-      path = cur ? (cur.group_head_id || NONE) : '';
-      render();
-      var qi = pop.querySelector('.pd-pss-q'); if (qi) setTimeout(function () { qi.focus(); }, 0);
+      paintPop();
+      var qi = pop.querySelector('.pd-nt-q'); if (qi) setTimeout(function () { qi.focus(); }, 0);
     }
     function close() { pop.hidden = true; wrap.classList.remove('open'); }
 
@@ -207,7 +238,7 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !pop.hidden) { close(); btn.focus(); } });
     sel.addEventListener('change', syncBtn);   // stay in sync on programmatic value changes
 
-    var api = { refresh: function () { syncBtn(); if (!pop.hidden) render(); }, close: close };
+    var api = { refresh: function () { syncBtn(); if (!pop.hidden) paintPop(); }, close: close };
     sel.__pdEnhanced = api;
     syncBtn();
     return api;
@@ -233,9 +264,12 @@
     function cls(key) { return active === key ? ' class="active"' : ''; }
     var html;
     if (mode === 'portfolio') {
-      // Portfolio Dashboard > Personal Dashboard > Projects — the default landing
-      // is the dashboard, not the plain project list, so it leads.
+      // Home (the Portfolio + Group-Head + Projects landing tree, item 1) >
+      // Portfolio Dashboard > Personal Dashboard > Projects — the default
+      // landing is the dashboard, not the plain project list, so it leads.
       html = '<div class="pd-navsec">Portfolio</div>' +
+        '<a href="' + base + 'home.html"' + cls('home') + ' title="Home">' +
+          '<span class="pd-navico" data-ico="compass"></span><span class="pd-navtxt">Home</span></a>' +
         '<a href="' + base + 'modules/portfolio-overview/index.html"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
         '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
@@ -249,11 +283,12 @@
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled; });
-      // A way back to Portfolio, always available — the project-scoped project
-      // picker (dashboard.html and every module) deliberately carries no Portfolio
-      // option of its own (it's a project picker, not a mode switch), so this is
-      // the one path out of a project back to the portfolio-wide views.
+      // A way back to Portfolio, always available — the shared project
+      // dropdown (UI.enhanceProjectSelect) also offers a Portfolio row now,
+      // but this stays as a second, always-visible path out of a project.
       html = '<div class="pd-navsec">Portfolio</div>' +
+        '<a href="' + base + 'home.html" title="Home">' +
+          '<span class="pd-navico" data-ico="compass"></span><span class="pd-navtxt">Home</span></a>' +
         '<a href="' + base + 'modules/portfolio-overview/index.html" title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
         '<div class="pd-navsec">Project</div>' +
@@ -299,55 +334,35 @@
     var btn = mount.querySelector('.pd-projsw-btn');
     var menu = mount.querySelector('.pd-projsw-menu');
     function close() { menu.classList.remove('open'); }
-    function ghNameOf(p) {
-      if (!p || !p.group_head_id) return '';
-      var g = (_pdSwGh || []).filter(function (x) { return x.id === p.group_head_id; })[0];
-      return g ? g.name : '';
-    }
+    // Static shell (a mount div for the shared list body + a fixed "All
+    // projects" link below it) so repainting the list on every search
+    // keystroke never wipes out the link — see UI.renderNavListInto.
+    menu.innerHTML = '<div class="pd-nt-mount"></div>' +
+      '<a class="pd-projsw-all" href="' + base + 'projects.html">' + (window.Icons ? Icons.svg('arrowRight', 15) : '') + ' All projects / selector</a>';
+    if (window.Icons) Icons.hydrate(menu);
+    var ntMount = menu.querySelector('.pd-nt-mount');
     function renderMenu() {
-      var groups = window.PDProgram ? PDProgram.groups(_pdSwProj || []) : (_pdSwProj || []).map(function (p) {
-        return { key: p.id, label: p.name || p.id, members: [p] };
-      });
-      var items =
-        '<button data-goto-portfolio="1"' + (mode === 'portfolio' ? ' class="cur"' : '') + '>' +
-          '<strong>' + esc('Portfolio') + '</strong><small>Projects &middot; Portfolio Dashboard &middot; Personal Dashboard</small></button>' +
-        '<div class="pd-projsw-menu-head">Switch project</div>' +
-        groups.map(function (g) {
-          var grouped = g.members.length > 1;
-          var kids = g.members.map(function (p) {
-            var gh = ghNameOf(p);
-            return '<button data-pick="' + esc(p.id) + '"' + (p.id === pid ? ' class="cur"' : '') + '>' +
-              '<strong>' + esc(p.name || p.id) + '</strong><small>' + esc(p.id) + (gh ? ' &middot; ' + esc(gh) : '') + '</small></button>';
-          }).join('');
-          return grouped
-            ? '<div class="pd-projsw-group">' + esc(g.label) + '</div><div class="pd-projsw-kids">' + kids + '</div>'
-            : kids;
-        }).join('') +
-        '<a class="pd-projsw-all" href="' + base + 'projects.html">' + (window.Icons ? Icons.svg('arrowRight', 15) : '') + ' All projects / selector</a>';
-      menu.innerHTML = items;
-      if (window.Icons) Icons.hydrate(menu);
-      var g1 = menu.querySelector('[data-goto-portfolio]');
-      // Opening Portfolio lands on the Portfolio Dashboard now, not the Projects
-      // list — the Projects list is still one click away from there (and from the
-      // 'All projects / selector' link below), it's just no longer the default.
-      if (g1) g1.onclick = function () { location.href = base + 'modules/portfolio-overview/index.html'; };
-      menu.querySelectorAll('[data-pick]').forEach(function (b) {
-        b.onclick = function () {
-          var id = b.dataset.pick;
-          var p = (_pdSwProj || []).filter(function (x) { return x.id === id; })[0];
-          sessionStorage.setItem('pd_project', id);
-          sessionStorage.setItem('pd_project_name', (p && p.name) || id);
-          sessionStorage.setItem('pd_group_head', (p && p.group_head_id) || '');
+      renderNavListInto(ntMount, _pdSwProj || [], _pdSwGh || [], {
+        portfolioActive: mode === 'portfolio',
+        isSelected: function (p) { return p.id === pid; },
+        // Opening Portfolio lands on the Portfolio Dashboard now, not the
+        // Projects list — the Projects list is still one click away (the
+        // 'All projects / selector' link below), it's just no longer default.
+        onPortfolio: function () { location.href = base + 'modules/portfolio-overview/index.html'; },
+        onProject: function (p) {
+          sessionStorage.setItem('pd_project', p.id);
+          sessionStorage.setItem('pd_project_name', p.name || p.id);
+          sessionStorage.setItem('pd_group_head', p.group_head_id || '');
           // ⚠️ A package belongs to the OLD project — carrying it across would
           // scope the shell to a package this project does not contain.
           sessionStorage.removeItem('pd_package');
           sessionStorage.removeItem('pd_package_name');
           location.href = base + 'dashboard.html';
-        };
+        }
       });
     }
     async function open() {
-      menu.innerHTML = '<div class="pd-projsw-menu-head">Loading&hellip;</div>';
+      ntMount.innerHTML = '<div class="pd-nt-empty">Loading&hellip;</div>';
       menu.classList.add('open');
       await ensureSwitcherData();
       renderMenu();
@@ -432,23 +447,18 @@
     });
   }
 
-  // ---- Module topbar: a permanent two-row split ----
-  // Every module topbar used to be one flat flex row: back · title · project
-  // select · view tabs · tool cluster · theme toggle · #user-bar. That fit on a
-  // wide desktop window, but a real module (several tabs, several action
-  // buttons) routinely overflows a normal laptop width too — the exact
-  // collisions/overlap this was rewritten to fix. It is now ALWAYS two rows,
-  // not just on a phone:
-  //   .pd-tb-main  — hamburger, module icon, project select, theme, #user-bar.
-  //                  App-wide identity + the ONE control that changes which
-  //                  project/portfolio you're looking at. Same shape on every
-  //                  module page.
-  //   .pd-tb-tools — everything module-specific: its own view tabs, its own
-  //                  action buttons (Add/Import/Health/...). This is the
-  //                  "secondary top bar."
+  // ---- Module topbar: pure app chrome, everything else moves below it ------
+  // Every topbar used to carry a module's own identity (icon + title) and its
+  // controls (view tabs, action buttons) alongside the app-wide chrome. It is
+  // now down to exactly four things, identical on every page: the sidebar
+  // toggle, the shared project/portfolio dropdown, the theme toggle, and the
+  // avatar. EVERYTHING ELSE a page had in its topbar — a module's icon+title,
+  // its tabs, its tool cluster, a shell page's own bare title — is pulled out
+  // into a NEW SIBLING element, `.pd-modulebar`, inserted directly below the
+  // topbar (as a sibling in `.pd-content`, not nested inside it).
   //
-  // ⚠️ No back button is ever bucketed here any more — the browser's own Back
-  // covers it, and every module markup has had its `-modback` anchor removed.
+  // ⚠️ No back button is ever bucketed here — the browser's own Back covers
+  // it, and every module markup has had its `-modback` anchor removed.
   //
   // Safe because no CSS anywhere targets topbar children with a DIRECT-child
   // combinator (`.pd-topbar > x`) — every module rule is a descendant selector.
@@ -462,39 +472,73 @@
 
     var main = document.createElement('div');
     main.className = 'pd-tb-main';
-    var tools = document.createElement('div');
-    tools.className = 'pd-tb-tools';
+    var below = document.createElement('div');
+    below.className = 'pd-modulebar';
 
     kids.forEach(function (el, i) {
       var isLead = i === 0 && el.classList.contains('pd-sidebar-toggle');
-      var isMark = el.tagName === 'IMG';   // shell pages lead with the Megawide mark
       var isAccount = el.id === 'user-bar' || el.id === 'pd-theme-toggle';
-      // The project selector is app-wide identity now that row 1 has its own
-      // full-width row on every screen size — it is never squeezed beside a
-      // long title any more, so it belongs with the controls that never
-      // change per module, not with the module's own tools.
       var isProjCtx = /-projctx$/.test(el.className || '') ||
                       el.id === 'ctx-switcher' || /(^|\s)pd-projsw(\s|$)/.test(el.className || '');
-      // A plain <h1> title (icon + text) stays in row 1, but its text label is
-      // hidden everywhere (see the CSS) — the name of the current screen is
-      // now carried by the tabs in row 2, not repeated as prose above them.
-      var isPlainTitle = el.tagName === 'H1';
-      // Anything else matching /title/ in its class name (e.g. Project
-      // Schedule's `.ps-title-switch`, a BUTTON that opens a view-switcher
-      // menu) falls through to `tools` below — it is functionally the same
-      // thing as another module's `-tabs` strip, just rendered as a dropdown,
-      // so it belongs in row 2 with the other view controls, not row 1's
-      // identity cluster.
-      (isLead || isMark || isAccount || isProjCtx || isPlainTitle ? main : tools).appendChild(el);
+      // Everything that is not one of the four fixed chrome controls above —
+      // a module's mark/icon, its <h1> (or a title-switch button like Project
+      // Schedule's), its tab strip, its tool cluster, presence dots, a shell
+      // page's bare title — moves below, together, in its original order.
+      (isLead || isAccount || isProjCtx ? main : below).appendChild(el);
     });
 
     topbar.appendChild(main);
-    if (tools.children.length) topbar.appendChild(tools);
     // Marks the topbar as restructured. The CSS keys off THIS class, never off
-    // `.pd-topbar` alone — the column layout assumes the two wrapper rows
-    // exist. Applied to a plain topbar it would turn every child into a
-    // full-width row and stretch the logo <img> into a giant red bar.
+    // `.pd-topbar` alone — the column layout assumes `.pd-tb-main` exists.
     topbar.classList.add('pd-tb-split');
+    if (below.children.length) topbar.parentNode.insertBefore(below, topbar.nextSibling);
+  }
+
+  // ---- Item 6: a tab strip rendered as a Project-Schedule-style dropdown ---
+  // Converts an existing flat row of tab <button>s (a module's own `.xx-tabs`
+  // strip) into a single trigger button + menu, matching the pattern Project
+  // Schedule already used for its own view switch. The original buttons stay
+  // in the DOM — still what the module's own click handlers/state management
+  // are wired to — just hidden (`.pd-tabsdrop-src`); picking a menu item
+  // simply clicks the corresponding real button, so no module JS needs to
+  // change to adopt this. Call once per tab strip, after it is populated.
+  function tabsToDropdown(selOrEl) {
+    var tabs = typeof selOrEl === 'string' ? document.querySelector(selOrEl) : selOrEl;
+    if (!tabs || tabs.__pdTabsDrop) return;
+    var btns = Array.prototype.slice.call(tabs.querySelectorAll('button'));
+    if (btns.length < 2) return;
+    tabs.__pdTabsDrop = true;
+    tabs.classList.add('pd-tabsdrop-src');
+
+    var wrap = document.createElement('div');
+    wrap.className = 'pd-tabsdrop';
+    var trig = document.createElement('button');
+    trig.type = 'button'; trig.className = 'pd-tabsdrop-btn';
+    var menu = document.createElement('div');
+    menu.className = 'pd-tabsdrop-menu';
+    wrap.appendChild(trig); wrap.appendChild(menu);
+    tabs.parentNode.insertBefore(wrap, tabs);
+
+    function activeBtn() { return btns.filter(function (b) { return b.classList.contains('active'); })[0] || btns[0]; }
+    function sync() {
+      var a = activeBtn();
+      trig.innerHTML = '<span>' + esc(a.textContent) + '</span><span class="pd-tabsdrop-caret" data-ico="chevronDown" data-ico-size="14"></span>';
+      menu.innerHTML = btns.map(function (b, i) {
+        return '<button type="button" data-i="' + i + '" class="' + (b === a ? 'cur' : '') + '">' + esc(b.textContent) + '</button>';
+      }).join('');
+      if (window.Icons) { Icons.hydrate(trig); Icons.hydrate(menu); }
+      menu.querySelectorAll('button[data-i]').forEach(function (mi) {
+        mi.onclick = function (e) { e.stopPropagation(); btns[+mi.dataset.i].click(); close(); sync(); };
+      });
+    }
+    function close() { menu.classList.remove('open'); }
+    trig.onclick = function (e) { e.stopPropagation(); sync(); menu.classList.toggle('open'); };
+    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) close(); });
+    // Re-sync the trigger's label whenever the module's own code flips which
+    // real tab button carries `.active` (e.g. after a screen switch).
+    var mo = new MutationObserver(sync);
+    btns.forEach(function (b) { mo.observe(b, { attributes: true, attributeFilter: ['class'] }); });
+    sync();
   }
 
   if (document.readyState === 'loading') {
@@ -617,5 +661,6 @@
   window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell,
                 enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar,
                 acceptSuggestOnTab: acceptSuggestOnTab, bindHistoryState: bindHistoryState,
-                renderNav: renderNav, renderSwitcher: renderSwitcher };
+                renderNav: renderNav, renderSwitcher: renderSwitcher,
+                renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown };
 })();

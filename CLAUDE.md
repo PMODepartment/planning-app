@@ -84,6 +84,107 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 (g) — Landing page, one topbar dropdown everywhere, module chrome moves below the topbar, tabs-as-dropdown
+
+Owner sent two more screenshots (a wide Project Schedule topbar, a narrow one showing the collision)
+with 8 items. Clarified two genuinely ambiguous ones via `AskUserQuestion` before touching anything
+this size: (1) the wide-layout ordering is **sidebar toggle + dropdown on the left, theme + avatar on
+the right** (as literally listed, not reversed); (2) "icon and name of module should not be in the top
+bar" means **everything module-specific** — icon, title, view tabs, action buttons — moves out, not
+just the icon/title.
+
+**1–2. New landing page `home.html` + ONE shared dropdown, reused everywhere.** Login (`index.html`,
+both the password and Microsoft-OAuth paths) now lands on `home.html`: Portfolio (selectable) then
+each Group Head as a plain, non-clickable label with its projects indented beneath — exactly item 1's
+tree, with a search box that flattens across every group. ⚠️ **This is not a fourth component built to
+match the other three — it's the same one.** New `UI.renderNavListInto(container, projects,
+groupHeads, opts)` in `ui.js` is the single list-building+wiring function, and it now drives:
+`enhanceProjectSelect`'s popover (every module's own project selector, plus dashboard.html's), the
+shell-page topbar switcher (`renderSwitcher` — modules.html/admin.html/my-work.html/projects.html/
+portfolio-overview), and `home.html` itself. `enhanceProjectSelect`'s old one-level drill-down
+(breadcrumb, folder click) is gone — the tree is always fully expanded now, matching item 1's literal
+shape, which also makes the "no All row" question from entry (f) moot (there's no drill-down left to
+have an All row in).
+- ⚠️ `enhanceProjectSelect`'s popover now offers **Portfolio too** (it didn't before — a gap the
+  sidebar's own "Portfolio Dashboard" link existed to paper over). Picking it navigates directly; every
+  other row still just sets the underlying native `<select>`'s value and fires `change`, so no module's
+  own `sel.onchange` wiring needed to change.
+- `renderSwitcher` **regrouped from parent-project (`PDProgram`) to Group Head** — item 1 asked for
+  Group Head labels specifically, and the topbar switcher and the module popover would otherwise group
+  the same projects two different ways. `PDProgram` stays a real, used module (`projects.html`'s own
+  "Group by: Parent project" is unrelated and untouched) — it's just no longer read here.
+- A "Home" sidebar link was added to both `renderNav` modes, pointing at `home.html`, so there's a way
+  back to the picker without signing out.
+- ⚠️ **NOT migrated: Project Schedule's own project browser.** It's a bespoke Workspace→Program→Group
+  walk (`renderProjectSelector`, `.ps-projsel-*`) living inside that module's ~1.2MB actively-developed
+  file, entirely independent of `enhanceProjectSelect` — confirmed by grepping every module for the
+  call before assuming coverage. Rewriting it to match risks exactly the region-replace/NUL-byte
+  failure modes that file's own changelog has recorded repeatedly. Flagged rather than risked; every
+  other module (all 15, `_template` included) now goes through the one shared component.
+
+**3–5. Topbar rebuilt down to four things; everything module-specific moves below it.**
+`UI.initModuleTopbar()` no longer buckets a module's icon/title/tabs/tools into a second row *inside*
+the topbar — it now keeps the topbar to **sidebar toggle, the dropdown, theme toggle, avatar**, full
+stop, and moves everything else (a module's `<h1>` or title-switch button, its `-tabs` strip, its
+`-topbar-tools`/`-tb-sep` cluster, presence dots, a shell page's bare `<h1>`) into a **new sibling
+element**, `.pd-modulebar`, inserted directly below `.pd-topbar` in the DOM (never nested inside it).
+- Wide screens: DOM order already gives toggle→dropdown→(theme, right-aligned via
+  `margin-left:auto`)→avatar — no `order` trick needed, this is the confirmed left/right split.
+- ≤820px: the dropdown moves to **row 2 of `.pd-tb-main` alone**, via `order:5` (was `order:-1` in
+  entry (f) — the opposite instruction this time): toggle+theme+avatar stay together on row 1 (all
+  default `order:0`), the dropdown, now ordered last, wraps onto its own line by its `flex-basis:100%`.
+- The module's title TEXT is shown again (the old unconditional `[class$="-title-txt"]{display:none}`
+  rule is gone) — it's no longer competing with tabs/tools for one compact row, so hiding it is no
+  longer necessary.
+- Zero per-module markup changes were needed for this — it's pure DOM migration in `initModuleTopbar`,
+  the same trick the 2026-08-30(d) two-row split used, just moving elements to a sibling instead of a
+  nested wrapper. Verified safe: no CSS anywhere used a `.pd-topbar > x` / `.pd-topbar + .pd-main`
+  combinator that a new sibling would break.
+
+**6. Tabs-as-dropdown, Project-Schedule style.** New `UI.tabsToDropdown(selector)`: converts an
+existing flat `.xx-tabs` row into a single trigger button + menu (matching Project Schedule's own
+`.ps-title-switch` pattern), reproducing it by **clicking the real, now-hidden tab buttons** rather
+than reimplementing any module's view-switching logic — a `MutationObserver` on each button's `class`
+keeps the trigger's label in sync when the module's own code flips which tab is `.active`. Wired into
+**Progress Photos** (`.pp-tabs`: Gallery/Presentations/Plans) and **Issues & Concerns** (`.il-tabs`:
+Minutes of Meeting/Issues & Concerns/Lessons Learned) — the two modules named in the request — via one
+`UI.tabsToDropdown('.pp-tabs')` / `('.il-tabs')` call each, added to their existing `requireLogin`
+callbacks. No other module's tab strip was converted; a flat row is still a valid presentation and
+wasn't asked for by name.
+
+**8. Narrow-width bugs.** No new screenshot analysis was possible this pass (none was re-attached), but
+the whole topbar/module-bar interaction — the thing the two attached photos actually showed colliding
+— was rebuilt from scratch with the wrap/order rules re-derived and re-checked rule by rule, rather
+than patched. The tab-strip-becomes-equal-segments-at-≤700px and tools-share-their-row rules from the
+2026-08-30(d)/(e) passes carry over unchanged, just re-scoped from `.pd-topbar .pd-tb-tools >` to
+`.pd-modulebar >`.
+
+**7. prc-app UX alignment** — not addressed as a standalone item this pass; no new prc-app source or
+screenshots were supplied to compare against, and the structural changes above (a slim, consistent
+four-control topbar with page content clearly separated below it) are themselves a step in that
+direction. Needs a concrete side-by-side follow-up like the earlier PRC-parity passes (sidebar
+metrics, brand block padding) rather than an open-ended instruction.
+
+⚠️ **Deployment note, not code:** the Supabase Auth dashboard's redirect-URL allowlist (Authentication →
+URL Configuration) needs `home.html` added alongside `projects.html`, or the Microsoft OAuth login path
+will be refused by Supabase before it ever reaches this app's own redirect logic.
+
+- `assets/js/ui.js` (`renderNavListInto`/`navListBody` new; `enhanceProjectSelect`, `renderSwitcher`,
+  `initModuleTopbar`, `renderNav` rewritten; `tabsToDropdown` new) and `assets/css/dashboard.css` (the
+  `.pd-nt-*` shared list styles, replacing `.pd-pss-*`; the "MODULE TOPBAR" section rewritten around
+  `.pd-modulebar`; `.pd-tabsdrop-*` new) are the shared files touched. New `home.html`. Two modules
+  edited for item 6 (one line each). `index.html` + `assets/js/auth.js` redirect targets updated.
+- Cache-bust: `ui.js` / `dashboard.css` bumped to `?v=20260830e` across all 26 pages that load them.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing constraint
+for every UI pass in this repo. Verified structurally: `ui.js` parses; every inline `<script>` in the
+touched shell pages and the two edited modules parses (checked with HTML comments stripped first, to
+avoid the documented false-positive where a literal `<script>` inside a comment fools a naive regex
+extraction); `dashboard.css` brace-balanced (412/412); no stale reference to any removed CSS class
+(`.pd-pss-*`, `.pd-projsw-group/-kids/-menu-head`, `data-goto-portfolio`) remains anywhere in the repo;
+every module's own project-selector call site confirmed routed through the one rewritten
+`enhanceProjectSelect` except Project Schedule's bespoke browser (flagged above, not touched).
+
 ### 2026-08-30 (f) — Mobile follow-up: project selector goes first, the shell adopts the module's own picker, Portfolio Dashboard leads
 
 Owner sent four phone screenshots (a module's project popover, that module's stacked topbar, the
