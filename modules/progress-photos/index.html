@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260830d" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260830e" />
   <link rel="stylesheet" href="module.css?v=20260830d" />
 </head>
 <body>
@@ -278,7 +278,7 @@
   <script src="../../assets/js/auth.js?v=20260814a"></script>
   <script src="../../assets/js/db.js?v=20260827c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260830d"></script>
+  <script src="../../assets/js/ui.js?v=20260830e"></script>
   <script src="../../assets/js/icons.js?v=20260830b"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -296,6 +296,9 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'progress-photos', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
+      // Item 6: Gallery/Presentations/Plans as a Project-Schedule-style
+      // dropdown instead of a flat tab row.
+      UI.tabsToDropdown('.pp-tabs');
       // ⚠️ Each sub-module's init() is isolated in its own try/catch. Before
       // this, a throw anywhere in ProgressPhotos.init()/PPR.init()/etc. (e.g.
       // a project load failing, or any future bug in one file) aborted every
