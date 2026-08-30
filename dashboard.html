@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
-  <link rel="apple-touch-icon" href="assets/img/icon.png" />
+  <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260830c" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260830d" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260827a" />
 </head>
 <body>
@@ -32,8 +32,11 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
-        <!-- Portfolio ⇄ Project switcher, shared across every shell page. -->
-        <div id="ctx-switcher"></div>
+        <!-- Project selector — the SAME searchable, Group-Head-grouped picker every
+             module uses (UI.enhanceProjectSelect), not a separate switcher component. -->
+        <div class="dh-projctx">
+          <select class="pd-select dh-project" id="dh-project" title="Project"></select>
+        </div>
         <div id="user-bar"></div>
       </div>
 
@@ -215,7 +218,7 @@
   <script src="assets/js/auth.js?v=20260814a"></script>
   <script src="assets/js/db.js?v=20260827c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/ui.js?v=20260830c"></script>
+  <script src="assets/js/ui.js?v=20260830d"></script>
   <script src="assets/js/icons.js?v=20260830b"></script>
   <script src="assets/js/modules-grid.js?v=20260830a"></script>
   <script src="assets/js/my-work.js?v=20260827a"></script>
@@ -241,9 +244,36 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'dashboard', base: '', isAdmin: isAdmin, pname: pnameNow, modules: APP_CONFIG.MODULES,
       });
-      UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'project', base: '', pid: pid, pname: pnameNow });
+      // Fast paint from sessionStorage alone (a single option) — refreshed with the
+      // real full list the moment boot()'s fetch resolves, in renderHeader() below.
+      renderProjPicker([{ id: pid, name: pnameNow }]);
       boot();
     });
+
+    // Project selector — same searchable, Group-Head-grouped picker every module's
+    // topbar uses (UI.enhanceProjectSelect). `list` is either the sessionStorage-only
+    // fast-paint fallback (one option) or the real project list once PROJ has loaded.
+    function renderProjPicker(list) {
+      var sel = document.getElementById('dh-project');
+      if (!sel) return;
+      sel.innerHTML = (list || []).map(function (p) {
+        return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' +
+          Fmt.esc(p.name || p.id) + '</option>';
+      }).join('');
+      UI.enhanceProjectSelect(sel);
+      sel.onchange = function () {
+        var id = this.value;
+        var p = (PROJ || []).filter(function (x) { return x.id === id; })[0];
+        sessionStorage.setItem('pd_project', id);
+        sessionStorage.setItem('pd_project_name', (p && p.name) || id);
+        sessionStorage.setItem('pd_group_head', (p && p.group_head_id) || '');
+        // ⚠️ A package belongs to the OLD project — carrying it across would
+        // scope the shell to a package this project does not contain.
+        sessionStorage.removeItem('pd_package');
+        sessionStorage.removeItem('pd_package_name');
+        location.reload();
+      };
+    }
 
     async function boot() {
       try {
@@ -274,14 +304,12 @@
     }
     function renderHeader() {
       var label = (curProj.name || curProj.id) + ' (' + curProj.id + ')';
-      var gh = groupHead(curProj);
       document.getElementById('dash-sub').textContent = label;
-      // Re-render the switcher + nav now that the authoritative name/group head
-      // are in — cheap, and the first pass above already made the shell usable.
-      UI.renderSwitcher(document.getElementById('ctx-switcher'), {
-        mode: 'project', base: '', pid: pid, pname: curProj.name || curProj.id,
-        ghLabel: gh ? ('Group Head: ' + gh) : '',
-      });
+      // Re-render the picker + nav now that the authoritative project list/name are
+      // in — cheap, and the first pass above already made the shell usable. This is
+      // what gives the picker's popover the FULL project list (it only offers
+      // projects that are actually present as <option>s on the underlying select).
+      renderProjPicker(PROJ);
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'dashboard', base: '', isAdmin: isAdmin, pname: curProj.name || curProj.id, modules: APP_CONFIG.MODULES,
       });

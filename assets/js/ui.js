@@ -126,9 +126,12 @@
     function head(pathId, q) {
       var cur = pathId ? node(pathId) : null;
       var curName = cur ? cur.name : (pathId === NONE ? '— No group head —' : '');
-      // One level deep, so the "trail" is at most All › <group head>.
-      var bc = q ? '' : '<div class="pd-pss-crumbs"><span class="pd-pss-crumb" data-crumb="">All</span>' +
-        (curName ? '<span class="pd-pss-sep">›</span><span class="pd-pss-crumb" data-crumb="' + esc(pathId) + '">' + esc(curName) + '</span>' : '') + '</div>';
+      // One level deep, so the "trail" is at most All › <group head>. At the ROOT
+      // there is nothing to trail back to — an "All" row that does nothing is
+      // just a wasted first row — so the crumb only renders once you've drilled
+      // into a group head, where "All" is then a real click back out of it.
+      var bc = (!q && pathId && curName) ? '<div class="pd-pss-crumbs"><span class="pd-pss-crumb" data-crumb="">All</span>' +
+        '<span class="pd-pss-sep">›</span><span class="pd-pss-crumb" data-crumb="' + esc(pathId) + '">' + esc(curName) + '</span></div>' : '';
       return '<div class="pd-pss-search"><input type="text" class="pd-pss-q" placeholder="Search all projects…" value="' + esc(q || search) + '">' + bc + '</div>';
     }
     function render() {
@@ -230,13 +233,15 @@
     function cls(key) { return active === key ? ' class="active"' : ''; }
     var html;
     if (mode === 'portfolio') {
+      // Portfolio Dashboard > Personal Dashboard > Projects — the default landing
+      // is the dashboard, not the plain project list, so it leads.
       html = '<div class="pd-navsec">Portfolio</div>' +
-        '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
-          '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
         '<a href="' + base + 'modules/portfolio-overview/index.html"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
         '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
           '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Personal Dashboard</span></a>' +
+        '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
+          '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
         (ctx.isAdmin
           ? '<div class="pd-navsec">System</div>' +
             '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Admin">' +
@@ -244,7 +249,14 @@
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled; });
-      html = '<div class="pd-navsec">Project</div>' +
+      // A way back to Portfolio, always available — the project-scoped project
+      // picker (dashboard.html and every module) deliberately carries no Portfolio
+      // option of its own (it's a project picker, not a mode switch), so this is
+      // the one path out of a project back to the portfolio-wide views.
+      html = '<div class="pd-navsec">Portfolio</div>' +
+        '<a href="' + base + 'modules/portfolio-overview/index.html" title="Portfolio Dashboard">' +
+          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
+        '<div class="pd-navsec">Project</div>' +
         '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
           '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard' +
           (ctx.pname ? '<small class="pd-nav-sub">' + esc(ctx.pname) + '</small>' : '') + '</span></a>' +
@@ -315,7 +327,10 @@
       menu.innerHTML = items;
       if (window.Icons) Icons.hydrate(menu);
       var g1 = menu.querySelector('[data-goto-portfolio]');
-      if (g1) g1.onclick = function () { location.href = base + 'projects.html'; };
+      // Opening Portfolio lands on the Portfolio Dashboard now, not the Projects
+      // list — the Projects list is still one click away from there (and from the
+      // 'All projects / selector' link below), it's just no longer the default.
+      if (g1) g1.onclick = function () { location.href = base + 'modules/portfolio-overview/index.html'; };
       menu.querySelectorAll('[data-pick]').forEach(function (b) {
         b.onclick = function () {
           var id = b.dataset.pick;

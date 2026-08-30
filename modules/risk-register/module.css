@@ -10,7 +10,6 @@
 .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
 .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
 .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
-.rr-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
 .rr-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
 .rr-title .rr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }

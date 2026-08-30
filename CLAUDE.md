@@ -84,6 +84,90 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 (f) — Mobile follow-up: project selector goes first, the shell adopts the module's own picker, Portfolio Dashboard leads
+
+Owner sent four phone screenshots (a module's project popover, that module's stacked topbar, the
+Project Dashboard's own switcher, the Projects list) with five concrete asks.
+
+**1. No "All" row in the module's project popover, at root.** `UI.enhanceProjectSelect`'s breadcrumb
+(`All`) rendered even at the top level, where it does nothing — you're already there. It now only
+renders once you've drilled into a group head, where "All" is a real click back out; at root there's
+just the search box, as shown in the screenshot.
+
+**2. The project selector wraps to its own line FIRST on a phone, the app chrome second.** The
+≤820px rule that forces the project selector (`-projctx` / `#ctx-switcher`) onto its own full-width
+line already existed (`flex-basis:100%`), but its `order:3` put it AFTER the hamburger/icon/theme/
+avatar cluster in flex layout order — so it wrapped to line 2, below the chrome, exactly backwards
+from what the screenshot showed being asked for. `order:-1` puts it first: project/portfolio context
+is the broader fact, so it leads; the app chrome wraps beneath it.
+
+**3. The Project Dashboard now uses the SAME picker as every module** (`UI.enhanceProjectSelect`),
+not the separate `renderSwitcher`/`#ctx-switcher` component it had (visibly different from the
+module's popover in the screenshots — grouped by parent-project vs. by Group Head, different visual
+language entirely). `dashboard.html`'s topbar is now a plain `.dh-projctx > select` filled with
+every accessible project and enhanced the same way `progress-photos`'s `.pp-projctx` is — a fast
+first paint from the single sessionStorage-cached project, refreshed to the full list the moment
+`boot()`'s fetch resolves. Picking a project sets the same three sessionStorage keys `renderSwitcher`
+did (project/name/group-head, clearing any stale `pd_package`) and reloads.
+
+⚠️ **This drops the ONE remaining path from a project back to Portfolio** (`renderSwitcher`'s own
+"Portfolio" menu item) — deliberately, since item 1 established a project picker should never carry
+a mode-switch option of its own. Rather than leave a dead end, `renderNav`'s **project**-mode sidebar
+now leads with a "Portfolio Dashboard" link (the same fix every module page picks up too, since they
+all render nav the same way and had the identical gap already — `renderSwitcher`'s Portfolio button
+was the only way out of ANY project-mode page, module pages included, and none of them showed it).
+
+**4. Projects list drops its "Portfolio Dashboard" / "Personal Dashboard" landing tiles.** They're
+still one click away — now from the sidebar (point 3) and, in portfolio mode, the topbar switcher —
+so nothing is lost, just no longer duplicated as banner tiles above the toolbar.
+
+**5. "Opening Portfolio" now defaults to the Portfolio Dashboard, not the Projects list**, in both
+places that phrase means something: `renderSwitcher`'s own "Portfolio" menu item (still used by
+`modules.html`, `admin.html`, `my-work.html`, `projects.html`, Portfolio Overview — everywhere except
+the Project Dashboard now) points at `modules/portfolio-overview/index.html` instead of
+`projects.html`; and `renderNav`'s **portfolio**-mode sidebar is reordered **Portfolio Dashboard >
+Personal Dashboard > Projects** (was Projects first), matching the new default.
+
+- `assets/js/ui.js` (`enhanceProjectSelect`'s `head()`, `renderSwitcher`'s Portfolio button,
+  `renderNav`'s both mode branches) and `assets/css/dashboard.css` (one `order` value) are the only
+  shared files touched. `dashboard.html`'s own topbar markup/script is rewritten to the module
+  pattern; `projects.html` loses its landing-tile block + the now-dead `.pd-landing-*` CSS.
+- Cache-bust: `ui.js` / `dashboard.css` bumped to `?v=20260830d` across all 26 pages that load them.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. Verified structurally: `ui.js` parses; `dashboard.html`'s
+inline script (extracted) parses; `dashboard.css` brace-balanced (416/416, −7 from the removed
+landing-tile rules); every module page's own `-projctx`/`#ctx-switcher` selector still resolves to
+the same shared rule (nothing module-local needed to change); the 5 pages still using `renderSwitcher`
+(`modules.html`, `admin.html`, `my-work.html`, `projects.html`, Portfolio Overview) are unaffected
+beyond the reordered sidebar and the Portfolio button's new destination.
+
+### 2026-08-30 (e) — Follow-up: 7 module.css files still carried the dead `.X-modback` rule
+
+Owner asked for a review of the latest code to confirm the (d) entry's six feedback points were
+actually all reflected. Re-checked each of the six against the current `main` (now 16 commits past
+the (d) merge, with PR #22's schema work and #25's progress-photos rounds landed in between) —
+five held with no drift; point 4 ("no back button, anywhere") had a real gap.
+
+⚠️ **The (d) pass removed the `-modback` anchor from every module's markup and its CSS rule — but
+only checked for the rule in the 7 modules whose topbar CSS is inline in `index.html`.** Seven
+other modules (`drawing-register`, `material-submittal`, `risk-register`, `stakeholder-map`,
+`progress-photos`, `issues-lessons`, `contracts-claims`) keep their CSS in a sibling `module.css`
+instead, and the sweep that removed the dead rule never looked there — so `.X-modback { width:36px;
+height:36px; … }` sat unused in all seven, dead code left over from a button that no longer exists
+in any of their markup. Harmless (nothing referenced the class), but worth cleaning up rather than
+leaving as rot the next person has to puzzle over.
+
+Confirmed each anchor was genuinely gone from markup first (a stray `arrowLeft` icon in Progress
+Photos is an unrelated in-page "back to presentations list" control, not this button), then removed
+the seven dead rules. Re-verified all five other points too: `initModuleTopbar()`'s permanent split
+and `enhanceProjectSelect`'s Group-Head grouping are both untouched by the intervening merges; the
+`.ps-tb-row` overflow issue flagged-not-fixed in (d) is still exactly as flagged, unaffected.
+
+Verified: CSS brace-balanced on all seven touched files (unchanged proportions, confirmed per-file);
+0 remaining `.X-modback` selectors anywhere in the repo (the one `ui.js` hit is a prose comment).
+Module-local CSS only — no shared asset changed, so **no `?v=` bump**.
+
 ### 2026-08-30 (d) — App-wide: the module top bar becomes a permanent two-row split, matching PRC
 
 Owner sent screenshots comparing the PRC (Procurement) App's top bar/sidebar against ours and gave
@@ -179,6 +263,63 @@ constraint for every UI pass in this repo. Verified structurally: `ui.js` parses
 brace-balanced (423/423 before and after); every `-modback` anchor and its CSS rule confirmed gone
 (0 remaining); every module still carries exactly one `-projctx` (or, for the shell/portfolio
 pages, `#ctx-switcher`) element; `_template`'s script parses.
+
+### 2026-08-30 (c) — Apple-touch-icon: white tile chosen, more breathing room around the mark
+
+Follow-up to the redesign above, after owner review. Presented four candidates (dark tile,
+brand-red tile with a white card, white tile, mark-alone) each rendered from the real mark on an
+iOS home-screen mockup rather than describing them — one candidate (the mark straight on a red
+field) failed visibly once rendered: the mark's cutout is genuine transparency, not painted white,
+so it vanished entirely into a same-color background. Owner picked the **white tile + wordmark**,
+then asked for more padding, and to see the result before it shipped.
+
+- Background changed `#2B2C2B` → **white**, "PLANNING" recolored to ink (`#231F20`) to match.
+- Outer padding widened (`13vw 11vw 14vw`, was `9vw 6vw 10vw`) and the mark/wordmark scaled down
+  slightly to keep proportion (mark 50vw was 58vw, wordmark 12vw was 14.2vw) — more air on every
+  edge, checked at both the 512px master and the true deployed 180px size before installing.
+- `assets/img/icon.png` replaced again (still 512×512 opaque); every reference's cache-bust bumped
+  `?v=20260830a` → `?v=20260830b` (26 pages + `manifest.webmanifest`) since the bytes changed again
+  under the same filename.
+
+⚠️ **This is the second commit onto a branch whose first commit had already merged as PR #22**
+(the unrelated `supabase-build.sql`/`VERIFY-schema.sql` regeneration). Per this repo's own
+merged-PR-is-finished rule, the branch was rebuilt from fresh `origin/main` and the still-unmerged
+icon commit was replayed onto that base rather than stacked on the old, now-closed PR's tip — so
+this change ships as its own pull request, not appended to #22.
+
+### 2026-08-30 (b) — App-wide: the apple-touch-icon (home-screen icon) is redesigned and fixed square
+
+Owner asked for the bookmark icon, then clarified the ask was specifically the **apple-touch-icon**
+(the icon iOS/iPadOS shows when the app is added to a home screen) and gave a concrete brief: a
+minimalist Megawide mark plus the word **PLANNING**.
+
+⚠️ **The old file wasn't just undesigned, it was the wrong shape.** `assets/img/icon.png` was a
+byte-for-byte copy of `favicon.png` — the same **1020×850** transparent PNG used for the browser-tab
+icon — reused for `<link rel="apple-touch-icon">` with no square crop at all. iOS expects a square
+source and letterboxes or crops whatever it's given; nothing here had ever actually been designed
+for that use.
+
+- New design: the existing red Megawide mark (unaltered — the corporate mark is not redrawn) centered
+  on a solid `--pd-dark` (#2B2C2B) square tile, with **PLANNING** set below it in Montserrat 800,
+  tracked uppercase, off-white. Composed as HTML/CSS at design-space units (`vw`-relative) and
+  rasterized with headless Chromium (Playwright) rather than hand-traced — the exact same red+white
+  glyph pixels as the source PNG, never redrawn.
+- Shipped as one **512×512** opaque (no alpha) PNG replacing `assets/img/icon.png` — large enough to
+  serve `apple-touch-icon` (iOS downscales) and the manifest's own 512 entry with no further files.
+- ⚠️ `manifest.webmanifest` had **two** icon entries pointing at the same file under two false claimed
+  sizes (`192x192` and `512x512`, both actually 1020×850). Collapsed to one honest
+  `512x512` entry — a single icon ≥192px already satisfies Chrome's install-icon minimum, and a second
+  entry lying about its own dimensions is worse than no second entry.
+- **`favicon.png` (the browser-tab icon) is deliberately untouched** — the wordmark would not read at
+  16–32px, and the plain mark is still the right asset for a tab. Only the home-screen icon changed.
+- Every `<link rel="apple-touch-icon">` across all 26 HTML pages + the `MODULE_CONTRACT.md`
+  boilerplate now carries `?v=20260830a` (this repo's standing cache-bust convention) — home-screen
+  icons are cached far more aggressively than a normal image, and the filename didn't change.
+
+Rendered and visually checked at both 512px and the deployed 180px size before installing — the mark
+and the wordmark both read cleanly at true icon size. ⚠️ **Not verified on a real device** — no iOS
+"Add to Home Screen" click-through is possible in this environment; the check is the rendered PNG,
+not an actual home screen.
 
 ### 2026-08-30 — App-wide: persistent module sidebar + Back/Forward steps through in-page views
 
