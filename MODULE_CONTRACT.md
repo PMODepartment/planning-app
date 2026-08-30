@@ -57,7 +57,7 @@ Your page is **one level deeper** than the shell, so shared assets load with a
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
-  <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830a" />
   <script src="../../assets/js/theme.js"></script>   <!-- dark mode; load in <head> -->
   <title>Risk Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />

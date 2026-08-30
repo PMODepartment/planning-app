@@ -84,6 +84,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 (b) — App-wide: the apple-touch-icon (home-screen icon) is redesigned and fixed square
+
+Owner asked for the bookmark icon, then clarified the ask was specifically the **apple-touch-icon**
+(the icon iOS/iPadOS shows when the app is added to a home screen) and gave a concrete brief: a
+minimalist Megawide mark plus the word **PLANNING**.
+
+⚠️ **The old file wasn't just undesigned, it was the wrong shape.** `assets/img/icon.png` was a
+byte-for-byte copy of `favicon.png` — the same **1020×850** transparent PNG used for the browser-tab
+icon — reused for `<link rel="apple-touch-icon">` with no square crop at all. iOS expects a square
+source and letterboxes or crops whatever it's given; nothing here had ever actually been designed
+for that use.
+
+- New design: the existing red Megawide mark (unaltered — the corporate mark is not redrawn) centered
+  on a solid `--pd-dark` (#2B2C2B) square tile, with **PLANNING** set below it in Montserrat 800,
+  tracked uppercase, off-white. Composed as HTML/CSS at design-space units (`vw`-relative) and
+  rasterized with headless Chromium (Playwright) rather than hand-traced — the exact same red+white
+  glyph pixels as the source PNG, never redrawn.
+- Shipped as one **512×512** opaque (no alpha) PNG replacing `assets/img/icon.png` — large enough to
+  serve `apple-touch-icon` (iOS downscales) and the manifest's own 512 entry with no further files.
+- ⚠️ `manifest.webmanifest` had **two** icon entries pointing at the same file under two false claimed
+  sizes (`192x192` and `512x512`, both actually 1020×850). Collapsed to one honest
+  `512x512` entry — a single icon ≥192px already satisfies Chrome's install-icon minimum, and a second
+  entry lying about its own dimensions is worse than no second entry.
+- **`favicon.png` (the browser-tab icon) is deliberately untouched** — the wordmark would not read at
+  16–32px, and the plain mark is still the right asset for a tab. Only the home-screen icon changed.
+- Every `<link rel="apple-touch-icon">` across all 26 HTML pages + the `MODULE_CONTRACT.md`
+  boilerplate now carries `?v=20260830a` (this repo's standing cache-bust convention) — home-screen
+  icons are cached far more aggressively than a normal image, and the filename didn't change.
+
+Rendered and visually checked at both 512px and the deployed 180px size before installing — the mark
+and the wordmark both read cleanly at true icon size. ⚠️ **Not verified on a real device** — no iOS
+"Add to Home Screen" click-through is possible in this environment; the check is the rendered PNG,
+not an actual home screen.
+
 ### 2026-08-30 — App-wide: persistent module sidebar + Back/Forward steps through in-page views
 
 Owner reported that Progress Photos' browser Back button skipped straight from a drilled-down
