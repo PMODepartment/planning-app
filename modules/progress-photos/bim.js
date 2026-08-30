@@ -33,6 +33,12 @@ window.BIM = (function () {
   var allPins = [];
   var registrations = [];  // floor_plan_registrations rows, all plans (Batch H)
   var actualView = false;  // Batch H: show the warped photo instead of the drawing
+  // Last-known value passed to syncTools by index.html's setScreen — render()
+  // must replay THIS, never a hardcoded true, or the Plans tools stay visible
+  // after any async re-render (e.g. load()'s own completion) even when the
+  // top-level screen is Gallery/Presentations, not Plans. Same convention and
+  // same bug this fixes as ppr.js's own toolsVisible.
+  var toolsVisible = false;
 
   // Pan/zoom state for the stage — plain translate+scale on a wrapper div,
   // not an SVG viewBox/CTM: simpler to reason about and to test (normalized
@@ -80,6 +86,7 @@ window.BIM = (function () {
     // up the real, working identical handler.
   }
   function syncTools(visible) {
+    toolsVisible = visible;
     if ($('bim-new')) $('bim-new').style.display = (visible && canWrite) ? '' : 'none';
     if ($('bim-place')) $('bim-place').style.display = (visible && canWrite && activePlanId) ? '' : 'none';
   }
@@ -243,7 +250,18 @@ window.BIM = (function () {
   function render() {
     var host = $('bim-view');
     if (!host) return;
-    syncTools(true);
+    // ⚠️ ROOT-CAUSE FIX (2026-08-30): this was `syncTools(true)`, unconditionally,
+    // on EVERY render — including one triggered by load()'s own async
+    // completion, which runs well after index.html's setScreen() has already
+    // correctly hidden this screen's tools because the Gallery (or
+    // Presentations) tab is the one actually active. That silently re-showed
+    // "+ Upload floor plan" on top of a screen it doesn't belong to — the
+    // exact symptom reported live and reproduced in the browser, with no
+    // console error, because nothing here ever threw. Replaying the
+    // last-known value (set by index.html's setScreen -> BIM._syncTools)
+    // keeps a later re-render from overriding a screen switch that already
+    // happened.
+    syncTools(toolsVisible);
 
     if (!plans.length) {
       // Even with zero plans uploaded, a project WITH a Location Breakdown
@@ -1272,6 +1290,15 @@ window.BIM = (function () {
   return {
     init: init,
     _syncTools: syncTools,
+    // Test-only hook, same convention as ppr.js's — genuinely executes
+    // render() so a regression of the 2026-08-30 syncTools(true) bug (a
+    // re-render silently re-showing "+ Upload floor plan" on a screen it
+    // doesn't belong to) is caught by running the real code, not just by
+    // reading it. Guards on host existing, same as render() itself.
+    _render: function () { render(); },
+    // Test-only hook — same reasoning as ppr.js's own _setCanWrite. Never
+    // called from production code.
+    _setCanWrite: function (v) { canWrite = v; },
     // Gallery upload follow-up (Batch E) — see openPinPickerFor's own comment.
     openPinPickerFor: openPinPickerFor,
     // 2026-08-29 item 11 — the embeddable form field, see pinFieldHTML's own

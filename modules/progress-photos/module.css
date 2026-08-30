@@ -1313,5 +1313,27 @@
   .pp-lb-close { width: 44px; height: 44px; top: max(10px, env(safe-area-inset-top)); right: 10px; }
   .pp-lb-cap { padding: 0 12px; }
 
-  .pp-gallery { grid-template-columns: 1fr; gap: 12px; }
+  /* Gallery view on phone: iOS Photos' own dense small-square grid, not a
+     single full-width column of large cards (2026-08-30 owner feedback — the
+     one-column layout was slow to scan AND made "loading is slow" read as
+     worse than it is, since every tile filled the whole viewport). Three
+     columns, hairline gap, square tiles — the recognisable iOS Photos shape.
+     ⚠️ Card chrome (border/radius/background) is dropped at rest so tiles sit
+     edge-to-edge like the real app; the SAME .pp-selrow rule still applies a
+     red border on selection, it just has nothing to override at rest now. */
+  .pp-gallery { grid-template-columns: repeat(3, 1fr); gap: 2px; }
+  .pp-card { border: none; border-radius: 0; background: transparent; }
+  .pp-card.pp-selrow { border: 2px solid var(--pd-red); }
+  /* Square crop, not the desktop's fixed 210px rectangle — a 3-per-row grid
+     needs its tile height to follow the column width, not a constant. */
+  .pp-cardphoto, .pp-vidthumb video { aspect-ratio: 1; height: auto; }
+  .pp-cardimg .pp-noimg { aspect-ratio: 1; height: auto; }
+  .pp-vidthumb { aspect-ratio: 1; }
+  /* Overlays scale down to match — a 210px-card-sized badge on a ~120px
+     phone tile would cover a third of the photo. */
+  .pp-cardsel, .pp-pinbtn { padding: 2px; top: 3px; }
+  .pp-cardsel { left: 3px; }
+  .pp-pinbtn { right: 3px; }
+  .pp-cardsel input[type=checkbox] { width: 14px; height: 14px; }
+  .pp-vidplay { border-width: 8px 0 8px 13px; }
 }

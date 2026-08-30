@@ -331,7 +331,18 @@ window.PPR = (function () {
     $('ppr-countbar').style.display = screen === 'list' ? '' : 'none';
     if ($('ppr-tmpl-wrap')) $('ppr-tmpl-wrap').hidden = screen !== 'templates';
     if ($('ppr-view')) $('ppr-view').hidden = screen === 'templates';
-    syncTools(true);
+    // ⚠️ ROOT-CAUSE FIX (2026-08-30): this was `syncTools(true)`, unconditionally,
+    // on EVERY render — including one triggered by load()'s own async
+    // completion, which runs well after index.html's setScreen() has already
+    // correctly hidden this screen's tools because the Gallery (or Plans) tab
+    // is the one actually active. That silently re-showed "+ New Presentation"
+    // on top of a screen it doesn't belong to — the exact symptom reported
+    // live and reproduced in the browser, with no console error, because
+    // nothing here ever threw. Replaying the last-known value (set by
+    // index.html's setScreen -> PPR._syncTools) keeps a later re-render from
+    // overriding a screen switch that already happened. bim.js had the
+    // identical bug (also fixed 2026-08-30).
+    syncTools(toolsVisible);
     if (screen === 'slides') renderSlides();
     else if (screen === 'templates') renderTemplates();
     else renderList();
@@ -2351,6 +2362,20 @@ window.PPR = (function () {
   return {
     init: init,
     _syncTools: syncTools,
+    // Test-only hook, same convention as the others below — genuinely
+    // executes render() so a regression of the 2026-08-30 syncTools(true)
+    // bug (a re-render silently re-showing "+ New Presentation" on a screen
+    // it doesn't belong to) is caught by running the real code, not just by
+    // reading it.
+    _render: function () { render(); },
+    // Test-only hook — sets canWrite directly, bypassing init()'s
+    // onProject()/load() machinery, so the syncTools(true)-vs-toolsVisible
+    // regression test can actually tell the two apart. Every real button
+    // syncTools touches is ALSO gated on canWrite (role-based), so with
+    // canWrite left at its harness default of false both a fixed and a
+    // buggy render() produce the same 'none' — the bug is invisible without
+    // this. Never called from production code.
+    _setCanWrite: function (v) { canWrite = v; },
     _addSlide: function () { openSlideForm(null); },
     _screen: function () { return screen; },
     // Archived presentations are excluded — a retired one is not a sensible
