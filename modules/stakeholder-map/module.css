@@ -6,8 +6,11 @@
    dashboard.css's `gap:14px` with no wrapping, the avatar loses its left
    divider, and theme.js's injected toggle keeps its default size instead of
    matching the 34x34 tool buttons — which reads as "the buttons beside the
-   profile icon are misplaced". Do not drop it when copying this module. */
-.pd-content { width:100%; }
+   profile icon are misplaced". Do not drop it when copying this module.
+   2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) — the
+   old `.pd-content { width:100% }` override is gone; the shared `.pd-content
+   { flex:1; min-width:0 }` in dashboard.css already sizes it correctly next to
+   `.pd-sidebar`. Re-adding a width:100% override would fight it for space. */
 .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
 .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
 .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }

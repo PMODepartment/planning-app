@@ -84,6 +84,91 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 — App-wide: persistent module sidebar + Back/Forward steps through in-page views
+
+Owner reported that Progress Photos' browser Back button skipped straight from a drilled-down
+screen (e.g. the presentation slide editor) past every intermediate view to the module launcher —
+the module has no History API integration at all, so every in-page tab/view switch is invisible to
+the browser's own navigation stack. Put two questions to the owner via `AskUserQuestion` rather than
+guessing on an app-wide, previously-reversed architectural convention: **(1)** fix it for Progress
+Photos only, or as an app-wide pattern; **(2)** keep the long-documented "sidebar-less modules,
+topbar back-link only" convention, or add a persistent sidebar back. Owner chose **app-wide** for
+both.
+
+**1. `UI.bindHistoryState({key, get, apply})`** (new, `assets/js/ui.js`) — a small, dependency-free
+`history.pushState`/`popstate` + `location.hash` primitive. Call once per top-level screen a module
+switches between; call `.push()` once per user action that changes it (never from inside `apply()`,
+or a Back press would immediately push a new forward entry and the button would stop working after
+one press). Multiple independent bindings on one page share the URL hash via per-key segments
+without clobbering each other, so a module can bind its screen tabs without touching whatever else
+already reads `location.hash`.
+⚠️ **A real design bug found by testing, not by review:** the first cut only stamped a state into
+the browser history when a hash *already existed* on bind — so pushing twice then pressing Back
+twice landed on the page's ORIGINAL (pre-push) history entry, which carried no stamped state, and
+`apply()` was silently never called; the view stuck at whatever it last showed instead of reverting
+to the true default. Fixed by always stamping the current/default state via `replaceState` when no
+hash exists yet, so the entry-0 fallback is never silently missing. Caught with a throwaway Node
+`vm`-sandbox harness simulating `window`/`location`/`history` (11/11 checks after the fix, 8/11
+before).
+
+**2. Sidebar reversal.** Every enabled module's shell-less `.pd-content` wrapper gains a
+`<aside class="pd-sidebar">` sibling (brand block + `<nav id="side-nav">`, filled by
+`UI.renderNav(el, 'project', {active, base, pname, modules})` — the exact shell-page pattern
+`dashboard.html` already used, and the one `portfolio-overview` already had). ⚠️ **This costs
+nothing structurally**: every module already wraps its body in `.pd-app > .pd-content` with
+`.pd-app` already `display:flex`, so the sidebar is a plain static markup addition with zero
+JS-driven DOM restructuring — `UI.initShell()` (hamburger collapse/expand) and `UI.renderNav` are
+the only two calls each module's `requireLogin` callback needed to add.
+⚠️ **A recurring CSS conflict, fixed in every module that had it:** several modules carried a
+`.pd-content { width: 100%; }` rule left over from the sidebar-less era (to make content fill the
+row with no sidebar competing for space) — this now fights a real sidebar for width and had to be
+removed. The shared `dashboard.css` rule (`.pd-content { flex:1; min-width:0; }`) already sizes
+content correctly beside `.pd-sidebar` on its own.
+- Rolled out to: risk-register, issues-lessons, contracts-claims, stakeholder-map, s-curve,
+  cash-flow, resource-loading, equipment-loading, manpower-loading, productivity-rates,
+  project-schedule, `_template` (the scaffold — fully rewritten as the canonical reference for
+  future module developers), and **progress-photos** last (see below).
+- ⚠️ **project-schedule got the sidebar but deliberately NOT the history-state binding.** Its own
+  internal views (Schedule / Cost·EVM / Planner Cockpit / WBS Manager / Schedule Builder) are
+  switched via a bespoke title dropdown with far more internal state than any other module's tabs,
+  and this file has its own long, repeatedly-documented history of region-replace failures under
+  concurrent editing. Wiring history-state there is a separate, careful pass, not bundled into an
+  app-wide sweep.
+- ⚠️ **s-curve and cash-flow got the sidebar but no history-state binding either** — both are
+  effectively single-view analytics screens with no top-level tab switch worth putting in the URL.
+
+**3. History-state binding**, wired for every module with a real top-level tab/view switch: the
+existing tab-click handler now also calls `.push()`, and a `UI.bindHistoryState` call's `apply()`
+re-runs the module's own existing switch function (`switchView`/`switchTab`/`switchScreen`/
+`applyTab`, whichever the module already had) — no module's switching logic was rewritten, only
+wrapped. Applied to risk-register, issues-lessons, contracts-claims, stakeholder-map,
+equipment-loading, manpower-loading, resource-loading, productivity-rates, portfolio-overview
+(already sidebar'd — bound only its `.po-tab` switch), and `admin.html` (`applyTab` extracted from
+the inline `wireTabs()` so it can double as `apply()`).
+
+**4. Progress Photos — done last, and separately, per the owner's original priority instruction**
+(a concurrent session was actively developing this exact module the same day; re-checked
+`git fetch`/`git rev-parse` against `origin/claude/planners-dashboard-uiux-qe6yfn` immediately
+before touching it and confirmed HEAD already matched origin with nothing further landed, so there
+was no live thread left to collide with). Sidebar added; `curScreen`/`histScreen` track the
+Gallery/Presentations/Plans top-level screen switch (`setScreen`), wrapped the same way as every
+other module. ⚠️ **Deliberately scoped to just that one switch** — this module also has List/
+Gallery/Plan/Stack view state, a PPR slide editor, and Plans-tab pan/zoom state, all already
+persisted to their own `localStorage` keys; wiring all of them into the URL is a separate, larger
+pass on a file under this much concurrent same-day development, not bundled in here.
+
+**Verified**: every touched inline-script module + every touched `module.js` parses
+(`node --check`, or the inline `<script>` extracted and checked where the module has no separate
+JS file); 0 duplicate DOM ids; CSS brace-balance re-checked on every edited stylesheet. Cache-busting
+bumped per the app's standing convention — shared `ui.js?v=` → `20260830a` across all 21 referencing
+pages, and every individually-edited module's own `module.css`/`module.js` query string bumped to
+`20260830b` (risk-register, issues-lessons, contracts-claims, stakeholder-map, progress-photos —
+the single-file inline modules have no separate asset version to bump).
+⚠️ **Not verified signed-in** — no live login available in this environment, consistent with the
+verification constraint recorded throughout this repo's history; the sidebar/history rollout was
+verified structurally (parse checks, brace balance, dup-id checks) rather than by clicking through
+a live session.
+
 ### 2026-08-28 (d) — Manpower Loading Portfolio: a cross-project curve, and who comes free
 
 Owner: *"For portfolio I also want a curve showing planned vs actual across different projects to show

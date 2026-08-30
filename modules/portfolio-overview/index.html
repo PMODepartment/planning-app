@@ -460,7 +460,7 @@
 <script src="../../assets/js/auth.js?v=20260814a"></script>
 <script src="../../assets/js/db.js?v=20260827c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260824a"></script>
+<script src="../../assets/js/ui.js?v=20260830a"></script>
 <script src="../../assets/js/icons.js?v=20260830a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -1788,7 +1788,16 @@
     document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderAll(); };
     document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderAll(); };
     document.getElementById('po-export').onclick = exportExcel;
-    document.querySelectorAll('.po-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view); }; });
+    document.querySelectorAll('.po-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view); histView.push(); }; });
+    // Browser-history integration — see UI.bindHistoryState in ui.js. Without this,
+    // switching Overview/S-Curve/Cash Flow/Resources/Equipment/Milestones never
+    // touches the URL, so the browser's native Back button jumps straight past
+    // every tab switch to the projects/dashboard page.
+    var histView = UI.bindHistoryState({
+      key: 'po_view',
+      get: function () { return { v: view }; },
+      apply: function (s) { switchView(s.v); }
+    });
     document.getElementById('po-sc-refresh').onclick = function () { loadScurve(true); };
     document.getElementById('po-rs-refresh').onclick = function () { loadResources(true); };
     document.getElementById('po-eq-refresh').onclick = function () { loadEquipment(true); };
