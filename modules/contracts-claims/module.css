@@ -21,7 +21,6 @@
    title survives down to a small window and only yields on genuinely narrow screens. */
 @media (max-width:1080px){ .cc-title-txt { display:none; } }
 .cc-title-ico { color:var(--pd-red); vertical-align:-3px; }
-.cc-modback { height:36px; width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
 
 .cc-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
 .cc-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px;
