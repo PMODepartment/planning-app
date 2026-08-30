@@ -47,7 +47,12 @@ window.PPR = (function () {
   var selId = null;              // selected PPR (drives the preview pane)
   var filters = { from: '', to: '', archived: false };  // archived: false = hide archived (default)
   var screen = 'list';           // list | slides | templates
-  var viewPprId = null, slideAt = 0, keyPlanOpen = false;
+  var viewPprId = null, slideAt = 0;
+  // Item 21: "the key plan should be per photo, not shared at the top."
+  // Replaces the single shared `keyPlanOpen` toggle with per-pane state —
+  // each of the two photos in a slide can show/hide its OWN key plan popup
+  // independently of the other.
+  var keyPlanOpenPane = { before: false, after: false };
   // Multi-select batch actions (item 14) — deliberately SEPARATE from `selId`.
   // `selId` means "this ONE presentation is open/being previewed"; `selectedPprs`
   // is a checkbox set for Download/Archive/Merge, and when 2+ are checked it
@@ -126,6 +131,13 @@ window.PPR = (function () {
       filters = { from: '', to: '', archived: filters.archived };  // the archived toggle is not a "filter" to clear
       ['from', 'to'].forEach(function (k) { var el = $('ppr-f-' + k); if (el) el.value = ''; });
       renderList();
+    };
+    // Item 2 parity — the topbar funnel toggles the same collapsed-by-default
+    // filter panel Gallery uses (#ppr-listbar shares the .pp-filters class).
+    if ($('ppr-topfilttoggle')) $('ppr-topfilttoggle').onclick = function () {
+      var wrap = $('ppr-listbar'); if (!wrap) return;
+      wrap.classList.toggle('open');
+      this.classList.toggle('is-active', wrap.classList.contains('open'));
     };
     $('ppr-new').onclick = function () { openPprForm(null); };
     $('ppr-back').onclick = function () { screen = 'list'; render(); };
@@ -340,6 +352,7 @@ window.PPR = (function () {
     // "the normal list tools" or "the selection batch tools" is ever visible.
     var hasSel = visible && onList && selIds.length > 0;
     if (back) back.style.display = (visible && (screen === 'slides' || onTmpl)) ? '' : 'none';
+    if ($('ppr-topfilttoggle')) $('ppr-topfilttoggle').style.display = (visible && onList && !hasSel) ? '' : 'none';
     if (neu) neu.style.display = (visible && onList && canWrite && !hasSel) ? '' : 'none';
     if (tmplBtn) tmplBtn.style.display = (visible && onList && !hasSel) ? '' : 'none';
     if (tmplNew) tmplNew.style.display = (visible && onTmpl && canWrite) ? '' : 'none';
@@ -397,29 +410,22 @@ window.PPR = (function () {
 
     var rows = list.map(function (p) {
       var n = slides(p.id).length;
-      // Row actions are Download / Preview / Archive only (follow-up feedback,
-      // 2026-08-29, item 1) — the row click already opens the presentation, so
-      // "open" is gone as an icon; Edit/Delete-presentation moved into the
-      // opened presentation's own header (renderSlides()), not lost, just
-      // relocated to where you're already looking at the thing you'd edit.
-      // The leading checkbox cell is item 14's multi-select — reuses the
-      // shared .pp-selcell sizing/centering the Gallery grid already defines.
-      return '<div class="ppr-row' + (p.id === selId ? ' sel' : '') + '" data-id="' + p.id + '" ' +
+      // Item 15: per-row icons are gone entirely — Download/Archive are now
+      // batch actions in the topbar the moment a row is checked (item 16),
+      // and Preview is superseded by the checkbox-driven preview pane
+      // itself. Edit/Delete-presentation still live inside the opened
+      // presentation's own header (renderSlides()).
+      // Item 16: the red highlight follows the CHECKBOX, not "which row was
+      // last opened" — `selId` (the currently-open presentation) is a
+      // different concept now that opening a row navigates away entirely.
+      return '<div class="ppr-row' + (selectedPprs[p.id] ? ' sel' : '') + '" data-id="' + p.id + '" ' +
         'title="Open this presentation\'s slides">' +
         '<div class="ppr-cell pp-selcell"><input type="checkbox" data-sel="' + p.id + '"' +
           (selectedPprs[p.id] ? ' checked' : '') + ' /></div>' +
         '<div class="ppr-cell ppr-date">' + esc(longDate(p.ppr_date)) + '</div>' +
         '<div class="ppr-cell">' + esc(p.description || '—') + '</div>' +
         '<div class="ppr-cell ppr-num">' + n + '</div>' +
-        '<div class="ppr-cell ppr-acts">' +
-          '<button class="pp-iconbtn" data-act="download" data-id="' + p.id + '" title="Download…">' +
-            '<span data-ico="download" data-ico-size="15"></span></button>' +
-          '<button class="pp-iconbtn" data-act="preview" data-id="' + p.id + '" title="Preview">' +
-            '<span data-ico="eye" data-ico-size="15"></span></button>' +
-          (canWrite ? '<button class="pp-iconbtn" data-act="archive" data-id="' + p.id + '" ' +
-                      'title="' + (p.archived ? 'Restore from archive' : 'Archive') + '">' +
-                      '<span data-ico="folder" data-ico-size="15"></span></button>' : '') +
-        '</div></div>';
+        '</div>';
     }).join('');
 
     // Header select-all/unselect-all tickbox (item 14 — same pattern this
@@ -430,7 +436,7 @@ window.PPR = (function () {
       '<div class="ppr-head"><div class="pp-selcell"><input type="checkbox" id="ppr-selall"' +
         (allChecked ? ' checked' : '') + ' title="Select/unselect all shown" /></div>' +
         '<div>Presentation Date</div><div>Description</div>' +
-      '<div class="ppr-num">No. of Slides</div><div></div></div>' +
+      '<div class="ppr-num">No. of Slides</div></div>' +
       (list.length ? rows : '<div class="pp-empty" style="border:0;">' +
         (filters.archived ? 'No archived presentations.' : 'No presentations in this date range.') + '</div>') +
       '</div>';
@@ -453,17 +459,10 @@ window.PPR = (function () {
         openPpr(r.dataset.id);
       };
     });
-    Array.prototype.forEach.call(host.querySelectorAll('[data-act]'), function (el) {
-      el.onclick = function (e) {
-        e.stopPropagation();
-        var p = pprById(el.dataset.id); if (!p) return;
-        var a = el.dataset.act;
-        if (a === 'download') openDownloadChoice(p);
-        else if (a === 'preview') openPreviewModal(p);
-        else if (a === 'archive') toggleArchive(p);
-      };
-    });
-    // Item 14 — the checkbox set (separate gesture from opening a row).
+    // Item 14/16 — the checkbox set (separate gesture from opening a row;
+    // its own change handler, below, also drives the preview pane and the
+    // red highlight — Download/Archive/Preview no longer have per-row icons
+    // at all, see item 15).
     Array.prototype.forEach.call(host.querySelectorAll('[data-sel]'), function (cb) {
       cb.onchange = function () {
         if (this.checked) selectedPprs[this.dataset.sel] = true; else delete selectedPprs[this.dataset.sel];
@@ -731,52 +730,61 @@ window.PPR = (function () {
 
   function openPpr(id) {
     var p = pprById(id); if (!p) return;
-    selId = id; viewPprId = id; slideAt = 0; keyPlanOpen = false;
+    selId = id; viewPprId = id; slideAt = 0; keyPlanOpenPane = { before: false, after: false };
     screen = 'slides';
     render();
   }
 
+  // Item 17: when a slide has BOTH a previous and current photo, its
+  // thumbnail is a stacked-photo card — current on top, previous peeking out
+  // from behind — instead of one flat image quietly standing in for the
+  // pair. Falls back to a single flat thumbnail when only one photo exists.
+  // Shared by the single-presentation preview and the combined (multi-
+  // selected) preview below, so the two can never draw a slide differently.
+  function slideThumbHTML(sl, i, clickable) {
+    var u = urlOfPhoto(sl.after_photo_id) || urlOfPhoto(sl.before_photo_id);
+    var b = sl.before_photo_id ? urlOfPhoto(sl.before_photo_id) : '';
+    var a = sl.after_photo_id ? urlOfPhoto(sl.after_photo_id) : '';
+    var slideAttr = clickable ? ' data-slide="' + i + '"' : '';
+    var body;
+    if (b && a) {
+      body = '<div class="ppr-stackcard"' + slideAttr + '>' +
+        '<img class="ppr-stack-back" src="' + esc(b) + '" alt="Previous" />' +
+        '<img class="ppr-stack-front" src="' + esc(a) + '" alt="Current" />' +
+      '</div>';
+    } else if (u) {
+      body = '<img class="ppr-thumb" src="' + esc(u) + '" alt="Slide ' + (i + 1) + '"' + slideAttr + ' />';
+    } else {
+      body = '<div class="ppr-thumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>';
+    }
+    return '<div class="ppr-thumbwrap"><span class="ppr-thumbno">' + (i + 1) + '</span>' + body + '</div>';
+  }
+
   function renderPreview() {
     var body = $('ppr-preview-body'); if (!body) return;
-    // Item 14 — "there should also be option to select multiple PPRs;
-    // previews will then combine all the PPRs". Deliberately a SEPARATE
-    // trigger from `selId`: checking 2+ boxes takes over the preview even
-    // if one of them also happens to be `selId`, and un-checking back down
-    // to 0/1 falls straight through to the ordinary single-presentation
-    // preview below with no special-casing needed.
+    // Item 16: "preview pane should align the the rows with checked boxes."
+    // The preview is now driven ENTIRELY by the CHECKBOX set — 0 checked
+    // shows a prompt, 1 shows that one presentation's slides (still
+    // clickable into the editor), 2+ combine them (item 14). `selId`
+    // ("which presentation is currently OPEN, in the slides screen") no
+    // longer drives the LIST screen's preview at all — opening a row
+    // navigates away from the list entirely, so there's nothing left on
+    // this screen for `selId` to usefully mean here.
     var selIds = visibleSelectedPprIds();
     if (selIds.length >= 2) { renderCombinedPreview(body, selIds); return; }
-    // ⚠️ Audit fix: unlike the combined path above (which is already scoped
-    // to visiblePprs() via visibleSelectedPprIds()), `selId` here was never
-    // re-checked against the current visible set — so archiving (or a date
-    // filter change hiding) the very presentation currently in the preview
-    // pane left its slide thumbnails on screen, disagreeing with a list that
-    // no longer shows it at all. slides(selId) still resolves fine (the rows
-    // aren't deleted, only the parent's `archived` flag flips), so nothing
-    // here would have thrown — it would just have kept quietly showing a
-    // preview of something the list says isn't there.
-    if (selId && !visiblePprs().some(function (p) { return p.id === selId; })) selId = null;
-    var s = selId ? slides(selId) : [];
-    if (!selId || !s.length) {
+    var oneId = selIds[0] || null;
+    var s = oneId ? slides(oneId) : [];
+    if (!oneId || !s.length) {
       body.innerHTML = '<div class="ppr-noslides">' +
-        (selId ? 'No slides to show.' : 'Select a presentation to preview its slides.') + '</div>';
+        (oneId ? 'No slides to show.' : 'Check a presentation to preview its slides.') + '</div>';
       return;
     }
-    body.innerHTML = '<div class="ppr-thumbs">' + s.map(function (sl, i) {
-      // The preview shows the "after" (this month's) photo — the slide's headline image.
-      var u = urlOfPhoto(sl.after_photo_id) || urlOfPhoto(sl.before_photo_id);
-      return '<div class="ppr-thumbwrap">' +
-        '<span class="ppr-thumbno">' + (i + 1) + '</span>' +
-        (u ? '<img class="ppr-thumb" src="' + esc(u) + '" alt="Slide ' + (i + 1) + '" ' +
-             'data-slide="' + i + '" />'
-           : '<div class="ppr-thumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
-        '</div>';
-    }).join('') + '</div>';
+    body.innerHTML = '<div class="ppr-thumbs">' + s.map(function (sl, i) { return slideThumbHTML(sl, i, true); }).join('') + '</div>';
 
     Array.prototype.forEach.call(body.querySelectorAll('[data-slide]'), function (im) {
       im.onclick = function () {
         var at = +im.dataset.slide;
-        openPpr(selId); slideAt = at; renderSlides();
+        openPpr(oneId); slideAt = at; renderSlides();
       };
     });
     if (window.Icons && Icons.hydrate) Icons.hydrate(body);
@@ -798,13 +806,7 @@ window.PPR = (function () {
           (p.description ? ' — ' + esc(p.description) : '') +
           ' <span class="pp-muted">(' + s.length + ' slide' + (s.length === 1 ? '' : 's') + ')</span></div>' +
         (s.length
-          ? '<div class="ppr-thumbs">' + s.map(function (sl, i) {
-              var u = urlOfPhoto(sl.after_photo_id) || urlOfPhoto(sl.before_photo_id);
-              return '<div class="ppr-thumbwrap"><span class="ppr-thumbno">' + (i + 1) + '</span>' +
-                (u ? '<img class="ppr-thumb" src="' + esc(u) + '" alt="Slide ' + (i + 1) + '" />'
-                   : '<div class="ppr-thumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
-              '</div>';
-            }).join('') + '</div>'
+          ? '<div class="ppr-thumbs">' + s.map(function (sl, i) { return slideThumbHTML(sl, i, false); }).join('') + '</div>'
           : '<div class="ppr-noslides">No slides.</div>') +
       '</div>';
     }).join('') + '</div>';
@@ -822,7 +824,8 @@ window.PPR = (function () {
 
     var header =
       '<div class="ppr-slidehead">' +
-        '<div class="ppr-hfield"><label>Project</label><span>' + esc(projName || pid) + '</span></div>' +
+        // Item 23: the Project field is gone — it's redundant (the topbar
+        // project selector already names it, on every screen of this module).
         '<div class="ppr-hfield"><label>Presentation Date</label><span>' + esc(longDate(p.ppr_date)) + '</span></div>' +
         '<div class="ppr-hfield"><label>Description</label><span>' + esc(p.description || '—') + '</span></div>' +
         '<div class="ppr-hfield"><label>Slides</label><span class="ppr-nav">' +
@@ -837,9 +840,16 @@ window.PPR = (function () {
         (canWrite ? '<span class="ppr-hfield ppr-hspacer">' +
           // Slide-sorter (18-item list item 12) — only worth offering with
           // something to reorder; a 1-slide (or empty) presentation has no
-          // possible order to change.
+          // possible order to change. Item 20: the icon is now a swap glyph
+          // (was a generic "layout" icon that read as unrelated to reordering).
           (s.length > 1 ? '<button class="pp-iconbtn" id="ppr-sort" title="Reorder slides">' +
-            '<span data-ico="layout" data-ico-size="15"></span></button>' : '') +
+            '<span data-ico="swap" data-ico-size="15"></span></button>' : '') +
+          '<button class="pp-iconbtn" id="ppr-pres-preview" title="Full-size preview">' +
+            '<span data-ico="eye" data-ico-size="15"></span></button>' +
+          '<button class="pp-iconbtn" id="ppr-pres-dl" title="Download this presentation">' +
+            '<span data-ico="download" data-ico-size="15"></span></button>' +
+          '<button class="pp-iconbtn" id="ppr-pres-arch" title="' + (p.archived ? 'Restore from archive' : 'Archive presentation') + '">' +
+            '<span data-ico="folder" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn" id="ppr-pres-edit" ' +
           'title="Edit presentation details"><span data-ico="pencil" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn pp-del" id="ppr-pres-del" title="Delete presentation">' +
@@ -863,21 +873,14 @@ window.PPR = (function () {
     // read straight from progress_photos. `cur.trade/works/location` survive on
     // old rows and are only used as a fallback when a pane has no photo linked.
     var hasBefore = !!cur.before_photo_id;
-    var anyKeyPlan = keyPlanPathFor(cur, 'before') || keyPlanPathFor(cur, 'after');
-    var meta =
-      '<div class="ppr-meta">' +
-        '<div class="ppr-hfield"><label>Key Plan</label>' +
-          (anyKeyPlan
-            ? '<button class="ppr-kpbtn" id="ppr-kp" title="Toggle the key plan overlay">' +
-              (keyPlanOpen ? '⤡' : '⤢') + '</button>'
-            : '<span class="ppr-kpnone">—</span>') +
-        '</div>' +
-      '</div>';
+    // Item 21: the shared "Key Plan" meta row is GONE — each pane now
+    // carries its own show/hide icon (wired inside pane()/wirePaneMarkup
+    // below), so there is nothing left for a top-of-slide toggle to do.
 
     // If both photos are at the SAME location, show it ONCE above the pair
-    // instead of repeating it on each pane (follow-up feedback item 3) — the
-    // location bar is omitted (never rendered twice, never guessed at) when
-    // there's no before photo, or the two disagree, or either is blank.
+    // instead of repeating it on each pane (follow-up feedback item 3, and
+    // item 22 — split into each pane's OWN location line when they differ,
+    // handled inside pane() via `hideLocation`).
     var sharedLoc = hasBefore ? sharedLocationOf(cur) : '';
     var sharedLocHTML = sharedLoc
       ? '<div class="ppr-sharedloc"><span data-ico="mapPin" data-ico-size="14"></span>' + esc(sharedLoc) + '</div>'
@@ -889,7 +892,7 @@ window.PPR = (function () {
       ? '<div class="ppr-pair">' + pane(cur, 'before', !!sharedLoc) + pane(cur, 'after', !!sharedLoc) + '</div>'
       : '<div class="ppr-pair ppr-pair-single">' + pane(cur, 'after', false) + '</div>';
 
-    host.innerHTML = header + meta + sharedLocHTML + pairHTML +
+    host.innerHTML = header + sharedLocHTML + pairHTML +
       (canWrite ? '<div class="ppr-slideacts">' +
         '<button class="pd-btn pd-btn-primary" id="ppr-slide-add">+ Add slide</button>' +
         '<button class="pd-btn" id="ppr-slide-edit">Edit slide</button>' +
@@ -897,10 +900,12 @@ window.PPR = (function () {
 
     wireSlideNav(s); wirePresActs(p);
     if ($('ppr-slide-add')) $('ppr-slide-add').onclick = function () { openSlideForm(null); };
-    var kp = $('ppr-kp');
-    if (kp) kp.onclick = function () { keyPlanOpen = !keyPlanOpen; renderSlides(); };
     if ($('ppr-slide-edit')) $('ppr-slide-edit').onclick = function () { openSlideForm(cur); };
     if ($('ppr-slide-del')) $('ppr-slide-del').onclick = function () { removeSlide(cur); };
+    ['before', 'after'].forEach(function (which) {
+      var kp = $('ppr-kp-' + which);
+      if (kp) kp.onclick = function () { keyPlanOpenPane[which] = !keyPlanOpenPane[which]; renderSlides(); };
+    });
     wirePaneMarkup(cur);
     hydrate();
   }
@@ -909,6 +914,9 @@ window.PPR = (function () {
     if ($('ppr-pres-edit')) $('ppr-pres-edit').onclick = function () { openPprForm(p); };
     if ($('ppr-pres-del')) $('ppr-pres-del').onclick = function () { removePpr(p); };
     if ($('ppr-sort')) $('ppr-sort').onclick = function () { openSlideSorter(p); };
+    if ($('ppr-pres-arch')) $('ppr-pres-arch').onclick = function () { toggleArchive(p); };
+    if ($('ppr-pres-dl')) $('ppr-pres-dl').onclick = function () { openDownloadChoice(p); };
+    if ($('ppr-pres-preview')) $('ppr-pres-preview').onclick = function () { openPreviewModal(p); };
   }
 
   // ------------------------------------------------------ slide-sorter (item 12) ---
@@ -934,12 +942,21 @@ window.PPR = (function () {
     var draft = slides(p.id);       // local working copy, index = current position
     var dragFrom = -1;
 
+    // Item 19: "add also the location details per photo" — each slide's
+    // current (and, if different, previous) photo location, since the two
+    // aren't required to match (2026-08-29 feedback already made that a
+    // real possibility).
     function thumbHTML(sl, i) {
       var u = urlOfPhoto(sl.after_photo_id) || urlOfPhoto(sl.before_photo_id);
+      var aph = photoById(sl.after_photo_id), bph = photoById(sl.before_photo_id);
+      var locs = [];
+      if (aph && aph.location) locs.push(aph.location);
+      if (bph && bph.location && bph.location !== aph.location) locs.push(bph.location + ' (previous)');
       return '<div class="ppr-sortitem" draggable="true" data-i="' + i + '">' +
         '<span class="ppr-sortno">' + (i + 1) + '</span>' +
         (u ? '<img class="ppr-sortthumb" src="' + esc(u) + '" alt="Slide ' + (i + 1) + '" />'
            : '<div class="ppr-sortthumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
+        (locs.length ? '<div class="ppr-sortloc">' + esc(locs.join(' · ')) + '</div>' : '') +
         '</div>';
     }
 
@@ -1026,21 +1043,31 @@ window.PPR = (function () {
   }
 
   // `hideLocation` is true when renderSlides() already printed the two photos'
-  // shared location once, above the pair (follow-up feedback item 3) — the
-  // per-pane tags line then shows only Trade/Works, so the location isn't
-  // said twice.
+  // shared location once, above the pair (follow-up feedback item 3) — this
+  // pane's own head then shows no location line at all, since it was already
+  // said. When `hideLocation` is FALSE (the two differ, or only one photo
+  // exists), item 22's "split" is simply: EACH pane states its own location,
+  // here, in its own head tile.
   function pane(sl, which, hideLocation) {
     var photoId = which === 'before' ? sl.before_photo_id : sl.after_photo_id;
     var ph = photoById(photoId);
     var u = urlOfPhoto(photoId);
     var cap = (which === 'before' ? sl.before_caption : sl.after_caption) ||
               (ph ? ph.description : '') || '';
-    var kp = keyPlanOpen ? urlOfPath(keyPlanPathFor(sl, which)) : '';
+    // Item 21: the key plan is per-pane now — its own icon, its own popup,
+    // independent of the other pane. Only offered when this SPECIFIC photo
+    // actually has one (never a speculative, usually-inert icon).
+    var kpPath = keyPlanPathFor(sl, which);
+    var kpOpen = keyPlanOpenPane[which];
+    var kpIcon = kpPath
+      ? '<button class="ppr-kpicon' + (kpOpen ? ' is-active' : '') + '" id="ppr-kp-' + which + '" ' +
+        'title="Show/hide this photo\'s key plan"><span data-ico="mapPin" data-ico-size="14"></span></button>'
+      : '';
+    var kpPopup = (kpOpen && kpPath) ? '<div class="ppr-kppopup"><img src="' + esc(urlOfPath(kpPath)) + '" alt="Key plan" /></div>' : '';
     // Each pane carries its own Trade · Works · Location, since the two photos
     // are no longer required to share a location.
-    var fields = ph ? [ph.trade, ph.works, hideLocation ? null : ph.location]
-                    : [sl.trade, sl.works, hideLocation ? null : sl.location];
-    var tags = fields.filter(Boolean).join(' · ');
+    var loc = hideLocation ? null : (ph ? ph.location : sl.location);
+    var tagsNoLoc = [ph ? ph.trade : sl.trade, ph ? ph.works : sl.works].filter(Boolean).join(' · ');
     // Presentation-only markup (item 14) — never on the offline/PDF/PPTX
     // exports (those are the record of what was PRESENTED; this overlay is a
     // live annotation aid), and never shown at all without an actual photo.
@@ -1054,6 +1081,10 @@ window.PPR = (function () {
       (canWrite ? '<button class="ppr-mktool" id="ppr-mkedit-' + which + '" title="Edit markup">' +
         '<span data-ico="palette" data-ico-size="13"></span></button>' : '') +
       '</div>' : '';
+    // Item 22/23: capture date / description / works move ABOVE the image
+    // (previously a figcaption below it) — a per-pane "head" tile, holding
+    // its own location line when the shared tile above the pair doesn't
+    // already cover it.
     return '<figure class="ppr-pane">' +
       // "Previous"/"Current" is the user-facing label (owner feedback, item 7:
       // less ambiguous than Before/After for a recurring capture). The
@@ -1062,18 +1093,19 @@ window.PPR = (function () {
       // it everywhere (this function, keyPlanPathFor, slideFigureHTML, the
       // form field ids) would touch ~30 call sites for no user-visible gain.
       '<div class="ppr-panelabel">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
+      '<div class="ppr-panehead">' +
+        (loc ? '<div class="ppr-panehead-loc"><span data-ico="mapPin" data-ico-size="12"></span>' + esc(loc) + '</div>' : '') +
+        '<div class="ppr-capdate">' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
+        '<div class="ppr-captxt">' + esc(cap || '—') + '</div>' +
+        (tagsNoLoc ? '<div class="ppr-panetags">' + esc(tagsNoLoc) + '</div>' : '') +
+      '</div>' +
       '<div class="ppr-imgwrap">' +
         (u ? '<img class="ppr-img" src="' + esc(u) + '" alt="' + esc(cap) + '" />'
            : '<div class="ppr-img pp-noimg"><span>Photo not set</span></div>') +
         (u && mk.length && mkVisible ? '<canvas class="ppr-mkcanvas" id="ppr-mkcanvas-' + which + '"></canvas>' : '') +
-        mkTools +
-        (kp ? '<img class="ppr-keyplan" src="' + esc(kp) + '" alt="Key plan" />' : '') +
+        mkTools + kpIcon + kpPopup +
       '</div>' +
-      '<figcaption>' +
-        '<div class="ppr-capdate">' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
-        '<div class="ppr-captxt">' + esc(cap || '—') + '</div>' +
-        (tags ? '<div class="ppr-panetags">' + esc(tags) + '</div>' : '') +
-      '</figcaption></figure>';
+    '</figure>';
   }
 
   // Called after renderSlides() paints — sizes each pane's overlay canvas to
@@ -1259,6 +1291,13 @@ window.PPR = (function () {
   // picker. `opts`: title, candidates (already filtered/sorted), currentId,
   // allowNone (Previous only — Current is always required), emptyHint,
   // onPick(idOrNull).
+  //
+  // 2026-08-30 items 18/24: "there is both a pick a photo and add photo
+  // button — there should only be pick a photo, and the add photo button
+  // should be INSIDE the pick-a-photo pop-up." The upload affordance moves
+  // here, once, so it's available to every caller of this picker (the slide
+  // form's Current/Previous pickers AND the copy wizard's) instead of being
+  // duplicated at each call site as a second, sibling button.
   function openThumbPicker(opts) {
     var html =
       '<div class="pd-modal-header"><h3>' + esc(opts.title) + '</h3>' +
@@ -1266,8 +1305,10 @@ window.PPR = (function () {
       '<div class="pp-form">' +
         '<input class="pd-input" id="ppr-pp-search" placeholder="Search description, location, trade…" ' +
           'style="margin-bottom:10px;width:100%;box-sizing:border-box;" />' +
-        (opts.allowNone ? '<button type="button" class="pd-btn" id="ppr-pp-none" style="margin-bottom:10px;">' +
-          '— None (clear) —</button>' : '') +
+        '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
+          '<button type="button" class="pd-btn pd-btn-primary" id="ppr-pp-upload">+ Upload new photo</button>' +
+          (opts.allowNone ? '<button type="button" class="pd-btn" id="ppr-pp-none">— None (clear) —</button>' : '') +
+        '</div>' +
         '<div class="ppr-pickgrid" id="ppr-pp-grid"></div>' +
       '</div>';
     var m = openModal(html, 660);
@@ -1297,6 +1338,23 @@ window.PPR = (function () {
     paint('');
     if ($('ppr-pp-search')) $('ppr-pp-search').oninput = function () { paint(this.value); };
     if ($('ppr-pp-none')) $('ppr-pp-none').onclick = function () { m.close(); opts.onPick(null); };
+    // Item 24 — "+ Upload new photo", now living INSIDE the picker. Reuses
+    // the Photos screen's own Add-media modal, reloads the library so the
+    // new row is pickable, then selects it exactly as this slide's
+    // Current/Previous choice — same recovery for PDSync's offline outbox
+    // (which can't report an inserted id) this flow already relied on.
+    if ($('ppr-pp-upload')) $('ppr-pp-upload').onclick = function () {
+      ProgressPhotos.openUploadForPicker(async function (newIds) {
+        var before = photos.map(function (p) { return p.id; });
+        await reloadPhotos();
+        var pickId = (newIds && newIds[0]) || photos.filter(function (p) {
+          return before.indexOf(p.id) < 0;
+        }).map(function (p) { return p.id; })[0];
+        if (!pickId) return;   // queued offline — nothing to pick yet
+        m.close();
+        opts.onPick(pickId);
+      });
+    };
   }
 
   // The slide form is PHOTO-FIRST (owner feedback: "for adding slides, you can
@@ -1339,9 +1397,7 @@ window.PPR = (function () {
         '<div class="pp-form2">' +
 
           '<div class="pd-field pp-span2"><label>Current photo' + reqMark() + '</label>' +
-            '<div class="ppr-pickrow"><span id="ppr-s-after-slot">' + pickBtnHTML('after', afterId) + '</span>' +
-              '<button type="button" class="pd-btn" id="ppr-s-after-add" title="Upload a new photo and use it here">+ Add photo</button>' +
-            '</div></div>' +
+            '<div class="ppr-pickrow"><span id="ppr-s-after-slot">' + pickBtnHTML('after', afterId) + '</span></div></div>' +
           '<div class="pd-field pp-span2"><label>Caption for the current photo</label>' +
             '<input class="pd-input" id="ppr-s-acap" placeholder="e.g. Aerial View facing Marikina River ftm of June 2026." value="' +
             esc(sl.after_caption || '') + '" /></div>' +
@@ -1349,9 +1405,7 @@ window.PPR = (function () {
           '<div class="pd-field pp-span2" id="ppr-s-before-field" style="display:none;">' +
             '<label>Previous photo <span class="pp-optnote">(optional — leave empty to show the current photo on its own)</span></label>' +
             '<label class="ppr-allloc"><input type="checkbox" id="ppr-s-alllocs" /> Show all locations, not just the current photo\'s</label>' +
-            '<div class="ppr-pickrow"><span id="ppr-s-before-slot">' + pickBtnHTML('before', beforeId) + '</span>' +
-              '<button type="button" class="pd-btn" id="ppr-s-before-add" title="Upload a new photo and use it here">+ Add photo</button>' +
-            '</div></div>' +
+            '<div class="ppr-pickrow"><span id="ppr-s-before-slot">' + pickBtnHTML('before', beforeId) + '</span></div></div>' +
           // Only rendered/shown when a before photo is actually set (owner
           // feedback: "when there is no added before photo, no need to ask for
           // before photo description").
@@ -1430,29 +1484,11 @@ window.PPR = (function () {
 
     wirePickBtn('after'); wirePickBtn('before'); syncVisibility();
     if ($('ppr-s-alllocs')) $('ppr-s-alllocs').onchange = function () { beforeAllLocs = this.checked; };
-
-    // "+ Add photo" right here — no trip to the Photos tab to upload a shot
-    // that's missing (owner feedback). Reuses the Photos screen's own Add-photos
-    // modal, then selects the newly created photo in this picker.
-    ['after', 'before'].forEach(function (which) {
-      var btn = $('ppr-s-' + which + '-add');
-      if (!btn) return;
-      btn.onclick = function () {
-        ProgressPhotos.openUploadForPicker(async function (newIds) {
-          // Re-read the library so the new row is pickable, then select it.
-          var before = photos.map(function (p) { return p.id; });
-          await reloadPhotos();
-          // PDSync's offline outbox can't report an inserted id, so fall back to
-          // whichever photo appeared that wasn't in the library a moment ago.
-          var pickId = (newIds && newIds[0]) || photos.filter(function (p) {
-            return before.indexOf(p.id) < 0;
-          }).map(function (p) { return p.id; })[0];
-          if (!pickId) return;                 // queued offline — nothing to pick yet
-          if (!$('ppr-s-' + which + '-btn') && !$('ppr-s-' + which + '-slot')) return;   // modal was closed meanwhile
-          if (which === 'after') setAfter(pickId); else setBefore(pickId);
-        });
-      };
-    });
+    // Item 18/24: uploading a new photo now happens INSIDE the "Pick a
+    // photo…" popup itself (openThumbPicker's own "+ Upload new photo"
+    // button) — there is no longer a separate sibling "+ Add photo" button
+    // here at all, so every slide keeps to exactly one Current photo and at
+    // most one Previous, with one single way to attach either.
 
     $('ppr-s-save').onclick = async function () {
       if (!afterId) { UI.toast('Pick a current photo for this slide', 'warn'); return; }
@@ -2349,29 +2385,31 @@ window.PPR = (function () {
     // Item 14 — see archiveDirectionFor's own comment on why this is worth
     // genuinely executing rather than only regex-checked.
     _archiveDirectionFor: function (ps) { return archiveDirectionFor(ps); },
-    // Test-only hook (same save/restore convention as _eligiblePhotos) for
-    // the audit fix to renderPreview()'s single-selection path: injects a
-    // presentation list/filter/slide set and a candidate `selId`, runs the
-    // REAL renderPreview(), and reports what selId ended up as plus what
-    // the pane actually shows — proving the self-correction (an archived
-    // or filtered-out selId must be cleared, not silently kept showing its
-    // stale slides) rather than only reading the guard as text.
-    _renderPreviewWithState: function (pprsArr, filtersPatch, testSelId, slidesMap) {
-      var savedPprs = pprs, savedFilters = filters, savedSelId = selId, savedSlidesOf = slidesOf, savedSel = selectedPprs;
-      // Forced empty so visibleSelectedPprIds() can never accidentally take
-      // the >= 2 combined-preview branch instead of the single-select path
-      // this hook exists to exercise (selectedPprs is unrelated leftover
-      // checkbox state from whatever the caller last selected in the UI).
-      selectedPprs = {};
-      pprs = pprsArr; filters = Object.assign({}, filters, filtersPatch); selId = testSelId;
+    // Test-only hook (same save/restore convention as _eligiblePhotos),
+    // REWRITTEN 2026-08-30 for item 16 — the preview pane is now driven
+    // ENTIRELY by the checkbox set (selectedPprs), never by `selId`.
+    // Injects a presentation list/filter/slide set and a candidate CHECKED
+    // id (which may be archived/filtered out), runs the REAL
+    // renderPreview(), and reports what the pane actually shows — proving
+    // that a checked-but-now-hidden presentation (visibleSelectedPprIds()
+    // scopes to visiblePprs()) renders the "nothing to preview" prompt
+    // rather than silently showing its stale slides.
+    _renderPreviewWithState: function (pprsArr, filtersPatch, testCheckedId, slidesMap) {
+      var savedPprs = pprs, savedFilters = filters, savedSlidesOf = slidesOf, savedSel = selectedPprs;
+      selectedPprs = testCheckedId ? (function () { var m = {}; m[testCheckedId] = true; return m; })() : {};
+      pprs = pprsArr; filters = Object.assign({}, filters, filtersPatch);
       if (slidesMap) slidesOf = slidesMap;
       try {
         renderPreview();
         var body = $('ppr-preview-body');
-        return { selIdAfter: selId, bodyHtml: body ? body.innerHTML : '' };
+        return { visibleCheckedIds: visibleSelectedPprIds(), bodyHtml: body ? body.innerHTML : '' };
       } finally {
-        pprs = savedPprs; filters = savedFilters; selId = savedSelId; slidesOf = savedSlidesOf; selectedPprs = savedSel;
+        pprs = savedPprs; filters = savedFilters; slidesOf = savedSlidesOf; selectedPprs = savedSel;
       }
-    }
+    },
+    // Item 17 — the stacked-photo-card thumbnail is worth genuinely
+    // executing (a mismatched previous/current guard here would silently
+    // fall back to a flat single image for every dual-photo slide).
+    _slideThumbHTML: function (sl, i, clickable) { return slideThumbHTML(sl, i, clickable); }
   };
 })();
