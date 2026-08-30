@@ -71,6 +71,17 @@
 }
 .pp-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
 .pp-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
+/* Sixth round item 7: a quiet, breadcrumb-style "back to the list" link,
+   deliberately NOT styled like the bordered .pd-btn action buttons it used
+   to sit among (jammed against the always-on offline-sync pill, reading as
+   one more competing button). Living right beside the screen tabs instead
+   of inside the action-tool cluster, it now reads as navigation. */
+.pp-crumbback {
+  display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 10px;
+  background: transparent; border: 1px solid transparent; border-radius: var(--pd-radius);
+  color: var(--pd-muted); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.pp-crumbback:hover { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-ink); }
 
 /* ---- Item 2: a topbar search box + a filter-reveal toggle -----------------
    Replaces the old always-expanded filter row (which took up "a big portion
@@ -677,16 +688,25 @@
 .ppr-kpbtn:hover { border-color: var(--pd-red); color: var(--pd-red); }
 .ppr-kpnone { color: var(--pd-muted); }
 
-.ppr-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ppr-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 /* A slide with no before photo shows just the current photo, centered */
 .ppr-pair-single { grid-template-columns: minmax(0, 620px); justify-content: center; }
-.ppr-pane { margin: 0; }
-.ppr-panelabel {
-  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--pd-muted); margin-bottom: 5px;
+/* Sixth round item 9: "looks very plain" — each pane is now a real card
+   (surface, border, radius, a little breathing room) instead of a bare
+   image with text floating above it directly on the page background. */
+.ppr-pane {
+  margin: 0; background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); padding: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
 }
-.ppr-panetags { font-size: 11.5px; color: var(--pd-muted); margin-top: 4px; }
-
+/* A small coloured chip instead of plain muted text — Current is the stage
+   being reported on (brand-red, filled); Previous is context (outlined,
+   quieter) — so which pane is which reads at a glance, not just by position. */
+.ppr-panelabel {
+  display: inline-flex; font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; padding: 3px 9px; border-radius: 999px; margin-bottom: 8px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); color: var(--pd-muted);
+}
+.ppr-panelabel.is-current { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 /* Presentation-only markup overlay (18-item list item 14) — a SEPARATE store
    from the photo's own permanent markup (ppr_slide_markups, keyed by
    ppr_slide_id+pane), toggled/edited per pane, never shown on Gallery tiles. */
@@ -719,10 +739,18 @@
 .ppr-sortthumb { width: 100%; height: 96px; object-fit: cover; display: block; }
 .ppr-sortthumb.pp-noimg { display: flex; align-items: center; justify-content: center; color: var(--pd-muted); }
 /* Item 19 — location details per photo, under its thumbnail */
+/* Sixth round item 8: the current photo's Works value, shown above the
+   location line (a bolder ink weight so it reads as "what this slide is
+   OF", with location as the supporting detail beneath it). */
+.ppr-sortworks {
+  padding: 3px 6px 0; font-size: 11px; font-weight: 700; color: var(--pd-ink);
+  background: var(--pd-bg); line-height: 1.3;
+}
 .ppr-sortloc {
   padding: 3px 6px; font-size: 10.5px; color: var(--pd-muted); background: var(--pd-bg);
   border-top: 1px solid var(--pd-line); line-height: 1.3;
 }
+.ppr-sortworks + .ppr-sortloc { border-top: none; }
 .ppr-sortno {
   position: absolute; top: 5px; left: 5px; min-width: 20px; height: 20px; padding: 0 5px;
   display: flex; align-items: center; justify-content: center;
@@ -764,8 +792,10 @@
    pair when both photos are at the same place, instead of repeating it on
    each pane's own tags line below. */
 .ppr-sharedloc {
-  display: flex; align-items: center; gap: 6px; justify-content: center;
-  font-size: 12.5px; font-weight: 600; color: var(--pd-ink); margin: -4px 0 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--pd-ink); margin: 0 0 12px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px;
+  padding: 5px 12px; left: 50%; position: relative; transform: translateX(-50%);
 }
 .ppr-sharedloc span[data-ico] { color: var(--pd-red); }
 
@@ -964,8 +994,12 @@
 .pp-planfloorbar, .pp-planmonthbar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
 }
-.pp-planfloorlabel { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pd-muted); }
-.pp-planfloorlabel .pd-select { width: auto; min-width: 140px; }
+/* Sixth round item 3: a plain text label — same role in BOTH the Floor and
+   Month bars, so the two rows read as one consistent toolbar shape (label,
+   then the stepper/control cluster, then one short trailing hint) instead
+   of a labelled <select> on one row and a bare, unlabelled stepper on the other. */
+.pp-planfloorlabel { font-size: 12.5px; font-weight: 600; color: var(--pd-muted); }
+.pp-planfloorbar .pd-select { width: auto; min-width: 140px; }
 .pp-planmonthbar strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
 .pp-planstage { position: relative; }
 .pp-planimgwrap { position: relative; width: 100%; height: 0; }
@@ -978,6 +1012,19 @@
   font-size: 13px; font-weight: 700; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
+/* Sixth round item 2 — a photo-backed cluster marker, iOS Photos map style:
+   the pin itself is a circular photo thumbnail, with the count as a small
+   badge in the corner rather than being the whole button's content. */
+.pp-plancluster-photo {
+  width: 44px; height: 44px; min-width: 44px; padding: 0; border-radius: 50%;
+  background-size: cover; background-position: center; position: absolute;
+}
+.pp-plancluster-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 999px; background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff;
+  border: 2px solid #fff; font-size: 10.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
 
 /* Gallery Stack view (item 16 — relocated + re-defaulted from bim.js's old
    Stack mode: "combine across all months" is now the default, step-through
@@ -986,20 +1033,26 @@
 .pp-stacklevels label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pd-muted); }
 .pp-stacklevels .pd-select { width: auto; min-width: 140px; }
 .pp-stackwrap { overflow-x: auto; }
+/* Sixth round item 5: styled to read as Project Schedule's Vertical
+   Stacking view (a building extruded upward, one horizontal BAND per level,
+   towers/zones as columns) rather than a plain spreadsheet grid — a red
+   rail on each row's header, taller bands, a subtle alternating tint. */
 .pp-stacktable { border-collapse: collapse; width: 100%; }
 .pp-stacktable th, .pp-stacktable td { border: 1px solid var(--pd-line); padding: 4px; text-align: center; }
 .pp-stacktable thead th { background: var(--pd-bg); font-size: 11.5px; color: var(--pd-muted); font-weight: 600; white-space: nowrap; }
+.pp-stacktable tbody tr:nth-child(even) td { background: var(--pd-bg); }
 .pp-stacktable tbody th {
-  background: var(--pd-bg); font-size: 12.5px; font-weight: 600; text-align: left;
-  padding: 4px 10px; white-space: nowrap; position: sticky; left: 0;
+  background: var(--pd-card); font-size: 12.5px; font-weight: 700; text-align: left;
+  padding: 4px 10px 4px 12px; white-space: nowrap; position: sticky; left: 0;
+  border-left: 3px solid var(--pd-red);
 }
-.pp-stackcell { width: 70px; height: 52px; padding: 0 !important; }
+.pp-stackcell { width: 76px; height: 64px; padding: 0 !important; }
 .pp-stackcell-empty { color: var(--pd-muted); font-size: 12px; }
-.pp-stackthumb { width: 100%; height: 52px; object-fit: cover; display: block; cursor: zoom-in; }
+.pp-stackthumb { width: 100%; height: 64px; object-fit: cover; display: block; cursor: zoom-in; }
 /* Combined-mode cell — several small thumbnails instead of one, since a
    location can hold many months of photos at once by default now. */
-.pp-stackcellphotos { display: flex; gap: 2px; height: 52px; align-items: center; justify-content: center; overflow: hidden; }
-.pp-stackthumb-sm { width: 24px; height: 46px; object-fit: cover; cursor: pointer; border-radius: 2px; flex: 0 0 auto; }
+.pp-stackcellphotos { display: flex; gap: 2px; height: 64px; align-items: center; justify-content: center; overflow: hidden; }
+.pp-stackthumb-sm { width: 26px; height: 58px; object-fit: cover; cursor: pointer; border-radius: 2px; flex: 0 0 auto; }
 .pp-stackmore { font-size: 10.5px; color: var(--pd-muted); flex: 0 0 auto; padding-left: 2px; }
 .pp-stackmag {
   position: fixed; right: 24px; bottom: 24px; z-index: 50; width: 280px;
@@ -1144,7 +1197,14 @@
 .ppr-panehead-loc span[data-ico] { color: var(--pd-red); }
 .ppr-panehead .ppr-capdate { font-size: 13.5px; color: var(--pd-ink); }
 .ppr-panehead .ppr-captxt { font-style: italic; font-size: 12.5px; color: var(--pd-muted); margin-top: 2px; }
-.ppr-panehead .ppr-panetags { font-size: 11.5px; color: var(--pd-muted); margin-top: 3px; }
+/* Sixth round items 10/11: an explicit label before each value (Date /
+   Description / Location were previously bare, unlabelled values) — a
+   quieter uppercase tag so it reads as a field name, not a second value.
+   `font-style:normal` overrides the italic .ppr-captxt inherits it from. */
+.ppr-panehead-lbl {
+  font-style: normal; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--pd-muted); margin-right: 3px;
+}
 
 /* ---- Item 6: Works multi-select ("Add works" pop-list) --------------------
    Replaces the single-value schedule-derived <select> with a button that

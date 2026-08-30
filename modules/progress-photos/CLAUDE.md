@@ -2,6 +2,150 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Seventh feedback round: 11 items — Plan-view clustering/thumbnails, the stale "3 of 3" count, Stack view's look, and a Presentation-pane rework (2026-08-30)
+
+Owner sent this batch mid-session, with 4 screenshots, while the sixth-round batch above was still
+being verified — a Photos-map reference image (iOS Photos' pin-clustering style, illustrating the
+*visual language* wanted for items 1/2, not a bug report about this app), and three screenshots of
+this app's own Plan view, Presentations list, and an open slide.
+
+### Items 1/2 — Plan-view pins: real distance clustering + a photo-thumbnail marker
+
+`planClusters()` was a grid-snap (round each pin to the nearest 0.05-cell) — two pins a hair's width
+apart could land in different cells if they straddled a boundary, never combining. Rewritten as a
+genuine greedy single-pass clustering: each pin (processed in a stable id-sorted order for
+determinism) joins the first existing cluster whose **current, recomputed centroid** is within
+`PLAN_CELL` (0.05, unchanged) of it, else starts a new cluster — matching the reference screenshot's
+"0.05 apart combine into one pin" ask literally, by distance rather than by a fixed cell.
+
+**A cluster marker now shows the latest photo in it**, iOS-Photos-style, with the item count as a
+small corner badge (`.pp-plancluster-photo`/`.pp-plancluster-badge`) — falling back to the old plain
+number badge when the cluster's most recent item has no photo thumbnail (a panorama or a 3D
+reconstruction, neither of which has a `thumb_url`).
+
+### Item 3 — the Floor row and the Month row now read as ONE toolbar
+
+They were built two different ways: Floor was a labelled `<select>` (`Floor [Ground Floor ▾]`),
+Month was a bare `‹ value ›` stepper with no label at all, and only Month carried a long trailing
+hint. Both are now the same shape — a plain-text label ("Floor" / "Month"), then the stepper/control
+cluster, then one short trailing hint each (the pinned-item count moved to the Floor row, since it's
+about the floor being shown, not the month).
+
+### Item 4 — the top "Showing N of M photos" bar disagreed with Plan/Stack's own counts
+
+⚠️ **Real bug, confirmed by reading the code, not just believed from the screenshot.** `render()`
+set `#pp-count`'s text from the Gallery's own filtered `list`/`rows` **unconditionally**, before
+ever checking which view was active — so in Plan view it showed the Gallery's whole-project count
+while the Plan toolbar, right below it, correctly showed its own floor/date-narrowed "N pinned
+items". Two different, correctly-computed numbers on screen at once is exactly what the screenshot
+shows ("3 of 3" above, "2 pinned items" below). The user's own note that Stack view "still says 3 of
+3" is the same bug — Stack has no top-level count of its own to disagree with, so the stale Gallery
+count sitting above it was simply wrong. Fixed by blanking `#pp-count` whenever `view === 'plan' ||
+view === 'stack'`, rather than trying to keep two separately-computed counts in sync — a second
+mechanism that agrees with the first *today* is exactly how this bug happened in the first place.
+
+### Item 5 — the Stack view restyled toward Project Schedule's Vertical Stacking
+
+Two changes, both scoped to what a plain HTML table can reasonably carry, not a full port of that
+module's SVG-based bands/scrub-magnifier system (a much larger rebuild than this batch's other ten
+items justify):
+- **Rows now order top-floor-first** (`stackRowSort`) — the previous plain alphabetical sort put
+  "1st Floor" above "9th Floor" (string comparison, not numeric), the opposite of a real building
+  read top-down. Rows are now sorted by whatever integer a level's own name embeds, **descending**
+  (highest floor first), falling back to reverse-alphabetical for a level with no number in it at
+  all (a named zone/tower rather than a storey) so it degrades sensibly instead of throwing.
+- **Visual language borrowed from Project Schedule's stacking bands**: each row is now a taller band
+  (52px → 64px) with a **red-railed** row header (`border-left:3px solid var(--pd-red)`) and
+  alternating row tint — reading as stacked floor slices rather than a spreadsheet grid.
+- ⚠️ **Not built**: the docked hover-magnifier is Stack view's *existing* one (a plain `<img>` swap
+  into a fixed panel, already present); no per-tower SVG cloning, no scrub-by-drag timeline beyond
+  the month stepper Stack already had. A genuine like-for-like port of the schedule module's stacking
+  view is a separate, materially larger piece of work.
+
+### Item 6 — the "Full-size preview" button removed from the opened presentation
+
+It duplicated the pane already on screen (you're already viewing the slide full-size while editing
+it). ⚠️ **The list screen's own separate "Preview" row action (`openPreviewModal`) is untouched** —
+that one opens a presentation's slides *without* entering the editor at all, a genuinely different,
+still-useful feature the owner didn't ask to remove.
+
+### Item 7 — "Presentations list" back button relocated
+
+It lived deep inside the action-tool cluster (`.pp-topbar-tools`), where it ended up as the one
+visible button beside the always-present offline-sync pill (`#pp-sync`, "N pending — Sync now") the
+moment every other list-only tool hid itself on the slides screen — reading as one more competing
+action button parked next to a status pill, exactly the "quite off" the screenshot shows. Moved to
+sit beside the screen tabs (Gallery/Presentations/Plans) instead, since it *is* screen-level
+navigation ("you're inside one presentation, step back up to the list"), and restyled as a quiet
+breadcrumb link (`.pp-crumbback` — no border at rest, muted text) rather than a bordered `.pd-btn`,
+so it reads as navigation rather than another action even where it does end up near the sync pill on
+a narrow layout.
+
+### Item 8 — the reorder-slides pop-up shows Location AND the current photo's Works
+
+Location was already added in an earlier round; the current (after) photo's **Works** value is now
+shown above it in each thumbnail card (`.ppr-sortworks`) — the thing a reorder decision usually turns
+on ("which stage of work comes first"), which the thumbnail alone can't convey.
+
+### Items 9/10/11 — the Presentation pane: a real card, always-shown Location, labelled fields, no tags line
+
+- **Item 9 ("looks very plain")**: each pane (`.ppr-pane`) is now a real card — surface, border,
+  radius, a subtle shadow — instead of an image floating directly on the page background. The
+  Previous/Current label became a small pill chip: Current filled brand-red (it's the stage being
+  reported on), Previous outlined and quieter — so the two panes read as distinct at a glance, not
+  only by left/right position. The shared-location banner above the pair got the same pill treatment.
+- **Item 10 ("location... must be shown")**: ⚠️ **Location previously vanished silently whenever a
+  photo had none set at all** — `loc ? '<div>...' : ''` rendered nothing, unlike Date/Description,
+  which already always render with an em-dash fallback. Location now always renders too (labelled,
+  em-dash when unset) — it only ever disappears when the SHARED-location tile above the pair has
+  already said it once for both photos. The key-plan icon was already top-right-of-the-photo
+  (confirmed against the shipped CSS, `.ppr-kpicon { position:absolute; top:8px; right:8px }`) — no
+  change needed there, it already matched the ask.
+- **Item 11 (labels + no activity-list caption)**: Date and Description now carry explicit small
+  uppercase labels (`.ppr-panehead-lbl`) — both were bare values before, with nothing distinguishing
+  which line was which. The Trade/Works tags line under the caption is **removed entirely** — "no
+  need to include as caption all the activities performed or assigned to the photo" — the caption is
+  now Location, Date and Description only. The now-orphaned `.ppr-panetags` CSS rules were deleted
+  rather than left as dead weight.
+- ⚠️ **Mirrored into the export path too** (`slideFigureHTML`, shared by the offline HTML/PDF/PPTX
+  downloads and the in-app preview modal) — dropping the tags line and adding the label/always-shown-
+  location rule only in the live editor would have left a downloaded file showing a caption the
+  on-screen view no longer does. The dead `.t`/tags rule in `EXPORT_CSS` was replaced with a `.loc`
+  rule for the new Location line.
+
+### Verified
+
+⚠️ **This round could NOT be verified by executing the test suite — no `node` binary was reachable
+in this session** (checked via `where node`, a filesystem search, and a direct invocation; none
+resolved), unlike every prior round in this file, all of which ran `test.js`'s Node `vm` harness.
+What WAS done instead, and what remains unproven:
+- **0 NUL bytes** and **CSS braces balanced (518/518)** across `module.css`, `module.js`, `ppr.js`,
+  `index.html` (byte-level Python checks, not a shell `grep` pattern).
+- **0 duplicate DOM `id=` attributes** in `index.html` after the `ppr-back` relocation.
+- Every edited region was re-read in full after editing and confirmed structurally well-formed
+  (matching quotes/parens/string concatenation, no dangling operators) — a manual review, not a
+  parser.
+- A rough paren-count check on `ppr.js` shows a pre-existing 1-paren imbalance that **already existed
+  at the last commit, before this round's edits** (confirmed via `git show HEAD`) — almost certainly
+  a decorative parenthesis inside a comment/string rather than a real syntax defect, given the file
+  loads and every edited region reads correctly, but flagged rather than silently waved off, since it
+  could not be confirmed with a real parser this round.
+- **`test.js` was NOT extended or re-run this round** — a real gap against this module's own
+  established practice. The next session with a working `node` should run the existing 734-check
+  suite unmodified first (to confirm nothing broke) and then add genuinely-executed coverage for
+  `stackRowSort` (numeric-descending + the no-number fallback) and the rewritten `planClusters`
+  (the id-sorted, recomputed-centroid distance join, replacing the old grid-snap tests).
+- Test-only hooks (`_stackRowSort`, `_planClusterLatestThumb`) were added to `module.js`'s exported
+  object anyway, in the same shape as every existing hook, so that follow-up work is a call away
+  rather than a rewrite.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. In particular: the
+real click-through of the relocated back button at a narrow viewport, the Plan-view thumbnail
+clustering against real pin data, and the Presentation pane's new card styling against a real render
+are all unverified beyond the structural checks above.
+
+`module.css/js`, `ppr.js` → `?v=20260830f`. (`bim.js` untouched this round, stays `?v=20260830e`.)
+
 ## Sixth feedback round: 9 items — Add-media type-switch bug + dropdown, markup grouping/redo/reorder/resize/rotate/text, markup-by-default, the pie-shaped camera cone, smaller thumbnails (2026-08-30)
 
 Owner sent 9 items in one message, the largest single batch in this module's history — 6 of the 9

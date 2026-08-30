@@ -1031,9 +1031,20 @@ window.ProgressPhotos = (function () {
 
     // The count + view toggle live in the static list bar (Drawing Register's
     // .dr-listbar pattern), so they don't get rebuilt on every render.
+    // ⚠️ Sixth round item 4: this used to show the GALLERY's own filtered
+    // count (list.length of rows.length) UNCONDITIONALLY, even in Plan/Stack
+    // view — which read PROJECT-WIDE data narrowed by their OWN floor/month/
+    // location-level filters, not this count's `list`/`rows` at all. That's
+    // exactly the reported "Showing 3 of 3 photos" sitting above a Plan
+    // toolbar correctly saying "2 pinned items" for the SAME screen. Rather
+    // than try to keep two separately-computed counts in sync (a second way
+    // for them to disagree again the next time either filter changes), this
+    // bar is blank in Plan/Stack — each already states its own count in its
+    // own toolbar (Plan: "N pinned items"; Stack states its own row/column
+    // scope) — and only ever describes the Gallery grid it's the header of.
     var count = $('pp-count');
     if (count) {
-      count.textContent = rows.length
+      count.textContent = (rows.length && view !== 'plan' && view !== 'stack')
         ? 'Showing ' + list.length + ' of ' + rows.length + ' photo' + (rows.length === 1 ? '' : 's')
         : '';
     }
@@ -1215,16 +1226,62 @@ window.ProgressPhotos = (function () {
     pins.forEach(function (p) { var d = itemDateForPin(p); if (d) set[d.slice(0, 7)] = true; });
     return Object.keys(set).sort();
   }
+  // Sixth round item 1: TRUE distance-based clustering — pins within
+  // PLAN_CELL (0.05 normalized) of each other combine into ONE marker,
+  // matching iOS Photos' own map-clustering behaviour. ⚠️ REVERSES the
+  // earlier grid-snap approach (round each pin to the nearest 0.05 grid
+  // line), which could leave two pins a hair's-width apart in DIFFERENT
+  // cells if they happened to straddle a grid boundary — exactly the
+  // "should have combined but didn't" gap the owner reported. Greedy
+  // single-pass agglomeration: a pin joins the first existing cluster
+  // whose CURRENT centroid is within threshold, else starts a new one:
+  // simple and deterministic (pins are processed in a stable id-sorted
+  // order, so the same input always produces the same clusters regardless
+  // of array order) rather than a full pairwise/optimal clustering, which
+  // is unnecessary for the small, spatially-sparse pin counts this map
+  // actually has to handle.
   function planClusters(pins, monthCutoff) {
-    var byCell = {};
+    var eligible = [];
     pins.forEach(function (p) {
       var d = itemDateForPin(p);
       if (monthCutoff && (!d || d.slice(0, 7) > monthCutoff)) return; // "as of" — cumulative up to and including the selected month
-      var cx = Math.round(p.x_norm / PLAN_CELL) * PLAN_CELL, cy = Math.round(p.y_norm / PLAN_CELL) * PLAN_CELL;
-      var key = cx.toFixed(2) + ',' + cy.toFixed(2);
-      (byCell[key] = byCell[key] || { x: cx, y: cy, pins: [] }).pins.push(p);
+      eligible.push(p);
     });
-    return Object.keys(byCell).map(function (k) { return byCell[k]; });
+    var sorted = eligible.slice().sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
+    var clusters = [];
+    sorted.forEach(function (p) {
+      var target = null;
+      for (var i = 0; i < clusters.length; i++) {
+        if (Math.hypot(p.x_norm - clusters[i].x, p.y_norm - clusters[i].y) <= PLAN_CELL) { target = clusters[i]; break; }
+      }
+      if (target) {
+        target.pins.push(p);
+        // Recompute the centroid so a THIRD pin compares against the
+        // cluster's current shape, not just its first member's position.
+        target.x = target.pins.reduce(function (s, q) { return s + q.x_norm; }, 0) / target.pins.length;
+        target.y = target.pins.reduce(function (s, q) { return s + q.y_norm; }, 0) / target.pins.length;
+      } else {
+        clusters.push({ x: p.x_norm, y: p.y_norm, pins: [p] });
+      }
+    });
+    return clusters;
+  }
+  // Sixth round item 2: "pins show number of photos. preview of the latest
+  // photo should also be shown" (iOS Photos map style — the pin itself IS a
+  // photo thumbnail, with a count badge). Only photos have a natural
+  // thumbnail source here (thumbUrlOf); a cluster whose latest item is a
+  // panorama/reconstruction falls back to the plain number badge, since
+  // neither has an equivalent still-image preview wired up yet.
+  function planClusterLatestThumb(cluster) {
+    var latest = null, latestDate = '';
+    cluster.pins.forEach(function (p) {
+      if (p.item_type !== 'photo') return;
+      var d = itemDateForPin(p) || '';
+      if (!latest || d > latestDate) { latest = p; latestDate = d; }
+    });
+    if (!latest) return null;
+    var r = byId(latest.item_id);
+    return r ? thumbUrlOf(r) : null;
   }
   function planPin(pinId, pins) { return pins.filter(function (p) { return p.id === pinId; })[0] || null; }
   // Opens a SPECIFIC photo's lightbox regardless of whatever the Gallery's
@@ -1290,23 +1347,31 @@ window.ProgressPhotos = (function () {
     var url = window.BIM ? BIM.planUrl(floor) : '';
     var aspect = (floor && floor.width_px && floor.height_px) ? (floor.height_px / floor.width_px) : 0.75;
     var pinCount = clusters.reduce(function (n, c) { return n + c.pins.length; }, 0);
+    // Sixth round item 3: the Floor row and the Month row read as two
+    // differently-built controls (a labelled <select> vs. a bare ‹value›
+    // stepper with no label at all, then a much longer trailing hint on only
+    // one of the two). Both are now the SAME shape — a plain-text label,
+    // then the stepper/control cluster, then one short trailing hint — so
+    // they read as one consistent toolbar instead of two unrelated rows.
     return '<div class="pp-plantoolbar">' +
       '<div class="pp-planfloorbar">' +
-        '<label class="pp-planfloorlabel">Floor ' +
-          '<select class="pd-select" id="pp-plan-floor">' +
-            floors.map(function (p) { return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === planFloorId ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>'; }).join('') +
-          '</select></label>' +
+        '<span class="pp-planfloorlabel">Floor</span>' +
+        '<select class="pd-select" id="pp-plan-floor">' +
+          floors.map(function (p) { return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === planFloorId ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>'; }).join('') +
+        '</select>' +
         '<button class="pp-iconbtn" id="pp-plan-floorprev" title="Previous floor">‹</button>' +
         '<button class="pp-iconbtn" id="pp-plan-floornext" title="Next floor">›</button>' +
         '<button class="pd-btn" id="pp-plan-floorplay">' + (planFloorPlaying ? 'Stop' : '▶ Animate floors') + '</button>' +
+        '<span class="pp-hint">' + pinCount + ' pinned item' + (pinCount === 1 ? '' : 's') + '</span>' +
       '</div>' +
       (months.length
         ? '<div class="pp-planmonthbar">' +
+            '<span class="pp-planfloorlabel">Month</span>' +
             '<button class="pp-iconbtn" id="pp-plan-mprev" title="Earlier month">‹</button>' +
             '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
             '<button class="pp-iconbtn" id="pp-plan-mnext" title="Later month">›</button>' +
             '<button class="pd-btn" id="pp-plan-mplay">' + (planPlaying ? 'Stop' : '▶ Play') + '</button>' +
-            '<span class="pp-hint">as of the end of this month · ' + pinCount + ' pinned item' + (pinCount === 1 ? '' : 's') + '</span>' +
+            '<span class="pp-hint">as of the end of this month</span>' +
           '</div>'
         : '<p class="pp-hint">No dated captures pinned on this floor yet.</p>') +
     '</div>' +
@@ -1317,8 +1382,16 @@ window.ProgressPhotos = (function () {
           // ⚠️ Audit fix: the only visible content was the bare pin count,
           // which a screen reader announces as just a number with no sense
           // of what the button does.
-          return '<button class="pp-plancluster" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;" ' +
-            'aria-label="' + c.pins.length + ' item' + (c.pins.length === 1 ? '' : 's') + ' at this location — view">' + c.pins.length + '</button>';
+          // Sixth round item 2: the marker itself shows the LATEST photo in
+          // the cluster (iOS Photos' own map style), with the count as a
+          // small badge rather than being the whole button's content —
+          // falls back to the old plain-number style when the cluster's
+          // latest item has no photo thumbnail (a panorama/reconstruction).
+          var thumb = planClusterLatestThumb(c);
+          return '<button class="pp-plancluster' + (thumb ? ' pp-plancluster-photo' : '') + '" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;' +
+            (thumb ? 'background-image:url(\'' + Fmt.esc(thumb) + '\');' : '') + '" ' +
+            'aria-label="' + c.pins.length + ' item' + (c.pins.length === 1 ? '' : 's') + ' at this location — view">' +
+            (thumb ? '<span class="pp-plancluster-badge">' + c.pins.length + '</span>' : c.pins.length) + '</button>';
         }).join('') +
       '</div>' +
     '</div>';
@@ -1421,6 +1494,27 @@ window.ProgressPhotos = (function () {
   // freshly-configured project with zero photos rendered as a bare "no
   // photos tagged" message instead of the empty grid a planner could check
   // their Location Breakdown against.
+  // Sixth round item 5: "retrieve the [look of the] stack view of the
+  // schedule module ... instead of dates and activities, photos are
+  // displayed in the vertical stack." Project Schedule's own Vertical
+  // Stacking always draws the HIGHEST level at the TOP of the stack (a
+  // building extruded upward) — a plain alphabetical sort put "1st Floor"
+  // above "9th Floor" (string comparison, not numeric), the opposite of a
+  // real building. Rows are now ordered by whatever number the level's own
+  // NAME embeds, descending — highest floor first — falling back to
+  // reverse-alphabetical for a level with no number in it at all (a named
+  // zone/tower rather than a storey), so it degrades sensibly rather than
+  // throwing on non-numeric level names.
+  function stackRowSort(names) {
+    return names.slice().sort(function (a, b) {
+      var na = (String(a).match(/\d+/) || [])[0];
+      var nb = (String(b).match(/\d+/) || [])[0];
+      if (na != null && nb != null) return (+nb) - (+na);
+      if (na != null) return -1;   // numbered levels sort above unnumbered ones
+      if (nb != null) return 1;
+      return String(b).localeCompare(String(a));
+    });
+  }
   function stackGrid(cutoff) {
     var rowLevel = stackRowLevel(), colLevel = stackColLevel();
     if (!rowLevel) return { rowLevel: null, colLevel: null, cols: [], rows: [] };
@@ -1432,7 +1526,7 @@ window.ProgressPhotos = (function () {
       var rv = lv[rowLevel.id]; if (rv) rowVals[rv] = true;
       if (colLevel) { var cv = lv[colLevel.id]; if (cv) colVals[cv] = true; }
     });
-    var rowNames = Object.keys(rowVals).sort();
+    var rowNames = stackRowSort(Object.keys(rowVals));
     var colNames = colLevel ? Object.keys(colVals).sort() : [];
     if (!colNames.length) colNames = [''];  // single-level project — one shared "All" column
     var gridRows = rowNames.map(function (rv) {
@@ -4532,6 +4626,15 @@ window.ProgressPhotos = (function () {
       stackRowLevelId = rowId || null; stackColLevelId = colId || null;
       try { return stackGrid(cutoff); }
       finally { LOC_LEVELS = savedLevels; rows = savedRows; SCHED_ACTS = savedActs; stackRowLevelId = null; stackColLevelId = null; }
+    },
+    // Item 5 (2026-08-30, second round) — the numeric-aware "top floor
+    // first" row order. Pure, no closure state to save/restore.
+    _stackRowSort: function (names) { return stackRowSort(names); },
+    // Item 2 (2026-08-30, second round) — the Plan-view cluster marker's
+    // "latest photo" resolution, against an injected row set.
+    _planClusterLatestThumb: function (cluster, photosArr) {
+      var saved = rows; if (photosArr) rows = photosArr;
+      try { return planClusterLatestThumb(cluster); } finally { rows = saved; }
     },
     // Test-only hook for the unified List+Gallery grouping (2026-08-29
     // follow-up item 6) — genuinely executes groupRows() with an INJECTED
