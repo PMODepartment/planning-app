@@ -66,7 +66,14 @@
     .ps-fresh-live { color:var(--pd-ok); background:rgba(31,143,78,.12); }
     .ps-fresh-live::before { background:var(--pd-ok); }
     @keyframes ps-fresh-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
-    .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0;
+    /* ⚠️ No flex-wrap here originally — every control (undo/redo/File▾/Reports/Health/filter/
+       refresh) stayed on one nowrap line and, once .pd-modulebar's own width couldn't fit them
+       all, silently overflowed PAST the module bar with nothing to catch it — spilling into and
+       visually colliding with .ps-toolbar's row in .pd-main just below (the "crowded/overlapping
+       Actions ▾ / + Add activity / File ▾ / Reports / Health" report at narrow widths). Wrapping
+       lets this cluster grow to a second internal line instead, which .pd-modulebar (itself
+       flex-wrap:wrap) then sizes around correctly. */
+    .ps-topbar-tools { display:flex; flex-wrap:wrap; row-gap:4px; align-items:center; gap:4px; min-width:0;
       padding-left:10px; margin-left:auto; border-left:1px solid var(--pd-line); }
     .ps-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
     /* Labeled tool buttons (File / Reports / Health) — auto width with icon + word so they don't read as mystery icons */
