@@ -64,13 +64,33 @@ Your page is **one level deeper** than the shell, so shared assets load with a
   <link rel="stylesheet" href="module.css" />
 </head>
 <body>
-  <!-- use the shared shell layout: .pd-app > .pd-sidebar + .pd-content -->
-  <!-- sidebar brand block: logo + your module name as the caption -->
-  <div class="pd-brand">
-    <img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">
-    Planners Dashboard<small>Risk Register</small>
+  <div class="pd-app">
+    <!-- Persistent module sidebar (2026-08-30 — every module now carries one,
+         a reversal of the earlier "sidebar-less" convention). Copy this block
+         VERBATIM from modules/_template/index.html or any enabled module —
+         its contents are rendered by UI.renderNav (see the script below), not
+         this static markup, so nothing here should reference your module by
+         name except the brand caption. -->
+    <aside class="pd-sidebar">
+      <div class="pd-brand">
+        <img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">
+        Planners Dashboard<small>Risk Register</small>
+      </div>
+      <nav id="side-nav"></nav>
+      <div class="pd-nav-foot">
+        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
+          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+        </a>
+        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
+          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
+        </a>
+      </div>
+      <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
+    </aside>
+    <div class="pd-content">
+      <!-- ... your topbar + main content, per §"Uniform top bar" below ... -->
+    </div>
   </div>
-  ...
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../../assets/js/config.js"></script>
   <script src="../../assets/js/auth.js"></script>
@@ -80,12 +100,23 @@ Your page is **one level deeper** than the shell, so shared assets load with a
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);          // top-right user + logout
+      UI.initShell();                     // wires the sidebar collapse/drawer toggle
+      var pname = sessionStorage.getItem('pd_project_name') || sessionStorage.getItem('pd_project') || '';
+      UI.renderNav(document.getElementById('side-nav'), 'project', {
+        active: 'risk-register',          // your module's `key` in config.js — highlights this row
+        base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
+      });
       MyModule.init(user, profile);       // your entry point
     });
   </script>
 </body>
 </html>
 ```
+
+⚠️ If your `module.css` (or an inline `<style>`) still carries a `.pd-content { width:100%; }`
+rule from before the sidebar existed, **delete it** — the shared `.pd-content { flex:1;
+min-width:0 }` in `dashboard.css` already sizes it correctly next to `.pd-sidebar` in the
+`.pd-app` flex row, and a leftover `width:100%` override fights the sidebar for space.
 
 `AppAuth.requireLogin` handles the session check and redirects unauthenticated
 users to login automatically — you never roll your own auth.
@@ -119,8 +150,20 @@ users to login automatically — you never roll your own auth.
   ids in your options (so any access filtering you applied is respected). Safe to call
   again to refresh after repopulating.
 
-**Uniform top bar (required).** Every module uses the sidebar-less shell with the same
-top-bar order: a 36×36 back button (`data-ico="arrowLeft"` → `dashboard.html`), then an
+**Sidebar (required, 2026-08-30).** Every module carries the persistent
+`.pd-app > .pd-sidebar + .pd-content` shell — this reverses the earlier
+"sidebar-less" convention some older CLAUDE.md entries still describe; if you're
+reading one of those, this is the current rule. Copy the `<aside class="pd-sidebar">`
+block verbatim from `modules/_template/index.html` (or any enabled module), then
+in your `requireLogin` callback call `UI.initShell()` (wires the collapse/drawer
+toggle) and `UI.renderNav(document.getElementById('side-nav'), 'project', {active:
+'<your-module-key>', base: '../../', pname: <project name>, modules:
+APP_CONFIG.MODULES})` — `active` must match your module's `key` in `config.js` so
+your row highlights. Don't hand-write the nav's `<a>` links; `UI.renderNav` builds
+them from `APP_CONFIG.MODULES` so they stay in sync with what's actually enabled.
+
+**Uniform top bar (required).** Every module keeps the same top-bar order inside
+`.pd-content`: a 36×36 back button (`data-ico="arrowLeft"` → `dashboard.html`), then an
 `<h1>` whose title is **preceded by the module's brand-red icon** (the `icon` from
 `config.js`, e.g. `<span data-ico="camera" style="color:var(--pd-red)"></span>`), then the
 project selector (enhanced per above), then a tool cluster beside the profile, then
@@ -129,7 +172,9 @@ project selector (enhanced per above), then a tool cluster beside the profile, t
 **Styles** — use the shared classes/tokens in `dashboard.css`: `.pd-card`,
 `.pd-btn`, `.pd-btn-primary`, `.pd-input`, `.pd-select`, `.pd-table`,
 `.pd-field`, and the CSS variables (`--pd-red`, `--pd-ink`, …). Put anything
-truly module-specific in your own `module.css`, prefixed `.<key>-…`.
+truly module-specific in your own `module.css`, prefixed `.<key>-…`. Do **not**
+add a `.pd-content { width:100%; }` rule — the shared `.pd-content { flex:1;
+min-width:0 }` already sizes it correctly beside `.pd-sidebar`.
 
 **Dark mode is automatic** — `theme.js` (in your `<head>`) handles the toggle
 and persistence; the toggle button auto-appears in the top bar. For your module
@@ -137,6 +182,20 @@ to adapt correctly, **use the shared tokens** for surfaces/text/borders
 (`--pd-bg`, `--pd-card`, `--pd-ink`, `--pd-muted`, `--pd-line`) and **never
 hard-code** `#fff`/`#000`/light backgrounds in `module.css`. Semantic data
 colors (status greens/ambers/reds) are fine to keep fixed.
+
+**Browser Back should step through your in-page views, not skip past them.** If
+your module switches between screens/tabs by flipping a JS variable and
+re-rendering (the norm here — most modules have no real page navigation between
+views), the browser's native Back button has nothing to step through: it jumps
+straight past every view change to whatever page was open before your module.
+Use `UI.bindHistoryState({key, get, apply})` (`ui.js`) — call it once per
+top-level screen switcher, and call the returned `.push()` once every time your
+code changes that screen (after mutating state, before/after re-rendering). See
+`UI.bindHistoryState`'s own doc comment in `ui.js`, or copy the wiring from
+`modules/risk-register/module.js` (`histView`) or
+`modules/issues-lessons/module.js` (`histScreen`). Deep drill-downs (a detail
+screen two levels below the top tab) are a reasonable thing to leave for a
+follow-up rather than solving in the same pass as the top-level tabs.
 
 ---
 

@@ -43,6 +43,7 @@ window.IssuesLessons = (function () {
   // ⚠️ DEFAULT SCREEN IS THE MINUTES, matching the tab order (meeting → register → library).
   // The module opens where the input comes in; the register is one click away.
   var screen = 'mom';                  // 'mom' | 'issues' | 'lessons'
+  var histScreen = null;               // UI.bindHistoryState() handle — see init()
 
   // ---- Issues & Concerns presentation ---------------------------------------
   // ⚠️ TWO PRESENTATIONS OF ONE REGISTER, not two features. `report` reads ONE issue
@@ -184,6 +185,18 @@ window.IssuesLessons = (function () {
     await loadProjects();
     wire();
     syncChrome();
+    // Browser-history integration (UI.bindHistoryState, ui.js): without this the
+    // Minutes/Issues/Lessons tab strip never touches the URL, so the browser's
+    // native Back button jumps straight past every screen switch to the module
+    // launcher. Bound once here (after the ?screen= deep-link above has already
+    // resolved the starting screen); switchScreen() itself does the DOM work, so
+    // it doubles as apply(). Every place that changes `screen` also calls
+    // histScreen.push() once (see wire()'s tab click handler).
+    histScreen = UI.bindHistoryState({
+      key: 'il_screen',
+      get: function () { return { s: screen }; },
+      apply: function (state) { switchScreen(state.s); }
+    });
     if (pid) load();
     joinCollab();
   }
@@ -218,7 +231,7 @@ window.IssuesLessons = (function () {
 
     // Screen tabs
     Array.prototype.forEach.call(document.querySelectorAll('.il-tab[data-screen]'), function (b) {
-      b.onclick = function () { switchScreen(b.dataset.screen); };
+      b.onclick = function () { switchScreen(b.dataset.screen); if (histScreen) histScreen.push(); };
     });
 
     // Issue filters

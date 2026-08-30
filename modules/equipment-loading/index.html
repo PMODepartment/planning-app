@@ -9,8 +9,10 @@
   <title>Equipment Loading · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260829a" />
   <style>
-    /* Uniform sidebar-less chrome (matches Resource & Role Master / Productivity Rates). */
-    .pd-content { width:100%; }
+    /* Uniform module chrome (matches every other module). 2026-08-30: modules
+       gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
+       forces width:100%; the shared `.pd-content { flex:1; min-width:0 }` rule
+       in dashboard.css already sizes it correctly next to `.pd-sidebar`. */
     .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
@@ -331,6 +333,21 @@
 </head>
 <body>
 <div class="pd-app">
+  <!-- Persistent module sidebar (uniform across the suite — see MODULE_CONTRACT.md
+       §"Sidebar"). Contents are mode='project', rendered by UI.renderNav below. -->
+  <aside class="pd-sidebar">
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
+    <nav id="side-nav"></nav>
+    <div class="pd-nav-foot">
+      <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
+        <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+      </a>
+      <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
+        <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
+      </a>
+    </div>
+    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
+  </aside>
   <div class="pd-content">
     <div class="pd-topbar">
       <a class="pd-btn eq-modback" href="../../modules.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
@@ -481,7 +498,7 @@
 <script src="../../assets/js/auth.js?v=20260814a"></script>
 <script src="../../assets/js/db.js?v=20260827c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260824a"></script>
+<script src="../../assets/js/ui.js?v=20260830a"></script>
 <script src="../../assets/js/icons.js?v=20260830a"></script>
 <script>
 // ============================================================================
@@ -2930,8 +2947,22 @@
   async function init(u, prof) {
     user = u; profile = prof;
     UI.renderUserBar(prof);
+    UI.initShell();
     if (UI.initModuleTopbar) UI.initModuleTopbar();
-    document.querySelectorAll('.eq-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view, b); }; });
+    document.querySelectorAll('.eq-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view, b); histView.push(); }; });
+    // Browser-history integration — see UI.bindHistoryState in ui.js. Without this,
+    // switching Loading/Gantt/Register/Site Plan never touches the URL, so the
+    // browser's native Back button jumps straight past every tab switch to the
+    // module launcher.
+    var histView = UI.bindHistoryState({
+      key: 'eq_view',
+      get: function () { return { v: view }; },
+      apply: function (s) { switchView(s.v, document.querySelector('.eq-tab[data-view="' + s.v + '"]')); }
+    });
+    var pname = sessionStorage.getItem('pd_project_name') || sessionStorage.getItem('pd_project') || '';
+    UI.renderNav(document.getElementById('side-nav'), 'project', {
+      active: 'equipment-loading', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
+    });
     document.getElementById('eq-g-group').onchange = function (e) { gGroup = e.target.value; renderGantt(); };
     document.querySelectorAll('#eq-detail button').forEach(function (b) {
       b.onclick = function () {

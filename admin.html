@@ -67,7 +67,7 @@
   <script src="assets/js/auth.js?v=20260814a"></script>
   <script src="assets/js/db.js?v=20260827c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/ui.js?v=20260824a"></script>
+  <script src="assets/js/ui.js?v=20260830a"></script>
   <script src="assets/js/icons.js?v=20260830a"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
@@ -83,14 +83,25 @@
       loadProjects();
     });
 
+    // Extracted so it can double as UI.bindHistoryState's apply() below.
+    function applyTab(tabKey) {
+      document.querySelectorAll('.pd-tab').forEach(function (x){ x.classList.toggle('active', x.dataset.tab === tabKey); });
+      document.querySelectorAll('.pd-tabpane').forEach(function (x){ x.classList.remove('active'); });
+      var pane = document.getElementById('pane-' + tabKey);
+      if (pane) pane.classList.add('active');
+    }
+
     function wireTabs() {
       document.querySelectorAll('.pd-tab').forEach(function (t) {
-        t.onclick = function () {
-          document.querySelectorAll('.pd-tab').forEach(function (x){ x.classList.remove('active'); });
-          document.querySelectorAll('.pd-tabpane').forEach(function (x){ x.classList.remove('active'); });
-          t.classList.add('active');
-          document.getElementById('pane-' + t.dataset.tab).classList.add('active');
-        };
+        t.onclick = function () { applyTab(t.dataset.tab); histTab.push(); };
+      });
+      // Browser-history integration — see UI.bindHistoryState in ui.js. Without this,
+      // switching Users/Projects never touches the URL, so the browser's native Back
+      // button jumps straight past a tab switch to whatever page opened Admin.
+      var histTab = UI.bindHistoryState({
+        key: 'adm_tab',
+        get: function () { var cur = document.querySelector('.pd-tab.active'); return { t: cur ? cur.dataset.tab : 'users' }; },
+        apply: function (s) { applyTab(s.t); }
       });
       document.getElementById('btn-add-project').onclick = function () { editProject(null); };
     }

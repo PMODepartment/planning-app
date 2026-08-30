@@ -72,6 +72,7 @@ window.ContractsClaims = (function () {
 
   // ---- state ---------------------------------------------------------------
   var UID = null, pid = null, rows = [], view = 'contract';
+  var histView = null;   // UI.bindHistoryState() handle for the top-level cc-tabs — see init()
   var canWrite = false, isAdmin = false, sel = {};
   var filters = { q: '', type: '', status: '', dateField: '', from: '', to: '', pkg: '' };
   /* A3's tail. Loaded tolerantly — `packages` arrives with
@@ -1028,7 +1029,17 @@ window.ContractsClaims = (function () {
     if (window.CCPackages) CCPackages.init(deps);
     if (window.BOQ) BOQ.init(deps);
     if (window.PMI) PMI.init(deps);
-    document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); }; });
+    document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); if (histView) histView.push(); }; });
+    // Browser-history integration (UI.bindHistoryState, ui.js) for the top-level
+    // Contract/Claims/Extension-of-Time tabs — without it the browser's native Back
+    // button jumps straight past a tab switch to the module launcher. Scoped to
+    // these three tabs only; the BOQ/PMI sub-screens (`sub`) are a deeper drill-down
+    // left for a follow-up, same as this app's other modules.
+    histView = UI.bindHistoryState({
+      key: 'cc_view',
+      get: function () { return { v: view }; },
+      apply: function (s) { switchTab(s.v); }
+    });
     document.getElementById('cc-add').onclick = openNew;
     document.getElementById('cc-export').onclick = exportExcel;
     document.getElementById('cc-print').onclick = function () { window.print(); };

@@ -509,8 +509,91 @@
     }, true);
   }
 
+  // ---- Browser-history integration for in-page view switches ---------------
+  // Every module (and several shell tabs) renders its screens by flipping a
+  // plain JS variable and re-rendering — no real navigation, so the browser's
+  // native Back button has nothing to step through: it jumps straight past
+  // every in-page view change to whatever page was loaded BEFORE this one
+  // (usually the module launcher), which reads as "Back lost my place."
+  //
+  // Usage — call ONCE per logical "screen" a page owns:
+  //   var hist = UI.bindHistoryState({
+  //     key: 'pp',                                       // unique on this page
+  //     get:   function () { return { view: view }; },   // current state
+  //     apply: function (s) { view = s.view; render(); } // restore + repaint
+  //   });
+  // then, wherever the view-changing code used to just call render(), also
+  // call hist.push() (after mutating the state, so get() reads the new
+  // value) — that is what turns the change into a real history entry.
+  //
+  // ⚠️ Bundle everything that makes up "what screen am I looking at" into ONE
+  // binding's get()/apply() and call push() ONCE per user action. Two
+  // bindings both pushing for one click makes Back require two presses to
+  // undo what looked like one change.
+  // ⚠️ Never call push() from inside apply() (i.e. from the popstate handler
+  // or from the initial-hash restore) — that would push a second, redundant
+  // entry for a navigation the browser is already recording itself.
+  //
+  // State lives in the URL hash as `key=<url-encoded JSON>&...`, so several
+  // independent bindings on one page (e.g. a module's top-level screen AND a
+  // sub-screen's own state) each own one segment and can't clobber another's.
+  function bindHistoryState(opts) {
+    var key = opts.key, get = opts.get, apply = opts.apply;
+    function parts() {
+      var h = location.hash.replace(/^#/, '');
+      return h ? h.split('&').filter(function (p) { return p; }) : [];
+    }
+    function readMine() {
+      var prefix = key + '=';
+      var found = parts().filter(function (p) { return p.indexOf(prefix) === 0; })[0];
+      if (!found) return null;
+      try { return JSON.parse(decodeURIComponent(found.slice(prefix.length))); }
+      catch (e) { return null; }
+    }
+    function writeUrl(replace) {
+      var mine = key + '=' + encodeURIComponent(JSON.stringify(get()));
+      var rest = parts().filter(function (p) { return p.indexOf(key + '=') !== 0; });
+      rest.push(mine);
+      var url = location.pathname + location.search + '#' + rest.join('&');
+      if (replace) history.replaceState(history.state, '', url);
+      else history.pushState(history.state, '', url);
+    }
+    window.addEventListener('popstate', function () {
+      var s = readMine();
+      // If our key is gone from the hash, the user has gone back past every
+      // state we ever pushed (or forward again with nothing of ours in it) —
+      // there is nothing of OURS to restore; the module's current state (or
+      // the browser's own navigation) stands.
+      if (s) apply(s);
+    });
+    // A reload, or a link landing straight on this page with our key already
+    // in the hash, restores that view instead of the module's hardcoded
+    // default — deliberately NOT pushed, since it is the current entry, not
+    // a new one.
+    var initial = readMine();
+    if (initial) {
+      apply(initial);
+    } else {
+      // ⚠️ Load-bearing: without this, the entry the browser was ALREADY on
+      // when this bound (the module's initial screen) carries no state of
+      // ours. Push a first view change, then go Back twice — the first Back
+      // correctly restores the state one level up, but the second Back lands
+      // on this untouched entry, finds nothing of ours in its hash, and
+      // leaves the last-applied view on screen instead of restoring the
+      // original one. Stamping the current (default) state into THIS entry
+      // via replaceState — never pushState, which would add a spurious extra
+      // entry for a view the user never navigated to — makes it a real,
+      // restorable step in the stack.
+      writeUrl(true);
+    }
+    return {
+      push: function () { writeUrl(false); },
+      replace: function () { writeUrl(true); }
+    };
+  }
+
   window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell,
                 enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar,
-                acceptSuggestOnTab: acceptSuggestOnTab,
+                acceptSuggestOnTab: acceptSuggestOnTab, bindHistoryState: bindHistoryState,
                 renderNav: renderNav, renderSwitcher: renderSwitcher };
 })();
