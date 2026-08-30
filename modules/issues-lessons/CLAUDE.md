@@ -1,5 +1,101 @@
 # Module: issues-lessons
 
+## 2026-08-30 — Tabs become a dropdown (shared `UI.tabsToDropdown`)
+
+The shared UI pass converted this module's flat `.il-tabs` row (Minutes of Meeting / Issues &
+Concerns / Lessons Learned) into a single trigger-button + menu, matching Project Schedule's own
+`.ps-title-switch` pattern — one `UI.tabsToDropdown('.il-tabs')` call added to the existing
+`requireLogin` callback. It works by **clicking the real, now-hidden tab buttons** rather than
+reimplementing this module's own view-switching logic, so `switchScreen`/the MoM-vs-register
+selectors are untouched; a `MutationObserver` on each button's `class` keeps the trigger's label in
+sync with whichever screen is `.active`. Also part of the same pass: the module's title/tabs/tools
+moved out of `.pd-topbar` into a new sibling `.pd-modulebar` (`UI.initModuleTopbar`, shared code, no
+module-local change needed here). See the root `CLAUDE.md`'s 2026-08-30(g) entry for the full
+shared-layer rationale. Module-local files untouched by this change (shared `ui.js`/`dashboard.css`
+only), so no `module.css/js?v=` bump this pass.
+
+## 2026-08-28 (b) — Open issues onto the next agenda; the red panel stops being a slab; five smaller fixes
+
+Owner ran both migrations, then gave six items off live screenshots. `MODULE_V` → `20260828b`;
+`module.css/js?v=` → `20260828a`. **No migration.**
+
+**1. Issues raised are now logged onto the NEXT meeting's minutes** — *"similar to a carry over items
+but for issues and concerns"*, and built as carry-over's sibling so the two share their rules.
+- A **new minute is seeded automatically** with the register's still-open issues, and a button beside
+  the carry-over dropdown pulls in anything raised since. ⚠️ Only on a **brand-new** minute: re-running
+  it on every render would fight a planner who deliberately took an item off this week's agenda.
+- ⚠️ **It COPIES the register link, never re-raises** — one issue, N meetings. The row therefore shows
+  the register's live status and carries no Raise button, so it cannot be double-raised by hand
+  either. `issues_lessons.mom_id` is untouched: provenance names the meeting an issue was FIRST raised
+  from, which is what lets `canDeleteMinute()` ignore these links.
+- ⚠️ **Openness is decided by the REGISTER**, the rule the screen, the PDF and carry-over already
+  follow — a closed issue must not be dragged onto next week's agenda, and `On Hold` is still open.
+- ⚠️ **Idempotent by construction**: an issue already on THIS minute is skipped, so pressing the button
+  twice adds nothing. Scoped per minute, not globally — an issue discussed last week is still open and
+  belongs on this week's agenda too.
+- ⚠️ **`owner_ids` travels with `owner`**, so a pulled item still resolves on the champion's My Work
+  page; copying only the text would silently drop the assignment. Tolerant of the un-run assignment
+  migration — `owner_ids` is dropped and retried, so the agenda still gets its issues.
+- ⚠️ **The button is offered only when there is something to bring in, and says how many.** A
+  permanently-present button that usually does nothing is the invitation-to-a-no-op that the
+  carry-over dropdown already avoids.
+- ⚠️ **Flagged, not solved:** a project with forty open issues seeds forty action items into every new
+  minute. That is what was asked for and it is what an agenda is, but if it proves noisy the honest
+  fix is a filter (department, or aging) rather than a silent cap.
+
+**2. The status panel is no longer a solid brand-red slab.** Owner: *"the red tint is pleasing but
+hurts the eye… for both light and dark mode."*
+- ⚠️ **Red at ~260×600px of continuous fill, with white text and white inputs punched into it, is a
+  glare source.** #EE3124 is an accent chosen to be seen in small doses. That it hurt in BOTH themes is
+  the tell that the problem was area and saturation, not the theme mapping. Red is now a **rail and a
+  heading** over a normal card — the same move the Gantt pass made when red went back to meaning
+  progress.
+- ⚠️ **The RAIL is what survives of the original fixed-contrast rule** ("must not look like a different
+  screen mid-meeting"): the brand cue is identical in both themes while the surface follows the theme
+  like every other card. A slab that ignored the theme was the thing being complained about.
+- ⚠️ **Two real WCAG failures found by measuring my own first cut**, both the trap this repo has now
+  recorded three times: brand red as 10px heading text is **4.12:1** on the card, and the aging value
+  was **3.60:1** on the tint. Fixed with a **paired** accent — `--pd-bad` (#C42127) light, **#FF8A80**
+  dark, because `--pd-bad` remaps to #EF5350 and measures **4.02** on the dark card.
+- ⚠️ **`--pd-dark-red` IS NOT A TOKEN.** Writing it resolves to nothing, silently inherits ink, and
+  measures 16.3 — i.e. it looks like a pass. Verified against the real stylesheet.
+- **Measured after, both themes: min 5.11 light / 6.14 dark across heading, labels, aging and inputs.**
+
+**3. The action item is multiline, and Description comes first.** It was a single-line `<input>`, which
+clips its own value — an action of any length was unreadable in exactly the mode that exists for
+reading it, the same defect the reporting view fixed for Issue / Agenda. Order now follows how the item
+is written up: what was discussed, then what will be done.
+
+**4. The "Any aging" filter stopped clashing.** ⚠️ Two causes, neither of them width tuning:
+`flex: 0 0 auto` gives a select an **auto basis** — its own content width — and a flex item will not
+shrink below that, so the last filter ran past the card edge and was clipped rather than wrapping; and
+the fixed `height: 34px` against the shared 16px control font clipped its descenders. Now
+`flex: 1 1 150px; min-width: 0` (the `min-width` is load-bearing — the auto minimum reinstates the
+content width otherwise) and **min**-height. Measured at 1385px: one 56px row, aging 38px, 0 overflow,
+0 page h-scroll.
+
+**5. Meeting types are the project's own** — PPR Meeting / PSC Meeting / Client Meeting, replacing the
+invented starter vocabulary. Still no CHECK constraint, so a project's own wording still joins the list
+through `momOptions()`.
+
+**6. The topbar stopped spilling** (it was orphaning the avatar on its own line) — the module title
+text now hides at ≤1500px, keeping the icon, well before the row is forced to wrap. The Lessons Learned
+lead banner is removed at the owner's request; the screen says what it is, and the detail's "What
+produced this lesson" block already explains that a link is optional.
+
+**Verified: 135 checks executing the SHIPPED functions**, sliced by brace-matching and never
+reimplemented — 11 new on the agenda rules alone (closed excluded, On Hold and blank counted as open,
+already-on-this-minute skipped, an unlinked action not suppressing an issue, another minute's copy not
+blocking this one, and running it twice adding nothing). ⚠️ The suite **cannot run against the
+pre-change file at all**, so it bites. **0 functions lost / 2 added**; parses; 0 NUL bytes; CSS braces
+233/233. Contrast and layout measured in a real browser against the shipped stylesheets in both themes.
+
+⚠️ **Not verified signed in** — no live click-through of the seeding, the button, or the reordered
+fields against real data.
+⚠️ **A near miss worth recording:** I overwrote the repo's own `.claude/launch.json` while setting up a
+throwaway static server, not having checked that one already existed. Restored from git. The repo
+already ships `.claude/tools/static-server.ps1` — use it.
+
 ## 2026-08-26 — Testing the meeting-linked lesson picker found TWO real defects
 
 The one path the earlier signed-in pass could not exercise (that project's single meeting had
