@@ -84,6 +84,45 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 (h) — Landing page (`home.html`) restyled to match the Procurement Dashboard's "Select Dashboard" screen
+
+Owner shared a screenshot of the Procurement (PRC) app's post-login landing screen and asked this
+app's own landing page to match its look. `home.html` — added in entry (g) below as the plain,
+always-expanded `UI.renderNavListInto` tree — is rebuilt into a centered card: a red Megawide mark +
+"Planners Dashboard" / "Megawide Construction Corporation", a **"Select Dashboard"** heading, a
+"Hi &lt;first name&gt;! &lt;role&gt;" greeting, a red-bordered search box + a live "N projects" count,
+an always-highlighted **Portfolio — Consolidated View** row, and project rows carrying a red code pill
++ name + `location` subtitle, grouped under uppercase Group Head headers with a count pill — the same
+visual language as the PRC screenshot's status-grouped, pill-badged project cards.
+
+⚠️ **Deliberately BESPOKE markup, not a restyle of `UI.renderNavListInto`.** That function is shared by
+three other consumers — every module's `enhanceProjectSelect` popover and the shell's topbar
+`renderSwitcher` — and reshaping it into a card/pill/radio layout for this one page would risk
+regressing those compact dropdown use-cases. `home.html` now has its own small render function
+(`PDb.getProjects()`/`getGroupHeads()`, the same data source) instead.
+- ⚠️ **Grouping stayed Group-Head-based** (the app's existing data model — see entry (g)/2026-08-12),
+  restyled with the PRC screenshot's uppercase-label-plus-count-pill treatment rather than switched to
+  PRC's status ("ACTIVE") grouping, which this app has no equivalent concept for.
+- ⚠️ **Kept the existing immediate-navigate-on-click interaction** (click a project row → go straight
+  to `dashboard.html`; click Portfolio → `portfolio-overview`) rather than adopting the screenshot's
+  implied select-a-radio-then-press-"Open Dashboard" pattern — that would be a real behavior change to
+  a page every session passes through, not a visual one, and nothing indicated the current one-click
+  flow was itself a complaint.
+- ⚠️ **No "+ Add New Project" / "Sign out" added to the page.** Project creation lives in
+  `projects.html`/`admin.html`; Sign out is already one click away via the topbar avatar menu
+  (`UI.renderUserBar`) on every shell page including this one — duplicating it here would be a new
+  affordance nothing asked for.
+- The Portfolio row is drawn permanently in its "selected" visual state (pink tint, red left border,
+  filled radio) — matching the screenshot's own always-highlighted "ALL PROJECTS" row — since there is
+  no separate persisted "current view" selection to reflect.
+- Search filters by project name or ID and re-renders the grouped list + count live; the Portfolio row
+  is unaffected by the search box, since it isn't a project.
+- Verified: the inline `<script>` block parses (`new Function`), the `<style>` block's braces balance
+  (32/32). ⚠️ **Not verified signed-in** — no live login is possible in this environment, the standing
+  constraint for every UI pass in this repo.
+- No shared asset changed (`home.html` is a standalone page with its own scoped `<style>` and its own
+  small inline script) — no `?v=` bump needed anywhere else.
+
 ### 2026-08-30 (g) — Landing page, one topbar dropdown everywhere, module chrome moves below the topbar, tabs-as-dropdown
 
 Owner sent two more screenshots (a wide Project Schedule topbar, a narrow one showing the collision)
