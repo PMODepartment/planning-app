@@ -35,6 +35,8 @@
     // --- Project / module glyphs ---
     project:     '<path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><line x1="9.5" y1="11" x2="9.5" y2="11.01"/><line x1="14.5" y1="11" x2="14.5" y2="11.01"/><line x1="9.5" y1="15" x2="9.5" y2="15.01"/><line x1="14.5" y1="15" x2="14.5" y2="15.01"/>',
     camera:      '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.2"/>',
+    // Progress Photos fifth round item 1 — the Add-media type-picker dropdown.
+    video:       '<rect x="1" y="5" width="15" height="14" rx="2"/><path d="M16 9l7-4v14l-7-4z"/>',
     clipboard:   '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v1H9z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/>',
     contract:    '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><polyline points="14 3 14 8 19 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>',
     risk:        '<path d="M12 4 2.5 20h19z"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="12" y1="17" x2="12" y2="17.01"/>',
