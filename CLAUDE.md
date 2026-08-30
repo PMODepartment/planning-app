@@ -84,6 +84,64 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 (f) — Mobile follow-up: project selector goes first, the shell adopts the module's own picker, Portfolio Dashboard leads
+
+Owner sent four phone screenshots (a module's project popover, that module's stacked topbar, the
+Project Dashboard's own switcher, the Projects list) with five concrete asks.
+
+**1. No "All" row in the module's project popover, at root.** `UI.enhanceProjectSelect`'s breadcrumb
+(`All`) rendered even at the top level, where it does nothing — you're already there. It now only
+renders once you've drilled into a group head, where "All" is a real click back out; at root there's
+just the search box, as shown in the screenshot.
+
+**2. The project selector wraps to its own line FIRST on a phone, the app chrome second.** The
+≤820px rule that forces the project selector (`-projctx` / `#ctx-switcher`) onto its own full-width
+line already existed (`flex-basis:100%`), but its `order:3` put it AFTER the hamburger/icon/theme/
+avatar cluster in flex layout order — so it wrapped to line 2, below the chrome, exactly backwards
+from what the screenshot showed being asked for. `order:-1` puts it first: project/portfolio context
+is the broader fact, so it leads; the app chrome wraps beneath it.
+
+**3. The Project Dashboard now uses the SAME picker as every module** (`UI.enhanceProjectSelect`),
+not the separate `renderSwitcher`/`#ctx-switcher` component it had (visibly different from the
+module's popover in the screenshots — grouped by parent-project vs. by Group Head, different visual
+language entirely). `dashboard.html`'s topbar is now a plain `.dh-projctx > select` filled with
+every accessible project and enhanced the same way `progress-photos`'s `.pp-projctx` is — a fast
+first paint from the single sessionStorage-cached project, refreshed to the full list the moment
+`boot()`'s fetch resolves. Picking a project sets the same three sessionStorage keys `renderSwitcher`
+did (project/name/group-head, clearing any stale `pd_package`) and reloads.
+
+⚠️ **This drops the ONE remaining path from a project back to Portfolio** (`renderSwitcher`'s own
+"Portfolio" menu item) — deliberately, since item 1 established a project picker should never carry
+a mode-switch option of its own. Rather than leave a dead end, `renderNav`'s **project**-mode sidebar
+now leads with a "Portfolio Dashboard" link (the same fix every module page picks up too, since they
+all render nav the same way and had the identical gap already — `renderSwitcher`'s Portfolio button
+was the only way out of ANY project-mode page, module pages included, and none of them showed it).
+
+**4. Projects list drops its "Portfolio Dashboard" / "Personal Dashboard" landing tiles.** They're
+still one click away — now from the sidebar (point 3) and, in portfolio mode, the topbar switcher —
+so nothing is lost, just no longer duplicated as banner tiles above the toolbar.
+
+**5. "Opening Portfolio" now defaults to the Portfolio Dashboard, not the Projects list**, in both
+places that phrase means something: `renderSwitcher`'s own "Portfolio" menu item (still used by
+`modules.html`, `admin.html`, `my-work.html`, `projects.html`, Portfolio Overview — everywhere except
+the Project Dashboard now) points at `modules/portfolio-overview/index.html` instead of
+`projects.html`; and `renderNav`'s **portfolio**-mode sidebar is reordered **Portfolio Dashboard >
+Personal Dashboard > Projects** (was Projects first), matching the new default.
+
+- `assets/js/ui.js` (`enhanceProjectSelect`'s `head()`, `renderSwitcher`'s Portfolio button,
+  `renderNav`'s both mode branches) and `assets/css/dashboard.css` (one `order` value) are the only
+  shared files touched. `dashboard.html`'s own topbar markup/script is rewritten to the module
+  pattern; `projects.html` loses its landing-tile block + the now-dead `.pd-landing-*` CSS.
+- Cache-bust: `ui.js` / `dashboard.css` bumped to `?v=20260830d` across all 26 pages that load them.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. Verified structurally: `ui.js` parses; `dashboard.html`'s
+inline script (extracted) parses; `dashboard.css` brace-balanced (416/416, −7 from the removed
+landing-tile rules); every module page's own `-projctx`/`#ctx-switcher` selector still resolves to
+the same shared rule (nothing module-local needed to change); the 5 pages still using `renderSwitcher`
+(`modules.html`, `admin.html`, `my-work.html`, `projects.html`, Portfolio Overview) are unaffected
+beyond the reordered sidebar and the Portfolio button's new destination.
+
 ### 2026-08-30 (e) — Follow-up: 7 module.css files still carried the dead `.X-modback` rule
 
 Owner asked for a review of the latest code to confirm the (d) entry's six feedback points were
