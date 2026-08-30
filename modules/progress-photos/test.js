@@ -127,7 +127,34 @@ function makeEl(tag) {
     addEventListener() {},
     onclick: null, onchange: null, oninput: null,
   };
+  // Item 1 (2026-08-30): module.js's makeThumbnailBlob() draws a decoded
+  // Image onto a real <canvas> and reads it back with toBlob() — a minimal
+  // stand-in so that code path can genuinely execute in this sandbox, same
+  // reasoning as the Path2D stub above for the markup engine's stickers.
+  // getContext records nothing meaningful (drawImage is a no-op here); the
+  // point is that the call sequence runs to completion without throwing.
+  if ((tag || '').toLowerCase() === 'canvas') {
+    el.width = 0; el.height = 0;
+    el.getContext = () => ({ drawImage() {} });
+    el.toBlob = (cb, type, q) => cb({ __fakeBlob: true, size: (el.width || 1) * (el.height || 1), type: type || 'image/png', q: q });
+  }
   return el;
+}
+// A fake decoded image — module.js's fileToImage() creates one per file and
+// waits for `onload`. Fires synchronously the instant `.src` is assigned
+// (this sandbox has no real event loop tick to wait for, and the calling
+// code only ever awaits the Promise it's wrapped in, never the timing of
+// the callback itself), reporting a plausible naturalWidth/naturalHeight so
+// the downscale-to-480px arithmetic in makeThumbnailBlob has something real
+// to compute against.
+class FakeImage {
+  constructor() {
+    this.naturalWidth = 1600; this.naturalHeight = 1200;
+    this.onload = null; this.onerror = null;
+    this._src = '';
+  }
+  set src(v) { this._src = v; if (this.onload) this.onload(); }
+  get src() { return this._src; }
 }
 const byId = {};
 function indexTree(el) {
@@ -199,6 +226,10 @@ const ctx = {
   sessionStorage: { _d: { pd_project: 'DEMO01' }, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); } },
   indexedDB: { open: () => ({ onupgradeneeded: null, onsuccess: null, onerror: null }) },
   URL: { createObjectURL: () => 'blob://x', revokeObjectURL() {} },
+  // Item 1 (2026-08-30): fileToImage()'s decode step, real enough to execute
+  // makeThumbnailBlob()'s downscale math end to end — see FakeImage's own
+  // comment above for why `src` firing onload synchronously is sufficient.
+  Image: FakeImage,
   // 2026-08-30: drawIconStamp's plant-sticker branch (MARKUP_STICKERS) builds
   // a real Path2D from an SVG path string — a minimal stand-in so that code
   // path can run inside this sandbox at all; the fake ctx's stroke() doesn't
@@ -1197,6 +1228,8 @@ console.log('\n[misc] insert().select() returns the new row id');
         // MARKUP_STICKERS Path2D branch) call these too — a real 2D canvas
         // context always has them.
         translate() { calls.push('translate'); }, scale() { calls.push('scale'); },
+        // Fourth round, item 3: the selection-outline dashed box.
+        setLineDash() { calls.push('setLineDash'); },
         set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {},
       };
     }
@@ -1472,7 +1505,23 @@ console.log('\n[misc] insert().select() returns the new row id');
     const byLoc = PP._groupRows(photos, 'location');
     eq('location grouping: alphabetical, "Unassigned" last', byLoc.map((g) => g.key), ['Tower 1', 'Tower 2', 'Unassigned']);
     eq('location grouping: Tower 1 holds both its photos regardless of trade', byLoc[0].items.map((r) => r.id), ['p1', 'p3']);
+
+    // 2026-08-30 feedback item 6: "None" is a real grouping mode -- one
+    // bucket, no sort, every row present, in the order it arrived.
+    const byNone = PP._groupRows(photos, 'none');
+    eq('none grouping: exactly one bucket', byNone.length, 1);
+    eq('none grouping: holds every row, in original order, unsorted', byNone[0].items.map((r) => r.id), ['p1', 'p2', 'p3', 'p4']);
+    ok('none grouping: the label is blank -- it is not "trade"/"location" text mistakenly carried over',
+       byNone[0].label === '');
   })();
+  ok('the "Group by" selector offers a real None option, not just month/trade/location',
+     /<option value="none">None<\/option>/.test(html));
+  ok('a restored "none" grouping preference from localStorage is honoured on reload (the restore allow-list includes it)',
+     /\['none', 'month', 'trade', 'location'\]\.indexOf\(g\) >= 0/.test(mjs));
+  ok('listHTML prints NO group header at all for the None bucket (not a header with a blank label)',
+     /if \(g\.key === NO_GROUP_KEY\) return g\.items\.map\(rowHTML\)\.join\(''\);/.test(mjs));
+  ok('galleryHTML prints a flat grid with no group-head wrapper for the None bucket',
+     /if \(g\.key === NO_GROUP_KEY\) return cards;/.test(mjs));
 
   // --- Item 7: no per-row action icons; the row itself opens the lightbox ----
   ok('rowActions()/the per-row icon-button function is gone entirely (superseded design)', !/function rowActions/.test(mjs));
@@ -1602,14 +1651,25 @@ console.log('\n[misc] insert().select() returns the new row id');
   // highlighter, ruler, shapes (rect/circle/arrow), text, signature, a
   // sticker palette (reusing Equipment Loading's own plant pictograms +
   // camera/person), and an eraser.
-  ok('all ten iOS-style tools exist: pen, highlighter, ruler, rect, circle, arrow, text, signature, sticker(icon), eraser',
-     /\['pen', 'highlighter', 'ruler', 'rect', 'circle', 'arrow', 'text', 'signature', 'icon', 'erase'\]/.test(mjs));
+  ok('all thirteen iOS-style tools exist: select, pen, highlighter, line, ruler, arrow, rect, circle, polygon, text, signature, sticker(icon), eraser',
+     /var TOOL_ORDER = \['select', 'pen', 'highlighter', 'line', 'ruler', 'arrow', 'rect', 'circle',\s*\n\s*'polygon', 'text', 'signature', 'icon', 'erase'\];/.test(mjs));
   ok('the sticker set reuses Equipment Loading\'s own plant pictograms verbatim (module contract forbids cross-module import, so this is a deliberate, documented duplicate)',
      /towercrane: 'M3 4h18M12 4v16M6 20h12M12 7l-7 -3M5 4v3M9 4v3M12 7v2M10\.5 9h3'/.test(mjs));
   ok('camera and person stickers exist, per the explicit ask, hand-drawn since they need more than one Path2D subpath',
      /else if \(name === 'camera'\)/.test(mjs) && /else if \(name === 'person'\)/.test(mjs));
-  ok('colours apply to BOTH the stroke and an optional, adjustable-transparency fill on rect/circle (hexToRgba)',
-     /function hexToRgba\(hex, alpha\)/.test(mjs) && /if \(o\.fill\) \{ ctx\.fillStyle = hexToRgba\(col, \(o\.fillAlpha == null \? 0\.3 : o\.fillAlpha\)\); \}/.test(mjs));
+  ok('colours apply to BOTH the stroke and an optional, adjustable-transparency fill on rect/circle/polygon (hexToRgba)',
+     /function hexToRgba\(hex, alpha\)/.test(mjs) && /if \(o\.fill\) \{ ctx\.fillStyle = hexToRgba\(fillColorOf\(o\), \(o\.fillAlpha == null \? 0\.3 : o\.fillAlpha\)\); \}/.test(mjs));
+  // Fourth round, item 3: border and fill colour are now genuinely
+  // independent fields, not one colour read twice.
+  ok('fillColorOf() falls back to the border colour only for objects saved BEFORE this feature existed (no fillColor field at all)',
+     /function fillColorOf\(o\) \{ return o\.fillColor \|\| o\.color \|\| MARKUP_COLORS\[0\]; \}/.test(mjs));
+  eq('a rect/circle/polygon with its OWN fillColor uses it, independent of its border colour',
+     PP._drawMarkupObjects ? (function () {
+       const c = (function () { const calls = []; return { calls, save() {}, restore() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, stroke() {}, fill() {}, strokeRect() {}, fillRect() { calls.push('fillRect:' + this._fill); }, ellipse() {}, arc() {}, fillText() {}, measureText: () => ({ width: 0 }), clearRect() {}, translate() {}, scale() {}, setLineDash() {}, set strokeStyle(v) {}, set fillStyle(v) { this._fill = v; }, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {} }; })();
+       PP._drawMarkupObjects(c, [{ type: 'rect', x0: 0.1, y0: 0.1, x1: 0.4, y1: 0.4, color: '#EE3124', fillColor: '#1E88E5', fill: true, fillAlpha: 0.5 }], 200, 100);
+       return c.calls[0];
+     })() : null,
+     'fillRect:rgba(30,136,229,0.5)');
   ok('a highlighter stroke is wide and translucent (globalAlpha), never opaque like an ordinary pen mark',
      /o\.type === 'highlighter'[\s\S]{0,200}ctx\.globalAlpha = 0\.35;/.test(mjs));
   ok('erase is a real removal (vector hit-test + splice), not a no-op or a paint-transparent hack',
@@ -1622,6 +1682,200 @@ console.log('\n[misc] insert().select() returns the new row id');
      /pp-lb-tool-labeled" id="pp-lb-markupedit"[\s\S]{0,200}<span>Markup<\/span>/.test(html));
   ok('the label styling widens the button rather than forcing text into a 38px square',
      /\.pp-lb-tool-labeled \{ width: auto;/.test(css));
+
+  // --- Fourth round, items 3/4 (2026-08-30): select-to-edit, Line, Polygon --
+  // "I can't select the markup or shape to edit" — the biggest gap. Genuinely
+  // executed, since a wrong coordinate math here is silent (the shape still
+  // looks fine; it just moved by the wrong amount, or only partially).
+  (function () {
+    // Rounded to 6dp throughout — this is ordinary float-addition dust
+    // (0.1 + 0.2 = 0.30000000000000004), not a defect in the code under test.
+    const r6 = (n) => Math.round(n * 1e6) / 1e6;
+    const rect = { type: 'rect', x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.3, color: '#EE3124' };
+    const moved = PP._translateMarkupObj(rect, 0.2, 0.05);
+    eq('translateMarkupObj shifts an x0/y0/x1/y1 shape (rect/circle/ruler/arrow/line) by the SAME delta on all four coordinates',
+       [r6(moved.x0), r6(moved.y0), r6(moved.x1), r6(moved.y1)], [0.3, 0.15, 0.5, 0.35]);
+    ok('translateMarkupObj does not mutate the original object (Cancel-safety — the caller decides whether to commit the move)',
+       rect.x0 === 0.1);
+
+    const pen = { type: 'pen', points: [[0.1, 0.1], [0.2, 0.2]], color: '#231F20' };
+    const movedPen = PP._translateMarkupObj(pen, 0.1, -0.05);
+    eq('translateMarkupObj shifts EVERY point of a multi-point shape (pen/highlighter/signature/polygon) — never just the first',
+       movedPen.points.map((p) => [r6(p[0]), r6(p[1])]), [[0.2, 0.05], [0.3, 0.15]]);
+
+    const icon = { type: 'icon', x: 0.5, y: 0.5, icon: 'warn', color: '#EE3124' };
+    eq('translateMarkupObj shifts a bare x/y shape (text/icon)', [PP._translateMarkupObj(icon, 0.1, 0.1).x, PP._translateMarkupObj(icon, 0.1, 0.1).y], [0.6, 0.6]);
+  })();
+
+  ok('Select is the DEFAULT tool on open — a planner opening markup to review an existing photo must not start drawing by accident',
+     /var tool = 'select', color = MARKUP_COLORS\[0\]/.test(mjs));
+  ok('the Select tool grabs whatever markupHitTest finds under the pointer, and deselects on an empty-canvas click',
+     /if \(tool === 'select'\) \{\s*var hit = markupHitTest\(objs, p\[0\], p\[1\], canvas\.width, canvas\.height\);\s*selectedIdx = hit;/.test(mjs));
+  ok('dragging a selection uses translateMarkupObj against a SNAPSHOT taken at drag-start, not the live object (so a fast drag can\'t compound its own delta)',
+     /dragOrig = Object\.assign\(\{\}, objs\[hit\]\); dragStart = p; drawing = true;/.test(mjs) &&
+     /objs\[selectedIdx\] = translateMarkupObj\(dragOrig, p\[0\] - dragStart\[0\], p\[1\] - dragStart\[1\]\);/.test(mjs));
+  ok('releasing a drag commits it to the undo history — Undo has something real to step back to',
+     /if \(tool === 'select'\) \{ dragOrig = null; \}\s*pushHistory\(\);/.test(mjs));
+  ok('a "Delete selected" button exists, separate from "Clear all", hidden until something is actually selected',
+     /id="pp-mk-delsel"[\s\S]{0,60}style="display:none;"/.test(mjs));
+  ok('the toolbar restyles the SELECTED object live (colour/width/fill), not just "the next new shape" — clicking a swatch after grabbing a shape changes THAT shape',
+     /if \(selectedIdx >= 0\) \{ objs\[selectedIdx\]\.color = c; pushHistory\(\); redraw\(\); \}/.test(mjs) &&
+     /if \(selectedIdx >= 0\) \{ objs\[selectedIdx\]\.width = w; pushHistory\(\); redraw\(\); \}/.test(mjs));
+  ok('switching to a DIFFERENT tool clears the selection, so the toolbar can\'t stay ambiguous about whether it\'s editing an old shape or setting up a new one',
+     /cancelPolygon\(\);\s*tool = this\.dataset\.tool;\s*selectedIdx = -1; syncDelBtn\(\);/.test(mjs));
+
+  // Fill/border colour are two independent swatch rows now.
+  ok('a SEPARATE fill-colour swatch row exists (data-fillcolor), distinct from the border row (data-color)',
+     /pp-mk-fillcolors" id="pp-mk-fillcolors"[\s\S]{0,300}data-fillcolor="/.test(mjs));
+  ok('the fill row shows only for shapes with a real interior (rect/circle/polygon) — never for Line/Ruler/Arrow, which have none',
+     /function fillableType\(t\) \{ return t === 'rect' \|\| t === 'circle' \|\| t === 'polygon'; \}/.test(mjs));
+  ok('the tool buttons are icon-only squares now (width=height, no text-plus-icon gap) — the old label-and-icon sizing is gone',
+     /\.pp-mk-tool \{\s*width: 32px; height: 32px; padding: 0;/.test(css) && !/\.pp-mk-tool \{\s*height: 32px; padding: 0 12px;/.test(css));
+  ok('every tool button carries a title/aria-label naming it, since the visible content is now icon-only',
+     /title="' \+ Fmt\.esc\(TOOL_TITLES\[t\]\) \+ '" aria-label="' \+ Fmt\.esc\(TOOL_TITLES\[t\]\) \+ '"/.test(mjs));
+
+  // Same minimal canvas-2D recorder as section 28's fakeCtx() above (that one
+  // is scoped inside its own IIFE and unreachable here) — a fresh copy so
+  // these later blocks can genuinely execute drawMarkupObjects() too.
+  function fakeCtxWithFill() {
+    const calls = [];
+    return {
+      calls,
+      save() { calls.push('save'); }, restore() { calls.push('restore'); },
+      beginPath() { calls.push('beginPath'); }, closePath() { calls.push('closePath'); },
+      moveTo() { calls.push('moveTo'); }, lineTo() { calls.push('lineTo'); },
+      stroke() { calls.push('stroke'); }, fill() { calls.push('fill'); },
+      strokeRect() { calls.push('strokeRect'); }, fillRect() { calls.push('fillRect'); },
+      ellipse() { calls.push('ellipse'); }, arc() { calls.push('arc'); },
+      fillText() { calls.push('fillText'); }, measureText: () => ({ width: 40 }),
+      clearRect() { calls.push('clearRect'); },
+      translate() { calls.push('translate'); }, scale() { calls.push('scale'); },
+      setLineDash() { calls.push('setLineDash'); },
+      set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {},
+    };
+  }
+
+  // Line and Polygon, the two new primitives.
+  {
+    const c1 = fakeCtxWithFill();
+    PP._drawMarkupObjects(c1, [{ type: 'line', x0: 0, y0: 0, x1: 1, y1: 1, color: '#EE3124' }], 200, 100);
+    ok('a Line object draws a plain stroked segment (moveTo+lineTo+stroke), with no arrowhead fill and no end-tick lines beyond the one segment',
+       c1.calls.includes('moveTo') && c1.calls.includes('lineTo') && c1.calls.includes('stroke') && !c1.calls.includes('fill'));
+
+    const c2 = fakeCtxWithFill();
+    PP._drawMarkupObjects(c2, [{ type: 'polygon', points: [[0.1, 0.1], [0.4, 0.1], [0.25, 0.4]], color: '#231F20', fill: true, fillColor: '#1E88E5', fillAlpha: 0.4 }], 200, 100);
+    ok('a filled Polygon closes its path and both fills (its OWN fillColor) and strokes (its border colour)',
+       c2.calls.includes('closePath') && c2.calls.includes('fill') && c2.calls.includes('stroke'));
+
+    const c3 = fakeCtxWithFill();
+    PP._drawMarkupObjects(c3, [{ type: 'polygon', points: [[0.1, 0.1], [0.4, 0.1], [0.25, 0.4]], color: '#231F20', fill: false }], 200, 100);
+    ok('an UNFILLED polygon still closes and strokes its outline, just never fills it',
+       c3.calls.includes('closePath') && c3.calls.includes('stroke') && !c3.calls.includes('fill'));
+
+    eq('markupHitTest recognises a Line by its bounding centre, same precision tier as Ruler/Arrow',
+       PP._markupHitTest([{ type: 'line', x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.3 }], 0.2, 0.2, 400, 300), 0);
+    eq('markupHitTest recognises a Polygon via its bounding BOX (the same area-based test as Rect/Circle), so clicking well inside a big polygon still selects it',
+       PP._markupHitTest([{ type: 'polygon', points: [[0.1, 0.1], [0.6, 0.1], [0.6, 0.6], [0.1, 0.6]] }], 0.35, 0.35, 400, 300), 0);
+  }
+
+  // Selection is visibly drawn — a dashed outline + corner handles, so a
+  // planner can SEE what they've grabbed (the literal complaint: "I can't
+  // select the markup or shape to edit" implies invisible/no feedback too).
+  {
+    const c4 = fakeCtxWithFill();
+    PP._drawMarkupObjects(c4, [{ type: 'rect', x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.3, color: '#EE3124' }], 200, 100, 0);
+    ok('passing a selectedIdx that matches draws a dashed selection outline (setLineDash) and corner handles (arc)',
+       c4.calls.includes('setLineDash') && c4.calls.includes('arc'));
+    const c5 = fakeCtxWithFill();
+    PP._drawMarkupObjects(c5, [{ type: 'rect', x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.3, color: '#EE3124' }], 200, 100, -1);
+    ok('…and omits it entirely when nothing is selected (selectedIdx -1), so an ordinary Save doesn\'t bake a stray outline into what\'s remembered',
+       !c5.calls.includes('setLineDash'));
+  }
+
+  // --- Item 5 (fourth round) — exposure/brightness/contrast/sharpness, ------
+  // genuinely executed. Non-destructive: the tests below never touch a
+  // photo_url/thumb_url, only the derived render-time filter/pixel math.
+  eq('adjustmentsOf fills in the full {exposure,brightness,contrast,sharpness} shape even for a row with no adjustments column at all',
+     PP._adjustmentsOf({}), { exposure: 0, brightness: 0, contrast: 0, sharpness: 0 });
+  eq('adjustmentsOf lets a partial object (e.g. only exposure set) inherit the rest as 0, never undefined',
+     PP._adjustmentsOf({ adjustments: { exposure: 40 } }), { exposure: 40, brightness: 0, contrast: 0, sharpness: 0 });
+  ok('adjustmentsAreDefault is true for an all-zero (or missing) object — this is what gates whether a filter/style attribute is emitted at all',
+     PP._adjustmentsAreDefault({ exposure: 0, brightness: 0, contrast: 0, sharpness: 0 }) && PP._adjustmentsAreDefault(null));
+  ok('adjustmentsAreDefault is false the moment ANY one value is genuinely non-zero',
+     !PP._adjustmentsAreDefault({ exposure: 0, brightness: 0, contrast: 5, sharpness: 0 }));
+  eq('cssFilterFor renders literally \'none\' for a default/untouched photo — never a computed brightness(1) contrast(1) that LOOKS like a real filter but changes nothing',
+     PP._cssFilterFor({ exposure: 0, brightness: 0, contrast: 0, sharpness: 0 }), 'none');
+  eq('cssFilterFor maps 0 exposure/brightness/contrast to exactly 1x multipliers',
+     PP._cssFilterFor({ exposure: 0, brightness: 0, contrast: 50, sharpness: 0 }), 'brightness(1) brightness(1) contrast(1.5)');
+  eq('a +100 slider maps to the clamped ceiling (1.9x), never runs away unbounded',
+     PP._cssFilterFor({ exposure: 100, brightness: 0, contrast: 0, sharpness: 0 }), 'brightness(1.9) brightness(1) contrast(1)');
+  eq('a -100 slider maps to the clamped floor (0.3x) — never 0x/negative, which would blank or invert the image',
+     PP._cssFilterFor({ exposure: -100, brightness: 0, contrast: 0, sharpness: 0 }), 'brightness(0.3) brightness(1) contrast(1)');
+  ok('sharpness contributes NOTHING to cssFilterFor (there is no CSS sharpen filter) — it is evaluated separately by applySharpen',
+     !/sharpness/.test(PP._cssFilterFor({ exposure: 0, brightness: 0, contrast: 0, sharpness: 80 })));
+
+  // applySharpen: genuinely executed against a real (fake) ImageData buffer.
+  (function () {
+    function fakeSharpenCtx(w, h, fillValue) {
+      const data = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < data.length; i += 4) { data[i] = data[i + 1] = data[i + 2] = fillValue; data[i + 3] = 255; }
+      let put = null;
+      return {
+        getImageData: () => ({ data, width: w, height: h }),
+        createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+        putImageData: (id) => { put = id; },
+        get lastPut() { return put; },
+      };
+    }
+    const flat = fakeSharpenCtx(3, 3, 128);
+    PP._applySharpen(flat, 3, 3, 0);
+    eq('sharpness 0 is a genuine no-op — putImageData is never even called', flat.lastPut, null);
+
+    const flat2 = fakeSharpenCtx(3, 3, 128);
+    PP._applySharpen(flat2, 3, 3, 100);
+    ok('sharpening a perfectly FLAT image changes nothing (every neighbour equals the centre, so the convolution nets to zero) — proves the kernel math, not just "did it run"',
+       flat2.lastPut && flat2.lastPut.data[4 * 4] === 128); // centre pixel (x=1,y=1) red channel
+
+    // A single bright centre pixel on a dark field — sharpening must push
+    // the centre UP (or hold the 255 ceiling) and can only ever pull a
+    // neighbour DOWN, never the reverse — that is what "sharpen" means.
+    const spike = (function () {
+      const w = 3, h = 3;
+      const data = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < data.length; i += 4) { data[i] = data[i + 1] = data[i + 2] = 50; data[i + 3] = 255; }
+      const c = 4 * 4; data[c] = data[c + 1] = data[c + 2] = 200; // centre pixel
+      let put = null;
+      return { getImageData: () => ({ data, width: w, height: h }), createImageData: () => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }), putImageData: (id) => { put = id; }, get lastPut() { return put; } };
+    })();
+    PP._applySharpen(spike, 3, 3, 100);
+    const out = spike.lastPut.data;
+    ok('the bright centre pixel is pushed toward/at the 255 ceiling, not left unchanged or dimmed',
+       out[4 * 4] >= 200);
+    ok('a dark neighbour pixel is pulled DOWN by the bright centre it borders — the defining behaviour of an unsharp mask',
+       out[1 * 4] < 50);
+  })();
+
+  ok('a filtered <img> costs nothing for the overwhelming majority of unadjusted rows — thumb() emits no style attribute at all when adjustmentsAreDefault',
+     /var filt = adjustmentsAreDefault\(r\.adjustments\) \? '' : ' style="filter:'/.test(mjs));
+  ok('the lightbox applies the SAME filter live and re-applies it the instant Save returns a new value — never a stale filter after editing',
+     /if \(imgEl\) imgEl\.style\.filter = isVideo \? '' : cssFilterFor\(adjustmentsOf\(r\)\);/.test(mjs) &&
+     /if \(imgEl\) imgEl\.style\.filter = cssFilterFor\(newAdj\);/.test(mjs));
+  ok('the Adjust button is hidden for a video (adjustments are photo-only) and for a read-only viewer, mirroring the Markup button\'s own gating',
+     /adjBtn\.style\.display = \(canWrite && !isVideo\) \? '' : 'none';/.test(mjs));
+  ok('Stack view applies the SAME per-photo filter in both its step-through and combined-photos cells, so a corrected photo looks corrected everywhere it appears',
+     /var cfilt = adjustmentsAreDefault\(c\.photo\.adjustments\)/.test(mjs) && /var pfilt = adjustmentsAreDefault\(p\.adjustments\)/.test(mjs));
+  ok('the staged-file grid (Add Media) offers Adjust beside Markup, wired the same way — available BEFORE the file is even uploaded',
+     /data-adjuststage="' \+ i \+ '"/.test(mjs) &&
+     /openAdjustEditor\(stagedUrls\[i\], pendingAdjust\[i\] \|\| \{\}, function \(adj\) \{ pendingAdjust\[i\] = adj; \}\);/.test(mjs));
+  ok('a default (untouched) adjustment is NEVER attached to the save payload — no accidental adjustments:{} column write for a photo nobody adjusted',
+     /if \(pendingAdjust\[i\] && !adjustmentsAreDefault\(pendingAdjust\[i\]\)\) perFile\.adjustments = pendingAdjust\[i\];/.test(mjs));
+  ok('tolerantWrite strips adjustments and retries on a pre-migration database, naming the round-3 migration file',
+     /'adjustments' in job\.patch[\s\S]{0,400}2026-08-30-photos-round3\.sql/.test(mjs));
+  ok('migrations/2026-08-30-photos-round3.sql adds progress_photos.adjustments as a jsonb column, idempotently',
+     /alter table progress_photos add column if not exists adjustments jsonb default '\{\}'::jsonb;/.test(
+       fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-30-photos-round3.sql'), 'utf8')));
+  ok('openAdjustEditor never writes its own [data-close] re-wire — same audited pattern as the markup/pin-field editors, onClose covers backdrop-click too',
+     /var m = openModal\(html, 700, function \(\) \{ window\.removeEventListener\('resize', redraw\); \}\);/.test(mjs));
 
   console.log('\n[34] Item 14 — Presentations multi-select + batch Download / Archive / Merge, combined preview');
   ok('a select checkbox is added to every presentation row, reusing the shared .pp-selcell sizing',
@@ -1762,7 +2016,7 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var m = openModal\(html, 900, function \(\) \{ window\.removeEventListener\('resize', sizeCanvas\); \}\);/.test(mjs) &&
      !/b\.onclick = function \(\) \{ window\.removeEventListener\('resize', sizeCanvas\); m\.close\(\); \};/.test(mjs));
   ok('the markup editor\'s Save button no longer needs its own removeEventListener either — m.close() already runs onClose',
-     /\$\('pp-mk-save'\)\.onclick = function \(\) \{\s*m\.close\(\);\s*if \(onSave\) onSave\(objs\);\s*\};/.test(mjs));
+     /\$\('pp-mk-save'\)\.onclick = function \(\) \{\s*cancelPolygon\(\);\s*m\.close\(\);\s*if \(onSave\) onSave\(objs\);\s*\};/.test(mjs));
   ok('every OTHER openModal call in this file still passes only (html, width) — onClose is opt-in, so nothing else in the file silently changed behaviour',
      (mjs.match(/openModal\(/g) || []).length >= 8 &&
      (mjs.match(/openModal\(html, \d+\);/g) || []).length >= 6);
@@ -2131,6 +2385,117 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('stitchFrames: srcMat/dstMat/Hmat (the per-frame warpPerspective inputs/output) are now wrapped in try/finally too — the same fix, same reasoning, for the loop\'s OTHER Mat trio',
      /var srcMat, dstMat, Hmat;\s*try \{\s*srcMat = cv\.imread\(frameCanvases\[i\]\);/.test(pnjs) &&
      /\} finally \{\s*if \(srcMat\) srcMat\.delete\(\);\s*if \(dstMat\) dstMat\.delete\(\);\s*if \(Hmat\) Hmat\.delete\(\);\s*\}/.test(pnjs));
+
+  console.log('\n[37] Fourth feedback round (2026-08-30) — the wireLocationField/wireLocFields regression, topbar init isolation, group-by None');
+
+  // ⚠️ ROOT-CAUSE REGRESSION GUARD. module.js used to carry TWO
+  // `function wireLocationField(idPrefix)` declarations — JS function-
+  // declaration hoisting means the SECOND one silently wins, and it called
+  // `wireLocFields(idPrefix)`, a helper that a previous refactor had already
+  // deleted from this file. Every caller of `wireLocationField` (both
+  // openUpload's Add Media modal and openForm's Edit Photo modal) therefore
+  // threw a ReferenceError the instant it ran — and since NEITHER call site
+  // wraps it in a try/catch, that throw silently aborted every wiring
+  // statement that followed it in the SAME function: wireWorksMultiField,
+  // BIM.wirePinField, wireMediaTypeSelector, the file-input change handler,
+  // and critically the Save/Upload button's own onclick — which is exactly
+  // "Key Plan doesn't work, Works and Location don't work, and Add Media
+  // regressed" reported together, because they are all downstream of the
+  // same one throw. No prior test caught this because none of them called
+  // `wireLocationField` for real — every existing check regex-matched
+  // pieces of the form in isolation.
+  ok('wireLocFields is completely gone from module.js — the deleted helper the stale duplicate used to call',
+     !/wireLocFields/.test(mjs));
+  eq('exactly ONE function wireLocationField declaration exists (the duplicate that shadowed it is gone)',
+     (mjs.match(/function wireLocationField\(/g) || []).length, 1);
+  ok('the surviving wireLocationField wires the "+ Add field"/"Change location…" button and repaints the schedule-activity context, nothing else',
+     /function wireLocationField\(idPrefix\) \{\s*var addBtn = \$\(idPrefix \+ '-locadd'\);\s*if \(addBtn\) addBtn\.onclick = function \(\) \{ openLocationPicker\(idPrefix\); \};\s*paintLocCtx\(idPrefix\);\s*\}/.test(mjs));
+  // Both call sites are unaffected by the fix (both always called it with
+  // exactly one argument, so removing the dead second parameter is safe).
+  ok('openUpload still calls wireLocationField(\'pp\') with the Add Media prefix', /wireLocationField\('pp'\)/.test(mjs));
+  ok('openForm (Edit Photo) still calls wireLocationField(\'pp-e\') with the Edit prefix', /wireLocationField\('pp-e'\)/.test(mjs));
+
+  // Item 2 — one throw in a sub-module's init() (or in one screen's
+  // syncTools()) must never leave a DIFFERENT screen's topbar button stuck
+  // showing. Isolated in index.html rather than module.js; checked here
+  // against the shipped page source since that is where the fix lives.
+  ok('every top-level sub-module init() call (ProgressPhotos/PPR/PANO/RECON/BIM) is wrapped so one throwing does not skip the rest',
+     (html.match(/safeInit\(function \(\) \{ (?:ProgressPhotos|PPR|PANO|RECON|BIM)\.init\(user, profile\); \}, '/g) || []).length === 5);
+  ok('setScreen()\'s four visibility calls (Gallery tools / PPR / BIM / Gallery chrome) are each isolated too',
+     /safeSync\(function \(\) \{ show\(PHOTO_TOOLS, isPhotos\); \}/.test(html) &&
+     /safeSync\(function \(\) \{ PPR\._syncTools\(isPpr\); \}/.test(html) &&
+     /safeSync\(function \(\) \{ BIM\._syncTools\(isBim\); \}/.test(html));
+
+  // Item 6 — "Group by: None" genuinely produces one unsorted bucket and
+  // prints no header row/wrapper in either view; also covered by the
+  // dedicated grouping block in section 6 above via _groupRows().
+  ok('None is listed in the group-by select, before Month (the new default position)',
+     /<option value="none">None<\/option>\s*\n\s*<option value="month">/.test(html));
+
+  // --- Item 1 (fourth round) — real client-side thumbnails, genuinely executed ---
+  // The repeated complaint ("tile loading still slow") after the 2026-08-29
+  // Storage-transform fix drove a second, independent mechanism: a real,
+  // separate small file generated at upload time. Exercised end to end here,
+  // not just regex-matched, because the earlier fix's own silent-degrade
+  // failure mode is exactly the kind of thing a regex can't catch.
+  {
+    const jpgFile = { type: 'image/jpeg', name: 'site.jpg' };
+    const pngFile = { type: 'image/png', name: 'site.png' };
+    const videoFile = { type: 'video/mp4', name: 'clip.mp4' };
+
+    const blob = await PP._makeThumbnailBlob(jpgFile);
+    ok('makeThumbnailBlob genuinely decodes and downscales to a real Blob', !!blob && blob.__fakeBlob === true);
+    ok('the produced blob is a JPEG', blob.type === 'image/jpeg');
+
+    const thumbPath = await PP._uploadThumbnailFor(jpgFile, 'DEMO01/123_abc_site.jpg');
+    ok('uploadThumbnailFor returns a real path for an image file', thumbPath === 'DEMO01/123_abc_site.jpg.thumb.jpg');
+    ok('...and it genuinely uploaded to Storage (not just computed a string)', !!signed[thumbPath]);
+
+    const pngThumbPath = await PP._uploadThumbnailFor(pngFile, 'DEMO01/124_def_site.png');
+    ok('uploadThumbnailFor also handles a non-JPEG source image', pngThumbPath === 'DEMO01/124_def_site.png.thumb.jpg');
+
+    const videoThumbPath = await PP._uploadThumbnailFor(videoFile, 'DEMO01/125_ghi_clip.mp4');
+    eq('uploadThumbnailFor is a no-op for a video file (skipped, not attempted-and-failed)', videoThumbPath, null);
+
+    // ⚠️ Never blocks the real upload: a thumbnail that fails to generate
+    // must return null, not throw and abort the whole capture.
+    const brokenFile = { type: 'image/jpeg', name: 'broken.jpg' };
+    const savedImage = ctx.Image;
+    ctx.Image = class { set src(v) { if (this.onerror) this.onerror(new Error('decode failed')); } };
+    let threw = false;
+    let result;
+    try { result = await PP._uploadThumbnailFor(brokenFile, 'DEMO01/126_jkl_broken.jpg'); }
+    catch (e) { threw = true; }
+    ctx.Image = savedImage;
+    ok('a thumbnail that fails to generate degrades to null rather than throwing', !threw && result === null);
+
+    // The fallback chain: thumb_url (signed) wins over the transform-based
+    // thumbCache, which wins over the full-resolution original — and a row
+    // with neither still resolves to something rather than a blank tile.
+    const rowsFixture = [
+      { id: 'has-thumb', photo_url: 'DEMO01/a.jpg', thumb_url: 'DEMO01/a.jpg.thumb.jpg' },
+      { id: 'legacy-only', photo_url: 'DEMO01/b.jpg' },
+      { id: 'no-photo', photo_url: '' },
+    ];
+    const urls = await PP._thumbUrlsFor(rowsFixture);
+    eq('a row with a real thumb_url resolves to ITS signed URL, not the full-res original',
+       urls['has-thumb'], 'signed://DEMO01/a.jpg.thumb.jpg');
+    eq('a pre-existing row with no thumb_url still resolves (falls through the chain to something usable)',
+       urls['legacy-only'], 'signed://DEMO01/b.jpg');
+    eq('a row with no photo at all resolves to an empty string, never undefined/throwing', urls['no-photo'], '');
+  }
+
+  ok('saveCapture uploads a thumbnail alongside the original and attaches it to the row before the insert',
+     /var thumbPath = await uploadThumbnailFor\(file, path\);[\s\S]{0,200}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
+  ok('flushQueue (the offline-capture sync path) does the same, so an offline-captured photo also gets a thumbnail once synced',
+     /var thumbPath = await uploadThumbnailFor\(item\.blob, path\);[\s\S]{0,200}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
+  ok('tolerantWrite strips thumb_url and retries on a pre-migration database, naming the round-3 migration file',
+     /'thumb_url' in job\.patch[\s\S]{0,400}2026-08-30-photos-round3\.sql/.test(mjs));
+  ok('deleting a photo also removes its thumbnail object from Storage, not just the original (no orphaned thumb files)',
+     /var toRemove = \[r\.photo_url, r\.thumb_url\]\.filter\(Boolean\);/.test(mjs));
+  ok('migrations/2026-08-30-photos-round3.sql adds progress_photos.thumb_url, idempotently',
+     /alter table progress_photos add column if not exists thumb_url text;/.test(
+       fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-30-photos-round3.sql'), 'utf8')));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

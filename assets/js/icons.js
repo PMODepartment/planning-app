@@ -78,7 +78,24 @@
     eyeOff:      '<path d="M9.9 5.2A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.6 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.4-1M3 3l18 18"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
     // Two opposing arrows — used for "swap/reorder" actions (e.g. Progress
     // Photos' reorder-slides button, item 20 of the 2026-08-30 feedback).
-    swap:        '<path d="M4 8h13"/><polyline points="13 4 17 8 13 12"/><path d="M20 16H7"/><polyline points="11 20 7 16 11 12"/>'
+    swap:        '<path d="M4 8h13"/><polyline points="13 4 17 8 13 12"/><path d="M20 16H7"/><polyline points="11 20 7 16 11 12"/>',
+
+    // --- Markup toolbar (Progress Photos, 2026-08-30 fourth round item 3) —
+    // "instead of the words pen, highlighter, etc., please use icons instead."
+    // pencil/ruler/trash/undo/arrowRight above are reused for Pen/Ruler/
+    // Delete/Undo/Arrow; these nine are new.
+    cursor:      '<path d="M5 3l14 8-6 1.5-2 6.5z"/>',
+    highlighter: '<path d="M3 21l1-5 11-11 4 4-11 11z"/><line x1="14" y1="6" x2="18" y2="10"/><line x1="4" y1="20" x2="7" y2="17"/>',
+    square:      '<rect x="4" y="4" width="16" height="16" rx="1.5"/>',
+    circleShape: '<circle cx="12" cy="12" r="8"/>',
+    line:        '<line x1="4" y1="20" x2="20" y2="4"/>',
+    polygon:     '<polygon points="12 3 21 9 18 20 6 20 3 9"/>',
+    textTool:    '<polyline points="5 6 5 4 19 4 19 6"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="9" y1="20" x2="15" y2="20"/>',
+    signature:   '<path d="M3 16c2-5 3.5-7 5-5.5s-1 6 .8 6.3 3-8.3 5-6.8-.5 6 1.5 6 3-3 5.7-3"/>',
+    eraser:      '<path d="M19 20H8l-5-5a2 2 0 0 1 0-2.8l9-9a2 2 0 0 1 2.8 0l6 6a2 2 0 0 1 0 2.8L13 20"/><line x1="13.5" y1="8.5" x2="19" y2="14"/>',
+    // Photo adjustments (exposure/brightness/contrast/sharpness) — the
+    // conventional three-slider "sliders/equalizer" glyph.
+    sliders:     '<line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2"/>'
   };
 
   function svg(name, size) {

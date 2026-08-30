@@ -1165,10 +1165,14 @@
 /* ---- Item 4: iOS-style markup toolbar rebuild ----------------------------- */
 .pp-mk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
 .pp-mk-tools { display: flex; flex-wrap: wrap; gap: 3px; background: var(--pd-bg); border-radius: 999px; padding: 3px; }
+/* Fourth round, item 3: "use icons instead" of text labels — the button is
+   now a plain square (was inline-flex + gap, sized for an icon+label pair
+   that no longer exists), the icon centred by flex. Title/aria-label carry
+   the name for anyone who needs it (tooltip, screen reader). */
 .pp-mk-tool {
-  height: 32px; padding: 0 12px; border-radius: 999px; border: 0; cursor: pointer;
-  background: transparent; color: var(--pd-ink); font-size: 12.5px; font-weight: 600;
-  display: inline-flex; align-items: center; gap: 5px;
+  width: 32px; height: 32px; padding: 0; border-radius: 999px; border: 0; cursor: pointer;
+  background: transparent; color: var(--pd-ink);
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .pp-mk-tool.active { background: var(--pd-red); color: #fff; }
 .pp-mk-tool:hover:not(.active) { background: var(--pd-card); }
@@ -1198,9 +1202,24 @@
 .pp-mk-width.active { border-color: var(--pd-red); color: var(--pd-red); }
 .pp-mk-fillrow { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--pd-muted); }
 .pp-mk-fillrow input[type=range] { width: 80px; }
+/* Fourth round, item 3: fill colour is a SECOND, independent swatch row
+   nested in the fill controls — smaller than the main border-colour row so
+   the two are visually distinct at a glance (border = the bigger swatches
+   in the main toolbar row; fill = these, right beside the Fill checkbox). */
+.pp-mk-fillcolors { display: flex; gap: 4px; }
+.pp-mk-fillcolors .pp-mk-swatch { width: 18px; height: 18px; }
 .pp-mk-canvaswrap { position: relative; max-width: 100%; touch-action: none; }
 .pp-mk-canvaswrap img { width: 100%; display: block; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
 .pp-mk-canvaswrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+
+/* ---- Item 5 (fourth round): exposure/brightness/contrast/sharpness ------- */
+.pp-adj-sliders { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.pp-adj-row { display: grid; grid-template-columns: 90px 32px 1fr; align-items: center; gap: 8px; font-size: 13px; color: var(--pd-ink); }
+.pp-adj-val { color: var(--pd-muted); font-size: 12px; text-align: right; }
+.pp-adj-row input[type=range] { width: 100%; }
+
+/* ---- Staged-file grid (Add Media): a Markup AND an Adjust button per file  */
+.pp-cardactions { display: flex; flex-wrap: wrap; }
 
 /* ---- Item 8: inline "upload a floor plan now" mini-form (Add Media) ------ */
 .pp-inlineplanform {

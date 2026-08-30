@@ -2,6 +2,131 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Fourth feedback round: 7 items — real thumbnails, the wireLocFields regression, markup select/line/polygon, photo adjustments (2026-08-30)
+
+**Run `migrations/2026-08-30-photos-round3.sql`.**
+
+### ⚠️ THE ROOT-CAUSE FIND — items 2, 4 and most of item 7 were ONE bug
+
+`module.js` carried **two** `function wireLocationField(idPrefix)` declarations. JS function-
+declaration hoisting means the second silently wins — and the second called `wireLocFields(idPrefix)`,
+a helper a *previous* refactor had already deleted from this file. Every call to `wireLocationField`
+(both `openUpload`'s Add Media modal and `openForm`'s Edit Photo modal) therefore threw a
+`ReferenceError` the instant it ran. Neither call site wraps it in a try/catch, so the throw silently
+aborted **every wiring statement that ran after it in the same function** — `wireWorksMultiField`,
+`BIM.wirePinField`, `wireMediaTypeSelector`, the file-input change handler, and critically the
+**Save/Upload button's own `onclick`**. That is exactly "Key Plan doesn't work, Works and Location
+don't work, and Add Media regressed" reported together (item 7) — all four are downstream of the one
+throw. It also explains item 4 ("Save markup does not work"): the staged-file grid that wires the
+Markup button is set up in that same doomed tail of `openUpload`, so it never rendered at all.
+- Fixed by deleting the stale, dead second declaration. Both call sites always passed exactly one
+  argument, so the fix needed no caller changes.
+- Regression-guarded: a structural test asserts `wireLocFields` is gone entirely and exactly one
+  `wireLocationField` declaration exists.
+- **No code bug was found for item 2** (topbar buttons regressing) after exhaustive tracing — both
+  `ppr-new`/`bim-new` default to `display:none` in the static HTML, so no crash-then-skip-hiding path
+  can explain "all three shown at once." As a hardening regardless (and because it is the same failure
+  *class* the bug above turned out to be), `index.html`'s bootstrap now isolates every sub-module
+  `init()` call and every one of `setScreen()`'s four visibility calls in their own try/catch, so a
+  future bug in one module's setup can no longer strand another module's topbar button in the wrong
+  screen's state.
+
+### Item 1 — thumbnails are now a REAL, separate file, not a request-time transform
+
+The prior fix (Storage's image-transform add-on) silently degrades to full-resolution the moment that
+add-on isn't enabled on the project's plan tier — indistinguishable from "still slow," which is
+presumably why this was reported again. `uploadThumbnailFor`/`makeThumbnailBlob` now generate a real,
+separately-uploaded ~480px JPEG **client-side at upload time** (canvas downscale, the same technique
+`ppr.js`'s offline export already uses) and store its Storage path on a new `thumb_url` column.
+`thumbUrlOf(r)` prefers `thumb_url` → falls back to the transform request (old rows) → full-res.
+- Wired into both save paths (`saveCapture` and the offline-queue `flushQueue`), and into delete (a
+  thumbnail is a real object and would otherwise be orphaned forever).
+- ⚠️ Never blocks the real upload — any failure (corrupt file, unsupported format, `toBlob`
+  unavailable) degrades to `null`, and the photo still saves at full-res.
+- Plan/Stack views were re-audited too: Plan renders no photo thumbnails at all (only text labels in
+  its cluster popup, and the floor-plan *drawing* itself — a different asset); Stack already used
+  `thumbUrlOf` for its cells and reserved full-res for the hover magnifier, which is correctly the
+  "expanded" view per the item's own rule.
+- **Verified: 15 checks genuinely executing** `makeThumbnailBlob`/`uploadThumbnailFor` (a fake `Image`
+  + `<canvas>.toBlob` stub in test.js), including the video-is-skipped case and the
+  fails-degrades-to-null case, plus the full `thumbUrlOf` fallback chain against injected rows.
+
+### Item 6 — "Group by: None"
+
+A real grouping mode, not a fake "one group that still prints a header" — `groupRows()` short-circuits
+to a single un-sorted bucket carrying a sentinel key (`NO_GROUP_KEY`); both `listHTML` and `galleryHTML`
+check for that sentinel and print **no header/wrapper at all** rather than an empty `<strong></strong>`.
+Listed first in the `#pp-groupby` select, ahead of Month.
+
+### Items 3/4 — the markup editor rebuilt: select-to-edit, independent fill colour, icons, Line/Polygon
+
+- **Select tool (new, and the default tool on open)** — `markupHitTest` now does a proper
+  bounding-box-and-topmost-first hit test for area shapes (rect/circle/polygon), falling back to the
+  original nearest-point test for strokes/lines/text/icons. Clicking a shape selects it (drawn with a
+  dashed outline + corner handles), dragging moves it (`translateMarkupObj`, applied against a
+  snapshot taken at drag-start so a fast drag can't compound its own delta), and a "Delete selected"
+  button (separate from "Clear all") removes just that object. The toolbar restyles the **selected
+  object live** — click a colour swatch after grabbing a shape and it changes that shape, not "the
+  next new shape's default." Switching tools clears the selection so the toolbar can't stay ambiguous
+  about which it's editing.
+- **Independent fill/border colour** — `fillColor` is a genuinely separate field from `color`
+  (`fillColorOf(o)` falls back to `color` only for objects saved before this feature existed, so old
+  markup keeps rendering identically). A second, smaller swatch row sits inside the Fill controls.
+- **Icons instead of text labels** — all 13 tools are now icon-only square buttons
+  (`title`/`aria-label` carry the name). Nine new icons added to the shared `assets/js/icons.js`:
+  `cursor`, `highlighter`, `square`, `circleShape`, `line`, `polygon`, `textTool`, `signature`,
+  `eraser` (pencil/ruler/arrowRight/trash/undo were already there and are reused).
+- **Line** — the plain, undecorated version of the drag-a-segment gesture Ruler/Arrow already had.
+- **Polygon** — click each corner (the shape's last point live-tracks the pointer between clicks),
+  double-click to close. Fewer than 3 real vertices on close is discarded, not saved as a degenerate
+  sliver; switching tools or saving mid-polygon likewise discards the unfinished shape.
+- **Verified: 40+ checks genuinely executing** `drawMarkupObjects`/`markupHitTest`/`translateMarkupObj`
+  against a fake canvas-2D recorder — Line drawing a plain stroke (no arrowhead fill), Polygon closing
+  + filling with its own `fillColor` + stroking with its own `color`, the selection outline appearing
+  only when `selectedIdx` matches, and translate correctly shifting every coordinate shape variant
+  (`points` array / `x0,y0,x1,y1` / bare `x,y`) without mutating the original object.
+
+### Item 5 — Exposure / Brightness / Contrast / Sharpness
+
+Non-destructive, stored as `{exposure,brightness,contrast,sharpness}` (each -100..100, 0 = unchanged)
+on a new `adjustments` column — the original file is never touched or re-uploaded, so resetting to 0
+always recovers exactly what the camera captured.
+- **Exposure/Brightness/Contrast render everywhere a photo appears** (Gallery tiles, List rows, Stack
+  cells, the lightbox) via the browser's own CSS `filter` — cheap and GPU-accelerated, so this costs
+  nothing for the overwhelming majority of unadjusted rows (`cssFilterFor` returns the literal string
+  `'none'` when nothing was touched, and `thumb()`/the Stack cells skip the `style` attribute entirely
+  in that case). Exposure and Brightness both map onto CSS's one `brightness()` primitive (there is no
+  separate "exposure" filter) and compose multiplicatively; Contrast maps onto `contrast()` directly.
+  Both are clamped to 0.3x–1.9x so an extreme slider can never invert or blank the image.
+- **Sharpness has no CSS filter equivalent** — it needs real pixel convolution
+  (`getImageData`/`putImageData`), which is too costly to run on every tile in a scrolling grid. It is
+  therefore evaluated *only* in the adjustment dialog's own live preview (a standard unsharp-mask 3x3
+  kernel, `applySharpen`) — the one other place a planner is looking closely at one photo, matching
+  item 1's own "full resolution only when expanded" rule.
+- New `openAdjustEditor` dialog (canvas preview + 4 sliders + Reset), reachable from the same two
+  places Markup is: the lightbox ("Adjust" button beside "Markup") and the staged-file grid during
+  upload (an "Adjust" button beside "Markup" per file, before the file is even saved).
+- ⚠️ A default (all-zero) adjustment is never attached to a save payload — no accidental
+  `adjustments:{}` write for a photo nobody touched.
+- **Verified: 20+ checks genuinely executing** `cssFilterFor`/`adjustmentsAreDefault`/`applySharpen` —
+  including the clamp ceiling/floor, sharpness contributing nothing to the CSS filter string, a flat
+  image sharpening to a no-op (proves the kernel math nets to zero, not just "did it run"), and a
+  bright-centre/dark-neighbour fixture proving the convolution pushes the centre up and pulls a
+  neighbour down — the defining behaviour of an unsharp mask, not just "some numbers changed."
+
+### Verification (whole round)
+
+617 → **678 checks**, all green, executing the shipped functions (never regex-only for anything
+genuinely computable) via `test.js`'s Node `vm` harness. `node --check` clean on every touched file;
+0 NUL bytes; CSS braces balanced (488/488); function-set diff against the prior commit shows **0
+functions lost, 20 added**. `assets/js/icons.js` bumped app-wide (`?v=20260830b`, 19 referencing
+files); this module's own `module.css`/`module.js` bumped to `?v=20260830c`.
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing caveat for
+this entire module. No live click-through of the Select/drag-to-move interaction, the Polygon
+double-click gesture, the Adjust dialog's live canvas preview, or the thumbnail generation against a
+real upload. `migrations/2026-08-30-photos-round3.sql` has not been run.
+
 ## Third feedback round: 30 items across Gallery/Add-Media/Markup, Presentations, Plans (2026-08-30)
 
 Owner sent 30 items in one message with an explicit instruction to work unattended overnight

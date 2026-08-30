@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260829a" />
-  <link rel="stylesheet" href="module.css?v=20260830b" />
+  <link rel="stylesheet" href="module.css?v=20260830c" />
 </head>
 <body>
   <div class="pd-app">
@@ -165,6 +165,7 @@
             <span class="pp-countbar" id="pp-count"></span>
             <label class="pp-groupby">Group by
               <select class="pd-select" id="pp-groupby">
+                <option value="none">None</option>
                 <option value="month">Month captured</option>
                 <option value="trade">Trade</option>
                 <option value="location">Location</option>
@@ -242,6 +243,9 @@
       <button class="pp-lb-tool" id="pp-lb-markuptoggle" title="Show/hide markup"><span data-ico="eye" data-ico-size="16"></span></button>
       <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-markupedit" title="Add or edit markup on this photo — pencil, shapes, icons, text">
         <span data-ico="palette" data-ico-size="16"></span><span>Markup</span></button>
+      <!-- Item 5 (2026-08-30, fourth round): exposure/brightness/contrast/sharpness. -->
+      <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-adjustedit" title="Adjust exposure, brightness, contrast and sharpness">
+        <span data-ico="sliders" data-ico-size="16"></span><span>Adjust</span></button>
       <button class="pp-lb-tool" id="pp-lb-edit" title="Edit details"><span data-ico="pencil" data-ico-size="16"></span></button>
       <button class="pp-lb-tool pp-lb-tool-danger" id="pp-lb-delete" title="Delete"><span data-ico="trash" data-ico-size="16"></span></button>
     </div>
@@ -277,11 +281,11 @@
   <script src="../../assets/js/db.js?v=20260827c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
   <script src="../../assets/js/ui.js?v=20260830a"></script>
-  <script src="../../assets/js/icons.js?v=20260830a"></script>
+  <script src="../../assets/js/icons.js?v=20260830b"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260830b"></script>
+  <script src="module.js?v=20260830c"></script>
   <script src="ppr.js?v=20260830b"></script>
   <script src="pano.js?v=20260830b"></script>
   <script src="recon.js?v=20260830b"></script>
@@ -294,15 +298,28 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'progress-photos', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
-      ProgressPhotos.init(user, profile);
-      PPR.init(user, profile);
-      PANO.init(user, profile);
-      RECON.init(user, profile);
-      BIM.init(user, profile);
+      // ⚠️ Each sub-module's init() is isolated in its own try/catch. Before
+      // this, a throw anywhere in ProgressPhotos.init()/PPR.init()/etc. (e.g.
+      // a project load failing, or any future bug in one file) aborted every
+      // init() call AND the tab-wiring/setScreen() block below it, since none
+      // of this ran inside a try — the module.js's own openModal() recursion
+      // bug (2026-08-30) demonstrated exactly how one un-caught throw upstream
+      // can silently strand the whole page's interactive state. Isolating each
+      // init() call means a failure in, say, BIM.init() can no longer prevent
+      // PPR's or the top-level screen switch's setup from running — and it is
+      // reported instead of silently vanishing into the console.
+      function safeInit(fn, label) {
+        try { fn(); } catch (e) { console.error('[progress-photos] ' + label + ' init failed:', e); }
+      }
+      safeInit(function () { ProgressPhotos.init(user, profile); }, 'ProgressPhotos');
+      safeInit(function () { PPR.init(user, profile); }, 'PPR');
+      safeInit(function () { PANO.init(user, profile); }, 'PANO');
+      safeInit(function () { RECON.init(user, profile); }, 'RECON');
+      safeInit(function () { BIM.init(user, profile); }, 'BIM');
 
-      document.getElementById('pp-lb-close').onclick = ProgressPhotos._closeLightbox;
-      document.getElementById('pp-lb-prev').onclick  = function () { ProgressPhotos._stepLightbox(-1); };
-      document.getElementById('pp-lb-next').onclick  = function () { ProgressPhotos._stepLightbox(1); };
+      if (document.getElementById('pp-lb-close')) document.getElementById('pp-lb-close').onclick = ProgressPhotos._closeLightbox;
+      if (document.getElementById('pp-lb-prev')) document.getElementById('pp-lb-prev').onclick  = function () { ProgressPhotos._stepLightbox(-1); };
+      if (document.getElementById('pp-lb-next')) document.getElementById('pp-lb-next').onclick  = function () { ProgressPhotos._stepLightbox(1); };
 
       // Top-level screen switch (Photos / PPRs) — each screen owns its own tools.
       var PHOTO_TOOLS = ['pp-add', 'pp-sep-photos', 'pp-refresh', 'pp-topsearch-wrap', 'pp-topfilttoggle'];
@@ -331,9 +348,23 @@
         document.getElementById('pp-screen-bim').hidden = !isBim;
         document.getElementById('pp-screen-title').textContent =
           isPpr ? 'Presentations' : isBim ? 'Plans' : 'Gallery';
-        show(PHOTO_TOOLS, isPhotos);
+        // ⚠️ Every one of these four calls is now isolated. Before, a throw
+        // in ANY of them (e.g. PPR._syncTools reading `screen` before PPR.init
+        // ever ran, because safeInit() above swallowed an earlier failure)
+        // aborted setScreen() partway through — and since `show(PHOTO_TOOLS,
+        // isPhotos)` had already run but PPR._syncTools/BIM._syncTools had
+        // not, the Gallery's own "+ Add media" would be correctly shown while
+        // "+ New Presentation"/"+ Upload floor plan" were left showing
+        // whatever they last were (their initial inline `display:none` is
+        // safe on first load, but NOT safe after switching screens once).
+        // Wrapping each call means one module's bug can never leave another
+        // module's topbar button stuck in the wrong screen's state.
+        function safeSync(fn, label) {
+          try { fn(); } catch (e) { console.error('[progress-photos] ' + label + ' syncTools failed:', e); }
+        }
+        safeSync(function () { show(PHOTO_TOOLS, isPhotos); }, 'Gallery tools');
         // Each module re-asserts its own tools' visibility (role + inner screen).
-        PPR._syncTools(isPpr);
+        safeSync(function () { PPR._syncTools(isPpr); }, 'PPR');
         // pano.js/recon.js's own screens (#pp-screen-pano/#pp-screen-recon)
         // stay in the DOM, permanently hidden — their load()/render() both
         // bail out early if their host div is missing, and PANO.ensureLoaded/
@@ -344,14 +375,13 @@
         // (#pano-new/#pano-compare-btn/#recon-new) were removed from this
         // page (2026-08-29 feedback item 2); calling it would just be a
         // harmless no-op, but there is nothing left for it to do.
-        BIM._syncTools(isBim);
+        safeSync(function () { BIM._syncTools(isBim); }, 'BIM');
         // ⚠️ Audit fix: a batch selection made on Gallery used to survive a
         // tab switch — its selection-only toolbar (count/Download/Add to
         // Presentation/Archive) stayed visible on top of whichever screen
         // opened next, and the checkboxes stayed silently checked in memory
         // for a planner who had moved on and forgotten what was selected.
-        if (isPhotos) ProgressPhotos._syncChrome();
-        else ProgressPhotos._leavePhotosScreen();
+        safeSync(function () { if (isPhotos) ProgressPhotos._syncChrome(); else ProgressPhotos._leavePhotosScreen(); }, 'Gallery chrome');
         Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
           b.classList.toggle('active', b.dataset.screen === s);
         });
