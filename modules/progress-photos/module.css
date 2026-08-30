@@ -5,12 +5,15 @@
    ============================================================================ */
 
 /* ============================================================================
-   SHELL — sidebar-less topbar.
-   These rules are deliberately identical to Drawing Register / Cash Flow /
-   Project Schedule so the module chrome is uniform across the suite. Keep them
-   in sync: 34px tool buttons, 36px back button, divider before the avatar.
+   SHELL — persistent sidebar (2026-08-30; see MODULE_CONTRACT.md §"Sidebar").
+   These rules are deliberately identical to every other module so the chrome
+   is uniform across the suite. Keep them in sync: 34px tool buttons, 36px
+   back button, divider before the avatar. `.pd-content` needs no width rule —
+   the shared `dashboard.css` flex layout (`.pd-content { flex:1; min-width:0 }`)
+   already sizes it correctly beside `.pd-sidebar`; a leftover `width:100%`
+   here (from before this module had a sidebar) would fight the sidebar for
+   space, so it was removed rather than kept "just in case."
    ============================================================================ */
-.pd-content { width: 100%; }
 
 .pd-topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 8px; }
 .pd-topbar #user-bar {

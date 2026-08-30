@@ -4,9 +4,11 @@
    automatically (module contract §4). Only semantic accents are fixed colours.
    Chrome rules mirror Progress Photos / Drawing Register / Cash Flow so the
    module chrome is uniform across the suite — keep them in sync.
+   2026-08-30: modules gained a persistent sidebar (see MODULE_CONTRACT.md) —
+   .pd-content no longer forces width:100%; the shared `.pd-content { flex:1;
+   min-width:0 }` rule in dashboard.css already sizes it correctly next to
+   `.pd-sidebar` in the `.pd-app` flex row.
    ============================================================================ */
-
-.pd-content { width: 100%; }
 
 /* ---- Shell / topbar ------------------------------------------------------ */
 .pd-topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 8px; }

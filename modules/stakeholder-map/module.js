@@ -25,6 +25,8 @@ window.StakeholderMap = (function () {
   var pid = null;
   var rows = [];
   var filters = { sector: '', group: '', importance: '', search: '', cell: null };
+  var curView = 'list';      // list | grid — kept in sync by switchView(); read by histView.get()
+  var histView = null;       // UI.bindHistoryState() handle — see init(); .push() after any switchView() call
 
   var SECTORS = ['Government','Private'];
   var GROUPS  = ['LGU','NGA','GOCC','National','Legislative','State University',
@@ -129,7 +131,17 @@ window.StakeholderMap = (function () {
       render();
     };
     document.querySelectorAll('.sm-tabs [data-view]').forEach(function (a) {
-      a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); };
+      a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); histView.push(); };
+    });
+
+    // Browser-history integration — see UI.bindHistoryState in ui.js. Without
+    // this, switching Register <-> Impact/Interest never touches the URL, so
+    // the browser's native Back button jumps straight past both views to the
+    // module launcher.
+    histView = UI.bindHistoryState({
+      key: 'sm_view',
+      get: function () { return { view: curView }; },
+      apply: function (s) { switchView(s.view, document.querySelector('.sm-tabs [data-view="' + s.view + '"]')); }
     });
 
     if (pid) load();
@@ -330,11 +342,13 @@ window.StakeholderMap = (function () {
         document.querySelector('.sm-tabs [data-view="list"]').classList.add('active');
         document.querySelector('.sm-tabs [data-view="grid"]').classList.remove('active');
         render();
+        if (histView) histView.push();
       };
     });
   }
 
   function switchView(view, link) {
+    curView = view;
     document.getElementById('sm-view-list').style.display = view === 'list' ? '' : 'none';
     document.getElementById('sm-view-grid').style.display = view === 'grid' ? '' : 'none';
     if (link) {

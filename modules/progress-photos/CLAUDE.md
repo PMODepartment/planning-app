@@ -311,6 +311,55 @@ supersedes), so a function-set diff against `HEAD` would compare against a stale
 prior baseline and its "0 lost" reading would not honestly mean what it's supposed to. Parse-clean +
 0-NUL + CSS-balanced + the 602-check suite are the verification actually performed and claimed here.
 
+## Persistent sidebar + Back/Forward steps through Gallery/Presentations/Plans (2026-08-30)
+
+Owner reported the actual trigger for this app-wide change: navigating deep into this module
+(e.g. the presentation slide editor) and pressing Back skipped straight past every intermediate
+screen to the module launcher — there was no History API integration anywhere in the app, and
+this module's own multi-screen (Gallery/Presentations/Plans) + multi-view (List/Gallery/Plan/
+Stack) structure made the symptom most visible here. Owner's explicit direction (via
+`AskUserQuestion`, see the main `CLAUDE.md` entry of the same date): fix this **app-wide**, and
+**bring back a persistent sidebar** — reversing this module's own "sidebar-less shell" note.
+
+⚠️ **This work was deliberately done LAST, and only after re-confirming there was nothing left to
+collide with.** This module had a concurrent session actively developing it the same day (Batches
+E–H, the full-module audit below, several feedback rounds) — `git fetch` + `git rev-parse HEAD` vs
+`origin/claude/planners-dashboard-uiux-qe6yfn` were re-checked immediately before touching this
+file and confirmed HEAD already matched origin with nothing further pending, so the earlier
+concurrent thread had already wrapped up into the same commit this session started from.
+
+- **Sidebar**: the old `<!-- Sidebar-less shell (matches Project Schedule / Cash Flow / Drawing
+  Register) -->` comment + bare `.pd-content` is replaced by the standard `<aside class="pd-
+  sidebar">` (brand block + `<nav id="side-nav">`, filled by `UI.renderNav(el, 'project', {active:
+  'progress-photos', ...})`), matching every other module now. `UI.initShell()` added to the
+  `requireLogin` callback for the hamburger collapse/expand.
+- ⚠️ **`module.css`'s `.pd-content { width: 100%; }` had to go** — a leftover from before this
+  module had a sidebar, it would otherwise fight the new sidebar for width. The shared
+  `dashboard.css` flex rule (`.pd-content { flex:1; min-width:0 }`) already sizes it correctly.
+- **History-state, scoped to ONE switch on purpose**: the top-level Gallery/Presentations/Plans
+  screen switch (`setScreen`) is now wrapped in `UI.bindHistoryState({key:'pp_screen', get, apply})`
+  — `curScreen` tracks the current screen, the existing `.pp-tab` click handler also calls
+  `histScreen.push()` after `setScreen()`, and `apply()` just calls `setScreen()` again. `setScreen`
+  itself is completely unchanged otherwise (still persists to `localStorage['pp_screen']` too, so
+  a plain reload still restores the last screen exactly as before).
+- ⚠️ **Deliberately NOT wired**: this module's List/Gallery/Plan/Stack view toggle, the PPR slide
+  editor's own navigation, and the Plans tab's pan/zoom state — all already persist to their own
+  `localStorage` keys, and folding every one of them into the URL hash is a materially bigger pass
+  than the reported bug needed, on a file that's had more same-day churn than any other module in
+  this repo. The top-level screen switch is the one that actually reproduced the reported symptom
+  (Back skipping past Presentations straight to the launcher); the rest is unchanged.
+- Cache-busting: `module.css?v=` bumped `20260830a` → `20260830b` (its own content changed); the
+  shared `ui.js?v=` bump (`20260830a`) that every module in this rollout picked up was already
+  applied to this file in an earlier pass the same day.
+
+**Verified**: the real (non-comment) inline `<script>` block parses (`node --check` on the
+extracted block — a stray literal `<script>` inside an unrelated HTML *comment* four lines above
+the CDN script tags is a known false-positive for naive regex extraction and was confirmed as
+such, not a real syntax issue); 0 duplicate DOM `id=` attributes (76, unchanged); CSS braces
+balanced (480/480). ⚠️ **Not verified signed-in** — same standing caveat as every other entry in
+this file; the sidebar's real layout and the Back/Forward click-through are unverified against a
+live session.
+
 ## Full-module audit — review, test, performance/UI/UX pass across all 8 files (2026-08-30)
 
 Owner: *"please review all the code. add more test cases and make sure everything works 100% of

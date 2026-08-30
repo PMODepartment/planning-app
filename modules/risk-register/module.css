@@ -1,8 +1,12 @@
 /* Risk Register module styles — all classes prefixed .rr- to avoid collisions. */
 
-/* ---- Uniform sidebar-less chrome (matches Progress Photos / Drawing Register /
-   Cash Flow / Project Schedule / S-Curve). Keep in sync with those. ---- */
-.pd-content { width:100%; }
+/* ---- Uniform module chrome (matches every other enabled module). Keep in
+   sync with those. 2026-08-30: modules gained a persistent sidebar (see
+   MODULE_CONTRACT.md) — .pd-content no longer forces width:100%; the shared
+   `.pd-content { flex:1; min-width:0 }` rule in dashboard.css already gives it
+   the right size next to `.pd-sidebar` in the `.pd-app` flex row. Re-adding a
+   width:100% override here would fight the sidebar for space again. ---- */
+.pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
 .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
 .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
 .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }

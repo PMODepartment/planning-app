@@ -19,6 +19,8 @@ window.RiskRegister = (function () {
   var pid = null;            // current project id (shared key 'pd_project')
   var rows = [];             // current project's risks (raw from DB)
   var filters = { status: '', category: '', search: '', cell: null };
+  var curView = 'list';      // list | matrix — kept in sync by switchView(); read by histView.get()
+  var histView = null;       // UI.bindHistoryState() handle — see init(); .push() after any switchView() call
 
   var CATEGORIES = ['Technical','Commercial','Schedule','Safety','Environmental',
                     'Financial','Regulatory','Resource','External'];
@@ -94,7 +96,19 @@ window.RiskRegister = (function () {
     });
     // sidebar view switch
     document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) {
-      a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); };
+      a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); histView.push(); };
+    });
+
+    // Browser-history integration (see UI.bindHistoryState in ui.js): without
+    // this, switching List <-> Matrix never touches the URL, so the browser's
+    // native Back button has nothing to step through — it jumps straight past
+    // both views to the module launcher. Bound once here, after the view's
+    // starting state (curView = 'list') is established; every place that
+    // changes the view also calls histView.push() once.
+    histView = UI.bindHistoryState({
+      key: 'rr_view',
+      get: function () { return { view: curView }; },
+      apply: function (s) { switchView(s.view, document.querySelector('.rr-tabs [data-view="' + s.view + '"]')); }
     });
 
     if (pid) load();
@@ -267,11 +281,13 @@ window.RiskRegister = (function () {
         document.querySelector('.rr-tabs [data-view="list"]').classList.add('active');
         document.querySelector('.rr-tabs [data-view="matrix"]').classList.remove('active');
         render();
+        if (histView) histView.push();
       };
     });
   }
 
   function switchView(view, link) {
+    curView = view;
     document.getElementById('rr-view-list').style.display   = view === 'list'   ? '' : 'none';
     document.getElementById('rr-view-matrix').style.display = view === 'matrix' ? '' : 'none';
     if (link) {
