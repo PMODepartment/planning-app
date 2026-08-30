@@ -84,6 +84,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 (c) — Apple-touch-icon: white tile chosen, more breathing room around the mark
+
+Follow-up to the redesign above, after owner review. Presented four candidates (dark tile,
+brand-red tile with a white card, white tile, mark-alone) each rendered from the real mark on an
+iOS home-screen mockup rather than describing them — one candidate (the mark straight on a red
+field) failed visibly once rendered: the mark's cutout is genuine transparency, not painted white,
+so it vanished entirely into a same-color background. Owner picked the **white tile + wordmark**,
+then asked for more padding, and to see the result before it shipped.
+
+- Background changed `#2B2C2B` → **white**, "PLANNING" recolored to ink (`#231F20`) to match.
+- Outer padding widened (`13vw 11vw 14vw`, was `9vw 6vw 10vw`) and the mark/wordmark scaled down
+  slightly to keep proportion (mark 50vw was 58vw, wordmark 12vw was 14.2vw) — more air on every
+  edge, checked at both the 512px master and the true deployed 180px size before installing.
+- `assets/img/icon.png` replaced again (still 512×512 opaque); every reference's cache-bust bumped
+  `?v=20260830a` → `?v=20260830b` (26 pages + `manifest.webmanifest`) since the bytes changed again
+  under the same filename.
+
+⚠️ **This is the second commit onto a branch whose first commit had already merged as PR #22**
+(the unrelated `supabase-build.sql`/`VERIFY-schema.sql` regeneration). Per this repo's own
+merged-PR-is-finished rule, the branch was rebuilt from fresh `origin/main` and the still-unmerged
+icon commit was replayed onto that base rather than stacked on the old, now-closed PR's tip — so
+this change ships as its own pull request, not appended to #22.
+
 ### 2026-08-30 (b) — App-wide: the apple-touch-icon (home-screen icon) is redesigned and fixed square
 
 Owner asked for the bookmark icon, then clarified the ask was specifically the **apple-touch-icon**
