@@ -180,6 +180,63 @@ brace-balanced (423/423 before and after); every `-modback` anchor and its CSS r
 (0 remaining); every module still carries exactly one `-projctx` (or, for the shell/portfolio
 pages, `#ctx-switcher`) element; `_template`'s script parses.
 
+### 2026-08-30 (c) — Apple-touch-icon: white tile chosen, more breathing room around the mark
+
+Follow-up to the redesign above, after owner review. Presented four candidates (dark tile,
+brand-red tile with a white card, white tile, mark-alone) each rendered from the real mark on an
+iOS home-screen mockup rather than describing them — one candidate (the mark straight on a red
+field) failed visibly once rendered: the mark's cutout is genuine transparency, not painted white,
+so it vanished entirely into a same-color background. Owner picked the **white tile + wordmark**,
+then asked for more padding, and to see the result before it shipped.
+
+- Background changed `#2B2C2B` → **white**, "PLANNING" recolored to ink (`#231F20`) to match.
+- Outer padding widened (`13vw 11vw 14vw`, was `9vw 6vw 10vw`) and the mark/wordmark scaled down
+  slightly to keep proportion (mark 50vw was 58vw, wordmark 12vw was 14.2vw) — more air on every
+  edge, checked at both the 512px master and the true deployed 180px size before installing.
+- `assets/img/icon.png` replaced again (still 512×512 opaque); every reference's cache-bust bumped
+  `?v=20260830a` → `?v=20260830b` (26 pages + `manifest.webmanifest`) since the bytes changed again
+  under the same filename.
+
+⚠️ **This is the second commit onto a branch whose first commit had already merged as PR #22**
+(the unrelated `supabase-build.sql`/`VERIFY-schema.sql` regeneration). Per this repo's own
+merged-PR-is-finished rule, the branch was rebuilt from fresh `origin/main` and the still-unmerged
+icon commit was replayed onto that base rather than stacked on the old, now-closed PR's tip — so
+this change ships as its own pull request, not appended to #22.
+
+### 2026-08-30 (b) — App-wide: the apple-touch-icon (home-screen icon) is redesigned and fixed square
+
+Owner asked for the bookmark icon, then clarified the ask was specifically the **apple-touch-icon**
+(the icon iOS/iPadOS shows when the app is added to a home screen) and gave a concrete brief: a
+minimalist Megawide mark plus the word **PLANNING**.
+
+⚠️ **The old file wasn't just undesigned, it was the wrong shape.** `assets/img/icon.png` was a
+byte-for-byte copy of `favicon.png` — the same **1020×850** transparent PNG used for the browser-tab
+icon — reused for `<link rel="apple-touch-icon">` with no square crop at all. iOS expects a square
+source and letterboxes or crops whatever it's given; nothing here had ever actually been designed
+for that use.
+
+- New design: the existing red Megawide mark (unaltered — the corporate mark is not redrawn) centered
+  on a solid `--pd-dark` (#2B2C2B) square tile, with **PLANNING** set below it in Montserrat 800,
+  tracked uppercase, off-white. Composed as HTML/CSS at design-space units (`vw`-relative) and
+  rasterized with headless Chromium (Playwright) rather than hand-traced — the exact same red+white
+  glyph pixels as the source PNG, never redrawn.
+- Shipped as one **512×512** opaque (no alpha) PNG replacing `assets/img/icon.png` — large enough to
+  serve `apple-touch-icon` (iOS downscales) and the manifest's own 512 entry with no further files.
+- ⚠️ `manifest.webmanifest` had **two** icon entries pointing at the same file under two false claimed
+  sizes (`192x192` and `512x512`, both actually 1020×850). Collapsed to one honest
+  `512x512` entry — a single icon ≥192px already satisfies Chrome's install-icon minimum, and a second
+  entry lying about its own dimensions is worse than no second entry.
+- **`favicon.png` (the browser-tab icon) is deliberately untouched** — the wordmark would not read at
+  16–32px, and the plain mark is still the right asset for a tab. Only the home-screen icon changed.
+- Every `<link rel="apple-touch-icon">` across all 26 HTML pages + the `MODULE_CONTRACT.md`
+  boilerplate now carries `?v=20260830a` (this repo's standing cache-bust convention) — home-screen
+  icons are cached far more aggressively than a normal image, and the filename didn't change.
+
+Rendered and visually checked at both 512px and the deployed 180px size before installing — the mark
+and the wordmark both read cleanly at true icon size. ⚠️ **Not verified on a real device** — no iOS
+"Add to Home Screen" click-through is possible in this environment; the check is the rendered PNG,
+not an actual home screen.
+
 ### 2026-08-30 — App-wide: persistent module sidebar + Back/Forward steps through in-page views
 
 Owner reported that Progress Photos' browser Back button skipped straight from a drilled-down
