@@ -2,6 +2,151 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Sixth feedback round: 9 items — Add-media type-switch bug + dropdown, markup grouping/redo/reorder/resize/rotate/text, markup-by-default, the pie-shaped camera cone, smaller thumbnails (2026-08-30)
+
+Owner sent 9 items in one message, the largest single batch in this module's history — 6 of the 9
+concentrate on the markup editor.
+
+### Item 1 — Add Media type-switch bug + a dropdown trigger
+
+⚠️ **Real bug, confirmed by reading the code, not just believed from the report.**
+`wireMediaTypeSelector`'s `onChange` callback only relabelled the file-field's `<label>` text — it
+never touched `#pp-stagedgrid`, `stagedUrls`, `pendingMarkup`/`pendingAdjust`, or the `#pp-files`
+input itself, and a `<input type=file>`'s already-chosen `FileList` can't be reassigned by script
+anyway. So switching Photo→Video after staging a photo left the wrong-kind file sitting there with
+no way for the code to notice. Every type change now clears the whole staged batch (revokes object
+URLs, drops pending markup/adjustments, resets the input, empties the grid).
+
+**"+ Add media" is now a dropdown** — Photo / Video / 360° / 3D (disabled) — matching the owner's
+suggestion. `wireMediaTypeSelector(idPrefix, initial, onChange)` gained an `initial` parameter so
+picking Photo/Video from the dropdown opens the upload modal pre-set to that type; 360° hands off
+straight to `PANO.openCapture()`, the same behaviour the modal's own in-place 360° button already
+had. New `video` icon added to the shared `icons.js` (bumped app-wide, 19 files).
+
+### Items 2/3/4 — the markup toolbar: grouped controls, Redo, reordered icons
+
+- **Item 2**: Line (colour + weight) and Fill (colour + transparency) are now two visually SEPARATE
+  labelled boxes (`.pp-mk-group-line`/`.pp-mk-group-fill`, each with a small uppercase caption) —
+  previously two same-shaped swatch rows sat directly adjacent with nothing distinguishing them.
+- **Item 3**: a Redo button beside Undo. ⚠️ The `undone` stack already existed (populated by Undo)
+  but nothing ever read it back — Redo just pops it onto `history` and restores from there, the
+  exact mirror of what Undo does.
+- **Item 4**: `TOOL_ORDER` reordered to the owner's explicit list — select, pen, highlighter, line,
+  arrow, rect, circle, polygon, ruler, text, sticker(icon), eraser — and **signature removed** as a
+  pickable tool. ⚠️ `drawMarkupObjects` still knows how to RENDER an existing signature-type object
+  (backward compatibility for markup saved before this round); only the ability to create a new one
+  is gone.
+
+### Item 5 — real on-canvas text entry, editable size, fillable background box
+
+`prompt('Text:')` is gone. Clicking with the Text tool creates a blank text object and immediately
+opens a real, positioned `contenteditable` overlay (`#pp-mk-textedit`) directly over the canvas at
+the click point — typing goes straight into it, Enter (no shift) or blur commits, Escape discards.
+Double-clicking an existing text object (Select tool) reopens it for direct editing with its current
+text pre-selected. Text objects gained `fontSize` (a new size slider, shown only for text) and joined
+`fillableType()` alongside rect/circle/polygon, so its background box's colour and transparency are
+now editable through the same Fill group everything else uses — replacing the old fixed, un-turnable-
+off `rgba(255,255,255,.85)` box. ⚠️ A commit with empty text REMOVES the object (matches `prompt()`'s
+old "cancelled if blank" behaviour, whether the object is brand new or was just emptied out).
+
+### Item 6 — resize and rotate
+
+Every markup object gained a `rotation` field (degrees, default 0), applied as a canvas transform
+around the object's own bounding-box centre — never baked into the stored coordinates, so the
+resize math stays simple regardless of rotation. Selecting an object now shows real, draggable corner
+handles (resize) and a rotate handle above the box, not just decorative dots.
+- **Resize** (`resizeBoxObj`): dragging a corner moves that corner to the new local position while
+  the OPPOSITE corner stays fixed — the standard anchor-corner resize. Text/icon have no box to
+  stretch, so `resizeSizeObj` scales their `fontSize`/`size` instead, based on distance from the
+  object's own point.
+- **Rotate** (`rotationFromPointer`): dragging the rotate handle sets rotation from the bearing to
+  the pointer, calibrated so the handle's own drawn position (straight up) is 0°.
+- **Hit-testing is now rotation-aware** (`markupToLocal`) — a rotated object's clickable region
+  rotates WITH it, not with its stored (unrotated) coordinates. ⚠️ **Genuinely proven, not assumed**:
+  a 90°-rotated wide-short rect's hit region was confirmed, by running the shipped code, to correctly
+  MISS a point inside its stored box and HIT a point outside it once rotated — the exact case a
+  naive "rotate the object, forget the hit-test" implementation would get backwards.
+- ⚠️ **DOM updates during a drag are in-place attribute writes, never a re-render** — replacing the
+  canvas/DOM mid-gesture would drop whatever pointer capture the drag itself just set up.
+
+### Item 7 — markup shows by default everywhere, one shared toggle
+
+Previously markup only ever rendered in the lightbox ("hidden on Gallery tiles by contract"). Now
+`thumb()` wraps any tile whose photo actually has markup in a positioned overlay canvas
+(`.pp-mkwrap`/`.pp-thumbmk`), drawn via the same `drawMarkupObjects` the editor uses, sized to the
+tile's own real rendered box. ⚠️ **Cost-gated**: only rows with `r.markup.length` get the wrapper at
+all — the overwhelming majority of tiles pay nothing extra, same discipline as the adjustments CSS
+filter. **One shared, persisted preference** (`markupGlobalVisible()`, per project) drives List,
+Gallery AND the lightbox — the lightbox's own toggle button now WRITES this shared flag (and
+re-renders the grid) instead of being a private per-session switch, and opening a photo seeds
+`lightboxMarkupVisible` FROM it instead of always defaulting to `true`. A new listbar button
+(`#pp-mkvistoggle`) gives a way to hide/show it without opening a photo first.
+- ⚠️ **Real bug caught before shipping**: `Icons.hydrate()` sets a one-time `dataset.icoDone` guard
+  and refuses to touch an element twice — re-hydrating the toggle button's icon after the FIRST
+  flip would have silently done nothing on every flip after that. Fixed by re-rendering the icon's
+  SVG directly (`Icons.svg(...)`) instead of calling `hydrate()` again.
+- ⚠️ **Scope**: List + Gallery + Lightbox only. Stack view keeps its own inline `<img>` rendering,
+  not `thumb()` — deferred given this round's size, flagged rather than silently left inconsistent.
+
+### Item 8 — the camera-angle cone: a real pie, one handle, gradient, hidden when N/A
+
+Replaces the straight-edged 2-handle triangle. `edge1_x/y`/`edge2_x/y` stay the persisted DB shape
+(no migration) — only how they're derived and manipulated changes:
+- **Shape**: a true SVG `<path>` with an ARC command (pin → edge1 → arc → edge2 → close), not a
+  3-point polygon. Fill is a radial gradient (`<radialGradient>` centred on the pin) — solid dark
+  near the pin, fading to nothing at the arc — with **no stroke at all**.
+- **One handle, sized 1/4 of the 14px pin dot (4px, was 16px)**, sitting at the sector's own
+  clockwise edge. Two DIFFERENT gestures now drive the cone, since one 2D point can't cleanly carry
+  three degrees of freedom: **dragging the SECTOR BODY** rotates only the facing direction
+  (half-width/reach untouched); **dragging the ONE handle** changes half-width (angle) and reach
+  (depth) TOGETHER — the literal "one button to adjust both" ask.
+- ⚠️ **Double-clicking to mark "does not apply" now hides the wedge and its handle ENTIRELY** — the
+  previous grey-dashed placeholder is gone; the pin dot itself (dimmed, `pointer-events:auto` only
+  in this state) is the sole remaining thing to double-click back on. ⚠️ **Real bug caught before
+  shipping**: `.bim-pinstage-dot` is `pointer-events:none` by default (deliberately, so a click near
+  the pin passes through to the image and moves it) — without an `.is-na` override, the dot's own
+  double-click handler would have been unreachable in exactly the one state that needs it.
+- ⚠️ **Live drag updates are in-place SVG attribute writes** (`setAttribute('d', …)`,
+  `setAttribute('cx'/'cy'/'r', …)`), never innerHTML replacement — same pointer-capture reasoning as
+  item 6's resize/rotate.
+- ⚠️ **A math property proven, not assumed**: `coneParamsFromEdges` (the inverse of `edgesFromCone`)
+  resolves a cone straddling the 0°/360° seam (e.g. spanning 355°→15°) to the correct SHORT 10°
+  half-width — a naive `b2-b1` subtraction would silently produce the ~350°-wide "long way round".
+
+### Item 9 — smaller thumbnails, again
+
+"Still slow" even after real client-generated thumbnails shipped last round. `THUMB_MAXW`/
+`THUMB_JPEG_Q` (the client-generated thumbnail) and `THUMB_OPTS.transform.width`/`.quality` (the
+Storage-transform fallback) both shrunk 480→320px / quality 0.6→0.5 / 0.55→0.5. Sized for the new
+3-column phone Gallery grid (~125px/tile) rather than the old single-column layout these were
+originally tuned for. ⚠️ Kept as two independent constants (as before) — no shared-constant
+cross-reference, since `THUMB_OPTS` is defined earlier in the file than `THUMB_MAXW` and referencing
+one from the other would read `undefined` at that point in the file's execution order.
+
+### Verified
+
+**734 checks, all green** — 684 → 734 (39 new genuinely-executed geometry/behaviour checks + a
+handful of pre-existing structural assertions updated in place for shape changes this round made
+deliberately, e.g. the TOOL_ORDER count/order, the `wireMediaTypeSelector` signature). Several
+findings came from EXECUTING the real code, not from reading it:
+- The rotate-handle hit-test's exact screen position, the resize anchor-corner invariant (dragging
+  one corner must never move the opposite one), and the rotated-hit-test boundary were all confirmed
+  by running the shipped functions against hand-built fixtures — one of my OWN first-draft test
+  coordinates was wrong (computed by hand against the 6px hit-pad without accounting for it) and was
+  corrected by empirically probing the actual shipped code rather than re-deriving by hand a second
+  time. The cone's seam-straddling case (355°→15°) and its edges↔params round-trip were checked the
+  same way.
+- `node --check` clean on every touched JS file; 0 NUL bytes; CSS braces balanced (511/511); 0
+  duplicate DOM ids. Function-set diff against the prior commit: 0 lost.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. In particular: the
+real drag-to-resize/rotate pointer gestures, the on-canvas text overlay's actual positioning against
+a real rendered image, and the cone's two-gesture interaction (body-drag vs. handle-drag) are
+verified by genuine execution of the underlying math/DOM-update functions, not by driving a live
+browser session.
+
+`module.css/js`/`bim.js` → `?v=20260830e`; `assets/js/icons.js` → `?v=20260830c` (app-wide, 19 files).
+
 ## Fifth feedback round: the REAL topbar-button root cause found live, and iOS-Photos-style phone tiles (2026-08-30)
 
 Owner sent a phone screenshot: *"1. when first opening the progress photos app, the buttons for

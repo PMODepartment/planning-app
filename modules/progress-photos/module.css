@@ -203,6 +203,14 @@
   display: flex; align-items: center; justify-content: center;
   color: var(--pd-muted); cursor: default;
 }
+/* Fifth round item 7 — markup shows on List/Gallery tiles by default now,
+   not only in the lightbox. inline-block so the wrapper takes exactly the
+   photo's own box (whatever cls's own width/height/aspect-ratio rule gives
+   it) rather than forcing block/full-width in a flex or grid cell; the
+   overlay canvas is pointer-events:none so it never intercepts the tile's
+   own click-to-open. */
+.pp-mkwrap { position: relative; display: inline-block; max-width: 100%; }
+.pp-thumbmk { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 /* ---- Icon buttons (used by the lightbox tools + PPR's own row actions) --- */
 .pp-iconbtn {
@@ -290,6 +298,22 @@
 .pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
 .pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
 
+/* Fifth round item 1: "+ Add media" as a dropdown choosing the media type up
+   front (Photo/Video/360°/3D), instead of deciding it inside the modal after
+   files may already be staged. */
+.pp-addmenu-wrap { position: relative; }
+.pp-addmenu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 150px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 4px; display: flex; flex-direction: column; gap: 2px;
+}
+.pp-addmenu-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; background: transparent;
+  color: var(--pd-ink); font-size: 13px; text-align: left; border-radius: 4px; cursor: pointer;
+}
+.pp-addmenu-item:hover:not(:disabled) { background: var(--pd-bg); }
+.pp-addmenu-item:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
+
 /* Group-by control (item 6 — now ONE shared selector living in .pp-listbar,
    not a per-view bar of its own) + the group headings both List and Gallery
    render from it. */
@@ -298,6 +322,10 @@
   font-size: 12.5px; color: var(--pd-muted);
 }
 .pp-groupby .pd-select { width: auto; }
+/* Fifth round item 7 — subtle, not filled: "markup visible" is the default/
+   common state, so this shouldn't read as an alarming always-on red button. */
+.pp-mkvistoggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; }
+.pp-mkvistoggle.is-active { color: var(--pd-red); border-color: var(--pd-red); }
 .pp-gallerygroup { margin-bottom: 20px; }
 .pp-gallerygrouphead {
   display: flex; align-items: center; gap: 9px; margin: 0 0 9px;
@@ -1023,30 +1051,29 @@
 .bim-plantree-item.no-plan .bim-plantree-dot { background: var(--pd-line); }
 @media (max-width: 820px) { .bim-withtree { grid-template-columns: 1fr; } .bim-plantree { max-height: 220px; } }
 
-/* ---- Item 28: the in-photo pin + field-of-view cone -----------------------
-   Replaces the separate circular direction widget below the plan image: the
-   cone is drawn AS A POLYGON DIRECTLY OVER the same image the pin sits on,
-   with two draggable endpoint handles at its far corners. Rendered at
-   moderate transparency so the plan/photo underneath stays legible.
-   Percentage-positioned HTML elements (pin dot, handles) — same technique
-   `.bim-pinstage-dot` already uses — so non-square images place them
-   correctly without any aspect-ratio math; only the WEDGE fill needs true
-   polygon geometry, so that alone is an SVG with a 0–100 viewBox stretched
-   `preserveAspectRatio="none"` to match, `vector-effect:non-scaling-stroke`
-   keeping its outline a constant width regardless of image aspect. */
+/* ---- Item 28 / fifth round item 8: the in-photo pin + field-of-view cone --
+   A true pie/circular-sector (an SVG <path> with an ARC, drawn by bim.js'
+   coneSvg — never a straight-edged polygon any more) directly over the same
+   image the pin sits on, with radial-gradient FILL only — dark at the pin,
+   fading to nothing at the arc — and NO stroke/border at all, per the
+   explicit ask. Percentage-positioned HTML elements (pin dot, the ONE
+   handle) — same technique `.bim-pinstage-dot` already used — so non-square
+   images place them correctly without any aspect-ratio math; only the wedge
+   itself needs true arc geometry, hence the 0–100 viewBox stretched
+   `preserveAspectRatio="none"` to match. */
 .bim-conestage { position: relative; max-width: 100%; touch-action: none; }
 .bim-conestage img { width: 100%; display: block; cursor: crosshair; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
 .bim-conestage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.bim-conewedge {
-  fill: color-mix(in srgb, var(--pd-red) 32%, transparent);
-  stroke: color-mix(in srgb, var(--pd-red) 70%, transparent);
-  vector-effect: non-scaling-stroke; stroke-width: 1.5; cursor: pointer;
-}
-.bim-conewedge.is-na { fill: color-mix(in srgb, var(--pd-muted) 22%, transparent); stroke: var(--pd-muted); stroke-dasharray: 4 3; }
+.bim-conewedge { cursor: grab; }
+.bim-conewedge:active { cursor: grabbing; }
+/* Fifth round item 8: "only 1/4 the size of the pin" — the pin dot
+   (.bim-pinstage-dot below) is 14px, so this is 4px, down from 16px. A
+   round white-fill/red-outline dot stays legible at that size against
+   almost any photo. */
 .bim-conehandle-el {
-  position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px;
-  border-radius: 50%; background: #fff; border: 2px solid var(--pd-red);
-  cursor: grab; z-index: 2; box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  position: absolute; width: 4px; height: 4px; margin: -2px 0 0 -2px;
+  border-radius: 50%; background: #fff; border: 1.5px solid var(--pd-red);
+  cursor: grab; z-index: 2; box-shadow: 0 1px 2px rgba(0, 0, 0, .5);
 }
 .bim-conehandle-el:active { cursor: grabbing; }
 .bim-conehint { font-size: 12px; color: var(--pd-muted); margin: 6px 0 0; }
@@ -1054,6 +1081,17 @@
   display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
   color: var(--pd-muted); margin-top: 4px;
 }
+/* Fifth round item 8: "does not apply" now hides the wedge ENTIRELY (bim.js
+   stops rendering it, rather than this class dimming a still-visible
+   placeholder) — the pin dot itself is the only thing marking the spot, and
+   it dims slightly so a top-view photo's pin doesn't compete visually with
+   ordinary directional ones. */
+/* ⚠️ .bim-pinstage-dot is pointer-events:none by default (deliberately — a
+   click near the pin should pass through to the image underneath and move
+   it, not be swallowed by the dot). When NA is set the wedge is gone, so the
+   dot is the ONLY thing left to double-click back on — auto here is what
+   actually makes that dblclick handler reachable at all. */
+.bim-pinstage-dot.is-na { opacity: .55; pointer-events: auto; cursor: pointer; }
 
 /* ---- Item 21: per-pane Key Plan icon + popup ------------------------------
    A small icon anchored to the top-right of EACH pane's own image (not a
@@ -1196,17 +1234,42 @@
 }
 .pp-mk-width span { border-radius: 50%; background: currentColor; display: block; }
 .pp-mk-width.active { border-color: var(--pd-red); color: var(--pd-red); }
-.pp-mk-fillrow { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--pd-muted); }
-.pp-mk-fillrow input[type=range] { width: 80px; }
+/* Fifth round item 2: Line (colour+weight) and Fill (colour+transparency)
+   are now two visually SEPARATE labelled groups, replacing the bare
+   `.pp-mk-fillrow` that used to sit right beside the border-colour swatches
+   with nothing distinguishing the two — "the current UI almost mixes the
+   two up." A light bordered box + a small caps-label per group. */
+.pp-mk-group {
+  display: flex; align-items: center; gap: 8px; padding: 4px 10px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+}
+.pp-mk-grouplabel {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--pd-muted); white-space: nowrap;
+}
+.pp-mk-group-fill input[type=range] { width: 70px; }
+.pp-mk-group-fill label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--pd-ink); white-space: nowrap; }
 /* Fourth round, item 3: fill colour is a SECOND, independent swatch row
    nested in the fill controls — smaller than the main border-colour row so
    the two are visually distinct at a glance (border = the bigger swatches
    in the main toolbar row; fill = these, right beside the Fill checkbox). */
 .pp-mk-fillcolors { display: flex; gap: 4px; }
 .pp-mk-fillcolors .pp-mk-swatch { width: 18px; height: 18px; }
+.pp-mk-group-text input[type=range] { width: 100px; }
 .pp-mk-canvaswrap { position: relative; max-width: 100%; touch-action: none; }
 .pp-mk-canvaswrap img { width: 100%; display: block; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
 .pp-mk-canvaswrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+/* Fifth round item 5: real on-canvas typing, replacing the browser prompt().
+   Positioned/sized by openTextEditAt() in module.js; a plain outline (no
+   solid fill of its own — the object's OWN fill, if any, is set as this
+   element's background live) makes clear it's an active input, not a second
+   rendering of the committed text underneath. min-width keeps an
+   empty/just-started box grabbable/visible before anything's typed. */
+.pp-mk-textedit {
+  position: absolute; min-width: 60px; min-height: 1.3em; padding: 2px 4px;
+  font: 700 18px Montserrat, Arial, sans-serif; line-height: 1.15; white-space: pre-wrap; word-break: break-word;
+  outline: 2px solid var(--pd-red); border-radius: 2px; cursor: text; touch-action: none;
+}
 
 /* ---- Item 5 (fourth round): exposure/brightness/contrast/sharpness ------- */
 .pp-adj-sliders { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
