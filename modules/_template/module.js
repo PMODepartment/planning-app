@@ -17,7 +17,7 @@ window.MyModule = (function () {
     profile = prof;
     await loadProjects();
     document.getElementById('btn-add').onclick = onAdd;
-    document.getElementById('project-picker').onchange = function (e) {
+    document.getElementById('tpl-project').onchange = function (e) {
       pid = e.target.value;
       sessionStorage.setItem('pd_project', pid);   // shared project context
       load();
@@ -27,13 +27,14 @@ window.MyModule = (function () {
 
   async function loadProjects() {
     var projects = await PDb.getProjects();
-    var sel = document.getElementById('project-picker');
+    var sel = document.getElementById('tpl-project');
     pid = sessionStorage.getItem('pd_project') || (projects[0] && projects[0].id) || null;
     sel.innerHTML = '<option value="">Select project…</option>' +
       projects.map(function (p) {
         return '<option value="' + p.id + '"' + (p.id === pid ? ' selected' : '') + '>' +
           Fmt.esc(p.name) + '</option>';
       }).join('');
+    UI.enhanceProjectSelect(sel);   // shared searchable, group-head-grouped project picker
   }
 
   async function load() {
