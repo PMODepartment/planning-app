@@ -2,6 +2,98 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Fifth feedback round: the REAL topbar-button root cause found live, and iOS-Photos-style phone tiles (2026-08-30)
+
+Owner sent a phone screenshot: *"1. when first opening the progress photos app, the buttons for
+the gallery tab are still not right. 2. loading of photos preview is also quite slow. photo
+previews in the gallery view can be smaller. in a phone view, copy size of ios photo gallery"*.
+Item 1 is the SAME defect the fourth-round entry below reported as "no code-level cause found" —
+that conclusion was wrong, and this time it was chased down live in a real browser instead of by
+static tracing.
+
+### ⚠️ THE REAL ROOT CAUSE — `render()` hardcoded `syncTools(true)` in BOTH ppr.js and bim.js
+
+Reproduced live on the deployed site (Chrome, real session): `getComputedStyle` on `#ppr-new` and
+`#bim-new` while sitting on the **Gallery** screen showed **`display: flex`** on both — all three
+topbar buttons ("+ Add media", "+ New Presentation", "+ Upload floor plan") visible at once,
+exactly the screenshot. No console error at all — nothing threw.
+
+Isolated the cause by calling `PPR._syncTools(false)` directly in the live page: it correctly hid
+both buttons with **zero errors**, proving `syncTools` itself was never the bug — the fourth
+round's `safeInit`/`safeSync` hardening had been solving a problem that didn't exist, while the
+real one hid in plain sight one call deeper. Fetching the live `ppr.js`/`bim.js` source and
+grepping every `syncTools(` call site found it: **`render()` in both files calls
+`syncTools(true)` unconditionally**, on *every* re-render — including the one triggered by their
+own **async `load()` completing**, which runs well after `index.html`'s `setScreen()` has already
+correctly called `PPR._syncTools(false)` / `BIM._syncTools(false)` because the active screen is
+Gallery, not Presentations/Plans. The async re-render silently threw that decision away and
+re-showed the button. Every other `syncTools(...)` call site in `ppr.js` already replays a cached
+`toolsVisible` (`syncTools(toolsVisible)`, e.g. the checkbox-select handlers) — `render()` was the
+one place that didn't, and `bim.js` had no such cache at all.
+
+- Fixed identically in both files: `render()` now calls `syncTools(toolsVisible)`. `bim.js` gained
+  the `toolsVisible` module variable it never had (ppr.js already had one).
+- ⚠️ **Why the fourth round's `safeInit`/`safeSync` hardening never caught this**: nothing throws
+  here — it's a plain logic error, and a try/catch around a call that succeeds catches nothing.
+  That hardening is still worth keeping (a genuinely different module could still misbehave and
+  strand another's button), but it was never going to fix this class of bug on its own.
+- ⚠️ **Verification trap, found and fixed in the course of proving this**: the harness's `canWrite`
+  defaults to `false` (no `init()`/session is exercised), and every real button `syncTools` touches
+  is *also* gated on `canWrite` — so with `canWrite` false, `syncTools(true)` (the bug) and
+  `syncTools(toolsVisible)` (the fix) are **indistinguishable**: both compute to `'none'` regardless.
+  A first draft of the genuine-execution test therefore passed against the **buggy** code too,
+  proving nothing — confirmed by actually reverting both files and re-running. New test-only
+  `_setCanWrite(v)` hooks (both files) make the two states differ, so the test can tell them apart.
+- ⚠️ **A second trap while re-verifying against the reverted code**: a throwaway Python revert
+  script wrote the file back out in Python's default Windows text mode, which silently converts
+  every `\n` to `\r\n` on write — inflating the whole file and breaking six *unrelated* pre-existing
+  regex assertions that match a literal `\n` (e.g. `hydrate\(\);\n  \}`), producing a wall of
+  spurious failures that had nothing to do with the change being tested. Diagnosed by diffing with
+  `--strip-trailing-cr` (showed only the one intended line differed) and confirming determinism.
+  **For any future revert-and-re-test cycle on this repo: use `sed -i` or the Edit/Write tools, never
+  raw Python `open(...).write()`, on Windows** — it silently corrupts line endings.
+- **Verified: 6 new checks genuinely executing the real code** (`PPR._render()`/`BIM._render()`,
+  new test-only hooks alongside `_setCanWrite`) — confirmed by reverting to `syncTools(true)` and
+  re-running: **both execution assertions fail against the pre-fix code, both pass against the
+  fix**, isolated from the `canWrite` masking trap above. Plus 2 source-level regex regression
+  guards. Function-set diff against `main`: **0 lost, 0 named-function additions** (the two new
+  hooks are anonymous export-object properties, the same under-counting this file's own convention
+  already notes elsewhere). 0 NUL bytes; both files parse.
+
+### Item 2 (phone tiles) — Gallery view now matches iOS Photos' own dense small-square grid
+
+The phone `@media (max-width: 700px)` block previously collapsed `.pp-gallery` to **one full-width
+column** (`grid-template-columns: 1fr`) — the opposite of what was asked, and also the reason
+"loading is slow" read as worse than it is: every tile filled the whole screen, so scrolling past
+a handful felt like a lot of loading for not much scanned.
+- **Three columns, a 2px hairline gap, square-cropped tiles** (`aspect-ratio: 1` on `.pp-cardphoto`/
+  `.pp-vidthumb`/the no-image placeholder, replacing the desktop's fixed 210px rectangle) — the
+  recognisable iOS Photos shape. Only inside the phone media query; desktop's 290px-minmax card
+  grid is untouched.
+- ⚠️ **Card chrome (border/border-radius/background) drops to nothing at rest on phone**, so tiles
+  sit edge-to-edge the way the real app's do — the existing `.pp-card.pp-selrow` red-border
+  selection rule still works unmodified, it simply has nothing to override at rest any more (a
+  2px border is added only when a tile is actually selected).
+- The corner overlays (`.pp-cardsel`'s select checkbox, `.pp-pinbtn`'s key-plan badge) shrink to
+  match — sized for a 210px desktop tile, either would cover close to a third of a ~120px phone tile.
+- **Verified: 6 new checks** against the real `module.css`, scoped to the phone media-query block
+  specifically (sliced from its own start to end-of-file) so an identically-named desktop rule
+  elsewhere in the file can't produce a false pass. Confirmed to bite: reverted just the
+  `.pp-gallery` grid line via `sed` (byte-safe on Windows, unlike Python's default text mode) and
+  re-ran — both the "multi-column" and "hairline gap" assertions fail against the old line, and
+  nothing else in the 690-check suite is disturbed. CSS braces balanced (498/498).
+
+### Verified (whole round)
+
+690 checks, all green, executing the shipped functions. `node --check` clean on `ppr.js`/`bim.js`/
+`test.js`; 0 NUL bytes across every touched file; CSS braces balanced.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. This round's
+fix WAS, however, reproduced and diagnosed live (Chrome DevTools-equivalent inspection of the
+actual deployed site), which is a step beyond this module's usual "structural only" verification
+for exactly the class of bug (an async-timing interaction) that structural checks alone had missed
+twice before.
+
 ## Fourth feedback round: 7 items — real thumbnails, the wireLocFields regression, markup select/line/polygon, photo adjustments (2026-08-30)
 
 **Run `migrations/2026-08-30-photos-round3.sql`.**

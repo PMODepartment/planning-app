@@ -190,6 +190,11 @@ const documentStub = {
  // bim.js's own screen host (audit section [35]'s _load hook needs it, or
  // load() bails at its very first line before exercising anything).
  'bim-view',
+ // syncTools(true)-regression section — bim-new wasn't in this list before
+ // that fix, so document.getElementById('bim-new') returned null and
+ // syncTools's `if ($('bim-new'))` guard silently no-op'd, which would have
+ // let a broken fix look like it passed.
+ 'bim-new',
  // ppr.js's preview pane (audit section [35]'s _renderPreviewWithState hook).
  'ppr-preview-body',
 ].forEach(ensure);
@@ -2496,6 +2501,80 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('migrations/2026-08-30-photos-round3.sql adds progress_photos.thumb_url, idempotently',
      /alter table progress_photos add column if not exists thumb_url text;/.test(
        fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-30-photos-round3.sql'), 'utf8')));
+
+  // [36] Root-cause fix (2026-08-30, live-reproduced): render() in BOTH
+  // ppr.js and bim.js was calling `syncTools(true)` UNCONDITIONALLY on every
+  // re-render — including the one triggered by their own async load()
+  // completing — silently overriding whatever index.html's setScreen() had
+  // already correctly set moments earlier via PPR._syncTools(false) /
+  // BIM._syncTools(false). This is the actual cause of "the buttons for the
+  // Gallery tab are still not right": confirmed live in a real browser via
+  // getComputedStyle (both ppr-new and bim-new read display:flex on the
+  // Gallery screen), then isolated by manually calling PPR._syncTools(false)
+  // — which correctly hid both buttons with no error — proving the bug was
+  // never inside syncTools itself, only in what called it afterward with a
+  // hardcoded true. GENUINELY EXECUTED below (not just regex-checked): both
+  // fixes are proven by actually running the real render() function and
+  // confirming a prior _syncTools(false) call survives it, which is exactly
+  // what the pre-fix `syncTools(true)` could never do.
+  {
+    // ⚠️ Both real buttons are ALSO role-gated (canWrite), which defaults to
+    // false in this harness since no init()/session is exercised here. Left
+    // at false, `syncTools(true)` (the bug) and `syncTools(toolsVisible)`
+    // (the fix) are INDISTINGUISHABLE — both compute to 'none' regardless,
+    // because `visible && canWrite` is false either way. That would make
+    // this test pass against the buggy code too, proving nothing. Confirmed
+    // by actually reverting both files to `syncTools(true)` and re-running:
+    // without _setCanWrite(true) below, these two assertions kept passing
+    // even against the bug — only the source-level regex checks caught it.
+    // _setCanWrite(true) is what makes the fixed and buggy behaviour differ.
+    PPR._setCanWrite(true);
+    PPR._syncTools(false);
+    eq('PPR._syncTools(false) hides "+ New Presentation" (proves the function itself was never the bug)',
+       byId['ppr-new'].style.display, 'none');
+    PPR._render();
+    eq('a PPR render() AFTER that — simulating load()\'s own async completion — must NOT re-show it; this line fails against the pre-fix `syncTools(true)`',
+       byId['ppr-new'].style.display, 'none');
+    PPR._setCanWrite(false);
+
+    BIM._setCanWrite(true);
+    BIM._syncTools(false);
+    eq('BIM._syncTools(false) hides "+ Upload floor plan" (proves the function itself was never the bug)',
+       byId['bim-new'].style.display, 'none');
+    BIM._render();
+    eq('a BIM render() AFTER that — simulating load()\'s own async completion — must NOT re-show it; this line fails against the pre-fix `syncTools(true)`',
+       byId['bim-new'].style.display, 'none');
+    BIM._setCanWrite(false);
+  }
+  ok('ppr.js\'s render() replays toolsVisible, not a hardcoded true (source-level regression guard alongside the execution proof above)',
+     /syncTools\(toolsVisible\);\s*\n\s*if \(screen === 'slides'\) renderSlides/.test(pjs) &&
+     !/\$\('ppr-tmpl-wrap'\)\)\.hidden = screen === 'templates';\s*\n\s*syncTools\(true\)/.test(pjs));
+  ok('bim.js\'s render() replays toolsVisible, not a hardcoded true (source-level regression guard alongside the execution proof above)',
+     /syncTools\(toolsVisible\);\s*\n\s*\n\s*if \(!plans\.length\)/.test(bmjs) &&
+     !/if \(!host\) return;\s*\n\s*syncTools\(true\)/.test(bmjs));
+
+  // [37] Gallery tiles on phone — a dense small-square grid (iOS Photos'
+  // own look), not a single full-width column (2026-08-30 owner feedback:
+  // "photo previews in the gallery view can be smaller. in a phone view,
+  // copy size of ios photo gallery"). Isolate the @media (max-width:700px)
+  // block so a rule of the same name elsewhere in the file (the desktop
+  // .pp-gallery/.pp-card definitions) can't produce a false pass.
+  {
+    const mq = css.slice(css.indexOf('@media (max-width: 700px)'));
+    ok('.pp-gallery is a multi-column grid on phone, not the old single full-width column',
+       /\.pp-gallery\s*\{\s*grid-template-columns:\s*repeat\(3,\s*1fr\);/.test(mq) &&
+       !/\.pp-gallery\s*\{\s*grid-template-columns:\s*1fr;/.test(mq));
+    ok('the phone gap is a hairline (iOS Photos-style tight grid), not the desktop 12-14px card gap',
+       /\.pp-gallery\s*\{\s*grid-template-columns:\s*repeat\(3,\s*1fr\);\s*gap:\s*2px;/.test(mq));
+    ok('tiles are square-cropped on phone (aspect-ratio:1), not the desktop fixed 210px rectangle',
+       /\.pp-cardphoto,\s*\.pp-vidthumb video\s*\{\s*aspect-ratio:\s*1;/.test(mq));
+    ok('card chrome (border/radius/background) drops out on phone so tiles sit edge-to-edge',
+       /\.pp-card\s*\{\s*border:\s*none;\s*border-radius:\s*0;\s*background:\s*transparent;\s*\}/.test(mq));
+    ok('the selected-tile indicator still works with the chrome gone (a real border reappears only when .pp-selrow is set)',
+       /\.pp-card\.pp-selrow\s*\{\s*border:\s*2px solid var\(--pd-red\);\s*\}/.test(mq));
+    ok('the corner overlays (select checkbox / pin badge) shrink to match the smaller tile, rather than covering a third of a ~120px photo at their desktop size',
+       /\.pp-cardsel,\s*\.pp-pinbtn\s*\{\s*padding:\s*2px;/.test(mq));
+  }
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
