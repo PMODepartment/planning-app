@@ -116,16 +116,16 @@
 
   // loginWithMicrosoft(): redirects to Microsoft (Azure AD) via Supabase's
   // "azure" OAuth provider. Only called from index.html (root), so the
-  // redirect target is always the root projects.html. On return, Supabase
-  // completes the session from the URL automatically (detectSessionInUrl, on
-  // by default) — the landing page just calls requireLogin() as usual, which
-  // self-heals a profile row for a first-time Microsoft sign-in the same way
-  // email sign-up does.
+  // redirect target is always the root home.html landing page. On return,
+  // Supabase completes the session from the URL automatically
+  // (detectSessionInUrl, on by default) — the landing page just calls
+  // requireLogin() as usual, which self-heals a profile row for a first-time
+  // Microsoft sign-in the same way email sign-up does.
   async function loginWithMicrosoft() {
     return getSB().auth.signInWithOAuth({
       provider: 'azure',
       options: {
-        redirectTo: location.origin + location.pathname.replace(/index\.html$/, '') + 'projects.html',
+        redirectTo: location.origin + location.pathname.replace(/index\.html$/, '') + 'home.html',
         scopes: 'email',
       },
     });
