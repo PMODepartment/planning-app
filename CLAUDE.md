@@ -84,6 +84,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-30 (e) — Follow-up: 7 module.css files still carried the dead `.X-modback` rule
+
+Owner asked for a review of the latest code to confirm the (d) entry's six feedback points were
+actually all reflected. Re-checked each of the six against the current `main` (now 16 commits past
+the (d) merge, with PR #22's schema work and #25's progress-photos rounds landed in between) —
+five held with no drift; point 4 ("no back button, anywhere") had a real gap.
+
+⚠️ **The (d) pass removed the `-modback` anchor from every module's markup and its CSS rule — but
+only checked for the rule in the 7 modules whose topbar CSS is inline in `index.html`.** Seven
+other modules (`drawing-register`, `material-submittal`, `risk-register`, `stakeholder-map`,
+`progress-photos`, `issues-lessons`, `contracts-claims`) keep their CSS in a sibling `module.css`
+instead, and the sweep that removed the dead rule never looked there — so `.X-modback { width:36px;
+height:36px; … }` sat unused in all seven, dead code left over from a button that no longer exists
+in any of their markup. Harmless (nothing referenced the class), but worth cleaning up rather than
+leaving as rot the next person has to puzzle over.
+
+Confirmed each anchor was genuinely gone from markup first (a stray `arrowLeft` icon in Progress
+Photos is an unrelated in-page "back to presentations list" control, not this button), then removed
+the seven dead rules. Re-verified all five other points too: `initModuleTopbar()`'s permanent split
+and `enhanceProjectSelect`'s Group-Head grouping are both untouched by the intervening merges; the
+`.ps-tb-row` overflow issue flagged-not-fixed in (d) is still exactly as flagged, unaffected.
+
+Verified: CSS brace-balanced on all seven touched files (unchanged proportions, confirmed per-file);
+0 remaining `.X-modback` selectors anywhere in the repo (the one `ui.js` hit is a prose comment).
+Module-local CSS only — no shared asset changed, so **no `?v=` bump**.
+
 ### 2026-08-30 (d) — App-wide: the module top bar becomes a permanent two-row split, matching PRC
 
 Owner sent screenshots comparing the PRC (Procurement) App's top bar/sidebar against ours and gave
