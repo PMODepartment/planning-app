@@ -184,9 +184,14 @@ window.MyWork = (function () {
       '<th>Lesson</th><th>Category</th><th>Captured</th></tr></thead><tbody>' + body + '</tbody></table>';
   }
 
-  // Clicking a row switches the app to that project and opens the register at the
-  // right screen. ⚠️ The project context is set FIRST — landing on the module with
-  // the previous project still selected would show someone else's register.
+  // Clicking a row switches the app to that project and opens the right module
+  // at the right screen. ⚠️ The project context is set FIRST — landing on the
+  // module with the previous project still selected would show someone else's
+  // register.
+  // ⚠️ 'mom' routes to the SEPARATE Minutes of Meeting module now (it used to be
+  // a third screen of this one) — 'issues'/'lessons' still route to Issues &
+  // Concerns, which keeps its own ?screen= param for its two remaining tabs.
+  var MW_SCREEN_MODULE = { mom: 'minutes-of-meeting', issues: 'issues-lessons', lessons: 'issues-lessons' };
   function wireRows(root) {
     var base = root.dataset.base || '';
     root.querySelectorAll('tr[data-pid]').forEach(function (tr) {
@@ -200,8 +205,10 @@ window.MyWork = (function () {
           sessionStorage.removeItem('pd_package');
           sessionStorage.removeItem('pd_package_name');
         }
-        location.href = base + 'modules/issues-lessons/index.html?screen=' +
-          encodeURIComponent(tr.dataset.screen || 'issues');
+        var screen = tr.dataset.screen || 'issues';
+        var mod = MW_SCREEN_MODULE[screen] || 'issues-lessons';
+        location.href = base + 'modules/' + mod + '/index.html' +
+          (mod === 'issues-lessons' ? '?screen=' + encodeURIComponent(screen) : '');
       };
     });
   }

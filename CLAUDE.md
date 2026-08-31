@@ -84,6 +84,185 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-31 (c) — Project-mode sidebar drops its "Portfolio" section
+
+Owner: *"from project, remove portfolio from sidebar."*
+
+- **`assets/js/ui.js` → `renderNav()`, project-mode (`else`) branch only:** the leading
+  `<div class="pd-navsec">Portfolio</div>` + "Portfolio Dashboard" link is gone; the sidebar now
+  opens directly on `<div class="pd-navsec">Project</div>` (Dashboard + the module list).
+  ⚠️ **Scoped to the project-mode branch — `mode === 'portfolio'`** (used by `projects.html`,
+  `admin.html`, `my-work.html`, `portfolio-overview`) **still shows its own "Portfolio Dashboard"
+  link**, unchanged; only a project's own sidebar (dashboard.html + every module page) drops it.
+- Not a dead end: the shared project dropdown (`UI.enhanceProjectSelect`) already offers a
+  Portfolio row from inside any project, so leaving a project for the Portfolio Dashboard is
+  still one click away — this just removes the second, always-visible path that duplicated it.
+- `.pd-navsec:first-child { padding-top: 0 }` needed no change — it applies positionally to
+  whichever section renders first, and "Project" now is that section.
+- Verified: `ui.js` parses; confirmed no page calls `renderNav(..., 'project', { active:
+  'portfolio-dashboard' })` (the only `active: 'portfolio-dashboard'` caller uses `mode:
+  'portfolio'`, unaffected).
+- Shared asset changed → **`ui.js?v=` bumped `20260831a` → `20260831c` across all 19
+  referencing HTML files** (`home.html` doesn't load `ui.js` any more, so it's not among them).
+
+### 2026-08-31 (b) — Projects page: denser rows in the list view
+
+Owner: *"in the projects list, the text size/row height of each project should be reduced."*
+Confirmed via `AskUserQuestion` this meant `projects.html` (the dedicated Project Selector), not
+`home.html`'s landing-page card list — the two are separate implementations and only one was
+in scope.
+
+- New rules scoped to `.pd-proj-table` (already layered onto the same `<table>` as the shared
+  `.pd-table` base — `class="pd-table pd-proj-table"` — so a later, equal-specificity rule here
+  wins by source order with no `!important` needed): cell padding `10px 12px` → **`6px 12px`**,
+  body text `14px` (inherited from `body`) → **`12.5px`**, header text `12px` → **`10.5px`**, the
+  project-id `<code>` chip `12px` → **`11px`**.
+- ⚠️ **Scoped deliberately to `.pd-proj-table`, not the shared `.pd-table` base** — `.pd-table` is
+  reused elsewhere in the app (e.g. `admin.html`'s Users table), and editing it directly would have
+  shrunk every other table in the app along with this one.
+- `.pd-proj-name` (no explicit font-size of its own) inherits the new 12.5px cell size for free.
+  Card view (`renderCards`) is untouched — the ask named "row height", which only applies to the
+  table-based List view (`renderList()`, the default view).
+- Verified: CSS brace-balance unchanged (414/414 before and after).
+- Shared asset changed → **`dashboard.css?v=` bumped `20260830e` → `20260831b` across all 27
+  referencing HTML files**, confirmed 0 stragglers on the old version.
+
+### 2026-08-31 — Landing page loses the shell chrome; "Home" dropped from the sidebar
+
+Owner: the `home.html` card from entry (h) below should have no sidebar/topbar around it — a pure
+picker screen, matching how the PRC screenshot it was modeled on has no app chrome either — and the
+sidebar's own "Home" link (added the same day as `home.html`, entry (g)) should go.
+
+- **`home.html`**: `<aside class="pd-sidebar">` and `<div class="pd-topbar">` (with `#user-bar`) are
+  gone; the card now sits directly in `.pd-app > .pd-content > .pd-main`, which already gave every
+  shell page its padding/background — no new wrapper needed. The matching JS calls
+  (`UI.renderUserBar`, `UI.renderNav`, `Icons.hydrate`) and their now-unused `ui.js`/`icons.js`
+  script tags are removed with them; the card itself never used a `data-ico` icon, so nothing was
+  hydrating anyway. `theme.js`'s dark/light toggle still appears — it already falls back to a
+  floating button on any page with no `.pd-topbar` (the same path the login/register pages use), so
+  removing the topbar didn't cost that control.
+  ⚠️ **Sign-out is now reachable only from inside a project/module** (the avatar menu on every other
+  shell page) — this page has no avatar any more. Not flagged as a gap: every destination from here
+  (Portfolio, a project) lands on a page with the full sidebar+topbar seconds later.
+- **`assets/js/ui.js` → `renderNav()`**: the `<a href="home.html">…Home</a>` entry is deleted from
+  **both** branches (`mode==='portfolio'` and the per-project `else`) — it was the only "Home" link in
+  the app, added alongside `home.html` itself in entry (g). `cls('home')`/`active==='home'` has no
+  remaining caller (grepped) and was the only place `home.html` was still linked from `ui.js`.
+- Verified: `home.html`'s inline `<script>` parses (`new Function`), its `<style>` block balances
+  (32/32), `node --check` on `ui.js`. ⚠️ **Not verified signed-in** — no live login is possible in
+  this environment, the standing constraint for every UI pass in this repo.
+- ⚠️ **`ui.js` is a shared asset and this is a real, visible change to every page's sidebar** (the
+  "Home" row disappears from all 19 `renderNav`-calling pages, not just `home.html`, which doesn't
+  even load `ui.js` any more) — so per this repo's own repeatedly-learned lesson (a browser caches a
+  script by its full URL; forgetting to bump the query string is how a shipped fix goes unseen),
+  `ui.js?v=` is bumped `20260830e` → `20260831a` across all 19 referencing HTML files.
+
+### 2026-08-31 — Minutes of Meeting split into its own module
+
+Owner: *"the minutes of the meeting and the issues and concerns should be two separate modules"*, with
+three concrete requirements: (1) keep the link between the two, (2) give Minutes of Meeting a List view
+and a Calendar view of every meeting on the project, (3) remove "Raise as issue" from the Add Minutes
+form and replace it with "Get from issue" — so action items for issues raised during a PPR get recorded
+by pulling them in, not by raising new ones from the minutes. **No migration** — `meeting_minutes` /
+`mom_items` are unchanged; only the code moved.
+
+**New module `modules/minutes-of-meeting/`** (`window.MinutesOfMeeting`, `config.js` key
+`minutes-of-meeting`, icon `calendar`), split out of the combined `window.IssuesLessons` module, which
+keeps Issues & Concerns + Lessons Learned as two screens (Lessons Learned stayed put — it is captured
+FROM an issue far more often than from a meeting, and a three-way split was not asked for). Full
+reasoning in both modules' own CLAUDE.md — `modules/minutes-of-meeting/CLAUDE.md` for the new module,
+`modules/issues-lessons/CLAUDE.md` for what stayed and why.
+
+- ⚠️ **The link is TWO LIGHT CROSS-MODULE READS, never a shared editor** — the same pattern every other
+  cross-module link in this app already uses (the schedule's `wpm_work_packages` mirror, Cash Flow's
+  WPM read). Minutes of Meeting reads a light copy of `issues_lessons` (for a linked item's live status
+  and the "Get from issue" picker) and of `lessons_learned` (for the "N lessons" badge); Issues &
+  Concerns keeps its existing light read of `meeting_minutes` for the "From MOM" tag. Neither module
+  writes to the other's table.
+- ⚠️ **"Raise as issue" is deleted, not hidden — and its replacement pulls in the OPPOSITE direction.**
+  The old button copied an action item's text into a brand-new `issues_lessons` row; new issues are
+  raised directly in Issues & Concerns now. **"Get from issue"** is a small searchable panel at the
+  action-items header (beside "+ Add action item") listing still-open issues not yet on this agenda,
+  each a one-click pull via `momPullOneIssue()` (factored to share its payload builder with the
+  existing bulk "+ Add all N" pull, so the two routes can't disagree). The underlying link
+  (`mom_items.issue_id → issues_lessons.id`) is unchanged — only which side creates the row reversed.
+  The auto-seed-on-a-new-minute bulk pull (still pulling every open issue quietly onto a fresh minute's
+  agenda) is untouched.
+- **List and Calendar views**, the module's new top-level way to browse every meeting on a project —
+  previously there was only the two-pane list+detail editor. List is a sortable table (Title / Type /
+  Date / Draft-or-Distributed / Action items / Recorded by, never a real name). Calendar is a
+  Monday-first month grid matching the Portfolio Overview milestones-calendar convention, with meeting
+  chips per day and Prev/Next/Today nav. ⚠️ Built on **UTC date arithmetic throughout**, matching a
+  meeting's date against its plain text rather than parsing it into a local `Date` — the local-vs-UTC
+  off-by-one this app has hit repeatedly. Selecting a meeting (or "+ New minutes") opens the existing
+  Detail editor, essentially unchanged; "← Back to meetings" returns to whichever browse mode was last
+  active. All three states are wired into the browser's own Back/Forward via `UI.bindHistoryState`.
+- Everything else in the Detail editor — the activity picker, distribute/revert, carry-over from
+  another meeting, attachments (the same private-bucket ordering rules), and the PDF export (still
+  byte-for-byte the mom-app-format sheet) — moved to the new module verbatim, unchanged in behaviour.
+
+**Shared assets touched:** `assets/js/config.js` (new MODULES entry), `assets/js/my-work.js` (the
+cross-project "My Work" page's row click now routes `data-screen="mom"` items to the new module instead
+of `issues-lessons`), `MODULE_CONTRACT.md` (module-key table). `MODULE_V` (derived from
+`modules-grid.js?v=` on `dashboard.html`/`modules.html`, per the 2026-08-25(m) stale-cache lesson) →
+`20260831a`, which is what makes the trimmed `issues-lessons/index.html` and the new module page both
+reach a browser rather than sitting behind a stale cached copy — the exact failure mode that entry
+documents.
+
+**Verified:** `node --check` clean on both modules' `module.js` and on `assets/js/my-work.js`; CSS brace
+balance confirmed on both modules' stylesheets (156/156 new, 194/194 trimmed); every class the trimmed
+`issues-lessons` JS emits still resolves to a CSS rule (a first cut over-trimmed — several `.il-mom-*`
+class names turned out to be a shared master/detail list+detail pattern **reused verbatim by Issues'
+and Lessons' own report screens**, not MoM-exclusive despite the prefix; caught by grepping actual usage
+before removing anything further, not by naming convention alone); every `mom`-prefixed function called
+in the new module resolves to a definition in the same file; grepped for every symbol the split was
+supposed to remove from `issues-lessons` (`renderMom`, `wireMom`, `momDetailHTML`, `canEditMinute`,
+`momLocked`, `MOM_BUCKET`, `momDownloadPDF`, `il-screen-mom`, `_momSel`, …) — zero remaining references.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing constraint
+for every UI pass in this repo. No live click-through of the List/Calendar views, "Get from issue", the
+cross-module lesson deep-link, or the PDF export against real data; the schema itself is unchanged from
+what the combined module already shipped against, so no new migration risk was introduced.
+
+### 2026-08-30 (h) — Landing page (`home.html`) restyled to match the Procurement Dashboard's "Select Dashboard" screen
+
+Owner shared a screenshot of the Procurement (PRC) app's post-login landing screen and asked this
+app's own landing page to match its look. `home.html` — added in entry (g) below as the plain,
+always-expanded `UI.renderNavListInto` tree — is rebuilt into a centered card: a red Megawide mark +
+"Planners Dashboard" / "Megawide Construction Corporation", a **"Select Dashboard"** heading, a
+"Hi &lt;first name&gt;! &lt;role&gt;" greeting, a red-bordered search box + a live "N projects" count,
+an always-highlighted **Portfolio — Consolidated View** row, and project rows carrying a red code pill
++ name + `location` subtitle, grouped under uppercase Group Head headers with a count pill — the same
+visual language as the PRC screenshot's status-grouped, pill-badged project cards.
+
+⚠️ **Deliberately BESPOKE markup, not a restyle of `UI.renderNavListInto`.** That function is shared by
+three other consumers — every module's `enhanceProjectSelect` popover and the shell's topbar
+`renderSwitcher` — and reshaping it into a card/pill/radio layout for this one page would risk
+regressing those compact dropdown use-cases. `home.html` now has its own small render function
+(`PDb.getProjects()`/`getGroupHeads()`, the same data source) instead.
+- ⚠️ **Grouping stayed Group-Head-based** (the app's existing data model — see entry (g)/2026-08-12),
+  restyled with the PRC screenshot's uppercase-label-plus-count-pill treatment rather than switched to
+  PRC's status ("ACTIVE") grouping, which this app has no equivalent concept for.
+- ⚠️ **Kept the existing immediate-navigate-on-click interaction** (click a project row → go straight
+  to `dashboard.html`; click Portfolio → `portfolio-overview`) rather than adopting the screenshot's
+  implied select-a-radio-then-press-"Open Dashboard" pattern — that would be a real behavior change to
+  a page every session passes through, not a visual one, and nothing indicated the current one-click
+  flow was itself a complaint.
+- ⚠️ **No "+ Add New Project" / "Sign out" added to the page.** Project creation lives in
+  `projects.html`/`admin.html`; Sign out is already one click away via the topbar avatar menu
+  (`UI.renderUserBar`) on every shell page including this one — duplicating it here would be a new
+  affordance nothing asked for.
+- The Portfolio row is drawn permanently in its "selected" visual state (pink tint, red left border,
+  filled radio) — matching the screenshot's own always-highlighted "ALL PROJECTS" row — since there is
+  no separate persisted "current view" selection to reflect.
+- Search filters by project name or ID and re-renders the grouped list + count live; the Portfolio row
+  is unaffected by the search box, since it isn't a project.
+- Verified: the inline `<script>` block parses (`new Function`), the `<style>` block's braces balance
+  (32/32). ⚠️ **Not verified signed-in** — no live login is possible in this environment, the standing
+  constraint for every UI pass in this repo.
+- No shared asset changed (`home.html` is a standalone page with its own scoped `<style>` and its own
+  small inline script) — no `?v=` bump needed anywhere else.
+
 ### 2026-08-31 — Manpower Loading: Table of Organization, Mobilization dashboard, 5 categories, schedule/location tagging, Activities×Subcontractor matrix, vertical stacking, manhours
 
 Owner's 7-item list for the Manpower Loading module (already built 2026-08-27/28): a steppable

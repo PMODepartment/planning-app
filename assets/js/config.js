@@ -46,6 +46,13 @@ window.APP_CONFIG = {
       // is told about and knows nothing about where progress photos live.
       recent: { orderBy: 'taken_at', limit: 6, columns: ['title', 'works', 'taken_at', 'location'],
                 bucket: 'progress-photos', pathCol: 'photo_url', ttl: 3600 } } },
+    // ⚠️ Minutes of Meeting and Issues & Concerns are now TWO SEPARATE MODULES
+    // (owner's explicit call) — they used to be screens in one combined module.
+    // Lessons Learned stayed with the register (a lesson is captured FROM an
+    // issue far more often than from a meeting). The link between the two is
+    // kept as light cross-module reads, not a shared editor — see each
+    // module's own CLAUDE.md.
+    { key: 'minutes-of-meeting', name: 'Minutes of Meeting',                   path: 'modules/minutes-of-meeting/index.html', icon: 'calendar',  enabled: true, dash: { table: 'meeting_minutes', unit: 'meetings', attention: { column: 'is_distributed', values: [false], label: 'draft' } } },
     { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
       metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] } ] } },
     { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',

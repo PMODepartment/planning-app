@@ -1132,7 +1132,20 @@ console.log('\n[misc] insert().select() returns the new row id');
 
   // --- Add-media type selector + video (folded in alongside Batch C) -------
   ok('mediaTypeSelectorHTML/wireMediaTypeSelector exist for the Photo/Video/360°/3D picker',
-     /function mediaTypeSelectorHTML\(idPrefix, cur\)/.test(mjs) && /function wireMediaTypeSelector\(idPrefix, onChange\)/.test(mjs));
+     /function mediaTypeSelectorHTML\(idPrefix, cur\)/.test(mjs) && /function wireMediaTypeSelector\(idPrefix, initial, onChange\)/.test(mjs));
+  // Fifth round item 1: wireMediaTypeSelector now takes an initial value (so
+  // the new "+ Add media" dropdown can pre-select Photo/Video before the
+  // modal even opens), and switching types clears whatever was already
+  // staged — the real bug behind "I switched to Video and my photo was
+  // still there".
+  ok('wireMediaTypeSelector accepts a preset initial type, not always hardcoded to photo',
+     /var cur = initial \|\| 'photo';/.test(mjs));
+  ok('switching media type clears the staged batch — revokes object URLs, drops pending markup/adjustments, resets the file input and grid',
+     /var mtype = wireMediaTypeSelector\('pp', preset\.mtype, function \(t\) \{[\s\S]{0,400}revokeStaged\(\);[\s\S]{0,100}pendingMarkup = \{\}; pendingAdjust = \{\};[\s\S]{0,100}pp-stagedgrid/.test(mjs));
+  ok('"+ Add media" is a dropdown (Photo/Video/360°/3D) — index.html carries the menu markup',
+     /pp-addmenu-wrap/.test(html) && /data-addtype="photo"/.test(html) && /data-addtype="video"/.test(html) && /data-addtype="360"/.test(html));
+  ok('picking Photo/Video from the dropdown opens the upload modal pre-set to that type',
+     /openUpload\(\{ mtype: t \}\);/.test(mjs));
   ok('the upload save payload records which kind was picked', /media_type: kind/.test(mjs));
   ok('a video renders as a real <video> element, not an <img>, in thumb()',
      /r\.media_type === 'video'/.test(mjs) && /pp-vidplay/.test(mjs));
@@ -1233,9 +1246,11 @@ console.log('\n[misc] insert().select() returns the new row id');
         // MARKUP_STICKERS Path2D branch) call these too — a real 2D canvas
         // context always has them.
         translate() { calls.push('translate'); }, scale() { calls.push('scale'); },
-        // Fourth round, item 3: the selection-outline dashed box.
-        setLineDash() { calls.push('setLineDash'); },
-        set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {},
+        // Fourth round, item 3: the selection-outline dashed box. Fifth
+        // round item 6: rect() for the resize-handle squares drawMarkupObjects
+        // now draws on a selected object.
+        setLineDash() { calls.push('setLineDash'); }, rect() { calls.push('rect'); },
+        set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {}, set globalAlpha(v) {},
       };
     }
     let c = fakeCtx();
@@ -1444,7 +1459,7 @@ console.log('\n[misc] insert().select() returns the new row id');
   console.log('\n[30] Gallery toolbar simplification, selection-mode swap, download formats, mobile filters');
 
   ok('the "+ Add photos" button is renamed "+ Add media" (item 2 — covers photo/video/360/3D from one button)',
-     /id="pp-add" title="Upload photos, video, or other media">\+ Add media</.test(html));
+     /id="pp-add" title="Upload photos, video, or other media">\s*\+ Add media/.test(html));
   ok('a comment explains WHY the capture buttons are gone and where their code still lives',
      /openCaptureModal\/openCompareModal\/openRequestForm/.test(html));
 
@@ -1656,8 +1671,15 @@ console.log('\n[misc] insert().select() returns the new row id');
   // highlighter, ruler, shapes (rect/circle/arrow), text, signature, a
   // sticker palette (reusing Equipment Loading's own plant pictograms +
   // camera/person), and an eraser.
-  ok('all thirteen iOS-style tools exist: select, pen, highlighter, line, ruler, arrow, rect, circle, polygon, text, signature, sticker(icon), eraser',
-     /var TOOL_ORDER = \['select', 'pen', 'highlighter', 'line', 'ruler', 'arrow', 'rect', 'circle',\s*\n\s*'polygon', 'text', 'signature', 'icon', 'erase'\];/.test(mjs));
+  // Fifth round item 4: reordered per the owner's explicit list and
+  // 'signature' removed as a pickable tool (twelve now, was thirteen) — the
+  // draw-time support for an EXISTING signature-type object stays (backward
+  // compatibility), only the ability to create a new one is gone.
+  ok('twelve iOS-style tools exist in the owner-specified order: select, pen, highlighter, line, arrow, rect, circle, polygon, ruler, text, sticker(icon), eraser — signature removed',
+     /var TOOL_ORDER = \['select', 'pen', 'highlighter', 'line', 'arrow', 'rect', 'circle', 'polygon', 'ruler', 'text', 'icon', 'erase'\];/.test(mjs) &&
+     !/TOOL_ICONS = \{[^}]*signature/.test(mjs));
+  ok('drawMarkupObjects can still RENDER an existing signature-type object (backward compatibility for markup saved before this round)',
+     /o\.type === 'signature' && o\.points && o\.points\.length/.test(mjs));
   ok('the sticker set reuses Equipment Loading\'s own plant pictograms verbatim (module contract forbids cross-module import, so this is a deliberate, documented duplicate)',
      /towercrane: 'M3 4h18M12 4v16M6 20h12M12 7l-7 -3M5 4v3M9 4v3M12 7v2M10\.5 9h3'/.test(mjs));
   ok('camera and person stickers exist, per the explicit ask, hand-drawn since they need more than one Path2D subpath',
@@ -1715,7 +1737,7 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('Select is the DEFAULT tool on open — a planner opening markup to review an existing photo must not start drawing by accident',
      /var tool = 'select', color = MARKUP_COLORS\[0\]/.test(mjs));
   ok('the Select tool grabs whatever markupHitTest finds under the pointer, and deselects on an empty-canvas click',
-     /if \(tool === 'select'\) \{\s*var hit = markupHitTest\(objs, p\[0\], p\[1\], canvas\.width, canvas\.height\);\s*selectedIdx = hit;/.test(mjs));
+     /var hit = markupHitTest\(objs, p\[0\], p\[1\], canvas\.width, canvas\.height\);\s*selectedIdx = hit;/.test(mjs));
   ok('dragging a selection uses translateMarkupObj against a SNAPSHOT taken at drag-start, not the live object (so a fast drag can\'t compound its own delta)',
      /dragOrig = Object\.assign\(\{\}, objs\[hit\]\); dragStart = p; drawing = true;/.test(mjs) &&
      /objs\[selectedIdx\] = translateMarkupObj\(dragOrig, p\[0\] - dragStart\[0\], p\[1\] - dragStart\[1\]\);/.test(mjs));
@@ -1724,16 +1746,18 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('a "Delete selected" button exists, separate from "Clear all", hidden until something is actually selected',
      /id="pp-mk-delsel"[\s\S]{0,60}style="display:none;"/.test(mjs));
   ok('the toolbar restyles the SELECTED object live (colour/width/fill), not just "the next new shape" — clicking a swatch after grabbing a shape changes THAT shape',
-     /if \(selectedIdx >= 0\) \{ objs\[selectedIdx\]\.color = c; pushHistory\(\); redraw\(\); \}/.test(mjs) &&
+     /if \(selectedIdx >= 0\) \{\s*objs\[selectedIdx\]\.color = c; pushHistory\(\); redraw\(\);/.test(mjs) &&
      /if \(selectedIdx >= 0\) \{ objs\[selectedIdx\]\.width = w; pushHistory\(\); redraw\(\); \}/.test(mjs));
   ok('switching to a DIFFERENT tool clears the selection, so the toolbar can\'t stay ambiguous about whether it\'s editing an old shape or setting up a new one',
-     /cancelPolygon\(\);\s*tool = this\.dataset\.tool;\s*selectedIdx = -1; syncDelBtn\(\);/.test(mjs));
+     /cancelPolygon\(\);\s*if \(editingTextIdx >= 0\) closeTextEdit\(true\);\s*tool = this\.dataset\.tool;\s*selectedIdx = -1; syncDelBtn\(\);/.test(mjs));
 
   // Fill/border colour are two independent swatch rows now.
   ok('a SEPARATE fill-colour swatch row exists (data-fillcolor), distinct from the border row (data-color)',
      /pp-mk-fillcolors" id="pp-mk-fillcolors"[\s\S]{0,300}data-fillcolor="/.test(mjs));
-  ok('the fill row shows only for shapes with a real interior (rect/circle/polygon) — never for Line/Ruler/Arrow, which have none',
-     /function fillableType\(t\) \{ return t === 'rect' \|\| t === 'circle' \|\| t === 'polygon'; \}/.test(mjs));
+  // Fifth round item 5: text is now fillable too (its background box), so
+  // fillableType gained a fourth true case alongside rect/circle/polygon.
+  ok('the fill row shows for shapes with a real interior (rect/circle/polygon) AND text (its background box) — never for Line/Ruler/Arrow, which have none',
+     /function fillableType\(t\) \{ return t === 'rect' \|\| t === 'circle' \|\| t === 'polygon' \|\| t === 'text'; \}/.test(mjs));
   ok('the tool buttons are icon-only squares now (width=height, no text-plus-icon gap) — the old label-and-icon sizing is gone',
      /\.pp-mk-tool \{\s*width: 32px; height: 32px; padding: 0;/.test(css) && !/\.pp-mk-tool \{\s*height: 32px; padding: 0 12px;/.test(css));
   ok('every tool button carries a title/aria-label naming it, since the visible content is now icon-only',
@@ -1755,8 +1779,8 @@ console.log('\n[misc] insert().select() returns the new row id');
       fillText() { calls.push('fillText'); }, measureText: () => ({ width: 40 }),
       clearRect() { calls.push('clearRect'); },
       translate() { calls.push('translate'); }, scale() { calls.push('scale'); },
-      setLineDash() { calls.push('setLineDash'); },
-      set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {},
+      setLineDash() { calls.push('setLineDash'); }, rect() { calls.push('rect'); },
+      set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set font(v) {}, set textBaseline(v) {}, set globalAlpha(v) {},
     };
   }
 
@@ -2021,7 +2045,7 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var m = openModal\(html, 900, function \(\) \{ window\.removeEventListener\('resize', sizeCanvas\); \}\);/.test(mjs) &&
      !/b\.onclick = function \(\) \{ window\.removeEventListener\('resize', sizeCanvas\); m\.close\(\); \};/.test(mjs));
   ok('the markup editor\'s Save button no longer needs its own removeEventListener either — m.close() already runs onClose',
-     /\$\('pp-mk-save'\)\.onclick = function \(\) \{\s*cancelPolygon\(\);\s*m\.close\(\);\s*if \(onSave\) onSave\(objs\);\s*\};/.test(mjs));
+     /\$\('pp-mk-save'\)\.onclick = function \(\) \{\s*cancelPolygon\(\);\s*if \(editingTextIdx >= 0\) closeTextEdit\(true\);\s*m\.close\(\);\s*if \(onSave\) onSave\(objs\);\s*\};/.test(mjs));
   ok('every OTHER openModal call in this file still passes only (html, width) — onClose is opt-in, so nothing else in the file silently changed behaviour',
      (mjs.match(/openModal\(/g) || []).length >= 8 &&
      (mjs.match(/openModal\(html, \d+\);/g) || []).length >= 6);
@@ -2575,6 +2599,131 @@ console.log('\n[misc] insert().select() returns the new row id');
     ok('the corner overlays (select checkbox / pin badge) shrink to match the smaller tile, rather than covering a third of a ~120px photo at their desktop size',
        /\.pp-cardsel,\s*\.pp-pinbtn\s*\{\s*padding:\s*2px;/.test(mq));
   }
+
+  // [38] Fifth round items 2/3/4/6/9 — markup grouping/redo/reorder, resize,
+  // rotate, and thumbnail size, genuinely executed for the pure geometry.
+  console.log('\n[38] Fifth round: markup resize/rotate math, thumbnail size, redo');
+  {
+    // Rotation: a pointer straight above the object's centre must read 0°
+    // (the rotate handle's own drawn position), and a full quarter-turn
+    // clockwise must read 90° — the two calibration points that would be
+    // silently swapped by a sign error.
+    eq('rotationFromPointer(0,-10) (straight up) is 0°', Math.round(PP._rotationFromPointer(0, -10)), 0);
+    eq('rotationFromPointer(10,0) (straight right, a quarter-turn clockwise) is 90°', Math.round(PP._rotationFromPointer(10, 0)), 90);
+    eq('rotationFromPointer(0,10) (straight down, half-turn) is 180°', Math.round(PP._rotationFromPointer(0, 10)), 180);
+
+    // rotatePointDeg: a 90° rotation around the origin must swap/negate the
+    // axes in the specific way canvas's own ctx.rotate() does, not just "some
+    // rotation" — checked against the exact expected coordinates.
+    const rp = PP._rotatePointDeg(10, 0, 0, 0, 90);
+    eq('rotatePointDeg(10,0 around 0,0, 90°) lands where ctx.rotate(90°) would draw it',
+       [Math.round(rp[0]), Math.round(rp[1])], [0, 10]);
+
+    // resizeBoxObj: dragging the 'se' corner of a rect to a new LOCAL pixel
+    // position must keep the 'nw' corner (the anchor) EXACTLY fixed, and
+    // scale the moving edges to land exactly on the drag point — the two
+    // invariants a vector editor's resize must never violate.
+    const rect = { type: 'rect', x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.3, color: '#EE3124' };
+    const resized = PP._resizeBoxObj(rect, 'se', 80, 80, 100, 100); // drag SE to (0.8, 0.8) normalized
+    eq('resizeBoxObj: dragging SE keeps NW (the anchor) exactly fixed', [resized.x0, resized.y0], [0.1, 0.1]);
+    eq('resizeBoxObj: dragging SE lands the moving corner exactly on the drop point', [resized.x1, resized.y1], [0.8, 0.8]);
+    ok('resizeBoxObj never mutates the original object', rect.x1 === 0.3);
+    const resizedNW = PP._resizeBoxObj(rect, 'nw', 5, 5, 100, 100); // drag NW toward the origin
+    eq('resizeBoxObj: dragging NW keeps SE (the opposite anchor) fixed this time', [resizedNW.x1, resizedNW.y1], [0.3, 0.3]);
+
+    // resizeSizeObj: text/icon have no box, only a font/icon SIZE — a scale
+    // of 2 must exactly double it, clamped so a wild drag can't vanish or
+    // explode it.
+    eq('resizeSizeObj doubles a text object\'s fontSize at scale=2', PP._resizeSizeObj({ type: 'text', fontSize: 18 }, 2).fontSize, 36);
+    eq('resizeSizeObj doubles an icon\'s size at scale=2', PP._resizeSizeObj({ type: 'icon', size: 34 }, 2).size, 68);
+    eq('resizeSizeObj clamps a huge scale rather than exploding past the sane ceiling', PP._resizeSizeObj({ type: 'text', fontSize: 18 }, 100).fontSize, 96);
+    eq('resizeSizeObj clamps a tiny scale rather than vanishing to 0', PP._resizeSizeObj({ type: 'text', fontSize: 18 }, 0.01).fontSize, 8);
+
+    // markupCenterPx / markupHandleHit: the rotate handle drawn ABOVE a
+    // rect's bounding box must actually register a hit there, and a click
+    // far from every handle must report none — proving hitTestHandles isn't
+    // just returning something for any click.
+    const rectObj = { type: 'rect', x0: 0.2, y0: 0.2, x1: 0.4, y1: 0.4 };
+    const center = PP._markupCenterPx(rectObj, 100, 100);
+    eq('markupCenterPx finds the true centre of a rect\'s bounding box', [center.cx, center.cy], [30, 30]);
+    // The rotate handle sits at box.y0 - pad(8) - 24 = 20-32 = -12 (box.y0
+    // here is 0.2*100=20) — computed from markupHandleRectsLocal's own
+    // formula, not assumed, so a future change to that offset re-derives
+    // this expectation rather than silently going stale.
+    eq('markupHandleHit finds the rotate handle at the position drawMarkupObjects itself draws it (above the box, on the vertical centre line)',
+       PP._markupHandleHit(rectObj, 30, -12, 100, 100), 'rotate');
+    eq('markupHandleHit finds the SE corner handle', PP._markupHandleHit(rectObj, 48, 48, 100, 100), 'se');
+    eq('markupHandleHit returns null far from every handle (not just "the nearest one, however far")', PP._markupHandleHit(rectObj, 70, 70, 100, 100), null);
+
+    // markupHitTest is now rotation-aware — a 90°-rotated rect's hit region
+    // must ROTATE WITH IT: a point that was outside the un-rotated box but
+    // is now inside the rotated one must hit, and vice versa.
+    const rotRect = { type: 'rect', x0: 0.4, y0: 0.45, x1: 0.6, y1: 0.55, rotation: 90 }; // a wide, short rect
+    // Un-rotated this is wide (px 40-60 x, 45-55 y) — rotated 90° around its
+    // own centre (50,50) it becomes TALL instead (45-55 x, 40-60 y), the
+    // dimensions swapped. Both test points confirmed by running the ACTUAL
+    // shipped hit-test against this exact fixture (and its un-rotated twin)
+    // rather than hand-derived — the 6px hit-pad makes the true boundary a
+    // few pixels off from the naive box maths.
+    eq('markupHitTest finds a rotated rect where its ROTATED shape now sits, not its stored (unrotated) coordinates — (0.5,0.35) misses the plain box but hits once rotated',
+       PP._markupHitTest([rotRect], 0.50, 0.35, 100, 100), 0);
+    eq('markupHitTest correctly MISSES a point that is inside the unrotated box but outside the same rect once rotated 90° — (0.36,0.5) hits the plain box but misses once rotated',
+       PP._markupHitTest([rotRect], 0.36, 0.50, 100, 100), -1);
+  }
+  eq('thumbUrlOf/thumbCache/THUMB_OPTS width shrunk 480->320 for both the client thumbnail and the Storage-transform fallback (item 9 — still slow even after real thumbnails)',
+     (/var THUMB_MAXW = 320, THUMB_JPEG_Q = 0\.5;/.test(mjs) && /transform: \{ width: 320, quality: 50, resize: 'contain' \}/.test(mjs)), true);
+  ok('markup now shows on Gallery/List tiles by default — thumb() wraps a marked-up photo in a positioned overlay canvas',
+     /if \(r\.markup && r\.markup\.length && markupGlobalVisible\(\)\) \{/.test(mjs) && /pp-thumbmk/.test(mjs));
+  ok('...gated by ONE shared, persisted preference read from localStorage, per project',
+     /function markupGlobalVisible\(\) \{/.test(mjs) && /function markupVisKey\(\) \{ return 'pp_markupvis_' \+ pid; \}/.test(mjs));
+  ok('the lightbox\'s own markup toggle now WRITES the shared preference too, so hiding it there hides it on every tile',
+     /lightboxMarkupVisible = !lightboxMarkupVisible;\s*setMarkupGlobalVisible\(lightboxMarkupVisible\);/.test(mjs));
+  ok('a Redo button exists beside Undo, and popping its stack restores exactly what Undo just removed',
+     /id="pp-mk-redo"/.test(mjs) && /if \(!undone\.length\) return;\s*history\.push\(undone\.pop\(\)\);/.test(mjs));
+  ok('Line/Fill/Text-size controls are visually grouped (item 2) — each carries its own uppercase caption, not three unlabelled rows side by side',
+     /pp-mk-group-line/.test(mjs) && /pp-mk-group-fill/.test(mjs) && /pp-mk-group-text/.test(mjs) && /pp-mk-grouplabel/.test(css));
+  ok('text entry is now direct on-canvas typing (a real contenteditable overlay), not a browser prompt()',
+     /id="pp-mk-textedit" contenteditable="true"/.test(mjs) && !/prompt\('Text:'\)/.test(mjs));
+  ok('double-clicking an existing text object (select tool) reopens it for direct editing, rather than only being settable once at creation',
+     /tool === 'select' && selectedIdx >= 0 && objs\[selectedIdx\]\.type === 'text'\) \{[\s\S]{0,80}openTextEditAt\(selectedIdx\);/.test(mjs));
+
+  console.log('\n[39] Fifth round item 8 — the pie-shaped cone, single handle, gradient fill');
+  {
+    // coneParamsFromEdges: a cone symmetric around a known bearing must
+    // report that EXACT bearing as its direction and the correct half-width
+    // — the inverse of edgesFromCone, so composing the two must round-trip.
+    const px = 0.5, py = 0.5;
+    const edges0 = BIM._edgesFromCone(px, py, 90, 25, 0.2); // facing due "east" (bearing 90), 25° half-width
+    const back = BIM._coneParamsFromEdges(px, py, edges0.e1x, edges0.e1y, edges0.e2x, edges0.e2y);
+    eq('edgesFromCone -> coneParamsFromEdges round-trips the direction exactly', Math.round(back.dir), 90);
+    eq('...and the half-width exactly', Math.round(back.halfW), 25);
+    ok('...and a reach close to what was asked for (within floating-point rounding)', Math.abs(back.reach - 0.2) < 0.001);
+
+    // A cone straddling the 0°/360° seam must resolve to the SHORT way
+    // round (a few degrees), never the ~360°-wide "long way" a naive
+    // (b2-b1) subtraction would silently produce.
+    const edgesSeam = BIM._edgesFromCone(px, py, 5, 10, 0.2); // direction 5°, spans from -5° (355°) to 15°
+    const seamBack = BIM._coneParamsFromEdges(px, py, edgesSeam.e1x, edgesSeam.e1y, edgesSeam.e2x, edgesSeam.e2y);
+    eq('coneParamsFromEdges resolves a seam-straddling cone (355°..15°) to the short 10° half-width, not ~350°', Math.round(seamBack.halfW), 10);
+  }
+  ok('the wedge is a true pie/circular-sector SVG path with an ARC command, not a straight-edged 3-point polygon',
+     /d="M ' \+ P\[0\] \+ ',' \+ P\[1\] \+ ' L ' \+ E1\[0\] \+ ',' \+ E1\[1\] \+ ' A '/.test(bmjs));
+  ok('the wedge fill is a radial gradient (dark at the pin, fading to nothing at the arc), and carries NO stroke at all',
+     /radialGradient id="' \+ gradId/.test(bmjs) && /stop-opacity:\.85/.test(bmjs) && /stop-opacity:0/.test(bmjs) && /stroke="none"/.test(bmjs));
+  ok('there is now exactly ONE draggable handle (was two independent edge handles)',
+     (bmjs.match(/bim-conehandle-el/g) || []).length > 0 && !/data-h="2"/.test(bmjs));
+  ok('the handle is sized to 1/4 of the 14px pin dot (4px, was 16px)',
+     /\.bim-conehandle-el \{\s*position: absolute; width: 4px; height: 4px;/.test(css));
+  ok('"does not apply" now hides the wedge and its handle ENTIRELY (bim.js stops rendering them), not a dimmed placeholder',
+     /\(s\.na \? '' : coneSvg\(/.test(bmjs) && /\(s\.na \? '' : '<div class="bim-conehandle-el"/.test(bmjs));
+  ok('double-clicking the PIN DOT itself toggles NA back off once the wedge is gone (the only thing left to click)',
+     /if \(dot\) dot\.ondblclick = toggleNA;/.test(bmjs));
+  ok('dragging the sector BODY changes only the facing direction (halfWidth/reach untouched)',
+     /Dragging the SECTOR BODY changes only the facing DIRECTION/.test(bmjs) && /var newDir = bearingFromTo\(cur\.x, cur\.y, n\.x, n\.y\);/.test(bmjs));
+  ok('dragging the ONE handle changes both half-width (angle) and reach (depth) together — "one button… both"',
+     /var newHalfW = Math\.max\(4, Math\.min\(88, Math\.abs\(diff\)\)\);/.test(bmjs) && /var newReach = Math\.max\(0\.02,/.test(bmjs));
+  ok('resize/rotate DOM updates during a drag are IN-PLACE attribute writes (setAttribute\'d), never innerHTML — replacing the DOM mid-gesture would drop the pointer capture the drag itself just set up',
+     /function paintConeLive\(cur\)/.test(bmjs) && /wedge\.setAttribute\('d',/.test(bmjs));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

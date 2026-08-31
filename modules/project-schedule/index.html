@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260830e" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260831b" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -66,7 +66,14 @@
     .ps-fresh-live { color:var(--pd-ok); background:rgba(31,143,78,.12); }
     .ps-fresh-live::before { background:var(--pd-ok); }
     @keyframes ps-fresh-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
-    .ps-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; min-width:0;
+    /* ⚠️ No flex-wrap here originally — every control (undo/redo/File▾/Reports/Health/filter/
+       refresh) stayed on one nowrap line and, once .pd-modulebar's own width couldn't fit them
+       all, silently overflowed PAST the module bar with nothing to catch it — spilling into and
+       visually colliding with .ps-toolbar's row in .pd-main just below (the "crowded/overlapping
+       Actions ▾ / + Add activity / File ▾ / Reports / Health" report at narrow widths). Wrapping
+       lets this cluster grow to a second internal line instead, which .pd-modulebar (itself
+       flex-wrap:wrap) then sizes around correctly. */
+    .ps-topbar-tools { display:flex; flex-wrap:wrap; row-gap:4px; align-items:center; gap:4px; min-width:0;
       padding-left:10px; margin-left:auto; border-left:1px solid var(--pd-line); }
     .ps-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
     /* Labeled tool buttons (File / Reports / Health) — auto width with icon + word so they don't read as mystery icons */
@@ -3105,12 +3112,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260828b"></script>
+<script src="../../assets/js/config.js?v=20260831a"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
 <script src="../../assets/js/db.js?v=20260827c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260830e"></script>
-<script src="../../assets/js/icons.js?v=20260830b"></script>
+<script src="../../assets/js/ui.js?v=20260831c"></script>
+<script src="../../assets/js/icons.js?v=20260830c"></script>
 <script src="../../assets/js/calendar.js?v=20260824a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
