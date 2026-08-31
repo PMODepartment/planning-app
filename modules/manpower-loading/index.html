@@ -181,6 +181,8 @@
        11px text, which needs 4.5:1. Darkened to 6.4:1. */
     .mp-badge.mp-vac { background:var(--pd-red-light); color:#A81F17; }
     .mp-badge.mp-fill { background:#E7F7EE; color:#1B7F4B; }
+    /* Subcontractors — a third category badge, distinct from the skilled-trade blue. */
+    .mp-badge.mp-subcon { background:#F3EAFB; color:#6B2FA8; }
     /* ⚠️ The dark rules MUST restate the text colour, not only the tint. Darkening the
        background while leaving the light theme's ink measured 2.98:1 (skilled) and 2.86:1
        (filled) on an 11px badge — under the 4.5:1 that size needs. Same defect the equipment
@@ -188,6 +190,22 @@
     html.pd-dark .mp-badge.mp-skill { background:#16273D; color:#7FB0F0; }
     html.pd-dark .mp-badge.mp-fill { background:#12301F; color:#6FD79B; }
     html.pd-dark .mp-badge.mp-vac { color:#FF9A93; }
+    html.pd-dark .mp-badge.mp-subcon { background:#2A1B3D; color:#C79EF0; }
+    .mp-linktag { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px;
+      background:var(--pd-bg); color:var(--pd-muted); display:inline-block; }
+
+    /* ---- Table of Organization ------------------------------------------------------------ */
+    .mp-org-dept-hdr { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+      color:var(--pd-muted); margin:14px 0 4px; }
+    .mp-org-box { display:flex; align-items:center; gap:10px; padding:7px 10px; margin:3px 0;
+      border:1px solid var(--pd-line); border-left:4px solid var(--pd-line); border-radius:6px;
+      background:var(--pd-card); font-size:12.5px; }
+    .mp-org-box.mp-org-crit { border-left-color:var(--pd-bad); }
+    .mp-org-box.mp-org-warn { border-left-color:var(--pd-warn); }
+    .mp-org-box.mp-org-ok   { border-left-color:var(--pd-ok); }
+    .mp-org-title { font-weight:600; flex:1; min-width:0; }
+    .mp-org-dept { color:var(--pd-muted); font-size:11px; flex:none; }
+    .mp-org-fig { font-weight:700; flex:none; min-width:70px; text-align:right; }
     .mp-actions { display:flex; gap:5px; }
     .mp-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line);
       background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
@@ -270,7 +288,10 @@
       <div class="mp-tabs" role="tablist">
         <button class="mp-tab active" data-view="loading">Loading</button>
         <button class="mp-tab" data-view="register">Positions</button>
+        <button class="mp-tab" data-view="org">Org Chart</button>
         <button class="mp-tab" data-view="roster">Roster</button>
+        <button class="mp-tab" data-view="mobilization">Mobilization</button>
+        <button class="mp-tab" data-view="activities">Activities</button>
         <button class="mp-tab" data-view="portfolio">Portfolio</button>
       </div>
       <div class="mp-topbar-tools">
@@ -287,6 +308,7 @@
     <div class="pd-main">
       <div id="mp-migrate" class="mp-warn" style="display:none;"></div>
       <div id="mp-drift" class="mp-warn mp-drift" style="display:none;"></div>
+      <div id="mp-mobbanner" class="mp-warn mp-drift" style="display:none;"></div>
 
       <!-- LOADING -->
       <div id="mp-view-loading">
@@ -294,9 +316,12 @@
           <span class="mp-filt-ico" data-ico="filter" data-ico-size="15"></span>
           <label for="mp-f-work" style="font-size:12.5px;">Workforce</label>
           <select class="pd-select" id="mp-f-work">
-            <option value="">Staff + Skilled</option>
-            <option value="Staff">Staff only</option>
-            <option value="Skilled">Skilled only</option>
+            <option value="">All categories</option>
+            <option value="Shared Staff">Shared Staff</option>
+            <option value="Project Staff">Project Staff</option>
+            <option value="Skilled Admin">Skilled Admin</option>
+            <option value="Skilled Self-Performed">Skilled Self-Performed</option>
+            <option value="Subcontractors">Subcontractors</option>
           </select>
           <label for="mp-f-dept" style="font-size:12.5px;">Department</label>
           <select class="pd-select" id="mp-f-dept"><option value="">All departments</option></select>
@@ -340,6 +365,27 @@
         </div>
       </div>
 
+      <!-- ORG CHART (Table of Organization) -->
+      <div id="mp-view-org" style="display:none;">
+        <div class="mp-controls">
+          <span class="mp-filt-ico" data-ico="users" data-ico-size="15"></span>
+          <button class="pd-btn" id="mp-org-prev" title="Previous month" style="height:34px;width:34px;padding:0;">&lsaquo;</button>
+          <input class="pd-input" id="mp-org-month" type="month" style="max-width:150px;">
+          <button class="pd-btn" id="mp-org-next" title="Next month" style="height:34px;width:34px;padding:0;">&rsaquo;</button>
+          <button class="pd-btn" id="mp-org-today" style="height:34px;">Cut-off</button>
+          <span class="mp-seg" id="mp-org-mode">
+            <button data-om="planned" class="active">Planned vs Actual</button>
+            <button data-om="actual">Actual only</button>
+          </span>
+          <span class="mp-note" id="mp-org-note" style="margin-left:auto;"></span>
+        </div>
+        <div class="mp-card">
+          <h3>Table of Organization</h3>
+          <p class="mp-note" style="margin:-4px 0 12px;">Grouped by <b>reports-to</b> where a position names a manager; every other position falls back to its department. Step through the months to see the org grow, shrink and fill in.</p>
+          <div id="mp-org-tree"></div>
+        </div>
+      </div>
+
       <!-- ROSTER -->
       <div id="mp-view-roster" style="display:none;">
         <div class="mp-controls">
@@ -349,9 +395,12 @@
           <input class="pd-input" id="mp-r-search" placeholder="name or position">
           <label for="mp-r-work" style="font-size:12.5px;">Workforce</label>
           <select class="pd-select" id="mp-r-work">
-            <option value="">Staff + Skilled</option>
-            <option value="Staff">Staff only</option>
-            <option value="Skilled">Skilled only</option>
+            <option value="">All categories</option>
+            <option value="Shared Staff">Shared Staff</option>
+            <option value="Project Staff">Project Staff</option>
+            <option value="Skilled Admin">Skilled Admin</option>
+            <option value="Skilled Self-Performed">Skilled Self-Performed</option>
+            <option value="Subcontractors">Subcontractors</option>
           </select>
           <span class="mp-note" id="mp-roster-note" style="margin-left:auto;"></span>
         </div>
@@ -365,6 +414,56 @@
         </div>
       </div>
 
+      <!-- MOBILIZATION / DEMOBILIZATION DASHBOARD -->
+      <div id="mp-view-mobilization" style="display:none;">
+        <div class="mp-controls">
+          <span class="mp-filt-ico" data-ico="calendar" data-ico-size="15"></span>
+          <span class="mp-note">Mobilization = contract <b>start</b> date; demobilization = contract <b>end</b> date. Alerts are measured against today, not the schedule&rsquo;s data date — a contract does not wait for a cut-off to expire.</span>
+        </div>
+        <div class="mp-kpis" id="mp-mob-kpis"></div>
+        <div class="mp-card">
+          <h3>Mobilizing — heads coming ON contract</h3>
+          <div id="mp-mob-in"></div>
+        </div>
+        <div class="mp-card">
+          <h3>Demobilizing — heads coming OFF contract</h3>
+          <div id="mp-mob-out"></div>
+        </div>
+      </div>
+
+      <!-- ACTIVITIES × SUBCONTRACTOR MATRIX + VERTICAL STACKING -->
+      <div id="mp-view-activities" style="display:none;">
+        <div class="mp-controls">
+          <span class="mp-filt-ico" data-ico="barChart" data-ico-size="15"></span>
+          <span class="mp-note">Only <b>Skilled Self-Performed</b> and <b>Subcontractors</b> profiles can be tagged to a schedule activity + location — see &ldquo;Schedule &amp; Location&rdquo; in a profile&rsquo;s Add/Edit form.</span>
+          <span class="mp-seg" id="mp-act-view" style="margin-left:auto;">
+            <button data-av="matrix" class="active">Matrix</button>
+            <button data-av="stack">Vertical Stacking</button>
+          </span>
+        </div>
+        <div id="mp-act-matrix">
+          <div class="mp-card" style="padding:0;overflow:auto;">
+            <table class="mp-table" id="mp-act-tbl"></table>
+          </div>
+        </div>
+        <div id="mp-act-stack" style="display:none;">
+          <div class="mp-controls">
+            <label for="mp-st-level" style="font-size:12.5px;">Location level</label>
+            <select class="pd-select" id="mp-st-level"></select>
+            <label for="mp-st-tower" style="font-size:12.5px;">Value</label>
+            <select class="pd-select" id="mp-st-tower"></select>
+            <label for="mp-st-act" style="font-size:12.5px;">Activity</label>
+            <select class="pd-select" id="mp-st-act"><option value="">All linked activities</option></select>
+          </div>
+          <div class="mp-card">
+            <h3>Vertical stacking — subcontractor per location</h3>
+            <p class="mp-note" style="margin:-4px 0 12px;">Each band is a value of the <b>next</b> location level down (typically a floor), stacked in natural reading order (numeric prefix first, then alphabetical), coloured by the subcontractor/skilled crew whose location tag matches it.</p>
+            <div id="mp-stack-view"></div>
+            <div class="mp-legend" id="mp-stack-legend"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- PORTFOLIO -->
       <div id="mp-view-portfolio" style="display:none;">
         <div class="mp-controls">
@@ -373,9 +472,12 @@
           <input class="pd-input" id="mp-p-month" type="month" style="max-width:160px;">
           <label for="mp-p-work" style="font-size:12.5px;">Workforce</label>
           <select class="pd-select" id="mp-p-work">
-            <option value="">Staff + Skilled</option>
-            <option value="Staff">Staff only</option>
-            <option value="Skilled">Skilled only</option>
+            <option value="">All categories</option>
+            <option value="Shared Staff">Shared Staff</option>
+            <option value="Project Staff">Project Staff</option>
+            <option value="Skilled Admin">Skilled Admin</option>
+            <option value="Skilled Self-Performed">Skilled Self-Performed</option>
+            <option value="Subcontractors">Subcontractors</option>
           </select>
           <button class="pd-btn" id="mp-p-run" style="height:34px;"><span data-ico="refresh" data-ico-size="15"></span> Read every project</button>
           <span class="mp-seg" id="mp-p-view">
@@ -479,6 +581,8 @@
   var LOAD = {};                  // position_id -> { 'YYYY-MM-01': row }
   var ROSTER = [];                // manpower_roster for this project
   var MONTHS = {};                // 'YYYY-MM-01' -> manpower_months row (phase + costs)
+  var MANHOURS = {};              // roster_id -> { 'YYYY-MM-01': manpower_manhours row }
+  var LEVELS = [];                // location_levels for this project (Tower/Floor/Zone/…)
   var SPAN = null;                // { start, end, months[], source }
   var CUTOFF = null;              // data date, month-floored
   var needsMigration = false;
@@ -508,7 +612,20 @@
   // bands per position turns the grid into something nobody scrolls.
   var shown = { planned: true, approved: false, forecast: false, actual: true };
 
-  var WORKFORCES = ['Staff', 'Skilled'];
+  // ⚠️ Five categories, replacing the earlier Staff/Skilled split (widened, not migrated — the
+  // column is free text with no CHECK constraint, so an old 'Staff'/'Skilled' row simply reads
+  // as an unrecognised category and sorts after every seeded one, same rule as an invented
+  // department). SHARED = staff time-shared across projects (not this project's own headcount
+  // cost alone); PROJECT = staff dedicated to this project; SKILLED ADMIN = skilled trades on
+  // the company's own payroll; SKILLED SELF-PERFORMED = skilled trades performing work directly
+  // for this project (schedule/location taggable, §"Schedule & Location" below);
+  // SUBCONTRACTORS = a subcontracted crew/company (also schedule/location taggable).
+  var WORKFORCES = ['Shared Staff', 'Project Staff', 'Skilled Admin', 'Skilled Self-Performed', 'Subcontractors'];
+  // Categories whose profiles can be tagged to a schedule activity + location — the two that
+  // actually do site work under someone else's supervision or a subcontract, where "which
+  // activity, which floor" is a real, useful fact. Office-based staff have no such tag.
+  var TAGGABLE_WORK = ['Skilled Self-Performed', 'Subcontractors'];
+  function isTaggable(work) { return TAGGABLE_WORK.indexOf(work) >= 0; }
   var RANKS = ['Managerial', 'Supervisory', 'Rank & File', 'Skilled', 'Helper'];
   var EMP_STATUS = ['Full-time', 'Part-time', 'Project-based', 'Agency'];
   var ALLOCATIONS = ['FULL-TIME', 'SHARED'];
@@ -612,7 +729,7 @@
 
   // ---- Data -----------------------------------------------------------------------------
   async function load(reset) {
-    if (!pid) { POS = []; LOAD = {}; ROSTER = []; MONTHS = {}; await loadSpan(); renderAll(); return; }
+    if (!pid) { POS = []; LOAD = {}; ROSTER = []; MONTHS = {}; MANHOURS = {}; LEVELS = []; LOCVAL_CACHE = {}; await loadSpan(); renderAll(); return; }
     if (reset) showLoading('Loading manpower…');
     needsMigration = false;
     try {
@@ -633,6 +750,19 @@
         needsMigration = true; POS = []; LOAD = {}; ROSTER = []; MONTHS = {};
       } else { UI.toast('Could not load manpower: ' + (err.message || err), 'error'); }
     }
+    // ⚠️ Manhours + location levels degrade INDEPENDENTLY of the four tables above — the
+    // 2026-08-31 migration is a separate, later run than the 2026-08-27 one, and a project that
+    // has the original four tables but not yet the newer ones must still show its Loading /
+    // Positions / Roster / Portfolio tabs, just with no manhours and no schedule tagging.
+    try {
+      var mh = await PDb.selectAll('manpower_manhours', function (q) { return q.eq('project_id', pid); });
+      MANHOURS = {};
+      mh.forEach(function (r) { (MANHOURS[r.roster_id] = MANHOURS[r.roster_id] || {})[String(r.period).slice(0, 10)] = r; });
+    } catch (_e) { MANHOURS = {}; }
+    try {
+      LEVELS = await PDb.selectAll('location_levels', function (q) { return q.eq('project_id', pid); });
+    } catch (_e) { LEVELS = []; }
+    LOCVAL_CACHE = {};
     await loadSpan();
     loadCutoff();
     deriveKeyLoad();
@@ -644,6 +774,17 @@
   // Departments in the seed's own order first (that IS the org chart's order), then anything
   // the project has invented, alphabetically. Sorting departments alphabetically would put
   // HR above the Project Manager on every printout.
+  // One badge renderer for every "workforce" cell, so the three render sites (matrix rows,
+  // Positions register, Roster table) cannot disagree about which category gets which colour.
+  function workBadgeCls(work) {
+    if (work === 'Subcontractors') return ' mp-subcon';
+    if (isTaggable(work) || work === 'Skilled Admin') return ' mp-skill';
+    return '';
+  }
+  function workBadge(work) {
+    var cls = workBadgeCls(work);
+    return cls ? ' <span class="mp-badge' + cls + '">' + esc(work) + '</span>' : '';
+  }
   function deptRank(d) {
     var i = STAFF_SEED.findIndex(function (x) { return x[0] === d; });
     if (i >= 0) return i;
@@ -670,6 +811,14 @@
   // ⚠️ Deliberately only for a MISSING COLUMN: a constraint violation, an RLS refusal or a
   // bad value must still fail loudly, or a save would silently discard real data.
   var MP_MIGRATION = 'migrations/2026-08-27-manpower-loading.sql';
+  var MP_MIGRATION2 = 'migrations/2026-08-31-manpower-org-schedule-manhours.sql';
+  // ⚠️ Named per column, not one blanket file — a dropped `reports_to_id` or `link_mode` needs
+  // the SECOND migration, and pointing a planner at the first one (which already ran) sends
+  // them to re-run a file that changes nothing, same trap the contracts module's `COL_MIGRATION`
+  // map exists to avoid.
+  var MP2_COLS = { reports_to_id: 1, link_mode: 1, link_activity_id: 1, link_wbs: 1, link_label: 1,
+    link_start: 1, link_finish: 1, link_synced_at: 1, location: 1 };
+  function migrationFor(col) { return MP2_COLS[col] ? MP_MIGRATION2 : MP_MIGRATION; }
   function missingColumn(err) {
     var m = /Could not find the '([^']+)' column/i.exec((err && err.message) || '');
     return m ? m[1] : null;
@@ -689,12 +838,18 @@
     return { ok: false, error: new Error('too many missing columns'), dropped: dropped };
   }
   var mpPendingMig = false;
+  var mpPendingMig2 = false;
   function reportDropped(dropped) {
     if (!dropped || !dropped.length) return;
-    mpPendingMig = true;
+    var files = {};
+    dropped.forEach(function (c) {
+      var f = migrationFor(c);
+      files[f] = 1;
+      if (f === MP_MIGRATION) mpPendingMig = true; else mpPendingMig2 = true;
+    });
     renderMigrateBanner();
     UI.toast('Saved, but ' + dropped.length + ' field(s) were not stored (' + dropped.join(', ') +
-      ') — run ' + MP_MIGRATION + ' in the Supabase SQL editor.', 'error');
+      ') — run ' + Object.keys(files).join(' and ') + ' in the Supabase SQL editor.', 'error');
   }
   async function persist(job, msg) {
     try { var r = await job; if (r && r.error) throw r.error; return true; }
@@ -1061,8 +1216,7 @@
           h.push('<tr class="mp-r-grp"><td class="mp-c1">' + esc(d) + '</td><td class="mp-c2">&nbsp;</td>' +
             months.map(function (m) { return '<td' + (m.iso === cutIso ? ' class="mp-cut"' : '') + '></td>'; }).join('') + '</tr>');
         }
-        var label = (p.code ? '<b>' + esc(p.code) + '</b> ' : '') + esc(p.position_title) +
-          (p.workforce === 'Skilled' ? ' <span class="mp-badge mp-skill">Skilled</span>' : '');
+        var label = (p.code ? '<b>' + esc(p.code) + '</b> ' : '') + esc(p.position_title) + workBadge(p.workforce);
         bandRows(label, function (iso, k) { return qtyOf(p, iso, k); }, p.id);
       });
     } else {
@@ -1504,7 +1658,7 @@
       h.push('<tr>' +
         '<td><b>' + esc(p.code || '—') + '</b></td>' +
         '<td><b>' + esc(p.position_title) + '</b>' + (p.remarks ? '<div class="mp-note">' + esc(p.remarks) + '</div>' : '') + '</td>' +
-        '<td><span class="mp-badge' + (p.workforce === 'Skilled' ? ' mp-skill' : '') + '">' + esc(p.workforce || 'Staff') + '</span></td>' +
+        '<td><span class="mp-badge' + workBadgeCls(p.workforce) + '">' + esc(p.workforce || WORKFORCES[0]) + '</span></td>' +
         '<td>' + esc(p.job_rank || '—') + '</td>' +
         '<td class="num">' + (req == null ? '—' : fnum(req)) + '</td>' +
         '<td class="num">' + (act == null ? '—' : fnum(act)) + '</td>' +
@@ -1573,12 +1727,19 @@
           '<span class="mp-note">Unique on this project. Two lines can share a TITLE; the code is what tells them apart.</span></div>' +
         '<div class="pd-field"><label>Position title</label>' +
           '<input class="pd-input" id="f-title" value="' + esc(p && p.position_title) + '" placeholder="e.g. Field Engineer"></div>' +
-        '<div class="pd-field"><label>Workforce</label><select class="pd-select" id="f-work">' + selOpts(WORKFORCES, p && p.workforce || 'Staff') + '</select></div>' +
+        '<div class="pd-field"><label>Workforce category</label><select class="pd-select" id="f-work">' + selOpts(WORKFORCES, (p && p.workforce) || WORKFORCES[0]) + '</select></div>' +
         '<div class="pd-field"><label>Department</label><select class="pd-select" id="f-dept">' + selOpts(depts, p && p.department) + '</select></div>' +
         '<div class="pd-field"><label>Rank</label><select class="pd-select" id="f-rank"><option value="">—</option>' + selOpts(RANKS, p && p.job_rank) + '</select></div>' +
         '<div class="pd-field"><label>Cost per head-month</label>' +
           '<input class="pd-input" id="f-rate" type="number" step="any" min="0" value="' + esc(p && p.monthly_rate != null ? p.monthly_rate : '') + '">' +
           '<span class="mp-note">Used only to derive a cost curve when payroll has not been typed for the month.</span></div>' +
+        '<div class="pd-field mp-form-full"><label>Reports to</label><select class="pd-select" id="f-reports">' +
+          '<option value="">— none (group by department on the Table of Organization) —</option>' +
+          POS.filter(function (x) { return !p || x.id !== p.id; }).map(function (x) {
+            return '<option value="' + esc(x.id) + '"' + (p && String(p.reports_to_id) === String(x.id) ? ' selected' : '') + '>' +
+              esc((x.code ? x.code + ' · ' : '') + x.position_title) + '</option>';
+          }).join('') + '</select>' +
+          '<span class="mp-note">Optional. Set it on enough positions and the Table of Organization draws a real reporting-line tree instead of grouping by department.</span></div>' +
         '<div class="pd-field mp-form-full"><label>Remarks</label>' +
           '<input class="pd-input" id="f-rem" value="' + esc(p && p.remarks) + '"></div>' +
       '</div></div>' +
@@ -1614,6 +1775,7 @@
         department: g('f-dept').value,
         job_rank: g('f-rank').value || null,
         monthly_rate: num(g('f-rate').value),
+        reports_to_id: g('f-reports').value || null,
         remarks: g('f-rem').value.trim() || null
       };
       var res;
@@ -1741,11 +1903,12 @@
       '<div class="pd-modal-body">' +
         '<p class="mp-note">These become ordinary position lines you can rename, re-rank or delete. Nothing is loaded into any month — that is the grid&rsquo;s job.</p>' +
         '<div class="mp-seg" id="mp-s-which" style="margin-top:10px;">' +
-          '<button data-w="Staff" class="active">Staff</button><button data-w="Skilled">Skilled</button>' +
+          '<button data-w="Project Staff" class="active">Project Staff</button><button data-w="Skilled Self-Performed">Skilled Self-Performed</button>' +
         '</div>' +
-        '<div id="mp-s-staff">' + block('Staff — direct staffing', STAFF_SEED, 'Staff', '') + '</div>' +
-        '<div id="mp-s-skilled" style="display:none;">' + block('Skilled workers', SKILLED_SEED, 'Skilled',
+        '<div id="mp-s-staff">' + block('Project Staff — direct staffing', STAFF_SEED, 'Project Staff', '') + '</div>' +
+        '<div id="mp-s-skilled" style="display:none;">' + block('Skilled Self-Performed trades', SKILLED_SEED, 'Skilled Self-Performed',
           '&#9888; <b>Provisional list.</b> The skilled-worker reference report has not been supplied yet, so these trades are taken from the staff report&rsquo;s own demobilisation summary plus the usual rest of a building job. Correct them here, or delete and re-seed once the real list arrives.') + '</div>' +
+        '<p class="mp-note">Shared Staff, Skilled Admin and Subcontractors have no seed — there is no standard headcount to propose for them. Add those with <b>+ Add position</b>.</p>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" id="mp-s-cancel">Cancel</button>' +
@@ -1755,8 +1918,8 @@
     m.el.querySelectorAll('#mp-s-which button').forEach(function (b) {
       b.onclick = function () {
         m.el.querySelectorAll('#mp-s-which button').forEach(function (x) { x.classList.toggle('active', x === b); });
-        g('mp-s-staff').style.display = b.dataset.w === 'Staff' ? '' : 'none';
-        g('mp-s-skilled').style.display = b.dataset.w === 'Skilled' ? '' : 'none';
+        g('mp-s-staff').style.display = b.dataset.w === 'Project Staff' ? '' : 'none';
+        g('mp-s-skilled').style.display = b.dataset.w === 'Skilled Self-Performed' ? '' : 'none';
       };
     });
     // ⚠️ Codes are allocated against a list that GROWS as the batch is built, not against POS
@@ -1859,17 +2022,17 @@
       return;
     }
     var h = ['<thead><tr><th>#</th><th>Name</th><th>Position</th><th>Status</th><th>Allocation</th>' +
-      '<th>Hired</th><th>Contract</th><th class="num">Months</th><th>Remarks</th><th></th></tr></thead><tbody>'];
+      '<th>Hired</th><th>Contract</th><th class="num">Months</th><th class="num">Manhours</th><th>Tagged to</th><th>Remarks</th><th></th></tr></thead><tbody>'];
     rows.forEach(function (r, i) {
       var p = r.position_id ? posById(r.position_id) : null;
       var ce = pd_(r.contract_end);
       var ended = ce && CUTOFF && mFloor(ce) < CUTOFF;
+      var mh = mhTotal(r.id, 'actual_hours');
       h.push('<tr>' +
         '<td>' + (i + 1) + '</td>' +
         '<td><b>' + esc(r.employee_name) + '</b>' + (isTBH(r) ? ' <span class="mp-badge mp-vac">unfilled</span>' : '') +
           (ended ? ' <span class="mp-badge">demobilised</span>' : '') + '</td>' +
-        '<td>' + (p ? esc((p.code ? p.code + ' · ' : '') + p.position_title) +
-          (p.workforce === 'Skilled' ? ' <span class="mp-badge mp-skill">Skilled</span>' : '')
+        '<td>' + (p ? esc((p.code ? p.code + ' · ' : '') + p.position_title) + workBadge(p.workforce)
           : '<span class="mp-note">not linked</span>') + '</td>' +
         '<td>' + esc(r.employee_status || '—') + '</td>' +
         '<td>' + esc(r.allocation || '—') + '</td>' +
@@ -1879,6 +2042,8 @@
                   (r.contract_end ? (Fmt.date ? Fmt.date(r.contract_end) : r.contract_end) : 'open'))
             : '—') + '</td>' +
         '<td class="num">' + rosterMonthsCell(r) + '</td>' +
+        '<td class="num">' + (mh == null ? '—' : fnum(mh)) + '</td>' +
+        '<td>' + (isLinked(r) ? '<span class="mp-linktag">' + esc(r.link_label || (r.link_mode === 'activity' ? r.link_activity_id : r.link_wbs) || '') + '</span>' : '') + '</td>' +
         '<td>' + esc(r.remarks || '') + '</td>' +
         '<td><div class="mp-actions">' +
           '<button class="mp-btn-sm" data-redit="' + r.id + '">Edit</button>' +
@@ -1928,7 +2093,7 @@
     r = r || null;
     var posOpts = '<option value="">— not linked —</option>' + POS.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (r && String(r.position_id) === String(p.id) ? ' selected' : '') + '>' +
-        esc((p.code ? p.code + ' · ' : '') + p.position_title + ' (' + (p.workforce || 'Staff') + ')') + '</option>';
+        esc((p.code ? p.code + ' · ' : '') + p.position_title + ' (' + (p.workforce || WORKFORCES[0]) + ')') + '</option>';
     }).join('');
     var m = UI.modal(
       '<div class="pd-modal-header"><h2>' + (r ? 'Edit manpower profile' : 'Add manpower profile') + '</h2>' +
@@ -1951,6 +2116,22 @@
           '<div class="mp-linkrow"><input class="pd-input" id="r-mos" type="number" min="1" step="1" style="max-width:110px;" placeholder="e.g. 12">' +
             '<button type="button" class="pd-btn" id="r-mos-go" style="height:34px;">Set end date from start</button></div>' +
           '<span class="mp-dur" id="r-dur"></span></div>' +
+        '<div class="mp-form-sec mp-form-full" id="r-sched-hdr" style="display:none;">Schedule &amp; Location</div>' +
+        '<div class="pd-field mp-form-full" id="r-sched-note" style="display:none;margin-bottom:0;">' +
+          '<span class="mp-note">Only for <b>Skilled Self-Performed</b> / <b>Subcontractors</b> — this says WHICH activity and WHERE the crew works. It is a tag for the Activities matrix and vertical stacking, never a second source for the monthly headcount above.</span></div>' +
+        '<div class="pd-field mp-form-full" id="r-link-wrap" style="display:none;">' +
+          '<label>Link to</label>' +
+          '<span class="mp-seg" id="r-link-mode"><button type="button" data-lm="">None</button><button type="button" data-lm="activity">Activity</button><button type="button" data-lm="wbs">WBS branch</button></span>' +
+          '<div id="r-link-cur" class="mp-note" style="margin-top:6px;"></div>' +
+          '<div id="r-link-search-wrap" style="display:none;position:relative;margin-top:6px;">' +
+            '<input class="pd-input" id="r-link-search" placeholder="Search activity ID or name…">' +
+            '<div id="r-link-results" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:20;background:var(--pd-card);border:1px solid var(--pd-line);border-radius:8px;max-height:220px;overflow:auto;box-shadow:var(--pd-shadow);"></div>' +
+          '</div>' +
+          '<div id="r-link-wbs-wrap" style="display:none;margin-top:6px;"><input class="pd-input" id="r-link-wbs" placeholder="WBS code prefix — matches that branch and everything under it"></div>' +
+        '</div>' +
+        '<div class="pd-field mp-form-full" id="r-loc-wrap" style="display:none;"><label>Location</label><div id="r-loc-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;"></div></div>' +
+        '<div class="mp-form-sec mp-form-full" id="r-mh-hdr" style="display:none;">Manhours by month</div>' +
+        '<div class="pd-field mp-form-full" id="r-mh-wrap" style="display:none;"><div id="r-mh-body" style="max-height:220px;overflow:auto;"></div></div>' +
         '<div class="pd-field mp-form-full"><label>Remarks</label><input class="pd-input" id="r-rem" value="' + esc(r && r.remarks) + '"></div>' +
       '</div></div>' +
       '<div class="pd-modal-footer">' +
@@ -1991,6 +2172,111 @@
       syncDur();
     };
     syncDur();
+
+    // ---- Schedule & Location (Skilled Self-Performed / Subcontractors only) --------------
+    var curLink = { mode: (r && r.link_mode) || '', activityId: r && r.link_activity_id, wbs: r && r.link_wbs, label: r && r.link_label };
+    var curLoc = (r && r.location) ? JSON.parse(JSON.stringify(r.location)) : {};
+    function taggableNow() {
+      var pid2 = g('r-pos').value;
+      var p = pid2 ? posById(pid2) : null;
+      return isTaggable(p && p.workforce);
+    }
+    function syncTaggableVisibility() {
+      var on = taggableNow();
+      ['r-sched-hdr', 'r-sched-note', 'r-link-wrap', 'r-loc-wrap'].forEach(function (id) {
+        var el = g(id); if (el) el.style.display = on ? '' : 'none';
+      });
+    }
+    function renderLinkCur() {
+      var el = g('r-link-cur'); if (!el) return;
+      if (curLink.mode === 'activity' && curLink.activityId) el.innerHTML = 'Linked to activity <b>' + esc(curLink.activityId) + '</b>' + (curLink.label ? ' — ' + esc(curLink.label) : '');
+      else if (curLink.mode === 'wbs' && curLink.wbs) el.innerHTML = 'Linked to WBS branch <b>' + esc(curLink.wbs) + '</b>';
+      else el.innerHTML = '<span class="mp-note">Not linked to the schedule.</span>';
+    }
+    function syncLinkModeUi() {
+      m.el.querySelectorAll('#r-link-mode button').forEach(function (b) { b.classList.toggle('active', b.dataset.lm === curLink.mode); });
+      var sw = g('r-link-search-wrap'), ww = g('r-link-wbs-wrap');
+      if (sw) sw.style.display = curLink.mode === 'activity' ? '' : 'none';
+      if (ww) { ww.style.display = curLink.mode === 'wbs' ? '' : 'none'; if (curLink.mode === 'wbs' && g('r-link-wbs')) g('r-link-wbs').value = curLink.wbs || ''; }
+      renderLinkCur();
+    }
+    m.el.querySelectorAll('#r-link-mode button').forEach(function (b) {
+      b.onclick = function () {
+        curLink.mode = b.dataset.lm;
+        if (curLink.mode !== 'activity') { curLink.activityId = null; }
+        if (curLink.mode !== 'wbs') { curLink.wbs = null; }
+        if (!curLink.mode) curLink.label = null;
+        syncLinkModeUi();
+      };
+    });
+    var searchTimer = null;
+    if (g('r-link-search')) g('r-link-search').oninput = function (e) {
+      var term = e.target.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(async function () {
+        var res = document.body.contains(g('r-link-results')) ? g('r-link-results') : null; if (!res) return;
+        var list = await searchSchedule('activity', term);
+        if (list.error) { res.innerHTML = '<div style="padding:8px;font-size:12px;" class="mp-note">' + esc(list.error) + '</div>'; res.style.display = ''; return; }
+        if (!list.length) { res.innerHTML = '<div style="padding:8px;font-size:12px;" class="mp-note">No matching activity.</div>'; res.style.display = ''; return; }
+        res.innerHTML = list.map(function (x) {
+          return '<div class="mp-btn-sm" data-pick="' + esc(x.key) + '" data-label="' + esc(x.label) + '" style="display:block;border:none;border-radius:0;text-align:left;padding:8px 10px;cursor:pointer;">' + esc(x.label) + '</div>';
+        }).join('');
+        res.style.display = '';
+        res.querySelectorAll('[data-pick]').forEach(function (row) {
+          row.onclick = function () {
+            curLink.mode = 'activity'; curLink.activityId = row.dataset.pick; curLink.label = row.dataset.label;
+            res.style.display = 'none';
+            g('r-link-search').value = '';
+            syncLinkModeUi();
+          };
+        });
+      }, 250);
+    };
+    if (g('r-link-wbs')) g('r-link-wbs').oninput = function (e) { curLink.wbs = e.target.value.trim(); curLink.label = null; renderLinkCur(); };
+    function renderLocFields() {
+      var host = g('r-loc-fields'); if (!host) return;
+      if (!LEVELS.length) { host.innerHTML = '<span class="mp-note">This project has no Location Breakdown levels (Project Schedule &rarr; Location Breakdown).</span>'; return; }
+      host.innerHTML = LEVELS.slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); })
+        .map(function (lv) { return '<div class="pd-field" style="margin-bottom:0;"><label>' + esc(lv.name) + '</label><select class="pd-select" data-loc="' + esc(lv.id) + '"></select></div>'; }).join('');
+      LEVELS.forEach(function (lv) {
+        loadLocValues(lv.id).then(function (vals) {
+          var sel = host.querySelector('[data-loc="' + lv.id + '"]'); if (!sel) return;
+          var cur = curLoc[lv.id] || '';
+          var opts = '<option value="">—</option>' + vals.map(function (x) { return '<option value="' + esc(x.value) + '"' + (x.value === cur ? ' selected' : '') + '>' + esc(x.value) + ' (' + x.n + ')</option>'; }).join('');
+          if (cur && !vals.some(function (x) { return x.value === cur; })) opts += '<option value="' + esc(cur) + '" selected>' + esc(cur) + ' (current)</option>';
+          sel.innerHTML = opts;
+          sel.onchange = function () { curLoc[lv.id] = sel.value || null; if (!sel.value) delete curLoc[lv.id]; };
+        });
+      });
+    }
+    syncTaggableVisibility();
+    syncLinkModeUi();
+    renderLocFields();
+    g('r-pos').addEventListener('change', function () { syncTaggableVisibility(); });
+
+    // ---- Manhours by month (existing profiles only — a new row has no id to attach hours to) --
+    // ⚠️ The month range is fixed to the profile's SAVED contract dates at the moment the modal
+    // opens — it does not track the contract-start/end inputs live. Widening the contract in
+    // this same edit and then typing hours into the newly-widened months in the same sitting
+    // is not supported; re-opening Edit after Save picks up the new range. Live-tracking would
+    // mean re-fetching manhours mid-edit for a month range that keeps moving under the typist.
+    var mhDraft = {}; // iso -> { planned_hours, actual_hours }
+    if (r) {
+      var mhMonths = mhMonthsFor(r);
+      if (mhMonths.length) {
+        g('r-mh-hdr').style.display = ''; g('r-mh-wrap').style.display = '';
+        var body = g('r-mh-body');
+        body.innerHTML = '<table class="mp-mon-tbl"><thead><tr><th>Month</th><th>Planned hrs</th><th>Actual hrs</th></tr></thead><tbody>' +
+          mhMonths.map(function (mo) {
+            var row = mhOf(r.id, mo.iso);
+            mhDraft[mo.iso] = { planned_hours: row ? num(row.planned_hours) : null, actual_hours: row ? num(row.actual_hours) : null };
+            return '<tr><td>' + monLabel(mo.d) + '</td>' +
+              '<td><input type="number" step="any" min="0" data-mh="' + mo.iso + '" data-mhk="planned_hours" value="' + (mhDraft[mo.iso].planned_hours == null ? '' : mhDraft[mo.iso].planned_hours) + '"></td>' +
+              '<td><input type="number" step="any" min="0" data-mh="' + mo.iso + '" data-mhk="actual_hours" value="' + (mhDraft[mo.iso].actual_hours == null ? '' : mhDraft[mo.iso].actual_hours) + '"></td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+    }
+
     g('mp-r-x').onclick = m.close;
     g('mp-r-cancel').onclick = m.close;
     g('mp-r-save').onclick = async function () {
@@ -2009,6 +2295,17 @@
         contract_end: ce,
         remarks: g('r-rem').value.trim() || null
       };
+      // ⚠️ Only written when the section is actually offered (a taggable category is
+      // selected). A profile switched away from Skilled Self-Performed/Subcontractors keeps
+      // whatever it last had — nothing here reads a non-taggable profile's link fields
+      // (`linkedRosterRows()` filters on the category first), so there is nothing to clean up.
+      if (taggableNow()) {
+        payload.link_mode = curLink.mode || null;
+        payload.link_activity_id = curLink.mode === 'activity' ? (curLink.activityId || null) : null;
+        payload.link_wbs = curLink.mode === 'wbs' ? (curLink.wbs || null) : null;
+        payload.link_label = curLink.mode ? (curLink.label || null) : null;
+        payload.location = curLoc;
+      }
       var res;
       if (r) res = await tolerantWrite(payload, function (x) { return sb().from('manpower_roster').update(x).eq('id', r.id); });
       else {
@@ -2017,6 +2314,29 @@
       }
       if (!res.ok) { UI.toast('Could not save: ' + (res.error && res.error.message), 'error'); return; }
       reportDropped(res.dropped);
+      var savedId = r ? r.id : (res.data && res.data[0] && res.data[0].id);
+      // Resolve + cache the linked span right after saving — same "sync on save" the equipment
+      // module's linked items get, so the cached start/finish is never permanently stale for a
+      // link nobody has explicitly re-synced.
+      if (savedId && taggableNow() && curLink.mode) {
+        var rr = { id: savedId, link_mode: curLink.mode, link_activity_id: curLink.activityId, link_wbs: curLink.wbs };
+        var span = await resolveRosterLink(rr);
+        if (span && !span.error) {
+          await tolerantWrite({ link_start: mkey(mFloor(span.start)), link_finish: mkey(mFloor(span.end)), link_synced_at: new Date().toISOString() },
+            function (x) { return sb().from('manpower_roster').update(x).eq('id', savedId); });
+        }
+      }
+      // Manhours — only the months that actually changed, matching openMonths' own diff rule:
+      // saving every month would touch `updated_at` on rows nobody edited.
+      if (savedId && r) {
+        var mhCells = [];
+        m.el.querySelectorAll('input[data-mh]').forEach(function (inp) {
+          var iso = inp.dataset.mh, k = inp.dataset.mhk;
+          var was = mhDraft[iso] ? mhDraft[iso][k] : null, now = num(inp.value);
+          if (was !== now) mhCells.push({ iso: iso, k: k, v: now });
+        });
+        for (var mi = 0; mi < mhCells.length; mi++) await setManhours(savedId, mhCells[mi].iso, mhCells[mi].k, mhCells[mi].v);
+      }
       m.close();
       UI.toast(r ? 'Manpower profile updated.' : 'Manpower profile added.', 'ok');
       await load();
@@ -2033,6 +2353,443 @@
       UI.toast('Removed.', 'ok');
       load();
     }
+  }
+
+  // ---- Manhours (per roster entry / month) -----------------------------------------------
+  // ⚠️ Its own table (manpower_manhours), not columns on manpower_roster — the same call
+  // manpower_loading made for headcount: two people editing different months must not clobber
+  // each other, and a database sum per month needs real rows, not a jsonb blob.
+  function mhOf(rosterId, iso) { return (MANHOURS[rosterId] || {})[iso] || null; }
+  function mhTotal(rosterId, k) {
+    var m = MANHOURS[rosterId]; if (!m) return null;
+    var t = null;
+    for (var iso in m) if (Object.prototype.hasOwnProperty.call(m, iso)) {
+      var v = num(m[iso][k]); if (v != null) t = (t || 0) + v;
+    }
+    return t;
+  }
+  // Months a manhours mini-matrix offers for one profile: its own contract span when it has
+  // one (clamped to the project axis), else the whole project axis — a profile with no dates
+  // yet should still be able to record hours somewhere.
+  function mhMonthsFor(r) {
+    var sp = profileSpanLabel(r);
+    if (!SPAN) return [];
+    var s = pd_(r.contract_start), e = r.contract_end ? pd_(r.contract_end) : SPAN.end;
+    if (!s) return SPAN.months;
+    s = mFloor(s); e = mFloor(e || SPAN.end);
+    if (s < SPAN.start) s = SPAN.start;
+    if (e > SPAN.end) e = SPAN.end;
+    var out = [], c = new Date(s), guard = 0;
+    while (c <= e && guard++ < 600) { out.push({ d: new Date(c), iso: mkey(c) }); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
+    return out;
+  }
+  async function setManhours(rosterId, iso, k, v) {
+    var n = num(v);
+    var cur = mhOf(rosterId, iso);
+    var payload = {}; payload[k] = n;
+    var res;
+    if (cur) res = await tolerantWrite(payload, function (p) { return sb().from('manpower_manhours').update(p).eq('id', cur.id); });
+    else {
+      var ins = { project_id: pid, roster_id: rosterId, period: iso, source: 'hand', created_by: user && user.id };
+      ins[k] = n;
+      res = await tolerantWrite(ins, function (p) { return sb().from('manpower_manhours').insert(p).select(); });
+    }
+    if (!res.ok) { UI.toast('Could not save manhours: ' + (res.error && res.error.message), 'error'); return false; }
+    reportDropped(res.dropped);
+    if (cur) { cur[k] = n; }
+    else if (res.data && res.data[0]) { (MANHOURS[rosterId] = MANHOURS[rosterId] || {})[iso] = res.data[0]; }
+    return true;
+  }
+
+  // ---- Schedule + location tagging (Skilled Self-Performed / Subcontractors only) --------
+  // ⚠️ A TAG, not a second source of derived months. manpower_loading is still driven purely
+  // by the roster entry's own contract_start/contract_end (see the 2026-08-28 derivation) —
+  // linking a subcontractor to an activity says WHERE they work, for the matrix and the
+  // vertical stacking below, and never recomputes a duration a second, possibly-disagreeing way.
+  function isLinked(r) { return !!(r && (r.link_mode === 'activity' || r.link_mode === 'wbs')); }
+  var LOCVAL_CACHE = {}; // location_levels.id -> [{value,n}]
+  async function loadLocValues(levelId, force) {
+    if (!force && LOCVAL_CACHE[levelId]) return LOCVAL_CACHE[levelId];
+    try {
+      var r = await sb().rpc('project_location_values', { p_project_id: pid, p_key: levelId });
+      if (r.error) throw r.error;
+      var out = (r.data || []).map(function (x) { return { value: x.value, n: x.n }; });
+      LOCVAL_CACHE[levelId] = out;
+      return out;
+    } catch (_e) { return []; }
+  }
+  // Resolve a link against the schedule — earliest start, latest finish. Two indexed reads,
+  // never a paged scan: a real project has up to 40k activities and a plain read stops at 1000
+  // rows, which would quietly report the wrong span rather than fail. Same shape as Equipment
+  // Loading's resolveLink.
+  async function resolveRosterLink(r) {
+    if (!isLinked(r)) return null;
+    function q(col, asc) {
+      var b = sb().from('project_schedule').select(col).eq('project_id', pid)
+        .neq('activity_type', 'WBS Summary').not(col, 'is', null);
+      if (r.link_mode === 'activity') b = b.eq('activity_id', r.link_activity_id);
+      else b = b.like('wbs', String(r.link_wbs || '') + '%');
+      return b.order(col, { ascending: asc }).limit(1);
+    }
+    try {
+      var a = await q('start_date', true), b = await q('end_date', false);
+      if (a.error) throw a.error; if (b.error) throw b.error;
+      var st = a.data && a.data[0] ? pd_(a.data[0].start_date) : null;
+      var fi = b.data && b.data[0] ? pd_(b.data[0].end_date) : null;
+      if (!st || !fi) return null;
+      if (fi < st) fi = st;
+      return { start: st, end: fi };
+    } catch (err) { return { error: err.message || String(err) }; }
+  }
+  // Same filter-punctuation stripping as Equipment Loading's searchSchedule — an unstripped
+  // comma/paren in the search term ends PostgREST's `.or()` filter early and silently answers a
+  // different question than the one typed.
+  async function searchSchedule(mode, term) {
+    var t = String(term || '').replace(/[,()*%\\]/g, ' ').trim();
+    try {
+      if (mode === 'activity') {
+        var b = sb().from('project_schedule').select('activity_id,activity_name,start_date,end_date')
+          .eq('project_id', pid).neq('activity_type', 'WBS Summary').not('start_date', 'is', null);
+        if (t) b = b.or('activity_name.ilike.*' + t + '*,activity_id.ilike.*' + t + '*');
+        var r = await b.order('start_date', { ascending: true }).limit(60);
+        if (r.error) throw r.error;
+        return (r.data || []).map(function (x) {
+          return { key: x.activity_id, label: (x.activity_id || '?') + ' · ' + (x.activity_name || '') +
+            (x.start_date ? '  [' + String(x.start_date).slice(0, 10) + ' → ' + String(x.end_date || '').slice(0, 10) + ']' : '') };
+        }).filter(function (x) { return x.key; });
+      }
+      var q2 = sb().from('project_schedule').select('wbs').eq('project_id', pid).not('wbs', 'is', null);
+      if (t) q2 = q2.ilike('wbs', '%' + t + '%');
+      var r2 = await q2.limit(1000);
+      if (r2.error) throw r2.error;
+      var seen = {}, out = [];
+      (r2.data || []).forEach(function (x) {
+        var w = String(x.wbs || '').trim(); if (!w || seen[w]) return; seen[w] = 1; out.push({ key: w, label: w });
+      });
+      out.sort(function (a, b) { return a.key.localeCompare(b.key); });
+      if (out.length > 60) { out = out.slice(0, 60); out.push({ key: '', label: '… more than 60 branches match — type more of the name' }); }
+      return out;
+    } catch (err) { var e = []; e.error = err.message || String(err); return e; }
+  }
+
+  // ---- Table of Organization (steppable by month) -----------------------------------------
+  var orgMonth = null;
+  var orgMode = 'planned';
+  // ⚠️ Cycle-guarded: `reports_to_id` is a plain self-reference with no constraint against a
+  // loop, so a manual mis-edit (A reports to B, B reports to A) must return null / false rather
+  // than hang the render — same rule as the schedule module's own cyclic-WBS-tree guard.
+  function orgHasCycle(p) {
+    var seen = {}, cur = p, guard = 0;
+    while (cur && cur.reports_to_id && guard++ < 200) {
+      if (seen[cur.id]) return true;
+      seen[cur.id] = 1;
+      cur = posById(cur.reports_to_id);
+    }
+    return false;
+  }
+  // ⚠️ Falls back to DEPARTMENT grouping the moment no position on the project has a manager
+  // set. A real reporting-line tree is optional data, and a project that has never touched
+  // `reports_to_id` must still get a usable Table of Organization on day one, not an empty one.
+  function orgTree() {
+    var anyManaged = POS.some(function (p) { return p.reports_to_id && !orgHasCycle(p); });
+    if (!anyManaged) {
+      var byDept = {}, order = [];
+      POS.forEach(function (p) {
+        var d = p.department || '—';
+        if (!byDept[d]) { byDept[d] = []; order.push(d); }
+        byDept[d].push(p);
+      });
+      order.sort(function (a, b) { return deptRank(a) - deptRank(b) || a.localeCompare(b); });
+      return order.map(function (d) { return { label: d, pos: null, children: byDept[d].map(function (p) { return { label: null, pos: p, children: [] }; }) }; });
+    }
+    var byMgr = {}, roots = [];
+    POS.forEach(function (p) {
+      var mgrId = (p.reports_to_id && !orgHasCycle(p)) ? p.reports_to_id : null;
+      if (mgrId) (byMgr[mgrId] = byMgr[mgrId] || []).push(p);
+      else roots.push(p);
+    });
+    function node(p) { return { label: null, pos: p, children: (byMgr[p.id] || []).map(node) }; }
+    roots.sort(function (a, b) { return deptRank(a.department) - deptRank(b.department) || String(a.position_title || '').localeCompare(b.position_title || ''); });
+    return roots.map(node);
+  }
+  function orgIso() { return orgMonth ? mkey(orgMonth) : (CUTOFF ? mkey(CUTOFF) : null); }
+  function orgCell(p) {
+    var iso = orgIso(); if (!iso) return { req: null, act: null };
+    return { req: govOf(p, iso), act: qtyOf(p, iso, 'actual') };
+  }
+  // Unknown (either figure missing) gets no colour at all — an unreported month is not the
+  // same fact as a zero-fill month, and painting them the same would misreport "not yet filed"
+  // as "understaffed".
+  function orgSeverity(req, act) {
+    if (req == null || act == null) return '';
+    if (req <= 0) return act > 0 ? 'mp-org-ok' : '';
+    var f = act / req;
+    if (f < 0.8) return 'mp-org-crit';
+    if (f < 1) return 'mp-org-warn';
+    return 'mp-org-ok';
+  }
+  function orgNodeHtml(n, depth) {
+    if (n.pos) {
+      var c = orgCell(n.pos);
+      var cls = orgSeverity(c.req, c.act);
+      var readout = orgMode === 'actual'
+        ? (c.act == null ? '<span class="mp-note">not reported</span>' : fnum(c.act))
+        : ((c.req == null ? '<span class="mp-note">no requirement</span>' : fnum(c.req)) + ' / ' + (c.act == null ? '<span class="mp-note">n/r</span>' : fnum(c.act)));
+      return '<div class="mp-org-box ' + cls + '" style="margin-left:' + (depth * 22) + 'px;">' +
+        '<div class="mp-org-title">' + (n.pos.code ? '<b>' + esc(n.pos.code) + '</b> ' : '') + esc(n.pos.position_title) + workBadge(n.pos.workforce) + '</div>' +
+        '<div class="mp-org-dept">' + esc(n.pos.department || '') + '</div>' +
+        '<div class="mp-org-fig">' + readout + '</div>' +
+        '</div>' +
+        n.children.map(function (c2) { return orgNodeHtml(c2, depth + 1); }).join('');
+    }
+    return '<div class="mp-org-dept-hdr" style="margin-left:' + (depth * 22) + 'px;">' + esc(n.label) + '</div>' +
+      n.children.map(function (c2) { return orgNodeHtml(c2, depth + 1); }).join('');
+  }
+  function orgStep(delta) {
+    if (!SPAN) return;
+    var base = orgMonth || CUTOFF || SPAN.start;
+    var n = new Date(base.getFullYear(), base.getMonth() + delta, 1);
+    if (n < SPAN.start) n = SPAN.start;
+    if (n > SPAN.end) n = SPAN.end;
+    orgMonth = n;
+    renderOrgChart();
+  }
+  function renderOrgChart() {
+    var host = document.getElementById('mp-org-tree'); if (!host) return;
+    if (!orgMonth) orgMonth = CUTOFF || mFloor(new Date());
+    var mi = document.getElementById('mp-org-month');
+    if (mi) mi.value = orgMonth.getFullYear() + '-' + String(orgMonth.getMonth() + 1).padStart(2, '0');
+    var note = document.getElementById('mp-org-note');
+    if (note) note.textContent = 'Showing ' + monLabel(orgMonth) + (CUTOFF && mkey(orgMonth) === mkey(CUTOFF) ? ' (cut-off)' : '');
+    if (!POS.length) { host.innerHTML = '<div class="mp-empty">No positions yet. Add or seed them on the Positions tab first.</div>'; return; }
+    var tree = orgTree();
+    host.innerHTML = tree.map(function (n) { return orgNodeHtml(n, 0); }).join('') +
+      '<div class="mp-legend" style="margin-top:10px;">' +
+        '<span class="mp-lg"><span class="sw" style="background:var(--pd-bad);"></span>Under 80% of requirement</span>' +
+        '<span class="mp-lg"><span class="sw" style="background:var(--pd-warn);"></span>Short</span>' +
+        '<span class="mp-lg"><span class="sw" style="background:var(--pd-ok);"></span>Filled</span>' +
+      '</div>';
+  }
+
+  // ---- Mobilization / Demobilization dashboard --------------------------------------------
+  // ⚠️ Measured against TODAY, deliberately not the schedule's cut-off — a contract does not
+  // wait for a data date to expire, and reporting "ending soon" relative to a stale cut-off
+  // would silently mislead whoever reads it after the schedule has gone a while unrefreshed.
+  function daysUntil(d) {
+    if (!d) return null;
+    var t = new Date(); t.setHours(0, 0, 0, 0);
+    var dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    return Math.round((dd - t) / 86400000);
+  }
+  function mobRows(dir) {
+    var field = dir === 'in' ? 'contract_start' : 'contract_end';
+    return ROSTER.filter(function (r) { return !isTBH(r) && r[field]; });
+  }
+  function mobGroupedHtml(rows, field, label) {
+    var by = {};
+    rows.forEach(function (r) { var iso = mkey(mFloor(pd_(r[field]))); (by[iso] = by[iso] || []).push(r); });
+    var keys = Object.keys(by).sort();
+    if (!keys.length) return '<div class="mp-note">No ' + label + ' dates recorded.</div>';
+    var h = ['<table class="mp-table"><thead><tr><th>Month</th><th class="num">Heads</th><th>Who</th></tr></thead><tbody>'];
+    keys.forEach(function (iso) {
+      var list = by[iso];
+      h.push('<tr><td><b>' + monLabel(pd_(iso)) + '</b></td><td class="num">' + list.length + '</td><td>' +
+        list.map(function (r) {
+          var p = r.position_id ? posById(r.position_id) : null;
+          return esc(r.employee_name) + (p ? ' <span class="mp-note">(' + esc(p.position_title) + ')</span>' : '');
+        }).join(', ') + '</td></tr>');
+    });
+    h.push('</tbody></table>');
+    return h.join('');
+  }
+  function renderMobilization() {
+    var kp = document.getElementById('mp-mob-kpis');
+    var inHost = document.getElementById('mp-mob-in'), outHost = document.getElementById('mp-mob-out');
+    var cutIso = CUTOFF ? mkey(CUTOFF) : null;
+    var inRows = mobRows('in'), outRows = mobRows('out');
+    var inThis = cutIso ? inRows.filter(function (r) { return mkey(mFloor(pd_(r.contract_start))) === cutIso; }).length : 0;
+    var outThis = cutIso ? outRows.filter(function (r) { return mkey(mFloor(pd_(r.contract_end))) === cutIso; }).length : 0;
+    var ending = { 30: 0, 60: 0, 90: 0 };
+    outRows.forEach(function (r) {
+      var d = daysUntil(pd_(r.contract_end));
+      if (d == null || d < 0) return;
+      if (d <= 30) ending[30]++;
+      if (d <= 60) ending[60]++;
+      if (d <= 90) ending[90]++;
+    });
+    if (kp) {
+      function k(v, l, cls) { return '<div class="mp-kpi"><div class="mp-kpi-v' + (cls ? ' ' + cls : '') + '">' + v + '</div><div class="mp-kpi-l">' + l + '</div></div>'; }
+      kp.innerHTML = k(inThis, 'Mobilizing this month' + (CUTOFF ? ' · ' + monLabel(CUTOFF) : '')) +
+        k(outThis, 'Demobilizing this month' + (CUTOFF ? ' · ' + monLabel(CUTOFF) : ''), outThis ? 'mp-bad' : '') +
+        k(ending[30], 'Ending within 30 days', ending[30] ? 'mp-bad' : '') +
+        k(ending[60], 'Ending within 60 days', ending[60] ? 'mp-bad' : '') +
+        k(ending[90], 'Ending within 90 days');
+    }
+    if (inHost) inHost.innerHTML = mobGroupedHtml(inRows, 'contract_start', 'mobilization');
+    if (outHost) outHost.innerHTML = mobGroupedHtml(outRows, 'contract_end', 'demobilization');
+    renderMobBanner(ending[30], outRows);
+  }
+  // ⚠️ A PERSISTENT, module-wide banner — rendered from renderAll() regardless of which tab is
+  // open. An alert visible only on the Mobilization tab is an alert a planner sitting on the
+  // Loading tab never sees until it is too late to act on.
+  function renderMobBanner(count30, outRows) {
+    var el = document.getElementById('mp-mobbanner'); if (!el) return;
+    if (!count30) { el.style.display = 'none'; return; }
+    var soon = (outRows || mobRows('out')).filter(function (r) { var d = daysUntil(pd_(r.contract_end)); return d != null && d >= 0 && d <= 30; })
+      .sort(function (a, b) { return pd_(a.contract_end) - pd_(b.contract_end); });
+    var fdate = function (v) { return Fmt && Fmt.date ? Fmt.date(v) : v; };
+    var names = soon.slice(0, 4).map(function (r) { return esc(r.employee_name) + ' (' + esc(fdate(r.contract_end)) + ')'; }).join(', ');
+    el.innerHTML = '&#9888; <b>' + count30 + ' contract' + (count30 === 1 ? '' : 's') + ' end' + (count30 === 1 ? 's' : '') + ' within 30 days:</b> ' +
+      names + (soon.length > 4 ? ', +' + (soon.length - 4) + ' more' : '') +
+      ' — <a href="#" id="mp-mobbanner-go">see the Mobilization tab</a>.';
+    el.style.display = '';
+    var go = document.getElementById('mp-mobbanner-go');
+    if (go) go.onclick = function (e) { e.preventDefault(); var tab = document.querySelector('.mp-tab[data-view="mobilization"]'); if (tab) switchView('mobilization', tab); };
+  }
+
+  // ---- Activities × Subcontractor matrix + Vertical Stacking ------------------------------
+  // Rows are the distinct schedule TAGS carried by taggable roster entries — one row per link,
+  // not one row per activity found in the schedule. A link the module has never resolved still
+  // shows up (the cached label is enough to identify it): "nothing tagged this activity" and
+  // "the schedule has no such activity" are different facts, and only a genuinely resolved
+  // link's row should ever depend on a live schedule read.
+  function linkedRosterRows() {
+    return ROSTER.filter(function (r) { var p = r.position_id ? posById(r.position_id) : null; return isTaggable(p && p.workforce) && isLinked(r); });
+  }
+  function linkKey(r) { return r.link_mode + '|' + (r.link_mode === 'activity' ? r.link_activity_id : r.link_wbs); }
+  function actMatrixData() {
+    var rows = linkedRosterRows();
+    var acts = {}, actOrder = [], subs = {}, subOrder = [];
+    rows.forEach(function (r) {
+      var ak = linkKey(r);
+      if (!acts[ak]) { acts[ak] = { key: ak, label: r.link_label || (r.link_mode === 'activity' ? r.link_activity_id : r.link_wbs) || ak, mode: r.link_mode }; actOrder.push(ak); }
+      if (!subs[r.id]) { subs[r.id] = { key: r.id, name: r.employee_name, cat: (r.position_id && posById(r.position_id)) ? posById(r.position_id).workforce : '' }; subOrder.push(r.id); }
+    });
+    actOrder.sort(function (a, b) { return acts[a].label.localeCompare(acts[b].label); });
+    subOrder.sort(function (a, b) { return subs[a].name.localeCompare(subs[b].name); });
+    var cell = {};
+    rows.forEach(function (r) { cell[linkKey(r) + '|' + r.id] = { mh: mhTotal(r.id, 'actual_hours') }; });
+    return { acts: actOrder.map(function (k) { return acts[k]; }), subs: subOrder.map(function (k) { return subs[k]; }), cell: cell };
+  }
+  function renderActMatrix() {
+    var el = document.getElementById('mp-act-tbl'); if (!el) return;
+    var d = actMatrixData();
+    if (!d.acts.length || !d.subs.length) {
+      el.innerHTML = '<tbody><tr><td><div class="mp-empty">No Skilled Self-Performed or Subcontractor profile is tagged to an activity yet. Open one from the Roster tab and set its Schedule &amp; Location.</div></td></tr></tbody>';
+      return;
+    }
+    var h = ['<thead><tr><th>Activity / WBS branch</th>'];
+    d.subs.forEach(function (s) { h.push('<th>' + esc(s.name) + workBadge(s.cat) + '</th>'); });
+    h.push('</tr></thead><tbody>');
+    d.acts.forEach(function (a) {
+      h.push('<tr><td><b>' + esc(a.label) + '</b>' + (a.mode === 'wbs' ? ' <span class="mp-note">(WBS branch)</span>' : '') + '</td>');
+      d.subs.forEach(function (s) {
+        var c = d.cell[a.key + '|' + s.key];
+        h.push('<td class="num">' + (c ? ('&#10003;' + (c.mh != null ? ' <span class="mp-note">' + fnum(c.mh) + 'h</span>' : '')) : '') + '</td>');
+      });
+      h.push('</tr>');
+    });
+    h.push('</tbody>');
+    el.innerHTML = h.join('');
+  }
+
+  // Natural sort for floor-like values: leading digits win numerically ("9th Floor" before
+  // "10th Floor" — plain alphabetical would put "10th" first); a value with no leading number
+  // (e.g. "Roof Deck") sorts after every numbered one, alphabetically among itself. ⚠️ This is
+  // a SIMPLIFICATION, not the schedule module's floor-rank engine (basements negative, ground
+  // zero, roof last) — it has no equivalent here since manpower has no notion of a WBS/level
+  // tree to derive rank from, only whatever text a roster entry's location carries.
+  function naturalRank(v) { var m = /^(\d+)/.exec(String(v || '').trim()); return m ? +m[1] : null; }
+  function naturalCmp(a, b) {
+    var ra = naturalRank(a), rb = naturalRank(b);
+    if (ra != null && rb != null) return ra - rb;
+    if (ra != null) return -1;
+    if (rb != null) return 1;
+    return String(a).localeCompare(String(b));
+  }
+  function stackLevelOptions() { return (LEVELS || []).slice().sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); }); }
+  function nextLevelAfter(levelId) {
+    var ord = stackLevelOptions();
+    for (var i = 0; i < ord.length - 1; i++) if (ord[i].id === levelId) return ord[i + 1];
+    return null;
+  }
+  var stackLevelId = null, stackTowerVal = '', stackActKey = '';
+  async function renderStackControls() {
+    var lv = document.getElementById('mp-st-level'), tv = document.getElementById('mp-st-tower'), av = document.getElementById('mp-st-act');
+    if (!lv) return;
+    var ord = stackLevelOptions();
+    if (!ord.length) { lv.innerHTML = '<option value="">No location levels on this project</option>'; if (tv) tv.innerHTML = ''; return; }
+    if (!stackLevelId || !ord.some(function (x) { return x.id === stackLevelId; })) stackLevelId = ord[0].id;
+    lv.innerHTML = ord.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === stackLevelId ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('');
+    var vals = await loadLocValues(stackLevelId);
+    if (tv) {
+      if (!vals.length) { tv.innerHTML = '<option value="">No values recorded</option>'; stackTowerVal = ''; }
+      else {
+        if (!stackTowerVal || !vals.some(function (x) { return x.value === stackTowerVal; })) stackTowerVal = vals[0].value;
+        tv.innerHTML = vals.map(function (x) { return '<option value="' + esc(x.value) + '"' + (x.value === stackTowerVal ? ' selected' : '') + '>' + esc(x.value) + ' (' + x.n + ')</option>'; }).join('');
+      }
+    }
+    if (av) {
+      var acts = actMatrixData().acts;
+      if (stackActKey && !acts.some(function (a) { return a.key === stackActKey; })) stackActKey = '';
+      av.innerHTML = '<option value="">All linked activities</option>' + acts.map(function (a) {
+        return '<option value="' + esc(a.key) + '"' + (a.key === stackActKey ? ' selected' : '') + '>' + esc(a.label) + '</option>';
+      }).join('');
+    }
+  }
+  function renderStackView() {
+    var host = document.getElementById('mp-stack-view'), lg = document.getElementById('mp-stack-legend');
+    if (!host) return;
+    var ord = stackLevelOptions();
+    if (!ord.length) { host.innerHTML = '<div class="mp-empty">This project has no Location Breakdown levels — set them up in Project Schedule &rarr; Location Breakdown first.</div>'; if (lg) lg.innerHTML = ''; return; }
+    var levelObj = ord.filter(function (x) { return x.id === stackLevelId; })[0];
+    var floorLv = nextLevelAfter(stackLevelId);
+    var rows = linkedRosterRows().filter(function (r) {
+      if ((r.location || {})[stackLevelId] !== stackTowerVal) return false;
+      if (stackActKey && linkKey(r) !== stackActKey) return false;
+      return true;
+    });
+    if (!rows.length) { host.innerHTML = '<div class="mp-empty">No tagged Skilled Self-Performed / Subcontractor profile matches this location' + (stackActKey ? ' and activity' : '') + '.</div>'; if (lg) lg.innerHTML = ''; return; }
+    if (!floorLv) {
+      host.innerHTML = '<div class="mp-note" style="margin-bottom:8px;">This project has no location level below &ldquo;' + esc(levelObj ? levelObj.name : '') + '&rdquo;, so there is nothing to stack — listing the matches instead.</div>' +
+        '<table class="mp-table"><tbody>' + rows.map(function (r) {
+          return '<tr><td style="border-left:4px solid ' + deptColor(r.id) + ';padding-left:8px;"><b>' + esc(r.employee_name) + '</b></td><td>' + esc(r.link_label || '') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+      if (lg) lg.innerHTML = '';
+      return;
+    }
+    var byFloor = {};
+    rows.forEach(function (r) { var v = (r.location || {})[floorLv.id]; if (!v) return; (byFloor[v] = byFloor[v] || []).push(r); });
+    var floors = Object.keys(byFloor).sort(naturalCmp);
+    if (!floors.length) { host.innerHTML = '<div class="mp-empty">' + rows.length + ' matching profile(s), but none carries a &ldquo;' + esc(floorLv.name) + '&rdquo; value.</div>'; if (lg) lg.innerHTML = ''; return; }
+    // ⚠️ column-reverse: the array is sorted low→high, but a vertical stack of floors reads
+    // top-to-bottom as high→low — the same visual convention the schedule module's own vertical
+    // stacking uses.
+    var h = ['<div style="display:flex;flex-direction:column-reverse;gap:2px;">'];
+    floors.forEach(function (fv) {
+      var list = byFloor[fv];
+      var seg = list.map(function (r) { return '<span style="flex:1;background:' + deptColor(r.id) + ';" title="' + esc(r.employee_name) + '"></span>'; }).join('');
+      h.push('<div style="display:flex;align-items:center;gap:8px;">' +
+        '<div style="width:110px;font-size:11.5px;color:var(--pd-muted);text-align:right;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(fv) + '</div>' +
+        '<div style="flex:1;max-width:420px;height:26px;display:flex;border-radius:4px;overflow:hidden;border:1px solid var(--pd-line);">' + seg + '</div>' +
+        '</div>');
+    });
+    h.push('</div>');
+    host.innerHTML = h.join('');
+    var seen = {}, lgHtml = [];
+    rows.forEach(function (r) { if (seen[r.id]) return; seen[r.id] = 1; lgHtml.push('<span class="mp-lg"><span class="sw" style="background:' + deptColor(r.id) + ';"></span>' + esc(r.employee_name) + '</span>'); });
+    if (lg) lg.innerHTML = lgHtml.join('');
+  }
+  async function renderStackTab() {
+    await renderStackControls();
+    renderStackView();
+  }
+  function switchActView(v, btn) {
+    document.querySelectorAll('#mp-act-view button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+    var m = document.getElementById('mp-act-matrix'), s = document.getElementById('mp-act-stack');
+    if (m) m.style.display = v === 'matrix' ? '' : 'none';
+    if (s) s.style.display = v === 'stack' ? '' : 'none';
+    if (v === 'stack') renderStackTab();
   }
 
   // ---- Portfolio ------------------------------------------------------------------------
@@ -2071,20 +2828,23 @@
       posRows.forEach(function (p) { posById2[p.id] = p; });
       var by = {};
       PROJECTS.forEach(function (p) {
-        by[p.id] = { id: p.id, name: p.name || p.id, lines: 0, req: 0, act: 0, hasReq: false, hasAct: false,
-                     staff: { req: 0, act: 0, has: false }, skilled: { req: 0, act: 0, has: false } };
+        by[p.id] = { id: p.id, name: p.name || p.id, lines: 0, req: 0, act: 0, hasReq: false, hasAct: false, byCat: {} };
       });
       posRows.forEach(function (p) { if (by[p.project_id]) by[p.project_id].lines++; });
+      // ⚠️ byCat keyed by the WORKFORCE STRING, not a fixed staff/skilled bucket — five
+      // categories now exist and a hardcoded pair would silently merge three of them. An old
+      // 'Staff'/'Skilled' row (unwidened data) still gets its own bucket under its own name.
       loadRows.filter(function (r) { return String(r.period).slice(0, 10) === iso; }).forEach(function (r) {
         var b = by[r.project_id]; if (!b) return;
         var p = posById2[r.position_id]; if (!p) return;
-        var w = (p.workforce === 'Skilled') ? 'skilled' : 'staff';
+        var w = p.workforce || WORKFORCES[0];
         if (portWork && p.workforce !== portWork) return;
+        var c = b.byCat[w] || (b.byCat[w] = { req: 0, act: 0, has: false });
         var a = num(r.approved_qty), pl = num(r.planned_qty);
         var req = a != null ? a : pl;
         var act = num(r.actual_qty);
-        if (req != null) { b.req += req; b.hasReq = true; b[w].req += req; b[w].has = true; }
-        if (act != null) { b.act += act; b.hasAct = true; b[w].act += act; b[w].has = true; }
+        if (req != null) { b.req += req; b.hasReq = true; c.req += req; c.has = true; }
+        if (act != null) { b.act += act; b.hasAct = true; c.act += act; c.has = true; }
       });
       PORT = { iso: iso, rows: Object.keys(by).map(function (k) { return by[k]; }) };
       PORTX = buildPortSeries(posRows, loadRows, rosterRows);
@@ -2512,11 +3272,13 @@
         k(biggest ? fnum(-biggest.gap) : '—', biggest ? ('Worst shortfall · ' + biggest.name) : 'Worst shortfall', biggest ? 'mp-bad' : '');
     }
     var h = ['<thead><tr><th>#</th><th>Project</th><th class="num">Requirement</th><th class="num">Deployed</th>' +
-      '<th class="num">Variance</th><th>Fill</th><th class="num">Staff (req / act)</th><th class="num">Skilled (req / act)</th><th>Read</th></tr></thead><tbody>'];
+      '<th class="num">Variance</th><th>Fill</th><th>By category (req / act)</th><th>Read</th></tr></thead><tbody>'];
     live.forEach(function (r, i) {
       var pctN = r.fill == null ? null : Math.round(r.fill * 100);
       var sev = r.fill == null ? '' : (r.fill < 0.8 ? 'crit' : (r.fill < 0.95 ? 'warn' : 'ok'));
       var barCol = r.fill == null ? 'var(--pd-line)' : (r.fill < 0.8 ? 'var(--pd-bad)' : (r.fill < 0.95 ? 'var(--pd-warn)' : 'var(--pd-ok)'));
+      var catTxt = Object.keys(r.byCat).sort(function (a, b) { return WORKFORCES.indexOf(a) - WORKFORCES.indexOf(b) || a.localeCompare(b); })
+        .map(function (w) { var c = r.byCat[w]; return esc(w) + ' ' + fnum(c.req) + '/' + (c.has ? fnum(c.act) : '—'); }).join(', ');
       h.push('<tr' + (String(r.id) === String(pid) ? ' style="outline:2px solid var(--pd-red);outline-offset:-2px;"' : '') + '>' +
         '<td>' + (i + 1) + '</td>' +
         '<td><b>' + esc(r.name) + '</b><div class="mp-note">' + r.lines + ' position line(s)</div></td>' +
@@ -2525,12 +3287,11 @@
         '<td class="num mp-sev ' + sev + '">' + (r.gap == null ? '—' : (r.gap > 0 ? '+' : '') + fnum(r.gap)) + '</td>' +
         '<td><div class="mp-bar"><i style="width:' + (pctN == null ? 0 : Math.min(100, pctN)) + '%;background:' + barCol + '"></i></div>' +
           '<div class="mp-note mp-sev ' + sev + '">' + (pctN == null ? 'unknown' : pctN + '%') + '</div></td>' +
-        '<td class="num">' + (r.staff.has ? fnum(r.staff.req) + ' / ' + fnum(r.staff.act) : '—') + '</td>' +
-        '<td class="num">' + (r.skilled.has ? fnum(r.skilled.req) + ' / ' + fnum(r.skilled.act) : '—') + '</td>' +
+        '<td class="mp-note">' + (catTxt || '—') + '</td>' +
         '<td><button class="mp-btn-sm" data-open="' + esc(r.id) + '">Open</button></td></tr>');
     });
     if (quiet.length) {
-      h.push('<tr class="mp-grp"><td colspan="9">No manpower plan for ' + esc(monLabel(pd_(PORT.iso))) + ' — ' + quiet.length + ' project(s)</td></tr>');
+      h.push('<tr class="mp-grp"><td colspan="8">No manpower plan for ' + esc(monLabel(pd_(PORT.iso))) + ' — ' + quiet.length + ' project(s)</td></tr>');
       quiet.forEach(function (r) {
         // ⚠️ THREE different reasons a project has no plan, and they send the reader to three
         // different places. Collapsing them into "no quantity is recorded" is wrong the moment a
@@ -2541,7 +3302,7 @@
           : (r.hasAct
               ? r.lines + ' position line(s), and ' + fnum(r.act) + ' deployed — but no planned or approved requirement for this month to measure against.'
               : r.lines + ' position line(s) exist, but no requirement is recorded for this month.');
-        h.push('<tr><td></td><td>' + esc(r.name) + '</td><td colspan="6" class="mp-note">' + why +
+        h.push('<tr><td></td><td>' + esc(r.name) + '</td><td colspan="5" class="mp-note">' + why +
           '</td><td><button class="mp-btn-sm" data-open="' + esc(r.id) + '">Open</button></td></tr>');
       });
     }
@@ -2736,9 +3497,10 @@
     if (needsMigration) {
       mg.style.display = 'block';
       mg.innerHTML = 'Manpower Loading needs its tables. Run <b>' + MP_MIGRATION + '</b> in the Supabase SQL editor, then refresh.';
-    } else if (mpPendingMig) {
+    } else if (mpPendingMig || mpPendingMig2) {
       mg.style.display = 'block';
-      mg.innerHTML = 'Some fields are not being saved because the database is behind. Run <b>' + MP_MIGRATION +
+      var files = [mpPendingMig ? MP_MIGRATION : null, mpPendingMig2 ? MP_MIGRATION2 : null].filter(Boolean);
+      mg.innerHTML = 'Some fields are not being saved because the database is behind. Run <b>' + files.join('</b> and <b>') +
         '</b> in the Supabase SQL editor, then refresh this page.';
     } else { mg.style.display = 'none'; mg.innerHTML = ''; }
   }
@@ -2761,6 +3523,11 @@
     renderKpis(ag); renderChart(ag); renderMatrix(ag); renderRegister(); renderRoster(); renderPortfolio();
     renderPortCurve(); renderPortPeople();
     renderDrift();
+    // ⚠️ Cheap and synchronous (in-memory only, no network) — safe to render unconditionally on
+    // every pass regardless of which tab is active. The Mobilization banner in particular MUST
+    // run here rather than only when its own tab renders, or it would only ever appear once a
+    // planner had already gone looking for the thing it exists to warn about.
+    renderOrgChart(); renderMobilization(); renderActMatrix();
     if (window.Icons) Icons.hydrate(document.body);
   }
   function syncFilters() {
@@ -2783,17 +3550,18 @@
   function switchView(v, btn) {
     view = v;
     document.querySelectorAll('.mp-tab').forEach(function (b) { b.classList.toggle('active', b === btn); });
-    ['loading', 'register', 'roster', 'portfolio'].forEach(function (k) {
+    ['loading', 'register', 'org', 'roster', 'mobilization', 'activities', 'portfolio'].forEach(function (k) {
       var el = document.getElementById('mp-view-' + k); if (el) el.style.display = (k === v ? 'block' : 'none');
     });
-    // The add button means a different thing on each tab; on Portfolio it means nothing at
-    // all, because that tab writes to no project.
+    // The add button means a different thing on each tab; on Portfolio/Org Chart/Mobilization it
+    // means nothing — those tabs are read views over data recorded elsewhere.
+    var readOnlyTabs = { portfolio: 1, org: 1, mobilization: 1 };
     var add = document.getElementById('mp-add');
-    if (add) add.style.display = (v === 'portfolio') ? 'none' : '';
+    if (add) add.style.display = readOnlyTabs[v] ? 'none' : '';
     var drv = document.getElementById('mp-derive');
-    if (drv) drv.style.display = (v === 'portfolio') ? 'none' : '';
+    if (drv) drv.style.display = readOnlyTabs[v] ? 'none' : '';
     var seed = document.getElementById('mp-seed');
-    if (seed) seed.style.display = (v === 'portfolio' || v === 'roster') ? 'none' : '';
+    if (seed) seed.style.display = (readOnlyTabs[v] || v === 'roster' || v === 'activities') ? 'none' : '';
     // ⚠️ The portfolio is NOT read automatically on the way in. It is the only view that
     // queries every project the user can open, and firing several hundred rows of read every
     // time somebody clicks a tab is a cost nobody asked for. The button says so.
@@ -2836,6 +3604,29 @@
     document.getElementById('mp-f-work').onchange = function (e) { fWork = e.target.value; renderAll(); };
     document.getElementById('mp-f-dept').onchange = function (e) { fDept = e.target.value; renderAll(); };
     document.getElementById('mp-show-cost').onchange = function (e) { showCost = e.target.checked; renderAll(); };
+    // Org Chart — month stepper + Planned-vs-Actual / Actual-only toggle.
+    document.getElementById('mp-org-prev').onclick = function () { orgStep(-1); };
+    document.getElementById('mp-org-next').onclick = function () { orgStep(1); };
+    document.getElementById('mp-org-today').onclick = function () { orgMonth = CUTOFF || mFloor(new Date()); renderOrgChart(); };
+    document.getElementById('mp-org-month').onchange = function (e) {
+      var mm = /^(\d{4})-(\d{2})$/.exec(e.target.value || '');
+      if (mm) orgMonth = new Date(+mm[1], +mm[2] - 1, 1);
+      renderOrgChart();
+    };
+    document.querySelectorAll('#mp-org-mode button').forEach(function (b) {
+      b.onclick = function () {
+        orgMode = b.dataset.om;
+        document.querySelectorAll('#mp-org-mode button').forEach(function (x) { x.classList.toggle('active', x === b); });
+        renderOrgChart();
+      };
+    });
+    // Activities tab — Matrix / Vertical Stacking switch + the stacking controls.
+    document.querySelectorAll('#mp-act-view button').forEach(function (b) {
+      b.onclick = function () { switchActView(b.dataset.av, b); };
+    });
+    document.getElementById('mp-st-level').onchange = function (e) { stackLevelId = e.target.value; stackTowerVal = ''; renderStackTab(); };
+    document.getElementById('mp-st-tower').onchange = function (e) { stackTowerVal = e.target.value; renderStackView(); };
+    document.getElementById('mp-st-act').onchange = function (e) { stackActKey = e.target.value; renderStackView(); };
     // The primary action adds a MANPOWER PROFILE everywhere. A position is the requirement and
     // is added from the Positions tab; the profile is the thing with a contract duration, and
     // it is what the day-to-day work of this module actually is.
@@ -2898,6 +3689,7 @@
       pid = sel.value || null;
       try { sessionStorage.setItem('pd_project', pid || ''); } catch (_e) {}
       fDept = ''; rSearch = ''; PORTX = null; PORT = null; ppFree = ''; ppSearch = '';
+      orgMonth = null; stackLevelId = null; stackTowerVal = ''; stackActKey = '';
       var rs = document.getElementById('mp-r-search'); if (rs) rs.value = '';
       load(true);
     };

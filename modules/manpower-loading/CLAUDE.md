@@ -370,3 +370,209 @@ no real skilled-worker report has been reproduced.
 ## Cache
 No `MODULE_V` bump: this module page is new, so no browser holds a stale copy of it. `config.js` —
 which is what gates the tile appearing at all — was bumped app-wide to `?v=20260828b`.
+
+## 2026-08-31 — Table of Organization, Mobilization dashboard, five categories, schedule/location
+## tagging, the Activities×Subcontractor matrix, vertical stacking, and manhours
+
+Owner's own list, verbatim:
+1. A table of organization (planned vs actual), connected to the loading and steppable month by month.
+2. A mobilization/demobilization dashboard, with contract-end alerts.
+3. Five categories: Shared Staff, Project Staff, Skilled Admin, Skilled Self-Performed, Subcontractors.
+4. Skilled Self-Performed and Subcontractors can be tagged to a schedule activity, with a location.
+5. A matrix of activities to subcontractors.
+6. Vertical stacking of subcontractors per activity.
+7. Manhours, per subcontractor or per person.
+
+**Run `migrations/2026-08-31-manpower-org-schedule-manhours.sql`** (after the 2026-08-27 one — it
+only ADDS columns/a table to what that migration created). Two new tabs (**Org Chart**,
+**Mobilization**), a third (**Activities**), and a persistent module-wide alert banner. Detail
+below; the module's per-file design notes (§"Design notes" above) are unchanged and still hold.
+
+### 1 — Table of Organization
+New **Org Chart** tab: a month stepper (‹ / › / a `type=month` input / "Cut-off") plus a
+**Planned vs Actual / Actual only** toggle, over a box tree read straight off `manpower_positions`
++ `manpower_loading` — no new aggregation, it calls the same `govOf`/`qtyOf` the Loading grid uses,
+so the two views cannot disagree about a month's figures.
+
+⚠️ **`reports_to_id` (new, self-referencing, optional) drives a real reporting-line tree — and
+falls back to DEPARTMENT grouping the instant no position on the project has ever set it.** A
+project that has never touched the field gets a usable chart on day one; setting it on enough
+positions upgrades the view to a genuine org chart with no schema change and no migration to
+"turn it on". Set from the position Add/Edit form's new **Reports to** field.
+
+⚠️ **Cycle-guarded, not merely trusting the data.** `reports_to_id` carries no DB constraint
+against a loop (Postgres has no easy "no cycles in this self-reference" check), so a manual
+mis-edit (A reports to B, B reports to A) must degrade rather than hang the render. `orgHasCycle`
+walks a position's own chain with a seen-set and a 200-iteration guard; any position on a detected
+cycle renders as an unlinked root instead of vanishing or looping the tree builder forever.
+
+⚠️ **A box's colour needs BOTH figures, and treats a missing one as unknown, not zero.** `req==null
+|| act==null → no colour`. The trap this avoids: `null / positiveNumber` is `0` in JavaScript, so a
+naive fill-rate calc on an unreported month would have painted it exactly like a genuine 0%
+shortfall — "nobody has filed this month yet" and "this month has nobody deployed" are different
+facts, and conflating them is precisely the failure this module's Portfolio tab was already fixed
+for once (the `reportedThrough` bug, 2026-08-28d).
+
+### 2 — Mobilization / Demobilization dashboard
+New **Mobilization** tab: KPIs (mobilizing this month / demobilizing this month / ending within
+30·60·90 days), and two grouped tables — heads coming ON contract (`contract_start`) and heads
+coming OFF (`contract_end`) — reusing the exact grouping shape the Roster tab's existing demob
+summary already had, now applied to both directions.
+
+⚠️ **Alerts are measured against TODAY, deliberately not the schedule's cut-off date.** A contract
+does not pause expiring because a planner has not refreshed the data date recently; anchoring the
+alert to a possibly-stale `CUTOFF` would silently under- or over-report urgency depending on how
+long ago the schedule was last touched.
+
+⚠️ **A PERSISTENT, module-wide banner** (`#mp-mobbanner`, styled like the existing drift banner) —
+rendered from `renderAll()` on every pass, so it shows regardless of which tab is open. An alert
+that only appears on the Mobilization tab is one nobody sees until they go looking for the thing
+it exists to warn about in the first place. Names up to 4 people + their end dates, with a "+N
+more" and a link that jumps straight to the Mobilization tab.
+
+### 3 — Five categories
+`WORKFORCES` widened from `['Staff','Skilled']` to `['Shared Staff','Project Staff','Skilled Admin',
+'Skilled Self-Performed','Subcontractors']`. ⚠️ **Widened, not migrated** — `workforce` is a plain
+text column with no CHECK constraint, so an old `'Staff'`/`'Skilled'` row on a project created
+before this pass simply reads as an unrecognised category and sorts after every seeded one, the
+exact rule an invented department already followed. One shared `workBadge()`/`workBadgeCls()`
+renderer replaces three independent inline `p.workforce === 'Skilled' ? …` conditionals (matrix
+rows, Positions register, Roster table) that would otherwise have to be found and fixed three
+times to stay in step; Subcontractors gets its own badge colour (purple), distinct from the
+skilled-trade blue.
+
+⚠️ **`TAGGABLE_WORK = ['Skilled Self-Performed', 'Subcontractors']`, and it is a SHORTER list than
+"skilled".** Skilled Admin is skilled labour on the company's own payroll, not deployed against a
+specific site activity the way self-performed trades and subcontracted crews are — tagging it to a
+schedule activity would invent a fact nobody has. The seed dialog now seeds **Project Staff** and
+**Skilled Self-Performed** only (renamed from Staff/Skilled); Shared Staff, Skilled Admin and
+Subcontractors have no standard headcount to propose and are added by hand, and the dialog says so.
+
+⚠️ Portfolio's snapshot table dropped its hardcoded Staff/Skilled two-column split (`r.staff`/
+`r.skilled`) for a dynamic `byCat` map keyed by the workforce string itself — a fixed pair would
+have silently merged three of the five categories into whichever bucket the old code happened to
+sort them.
+
+### 4 — Schedule + location tagging (Skilled Self-Performed / Subcontractors only)
+Reuses Equipment Loading's exact schedule-link shape (`link_mode`/`link_activity_id`/`link_wbs`/
+`link_label`/`link_start`/`link_finish`/`link_synced_at`), added to `manpower_roster` instead of a
+new table — a link belongs to the PROFILE (the specific crew/person), not the position (the
+requirement line), since one position can be filled by several differently-located crews.
+`location` (new jsonb) is the SAME shape `project_schedule.location` and Equipment Loading's site
+plan already use — keyed by `location_levels.id` — reusing the existing `project_location_values`
+RPC to populate each level's picker with real, counted values rather than free text.
+
+⚠️ **A TAG, not a second source of derived months — stated three times in the code because it is
+the decision most likely to be "improved" back into a bug.** `manpower_loading` is still driven
+purely by the profile's own `contract_start`/`contract_end` (the 2026-08-28 derivation). Linking a
+crew to an activity says WHERE they work, for the matrix and the stacking below; it never
+recomputes a duration a second way that could disagree with the first.
+
+⚠️ **Only offered when the SELECTED POSITION's category is taggable**, checked live as the
+Position field changes (`taggableNow()`), not fixed at modal-open time — switching a profile's
+position from Subcontractors to Project Staff mid-edit hides the section immediately, matching
+what will actually be readable about that profile once saved.
+
+⚠️ **The activity search reuses Equipment Loading's exact filter-punctuation stripping**
+(`replace(/[,()*%\\]/g, ' ')`) before building the `.or()` string — an unstripped comma or paren in
+a typed search term ends PostgREST's filter early and silently answers a different question than
+the one asked, the documented equipment-module trap.
+
+⚠️ **Resolved and cached right after Save**, mirroring Equipment's "sync on save" — `resolveRosterLink`
+does the same two indexed, capped reads (`activity_id`/`wbs` × `project_id`, excluding WBS-Summary
+rows) and stamps `link_start`/`link_finish`/`link_synced_at`. Nothing re-syncs automatically beyond
+that single stamp; there is no periodic drift check here (unlike Equipment Loading) because the
+link's only consumers — the matrix and the stacking view — read the CURRENT schedule live on
+render, not the cached span, so staleness in the cache costs nothing but an out-of-date informational
+number, never a wrong picture on either downstream view.
+
+### 5 — Activities × Subcontractor matrix
+New **Activities** tab, **Matrix** sub-view: rows are the distinct schedule tags carried by
+taggable, linked profiles (one row per `link_mode + activity_id/wbs`, not one row per schedule
+activity the module has separately enumerated); columns are the profiles themselves — a crew or
+person IS a column, by construction, since two different subcontractors are two different answers
+to "who is doing this". A cell shows a checkmark plus its recorded manhours total when both exist.
+
+⚠️ **A row exists even for a link the module has never resolved against a live schedule** — the
+cached `link_label` is enough to identify it in the matrix. "Nothing has tagged this activity" and
+"the schedule query for this activity failed" are different facts; a row disappearing because a
+network call failed would read as the tag itself having vanished.
+
+### 6 — Vertical stacking of subcontractors per activity
+New **Activities** tab, **Vertical Stacking** sub-view: pick a location level (e.g. Tower), a value
+(e.g. Tower 3), and optionally one linked activity; bands render for the NEXT location level down
+(typically Floor), one band per distinct value among the matching tagged profiles, coloured by
+which profile (reusing the existing `deptColor` hash-palette function rather than inventing a
+second one) — a legend lists every profile shown.
+
+⚠️ **Deliberately a SIMPLIFICATION of the schedule module's own vertical stacking, not a port of
+it.** Project Schedule's stacking ranks floors structurally (basements negative, ground zero, roof
+last) by walking the WBS/level tree; this module has no such tree to derive rank from, only
+whatever text a roster entry's `location` value carries. `naturalCmp`/`naturalRank` order by
+leading digit ("9th Floor" before "10th Floor" — plain alphabetical sort gets this wrong, asserted
+in the test) and put anything with no leading number after every numbered value, alphabetically
+among itself. Documented in the code as a simplification, not silently passed off as the real thing.
+
+⚠️ **A location level with no level below it degrades to a flat list, never an invented single
+band.** Stacking requires two levels (the grouping axis and the thing stacked); a project with only
+one level has nothing to stack, and the view says so rather than drawing one wide meaningless band.
+
+### 7 — Manhours per subcontractor or per person
+New `manpower_manhours` (one row per **roster entry** per month — profile-level, matching the ask
+"per subcon or per person" exactly, as distinct from `manpower_loading`'s position-level headcount).
+Entered from a mini-table inside an EXISTING profile's Edit form (`.mp-mon-tbl`, the same style the
+Positions tab's own per-position month editor already uses), saved as part of that same Save click
+— only the cells that actually changed are written, matching `openMonths`' own diff rule (saving
+every month would touch `updated_at` on rows nobody edited).
+
+⚠️ **Manhours are offered on EXISTING profiles only** (`r` truthy) — `manpower_manhours.roster_id`
+is `not null references manpower_roster`, so there is nowhere to attach an hours row until the
+profile itself has been saved and has an id. A brand-new profile: save it once, then re-open Edit
+to record hours.
+
+⚠️ **`mhTotal` returns `null`, never `0`, when nothing has been recorded** — "no hours logged yet"
+and "logged zero hours" are different facts, the same rule this module already applies to vacancy
+counts and unreported actuals everywhere else. Surfaced in three places that all read the one
+table: a new **Manhours** column on the Roster table, the matrix cell in item 5, and the mini-table
+itself — one number, three views, cannot disagree.
+
+⚠️ **The month range offered is fixed to the profile's SAVED contract dates at modal-open time** —
+it does not track live edits to the contract-start/end fields in the same sitting. Widening a
+contract and typing hours into the newly-widened months in one edit is not supported; re-opening
+Edit after Save picks up the new range. Documented in the code rather than silently accepted.
+
+### Migration-degradation, extended
+`missingColumn`'s error message names a column but not which of the two migrations it came from —
+so a dropped `reports_to_id`/`link_mode`/`location`/etc. now resolves through a small `MP2_COLS`
+lookup to the CORRECT file (`migrationFor(col)`), rather than pointing a planner at the original
+2026-08-27 migration (already applied, would change nothing). The banner and the toast both list
+every distinct file actually implicated, not just one. ⚠️ Table-level absence (`manpower_manhours`
+not existing at all) is **not** caught by this same tolerant-write path — that failure mode is a
+different PostgREST error shape (missing relation, not missing column) and surfaces as a loud,
+un-friendly error toast rather than a named-migration message. Accepted rather than built out
+further: it still fails LOUDLY (no silent data loss), just without the polish the column-level case
+gets.
+
+### Verified
+**42 checks** executing functions sliced VERBATIM out of the shipped `index.html` (brace-matched,
+never reimplemented) — `naturalRank`/`naturalCmp` including the case proving plain
+`String.localeCompare` gets "9th Floor" vs "10th Floor" backwards; `daysUntil` at 0/+10/-5 days;
+`orgSeverity`'s full colour matrix, explicitly including the `req!=null, act==null` trap that
+naive JS division would have silently painted as a 0% crisis; `isTaggable`/`workBadgeCls` across
+all five categories; `orgHasCycle` on a 2-node A↔B cycle (from both sides), a self-reference, a
+normal chain, and a timing assertion that it returns promptly rather than hanging; `linkKey`;
+`mhTotal`'s null-vs-zero handling. **0 functions lost** against the pre-change file (44 added);
+inline script parses; 0 duplicate DOM ids; 0 NUL bytes; CSS braces balanced; every
+`getElementById` target resolves in the markup.
+
+### NOT verified
+⚠️ **Nothing here has been exercised signed in.** The anon key has no grants in this environment,
+so every write path (positions with `reports_to_id`, the roster form's Schedule & Location section,
+the activity/WBS search against real `project_schedule` rows, the `project_location_values` RPC,
+manhours upserts) is verified only as sliced pure logic, never against real PostgREST.
+⚠️ **The migration has not been run.** Until it is, the new columns/table are silently dropped by
+`tolerantWrite` on save and the module names the file to run.
+⚠️ **No screenshot** — every visual claim above is a structural/markup check, not a rendered image.
+⚠️ The vertical-stacking natural-sort simplification (documented above) has not been checked
+against a real project's actual floor-naming conventions — only against the synthetic
+"1st/2nd/9th/10th Floor/Roof Deck" style fixture the unit test uses.

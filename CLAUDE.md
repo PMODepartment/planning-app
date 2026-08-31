@@ -263,6 +263,23 @@ regressing those compact dropdown use-cases. `home.html` now has its own small r
 - No shared asset changed (`home.html` is a standalone page with its own scoped `<style>` and its own
   small inline script) — no `?v=` bump needed anywhere else.
 
+### 2026-08-31 — Manpower Loading: Table of Organization, Mobilization dashboard, 5 categories, schedule/location tagging, Activities×Subcontractor matrix, vertical stacking, manhours
+
+Owner's 7-item list for the Manpower Loading module (already built 2026-08-27/28): a steppable
+planned-vs-actual Table of Organization; a mobilization/demobilization dashboard with contract-end
+alerts; widened workforce categories (Shared Staff / Project Staff / Skilled Admin / Skilled
+Self-Performed / Subcontractors); schedule-activity + location tagging for the two site-work
+categories; an Activities×Subcontractor matrix; a simplified vertical stacking view of
+subcontractors per activity/location; and manhours entry per subcontractor or per person.
+**Run `migrations/2026-08-31-manpower-org-schedule-manhours.sql`** (after the 2026-08-27 one — it
+only adds columns/a table, nothing destructive). Full design reasoning, the trade-offs taken
+(notably: the location/schedule link is a TAG, never a second source for the monthly headcount
+which is still contract-duration-derived; and the vertical stacking is a documented
+simplification of the schedule module's own floor-rank engine, not a port of it) and the 42-check
+verification are in `modules/manpower-loading/CLAUDE.md`. ⚠️ Not verified signed in — the anon key
+has no grants in this environment; verified as sliced, executed pure logic only. `0` functions
+lost, `44` added; no shared asset touched, so no app-wide cache-bust.
+
 ### 2026-08-30 (g) — Landing page, one topbar dropdown everywhere, module chrome moves below the topbar, tabs-as-dropdown
 
 Owner sent two more screenshots (a wide Project Schedule topbar, a narrow one showing the collision)
