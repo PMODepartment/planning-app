@@ -84,6 +84,79 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-31 (c) — Project-mode sidebar drops its "Portfolio" section
+
+Owner: *"from project, remove portfolio from sidebar."*
+
+- **`assets/js/ui.js` → `renderNav()`, project-mode (`else`) branch only:** the leading
+  `<div class="pd-navsec">Portfolio</div>` + "Portfolio Dashboard" link is gone; the sidebar now
+  opens directly on `<div class="pd-navsec">Project</div>` (Dashboard + the module list).
+  ⚠️ **Scoped to the project-mode branch — `mode === 'portfolio'`** (used by `projects.html`,
+  `admin.html`, `my-work.html`, `portfolio-overview`) **still shows its own "Portfolio Dashboard"
+  link**, unchanged; only a project's own sidebar (dashboard.html + every module page) drops it.
+- Not a dead end: the shared project dropdown (`UI.enhanceProjectSelect`) already offers a
+  Portfolio row from inside any project, so leaving a project for the Portfolio Dashboard is
+  still one click away — this just removes the second, always-visible path that duplicated it.
+- `.pd-navsec:first-child { padding-top: 0 }` needed no change — it applies positionally to
+  whichever section renders first, and "Project" now is that section.
+- Verified: `ui.js` parses; confirmed no page calls `renderNav(..., 'project', { active:
+  'portfolio-dashboard' })` (the only `active: 'portfolio-dashboard'` caller uses `mode:
+  'portfolio'`, unaffected).
+- Shared asset changed → **`ui.js?v=` bumped `20260831a` → `20260831c` across all 19
+  referencing HTML files** (`home.html` doesn't load `ui.js` any more, so it's not among them).
+
+### 2026-08-31 (b) — Projects page: denser rows in the list view
+
+Owner: *"in the projects list, the text size/row height of each project should be reduced."*
+Confirmed via `AskUserQuestion` this meant `projects.html` (the dedicated Project Selector), not
+`home.html`'s landing-page card list — the two are separate implementations and only one was
+in scope.
+
+- New rules scoped to `.pd-proj-table` (already layered onto the same `<table>` as the shared
+  `.pd-table` base — `class="pd-table pd-proj-table"` — so a later, equal-specificity rule here
+  wins by source order with no `!important` needed): cell padding `10px 12px` → **`6px 12px`**,
+  body text `14px` (inherited from `body`) → **`12.5px`**, header text `12px` → **`10.5px`**, the
+  project-id `<code>` chip `12px` → **`11px`**.
+- ⚠️ **Scoped deliberately to `.pd-proj-table`, not the shared `.pd-table` base** — `.pd-table` is
+  reused elsewhere in the app (e.g. `admin.html`'s Users table), and editing it directly would have
+  shrunk every other table in the app along with this one.
+- `.pd-proj-name` (no explicit font-size of its own) inherits the new 12.5px cell size for free.
+  Card view (`renderCards`) is untouched — the ask named "row height", which only applies to the
+  table-based List view (`renderList()`, the default view).
+- Verified: CSS brace-balance unchanged (414/414 before and after).
+- Shared asset changed → **`dashboard.css?v=` bumped `20260830e` → `20260831b` across all 27
+  referencing HTML files**, confirmed 0 stragglers on the old version.
+
+### 2026-08-31 — Landing page loses the shell chrome; "Home" dropped from the sidebar
+
+Owner: the `home.html` card from entry (h) below should have no sidebar/topbar around it — a pure
+picker screen, matching how the PRC screenshot it was modeled on has no app chrome either — and the
+sidebar's own "Home" link (added the same day as `home.html`, entry (g)) should go.
+
+- **`home.html`**: `<aside class="pd-sidebar">` and `<div class="pd-topbar">` (with `#user-bar`) are
+  gone; the card now sits directly in `.pd-app > .pd-content > .pd-main`, which already gave every
+  shell page its padding/background — no new wrapper needed. The matching JS calls
+  (`UI.renderUserBar`, `UI.renderNav`, `Icons.hydrate`) and their now-unused `ui.js`/`icons.js`
+  script tags are removed with them; the card itself never used a `data-ico` icon, so nothing was
+  hydrating anyway. `theme.js`'s dark/light toggle still appears — it already falls back to a
+  floating button on any page with no `.pd-topbar` (the same path the login/register pages use), so
+  removing the topbar didn't cost that control.
+  ⚠️ **Sign-out is now reachable only from inside a project/module** (the avatar menu on every other
+  shell page) — this page has no avatar any more. Not flagged as a gap: every destination from here
+  (Portfolio, a project) lands on a page with the full sidebar+topbar seconds later.
+- **`assets/js/ui.js` → `renderNav()`**: the `<a href="home.html">…Home</a>` entry is deleted from
+  **both** branches (`mode==='portfolio'` and the per-project `else`) — it was the only "Home" link in
+  the app, added alongside `home.html` itself in entry (g). `cls('home')`/`active==='home'` has no
+  remaining caller (grepped) and was the only place `home.html` was still linked from `ui.js`.
+- Verified: `home.html`'s inline `<script>` parses (`new Function`), its `<style>` block balances
+  (32/32), `node --check` on `ui.js`. ⚠️ **Not verified signed-in** — no live login is possible in
+  this environment, the standing constraint for every UI pass in this repo.
+- ⚠️ **`ui.js` is a shared asset and this is a real, visible change to every page's sidebar** (the
+  "Home" row disappears from all 19 `renderNav`-calling pages, not just `home.html`, which doesn't
+  even load `ui.js` any more) — so per this repo's own repeatedly-learned lesson (a browser caches a
+  script by its full URL; forgetting to bump the query string is how a shipped fix goes unseen),
+  `ui.js?v=` is bumped `20260830e` → `20260831a` across all 19 referencing HTML files.
+
 ### 2026-08-31 — Minutes of Meeting split into its own module
 
 Owner: *"the minutes of the meeting and the issues and concerns should be two separate modules"*, with
