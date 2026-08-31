@@ -502,7 +502,14 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 
 /* projects table */
 .pd-proj-table { border: 1px solid var(--pd-line); border-radius: var(--pd-radius); overflow: hidden; }
-.pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+/* Denser rows than the shared .pd-table default (10px/13.5-14px) — this list can
+   run to dozens/hundreds of projects, so a shorter row + smaller type lets more
+   of it show at once without opening each project just to scan the list.
+   Scoped to .pd-proj-table (layered on the same <table> as .pd-table) so no
+   other table in the app — e.g. admin.html's Users table — is affected. */
+.pd-proj-table th, .pd-proj-table td { padding: 6px 12px; font-size: 12.5px; }
+.pd-proj-table th { font-size: 10.5px; }
+.pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
 /* PRC's grouped-table header (_ghHeadCells): a tinted chip with a RED LEFT
    BORDER, then a muted "N projects" beside it. ⚠️ Deliberately NOT a solid-red
    pill — PRC's own note records that as user feedback ("no red overlay behind

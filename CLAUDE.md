@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-31 (b) — Projects page: denser rows in the list view
+
+Owner: *"in the projects list, the text size/row height of each project should be reduced."*
+Confirmed via `AskUserQuestion` this meant `projects.html` (the dedicated Project Selector), not
+`home.html`'s landing-page card list — the two are separate implementations and only one was
+in scope.
+
+- New rules scoped to `.pd-proj-table` (already layered onto the same `<table>` as the shared
+  `.pd-table` base — `class="pd-table pd-proj-table"` — so a later, equal-specificity rule here
+  wins by source order with no `!important` needed): cell padding `10px 12px` → **`6px 12px`**,
+  body text `14px` (inherited from `body`) → **`12.5px`**, header text `12px` → **`10.5px`**, the
+  project-id `<code>` chip `12px` → **`11px`**.
+- ⚠️ **Scoped deliberately to `.pd-proj-table`, not the shared `.pd-table` base** — `.pd-table` is
+  reused elsewhere in the app (e.g. `admin.html`'s Users table), and editing it directly would have
+  shrunk every other table in the app along with this one.
+- `.pd-proj-name` (no explicit font-size of its own) inherits the new 12.5px cell size for free.
+  Card view (`renderCards`) is untouched — the ask named "row height", which only applies to the
+  table-based List view (`renderList()`, the default view).
+- Verified: CSS brace-balance unchanged (414/414 before and after).
+- Shared asset changed → **`dashboard.css?v=` bumped `20260830e` → `20260831b` across all 27
+  referencing HTML files**, confirmed 0 stragglers on the old version.
+
 ### 2026-08-31 — Landing page loses the shell chrome; "Home" dropped from the sidebar
 
 Owner: the `home.html` card from entry (h) below should have no sidebar/topbar around it — a pure
