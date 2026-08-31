@@ -1,5 +1,63 @@
 # Module: issues-lessons
 
+## 2026-08-31 — Minutes of Meeting split out into its own module
+
+Owner: *"the minutes of the meeting and the issues and concerns should be two separate modules."*
+Full detail lives in `modules/minutes-of-meeting/CLAUDE.md`; this entry is the Issues & Concerns half.
+
+**What left this file:** the whole MoM screen — `renderMom`/`wireMom`/`momDetailHTML`/`momItemRowHTML`/
+distribute/carry-over/raise (now "Get from issue" on the other side)/attachments/the PDF export — moved
+wholesale to `window.MinutesOfMeeting` in the new module. The `il-tabs` strip is now two tabs (Issues &
+Concerns, Lessons Learned); default `screen` changed from `'mom'` to `'issues'`; the deep-link reader
+only accepts `?screen=issues|lessons` now.
+
+**What stayed, and why — the kept half is the LINK, not a leftover.**
+- `momTag()` — the register's "From MOM" tag — is untouched: it was always a light read of
+  `meeting_minutes` (id/title/meeting_date only, populated in `load()`), never dependent on the full
+  MoM editor.
+- `MOMS` / `MOM_ITEMS` / `momItemsOf()` / `loadMoms()` / `momReset()` survive in trimmed form, for
+  exactly one remaining consumer: `momLinkPickerHTML()`, the Lessons Learned "Source → A meeting action
+  item" picker. It still needs to list meetings and their action items to link a lesson to one; it
+  never needed the rest of the MoM apparatus (permissions, distribute state, attachments…), so none of
+  that moved back in.
+- ⚠️ **`momLoadDone()` is gone, not moved.** It existed to re-render the Lessons screen when a
+  background `loadMoms()` resolved; `momLinkPickerHTML()` already chains its own
+  `loadMoms().then(function(){renderLessons();})`, so the extra notification hook was redundant once
+  the MoM screen (its other caller) no longer exists here.
+
+**The new reciprocal link — receiving a deep link FROM Minutes of Meeting.** That module's "Capture
+lesson" / "N lessons" buttons now navigate here (Lessons Learned's editor is this module's, not
+theirs) instead of switching a local screen. `init()` reads `?momId=&momItem=&issueId=` or
+`?openLesson=` **after `load()` completes** (now `await`ed instead of fire-and-forget, specifically so
+this can run once `LESSONS`/`_lessLegacy` are actually populated) and calls the existing
+`newLesson({mom_id, mom_item_id, issue_id})` or `openLesson(id)` — the exact same functions a local
+"+ Capture lesson" click always called; only the trigger crossed a module boundary.
+
+**CSS.** Removed only rules verified to have zero remaining selector usage after the JS surgery —
+`.il-mi-cards/-card/-meta/-foot`, `.il-c-no/-reg/-del`, the activity-picker block (`.il-mom-act*`,
+`.il-mom-chip*`), `.il-mom-by`, and the carry-over/filter-bar/attachment blocks
+(`.il-mom-carry*`, `.il-mom-group*`, `.il-mom-filters*`, `.il-mom-count`, `.il-mom-file`).
+⚠️ **Everything else with an `.il-mom-*` name was deliberately KEPT** — `.il-mom-wrap/-list/-detail/
+-head/-item/-draft/-detail-card/-toolbar/-state/-note/-actions/-addrow/-search/-report` turned out to
+be a **shared master/detail list+detail pattern**, reused verbatim by Issues' and Lessons' own
+"View Open Issues"-style report screens (confirmed by grepping actual class usage in the trimmed file
+before removing anything — several looked MoM-exclusive by name alone and were not). Removing those
+would have broken the Issues/Lessons report views, not cleaned up dead code.
+
+**Verified.** `node --check` clean; CSS braces balanced (194/194); every class the trimmed JS emits
+resolves to a CSS rule except pre-existing JS-hook-only classes that had no dedicated styling before
+this change either (`il-if`, `il-c-aging`, `il-iss-card`, `il-lf-fld`) — confirmed pre-existing, not a
+regression. Grepped for every symbol this split was supposed to remove (`renderMom`, `wireMom`,
+`momDetailHTML`, `MOM_ACT_NAME`, `MOM_TYPES`, `canEditMinute`, `momLocked`, `MOM_BUCKET`,
+`momDownloadPDF`, `il-screen-mom`, `_momSel`, …) — zero remaining references.
+
+⚠️ **Not verified signed in** — no live click-through of the cross-module lesson deep-link, and no
+live confirmation that the "From MOM" tag still resolves against a meeting recorded in the sibling
+module (the underlying read is unchanged, but the split itself is untested against real data).
+
+`module.css/js?v=20260831a`; `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`)
+→ `20260831a`.
+
 ## 2026-08-30 — Tabs become a dropdown (shared `UI.tabsToDropdown`)
 
 The shared UI pass converted this module's flat `.il-tabs` row (Minutes of Meeting / Issues &
