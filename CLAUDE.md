@@ -84,6 +84,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-31 — Landing page loses the shell chrome; "Home" dropped from the sidebar
+
+Owner: the `home.html` card from entry (h) below should have no sidebar/topbar around it — a pure
+picker screen, matching how the PRC screenshot it was modeled on has no app chrome either — and the
+sidebar's own "Home" link (added the same day as `home.html`, entry (g)) should go.
+
+- **`home.html`**: `<aside class="pd-sidebar">` and `<div class="pd-topbar">` (with `#user-bar`) are
+  gone; the card now sits directly in `.pd-app > .pd-content > .pd-main`, which already gave every
+  shell page its padding/background — no new wrapper needed. The matching JS calls
+  (`UI.renderUserBar`, `UI.renderNav`, `Icons.hydrate`) and their now-unused `ui.js`/`icons.js`
+  script tags are removed with them; the card itself never used a `data-ico` icon, so nothing was
+  hydrating anyway. `theme.js`'s dark/light toggle still appears — it already falls back to a
+  floating button on any page with no `.pd-topbar` (the same path the login/register pages use), so
+  removing the topbar didn't cost that control.
+  ⚠️ **Sign-out is now reachable only from inside a project/module** (the avatar menu on every other
+  shell page) — this page has no avatar any more. Not flagged as a gap: every destination from here
+  (Portfolio, a project) lands on a page with the full sidebar+topbar seconds later.
+- **`assets/js/ui.js` → `renderNav()`**: the `<a href="home.html">…Home</a>` entry is deleted from
+  **both** branches (`mode==='portfolio'` and the per-project `else`) — it was the only "Home" link in
+  the app, added alongside `home.html` itself in entry (g). `cls('home')`/`active==='home'` has no
+  remaining caller (grepped) and was the only place `home.html` was still linked from `ui.js`.
+- Verified: `home.html`'s inline `<script>` parses (`new Function`), its `<style>` block balances
+  (32/32), `node --check` on `ui.js`. ⚠️ **Not verified signed-in** — no live login is possible in
+  this environment, the standing constraint for every UI pass in this repo.
+- ⚠️ **`ui.js` is a shared asset and this is a real, visible change to every page's sidebar** (the
+  "Home" row disappears from all 19 `renderNav`-calling pages, not just `home.html`, which doesn't
+  even load `ui.js` any more) — so per this repo's own repeatedly-learned lesson (a browser caches a
+  script by its full URL; forgetting to bump the query string is how a shipped fix goes unseen),
+  `ui.js?v=` is bumped `20260830e` → `20260831a` across all 19 referencing HTML files.
+
 ### 2026-08-30 (h) — Landing page (`home.html`) restyled to match the Procurement Dashboard's "Select Dashboard" screen
 
 Owner shared a screenshot of the Procurement (PRC) app's post-login landing screen and asked this

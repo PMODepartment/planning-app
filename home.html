@@ -83,25 +83,7 @@
 </head>
 <body>
   <div class="pd-app">
-    <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
-      <nav id="side-nav"></nav>
-      <div class="pd-nav-foot">
-        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
-          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
-        </a>
-        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
-          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
-        </a>
-      </div>
-      <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
-    </aside>
-
     <div class="pd-content">
-      <div class="pd-topbar">
-        <div id="user-bar"></div>
-      </div>
-
       <div class="pd-main">
         <div class="pd-home-wrap">
           <div class="pd-home-card">
@@ -131,8 +113,6 @@
   <script src="assets/js/config.js?v=20260828b"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
   <script src="assets/js/db.js?v=20260827c"></script>
-  <script src="assets/js/ui.js?v=20260830e"></script>
-  <script src="assets/js/icons.js?v=20260830b"></script>
   <script>
   (function () {
     var esc = (window.Fmt && Fmt.esc) || function (s) { return String(s == null ? '' : s); };
@@ -213,14 +193,9 @@
           if (p) goProject(p);
         };
       });
-      if (window.Icons && Icons.hydrate) Icons.hydrate();
     }
 
     AppAuth.requireLogin(async function (user, profile) {
-      UI.renderUserBar(profile);
-      var isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
-      UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'home', isAdmin: isAdmin });
-
       document.getElementById('home-greet').innerHTML =
         'Hi ' + esc(firstName(profile)) + '!' +
         '<span class="pd-home-rolepill">' + esc((profile.role || '').replace(/_/g, ' ')) + '</span>';

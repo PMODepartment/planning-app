@@ -264,12 +264,11 @@
     function cls(key) { return active === key ? ' class="active"' : ''; }
     var html;
     if (mode === 'portfolio') {
-      // Home (the Portfolio + Group-Head + Projects landing tree, item 1) >
       // Portfolio Dashboard > Personal Dashboard > Projects — the default
       // landing is the dashboard, not the plain project list, so it leads.
+      // (No "Home" link here — home.html is the landing/picker screen itself,
+      // not a destination to navigate back to from inside the app.)
       html = '<div class="pd-navsec">Portfolio</div>' +
-        '<a href="' + base + 'home.html"' + cls('home') + ' title="Home">' +
-          '<span class="pd-navico" data-ico="compass"></span><span class="pd-navtxt">Home</span></a>' +
         '<a href="' + base + 'modules/portfolio-overview/index.html"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
         '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
@@ -287,8 +286,6 @@
       // dropdown (UI.enhanceProjectSelect) also offers a Portfolio row now,
       // but this stays as a second, always-visible path out of a project.
       html = '<div class="pd-navsec">Portfolio</div>' +
-        '<a href="' + base + 'home.html" title="Home">' +
-          '<span class="pd-navico" data-ico="compass"></span><span class="pd-navtxt">Home</span></a>' +
         '<a href="' + base + 'modules/portfolio-overview/index.html" title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
         '<div class="pd-navsec">Project</div>' +
