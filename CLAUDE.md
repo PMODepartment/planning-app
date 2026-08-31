@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-08-31 (c) — Project-mode sidebar drops its "Portfolio" section
+
+Owner: *"from project, remove portfolio from sidebar."*
+
+- **`assets/js/ui.js` → `renderNav()`, project-mode (`else`) branch only:** the leading
+  `<div class="pd-navsec">Portfolio</div>` + "Portfolio Dashboard" link is gone; the sidebar now
+  opens directly on `<div class="pd-navsec">Project</div>` (Dashboard + the module list).
+  ⚠️ **Scoped to the project-mode branch — `mode === 'portfolio'`** (used by `projects.html`,
+  `admin.html`, `my-work.html`, `portfolio-overview`) **still shows its own "Portfolio Dashboard"
+  link**, unchanged; only a project's own sidebar (dashboard.html + every module page) drops it.
+- Not a dead end: the shared project dropdown (`UI.enhanceProjectSelect`) already offers a
+  Portfolio row from inside any project, so leaving a project for the Portfolio Dashboard is
+  still one click away — this just removes the second, always-visible path that duplicated it.
+- `.pd-navsec:first-child { padding-top: 0 }` needed no change — it applies positionally to
+  whichever section renders first, and "Project" now is that section.
+- Verified: `ui.js` parses; confirmed no page calls `renderNav(..., 'project', { active:
+  'portfolio-dashboard' })` (the only `active: 'portfolio-dashboard'` caller uses `mode:
+  'portfolio'`, unaffected).
+- Shared asset changed → **`ui.js?v=` bumped `20260831a` → `20260831c` across all 19
+  referencing HTML files** (`home.html` doesn't load `ui.js` any more, so it's not among them).
+
 ### 2026-08-31 (b) — Projects page: denser rows in the list view
 
 Owner: *"in the projects list, the text size/row height of each project should be reduced."*

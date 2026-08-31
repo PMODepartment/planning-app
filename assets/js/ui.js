@@ -282,13 +282,10 @@
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled; });
-      // A way back to Portfolio, always available — the shared project
-      // dropdown (UI.enhanceProjectSelect) also offers a Portfolio row now,
-      // but this stays as a second, always-visible path out of a project.
-      html = '<div class="pd-navsec">Portfolio</div>' +
-        '<a href="' + base + 'modules/portfolio-overview/index.html" title="Portfolio Dashboard">' +
-          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
-        '<div class="pd-navsec">Project</div>' +
+      // No "Portfolio" section here (owner's call, 2026-08-31) — the shared
+      // project dropdown (UI.enhanceProjectSelect) already offers a Portfolio
+      // row, so a project's own sidebar stays scoped to that project.
+      html = '<div class="pd-navsec">Project</div>' +
         '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
           '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard' +
           (ctx.pname ? '<small class="pd-nav-sub">' + esc(ctx.pname) + '</small>' : '') + '</span></a>' +
