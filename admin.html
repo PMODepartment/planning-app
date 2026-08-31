@@ -115,8 +115,9 @@
       // shared: the contract forbids a module editing shared assets, so promoting it to
       // config.js is a change the module owner has to make. Keep the two lists in step —
       // a value here that the register does not offer becomes an unselectable default.
-      var DEPARTMENTS = ['PMO', 'Operations', 'Engineering', 'Design', 'QA/QC', 'Safety',
-                         'Procurement', 'Commercial', 'Finance', 'Human Resources', 'MEP', 'External'];
+      var DEPARTMENTS = ['Commercial and Contracts', 'Engineering', 'Procurement', 'Finance',
+                         'Human Resources', 'Quality', 'Health and Safety', 'Operations',
+                         'PMO', 'COO', 'CEO'];
       t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Actions</th></tr></thead><tbody>' +
         users.map(function (u) {
           var canSuper = ME.role === 'super_admin';

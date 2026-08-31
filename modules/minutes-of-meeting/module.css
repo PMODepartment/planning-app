@@ -40,7 +40,12 @@
 }
 .il-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
 
-@media (max-width: 1500px) { .il-title .il-title-txt { display: none; } }
+/* ⚠️ REMOVED (2026-08-31, owner-reported bug #4 — see issues-lessons/module.css for
+   the full explanation): a `.il-title-txt { display:none }` rule at ≤1500px, copied
+   verbatim from issues-lessons before that module's stale hide-the-title rule was
+   found and removed. The shared `.pd-modulebar` layer already keeps the title
+   visible at every width; this local override left the icon stranded alone on its
+   own row. Do not reintroduce it. */
 
 /* ---- Empty states -------------------------------------------------------- */
 .il-empty { padding: 40px 24px; text-align: center; color: var(--pd-muted); }

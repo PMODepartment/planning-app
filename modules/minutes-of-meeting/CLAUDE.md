@@ -1,5 +1,15 @@
 # Module: minutes-of-meeting
 
+## 2026-08-31 (b) — Fix: stale title-hiding rule stacked the module icon and title
+
+Owner-reported bug (screenshot), fixed as part of the same-day Issues & Concerns pass — see that
+module's CLAUDE.md for the full root-cause explanation (a rule superseded by the shared
+`.pd-modulebar` layer's 2026-07-24 decision to always show module title text, never removed from
+either module's own stylesheet). This module's copy — `@media (max-width: 1500px) { .il-title
+.il-title-txt { display: none; } }`, copied verbatim from Issues & Concerns at the module split —
+removed with an explanatory comment in its place. No JS change; no `?v=` bump needed beyond whatever
+the sibling module's pass already triggers app-wide (`MODULE_V` via `modules-grid.js?v=`).
+
 ## 2026-08-31 — Module created: Minutes of Meeting split out of Issues, Concerns & Lessons Learned
 
 Owner: *"the minutes of the meeting and the issues and concerns should be two separate modules"* —

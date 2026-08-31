@@ -1,5 +1,206 @@
 # Module: issues-lessons
 
+## 2026-08-31 (b) — Issues & Concerns rebuilt: dashboard, status workflow + history, required fields;
+## Lessons Learned mirrors it for closed issues; three bugs fixed
+
+Owner sent a 24-item request spanning this module and Minutes of Meeting, off two screenshots (a
+phone-width topbar and a date-input field). Given the size, this pass **phases the delivery**: the
+three bugs first, then Issues & Concerns rebuilt in full, then Lessons Learned mirrored onto the same
+architecture for its one narrower case (item #15). Minutes of Meeting's own Dashboard/Meetings rework
+(items #2, #17–23) and the HTML/PDF/PPTX exports (#24) are **NOT started** — flagged below, not
+fabricated as done. **Run `migrations/2026-08-31-issues-workflow-history.sql`.**
+
+### Bug #3 — a fresh visit rendered nothing at all
+⚠️ **Root cause: `UI.bindHistoryState`'s `apply()` only runs if a URL hash for that key ALREADY
+exists.** On a first visit there is none, so `bindHistoryState` calls `writeUrl(true)`
+(`replaceState`) and returns — `apply()`, the callback that actually paints a screen, is never
+invoked. Every other module either renders unconditionally at load or has a screen visible by
+default in raw HTML; this module's `#il-screen-issues` carried a stray `hidden` attribute with no
+unconditional render before `bindHistoryState` ran, so the one path that should have painted it
+never fired and the app sat blank until some other interaction forced a re-render.
+- Fixed at the cause: `init()` now calls `switchScreen(screen)` unconditionally right after binding
+  history state — a harmless repaint if `apply()` already ran (nothing here calls `.push()` from
+  inside it, so no double-navigation), the only paint if it did not.
+- **Defense in depth:** removed the stray `hidden` from `#il-screen-issues` in `index.html` — a
+  screen's initial visibility must not depend solely on JS having run before paint, the convention
+  every other module already follows.
+- Checked all 11 other modules using the same `bindHistoryState` pattern — none share this defect;
+  every one of them either has no `hidden` default screen or renders unconditionally at load.
+
+### Bug #4 — the module icon and title stacked on separate lines on a phone
+⚠️ **A stale rule from before the shared-layer topbar restructuring.** `UI.initModuleTopbar()`
+(2026-07-24) moved every module's title out of `.pd-topbar` into a sibling `.pd-modulebar`, and a
+later shared-layer decision (root CLAUDE.md, 2026-07-24 "part 9") explicitly **restored** module
+title text at every width, superseding an earlier "hide the title text on narrow screens" rule. This
+module still carried its OWN copy of that superseded rule —
+`.il-title-txt { display: none }` inside `@media (max-width: 820px)`, plus a second, wider
+`@media (max-width: 1500px) { .il-title .il-title-txt { display: none } }` block — so the icon
+rendered alone with the title text hidden, and on the module's own two-row layout the icon and (once
+visible again above 1500px) the title text stacked instead of sitting on one line. Both rules
+removed, with an explanatory comment in their place. Also removed the identical stale rule from
+`modules/minutes-of-meeting/module.css` (copied at the module-split, same bug).
+
+### Bug #5 — date input fields rendered with visible clipping/misalignment
+Native `<input type="date">` controls inherited this module's 16px phone font (the iOS-zoom guard
+every input carries) with no compensating height/padding, so the browser's own date-picker chrome
+(calendar icon, segments) crowded against the box edges. Normalized with an explicit `height: 34px`
++ `line-height: 20px` + matched vertical padding + `box-sizing: border-box`, with a taller phone
+override. A defensible, general fix rather than a guess chasing one browser's rendering quirk from a
+static screenshot — this is a much smaller item than the 21 substantial feature items in the same
+request.
+
+### Items #1, #6–14, #16 — Issues & Concerns rebuilt around three modes: Dashboard · Log · Detail
+`_issMode` replaces the old `'report'|'library'` idea entirely — **Dashboard** (item #16 renames
+"Report"), **Log** (the table, unchanged in kind), and **Detail**, a drill-down reached from either.
+All three read the same `issuesFiltered()`, so switching presentation never changes the set in view.
+
+- **#1 — the Dashboard**, `renderIssueDashboard()`: a tile (issue count, labelled by the active
+  status scope — "Open issues" by default), a **summary list** of the filtered issues sorted
+  longest-aging-first (capped to 12, "switch to Log for the full list" beyond that) showing Issue /
+  Champion / Department / Status / Aging, a **donut** and a **bar** chart (hand-rolled inline SVG,
+  the app's established convention — no charting library). ⚠️ **"Category" reads as DEPARTMENT.**
+  Issues have no free-text category field of their own (unlike Lessons, which do); department is
+  this register's existing classifying dimension and the one the filter bar and log already group
+  by, so the donut is "by department" rather than inventing a second, parallel taxonomy. The bar
+  chart is "by aging group" against the same three buckets (0–30 / 31–90 / 90+) the filter bar
+  already offers (`AGING_BUCKETS`), via `agingBucketsOf()`.
+- **#6 — the Log defaults to Open**: `iFilters.status` now defaults to `'Open'` (was `''`), on both
+  Dashboard and Log — they share one filter state. ⚠️ Because Open is now the *default* scope and
+  not "no filter," it must not count toward "a filter is active" or the Clear-filters button would
+  show permanently at rest; `anyF` explicitly excludes `status === 'Open'` from that test.
+- **#7 — the department list** replaced with the owner's exact 11: Commercial and Contracts,
+  Engineering, Procurement, Finance, Human Resources, Quality, Health and Safety, Operations, PMO,
+  COO, CEO. Synced to `admin.html`'s own copy (its user-management Department column), which had
+  drifted onto an older, different list. ⚠️ Minutes of Meeting carries **no department picker of its
+  own** — it only displays a linked issue's department verbatim off the light `ISSUES` mirror — so
+  there is nothing to sync there.
+- **#8 — every field required**: department, champion(s), the issue text, caused-by and date
+  presented are `required` on the base form; the status-conditional narrative field (corrective
+  action / hold reason / closure report, see #10–13) is `required` too, whichever one is showing.
+  `reqMark()` renders a visible `*` beside each required label so this isn't only enforced silently
+  by the browser. Backed by `validateIssueCommon()` + per-status checks in `saveIssue()`, so a
+  bypassed `required` attribute (autofill, programmatic submit) still can't save an incomplete row.
+- **#9 — spellcheck** on every free-text textarea in the detail form (issue, caused-by, corrective
+  action, hold reason, closure report, the standalone-lesson text).
+- **#10–13 — status is no longer a field you set; it's driven by three buttons.**
+  - **Update Issue** — the existing Save path, now logging history (see #11) on every save.
+  - **Put On Hold** (`confirmHoldIssue`) — opens a reveal panel demanding a **Reason for Hold**
+    (`required`); on confirm, sets `status='On Hold'` + `hold_reason`, and the detail view swaps its
+    narrative field from **Corrective Action** to **Reason for Hold** (item #12) — the same field
+    slot, different label and column, so a hold reason can never be mistaken for a corrective action
+    once the issue reopens.
+  - **Close Issue** (`confirmCloseIssue`) — opens a reveal panel demanding BOTH a **Closure Report**
+    and a **Lessons Learned** entry (`required`, item #13); on confirm, the narrative field becomes
+    **Closure Report** and — this is the load-bearing decision — the lesson text is inserted straight
+    into `lessons_learned` (linked via `issue_id`) in the *same* action, so **"no need for the
+    capture a lesson button"** is not a missing feature, it's the point: closing an issue always
+    produces exactly one lesson, with no separate step to skip.
+  - ⚠️ **Two new columns, not a repurposed one** (`migrations/2026-08-31-issues-workflow-history.sql`):
+    `hold_reason` and `closure_report`, both `text`. Overloading `corrective_action` for all three
+    would make an On-Hold issue's "planned actions" column silently mean "why we paused," and a
+    Closed one mean "how we closed it" — one column answering three different questions is exactly
+    how a report ends up quoting the wrong thing.
+  - Adding a new issue no longer asks for a status at all (item #10) — `newIssue()` seeds
+    `status: 'Open'` directly; the only way out of Open is one of the two buttons above, on a saved row.
+- **#11 — every change is logged to a per-issue history**, new `issues_lessons_history` table.
+  - ⚠️ **Insert-only RLS on purpose — no update policy, no delete policy, anywhere.** An audit trail
+    a planner could edit or remove after the fact is not an audit trail; a bad entry from a future
+    bug is a manual, logged, out-of-band DBA fix, never a feature this app exposes.
+  - Every write path — create, update, hold, close, and the forced-closed-on-create path from item
+    #15 — captures a **snapshot of the row as it stood immediately before the change** (`before =
+    Object.assign({}, r)`, taken before the row is mutated) plus an `action` label and an optional
+    `note` (the hold reason / closure report / lessons text at that moment, so the history reads as
+    a story without decoding jsonb). `changed_by_department` is denormalized from the actor's own
+    profile at write time — resolving `created_by`→name later would need a `users` read a department
+    user has no business being granted, the same privacy floor `championText`/`raisedByLabel` already
+    hold in this module.
+  - ⚠️ **Best-effort, never load-bearing**: `logHistory()` runs *after* the real write has already
+    succeeded, wrapped in its own try/catch — a missing migration or a transient failure here must
+    never make a successful save read as an error to the person who just saved. `historyHTML()`
+    correctly distinguishes "no changes yet" from "the migration hasn't been run" only by naming the
+    file in the empty state, since both look identical from the client's side.
+- **#14 — narrow-screen field order**: `.il-iss-panel { order: 2 }` / `.il-iss-body { order: 1 }`
+  inside the existing `@media (max-width: 700px)` block, so on a phone the issue/caused-by/
+  corrective-action/narrative fields render ABOVE the status panel (department, champion, dates),
+  matching the flex column the module already switches to at that width.
+- **#16 — "Report" → "Dashboard"** everywhere the word appeared as a screen label (view toggle
+  buttons in `index.html`, `syncChrome()`'s labelling logic).
+
+### Item #15 — Lessons Learned mirrors Issues, closed-only, plus a standalone flow
+*"Lessons learned and issues and concerns should be similar in terms of report/dashboard content and
+log content except that the lessons learned are exclusively for closed issues only. Users can add
+lessons without going through issues but they must still provide all the details required from
+adding issues up to closure report and lessons learned."*
+
+⚠️ **Read literally, a standalone lesson under this model IS a full `issues_lessons` row created
+directly in Closed status** — not a second data model bolted beside the first. That reading is what
+let the Lessons screen reuse almost everything the Issues rebuild had just built:
+- `_lessMode`: `'dashboard' | 'log' | 'detail'`, same three-mode shape as Issues.
+- `renderLessonDashboard()` mirrors `renderIssueDashboard()`: a tile counting closed issues +
+  standalone `lessons_learned` rows together, a summary list of closed issues
+  (`lessonDashboardListHTML`), a donut **by lesson category** (the field Issues doesn't have but
+  Lessons always did), a bar **by department**.
+- `renderLessonsLogView()` shows the register-style table for `closedIssuesFiltered()` — issues where
+  `status === 'Closed'` — with a **secondary section beneath it** for
+  `standaloneLessonsFiltered()`: `lessons_learned` rows with **no** `issue_id`, i.e. lessons captured
+  straight from a meeting action item (via the cross-module deep link from Minutes of Meeting) or
+  written before this workflow existed. Kept visible rather than dropped — item #15 scopes *new*
+  standalone lessons through the full closure flow, it doesn't retire the legacy ones.
+- **"+ New Lesson" on the Lessons screen routes to `newLessonAsClosedIssue()`**, not the legacy
+  `newLesson()` — it opens the SAME Issues detail form (`_forceClose` flag on the draft), demanding
+  every field up through department/champion/dates AND the closure report AND the lesson text in one
+  save, then inserts both the `issues_lessons` row (Closed) and the `lessons_learned` row atomically
+  in `saveIssue()`'s forced-close branch. `_issNewFromLessons` routes "← Back" and a successful save
+  back to the Lessons screen instead of Issues'.
+- ⚠️ **The legacy `newLesson()`/`openLesson()` pair is kept, unchanged in purpose, for the ONE case
+  that still needs it**: a lesson with no full issue behind it (a meeting-linked or pre-migration
+  standalone `lessons_learned` row). Its own `_lessMode`/`_lessPrevMode` were carrying a stale
+  `'report'` value left over from before this rewrite (a bug introduced mid-session and caught before
+  landing) — fixed to `'detail'`, with `_lessPrevMode` tracked the same way `newIssue()` tracks
+  `_issPrevMode`, and a new `backFromLessonDetail()` written to mirror `backFromIssueDetail()`
+  (previously referenced by `wireLessons()` but never defined — also caught before landing).
+- Clicking a closed issue anywhere in the Lessons dashboard/log opens it via the shared `openIssue()`
+  — on the Issues screen, in Issues' own Detail view — since a closed issue **is** an Issues record;
+  the Lessons screen is a filtered lens onto it, not a second editor for the same row.
+
+### Verified
+- `node --check` clean throughout every edit in this pass.
+- CSS brace balance unchanged at **233/233** after all new `.il-req` / `.il-backlink` /
+  `.il-workflow-*` / `.il-history*` / `.il-dash-*` rules.
+- **0 NUL bytes** (checked with a raw byte count, not `grep -c` — a `grep -c $'\x00'` in this shell
+  reported a meaningless count and would have been a false alarm if trusted).
+- **Function-set diff against the last commit: 6 lost, all deliberate** (`issListRowHTML`,
+  `issSearchList`, `renderIssuesReport`, `lessonListRowHTML`, `renderLessonsLibrary`,
+  `renderLessonsReport` — the old Report/Library-mode renderers, wholly superseded), **21 added**
+  (the Dashboard renderers, the chart helpers, the workflow confirm/validate functions, the history
+  functions, `backFromLessonDetail`, `newLessonAsClosedIssue`, `closedIssuesFiltered`/
+  `standaloneLessonsFiltered`). Grepped for every removed name across the whole module + `index.html`
+  — zero remaining references.
+- Every static element id referenced via `$('…')`/`getElementById('…')` resolves against
+  `index.html`'s raw markup (dynamically-created ids reached via `host.querySelector` inside the
+  detail-view render functions are, correctly, not part of that check).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the dashboard charts, the
+Hold/Close workflow, the history table, or the standalone-lesson closure flow against real data; the
+migration has not been run.
+
+### Explicitly NOT done this pass — flagged, not silently skipped
+- **Item #2** (a Minutes-of-Meeting dashboard, mirroring this one) and **items #17–23** (Meetings tab
+  redesign: defined recurring meeting schedules, a calendar showing actual-or-planned dates per
+  frequency, agenda continuity from the previous meeting, required/optional/actual attendees, venue/
+  link/recording fields, Internal/External meeting-type grouping, a right-pane scheduler, and a
+  per-item history + hold/close narrative for `mom_items` mirroring what Issues just got) — a
+  substantial separate body of work (new tables for meeting schedules/frequency, new calendar/
+  right-pane/agenda UI) belonging in `modules/minutes-of-meeting/`, deliberately deferred to its own
+  pass rather than compressed into this one.
+- **Item #24** (download as HTML / PDF / PPTX for Issues, Lessons, and Minutes) — Minutes of Meeting
+  already has a working PDF export from an earlier session (see that module's history below); Issues
+  and Lessons have no export at all yet, and no module has an HTML or PPTX export. Not started.
+
+`module.css/js?v=20260831b`; `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`)
+→ `20260831b`.
+
 ## 2026-08-31 — Minutes of Meeting split out into its own module
 
 Owner: *"the minutes of the meeting and the issues and concerns should be two separate modules."*
