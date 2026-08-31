@@ -84,6 +84,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 — Vertical stacking exports to PDF
+Owner asked for the displayed vertical-stacking report to be convertible to PDF, "very simple yet
+aesthetic". New **PDF** button in the stacking toolbar: opens a clean A4 print sheet — title, project,
+the basis it was exported under (tower / view / detail / dates / trades), the legend, one card per
+building, footer with the data date — and triggers the print dialog.
+- ⚠️ **No PDF library, deliberately.** A print window keeps the SVG **vector**; html2canvas would
+  rasterise the buildings and add a vendored megabyte to a no-build app. Same approach the Reports
+  library already uses.
+- ⚠️ **The buildings are cloned from the screen, not re-derived** — a second renderer would drift from
+  the one on screen. Their hatch `<defs>` are copied in ahead of them, and the CSS vars they resolve
+  against are re-declared as a **fixed light palette** so a planner on dark mode does not print a black
+  page.
+- Detail in `modules/project-schedule/CLAUDE.md`. `MODULE_V` → `20260901a`.
+⚠️ **Not verified signed in** — no PDF has actually been produced against real data.
+
 ### 2026-08-31 (c) — Project-mode sidebar drops its "Portfolio" section
 
 Owner: *"from project, remove portfolio from sidebar."*

@@ -12052,6 +12052,100 @@
       // still be read with the pointer off the building.
     });
   }
+  // ---- Export the stacking as a PDF ------------------------------------------------------------
+  // Owner 2026-09-01: *"add an option wherein users are able to convert the displayed report in the
+  // vertical stacking into PDF format. please make the report very simple yet aesthetic."*
+  //
+  // ⚠️ No PDF library. The whole app is a no-build vanilla page; adding jsPDF/html2canvas would add a
+  // vendored megabyte and rasterise the buildings. A print window + "Save as PDF" keeps the SVG
+  // VECTOR — the zone dates stay sharp at any zoom, which is the whole point of printing this view.
+  // ⚠️ The svg is CLONED from the screen, never re-derived. See the note on the toolbar button.
+  // ⚠️ The cloned svg carries `var(--pd-line)` / `var(--pd-muted)` fills and references the hatch
+  // patterns from `_vsHatchDefs()`, so BOTH must travel: the vars are re-declared in the print
+  // document (as a fixed LIGHT palette — a planner on dark mode must not get a black page of ink),
+  // and the defs svg is copied in ahead of the buildings that reference it.
+  function _vsExportPDF(host) {
+    if (!host) return;
+    var cards = host.querySelectorAll('.ps-vs-grid > .ps-vs-tower');
+    if (!cards.length) { UI.toast('Nothing to export — no buildings are on screen.', 'error'); return; }
+    var w = window.open('', '_blank');
+    if (!w) { UI.toast('Allow pop-ups to export the stacking as PDF.', 'error'); return; }
+
+    var scopeWord = _vsScope === 'tower' ? 'One building per tower' : (_vsScope === 'all' ? 'Consolidated — one building' : 'One building per trade');
+    var towerWord = (_vsTower === 'ALL') ? 'All towers' : _vsTower;
+    var detail = _vsDetailNow();
+    var meta = [
+      ['Tower', towerWord],
+      ['View', scopeWord],
+      ['Detail', LOC_LEVELS.slice(0, detail).map(function (l) { return l.name; }).join(' › ')],
+      ['Dates', _vsBasisWord() + ' · ' + (_vsDateMode === 'start' ? 'start' : 'finish')],
+      ['Trades', _vsTradeSel.length ? _vsTradeSel.join(', ') : 'all']
+    ];
+
+    // ⚠️ Width/height attributes are dropped so each building scales to the page; the viewBox is what
+    // carries the geometry. Left as-is, a wide building would print off the right margin.
+    var body = '';
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      var nm = c.querySelector('.ps-vs-towerh .n');
+      var ct = c.querySelector('.ps-vs-towerh .ct');
+      var sv = c.querySelector('.ps-vs-scroll svg');
+      if (!sv) continue;
+      var clone = sv.cloneNode(true);
+      clone.removeAttribute('width'); clone.removeAttribute('height');
+      clone.setAttribute('style', 'width:100%;height:auto;display:block;');
+      var tc = c.style.getPropertyValue('--tc') || '#EE3124';
+      body += '<section class="b" style="--tc:' + tc + '">' +
+        '<div class="bh"><span class="bn">' + esc(nm ? String(nm.textContent || '').trim() : 'Building') + '</span>' +
+        '<span class="bc">' + esc(ct ? String(ct.textContent || '').trim() : '') + '</span></div>' +
+        '<div class="bs">' + clone.outerHTML + '</div></section>';
+    }
+
+    var defs = host.querySelector('svg[width="0"]');
+    var legend = (_vsBasis === 'compare')
+      ? [[VS_SLIP_EARLY, 'early'], [VS_SLIP_ONTIME, 'on time'], [VS_SLIP_LATE, 'late'], [VS_SLIP_NONE, 'no baseline']]
+          .map(function (o) { return '<span class="lg"><i style="background:' + o[0] + '"></i>' + o[1] + '</span>'; }).join('')
+      : '<span class="lg"><i class="sol"></i>' + (_vsBasis === 'planned' ? 'due by today' : 'complete') + '</span>' +
+        '<span class="lg"><i class="hat"></i>' + (_vsBasis === 'planned' ? 'not yet due' : 'remaining') + '</span>';
+
+    w.document.write('<!doctype html><html><head><meta charset="utf-8">' +
+      '<title>Vertical Stacking — ' + esc(projName()) + '</title><style>' +
+      // A fixed light palette: the vars the cloned svg resolves against, plus the page's own ink.
+      ':root{--pd-ink:#231F20;--pd-muted:#6E7378;--pd-line:#DCE0E5;--pd-red:#EE3124;}' +
+      '*{box-sizing:border-box;}' +
+      'body{font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--pd-ink);margin:0;padding:22px 24px 28px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+      'header{border-bottom:2px solid var(--pd-red);padding-bottom:10px;margin-bottom:14px;}' +
+      'h1{font-size:19px;letter-spacing:-.01em;margin:0 0 3px;font-weight:700;}' +
+      '.pj{font-size:13px;color:var(--pd-ink);font-weight:600;margin:0;}' +
+      '.mt{margin:10px 0 0;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:10.5px;color:var(--pd-muted);}' +
+      '.mt b{display:block;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#8A9096;}' +
+      '.mt span{color:var(--pd-ink);font-weight:600;}' +
+      '.lgs{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--pd-muted);margin:12px 0 16px;align-items:center;}' +
+      '.lg{display:inline-flex;align-items:center;gap:5px;}' +
+      '.lg i{width:11px;height:11px;border-radius:2.5px;background:var(--pd-muted);display:inline-block;}' +
+      '.lg i.sol{background:#6E7378;}' +
+      '.lg i.hat{background:repeating-linear-gradient(45deg,#6E7378 0 2px,#fff 2px 5px);border:1px solid var(--pd-line);}' +
+      // ⚠️ break-inside on the section, not on the svg: a building is only readable whole.
+      '.b{border:1px solid var(--pd-line);border-top:3px solid var(--tc,var(--pd-red));border-radius:10px;padding:0 0 12px;margin:0 0 16px;break-inside:avoid;page-break-inside:avoid;}' +
+      '.bh{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 13px 8px;border-bottom:1px solid var(--pd-line);}' +
+      '.bn{font-size:13px;font-weight:700;}' +
+      '.bc{font-size:10px;color:var(--pd-muted);text-align:right;}' +
+      '.bs{padding:12px 13px 0;}' +
+      'footer{margin-top:18px;padding-top:9px;border-top:1px solid var(--pd-line);font-size:9.5px;color:#8A9096;display:flex;justify-content:space-between;}' +
+      '@page{size:A4 portrait;margin:12mm;}' +
+      '@media print{body{padding:0;}}' +
+      '</style></head><body>' +
+      '<header><h1>Vertical Stacking</h1><p class="pj">' + esc(projName()) + '</p>' +
+      '<div class="mt">' + meta.map(function (m) {
+        return '<div><b>' + esc(m[0]) + '</b><span>' + esc(m[1] || '—') + '</span></div>';
+      }).join('') + '</div></header>' +
+      '<div class="lgs">' + legend + '<span style="margin-left:auto;">Each cell is a zone: solid = progress, hatched = remaining.</span></div>' +
+      (defs ? defs.outerHTML : '') + body +
+      '<footer><span>Data date ' + esc(Fmt.date(dstr(today()))) + '</span><span>Planners Dashboard · Project Schedule</span></footer>' +
+      '<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},300);};</scr' + 'ipt>' +
+      '</body></html>');
+    w.document.close();
+  }
   // ⚠️ `hostEl` lets the PHONE view render the stack into its own container. The desktop
   // #ps-vstack still exists (hidden) at phone width, so a duplicate id would win getElementById
   // and the phone would paint into an invisible node — hence an argument, not a second id.
@@ -12172,6 +12266,10 @@
       '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
       '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
       '<span class="ps-vs-seg"><button class="ps-vs-loupebtn' + (_vsLoupe ? ' on' : '') + '" id="ps-vs-loupebtn" title="Magnifier \u2014 hover a zone on the left and it is shown enlarged, with its dates and progress, in a panel on the right"><span data-ico="search" data-ico-size="14"></span>Magnify</button></span>' +
+      // \u26a0\ufe0f The PDF is built from the buildings ALREADY ON SCREEN (their svg is cloned), not re-derived.
+      // Re-deriving would be a second renderer to keep in step with this one, and the first divergence
+      // would be a report that disagrees with the screen it was exported from.
+      '<span class="ps-vs-seg"><button class="ps-vs-loupebtn" id="ps-vs-pdf" title="Export what is on screen as a clean one-page-per-building report \u2014 opens the print dialog, choose Save as PDF"><span data-ico="printer" data-ico-size="14"></span>PDF</button></span>' +
       '<span style="flex:1 1 auto;"></span>' +
       (_vsBasis === 'compare'
         ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
@@ -12349,6 +12447,8 @@
     });
     var fitB = host.querySelector('#ps-vs-fit');
     if (fitB) fitB.onclick = function () { _vsFit = !_vsFit; _saveVsFit(); renderVStack(); };
+    var pdfB = host.querySelector('#ps-vs-pdf');
+    if (pdfB) pdfB.onclick = function () { _vsExportPDF(host); };
     _vsApplyPane(host);
     var zo = host.querySelector('#ps-vs-zout'); if (zo) zo.onclick = function () { _vsZoom = Math.max(0.6, Math.round((_vsZoom - 0.2) * 10) / 10); renderVStack(); };
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };

@@ -1,3 +1,36 @@
+## Vertical stacking: export the displayed report as a PDF (2026-09-01) — fmlozano
+
+Owner: *"add an option wherein users are able to convert the displayed report in the vertical stacking
+into PDF format. please make the report very simple yet aesthetic."* New **PDF** button in the stacking
+toolbar, beside Magnify.
+
+- ⚠️ **No PDF library.** This app is a no-build vanilla page; jsPDF/html2canvas would add a vendored
+  megabyte and **rasterise** the buildings. A print window + the browser's own "Save as PDF" keeps the
+  SVG **vector**, so the zone dates stay sharp at any zoom — which is the whole point of printing this
+  view. Same pattern the Reports library already uses (`runReport`).
+- ⚠️ **The svg is CLONED from the screen, never re-derived.** Re-deriving would be a second renderer to
+  keep in step with `_vsTowerSVG`, and the first divergence would be a report that disagrees with the
+  screen it was exported from.
+- ⚠️ **Two things must travel with the clone.** The cells carry `var(--pd-line)` / `var(--pd-muted)`
+  fills, so the vars are re-declared in the print document — as a **fixed LIGHT palette**, because a
+  planner on dark mode must not get a black page of ink. And the cells reference the hatch patterns from
+  `_vsHatchDefs()`, so that defs svg is copied in **ahead of** the buildings that reference it.
+- ⚠️ **`width`/`height` attributes are stripped from the clone**; the viewBox carries the geometry, so
+  each building scales to the page. Left as-is, a wide tower prints off the right margin.
+- ⚠️ `break-inside:avoid` sits on the building **section**, not the svg — a building split across two
+  pages is unreadable.
+- The page states the basis it was exported under (Tower / View / Detail / Dates / Trades) plus the
+  legend for the current basis, so a printed sheet cannot be misread as a different scope. Compare basis
+  prints the four slip colours; otherwise the solid/hatched progress key.
+- A4 portrait, 12mm margins, brand-red rule under the title, one card per building, footer with the data
+  date. Pop-ups blocked or nothing on screen → a toast, not a silent no-op.
+
+**Verified:** inline script parses (1 block, 0 fail); **0 functions lost, 1 added** against HEAD; 0 NUL
+bytes; every helper it calls (`_vsDetailNow`, `_vsBasisWord`, `projName`, `esc`, `dstr`, `today`, the four
+`VS_SLIP_*`) confirmed present.
+⚠️ **Not verified signed in** — the anon key has no grants, so no real project was opened and no PDF was
+produced. The first real export is the test. `MODULE_V` → `20260901a`.
+
 ## Fix: narrow-width topbar-tools cluster overflowed past the module bar (2026-08-30) — fmlozano
 
 Owner sent a screenshot at a narrow ("tablet"/narrow-desktop, roughly 820–955px — the band the shared
