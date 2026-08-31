@@ -24,6 +24,7 @@ Your module key (folder name) is fixed — use exactly the one assigned in
 | Module | key |
 |---|---|
 | Progress Photos | `progress-photos` |
+| Minutes of Meeting | `minutes-of-meeting` |
 | Issues, Concerns & Lessons Learned | `issues-lessons` |
 | Contracts & Claims Register | `contracts-claims` |
 | Risk Register | `risk-register` |

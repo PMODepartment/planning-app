@@ -157,6 +157,73 @@ sidebar's own "Home" link (added the same day as `home.html`, entry (g)) should 
   script by its full URL; forgetting to bump the query string is how a shipped fix goes unseen),
   `ui.js?v=` is bumped `20260830e` → `20260831a` across all 19 referencing HTML files.
 
+### 2026-08-31 — Minutes of Meeting split into its own module
+
+Owner: *"the minutes of the meeting and the issues and concerns should be two separate modules"*, with
+three concrete requirements: (1) keep the link between the two, (2) give Minutes of Meeting a List view
+and a Calendar view of every meeting on the project, (3) remove "Raise as issue" from the Add Minutes
+form and replace it with "Get from issue" — so action items for issues raised during a PPR get recorded
+by pulling them in, not by raising new ones from the minutes. **No migration** — `meeting_minutes` /
+`mom_items` are unchanged; only the code moved.
+
+**New module `modules/minutes-of-meeting/`** (`window.MinutesOfMeeting`, `config.js` key
+`minutes-of-meeting`, icon `calendar`), split out of the combined `window.IssuesLessons` module, which
+keeps Issues & Concerns + Lessons Learned as two screens (Lessons Learned stayed put — it is captured
+FROM an issue far more often than from a meeting, and a three-way split was not asked for). Full
+reasoning in both modules' own CLAUDE.md — `modules/minutes-of-meeting/CLAUDE.md` for the new module,
+`modules/issues-lessons/CLAUDE.md` for what stayed and why.
+
+- ⚠️ **The link is TWO LIGHT CROSS-MODULE READS, never a shared editor** — the same pattern every other
+  cross-module link in this app already uses (the schedule's `wpm_work_packages` mirror, Cash Flow's
+  WPM read). Minutes of Meeting reads a light copy of `issues_lessons` (for a linked item's live status
+  and the "Get from issue" picker) and of `lessons_learned` (for the "N lessons" badge); Issues &
+  Concerns keeps its existing light read of `meeting_minutes` for the "From MOM" tag. Neither module
+  writes to the other's table.
+- ⚠️ **"Raise as issue" is deleted, not hidden — and its replacement pulls in the OPPOSITE direction.**
+  The old button copied an action item's text into a brand-new `issues_lessons` row; new issues are
+  raised directly in Issues & Concerns now. **"Get from issue"** is a small searchable panel at the
+  action-items header (beside "+ Add action item") listing still-open issues not yet on this agenda,
+  each a one-click pull via `momPullOneIssue()` (factored to share its payload builder with the
+  existing bulk "+ Add all N" pull, so the two routes can't disagree). The underlying link
+  (`mom_items.issue_id → issues_lessons.id`) is unchanged — only which side creates the row reversed.
+  The auto-seed-on-a-new-minute bulk pull (still pulling every open issue quietly onto a fresh minute's
+  agenda) is untouched.
+- **List and Calendar views**, the module's new top-level way to browse every meeting on a project —
+  previously there was only the two-pane list+detail editor. List is a sortable table (Title / Type /
+  Date / Draft-or-Distributed / Action items / Recorded by, never a real name). Calendar is a
+  Monday-first month grid matching the Portfolio Overview milestones-calendar convention, with meeting
+  chips per day and Prev/Next/Today nav. ⚠️ Built on **UTC date arithmetic throughout**, matching a
+  meeting's date against its plain text rather than parsing it into a local `Date` — the local-vs-UTC
+  off-by-one this app has hit repeatedly. Selecting a meeting (or "+ New minutes") opens the existing
+  Detail editor, essentially unchanged; "← Back to meetings" returns to whichever browse mode was last
+  active. All three states are wired into the browser's own Back/Forward via `UI.bindHistoryState`.
+- Everything else in the Detail editor — the activity picker, distribute/revert, carry-over from
+  another meeting, attachments (the same private-bucket ordering rules), and the PDF export (still
+  byte-for-byte the mom-app-format sheet) — moved to the new module verbatim, unchanged in behaviour.
+
+**Shared assets touched:** `assets/js/config.js` (new MODULES entry), `assets/js/my-work.js` (the
+cross-project "My Work" page's row click now routes `data-screen="mom"` items to the new module instead
+of `issues-lessons`), `MODULE_CONTRACT.md` (module-key table). `MODULE_V` (derived from
+`modules-grid.js?v=` on `dashboard.html`/`modules.html`, per the 2026-08-25(m) stale-cache lesson) →
+`20260831a`, which is what makes the trimmed `issues-lessons/index.html` and the new module page both
+reach a browser rather than sitting behind a stale cached copy — the exact failure mode that entry
+documents.
+
+**Verified:** `node --check` clean on both modules' `module.js` and on `assets/js/my-work.js`; CSS brace
+balance confirmed on both modules' stylesheets (156/156 new, 194/194 trimmed); every class the trimmed
+`issues-lessons` JS emits still resolves to a CSS rule (a first cut over-trimmed — several `.il-mom-*`
+class names turned out to be a shared master/detail list+detail pattern **reused verbatim by Issues'
+and Lessons' own report screens**, not MoM-exclusive despite the prefix; caught by grepping actual usage
+before removing anything further, not by naming convention alone); every `mom`-prefixed function called
+in the new module resolves to a definition in the same file; grepped for every symbol the split was
+supposed to remove from `issues-lessons` (`renderMom`, `wireMom`, `momDetailHTML`, `canEditMinute`,
+`momLocked`, `MOM_BUCKET`, `momDownloadPDF`, `il-screen-mom`, `_momSel`, …) — zero remaining references.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing constraint
+for every UI pass in this repo. No live click-through of the List/Calendar views, "Get from issue", the
+cross-module lesson deep-link, or the PDF export against real data; the schema itself is unchanged from
+what the combined module already shipped against, so no new migration risk was introduced.
+
 ### 2026-08-30 (h) — Landing page (`home.html`) restyled to match the Procurement Dashboard's "Select Dashboard" screen
 
 Owner shared a screenshot of the Procurement (PRC) app's post-login landing screen and asked this

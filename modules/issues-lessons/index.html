@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260831b" />
-  <link rel="stylesheet" href="module.css?v=20260830b" />
+  <link rel="stylesheet" href="module.css?v=20260831a" />
 </head>
 <body>
   <div class="pd-app">
@@ -31,19 +31,19 @@
       <div class="pd-topbar">
         <h1 class="il-title" style="margin:0;">
           <span class="il-title-ico" data-ico="clipboard" data-ico-size="20"></span>
-          <span class="il-title-txt" id="il-screen-title">Minutes of Meeting</span>
+          <span class="il-title-txt" id="il-screen-title">Issues &amp; Concerns</span>
         </h1>
         <div class="il-projctx">
           <select class="pd-select il-project" id="il-project" title="Project"></select>
         </div>
 
-        <!-- Top-level screens, in the order the work actually happens:
-             a meeting is recorded -> what it raised is chased in the register ->
-             what it taught is kept in the library. The first tab is the default
-             screen, so the module opens where the input comes in. -->
+        <!-- Top-level screens: what was raised is chased in the register, what it
+             taught is kept in the library. Minutes of Meeting moved to its own
+             module (modules/minutes-of-meeting/) — see that module's link back
+             here (the "From MOM" tag) and this module's link out to it (the
+             Lessons Learned screen's "A meeting action item" source). -->
         <div class="il-tabs" role="tablist">
-          <button class="il-tab active" data-screen="mom">Minutes of Meeting</button>
-          <button class="il-tab" data-screen="issues">Issues &amp; Concerns</button>
+          <button class="il-tab active" data-screen="issues">Issues &amp; Concerns</button>
           <button class="il-tab" data-screen="lessons">Lessons Learned</button>
         </div>
 
@@ -115,31 +115,12 @@
           <div class="il-kpis il-kpis-2" id="il-lkpis"></div>
           <div id="il-lessons-view"></div>
         </div>
-
-        <!-- ================= Minutes of Meeting ================= -->
-        <!-- Moved here out of the Project Schedule module: a meeting's action items
-             become entries in THIS register, so the minutes belong beside it. -->
-        <div id="il-screen-mom">
-          <div class="il-lead pd-card">
-            <span class="il-lead-ico" data-ico="clipboard" data-ico-size="20"></span>
-            <div>
-              <strong>Minutes of Meeting.</strong>
-              <span class="il-lead-sub">The record of what was said, plus the action items it produced.
-              <em>Raise</em> an action item to put it in the Issues &amp; Concerns register and link the two —
-              after that the register is where it is chased, and these minutes keep saying what the meeting said.</span>
-            </div>
-          </div>
-          <div id="il-mom-view"></div>
-        </div>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Minutes of Meeting PDF export. Same library and version the standalone mom-app
-       uses, so the exported sheet is byte-for-byte the same layout engine. -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="../../assets/js/config.js?v=20260828b"></script>
+  <script src="../../assets/js/config.js?v=20260831a"></script>
   <script src="../../assets/js/auth.js?v=20260814a"></script>
   <script src="../../assets/js/db.js?v=20260827c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
@@ -148,7 +129,7 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260830b"></script>
+  <script src="module.js?v=20260831a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -157,8 +138,9 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'issues-lessons', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
-      // Item 6: Minutes of Meeting / Issues & Concerns / Lessons Learned as a
-      // Project-Schedule-style dropdown instead of a flat tab row.
+      // Issues & Concerns / Lessons Learned as a Project-Schedule-style dropdown
+      // instead of a flat tab row (kept from before the Minutes of Meeting split —
+      // still worth it at 2 tabs, matching every other module's chrome).
       UI.tabsToDropdown('.il-tabs');
       IssuesLessons.init(user, profile);
     });
