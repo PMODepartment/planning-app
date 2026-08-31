@@ -84,6 +84,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (b) — Vertical stacking: the floors were running sideways
+Owner, on a multi-tower project with towers matched and levels defined: *"in vertical stacking the level
+locations are not properly stacked. they are stacked horizontally."* Their data was right; the view read
+the wrong level.
+- ⚠️ **The stack banded by `LOC_LEVELS[0]`, which on a `Tower › Level › Zone` breakdown is the TOWER.**
+  Each card is already scoped to one tower, so that gave exactly **one band**, and the floors fell out as
+  that band's cells — a building drawn on its side.
+- New **`_vsAxis()`**: the tower is the CARD and the selector, never also the band axis. Storeys take the
+  vertical axis. Falls back to the full list on a project whose only level IS the tower, so a one-level
+  project is unchanged.
+- ⚠️ Same principle the stacking modal settled on 2026-08-17 — that fix went into `stkGridHTML` and was
+  never applied to this view.
+- ⚠️ The **Assign** repair stays about the TOWER and is split out rather than re-pointed: "assign every
+  activity to one floor" would be nonsense. And `_vsStampTopLevel` wrote `LOC_LEVELS[0]` rather than the
+  tower — on a differently-ordered breakdown that is a floor.
+- **17/17** executing the shipped axis functions; 0 functions lost, 1 added. Detail in
+  `modules/project-schedule/CLAUDE.md`. `MODULE_V` → `20260901b`.
+⚠️ **Not verified signed in** — the owner's project was not opened from here.
+
+
 ### 2026-09-01 — Vertical stacking exports to PDF
 Owner asked for the displayed vertical-stacking report to be convertible to PDF, "very simple yet
 aesthetic". New **PDF** button in the stacking toolbar: opens a clean A4 print sheet — title, project,
