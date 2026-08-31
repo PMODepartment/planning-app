@@ -212,7 +212,7 @@
 }
 
 /* ⚠️ The topbar spilled to a second row and orphaned the avatar on its own line.
-   The Lessons screen carries the most chrome — back, icon, title, project, three
+   The Lessons screen carries the most chrome — back, icon, title, project, two
    tabs, a Report/Library toggle, a primary button, refresh, presence, theme and
    the avatar — and the title TEXT is the one item that costs width while saying
    what the active tab already says. It goes first, keeping the module icon, well
@@ -282,6 +282,8 @@
   color: var(--pd-muted); margin: 0 0 6px;
 }
 .il-mom-head span { color: var(--pd-ink); }
+.il-mom-search { width: 100%; margin-bottom: 8px; }
+.il-mom-addrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .il-mom-item {
   display: block; width: 100%; text-align: left; background: var(--pd-card);
   border: 1px solid var(--pd-line); border-radius: 8px; padding: 8px 10px;
@@ -298,40 +300,6 @@
 .il-mom-actions h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--pd-muted); }
 .il-mom-actions p { margin: 0 0 8px; font-size: 12px; color: var(--pd-muted); }
 .il-mom-actions td { vertical-align: middle; }
-/* The action table is an editable grid — it scrolls inside its own box rather
-   than widening the page (same call as the two editable registers). */
-/* ⚠️⚠️ AN ACTION ITEM IS A CARD, NOT A TABLE ROW. Do not put the columns back.
-   This was an 11-column table with `min-width: 1400px` scrolling inside a wrap. On a
-   real pane that meant Owner, Due, Status, File and the register link sat off the
-   right edge behind a scrollbar — the owner reported it as "I need all the details in
-   one view, especially during reporting", and they were right: a reporter cannot read
-   a record whose second half is behind a horizontal scroll.
-
-   Columns could not be re-tuned to fix it. An action item has more fields than a
-   screen has columns, so any width that fits them all crushes the text fields, and
-   any width that keeps the text readable overflows. The layout has to WRAP.
-
-   The card mirrors mom-app's own layout — the same structure momDownloadPDF() renders
-   — so the screen and the export are one document. Keep them in step. */
-.il-mi-cards { display: flex; flex-direction: column; gap: 10px; }
-
-.il-mi-card {
-  border: 1px solid var(--pd-line); border-radius: 10px;
-  padding: 12px; background: var(--pd-card);
-}
-
-/* The six-cell meta grid, in the PDF's own order: No. / Category / Type / Status /
-   Responsible / Target date.
-   ⚠️ Stepped column COUNTS, not `auto-fit`. auto-fit with a minmax floor packed 5
-   tracks into the pane and left Target date stranded alone on a second row — it never
-   clipped, but a 5+1 split reads as a mistake. Fixed counts wrap evenly (6 → 3 → 2)
-   and every step divides six exactly.
-   ⚠️ At full width the tracks are the PDF's own fractions, so Category gets the room
-   its longest option needs ("Commercial / Contracts") instead of an equal share. */
-.il-mi-meta { display: grid; gap: 8px; margin-bottom: 8px; grid-template-columns: repeat(2, 1fr); }
-@media (min-width: 700px)  { .il-mi-meta { grid-template-columns: repeat(3, 1fr); } }
-@media (min-width: 1100px) { .il-mi-meta { grid-template-columns: 0.6fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr; } }
-
 /* A labelled field block — the same shape as the PDF's grey cells. */
 .il-mi-f { min-width: 0; }          /* ⚠️ or a long value stretches its grid track */
 .il-mi-f + .il-mi-f { margin-top: 8px; }
@@ -359,50 +327,10 @@
 }
 .il-mi-val.is-empty { color: var(--pd-muted); }
 
-/* The No. field is a number, not a sentence — it should not eat a full track. */
-.il-c-no .pd-input { max-width: 96px; }
-/* ⚠️ The carried badge sits UNDER the number: inline it overflowed and rendered
-   clipped as "carr" against the next field. */
-.il-c-no .il-mom-carried { display: block; margin: 3px 0 0 1px; }
-
-.il-mi-foot {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
-  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--pd-line);
-}
-.il-mi-foot .il-mi-f { margin-top: 0; }
-.il-c-reg { flex: 1 1 auto; }
-.il-c-del { margin-left: auto; }     /* the destructive control sits apart */
-
-/* Activity picker: this module does not own the schedule, so the field searches
-   the server instead of listing every activity. */
-.il-mom-act { position: relative; }
-.il-mom-acres {
-  position: absolute; z-index: 40; left: 0; right: 0; top: 100%; margin-top: 2px;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.14); max-height: 240px; overflow-y: auto;
-}
-.il-mom-acres button {
-  display: block; width: 100%; text-align: left; background: none; border: 0;
-  border-bottom: 1px solid var(--pd-line); padding: 7px 10px; cursor: pointer;
-  font-size: 12.5px; color: var(--pd-ink);
-}
-.il-mom-acres button:last-child { border-bottom: 0; }
-.il-mom-acres button:hover { background: var(--pd-bg); }
-.il-mom-acres button b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.il-mom-acres .il-mom-acnote { padding: 6px 10px; font-size: 11px; color: var(--pd-muted); }
-.il-mom-chip {
-  display: inline-flex; align-items: center; gap: 6px; background: var(--pd-bg);
-  border: 1px solid var(--pd-line); border-radius: 999px; padding: 3px 6px 3px 10px;
-  font-size: 12px; margin-bottom: 4px;
-}
-.il-mom-chip code { font-size: 11.5px; }
-.il-mom-chip button { background: none; border: 0; cursor: pointer; color: var(--pd-muted); font-size: 13px; line-height: 1; padding: 2px 4px; }
-.il-mom-chip button:hover { color: var(--pd-red); }
 .il-mom-note { font-size: 12px; color: var(--pd-muted); margin: 0 0 10px; }
 /* The byline describes the whole record, so it needs air under it — without the
    bottom margin it butts against the next field's label and reads as that field's
    hint rather than as "who recorded these minutes". */
-.il-mom-by { margin: 2px 0 12px; }
 /* A disabled .pd-input is almost indistinguishable from a live one, so the
    read-only minutes get a tinted field. The text stays at full contrast — the
    point of the screen is reading it. */
@@ -440,49 +368,6 @@
   padding: 1px 6px; border-radius: 3px; margin-left: 6px;
   background: var(--pd-red-light); color: var(--pd-red);
 }
-/* --- Action items: carry-over + the wider table -------------------------- */
-.il-mom-addrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-.il-mom-carry { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.il-mom-carry .pd-select { max-width: 320px; }
-.il-mom-carried {
-  display: inline-block; font-size: 9px; font-weight: 700; margin-top: 3px;
-  padding: 1px 5px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
-}
-/* ⚠️ The carried badge goes UNDER the number, not beside it. Inline it overflowed
-   the nowrap cell and rendered clipped as "carr" against the next column. */
-.il-c-no .il-mom-carried { display: block; margin-left: 1px; }
-
-/* --- Meetings list: search + type groups --------------------------------- */
-.il-mom-search { width: 100%; margin-bottom: 8px; }
-/* ⚠️ Sticky so the group a long list is scrolled into stays named. `top:0` works
-   because .il-mom-list is the scroll container, not the page. */
-.il-mom-group {
-  position: sticky; top: 0; z-index: 1;
-  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--pd-muted); background: var(--pd-card);
-  padding: 8px 2px 4px; margin-top: 6px; border-bottom: 1px solid var(--pd-line);
-}
-.il-mom-group:first-child { margin-top: 0; }
-.il-mom-group span { color: var(--pd-muted); font-weight: 600; }
-
-/* --- Action-item filter bar ---------------------------------------------- */
-.il-mom-filters {
-  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 8px;
-  padding: 8px 12px; margin-bottom: 10px;
-}
-/* ⚠️ The shared `.pd-select` / `.pd-input` are `width:100%` (they are built for
-   stacked .pd-field forms), so without an explicit basis every select claims the whole
-   bar and each one lands on its own row — measured 203px tall before this. Every
-   filter bar in this app has to override it; this is not decoration. */
-.il-mom-filters .pd-input, .il-mom-filters .pd-select { min-height: 34px; width: auto; }
-.il-mom-filters .pd-select { flex: 0 1 auto; min-width: 130px; max-width: 190px; }
-.il-mom-filters #il-momf-q { flex: 1 1 200px; min-width: 0; width: auto; }
-.il-mom-count { margin-left: auto; font-size: 12px; color: var(--pd-muted); white-space: nowrap; }
-
-/* --- Attachment cell ------------------------------------------------------ */
-.il-mom-file { display: inline-flex; gap: 4px; align-items: center; }
-
 /* --- Reporting view -------------------------------------------------------
    Follows the Project Schedule's precedent exactly: hide the AUTHORING controls
    and neutralise the edit affordances; keep every VIEW control (filters, search,
