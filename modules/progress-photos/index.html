@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260830e" />
-  <link rel="stylesheet" href="module.css?v=20260830d" />
+  <link rel="stylesheet" href="module.css?v=20260830f" />
 </head>
 <body>
   <div class="pd-app">
@@ -47,6 +47,15 @@
           <button class="pp-tab" data-screen="ppr">Presentations</button>
           <button class="pp-tab" data-screen="bim">Plans</button>
         </div>
+        <!-- Sixth round item 7: relocated OUT of the action-tool cluster
+             (where it sat wedged against the always-visible offline-sync
+             pill, reading as one more competing button rather than
+             navigation) and placed here, right beside the screen tabs — it
+             IS screen-level navigation ("you're inside one presentation,
+             this steps back up to the list"), so it belongs next to the
+             other screen-switching control, not among the action buttons. -->
+        <button class="pp-crumbback" id="ppr-back" title="Back to the presentation list" style="display:none;">
+          <span data-ico="arrowLeft" data-ico-size="14"></span> Presentations list</button>
 
         <!-- Tool cluster beside the profile: one labelled primary action per
              screen, everything else icon-only (Drawing Register / Cash Flow). -->
@@ -72,7 +81,28 @@
           </div>
           <button class="pp-topfilttoggle" id="pp-topfilttoggle" title="More filters">
             <span data-ico="filter" data-ico-size="16"></span></button>
-          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos, video, or other media">+ Add media</button>
+          <!-- Fifth round item 1: "+ Add media" is now a dropdown choosing
+               the media type UP FRONT (Photo/Video/360°/3D-on-hold), rather
+               than deciding it inside the modal after files may already be
+               staged — the very ambiguity that let a staged photo survive a
+               later switch to Video. Picking Photo/Video opens the same
+               upload modal pre-set to that type; 360° goes straight to
+               pano.js's capture flow, matching the modal's own former
+               in-place 360° button. -->
+          <div class="pp-addmenu-wrap" id="pp-addmenu-wrap">
+            <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos, video, or other media">
+              + Add media <span data-ico="chevronDown" data-ico-size="12"></span></button>
+            <div class="pp-addmenu" id="pp-addmenu" hidden>
+              <button type="button" class="pp-addmenu-item" data-addtype="photo">
+                <span data-ico="camera" data-ico-size="15"></span> Photo</button>
+              <button type="button" class="pp-addmenu-item" data-addtype="video">
+                <span data-ico="video" data-ico-size="15"></span> Video</button>
+              <button type="button" class="pp-addmenu-item" data-addtype="360">
+                <span data-ico="compass" data-ico-size="15"></span> 360°</button>
+              <button type="button" class="pp-addmenu-item" disabled title="3D reconstruction is on hold">
+                <span data-ico="box" data-ico-size="15"></span> 3D</button>
+            </div>
+          </div>
           <span class="pp-tb-sep" id="pp-sep-photos"></span>
           <button class="pd-btn" id="pp-refresh" title="Reload photos">
             <span data-ico="refresh" data-ico-size="16"></span></button>
@@ -95,8 +125,6 @@
           <button class="pd-btn" id="ppr-templates" title="Report templates (Section 5)" style="display:none;">
             <span data-ico="layers" data-ico-size="16"></span></button>
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-tmpl-new" title="Create a report template" style="display:none;">+ New template</button>
-          <button class="pd-btn pp-tb-labeled" id="ppr-back" title="Back to the presentation list" style="display:none;">
-            <span data-ico="arrowLeft" data-ico-size="16"></span> Presentations list</button>
           <!-- PPR multi-select batch actions (item 14) — same swap-in pattern as
                the Gallery's own selection tools: replace "+ New Presentation"
                the moment 1+ rows are checked, restored by
@@ -169,6 +197,12 @@
                 <option value="location">Location</option>
               </select>
             </label>
+            <!-- Fifth round item 7: markup now shows by default on every
+                 tile that has any; this is the one shared switch to hide it
+                 (the lightbox's own markup-toggle button drives and reflects
+                 the SAME preference, see openLightbox/markupGlobalVisible). -->
+            <button class="pd-btn pp-mkvistoggle" id="pp-mkvistoggle" title="Show/hide markup on photo tiles">
+              <span data-ico="eye" data-ico-size="15"></span> Markup</button>
             <!-- Item 3: Tile (Gallery) is the DEFAULT view (module.js's own
                  `view = 'gallery'`), so its button leads the group — List
                  moves to second place. -->
@@ -279,15 +313,15 @@
   <script src="../../assets/js/db.js?v=20260827c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
   <script src="../../assets/js/ui.js?v=20260830e"></script>
-  <script src="../../assets/js/icons.js?v=20260830b"></script>
+  <script src="../../assets/js/icons.js?v=20260830c"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260830c"></script>
-  <script src="ppr.js?v=20260830d"></script>
+  <script src="module.js?v=20260830f"></script>
+  <script src="ppr.js?v=20260830f"></script>
   <script src="pano.js?v=20260830b"></script>
   <script src="recon.js?v=20260830b"></script>
-  <script src="bim.js?v=20260830d"></script>
+  <script src="bim.js?v=20260830e"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

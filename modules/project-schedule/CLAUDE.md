@@ -1,3 +1,35 @@
+## Fix: narrow-width topbar-tools cluster overflowed past the module bar (2026-08-30) — fmlozano
+
+Owner sent a screenshot at a narrow ("tablet"/narrow-desktop, roughly 820–955px — the band the shared
+`.pd-modulebar` layer does NOT force a wrap at, unlike ≤900px) width: the project dropdown, the title
+switcher and the workspace subline visually crowded together, and below them "Actions ▾" / "+ Add
+activity" / undo-redo / "File ▾" / "Group: WBS ▾" collided with faintly-visible "Reports"/"Health" text
+and icons — reading exactly like the row of action buttons had been "lost".
+
+⚠️ **Root cause: `#ps-topbar-tools` (undo/redo/File▾/Reports/Health/filter/refresh, 7+ controls) had
+`display:flex` with no `flex-wrap` at all (defaults to `nowrap`) and nothing catching an overflow** —
+neither a scrollbar nor a clip. At any width too narrow to fit all seven controls on one line, they
+simply overflowed PAST `.pd-modulebar`'s right edge and painted on top of `.ps-toolbar`'s row in
+`.pd-main` directly below it. That is every element in the screenshot: the topbar-tools cluster
+spilling downward onto the schedule's own Actions/Add/Group row.
+- ⚠️ Ruled out first, not guessed away: a sticky-positioning stacking collision (grepped every
+  `position:sticky|fixed|absolute` in the file — none touch `.pd-topbar-tools`/`.pd-modulebar`/
+  `.ps-toolbar`/`.pd-main`); leftover `position:absolute` on `.ps-datadate-badge`/`.ps-fresh`/
+  `.ps-title-btn` from before the 2026-08-30 topbar restructure (none carry a position); and
+  `.pd-tb-main`/`.pd-modulebar` mis-sizing around wrapped content (`.pd-modulebar` is `flex-wrap:wrap`
+  with no fixed height, so it grows to fit any number of wrapped rows — confirmed, not the cause).
+- **Fix:** `.ps-topbar-tools` gets `flex-wrap:wrap; row-gap:4px` — the same shape the shared
+  `.pd-modulebar` container around it already uses. At any width where the 7 controls don't fit one
+  line, they now wrap to a second line INSIDE the cluster instead of overflowing past it; the parent
+  `.pd-modulebar` (itself `flex-wrap:wrap`, `min-height` not fixed) sizes around the extra line with no
+  clipping. Composes cleanly with the shared ≤900px rule that forces the whole cluster onto its own
+  full-width row — that rule still applies unchanged, this only fixes the band above it where the
+  cluster stays inline but couldn't wrap on its own.
+- Also dropped a harmless duplicate `margin-left:auto` on the same rule (declared twice, no behaviour
+  change).
+- `MODULE_V` → `20260830f` (bumped in `dashboard.html`/`modules.html`'s `modules-grid.js?v=` tag, which
+  is what the constant is actually derived from — see that file's own header note).
+
 ## Stacking: the trade chips become a multi-select filter (2026-08-27) — fmlozano
 
 `_vsTrade` (a single value) → `_vsTradeSel` (a list) + `_vsTradeOn` / `_vsTradeToggle`.
