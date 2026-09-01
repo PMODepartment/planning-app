@@ -1,5 +1,112 @@
 # Module: issues-lessons
 
+## 2026-09-01 (e) — Reopen from On Hold, a leaner lesson form, lessons genuinely separate from issues, and the dashboard redrawn with horizontal "N open of N" bars
+
+Owner's 6-item list, verbatim: (1) once On Hold, a button to move back to Open, requiring an
+Action Plan; (2) dropping the standalone-lesson-capture form's Recommendation field ("the same
+as lessons learned") and its "what produced this lesson" question when it's already known
+("the same as the current issue"); (3) opening a lesson must never land on the issue — lessons
+need their own separate page; (4) all three Dashboard tiles in one row on a wide screen;
+(5) replace the vertical Open-vs-Total bar and the grouped champion bar with a horizontal bar
+per department and per champion, labelled "X open of X issues"; (6) the full issue list in its
+own tile, with a wider Issue column. **Migration
+`migrations/2026-09-01-issues-reopen-action-plan.sql`.**
+
+### Item 1 — Reopen Issue, gated on an Action Plan
+`canReopen` mirrors `canHold`/`canClose` exactly, just on the opposite status
+(`status === 'On Hold'`), and the "Reopen Issue" button opens the same reveal-panel shape Hold
+and Close already use — a required textarea (`il-iss-reopennote`) that must be non-empty before
+`confirmReopenIssue()` will write `{status: 'Open', action_plan: note}`. ⚠️ **`action_plan` is a
+real column, not just a history note** — added to `HIST_FIELDS` (`'Action Plan'`) so a reopen's
+reasoning shows up in the before→after diff the same way Hold/Close's narratives already do, and
+`ISSUE_HIST_LABELS.reopen = 'Reopened'` names the entry itself. ⚠️ **`hold_reason` is left
+untouched on reopen** — clearing it would erase the record of why it was held in the first
+place, which the History timeline (and a later reader of the row) still benefits from seeing.
+The three reveal-panel flags (`_issHoldOpen` / `_issCloseOpen` / `_issReopenOpen`) are now
+mutually exclusive everywhere a panel opens, and all three are reset on `openIssue()` /
+`backFromIssueDetail()` / `issReset()` so switching issues can never leave a stray open panel
+from the previous one.
+
+### Item 2 — a leaner standalone-lesson form
+**Recommendation is gone** — the field, its `data`/`saveLesson` write, its search-hay entry, and
+its display line on `lessonCardHTML` are all removed; the `recommendation` COLUMN is untouched
+(same call as Lesson category's removal on 2026-08-31) so nothing already stored is destroyed,
+and `saveLesson()`'s payload simply omits the key now rather than writing `''`, so an update can
+never blank an old value it no longer has a field to edit. **"What produced this lesson" is
+skipped whenever `l.issue_id` is already set** — covering both "+ Capture another lesson" from
+an issue's own detail (the draft arrives pre-linked) and any existing issue-linked lesson viewed
+later. ⚠️ **Scoped to issue links only, not meeting links** — a lesson linked to a meeting action
+item (`mom_id`/`mom_item_id`, no `issue_id`) still gets the picker, since the owner's own wording
+("the same as the current issue") only names the issue case, and a genuinely standalone lesson
+(no link at all, captured fresh from the Lessons screen) needs the picker to have any way to link
+one. The toolbar's `lessonSourceText(l)` line already states the issue when the block is hidden.
+
+### Item 3 — Lessons Learned is a real, separate page now
+⚠️ **Root cause: the Lessons screen's "log" was a mirrored TABLE of closed issues, not a list of
+lesson records** — `renderLessonsLogView` built its own copy of the Issues log's shape from
+`closedIssuesFiltered()` (a filter over `rows`, the issues table), and every row's click handler
+called `openIssue()`. So "viewing a lesson" from that table always meant leaving the Lessons
+screen for the Issues one — the standalone-lessons section below it was the only part that ever
+opened a real Lesson record. Rebuilt around `lessonsFiltered()` (already existed, already
+department/search-filters the actual `LESSONS` table, already covers both issue-linked and
+standalone rows in one set) rendered uniformly via `lessonCardHTML`, whose own "Open this lesson
+→" button calls `openLesson()` — staying on the Lessons screen. **`closedIssuesFiltered()` and
+`standaloneLessonsFiltered()` are deleted**, not left as unused rot. "Open the issue →" is kept
+as an explicit, secondary link on a card that has one — a deliberate way OUT when someone
+genuinely wants the issue, never the default click any more. ⚠️ **Drag-to-reorder is uniform
+across the whole list now** (the earlier round's split between the issues table's `sort_order`
+and the standalone cards' `sort_order` collapses into one `wireReorder` call against `LESSONS` /
+`lessonOrderCmp` / `LESSON_TABLE`), since every row is now a real lesson record.
+
+### Item 4 — three tiles, one row, on a wide screen
+`.il-dash-grid` drops the old `1.4fr 1fr 1fr` template plus `.il-dash-wide`'s
+`grid-column: 1 / 2` override (which — verified by walking CSS Grid's auto-placement algorithm
+— pushed the champion card onto a SECOND row anyway, in column 1 only, leaving two empty cells;
+"wide" never actually meant full-span at desktop widths). Replaced with a plain
+`repeat(3, 1fr)`, so Status / Department / Champion sit in one row above ~1000px, two-then-one at
+the existing breakpoints.
+
+### Item 5 — horizontal "N open of N issues" bars, per department and per champion
+New `hbarSVG(items, opts)` replaces both `barChartSVG` (the old single overall Open/Total pair)
+and `groupedBarSVG` (the vertical grouped per-champion bars) — one shared horizontal-bar renderer
+for both tiles. Each row draws a track sized to the item's TOTAL (scaled off the largest total
+among every row), the OPEN count filled on top in the accent colour, with the label to the left
+and **"N open of N issues" printed after the bar**, per the owner's own wording. New `byDept`
+grouping mirrors the existing `byChamp` one (same `{label, open, total}` shape, same
+`latestChampionText()`-based grouping for champions). ⚠️ **Rows are never capped** — the old
+grouped-bar chart topped out at 10 champions with a separate breakdown table listing the rest;
+since a horizontal chart's row count only changes its HEIGHT (not its legibility at a fixed
+width, the way a vertical chart's bar count would), every department and every champion is
+always shown, and the now-redundant `champTableHTML` breakdown table is deleted along with it —
+each bar row already states its own open/total, so a second table repeating the same numbers had
+nothing left to add. A tall chart (many champions) scrolls inside its own tile
+(`.il-dash-hbar-wrap`, `max-height:340px`) rather than growing the page without bound.
+
+### Item 6 — the full issue list gets its own tile, Issue column widened
+`fullIssueListHTML(data)`'s output is now wrapped in `<div class="pd-card il-dash-card
+il-dash-fulllist-card">`, matching the other three tiles' own card treatment instead of sitting
+bare under the grid. `.il-dash-list` — now used ONLY by this table, since item 5 removed its
+other consumer (the champion breakdown table) — gets `table-layout:fixed` plus explicit
+`nth-child` column widths (Issue 42% / Champion 17% / Department 17% / Status 13% / Aging 11%),
+so the Issue column genuinely claims the most room instead of splitting evenly with four much
+shorter columns.
+
+**Verified.** `node --check` clean; CSS braces balanced (258/258); 0 NUL bytes in both files; 0
+duplicate DOM ids; `<div>`/`</div>` balanced in `index.html` (26/26). Function-set diff against
+the prior commit: **lost** — `barChartSVG`, `champTableHTML`, `closedIssuesFiltered`,
+`groupedBarSVG`, `standaloneLessonsFiltered` (all five deliberately superseded, per the items
+above); **added** — `confirmReopenIssue`, `hbarSVG`. Every id `wireIssues()` queries for the
+Reopen panel (`il-iss-reopenbtn` / `-reopencancel` / `-reopennote` / `-reopenconfirm`) confirmed
+present in `issDetailHTML`'s own emitted markup.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the Reopen workflow, the
+restructured Lessons list, the new horizontal-bar charts against real data, or the migration
+itself, which has not been run.
+
+`module.css/js?v=20260901g`; `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/
+`modules.html`) → `20260901i`.
+
 ## 2026-09-01 (d) — Progress-Photos-style search/filter chrome, drag-to-reorder, a leaner log, and one combined dashboard with real charts
 
 Owner's 10-item list, verbatim: (1) same search/filter UX as Progress Photos everywhere in this

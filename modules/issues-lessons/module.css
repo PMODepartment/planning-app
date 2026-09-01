@@ -633,49 +633,61 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   border-bottom: 1px solid var(--pd-line);
 }
 .il-dash-sec-head:first-child { margin-top: 0; }
-.il-dash-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; align-items: start; }
+/* ITEM 4: three EQUAL tiles, one row on a wide screen — no card spans extra
+   columns any more (the old `.il-dash-wide`, which put the champion card on
+   its own row under a 1.4fr/1fr/1fr template, is gone). */
+.il-dash-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
 .il-dash-card { padding: 14px 16px; }
 .il-dash-card h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
-.il-dash-wide { grid-column: 1 / 2; }
 .il-dash-chartwrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .il-dash-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; min-width: 0; }
 .il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); }
 .il-dash-legend-i i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
-.il-dash-list { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 480px; }
+/* ---- Item 5: the horizontal "N open of N issues" bar charts (department /
+   champion) — rows are never capped (see hbarSVG in module.js), so a tile with
+   many departments/champions scrolls internally rather than growing without
+   bound. */
+.il-dash-hbar-wrap { max-height: 340px; overflow-y: auto; padding-right: 2px; }
+/* ---- Item 6: the full issue list, in its own tile, Issue column widened --
+   `.il-dash-list` is used ONLY by the full-list table now (the champion
+   breakdown table it used to also serve is gone — item 5's bar rows already
+   state their own open/total). `table-layout:fixed` makes the column
+   percentages below actually hold instead of just hinting at them. */
+.il-dash-list { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12.5px; min-width: 560px; }
 .il-dash-list th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
   color: var(--pd-muted); padding: 4px 8px 6px; border-bottom: 1px solid var(--pd-line); }
-.il-dash-list td { padding: 6px 8px; border-bottom: 1px solid var(--pd-line); vertical-align: top; }
+.il-dash-list td { padding: 6px 8px; border-bottom: 1px solid var(--pd-line); vertical-align: top; word-break: break-word; }
 .il-dash-list tr:last-child td { border-bottom: 0; }
 .il-dash-list tr[data-open] { cursor: pointer; }
 .il-dash-list tr[data-open]:hover td { background: var(--pd-bg); }
+/* Issue · Champion · Department · Status · Aging — Issue gets the lion's share. */
+.il-dash-list th:nth-child(1), .il-dash-list td:nth-child(1) { width: 42%; }
+.il-dash-list th:nth-child(2), .il-dash-list td:nth-child(2) { width: 17%; }
+.il-dash-list th:nth-child(3), .il-dash-list td:nth-child(3) { width: 17%; }
+.il-dash-list th:nth-child(4), .il-dash-list td:nth-child(4) { width: 13%; }
+.il-dash-list th:nth-child(5), .il-dash-list td:nth-child(5) { width: 11%; }
 
-@media (max-width: 1000px) {
-  .il-dash-grid { grid-template-columns: 1fr 1fr; }
-  .il-dash-wide { grid-column: 1 / -1; }
-}
-@media (max-width: 700px) {
-  .il-dash-grid { grid-template-columns: 1fr; }
-  .il-dash-wide { grid-column: auto; }
-}
+@media (max-width: 1000px) { .il-dash-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px)  { .il-dash-grid { grid-template-columns: 1fr; } }
 
-/* ---- Dashboard rework (items 6-10): one unified page, no Issues/Lessons
-   split — a status pie in place of tiles, an open-vs-total bar, a champion
-   breakdown (table + grouped bar), and the full issue list at the very
-   bottom, below every chart. ------------------------------------------- */
+/* ---- Dashboard rework (items 4-10): one unified page, no Issues/Lessons
+   split — a status pie, horizontal "N open of N issues" bars by department
+   and by champion (each a real tile, all three in one row on a wide screen),
+   and the full issue list at the very bottom, in its own tile too. -------- */
 .il-dash-note {
   font-size: 12.5px; color: var(--pd-muted); margin: 0 0 14px;
   display: flex; align-items: center; gap: 6px;
 }
 .il-dash-note strong { color: var(--pd-ink); font-weight: 700; }
-/* Grouped (Open vs Total) bars share one legend swatch pair everywhere they
-   appear, so a reader never has to re-learn the colour mapping per chart. */
+/* Item 5: the two horizontal-bar tiles share one legend swatch pair, so a
+   reader never has to re-learn the colour mapping between them. */
 .il-dash-barlegend { display: flex; gap: 14px; font-size: 12px; color: var(--pd-muted); margin-top: 8px; flex-wrap: wrap; }
 .il-dash-barlegend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
-.il-dash-champ-table td.il-dc-num { text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- Item 10: the full list, at the bottom of every chart -------------- */
+.il-dash-fulllist-card { margin-top: 14px; }
 .il-dash-fulllist-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  margin: 18px 0 8px;
+  margin: 0 0 8px;
 }
 .il-dash-fulllist-head h4 {
   margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted);
