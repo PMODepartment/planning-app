@@ -172,7 +172,15 @@ rule is verified as AUTHORED (`96px 1fr 40px`, dates hidden) via the CSSOM — t
 `innerWidth: 1280` whatever preset is set, so it was never actually rendered narrow.
 
 `config.js?v=` → `20260901a` (26 files), `db.js?v=` → `20260901a` (22), `modules-grid.js?v=` →
-`20260901c` (2). No `MODULE_V` bump: no module's index.html changed structurally.
+**`20260901d`** (2). No `MODULE_V` bump: no module's index.html changed structurally.
+
+⚠️ **A cache-version COLLISION was caught while rebasing onto PR #35.** That PR bumped the
+`modules-grid.js?v=` query string to `20260901c` **without changing the file** — and this work had
+independently chosen `20260901c` for a modules-grid.js that DOES change (the new `card` export).
+Two different file contents behind one version string means any browser that already fetched their
+`c` would keep serving the old file and `ModulesGrid.card` would be undefined, breaking every tile
+on the dashboard. Bumped to `20260901d` instead. A query-string bump with no file change is what
+made this possible; the version means nothing if it is not tied to content.
 
 
 ### 2026-09-01 (g) — RunPod 3D reconstruction cancelled; both Edge Functions undeployed
