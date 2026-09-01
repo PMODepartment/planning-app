@@ -139,7 +139,9 @@ html.pd-dark .rr-band.on { color:#FF8A80; }
 .rr-resrow { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
 .rr-rescard { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   padding:14px 16px; box-shadow:var(--pd-shadow); border-top:3px solid var(--rcm-c, var(--pd-line)); }
-.rr-rescard .rr-kpi-val { color:var(--rcm-c, var(--pd-ink)); }
+/* ⚠️ --rcm-t, not --rcm-c. This is the one place the fill token survived as a text
+   colour and it measured 2.80:1 in dark (24px/800 needs 3) on the residual band cards. */
+.rr-rescard .rr-kpi-val { color:var(--rcm-t, var(--pd-ink)); }
 
 /* ---- Risk Universe view ------------------------------------------------- */
 .rr-uni td:first-child { min-width:190px; }

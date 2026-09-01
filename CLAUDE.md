@@ -175,6 +175,31 @@ than writing to a live project unasked.
 
 `epc-rcm.css` + both `module.css` → `?v=20260901g`; `MODULE_V` → `20260901j`.
 
+⚠️ **A NINTH defect and a SIXTH bad measurement, both found on the re-verify** — recorded because the
+second is the more useful one.
+
+**The parser in my own probe could not read `color-mix()`.** Chrome serializes a computed `color-mix`
+as `color(srgb 0.98 0.88 0.88 / 0.12)` with **0–1** components; the probe assumed **0–255**, so it read
+every such background as near-black. That silently corrupted the two surfaces whose background IS a
+`color-mix` — the outline pill and the heat-map cell label — and it is why a "failure" of 2.51:1 turned
+up on a pale pink wash, which is not a number that surface can produce. ⚠️ **The parser bug UNDERSTATED
+the problem, not overstated it:** re-tested with a self-checked parser by overriding only the two custom
+properties on a real shipped pill, the pre-change outline pill fails in **both** themes (light
+2.74–3.88, dark 2.67–3.65) and the new values pass in both (light 5.70–6.68, dark 4.67–7.40). So the
+dark-only `--rcm-t` an earlier pass added was itself measured with the broken parser and was never
+enough. The three-role model is right; it just needed a probe that could read the CSS.
+⚠️ A first attempt at that re-test returned ratios **in the millions** — impossible, the maximum is
+21:1 — because it built its own background instead of using the stylesheet's. Probes now carry a range
+guard that reports `bad` rather than a number, and the parser has a self-test that asserts a known mix.
+
+**The ninth defect:** `.rr-rescard .rr-kpi-val` was the one place the FILL token survived as a text
+colour — 2.80:1 in dark on the residual band cards. A sweep for `--rcm-c` reaching any text property
+now comes back with only legitimate uses (backgrounds, washes, a legend swatch, a 3px top border).
+
+**Live re-measure after the fix: 44 surfaces per theme, 0 failures in light, 0 in dark.**
+
+`epc-rcm.css` + both `module.css` → `?v=20260901h`; `MODULE_V` → `20260901k`.
+
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
 Owner, after running both RCM migrations: *"the user cannot access any admin features like add
