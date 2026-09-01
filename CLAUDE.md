@@ -125,6 +125,26 @@ was deployed, and the other four panels sat in their empty states (WCB363 carrie
 or register entries), so **Approaching Deadlines, Minutes of Meeting, Issues & Concerns and the My
 items drawer have still only been seen against fixtures.**
 
+**Re-verified live after the fix shipped** (same project, `db.js?v=20260901d` confirmed served).
+*"forecast finish Sep 1, 2026"* — formatted, and **no raw JS date string anywhere on the page**.
+
+**Monthly and Quarterly both driven on the real 16,256-activity schedule** (Jul 2020 → Sep 2026):
+**75 monthly columns → 25 quarterly**, `misaligned: 0` and `clipped: 0` in **both**, the toggle
+switching each way, and the two modes agreeing on the current period (99.97 planned / 59.49 actual)
+— which is the anchoring rule holding on real data, not on a fixture. ⚠️ **Quarterly is what makes
+this project readable**: in monthly the −40 point gap is 75 columns of scrolling, and in quarterly
+the plan pulling away from a flat actual after Q3 2024 is a shape you see at a glance. No console
+errors.
+
+**The "My items" drawer is live-verified too** — it opens over a scrim, renders `my-work.js`'s real
+empty state against the live database (*"Nothing on this project is assigned to your account. Items
+whose champion or responsible was typed as free text cannot be matched to a login"*), and Escape
+closes it with focus returning to the button and `aria-expanded` back to false.
+
+⚠️ **Still fixture-only: Approaching Deadlines, Minutes of Meeting and Issues & Concerns.** WCB363
+carries no trades, minutes or register entries, so those three panels showed their empty states and
+their populated forms have never been seen against real rows.
+
 `db.js` → `20260901d`.
 
 ### 2026-09-01 (k) — S-Curve panel: two decimals and a Monthly/Quarterly switch, plus three defects the switch exposed
