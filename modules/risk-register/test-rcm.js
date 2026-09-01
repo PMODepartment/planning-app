@@ -416,5 +416,62 @@ ok('the migration pre-flights is_writer() rather than failing obscurely',
 ok('photo columns store PATHS, signed on demand — not URLs, which expire',
    /photo_path/.test(stkMig) && /photo_thumb_path/.test(stkMig));
 
+console.log('\n--- 13. admin is REACHABLE (the 2026-09-01 access regression) ---');
+// ⚠️ renderNav's 'project' branch deliberately emits no Admin/Projects link, and
+// home.html has no sidebar at all — so if the account menu does not carry the
+// system destinations, "+ Add project" and user management are unreachable from
+// every page a planner actually uses. That is a NAVIGATION defect, not a
+// permissions one, and no role check anywhere would have caught it.
+const uiSrc = fs.readFileSync(root('assets', 'js', 'ui.js'), 'utf8');
+const authSrc = fs.readFileSync(root('assets', 'js', 'auth.js'), 'utf8');
+const userBar = uiSrc.slice(uiSrc.indexOf('function renderUserBar'),
+                            uiSrc.indexOf('function renderUserBar') + 4000);
+ok('the account menu links to projects.html (where "+ Add project" lives)',
+   /pd-usermenu-link[^]*projects\.html/.test(userBar));
+ok('the account menu links to admin.html', /pd-usermenu-link[^]*admin\.html/.test(userBar));
+ok('Admin is gated on the profile role, in ONE place rather than 20 call sites',
+   /\['admin', 'super_admin'\]\.indexOf\(profile\.role\)/.test(userBar));
+ok('...and it is genuinely conditional, not always rendered',
+   /isAdmin\s*\?[^]*admin\.html/.test(userBar));
+ok('the links resolve from a module page too (appBase gives ../../)',
+   /var base = appBase\(\);/.test(userBar));
+ok('every renderNav "project"-mode page still gets Admin via the account menu, since renderNav itself offers none there',
+   !/mode === 'project'[^]*admin\.html/.test(uiSrc));
+// The CSS must exist or the links render unstyled inside the menu.
+const css = fs.readFileSync(root('assets', 'css', 'dashboard.css'), 'utf8');
+ok('.pd-usermenu-link is styled', /\.pd-usermenu-link\s*\{/.test(css));
+ok('.pd-usermenu-links group is styled', /\.pd-usermenu-links\s*\{/.test(css));
+ok('the menu links meet the 44px touch minimum on a phone',
+   /\.pd-usermenu-link\s*\{\s*min-height:\s*44px/.test(css.replace(/\s+/g, ' ')));
+
+// ⚠️ The stale-profile half: a role change must reach a tab that already cached
+// the old profile, or an admin promoting someone appears to do nothing.
+ok('the profile cache is revalidated against the server in the background',
+   /function revalidateProfile/.test(authSrc) && /revalidateProfile\(user, cached\)/.test(authSrc));
+ok('a transient network error keeps the cache rather than signing the user out',
+   /keep the cache, never sign the user out/.test(authSrc));
+ok('only role/status changes interrupt the page — other edits just correct the cache',
+   /r\.data\.role === cached\.role && r\.data\.status === cached\.status/.test(authSrc));
+ok('the reload guard is keyed on the OBSERVED STATE, so a second real change still applies',
+   /var sig = r\.data\.role \+ '\|' \+ r\.data\.status;/.test(authSrc));
+ok('the reload marker is cleared by logout (it shares the pd_prof_ prefix)',
+   /pd_prof_rl_/.test(authSrc) && /k\.indexOf\('pd_prof_'\) === 0/.test(authSrc));
+
+// One version per shared asset — a page left a version behind serves the OLD
+// account menu and stays locked out, which is exactly how this hid.
+['ui.js', 'auth.js', 'dashboard.css'].forEach((asset) => {
+  const versions = new Set();
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) { if (e.name !== 'node_modules' && e.name !== '.git') walk(p); }
+    else if (e.name.endsWith('.html')) {
+      const m = fs.readFileSync(p, 'utf8').match(new RegExp(asset.replace('.', '\\.') + '\\?v=([^"\']+)', 'g'));
+      if (m) m.forEach((x) => versions.add(x));
+    }
+  });
+  walk(root());
+  eq(`${asset} is served at exactly one version app-wide`, [...versions].length, 1);
+});
+
 console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
 process.exit(fails ? 1 : 0);
