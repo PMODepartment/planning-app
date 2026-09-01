@@ -15,8 +15,15 @@ Thumbs.db
 # Node (only if a dev adds tooling later — there is no build step by default)
 node_modules/
 
-# Local UI smoke-test harnesses (throwaway; never commit)
+# Local UI smoke-test harnesses (throwaway; never commit).
+# ⚠️ The `_ui_test.html` pattern was too narrow and four harness files shipped to
+# production on 2026-09-01 under a different name — a publicly reachable page that
+# renders a fake register from fixtures with the auth layer stubbed out. Match the
+# WORD, not one filename.
 **/_ui_test.html
+**/harness.html
+**/harness-stub.js
+**/*.harness.html
 
 # Supabase CLI local state
 supabase/.temp/

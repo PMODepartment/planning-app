@@ -14,24 +14,40 @@
    ============================================================================ */
 
 /* ---- Priority + residual semantics --------------------------------------
-   TWO tokens per level, and the split is load-bearing:
-     --rcm-c  the FILL (solid pill, cell wash, legend swatch) — white text sits
-              on it, so it must stay dark enough in both themes.
-     --rcm-t  the same meaning used as TEXT.
-   ⚠️ They cannot be one token. Measured on the dark card (#2B2C2B): the fill red
-   #dc2626 reads 2.92:1 as text and the outline pill 3.65:1 — both under AA —
-   while a red light enough to pass as text would drop white-on-fill below it.
-   So the fill is fixed in both themes (a priority colour is DATA, printed on the
-   controlled document) and only the TEXT token is lightened for dark.
-   This is the third time in this repo brand-weight red has failed as small text;
-   never colour a label with a fill token. */
-.rcm-p1 { --rcm-c: #dc2626; --rcm-t: #dc2626; }   /* 1st Priority — red    */
-.rcm-p2 { --rcm-c: #ea580c; --rcm-t: #ea580c; }   /* 2nd Priority — orange */
-.rcm-p3 { --rcm-c: #d97706; --rcm-t: #d97706; }   /* 3rd Priority — amber  */
-.rcm-p4 { --rcm-c: #16a34a; --rcm-t: #16a34a; }   /* 4th Priority — green  */
-.rcm-res-high { --rcm-c: #dc2626; --rcm-t: #dc2626; }
-.rcm-res-mod  { --rcm-c: #d97706; --rcm-t: #d97706; }
-.rcm-res-low  { --rcm-c: #16a34a; --rcm-t: #16a34a; }
+   THREE roles per level, and the split is load-bearing — measured live on the
+   deployed site in BOTH themes, not reasoned about:
+
+     --rcm-c  the FILL. White text sits on it (solid pill), and it is also the
+              wash behind the outline pill and the heat-map cell.
+     --rcm-t  the same meaning used as TEXT. Light mode needs a DARK shade,
+              dark mode a LIGHT one — so it is neither equal to the fill nor a
+              single value.
+
+   ⚠️ Why it cannot be one or two tokens. Measured before this change:
+     · solid pill, white on the fill — orange 3.56, amber 3.19, green 3.30,
+       IDENTICAL IN BOTH THEMES because the fill is theme-independent. So the
+       fills were too light for white and had to be darkened.
+     · outline pill, fill-coloured text on a 12% wash of itself — ALL SEVEN
+       levels failed in LIGHT (2.42–3.67). An earlier pass lightened --rcm-t for
+       dark only (5.44–9.00 there) and never measured light, so the fix moved the
+       failure rather than removing it.
+   A colour light enough to read on a dark card is too light to carry white; a
+   colour dark enough to carry white is too dark to read on a light wash. Hence
+   fill and text are different tokens, and text is per-theme.
+
+   ⚠️ The FILL stays fixed across themes on purpose: a priority colour is DATA
+   (it is printed on the controlled document), and a red that pales in dark mode
+   stops meaning "1st Priority". Only the text shade follows the theme.
+
+   This is the fourth time in this repo brand-weight colour has failed as small
+   text. Never colour a label with a fill token. */
+.rcm-p1 { --rcm-c: #dc2626; --rcm-t: #991b1b; }   /* 1st Priority — red    */
+.rcm-p2 { --rcm-c: #c2410c; --rcm-t: #9a3412; }   /* 2nd Priority — orange */
+.rcm-p3 { --rcm-c: #a16207; --rcm-t: #854d0e; }   /* 3rd Priority — amber  */
+.rcm-p4 { --rcm-c: #15803d; --rcm-t: #166534; }   /* 4th Priority — green  */
+.rcm-res-high { --rcm-c: #dc2626; --rcm-t: #991b1b; }
+.rcm-res-mod  { --rcm-c: #a16207; --rcm-t: #854d0e; }
+.rcm-res-low  { --rcm-c: #15803d; --rcm-t: #166534; }
 html.pd-dark .rcm-p1, html.pd-dark .rcm-res-high { --rcm-t: #f87171; }
 html.pd-dark .rcm-p2 { --rcm-t: #fb923c; }
 html.pd-dark .rcm-p3, html.pd-dark .rcm-res-mod { --rcm-t: #fbbf24; }
@@ -47,7 +63,7 @@ html.pd-dark .rcm-p4, html.pd-dark .rcm-res-low { --rcm-t: #4ade80; }
   font-size: 11px; font-weight: 700; line-height: 1.6; white-space: nowrap;
   color: var(--rcm-t, var(--pd-muted));
   border: 1px solid var(--rcm-t, var(--pd-line));
-  background: color-mix(in srgb, var(--rcm-c, transparent) 12%, transparent);
+  background: color-mix(in srgb, var(--rcm-c, transparent) 14%, transparent);
 }
 .rcm-muted { color: var(--pd-muted); }
 

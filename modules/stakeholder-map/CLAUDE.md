@@ -1,5 +1,46 @@
 # Module: stakeholder-map
 
+## Live audit, out-of-app browser (2026-09-01) — fmlozano
+
+Verified on the **deployed** site in the owner's signed-in Chrome, against **real legacy rows** written
+by the pre-RCM module. Read-only; nothing written. Both 2026-09-01 migrations confirmed applied
+(every new column resolves; an invented column correctly answers `42703`, so the probe discriminates).
+
+⚠️ **Eight contrast defects found by MEASURING the deployed CSS, split across themes** — a one-theme
+check would have passed. Full table and the reasoning in the root `CLAUDE.md` (2026-09-01 (m)). The
+structural fix: `epc-rcm.css` now separates **`--rcm-c` (fill, fixed in both themes)** from
+**`--rcm-t` (text, dark shade in light mode / light shade in dark)**, because one token cannot both
+carry white and read on a light wash of itself. `--pd-muted` is dark in light mode and **light** in
+dark, so the activity-number chip is ink-on-card inverted rather than white-on-muted. Status chips take
+this repo's settled shape for the same failure: ink text, semantic colour on the border.
+
+⚠️ **Four of the measurements were wrong before they were right** — a live `getComputedStyle` object
+re-read after a class change, `.x` and `.x.on` resolving to the same element, a `color:transparent`
+spacer scoring 1.00:1, and this module's classes probed on the *other* module's page (where its
+stylesheet is not loaded). Enumerate every instance, snapshot values immediately, skip transparent and
+empty nodes, and never measure a module's classes off its own page.
+
+⚠️ The automated tab is `visibilityState: 'hidden'`, where timers throttle to ~1/min — an awaited
+`setTimeout` inside a probe stalls the call for 45s. Style resolution is synchronous; do not await.
+
+⚠️ **Four harness files had shipped to production** from this module's own rebuild commit and are now
+removed, with `.gitignore` widened from the single `_ui_test.html` name to the word.
+
+**Rendered correctly against OPW101's one legacy stakeholder** — impact 4 × influence 3 →
+**12 → 1st Priority → Manage Closely**, with the BD relationship chain intact (2→3, gap 1,
+**Enhance / Every two months**) and an initials avatar standing in for the missing photo. 17 header
+cells = 17 row cells; no page horizontal scroll.
+
+⚠️ **The photo upload is still NOT verified against the real bucket.**
+`storage.from('stakeholder-photos').list()` returns `[]` for a bucket that does **not** exist — proved
+with a control on an invented bucket name — so the bucket is **unprobeable read-only** and the only
+honest test is a real upload, which is a write. Left for a pass that is allowed to write to a sandbox.
+
+⚠️ The sidebar still reads **"Stakeholder Map"** while the page is now the **"Stakeholder Register"**;
+the name lives in `config.js`'s shared `MODULES` registry, so renaming it is the app owner's call.
+
+`module.css` + `epc-rcm.css` → `?v=20260901g`.
+
 ## Rebuilt on the OPS register + stakeholder photos (2026-09-01) — fmlozano
 Rebuilt against **`CSF101. OPS. Stakeholder Register. 2026 02 13.xlsx`**. ⚠️ **This SUPERSEDES the
 corporate-BD build documented further down** — that section describes `IMP_GRID`, "Impact ×

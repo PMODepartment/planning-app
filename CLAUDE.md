@@ -84,6 +84,97 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (m) — Live audit of both rebuilt registers: 8 real defects, and 4 of my own measurements were wrong first
+
+Owner: *"Let's instead audit and verify via out of app browser."* Driven through the **deployed** site in
+the owner's own signed-in Chrome (super_admin). ⚠️ **Read-only on real data throughout** — no row was
+created, edited or deleted anywhere; the only writes are the source fixes below.
+
+**Both migrations are confirmed applied, and the probe was calibrated before it was trusted:** all 22
+`risk_register` and all 27 `stakeholder_map` RCM columns resolve, while an invented column correctly
+answers `42703`. So the two registers are running on the real schema, not degrading through their
+tolerant-write path.
+
+**The rebuild is correct against the real legacy rows** — which is the test a fixture cannot give.
+`DEMO01`'s three pre-RCM risks (categories `Regulatory`/`Commercial`/`Schedule`, responses
+`Mitigate`/`Transfer`/`Accept`, no activity, no residual) render under a `— UNASSIGNED ACTIVITY` group
+with the tally `2 × 2nd · 1 × 3rd`, and every derived priority matches the workbook's 5×5 by hand:
+4×4→2nd, 4×3→2nd, 3×3→3rd. `OPW101`'s one legacy stakeholder (impact 4 × influence 3) reads
+**12 → 1st Priority → Manage Closely**, with the BD relationship chain preserved (2→3, gap 1,
+**Enhance / Every two months**) and an initials avatar in place of the missing photo. Header and row
+cells align exactly in both registers (19/19 and 17/17); no page horizontal scroll.
+
+**⚠️ EIGHT REAL CONTRAST DEFECTS, ALL FOUND BY MEASURING THE DEPLOYED CSS, NONE VISIBLE BY READING IT.**
+And the interesting half is that they split across themes, so a one-theme check would have passed:
+
+| surface | light | dark |
+|---|---|---|
+| solid priority pill (white on fill) — orange/amber/green | **3.19–3.56** | same (fill is theme-independent) |
+| outline pill — **all seven levels** | **2.42–3.67** | pass (5.4–9.0) |
+| band header (`--pd-red-dark` 10px) | pass 5.31 | **2.92** |
+| lit band pill (`--pd-red-dark` on `--pd-red-light`) | pass 5.11 | **2.64** |
+| activity-number chip (white on `--pd-muted`) | pass 7.07 | **2.00** |
+| status chip | **In Progress 3.46 · Closed 4.12** | **Open 4.02** |
+| priority KPI value (24px/800) | pass | **2.90** |
+| stakeholder Manage-Closely KPI | pass 3.46 | **2.17** |
+
+⚠️ **An earlier pass had "fixed" the outline pill for dark only and never measured light — so it moved
+the failure rather than removing it.** The root cause is that one token was doing two jobs: a colour
+light enough to read on a dark card is too light to carry white, and a colour dark enough to carry
+white is too dark to read on a light wash. `epc-rcm.css` now carries **three roles** — `--rcm-c` the
+fill (fixed in both themes, because a priority colour is printed on the controlled document), and
+`--rcm-t` the text, with a **dark shade in light mode and a light shade in dark mode**. The fills were
+darkened so white passes. ⚠️ `--pd-muted` is a dark grey in light mode and a **light** grey in dark, so
+white-on-muted was never viable; the chip is ink-on-card inverted, which flips with the theme by
+construction. The status chip takes the repo's already-settled shape for this exact failure — ink text,
+semantic colour on the border. **30 combinations now predicted to pass, 0 failures**, tightest margin
+4.67.
+
+**⚠️ AND FOUR OF MY OWN MEASUREMENTS WERE WRONG BEFORE THEY WERE RIGHT — the transferable part:**
+1. **`getComputedStyle` returns a LIVE object.** Reading `cs.backgroundColor` after changing the
+   element's class returns the NEW value, so a probe that reused one element reported the outline
+   pill's 12% wash as the solid pill's fill. One fresh element per variant, value snapshotted
+   immediately.
+2. **`querySelector('.x')` and `querySelector('.x.on')` returned the SAME element** (the first band
+   pill is `.rr-band on`), so two lines of a report were one measurement wearing two labels. Enumerate
+   every instance and keep the worst.
+3. **A `color:transparent` spacer measures 1.00:1 and is not a defect** — `.rr-bandhead-x` is blank by
+   design. Skip elements with no text or a transparent colour, or the report cries wolf.
+4. **Module classes measured on another module's page are meaningless.** `.rr-st-*` probed on the
+   Stakeholder page returned a uniform 12.22 — that page never loads risk-register's stylesheet, so it
+   was measuring an unstyled span. All three status numbers agreeing was the tell.
+
+⚠️ **A fifth trap, environmental:** the automated tab reports `visibilityState: 'hidden'`, where timers
+are throttled to ~1/min — an `await new Promise(setTimeout)` inside a probe stalled the CDP call for
+45s and left the page mid-way through a theme toggle. **Style resolution is synchronous; measure
+without awaiting.**
+
+**⚠️ AND A PROCESS DEFECT OF MY OWN, SHIPPED TO PRODUCTION.** Commit `512d317` included **four
+verification harness files** — `modules/{risk-register,stakeholder-map}/harness.html` +
+`harness-stub.js` — so the deployed site carried two publicly reachable pages that render a fake
+register from fixtures with `window.getSB` and `AppAuth` stubbed out. No real data is exposed (every
+row is a literal in the page) and the stub only exists when that page loads it, so this is not a
+credential or RLS hole — but it is exactly what `.gitignore`'s *"throwaway; never commit"* rule exists
+to prevent, and the rule missed it because the pattern was **one filename** (`_ui_test.html`) rather
+than the word. Files removed; the pattern now matches `harness.html` / `harness-stub.js` / `*.harness.html`.
+
+**Also clean in the audit:** every JS file parses, 0 NUL bytes, CSS braces balanced in all three
+stylesheets, both migrations paren-balanced with `$$` paired and every policy preceded by a drop, both
+migrations present in the generated `supabase-build.sql`, and **no shared asset served at two versions
+and none unversioned**.
+
+⚠️ **Raised, not changed:** the sidebar still says **"Stakeholder Map"** while the page title and every
+heading now say **"Stakeholder Register"** — the name lives in `config.js`'s `MODULES` registry, a
+shared file, and renaming it is the app owner's call. Also cosmetic: the Code column is narrow enough
+to wrap `R-002` onto two lines.
+
+⚠️ **Not verified:** the photo upload against the real private bucket. `storage.from(b).list()` returns
+`[]` for a bucket that does not exist — the control proved it, so **the bucket cannot be probed
+read-only** and the only honest test is a real upload, which is a write. Left for the next pass rather
+than writing to a live project unasked.
+
+`epc-rcm.css` + both `module.css` → `?v=20260901g`; `MODULE_V` → `20260901j`.
+
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
 Owner, after running both RCM migrations: *"the user cannot access any admin features like add
