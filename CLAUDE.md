@@ -84,6 +84,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (k) — S-Curve panel: two decimals and a Monthly/Quarterly switch, plus three defects the switch exposed
+
+Owner: *"In the S-curve kpi panel let's have at least 2 decimal points in the table. Let's have a
+toggle to make the period switch to monthly and quarterly as well."* Both done, `dashboard.html`
+only — no shared asset moved, so nothing needed a `?v=` bump.
+
+**⚠️ THE PERIOD IS A VIEW OVER THE ENGINE'S MONTHLY SERIES, NOT A SECOND COMPUTATION.** `PDScurve`
+walks months; `scPeriods()` re-groups what it returned and `scSeries()` reads one point per group.
+Recomputing the curve on a quarterly axis would be a second engine, and the two would eventually
+disagree — which is the whole reason the engine was shared in the first place (entry (j)).
+
+**⚠️ A QUARTER IS READ AT ITS END, NEVER SUMMED.** These are cumulative curves: adding three
+cumulative points gives roughly three times the truth, and on a chart that tops out at 100% that
+reads as nothing worse than optimism. The suite asserts no quarter accidentally equals the sum of
+its months, which is the shape the mistake would take.
+
+**⚠️ AND THE CURRENT PERIOD IS READ AT TODAY, not at its end** — the same rule the monthly view has
+always used, generalised. This is not a nicety: `actualC` is padded past the data date, so reading
+the current quarter at its end would report ~0 and **a project would appear to have un-built itself
+the moment you switched to quarterly.** Asserted directly (`current QUARTER actual == overall %
+complete`), and separately for a schedule starting in each of the twelve months, because a fixture
+that happens to start in January never produces the partial leading group where this goes wrong.
+
+**⚠️ Partial groups are correct and are NAMED.** A February start gives a two-month Q1. The end of
+the group is still the end of the group, so the figure is right — but the header says "Q1" over two
+months of data, so the tooltip spells out the real span (*"Q1 2026 · Jan–Mar 2026"*, or *"Feb–Mar
+2026"* where that is what it is) rather than letting the label speak for it.
+
+**Two decimals, and the `%` moved to the row label.** Repeating the sign in 78 cells is noise, and at
+10px it is the difference between "100.00" fitting its column and being clipped into a different
+number. The KPI line took two decimals as well — the "now" column IS `plannedPct`, and a headline
+saying 46% over a cell saying 46.20 is the panel disagreeing with itself.
+
+**⚠️ DEFECT 1 — THE TOGGLE WOULD HAVE BEEN A DEAD CONTROL WHEREVER STORAGE IS BLOCKED.** The mode was
+read straight out of `localStorage` on every render. That looks tidier and it means that in a private
+window, or a browser set to block site data, the write throws, the read throws, and the repaint comes
+back on the mode it started on — clicking "Quarterly" does nothing at all, with no error and nothing
+to see. The mode is a variable now; storage only **seeds** it and is a best-effort place to remember
+it. Found because the harness runs from a `data:` URL, where `localStorage` throws outright.
+
+**⚠️ DEFECT 2 — THE PANEL WOULD HAVE OPENED SCROLLED PAST THE DATA DATE.** The opening scroll still
+used `c.ti`, the engine's **monthly** index, on an axis that is now quarterly — about three times too
+far right. Every other x in the panel was converted; this one survived because it reads correctly on
+the monthly axis, which is exactly why a conversion misses it. Caught by a replace that asserted its
+own target and refused to write when it did not match.
+
+**⚠️ DEFECT 3 — a fixed column width drew a chart that looked CUT OFF.** A quarterly axis is a third
+of the columns, so a two-year programme filled two thirds of the panel and its gridlines ended in
+mid-air. The column width is computed per render now and shared by the chart and the table through
+one `<colgroup>` — 46px is a **minimum** (what "100.00" needs at 10px tabular figures), and when the
+whole axis fits, the columns share the room out instead. ⚠️ The width is **passed** to `scPath`
+rather than read from the constant: a helper quietly using the constant while the table uses the
+computed one is precisely the chart-vs-table drift this panel was bitten by last round.
+
+Smaller: the tooltip read *"Forecast —%"* for a period with no forecast — the em dash means "there is
+no number here" and a percent sign on it claims there is. The scroll hint is conditional, because an
+instruction to scroll a panel that does not scroll reads as a broken control. The switch reuses the
+**same segmented control** the S-Curve module uses for Duration/Cost, and takes the app's own 44px
+tap minimum on a phone — `assets/css/dashboard.css` records that segmented buttons sized to their
+text were *"among the hardest things on the page to hit accurately"*.
+⚠️ **Its active state measures 4.12:1**, under AA for 11px. That is brand red with white text, which
+is the app's established active state everywhere — sidebar nav, `.pd-btn-primary`, the node tree, the
+view tabs. Raised deliberately rather than forked on one panel.
+
+**Verified: 58 new checks** on `scPeriods`/`scSeries`/`scColFor`/`scPath`/`scPct`, all lifted out of
+`dashboard.html` and executed, plus the 70 shell/engine checks and both equivalence runs (15,927 and
+11,510 compared values, 0 differing) still green. In a browser, both modes: **0 misaligned columns**
+(26 at 46px monthly, 9 at 79px quarterly), nothing clipped, hover naming the correct period, the
+quarterly axis filling the panel with no sideways scroll, and 7.07 light / 7.02 dark contrast.
+
 ### 2026-09-01 (j) — Dashboard round 3: the S-curve engine shared, four owner items, and TWO defects the panels only revealed under measurement
 
 Owner, four items: *"I don't understand the Project Schedule & Milestones kpi panel. It has red fills

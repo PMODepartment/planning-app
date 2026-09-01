@@ -180,6 +180,10 @@
     .pd-sc-ac { fill:none; stroke:#2FA36B; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
     .pd-sc-fc { fill:none; stroke:#C9A227; stroke-width:2; stroke-dasharray:5 4; stroke-linejoin:round; stroke-linecap:round; }
     .pd-sc-tbl { border-collapse:collapse; font-size:10px; table-layout:fixed; margin-top:6px; }
+    /* ⚠️ The 46px here is only a FALLBACK. The real widths come from the <colgroup> the panel
+       emits, because the column width is computed per render (see scColFor) and the chart and the
+       table must be laid out from one number. Under `table-layout:fixed` a col's width beats a
+       cell's, so the colgroup wins wherever both are present. */
     .pd-sc-tbl th, .pd-sc-tbl td { width:46px; text-align:center; padding:3px 0; color:var(--pd-muted);
       white-space:nowrap; font-variant-numeric:tabular-nums; }
     .pd-sc-tbl th { font-weight:700; border-bottom:1px solid var(--pd-line); }
@@ -213,6 +217,28 @@
       padding:7px 9px; font-size:10.5px; color:var(--pd-muted); display:grid; gap:2px;
       box-shadow:0 6px 18px rgba(0,0,0,.28); }
     .pd-sc-tip b { color:var(--pd-ink); font-size:11px; margin-bottom:2px; }
+    .pd-sc-tip-s { font-size:9.5px; opacity:.85; margin-bottom:2px; }
+
+    /* Period switch. ⚠️ Deliberately the SAME segmented control the S-Curve module uses for its
+       Duration/Cost switch (`.sc-seg` there) — a planner moving between the panel and the module
+       should not have to learn a second control for the same kind of choice. */
+    .pd-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .pd-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:11px;
+      font-weight:700; padding:5px 11px; cursor:pointer; line-height:1.3; }
+    .pd-seg button + button { border-left:1px solid var(--pd-line); }
+    .pd-seg button:hover { background:var(--pd-bg); }
+    /* ⚠️ Brand red with white text is the app's established ACTIVE state — the sidebar's current
+       nav item, .pd-btn-primary, the node tree's selection and the view tabs all use exactly this
+       pair. It measures 4.12:1, under AA for 11px text, and that is a property of the brand red
+       rather than of this control: forking it here would make one panel's toggle the only active
+       state in the app that looks different. Raised deliberately rather than silently diverged. */
+    .pd-seg button.on { background:var(--pd-red); color:#fff; }
+    /* ⚠️ 44px on a phone, per the rule assets/css/dashboard.css states for exactly this shape:
+       segmented buttons sized to their text were "among the hardest things on the page to hit
+       accurately". The desktop size is unchanged — this is the tap area, not visual bulk. */
+    @media (max-width:700px) { .pd-seg button { min-height:var(--pd-tap); padding:8px 13px; } }
+    /* The head puts the legend slot on the right; the switch shares it with the module link. */
+    .pd-viz-h .pd-viz-legend { align-items:center; gap:12px; }
 
     /* ---- list extras shared by the deadline / MoM / Issues panels ---------------------------- */
     .pd-list-top { margin-top:0; padding-top:0; border-top:0; }
@@ -611,28 +637,126 @@
     //    column in the table is always under the point it describes. Two scrollers would drift the
     //    moment either one was touched, and a table that disagrees with the chart above it is worse
     //    than no table.
-    var SC_COL = 46;      // px per month — the scroll unit for both the chart and the table
+    // ⚠️ A MINIMUM, not a fixed width. 46px is what "100.00" needs at 10px tabular figures, and a
+    //    narrower column clips a figure into a different number. But a QUARTERLY axis is a third of
+    //    the columns, and at a fixed width a two-year programme drew a chart that stopped two-thirds
+    //    of the way across the panel with its gridlines ending in mid-air — which reads as a chart
+    //    that has been cut off, not as one that fits. When the whole axis fits, the columns share
+    //    the room out instead.
+    var SC_COL = 46;      // px per period, MINIMUM — the scroll unit for both the chart and the table
     var SC_H = 150;       // px, plot height
     // ⚠️ The table carries a row-label column the chart does not. The SVG is therefore INDENTED by
     //    exactly that width, so month i sits at the same x in both. Every mouse-x, tooltip and
     //    scroll figure below goes through it — it is not a style, it is part of the alignment.
     var SC_KEY = 78;      // px, the 'Planned / Actual / Forecast' label column (swatch + word)
 
-    function scPoints(vals, TOT, n) {
-      // % of total, null preserved: a null is "not forecast yet", not zero.
-      return vals.map(function (v, i) {
-        return v == null ? null : { i: i, y: TOT ? Math.max(0, Math.min(100, v / TOT * 100)) : 0 };
-      }).slice(0, n);
+    // ⚠️ THE PERIOD IS A VIEW OVER THE ENGINE'S MONTHLY SERIES, NOT A SECOND COMPUTATION.
+    //    PDScurve walks months; quarterly re-groups what it returned. Recomputing the curve on a
+    //    quarterly axis would be a second engine, and the two would eventually disagree.
+    // ⚠️ A quarter's value is the value at the quarter's END, never a sum of its months. These are
+    //    CUMULATIVE series — adding three cumulative points gives a number roughly three times the
+    //    truth, and on a chart that reaches 100% it would look like nothing worse than optimism.
+    // ⚠️ The first and last groups are routinely PARTIAL (a project starting in February gives a
+    //    two-month Q1). That is correct for a cumulative read — the end of the group is still the
+    //    end of the group — but the header would say "Q1" over two months of data, so the tooltip
+    //    names the real month span rather than letting the label speak for it.
+    function scPeriods(c, mode) {
+      var out = [];
+      if (mode !== 'q') {
+        c.months.forEach(function (m, k) {
+          out.push({ first: k, last: k, year: m.getFullYear(),
+                     label: m.toLocaleDateString('en-US', { month: 'short' }), newYear: m.getMonth() === 0 });
+        });
+        return out;
+      }
+      var i = 0;
+      while (i < c.months.length) {
+        var m = c.months[i], q = Math.floor(m.getMonth() / 3), y = m.getFullYear(), first = i;
+        while (i < c.months.length &&
+               c.months[i].getFullYear() === y && Math.floor(c.months[i].getMonth() / 3) === q) i++;
+        out.push({ first: first, last: i - 1, year: y, label: 'Q' + (q + 1), newYear: q === 0 });
+      }
+      return out;
     }
-    function scPath(pts) {
+
+    // The three display series, one point per period, plus which period holds the data date.
+    // ⚠️ THE CURRENT PERIOD IS READ AT TODAY, every other one at its end — the same rule the
+    //    monthly view has always used, generalised. Reading the current quarter's ACTUAL at the
+    //    quarter end would report a figure from `actualC`'s post-data-date padding, i.e. zero, and
+    //    a project would appear to have un-built itself the moment you switched to quarterly.
+    function scSeries(c, P) {
+      var TOT = c.TOT;
+      function at(arr, idx) {
+        var v = arr[idx];
+        return v == null ? null : { y: TOT ? Math.max(0, Math.min(100, v / TOT * 100)) : 0 };
+      }
+      var ti = 0;
+      P.forEach(function (p, k) { if (c.ti >= p.first && c.ti <= p.last) ti = k; });
+      return {
+        ti: ti,
+        pl: P.map(function (p) { return at(c.plannedC, p.last); }),
+        // null once the period starts after the data date: an actual for the future is not a low
+        // number, it is not a number.
+        ac: P.map(function (p) { return p.first > c.ti ? null : at(c.actualC, Math.min(p.last, c.ti)); }),
+        // null before the data date — a forecast of the past is a claim about history, and history
+        // is what `actual` is for.
+        fc: P.map(function (p) {
+          if (p.last < c.ti) return null;
+          return at(c.forecastC, p.first <= c.ti ? c.ti : p.last);
+        })
+      };
+    }
+
+    // ⚠️ The column width is a per-render figure, so it is PASSED rather than read from the
+    //    constant. Every x in the panel — path, gridline, now-line, table column, hover — has to
+    //    come from the same number, and a helper quietly using the constant while the table uses
+    //    the computed one is exactly the chart-vs-table drift this panel has already been bitten by.
+    // ⚠️ The cap's only job is the DEGENERATE axis — a one- or two-period programme, where sharing
+    //    the whole panel out gives a single 700px column and a "curve" that is one dot. It is not
+    //    there to stop the chart filling the width: this is a line chart, and a six-quarter
+    //    programme spread across the panel is exactly what the quarterly view is for. Set low
+    //    (104px) it left a fifth of the plot empty and the gridlines still ended in mid-air.
+    var SC_COL_MAX = 160;
+    function scColFor(host, n) {
+      var avail = (host && host.clientWidth ? host.clientWidth : 0) - 34 - SC_KEY;  // 34 = panel padding
+      if (!(avail > 0) || !n) return SC_COL;
+      return Math.max(SC_COL, Math.min(SC_COL_MAX, Math.floor(avail / n)));
+    }
+    function scPath(pts, COL) {
       var d = '', open = false;
-      pts.forEach(function (p) {
+      pts.forEach(function (p, i) {
         if (!p) { open = false; return; }
-        var x = p.i * SC_COL + SC_COL / 2, y = SC_H - (p.y / 100) * SC_H;
+        var x = i * COL + COL / 2, y = SC_H - (p.y / 100) * SC_H;
         d += (open ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
         open = true;
       });
       return d.trim();
+    }
+
+    // ⚠️ TWO DECIMALS, and the '%' lives in the ROW LABEL rather than in every cell (owner,
+    //    2026-09-01: *"at least 2 decimal points in the table"*). Repeating the sign 78 times is
+    //    noise, and at 10px it is the difference between "100.00" fitting a column and being
+    //    clipped to a different number. The tooltip keeps its '%' — there it is prose, not a grid.
+    function scPct(p) { return p == null ? '—' : p.y.toFixed(2); }
+    // The same figure with its sign, for prose. ⚠️ No '%' on the em dash — the dash means "there is
+    // no number here", and "—%" reads as a number that failed to print rather than an absence.
+    function scPctU(p) { return p == null ? '—' : p.y.toFixed(2) + '%'; }
+
+    // The chosen period. ⚠️ THE STATE LIVES IN A VARIABLE; localStorage only SEEDS it and is a
+    //    best-effort place to remember it. Reading the mode straight out of storage on every render
+    //    looks tidier and makes the control DEAD wherever storage is unavailable — a private window,
+    //    or a browser set to block site data — because the write throws, the read throws, and the
+    //    repaint comes back with the mode it started on. Clicking "Quarterly" would do nothing at
+    //    all, with no error and nothing to see. Found in the harness, which runs from a `data:` URL
+    //    where localStorage throws outright.
+    var SC_PERIOD_KEY = 'pd_dash_sc_period';
+    var scMode = (function () {
+      try { return localStorage.getItem(SC_PERIOD_KEY) === 'q' ? 'q' : 'm'; } catch (e) { return 'm'; }
+    })();
+    function scPeriodMode() { return scMode === 'q' ? 'q' : 'm'; }
+    function scSetPeriodMode(v) {
+      scMode = v === 'q' ? 'q' : 'm';
+      try { localStorage.setItem(SC_PERIOD_KEY, scMode); } catch (e) { /* the view still switches */ }
     }
 
     function renderScurve() {
@@ -654,73 +778,85 @@
         return vizEmpty('viz-scurve', 'S-Curve', why);
       }
 
-      var n = c.months.length, TOT = c.TOT;
-      var pl = scPoints(c.plannedC, TOT, n), ac = scPoints(c.actualC, TOT, n), fc = scPoints(c.forecastC, TOT, n);
-      // Actual is only meaningful up to the data date; past it the array holds anchoring zeroes.
-      ac = ac.map(function (p, i) { return i <= c.ti ? p : null; });
-      var W = Math.max(n * SC_COL, 320);
+      var mode = scPeriodMode();
+      var P = scPeriods(c, mode), n = P.length;
+      var S = scSeries(c, P), pl = S.pl, ac = S.ac, fc = S.fc, ti = S.ti;
+      var COL = scColFor(host, n);
+      var W = n * COL;
+      var unit = mode === 'q' ? 'quarter' : 'month';
 
-      // Gridlines at 0/25/50/75/100% and a year rule wherever January falls.
+      // Gridlines at 0/25/50/75/100% and a year rule at the first period of each year.
       var grid = '';
       [0, 25, 50, 75, 100].forEach(function (g) {
         var y = SC_H - (g / 100) * SC_H;
         grid += '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) + '" class="pd-sc-grid"/>';
       });
-      c.months.forEach(function (m, i) {
-        if (m.getMonth() !== 0) return;
-        var x = (i * SC_COL).toFixed(1);
+      P.forEach(function (p, i) {
+        if (!p.newYear || i === 0) return;
+        var x = (i * COL).toFixed(1);
         grid += '<line x1="' + x + '" y1="0" x2="' + x + '" y2="' + SC_H + '" class="pd-sc-year"/>';
       });
       // The data date — where "actual" stops being a record and "forecast" starts being a guess.
-      var tx = (c.ti * SC_COL + SC_COL / 2).toFixed(1);
+      var tx = (ti * COL + COL / 2).toFixed(1);
       grid += '<line x1="' + tx + '" y1="0" x2="' + tx + '" y2="' + SC_H + '" class="pd-sc-now"/>';
 
       var svg =
         '<svg class="pd-sc-svg" width="' + W + '" height="' + SC_H + '" viewBox="0 0 ' + W + ' ' + SC_H + '"' +
           ' style="margin-left:' + SC_KEY + 'px" aria-hidden="true">' +
           grid +
-          '<path d="' + scPath(pl) + '" class="pd-sc-pl"/>' +
-          '<path d="' + scPath(fc) + '" class="pd-sc-fc"/>' +
-          '<path d="' + scPath(ac) + '" class="pd-sc-ac"/>' +
+          '<path d="' + scPath(pl, COL) + '" class="pd-sc-pl"/>' +
+          '<path d="' + scPath(fc, COL) + '" class="pd-sc-fc"/>' +
+          '<path d="' + scPath(ac, COL) + '" class="pd-sc-ac"/>' +
           '<line id="sc-guide" x1="0" y1="0" x2="0" y2="' + SC_H + '" class="pd-sc-guide" style="opacity:0"/>' +
         '</svg>';
 
-      function pct(p) { return p == null ? '—' : Math.round(p.y) + '%'; }
       var head = '', rPl = '', rAc = '', rFc = '';
-      c.months.forEach(function (m, i) {
-        var lbl = m.toLocaleDateString('en-US', { month: 'short' });
-        var yr = m.getMonth() === 0 || i === 0 ? "<small>" + m.getFullYear() + "</small>" : '';
-        head += '<th' + (i === c.ti ? ' class="now"' : '') + '>' + lbl + yr + '</th>';
-        rPl += '<td' + (i === c.ti ? ' class="now"' : '') + '>' + pct(pl[i]) + '</td>';
-        rAc += '<td' + (i === c.ti ? ' class="now"' : '') + '>' + pct(ac[i]) + '</td>';
-        rFc += '<td' + (i === c.ti ? ' class="now"' : '') + '>' + pct(fc[i]) + '</td>';
+      P.forEach(function (p, i) {
+        var yr = (p.newYear || i === 0) ? '<small>' + p.year + '</small>' : '';
+        var nw = i === ti ? ' class="now"' : '';
+        head += '<th' + nw + '>' + p.label + yr + '</th>';
+        rPl += '<td' + nw + '>' + scPct(pl[i]) + '</td>';
+        rAc += '<td' + nw + '>' + scPct(ac[i]) + '</td>';
+        rFc += '<td' + nw + '>' + scPct(fc[i]) + '</td>';
       });
       // ⚠️ The header needs the CORNER cell, and that cell needs the KEY column's WIDTH (see the
       // th.k rule). Both halves matter and only one of them is visible: without the cell, thead has
-      // one fewer column than every tbody row; with the cell but at the month width, the table is
-      // 46px narrower than it declares and slides a whole column off the chart. Either way the
-      // figures are labelled with the wrong month and the table looks perfectly tidy.
+      // one fewer column than every tbody row; with the cell but at the period width, the table is
+      // narrower than it declares and slides a whole column off the chart. Either way the figures
+      // are labelled with the wrong period and the table looks perfectly tidy.
       // ⚠️ Caught by measuring the 'now' header's centre against the chart's now-line — they must
       //    be the same x — not by looking at it.
+      // ⚠️ One <colgroup> rather than a width on 27 cells: under `table-layout:fixed` a col's width
+      // beats a cell's, so this is the single place the table's geometry comes from, and it is the
+      // same COL the chart above it was drawn with.
+      var cols = '<colgroup><col style="width:' + SC_KEY + 'px">' +
+        P.map(function () { return '<col style="width:' + COL + 'px">'; }).join('') + '</colgroup>';
       var table =
-        '<table class="pd-sc-tbl" style="width:' + (W + SC_KEY) + 'px">' +
+        '<table class="pd-sc-tbl" style="width:' + (W + SC_KEY) + 'px">' + cols +
           '<thead><tr><th class="k"></th>' + head + '</tr></thead><tbody>' +
-          '<tr class="pl"><td class="k">Planned</td>' + rPl.replace(/^<td/, '<td') + '</tr>' +
-          '<tr class="ac"><td class="k">Actual</td>' + rAc + '</tr>' +
-          '<tr class="fc"><td class="k">Forecast</td>' + rFc + '</tr>' +
+          '<tr class="pl"><td class="k">Planned %</td>' + rPl + '</tr>' +
+          '<tr class="ac"><td class="k">Actual %</td>' + rAc + '</tr>' +
+          '<tr class="fc"><td class="k">Forecast %</td>' + rFc + '</tr>' +
           '</tbody></table>';
 
       var vari = c.variance;
       var sub = (c.money ? 'Cost-weighted' : 'Duration-weighted') + ' &middot; ' + c.activities + ' activities &middot; ' +
         'forecast finish ' + Fmt.esc(Fmt.date(c.fcFinish)) + (c.manual ? ' (pinned)' : ' (from SPI ' + (Math.round(c.spi * 100) / 100).toFixed(2) + ')');
+      var seg =
+        '<span class="pd-seg" id="sc-period" role="group" aria-label="Period">' +
+          '<button type="button" data-p="m"' + (mode === 'm' ? ' class="on"' : '') +
+            ' aria-pressed="' + (mode === 'm') + '">Monthly</button>' +
+          '<button type="button" data-p="q"' + (mode === 'q' ? ' class="on"' : '') +
+            ' aria-pressed="' + (mode === 'q') + '">Quarterly</button>' +
+        '</span>';
 
       host.innerHTML =
-        vizHead('S-Curve', sub, link) +
+        vizHead('S-Curve', sub, seg + link) +
         '<div class="pd-sc-kpi">' +
-          '<span><b>' + Math.round(c.plannedPct) + '%</b> planned to date</span>' +
-          '<span><b>' + Math.round(c.actualPct) + '%</b> actual</span>' +
+          '<span><b>' + c.plannedPct.toFixed(2) + '%</b> planned to date</span>' +
+          '<span><b>' + c.actualPct.toFixed(2) + '%</b> actual</span>' +
           '<span class="' + (vari >= 0 ? 'pd-perf-good' : 'pd-stat-warn') + '"><b>' +
-            (vari >= 0 ? '+' : '') + Math.round(vari) + ' pts</b> variance</span>' +
+            (vari >= 0 ? '+' : '') + vari.toFixed(2) + ' pts</b> variance</span>' +
         '</div>' +
         '<div class="pd-sc-legend">' +
           '<span><i class="pl"></i>Planned (baseline)</span>' +
@@ -732,28 +868,57 @@
           '<div class="pd-sc-inner" style="width:' + (W + SC_KEY) + 'px">' + svg + table + '</div>' +
           '<div class="pd-sc-tip" id="sc-tip" hidden></div>' +
         '</div>' +
-        '<div class="pd-viz-s pd-mini-note">Scroll sideways for the whole programme; hover a month for its figures. ' +
-          'Percentages are of the project total, so they are comparable across months.</div>';
+        // ⚠️ The scroll hint is CONDITIONAL. On a quarterly axis the columns share the panel out and
+        //    there is usually nothing to scroll, and an instruction to do something the page will not
+        //    do reads as a broken control rather than as a leftover sentence.
+        '<div class="pd-viz-s pd-mini-note">' +
+          (W + SC_KEY > (host.clientWidth || 0) - 34 ? 'Scroll sideways for the whole programme; hover' : 'Hover') +
+          ' a ' + unit + ' for its figures. Percentages are of the project total, so they are ' +
+          'comparable across ' + unit + 's. ' + (mode === 'q'
+            ? 'A quarter reads at its <b>end</b> — these are cumulative curves, so quarters are never added up. '
+            : '') +
+          'The <b>' + unit + ' in progress</b> is read at today, not at its end.</div>';
+
+      // ---- the period toggle ----
+      // A repaint, never a re-fetch: the curve is already computed and held in MET.
+      host.querySelectorAll('#sc-period [data-p]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          if (b.dataset.p === mode) return;
+          scSetPeriodMode(b.dataset.p);
+          renderScurve();
+        });
+      });
 
       // ---- hover: one guide line + a tooltip, driven off the pointer's column ----
       var scroll = document.getElementById('sc-scroll');
       var tip = document.getElementById('sc-tip');
       var guide = host.querySelector('#sc-guide');
       if (!scroll || !tip || !guide) return;
+      var MON = { month: 'short' }, MONY = { month: 'short', year: 'numeric' };
       scroll.addEventListener('mousemove', function (e) {
         var r = scroll.getBoundingClientRect();
         var x = e.clientX - r.left + scroll.scrollLeft - SC_KEY;
-        var i = Math.max(0, Math.min(n - 1, Math.floor(x / SC_COL)));
-        var cx = i * SC_COL + SC_COL / 2;
+        var i = Math.max(0, Math.min(n - 1, Math.floor(x / COL)));
+        var cx = i * COL + COL / 2;
+        var p = P[i];
         guide.setAttribute('x1', cx); guide.setAttribute('x2', cx);
         guide.style.opacity = '1';
         tip.hidden = false;
+        // ⚠️ The span is spelled out, not implied by the label. On a partial group "Q1 2026" covers
+        //    whatever months the programme actually occupies, and a reader comparing it with a full
+        //    quarter beside it deserves to be told which.
+        var span = p.first === p.last
+          ? c.months[p.first].toLocaleDateString('en-US', MONY)
+          : c.months[p.first].toLocaleDateString('en-US', MON) + '–' +
+            c.months[p.last].toLocaleDateString('en-US', MONY);
         tip.innerHTML =
-          '<b>' + Fmt.esc(c.months[i].toLocaleDateString('en-US', { month: 'short', year: 'numeric' })) + '</b>' +
-          '<span><i class="pl"></i>Planned ' + pct(pl[i]) + '</span>' +
-          '<span><i class="ac"></i>Actual ' + pct(ac[i]) + '</span>' +
-          '<span><i class="fc"></i>Forecast ' + pct(fc[i]) + '</span>';
-        // Keep the tip inside the scroller rather than letting it hang off the right edge.
+          '<b>' + Fmt.esc(mode === 'q' ? p.label + ' ' + p.year : span) + '</b>' +
+          (mode === 'q' ? '<span class="pd-sc-tip-s">' + Fmt.esc(span) + '</span>' : '') +
+          (i === ti ? '<span class="pd-sc-tip-s">read at today</span>' : '') +
+          '<span><i class="pl"></i>Planned ' + scPctU(pl[i]) + '</span>' +
+          '<span><i class="ac"></i>Actual ' + scPctU(ac[i]) + '</span>' +
+          '<span><i class="fc"></i>Forecast ' + scPctU(fc[i]) + '</span>';
+      // Keep the tip inside the scroller rather than letting it hang off the right edge.
         var left = cx + SC_KEY - scroll.scrollLeft + 12;
         if (left + 150 > r.width) left = Math.max(4, left - 174);
         tip.style.left = left + 'px';
@@ -763,7 +928,11 @@
       });
       // Open on the data date rather than at month 1 — the current position is what a planner
       // came to see, and on a three-year programme month 1 is a year of scrolling away.
-      scroll.scrollLeft = Math.max(0, c.ti * SC_COL + SC_KEY - scroll.clientWidth / 2);
+      // ⚠️ `ti`, the PERIOD index — not `c.ti`, which is the engine's MONTHLY one. On a quarterly
+      //    axis the monthly index is about three times too far right, so the panel would have opened
+      //    scrolled past the data date it exists to show. Every other x here was converted; this one
+      //    reads correctly either way on the monthly axis, which is how it survived the conversion.
+      scroll.scrollLeft = Math.max(0, ti * COL + SC_KEY - scroll.clientWidth / 2);
     }
 
     // ---- Trades programme ------------------------------------------------------------------------
