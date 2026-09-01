@@ -320,9 +320,23 @@ window.MyWork = (function () {
     wireRows(host);
   }
 
+  // ⚠️ Counts through the SAME fetchAll + counts() the panel renders from, so the dashboard's
+  // drawer badge and the panel it opens can never disagree. A badge computed its own way is a
+  // second definition of "mine", and the first time the two differ the badge is the one believed.
+  // Resolves to 0 rather than rejecting when the fetch fails: a badge is decoration, and a caller
+  // should not have to catch to render a page.
+  async function countOpen(userId, pid) {
+    if (!userId || !pid) return 0;
+    try {
+      var c = counts(await fetchAll(userId, pid));
+      return c.championOpen + c.respOpen;
+    } catch (e) { return 0; }
+  }
+
   return {
     render: render,
     renderBlock: renderBlock,
+    countOpen: countOpen,
     // Exposed for the test harness — never called by the app.
     _internals: {
       agingOf: agingOf, daysBetween: daysBetween, counts: counts,

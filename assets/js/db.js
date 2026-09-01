@@ -216,6 +216,15 @@
         if (m.weight) want[m.weight] = 1;
       });
       if (spec.exclude && spec.exclude.column) want[spec.exclude.column] = 1;
+      // ⚠️ The curve's column list comes from the ENGINE, not from a list retyped here — a
+      // column missing from this select does not throw, it reads undefined and quietly
+      // flattens the curve, which looks exactly like a project that has not started.
+      if (spec.curve && window.PDScurve) (PDScurve.COLS || []).forEach(function (c) { want[c] = 1; });
+      (spec.lists || []).forEach(function (l) {
+        (l.columns || []).forEach(function (c) { want[c] = 1; });
+        if (l.orderBy) want[l.orderBy] = 1;
+        (l.where || []).forEach(function (w) { if (w && w.column) want[w.column] = 1; });
+      });
       (spec.metrics || []).forEach(function (m) {
         // ⚠️ m.amount is sumEarned's fallback money column — omit it here and the derivation
         // silently reads undefined on every row, i.e. the metric comes back null and the panel
@@ -254,6 +263,25 @@
           if (!c || !c.column) continue;
           var v = r[c.column];
           if (c.values) { if (c.values.indexOf(v) === -1) return false; }
+          // ⚠️ `notValues` is not sugar for `values`: "status is not Completed" must also keep rows
+          // whose status is NULL. A module that has never set a status still has open work.
+          else if (c.notValues) { if (c.notValues.indexOf(v) !== -1) return false; }
+          // ⚠️ A numeric ceiling, exclusive. NULL and '' read as ZERO, not as "fails the test" — a
+          // percent_complete nobody has ever typed is 0% done, which is exactly what `below: 100`
+          // is asking about. Rejecting it would drop every untouched activity off the list.
+          else if (c.below != null) { if (!((v == null || v === '' ? 0 : Number(v)) < c.below)) return false; }
+          // A date window relative to TODAY, in days. `from` may be negative to include overdue.
+          // ⚠️ Computed against local midnight, matching every other date comparison in this app —
+          // a UTC boundary would move "due today" by a day for half the working day in Manila.
+          else if (c.withinDays) {
+            if (v == null || v === '') return false;
+            var _t = new Date(); _t.setHours(0, 0, 0, 0);
+            var _m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/);
+            if (!_m) return false;
+            var _d = Math.round((new Date(+_m[1], +_m[2] - 1, +_m[3]) - _t) / 86400000);
+            if (c.withinDays.from != null && _d < c.withinDays.from) return false;
+            if (c.withinDays.to != null && _d > c.withinDays.to) return false;
+          }
           // ⚠️ `absent` is how a module says "not yet resolved" without the shell knowing what
           // resolution means — an unresolved claim is one with no date_resolved.
           else if (c.absent) { if (!(v == null || v === '')) return false; }
@@ -369,6 +397,52 @@
         else if (m.agg === 'avg') out[m.key] = n ? (sum / n) : null;
         else if (m.agg === 'wavg') out[m.key] = wsum > 0 ? (wacc / wsum) : null;
       });
+      // ---- one DECLARED companion table ---------------------------------------------------------
+      // ⚠️ Declared by the module, exactly like everything else here: the shell is told a table
+      // name, a project column and a column list. It does not know that `mom_items` are action
+      // items, only that this module publishes a second table alongside its main one.
+      // ⚠️ Its own try/catch: a companion table that has not been migrated yet must cost this
+      // module its extra list, not its whole card.
+      if (spec.sub && spec.sub.table) {
+        try {
+          var swant = { id: 1 };
+          (spec.sub.columns || []).forEach(function (c) { swant[c] = 1; });
+          out.sub = await PDb.selectAll(spec.sub.table,
+            function (q) { return q.eq(spec.sub.projectCol || 'project_id', projectId); },
+            Object.keys(swant).join(','));
+        } catch (e) { out.sub = []; out.__subError = (e && e.message) || String(e); }
+      }
+      // ---- named, filtered, sorted lists ------------------------------------------------------
+      // ⚠️ Every clause is DECLARED by the module. The shell does not know that a schedule calls
+      // its finish `end_date`, nor that 'Completed' means done — it applies what it was handed.
+      if (spec.lists && spec.lists.length) {
+        out.lists = {};
+        spec.lists.forEach(function (l) {
+          var picked = rows.filter(function (r) { return keep(r, l.where); });
+          if (l.orderBy) {
+            var dir = l.dir === 'desc' ? -1 : 1;
+            picked.sort(function (a, b) {
+              var x = a[l.orderBy], y = b[l.orderBy];
+              // ⚠️ Rows with no sort value go LAST in either direction. Sorting them to the front
+              // of a "due soonest" list would headline the activities nobody has dated.
+              if (x == null || x === '') return (y == null || y === '') ? 0 : 1;
+              if (y == null || y === '') return -1;
+              return x < y ? -dir : x > y ? dir : 0;
+            });
+          }
+          out.lists[l.key] = picked.slice(0, l.limit || 6);
+          out.lists[l.key + '__total'] = picked.length;
+        });
+      }
+      // ---- the S-curve, via the shared engine ------------------------------------------------
+      // Computed from the rows this call already fetched, so the panel costs no extra query.
+      if (spec.curve) {
+        try {
+          out.curve = window.PDScurve
+            ? PDScurve.compute(rows, { basis: spec.curve.basis || 'dur' })
+            : { empty: true, noEngine: true };
+        } catch (e) { out.curve = { empty: true, error: (e && e.message) || String(e) }; }
+      }
       // ---- the most recent N rows, for a module that has something to SHOW rather than count ----
       // ⚠️ Declared columns only, and the module names its own storage bucket — the shell does not
       // know that progress photos live in a private bucket, only that this spec asked for signing.

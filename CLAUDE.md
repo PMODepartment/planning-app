@@ -84,6 +84,133 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (j) — Dashboard round 3: the S-curve engine shared, four owner items, and TWO defects the panels only revealed under measurement
+
+Owner, four items: *"I don't understand the Project Schedule & Milestones kpi panel. It has red fills
+inside the progress bars. What does this signify when all trades are 0%… Minutes of Meeting and
+Issues and Concerns should be interactable… My items on this project should be folded into a side
+toggle… I also want… a list of approaching deadline activities/Milestones."* Then, mid-build:
+*"I want the approaching deadlines card to be at the bottom of the minutes of meeting and issues and
+concerns cards."* All five are done.
+
+**⚠️ ITEM 1: THE RED FILL WAS NEVER PROGRESS — IT WAS THE DATE SPAN, PAINTED IN THE STATUS COLOUR.**
+Each trade's bar drew its span tinted with the row's status colour at .22 opacity, so "0% complete"
+and "a bar that looks three-quarters full" were on screen together. The only honest reading of that
+is that the chart is lying, and the owner read it correctly. **The rule now: neutral means WHEN,
+colour means HOW MUCH.** The span is neutral, the progress fill is the only coloured thing, and a
+hatched band shows time elapsed that work has not caught up with — which is what "behind" actually
+looks like. ⚠️ **The fill is never red**, even on a behind trade: painting a behind trade's completed
+12% red says "this 12% is the problem" when the problem is the 18% beside it that is missing, and it
+contradicted the legend printed directly above it. Red belongs to the shortfall band; the percentage
+*text* still carries the status colour.
+
+**⚠️⚠️ AND A SECOND DEFECT IN THAT SAME PANEL, OLDER AND INVISIBLE BY CONSTRUCTION.** The
+elapsed-time marker on every trade bar — added in entry (i) precisely so "0% complete but 60% of the
+time gone" would be legible — **has never once been drawn.** It read `background:var(--pd-fg)`, and
+**there is no `--pd-fg` token in this app**; `assets/css/dashboard.css` defines `--pd-ink`. An
+undefined custom property is not a no-op: on an **inherited** property (`color`, `stroke`) it falls
+back to the inherited value and looks correct by accident, which is why every text rule using it
+seemed fine and nobody caught it. `background` is **not** inherited, so it computed to the initial
+value — transparent. Eleven uses across the file; the three on non-inherited properties (the trade
+marker, its legend swatch, the S-curve's hover guide) were all drawing nothing. ⚠️ **Only a
+computed-style read could find this.** A marker that is absent and a marker sitting at 0% are the
+same picture, so the owner's complaint that the panel was unreadable was partly this, and neither of
+us could have seen which.
+
+**THE S-CURVE ENGINE IS NOW SHARED, NOT COPIED.** The dashboard needed the same curve the S-Curve
+module draws. Copying ~150 lines of two-basis, spread-curve, SPI-forecast maths onto a second screen
+is how two screens come to disagree about one project's progress, so it moved to
+**`assets/js/scurve.js` (`PDScurve`)** and **both** callers use it. ⚠️ **The module's RPC path is
+preserved, not replaced**: `schedule_scurve_agg` returns pre-summed month buckets and is far faster
+on a large schedule but is duration-only by construction, so the module still calls it and injects
+the result as `opts.series`; everything downstream is shared. ⚠️ `PDScurve.COLS` is exported so the
+two callers cannot drift on the select list — a column missing there does not throw, it reads
+undefined and quietly flattens the curve, which looks exactly like a project that has not started.
+⚠️ **`compute()` never invents data**: a schedule with no cost loaded returns `{empty, noCost}`, not
+a curve of zeroes, because a flat line at zero and "nobody has loaded the costs" look identical and
+mean completely different things. Four dead wrappers and a dead `isWbs` were removed from the module
+rather than left to imply it still has its own engine, and the long comment claiming the spread curve
+is *"TRANSCRIBED, not shared… asserted instead"* was rewritten — it is shared now, and a stale
+comment telling the next reader to keep two copies in agreement is worse than no comment.
+
+**⚠️⚠️ THE S-CURVE TABLE WAS LABELLING EVERY FIGURE WITH THE WRONG MONTH.** The chart and the period
+table share one horizontal scroller so a column always sits under the point it describes. It did not.
+Under `table-layout:fixed` the **first row** sets every column width — and that row is the header — so
+styling only `td.k` left the header's corner cell at the month width, the table 46px narrower than it
+declared, and every month column one whole column right of its chart point. A second, smaller drift
+sat underneath it: `content-box` added the 6px `padding-right` on top of the declared 64px. **Both
+were invisible.** The table looked perfectly tidy in both states. Caught by measuring the "now"
+header's centre against the chart's now-line and requiring them to be the same x — now **26 of 26
+columns align exactly**, and hovering any month names that month in the tooltip.
+
+**ITEM 2 — the two registers now show WHAT, not how many.** Minutes of Meeting lists the **latest
+meeting's action items** (owner, due chip, open-first then by due date) rather than a list of meeting
+titles, which tells a planner nothing the count above it did not. Issues & Concerns lists **open items
+oldest first with days-open and champion**. ⚠️ **A separate declared `open` list, not a filter over
+`recent`**: `recent` is the 4 newest rows, so on a register whose latest entries happen to be closed
+the panel would have shown a tidy list while a dozen open items sat below the fold.
+
+**ITEM 3 — "My items" is a right-hand drawer.** Same `assets/js/my-work.js` as the cross-project page,
+never a second copy of the rules. ⚠️ **Rendered once, lazily, on first open** — three extra queries
+for a panel most visits never open, and the dashboard's own panels must not queue behind a personal
+to-do list. ⚠️ **The badge count is the exception and is eager**, via a new `MyWork.countOpen()` that
+runs the *same* `fetchAll` + `counts()` the panel renders from: a badge computed its own way is a
+second definition of "mine", and the first time the two differ the badge is the one believed. A
+drawer that hides an overdue item behind a click nobody knows to make is worse than no drawer.
+
+**ITEM 4 — Approaching Deadlines**, moved **below** both registers at the owner's follow-up.
+⚠️ **The window reaches 30 days into the PAST**, not just forward: an activity that was due last week
+and is still unfinished is the most urgent thing on the list, and a window starting at today hides
+exactly those. The subtitle says so rather than claiming "due within 30 days". ⚠️ **The overdue
+headline is its own declared list's total, not a count of the visible rows** — the eight-row cap is a
+display limit and a headline number must not inherit it; it would have read "1 overdue" over a
+schedule with nine. ⚠️ **Unfinished means status AND percent**: the two are set independently, so an
+activity finished on site and ticked to 100% but never moved off 'In Progress' would otherwise
+headline this panel as overdue.
+
+**The shell learned three declared clauses, and knows nothing about what they mean.** `notValues`
+(⚠️ not sugar for `values` — "status is not Completed" must also keep rows whose status is NULL,
+because a module that has never set a status still has open work), `below` (⚠️ NULL reads as ZERO,
+not as a rejection — a `percent_complete` nobody has typed is 0% done, which is exactly what
+`below:100` is asking about), and `withinDays` (⚠️ local midnight, matching every other date
+comparison here — a UTC boundary moves "due today" by a day for half the working day in Manila).
+Undated rows sort **last** in either direction: sorting them to the front of a "due soonest" list
+would headline the activities nobody has dated.
+
+**⚠️ A THIRD DEFECT, found by contrast measurement.** The S-curve's row labels were colour-coded to
+their lines — 10px bold type at **2.42:1** (Forecast) and 3.09:1 (Planned) against the card. A label
+that names a line you cannot read is not colour-coding. The colour moved to a **line swatch**, the
+same vocabulary the legend already uses, and the text took the normal foreground.
+
+**VERIFIED, and every harness executes the SHIPPED source rather than a copy of it.** The previous
+preview harness was a hand-made transcription of the panel functions, which drifts the moment either
+file is edited; it is now **generated** — the real `<style>`, the real panel band (so the panel ORDER
+under test is the shipped order) and the real function bodies are extracted from `dashboard.html`
+every run. **70 shell/engine checks** executing `keep()`, the list comparator and `PDScurve` lifted
+from the deploying files. **Equivalence with the pre-extraction module: 125 schedules / 15,927
+compared values / 0 differing** across both bases, WBS rows, pinned and auto forecasts, and the
+empty / no-cost / all-complete / none-complete states — comparing every cumulative point, not the
+headline numbers, because a slightly wrong curve looks exactly like a right one. **The RPC branch
+too: 61 aggregates / 11,510 values / 0 differing**, which matters because that is the path a real
+large schedule actually takes. In a browser: all six panels render with zero failures, 26/26 columns
+aligned, hover naming the correct month, the drawer's open/close/Escape/scrim/focus cycle correct
+with `renderBlock` called **exactly once across four opens**, nothing overflowing outside a scroller
+at 375px, and every new surface at **7.07 light / 7.02 dark** minimum.
+
+⚠️ **One real bug in the shared engine, found by the equivalence run and not by reading.** `pd()`
+tested `v instanceof Date`, which is **per-realm** — a Date handed in from anywhere that is not this
+exact window failed the check, fell through to the string branch, and a **pinned forecast finish
+silently became null**. Duck-typed now.
+
+⚠️ **Not verified signed in.** Every check above runs against fixtures and lifted source; nothing has
+been read from PostgREST. The declared columns were confirmed to exist in `supabase-build.sql`
+(`mom_items.project_id`, `issues_lessons.champion`, `project_schedule.cost_curve`), but **no query
+has actually been run** — in particular the MoM sub-table fetch and the schedule select that now
+carries the curve's ten columns. That is the thing most worth a live look.
+
+`db.js` → `20260901c`, `config.js` → `20260901c`, `my-work.js` → `20260901a`,
+`modules-grid.js`/`MODULE_V` → `20260901e`, new `scurve.js` at `20260901a`.
+
 ### 2026-09-01 (i) — Dashboard round 2: a REGRESSION I shipped, the chips removed, MoM/Issues expanded, topbar made consistent
 
 Owner ran the two PR #35 migrations, then sent a screenshot with five items. Four are done here;

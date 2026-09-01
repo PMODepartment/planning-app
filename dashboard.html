@@ -59,20 +59,20 @@
              of the old band that names something a planner must act on. -->
         <section class="pd-stat-band" id="stat-band" aria-label="Project status">
           <div class="pd-perf-grid" id="perf-grid"></div>
+          <div class="pd-viz" id="viz-scurve"></div>
           <div class="pd-viz" id="viz-program"></div>
           <div class="pd-viz-2col">
             <div class="pd-viz" id="viz-mom"></div>
             <div class="pd-viz" id="viz-issues"></div>
           </div>
+          <!-- ⚠️ Approaching Deadlines sits BELOW the two registers at the owner's request
+               (2026-09-01). The order it makes is a reading order: the curve and the programme
+               say where the project stands, the two registers say what is being talked about,
+               and this says what falls due next — the thing you leave the dashboard to act on. -->
+          <div class="pd-viz" id="viz-due"></div>
           <div class="pd-viz" id="viz-photos" style="margin-top:12px;"></div>
         </section>
 
-        <!-- ---- My items on this project --------------------------------
-             ⚠️ Rendered by the SAME code as the cross-project My Work page
-             (assets/js/my-work.js), never a second copy of the rules — two
-             screens each computing "my items" their own way is how one page
-             comes to disagree with the other about what a planner owes. -->
-        <section class="mw-sec" id="mw-block"></section>
 
         <!-- ---- Module summaries (A5) ----------------------------------- -->
         <section>
@@ -83,6 +83,28 @@
           <div class="pd-module-grid" id="tile-grid"></div>
         </section>
       </div>
+
+      <!-- ---- "My items" drawer (2026-09-01) ---------------------------
+           ⚠️ Rendered by the SAME code as the cross-project My Work page
+           (assets/js/my-work.js), never a second copy of the rules — two
+           screens each computing "my items" their own way is how one page
+           comes to disagree with the other about what a planner owes.
+           It moved out of the page flow at the owner's request: it is a
+           personal to-do list, not a project fact, and it was sitting
+           between the project's own panels and the module grid. -->
+      <button type="button" class="mw-fab" id="mw-fab" aria-expanded="false" aria-controls="mw-drawer">
+        <span class="mw-fab-ico" aria-hidden="true">☑</span>
+        <span class="mw-fab-txt">My items</span>
+        <span class="mw-fab-n" id="mw-fab-n" hidden></span>
+      </button>
+      <div class="mw-scrim" id="mw-scrim" hidden></div>
+      <aside class="mw-drawer" id="mw-drawer" hidden aria-label="My items on this project">
+        <div class="mw-drawer-head">
+          <strong>My items on this project</strong>
+          <button type="button" class="mw-drawer-x" id="mw-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="mw-drawer-body"><section class="mw-sec" id="mw-block"></section></div>
+      </aside>
     </div>
   </div>
 
@@ -136,6 +158,110 @@
     .pd-tag-bad { color:#E5534B; border-color:#E5534B55; }
     @media (max-width:520px) { .pd-list-d { display:none; } }
 
+    /* ---- S-Curve panel ------------------------------------------------------------------------ */
+    .pd-sc-kpi { display:flex; flex-wrap:wrap; gap:16px; font-size:11.5px; color:var(--pd-muted); margin-bottom:8px; }
+    .pd-sc-kpi b { font-size:15px; color:var(--pd-ink); font-weight:800; letter-spacing:-.02em; }
+    .pd-sc-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:10.5px; color:var(--pd-muted); margin-bottom:6px; }
+    .pd-sc-legend i, .pd-sc-tip i { display:inline-block; width:14px; height:0; border-top-width:2px; border-top-style:solid; margin-right:6px; vertical-align:middle; }
+    .pd-sc-legend i.pl, .pd-sc-tip i.pl { border-top-color:#8A93A6; }
+    .pd-sc-legend i.ac, .pd-sc-tip i.ac { border-top-color:#2FA36B; }
+    .pd-sc-legend i.fc, .pd-sc-tip i.fc { border-top-color:#C9A227; border-top-style:dashed; }
+    .pd-sc-legend i.nw { border-top-color:var(--pd-red); }
+    /* ⚠️ ONE scroller around the chart AND the table, so a table column is always under the point
+       it describes. Two scrollers drift apart the moment either is touched. */
+    .pd-sc-scroll { position:relative; overflow-x:auto; overflow-y:hidden; padding-bottom:4px; }
+    .pd-sc-inner { position:relative; }
+    .pd-sc-svg { display:block; }
+    .pd-sc-grid { stroke:var(--pd-line); stroke-width:1; }
+    .pd-sc-year { stroke:var(--pd-line); stroke-width:1; stroke-dasharray:2 4; }
+    .pd-sc-now  { stroke:var(--pd-red); stroke-width:1.5; opacity:.75; }
+    .pd-sc-guide{ stroke:var(--pd-ink); stroke-width:1; opacity:0; pointer-events:none; }
+    .pd-sc-pl { fill:none; stroke:#8A93A6; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+    .pd-sc-ac { fill:none; stroke:#2FA36B; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
+    .pd-sc-fc { fill:none; stroke:#C9A227; stroke-width:2; stroke-dasharray:5 4; stroke-linejoin:round; stroke-linecap:round; }
+    .pd-sc-tbl { border-collapse:collapse; font-size:10px; table-layout:fixed; margin-top:6px; }
+    .pd-sc-tbl th, .pd-sc-tbl td { width:46px; text-align:center; padding:3px 0; color:var(--pd-muted);
+      white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .pd-sc-tbl th { font-weight:700; border-bottom:1px solid var(--pd-line); }
+    .pd-sc-tbl th small { display:block; font-size:8.5px; opacity:.75; font-weight:600; }
+    /* ⚠️ th.k AND td.k, both. Under `table-layout:fixed` the FIRST row sets every column width,
+       and that row is the header — so styling only `td.k` left the header's corner cell at the
+       month width, the whole table 46px narrower than it declared, and every month column sitting
+       one column to the RIGHT of the chart point it labels. The table looked perfectly tidy and
+       was labelling every figure with the wrong month. */
+    /* ⚠️ box-sizing:border-box, and it is load-bearing. The default content-box adds the 6px
+       padding-right ON TOP of the declared 64px, so the key column measured 70 and every month
+       column sat 6px right of its chart point — a small, plausible-looking drift that is still
+       the table disagreeing with the chart. The declared width must BE the width, because
+       SC_KEY in the script indents the plot by exactly this number. */
+    .pd-sc-tbl th.k, .pd-sc-tbl td.k { box-sizing:border-box; position:sticky; left:0; z-index:2;
+      width:78px; text-align:left; font-weight:700; background:var(--pd-card, var(--pd-bg));
+      padding-right:6px; }
+    .pd-sc-tbl th.k { border-bottom:1px solid var(--pd-line); }
+    /* ⚠️ The row label says WHICH LINE with a swatch, not by tinting its own text. Tinting put
+       10px bold type at 2.42:1 (Forecast) and 3.09:1 (Planned) against the card — a label that
+       names a line you cannot read is not colour-coding. The swatch carries the colour; the text
+       carries the normal foreground. Same swatch vocabulary as the legend above the chart. */
+    .pd-sc-tbl td.k::before { content:''; display:inline-block; width:12px; height:0; margin-right:5px;
+      border-top:2px solid transparent; vertical-align:middle; }
+    .pd-sc-tbl tr.pl td.k::before { border-top-color:#8A93A6; }
+    .pd-sc-tbl tr.ac td.k::before { border-top-color:#2FA36B; }
+    .pd-sc-tbl tr.fc td.k::before { border-top-color:#C9A227; border-top-style:dashed; }
+    .pd-sc-tbl .now { color:var(--pd-ink); font-weight:800; }
+    .pd-sc-tip { position:absolute; top:6px; z-index:3; pointer-events:none; min-width:150px;
+      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); border-radius:8px;
+      padding:7px 9px; font-size:10.5px; color:var(--pd-muted); display:grid; gap:2px;
+      box-shadow:0 6px 18px rgba(0,0,0,.28); }
+    .pd-sc-tip b { color:var(--pd-ink); font-size:11px; margin-bottom:2px; }
+
+    /* ---- list extras shared by the deadline / MoM / Issues panels ---------------------------- */
+    .pd-list-top { margin-top:0; padding-top:0; border-top:0; }
+    .pd-list-h { font-size:10.5px; color:var(--pd-muted); margin-top:12px; padding-top:10px;
+      border-top:1px solid var(--pd-line); font-weight:600; }
+    .pd-list-h + .pd-list { margin-top:7px; padding-top:0; border-top:0; }
+    .pd-list-t small { display:block; font-size:9.5px; color:var(--pd-muted); font-weight:500;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pd-list-r.done .pd-list-t { opacity:.6; }
+    .pd-list-r .pd-no { color:var(--pd-muted); font-weight:700; font-size:10px; }
+    .pd-ms { color:#C9A227; }
+    .pd-due-r.late .pd-list-t { color:var(--pd-ink); }
+    .pd-due-p { flex:none; width:34px; text-align:right; font-size:10.5px; font-weight:700;
+      color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+
+    /* ---- "My items" drawer -------------------------------------------------------------------- */
+    .mw-fab { position:fixed; right:18px; bottom:18px; z-index:60; display:inline-flex; align-items:center;
+      gap:8px; padding:11px 15px; border-radius:999px; border:1px solid var(--pd-line);
+      background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:12.5px; font-weight:700;
+      cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.32); }
+    .mw-fab:hover { border-color:var(--pd-muted); }
+    .mw-fab.has { border-color:var(--pd-red); }
+    .mw-fab-ico { font-size:14px; line-height:1; }
+    .mw-fab-n { min-width:19px; height:19px; padding:0 5px; border-radius:999px; background:var(--pd-red);
+      color:#fff; font-size:10.5px; line-height:19px; text-align:center; font-weight:800; }
+    .mw-scrim { position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.42);
+      opacity:0; transition:opacity .18s ease; }
+    .mw-scrim.open { opacity:1; }
+    .mw-drawer { position:fixed; top:0; right:0; bottom:0; z-index:71; width:min(460px, 94vw);
+      display:flex; flex-direction:column; background:var(--pd-card, var(--pd-bg));
+      border-left:1px solid var(--pd-line); box-shadow:-12px 0 34px rgba(0,0,0,.34);
+      transform:translateX(100%); transition:transform .2s ease; }
+    .mw-drawer.open { transform:translateX(0); }
+    .mw-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:14px 18px; border-bottom:1px solid var(--pd-line); font-size:14px; flex:none; }
+    .mw-drawer-x { background:none; border:0; color:var(--pd-muted); font-size:24px; line-height:1;
+      cursor:pointer; padding:0 4px; }
+    .mw-drawer-x:hover { color:var(--pd-ink); }
+    .mw-drawer-body { overflow-y:auto; padding:14px 18px 22px; flex:1 1 auto; }
+    /* The block was written for a full-width page section; inside a 460px drawer its own head
+       is redundant (the drawer has one) and its tables must be allowed to scroll. */
+    .mw-drawer-body .mw-sechead { display:none; }
+    .mw-drawer-body table { width:100%; }
+    .mw-drawer-body .mw-tblwrap, .mw-drawer-body .mw-scroll { overflow-x:auto; }
+    @media (prefers-reduced-motion:reduce) {
+      .mw-drawer, .mw-scrim { transition:none; }
+    }
+    @media (max-width:640px) { .mw-fab-txt { display:none; } .mw-fab { padding:12px; } }
+
     /* ---- Visual panels ---------------------------------------------------------------------- */
     .pd-viz { margin-top:12px; padding:15px 17px 16px; border-radius:12px;
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); }
@@ -148,27 +274,46 @@
     .pd-viz-legend { display:flex; gap:13px; flex-wrap:wrap; font-size:10.5px; color:var(--pd-muted); }
     .pd-viz-legend i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
 
-    /* Programme view — one row per trade */
-    .pd-pv { display:grid; grid-template-columns:126px 132px 1fr 42px; gap:7px 11px; align-items:center; }
-    .pd-pv-l { font-size:11.5px; color:var(--pd-muted); text-align:right; white-space:nowrap;
+    /* Programme view — one row per trade.
+       ⚠️ The colour rule: NEUTRAL means "when", COLOUR means "how much". The old bar painted the
+       trade's date span in the status colour, so a 0%-complete trade showed a big red band that
+       read as three-quarters finished. Only the fill and the shortfall band carry colour now. */
+    .pd-pv { display:grid; grid-template-columns:196px 1fr 62px; gap:9px 12px; align-items:center; }
+    .pd-pv-l { min-width:0; line-height:1.3; }
+    .pd-pv-l b { display:block; font-size:11.5px; font-weight:700; color:var(--pd-ink);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pd-pv-l small { display:block; font-size:10px; color:var(--pd-muted); white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; }
-    /* Each trade's own span, per the owner's request — the header dates are the whole programme's,
-       which said nothing about the individual bar a reader is looking at. */
-    .pd-pv-d { font-size:10.5px; color:var(--pd-muted); line-height:1.3; white-space:nowrap; }
-    .pd-pv-d small { display:block; font-size:9.5px; opacity:.8; }
-    .pd-pv-t { position:relative; height:16px; border-radius:8px; background:var(--pd-line); overflow:hidden; }
-    .pd-pv-b { position:absolute; top:0; bottom:0; border-radius:8px; }
-    .pd-pv-f { position:absolute; top:0; bottom:0; left:0; border-radius:8px; opacity:.95; }
-    /* Where TODAY falls inside this trade's own span. */
-    .pd-pv-now { position:absolute; top:-1px; bottom:-1px; width:2px; background:var(--pd-fg);
-      opacity:.5; border-radius:1px; }
-    /* ⚠️ NOT absolutely positioned inside .pd-pv-b any more. It used to be, and .pd-pv-b clips with
-       overflow:hidden, so a short trade's label was sliced mid-digit ("%" or "0" instead of "40%").
-       It is a real grid column now and cannot be truncated by the bar it describes. */
-    .pd-pv-n { font-size:10.5px; font-weight:700; text-align:right; opacity:.95; }
+    .pd-pv-l small.dim { opacity:.75; }
+    .pd-pv-t { position:relative; height:18px; border-radius:9px; background:var(--pd-line); overflow:hidden; }
+    /* The span answers WHEN. Neutral by design. */
+    .pd-pv-span { position:absolute; top:0; bottom:0; border-radius:9px; overflow:hidden;
+      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); }
+    /* The fill answers HOW MUCH, and is the only thing that carries the status colour. */
+    .pd-pv-f { position:absolute; top:0; bottom:0; left:0; border-radius:9px 0 0 9px; opacity:.95; }
+    /* Time gone that work has not caught up with — hatched, so it cannot be mistaken for progress. */
+    .pd-pv-gap { position:absolute; top:0; bottom:0; opacity:.5;
+      background:repeating-linear-gradient(135deg, #E5534B 0 4px, transparent 4px 8px); }
+    /* ⚠️⚠️ THIS MARKER WAS INVISIBLE, and had been since it shipped. It read `var(--pd-fg)`,
+       and THERE IS NO --pd-fg TOKEN in this app — assets/css/dashboard.css defines --pd-ink.
+       An undefined custom property is not a no-op: on an INHERITED property (color, stroke) it
+       falls back to the inherited value and looks right by accident, which is why every text
+       rule using it seemed fine. `background` is NOT inherited, so it computed to the initial
+       value — transparent. The elapsed-time marker, its legend swatch and the S-curve's hover
+       guide were all drawing nothing. Found by measuring computed styles, not by looking:
+       a marker that is not there and a marker at 0% look identical on a bar. */
+    .pd-pv-now { position:absolute; top:-1px; bottom:-1px; width:2px; background:var(--pd-ink);
+      opacity:.55; border-radius:1px; }
+    /* Its own grid cell, never inside the clipped track — a % that can be sliced mid-digit into a
+       different number is worse than no %. */
+    .pd-pv-n { font-size:11px; font-weight:700; text-align:right; line-height:1.25; }
+    .pd-pv-n small { display:block; font-size:9px; font-weight:600; color:var(--pd-muted); }
+    .pd-viz-legend i.pd-lg-span { background:var(--pd-card); border:1px solid var(--pd-line); }
+    .pd-viz-legend i.pd-lg-gap { background:repeating-linear-gradient(135deg, #E5534B 0 3px, transparent 3px 6px); }
+    .pd-viz-legend i.pd-lg-now { background:var(--pd-ink); opacity:.55; width:3px; border-radius:1px; }
     @media (max-width:720px) {
-      .pd-pv { grid-template-columns:96px 1fr 40px; }
-      .pd-pv-d { display:none; }
+      .pd-pv { grid-template-columns:132px 1fr 52px; gap:8px; }
+      .pd-pv-l small.dim { display:none; }
     }
 
     /* Photo strip */
@@ -177,18 +322,19 @@
     .pd-ph-i img { display:block; width:100%; height:74px; object-fit:cover; }
     .pd-ph-x { height:74px; display:flex; align-items:center; justify-content:center; color:var(--pd-muted); font-size:10px; }
     .pd-ph-c { padding:5px 7px 6px; font-size:9.5px; color:var(--pd-muted); line-height:1.35; }
-    .pd-ph-c b { display:block; color:var(--pd-fg); font-size:10px; font-weight:700;
+    .pd-ph-c b { display:block; color:var(--pd-ink); font-size:10px; font-weight:700;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260901b"></script>
+  <script src="assets/js/config.js?v=20260901c"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260901b"></script>
+  <script src="assets/js/db.js?v=20260901c"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
+  <script src="assets/js/scurve.js?v=20260901a"></script>
   <script src="assets/js/ui.js?v=20260831c"></script>
   <script src="assets/js/icons.js?v=20260830c"></script>
-  <script src="assets/js/modules-grid.js?v=20260901d"></script>
-  <script src="assets/js/my-work.js?v=20260831a"></script>
+  <script src="assets/js/modules-grid.js?v=20260901e"></script>
+  <script src="assets/js/my-work.js?v=20260901a"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
@@ -256,7 +402,7 @@
       // ⚠️ Not awaited, and its own failure is contained inside renderBlock —
       // a personal panel must never be able to stop the project dashboard from
       // rendering. Base is '' because dashboard.html sits at the app root.
-      MyWork.renderBlock(document.getElementById('mw-block'), CURUSER, pid, '');
+      initMyDrawer();
     }
 
     // The project's own tag — there is no workspace ancestry to walk any more.
@@ -391,6 +537,245 @@
     // ---- 1. Programme view -------------------------------------------------------------------
     // One bar per trade, positioned on the project's own timeline. Colour is STATE, not decoration:
     // complete / behind the plan / on track.
+    // How many days from today, negative = overdue. Null when the row carries no date.
+    function _dueIn(d) {
+      if (!d) return null;
+      var t = new Date(); t.setHours(0, 0, 0, 0);
+      var m = String(d).match(/(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return null;
+      return Math.round((new Date(+m[1], +m[2] - 1, +m[3]) - t) / 86400000);
+    }
+    // ⚠️ "Overdue" is stated as a fact, never softened into "due 3 days ago". A planner scanning
+    //    this list is looking for the word.
+    function _dueChip(d) {
+      var n = _dueIn(d);
+      if (n == null) return '<span class="pd-tag">No date</span>';
+      if (n < 0) return '<span class="pd-tag pd-tag-bad">' + Math.abs(n) + 'd overdue</span>';
+      if (n === 0) return '<span class="pd-tag pd-tag-warn">Due today</span>';
+      if (n <= 7) return '<span class="pd-tag pd-tag-warn">in ' + n + 'd</span>';
+      return '<span class="pd-tag">in ' + n + 'd</span>';
+    }
+
+    // ---- Approaching deadlines ------------------------------------------------------------------
+    function renderDue() {
+      var sch = MET['project-schedule'] || {};
+      var list = (sch.lists && sch.lists.dueSoon) || [];
+      var total = (sch.lists && sch.lists.dueSoon__total) || 0;
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'project-schedule'; });
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open schedule</a>' : '';
+      if (!sch.__rows) {
+        return vizEmpty('viz-due', 'Approaching Deadlines',
+          'No schedule on this project yet, so nothing can be due.');
+      }
+      if (!list.length) {
+        return vizEmpty('viz-due', 'Approaching Deadlines',
+          'Nothing unfinished falls due in the next 30 days, and nothing is overdue from the last 30. ' +
+          '⚠️ Activities with <b>no finish date</b> are not counted here — they cannot be late if nobody said when they were due.');
+      }
+      // ⚠️ The overdue figure is the DECLARED `overdue` list's total, not a count of the rows on
+      //    screen. Counting the visible slice would have said "1 already overdue" over a schedule
+      //    with nine — the eight-row cap is a display limit, and a headline number must not inherit
+      //    it. The two lists share their where-clauses; only the date window differs.
+      var overdue = (sch.lists && sch.lists.overdue__total) || 0;
+      var body = list.map(function (r) {
+        var isMs = String(r.activity_type || '').toLowerCase().indexOf('milestone') !== -1;
+        var pc = Math.max(0, Math.min(100, Math.round(r.percent_complete || 0)));
+        var n = _dueIn(r.end_date);
+        return '<li class="pd-list-r pd-due-r' + (n != null && n < 0 ? ' late' : '') + '">' +
+          '<span class="pd-list-t" title="' + Fmt.esc(r.activity_name || '') + '">' +
+            (isMs ? '<b class="pd-ms">◆</b> ' : '') + Fmt.esc(r.activity_name || r.activity_id || 'Untitled') +
+            '<small>' + Fmt.esc(r.activity_id || '') + (r.work_type ? ' &middot; ' + Fmt.esc(r.work_type) : '') + '</small>' +
+          '</span>' +
+          '<span class="pd-due-p">' + pc + '%</span>' +
+          '<span class="pd-list-d">' + Fmt.esc(Fmt.date(r.end_date)) + '</span>' +
+          _dueChip(r.end_date) + '</li>';
+      }).join('');
+      document.getElementById('viz-due').innerHTML =
+        vizHead('Approaching Deadlines',
+          // ⚠️ The window is stated in full. "Due within 30 days" would be a half-truth: the list
+          //    deliberately reaches 30 days into the PAST, because an activity that was due last
+          //    week and is still unfinished is the most urgent thing on it.
+          total + ' unfinished activit' + (total === 1 ? 'y' : 'ies') + ' due in the next 30 days or the last 30' +
+          (overdue ? ' &middot; <span class="pd-stat-warn">' + overdue + ' already overdue</span>' : ''),
+          link) +
+        '<ul class="pd-list pd-list-top">' + body + '</ul>' +
+        (total > list.length
+          ? '<div class="pd-viz-s pd-mini-note">Showing the ' + list.length + ' soonest of ' + total + '.</div>'
+          : '');
+    }
+
+    // ---- S-Curve panel -------------------------------------------------------------------------
+    // Baseline (planned), actual and forecast, from PDScurve — the SAME engine the S-Curve module
+    // runs, so the two screens cannot disagree about one project's curve.
+    // ⚠️ The chart and the period table share ONE horizontal scroller and one column width, so a
+    //    column in the table is always under the point it describes. Two scrollers would drift the
+    //    moment either one was touched, and a table that disagrees with the chart above it is worse
+    //    than no table.
+    var SC_COL = 46;      // px per month — the scroll unit for both the chart and the table
+    var SC_H = 150;       // px, plot height
+    // ⚠️ The table carries a row-label column the chart does not. The SVG is therefore INDENTED by
+    //    exactly that width, so month i sits at the same x in both. Every mouse-x, tooltip and
+    //    scroll figure below goes through it — it is not a style, it is part of the alignment.
+    var SC_KEY = 78;      // px, the 'Planned / Actual / Forecast' label column (swatch + word)
+
+    function scPoints(vals, TOT, n) {
+      // % of total, null preserved: a null is "not forecast yet", not zero.
+      return vals.map(function (v, i) {
+        return v == null ? null : { i: i, y: TOT ? Math.max(0, Math.min(100, v / TOT * 100)) : 0 };
+      }).slice(0, n);
+    }
+    function scPath(pts) {
+      var d = '', open = false;
+      pts.forEach(function (p) {
+        if (!p) { open = false; return; }
+        var x = p.i * SC_COL + SC_COL / 2, y = SC_H - (p.y / 100) * SC_H;
+        d += (open ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+        open = true;
+      });
+      return d.trim();
+    }
+
+    function renderScurve() {
+      var host = document.getElementById('viz-scurve'); if (!host) return;
+      var sch = MET['project-schedule'] || {};
+      var c = sch.curve;
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 's-curve'; });
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open S-Curve</a>' : '';
+
+      if (!c || c.empty) {
+        // ⚠️ Three DIFFERENT empty states, because they send a planner to three different places.
+        var why = c && c.noCost
+          ? 'The schedule is fine — the <b>cost loading</b> has not been done, so there is no money curve to draw. ' +
+            'Load it in <b>Project Schedule → Cost Loading</b>, or read the duration curve in <b>S-Curve</b>.'
+          : c && c.noEngine
+            ? 'The curve engine did not load on this page.'
+            : 'No dated activities yet, so there is nothing to plot. Push a programme from <b>Schedule Builder</b>, ' +
+              'or set start and finish dates on the activities.';
+        return vizEmpty('viz-scurve', 'S-Curve', why);
+      }
+
+      var n = c.months.length, TOT = c.TOT;
+      var pl = scPoints(c.plannedC, TOT, n), ac = scPoints(c.actualC, TOT, n), fc = scPoints(c.forecastC, TOT, n);
+      // Actual is only meaningful up to the data date; past it the array holds anchoring zeroes.
+      ac = ac.map(function (p, i) { return i <= c.ti ? p : null; });
+      var W = Math.max(n * SC_COL, 320);
+
+      // Gridlines at 0/25/50/75/100% and a year rule wherever January falls.
+      var grid = '';
+      [0, 25, 50, 75, 100].forEach(function (g) {
+        var y = SC_H - (g / 100) * SC_H;
+        grid += '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) + '" class="pd-sc-grid"/>';
+      });
+      c.months.forEach(function (m, i) {
+        if (m.getMonth() !== 0) return;
+        var x = (i * SC_COL).toFixed(1);
+        grid += '<line x1="' + x + '" y1="0" x2="' + x + '" y2="' + SC_H + '" class="pd-sc-year"/>';
+      });
+      // The data date — where "actual" stops being a record and "forecast" starts being a guess.
+      var tx = (c.ti * SC_COL + SC_COL / 2).toFixed(1);
+      grid += '<line x1="' + tx + '" y1="0" x2="' + tx + '" y2="' + SC_H + '" class="pd-sc-now"/>';
+
+      var svg =
+        '<svg class="pd-sc-svg" width="' + W + '" height="' + SC_H + '" viewBox="0 0 ' + W + ' ' + SC_H + '"' +
+          ' style="margin-left:' + SC_KEY + 'px" aria-hidden="true">' +
+          grid +
+          '<path d="' + scPath(pl) + '" class="pd-sc-pl"/>' +
+          '<path d="' + scPath(fc) + '" class="pd-sc-fc"/>' +
+          '<path d="' + scPath(ac) + '" class="pd-sc-ac"/>' +
+          '<line id="sc-guide" x1="0" y1="0" x2="0" y2="' + SC_H + '" class="pd-sc-guide" style="opacity:0"/>' +
+        '</svg>';
+
+      function pct(p) { return p == null ? '—' : Math.round(p.y) + '%'; }
+      var head = '', rPl = '', rAc = '', rFc = '';
+      c.months.forEach(function (m, i) {
+        var lbl = m.toLocaleDateString('en-US', { month: 'short' });
+        var yr = m.getMonth() === 0 || i === 0 ? "<small>" + m.getFullYear() + "</small>" : '';
+        head += '<th' + (i === c.ti ? ' class="now"' : '') + '>' + lbl + yr + '</th>';
+        rPl += '<td' + (i === c.ti ? ' class="now"' : '') + '>' + pct(pl[i]) + '</td>';
+        rAc += '<td' + (i === c.ti ? ' class="now"' : '') + '>' + pct(ac[i]) + '</td>';
+        rFc += '<td' + (i === c.ti ? ' class="now"' : '') + '>' + pct(fc[i]) + '</td>';
+      });
+      // ⚠️ The header needs the CORNER cell, and that cell needs the KEY column's WIDTH (see the
+      // th.k rule). Both halves matter and only one of them is visible: without the cell, thead has
+      // one fewer column than every tbody row; with the cell but at the month width, the table is
+      // 46px narrower than it declares and slides a whole column off the chart. Either way the
+      // figures are labelled with the wrong month and the table looks perfectly tidy.
+      // ⚠️ Caught by measuring the 'now' header's centre against the chart's now-line — they must
+      //    be the same x — not by looking at it.
+      var table =
+        '<table class="pd-sc-tbl" style="width:' + (W + SC_KEY) + 'px">' +
+          '<thead><tr><th class="k"></th>' + head + '</tr></thead><tbody>' +
+          '<tr class="pl"><td class="k">Planned</td>' + rPl.replace(/^<td/, '<td') + '</tr>' +
+          '<tr class="ac"><td class="k">Actual</td>' + rAc + '</tr>' +
+          '<tr class="fc"><td class="k">Forecast</td>' + rFc + '</tr>' +
+          '</tbody></table>';
+
+      var vari = c.variance;
+      var sub = (c.money ? 'Cost-weighted' : 'Duration-weighted') + ' &middot; ' + c.activities + ' activities &middot; ' +
+        'forecast finish ' + Fmt.esc(Fmt.date(c.fcFinish)) + (c.manual ? ' (pinned)' : ' (from SPI ' + (Math.round(c.spi * 100) / 100).toFixed(2) + ')');
+
+      host.innerHTML =
+        vizHead('S-Curve', sub, link) +
+        '<div class="pd-sc-kpi">' +
+          '<span><b>' + Math.round(c.plannedPct) + '%</b> planned to date</span>' +
+          '<span><b>' + Math.round(c.actualPct) + '%</b> actual</span>' +
+          '<span class="' + (vari >= 0 ? 'pd-perf-good' : 'pd-stat-warn') + '"><b>' +
+            (vari >= 0 ? '+' : '') + Math.round(vari) + ' pts</b> variance</span>' +
+        '</div>' +
+        '<div class="pd-sc-legend">' +
+          '<span><i class="pl"></i>Planned (baseline)</span>' +
+          '<span><i class="ac"></i>Actual</span>' +
+          '<span><i class="fc"></i>Forecast</span>' +
+          '<span><i class="nw"></i>Today</span>' +
+        '</div>' +
+        '<div class="pd-sc-scroll" id="sc-scroll">' +
+          '<div class="pd-sc-inner" style="width:' + (W + SC_KEY) + 'px">' + svg + table + '</div>' +
+          '<div class="pd-sc-tip" id="sc-tip" hidden></div>' +
+        '</div>' +
+        '<div class="pd-viz-s pd-mini-note">Scroll sideways for the whole programme; hover a month for its figures. ' +
+          'Percentages are of the project total, so they are comparable across months.</div>';
+
+      // ---- hover: one guide line + a tooltip, driven off the pointer's column ----
+      var scroll = document.getElementById('sc-scroll');
+      var tip = document.getElementById('sc-tip');
+      var guide = host.querySelector('#sc-guide');
+      if (!scroll || !tip || !guide) return;
+      scroll.addEventListener('mousemove', function (e) {
+        var r = scroll.getBoundingClientRect();
+        var x = e.clientX - r.left + scroll.scrollLeft - SC_KEY;
+        var i = Math.max(0, Math.min(n - 1, Math.floor(x / SC_COL)));
+        var cx = i * SC_COL + SC_COL / 2;
+        guide.setAttribute('x1', cx); guide.setAttribute('x2', cx);
+        guide.style.opacity = '1';
+        tip.hidden = false;
+        tip.innerHTML =
+          '<b>' + Fmt.esc(c.months[i].toLocaleDateString('en-US', { month: 'short', year: 'numeric' })) + '</b>' +
+          '<span><i class="pl"></i>Planned ' + pct(pl[i]) + '</span>' +
+          '<span><i class="ac"></i>Actual ' + pct(ac[i]) + '</span>' +
+          '<span><i class="fc"></i>Forecast ' + pct(fc[i]) + '</span>';
+        // Keep the tip inside the scroller rather than letting it hang off the right edge.
+        var left = cx + SC_KEY - scroll.scrollLeft + 12;
+        if (left + 150 > r.width) left = Math.max(4, left - 174);
+        tip.style.left = left + 'px';
+      });
+      scroll.addEventListener('mouseleave', function () {
+        tip.hidden = true; guide.style.opacity = '0';
+      });
+      // Open on the data date rather than at month 1 — the current position is what a planner
+      // came to see, and on a three-year programme month 1 is a year of scrolling away.
+      scroll.scrollLeft = Math.max(0, c.ti * SC_COL + SC_KEY - scroll.clientWidth / 2);
+    }
+
+    // ---- Trades programme ------------------------------------------------------------------------
+    // ⚠️ WHAT THE OWNER SAW AND WHY IT WAS WRONG (2026-09-01): every bar showed a big RED FILL while
+    //    every trade read 0%. That coloured band was never progress — it was the trade's DATE SPAN,
+    //    tinted with the row's status colour at .22 opacity. So "0% complete" and "a bar that looks
+    //    three-quarters full" were on screen together, and the only honest reading of that is that
+    //    the chart is lying. A shape that means "when" must not be painted in the colour that means
+    //    "how much".
+    //    Now: the span is NEUTRAL (it answers *when*), the progress fill is the only coloured thing
+    //    (it answers *how much*), and a separate hatched region shows time elapsed but unearned —
+    //    which is what "behind" actually looks like.
     function renderProgram() {
       var sch = MET['project-schedule'] || {}, rowsPv = sch.program || [];
       rowsPv = rowsPv.filter(function (r) { return r.from && r.to; });
@@ -399,48 +784,57 @@
       var min = null, max = null;
       rowsPv.forEach(function (r) { if (!min || r.from < min) min = r.from; if (!max || r.to > max) max = r.to; });
       var span = Math.max(1, _days(min, max));
-      // Trades in the project's own build order — earliest start first, which is how a programme reads.
       rowsPv.sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
       var today = new Date().toISOString().slice(0, 10);
       var elapsed = Math.max(0, Math.min(100, _days(min, today) / span * 100));
+
       var body = rowsPv.slice(0, 9).map(function (r) {
         var x = _days(min, r.from) / span * 100, w = Math.max(1.2, (_days(r.from, r.to) + 1) / span * 100);
         var pct = r.pct == null ? 0 : Math.round(r.pct);
-        // ⚠️ "Behind" is only claimable against elapsed TIME on this bar, which is a rough read and
-        // is labelled as such in the legend — not presented as a baseline variance.
+        // `own` = how much of THIS trade's own duration has gone, 0..100.
         var own = Math.max(0, Math.min(100, (elapsed - x) / w * 100));
-        var col = pct >= 100 ? C_OK : (own > 5 && pct < own - 10) ? C_LATE : C_BLUE;
-        // ⚠️ THE LABEL LIVES OUTSIDE THE BAR (2026-09-01). It used to sit inside the clipped
-        // `overflow:hidden` track, so on a short trade the percentage was sliced to "%" or "0"
-        // with the digits cut off — visible on Allied Services in the owner's screenshot. A
-        // number that can be truncated to a different number is worse than no number.
-        // ⚠️ `own` is the % of THIS trade's own span that has elapsed; the thin marker below
-        // draws it, so "0% complete but 60% of the time gone" is legible rather than inferred
-        // from the bar's colour alone.
-        var marker = (own > 0 && own < 100)
-          ? '<i class="pd-pv-now" style="left:' + own.toFixed(2) + '%" title="' + Math.round(own) +
-            '% of this trade’s own duration has elapsed"></i>' : '';
-        return '<div class="pd-pv-l" title="' + Fmt.esc(r.key) + '">' + Fmt.esc(r.key) + '</div>' +
-          '<div class="pd-pv-d">' + Fmt.esc(Fmt.date(r.from)) + ' &rarr; ' + Fmt.esc(Fmt.date(r.to)) +
-            '<small>' + r.n + ' activit' + (r.n === 1 ? 'y' : 'ies') +
-            (r.done ? ' &middot; ' + r.done + ' done' : '') + '</small></div>' +
+        var behind = own > 5 && pct < own - 10;
+        // ⚠️ THE FILL IS NEVER RED. It is work that has actually been done, and the legend has one
+        //    swatch for that. Painting a behind trade's completed 12% red said "this 12% is the
+        //    problem" when the problem is the 18% beside it that is missing — and it contradicted
+        //    the very legend printed above it. Red belongs to the shortfall band alone; the
+        //    percentage TEXT still carries the status colour, which is where a reader looks for it.
+        var col = pct >= 100 ? C_OK : C_BLUE;
+        var txtCol = pct >= 100 ? C_OK : behind ? C_LATE : C_BLUE;
+        // The shortfall band: time gone that work has NOT caught up with. The only red on the bar,
+        // and drawn only where it actually exists.
+        var shortfall = behind ? (own - pct) : 0;
+        return '<div class="pd-pv-l"><b title="' + Fmt.esc(r.key) + '">' + Fmt.esc(r.key) + '</b>' +
+            '<small>' + Fmt.esc(Fmt.date(r.from)) + ' &rarr; ' + Fmt.esc(Fmt.date(r.to)) + '</small>' +
+            '<small class="dim">' + r.n + ' activit' + (r.n === 1 ? 'y' : 'ies') +
+              (r.done ? ' &middot; ' + r.done + ' done' : '') + '</small></div>' +
           '<div class="pd-pv-t">' +
-            '<div class="pd-pv-b" style="left:' + x.toFixed(2) + '%;width:' + w.toFixed(2) + '%;background:' + col + ';opacity:.22"></div>' +
-            '<div class="pd-pv-b" style="left:' + x.toFixed(2) + '%;width:' + w.toFixed(2) + '%;overflow:hidden;background:transparent">' +
-              '<div class="pd-pv-f" style="width:' + pct + '%;background:' + col + '"></div>' + marker +
+            // the span: neutral, so it reads as "when", never as "how much"
+            '<div class="pd-pv-span" style="left:' + x.toFixed(2) + '%;width:' + w.toFixed(2) + '%">' +
+              (shortfall > 0
+                ? '<div class="pd-pv-gap" style="left:' + pct + '%;width:' + shortfall.toFixed(2) + '%"></div>'
+                : '') +
+              '<div class="pd-pv-f" style="width:' + pct + '%;background:' + col + '"></div>' +
+              (own > 0 && own < 100
+                ? '<i class="pd-pv-now" style="left:' + own.toFixed(2) + '%" title="' + Math.round(own) +
+                  '% of this trade’s duration has elapsed"></i>' : '') +
             '</div>' +
           '</div>' +
-          '<div class="pd-pv-n" style="color:' + col + '">' + pct + '%</div>';
+          '<div class="pd-pv-n" style="color:' + txtCol + '">' + pct + '%' +
+            (behind ? '<small>' + Math.round(own) + '% elapsed</small>' : '') + '</div>';
       }).join('');
+
       document.getElementById('viz-program').innerHTML =
         vizHead('Project Schedule & Milestones',
-          Fmt.date(min) + ' &rarr; ' + Fmt.date(max) + ' · ' + rowsPv.length + ' trades · ' +
+          Fmt.date(min) + ' &rarr; ' + Fmt.date(max) + ' &middot; ' + rowsPv.length + ' trades &middot; ' +
           Math.round(elapsed) + '% of the programme elapsed',
+          '<span><i class="pd-lg-span"></i>Trade span</span>' +
+          '<span><i style="background:' + C_BLUE + '"></i>Work done</span>' +
           '<span><i style="background:' + C_OK + '"></i>Complete</span>' +
-          '<span><i style="background:' + C_BLUE + '"></i>On track</span>' +
-          '<span><i style="background:' + C_LATE + '"></i>Behind elapsed time</span>') +
+          '<span><i class="pd-lg-gap"></i>Time gone, work not done</span>' +
+          '<span><i class="pd-lg-now"></i>Today</span>') +
         '<div class="pd-pv">' + body + '</div>' +
-        (rowsPv.length > 9 ? '<div class="pd-viz-s" style="margin-top:8px;">Showing the 9 earliest of ' + rowsPv.length + ' trades.</div>' : '');
+        (rowsPv.length > 9 ? '<div class="pd-viz-s pd-mini-note">Showing the 9 earliest of ' + rowsPv.length + ' trades.</div>' : '');
     }
 
     // ---- 2. Minutes of Meeting -----------------------------------------------------------------
@@ -467,16 +861,37 @@
         ? Fmt.esc(Fmt.date(m.earliest)) + ' &rarr; ' + Fmt.esc(Fmt.date(latest))
         : (latest ? Fmt.esc(Fmt.date(latest)) : null);
 
-      // The four most recent meetings, so the card SHOWS the cadence rather than only counting it.
-      var rows = (m.recent || []).slice(0, 4).map(function (r) {
-        var isDraft = r.is_distributed === false;
-        return '<li class="pd-list-r">' +
-          '<span class="pd-list-d">' + Fmt.esc(r.meeting_date ? Fmt.date(r.meeting_date) : 'No date') + '</span>' +
-          '<span class="pd-list-t" title="' + Fmt.esc(r.title || '') + '">' + Fmt.esc(r.title || 'Untitled meeting') + '</span>' +
-          (r.meeting_group ? '<span class="pd-tag">' + Fmt.esc(r.meeting_group) + '</span>' : '') +
-          (isDraft ? '<span class="pd-tag pd-tag-warn">Draft</span>' : '') +
+      // ⚠️ The LATEST MEETING'S ACTION ITEMS, not a list of meeting titles (owner, 2026-09-01). A
+      // list of titles tells a planner nothing they cannot get from the count above it; what they
+      // came for is what was decided and who owes it.
+      var last = (m.recent || [])[0] || null;
+      var items = last ? (m.sub || []).filter(function (r) { return r.mom_id === last.id; }) : [];
+      // Open first, then by due date — the ones with no date last, since an undated item cannot
+      // be ranked against a dated one without inventing a deadline for it.
+      items.sort(function (a, b) {
+        var ao = a.status === 'Closed' ? 1 : 0, bo = b.status === 'Closed' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        if (!a.due_date) return b.due_date ? 1 : 0;
+        if (!b.due_date) return -1;
+        return a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0;
+      });
+      var openN = items.filter(function (r) { return r.status !== 'Closed'; }).length;
+      var rows = items.slice(0, 4).map(function (r) {
+        var txt = r.action_item || r.description || 'Untitled item';
+        var closed = r.status === 'Closed';
+        return '<li class="pd-list-r' + (closed ? ' done' : '') + '">' +
+          '<span class="pd-list-t" title="' + Fmt.esc(txt) + '">' +
+            (r.item_no ? '<b class="pd-no">' + Fmt.esc(r.item_no) + '</b> ' : '') + Fmt.esc(txt) +
+            (r.owner ? '<small>' + Fmt.esc(r.owner) + '</small>' : '') + '</span>' +
+          (closed ? '<span class="pd-tag pd-tag-ok">Closed</span>' : _dueChip(r.due_date)) +
           '</li>';
       }).join('');
+      var itemsHead = last
+        ? '<div class="pd-list-h">From ' + Fmt.esc(last.title || 'the latest meeting') +
+          (last.meeting_date ? ' &middot; ' + Fmt.esc(Fmt.date(last.meeting_date)) : '') +
+          ' &mdash; ' + (items.length ? openN + ' open of ' + items.length + ' item' + (items.length === 1 ? '' : 's')
+                                      : 'no action items recorded') + '</div>'
+        : '';
 
       document.getElementById('viz-mom').innerHTML =
         vizHead('Minutes of Meeting',
@@ -490,6 +905,7 @@
             series ? 'From a meeting schedule' : 'All one-off meetings') +
         '</div>' +
         '<div class="pd-mini-bar" title="' + issued + ' distributed of ' + total + '"><i style="width:' + pctIssued + '%"></i></div>' +
+        (last ? itemsHead : '') +
         (rows ? '<ul class="pd-list">' + rows + '</ul>' : '') +
         (draft
           ? '<div class="pd-viz-s pd-mini-note"><span class="pd-stat-warn">' + draft +
@@ -517,17 +933,30 @@
       var other = Math.max(0, total - open - closed);
       var pctClosed = total ? Math.round(closed / total * 100) : 0;
 
-      var rows = (m.recent || []).slice(0, 4).map(function (r) {
+      // ⚠️ The OPEN list, oldest first — not `recent`. `recent` is the 4 newest entries, so on a
+      // register whose latest rows happen to be closed this panel would have shown a tidy list
+      // while a dozen open items sat below the fold. Oldest first because an issue open since
+      // June is worse news than one raised yesterday.
+      var openRows = (m.lists && m.lists.open) || [];
+      var openTotal = (m.lists && m.lists.open__total) || 0;
+      var rows = openRows.slice(0, 4).map(function (r) {
         var st = String(r.status || '').trim();
         var sev = String(r.severity || '').trim();
         var sevCls = sev === 'Critical' ? ' pd-tag-bad' : sev === 'High' ? ' pd-tag-warn' : '';
+        var age = _dueIn(r.date_raised);
         return '<li class="pd-list-r">' +
-          '<span class="pd-list-d">' + Fmt.esc(r.date_raised ? Fmt.date(r.date_raised) : 'No date') + '</span>' +
-          '<span class="pd-list-t" title="' + Fmt.esc(r.title || '') + '">' + Fmt.esc(r.title || 'Untitled entry') + '</span>' +
+          '<span class="pd-list-t" title="' + Fmt.esc(r.title || '') + '">' + Fmt.esc(r.title || 'Untitled entry') +
+            '<small>' + (r.date_raised ? 'raised ' + Fmt.esc(Fmt.date(r.date_raised)) +
+              (age != null && age < 0 ? ' &middot; ' + Math.abs(age) + ' days open' : '') : 'no date raised') +
+              (r.champion ? ' &middot; ' + Fmt.esc(r.champion) : '') + '</small></span>' +
           (sev ? '<span class="pd-tag' + sevCls + '">' + Fmt.esc(sev) + '</span>' : '') +
-          '<span class="pd-tag' + (st === 'Closed' ? ' pd-tag-ok' : '') + '">' + Fmt.esc(st || 'No status') + '</span>' +
+          '<span class="pd-tag' + (st === 'On Hold' ? ' pd-tag-warn' : '') + '">' + Fmt.esc(st || 'No status') + '</span>' +
           '</li>';
       }).join('');
+      var openHead = openRows.length
+        ? '<div class="pd-list-h">Open items, oldest first' +
+          (openTotal > openRows.length ? ' &mdash; showing ' + openRows.length + ' of ' + openTotal : '') + '</div>'
+        : '';
 
       document.getElementById('viz-issues').innerHTML =
         vizHead('Issues & Concerns',
@@ -541,6 +970,7 @@
           miniCell('Closed', String(closed), closed ? true : null, pctClosed + '% of the register') +
         '</div>' +
         '<div class="pd-mini-bar" title="' + closed + ' closed of ' + total + '"><i style="width:' + pctClosed + '%"></i></div>' +
+        openHead +
         (rows ? '<ul class="pd-list">' + rows + '</ul>' : '') +
         (other
           ? '<div class="pd-viz-s pd-mini-note"><span class="pd-stat-warn">' + other +
@@ -583,6 +1013,8 @@
       // Each panel is independent: one module's missing data must not blank the others.
       // Each panel is independently guarded: one module's bad data must not blank the rest.
       try { renderPerf(); } catch (e) { var pg = document.getElementById('perf-grid'); if (pg) pg.innerHTML = '<div class="pd-viz-empty">Could not draw the performance row.</div>'; }
+      try { renderDue(); } catch (e) { vizEmpty('viz-due', 'Approaching Deadlines', 'Could not draw this panel.'); }
+      try { renderScurve(); } catch (e) { vizEmpty('viz-scurve', 'S-Curve', 'Could not draw this panel.'); }
       try { renderProgram(); } catch (e) { vizEmpty('viz-program', 'Project Schedule & Milestones', 'Could not draw this panel.'); }
       try { renderMom(); } catch (e) { vizEmpty('viz-mom', 'Minutes of Meeting', 'Could not draw this panel.'); }
       try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
@@ -598,6 +1030,56 @@
         return PDb.moduleMetrics(m.dash, pid).then(function (r) { MET[m.key] = r || {}; },
           function () { MET[m.key] = {}; });
       })).then(function () { renderViz(); }, function () { renderViz(); });
+    }
+
+    // ---- "My items" drawer -----------------------------------------------------------------
+    // ⚠️ Rendered ONCE, lazily, on first open — not on page load. It is three extra queries for a
+    //    panel most visits never open, and the dashboard's own panels should not queue behind a
+    //    personal to-do list. The badge count is the one thing computed eagerly, because a drawer
+    //    that hides an overdue item behind a click nobody knows to make is worse than no drawer.
+    var mwLoaded = false;
+    function initMyDrawer() {
+      var fab = document.getElementById('mw-fab'), dr = document.getElementById('mw-drawer'),
+          sc = document.getElementById('mw-scrim'), x = document.getElementById('mw-close'),
+          host = document.getElementById('mw-block');
+      if (!fab || !dr || !host) return;
+
+      function open() {
+        dr.hidden = false; sc.hidden = false;
+        // Two frames: `hidden` must be off and the element laid out before the class that
+        // transitions it, or the browser paints it already-open and there is no animation.
+        requestAnimationFrame(function () { requestAnimationFrame(function () { dr.classList.add('open'); sc.classList.add('open'); }); });
+        fab.setAttribute('aria-expanded', 'true');
+        if (!mwLoaded) {
+          mwLoaded = true;
+          try { MyWork.renderBlock(host, CURUSER, pid, ''); }
+          catch (e) { host.innerHTML = '<p class="mw-empty">Could not load your items.</p>'; }
+        }
+        x.focus();
+      }
+      function close() {
+        dr.classList.remove('open'); sc.classList.remove('open');
+        fab.setAttribute('aria-expanded', 'false');
+        // Wait out the transition before hiding, or it snaps shut.
+        setTimeout(function () { dr.hidden = true; sc.hidden = true; }, 200);
+        fab.focus();
+      }
+      fab.addEventListener('click', function () { dr.hidden ? open() : close(); });
+      x.addEventListener('click', close);
+      sc.addEventListener('click', close);
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !dr.hidden) close(); });
+
+      // The badge: my OPEN items on this project, counted by MyWork itself so the drawer and the
+      // cross-project page cannot disagree about what "mine" means.
+      if (MyWork.countOpen) {
+        MyWork.countOpen(CURUSER.id, pid).then(function (n) {
+          var b = document.getElementById('mw-fab-n');
+          if (!b || !n) return;
+          b.textContent = n > 99 ? '99+' : String(n);
+          b.hidden = false;
+          fab.classList.add('has');
+        }).catch(function () { /* a badge is not worth a visible failure */ });
+      }
     }
 
     function renderTiles() {

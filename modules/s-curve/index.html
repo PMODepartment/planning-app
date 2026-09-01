@@ -158,10 +158,11 @@
 <div class="sc-loading" id="sc-loading" style="display:none;"><div class="sc-spin"></div><span>Loading schedule…</span></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260901b"></script>
+<script src="../../assets/js/config.js?v=20260901c"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260901b"></script>
+<script src="../../assets/js/db.js?v=20260901c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
+<script src="../../assets/js/scurve.js?v=20260901a"></script>
 <script src="../../assets/js/ui.js?v=20260831c"></script>
 <script src="../../assets/js/icons.js?v=20260830c"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -188,7 +189,6 @@
   function fcKey() { return 'sc_fc_' + pid; }
   function plannedFinishDate() { var mx = null; rows.forEach(function (a) { if (a.activity_type === 'WBS Summary') return; var e = pd(a.end_date); if (e && (!mx || e > mx)) mx = e; }); return mx; }
   function esc(s) { return Fmt.esc(s); }
-  function isWbs(r) { return r.activity_type === 'WBS Summary'; }
   function showLoading() { var e = document.getElementById('sc-loading'); if (e) e.style.display = 'flex'; }
   function hideLoading() { var e = document.getElementById('sc-loading'); if (e) e.style.display = 'none'; }
 
@@ -281,125 +281,55 @@
     render();
   }
 
-  // Base monthly series (duration-weighted): cumulative planned + actual as functions of
-  // date, plus totals + bounds. Sourced from the server RPC aggregate when present (agg),
-  // else computed per-activity from the fallback rows. Both expose the SAME shape so the
-  // rest of compute() is source-agnostic. Cost / earned-value (EVM) is out of scope here.
-  function baseSeries() {
-    if (basis === 'cost') return costSeries();
-    if (agg && agg.months && agg.months.length) {
-      // RPC gives cumulative planned (pd) + actual (ad) at each month END. Prepend a 0-point
-      // at the schedule start so sub-month values interpolate linearly (the chart is monthly,
-      // so interpolation only affects the SPI-at-data-date and forecast-date sampling).
-      var start = pd(agg.minDate);
-      var pts = [{ t: +start, pd: 0, ad: 0 }];
-      agg.months.forEach(function (mm) {
-        var y = +String(mm.key).slice(0, 4), mo = +String(mm.key).slice(5, 7);
-        pts.push({ t: +new Date(y, mo, 0), pd: +mm.pd || 0, ad: +mm.ad || 0 });
-      });
-      function interp(f, t) {
-        if (t <= pts[0].t) return 0;
-        var last = pts[pts.length - 1]; if (t >= last.t) return last[f];
-        for (var i = 1; i < pts.length; i++) { if (t <= pts[i].t) { var a = pts[i - 1], b = pts[i]; var r = (b.t - a.t) ? (t - a.t) / (b.t - a.t) : 0; return a[f] + (b[f] - a[f]) * r; } }
-        return last[f];
+  // ⚠️ THE CURVE MATHS IS NO LONGER IN THIS FILE (2026-09-01). Two bases, the per-activity
+  // spread curve, the SPI forecast and the month walk all moved to assets/js/scurve.js so the
+  // DASHBOARD could draw the same curve; copying ~150 lines onto a second screen is how two
+  // screens come to disagree about one project's progress. Read the engine there.
+  // What stays HERE is the one thing that is genuinely this module's: the RPC branch.
+  // `schedule_scurve_agg` returns pre-summed month buckets and is far faster than a per-row
+  // fetch on a large schedule, but it is duration-only by construction — so the cost basis
+  // deliberately skips it and lets the engine walk the rows.
+  // The server aggregate, reshaped into the same {TOT, plannedAt, actualAt, …} contract the
+  // shared engine consumes. Cumulative planned (pd) + actual (ad) at each month END, with a
+  // 0-point prepended at the schedule start so sub-month values interpolate linearly.
+  function rpcSeries() {
+    var start = pd(agg.minDate);
+    var pts = [{ t: +start, pd: 0, ad: 0 }];
+    agg.months.forEach(function (mm) {
+      var y = +String(mm.key).slice(0, 4), mo = +String(mm.key).slice(5, 7);
+      pts.push({ t: +new Date(y, mo, 0), pd: +mm.pd || 0, ad: +mm.ad || 0 });
+    });
+    function interp(f, t) {
+      if (t <= pts[0].t) return 0;
+      var last = pts[pts.length - 1]; if (t >= last.t) return last[f];
+      for (var i = 1; i < pts.length; i++) {
+        if (t <= pts[i].t) { var a = pts[i - 1], b = pts[i]; var r = (b.t - a.t) ? (t - a.t) / (b.t - a.t) : 0; return a[f] + (b[f] - a[f]) * r; }
       }
-      if (!(+agg.totDur > 0) || !start) return null;
-      return {
-        TOT: +agg.totDur, overallDone: +agg.doneDur || 0,
-        minDate: start, plannedEnd: pd(agg.maxDate), nAct: agg.nAct || 0,
-        plannedAt: function (D) { return interp('pd', +D); },
-        actualAt: function (D) { return interp('ad', +D); }
-      };
+      return last[f];
     }
-    // Fallback: per-activity from the (keyset-loaded) rows.
-    var leaves = rows.filter(function (r) { return !isWbs(r); });
-    if (!leaves.length) return null;
-    function val(a) { if (a.duration_days) return a.duration_days; var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
-    function done(a) { return val(a) * (Math.max(0, Math.min(100, a.percent_complete || 0)) / 100); }
-    var TOT = leaves.reduce(function (s, a) { return s + val(a); }, 0);
-    var ds = [], de = [];
-    leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) ds.push(+s); if (e) de.push(+e); });
-    if (!ds.length) return null;
+    if (!(+agg.totDur > 0) || !start) return null;
     return {
-      TOT: TOT, overallDone: leaves.reduce(function (s, a) { return s + done(a); }, 0),
-      minDate: new Date(Math.min.apply(null, ds)), plannedEnd: new Date(Math.max.apply(null, de.length ? de : ds)), nAct: leaves.length,
-      plannedAt: function (D) { var pv = 0; leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return; var pf = D >= e ? 1 : (D < s ? 0 : (e > s ? (D - s) / (e - s) : 1)); pv += val(a) * pf; }); return pv; },
-      actualAt: function (D) { var av = 0; leaves.forEach(function (a) { var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS; if (!aS) return; var af = D >= aE ? 1 : (D < aS ? 0 : (aE > aS ? (D - aS) / (aE - aS) : 1)); av += done(a) * af; }); return av; }
+      TOT: +agg.totDur, overallDone: +agg.doneDur || 0,
+      minDate: start, plannedEnd: pd(agg.maxDate), nAct: agg.nAct || 0,
+      plannedAt: function (D) { return interp('pd', +D); },
+      actualAt: function (D) { return interp('ad', +D); }
     };
   }
 
-  // ⚠️⚠️ THE SPREAD CURVE — the same four shapes, and the SAME cdf, as the schedule's `curveCdf`.
-  // Owner 2026-08-26: *"there should be a step wherein the manner of distribution of an activity is
-  // defined… bell curve, front loaded, back loaded, linear… in order to give a more accurate
-  // projection. And then after all that data, that should be reported in the s-curve."*
-  // Cost Loading's "Spread over time" step writes `project_schedule.cost_curve`; this reads it.
-  // ⚠️ TRANSCRIBED, not shared — this is a separate module and may not reach into the schedule's
-  // closure. So it is asserted instead: `scratchpad/check-curve.js` runs BOTH copies over the same
-  // inputs and requires them to agree, exactly as `push-need-by` is held to `wpNeedByIndex`. If you
-  // change one, the test fails until you change the other.
-  // ⚠️ cdf(0)=0 and cdf(1)=1 for every shape, so a curve moves WHEN the money lands and never HOW
-  // MUCH: the project total, the final cumulative point and BAC are untouched by the choice.
-  // ⚠️ An unrecognised value (or null) reads as LINEAR, so a project that has never run the
-  // migration — and one imported from P6 with its own spelling — draws exactly as it does today.
-  function curveCdf(type, f) {
-    if (f <= 0) return 0; if (f >= 1) return 1;
-    if (type === 'front') return f * (2 - f);          // density 2(1-f)
-    if (type === 'back') return f * f;                 // density 2f
-    if (type === 'bell') return f <= 0.5 ? 2 * f * f : 1 - 2 * (1 - f) * (1 - f);  // triangular peak at 0.5
-    return f;                                          // linear / unknown / null
-  }
-  function curveOfRow(a) {
-    var k = String(a.cost_curve || '').trim().toLowerCase();
-    return (k === 'front' || k === 'back' || k === 'bell') ? k : 'linear';
-  }
-  // The COST curve: identical maths to the duration one, with money as the weight.
-  //   planned value at D = Σ (activity cost × how much of its planned span has elapsed by D)
-  //   earned  value at D = Σ (activity cost × % complete × how much of its ACTUAL span has elapsed)
-  // ⚠️ Straight-line spread inside an activity, exactly as the duration curve does it. A cost-loaded
-  // activity carries no cost profile of its own, so any other shape would be invented.
-  // ⚠️ Activities with NO cost contribute nothing — they are unpriced, not free. That is why
-  // coverage is reported (`priced` / `nAct`, and the unpriced share) rather than left implicit: a
-  // curve built from a third of the schedule's money looks exactly like a complete one.
-  function costSeries() {
-    var leaves = rows.filter(function (r) { return !isWbs(r); });
-    if (!leaves.length) return null;
-    function val(a) { var c = parseFloat(a.planned_cost); return isFinite(c) && c > 0 ? c : 0; }
-    function done(a) { return val(a) * (Math.max(0, Math.min(100, a.percent_complete || 0)) / 100); }
-    var TOT = 0, priced = 0, ds = [], de = [], shapes = {};
-    leaves.forEach(function (a) {
-      var v = val(a); if (v > 0) { TOT += v; priced++; var _k = curveOfRow(a); shapes[_k] = (shapes[_k] || 0) + 1; }
-      var s = pd(a.start_date), e = pd(a.end_date);
-      if (v > 0 && s) ds.push(+s);
-      if (v > 0 && e) de.push(+e);
-    });
-    if (!TOT || !ds.length) return { noCost: true, nAct: leaves.length };
-    return {
-      TOT: TOT, overallDone: leaves.reduce(function (s, a) { return s + done(a); }, 0),
-      minDate: new Date(Math.min.apply(null, ds)),
-      plannedEnd: new Date(Math.max.apply(null, de.length ? de : ds)),
-      nAct: leaves.length, priced: priced, money: true, shapes: shapes,
-      // ⚠️ The elapsed FRACTION is still time, but how much money that fraction has delivered is now
-      // the curve's business: `pf` goes through curveCdf instead of being used raw. Linear is the
-      // identity, so an un-curved schedule is byte-identical to before this change.
-      plannedAt: function (D) { var pv = 0; leaves.forEach(function (a) { var v = val(a); if (!v) return; var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return; var pf = D >= e ? 1 : (D < s ? 0 : (e > s ? (D - s) / (e - s) : 1)); pv += v * curveCdf(curveOfRow(a), pf); }); return pv; },
-      // ⚠️ The EARNED side is curved too, and it has to be: earned value is the same money being
-      // recognised, so spreading it straight-line under a bell-curved plan would manufacture a
-      // schedule variance out of nothing but the two shapes disagreeing.
-      actualAt: function (D) { var av = 0; leaves.forEach(function (a) { if (!val(a)) return; var aS = pd(a.actual_start || a.start_date), aE = pd(a.actual_finish) || pd(a.end_date) || aS; if (!aS) return; var af = D >= aE ? 1 : (D < aS ? 0 : (aE > aS ? (D - aS) / (aE - aS) : 1)); av += done(a) * curveCdf(curveOfRow(a), af); }); return av; }
-    };
-  }
+  // ⚠️⚠️ THE SPREAD CURVE now lives in the shared engine, and this is the resolution of a
+  // problem the old comment here described at length. Owner 2026-08-26: *"there should be a step
+  // wherein the manner of distribution of an activity is defined… bell curve, front loaded, back
+  // loaded, linear… in order to give a more accurate projection."* Cost Loading's "Spread over
+  // time" step writes `project_schedule.cost_curve`; the engine reads it.
+  // ⚠️ It used to be TRANSCRIBED here rather than shared — a second copy of `curveCdf` held to
+  // the schedule module's copy by an assertion script, because a module could not reach into
+  // another module's closure. assets/js/scurve.js is a shared asset, so there is now ONE copy and
+  // nothing to hold in agreement. Do not re-transcribe it.
   // ⚠️ Reports the MIX rather than a single word. A schedule is routinely part-curved, and a note
   // reading "bell" over a project where three activities out of 300 are bell-shaped would be a
   // confident wrong answer about the whole curve. All-linear says so explicitly, and names where the
   // shape is set — otherwise "linear" reads as a property of the project rather than an unmade choice.
-  function shapeNote(sh) {
-    var LBL = { linear: 'linear', front: 'front-loaded', back: 'back-loaded', bell: 'bell' };
-    var ks = Object.keys(sh || {}).filter(function (k) { return sh[k] > 0; });
-    if (!ks.length) return 'straight-line';
-    if (ks.length === 1 && ks[0] === 'linear') return 'straight-line (no spread curve set yet — choose one per activity in Project Schedule → Cost Loading → Spread over time)';
-    ks.sort(function (a, b) { return sh[b] - sh[a]; });
-    return 'by their spread curves (' + ks.map(function (k) { return sh[k] + ' ' + LBL[k]; }).join(', ') + ')';
-  }
+  function shapeNote(sh) { return PDScurve.shapeNote(sh); }
   function peso(n) {
     if (n == null || !isFinite(n)) return '—';
     if (Math.abs(n) >= 1e9) return '₱' + (Math.round(n / 1e8) / 10) + 'B';
@@ -407,59 +337,15 @@
     if (Math.abs(n) >= 1e3) return '₱' + (Math.round(n / 100) / 10) + 'K';
     return '₱' + Math.round(n);
   }
+  // Delegates to the shared engine; the module supplies only what is module-specific — which
+  // basis is selected, whether the planner has pinned a forecast finish, and the RPC series.
   function compute() {
-    var base = baseSeries();
-    // ⚠️ A distinct state from "empty": the schedule is fine, the LOADING has not been done. Saying
-    // "no dated activities" there would send a planner to fix a schedule that has nothing wrong.
-    if (base && base.noCost) return { empty: true, noCost: true, nAct: base.nAct };
-    if (!base) return { empty: true };
-    var TOT = base.TOT, overallDone = base.overallDone, plannedEnd = base.plannedEnd, minDate = base.minDate;
-    var plannedAt = base.plannedAt, actualAt = base.actualAt;
-    if (!TOT || !minDate || !plannedEnd) return { empty: true };
-    var tnow = today();
-    // Performance-based (SPI) forecast finish: SPI = actual% ÷ planned% at the data date; the
-    // remaining planned duration is stretched by 1/SPI (behind → later finish). A pinned date
-    // overrides; the timeline extends to cover whichever is later.
-    var pctNow = TOT ? overallDone / TOT * 100 : 0;
-    var plPctNow = TOT ? plannedAt(tnow) / TOT * 100 : 0;
-    var spi = plPctNow > 0 ? pctNow / plPctNow : 1;
-    spi = Math.max(0.1, Math.min(spi, 3));
-    var remMs = Math.max(0, +plannedEnd - +tnow);
-    var autoFc = pctNow >= 100 ? tnow : new Date(+tnow + remMs / spi);
-    var fc = (fcManual && forecastFinish) ? forecastFinish : autoFc;
-    var domainMax = new Date(Math.max(+plannedEnd, +tnow, +fc));
-    var months = [], c = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
-    while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
-    function monthEnd(m) { return new Date(m.getFullYear(), m.getMonth() + 1, 0); }
-    var plannedC = months.map(function (m) { return plannedAt(monthEnd(m)); });
-    var ti = -1;
-    for (var i = 0; i < months.length; i++) { if (monthEnd(months[i]) >= tnow) { ti = i; break; } }
-    if (ti < 0) ti = months.length - 1;
-    // Actual only up to the data date; anchor the current month to true overall % complete.
-    var actualC = months.map(function (m, idx) { return idx < ti ? actualAt(monthEnd(m)) : 0; });
-    actualC[ti] = overallDone;
-    // Forecast to finish: follow the remaining plan's shape, time-stretched to fc, from the
-    // actual point up to 100%. null before the data date.
-    var forecastC = months.map(function () { return null; });
-    var rem = TOT - plannedC[ti];
-    if (fc && actualC[ti] < TOT && rem > 0.0001) {
-      var fcSpan = +fc - +tnow;
-      forecastC[ti] = actualC[ti];
-      for (var fj = ti + 1; fj < months.length; fj++) {
-        var mE = monthEnd(months[fj]);
-        if (fcSpan <= 0) { forecastC[fj] = TOT; continue; }
-        var realFrac = (+mE - +tnow) / fcSpan;
-        if (realFrac <= 0) { forecastC[fj] = actualC[ti]; continue; }
-        if (realFrac >= 1) { forecastC[fj] = TOT; continue; }
-        var planDate = new Date(+tnow + realFrac * (+plannedEnd - +tnow));
-        var valFrac = Math.min(1, Math.max(0, (plannedAt(planDate) - plannedC[ti]) / rem));
-        forecastC[fj] = actualC[ti] + valFrac * (TOT - actualC[ti]);
-      }
-    }
-    var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
-    var overallPct = TOT ? overallDone / TOT * 100 : 0;
-    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, forecastC: forecastC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: base.nAct, plannedEnd: plannedEnd, fcFinish: fc, autoFc: autoFc, spi: spi, manual: fcManual,
-      money: !!base.money, priced: base.priced || 0, shapes: base.shapes || null };
+    var series = (basis !== 'cost' && agg && agg.months && agg.months.length) ? rpcSeries() : null;
+    return PDScurve.compute(rows, {
+      basis: basis,
+      forecastFinish: fcManual && forecastFinish ? forecastFinish : null,
+      series: series
+    });
   }
 
   function render() {
