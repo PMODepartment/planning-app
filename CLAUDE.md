@@ -84,6 +84,45 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (d) — The clean VERIFY result was real but incomplete: the verifier was two migrations stale
+
+Owner ran `RUN-OUTSTANDING-2026-08-28-to-08-31.sql`, then `VERIFY-schema.sql`, which returned
+*"Success. No rows returned"* — which that file's own header defines as every migration applied.
+**The result is genuine, but it did not cover the whole bundle.**
+
+⚠️ **`VERIFY-schema.sql` was last regenerated on 2026-08-30 and its `expected` list stopped at
+`2026-08-30-photos-round2.sql`.** The final two files of the 14-migration bundle —
+`2026-08-30-photos-round3.sql` and `2026-08-31-manpower-org-schedule-manhours.sql` — were declared
+**after** that regeneration and so were **never asked for**. A verifier cannot report a missing
+object it was never told to look for, so "no rows" proved 12 of 14, not 14 of 14. Caught by grepping
+each of the 14 filenames against the verifier's own value list rather than trusting the clean run.
+
+**Regenerated: `node migrations/gen-verify.js`** → **342 live objects from 132 migrations**
+(was 328/130). The 14 checks added are `progress_photos.thumb_url` / `.adjustments`, the
+`manpower_manhours` table, `manpower_positions.reports_to_id`, `manpower_roster.location` and its
+seven `link_*` columns, and `project_location_values`.
+
+⚠️ **One check MOVED rather than being added, and that is correct.** `project_location_values` was
+attributed to `2026-08-24-equipment-loading.sql`; the 08-31 migration `CREATE OR REPLACE`s it, and
+gen-verify models supersession, so the function is now checked against its latest declaration. Net
+`function` count is unchanged — a diff reader who sees one line removed should not read it as a lost
+object.
+
+**Still outstanding after this, and NOT a SQL problem:** 3D reconstruction remains non-functional.
+`reconstruction_requests` now exists, but the chain needs the two Edge Functions deployed
+(`supabase functions deploy submit-reconstruction` / `reconstruction-webhook`, plus
+`supabase secrets set`) and a RunPod serverless endpoint that has never been created. The module
+correctly shows an empty approval queue meanwhile. No new storage bucket is needed — every write
+path in this module still goes to the existing `progress-photos` bucket, confirmed by grepping
+`storage.from(` across all of `modules/progress-photos/`.
+
+⚠️ **What a clean verifier still does not prove**, per its own header: it checks object EXISTENCE
+only — never RLS policies, grants, index definitions, trigger bodies or back-fills. Because the
+bundle deliberately carried no wrapping transaction, a mid-file failure would have left earlier
+statements committed; a policy block skipped that way would still verify clean. Re-run the
+regenerated file to close the 2-migration gap before treating the bundle as fully landed.
+
+
 ### 2026-09-01 (c) — One combined SQL file for the 14 migrations still outstanding
 
 Owner asked which migrations from Friday 2026-08-28 onward still need running, then for the

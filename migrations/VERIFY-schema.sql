@@ -271,7 +271,6 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-24-equipment-code-and-sharing.sql','column','equipment_items','code'),
     ('2026-08-24-equipment-code-and-sharing.sql','table','equipment_tower_links',''),
     ('2026-08-24-equipment-loading.sql','function','equipment_touch',''),
-    ('2026-08-24-equipment-loading.sql','function','project_location_values',''),
     ('2026-08-24-equipment-loading.sql','table','equipment_items',''),
     ('2026-08-24-equipment-loading.sql','table','equipment_loading',''),
     ('2026-08-24-equipment-loading.sql','table','equipment_site_plan',''),
@@ -351,7 +350,20 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-30-photos-round2.sql','column','floor_plan_pins','edge2_x'),
     ('2026-08-30-photos-round2.sql','column','floor_plan_pins','edge2_y'),
     ('2026-08-30-photos-round2.sql','column','floor_plans','location_values'),
-    ('2026-08-30-photos-round2.sql','column','progress_photos','view_name')
+    ('2026-08-30-photos-round2.sql','column','progress_photos','view_name'),
+    ('2026-08-30-photos-round3.sql','column','progress_photos','adjustments'),
+    ('2026-08-30-photos-round3.sql','column','progress_photos','thumb_url'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_positions','reports_to_id'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_activity_id'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_finish'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_label'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_mode'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_start'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_synced_at'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_wbs'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','location'),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','function','project_location_values',''),
+    ('2026-08-31-manpower-org-schedule-manhours.sql','table','manpower_manhours','')
 ),
 missing as (
   select e.* from expected e
