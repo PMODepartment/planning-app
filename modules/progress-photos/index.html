@@ -31,7 +31,7 @@
       <div class="pd-topbar">
         <h1 class="pp-title" style="margin:0;">
           <span class="pp-title-ico" data-ico="camera" data-ico-size="20"></span>
-          <span class="pp-title-txt" id="pp-screen-title">Gallery</span>
+          <span class="pp-title-txt" id="pp-screen-title">Progress Photos</span>
         </h1>
         <div class="pp-projctx">
           <select class="pd-select pp-project" id="pp-project" title="Project"></select>
@@ -196,6 +196,15 @@
                 <option value="trade">Trade</option>
                 <option value="location">Location</option>
               </select>
+            </label>
+            <!-- Tile size — Gallery/Tile view only (module.js toggles this
+                 field's display); the icons either side just label the
+                 slider's ends, not their own buttons. Default is 1/3 (see
+                 gallerySizeScale in module.js). -->
+            <label class="pp-tilesizefield" title="Tile size">
+              <span data-ico="gridView" data-ico-size="12"></span>
+              <input type="range" id="pp-tilesize" min="0.2" max="2" step="0.05" value="0.3333" />
+              <span data-ico="gridView" data-ico-size="18"></span>
             </label>
             <!-- Fifth round item 7: markup now shows by default on every
                  tile that has any; this is the one shared switch to hide it
@@ -381,8 +390,10 @@
         document.getElementById('pp-screen-photos').hidden = !isPhotos;
         document.getElementById('pp-screen-ppr').hidden = !isPpr;
         document.getElementById('pp-screen-bim').hidden = !isBim;
-        document.getElementById('pp-screen-title').textContent =
-          isPpr ? 'Presentations' : isBim ? 'Plans' : 'Gallery';
+        // Title is static ("Progress Photos") — the .pp-tab active state already
+        // names the screen, so this must NOT overwrite #pp-screen-title (that
+        // was the "Gallery / Gallery" duplicate-label bug this line used to
+        // reintroduce).
         // ⚠️ Every one of these four calls is now isolated. Before, a throw
         // in ANY of them (e.g. PPR._syncTools reading `screen` before PPR.init
         // ever ran, because safeInit() above swallowed an earlier failure)

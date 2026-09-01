@@ -315,10 +315,15 @@
       // No "Portfolio" section here (owner's call, 2026-08-31) — the shared
       // project dropdown (UI.enhanceProjectSelect) already offers a Portfolio
       // row, so a project's own sidebar stays scoped to that project.
+      //
+      // ⚠️ "Meetings" is no longer a hardcoded nav entry deep-linking into
+      // issues-lessons — Minutes of Meeting split out into its own real
+      // module (`minutes-of-meeting`), so it now flows through mods.map()
+      // below like every other module; config.js's MODULES order is what
+      // puts it first, right after Dashboard.
       html = '<div class="pd-navsec">Project</div>' +
         '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
-          '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard' +
-          (ctx.pname ? '<small class="pd-nav-sub">' + esc(ctx.pname) + '</small>' : '') + '</span></a>' +
+          '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard</span></a>' +
         mods.map(function (m) {
           var href = window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path;
           return '<a href="' + href + '"' + cls(m.key) + ' title="' + esc(m.name) + '">' +

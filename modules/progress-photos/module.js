@@ -213,6 +213,7 @@ window.ProgressPhotos = (function () {
       localStorage.setItem(uiKey('view'), view);
       localStorage.setItem(uiKey('collapsed'), JSON.stringify(collapsed));
       localStorage.setItem(uiKey('gallerygroup'), galleryGroupBy);
+      localStorage.setItem(uiKey('tilescale'), String(gallerySizeScale));
     } catch (e) {}
   }
   function restoreUI() {
@@ -222,7 +223,21 @@ window.ProgressPhotos = (function () {
       collapsed = JSON.parse(localStorage.getItem(uiKey('collapsed')) || '{}') || {};
       var g = localStorage.getItem(uiKey('gallerygroup'));
       if (['none', 'month', 'trade', 'location'].indexOf(g) >= 0) galleryGroupBy = g;
+      var ts = parseFloat(localStorage.getItem(uiKey('tilescale')));
+      if (ts && ts >= 0.2 && ts <= 2) gallerySizeScale = ts;
     } catch (e) { collapsed = {}; }
+  }
+  // Applies the current scale as CSS custom properties on the gallery's own
+  // scroll host, so a project switch (which re-runs restoreUI) or a fresh
+  // page load both repaint tiles at the right size without waiting for a
+  // render pass to touch #pp-tilesize.
+  function applyTileScale() {
+    var host = document.getElementById('pp-view');
+    if (!host) return;
+    host.style.setProperty('--pp-tile-min', Math.round(TILE_BASE_MIN * gallerySizeScale) + 'px');
+    host.style.setProperty('--pp-tile-h', Math.round(TILE_BASE_H * gallerySizeScale) + 'px');
+    var slider = document.getElementById('pp-tilesize');
+    if (slider) slider.value = gallerySizeScale;
   }
 
   // ------------------------------------------------------------------ init ---
@@ -234,6 +249,7 @@ window.ProgressPhotos = (function () {
 
     await fillProjects();
     wire();
+    applyTileScale();
     syncChrome();
     await load();
     await loadSchedule();
@@ -449,7 +465,7 @@ window.ProgressPhotos = (function () {
       projName = opt ? opt.textContent : pid;
       sessionStorage.setItem('pd_project', pid);
       sessionStorage.setItem('pd_project_name', projName);
-      restoreUI(); syncChrome(); notifyProject();
+      restoreUI(); applyTileScale(); syncChrome(); notifyProject();
       await load();
       await loadSchedule();
       fillFilterOptions();
@@ -462,6 +478,18 @@ window.ProgressPhotos = (function () {
     if ($('pp-groupby')) {
       $('pp-groupby').value = galleryGroupBy;
       $('pp-groupby').onchange = function () { galleryGroupBy = this.value; saveUI(); render(); };
+    }
+    // Tile-size control — Gallery/Tile view only (shown/hidden alongside
+    // #pp-groupby's own view-based visibility, in render()). Drags the scale
+    // live via CSS vars on #pp-view; no re-render needed since nothing about
+    // the tile MARKUP changes, only its size.
+    if ($('pp-tilesize')) {
+      $('pp-tilesize').value = gallerySizeScale;
+      $('pp-tilesize').oninput = function () {
+        gallerySizeScale = parseFloat(this.value) || 1 / 3;
+        applyTileScale();
+      };
+      $('pp-tilesize').onchange = function () { saveUI(); };
     }
     // Item 8 — filters collapsed by default on a phone; the toggle button is
     // desktop-invisible (module.css), so this handler is harmless dead
@@ -976,8 +1004,12 @@ window.ProgressPhotos = (function () {
     host.innerHTML = LOC_LEVELS.map(function (l) {
       var cur = filters.locValues[l.id] || '';
       var vals = distinctPhotoLocValues(l.id);
+      // "Filter by <level>" matches the Trade/Works filters' own blank-option
+      // wording (fillFilterOptions() above) — it used to show the bare level
+      // name here while its title attribute already said "Filter by X",
+      // which read as two different labels for the same control.
       return '<select class="pd-select" data-lvl="' + l.id + '" title="Filter by ' + Fmt.esc(l.name) + '">' +
-        '<option value="">' + Fmt.esc(l.name) + '</option>' +
+        '<option value="">Filter by ' + Fmt.esc(l.name) + '</option>' +
         vals.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>'; }).join('') +
         '</select>';
     }).join('');
@@ -1058,6 +1090,10 @@ window.ProgressPhotos = (function () {
     // left visible and silently inert.
     var gbField = $('pp-groupby') && $('pp-groupby').closest('.pp-groupby');
     if (gbField) gbField.style.display = (view === 'plan' || view === 'stack') ? 'none' : '';
+    // Tile size only means anything in Gallery/Tile view — List rows, Plan
+    // pins and Stack cells all size themselves differently.
+    var tsField = $('pp-tilesize') && $('pp-tilesize').closest('.pp-tilesizefield');
+    if (tsField) tsField.style.display = view === 'gallery' ? '' : 'none';
 
     // Clear-filters only shows when a filter is actually set (no orphan button).
     var anyFilter = ['from', 'to', 'trade', 'works', 'search'].some(function (k) { return filters[k]; }) ||
@@ -1121,6 +1157,16 @@ window.ProgressPhotos = (function () {
   // the renderers can test g.key === NO_GROUP_KEY to decide whether to print
   // a group header at all.
   var NO_GROUP_KEY = '__none__';
+
+  // Tile-size control (Gallery/Tile view only). A scale factor applied to the
+  // BASE tile geometry (290px min-width, 210px photo height — the sizes the
+  // grid always used) via CSS custom properties, so the control never has to
+  // know the underlying px values and the CSS never has to know the scale.
+  // ⚠️ Default is 1/3 — denser than the fixed size this view always rendered
+  // at before the control existed — per the owner's ask; dragging back up to
+  // 1.0 reproduces the old fixed tile size exactly.
+  var TILE_BASE_MIN = 290, TILE_BASE_H = 210;
+  var gallerySizeScale = 1 / 3;
 
   // ---- Plan / Stack views (item 16 — relocated here from the Plans tab's
   // own Map/Stack modes, item 15 having removed them from there). Both read
@@ -1371,6 +1417,7 @@ window.ProgressPhotos = (function () {
             '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
             '<button class="pp-iconbtn" id="pp-plan-mnext" title="Later month">›</button>' +
             '<button class="pd-btn" id="pp-plan-mplay">' + (planPlaying ? 'Stop' : '▶ Play') + '</button>' +
+            '<button class="pd-btn pp-livebtn' + (planMonth == null ? ' is-live' : '') + '" id="pp-plan-mlive" title="Back to the latest month">Live</button>' +
             '<span class="pp-hint">as of the end of this month</span>' +
           '</div>'
         : '<p class="pp-hint">No dated captures pinned on this floor yet.</p>') +
@@ -1440,6 +1487,14 @@ window.ProgressPhotos = (function () {
         planMonth = ms[i + 1]; render();
       }, 900);
       render();
+    };
+    // Same "null = recorded/latest, a value = scrubbed" convention Project
+    // Schedule's Vertical Stacking timeline established — Live jumps back to
+    // it in one click instead of stepping through every intervening month.
+    if ($('pp-plan-mlive')) $('pp-plan-mlive').onclick = function () {
+      if (planMonth == null) return;   // already live — nothing to do
+      stopPlanMonthPlay();
+      planMonth = null; render();
     };
     Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-cluster]'), function (btn) {
       btn.onclick = function () { openPlanClusterList(clusters[+this.dataset.cluster]); };
@@ -1574,6 +1629,7 @@ window.ProgressPhotos = (function () {
               '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
               '<button class="pp-iconbtn" id="pp-stack-mnext" title="Later month">›</button>' +
               '<button class="pd-btn" id="pp-stack-mplay">' + (stackPlaying ? 'Stop' : '▶ Play') + '</button>' +
+              '<button class="pd-btn pp-livebtn' + (stackMonth == null ? ' is-live' : '') + '" id="pp-stack-mlive" title="Back to the latest month">Live</button>' +
               '<span class="pp-hint">as of the end of this month</span></div>'
           : '<p class="pp-hint">No dated, location-tagged photos yet.</p>')
       : '<p class="pp-hint">Every photo captured at each location, combined across all months.</p>';
@@ -1650,6 +1706,13 @@ window.ProgressPhotos = (function () {
           stackMonth = ms[i + 1]; render();
         }, 900);
         render();
+      };
+      // Same "null = live, a value = scrubbed" convention as Plan view /
+      // Project Schedule's Vertical Stacking timeline.
+      if ($('pp-stack-mlive')) $('pp-stack-mlive').onclick = function () {
+        if (stackMonth == null) return;   // already live
+        stopStackPlay();
+        stackMonth = null; render();
       };
       var mag = $('pp-stack-mag'), magImg = $('pp-stack-magimg'), magCap = $('pp-stack-magcap');
       if (mag) {
@@ -2998,7 +3061,13 @@ window.ProgressPhotos = (function () {
     var html =
       '<div class="pd-modal-header"><h3>Markup</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
+        // Tools grouped left, actions (Undo/Clear all) grouped right, with a
+        // full-width divider under the whole bar — .pp-mk-toolbar just splits
+        // into two flex groups; every id/data-attr below is unchanged, so the
+        // existing querySelector wiring (by id or [data-*], not by parent) still
+        // finds everything.
         '<div class="pp-mk-toolbar">' +
+        '<div class="pp-mk-toolgroup">' +
           '<div class="pp-mk-tools" role="tablist">' + TOOL_ORDER.map(toolBtnHTML).join('') + '</div>' +
           '<div class="pp-mk-icons pp-mk-stickers" id="pp-mk-icons" style="display:none;">' +
             STICKER_NAMES.map(function (ic) {
@@ -3041,6 +3110,8 @@ window.ProgressPhotos = (function () {
             '<span class="pp-mk-grouplabel">Text size</span>' +
             '<input type="range" id="pp-mk-fontsize" min="10" max="48" value="' + fontSize + '" title="Text size" />' +
           '</div>' +
+        '</div>' +
+        '<div class="pp-mk-actiongroup">' +
           '<button type="button" class="pd-btn" id="pp-mk-undo" title="Undo">' + (window.Icons ? Icons.svg('undo', 16) : 'Undo') + '</button>' +
           // Fifth round item 3.
           '<button type="button" class="pd-btn" id="pp-mk-redo" title="Redo">' + (window.Icons ? Icons.svg('redo', 16) : 'Redo') + '</button>' +
@@ -3049,6 +3120,7 @@ window.ProgressPhotos = (function () {
           '<button type="button" class="pd-btn pd-btn-danger" id="pp-mk-delsel" title="Delete selected" style="display:none;">' +
             (window.Icons ? Icons.svg('trash', 16) : 'Delete') + '</button>' +
           '<button type="button" class="pd-btn" id="pp-mk-clear">Clear all</button>' +
+        '</div>' +
         '</div>' +
         '<div class="pp-mk-canvaswrap" id="pp-mk-canvaswrap">' +
           '<img id="pp-mk-img" src="' + Fmt.esc(imageUrl) + '" alt="" />' +
@@ -3740,8 +3812,13 @@ window.ProgressPhotos = (function () {
     return { get: function () { return cur; } };
   }
 
+  var _uploadModalOpen = false; // guards against stacking a 2nd "+ Add media" overlay on a fast
+                                 // double-click — the previous one still full-viewport underneath
+                                 // reads exactly as "the dropdown gets stuck open (doesn't close)".
   function openUpload(preset) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (_uploadModalOpen) return;   // already open — don't stack a second copy on top of it
+    _uploadModalOpen = true;
     preset = preset || {};
     var today = new Date().toISOString().slice(0, 10);
     // Item 5: markup is now available AT UPLOAD TIME, before the file is even
@@ -3755,7 +3832,13 @@ window.ProgressPhotos = (function () {
     // one in-memory {exposure,brightness,contrast,sharpness} per staged file.
     var pendingAdjust = {};   // file-array index -> adjustments object
     var stagedUrls = [];      // parallel array of object URLs, revoked on close/replace
-    function revokeStaged() { stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); stagedUrls = []; }
+    function revokeStaged() {
+      stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); stagedUrls = [];
+      // openModal() calls this onClose on EVERY close path (×, Cancel, backdrop
+      // click, and a programmatic m.close() after a successful upload), so this
+      // is the one place that reliably clears the guard whichever way it closed.
+      _uploadModalOpen = false;
+    }
     var html =
       '<div class="pd-modal-header"><h3>Add media</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +

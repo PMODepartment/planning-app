@@ -320,14 +320,26 @@ window.IssuesLessons = (function () {
 
     await loadProjects();
     wire();
-    syncChrome();
+    // ⚠️ REAL BUG FIXED HERE — this used to be a bare `syncChrome();` call, on the
+    // (false) assumption that syncChrome() "paints the tab strip from `screen`".
+    // It doesn't: syncChrome() only toggles the +New button / view-toggle, never the
+    // il-screen-* `hidden` attributes, the `.il-tab.active` class, or the title —
+    // ONLY switchScreen() does that. So a `?screen=issues` deep link (My Work's row
+    // click; also the sidebar's "Meetings" entry with `?screen=mom`) set the `screen`
+    // VARIABLE above but left the DOM showing the default Minutes-of-Meeting screen
+    // (still un-hidden, and empty because render() never draws into it for a
+    // different screen) while the actually-requested screen's content rendered
+    // correctly into a `<div>` that stayed `hidden` — i.e. "nothing shows up" for
+    // whatever screen was actually asked for. switchScreen() also calls syncChrome()
+    // and render() itself, so this both fixes the DOM and folds in the old call.
+    switchScreen(screen);
     // Browser-history integration (UI.bindHistoryState, ui.js): without this the
     // Issues/Lessons tab strip never touches the URL, so the browser's native
     // Back button jumps straight past every screen switch to the module
     // launcher. Bound once here (after the ?screen= deep-link above has already
-    // resolved the starting screen); switchScreen() itself does the DOM work, so
-    // it doubles as apply(). Every place that changes `screen` also calls
-    // histScreen.push() once (see wire()'s tab click handler).
+    // been resolved and applied to the DOM by switchScreen()); switchScreen() itself
+    // does the DOM work, so it doubles as apply(). Every place that changes `screen`
+    // also calls histScreen.push() once (see wire()'s tab click handler).
     histScreen = UI.bindHistoryState({
       key: 'il_screen',
       get: function () { return { s: screen }; },

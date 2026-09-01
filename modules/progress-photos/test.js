@@ -384,9 +384,23 @@ eq('worksOf falls back to the legacy singular column pre-migration',
 console.log('\n[3] PPR renamed to Meeting, then to Presentation (2026-08-29 feedback item 3)');
 ok('tab label is Presentations', /data-screen="ppr">Presentations</.test(html));
 ok('primary action is + New Presentation', /\+ New Presentation/.test(html));
-ok('screen title is Presentations', /isPpr \? 'Presentations'/.test(html));
-ok('Plans/Gallery screen titles renamed too (2026-08-29 tab-label pass)',
-   /isBim \? 'Plans' : 'Gallery'/.test(html));
+// ⚠️ Superseded by the punch-list fix for "duplicate tab-name label"
+// (Gallery / Gallery): setScreen() used to overwrite #pp-screen-title with
+// `isPpr ? 'Presentations' : (isBim ? 'Plans' : 'Gallery')`, which repeated
+// exactly what the tab strip right below it already says. The <h1> is now a
+// STATIC "Progress Photos" (never rewritten per screen) and the tab strip
+// alone carries Gallery/Presentations/Plans — asserted here instead. Healthy
+// churn from an intentional change, same convention as every other rename
+// in this file's own history (see the 2026-08-29 PPR→Meeting/Presentation
+// entries), not a regression to chase.
+ok('the module title is now static ("Progress Photos") — setScreen() no longer overwrites #pp-screen-title per screen',
+   /<span class="pp-title-txt" id="pp-screen-title">Progress Photos<\/span>/.test(html) &&
+   /must NOT overwrite #pp-screen-title/.test(html) &&
+   !/document\.getElementById\('pp-screen-title'\)\.textContent =/.test(html));
+ok('…and each screen\'s own name lives ONLY on its tab button now (Gallery / Presentations / Plans), not duplicated in the title too',
+   /data-screen="photos">Gallery<\/button>/.test(html) &&
+   /data-screen="ppr">Presentations<\/button>/.test(html) &&
+   /data-screen="bim">Plans<\/button>/.test(html));
 ok('modal header New Presentation', /'New Presentation' : 'Edit Presentation'/.test(pjs));
 ok('list column header is Presentation Date', /<div>Presentation Date<\/div>/.test(pjs));
 // Strip // comments before asserting on user-facing copy — a stale comment
@@ -596,7 +610,12 @@ console.log('\n[misc] insert().select() returns the new row id');
   // knob with a red ring, deliberately theme-independent since it sits over
   // an arbitrary floor-plan/photo image) join the allow-list on the same
   // basis as the entries already documented above.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.ppr-kpicon\b/;
+  // Punch-list #9: .pp-livebtn.is-live (the Plan/Stack month steppers' new
+  // "Live" jump-back button) is the SAME family as .pp-tab.active/
+  // .pd-btn-primary two lines up — a solid var(--pd-red) fill with white
+  // text, always legible regardless of theme, so it's exempt for the same
+  // reason those two already are.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.ppr-kpicon\b|\.pp-livebtn\.is-live\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -1389,20 +1408,27 @@ console.log('\n[misc] insert().select() returns the new row id');
       // Tower 2 / Floor 2: deliberately NO photo at all.
     ];
     const g = PP._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', null);
-    eq('stackGrid: rows are the distinct ROW-level values, sorted', g.rows.map((r) => r.row), ['Tower 1', 'Tower 2']);
+    // ⚠️ Rows sort NUMERIC-DESCENDING now (stackRowSort, added on main the same
+    // day this fixture was written) — the intended reading for a vertical
+    // building stack is highest floor/tower first, so 'Tower 2' precedes
+    // 'Tower 1'. Columns are untouched (plain ascending .sort()). Updated on
+    // merge (2026-09-01) — this fixture predates stackRowSort and originally
+    // asserted the old ascending order, which is no longer what the shipped
+    // function does.
+    eq('stackGrid: rows are the distinct ROW-level values, sorted numeric-descending (stackRowSort)', g.rows.map((r) => r.row), ['Tower 2', 'Tower 1']);
     eq('stackGrid: columns are the distinct COLUMN-level values, sorted', g.cols, ['Floor 1', 'Floor 2']);
-    eq('stackGrid: Tower 1 / Floor 1 COMBINES both competing photos (item 16 default)', g.rows[0].cells[0].photos.map((p) => p.id).sort(), ['a1', 'a2']);
+    eq('stackGrid: Tower 1 / Floor 1 COMBINES both competing photos (item 16 default)', g.rows[1].cells[0].photos.map((p) => p.id).sort(), ['a1', 'a2']);
     eq('stackGrid: Tower 1 / Floor 1 step-mode field still resolves to the LATEST (a2, not a1) for the opt-in toggle',
-       g.rows[0].cells[0].photo.id, 'a2');
-    eq('stackGrid: Tower 1 / Floor 2 resolves to its one photo', g.rows[0].cells[1].photo.id, 'b1');
-    eq('stackGrid: Tower 2 / Floor 1 resolves to its one photo', g.rows[1].cells[0].photo.id, 'c1');
+       g.rows[1].cells[0].photo.id, 'a2');
+    eq('stackGrid: Tower 1 / Floor 2 resolves to its one photo', g.rows[1].cells[1].photo.id, 'b1');
+    eq('stackGrid: Tower 2 / Floor 1 resolves to its one photo', g.rows[0].cells[0].photo.id, 'c1');
     eq('stackGrid: Tower 2 / Floor 2 (no photo at all) is null, never borrowed from a neighbouring cell',
-       g.rows[1].cells[1].photo, null);
-    eq('stackGrid: Tower 2 / Floor 2 combined list is empty, not null/undefined', g.rows[1].cells[1].photos, []);
+       g.rows[0].cells[1].photo, null);
+    eq('stackGrid: Tower 2 / Floor 2 combined list is empty, not null/undefined', g.rows[0].cells[1].photos, []);
     // As-of cutoff applied through the WHOLE grid, not just one cell (step mode only).
     const gCutoff = PP._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', '2026-01');
     eq('stackGrid with a cutoff: Tower 1 / Floor 1 step-mode falls back to a1 (a2 is in the future relative to the cutoff)',
-       gCutoff.rows[0].cells[0].photo.id, 'a1');
+       gCutoff.rows[1].cells[0].photo.id, 'a1');
     eq('stackGrid: a project with only ONE level collapses columns to a single shared bucket',
        PP._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
   })();
@@ -1420,7 +1446,11 @@ console.log('\n[misc] insert().select() returns the new row id');
       { location: { 'lvl-tower': 'Tower 2', 'lvl-floor': '9th Floor' } },
     ];
     const g = PP._stackGrid(levels, [], 'lvl-tower', 'lvl-floor', null, schedActs);
-    eq('with ZERO photos, rows still come from the SCHEDULE\'s own distinct values (the skeleton)', g.rows.map((r) => r.row), ['Tower 1', 'Tower 2']);
+    // ⚠️ Rows sort NUMERIC-DESCENDING (stackRowSort, added on main the same day
+    // this fixture was written) — 'Tower 2' precedes 'Tower 1'. Columns are
+    // unaffected (plain ascending .sort(), and '10th Floor' < '9th Floor'
+    // lexicographically either way). Updated on merge (2026-09-01).
+    eq('with ZERO photos, rows still come from the SCHEDULE\'s own distinct values (the skeleton)', g.rows.map((r) => r.row), ['Tower 2', 'Tower 1']);
     eq('…and so do the columns', g.cols, ['10th Floor', '9th Floor']);
     eq('every cell is honestly empty (no photo), never invented', g.rows[0].cells[0].photo, null);
     eq('…and the combined-photos list for that cell is [], not null/undefined', g.rows[0].cells[0].photos, []);
@@ -1430,8 +1460,8 @@ console.log('\n[misc] insert().select() returns the new row id');
     // just because the schedule hasn't caught up.
     const photosOnly = [{ id: 'x1', taken_at: '2026-01-01', location_values: { 'lvl-tower': 'Tower 3', 'lvl-floor': '9th Floor' } }];
     const g2 = PP._stackGrid(levels, photosOnly, 'lvl-tower', 'lvl-floor', null, schedActs);
-    eq('the union includes a photo-only location the schedule has never carried', g2.rows.map((r) => r.row), ['Tower 1', 'Tower 2', 'Tower 3']);
-    eq('…and that photo is findable in its own (schedule-unknown) cell', g2.rows[2].cells[1].photo.id, 'x1');
+    eq('the union includes a photo-only location the schedule has never carried', g2.rows.map((r) => r.row), ['Tower 3', 'Tower 2', 'Tower 1']);
+    eq('…and that photo is findable in its own (schedule-unknown) cell', g2.rows[0].cells[1].photo.id, 'x1');
   })();
 
   // Genuine execution of the cluster grouping (grid-snap by ~5% cell, ported
@@ -2724,6 +2754,48 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var newHalfW = Math\.max\(4, Math\.min\(88, Math\.abs\(diff\)\)\);/.test(bmjs) && /var newReach = Math\.max\(0\.02,/.test(bmjs));
   ok('resize/rotate DOM updates during a drag are IN-PLACE attribute writes (setAttribute\'d), never innerHTML — replacing the DOM mid-gesture would drop the pointer capture the drag itself just set up',
      /function paintConeLive\(cur\)/.test(bmjs) && /wedge\.setAttribute\('d',/.test(bmjs));
+
+  // =========================================================== [40] =========
+  // Task #9 (punch-list): Plan view and Stack view's month steppers each
+  // gain an explicit "Live" button, matching Project Schedule's Vertical
+  // Stacking timeline (`data-tllive`, styled `.on`/here `.is-live` when
+  // scrubbed back to the latest month, "Back to recorded progress"). Both
+  // steppers already used the identical null-is-live/value-is-scrubbed
+  // convention (`planMonth`/`stackMonth`) — this only adds the one-click
+  // way back, it doesn't change what null already meant.
+  // ⚠️ Renumbered from [37] on merge — origin/main had independently used
+  // that number (and [38]/[39]) for its own, unrelated, later sections.
+  console.log('\n[40] Plan/Stack month steppers gain an explicit "Live" jump-back button (Project Schedule Vertical Stacking parity)');
+
+  ok('Plan view\'s month stepper renders a Live button, styled is-live exactly when planMonth is null (the existing "latest month" state)',
+     /'<button class="pd-btn pp-livebtn' \+ \(planMonth == null \? ' is-live' : ''\) \+ '" id="pp-plan-mlive" title="Back to the latest month">Live<\/button>' \+/.test(mjs));
+  ok('…and it sits in the SAME month bar as prev\\/next\\/play, after Play — one control cluster, not a second row',
+     /pp-plan-mnext"[\s\S]{0,100}pp-plan-mplay">[\s\S]{0,200}pp-plan-mlive"/.test(mjs));
+  ok('wirePlanView(): clicking Live stops any running month-play timer FIRST, then snaps planMonth back to null (never leaves a timer ticking toward a month that no longer matters) and re-renders',
+     /if \(\$\('pp-plan-mlive'\)\) \$\('pp-plan-mlive'\)\.onclick = function \(\) \{\s*if \(planMonth == null\) return;[^\n]*\s*stopPlanMonthPlay\(\);\s*planMonth = null; render\(\);\s*\};/.test(mjs));
+  ok('…and clicking Live while already live is a genuine no-op (guarded, doesn\'t stop a timer or force an unnecessary render)',
+     /if \(planMonth == null\) return;   \/\/ already live/.test(mjs));
+
+  ok('Stack view\'s step-mode month stepper renders the same Live button, styled is-live exactly when stackMonth is null',
+     /'<button class="pd-btn pp-livebtn' \+ \(stackMonth == null \? ' is-live' : ''\) \+ '" id="pp-stack-mlive" title="Back to the latest month">Live<\/button>' \+/.test(mjs));
+  ok('…placed after Play, before the "as of the end of this month" hint — same cluster shape as Plan view',
+     /id="pp-stack-mplay">[\s\S]{0,120}'<button class="pd-btn pp-livebtn' \+ \(stackMonth == null \? ' is-live' : ''\) \+ '" id="pp-stack-mlive"[\s\S]{0,120}as of the end of this month/.test(mjs));
+  ok('wireStackView(): clicking Live stops the Stack play timer first, then snaps stackMonth back to null and re-renders — only wired while step mode is actually on',
+     /if \(\$\('pp-stack-mlive'\)\) \$\('pp-stack-mlive'\)\.onclick = function \(\) \{\s*if \(stackMonth == null\) return;[^\n]*\s*stopStackPlay\(\);\s*stackMonth = null; render\(\);\s*\};/.test(mjs));
+  ok('…that wiring lives inside the `if (stackStepMode) { ... }` block, alongside mprev\\/mnext\\/mplay — combine mode never wires a stepper it doesn\'t render',
+     (function () {
+       const m = /function wireStackView\(\) \{([\s\S]*?)\n  \}/.exec(mjs);
+       if (!m) return false;
+       const stepBlock = /if \(stackStepMode\) \{([\s\S]*?)\n\s*\} else \{/.exec(m[1]);
+       return !!stepBlock && /pp-stack-mlive/.test(stepBlock[1]) && /pp-stack-mprev/.test(stepBlock[1]);
+     })());
+
+  ok('module.css: .pp-livebtn / .is-live are defined (a solid brand-red fill + white text — same fixed-background exemption from the dark-mode #fff audit as .pp-tab.active / .pd-btn-primary)',
+     /\.pp-livebtn \{ padding: 4px 12px; font-size: 12px; \}/.test(cssFile) &&
+     /\.pp-livebtn\.is-live \{ background: var\(--pd-red\); border-color: var\(--pd-red\); color: #fff;/.test(cssFile));
+
+  ok('the two new ids (pp-plan-mlive / pp-stack-mlive) are each referenced exactly 3 times in module.js — once rendered, twice in the wiring ($(id) guard + $(id).onclick, the same shape every sibling stepper button already uses) — never a stray 4th reference suggesting a leftover or a duplicate',
+     (mjs.match(/pp-plan-mlive/g) || []).length === 3 && (mjs.match(/pp-stack-mlive/g) || []).length === 3);
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

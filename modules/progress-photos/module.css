@@ -236,10 +236,22 @@
 .pp-iconbtn.pp-del:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 
 /* ---- Gallery view -------------------------------------------------------- */
+/* --pp-tile-min/--pp-tile-h are set from JS (applyTileScale(), module.js) on
+   #pp-view as the tile-size slider moves; the px fallbacks here are the
+   ORIGINAL fixed tile size, so the rules degrade correctly if the control's
+   markup is ever missing (JS disabled, older cached HTML, etc). */
 .pp-gallery {
   display: grid; gap: 14px;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--pp-tile-min, 290px), 1fr));
 }
+/* Tile-size slider, in the list bar beside Group by — small icon bookends
+   showing which end of the drag is smaller/larger, never their own buttons. */
+.pp-tilesizefield {
+  display: inline-flex; align-items: center; gap: 5px; color: var(--pd-muted);
+}
+.pp-tilesizefield input[type=range] { width: 90px; accent-color: var(--pd-red); }
+.pp-tilesizefield span:first-child { flex: none; }
+.pp-tilesizefield span:last-child { flex: none; color: var(--pd-ink); }
 /* Tile view is the PHOTO ONLY — no caption table, no inline action icons
    (2026-08-28 owner feedback). Details + download/view/edit/delete all live in
    the lightbox, opened by clicking the tile. */
@@ -282,9 +294,9 @@
 .pp-pinpreview-zoom { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
 .pp-cardimg { position: relative; background: var(--pd-bg); }
 .pp-cardphoto {
-  width: 100%; height: 210px; object-fit: cover; display: block; cursor: zoom-in;
+  width: 100%; height: var(--pp-tile-h, 210px); object-fit: cover; display: block; cursor: zoom-in;
 }
-.pp-cardimg .pp-noimg { height: 210px; }
+.pp-cardimg .pp-noimg { height: var(--pp-tile-h, 210px); }
 
 /* Video thumbnails (18-item list item 4) — same box as a photo thumb, a
    muted first-frame <video> in place of <img>, with a plain CSS play
@@ -1001,6 +1013,13 @@
 .pp-planfloorlabel { font-size: 12.5px; font-weight: 600; color: var(--pd-muted); }
 .pp-planfloorbar .pd-select { width: auto; min-width: 140px; }
 .pp-planmonthbar strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+/* "Live" jump-back button (Plan + Stack month steppers) — same on/off shape
+   as .pp-tab.active / .pd-btn-primary: a solid brand-red fill with white
+   text is always legible regardless of theme, so it's exempt from the
+   dark-mode #fff audit like those two. */
+.pp-livebtn { padding: 4px 12px; font-size: 12px; }
+.pp-livebtn.is-live { background: var(--pd-red); border-color: var(--pd-red); color: #fff; cursor: default; }
+.pp-livebtn.is-live:hover { background: var(--pd-red); border-color: var(--pd-red); }
 .pp-planstage { position: relative; }
 .pp-planimgwrap { position: relative; width: 100%; height: 0; }
 .pp-planimgwrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
@@ -1257,7 +1276,17 @@
 .pp-loctree { max-height: 360px; overflow-y: auto; }
 
 /* ---- Item 4: iOS-style markup toolbar rebuild ----------------------------- */
-.pp-mk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+/* Two groups on one row: drawing tools left (.pp-mk-toolgroup, grows/wraps),
+   Undo/Clear all right (.pp-mk-actiongroup, margin-left:auto pins it to the
+   trailing edge). The divider is the bar's OWN border-bottom, so it is always
+   full width — left-aligned and filling to the right — regardless of how much
+   the two groups above it actually use. */
+.pp-mk-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--pd-line);
+}
+.pp-mk-toolgroup { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
+.pp-mk-actiongroup { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; }
 .pp-mk-tools { display: flex; flex-wrap: wrap; gap: 3px; background: var(--pd-bg); border-radius: 999px; padding: 3px; }
 /* Fourth round, item 3: "use icons instead" of text labels — the button is
    now a plain square (was inline-flex + gap, sized for an icon+label pair

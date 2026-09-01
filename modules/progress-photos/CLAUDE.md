@@ -2,6 +2,62 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Plan/Stack month steppers gain an explicit "Live" button (2026-09-01)
+
+Owner's punch-list item #9 ("Build a Stack view like Project Schedule's vertical-stacking… with the
+`‹ › play/Live` timeline scrub-bar UX, applied to Plan view too") — the Stack view and the Plan view
+already existed (see the 2026-08-29/30 entries below) with month-stepping infrastructure that
+matched Project Schedule's Vertical Stacking timeline in every respect **except the explicit "Live"
+button**: both already used the identical `null` = latest/live, a `'YYYY-MM'` string = scrubbed
+convention Project Schedule's own `_vsAsOf` established, and both already had `‹`/`›`/Play. Confirmed
+Project Schedule's exact reference markup (`modules/project-schedule/index.html`'s `.ps-vs-tlbtns`,
+`data-tllive`, styled `.on` when `_vsAsOf == null`, tooltip "Back to recorded progress") before
+building the equivalent here.
+
+- **Plan view**: `.pp-planmonthbar` gains a `pp-plan-mlive` button after Play, styled `is-live`
+  (a solid brand-red fill, matching `.pp-tab.active`) exactly when `planMonth == null`. Clicking it
+  stops the running month-play timer first (never leaves it ticking toward a month that no longer
+  matters, the same discipline `mnext`/`floorplay`'s mutual-exclusion already follows), snaps
+  `planMonth` back to `null`, and re-renders. A click while already live is a genuine no-op — it
+  neither stops a timer nor forces a redundant render.
+- **Stack view**: the identical button (`pp-stack-mlive`) in the step-mode stepper only — wired
+  inside the same `if (stackStepMode) { ... }` block as `mprev`/`mnext`/`mplay`, since combine mode
+  (the default; step-through is the opt-in checkbox) has no month cutoff to jump back to. Same
+  guard/stop-timer/snap-to-null/no-op-if-already-live shape as Plan view.
+- ⚠️ **Deliberately NOT added anywhere else that reads `null`-is-live** — `renderStackView`'s combine
+  mode, `renderPlanView`'s floor stepper, and Project Schedule's own timeline all keep whatever "Live"
+  affordance (or lack of one) they already had; this only closes the one gap the punch-list named.
+- New shared `.pp-livebtn`/`.pp-livebtn.is-live` CSS. ⚠️ `is-live`'s `#fff`-on-`var(--pd-red)` pairing
+  joins this file's own documented dark-mode `#fff` allow-list on the exact same basis as
+  `.pp-tab.active`/`.pd-btn-primary` — a solid brand-red fill with white text, always legible
+  regardless of theme, not a light surface needing a dark override.
+
+**Verified: 612/612 checks green** (was 607 — 5 new for this item), via `test.js`'s own established
+convention for this class of DOM-rendering function: structural regex assertions against the shipped
+`mjs`/`cssFile` source (genuine EXECUTION of `renderPlanView`/`wirePlanView`/`renderStackView`/
+`wireStackView` isn't practical without driving the module's full `init()`/auth/project-load chain,
+which is why the 2026-08-30 entry below verified the SAME two functions' Map/Stack relocation
+structurally too — not a lower bar invented for this item). Confirmed: the button renders in the
+right bar with the right conditional class, in the right position (after Play, same cluster as
+prev/next); the click handler stops the timer, snaps to `null`, no-ops if already live; the Stack
+wiring lives inside the step-mode-only guard so combine mode never wires a stepper it doesn't render;
+each new id is referenced exactly 3 times (rendered once, wired via the same `$(id)` guard +
+`$(id).onclick` shape every sibling stepper button already uses — never a stray 4th reference); the
+CSS rule exists and is on the `#fff` allow-list.
+
+⚠️ **Two PRE-EXISTING test failures found and fixed while running the suite, both from an earlier
+(already-shipped, unrelated) fix in this same punch-list — not caused by this change.** Punch-list
+item #7 ("remove duplicate tab-name label — Gallery / Gallery") had made `index.html`'s `<h1>` a
+STATIC "Progress Photos" and removed `setScreen()`'s per-screen title overwrite (the tab strip right
+below it already names Gallery/Presentations/Plans), but the two `test.js` assertions asserting the
+OLD dynamic-title strings (`isPpr ? 'Presentations'`, `isBim ? 'Plans' : 'Gallery'`) were never
+updated to match — healthy churn from an intentional change, the same convention this file's own
+2026-08-29 rename entries already establish for exactly this situation. Rewritten to assert the
+current, correct behaviour instead of the retired one.
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module; no live click-through
+of the button's real click/render cycle in a browser, only structural source verification.
+
 ## 3D reconstruction CANCELLED — both Edge Functions undeployed, code shelved intact (2026-09-01)
 
 Owner: *"Let's cancel the runpod feature since it requires a subscription."* RunPod's GPU service is
