@@ -350,9 +350,12 @@ window.PPR = (function () {
 
   // The topbar tools follow the Presentations screen's own state: "+ New Presentation"
   // and "Templates" belong to the list, "Presentations list" (back) belongs to the
-  // slides/templates views, "+ New template" belongs to the templates view.
-  // `visible` is false while the Photos screen is showing, which hides all of
-  // them — they never share a row with each other, so no divider is needed.
+  // templates view now (the slides view carries its own in-header back button,
+  // #ppr-slide-back, rendered first inside .ppr-slidehead — owner feedback:
+  // Back Button > Presentation Details > action buttons), "+ New template"
+  // belongs to the templates view. `visible` is false while the Photos screen
+  // is showing, which hides all of them — they never share a row with each
+  // other, so no divider is needed.
   var toolsVisible = false;   // last-known value passed to syncTools by index.html's setScreen
   function syncTools(visible) {
     toolsVisible = visible;
@@ -362,7 +365,7 @@ window.PPR = (function () {
     // Same swap-in shape as the Gallery's own syncChrome: exactly one of
     // "the normal list tools" or "the selection batch tools" is ever visible.
     var hasSel = visible && onList && selIds.length > 0;
-    if (back) back.style.display = (visible && (screen === 'slides' || onTmpl)) ? '' : 'none';
+    if (back) back.style.display = (visible && onTmpl) ? '' : 'none';
     if ($('ppr-topfilttoggle')) $('ppr-topfilttoggle').style.display = (visible && onList && !hasSel) ? '' : 'none';
     if (neu) neu.style.display = (visible && onList && canWrite && !hasSel) ? '' : 'none';
     if (tmplBtn) tmplBtn.style.display = (visible && onList && !hasSel) ? '' : 'none';
@@ -835,6 +838,14 @@ window.PPR = (function () {
 
     var header =
       '<div class="ppr-slidehead">' +
+        // Owner feedback: "Back to List" belongs BEFORE the presentation
+        // details, not tucked into the topbar (where it used to sit as a
+        // breadcrumb beside the screen tabs — see index.html's syncTools,
+        // now scoped to the Templates screen only). Rendered as the FIRST
+        // child of this header so the reading order is exactly
+        // Back Button > Presentation Details > action buttons.
+        '<button class="pp-crumbback ppr-slideback" id="ppr-slide-back" title="Back to the presentation list">' +
+          '<span data-ico="arrowLeft" data-ico-size="14"></span> Presentations list</button>' +
         // Item 23: the Project field is gone — it's redundant (the topbar
         // project selector already names it, on every screen of this module).
         '<div class="ppr-hfield"><label>Presentation Date</label><span>' + esc(longDate(p.ppr_date)) + '</span></div>' +
@@ -848,27 +859,36 @@ window.PPR = (function () {
         // row's own icons to Download/Preview/Archive only) — this is the
         // screen you're already on when you'd want to rename/re-date it or
         // remove it entirely, so nothing was actually lost.
-        (canWrite ? '<span class="ppr-hfield ppr-hspacer">' +
+        '<span class="ppr-hfield ppr-hspacer">' +
           // Slide-sorter (18-item list item 12) — only worth offering with
           // something to reorder; a 1-slide (or empty) presentation has no
           // possible order to change. Item 20: the icon is now a swap glyph
           // (was a generic "layout" icon that read as unrelated to reordering).
-          (s.length > 1 ? '<button class="pp-iconbtn" id="ppr-sort" title="Reorder slides">' +
+          // It reorders (a write), so it's canWrite-gated like Edit/Delete.
+          (canWrite && s.length > 1 ? '<button class="pp-iconbtn" id="ppr-sort" title="Reorder slides">' +
             '<span data-ico="swap" data-ico-size="15"></span></button>' : '') +
           // Sixth round item 6: "no need for the full size preview button" —
-          // this button opened a modal reproducing the SAME pane already on
+          // that button opened a modal reproducing the SAME pane already on
           // screen (you're already viewing this exact slide full-size while
-          // editing it). The list screen's own row-level "Preview" action
-          // (openPreviewModal, opened without entering the editor at all)
-          // is a different, still-useful feature and is untouched.
+          // editing it), and was removed. This is a DIFFERENT feature: the
+          // list row's own "Preview" (openPreviewModal, all of the
+          // presentation's slides at once) had no way back INTO it once you
+          // opened the presentation to edit it — restored here so it's
+          // reachable from both places, not just the list. Preview and
+          // Download are reads (never gated by canWrite, same as the list
+          // row's own Preview/Download always were); Archive/Edit/Delete
+          // mutate the record and stay writer-only.
+          '<button class="pp-iconbtn" id="ppr-pres-preview" title="Preview this presentation\'s slides">' +
+            '<span data-ico="eye" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn" id="ppr-pres-dl" title="Download this presentation">' +
             '<span data-ico="download" data-ico-size="15"></span></button>' +
-          '<button class="pp-iconbtn" id="ppr-pres-arch" title="' + (p.archived ? 'Restore from archive' : 'Archive presentation') + '">' +
+          (canWrite ? '<button class="pp-iconbtn" id="ppr-pres-arch" title="' + (p.archived ? 'Restore from archive' : 'Archive presentation') + '">' +
             '<span data-ico="folder" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn" id="ppr-pres-edit" ' +
           'title="Edit presentation details"><span data-ico="pencil" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn pp-del" id="ppr-pres-del" title="Delete presentation">' +
-          '<span data-ico="trash" data-ico-size="15"></span></button></span>' : '') +
+          '<span data-ico="trash" data-ico-size="15"></span></button>' : '') +
+        '</span>' +
       '</div>';
 
     if (!s.length) {
@@ -926,11 +946,17 @@ window.PPR = (function () {
   }
 
   function wirePresActs(p) {
+    // Back button now lives INSIDE the slide header itself (owner feedback:
+    // Back Button > Presentation Details > action buttons) rather than the
+    // topbar's own #ppr-back, which is now scoped to the Templates screen
+    // only (see index.html/syncTools). Same behaviour #ppr-back always had.
+    if ($('ppr-slide-back')) $('ppr-slide-back').onclick = function () { screen = 'list'; render(); };
     if ($('ppr-pres-edit')) $('ppr-pres-edit').onclick = function () { openPprForm(p); };
     if ($('ppr-pres-del')) $('ppr-pres-del').onclick = function () { removePpr(p); };
     if ($('ppr-sort')) $('ppr-sort').onclick = function () { openSlideSorter(p); };
     if ($('ppr-pres-arch')) $('ppr-pres-arch').onclick = function () { toggleArchive(p); };
     if ($('ppr-pres-dl')) $('ppr-pres-dl').onclick = function () { openDownloadChoice(p); };
+    if ($('ppr-pres-preview')) $('ppr-pres-preview').onclick = function () { openPreviewModal(p); };
   }
 
   // ------------------------------------------------------ slide-sorter (item 12) ---

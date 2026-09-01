@@ -575,6 +575,7 @@ window.ProgressPhotos = (function () {
     }
     $('pp-refresh').onclick = function () { load(); };
     if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
+    if ($('pp-genthumbs')) $('pp-genthumbs').onclick = function () { backfillThumbnails(); };
     wireSelBar();
 
     document.addEventListener('keydown', function (e) {
@@ -1060,6 +1061,7 @@ window.ProgressPhotos = (function () {
     // versa), so this runs unconditionally rather than only on the final
     // "has photos" path.
     renderMediaStrip();
+    syncGenThumbsBtn();
 
     // The count + view toggle live in the static list bar (Drawing Register's
     // .dr-listbar pattern), so they don't get rebuilt on every render.
@@ -2691,6 +2693,26 @@ window.ProgressPhotos = (function () {
   // to `color` when absent so every object saved BEFORE this feature
   // (single colour for both) keeps rendering exactly as it always did.
   function fillColorOf(o) { return o.fillColor || o.color || MARKUP_COLORS[0]; }
+  // ⚠️ Real bug fixed ("add text is not working"/text hard to read): a newly
+  // created text object stores `fill: fillOn`, and `fillOn` defaults to the
+  // boolean `false` (the toolbar's own "Fill: On" checkbox starts unticked)
+  // — NOT `undefined`. drawMarkupObjects' own three-state design only ever
+  // meant `o.fill === false` as "the planner EXPLICITLY turned the box off"
+  // (giving fully transparent text with no backing at all), reserving that
+  // for an object someone had already selected and deliberately unticked;
+  // "nobody has touched Fill yet" was meant to read as `undefined` and fall
+  // back to a light, readable default backing. Because every freshly-typed
+  // text box got the explicit `false` instead, it ALWAYS rendered with zero
+  // background — easy to lose against a busy photo, which is what made
+  // typing text look like it silently "did nothing". One function computes
+  // the box colour so the live-typing overlay (openTextEditAt) and the
+  // final canvas render (drawMarkupObjects) can never show two different
+  // answers for the same object — null means "no box at all".
+  function textBoxFillColor(o) {
+    if (o.fill === false) return null;
+    if (o.fill) return hexToRgba(fillColorOf(o), (o.fillAlpha == null ? 0.85 : o.fillAlpha));
+    return 'rgba(255,255,255,.85)';
+  }
   // Fifth round item 6 — rotation is a plain degrees field on EVERY object
   // type, applied as a canvas transform around the object's own bounding-box
   // centre (never baked into the stored coordinates) so a rotated shape's
@@ -2794,19 +2816,32 @@ window.ProgressPhotos = (function () {
         // optional box FILL reusing the same fillColor/fillAlpha fields every
         // fillable shape already has (item 2's grouping applies to text too),
         // instead of a fixed white-ish box nobody could turn off or recolour.
+        // Owner feedback ("format text and format textbox"): Bold/Italic are
+        // now real per-object fields (default bold:true — matches the fixed
+        // 700-weight every text object drawn before this had), and the box
+        // can carry its own BORDER (o.boxBorder), stroked with this object's
+        // own colour/width — "Line" now formats the textbox, not just the
+        // text's own outline (there is none — canvas fillText has no stroke
+        // concept here), giving the box a second, independent way to stand
+        // out from a busy photo besides its fill.
         var fsz = o.fontSize || 18;
-        ctx.font = '700 ' + fsz + 'px Montserrat, Arial, sans-serif';
+        var fWeight = o.bold === false ? '400' : '700';
+        var fStyle = o.italic ? 'italic ' : '';
+        ctx.font = fStyle + fWeight + ' ' + fsz + 'px Montserrat, Arial, sans-serif';
         ctx.textBaseline = 'top';
         var tx = o.x * w, ty = o.y * h;
         var metrics = ctx.measureText(o.text || '');
         var padX = Math.max(3, fsz * 0.18), padY = Math.max(2, fsz * 0.12);
         var boxW = metrics.width + padX * 2, boxH = fsz + padY * 2;
-        if (o.fill !== false) {
-          // Default ON (text is unreadable over a busy photo with no box at
-          // all) at a light, mostly-opaque backing — o.fill === false is the
-          // explicit "no box" state once a planner turns the Fill checkbox off.
-          ctx.fillStyle = o.fill ? hexToRgba(fillColorOf(o), (o.fillAlpha == null ? 0.85 : o.fillAlpha)) : 'rgba(255,255,255,.85)';
-          ctx.fillRect(tx - padX, ty - padY, boxW, boxH);
+        // The two functions that decide what this box looks like — colour
+        // (textBoxFillColor) and whether it exists at all — must NEVER
+        // disagree with what the live-typing overlay (openTextEditAt) shows
+        // for the SAME object, so both read the one shared helper.
+        var boxFill = textBoxFillColor(o);
+        if (boxFill) { ctx.fillStyle = boxFill; ctx.fillRect(tx - padX, ty - padY, boxW, boxH); }
+        if (o.boxBorder) {
+          ctx.strokeStyle = col; ctx.lineWidth = o.width || 2;
+          ctx.strokeRect(tx - padX, ty - padY, boxW, boxH);
         }
         ctx.fillStyle = col;
         ctx.fillText(o.text || '', tx, ty);
@@ -3027,6 +3062,14 @@ window.ProgressPhotos = (function () {
     var objs = (initialMarkup || []).map(function (o) { return Object.assign({}, o); }); // work on a copy — Cancel must leave the original untouched
     var tool = 'select', color = MARKUP_COLORS[0], fillColor = MARKUP_COLORS[0], iconChoice = 'camera';
     var strokeWidth = MARKUP_WIDTHS[0], fillOn = false, fillAlpha = 0.3, fontSize = 18;
+    // "Format text and format textbox" — Bold/Italic style the TEXT itself;
+    // Border draws a stroke around the textbox (using the same Line colour/
+    // weight the box's Fill already borrows the Fill group's colour/alpha
+    // from), a second, independent way for the box to stand out besides
+    // its fill. Defaults match what every text object drawn before this
+    // feature always looked like (bold, no italic, no border) so nothing
+    // already-saved changes appearance.
+    var textBold = true, textItalic = false, textBorder = false;
     var selectedIdx = -1;   // item 3: the currently grabbed object, -1 = none
     var undone = []; // redo stack (fifth round item 3) — cleared on any new edit, same as before
     var history = [objs.map(function (o) { return Object.assign({}, o); })];
@@ -3106,9 +3149,17 @@ window.ProgressPhotos = (function () {
             '<input type="range" id="pp-mk-fillalpha" min="0" max="100" value="' + Math.round(fillAlpha * 100) + '" title="Fill transparency" />' +
           '</div>' +
           // Fifth round item 5: text size, editable independently of line weight.
+          // Issue 4 follow-up: "format text and format textbox" — Bold/Italic
+          // style the TEXT itself, Border toggles a stroke on the textbox
+          // (the fill colour/transparency for the box are handled by the
+          // shared Fill group above, via fillableType() including 'text').
           '<div class="pp-mk-group pp-mk-group-text" id="pp-mk-textrow" style="display:none;">' +
-            '<span class="pp-mk-grouplabel">Text size</span>' +
+            '<span class="pp-mk-grouplabel">Text</span>' +
             '<input type="range" id="pp-mk-fontsize" min="10" max="48" value="' + fontSize + '" title="Text size" />' +
+            '<button type="button" class="pd-btn pp-mk-toggle" id="pp-mk-bold" title="Bold" style="font-weight:700;">B</button>' +
+            '<button type="button" class="pd-btn pp-mk-toggle" id="pp-mk-italic" title="Italic" style="font-style:italic;">I</button>' +
+            '<label class="pp-mk-checklabel" title="Draw a border around the text box">' +
+              '<input type="checkbox" id="pp-mk-textborder" /> Border</label>' +
           '</div>' +
         '</div>' +
         '<div class="pp-mk-actiongroup">' +
@@ -3165,8 +3216,20 @@ window.ProgressPhotos = (function () {
     }
     function syncTextRow() {
       var el = $('pp-mk-textrow'); if (!el) return;
-      var showFor = selectedIdx >= 0 ? objs[selectedIdx].type : tool;
+      var sel = selectedIdx >= 0 ? objs[selectedIdx] : null;
+      var showFor = sel ? sel.type : tool;
       el.style.display = showFor === 'text' ? '' : 'none';
+      if (showFor !== 'text') return;
+      // Reflects either the SELECTED text object's own formatting, or (with
+      // nothing selected) the defaults the NEXT new text object will get —
+      // same "selection wins, else the default" convention as the color/fill
+      // controls elsewhere in this toolbar.
+      var b = sel ? sel.bold !== false : textBold;
+      var i = sel ? !!sel.italic : textItalic;
+      var bd = sel ? !!sel.boxBorder : textBorder;
+      if ($('pp-mk-bold')) $('pp-mk-bold').classList.toggle('active', b);
+      if ($('pp-mk-italic')) $('pp-mk-italic').classList.toggle('active', i);
+      if ($('pp-mk-textborder')) $('pp-mk-textborder').checked = bd;
     }
     function syncControlsFromSelection() {
       if (selectedIdx < 0) return;
@@ -3178,6 +3241,8 @@ window.ProgressPhotos = (function () {
       if ($('pp-mk-fillon')) $('pp-mk-fillon').checked = !!o.fill;
       if ($('pp-mk-fillalpha')) $('pp-mk-fillalpha').value = Math.round((o.fillAlpha == null ? 0.3 : o.fillAlpha) * 100);
       if ($('pp-mk-fontsize') && o.type === 'text') $('pp-mk-fontsize').value = o.fontSize || 18;
+      // Bold/Italic/Border are reflected inside syncTextRow() itself (it
+      // reads `objs[selectedIdx]` directly), so nothing further needed here.
       syncFillRow(); syncTextRow();
     }
     // Cancels an in-progress, not-yet-finished polygon (e.g. the planner
@@ -3221,7 +3286,16 @@ window.ProgressPhotos = (function () {
       textEl.style.top = (o.y * canvas.height) + 'px';
       textEl.style.fontSize = (o.fontSize || 18) + 'px';
       textEl.style.color = o.color || color;
-      textEl.style.background = o.fill === false ? 'transparent' : hexToRgba(fillColorOf(o), o.fill ? (o.fillAlpha == null ? 0.85 : o.fillAlpha) : 0.85);
+      // ⚠️ Unified with the final canvas render via the shared textBoxFillColor()
+      // helper — previously this line's own inline fallback logic disagreed with
+      // drawMarkupObjects' (a colored fill showed WHILE typing, then reverted to
+      // plain white the instant it committed), which is exactly the kind of
+      // "looks broken" mismatch behind the "add text is not working" report.
+      var boxBg = textBoxFillColor(o);
+      textEl.style.background = boxBg || 'transparent';
+      textEl.style.fontWeight = o.bold === false ? '400' : '700';
+      textEl.style.fontStyle = o.italic ? 'italic' : 'normal';
+      textEl.style.border = o.boxBorder ? '2px solid ' + (o.color || color) : 'none';
       textEl.style.display = 'block';
       textEl.onblur = function () { closeTextEdit(true); };
       textEl.onkeydown = function (e) {
@@ -3300,6 +3374,48 @@ window.ProgressPhotos = (function () {
       } else fontSize = v;
     };
     if ($('pp-mk-fontsize')) $('pp-mk-fontsize').onchange = function () { if (selectedIdx >= 0) pushHistory(); };
+    // Issue 4 follow-up: Bold/Italic/Border — same "edit the selected object,
+    // else set the default for the next new one" pattern as color/fill/size.
+    function applyTextStyleLive(idx) {
+      if (editingTextIdx !== idx) return;
+      var o = objs[idx];
+      textEl.style.fontWeight = o.bold === false ? '400' : '700';
+      textEl.style.fontStyle = o.italic ? 'italic' : 'normal';
+      textEl.style.border = o.boxBorder ? '2px solid ' + (o.color || color) : 'none';
+    }
+    if ($('pp-mk-bold')) $('pp-mk-bold').onclick = function () {
+      if (selectedIdx >= 0 && objs[selectedIdx].type === 'text') {
+        var o = objs[selectedIdx];
+        o.bold = o.bold === false ? true : false;
+        this.classList.toggle('active', o.bold !== false);
+        applyTextStyleLive(selectedIdx);
+        pushHistory(); redraw();
+      } else {
+        textBold = !textBold;
+        this.classList.toggle('active', textBold);
+      }
+    };
+    if ($('pp-mk-italic')) $('pp-mk-italic').onclick = function () {
+      if (selectedIdx >= 0 && objs[selectedIdx].type === 'text') {
+        var o = objs[selectedIdx];
+        o.italic = !o.italic;
+        this.classList.toggle('active', !!o.italic);
+        applyTextStyleLive(selectedIdx);
+        pushHistory(); redraw();
+      } else {
+        textItalic = !textItalic;
+        this.classList.toggle('active', textItalic);
+      }
+    };
+    if ($('pp-mk-textborder')) $('pp-mk-textborder').onchange = function () {
+      if (selectedIdx >= 0 && objs[selectedIdx].type === 'text') {
+        objs[selectedIdx].boxBorder = this.checked;
+        applyTextStyleLive(selectedIdx);
+        pushHistory(); redraw();
+      } else {
+        textBorder = this.checked;
+      }
+    };
     $('pp-mk-undo').onclick = function () {
       if (history.length < 2) return;
       undone.push(history.pop());
@@ -3382,7 +3498,22 @@ window.ProgressPhotos = (function () {
         // Fifth round item 5: no more prompt() — a blank object is created
         // and immediately opened for direct on-canvas typing; closeTextEdit
         // removes it again if nothing was ever typed (isNew=true).
-        objs.push({ type: 'text', x: p[0], y: p[1], text: '', color: color, fontSize: fontSize, fill: fillOn, fillColor: fillColor, fillAlpha: fillAlpha });
+        // ⚠️ Real bug fixed: `fill` used to be set to fillOn's boolean value
+        // UNCONDITIONALLY — including an explicit `false` when fillOn was off
+        // (its own default). textBoxFillColor() treats fill===false as "user
+        // explicitly turned the box off", so every brand-new text object was
+        // silently born with NO readable background, contradicting the
+        // documented default-on-white-backing behaviour. Now `fill` is only
+        // ever set when it's actually true; omitted (undefined) lets
+        // textBoxFillColor() apply its default white box, matching what the
+        // live-typing overlay already shows via the same helper.
+        var newTextObj = {
+          type: 'text', x: p[0], y: p[1], text: '', color: color, fontSize: fontSize,
+          fillColor: fillColor, fillAlpha: fillAlpha,
+          bold: textBold, italic: textItalic, boxBorder: textBorder
+        };
+        if (fillOn) newTextObj.fill = true;
+        objs.push(newTextObj);
         selectedIdx = objs.length - 1;
         redraw();
         openTextEditAt(selectedIdx);
@@ -4103,6 +4234,100 @@ window.ProgressPhotos = (function () {
     } catch (e) { return null; }
   }
 
+  // ---------------------------------------------- backfill older thumbnails ---
+  // Item: "fix the slow loading for old photos… manually add the thumbnail
+  // data to the database". Every photo captured SINCE 2026-08-30 already gets
+  // a real, small thumbnail file generated at upload time (thumb_url, see
+  // uploadThumbnailFor above); anything captured BEFORE that shipped has none
+  // and still loads full-resolution on every request — exactly what makes an
+  // older project feel slow. This is a one-time, one-click catch-up: fetch
+  // each such photo's already-uploaded full-resolution file, downscale it the
+  // SAME way a brand-new upload does, upload the small copy, and record its
+  // path — a real, stored preview the app can just fetch from then on,
+  // instead of recomputing/re-downloading the original every time.
+  function photosNeedingThumb() {
+    // Videos already get a free, negligible-cost preview via
+    // <video preload="metadata"> — see thumb()'s own comment — so this is
+    // scoped to real images, matching uploadThumbnailFor's own guard.
+    return rows.filter(function (r) {
+      return r.photo_url && !r.thumb_url && r.media_type !== 'video';
+    });
+  }
+  function syncGenThumbsBtn() {
+    var b = $('pp-genthumbs');
+    if (!b) return;
+    var need = canWrite ? photosNeedingThumb() : [];
+    b.style.display = need.length ? '' : 'none';
+    b.title = need.length
+      ? 'Generate a small, stored preview file for ' + need.length + ' older photo' +
+        (need.length === 1 ? '' : 's') + ' so the gallery loads them faster'
+      : '';
+  }
+  // Uses upsert:true (unlike the fresh-upload path above) — a retry after a
+  // partial prior attempt (thumbnail uploaded, row update failed) must be
+  // able to overwrite the same object path rather than fail on it.
+  async function backfillThumbnailBlob(blob, mainPath) {
+    if (!/^image\//.test(blob.type || '')) return null;
+    try {
+      var thumbBlob = await makeThumbnailBlob(blob);
+      var thumbPath = mainPath + '.thumb.jpg';
+      var res = await sb().storage.from(BUCKET).upload(thumbPath, thumbBlob, { contentType: 'image/jpeg', upsert: true });
+      if (res.error) return null;
+      return thumbPath;
+    } catch (e) { return null; }
+  }
+  async function backfillOneThumbnail(r) {
+    var url = urlOf(r);
+    if (!url) {
+      try {
+        var signed = await sb().storage.from(BUCKET).createSignedUrl(r.photo_url, SIGN_TTL);
+        if (signed.error || !signed.data) return false;
+        url = signed.data.signedUrl;
+      } catch (e) { return false; }
+    }
+    var blob;
+    try {
+      var resp = await fetch(url);
+      if (!resp.ok) return false;
+      blob = await resp.blob();
+    } catch (e) { return false; }
+    var thumbPath = await backfillThumbnailBlob(blob, r.photo_url);
+    if (!thumbPath) return false;
+    var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: { thumb_url: thumbPath } });
+    if (!w.ok) return false;
+    r.thumb_url = thumbPath; // update in place so a re-render sees it immediately
+    return true;
+  }
+  async function backfillThumbnails() {
+    var need = photosNeedingThumb();
+    if (!need.length) { UI.toast('Nothing to generate — every photo already has a thumbnail', 'ok'); return; }
+    var btn = $('pp-genthumbs'), prog = $('pp-genthumbs-prog');
+    if (btn) btn.disabled = true;
+    if (prog) prog.style.display = '';
+    var ok = 0, fail = 0;
+    // Same small capped-concurrency-pool shape as the batch upload save loop
+    // (item 29, 2026-08-29) — a handful of photos at a time, not one at a
+    // time and not all at once.
+    var POOL = 3, nextIdx = 0, doneCount = 0;
+    function updateProg() { if (prog) prog.textContent = 'Generating ' + doneCount + ' of ' + need.length + '…'; }
+    updateProg();
+    async function worker() {
+      while (nextIdx < need.length) {
+        var r = need[nextIdx++];
+        try { if (await backfillOneThumbnail(r)) ok++; else fail++; }
+        catch (e) { fail++; }
+        doneCount++; updateProg();
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(POOL, need.length) }, worker));
+    if (btn) btn.disabled = false;
+    if (prog) prog.style.display = 'none';
+    await signAll();
+    syncGenThumbsBtn();
+    render();
+    UI.toast(ok + ' thumbnail' + (ok === 1 ? '' : 's') + ' generated' + (fail ? (', ' + fail + ' failed') : ''), fail ? 'warn' : 'ok');
+  }
+
   // ---------------------------------------------------- Key Plan (per photo)
   // RETIRED (2026-08-29 feedback item 11): this ad-hoc "upload your own key
   // plan image every time" wizard is superseded by BIM.pinFieldHTML/
@@ -4549,6 +4774,17 @@ window.ProgressPhotos = (function () {
       ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'].forEach(function (id) {
         var el = $(id); if (el) el.style.display = 'none';
       });
+      // ⚠️ Real bug fixed: the "+ Add media" DROPDOWN (#pp-addmenu, a
+      // position:absolute sibling of the #pp-add button, not a child) has
+      // no relationship to index.html's own PHOTO_TOOLS-driven show/hide —
+      // that array only ever toggled the #pp-add BUTTON's display, so a
+      // dropdown left open (hidden=false) when switching away from Gallery
+      // stayed visually open, floating on top of Presentations/Plans with
+      // no trigger button in sight ("dropdown choices for add media is also
+      // showing throughout all progress photos pages"). Force-closed here,
+      // on every screen switch away from Gallery, regardless of whether it
+      // was ever opened.
+      var addMenu = $('pp-addmenu'); if (addMenu) addMenu.hidden = true;
       // #pp-view isn't destroyed when leaving (its screen container is only
       // `hidden`, not emptied), so a checked box or highlighted row from a
       // now-cleared selection would otherwise sit there stale until the
@@ -4751,6 +4987,21 @@ window.ProgressPhotos = (function () {
         rowsArr.forEach(function (r) { out[r.id] = thumbUrlOf(r); });
         return out;
       }).finally(function () { rows = saved; });
-    }
+    },
+    // Test-only hooks for the old-photo thumbnail backfill — genuinely
+    // executes the fetch/downscale/upload/row-update chain against an
+    // injected row, rather than only regex-checking the source, the same
+    // convention as every hook above. `photosNeedingThumb` reads the
+    // closure's own `rows`, so it's save/restored like `_stackGrid`.
+    _photosNeedingThumb: function (rowsArr) {
+      var saved = rows; if (rowsArr) rows = rowsArr;
+      try { return photosNeedingThumb(); } finally { rows = saved; }
+    },
+    _backfillOneThumbnail: function (r) { return backfillOneThumbnail(r); },
+    // Issue 4 follow-up — the "add text is not working" fix: exposes the
+    // shared background-colour decision so the exact fill===false-vs-
+    // undefined bug (and its fix) can be asserted directly, not just
+    // inferred from drawMarkupObjects' rendered calls.
+    _textBoxFillColor: function (o) { return textBoxFillColor(o); }
   };
 })();

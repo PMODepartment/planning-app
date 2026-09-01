@@ -24,10 +24,6 @@
   width: 34px; height: 34px; padding: 0; margin-left: 4px; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.pp-title { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; overflow: hidden; }
-.pp-title .pp-title-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pp-title-ico { color: var(--pd-red); vertical-align: -3px; margin-right: 2px; }
-
 /* Project context — borderless until hover (Drawing Register's .dr-project) */
 .pp-projctx { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
 .pp-project {
@@ -215,12 +211,21 @@
   color: var(--pd-muted); cursor: default;
 }
 /* Fifth round item 7 — markup shows on List/Gallery tiles by default now,
-   not only in the lightbox. inline-block so the wrapper takes exactly the
-   photo's own box (whatever cls's own width/height/aspect-ratio rule gives
-   it) rather than forcing block/full-width in a flex or grid cell; the
-   overlay canvas is pointer-events:none so it never intercepts the tile's
-   own click-to-open. */
-.pp-mkwrap { position: relative; display: inline-block; max-width: 100%; }
+   not only in the lightbox.
+   ⚠️ Toggling markup visibility used to visibly resize the tile: the
+   overlay used `display:inline-block` with no width of its own, and its
+   only child (the <img>) is `width:100%` in Gallery view (.pp-cardphoto) —
+   an inline-block box can't derive its own shrink-to-fit width from a
+   PERCENTAGE-width child (percentages need a definite containing block,
+   which the inline-block itself doesn't have until its width is already
+   known), so the browser fell back to the image's natural/rendered size
+   instead of the grid cell's width the instant it got wrapped. Block +
+   width:100% gives the wrapper the exact same box the bare <img> would
+   have as a direct child, in both Gallery (percentage-width tile) and
+   List (fixed 96x62 .pp-thumb — width:100% on the wrapper doesn't stretch
+   a fixed-width image, so this is safe there too). The overlay canvas is
+   pointer-events:none so it never intercepts the tile's own click-to-open. */
+.pp-mkwrap { position: relative; display: block; width: 100%; }
 .pp-thumbmk { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 /* ---- Icon buttons (used by the lightbox tools + PPR's own row actions) --- */
@@ -675,12 +680,17 @@
 
 /* ---- Slides view --------------------------------------------------------- */
 .ppr-slidehead, .ppr-meta {
-  display: flex; flex-wrap: wrap; gap: 10px 34px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 34px;
   padding: 12px 14px; margin-bottom: 12px;
   border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
   background: var(--pd-card);
 }
 .ppr-meta { margin-top: -4px; }
+/* Back-to-list link, rendered as the FIRST child of .ppr-slidehead (owner
+   feedback: Back Button > Presentation Details > action buttons) — .pp-crumbback
+   is otherwise only used in the topbar, so this reasserts its own gap isn't
+   doubled by the parent's flex `gap` (the button has no margin of its own). */
+.ppr-slideback { flex: 0 0 auto; }
 .ppr-hfield { display: flex; align-items: baseline; gap: 10px; font-size: 13.5px; }
 .ppr-hfield label {
   font-weight: 700; color: var(--pd-ink); margin: 0; white-space: nowrap;
@@ -1345,6 +1355,19 @@
 .pp-mk-fillcolors { display: flex; gap: 4px; }
 .pp-mk-fillcolors .pp-mk-swatch { width: 18px; height: 18px; }
 .pp-mk-group-text input[type=range] { width: 100px; }
+/* Issue 4 follow-up: "format text and format textbox" — Bold/Italic toggle
+   buttons (same active-state language as .pp-mk-width's circular toggles)
+   and a plain Border checkbox, both reflecting either the selected text
+   object or the default the next new one will get (see syncTextRow()). */
+.pp-mk-toggle {
+  width: 26px; height: 26px; padding: 0; border-radius: 4px; border: 1px solid var(--pd-line);
+  background: var(--pd-card); color: var(--pd-ink); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
+}
+.pp-mk-toggle.active { border-color: var(--pd-red); color: var(--pd-red); background: var(--pd-bg); }
+.pp-mk-checklabel {
+  display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--pd-ink); white-space: nowrap;
+}
 .pp-mk-canvaswrap { position: relative; max-width: 100%; touch-action: none; }
 .pp-mk-canvaswrap img { width: 100%; display: block; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
 .pp-mk-canvaswrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
@@ -1377,10 +1400,6 @@
 .pp-inlineplanform .pd-input { flex: 1 1 160px; }
 
 /* ---- Responsive ---------------------------------------------------------- */
-/* Title collapses to icon-only, same breakpoint as Drawing Register */
-@media (max-width: 1150px) {
-  .pp-title-txt { display: none; }
-}
 @media (max-width: 1000px) {
   .ppr-split { grid-template-columns: 1fr; }
   .ppr-pair, .ppr-pair-single { grid-template-columns: 1fr; }
