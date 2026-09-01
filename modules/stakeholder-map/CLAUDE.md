@@ -1,5 +1,52 @@
 # Module: stakeholder-map
 
+## Rebuilt on the OPS register + stakeholder photos (2026-09-01) — fmlozano
+Rebuilt against **`CSF101. OPS. Stakeholder Register. 2026 02 13.xlsx`**. ⚠️ **This SUPERSEDES the
+corporate-BD build documented further down** — that section describes `IMP_GRID`, "Impact ×
+Interest", two views and "no storage bucket (no file uploads)", none of which is true any more.
+
+**Four views:** Register (28 columns behind 6 band groups, `sm_bands`, grouped by 5-PMLC activity) ·
+**Cards** (the faces, grouped by engagement approach) · Impact / Influence (two 4×4 grids) · Criteria.
+
+⚠️⚠️ **THE TWO WORKBOOKS ARE NOT THE SAME TEMPLATE FOR THE PRIORITY GRID.** Both carry a sheet named
+`Risk Assessment Criteria - old` and both `INDEX` into `D328:H332` on it, but the **contents of that
+range differ between the files**. Deriving the stakeholder grid from the risk workbook's table — which
+the shared formula makes very easy to do by accident — is wrong in **6 of 16 cells**, and wrong in the
+direction that *under-states* a stakeholder's priority. `RISK_GRID` and `STK_GRID` are two separate
+transcriptions on purpose. Asserted, with a contrast run, in `../risk-register/test-rcm.js`.
+
+⚠️ **The two stakeholder lookups DISAGREE and both are shown**, because the workbook does: impact 3 ×
+influence 3 is 2nd Priority → "Keep Informed" by the response lookup, and "Manage Closely" by Table 2.
+The register's own hand-typed Approach column follows neither consistently (at (3,3): 23 rows "Keep
+Informed", 2 "Manage Closely") — which is why a stored `mgmt_approach` **overrides** the derived value
+rather than being corrected to it.
+
+**Column reuse is load-bearing and counter-intuitive:** `influence` stores **Impact**, `interest`
+stores **Influence**, both as TEXT `'1'..'4'`. `config.js` declares those column names for the
+dashboard tile, so renaming them breaks the tile silently. Do not "tidy" it.
+
+### Photos (the feature this round was asked for)
+Private bucket **`stakeholder-photos`**; the columns store **paths, not URLs** (a stored URL expires),
+signed in one **batched** `createSignedUrls` per load. Client-side canvas downscale to a display image
+(1024px) **and a real separate thumbnail** (240px). Drop-well + picker + lightbox, initials fallback
+with a deterministic hue.
+⚠️ **Ordering rules, each because the opposite leaves a real mess:** the file is held in memory and
+uploaded **on Save, not on pick** (an abandoned modal leaves no orphan); old objects are deleted
+**only after** the row no longer points at them; deleting a row removes its objects.
+
+**Migration `../../migrations/2026-09-01-stakeholder-register-ops.sql` (USER MUST RUN)** — 27 columns,
+an activity index, the private bucket and 4 storage policies, guarded on `is_writer()`.
+
+**Verified:** covered by `node modules/risk-register/test-rcm.js` (146 checks; the derived helpers are
+sliced out of *this* module.js and executed). Driven in a browser: 0 console errors, all 4 views, live
+derivation matching the workbook (impact 4 × influence 3 → 1st Priority / Manage Closely; gap 1 →
+Enhance → Every two months), and the **whole photo path** — pick → a 300×200 blob preview with
+**nothing uploaded** → Save → main + thumb uploaded to `CSF101/<ts>_<rand>.jpg` → row inserted
+carrying both paths, `created_by` stamped, and **0 derived values persisted**.
+⚠️ **Not verified signed in; the migration has not been run** — so the real `createSignedUrls`, the
+bucket policies and the RLS on the new columns are untested against PostgREST. ⚠️ **No geometry or
+contrast measured** (compositor stalled, `innerWidth: 0`).
+
 ## Live collaboration + offline (Phase 1 & 2) (2026-07-26) — fmlozano
 Same "◑ register" recipe as risk-register: presence (`#sm-presence`), row cursor on Edit-modal open,
 live rows via postgres_changes, offline modal-update via `PDSync.write` + read-cache (`sm:<pid>`).

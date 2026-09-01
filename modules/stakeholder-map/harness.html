@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HARNESS · Stakeholder Register</title>
+  <script src="../../assets/js/theme.js"></script>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <link rel="stylesheet" href="../../assets/css/epc-rcm.css" />
+  <link rel="stylesheet" href="module.css" />
+</head>
+<body>
+  <div class="pd-app">
+    <aside class="pd-sidebar"><div class="pd-brand">Planners Dashboard</div><nav id="side-nav"></nav></aside>
+    <div class="pd-content">
+      <div class="pd-topbar">
+        <h1 class="sm-title" style="margin:0;">
+          <span class="sm-title-ico" data-ico="compass" data-ico-size="20"></span>
+          <span class="sm-title-txt">Stakeholder Register</span>
+        </h1>
+        <div class="sm-projctx"><select class="pd-select sm-project" id="sm-project"></select></div>
+        <div class="sm-tabs" role="tablist">
+          <button class="sm-tab active" data-view="list">Register</button>
+          <button class="sm-tab" data-view="cards">Cards</button>
+          <button class="sm-tab" data-view="grid">Impact / Influence</button>
+          <button class="sm-tab" data-view="criteria">Criteria</button>
+        </div>
+        <div class="sm-topbar-tools">
+          <button class="pd-btn" id="sm-export">Export</button>
+          <button class="pd-btn pd-btn-primary sm-tb-labeled" id="sm-add">+ Add stakeholder</button>
+        </div>
+        <div id="sm-presence"></div><div id="user-bar"></div>
+      </div>
+      <div class="pd-main">
+        <div class="sm-filters" id="sm-filters">
+          <span class="sm-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <select class="pd-select" id="sm-f-activity" style="max-width:230px;"></select>
+          <select class="pd-select" id="sm-f-category" style="max-width:160px;"></select>
+          <select class="pd-select" id="sm-f-sub" style="max-width:180px;" disabled></select>
+          <select class="pd-select" id="sm-f-priority" style="max-width:145px;">
+            <option value="">All priorities</option>
+            <option>1st Priority</option><option>2nd Priority</option>
+            <option>3rd Priority</option><option>4th Priority</option>
+          </select>
+          <select class="pd-select" id="sm-f-approach" style="max-width:190px;"></select>
+          <select class="pd-select" id="sm-f-flag" style="max-width:170px;">
+            <option value="">No gaps filter</option>
+            <option value="nophoto">Missing photo</option>
+            <option value="noplan">No engagement plan</option>
+            <option value="unrated">Not yet assessed</option>
+          </select>
+          <input class="pd-input sm-search" id="sm-f-search" placeholder="Search…" />
+          <button class="sm-clear" id="sm-clear"><span data-ico="x" data-ico-size="14"></span>Clear</button>
+        </div>
+        <div class="sm-bands" id="sm-bands"></div>
+        <div class="sm-kpis" id="sm-kpis"></div>
+        <div id="sm-view-list"><div class="pd-card" style="padding:0;overflow:auto;">
+          <table class="pd-table sm-table" id="sm-table"></table></div></div>
+        <div id="sm-view-cards" style="display:none;"><div id="sm-cards"></div></div>
+        <div id="sm-view-grid" style="display:none;">
+          <div class="pd-card"><h2 style="margin-top:0;">Priority level</h2>
+            <div class="sm-gridwrap"><div id="sm-grid-priority"></div></div><div id="sm-grid-legend"></div></div>
+          <div class="pd-card"><h2 style="margin-top:0;">Impact / Influence map</h2>
+            <div class="sm-gridwrap"><div id="sm-grid-mendelow"></div></div><div id="sm-grid-mendelow-legend"></div></div>
+        </div>
+        <div id="sm-view-criteria" style="display:none;"><div id="sm-criteria"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../assets/js/config.js"></script>
+  <script src="harness-stub.js"></script>
+  <script src="../../assets/js/db.js"></script>
+  <script src="../../assets/js/ui.js"></script>
+  <script src="../../assets/js/icons.js"></script>
+  <script src="../../assets/js/epc-rcm.js"></script>
+  <script src="module.js"></script>
+  <script>
+    // Fixtures transcribed from the real CSF101 workbook — including the rows that
+    // exercise the awkward states (an override, a missing photo, an unassessed row).
+    PDHarness.install({
+      projects: [{ id: 'CSF101', name: 'MCIA Cargo and Screening Facility' }],
+      stakeholder_map: [
+        { id: 'b1', project_id: 'CSF101', activity_no: 1, activity: 'OPPORTUNITY MANAGEMENT', sub_process: 'Opportunity Management',
+          stk_category: 'Stakeholders', stk_sub_category: 'Customer',
+          name: 'Edgar Saavedra', role_title: 'C2W — Chairman & CEO', organization: 'Citicore West',
+          category: 'Private', stakeholder_group: 'Client',
+          influence: '4', interest: '4', photo_path: 'CSF101/edgar.jpg', photo_thumb_path: 'CSF101/edgar.jpg.thumb.jpg',
+          megawide_counterpart: 'COO Eric Tan', engagement_plan: 'Monthly Regular Updates – concise, high-level updates on key developments, milestones and risks.',
+          current_rel: 2, target_rel: 4, sort_order: 10 },
+        { id: 'b2', project_id: 'CSF101', activity_no: 1, activity: 'OPPORTUNITY MANAGEMENT', sub_process: 'Opportunity Management',
+          stk_category: 'Stakeholders', stk_sub_category: 'Customer',
+          name: 'Jasmin Fernandez', role_title: 'C2W — Operations Head', organization: 'Citicore West',
+          influence: '3', interest: '3', megawide_counterpart: 'PM Gil Torres',
+          engagement_plan: 'Weekly Regular Updates – provide concise updates on key developments.',
+          current_rel: 3, target_rel: 4, sort_order: 20 },
+        { id: 'b3', project_id: 'CSF101', activity_no: 9, activity: 'MOBILIZATION / OPERATIONS', sub_process: 'Mobilization',
+          stk_category: 'Stakeholders', stk_sub_category: 'Others',
+          name: 'Patricio Nemenzo Jr', role_title: 'Chief, Office of the Building Official (OBO)', organization: 'LGU',
+          category: 'Government', stakeholder_group: 'LGU',
+          influence: '4', interest: '4', mgmt_approach: 'Manage Closely',
+          engagement_plan: 'Daily Updates during mobilisation.', megawide_counterpart: 'PM Gil Torres',
+          res_impact: 5, res_possibility: 4, res_detectability: 4, sort_order: 10 },
+        { id: 'b4', project_id: 'CSF101', activity_no: 7, activity: 'PREPARATION OF PROJECT EXECUTION PLAN (PEP)',
+          sub_process: 'Preparation of Project Execution Plan (PEP)',
+          stk_category: 'Operational', stk_sub_category: 'Others',
+          name: 'Gil Torres', role_title: 'MCC — Project Manager', organization: 'Megawide',
+          influence: '2', interest: '2', engagement_plan: 'Ensure the presentation is aligned with the standard PEP Outline.',
+          current_rel: 4, target_rel: 4, sort_order: 10 },
+        // Registered but never assessed, and no photo — the two gap filters.
+        { id: 'b5', project_id: 'CSF101', name: 'TBH', role_title: 'MCC — Warehouseman',
+          stk_category: 'Operational', stk_sub_category: 'Others' }
+      ]
+    });
+    StakeholderMap.init({ id: 'u1' }, { id: 'u1', name: 'Harness User' });
+  </script>
+</body>
+</html>

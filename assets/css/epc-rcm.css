@@ -1,0 +1,130 @@
+/* ============================================================================
+   epc-rcm.css — shared look for the EPC Risk and Control Matrix furniture
+   ----------------------------------------------------------------------------
+   Paired with assets/js/epc-rcm.js. Loaded by modules/risk-register and
+   modules/stakeholder-map, which render the SAME criteria tables, the same
+   priority pills and the same heat-map grid; keeping the styles here is what
+   stops one register's matrix from slowly looking unlike the other's.
+
+   Every surface/text/border colour is a shared token so dark mode is automatic.
+   The four PRIORITY colours and the three RESIDUAL band colours are fixed in
+   both themes on purpose — a priority colour is DATA (it is printed on the
+   controlled document in those colours), not chrome, and a red that turns pale
+   in dark mode stops meaning "1st Priority".
+   ============================================================================ */
+
+/* ---- Priority + residual semantics --------------------------------------
+   TWO tokens per level, and the split is load-bearing:
+     --rcm-c  the FILL (solid pill, cell wash, legend swatch) — white text sits
+              on it, so it must stay dark enough in both themes.
+     --rcm-t  the same meaning used as TEXT.
+   ⚠️ They cannot be one token. Measured on the dark card (#2B2C2B): the fill red
+   #dc2626 reads 2.92:1 as text and the outline pill 3.65:1 — both under AA —
+   while a red light enough to pass as text would drop white-on-fill below it.
+   So the fill is fixed in both themes (a priority colour is DATA, printed on the
+   controlled document) and only the TEXT token is lightened for dark.
+   This is the third time in this repo brand-weight red has failed as small text;
+   never colour a label with a fill token. */
+.rcm-p1 { --rcm-c: #dc2626; --rcm-t: #dc2626; }   /* 1st Priority — red    */
+.rcm-p2 { --rcm-c: #ea580c; --rcm-t: #ea580c; }   /* 2nd Priority — orange */
+.rcm-p3 { --rcm-c: #d97706; --rcm-t: #d97706; }   /* 3rd Priority — amber  */
+.rcm-p4 { --rcm-c: #16a34a; --rcm-t: #16a34a; }   /* 4th Priority — green  */
+.rcm-res-high { --rcm-c: #dc2626; --rcm-t: #dc2626; }
+.rcm-res-mod  { --rcm-c: #d97706; --rcm-t: #d97706; }
+.rcm-res-low  { --rcm-c: #16a34a; --rcm-t: #16a34a; }
+html.pd-dark .rcm-p1, html.pd-dark .rcm-res-high { --rcm-t: #f87171; }
+html.pd-dark .rcm-p2 { --rcm-t: #fb923c; }
+html.pd-dark .rcm-p3, html.pd-dark .rcm-res-mod { --rcm-t: #fbbf24; }
+html.pd-dark .rcm-p4, html.pd-dark .rcm-res-low { --rcm-t: #4ade80; }
+
+.rcm-pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; line-height: 1.6; white-space: nowrap;
+  color: #fff; background: var(--rcm-c, var(--pd-muted));
+}
+.rcm-pill-o {                     /* outline variant, for dense table cells */
+  display: inline-block; padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; line-height: 1.6; white-space: nowrap;
+  color: var(--rcm-t, var(--pd-muted));
+  border: 1px solid var(--rcm-t, var(--pd-line));
+  background: color-mix(in srgb, var(--rcm-c, transparent) 12%, transparent);
+}
+.rcm-muted { color: var(--pd-muted); }
+
+/* ---- Reference tables (Criteria / Universe / Control Masterlist) --------- */
+.rcm-tblwrap { margin: 0 0 22px; }
+.rcm-tbl-cap {
+  font-size: 13px; font-weight: 800; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--pd-ink); margin: 0 0 8px;
+}
+/* ⚠️ The wide reference tables scroll INSIDE this block, never the page — the
+   Criteria tab has five of them and a page-level h-scroll makes the sidebar and
+   top bar slide away with the content. */
+.rcm-tbl {
+  display: block; overflow-x: auto; max-width: 100%;
+  border-collapse: collapse; width: 100%; font-size: 13px;
+}
+.rcm-tbl thead th {
+  text-align: left; padding: 8px 10px; white-space: nowrap;
+  background: var(--pd-bg); color: var(--pd-muted);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  border-bottom: 1px solid var(--pd-line);
+}
+.rcm-tbl td { padding: 8px 10px; vertical-align: top; border-bottom: 1px solid var(--pd-line); color: var(--pd-ink); }
+.rcm-tbl tbody tr:last-child td { border-bottom: 0; }
+.rcm-tbl-k { white-space: nowrap; }
+.rcm-tbl-note { font-size: 12px; color: var(--pd-muted); margin-top: 8px; line-height: 1.5; }
+.rcm-bul { margin: 4px 0 0; padding-left: 18px; }
+.rcm-bul li { margin: 2px 0; color: var(--pd-muted); }
+
+/* ---- Heat-map grid ------------------------------------------------------- */
+.rcm-grid { border-collapse: separate; border-spacing: 4px; width: 100%; }
+.rcm-ax {
+  color: var(--pd-muted); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; text-align: center; padding: 4px;
+}
+.rcm-ax-y { width: 22px; }
+/* Rotate the y-axis caption so a 5-row grid doesn't need a wide gutter. */
+.rcm-ax-y span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
+.rcm-gcell {
+  border-radius: 8px; padding: 8px; min-width: 74px; height: 78px;
+  vertical-align: top; cursor: pointer; position: relative;
+  border: 1px solid color-mix(in srgb, var(--rcm-c, var(--pd-line)) 55%, transparent);
+  background: color-mix(in srgb, var(--rcm-c, transparent) 14%, var(--pd-card));
+  transition: box-shadow .12s, transform .12s;
+}
+.rcm-gcell:hover { box-shadow: 0 2px 10px rgba(0,0,0,.14); transform: translateY(-1px); }
+.rcm-gcell.rcm-cell-active { outline: 2px solid var(--pd-red); outline-offset: 1px; }
+.rcm-gcell-lab {
+  display: block; font-size: 10px; font-weight: 800; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--rcm-t, var(--pd-muted));
+}
+.rcm-gcell-count { display: block; font-size: 22px; font-weight: 800; color: var(--pd-ink); line-height: 1.2; }
+.rcm-gcell-empty { color: var(--pd-muted); font-size: 18px; }
+.rcm-gchips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.rcm-gchip {
+  font-size: 10px; padding: 1px 5px; border-radius: 4px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--pd-bg); color: var(--pd-ink); border: 1px solid var(--pd-line);
+}
+
+/* ---- Legend -------------------------------------------------------------- */
+.rcm-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; }
+.rcm-leg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--pd-muted); }
+.rcm-leg b { color: var(--pd-ink); }
+.rcm-leg-sw { width: 12px; height: 12px; border-radius: 3px; background: var(--rcm-c, var(--pd-line)); display: inline-block; }
+
+/* ---- Derived-value readout used inside the Add/Edit forms ---------------- */
+.rcm-derived {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+  padding: 8px 10px; border-radius: 8px; margin: 2px 0 10px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); font-size: 12px;
+}
+.rcm-derived .rcm-d-k { color: var(--pd-muted); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; font-weight: 700; }
+.rcm-derived .rcm-d-v { color: var(--pd-ink); font-weight: 700; }
+
+@media (max-width: 700px) {
+  .rcm-gcell { min-width: 58px; height: 64px; padding: 5px; }
+  .rcm-gcell-count { font-size: 17px; }
+  .rcm-gchips { display: none; }   /* chips are unreadable at this size */
+}

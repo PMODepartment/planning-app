@@ -84,6 +84,86 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (m) — Both registers rebuilt as EPC Risk & Control Matrices; the transcription verified against the workbooks themselves
+
+Owner: make the Stakeholder Map and the Risk Register *"more in-depth"*, each following its OPS
+workbook, and give the Stakeholder Map **a complete add-a-stakeholder feature with photos**. A prior
+session built the bulk of this and was interrupted; this entry finishes it and verifies it.
+
+**Both registers are now the workbook's RCM**, banded Identification → Assessment → Response →
+Residual → Audit Plan (+ **Engagement** on the stakeholder side), grouped by the **5-PMLC activity**
+each row is registered against. Four views each. New shared **`assets/js/epc-rcm.js`** holds the
+vocabulary, the scales, the grids and the 836-row Control Masterlist **once** — transcribing them into
+two modules would guarantee the day a sub-category is added to one picker and not the other, after
+which the two registers can no longer be joined on category. Detail in the two module CLAUDE.md files.
+
+**⚠️⚠️ THE FINDING THAT MATTERS MOST: THE TWO WORKBOOKS ARE *NOT* THE SAME TEMPLATE FOR THE PRIORITY
+GRID.** Both carry a sheet named `Risk Assessment Criteria - old`, both `INDEX` into `D328:H332` on it
+— and the **contents of that range differ between the files**. Deriving the stakeholder grid from the
+risk workbook's table, which the shared formula makes very easy to do by accident, is wrong in **6 of
+16 cells** and wrong in the direction that **under-states** a stakeholder's priority. `RISK_GRID` and
+`STK_GRID` are therefore two separate transcriptions on purpose. I started from the "same template"
+assumption myself and the workbooks disproved it.
+
+**⚠️ TWO SHIPPED COMMENTS ASSERTED FACTS THEIR OWN TABLES CONTRADICT** — found because the suite
+encoded the comments and then failed. Both tables were correct; both explanations were wrong.
+(1) *"(5,1) and (1,5) both score 5 yet land on 3rd and 4th priority"* — the sheet gives **3rd for
+both**. The real demonstration that priority is a lookup and not a band on the product is a product of
+4, which the sheet answers three ways: **2×2 → 4th, 1×4 → 3rd, 4×1 → 3rd**. (2) *"(3,3) is Keep
+Informed by the lookup and Keep Satisfied by the map"* — the map gives **Manage Closely**. The
+disagreement is real, the values were not. Both comments corrected, both replaced by assertions, so
+the claim and the data cannot drift apart again. **A wrong comment above right code is how someone
+later "fixes" the code to match it.**
+
+**⚠️ Priority derives NOTHING from an unrated row** — no default, no 4th-by-omission. "Nobody has
+assessed this" and "this is low priority" are opposite facts and only one is a reason to act.
+
+**Photos (the specific ask).** Private `stakeholder-photos` bucket; the columns store **paths, not
+URLs** (a stored URL expires), signed in one **batched** call per load; client-side canvas downscale
+to a display image **and a real separate thumbnail**; drop-well, lightbox, initials fallback.
+⚠️ **The file is held in memory and uploaded on SAVE, not on pick**, so an abandoned modal leaves no
+orphan; old objects are deleted **only after** the row stops pointing at them.
+
+**Finished this session:** ⚠️ **`MODULE_V` had not been bumped** — both `index.html` files changed
+structurally (new `epc-rcm` tags, renamed tabs), so a returning browser would have served the **cached
+old page**, which never loads `epc-rcm.js` and throws on first use. This repo has mis-diagnosed exactly
+that as a code bug before (2026-08-25 (m)). → `20260901g`. ⚠️ **A retired view name rendered a blank
+page**: `#rr_view={"view":"matrix"}` matched no view, so all four panes hid with no error. Now mapped
+to `heat`, with anything unrecognised falling back to the register; the same guard added to
+stakeholder-map. **`VERIFY-schema.sql` regenerated** (342 → **406** objects, 132 → 136 migrations — it
+was two migrations stale, so a clean run would have proved nothing about this round, the 2026-09-01 (d)
+blind spot) and **`supabase-build.sql` regenerated**.
+
+**Verified: `node modules/risk-register/test-rcm.js` — 146 checks**, executing the shipped functions
+(sliced by brace matching, never reimplemented), including the derived helpers of **both** modules so
+the shared engine is proven to be doing its job. ⚠️ **The grids are asserted against the WORKBOOKS' OWN
+COMPUTED OUTPUT** — the values Excel itself last wrote into the Priority Level cells, grouped by their
+row's ratings: **13/13 risk pairs, 7/7 stakeholder pairs, all 16 Mendelow cells.** ⚠️ **The suite
+bites**: transposing `STK_GRID` to the risk workbook's table fails 4.
+
+**Driven in a browser** against the real modules with only the backend stubbed: 0 console errors, all
+four views in each module rendering exactly one pane, the retired hash now rendering the Heat Map,
+heat-map click-to-filter, 33 zero-count Risk Universe branches flagged, live in-form derivation
+matching the workbook (impact 4 × influence 3 → 1st Priority / Manage Closely; gap 1 → Enhance → Every
+two months), and the **whole photo path**: pick → a 300×200 blob preview with **nothing uploaded** →
+Save → main + thumb uploaded to `CSF101/<ts>_<rand>.jpg` → row inserted carrying both paths,
+`created_by` stamped, and **0 derived values persisted**.
+
+⚠️ **Three of my own assertions were wrong before the code ever was** — two encoding the bad comments
+above, and one reading `.src` on a `<div>` (the photo preview is an `<img>` inside it) and then
+`backgroundImage` on the same div. Said plainly because the split matters: a suite that is always
+"right" about its own expectations is not being read.
+
+⚠️ **NOT VERIFIED, and the owner actions that remain.** **Neither migration has been run** — until they
+are, every new column and the photo bucket are absent; both modules degrade with a toast naming their
+own file, so nothing breaks, but nothing new works either. **Nothing was exercised signed in**: the
+batched `createSignedUrls`, the upload/rollback ordering against real storage, the four bucket policies
+and every new column against PostgREST are all untested. ⚠️ **No geometry, layout or contrast was
+measured and there is no screenshot** — the Browser pane was not compositing (`visibilityState:
+hidden`, `innerWidth: 0`, `clientWidth: 0`), which first reported a plausible-looking **274px page
+h-scroll** that is pure artefact. Gate every measurement in this pane on `clientWidth` being non-zero,
+and do not chase its layout numbers as defects.
+
 ### 2026-09-01 (l) — Verified live, and the live run found a bug the harness was structurally incapable of finding
 
 Owner: *"After performing the prompts. Verify live via out of app browser."* Driven through the
