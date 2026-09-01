@@ -272,6 +272,21 @@ window.MinutesOfMeeting = (function () {
     if (t) parts.push(t);
     return parts.join('; ');
   }
+  // ⚠️ THE INVERSE OF championText — see issues-lessons/module.js's copy of this same
+  // helper for the full rationale. `owner` on a saved action item is already
+  // `championText(owner_ids, extra)`; seeding the free-text box with that whole string
+  // (instead of just the typed extra) makes every "Update" re-prepend the resolved names
+  // onto an already-name-bearing string — the reported champion-concatenation bug,
+  // copy-pasted here for the Responsible picker. Strips any segment matching a
+  // currently-resolved name for `ids`, order-independent, keeping the genuine extra.
+  function championExtra(ids, champion) {
+    var named = {};
+    peopleNamesOf(ids).forEach(function (n) { named[n] = 1; });
+    return (champion || '').split(';')
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s && !named[s]; })
+      .join('; ');
+  }
   function idsOf(root) {
     var v = (root && root.dataset.ids) || '';
     return v ? v.split(',').filter(Boolean) : [];
@@ -2045,7 +2060,7 @@ window.MinutesOfMeeting = (function () {
       // Same roster as the register's Champion, so an action raised into an issue
       // carries a responsible the personal view can actually resolve.
       momFieldHTML('Responsible', 'il-c-owner',
-        peoplePickerHTML('mom-own-' + it.id, it.owner_ids, it.owner, ro),
+        peoplePickerHTML('mom-own-' + it.id, it.owner_ids, championExtra(it.owner_ids, it.owner), ro),
         championText(it.owner_ids, it.owner)) +
       momFieldHTML('Target date', 'il-c-due',
         '<input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '>',

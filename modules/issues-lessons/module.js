@@ -306,6 +306,15 @@ window.IssuesLessons = (function () {
       b.onclick = function () { switchScreen(b.dataset.screen); if (histScreen) histScreen.push(); };
     });
 
+    // ITEM #3: filters are hidden until called up. The panel's own visibility is
+    // session state, not part of iFilters — closing it must never clear a filter.
+    var filtToggle = $('il-filt-toggle'), filtPanel = $('il-issues-filters');
+    if (filtToggle && filtPanel) filtToggle.onclick = function () {
+      filtPanel.hidden = !filtPanel.hidden;
+      filtToggle.setAttribute('aria-expanded', filtPanel.hidden ? 'false' : 'true');
+      filtToggle.classList.toggle('is-open', !filtPanel.hidden);
+    };
+
     // Issue filters
     ['search', 'status', 'department', 'champion', 'aging'].forEach(function (k) {
       var el = $('il-f-' + k);
@@ -588,6 +597,43 @@ window.IssuesLessons = (function () {
     } catch (e) { ISSUE_HISTORY[id] = []; }
     if (_issSel === id && _issMode === 'detail') { renderIssues(); }
   }
+  // ⚠️ ITEM #6: the fields shown as a before -> after line whenever they changed —
+  // every field this register actually asks for, not just the action label + a
+  // free-text note. `logHistory` already snapshots the WHOLE row before each
+  // change (see saveIssue/confirmHoldIssue/confirmCloseIssue) — this is what turns
+  // that stored jsonb into something readable rather than a blob nobody opens.
+  var HIST_FIELDS = [
+    ['status', 'Status'], ['department', 'Department'], ['champion', 'Champion(s)'],
+    ['description', 'Issue'], ['caused_by', 'Caused By'],
+    ['corrective_action', 'Corrective Action'], ['hold_reason', 'Reason for Hold'],
+    ['closure_report', 'Closure Report'],
+    ['date_presented', 'Date Presented'], ['date_resolved', 'Date Resolved'],
+  ];
+  function histNorm(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function histFieldHTML(key, val) {
+    if (!val) return '<em>—</em>';
+    if (key === 'date_presented' || key === 'date_resolved') return Fmt.esc(Fmt.date(val));
+    return Fmt.esc(val).replace(/\n/g, '<br>');
+  }
+  // `before` is null on a `create` entry (logHistory is passed null — there is nothing
+  // yet to compare against), in which case this lists what was actually captured at
+  // creation instead of an arrow. Fields that did not change are omitted entirely.
+  function issHistDiffHTML(before, after) {
+    after = after || {};
+    var lines = HIST_FIELDS.map(function (f) {
+      var key = f[0], label = f[1];
+      var a = histNorm(after[key]);
+      if (!before) {
+        if (!a) return '';
+        return '<li><strong>' + Fmt.esc(label) + ':</strong> ' + histFieldHTML(key, a) + '</li>';
+      }
+      var b = histNorm(before[key]);
+      if (b === a) return '';
+      return '<li><strong>' + Fmt.esc(label) + ':</strong> ' + histFieldHTML(key, b) +
+        ' &rarr; ' + histFieldHTML(key, a) + '</li>';
+    }).filter(Boolean);
+    return lines.length ? '<ul class="il-history-diff">' + lines.join('') + '</ul>' : '';
+  }
   function historyHTML(id) {
     var list = ISSUE_HISTORY[id];
     if (list === undefined) return '<p class="il-mom-note">Loading history…</p>';
@@ -596,12 +642,18 @@ window.IssuesLessons = (function () {
         '2026-08-31-issues-workflow-history.sql</code> if this issue has been updated and ' +
         'nothing appears here.</p>';
     }
-    return '<ul class="il-history">' + list.map(function (h) {
+    // ⚠️ Entry i's AFTER state is the snapshot the NEXT-more-recent entry stored as its
+    // BEFORE (list is newest-first) — the most recent entry's after-state is simply the
+    // live row, since no later history entry exists to have snapshotted it.
+    var current = rows.find(function (x) { return x.id === id; }) || {};
+    return '<ul class="il-history">' + list.map(function (h, i) {
+      var after = i === 0 ? current : (list[i - 1].snapshot || {});
       return '<li class="il-history-i"><div class="il-history-top">' +
         '<span class="il-history-action">' + Fmt.esc(ISSUE_HIST_LABELS[h.action] || h.action) + '</span>' +
         '<span class="il-history-when">' + Fmt.esc(Fmt.date(h.changed_at)) +
         (h.changed_by_department ? ' · ' + Fmt.esc(h.changed_by_department) : '') + '</span></div>' +
         (h.note ? '<div class="il-history-note">' + Fmt.esc(h.note).replace(/\n/g, '<br>') + '</div>' : '') +
+        issHistDiffHTML(h.snapshot, after) +
       '</li>';
     }).join('') + '</ul>';
   }
@@ -615,6 +667,10 @@ window.IssuesLessons = (function () {
     var anyF = ['search', 'department', 'champion', 'aging'].some(function (k) { return iFilters[k]; }) ||
       iFilters.status !== 'Open';
     var clr = $('il-clearfilters'); if (clr) clr.hidden = !anyF;
+    // ITEM #3: the filter panel can be collapsed, so a narrowed view needs a signal
+    // that survives closing it — otherwise a hidden "Open items only" filter looks like
+    // a missing issue rather than a filter someone forgot was on.
+    var ft = $('il-filt-toggle'); if (ft) ft.classList.toggle('has-active', anyF);
     var log = $('il-issues-log'), view = $('il-issues-view');
     if (log) log.hidden = _issMode !== 'log';
     if (view) view.hidden = _issMode === 'log';
@@ -759,8 +815,13 @@ window.IssuesLessons = (function () {
       '<th>No.</th><th>Department</th><th>Issue</th><th>Caused By</th>' +
       '<th>Corrective Action</th><th>Champion</th><th>Status</th>' +
       '<th>Date Presented</th><th>Days Aging</th><th>Date Resolved</th>' +
-      (canWrite ? '<th></th>' : '') + '</tr></thead>';
+      (isSteward ? '<th></th>' : '') + '</tr></thead>';
 
+    // ⚠️ ITEM #4: no per-row edit button any more — the WHOLE ROW opens the issue
+    // (view-only where canEditRow(r) is false; issDetailHTML already renders read-only
+    // in that case via its own `ro` flag, so this also lets a viewer read a record they
+    // never had a click-through to before). Only a planner's delete icon remains, and it
+    // stops the click from bubbling up into the row-open.
     var body = data.map(function (r, i) {
       var a = agingDays(r);
       var agingTxt = a == null ? '—' : (a + ' day' + (a === 1 ? '' : 's'));
@@ -768,7 +829,7 @@ window.IssuesLessons = (function () {
       // data-l = the column heading. Unused on desktop (the <thead> supplies it);
       // at phone width module.css hides the head and stacks each row into a card,
       // where every value needs its own inline label (.il-table td::before).
-      return '<tr>' +
+      return '<tr class="il-clickrow" data-open="' + Fmt.esc(r.id) + '">' +
         '<td class="il-cell-num">' + (i + 1) + '</td>' +
         '<td data-l="Department">' + Fmt.esc(r.department) + '</td>' +
         '<td class="il-cell-wrap il-cell-issue" data-l="Issue"><div class="il-clip">' + Fmt.esc(r.description) + '</div>' +
@@ -782,27 +843,23 @@ window.IssuesLessons = (function () {
         '<td data-l="Presented">' + Fmt.date(r.date_presented) + '</td>' +
         '<td class="il-aging' + (hot ? ' is-hot' : '') + '" data-l="Aging">' + agingTxt + '</td>' +
         '<td data-l="Resolved">' + Fmt.date(r.date_resolved) + '</td>' +
-        (canWrite ? '<td class="il-rowacts">' +
-          (canEditRow(r)
-            ? '<button class="il-iconbtn" title="Edit" data-edit="' + r.id + '">✎</button> '
-            : '<span class="il-noedit" title="Raised by someone else — a planner maintains the register as a whole">—</span>') +
-          (isSteward ? '<button class="il-iconbtn is-danger" title="Delete" data-del="' + r.id + '">🗑</button>' : '') +
+        (isSteward ? '<td class="il-rowacts">' +
+          '<button class="il-iconbtn is-danger" title="Delete" data-del="' + r.id + '">🗑</button>' +
           '</td>' : '') +
       '</tr>';
     }).join('');
 
     t.innerHTML = head + '<tbody>' + (body ||
-      '<tr><td colspan="' + (canWrite ? 11 : 10) + '" style="padding:24px;color:var(--pd-muted);">No issues match the current filters.</td></tr>') +
+      '<tr><td colspan="' + (isSteward ? 11 : 10) + '" style="padding:24px;color:var(--pd-muted);">No issues match the current filters.</td></tr>') +
       '</tbody>';
 
-    // ⚠️ Editing from the log SWITCHES to the report view rather than opening a modal.
-    // There is one editor for an issue now, and it is the detail pane — a second one would
-    // be a second place for the fields to drift apart.
-    t.querySelectorAll('[data-edit]').forEach(function (b) {
-      b.onclick = function () { openIssue(b.dataset.edit); };
+    // ⚠️ The row IS the editor entry point now. Its own click opens the issue; the
+    // delete button inside it stops propagation first, or deleting would also open it.
+    t.querySelectorAll('tr[data-open]').forEach(function (tr) {
+      tr.onclick = function () { openIssue(tr.dataset.open); };
     });
     t.querySelectorAll('[data-del]').forEach(function (b) {
-      b.onclick = function () { del(b.dataset.del); };
+      b.onclick = function (e) { e.stopPropagation(); del(b.dataset.del); };
     });
     if (window.Icons) Icons.hydrate(t);
   }
@@ -861,13 +918,49 @@ window.IssuesLessons = (function () {
       return;
     }
     var cur = _issNew || rows.find(function (r) { return r.id === _issSel; }) || null;
+    // ⚠️ ITEM #5: step through the SAME set the log is currently showing —
+    // issuesFiltered(), not all of `rows` — so Prev/Next tracks whatever filter is
+    // applied. Never offered for a not-yet-saved draft, which has no place in that
+    // list yet, and it degrades to a plain note when the open record has fallen out
+    // of the active filter (e.g. it was just closed while "Open items only" is set)
+    // rather than guessing which neighbour to step to.
     host.innerHTML =
-      '<button class="il-backlink" id="il-iss-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Issues</button>' +
+      '<div class="il-detail-nav">' +
+        '<button class="il-backlink" id="il-iss-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Issues</button>' +
+        (cur && !_issNew ? issStepHTML(cur.id) : '') +
+      '</div>' +
       (cur ? issDetailHTML(cur)
            : '<div class="il-empty" style="padding:28px;">This issue is no longer in the current filter — ' +
              '<button class="pd-btn pd-btn-sm" id="il-iss-back2">go back</button>.</div>');
     wireIssues();
+    var prevBtn = $('il-iss-prev'), nextBtn = $('il-iss-next');
+    if (prevBtn) prevBtn.onclick = function () { stepIssue(-1); };
+    if (nextBtn) nextBtn.onclick = function () { stepIssue(1); };
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+  }
+
+  function issStepHTML(id) {
+    var list = issuesFiltered();
+    var idx = list.findIndex(function (x) { return x.id === id; });
+    if (idx === -1) return '<span class="il-stepnote">Not in the current filter</span>';
+    return '<div class="il-steps">' +
+      '<button class="il-iconbtn" id="il-iss-prev" title="Previous in the filtered list"' +
+        (idx <= 0 ? ' disabled' : '') + '>&lsaquo;</button>' +
+      '<span class="il-stepnote">' + (idx + 1) + ' of ' + list.length + '</span>' +
+      '<button class="il-iconbtn" id="il-iss-next" title="Next in the filtered list"' +
+        (idx >= list.length - 1 ? ' disabled' : '') + '>&rsaquo;</button>' +
+    '</div>';
+  }
+
+  // Moves to the adjacent issue in issuesFiltered() — the log's own current order —
+  // and opens it exactly as clicking that row would (same permission handling, same
+  // history load). A boundary or a since-vanished current record is simply a no-op.
+  function stepIssue(dir) {
+    var list = issuesFiltered();
+    var idx = list.findIndex(function (x) { return x.id === _issSel; });
+    if (idx === -1) return;
+    var next = list[idx + dir];
+    if (next) openIssue(next.id);
   }
 
   function issDetailHTML(r) {
@@ -986,7 +1079,7 @@ window.IssuesLessons = (function () {
           // text — it carries both, so a champion without an account is still
           // nameable and no existing value is lost on the next save.
           ilField(ro, 'Champion(s)' + reqMark(!ro), 'il-c-champ',
-            peoplePickerHTML('iss-champ', r.champion_ids, r.champion, ro),
+            peoplePickerHTML('iss-champ', r.champion_ids, championExtra(r.champion_ids, r.champion), ro),
             championText(r.champion_ids, r.champion)) +
           ilField(ro, 'Date Presented' + reqMark(!ro), 'il-c-pres',
             '<input class="pd-input pd-input-sm il-if" data-f="date_presented" type="date" value="' +
@@ -1178,7 +1271,7 @@ window.IssuesLessons = (function () {
     var root = host && host.querySelector('[data-people="iss-champ"]');
     if (!root) {                       // read-only renders text, not a control
       var r = _issNew || rows.find(function (x) { return x.id === _issSel; }) || {};
-      return { ids: r.champion_ids || [], text: r.champion || '' };
+      return { ids: r.champion_ids || [], text: championExtra(r.champion_ids, r.champion) };
     }
     var free = root.querySelector('.il-pp-free');
     return { ids: idsOf(root), text: free ? free.value.trim() : '' };
@@ -1446,6 +1539,25 @@ window.IssuesLessons = (function () {
     var t = (extra || '').trim();
     if (t) parts.push(t);
     return parts.join('; ');
+  }
+  // ⚠️ THE INVERSE OF championText — reconstructs just the free-typed portion from a
+  // stored `champion` string, for RE-SEEDING the picker's free-text box on render.
+  // `champion` on a saved row is already `championText(ids, extra)` — names AND extra,
+  // joined. Feeding that whole string back into the free-text input (as the editable
+  // picker used to) means the next save re-prepends the same names on top of it via
+  // championText again, and the one after that prepends them AGAIN onto the already-
+  // doubled result — the reported "concatenates every time Update is clicked" bug.
+  // Strips out any segment that exactly matches one of the CURRENTLY resolved names for
+  // `ids` (not by position, so it survives ids being reordered) and keeps the rest —
+  // which is the actual typed extra, including legacy free-text-only data where `ids`
+  // is empty and every segment survives untouched.
+  function championExtra(ids, champion) {
+    var named = {};
+    peopleNamesOf(ids).forEach(function (n) { named[n] = 1; });
+    return (champion || '').split(';')
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s && !named[s]; })
+      .join('; ');
   }
   function idsOf(root) {
     var v = (root && root.dataset.ids) || '';
