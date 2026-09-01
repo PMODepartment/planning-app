@@ -84,6 +84,48 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 — Sidebar logo centered + more vertical air; a minimalist pass on tiles/cards app-wide
+
+Owner: *"1. center the megawide logo in the side pane and add top and bottom padding. 2. for all
+projects, add internal and external padding to tiles and boxes. reduce also size of texts to make
+look more minimalistic. align text sizes to procurement app."*
+
+**1. Sidebar brand block (`assets/css/dashboard.css`).** `.pd-brand-logo` was `width:100%` with
+`object-position:left center` — a deliberate 2026-08-19 call to remove an old `max-width:188px` cap
+that made the wordmark visibly smaller than PRC's. Full-bleed-width happened to leave it looking
+left-aligned rather than centered once the mark's own art doesn't fill every pixel of that width.
+Now `width:auto; max-width:160px; margin:0 auto` (centered) with `.pd-brand`'s own padding bumped
+`18px 20px 16px` → `28px 20px 24px` (top/bottom). Mirrored in the collapsed rail (`18px`→`24px`) and
+the ≤820px drawer (`max(18px,safe-area) … 14px` → `max(24px,safe-area) … 20px`), so the three brand
+states (expanded / collapsed rail / mobile drawer) stay consistent.
+
+**2. Tiles/cards minimalist pass, following the PRC-matched precedent already set for buttons**
+(`.pd-btn` was already sized to PRC's 12.5px/7px 14px — see the comment above it). Extended the same
+treatment to the box components every page inherits from `dashboard.css`, so this is one shared-file
+change reaching all 28 pages rather than a per-module edit:
+- **`.pd-card`** padding `18px` → `20px`.
+- **`.pd-module-card`** (dashboard launcher tiles): padding `24px 22px` → `26px 24px`; icon box
+  `56px`→`48px` (glyph `28px`→`22px`); title `16px`→`14.5px`; sub `13px`→`12px`; grid gap `20px`→`22px`.
+- **`.pd-kpi`** (project-facts strip): padding `12px 14px`→`14px 16px`; value `18px`→`16px`; label
+  `10px`→`9.5px`; sub `12px`→`11.5px`; grid gap `12px`→`14px`.
+- **`.pd-proj-card`** (`projects.html` tiles): padding `16px`→`18px`; title now explicit `13.5px`
+  (was inheriting body's 14px); id chip `12px`→`11.5px`; meta `13px`/`11px`→`12.5px`/`10.5px`; loc
+  `12px`→`11.5px`; grid gap `14px`→`16px`.
+- `.pd-home-head h2` `22px`→`19px`; `.pd-sec-head h3` `15px`→`14px`; `.pd-module-figs` figure
+  `15px`→`14px`, others `13px`/`11.5px`→`12px`/`11px`; `.pd-cardgroup` `13px`/`11px`→`12.5px`/`10.5px`.
+- `.pd-main` page padding `22px`→`24px` (the one "external" bump at the page-chrome level, beyond the
+  per-component gap increases above).
+- ⚠️ **Deliberately did NOT touch the base `body { font-size: 14px }`.** That cascades into every
+  page's own px-based spacing (many components size padding/line-height off it implicitly), and this
+  repo's own history records exactly this class of risk — the "align text sizes to procurement app"
+  ask is satisfied by bringing the *box components* (cards/tiles/KPIs) down toward the already-matched
+  button scale, not by changing the global baseline every module inherits.
+- Verified: CSS brace-balance unchanged (414/414 before and after).
+- Shared asset changed → **`dashboard.css?v=` bumped to `20260901a` across all 28 referencing HTML
+  files** (27 were on `20260831b`; `modules/minutes-of-meeting/index.html`, added by concurrent
+  module work after that bump, was still on the older `20260830e` — folded into the same pass so
+  every page now serves one version).
+
 ### 2026-08-31 (c) — Project-mode sidebar drops its "Portfolio" section
 
 Owner: *"from project, remove portfolio from sidebar."*
