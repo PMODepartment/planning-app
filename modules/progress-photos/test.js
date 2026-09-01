@@ -516,8 +516,9 @@ ok('edit/delete hidden for readers', /editBtn\.style\.display = canWrite/.test(m
 // lightbox (already asserted above) is the only place they live now.
 ok('list view has NO per-row action icons (item 7 — superseded design)',
    !/pp-actcell/.test(mjs) && !/function rowActions/.test(mjs));
-ok('clicking a List row opens the lightbox instead', /data-rowopen="' \+ r\.id/.test(mjs) &&
-   /openLightbox\(this\.dataset\.rowopen\)/.test(mjs));
+ok('clicking a List row opens the lightbox instead (or, for a merged pseudo-row, dispatches to PANO/RECON — items 6+8)',
+   /data-rowopen="' \+ r\.id/.test(mjs) &&
+   /var id = this\.dataset\.rowopen;[\s\S]{0,300}openLightbox\(id\);/.test(mjs));
 
 console.log('\n[15] Grouping: month default, unified across List AND Gallery (item 6)');
 ok('default group is month', /var galleryGroupBy = 'month'/.test(mjs));
@@ -593,11 +594,14 @@ console.log('\n[misc] insert().select() returns the new row id');
   // .pp-mediatile-badge (Batch C, 2026-08-29) added to the list on the same
   // basis as .pano-badge-warn just above it: a solid-brand-background badge
   // (color-mix red), white text always readable regardless of theme.
-  // Batches E-H (2026-08-29) add four more, all the same shape: a fixed dark
-  // scrim (.pp-pinbtn — mirrors .pp-cardsel's own dark corner overlay) or a
-  // solid brand-red badge/dot (.pp-pinpreview-dot, .bim-cluster, .ppr-mktool
+  // Batches E-H (2026-08-29) add three more, all the same shape: a
+  // solid brand-red badge/dot (.bim-cluster, .ppr-mktool
   // — a dark translucent toolbar over an arbitrary photo, .ppr-sortno — a
   // solid-red slide-order badge, same family as .ppr-tmpl-locorder).
+  // ⚠️ .pp-pinbtn / .pp-pinpreview-dot are RETIRED (item 4, 11-item round —
+  // the Gallery tile's key-plan popup is gone) and removed from this list;
+  // the lightbox's replacement overlay, .pp-lb-kpoverlay, has no #fff of its
+  // own and is covered by the \.pp-lb- entry below regardless.
   // .bim-pinstage-dot (item 11, same day) is the SAME shape as .bim-pin
   // itself — a solid-red marker with a white ring over an arbitrary floor
   // plan image, deliberately theme-independent since the plan's own colours
@@ -613,12 +617,31 @@ console.log('\n[misc] insert().select() returns the new row id');
   // knob with a red ring, deliberately theme-independent since it sits over
   // an arbitrary floor-plan/photo image) join the allow-list on the same
   // basis as the entries already documented above.
+  // Item 3 (this round): .bim-dirhandle-el (the new direction-only handle —
+  // same white-filled-control-knob shape as .bim-conehandle-el right next to
+  // it, just an ink ring instead of a red one) joins on the same basis. The
+  // pin dot itself (.bim-pinstage-dot, already allow-listed above) gained a
+  // second, separate #fff use — `color: #fff` for the person/drone icon's
+  // stroke, over the same solid var(--pd-red) fill the dot already had — the
+  // existing entry already covers the whole selector, so nothing new to add
+  // there.
   // Punch-list #9: .pp-livebtn.is-live (the Plan/Stack month steppers' new
   // "Live" jump-back button) is the SAME family as .pp-tab.active/
   // .pd-btn-primary two lines up — a solid var(--pd-red) fill with white
   // text, always legible regardless of theme, so it's exempt for the same
   // reason those two already are.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.ppr-kpicon\b|\.pp-livebtn\.is-live\b/;
+  // Items 6+8 (current round): .pp-mediatile-badge (the retired separate
+  // strip's badge) is GONE with the CSS block it lived in — replaced by
+  // .pp-mkbadge (same shape: solid color-mix'd brand-red, white text) and
+  // .pp-mkeditbtn (a fixed dark scrim over an arbitrary tile image, same
+  // family as .pp-cardsel's own dark corner overlay).
+  // Items 10/11 (current round): .ppr-kpicon is RETIRED (superseded by the
+  // header #ppr-kp-toggle, styled via the new .pp-iconbtn.is-active rule —
+  // same solid-brand-red-fill family as .ppr-mktool.is-active two entries
+  // over). .ppr-kppopup's own #fff usage was already covered by
+  // \.pp-lightbox|\.pp-lb- style contexts... it has none of its own (only a
+  // box-shadow rgba), so nothing to add there.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mkbadge\b|\.pp-mkeditbtn\b|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -972,26 +995,64 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('the tab bar now has exactly three tabs: Progress Photos, Presentations, Floor Plans (renamed from Gallery/Plans; data-screen values unchanged)',
      (html.match(/class="pp-tab[^"]*" data-screen="[a-z]+"/g) || []).length === 3 &&
      /data-screen="photos">Progress Photos/.test(html) && /data-screen="ppr">Presentations/.test(html) && /data-screen="bim">Floor Plans/.test(html));
-  ok('the Gallery screen carries a #pp-media-strip host for the folded 360°/3D content', /id="pp-media-strip"/.test(html));
-  ok('module.js loads PANO/RECON data before rendering Gallery, so the strip has something to show without a separate screen visit',
+  // ⚠️ RETIRED (items 6+8, current round): the #pp-media-strip host is gone —
+  // "360, 3D and video should not be grouped separately... it should be
+  // included with the normal grouping." Panoramas/reconstructions now flow
+  // through mergedRows() into the SAME List/Gallery grid a photo does; the
+  // assertions below are rewritten to test THAT, not the retired strip.
+  ok('the old #pp-media-strip host is gone — panoramas/scans render inline in #pp-view now',
+     !/id="pp-media-strip"/.test(html) && /id="pp-view"/.test(html));
+  ok('module.js loads PANO/RECON data before rendering Gallery, so mergedRows() has something to show without a separate screen visit',
      /PANO && PANO\.ensureLoaded[\s\S]{0,120}RECON && RECON\.ensureLoaded/.test(mjs));
-  ok('render() calls renderMediaStrip() BEFORE the photo grid\'s own empty-state branches, so it repaints regardless of them',
-     /renderMediaStrip\(\);/.test(mjs) && mjs.indexOf('renderMediaStrip();') < mjs.indexOf('if (!rows.length)'));
-  ok('a media tile opens the SAME viewers as the old dedicated tabs used (PANO.open / RECON.openById), nothing reimplemented',
-     /PANO && PANO\.open\)\s*PANO\.open\(id\)/.test(mjs) && /RECON && RECON\.openById\)\s*RECON\.openById\(id\)/.test(mjs));
+  ok('render() draws from mergedRows(), and scopes lightboxIds to real (non-pseudo) rows only',
+     /var list = mergedRows\(\);/.test(mjs) &&
+     /lightboxIds = list\.filter\(function \(r\) \{ return !r\._kind; \}\)/.test(mjs));
+  ok('a merged pseudo-row tile opens the SAME viewers the old dedicated tabs used (PANO.open / RECON.openById), nothing reimplemented',
+     /PANO && PANO\.open\) PANO\.open\(id\.slice\(5\)\)/.test(mjs) &&
+     /RECON && RECON\.openById\) RECON\.openById\(id\.slice\(6\)\)/.test(mjs));
+  ok('the pencil edit-details button dispatches through byMergedId + openMediaKindEditor, separately from the tile\'s own open dispatch',
+     /\[data-mkedit\]'\), function \(btn\)/.test(mjs) && /byMergedId\(this\.dataset\.mkedit\)/.test(mjs) &&
+     /openMediaKindEditor\(row\)/.test(mjs));
 
-  // --- mediaStripMatches genuinely EXECUTED against the real closure -------
+  // --- matchesFilters/mergedRows genuinely EXECUTED against the real closure
   // `filters` is module-private state, set only via wireFilters()/init() —
   // never called in this harness (same as every other Batch A/B test above,
   // which is why [2c] tests tradesOf/worksOf as pure functions instead). At
   // its untouched default (every field blank) this is still a real assertion
   // of the function's actual behaviour, not a stub: it proves the ANDed
   // filter checks all short-circuit to "no restriction" together rather than
-  // one of them silently rejecting everything by default.
-  ok('with every filter at its untouched default, a real item matches',
-     PP._mediaStripMatches({ location_values: {}, taken_at: '2026-03-01', location: 'Tower 1' }));
-  ok('_mediaStripItems() runs against the real PANO/RECON closures with no throw, and returns [] before either has loaded anything',
-     JSON.stringify(PP._mediaStripItems()) === '[]');
+  // one of them silently rejecting everything by default — for BOTH a real
+  // photo shape and a panorama/reconstruction pseudo-row shape.
+  ok('with every filter at its untouched default, a real photo row matches',
+     PP._matchesFilters({ location_values: {}, taken_at: '2026-03-01', location: 'Tower 1', trades: [], works_multi: [] }));
+  ok('with every filter at its untouched default, a panorama pseudo-row also matches',
+     PP._matchesFilters({ _kind: 'panorama', location_values: {}, taken_at: '2026-03-01', location: 'Tower 1', description: '360° panorama' }));
+  ok('_mergedRows() runs against the real rows/PANO/RECON closures with no throw, and returns [] before any of them have loaded anything',
+     JSON.stringify(PP._mergedRows()) === '[]');
+  ok('_panoPseudoRow() prefixes the id and normalizes the shape the grid pipeline reads (taken_at/location/trades/works_multi)',
+     (() => {
+       const pr = PP._panoPseudoRow({ id: 'p1', location: 'Tower 1', location_values: { x: 'Tower 1' }, taken_at: '2026-04-01', archived: false });
+       return pr.id === 'pano:p1' && pr._kind === 'panorama' && pr._src.id === 'p1' &&
+              pr.location === 'Tower 1' && pr.taken_at === '2026-04-01' &&
+              Array.isArray(pr.trades) && pr.trades.length === 0 && Array.isArray(pr.works_multi);
+     })());
+  ok('_reconPseudoRow() prefixes with "recon:" and folds requested_note into a readable description',
+     (() => {
+       const rr = PP._reconPseudoRow({ id: 'r1', location: '', location_values: {}, created_at: '2026-04-02T00:00:00Z', requested_note: 'North wing' });
+       return rr.id === 'recon:r1' && rr._kind === 'reconstruction' && rr.taken_at === '2026-04-02' &&
+              /North wing/.test(rr.description);
+     })());
+  ok('a SET trade filter excludes a pseudo-row (it carries no trade at all) but still matches a real photo carrying that trade',
+     !PP._matchesFilters({ _kind: 'panorama', location_values: {}, archived: false, taken_at: '2026-04-01' },
+                          { trade: 'Structural Works' }) &&
+     PP._matchesFilters({ location_values: {}, archived: false, trades: ['Structural Works'], works_multi: [] },
+                         { trade: 'Structural Works' }));
+  ok('a SET works filter likewise excludes a pseudo-row',
+     !PP._matchesFilters({ _kind: 'reconstruction', location_values: {}, archived: false, taken_at: '2026-04-01' },
+                          { works: 'Rebar Installation' }));
+  ok('the search box matches a pseudo-row on its kind label even with a blank description/location ("360" finds a panorama)',
+     PP._matchesFilters({ _kind: 'panorama', location_values: {}, archived: false, location: '', description: '' },
+                         { search: '360' }));
 
   console.log('\n[27] Deployment plan — Presentations row (Download/Preview/Archive), shared location, PPTX/PDF fixes, wizard, Gallery batch select');
 
@@ -1011,15 +1072,19 @@ console.log('\n[misc] insert().select() returns the new row id');
      !/ppr-row' \+[\s\S]{0,300}data-act=/.test(pjs));
   ok('item 16: the row\'s red highlight follows the CHECKBOX (selectedPprs), not `selId`',
      /'<div class="ppr-row' \+ \(selectedPprs\[p\.id\] \? ' sel' : ''\)/.test(pjs));
-  ok('Download/Preview/Archive are still reachable — relocated to the OPENED presentation\'s own header (wirePresActs)',
-     /id="ppr-pres-dl"/.test(pjs) && /id="ppr-pres-preview"/.test(pjs) && /id="ppr-pres-arch"/.test(pjs) &&
+  ok('Download/Archive are still reachable — relocated to the OPENED presentation\'s own header (wirePresActs)',
+     /id="ppr-pres-dl"/.test(pjs) && /id="ppr-pres-arch"/.test(pjs) &&
      /\$\('ppr-pres-dl'\)\.onclick = function \(\) \{ openDownloadChoice\(p\); \};/.test(pjs) &&
-     /\$\('ppr-pres-preview'\)\.onclick = function \(\) \{ openPreviewModal\(p\); \};/.test(pjs) &&
      /\$\('ppr-pres-arch'\)\.onclick = function \(\) \{ toggleArchive\(p\); \};/.test(pjs));
   ok('download opens a format-choice modal instead of exporting directly', /function openDownloadChoice/.test(pjs) && /data-fmt="html"/.test(pjs) && /data-fmt="pptx"/.test(pjs) && /data-fmt="pdf"/.test(pjs));
   ok('the format choice dispatches to all three real export functions', /if \(fmt === 'html'\) exportOffline\(p\);/.test(pjs) && /else if \(fmt === 'pptx'\) exportPptx\(p\);/.test(pjs) && /else if \(fmt === 'pdf'\) exportPdf\(p\);/.test(pjs));
-  ok('preview reuses slidesBodyHTML/EXPORT_CSS verbatim, not a re-implementation', /function openPreviewModal[\s\S]{0,700}slidesBodyHTML\(p, s, identityImgs\(s\)\)/.test(pjs));
-  ok('preview does not re-embed images as data URIs — it reuses the already-signed URLs', /function identityImgs[\s\S]{0,220}imgs\[u\] = u;/.test(pjs));
+  // ⚠️ RETIRED (item 10, current round): the header's "Preview" icon
+  // (ppr-pres-preview -> openPreviewModal/identityImgs) is gone — replaced
+  // by the photo-markup toggle (ppr-photomk-toggle), asserted in [45] below.
+  // Both functions had exactly this one caller and are deleted, not left
+  // dead — confirmed absent here rather than asserted present.
+  ok('openPreviewModal/identityImgs and the header\'s ppr-pres-preview icon are all gone (item 10 superseded them)',
+     !/function openPreviewModal/.test(pjs) && !/function identityImgs/.test(pjs) && !/id="ppr-pres-preview"/.test(pjs));
   ok('icon left-padding on the row (re-confirmed; already shipped in Batch A)', /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
 
   // --- Archive filter + toggle (item 1) -----------------------------------
@@ -1148,9 +1213,13 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('a chosen photo shows as a thumbnail button (pickBtnHTML), not plain text', /function pickBtnHTML\(which, id\)/.test(pjs));
 
   // --- Gallery batch select (item 5) ---------------------------------------
-  ok('module.js tracks a selection set, scoped to VISIBLE ids for every bulk action',
+  // Items 6+8 (current round): visibleSelectedIds()/selAll now scope against
+  // mergedRows() (real photos + panorama/reconstruction pseudo-rows), not
+  // visible() (real photos only) — a selected panorama/scan tile must stay
+  // counted while its own filter state still shows it.
+  ok('module.js tracks a selection set, scoped to VISIBLE (merged) ids for every bulk action',
      /var selected = \{\};/.test(mjs) && /function visibleSelectedIds\(\)/.test(mjs) &&
-     /var vis = \{\}; visible\(\)\.forEach/.test(mjs));
+     /var vis = \{\}; mergedRows\(\)\.forEach/.test(mjs));
   ok('both List and Gallery rows carry a [data-sel] checkbox (one selection set for the whole Gallery screen)',
      /data-sel="' \+ r\.id \+ '"/.test(mjs) && (mjs.match(/data-sel="/g) || []).length >= 2);
   // 2026-08-29 follow-up item 4: the leading header cell is now a REAL
@@ -1158,14 +1227,28 @@ console.log('\n[misc] insert().select() returns the new row id');
   // not a blank spacer div.
   ok('the List grid header\'s leading cell is a select-all checkbox, not a blank spacer',
      /id="pp-selall"/.test(mjs) && /<div>Photo<\/div>/.test(mjs));
-  ok('the select-all checkbox toggles every VISIBLE row, matching visibleSelectedIds\' own scoping rule',
-     /selAll\.onchange = function \(\) \{[\s\S]{0,200}visible\(\)\.forEach/.test(mjs));
+  ok('the select-all checkbox toggles every VISIBLE (merged) row, matching visibleSelectedIds\' own scoping rule',
+     /selAll\.onchange = function \(\) \{[\s\S]{0,200}mergedRows\(\)\.forEach/.test(mjs));
   ok('the three batch actions are Download / Add to Presentation / Archive',
      /pp-sel-download/.test(mjs) && /pp-sel-addppr/.test(mjs) && /pp-sel-archive/.test(mjs));
   // Item 4 also REMOVES the separate "Clear" action — the header checkbox
   // covers deselecting everything.
   ok('the old separate "Clear" selection button is gone (item 4)', !/pp-sel-clear/.test(mjs) && !/pp-sel-clear/.test(html));
-  ok('batch archive is tolerant of the pending migration, same as the single-item toggle', /pp-sel-archive'\)\.onclick[\s\S]{0,400}archive-flag\.sql/.test(mjs));
+  ok('batch archive is tolerant of the pending migration, same as the single-item toggle', /pp-sel-archive'\)\.onclick[\s\S]{0,900}archive-flag\.sql/.test(mjs));
+  // Items 6+8: batch archive is now kind-aware — a mixed selection issues up
+  // to three parallel updates (progress_photos/panoramas/
+  // reconstruction_requests) via splitSelectedIds(), never a single
+  // `.in('id', ids)` against one table that would silently miss a prefixed
+  // pseudo-id (or, worse, try to match it against a real photo's uuid).
+  ok('splitSelectedIds() exists and separates a mixed selection into its three real target tables',
+     /function splitSelectedIds\(ids\)/.test(mjs) &&
+     /out\.pano\.push\(id\.slice\(5\)\)/.test(mjs) && /out\.recon\.push\(id\.slice\(6\)\)/.test(mjs));
+  ok('batch archive updates panoramas/reconstruction_requests too when the selection contains pseudo-rows',
+     /sb\(\)\.from\('panoramas'\)\.update\(\{ archived: true \}\)\.in\('id', split\.pano\)/.test(mjs) &&
+     /sb\(\)\.from\('reconstruction_requests'\)\.update\(\{ archived: true \}\)\.in\('id', split\.recon\)/.test(mjs));
+  ok('batch download and Add-to-Presentation are scoped to real photos only, with a warning naming the skipped 360°/3D count',
+     /if \(!split\.photo\.length\) \{[\s\S]{0,200}UI\.toast\('Select at least one photo to download/.test(mjs) &&
+     /if \(!split\.photo\.length\) \{[\s\S]{0,200}UI\.toast\('Select at least one photo — 360°\/3D captures/.test(mjs));
   // Item 3: the whole separate boxed "selection bar" is GONE — its actions
   // moved into the topbar tools row, toggled via syncChrome()'s explicit
   // style.display (see [29]'s own note on why: `hidden` never worked here).
@@ -1229,9 +1312,23 @@ console.log('\n[misc] insert().select() returns the new row id');
   // the [item 11] section further down, not here.
   ok('module.js no longer opens the after-the-fact pin-picker modal from the upload flow',
      !/BIM\.openPinPickerFor/.test(mjs));
-  ok('Gallery tiles with a pin show an expandable icon (item 8), never on tiles without one',
-     /pinInfoFor\('photo', r\.id\)/.test(mjs) && /pp-pinbtn/.test(mjs));
-  ok('openPinPreview exists for the tile-icon crop-zoom overlay', /function openPinPreview\(photoId\)/.test(mjs));
+  // ⚠️ RETIRED (item 4, 11-item round): "no need for the key plan button" in
+  // Gallery/List — cardHTML no longer emits .pp-pinbtn/[data-pinpreview] at
+  // all, openPinPreview() (the Tight/Wide crop-zoom popup) is deleted with
+  // it, and [data-pinpreview] is no longer wired in wireRows(). The
+  // replacement lives in the lightbox toolbar instead — see the [item 4]
+  // section further down.
+  // ⚠️ Narrowed to actual DECLARATION/USAGE patterns, not a bare substring
+  // match — comments in this very file legitimately mention "pp-pinbtn" and
+  // "[data-pinpreview]" in prose explaining the retirement, and a test that
+  // fails on its own retirement comment is the exact trap item 11's own fix
+  // already had to correct once (see that section's comment further down).
+  ok('cardHTML no longer emits the Gallery-tile pin icon markup (class="pp-pinbtn" / data-pinpreview=)',
+     !/class="pp-pinbtn/.test(mjs) && !/data-pinpreview="/.test(mjs));
+  ok('openPinPreview() as a real function declaration is gone',
+     !/function openPinPreview\(/.test(mjs));
+  ok('wireRows() no longer wires [data-pinpreview]',
+     !/querySelectorAll\('\[data-pinpreview\]'\)/.test(mjs));
   // Genuine execution — the exact math, not a regex on the surrounding code.
   // 0° = up, clockwise-positive, matching floor_plan_pins.direction_deg's
   // documented convention.
@@ -2286,8 +2383,58 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('openViewer captures mountCylinderViewer\'s return value (it used to be discarded outright) and passes a dispose callback as onClose — a real WebGL context can no longer leak on every single-panorama view',
      /var viewer = null;\s*var m = openModal\(html, 900, function \(\) \{ if \(viewer\) viewer\.dispose\(\); \}\);/.test(pnjs) &&
      /viewer = mountCylinderViewer\(canvas, u\);/.test(pnjs));
-  ok('mountCylinderViewer\'s own dispose really does release the renderer\'s WebGL context (unchanged by this fix — confirming the handle openViewer now keeps a reference to is the right one)',
-     /dispose: function \(\) \{ try \{ renderer\.dispose\(\); \} catch \(e\) \{\} \}/.test(pnjs));
+  // ⚠️ Superseded by item 5's own audit-continuation and item 7 (this
+  // round) — `dispose`'s shape changed from the single-line
+  // `dispose: function () { try { renderer.dispose(); } catch (e) {} }`
+  // this assertion used to check, since it now ALSO removes the leaked
+  // window listener and cancels the rAF loop (below). Updated in place —
+  // still confirms `renderer.dispose()` runs, just no longer as the ONLY
+  // thing dispose does.
+  ok('mountCylinderViewer\'s own dispose still releases the renderer\'s WebGL context (unchanged behaviour, now alongside the item-7 cleanup below)',
+     /dispose: function \(\) \{\s*window\.removeEventListener\('mouseup', onUp\);[\s\S]{0,200}try \{ renderer\.dispose\(\); \} catch \(e\) \{\}\s*\}/.test(pnjs));
+
+  console.log('\n[36c] Item 7 (11-item round) — 360° viewer smoothness/performance');
+  {
+    // ⚠️ The real, high-confidence root cause: `window.addEventListener(
+    // 'mouseup', onUp)` was NEVER matched by a removeEventListener — the
+    // SAME bug class this file's own audit already fixed once in bim.js's
+    // wireStageInteractions (see that entry above). Because a JS closure
+    // keeps its WHOLE enclosing scope alive (not just the variables the
+    // inner function actually reads), a stray window-level listener kept
+    // the entire mountCylinderViewer() call — the WebGLRenderer, its GL
+    // context, the scene, the texture — reachable forever. Opening/closing
+    // several panoramas in one session (or switching A/B in the dormant
+    // Compare view, which re-mounts on every dropdown change) would
+    // accumulate real GPU/memory pressure this way — exactly the shape of
+    // "gets less smooth over time."
+    ok('dispose() now removes the window-level mouseup listener that was NEVER cleaned up before',
+       /dispose: function \(\) \{\s*window\.removeEventListener\('mouseup', onUp\);/.test(pnjs));
+    ok('…and cancels the render-loop rAF request too, so a viewer closed mid-drag cannot leave a dangling animation-frame callback either',
+       /if \(rafId != null\) \{ try \{ cancelAnimationFrame\(rafId\); \} catch \(e\) \{\} rafId = null; \}/.test(pnjs));
+
+    // The second, independent fix: drag used to call renderer.render()
+    // SYNCHRONOUSLY on every raw mousemove/touchmove — a browser can
+    // dispatch several move events between two actual display refreshes,
+    // each one triggering a full separate WebGL render pass with no
+    // requestAnimationFrame coalescing or vsync alignment at all. That
+    // unsynced, bursty render pattern is a textbook cause of perceived
+    // jank during a drag, independent of the leak above.
+    ok('onMove no longer calls renderer.render() directly — it only sets a dirty flag (needsRender), coalescing however many move events land within one frame into a single actual render',
+       /function onMove\(x, y\) \{\s*if \(!dragging\) return;\s*lon -= \(x - lastX\) \* 0\.2; lat = Math\.max\(-70, Math\.min\(70, lat \+ \(y - lastY\) \* 0\.2\)\);\s*lastX = x; lastY = y; needsRender = true;\s*\}/.test(pnjs) &&
+       !/lastX = x; lastY = y; applyLook\(\); renderer\.render\(scene, camera\);/.test(pnjs));
+    ok('renderLoop() renders AT MOST ONCE per animation frame, always reading the LATEST lon/lat via applyLook(), only when something actually changed since the last frame',
+       /function renderLoop\(\) \{\s*rafId = null;\s*if \(needsRender\) \{ needsRender = false; applyLook\(\); renderer\.render\(scene, camera\); \}/.test(pnjs));
+    ok('the render loop keeps ticking ONLY while dragging is true — an idle (non-dragging) view costs nothing, no background render loop runs forever burning CPU/battery',
+       /if \(dragging\) rafId = requestAnimationFrame\(renderLoop\);/.test(pnjs));
+    ok('onDown wakes the loop (in case it had already gone idle from a previous drag ending) rather than assuming it is still running',
+       /function onDown\(x, y\) \{ dragging = true; lastX = x; lastY = y; wake\(\); \}/.test(pnjs) &&
+       /function wake\(\) \{ if \(rafId == null\) rafId = requestAnimationFrame\(renderLoop\); \}/.test(pnjs));
+    ok('the initial (non-drag) render on mount is untouched — a viewer still shows something the instant it opens, before any drag has happened',
+       /applyLook\(\);\s*renderer\.render\(scene, camera\);\s*\n\s*return \{/.test(pnjs));
+    ok('setOpacity/setTexture (used by the dormant Compare viewer\'s discrete texture-swap) are left as direct, immediate renders — infrequent, discrete actions, not part of the continuous-drag hot path the rAF coalescing exists for',
+       /setOpacity: function \(a\) \{ material\.opacity = a; material\.transparent = a < 1; material\.needsUpdate = true; renderer\.render\(scene, camera\); \}/.test(pnjs) &&
+       /setTexture: function \(u2\) \{\s*loader\.load\(u2, function \(tex\) \{ material\.map = tex; material\.needsUpdate = true; renderer\.render\(scene, camera\); \}\);/.test(pnjs));
+  }
 
   // --- bim.js OpenCV cv.Mat leaks — structural only. Genuinely proving this
   // needs a fake `cv` global tracking live/deleted WASM Mat handles across
@@ -2505,6 +2652,116 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var srcMat, dstMat, Hmat;\s*try \{\s*srcMat = cv\.imread\(frameCanvases\[i\]\);/.test(pnjs) &&
      /\} finally \{\s*if \(srcMat\) srcMat\.delete\(\);\s*if \(dstMat\) dstMat\.delete\(\);\s*if \(Hmat\) Hmat\.delete\(\);\s*\}/.test(pnjs));
 
+  console.log('\n[36b] Item 5 (11-item round) — the three reported 360° capture failures: "could not build panorama", "could not read video duration", "maximum call stack exceeded"');
+  {
+    // "Could not read the video duration." is the LITERAL string this
+    // codebase throws when video.duration is still non-finite after the
+    // fix attempt — a MediaRecorder-produced blob commonly has no duration
+    // atom, so <video>.duration reads Infinity/NaN until the browser is
+    // forced to recompute it (seek far past the end, then back to 0).
+    ok('extractFrames now attempts fixInfiniteDuration() before giving up on a non-finite duration, instead of rejecting on the very first Infinity/NaN reading',
+       /if \(!isFinite\(duration\) \|\| duration <= 0\) \{[\s\S]{0,2000}duration = await fixInfiniteDuration\(video\);\s*\}/.test(pnjs) &&
+       /if \(!isFinite\(duration\) \|\| duration <= 0\) \{ reject\(new Error\('Could not read the video duration\.'\)\); return; \}/.test(pnjs));
+
+    // Genuinely EXECUTE fixInfiniteDuration against a fake <video> — same
+    // reasoning as every other pure-logic hook this app exports: a wrong
+    // event name or a swallowed exception here is silent (the pipeline
+    // would just hang or immediately reject, indistinguishable by reading
+    // the source alone from "it works but slowly").
+    function fakeVideo(opts) {
+      const listeners = {};
+      const v = {
+        _duration: opts.initialDuration,
+        _seekHistory: [],
+        get duration() { return this._duration; },
+        set currentTime(t) {
+          this._seekHistory.push(t);
+          if (opts.throwOnSeek) throw new Error('seek not supported');
+          // Simulate the browser settling on a real duration once seeked
+          // near the end, then the code seeking back to 0 (onTimeUpdate).
+          // ⚠️ 'timeupdate' fires only for the INITIAL far-future seek
+          // (t > 1000), never for the code's own seek-BACK to 0 inside its
+          // own handler — a real browser fires 'timeupdate' asynchronously
+          // on its own schedule, not synchronously and reentrantly on every
+          // currentTime write. Firing it unconditionally here would make
+          // onTimeUpdate() call itself the instant it sets currentTime=0,
+          // before removeEventListener has had a chance to run — a genuine
+          // infinite-recursion bug in the FAKE, not in pano.js's real code.
+          if (t > 1000) { this._duration = opts.resolvedDuration; }
+          if (t > 1000 && listeners.timeupdate && opts.firesTimeUpdate) listeners.timeupdate.slice().forEach((fn) => fn());
+        },
+        addEventListener(name, fn) { (listeners[name] = listeners[name] || []).push(fn); },
+        removeEventListener(name, fn) {
+          if (!listeners[name]) return;
+          listeners[name] = listeners[name].filter((f) => f !== fn);
+        }
+      };
+      return v;
+    }
+    // The whole rest of this file runs inside one top-level `(async () =>
+    // {...})()` IIFE (see the [misc] "insert().select() returns the new row
+    // id" section far above) — this is a genuine `await`, not a fire-and-
+    // forget nested promise whose assertions would otherwise race the
+    // final process.exit() and might never actually run before the summary
+    // prints.
+    const v1 = fakeVideo({ initialDuration: Infinity, resolvedDuration: 12.5, firesTimeUpdate: true });
+    const d1 = await PANO._fixInfiniteDuration(v1);
+    ok('fixInfiniteDuration resolves with the REAL duration once the browser (simulated) settles on one after the forced seek',
+       d1 === 12.5);
+    ok('…and it seeks past 1000 first (the forced far-future seek), then back to 0 afterward — the standard two-step fix, in order',
+       v1._seekHistory.length === 2 && v1._seekHistory[0] > 1000 && v1._seekHistory[1] === 0);
+
+    // A browser that genuinely never fires the event (or never recovers a
+    // real duration) must still resolve — via the 2s timeout — rather than
+    // hang the whole capture pipeline forever waiting on it.
+    ok('fixInfiniteDuration times out and resolves anyway (2s) rather than hanging forever, same discipline seekTo() already uses',
+       /var timer = setTimeout\(finish, 2000\);/.test(pnjs) &&
+       /function finish\(\) \{\s*if \(done\) return;\s*done = true;\s*video\.removeEventListener\('timeupdate', onTimeUpdate\);\s*clearTimeout\(timer\);\s*resolve\(video\.duration\);\s*\}/.test(pnjs));
+    ok('…and a browser that throws on the seek itself (some do, for a detached/corrupt video) still resolves rather than throwing out of fixInfiniteDuration',
+       /try \{ video\.currentTime = 1e101; \} catch \(e\) \{ finish\(\); \}/.test(pnjs));
+
+    // The width/height Infinity bug: `Infinity || 0.5625` is Infinity (not
+    // the intended fallback), so a videoWidth-0-but-videoHeight-nonzero
+    // frame used to compute an Infinite canvas height.
+    ok('extractFrames guards width/height EXPLICITLY (both-zero AND either-alone), never an `||` fallback chain that can itself produce Infinity',
+       /var vw = video\.videoWidth \|\| 0, vh = video\.videoHeight \|\| 0;/.test(pnjs) &&
+       /var w = vw \? Math\.min\(vw, 640\) : 640;/.test(pnjs) &&
+       /var h = \(vw && vh\) \? Math\.round\(w \* \(vh \/ vw\)\) : Math\.round\(w \* 0\.5625\);/.test(pnjs) &&
+       !/Math\.round\(w \* \(video\.videoHeight \/ video\.videoWidth \|\| 0\.5625\)\)/.test(pnjs));
+
+    // "Maximum call stack size exceeded" — genuinely a hard bug to pin down
+    // without a real WASM/OpenCV.js stack (this environment has neither),
+    // so the fix is defence-in-depth at the three most plausible entry
+    // points, each verified structurally: (1) never feed OpenCV a
+    // zero-dimension frame in the first place, (2) one bad frame pair no
+    // longer aborts the WHOLE capture, (3) formatting the caught error can
+    // never itself throw.
+    ok('stitchFrames skips (never feeds OpenCV) a frame pair where either canvas has a zero width/height — a documented crash source for ORB/BFMatcher, degrading to "poor quality" for that pair instead',
+       /if \(!frameCanvases\[i - 1\]\.width \|\| !frameCanvases\[i - 1\]\.height \|\|\s*!frameCanvases\[i\]\.width \|\| !frameCanvases\[i\]\.height\) \{\s*quality = 'poor'; continue;\s*\}/.test(pnjs));
+    ok('a THROW from homographyBetween on one frame pair no longer aborts the whole stitch — it degrades that pair to "poor" and the loop continues, the same non-fatal path a low-match pair already takes',
+       /try \{\s*try \{\s*var r = homographyBetween\(prevMat, curMat\);/.test(pnjs) &&
+       /\} catch \(pairErr\) \{\s*quality = 'poor'; continue;\s*\}/.test(pnjs));
+    ok('prevMat\\/curMat are still deleted via their own inner finally even when homographyBetween throws (the outer catch does not bypass that cleanup)',
+       /\} finally \{ prevMat\.delete\(\); curMat\.delete\(\); \}\s*\} catch \(pairErr\)/.test(pnjs));
+
+    // safeErrMessage: genuinely executed across the shapes that matter —
+    // a real Error, a raw non-Error value (the documented OpenCV.js WASM
+    // exception-pointer shape), and a value that THROWS when read at all.
+    eq('safeErrMessage: a real Error returns its own .message', PANO._safeErrMessage(new Error('boom')), 'boom');
+    eq('safeErrMessage: a raw number (the documented shape of an Emscripten/OpenCV.js WASM exception pointer) stringifies safely rather than being read as .message',
+       PANO._safeErrMessage(12345), '12345');
+    eq('safeErrMessage: a plain string passes through unchanged', PANO._safeErrMessage('already a string'), 'already a string');
+    eq('safeErrMessage: an object with a THROWING message getter degrades to a generic message rather than propagating a second exception out of the error handler',
+       PANO._safeErrMessage({ get message() { throw new Error('reentrant'); } }), 'an unexpected error');
+    eq('safeErrMessage: an object whose String() conversion itself throws still degrades to the generic message, never escapes',
+       PANO._safeErrMessage({ toString() { throw new Error('also reentrant'); } }), 'an unexpected error');
+    eq('safeErrMessage: null/undefined stringify to a plain word rather than crashing on `.message` access',
+       PANO._safeErrMessage(null), 'null');
+    ok('processVideo\'s catch block now routes through safeErrMessage(e), not the old unguarded `e.message || e`',
+       /UI\.toast\('Could not build the panorama: ' \+ safeErrMessage\(e\), 'error'\);/.test(pnjs) &&
+       !/UI\.toast\('Could not build the panorama: ' \+ \(e\.message \|\| e\), 'error'\);/.test(pnjs));
+  }
+
   console.log('\n[37] Fourth feedback round (2026-08-30) — the wireLocationField/wireLocFields regression, topbar init isolation, group-by None');
 
   // ⚠️ ROOT-CAUSE REGRESSION GUARD. module.js used to carry TWO
@@ -2686,8 +2943,12 @@ console.log('\n[misc] insert().select() returns the new row id');
        /\.pp-card\s*\{\s*border:\s*none;\s*border-radius:\s*0;\s*background:\s*transparent;\s*\}/.test(mq));
     ok('the selected-tile indicator still works with the chrome gone (a real border reappears only when .pp-selrow is set)',
        /\.pp-card\.pp-selrow\s*\{\s*border:\s*2px solid var\(--pd-red\);\s*\}/.test(mq));
-    ok('the corner overlays (select checkbox / pin badge) shrink to match the smaller tile, rather than covering a third of a ~120px photo at their desktop size',
-       /\.pp-cardsel,\s*\.pp-pinbtn\s*\{\s*padding:\s*2px;/.test(mq));
+    // ⚠️ Item 4 (11-item round) retired .pp-pinbtn (the Gallery-tile pin
+    // badge), so this rule now scopes to .pp-cardsel alone — the select
+    // checkbox is the only remaining corner overlay on a phone tile.
+    ok('the select-checkbox corner overlay shrinks to match the smaller tile, rather than covering a third of a ~120px photo at its desktop size',
+       /\.pp-cardsel\s*\{\s*padding:\s*2px;\s*top:\s*3px;\s*left:\s*3px;\s*\}/.test(mq) &&
+       !/\.pp-pinbtn/.test(mq));
   }
 
   // [38] Fifth round items 2/3/4/6/9 — markup grouping/redo/reorder, resize,
@@ -2800,20 +3061,81 @@ console.log('\n[misc] insert().select() returns the new row id');
      /d="M ' \+ P\[0\] \+ ',' \+ P\[1\] \+ ' L ' \+ E1\[0\] \+ ',' \+ E1\[1\] \+ ' A '/.test(bmjs));
   ok('the wedge fill is a radial gradient (dark at the pin, fading to nothing at the arc), and carries NO stroke at all',
      /radialGradient id="' \+ gradId/.test(bmjs) && /stop-opacity:\.85/.test(bmjs) && /stop-opacity:0/.test(bmjs) && /stroke="none"/.test(bmjs));
-  ok('there is now exactly ONE draggable handle (was two independent edge handles)',
-     (bmjs.match(/bim-conehandle-el/g) || []).length > 0 && !/data-h="2"/.test(bmjs));
-  ok('the handle is sized to 1/4 of the 14px pin dot (4px, was 16px)',
-     /\.bim-conehandle-el \{\s*position: absolute; width: 4px; height: 4px;/.test(css));
-  ok('"does not apply" now hides the wedge and its handle ENTIRELY (bim.js stops rendering them), not a dimmed placeholder',
-     /\(s\.na \? '' : coneSvg\(/.test(bmjs) && /\(s\.na \? '' : '<div class="bim-conehandle-el"/.test(bmjs));
-  ok('double-clicking the PIN DOT itself toggles NA back off once the wedge is gone (the only thing left to click)',
-     /if \(dot\) dot\.ondblclick = toggleNA;/.test(bmjs));
-  ok('dragging the sector BODY changes only the facing direction (halfWidth/reach untouched)',
+  // ⚠️ Superseded by item 3 (this round): a SECOND handle was added
+  // ("one more small drag point for the direction of the camera angle"),
+  // so "exactly ONE handle" is no longer the shipped behaviour — rewritten
+  // to assert BOTH handles exist and are distinct classes, rather than
+  // deleting the coverage outright.
+  ok('there are now TWO draggable handles — the original corner handle (angle+range) plus a new direction-only handle (item 3)',
+     (bmjs.match(/bim-conehandle-el/g) || []).length > 0 && (bmjs.match(/bim-dirhandle-el/g) || []).length > 0);
+  // ⚠️ Superseded by item 3: the pin dot grew from 14px to 22px (it now
+  // holds a person/drone icon), and the corner handle grew from 4px to 6px
+  // to stay proportioned to it — both figures updated, not just re-asserted.
+  ok('the corner handle stays proportioned to the (now 22px) pin dot — 6px, still roughly 1/4',
+     /\.bim-pinstage-dot \{\s*position: absolute; width: 22px; height: 22px;/.test(css) &&
+     /\.bim-conehandle-el \{\s*position: absolute; width: 6px; height: 6px;/.test(css));
+  ok('the new direction-only handle is styled distinctly from the corner handle (ink border, not red) so the two are visually distinguishable',
+     /\.bim-dirhandle-el \{\s*position: absolute; width: 6px; height: 6px;[\s\S]{0,120}border: 1\.5px solid var\(--pd-ink\);/.test(css));
+  ok('"does not apply" now hides the wedge and BOTH handles ENTIRELY (bim.js stops rendering them), not a dimmed placeholder',
+     /\(s\.na \? '' : coneSvg\(/.test(bmjs) && /\(s\.na \? '' : '<div class="bim-conehandle-el"/.test(bmjs) &&
+     /\(s\.na \? '' : '<div class="bim-dirhandle-el"/.test(bmjs));
+  // ⚠️ Superseded by item 3 ("the pin should switch from person icon to
+  // drone icon on one click"): double-click is gone, replaced by a real
+  // drag-vs-tap pointer sequence on the pin dot itself. Rewritten to assert
+  // the NEW mechanism instead of the retired one, and to confirm the old
+  // one is genuinely gone (not left dangling as dead-but-still-attached code).
+  ok('double-click-to-toggle on the pin dot is GONE — dot.ondblclick is no longer assigned',
+     !/if \(dot\) dot\.ondblclick = toggleNA;/.test(bmjs));
+  ok('the pin dot wires a real pointer-capture drag (onpointerdown/setPointerCapture), not a click handler',
+     /if \(dot\) dot\.onpointerdown = function \(e\) \{/.test(bmjs) && /dot\.setPointerCapture\(e\.pointerId\);/.test(bmjs));
+  ok('a genuine TAP on the pin dot (movement stays under the threshold) toggles na — the single-click camera/drone switch',
+     /var DOT_TAP_THRESHOLD = 6;/.test(bmjs) && /if \(!moved\) \{\s*var cur = state\(\); if \(!cur\) return;\s*cur\.na = !cur\.na; setState\(cur\); repaint\(\);/.test(bmjs));
+  ok('a real DRAG on the pin dot (movement exceeds the threshold) does NOT toggle na — only a tap does',
+     /if \(!moved\) return; \/\/ still within tap range — don't nudge the pin for a click/.test(bmjs));
+  ok('dragging the pin dot translates BOTH cone edges by the same delta as the pin itself — so the cone stays attached in shape/orientation as the pin moves',
+     /cur\.e1x = startE1x \+ dx; cur\.e1y = startE1y \+ dy;/.test(bmjs) && /cur\.e2x = startE2x \+ dx; cur\.e2y = startE2y \+ dy;/.test(bmjs));
+  ok('the pin-drag snapshot is taken at drag-START, the same convention module.js\'s translateMarkupObj already documents — never an incremental delta reapplied move-to-move',
+     /var startX = start\.x, startY = start\.y;/.test(bmjs) && /var startE1x = start\.e1x, startE1y = start\.e1y, startE2x = start\.e2x, startE2y = start\.e2y;/.test(bmjs));
+  ok('the pin dot renders a person icon in camera mode and a drone icon in NA/top-view mode, via Icons.svg() directly (not the data-ico/hydrate path, so it updates synchronously on every repaint)',
+     /Icons\.svg\(s\.na \? 'drone' : 'person', 12\)/.test(bmjs));
+  ok('dragging the sector BODY still changes only the facing direction (halfWidth/reach untouched) — kept alongside the new dedicated handle, not removed',
      /Dragging the SECTOR BODY changes only the facing DIRECTION/.test(bmjs) && /var newDir = bearingFromTo\(cur\.x, cur\.y, n\.x, n\.y\);/.test(bmjs));
-  ok('dragging the ONE handle changes both half-width (angle) and reach (depth) together — "one button… both"',
+  ok('dragging the CORNER handle changes both half-width (angle) and reach (depth) together — unchanged from before item 3',
      /var newHalfW = Math\.max\(4, Math\.min\(88, Math\.abs\(diff\)\)\);/.test(bmjs) && /var newReach = Math\.max\(0\.02,/.test(bmjs));
+  ok('dragging the NEW direction-only handle changes ONLY direction, passing halfW/reach through unchanged — the inverse split from the corner handle',
+     /if \(dirHandle\) dirHandle\.onpointerdown = function \(e\) \{/.test(bmjs) &&
+     /var newDir = bearingFromTo\(cur\.x, cur\.y, n\.x, n\.y\);\s*var edges = edgesFromCone\(cur\.x, cur\.y, newDir, cone\.halfW, cone\.reach\);/.test(bmjs));
   ok('resize/rotate DOM updates during a drag are IN-PLACE attribute writes (setAttribute\'d), never innerHTML — replacing the DOM mid-gesture would drop the pointer capture the drag itself just set up',
      /function paintConeLive\(cur\)/.test(bmjs) && /wedge\.setAttribute\('d',/.test(bmjs));
+  ok('paintConeLive also keeps the new direction handle glued to the arc\'s bearing/reach during any drag',
+     /var dirHandle = \$\(idPrefix \+ '-dir-handle'\);\s*if \(dirHandle\) \{/.test(bmjs));
+
+  // Item 3 (this round) — genuinely EXECUTE the direction-handle's own
+  // position math (pointAtBearing), the same reasoning already applied to
+  // every other cone-geometry helper in this section: a flipped sign here
+  // is silent — the handle still LOOKS like a normal draggable control, it
+  // just sits at the wrong point.
+  {
+    const p0 = BIM._pointAtBearing(0.5, 0.5, 0, 0.2);   // bearing 0 = straight up
+    ok('pointAtBearing at bearing 0 (straight up) moves y NEGATIVE (up, in normalized image coords) and x stays put',
+       Math.abs(p0.x - 0.5) < 1e-9 && p0.y < 0.5 - 0.19);
+    const p90 = BIM._pointAtBearing(0.5, 0.5, 90, 0.2); // bearing 90 = due "east"/right
+    ok('pointAtBearing at bearing 90 (east) moves x POSITIVE and y stays put',
+       Math.abs(p90.y - 0.5) < 1e-9 && p90.x > 0.5 + 0.19);
+    // The direction handle's position is exactly pointAtBearing(px, py,
+    // cone.dir, cone.reach) — confirm the round-trip against a real cone:
+    // a cone facing bearing 90 with reach 0.2 must place its direction
+    // handle at the SAME point p90 computed independently above.
+    const edgesE = BIM._edgesFromCone(0.5, 0.5, 90, 25, 0.2);
+    const coneE = BIM._coneParamsFromEdges(0.5, 0.5, edgesE.e1x, edgesE.e1y, edgesE.e2x, edgesE.e2y);
+    const dirHandlePt = BIM._pointAtBearing(0.5, 0.5, coneE.dir, coneE.reach);
+    ok('the direction handle\'s computed position (from a real cone\'s own dir/reach) matches pointAtBearing computed independently — the handle sits exactly where the facing direction points',
+       Math.abs(dirHandlePt.x - p90.x) < 0.001 && Math.abs(dirHandlePt.y - p90.y) < 0.001);
+  }
+  ok('the pin-capture hint text describes the new drag-the-pin + single-click-toggle model, not the retired double-click one',
+     /Drag the pin to move it\. Drag the small handle at the arc\\'s edge to adjust the/.test(bmjs) &&
+     /Click the pin once to switch between a ground-level camera view and a top-view drone shot\./.test(bmjs) &&
+     !/Double-click the shaded area/.test(bmjs));
 
   // =========================================================== [40] =========
   // Task #9 (punch-list): Plan view and Stack view's month steppers each
@@ -2867,7 +3189,10 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('the button + progress label exist in index.html, wired to backfillThumbnails(); render() keeps the button in sync every repaint',
      /id="pp-genthumbs"/.test(html) && /id="pp-genthumbs-prog"/.test(html) &&
      /\$\('pp-genthumbs'\)\.onclick = function \(\) \{ backfillThumbnails\(\); \};/.test(mjs) &&
-     /renderMediaStrip\(\);\s*syncGenThumbsBtn\(\);/.test(mjs));
+     // Items 6+8: renderMediaStrip() (the retired separate strip) is gone —
+     // syncGenThumbsBtn() now runs right after render() computes lightboxIds
+     // from the merged list, still unconditionally on every repaint.
+     /lightboxIds = list\.filter\(function \(r\) \{ return !r\._kind; \}\)[\s\S]{0,80}syncGenThumbsBtn\(\);/.test(mjs));
 
   // Genuine execution: a photo with no thumb_url is correctly listed as
   // needing one; a photo that already has one is correctly excluded; a
@@ -3008,6 +3333,92 @@ console.log('\n[misc] insert().select() returns the new row id');
 
   ok('module.css defines .pp-mk-toggle\/.active (Bold\/Italic buttons) and .pp-mk-checklabel (the Border checkbox\'s label) — both new controls actually have styling, not just markup',
      /\.pp-mk-toggle \{/.test(cssFile) && /\.pp-mk-toggle\.active \{/.test(cssFile) && /\.pp-mk-checklabel \{/.test(cssFile));
+
+  console.log('\n[44] Eleven-item feedback round (current) — items 9/10: back-button label, "Preview" replaced by a photo-markup toggle');
+
+  // --- Item 9: back-arrow + "Back" label -----------------------------------
+  ok('the in-header back button (#ppr-slide-back) now reads "Back", not "Presentations list" — the arrow icon already carried the direction',
+     /id="ppr-slide-back" title="Back to the presentation list">' \+\s*\n\s*'<span data-ico="arrowLeft" data-ico-size="14"><\/span> Back<\/button>/.test(pjs));
+  ok('the topbar\'s own Templates-screen-only back button (#ppr-back) is renamed the same way, for consistency',
+     /id="ppr-back" title="Back to the presentation list" style="display:none;">\s*\n\s*<span data-ico="arrowLeft" data-ico-size="14"><\/span> Back<\/button>/.test(html));
+
+  // --- Item 10: "Preview this presentation" removed, replaced by a photo-markup toggle
+  ok('the "Preview this presentation\'s slides" header icon is gone; a photo-markup toggle (ppr-photomk-toggle) takes its place',
+     !/id="ppr-pres-preview"/.test(pjs) && /id="ppr-photomk-toggle"/.test(pjs));
+  ok('showPhotoMarkup is a SEPARATE, presentation-wide flag from showMarkup{} (the per-pane SLIDE-only annotation toggle), defaulting true',
+     /var showPhotoMarkup = true;/.test(pjs));
+  ok('clicking the toggle flips showPhotoMarkup and re-renders the slide (both panes read it fresh on every renderSlides() call)',
+     /\$\('ppr-photomk-toggle'\)\.onclick = function \(\) \{\s*\n\s*showPhotoMarkup = !showPhotoMarkup;\s*\n\s*renderSlides\(\);\s*\n\s*\};/.test(pjs));
+  ok('pane() reads the photo\'s OWN permanent markup (ph.markup, progress_photos.markup) — a field the slide-markup canvas never reads',
+     /var photoMk = \(ph && ph\.markup\) \|\| \[\];/.test(pjs) &&
+     /var photoMkVisible = showPhotoMarkup && u && photoMk\.length;/.test(pjs));
+  ok('the photo-markup canvas is a SECOND, separate canvas element from the slide-markup one (ppr-photomkcanvas-<which> vs ppr-mkcanvas-<which>), painted UNDERNEATH it in DOM order',
+     /id="ppr-photomkcanvas-' \+ which \+ '"/.test(pjs) && /id="ppr-mkcanvas-' \+ which \+ '"/.test(pjs) &&
+     pjs.indexOf('ppr-photomkcanvas-') < pjs.indexOf("id=\"ppr-mkcanvas-' + which + '\""));
+  ok('wirePaneMarkup paints the photo-markup canvas from photoById(photoId).markup via the SAME shared drawMarkupOnCanvas export the slide canvas uses (never a second drawing implementation)',
+     /var ph = photoById\(photoId\);\s*\n\s*if \(ph && window\.ProgressPhotos && ProgressPhotos\.drawMarkupOnCanvas\) \{\s*\n\s*ProgressPhotos\.drawMarkupOnCanvas\(pcv, ph\.markup \|\| \[\]\);/.test(pjs));
+  ok('the slide-export path (slideFigureHTML/EXPORT_CSS) is untouched by item 10 — the photo-markup toggle is a live viewing aid, never baked into a downloaded file',
+     /function slideFigureHTML/.test(pjs) && !/showPhotoMarkup/.test(pjs.slice(pjs.indexOf('function slideFigureHTML'))));
+
+  // --- Item 11: ONE key-plan toggle, top-right corner overlay at 1/10 size --
+  ok('item 21\'s per-pane keyPlanOpenPane state is gone (no declaration/assignment of it survives — only explanatory prose mentioning the retired name), replaced by a single showKeyPlan flag',
+     !/var keyPlanOpenPane/.test(pjs) && !/keyPlanOpenPane\[/.test(pjs) && !/keyPlanOpenPane =/.test(pjs) &&
+     /var showKeyPlan = false;/.test(pjs));
+  ok('openPpr() resets showKeyPlan (not the old per-pane object) when opening a presentation',
+     /selId = id; viewPprId = id; slideAt = 0; showKeyPlan = false;/.test(pjs));
+  ok('the header key-plan toggle (#ppr-kp-toggle) is offered ONLY when the current slide actually has a key plan on at least one pane — never a speculative control',
+     /\(cur && \(keyPlanPathFor\(cur, 'before'\) \|\| keyPlanPathFor\(cur, 'after'\)\)\)/.test(pjs) &&
+     /id="ppr-kp-toggle"/.test(pjs));
+  ok('clicking it flips showKeyPlan (a presentation-wide flag) and re-renders — both panes read it fresh',
+     /\$\('ppr-kp-toggle'\)\.onclick = function \(\) \{\s*\n\s*showKeyPlan = !showKeyPlan;\s*\n\s*renderSlides\(\);\s*\n\s*\};/.test(pjs));
+  ok('pane() no longer renders a per-pane ppr-kpicon button — the popup\'s visibility is driven by the header\'s showKeyPlan alone, gated per-pane only on whether THAT photo has a plan',
+     !/class="ppr-kpicon/.test(pjs) &&
+     /var kpPopup = \(showKeyPlan && kpPath\)/.test(pjs));
+  ok('module.css: the popup is pinned to the photo\'s own top-right corner (top:8px;right:8px, matching where the retired per-pane icon used to sit) and sized as a FRACTION of the photo (10% width), not a fixed 220px dropdown',
+     /\.ppr-kppopup \{[^}]*top: 8px; right: 8px;[^}]*width: 10%;/.test(css.replace(/\n/g, ' ')));
+  ok('the retired .ppr-kpicon CSS rule is gone entirely',
+     !/\.ppr-kpicon\s*\{/.test(css));
+  ok('.pp-iconbtn.is-active exists (the shared "on" state both the item-10 and item-11 header toggles use)',
+     /\.pp-iconbtn\.is-active \{/.test(css));
+
+  console.log('\n[45] Item 4 — Gallery/List key-plan button removed, replaced by a per-photo lightbox toggle overlaying 1/8 of the photo');
+
+  // --- "no need for the key plan button" in gallery/list --------------------
+  ok('the Gallery tile no longer has a key-plan icon at all: no .pp-pinbtn markup, no data-pinpreview attribute, no openPinPreview() function',
+     !/class="pp-pinbtn/.test(mjs) && !/data-pinpreview="/.test(mjs) && !/function openPinPreview\(/.test(mjs));
+  ok('wireRows() no longer wires [data-pinpreview] (its handler and querySelectorAll call are both gone)',
+     !/querySelectorAll\('\[data-pinpreview\]'\)/.test(mjs));
+  ok('the retired .pp-pinbtn / .pp-pinpreview-box / -dot / -cone / -zoom CSS rules are gone from module.css',
+     !/\.pp-pinbtn\s*\{/.test(css) && !/\.pp-pinpreview-box\s*\{/.test(css) &&
+     !/\.pp-pinpreview-dot\s*\{/.test(css) && !/\.pp-pinpreview-cone\s*\{/.test(css) &&
+     !/\.pp-pinpreview-zoom\s*\{/.test(css));
+
+  // --- "when opening the photo, the key plan button should be there" -------
+  ok('index.html: #pp-lb-keyplan is a real lightbox toolbar button, hidden by default (shown only per-photo in paintLightbox), using the mapPin icon',
+     /id="pp-lb-keyplan" title="Show\/hide key plan" style="display:none">.*data-ico="mapPin"/.test(html));
+  ok('index.html: #pp-lb-keyplan-overlay is a real <img> INSIDE .pp-lb-imgwrap, hidden by default',
+     /pp-lb-imgwrap[\s\S]*?<img class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" alt="Key plan" hidden \/>[\s\S]*?<\/div>/.test(html));
+  ok('paintLightbox() resolves the current row\'s pin POLYMORPHICALLY — under its OWN kind + real underlying id (r._kind/_src), never hardcoded to "photo" — the same rule cardHTML used to use before item 4 moved this into the lightbox',
+     /var kpPinType = r\._kind \|\| 'photo';/.test(mjs) &&
+     /var kpPinId = r\._src \? r\._src\.id : r\.id;/.test(mjs) &&
+     /var kpHasPin = window\.BIM && BIM\.pinInfoFor && !!BIM\.pinInfoFor\(kpPinType, kpPinId\);/.test(mjs));
+  ok('the #pp-lb-keyplan button is shown ONLY when the current item actually has a pin, never speculatively',
+     /kpBtn\.style\.display = kpHasPin \? '' : 'none';/.test(mjs));
+  ok('lightboxKeyPlanVisible resets to false on EVERY paintLightbox() call — stepping ←/→ to a different photo must not carry a previous photo\'s overlay over onto it',
+     /lightboxKeyPlanVisible = false;\s*\n\s*paintKeyPlanOverlay\(r\);/.test(mjs));
+  ok('clicking #pp-lb-keyplan toggles lightboxKeyPlanVisible and repaints the overlay for the CURRENT row (the same one paintLightbox closed over, not a re-read of lightboxIds[lightboxAt] which could have moved on)',
+     /kpBtn\.onclick = function \(\) \{\s*\n\s*lightboxKeyPlanVisible = !lightboxKeyPlanVisible;\s*\n\s*paintKeyPlanOverlay\(r\);/.test(mjs));
+  ok('paintKeyPlanOverlay() exists, hides+clears the overlay img when NOT visible (never leaves a stale src around), and reflects the on/off state on the button via .is-active',
+     /function paintKeyPlanOverlay\(r\) \{/.test(mjs) &&
+     /if \(kpBtn\) kpBtn\.classList\.toggle\('is-active', lightboxKeyPlanVisible\);/.test(mjs) &&
+     /if \(!lightboxKeyPlanVisible\) \{ img\.hidden = true; img\.removeAttribute\('src'\); return; \}/.test(mjs));
+  ok('paintKeyPlanOverlay() sets the overlay\'s src to the resolved plan URL and un-hides it only once one is actually found; a missing plan hides it and warns rather than showing a broken image',
+     /img\.src = info\.planUrl;\s*\n\s*img\.hidden = false;/.test(mjs) &&
+     /UI\.toast\('That floor plan image is not available', 'warn'\);/.test(mjs));
+  ok('module.css: .pp-lb-kpoverlay is pinned to the photo\'s own top-right corner and sized to 1/8 (12.5%) of it — "overlays on top of the photo at the top right corner with the size 1/8 of the photo", literally',
+     /\.pp-lb-kpoverlay \{[^}]*top: 10px; right: 10px;[^}]*width: 12\.5%;/.test(css.replace(/\n/g, ' ')));
+  ok('.pp-lb-kpoverlay carries no #fff of its own (its only colour is a --pd-card background + rgba box-shadow) — nothing new for the #fff-context allow-list to have to cover',
+     !/\.pp-lb-kpoverlay\s*\{[^}]*#fff/.test(css.replace(/\n/g, ' ')));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

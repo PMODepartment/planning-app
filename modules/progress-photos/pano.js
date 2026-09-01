@@ -245,11 +245,33 @@ window.PANO = (function () {
         500 * Math.sin(phi) * Math.sin(theta)
       );
     }
-    function onDown(x, y) { dragging = true; lastX = x; lastY = y; }
+    // Item 7: drag was rendering SYNCHRONOUSLY on every raw mousemove/
+    // touchmove event, with no requestAnimationFrame coalescing at all. A
+    // browser can dispatch several move events between two actual display
+    // refreshes (especially on Windows / high-poll-rate mice/trackpads),
+    // and each one used to trigger a full separate WebGL render pass on the
+    // main thread — wasted, redundant renders that never get a chance to
+    // reach the screen, and exactly the kind of unsynced, bursty work that
+    // reads as stutter/jank rather than a smooth drag. `needsRender` now
+    // just records that the view changed; the actual `renderer.render()`
+    // call happens at most ONCE per animation frame, always with the
+    // latest lon/lat, via `renderLoop`.
+    var needsRender = false, rafId = null;
+    function renderLoop() {
+      rafId = null;
+      if (needsRender) { needsRender = false; applyLook(); renderer.render(scene, camera); }
+      // Keep ticking only while a drag is actually in progress — an idle
+      // view costs nothing (no background render loop running forever),
+      // and `wake()` restarts it the instant a new drag begins even if it
+      // had already gone idle.
+      if (dragging) rafId = requestAnimationFrame(renderLoop);
+    }
+    function wake() { if (rafId == null) rafId = requestAnimationFrame(renderLoop); }
+    function onDown(x, y) { dragging = true; lastX = x; lastY = y; wake(); }
     function onMove(x, y) {
       if (!dragging) return;
       lon -= (x - lastX) * 0.2; lat = Math.max(-70, Math.min(70, lat + (y - lastY) * 0.2));
-      lastX = x; lastY = y; applyLook(); renderer.render(scene, camera);
+      lastX = x; lastY = y; needsRender = true;
     }
     function onUp() { dragging = false; }
     canvas.addEventListener('mousedown', function (e) { onDown(e.clientX, e.clientY); });
@@ -267,7 +289,26 @@ window.PANO = (function () {
       setTexture: function (u2) {
         loader.load(u2, function (tex) { material.map = tex; material.needsUpdate = true; renderer.render(scene, camera); });
       },
-      dispose: function () { try { renderer.dispose(); } catch (e) {} }
+      // Item 7: `window.addEventListener('mouseup', onUp)` above was NEVER
+      // matched by a removeEventListener — the SAME bug class this file's
+      // own audit already fixed once in bim.js's wireStageInteractions
+      // (see that entry above). Every single panorama view (and every
+      // Compare-view rebuild(), which disposes and remounts on the SAME
+      // canvas each time a dropdown changes) left a `window`-level listener
+      // behind, and because JS closures keep their WHOLE enclosing scope
+      // alive — not just the variables a function actually reads — that one
+      // leaked listener kept the ENTIRE mountCylinderViewer() call reachable
+      // forever: the WebGLRenderer, its GL context, the scene, the texture,
+      // all of it. Opening/closing panoramas repeatedly in one session would
+      // accumulate real GPU/memory pressure this way, which is exactly the
+      // kind of thing that reads as "gets less smooth over time." The rAF
+      // loop is also cancelled here so a viewer closed mid-drag can't leave
+      // a dangling animation-frame request either.
+      dispose: function () {
+        window.removeEventListener('mouseup', onUp);
+        if (rafId != null) { try { cancelAnimationFrame(rafId); } catch (e) {} rafId = null; }
+        try { renderer.dispose(); } catch (e) {}
+      }
     };
   }
 
@@ -586,7 +627,15 @@ window.PANO = (function () {
         // it as one is exactly the confusing "error" the user never caused.
         if (cancelled) { if (uploadedPath) { try { await sb().storage.from(BUCKET).remove([uploadedPath]); } catch (e2) {} } return; }
         status.textContent = '';
-        UI.toast('Could not build the panorama: ' + (e.message || e), 'error');
+        // Item 5: `e.message || e` is not safe here — a raw OpenCV.js/
+        // Emscripten exception is often a bare WASM exception POINTER
+        // (a number), not a JS Error, and reading/formatting it is a
+        // documented trigger for OpenCV.js's own exception-to-string glue to
+        // re-enter the (already-unwinding) WASM module, which is exactly how
+        // "Maximum call stack size exceeded" can surface from a catch block
+        // that never expected to throw a SECOND time. safeErrMessage() never
+        // lets that escape uncaught.
+        UI.toast('Could not build the panorama: ' + safeErrMessage(e), 'error');
       } finally {
         // Runs on every exit path — success, error, or an early `return`
         // inside the try (cancellation) — so the record/upload mutual
@@ -605,10 +654,37 @@ window.PANO = (function () {
       video.src = URL.createObjectURL(blob);
       video.onloadedmetadata = async function () {
         var duration = video.duration;
+        if (!isFinite(duration) || duration <= 0) {
+          // Item 5: this IS the "could not read video duration" failure the
+          // owner reported. A MediaRecorder-produced blob's container commonly
+          // has NO duration atom at all — the recorder is writing the header
+          // before it knows the final length — so <video>.duration reads
+          // Infinity (or NaN) on first load. This is a well-documented browser
+          // quirk with a well-documented fix: forcing a seek past the end (and
+          // back) makes the browser recompute the real duration from the
+          // actual media data rather than the missing header. A REAL recorded
+          // capture hits this routinely; an uploaded pre-recorded file usually
+          // doesn't, since its container already carries a real duration atom
+          // — which is why this bug was easy to miss testing with uploads alone.
+          duration = await fixInfiniteDuration(video);
+        }
         if (!isFinite(duration) || duration <= 0) { reject(new Error('Could not read the video duration.')); return; }
         var frames = [];
-        var w = Math.min(video.videoWidth, 640) || 640;
-        var h = Math.round(w * (video.videoHeight / video.videoWidth || 0.5625));
+        // Item 5: guard both dimensions EXPLICITLY rather than a `||`
+        // fallback chain — the old `Math.round(w * (video.videoHeight /
+        // video.videoWidth || 0.5625))` produced `Infinity` (not the intended
+        // 0.5625 fallback) whenever videoWidth was 0 but videoHeight was not,
+        // since `Infinity || 0.5625` is `Infinity` (Infinity is truthy).
+        // Assigning an Infinite canvas height throws — and feeding OpenCV a
+        // zero/garbage-dimension frame later in stitchFrames is a separate,
+        // well-documented cause of the "Maximum call stack size exceeded"
+        // failure (a malformed Mat fed into ORB/BFMatcher can throw a raw
+        // WASM exception whose own message-formatting can itself recurse).
+        // Both dimensions are guarded here so a frame canvas can never be
+        // constructed with a 0/NaN/Infinite width or height in the first place.
+        var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
+        var w = vw ? Math.min(vw, 640) : 640;
+        var h = (vw && vh) ? Math.round(w * (vh / vw)) : Math.round(w * 0.5625);
         for (var i = 0; i < count; i++) {
           var t = (duration * (i + 0.5)) / count;
           await seekTo(video, t);
@@ -621,6 +697,34 @@ window.PANO = (function () {
         resolve(frames);
       };
       video.onerror = function () { reject(new Error('Could not read this video file.')); };
+    });
+  }
+  // Item 5: the standard fix for a MediaRecorder blob's Infinity/NaN
+  // duration — seek far past the (unknown) end, wait for the browser to
+  // settle on the real duration, then seek back to the start. Resolves with
+  // whatever `video.duration` ends up being (which the caller re-checks for
+  // finiteness) rather than rejecting itself, so a browser that genuinely
+  // can't recover a duration still reports the SAME clear "Could not read
+  // the video duration." message instead of a different one from in here.
+  function fixInfiniteDuration(video) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        video.removeEventListener('timeupdate', onTimeUpdate);
+        clearTimeout(timer);
+        resolve(video.duration);
+      }
+      function onTimeUpdate() { video.currentTime = 0; finish(); }
+      // Not every browser fires 'timeupdate' for this trick, or some do so
+      // before duration has actually settled — never hang the whole capture
+      // waiting on it (same timeout-and-resolve-anyway discipline seekTo()
+      // already uses, for the same reason: a slightly-off duration reading
+      // is a better outcome than a permanently stuck pipeline).
+      var timer = setTimeout(finish, 2000);
+      video.addEventListener('timeupdate', onTimeUpdate);
+      try { video.currentTime = 1e101; } catch (e) { finish(); }
     });
   }
   // ⚠️ Audit fix: no timeout at all — a malformed video, or the known
@@ -684,13 +788,38 @@ window.PANO = (function () {
 
     for (var i = 1; i < frameCanvases.length; i++) {
       if (onProgress) onProgress(i, frameCanvases.length);
+      // Item 5: never hand OpenCV a zero-dimension canvas. extractFrames'
+      // own width/height guards (above) mean this should not happen any
+      // more, but a malformed Mat is a documented cause of the reported
+      // "Maximum call stack size exceeded" — cv.imread on a 0×0 canvas
+      // produces a Mat that ORB/BFMatcher can crash on deep in the WASM
+      // module rather than raising a clean, catchable JS error. Skipping the
+      // pair (same "poor quality, keep going" path a genuinely low-match
+      // pair already takes) is a far better failure mode than feeding it in
+      // and finding out.
+      if (!frameCanvases[i - 1].width || !frameCanvases[i - 1].height ||
+          !frameCanvases[i].width || !frameCanvases[i].height) {
+        quality = 'poor'; continue;
+      }
       var prevMat = cv.imread(frameCanvases[i - 1]);
       var curMat = cv.imread(frameCanvases[i]);
       var H = null, matches = 0;
+      // Item 5: a THROW from homographyBetween (a genuine OpenCV/WASM-level
+      // failure on this one pair, not merely "too few matches" — which is
+      // already handled below without throwing) used to abort the WHOLE
+      // capture, surfacing as the generic "Could not build the panorama"
+      // error even though 9 of 10 frame pairs might have stitched fine.
+      // One bad pair is now treated exactly like a low-match pair: this
+      // pair contributes nothing (quality drops to 'poor', so the failure is
+      // still visible, never silently hidden), and the loop carries on.
       try {
-        var r = homographyBetween(prevMat, curMat);
-        H = r.H; matches = r.matches;
-      } finally { prevMat.delete(); curMat.delete(); }
+        try {
+          var r = homographyBetween(prevMat, curMat);
+          H = r.H; matches = r.matches;
+        } finally { prevMat.delete(); curMat.delete(); }
+      } catch (pairErr) {
+        quality = 'poor'; continue;
+      }
       if (matches < MIN_GOOD_MATCHES || !H) { quality = 'poor'; if (H) H.delete(); continue; }
 
       // Compose: newBaseTransform = accumTransform * H (H maps frame[i] -> frame[i-1]'s space)
@@ -783,6 +912,21 @@ window.PANO = (function () {
     }
   }
 
+  // Item 5: turns ANY caught value into a display-safe string, defensively —
+  // never lets reading/formatting the exception itself be what throws.
+  // `e.message` is read only when it's genuinely a string (a real Error);
+  // a raw non-Error value (a WASM exception pointer, a plain object with a
+  // weird toString) goes through `String()` inside its own try, so a
+  // pathological value can degrade to a generic message instead of crashing
+  // the error handler that exists to report it.
+  function safeErrMessage(e) {
+    try {
+      if (e && typeof e === 'object' && typeof e.message === 'string' && e.message) return e.message;
+      return String(e);
+    } catch (e2) {
+      return 'an unexpected error';
+    }
+  }
   function matToArray(m) { var out = []; for (var r = 0; r < 3; r++) for (var c = 0; c < 3; c++) out.push(m.doubleAt(r, c)); return out; }
   function mul3(a, b) {
     var out = new Array(9).fill(0);
@@ -815,6 +959,13 @@ window.PANO = (function () {
     // delegates to the real capture flow rather than reimplementing it; this
     // is that flow's only remaining entry point now that its own topbar
     // button (#pano-new) is gone (folded into the Gallery screen, item 2).
-    openCapture: function () { openCaptureModal(); }
+    openCapture: function () { openCaptureModal(); },
+    // Item 5 — exported so the test harness can genuinely EXECUTE these
+    // rather than only read them, same reasoning as every other pure-math
+    // hook this app exports: a wrong string/number here is silent (nothing
+    // visibly "looks broken" about a slightly-off error message), so it's
+    // worth proving rather than trusting on inspection alone.
+    _safeErrMessage: function (e) { return safeErrMessage(e); },
+    _fixInfiniteDuration: function (video) { return fixInfiniteDuration(video); }
   };
 })();
