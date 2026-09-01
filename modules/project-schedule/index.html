@@ -2624,6 +2624,7 @@
           <button class="pd-btn" id="ps-wbs-fromproj" title="Copy the WBS structure from another project"><span data-ico="download" data-ico-size="15"></span> From project…</button>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
+          <button class="pd-btn" id="ps-wbs-reset" title="Drop every custom / imported branch and rebuild the tree from the schedule's own WBS codes — the standard skeleton is kept"><span data-ico="refresh" data-ico-size="15"></span> Reset WBS…</button>
           <span class="ps-tb-div"></span>
           <!-- Design Development is MIRRORED from the Engineering App (drawing register +
                material submittal log). This pulls a fresh roll-up through the sync-eng
@@ -6395,6 +6396,20 @@
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
+    // Self-heal activities that were imported before the adoption step attached them to the tree
+    // (see _wbsLinkActivityParents). Every project imported before this fix carries ALL of its
+    // activities unattached, and the symptom is silent: the grid looks right while Vertical
+    // Stacking, the WBS Manager's counts and the Contract Scope column all read empty. Gated on an
+    // in-memory test, so a healthy project performs no query at all.
+    if (_wbsUnlinkedActs()) {
+      var linkedN = await _wbsLinkActivityParents(true);
+      if (gen !== _loadGen) return;
+      if (linkedN) {
+        rebuild(); _cachePut(pid, rows); renderAll();
+        UI.toast('Attached ' + linkedN.toLocaleString() + ' imported activit' + (linkedN === 1 ? 'y' : 'ies') + ' to the WBS tree — phase, trade and Vertical Stacking now read from it.', 'success');
+      }
+    }
+    if (gen !== _loadGen) return;
     // Mirror the two registers into the Design Development branch. Runs AFTER the WBS is
     // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
     // leaves the branch as it was rather than blocking the schedule.
@@ -7460,7 +7475,15 @@
     if (!inc.length) return null;
     function re(list) { return new RegExp('(^|\\W)(' + list.map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|') + ')(\\W|$)', 'i'); }
     var incRe = re(inc), excRe = exc.length ? re(exc) : null;
-    return function (s) { return incRe.test(s) && !(excRe && excRe.test(s)); };
+    // Memoised per matcher: the caller asks the same WBS node NAMES over and over (once per ancestry
+    // segment per activity), and the answer only depends on the name.
+    var memo = {};
+    return function (s) {
+      var k = String(s == null ? '' : s);
+      var v = memo[k];
+      if (v === undefined) v = memo[k] = (incRe.test(k) && !(excRe && excRe.test(k)));
+      return v;
+    };
   }
   // ⚠️ A WBS node often qualifies the location with the work it holds — Jab names its towers
   // "Tower D - Substructure" and "Tower D - Superstructure", which would make ONE tower into TWO
@@ -7484,17 +7507,30 @@
       get: function () { return null; },   // inert until make() supplies the terms
       make: function (arg) {
         var match = locWordMatcher(arg);
+        // ⚠️ Memoised PER CODE PATH, not per record. The deepest matching ancestor of "4.2.3.1.5" is
+        // fully determined by "4.2.3.1" plus that one node's own name, so the whole tree resolves in
+        // one pass instead of re-walking (and re-joining, and re-matching) every ancestry for every
+        // activity. On the 4PH Strevi .xer that is 16,393 activities x up to 11 segments x 3 mapped
+        // levels x 2 passes (merge table, then plan) — and the plan reruns on every keystroke in the
+        // terms box.
+        var memo = Object.create(null);
+        function deepest(code) {
+          var hit = memo[code];
+          if (hit !== undefined) return hit;
+          var dot = code.lastIndexOf('.');
+          var up = dot === -1 ? null : deepest(code.slice(0, dot));
+          var nm = nameByCode[code];
+          return (memo[code] = (nm && match(nm)) ? nm : up);
+        }
+        var trimmed = Object.create(null);
         return { key: 'wbsword:' + arg, kind: 'wbsword', name: 'WBS path matching "' + arg + '"', get: function (r) {
           if (!match) return null;
           var c = getCode(r); if (!c) return null;
-          var segs = String(c).split('.');
-          // Root → leaf, keeping the last (deepest) hit.
-          var found = null;
-          for (var i = 1; i <= segs.length; i++) {
-            var nm = nameByCode[segs.slice(0, i).join('.')];
-            if (nm && match(nm)) found = nm;
-          }
-          return found == null ? null : locTrimSeg(found, match);
+          var found = deepest(String(c));
+          if (found == null) return null;
+          var t = trimmed[found];
+          if (t === undefined) t = trimmed[found] = locTrimSeg(found, match);
+          return t;
         } };
       }
     }];
@@ -7565,10 +7601,20 @@
   // cluster of TOWERS, not a level — but it contains "Superstructure". The head of the name says
   // what the thing IS, so the earliest hit wins ("Cluster" at 0 beats "Superstructure" at 24), and
   // "Tower D - Substructure" is a Tower for the same reason.
+  // ⚠️ The compiled term regexes are CACHED. The term list is a fixed vocabulary (LOC_SYN /
+  // WORK_CANON — ~70 terms) but the callers run per WBS-ancestry segment per activity: stamping
+  // Discipline/Trade over the 4PH Strevi .xer's 16,393 activities compiles ~13.7M identical
+  // RegExps, ~1.5s of blocked main thread — and the import runs it twice (dialog + import).
+  var _locTermRe = {};
+  function _locTermRegex(t) {
+    var k = String(t), re = _locTermRe[k];
+    if (!re) re = _locTermRe[k] = new RegExp('(^|\\W)(' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(\\W|$)', 'i');
+    return re;
+  }
   function locTermHit(name, terms) {
     var best = -1;
     terms.forEach(function (t) {
-      var re = new RegExp('(^|\\W)(' + String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(\\W|$)', 'i');
+      var re = _locTermRegex(t);
       var m = re.exec(name); if (!m) return;
       var at = m.index + m[1].length;
       if (best === -1 || at < best) best = at;
@@ -7649,14 +7695,19 @@
   // A source per level, driven by the wizard's name→value table. Deepest ancestor wins, exactly like
   // the keyword source — which is what makes the trade variation work without per-trade config.
   function locSrcsAssigned(getCode, nameByCode, table) {
+    // Memoised per code path — same reasoning as the keyword source's `deepest()`.
+    var memo = Object.create(null);
+    function deepest(code) {
+      var hit = memo[code];
+      if (hit !== undefined) return hit;
+      var dot = code.lastIndexOf('.');
+      var up = dot === -1 ? null : deepest(code.slice(0, dot));
+      var nm = nameByCode[code];
+      return (memo[code] = (nm && Object.prototype.hasOwnProperty.call(table, nm)) ? table[nm] : up);
+    }
     return { key: 'assigned', name: 'Matched in the wizard', get: function (r) {
       var c = getCode(r); if (!c) return null;
-      var segs = String(c).split('.'), found = null;
-      for (var i = 1; i <= segs.length; i++) {
-        var nm = nameByCode[segs.slice(0, i).join('.')];
-        if (nm && Object.prototype.hasOwnProperty.call(table, nm)) found = table[nm];
-      }
-      return found || null;
+      return deepest(String(c)) || null;
     } };
   }
   // One source per level that already has a SAVED match table (`location_levels.match`, written by
@@ -7675,6 +7726,52 @@
       s.key = 'assigned:' + l.id; s.kind = 'assigned'; s.forLevel = l.id;
       s.name = 'Saved matching for ' + (l.name || 'level') + ' (' + Object.keys(l.match).length + ' names)';
       return s;
+    });
+  }
+  // ---- Execution Phase scoping, for the IMPORTERS ---------------------------------------------
+  // ⚠️ Both post-hoc location tools scope to Execution Phase (`locExecScopedActs`) precisely so a
+  // Milestone or a Planning deliverable can never pick up a tower/floor/zone — but the IMPORTERS ran
+  // the same matcher over EVERY leaf in the file, which is where the location breakdown gets dirty
+  // before anyone can see it. Measured on the 4PH Strevi Residences .xer: mapping Tower produced 14
+  // values for 4 real towers — the Milestones branch contributed "Tower Handover", "Building
+  // Watertightness" and "Building Energization" (WBS headings, not places), and the Closeout branch
+  // contributed a SECOND, differently-spelled set of the same four towers ("Tower 1".."Tower 4"
+  // against Execution's "Tower A".."Tower D"), which no spelling merge can reconcile because they
+  // genuinely are different strings for the same building.
+  // The importer knows the scope without asking: the WBS-placement step in the same dialog is where
+  // the planner says which of the file's branches IS the Execution Phase. Falls back to the whole
+  // file (the old behaviour) when nothing is filed there, rather than silently mapping nothing.
+  function locImportScope(leafRecs, wbsPlace, el) {
+    var none = { recs: leafRecs, scoped: false, names: [], codes: null };
+    if (!wbsPlace || !el) return none;
+    var execKey = _wbsNameKey('Execution Phase');
+    var exec = _wbsSkeletonTargets().filter(function (t) { return _wbsNameKey(t.name) === execKey; })[0];
+    if (!exec) return none;
+    var plan = (wbsPlace.read(el) || {}).plan || [];
+    var picked = plan.filter(function (p) { return p.target && String(p.target) === String(exec.code); });
+    if (!picked.length) return none;
+    return { scoped: true, names: picked.map(function (p) { return p.name || p.prefix; }),
+      codes: picked.map(function (p) { return String(p.prefix); }),
+      recs: locScopeByCodes(leafRecs, picked.map(function (p) { return String(p.prefix); })) };
+  }
+  // Says out loud which part of the file the mapping is reading, so the scoping is visible rather
+  // than a silent difference between the preview's numbers and the file's size.
+  function locScopeNoteHTML(sc, total) {
+    if (!sc || !sc.scoped) {
+      return '<div style="margin-bottom:6px;">Reading <strong>all ' + total + '</strong> activities — nothing is filed under Execution Phase above, so location is matched across the whole file (Milestones and Closeout headings can leak in).</div>';
+    }
+    return '<div style="margin-bottom:6px;">Reading the <strong>' + sc.recs.length + '</strong> activities under ' +
+      esc(sc.names.join(', ')) + ' (filed under Execution Phase). Milestones, Planning and Closeout are left without a location.</div>';
+  }
+  // Leaf records at or under any of `codes` (boundary-safe: "4" matches "4.1", never "40.1").
+  function locScopeByCodes(leafRecs, codes) {
+    if (!codes || !codes.length) return leafRecs;
+    var exact = {}; codes.forEach(function (c) { exact[c] = 1; });
+    var pre = codes.map(function (c) { return c + '.'; });
+    return leafRecs.filter(function (r) {
+      var c = String(r.code); if (exact[c]) return true;
+      for (var i = 0; i < pre.length; i++) if (c.indexOf(pre[i]) === 0) return true;
+      return false;
     });
   }
   // Spreadsheet-column sources. cols = the headers the importer's fixed detection didn't claim;
@@ -7828,7 +7925,15 @@
   var LOC_ORD = { first:1, second:2, third:3, fourth:4, fifth:5, sixth:6, seventh:7, eighth:8,
     eight:8, ninth:9, nineth:9, tenth:10, eleventh:11, twelfth:12, thirteenth:13, fourteenth:14,
     fifteenth:15, sixteenth:16, seventeenth:17, eighteenth:18, nineteenth:19, twentieth:20 };
+  // Memoised: called once per record per mapped level in BOTH the merge pass and the plan pass, over
+  // a value set that is tiny (a couple of dozen distinct spellings) next to the record count.
+  var _locNormMemo = Object.create(null);
   function locNormKey(v) {
+    var _k = String(v == null ? '' : v), _c = _locNormMemo[_k];
+    if (_c !== undefined) return _c;
+    return (_locNormMemo[_k] = _locNormKeyCalc(_k));
+  }
+  function _locNormKeyCalc(v) {
     var s = String(v == null ? '' : v).toLowerCase().replace(/[‘’']/g, '');
     s = s.replace(/[a-z]+/g, function (w) { return LOC_ORD[w] != null ? String(LOC_ORD[w]) : w; });
     s = s.replace(/(\d+)(st|nd|rd|th)(?![a-z])/g, '$1');   // 2nd → 2, 10th → 10
@@ -8269,9 +8374,16 @@
     { name: 'Allied Services', terms: ['allied services', 'allied'] },
     { name: 'Site Development', terms: ['site development works', 'site development', 'landscaping'] }
   ];
+  // ⚠️ Memoised by name. This is asked once per WBS-ancestry segment per activity, and a real tree
+  // repeats the same few thousand node names across tens of thousands of activities — the 4PH Strevi
+  // .xer asks it ~150k times for ~2.6k distinct names, each answer costing a scan of all ~70 terms.
+  var _discCanonMemo = {};
   function _discTermMatch(s) {
-    for (var i = 0; i < WORK_CANON.length; i++) { if (locTermHit(s, WORK_CANON[i].terms) !== -1) return WORK_CANON[i].name; }
-    return null;
+    var k = String(s == null ? '' : s);
+    if (Object.prototype.hasOwnProperty.call(_discCanonMemo, k)) return _discCanonMemo[k];
+    var hit = null;
+    for (var i = 0; i < WORK_CANON.length; i++) { if (locTermHit(k, WORK_CANON[i].terms) !== -1) { hit = WORK_CANON[i].name; break; } }
+    return (_discCanonMemo[k] = hit);
   }
   // The canonical trade for a WBS name: prefer the schedule's OWN grouping (walk the ancestry
   // nearest-first for the enclosing trade heading — this is what correctly resolves "Fire Protection
@@ -9071,7 +9183,7 @@
   }
   function impPackageRead(el) { var s2 = el.querySelector('#ps-imp-pkg'); return (s2 && s2.value) || null; }
 
-  async function doImport(recs, replace, fname, locMap, placement, discOnImport, pkgId) {
+  async function doImport(recs, replace, fname, locMap, placement, discOnImport, pkgId, locScopeCodes) {
     showLoading('Preparing import…');
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
@@ -9105,7 +9217,8 @@
     if (locMap.length) {
       setLoading('Setting up the location breakdown…');
       if (await locEnsureLevels(locMap)) {
-        locMapPlan(recs.filter(function(r){ return r.isLeaf; }), locMap, function(){ return null; }, true)
+        // Scoped to the branches filed under Execution Phase in the preview — see locImportScope.
+        locMapPlan(locScopeByCodes(recs.filter(function(r){ return r.isLeaf; }), locScopeCodes), locMap, function(){ return null; }, true)
           .ups.forEach(function(u){ u.rec.loc = u.loc; });
         populateGroupSelect(); seedExtraHidden(); renderHeader();
       } else locMap = [];
@@ -9183,7 +9296,13 @@
       .toLowerCase()
       .replace(/\([^)]*\)/g, ' ')
       .replace(/[^a-z0-9]+/g, ' ')
-      .replace(/\b(the|project|overall|main|general|key)\b/g, ' ')
+      // ⚠️ "phase" is a generic qualifier like the leading ones, and it is the one that actually bit:
+      // the seeded skeleton says "Closeout Phase" while the 4PH Strevi .xer's own branch is called
+      // "Closeout", so the two did not match — the file's branch was filed as a SIXTH top-level
+      // branch beside the skeleton's empty "Closeout Phase", the exact duplicate-top-level shape the
+      // placement step exists to prevent. Dropping it keeps every skeleton phase distinct
+      // (initiation / planning / execution / closeout / milestone) so no real pair collapses.
+      .replace(/\b(the|project|overall|main|general|key|phase)\b/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .replace(/s$/, '');
@@ -9251,7 +9370,12 @@
   ];
   function _impGuessTarget(name, targets) {
     var n = String(name || '').trim().toLowerCase();
-    var exact = targets.find(function (t) { return t.name.toLowerCase() === n; });
+    // ⚠️ Matched on the SAME normalised key applyWbsPlacement uses for its merge test. A guess that
+    // says "file this under Closeout Phase" while the placement's own sameName test disagrees
+    // produces "Closeout Phase › Closeout" — the double-layering both are there to prevent. The two
+    // must read the file's branch name the same way or the dialog is lying about what it will do.
+    var nk = _wbsNameKey(name);
+    var exact = targets.find(function (t) { return t.name.toLowerCase() === n || (nk && _wbsNameKey(t.name) === nk); });
     if (exact) return exact.code;
     for (var i = 0; i < _IMP_PHASE_HINT.length; i++) {
       var h = _IMP_PHASE_HINT[i];
@@ -9404,20 +9528,31 @@
       locSection+
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
     if (locUI) {
-      locUI.bind(m.el, function(){
+      // Same scoping + debounce as the .xer path — see locImportScope and the note there.
+      var prevEl0 = m.el.querySelector('#imp-locprev'), prevT0 = null;
+      var repaint0 = function(){
         var map = locUI.read(m.el);
-        m.el.querySelector('#imp-locprev').innerHTML = locPreviewHTML(map, locMapPlan(leafRecs, map, function(){ return null; }, true), leafRecs.length);
+        var sc = locImportScope(leafRecs, wbsPlace, m.el);
+        prevEl0.innerHTML = locScopeNoteHTML(sc, leafRecs.length) +
+          locPreviewHTML(map, locMapPlan(sc.recs, map, function(){ return null; }, true), sc.recs.length);
+      };
+      var onChange0 = function(){ clearTimeout(prevT0); prevT0 = setTimeout(repaint0, 250); };
+      locUI.bind(m.el, onChange0);
+      Array.prototype.forEach.call(m.el.querySelectorAll('.ps-impwbs'), function(s){
+        var prior = s.onchange;
+        s.onchange = function(e){ if (prior) prior.call(this, e); onChange0(); };
       });
-      m.el.querySelector('#imp-locprev').innerHTML = '';
+      prevEl0.innerHTML = '';
     }
     m.el.querySelector('#ps-imp-x').onclick = m.close;
     m.el.querySelector('#ps-imp-go').onclick = function(){
       var rep=m.el.querySelector('#ps-imp-rep').checked;
       var locMap = locUI ? locUI.read(m.el) : [];
+      var locScopeCodes = locUI ? locImportScope(leafRecs, wbsPlace, m.el).codes : null;
       var placement = wbsPlace ? wbsPlace.read(m.el) : null;
       var dsc = m.el.querySelector('#ps-imp-disc'); dsc = !dsc || dsc.checked;
       var pkgId = impPackageRead(m.el);
-      m.close(); doImport(recs, rep, fname, locMap, placement, dsc, pkgId);
+      m.close(); doImport(recs, rep, fname, locMap, placement, dsc, pkgId, locScopeCodes);
     };
   }
 
@@ -9696,16 +9831,34 @@
       '<p style="font-size:12px;color:var(--pd-muted);">Also imports the P6 calendar(s), activity codes and resource master into this project (added alongside anything already there — not replaced). Calendars that already exist on this project — same name, same working week, same hours — are <strong>reused</strong> rather than copied, so re-importing the same file no longer multiplies them.</p>' +
       '<div style="text-align:right;"><button class="pd-btn" id="ps-impx-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-impx-go">Import ' + recs.length + ' rows</button></div>');
     if (locUI) {
-      locUI.bind(m.el, function () {
+      var prevEl = m.el.querySelector('#impx-locprev');
+      // ⚠️ DEBOUNCED. onChange is wired to `oninput` on the keyword-terms box, and the plan it runs
+      // walks every leaf in the file — ~0.3s for this .xer even after the memoisation above, which
+      // per keystroke makes the field unusable. 250ms is below the "did it hear me" threshold and
+      // above a fast typist's inter-key gap.
+      var prevT = null;
+      var repaint = function () {
         var map = locUI.read(m.el);
-        m.el.querySelector('#impx-locprev').innerHTML = locPreviewHTML(map, locMapPlan(leafRecs, map, function () { return null; }, true), leafRecs.length);
+        var sc = locImportScope(leafRecs, wbsPlace, m.el);
+        prevEl.innerHTML = locScopeNoteHTML(sc, leafRecs.length) +
+          locPreviewHTML(map, locMapPlan(sc.recs, map, function () { return null; }, true), sc.recs.length);
+      };
+      var onChange = function () { clearTimeout(prevT); prevT = setTimeout(repaint, 250); };
+      locUI.bind(m.el, onChange);
+      // The placement selects decide the scope, so they repaint the preview too.
+      Array.prototype.forEach.call(m.el.querySelectorAll('.ps-impwbs'), function (s) {
+        var prior = s.onchange;
+        s.onchange = function (e) { if (prior) prior.call(this, e); onChange(); };
       });
-      m.el.querySelector('#impx-locprev').innerHTML = '';
+      prevEl.innerHTML = '';
     }
     m.el.querySelector('#ps-impx-x').onclick = m.close;
     m.el.querySelector('#ps-impx-go').onclick = function () {
       var rep = m.el.querySelector('#ps-impx-rep').checked;
       parsed.locMap = locUI ? locUI.read(m.el) : [];
+      // Captured HERE, from the same dialog state the preview showed — doImportXER has no element to
+      // re-read, and re-deriving it there could disagree with what the planner just approved.
+      parsed.locScopeCodes = locUI ? locImportScope(leafRecs, wbsPlace, m.el).codes : null;
       parsed.wbsPlacement = wbsPlace ? wbsPlace.read(m.el) : null;
       var dscx = m.el.querySelector('#ps-imp-disc'); parsed.discOnImport = !dscx || dscx.checked;
       m.close(); doImportXER(parsed, rep, fname);
@@ -9818,7 +9971,11 @@
     if (locMap.length) {
       setLoading('Setting up the location breakdown…');
       if (await locEnsureLevels(locMap)) {
-        locMapPlan(parsed.recs.filter(function (r) { return r.isLeaf; }), locMap, function () { return null; }, true)
+        // Scoped to the branches the planner filed under Execution Phase — see locImportScope. Runs
+        // on the ORIGINAL codes, before applyWbsPlacement rewrites them, which is what the captured
+        // `locScopeCodes` are expressed in.
+        var locRecs = locScopeByCodes(parsed.recs.filter(function (r) { return r.isLeaf; }), parsed.locScopeCodes);
+        locMapPlan(locRecs, locMap, function () { return null; }, true)
           .ups.forEach(function (u) { u.rec.loc = u.loc; });
         populateGroupSelect(); seedExtraHidden(); renderHeader();
       }
@@ -17048,14 +17205,14 @@
       arr.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
     });
     for (var k = 0; k < rows.length; k++) { var r = rows[k]; if (!isWbs(r) && r.wbs_node_id) actCount.set(r.wbs_node_id, (actCount.get(r.wbs_node_id) || 0) + 1); }
-    var codeOf = {};
-    (function walk(parentId, parentCode) {
-      (childrenOf.get(parentId) || []).forEach(function (n, i) {
-        var auto = (parentCode ? parentCode + '.' : '') + (i + 1);
-        codeOf[n.id] = (n.code_custom && n.code) ? n.code : auto;
-        walk(n.id, codeOf[n.id]);
-      });
-    })(null, '');
+    // ⚠️ THE SAME CODES THE SCHEDULE USES, from the one function that owns the rule. This used to be
+    // a private copy of the walk that read `n.code` RAW for a custom code — i.e. the pre-fix rule
+    // `computeWbsCodes()` carries a long warning about, one function over: a custom code is a SEGMENT
+    // of the path, never a replacement for it. So a Builder branch coded "AR-F11" was drawn in the
+    // WBS Manager as a top-level-looking "AR-F11" while the schedule showed it at "4.2.3.AR-F11" —
+    // the same node, two different codes, in two views of one tree. There is no second rule to keep
+    // in step now.
+    var codeOf = computeWbsCodes();
     return { byId: byId, childrenOf: childrenOf, actCount: actCount, codeOf: codeOf };
   }
   // Build one row's HTML from a flat descriptor. Shared by the full render + the virtual window.
@@ -17575,23 +17732,81 @@
     if (_resyncingCodes) return 0;
     _resyncingCodes = true;
     try {
-      var ownPid = pid, codeOf = computeWbsCodes(), all = [], from = 0;
-      for (;;) {
-        var q = await sb().from(TABLE).select('id,wbs,wbs_node_id').eq('project_id', ownPid)
-          .not('wbs_node_id', 'is', null).range(from, from + 999);
-        if (q.error) return 0;
-        if (pid !== ownPid) return 0;
-        all = all.concat(q.data || []);
-        if (!q.data || q.data.length < 1000) break;
-        from += 1000;
+      var ownPid = pid, codeOf = computeWbsCodes(), all = [], bad = false;
+      // ⚠️ TWO PHASES, and the second one usually does not run. Until activities were attached to the
+      // tree (_wbsLinkActivityParents) "linked rows" and "summary rows" were the same set, so one
+      // unfiltered page-through was free. Now every activity carries a node id too, and paging them
+      // all in would DOUBLE this query on every single load — 29 round-trips instead of 13 on the
+      // Strevi project — to discover, almost always, that nothing drifted.
+      // The short-circuit is exact rather than a heuristic: an activity's target code is its node's
+      // code plus its own tail, so if not one summary row's code has moved, no activity's can have
+      // either. A healthy project therefore pays LESS than before this change, not more.
+      async function page(summariesOnly) {
+        var out = [], from = 0;
+        for (;;) {
+          var qb = sb().from(TABLE).select('id,wbs,wbs_node_id,activity_type').eq('project_id', ownPid)
+            .not('wbs_node_id', 'is', null);
+          if (summariesOnly) qb = qb.eq('activity_type', 'WBS Summary');
+          else qb = qb.neq('activity_type', 'WBS Summary');
+          var q = await qb.range(from, from + 999);
+          if (q.error || pid !== ownPid) { bad = true; return out; }
+          out = out.concat(q.data || []);
+          if (!q.data || q.data.length < 1000) return out;
+          from += 1000;
+        }
+      }
+      all = await page(true);
+      if (bad) return 0;
+      var _summaryDrift = all.some(function (r) {
+        var w = codeOf[r.wbs_node_id];
+        return w && String(r.wbs) !== String(w);
+      });
+      if (_summaryDrift) {
+        all = all.concat(await page(false));
+        if (bad) return 0;
       }
       // Group the drifted rows by the code they SHOULD carry — one UPDATE per target code.
       var byCode = {}, n = 0;
       all.forEach(function (r) {
         var want = codeOf[r.wbs_node_id];
-        if (!want || String(r.wbs) === String(want)) return;
+        if (!want) return;
+        // ⚠️⚠️ A SUMMARY ROW *IS* ITS NODE; AN IMPORTED ACTIVITY SITS ONE LEVEL BELOW IT.
+        // Until activities were attached to the tree (_wbsLinkActivityParents) every row reaching
+        // this loop was a summary row, so "the row's code is the node's code" held. It does not hold
+        // for an activity: an imported activity carries its own leaf segment — "4.2.3.1.5" under
+        // branch "4.2.3.1" — and rewriting it to the branch code would collapse EVERY activity in a
+        // branch onto one shared code, which rebuild() then reads as ancestry. Measured against the
+        // real files: the un-guarded rule rewrites 4,393 (Avesta) / 16,393 (Strevi) activity codes,
+        // i.e. the entire schedule, on the first load() after adoption. Only the BRANCH part of the
+        // code may move; the row's own tail segment is its identity and is kept.
+        // Depth is the discriminator and it is reliable: a Builder-pushed / manually-added activity
+        // is filed AT its node and carries exactly the node's code (same depth → take `want` as-is,
+        // unchanged behaviour), while an imported activity is strictly deeper.
+        if (r.activity_type !== 'WBS Summary') {
+          var segs = String(r.wbs == null ? '' : r.wbs).split('.'), wSegs = String(want).split('.');
+          if (segs.length > wSegs.length) want = want + '.' + segs[segs.length - 1];
+        }
+        if (String(r.wbs) === String(want)) return;
         (byCode[want] = byCode[want] || []).push(r.id); n++;
       });
+      // ⚠️ One UPDATE per TARGET CODE, and an activity's target code is unique to it — so a renumber
+      // that moves a big branch would issue one request per activity, the same request storm
+      // `_wbsLinkRows` was written to kill. Bounded rather than silently slow: the summary rows (few,
+      // and the ones the tree is drawn from) are always re-synced; a mass activity rebase is reported
+      // instead of run. Nothing is corrupted by skipping it — those rows keep the codes they already had.
+      var _codeKeys = Object.keys(byCode);
+      if (_codeKeys.length > 500) {
+        var _keep = {}, _kept = 0;
+        all.forEach(function (r) {
+          if (r.activity_type !== 'WBS Summary') return;
+          var w = codeOf[r.wbs_node_id];
+          if (!w || String(r.wbs) === String(w)) return;
+          (_keep[w] = _keep[w] || []).push(r.id); _kept++;
+        });
+        UI.toast((n - _kept).toLocaleString() + ' activity codes still point at the old WBS numbering. ' +
+          'The branches were re-synced; re-import or re-adopt to renumber the activities.', 'warn');
+        byCode = _keep; n = _kept;
+      }
       if (!n) return 0;
       var codes = Object.keys(byCode), failed = 0;
       for (var i = 0; i < codes.length; i++) {
@@ -17871,6 +18086,29 @@
       UI.toast('Save error on ' + failed.length + ' of ' + ups.length + ' row' + (ups.length === 1 ? '' : 's') + (failed[0].error ? (': ' + failed[0].error) : '') + '.', 'error');
     }
     return { ok: failed.length === 0, failedIds: failed.map(function (f) { return f.id; }) };
+  }
+  // Write the adopted WBS links (project_schedule.wbs_node_id) for a whole tree.
+  // ⚠️ ONE round-trip, not one per row. `_batchUpdate` issues a single-row PATCH per entry (40 in
+  // flight, so 312 sequential waves for the 4PH Strevi .xer's 12,465 nodes) — minutes of an
+  // apparently-hung app, and any wave that fails leaves nodes unlinked, which `_wbsEnsureSummaries`
+  // then reads as "this node has no summary row" and heals by INSERTING a duplicate, one sequential
+  // insert at a time. That is the Avesta runaway in a new costume, so the link write is the one
+  // place this must not be lossy.
+  // `wbs_link_codes(project_id, [{code,node_id}…])` does the whole set as a single UPDATE ... FROM
+  // jsonb_to_recordset. It matches on the dotted code, so it links the summary row AND any activity
+  // carrying the same code, exactly like the client loop. SECURITY INVOKER → the caller's RLS still
+  // applies. Falls back to `_batchUpdate` when the function isn't deployed, so the app works before
+  // AND after migrations/2026-09-01-wbs-link-rpc.sql — same contract as `schedule_rows`.
+  async function _wbsLinkRows(pairs, schedUp) {
+    if (!schedUp || !schedUp.length) return;
+    if (pairs && pairs.length) {
+      try {
+        setLoading('Linking ' + schedUp.length + ' rows to the WBS tree…');
+        var rp = await sb().rpc('wbs_link_codes', { p_project_id: pid, p_map: pairs });
+        if (!rp.error) return;
+      } catch (e) { /* RPC unavailable — fall through */ }
+    }
+    await _batchUpdate(TABLE, schedUp);
   }
   // Select a WBS node (highlight); its selection preselects the parent when adding an activity.
   function wbsSelect(id) { _wbsSel = (_wbsSel === id) ? null : id; renderWbsManager(); }
@@ -18655,7 +18893,10 @@
     if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
-    var nodeByCode = {}, sibCount = {}, schedUp = [];
+    var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [], codeByKey = {};
+    // Activities indexed by their dotted code, once — see the note at the link step below.
+    var actsByCode = {};
+    rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && a.wbs) (actsByCode[String(a.wbs)] = actsByCode[String(a.wbs)] || []).push(a); });
     var codeOf0 = computeWbsCodes();
     WBS_NODES.forEach(function (n) { var c = codeOf0[n.id]; if (c) nodeByCode[c] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
     var byDepth = {};
@@ -18672,23 +18913,201 @@
         var code = String(r.wbs), parentCode = code.split('.').slice(0, -1).join('.');
         var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
         var k = parentId || '', so = (sibCount[k] || 0); sibCount[k] = so + 1;
-        return { project_id: pid, parent_id: parentId, code: code, code_custom: true, name: r.activity_name || code, sort_order: so, created_by: UID };
+        var pl = { project_id: pid, parent_id: parentId, name: r.activity_name || code, sort_order: so, created_by: UID };
+        // ⚠️⚠️ A NODE'S `code` IS ITS OWN SEGMENT, NEVER THE WHOLE PATH — and a purely numeric
+        // segment must not be custom at all.
+        // This used to write `{ code: <the full dotted code>, code_custom: true }`, i.e. "1.4.2.3".
+        // `computeWbsCodes()` reads a custom code through `ownCodeSeg()`, which flattens dots to
+        // dashes so a custom code can only ever be ONE segment — so "1.4.2.3" came back as
+        // "1-4-2-3" and the node's computed code became `parentPath + '.' + "1-4-2-3"`. Measured on
+        // the 4PH Strevi Residences .xer (12,465 WBS nodes): 12,456 of them computed to a MANGLED
+        // code ("1.1" -> "1.1-1", "1.4.2.3" -> "1.1-4.1-4-2.1-4-2-3"). `_wbsResyncCodes()` then runs
+        // on the very next load(), sees every stored `wbs` disagree with the computed code, and
+        // rewrites all 12,456 summary rows to the mangled value — and since rebuild() derives
+        // ancestry by SPLITTING that code, the entire hierarchy collapses. That is the "it bugged
+        // completely" report.
+        // Adoption never needed a custom code for these: the rows are adopted in code order, one
+        // whole depth level at a time, so `sort_order` already reproduces the file's own numbering
+        // and auto-numbering yields the identical dotted code (verified: 0 of 12,465 drift).
+        // A NON-numeric segment ("AR-F11", "ISD02") carries planner meaning that position cannot
+        // reproduce, so that — and only that — is kept as a custom code, stripped to its own segment.
+        var ownSeg = code.split('.').pop();
+        if (!/^\d+$/.test(ownSeg)) { pl.code = ownSeg; pl.code_custom = true; }
+        // ⚠️⚠️ REMEMBER WHICH DOTTED CODE THIS PAYLOAD IS FOR — the inserted row cannot tell us.
+        // The loop below used to register each new node as `nodeByCode[n.code]`, which worked ONLY
+        // while `code` carried the whole dotted path. Now that a purely numeric segment is not
+        // custom (see the note above), `n.code` comes back NULL for every node in a P6 import — so
+        // `nodeByCode` was filled under the single key "null" and the real codes were never
+        // registered. Consequences, measured live on Avesta after a Replace re-import:
+        //   * depth 2 looked up nodeByCode["1"], got nothing, and was inserted with parent_id NULL
+        //     — and so was every level below it: 1,623 nodes ALL AT THE TOP LEVEL, which is why the
+        //     WBS Manager listed bare codes 1…1632 ("951 Wet Works") instead of a tree;
+        //   * the link step below resolves `nodeByCode[r.wbs]`, so it matched nothing and NO summary
+        //     row was linked — which in turn left `wbs_link_activity_parents` with an empty
+        //     code -> node map, so the activity heal found nothing to attach and Vertical Stacking
+        //     still drew "0 execution-phase activities stacked" even after the migration was run.
+        // Keyed on (parent_id, sort_order), which is unique per payload within this adopt and is
+        // returned on the inserted row — NOT on response order, which PostgREST does not promise
+        // (the same reason the .xer importer matches activity-code values back by (type,value)).
+        codeByKey[(parentId || '') + '|' + so] = code;
+        return pl;
       });
       for (var c = 0; c < payloads.length; c += 500) {
         setLoading('Adopting WBS tree… level ' + depths[di] + ' (' + Math.min(c + 500, payloads.length) + '/' + payloads.length + ')');
         var ins = await sb().from('wbs_nodes').insert(payloads.slice(c, c + 500)).select();
         if (ins.error) { if (!silent) UI.toast('Adopt failed: ' + ins.error.message, 'error'); return 0; }
-        (ins.data || []).forEach(function (n) { nodeByCode[n.code] = n.id; WBS_NODES.push(n); });
+        (ins.data || []).forEach(function (n) {
+          var dotted = codeByKey[(n.parent_id || '') + '|' + n.sort_order];
+          if (dotted) nodeByCode[dotted] = n.id;
+          WBS_NODES.push(n);
+        });
       }
       group.forEach(function (r) {
         var id = nodeByCode[String(r.wbs)]; if (!id) return;
         r.wbs_node_id = id; schedUp.push({ id: r.id, patch: { wbs_node_id: id } });
-        rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && String(a.wbs) === String(r.wbs)) { a.wbs_node_id = id; schedUp.push({ id: a.id, patch: { wbs_node_id: id } }); } });
+        linkByCode.push({ code: String(r.wbs), node_id: id });
+        // ⚠️ Indexed, not scanned. This used to be `rows.forEach(...)` INSIDE this per-node loop —
+        // O(nodes x rows), which on the 4PH Strevi .xer (12,465 nodes x 28,858 rows = 360M
+        // comparisons) blocked the main thread for ~3.7s and linked exactly ZERO activities, because
+        // an IMPORTED activity carries its own leaf code and never shares a code with a branch. The
+        // index keeps the case that IS real (Builder pushes / manually-added rows, where an activity
+        // carries its parent branch's code) at O(1).
+        (actsByCode[String(r.wbs)] || []).forEach(function (a) {
+          if (a.wbs_node_id) return;
+          a.wbs_node_id = id; schedUp.push({ id: a.id, patch: { wbs_node_id: id } });
+        });
       });
     }
-    await _batchUpdate(TABLE, schedUp);
+    await _wbsLinkRows(linkByCode, schedUp);
+    // ⚠️⚠️ AND NOW ATTACH THE ACTIVITIES. Everything above links SUMMARY rows (and the rare activity
+    // that carries a branch's own code). An IMPORTED activity carries its own LEAF code — "4.2.3.1.5"
+    // under branch "4.2.3.1" — so it matched nothing here and came out of every import with
+    // `wbs_node_id = null`. Measured: 4,393 of 4,393 (Avesta) and 16,393 of 16,393 (Strevi)
+    // activities unattached. The grid still looked right, because rebuild() derives ancestry by
+    // SPLITTING the dotted code — but every NODE-keyed feature saw an empty project:
+    //   • the WBS Manager's "N activities" read 0 on all 1,623 / 12,464 nodes;
+    //   • phaseOf() = `r.phase || _nodePhase(r.wbs_node_id)` returned null for every activity, so
+    //     isExecPhase() was false everywhere and Vertical Stacking drew "0 execution-phase
+    //     activities stacked" on a project holding 3,874 of them;
+    //   • workOf() fell back to '' and the Contract Scope column read "—".
+    // Linking each activity to the node whose code is its PARENT code fixes all three at once:
+    // measured isExecPhase 0 → 3,874 (Avesta) / 0 → 16,000 (Strevi), trade 0 → 4,393 / 16,393,
+    // and 0 → 1,111 / 7,442 nodes reporting a count. Every activity resolved (0 orphans).
+    await _wbsLinkActivityParents(silent);
     if (!silent) { renderWbsManager(); UI.toast('Adopted ' + legacy.length + ' WBS nodes into the tree.', 'success'); }
     return legacy.length;
+  }
+  // Activities whose branch is known but whose `wbs_node_id` is still null — the in-memory test that
+  // gates the healer below, so a healthy project pays no round-trip at all.
+  function _wbsUnlinkedActs() {
+    var nodeByCode = {};
+    for (var i = 0; i < rows.length; i++) { var s = rows[i]; if (isWbs(s) && s.wbs && s.wbs_node_id) nodeByCode[String(s.wbs)] = 1; }
+    var n = 0;
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      if (isWbs(r) || r.wbs_node_id || !r.wbs) continue;
+      var p = String(r.wbs).split('.').slice(0, -1).join('.');
+      if (p && nodeByCode[p]) n++;
+    }
+    return n;
+  }
+  // Attach every un-attached activity to the WBS node that owns its parent code.
+  // ⚠️ ZERO PAYLOAD. The project's own WBS-Summary rows already hold (dotted code → node id), so the
+  // whole join happens server-side and nothing is uploaded — unlike `wbs_link_codes`, which has to
+  // send one {code,node_id} pair per branch. That matters at this scale: the per-row PATCH fallback
+  // would be 16,393 requests, the very runaway `_wbsLinkRows` exists to avoid. So there is NO row-by-row
+  // fallback here: without the function we say so and leave the data alone rather than hanging the app.
+  async function _wbsLinkActivityParents(silent) {
+    if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
+    var n = 0;
+    try {
+      var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid });
+      if (rp.error) throw rp.error;
+      n = rp.data || 0;
+    } catch (e) {
+      if (!silent) UI.toast('Activities could not be attached to the WBS tree — run migrations/2026-09-01-wbs-link-rpc.sql.', 'warn');
+      return 0;
+    }
+    if (!n) return 0;
+    // Mirror into memory so the next render is right without a refetch — same contract as _wbsResyncCodes.
+    var nodeByCode = {};
+    rows.forEach(function (s) { if (isWbs(s) && s.wbs && s.wbs_node_id) nodeByCode[String(s.wbs)] = s.wbs_node_id; });
+    rows.forEach(function (r) {
+      if (isWbs(r) || r.wbs_node_id || !r.wbs) return;
+      var p = String(r.wbs).split('.').slice(0, -1).join('.');
+      if (p && nodeByCode[p]) r.wbs_node_id = nodeByCode[p];
+    });
+    _clearPhaseMemo();   // phase / trade / scope / package are all derived from the node
+    return n;
+  }
+  // ---- Reset WBS tree -------------------------------------------------------------------------
+  // Owner request: *"If we can have a clear WBS feature here to reset to default."* It exists because
+  // a tree can end up in a state no amount of editing recovers from — the adoption regression above
+  // left 1,584 of 1,623 nodes at the top level, and a re-adopt on top of THAT is worse, not better:
+  // the strays' computed codes ("1"…"1632") collide with the real depth-1 codes, so parents resolve
+  // onto garbage. The tree has to go before it can be rebuilt.
+  //
+  // ⚠️ SAFE BECAUSE THE DOTTED CODES ARE THE SOURCE OF TRUTH, NOT THE TREE. Every activity and
+  // summary row keeps its own `wbs` string; the tree is DERIVED from those. So dropping the nodes
+  // loses nothing that cannot be rebuilt, and "Rebuild" simply runs the same adoption an import does.
+  // ⚠️ `project_schedule.wbs_node_id` is a plain uuid column with NO foreign key (checked against
+  // supabase-build.sql — only progress_photos has one, `on delete set null`). Deleting nodes
+  // therefore cannot cascade into the schedule; it leaves dangling ids, which is what the update
+  // below clears.
+  async function wbsResetTree() {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    if (!canWrite || window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    var custom = (WBS_NODES || []).filter(function (n) { return !n.is_locked; }).length;
+    var legacyN = rows.filter(function (r) { return isWbs(r) && r.wbs; }).length;
+    var m = UI.modal('<h2 style="margin-top:0;">Reset WBS tree</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Drops all <strong>' + custom +
+      '</strong> custom / imported branches. The standard <strong>Milestones · Initiation · Planning · Execution · Closeout</strong> ' +
+      'skeleton is kept — it is locked and is never deleted.</p>' +
+      '<p style="font-size:12.5px;margin:0 0 12px;">No activity is deleted either way. Every row keeps its own WBS code, ' +
+      'which is what the tree is built from — so this is reversible by rebuilding.</p>' +
+      '<div style="display:flex;flex-direction:column;gap:8px;">' +
+        '<button class="pd-btn pd-btn-primary" id="ps-wbsr-rebuild" style="text-align:left;padding:10px 12px;">' +
+          '<strong>Reset and rebuild from the schedule</strong><br>' +
+          '<span style="font-weight:400;font-size:12px;opacity:.85;">Recommended. Rebuilds the tree from the ' + legacyN +
+          ' WBS codes already in the schedule, then re-attaches the activities. This is what an import does.</span></button>' +
+        '<button class="pd-btn" id="ps-wbsr-bare" style="text-align:left;padding:10px 12px;">' +
+          '<strong>Reset to the standard skeleton only</strong><br>' +
+          '<span style="font-weight:400;font-size:12px;opacity:.85;">Leaves just the five locked phases. The schedule keeps ' +
+          'its codes and still groups by them, but nothing is attached to a tree until you rebuild.</span></button>' +
+      '</div>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-wbsr-x">Cancel</button></div>');
+    m.el.querySelector('#ps-wbsr-x').onclick = m.close;
+    m.el.querySelector('#ps-wbsr-rebuild').onclick = function () { m.close(); _wbsResetGo(true); };
+    m.el.querySelector('#ps-wbsr-bare').onclick = function () { m.close(); _wbsResetGo(false); };
+  }
+  async function _wbsResetGo(rebuild_) {
+    showLoading('Clearing the WBS tree…');
+    var werr = await _clearWbsTree();
+    if (werr) { hideLoading(); UI.toast('Could not clear the WBS tree: ' + werr.message, 'error'); return; }
+    // Clear the now-dangling links. ⚠️ Expressed as "everything except the surviving locked nodes"
+    // rather than as a list of the deleted ids: the locked set is 5-8 rows, so this is ONE request,
+    // where an id list would be 1,584 (Avesta) or 12,459 (Strevi) ids in batches of 200 — the request
+    // storm this module keeps re-learning to avoid.
+    var keep = (WBS_NODES || []).map(function (n) { return n.id; });
+    try {
+      var q = sb().from(TABLE).update({ wbs_node_id: null }).eq('project_id', pid).not('wbs_node_id', 'is', null);
+      if (keep.length) q = q.not('wbs_node_id', 'in', '(' + keep.join(',') + ')');
+      var ures = await q;
+      if (ures.error) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it: ' + ures.error.message, 'error'); return; }
+    } catch (e) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it.', 'error'); return; }
+    var live = {}; keep.forEach(function (id) { live[id] = 1; });
+    rows.forEach(function (r) { if (r.wbs_node_id && !live[r.wbs_node_id]) r.wbs_node_id = null; });
+    _clearPhaseMemo();
+    if (!rebuild_) {
+      hideLoading(); collapsed = {}; await load();
+      UI.toast('WBS tree reset to the standard skeleton. Use “Adopt existing WBS” to rebuild it from the schedule.', 'success');
+      return;
+    }
+    setLoading('Rebuilding the WBS tree…');
+    var n = await wbsAdopt(true);
+    hideLoading(); collapsed = {}; await load();
+    UI.toast(n ? ('WBS tree rebuilt — ' + n.toLocaleString() + ' branches from the schedule’s own codes.')
+               : 'WBS tree reset. Nothing in the schedule carried a WBS code to rebuild from.', n ? 'success' : 'warn');
   }
   // Auto-adopt after an import (tolerant — never blocks the import if the wbs_nodes table/write fails).
   /* After an import has adopted its WBS tree, move that tree UNDER the package's own
@@ -28502,6 +28921,7 @@
     };
     document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
     document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
+    document.getElementById('ps-wbs-reset').onclick = wbsResetTree;
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
     var _pb = document.getElementById('ps-sync-prc'); if (_pb) _pb.onclick = syncProcurementApp;
     var _nb = document.getElementById('ps-push-needby'); if (_nb) _nb.onclick = pushNeedByToWpm;

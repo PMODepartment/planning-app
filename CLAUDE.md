@@ -84,6 +84,170 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (m) — Live audit of both rebuilt registers: 8 real defects, and 4 of my own measurements were wrong first
+
+Owner: *"Let's instead audit and verify via out of app browser."* Driven through the **deployed** site in
+the owner's own signed-in Chrome (super_admin). ⚠️ **Read-only on real data throughout** — no row was
+created, edited or deleted anywhere; the only writes are the source fixes below.
+
+**Both migrations are confirmed applied, and the probe was calibrated before it was trusted:** all 22
+`risk_register` and all 27 `stakeholder_map` RCM columns resolve, while an invented column correctly
+answers `42703`. So the two registers are running on the real schema, not degrading through their
+tolerant-write path.
+
+**The rebuild is correct against the real legacy rows** — which is the test a fixture cannot give.
+`DEMO01`'s three pre-RCM risks (categories `Regulatory`/`Commercial`/`Schedule`, responses
+`Mitigate`/`Transfer`/`Accept`, no activity, no residual) render under a `— UNASSIGNED ACTIVITY` group
+with the tally `2 × 2nd · 1 × 3rd`, and every derived priority matches the workbook's 5×5 by hand:
+4×4→2nd, 4×3→2nd, 3×3→3rd. `OPW101`'s one legacy stakeholder (impact 4 × influence 3) reads
+**12 → 1st Priority → Manage Closely**, with the BD relationship chain preserved (2→3, gap 1,
+**Enhance / Every two months**) and an initials avatar in place of the missing photo. Header and row
+cells align exactly in both registers (19/19 and 17/17); no page horizontal scroll.
+
+**⚠️ EIGHT REAL CONTRAST DEFECTS, ALL FOUND BY MEASURING THE DEPLOYED CSS, NONE VISIBLE BY READING IT.**
+And the interesting half is that they split across themes, so a one-theme check would have passed:
+
+| surface | light | dark |
+|---|---|---|
+| solid priority pill (white on fill) — orange/amber/green | **3.19–3.56** | same (fill is theme-independent) |
+| outline pill — **all seven levels** | **2.42–3.67** | pass (5.4–9.0) |
+| band header (`--pd-red-dark` 10px) | pass 5.31 | **2.92** |
+| lit band pill (`--pd-red-dark` on `--pd-red-light`) | pass 5.11 | **2.64** |
+| activity-number chip (white on `--pd-muted`) | pass 7.07 | **2.00** |
+| status chip | **In Progress 3.46 · Closed 4.12** | **Open 4.02** |
+| priority KPI value (24px/800) | pass | **2.90** |
+| stakeholder Manage-Closely KPI | pass 3.46 | **2.17** |
+
+⚠️ **An earlier pass had "fixed" the outline pill for dark only and never measured light — so it moved
+the failure rather than removing it.** The root cause is that one token was doing two jobs: a colour
+light enough to read on a dark card is too light to carry white, and a colour dark enough to carry
+white is too dark to read on a light wash. `epc-rcm.css` now carries **three roles** — `--rcm-c` the
+fill (fixed in both themes, because a priority colour is printed on the controlled document), and
+`--rcm-t` the text, with a **dark shade in light mode and a light shade in dark mode**. The fills were
+darkened so white passes. ⚠️ `--pd-muted` is a dark grey in light mode and a **light** grey in dark, so
+white-on-muted was never viable; the chip is ink-on-card inverted, which flips with the theme by
+construction. The status chip takes the repo's already-settled shape for this exact failure — ink text,
+semantic colour on the border. **30 combinations now predicted to pass, 0 failures**, tightest margin
+4.67.
+
+**⚠️ AND FOUR OF MY OWN MEASUREMENTS WERE WRONG BEFORE THEY WERE RIGHT — the transferable part:**
+1. **`getComputedStyle` returns a LIVE object.** Reading `cs.backgroundColor` after changing the
+   element's class returns the NEW value, so a probe that reused one element reported the outline
+   pill's 12% wash as the solid pill's fill. One fresh element per variant, value snapshotted
+   immediately.
+2. **`querySelector('.x')` and `querySelector('.x.on')` returned the SAME element** (the first band
+   pill is `.rr-band on`), so two lines of a report were one measurement wearing two labels. Enumerate
+   every instance and keep the worst.
+3. **A `color:transparent` spacer measures 1.00:1 and is not a defect** — `.rr-bandhead-x` is blank by
+   design. Skip elements with no text or a transparent colour, or the report cries wolf.
+4. **Module classes measured on another module's page are meaningless.** `.rr-st-*` probed on the
+   Stakeholder page returned a uniform 12.22 — that page never loads risk-register's stylesheet, so it
+   was measuring an unstyled span. All three status numbers agreeing was the tell.
+
+⚠️ **A fifth trap, environmental:** the automated tab reports `visibilityState: 'hidden'`, where timers
+are throttled to ~1/min — an `await new Promise(setTimeout)` inside a probe stalled the CDP call for
+45s and left the page mid-way through a theme toggle. **Style resolution is synchronous; measure
+without awaiting.**
+
+**⚠️ AND A PROCESS DEFECT OF MY OWN, SHIPPED TO PRODUCTION.** Commit `512d317` included **four
+verification harness files** — `modules/{risk-register,stakeholder-map}/harness.html` +
+`harness-stub.js` — so the deployed site carried two publicly reachable pages that render a fake
+register from fixtures with `window.getSB` and `AppAuth` stubbed out. No real data is exposed (every
+row is a literal in the page) and the stub only exists when that page loads it, so this is not a
+credential or RLS hole — but it is exactly what `.gitignore`'s *"throwaway; never commit"* rule exists
+to prevent, and the rule missed it because the pattern was **one filename** (`_ui_test.html`) rather
+than the word. Files removed; the pattern now matches `harness.html` / `harness-stub.js` / `*.harness.html`.
+
+**Also clean in the audit:** every JS file parses, 0 NUL bytes, CSS braces balanced in all three
+stylesheets, both migrations paren-balanced with `$$` paired and every policy preceded by a drop, both
+migrations present in the generated `supabase-build.sql`, and **no shared asset served at two versions
+and none unversioned**.
+
+⚠️ **Raised, not changed:** the sidebar still says **"Stakeholder Map"** while the page title and every
+heading now say **"Stakeholder Register"** — the name lives in `config.js`'s `MODULES` registry, a
+shared file, and renaming it is the app owner's call. Also cosmetic: the Code column is narrow enough
+to wrap `R-002` onto two lines.
+
+⚠️ **Not verified:** the photo upload against the real private bucket. `storage.from(b).list()` returns
+`[]` for a bucket that does not exist — the control proved it, so **the bucket cannot be probed
+read-only** and the only honest test is a real upload, which is a write. Left for the next pass rather
+than writing to a live project unasked.
+
+`epc-rcm.css` + both `module.css` → `?v=20260901g`; `MODULE_V` → `20260901j`.
+
+⚠️ **A NINTH defect and a SIXTH bad measurement, both found on the re-verify** — recorded because the
+second is the more useful one.
+
+**The parser in my own probe could not read `color-mix()`.** Chrome serializes a computed `color-mix`
+as `color(srgb 0.98 0.88 0.88 / 0.12)` with **0–1** components; the probe assumed **0–255**, so it read
+every such background as near-black. That silently corrupted the two surfaces whose background IS a
+`color-mix` — the outline pill and the heat-map cell label — and it is why a "failure" of 2.51:1 turned
+up on a pale pink wash, which is not a number that surface can produce. ⚠️ **The parser bug UNDERSTATED
+the problem, not overstated it:** re-tested with a self-checked parser by overriding only the two custom
+properties on a real shipped pill, the pre-change outline pill fails in **both** themes (light
+2.74–3.88, dark 2.67–3.65) and the new values pass in both (light 5.70–6.68, dark 4.67–7.40). So the
+dark-only `--rcm-t` an earlier pass added was itself measured with the broken parser and was never
+enough. The three-role model is right; it just needed a probe that could read the CSS.
+⚠️ A first attempt at that re-test returned ratios **in the millions** — impossible, the maximum is
+21:1 — because it built its own background instead of using the stylesheet's. Probes now carry a range
+guard that reports `bad` rather than a number, and the parser has a self-test that asserts a known mix.
+
+**The ninth defect:** `.rr-rescard .rr-kpi-val` was the one place the FILL token survived as a text
+colour — 2.80:1 in dark on the residual band cards. A sweep for `--rcm-c` reaching any text property
+now comes back with only legitimate uses (backgrounds, washes, a legend swatch, a 3px top border).
+
+**Live re-measure after the fix: 44 surfaces per theme, 0 failures in light, 0 in dark.**
+
+`epc-rcm.css` + both `module.css` → `?v=20260901h`; `MODULE_V` → `20260901k`.
+
+⚠️ **A TENTH defect, on the Cards view, found only once the probe covered card-only classes:**
+`.sm-card-plan-none` — the "No engagement plan yet" notice — used `--pd-warn` as 12px/400 text and
+measured **3.46:1 in light** (`#C77700`; the token is tuned for larger type). It is an *absence*
+notice, so it is now muted text (7.07 / 7.02) with the warn colour moved to a **left rail**, keeping
+the flag visible without colouring the sentence. Same shape as the status-chip fix.
+
+**Final live state, both registers, both themes: 57 surfaces each, 0 AA failures.** Worst margins
+4.67:1 (dark) and 4.83:1 (light), both on the 1st-Priority red — the tightest by design, since that
+fill is the one colour held fixed across themes.
+
+Stakeholder `module.css` → `?v=20260901i`; `MODULE_V` → `20260901l`.
+
+⚠️ **An ELEVENTH, in the module's OWN palette rather than the shared one** — and it only appeared once
+the sweep was widened to the classes the Register tab never renders. `.sm-gm-lab`, the Mendelow map's
+10px/800 cell label, read `--sm-c` (the engagement-approach FILL) on a 15% wash of that same fill:
+**1.70:1 in dark for Monitor, 4.08:1 in light for Keep Satisfied.** Exactly the fill-as-text mistake
+the priority palette had, one file over. `.sm-a-*` now carries `--sm-c` (fill — white on it passes
+5.0–7.6 for all four) and `--sm-t` (text, per theme). **The lesson generalises: any palette that gets
+used as BOTH a fill and a label needs two tokens, and the label one needs two values.**
+
+⚠️ **And a lesson about the sweep itself:** every earlier pass measured what happened to be on the
+Register tab. The Cards and Impact/Influence views contributed two of the eleven defects and were
+invisible until their classes were synthesised into the probe. **Enumerate the stylesheet's classes,
+not the current DOM.**
+
+Stakeholder `module.css` → `?v=20260901j`.
+
+⚠️ **A TWELFTH — and, more usefully, THE LIMIT OF "MEASURE EVERYTHING".** An exhaustive sweep of
+every class each stylesheet defines × every palette context (1,638 combinations per theme) reported
+**152 dark and 29 light failures**. All but one are **combinations the app never renders**, and
+reporting them as defects would have been worse than not sweeping:
+- 152 of 152 dark "failures" nest a shared class inside `.sm-s-*`. That is a self-contained strategy
+  chip with a light background and dark text, emitted only as `sm-strat sm-s-X` with its own text and
+  **no children** — grepped, not assumed. Nothing ever puts a heat-map cell inside one.
+- 11 light "failures" are `*-leg-sw`, which are **12×12 empty background swatches**
+  (`<span class="…-leg-sw …"></span>`). The probe injected text into them; the app never does.
+
+**The one real find: `.sm-ovr`**, the `±` "manually overridden" marker — `--pd-warn` at 14px/800 is
+**3.46:1 in light** (14px sits below the 18.66px large-text threshold, so 4.5 applies). Here the
+colour IS the signal — a single glyph cannot have its flag moved to a border — so it takes per-theme
+values (`#8a5300` light 6.33, `#fbbf24` dark 8.4).
+
+⚠️ **So the rule is: sweep broadly, then filter the output against what the JS actually EMITS.** An
+unfiltered exhaustive sweep buries one real defect under 180 impossible ones, and a reviewer who
+learns to skim it will miss the next real one.
+
+Stakeholder `module.css` → `?v=20260901k`; `MODULE_V` → `20260901n`.
+
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
 Owner, after running both RCM migrations: *"the user cannot access any admin features like add

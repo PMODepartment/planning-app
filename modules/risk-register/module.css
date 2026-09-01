@@ -53,6 +53,15 @@
 .rr-band:hover { border-color:var(--pd-red-mid); color:var(--pd-ink); }
 .rr-band.on { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red-dark); }
 
+/* ⚠️ Brand red is not a text colour on a dark surface, and this was measured on
+   the deployed site rather than assumed: --pd-red-dark reads 2.92:1 as the band
+   header (10px/800 on --pd-bg) and 2.64:1 on the lit band pill (--pd-red-light).
+   Both pass in light mode (5.31 / 5.11), so only dark is overridden — the light
+   look is unchanged. #FF8A80 is the shade this app already settled on for red
+   text on dark (issues-lessons, 2026-08-24): 7.5 on --pd-bg, 6.2 on a card. */
+html.pd-dark .rr-bands-row th.rr-bandhead { color:#FF8A80; }
+html.pd-dark .rr-band.on { color:#FF8A80; }
+
 /* KPIs */
 .rr-kpis { display:grid; grid-template-columns:repeat(6, 1fr); gap:12px; margin-bottom:18px; }
 .rr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
@@ -63,7 +72,7 @@
 /* Only the NUMBER takes the semantic colour; the card keeps the normal surface
    so the label stays readable in both themes. */
 .rr-kpi.rcm-p1 .rr-kpi-val, .rr-kpi.rcm-p2 .rr-kpi-val,
-.rr-kpi.rcm-res-high .rr-kpi-val { color:var(--rcm-c); }
+.rr-kpi.rcm-res-high .rr-kpi-val { color:var(--rcm-t); }
 
 .rr-help { color:var(--pd-muted); margin-top:0; font-size:13px; line-height:1.55; max-width:80ch; }
 
@@ -101,19 +110,28 @@
 .rr-gcar { display:inline-block; width:14px; color:var(--pd-muted); transition:transform .12s; }
 .rr-gcar.col { transform:rotate(-90deg); }
 .rr-gno { display:inline-block; min-width:22px; text-align:center; font-weight:800; font-size:11px;
-  color:#fff; background:var(--pd-muted); border-radius:4px; padding:1px 4px; margin-right:8px; }
+  /* ⚠️ ink-on-card INVERTED, not white-on-muted. --pd-muted is a dark grey in light mode
+     but a LIGHT grey in dark mode, so white on it measured 2.00:1 live. This pairing
+     flips with the theme by construction: 16.3 light / 12.2 dark. */
+  color:var(--pd-card); background:var(--pd-ink); border-radius:4px; padding:1px 4px; margin-right:8px; }
 .rr-gname { font-weight:800; letter-spacing:.02em; text-transform:uppercase; font-size:12px; }
 .rr-gcount { color:var(--pd-muted); font-size:12px; margin:0 10px; }
 .rr-grow .rcm-pill-o { margin-right:5px; }
 .rr-gobj { color:var(--pd-muted); font-size:12px; margin-top:3px; font-weight:400; text-transform:none;
   max-width:110ch; line-height:1.45; }
 
-/* Status chips */
+/* Status chips
+   ⚠️ INK text, semantic colour on the BORDER — measured, not a style preference.
+   The app's semantic tokens are tuned for larger type, and as 11px/700 chip text
+   they failed in both themes at different states: dark Open 4.02:1; light
+   In Progress 3.46:1 and Closed 4.12:1. Ink on the card is 16.3 light / 12.2
+   dark by construction, and the border keeps the status legible at a glance.
+   Same fix and the same reason as the contracts-claims `claim` mark. */
 .rr-st { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;
-  border:1px solid var(--pd-line); color:var(--pd-muted); }
-.rr-st-open { color:var(--pd-bad); border-color:var(--pd-bad); }
-.rr-st-inprogress { color:var(--pd-warn); border-color:var(--pd-warn); }
-.rr-st-closed { color:var(--pd-ok); border-color:var(--pd-ok); }
+  border:1px solid var(--pd-line); color:var(--pd-ink); }
+.rr-st-open { border-color:var(--pd-bad); background:color-mix(in srgb, var(--pd-bad) 12%, transparent); }
+.rr-st-inprogress { border-color:var(--pd-warn); background:color-mix(in srgb, var(--pd-warn) 12%, transparent); }
+.rr-st-closed { border-color:var(--pd-ok); background:color-mix(in srgb, var(--pd-ok) 12%, transparent); }
 
 /* ---- Heat map view ------------------------------------------------------ */
 .rr-heatwrap { overflow-x:auto; }          /* the grid scrolls in its card, never the page */
@@ -121,7 +139,9 @@
 .rr-resrow { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
 .rr-rescard { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   padding:14px 16px; box-shadow:var(--pd-shadow); border-top:3px solid var(--rcm-c, var(--pd-line)); }
-.rr-rescard .rr-kpi-val { color:var(--rcm-c, var(--pd-ink)); }
+/* ⚠️ --rcm-t, not --rcm-c. This is the one place the fill token survived as a text
+   colour and it measured 2.80:1 in dark (24px/800 needs 3) on the residual band cards. */
+.rr-rescard .rr-kpi-val { color:var(--rcm-t, var(--pd-ink)); }
 
 /* ---- Risk Universe view ------------------------------------------------- */
 .rr-uni td:first-child { min-width:190px; }

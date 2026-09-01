@@ -1,5 +1,39 @@
 # Module: risk-register
 
+## Live audit, out-of-app browser (2026-09-01) — fmlozano
+
+Verified on the **deployed** site in the owner's signed-in Chrome, against **real legacy rows** written
+by the pre-RCM module. Read-only; nothing written. Both 2026-09-01 migrations confirmed applied
+(every new column resolves; an invented column correctly answers `42703`, so the probe discriminates).
+
+⚠️ **Eight contrast defects found by MEASURING the deployed CSS, split across themes** — a one-theme
+check would have passed. Full table and the reasoning in the root `CLAUDE.md` (2026-09-01 (m)). The
+structural fix: `epc-rcm.css` now separates **`--rcm-c` (fill, fixed in both themes)** from
+**`--rcm-t` (text, dark shade in light mode / light shade in dark)**, because one token cannot both
+carry white and read on a light wash of itself. `--pd-muted` is dark in light mode and **light** in
+dark, so the activity-number chip is ink-on-card inverted rather than white-on-muted. Status chips take
+this repo's settled shape for the same failure: ink text, semantic colour on the border.
+
+⚠️ **Four of the measurements were wrong before they were right** — a live `getComputedStyle` object
+re-read after a class change, `.x` and `.x.on` resolving to the same element, a `color:transparent`
+spacer scoring 1.00:1, and this module's classes probed on the *other* module's page (where its
+stylesheet is not loaded). Enumerate every instance, snapshot values immediately, skip transparent and
+empty nodes, and never measure a module's classes off its own page.
+
+⚠️ The automated tab is `visibilityState: 'hidden'`, where timers throttle to ~1/min — an awaited
+`setTimeout` inside a probe stalls the call for 45s. Style resolution is synchronous; do not await.
+
+⚠️ **Four harness files had shipped to production** from this module's own rebuild commit and are now
+removed, with `.gitignore` widened from the single `_ui_test.html` name to the word.
+
+**Rendered correctly against DEMO01's three legacy risks** (pre-RCM categories and responses, no
+activity, no residual): grouped under `— UNASSIGNED ACTIVITY` with the tally `2 × 2nd · 1 × 3rd`, and
+every derived priority matching the workbook's 5×5 by hand — 4×4→2nd, 4×3→2nd, 3×3→3rd. 19 header
+cells = 19 row cells; no page horizontal scroll. Legacy off-taxonomy `Schedule` still surfaces in the
+Risk Universe rather than being silently dropped.
+
+`module.css` + `epc-rcm.css` → `?v=20260901g`.
+
 ## Rebuilt as an EPC Risk & Control Matrix (2026-09-01) — fmlozano
 Rebuilt against **`SLN101. OPS. Risk Register. 2025 07 01.xlsx`**. The register is no longer a flat
 CRUD table: it is the workbook's **RCM**, banded Identification → Assessment → Response → Residual →
