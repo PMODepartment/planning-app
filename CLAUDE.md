@@ -227,6 +227,27 @@ not the current DOM.**
 
 Stakeholder `module.css` → `?v=20260901j`.
 
+⚠️ **A TWELFTH — and, more usefully, THE LIMIT OF "MEASURE EVERYTHING".** An exhaustive sweep of
+every class each stylesheet defines × every palette context (1,638 combinations per theme) reported
+**152 dark and 29 light failures**. All but one are **combinations the app never renders**, and
+reporting them as defects would have been worse than not sweeping:
+- 152 of 152 dark "failures" nest a shared class inside `.sm-s-*`. That is a self-contained strategy
+  chip with a light background and dark text, emitted only as `sm-strat sm-s-X` with its own text and
+  **no children** — grepped, not assumed. Nothing ever puts a heat-map cell inside one.
+- 11 light "failures" are `*-leg-sw`, which are **12×12 empty background swatches**
+  (`<span class="…-leg-sw …"></span>`). The probe injected text into them; the app never does.
+
+**The one real find: `.sm-ovr`**, the `±` "manually overridden" marker — `--pd-warn` at 14px/800 is
+**3.46:1 in light** (14px sits below the 18.66px large-text threshold, so 4.5 applies). Here the
+colour IS the signal — a single glyph cannot have its flag moved to a border — so it takes per-theme
+values (`#8a5300` light 6.33, `#fbbf24` dark 8.4).
+
+⚠️ **So the rule is: sweep broadly, then filter the output against what the JS actually EMITS.** An
+unfiltered exhaustive sweep buries one real defect under 180 impossible ones, and a reviewer who
+learns to skim it will miss the next real one.
+
+Stakeholder `module.css` → `?v=20260901k`; `MODULE_V` → `20260901n`.
+
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
 Owner, after running both RCM migrations: *"the user cannot access any admin features like add

@@ -9355,7 +9355,12 @@
   ];
   function _impGuessTarget(name, targets) {
     var n = String(name || '').trim().toLowerCase();
-    var exact = targets.find(function (t) { return t.name.toLowerCase() === n; });
+    // ⚠️ Matched on the SAME normalised key applyWbsPlacement uses for its merge test. A guess that
+    // says "file this under Closeout Phase" while the placement's own sameName test disagrees
+    // produces "Closeout Phase › Closeout" — the double-layering both are there to prevent. The two
+    // must read the file's branch name the same way or the dialog is lying about what it will do.
+    var nk = _wbsNameKey(name);
+    var exact = targets.find(function (t) { return t.name.toLowerCase() === n || (nk && _wbsNameKey(t.name) === nk); });
     if (exact) return exact.code;
     for (var i = 0; i < _IMP_PHASE_HINT.length; i++) {
       var h = _IMP_PHASE_HINT[i];

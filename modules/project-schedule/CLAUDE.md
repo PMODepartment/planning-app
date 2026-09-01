@@ -1,3 +1,122 @@
+## The .xer import "bugged completely" on 4PH Strevi — the WBS code was being mangled (2026-09-01) — fmlozano
+
+Owner: *"I tried importing the detailed program for Strevi Residences in the importer and it bugged
+completely. Let's fix considering the location breakdown and matching of locations and WBS."*
+
+**Reproduced headlessly first** by running the SHIPPED `parseXER` over the real 8.4 MB file (50,462
+lines) rather than guessing: **12,465 PROJWBS + 16,393 TASK = 28,858 recs, WBS nesting 10 deep,
+21,338 TASKPRED**. The parse itself is fine — 376 ms. Everything below was measured against that.
+⚠️ ACTVCODE is effectively empty in this file (1 type, 1 value, 1 assignment), so the location
+breakdown can only come from the WBS — which is what made items 4-6 matter.
+
+### 1 ⚠️⚠️ THE ONE THAT DESTROYS THE SCHEDULE — `wbsAdopt` mangled every adopted WBS code
+
+`wbsAdopt` inserted each node as `{ code: "1.4.2.3", code_custom: true }` — **the whole dotted path**.
+But `computeWbsCodes` reads a custom code through `ownCodeSeg()`, which flattens dots to dashes so a
+custom code can only ever be ONE segment. So `"1.4.2.3"` came back as **`"1-4-2-3"`** and the node's
+computed code became `parentPath + "." + "1-4-2-3"`.
+
+Measured on this file: **12,456 of 12,465 nodes compute to a mangled code** — `1.1` → `1.1-1`,
+`1.4.2.3` → `1.1-4.1-4-2.1-4-2-3`. `_wbsResyncCodes()` then runs on the very next `load()`, sees every
+stored `wbs` disagree with the computed code, and **rewrites all 12,456 summary rows to the mangled
+value**. Since `rebuild()` derives ancestry by SPLITTING that code, `1.1-1.1-1-1` is depth 2 where it
+should be depth 3 — the hierarchy collapses into sibling salad. That is "bugged completely".
+
+⚠️ **The activities are NOT rewritten** (they carry no `wbs_node_id` — see #2), so they keep correct
+codes while the summaries move: orphaned activities under garbage branches.
+
+**Fix:** a node's `code` is its **own segment**, and only when that segment is **not purely numeric**.
+Adoption never needed a custom code for numeric paths — rows are adopted in code order, one depth
+level at a time, so `sort_order` already reproduces the file's numbering and auto-numbering yields the
+identical dotted code. **Verified: 12,456 drifted → 0.** A non-numeric segment (`AR-F11`, `ISD02`)
+carries planner meaning position cannot reproduce, so that — and only that — stays custom, stripped to
+its own segment.
+
+### 2 ⚠️ `wbsAdopt`'s link loop was O(n²) and linked NOTHING
+
+`legacy.forEach(r => rows.forEach(a => …))` = **12,465 × 28,858 = 360 M comparisons, 3.7 s of blocked
+main thread — and 0 activities linked**, because an imported activity carries its own leaf code and
+never shares a code with a branch. Now indexed by code once; the real case (Builder pushes / manual
+rows, where an activity carries its parent branch's code) stays O(1).
+
+### 3 ⚠️ 12,465 single-row PATCHes to write the links
+
+`_batchUpdate` issues one PATCH per row, 40 in flight → **312 sequential waves**. Minutes of an
+apparently-hung app — and any wave that fails leaves nodes unlinked, which `_wbsEnsureSummaries` reads
+as "this node has no summary row" and heals by **INSERTING a duplicate**, sequentially. That is the
+Avesta runaway in a new costume, so this is a correctness fix, not only a speed one.
+
+New `_wbsLinkRows()` → **`wbs_link_codes(project_id, [{code,node_id}…])`**, one UPDATE ... FROM
+`jsonb_to_recordset`, **one round-trip**. Matches on the dotted code so it links the summary row AND
+any activity carrying it — exactly what the client loop did. `security invoker`, so the caller's RLS
+still applies. **Falls back to `_batchUpdate` when the function is absent**, same contract as
+`schedule_rows`, so the app works before AND after `migrations/2026-09-01-wbs-link-rpc.sql`.
+⚠️ **The owner must run it.**
+
+### 4 The location breakdown was not scoped to Execution Phase
+
+Both post-hoc location tools scope to Execution Phase (`locExecScopedActs`) so a Milestone or a
+Planning deliverable can never pick up a tower/floor/zone. **The IMPORTERS ran the matcher over every
+leaf in the file** — which is where the breakdown gets dirty before anyone can see it.
+
+Measured on this file, mapping Tower with the default seeded terms: **14 values for 4 real towers.**
+The Milestones branch contributed `Tower Handover`, `Building Watertightness` and `Building
+Energization` (WBS headings, not places), and **Closeout contributed a SECOND, differently-spelled set
+of the same four towers** — `Tower 1`..`Tower 4` against Execution's `Tower A`..`Tower D`. No spelling
+merge can reconcile those: they genuinely are different strings for the same building.
+
+`locImportScope()` scopes to the branches the planner filed under Execution Phase **in the same
+dialog** — the importer already knows the answer, it just never asked itself. Falls back to the whole
+file (old behaviour) when nothing is filed there, and **says which it is doing** in the preview.
+**Measured after: Tower 14 → 7 values** (4 real + 3 genuine Site-Development / General-Requirements
+mentions), Level 20 → 19, Zone unchanged. Applied to the Excel path too — same defect, same fix.
+
+### 5 The preview recomputed over 16k leaves on every keystroke
+
+`onChange` is wired to `oninput` on the keyword-terms box and ran the full plan each time.
+**Debounced 250 ms**, and the placement selects now repaint it too (they decide the scope).
+
+### 6 Memoisation — the same regex compiled 13.7 M times
+
+`locTermHit` built a fresh `RegExp` **per term per call**, and `discStampFromWbs` asks it once per WBS
+ancestry segment per activity: ~70 terms × up to 12 segments × 16,393 activities. Measured **1.46 s**,
+and the import runs it **twice** (dialog + import).
+- compiled-regex cache → 0.72 s
+- memoise `_discTermMatch` **by name** (the tree repeats ~2.6k names across 150k asks) → **0.14 s, 10×**
+- `locWordMatcher` memoised per matcher; the keyword source's ancestry walk memoised **per code path**
+  (the deepest match for `4.2.3.1.5` is determined by `4.2.3.1` plus one node's name) → `locMapPlan`
+  **0.47 s → 0.27 s**, byte-identical output
+- `locNormKey` memoised (called twice per record per level over ~20 distinct values)
+
+### 7 `Closeout` never matched `Closeout Phase`
+
+The seeded skeleton says **Closeout Phase**; the file's branch is **Closeout**. `_wbsNameKey` folds
+leading generic qualifiers but not a trailing `phase`, so the two did not match and the file's branch
+was filed as a **sixth top-level branch beside the skeleton's empty Closeout Phase** — the exact
+duplicate-top-level shape the placement step exists to prevent. `phase` added to the dropped words;
+every skeleton phase stays distinct (initiation / planning / execution / closeout / milestone).
+`_impGuessTarget` now matches on the same key, so the dialog's guess and `applyWbsPlacement`'s merge
+test can never disagree — a mismatch there produces `Closeout Phase › Closeout`.
+
+### Verified
+
+By **executing the shipped functions**, sliced out of `index.html` by brace-matching and never
+reimplemented, over the real file:
+- placement + adoption end to end: the 5 branches merge into their skeleton phases, root wrapper
+  dropped, **code drift 12,456 → 0** — and the same harness reproduces 12,456 against the pre-fix
+  code, so it bites;
+- the O(n²) loop measured at 3.7 s / 0 links;
+- the scoped location plan (values above), with `locMapPlan` output byte-identical after memoisation;
+- `discStampFromWbs` 1.46 s → 0.14 s, same 16,056 stamped.
+
+Whole file: **0 NUL bytes, 1 inline script, parses clean, 1,427 function definitions, 0 lost.**
+
+⚠️ **NOT verified signed in.** The anon key has no grants, so no import was actually run against
+Supabase and the RPC has never been called. **The first real import is the test**, and it needs
+`migrations/2026-09-01-wbs-link-rpc.sql` run first (without it the fallback fires: correct, but slow).
+⚠️ Existing projects already carrying mangled codes are **not migrated** — a re-import with *Replace*
+clears the tree and rebuilds it correctly, which is the recovery path.
+
 ## Vertical stacking banded by the TOWER, so the floors ran sideways (2026-09-01) — fmlozano
 
 Owner: *"for multiple towers, i have identified and matched WBS to tower location, and as well as

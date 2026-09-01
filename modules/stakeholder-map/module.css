@@ -116,7 +116,11 @@ html.pd-dark .sm-kpi.sm-k-satisfy .sm-kpi-val { color:#fbbf24; }
 .sm-cat { font-weight:600; }
 /* The "this value was overridden by hand" marker. Deliberately quiet but
    present: a derived column that someone has overruled must not look derived. */
-.sm-ovr { color:var(--pd-warn); font-weight:800; cursor:help; }
+/* ⚠️ Per-theme, because the colour IS the signal here — a single ± glyph, so it cannot
+   be demoted to muted text with the flag moved to a border. --pd-warn measured 3.46:1
+   in light at 14px/800 (below the 18.66px large-text threshold, so 4.5 applies). */
+.sm-ovr { color:#8a5300; font-weight:800; cursor:help; }
+html.pd-dark .sm-ovr { color:#fbbf24; }
 
 .sm-bands-row th.sm-bandhead {
   background:var(--pd-bg); color:var(--pd-red-dark); text-align:center;
