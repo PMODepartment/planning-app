@@ -46,23 +46,44 @@ window.IssuesLessons = (function () {
   // the issue / cause / corrective action — because that is what gets presented in a
   // meeting. `log` is the table, because scanning forty issues for the one you want is a
   // different job from reading one of them. Neither is a filter; both show the same set.
-  var _issMode = 'report';             // 'report' | 'log'
-  var _issSel = null;                  // id of the issue open in the detail pane
+  // ⚠️ THREE MODES NOW, not a Report/Log toggle (items #1, #16). 'dashboard' is a real
+  // analytics landing page (KPI tiles, a champion summary list, a department pie, an
+  // aging bar) — never a single-record reading pane any more, which is what "report"
+  // used to mean. Viewing/editing ONE issue is a drill-down, reached from either
+  // 'dashboard' or 'log', and is its own mode ('detail') so the view-toggle can hide
+  // itself while it's open (there is nothing to switch between while reading one record).
+  var _issMode = 'dashboard';          // 'dashboard' | 'log' | 'detail'
+  var _issPrevMode = 'dashboard';      // where "← Back" in detail returns to
+  var _issSel = null;                  // id of the issue open in detail
   // ⚠️ A NEW ISSUE IS A DRAFT IN MEMORY, NOT AN INSERTED ROW — deliberately UNLIKE
   // "+ New minutes", which inserts immediately and lets you type. It cannot work that way
   // here: `issues_lessons_del` is planner-only (2026-08-19-department-issues.sql), so a
   // department that mis-clicked "+ New issue" would leave a blank row in the register with
   // no way to remove it. The draft is written on Save and discarded on Cancel.
   var _issNew = null;
-  var _issReport = false;              // reporting view (read-only presentation)
   var _issQ = '';                      // search inside the issue list
+  // ---- Status workflow (items #10–13): inline reveal panels, not a modal ----
+  // Clicking "Put On Hold" / "Close Issue" opens one of these instead of changing
+  // `status` directly — both require a narrative before anything is written.
+  var _issHoldOpen = false, _issHoldNote = '';
+  var _issCloseOpen = false, _issCloseDraft = { report: '', lesson: '', category: '' };
+  var ISSUE_HISTORY = {};              // issue id -> array of history rows (loaded on open)
+  // Set while a NEW issue draft was started from the Lessons Learned screen's
+  // "+ New Lesson" (item #15) — routes "Back"/"Cancel" to Lessons instead of Issues.
+  var _issNewFromLessons = false;
 
   // ---- Lessons Learned ------------------------------------------------------
   // A lesson is its OWN record now (table `lessons_learned`), linked to the issue and/or
   // the meeting that produced it — see migrations/2026-08-26-lessons-learned.sql for why
   // it stopped being three columns on the issue.
   var LESSONS = [], _lessLoaded = false, _lessErr = '', _lessLegacy = false;
-  var _lessMode = 'report';            // 'report' | 'library'
+  // ⚠️ ITEM #15/#16: same three modes as Issues — 'dashboard' is the analytics landing
+  // page (scoped to Closed issues, since "lessons learned are exclusively for closed
+  // issues"), 'log' is the table (plus a section for lessons captured without a full
+  // issue — meeting-linked or legacy), 'detail' is the standalone lesson editor
+  // (`lessonDetailHTML`, unchanged) reached from a "capture another lesson" / meeting link.
+  var _lessMode = 'dashboard';         // 'dashboard' | 'log' | 'detail'
+  var _lessPrevMode = 'dashboard';
   var _lessSel = null, _lessNew = null, _lessReport = false;
   // "This came out of a meeting." The tag is read-only in the log: the minute is the
   // record of what was said, this register owns how the issue is chased. Both now live
@@ -93,14 +114,40 @@ window.IssuesLessons = (function () {
       '<span data-ico="clipboard" data-ico-size="12"></span>From MOM</span>';
   }
 
-  var iFilters = { search: '', status: '', department: '', champion: '', aging: '' };
+  // ⚠️ ITEMS #1/#6: status defaults to 'Open', not "All" — both the Dashboard and the Log
+  // read this SAME filter, so "by default only open issues show" applies to both screens
+  // at once, and changing the one status control in the filter bar broadens (or narrows)
+  // what either presentation describes. Never silently reset to '' anywhere but the
+  // explicit Clear-filters action, which restores THIS default rather than "All".
+  var iFilters = { search: '', status: 'Open', department: '', champion: '', aging: '' };
   var lFilters = { search: '', department: '', category: '' };
 
-  var DEPARTMENTS = ['PMO', 'Operations', 'Engineering', 'Design', 'QA/QC', 'Safety',
-                     'Procurement', 'Commercial', 'Finance', 'Human Resources', 'MEP', 'External'];
+  // ⚠️ THE OWNER'S OWN LIST, replacing the earlier invented starter vocabulary
+  // (item #7). A department value already on a row that predates this list
+  // (e.g. legacy 'MEP', 'QA/QC') is NOT migrated or hidden — `populateFilterOptions()`
+  // already builds its filter options from whatever departments are actually
+  // present in the data, so an old value stays visible/filterable; only the
+  // ADD/EDIT picker offers the new canonical list going forward. Kept in step
+  // with the copy in `admin.html` (Minutes of Meeting has no department picker
+  // of its own — it only displays a linked issue's department verbatim, so
+  // there is nothing to sync there).
+  var DEPARTMENTS = ['Commercial and Contracts', 'Engineering', 'Procurement', 'Finance',
+                     'Human Resources', 'Quality', 'Health and Safety', 'Operations',
+                     'PMO', 'COO', 'CEO'];
   var STATUSES    = ['Open', 'On Hold', 'Closed'];
   var LESSON_CATS = ['Schedule', 'Cost', 'Quality', 'Safety', 'Design', 'Procurement',
                      'Contract', 'Communication', 'Resource', 'Stakeholder', 'Other'];
+  var AGING_BUCKETS = [
+    { key: '0-30',  label: '0–30 days',   test: function (a) { return a <= 30; } },
+    { key: '31-90', label: '31–90 days',  test: function (a) { return a >= 31 && a <= 90; } },
+    { key: '90+',   label: 'Over 90 days', test: function (a) { return a > 90; } },
+  ];
+  // A small fixed palette for the dashboard's pie/bar charts — reused across
+  // both Issues and Lessons so a department/category always reads the same
+  // colour wherever it appears. Chosen for contrast on both themes (checked
+  // against --pd-card in light and dark, min ~4.5:1 for the accompanying text).
+  var CHART_COLORS = ['#EE3124', '#2B6CB0', '#2F855A', '#B7791F', '#6B46C1',
+                       '#B83280', '#00838F', '#8D6E63', '#4A5568', '#5A67D8', '#C42127'];
 
   function sb() { return AppAuth.getSB(); }
 
@@ -193,6 +240,20 @@ window.IssuesLessons = (function () {
       get: function () { return { s: screen }; },
       apply: function (state) { switchScreen(state.s); }
     });
+    // ⚠️ BUG FIX (owner report: "when you don't select issues or lessons, nothing
+    // shows up"). `bindHistoryState` only calls `apply()` — i.e. `switchScreen()`,
+    // the ONLY thing that clears the `hidden` attribute off a screen `<div>` — when
+    // the URL already carries its own hash (a reload, or a Back/Forward step). On a
+    // genuinely first visit there is no hash, so `apply()` is never called and both
+    // `#il-screen-issues` / `#il-screen-lessons` stay `hidden` forever: the module
+    // paints a topbar and nothing else. The same gap meant `?screen=lessons` (the
+    // deep link from Minutes of Meeting / My Work) set the `screen` VARIABLE above
+    // but never told the DOM, which still showed whatever the last hash said (or
+    // nothing). Calling switchScreen(screen) unconditionally here covers both: on
+    // a plain visit it establishes the default; if bindHistoryState's apply() has
+    // ALREADY run (a hash existed) this just re-applies the same value — a harmless
+    // no-op repaint, not a second navigation (nothing here calls histScreen.push()).
+    switchScreen(screen);
     if (pid) {
       // ⚠️ AWAITED here (unlike the fire-and-forget pattern this module used
       // before the split) so the cross-module deep link below can act once
@@ -255,10 +316,14 @@ window.IssuesLessons = (function () {
       };
     });
     $('il-clearfilters').onclick = function () {
-      iFilters = { search: '', status: '', department: '', champion: '', aging: '' };
-      ['search', 'status', 'department', 'champion', 'aging'].forEach(function (k) {
+      // ⚠️ Restores the DEFAULT (status=Open), not "All" — items #1/#6. A Clear that landed
+      // on "All statuses" would silently widen the dashboard/log past the app's own default
+      // scope, reading as a filter change rather than a reset.
+      iFilters = { search: '', status: 'Open', department: '', champion: '', aging: '' };
+      ['search', 'department', 'champion', 'aging'].forEach(function (k) {
         var el = $('il-f-' + k); if (el) el.value = '';
       });
+      var st = $('il-f-status'); if (st) st.value = 'Open';
       renderIssues();
     };
 
@@ -279,8 +344,12 @@ window.IssuesLessons = (function () {
     };
 
     $('il-new').onclick = function () {
+      // ⚠️ ITEM #15: a standalone lesson goes through the SAME full issue-to-closure flow
+      // as any other closed issue (see `newLessonAsClosedIssue`) — not the older lightweight
+      // `newLesson(null)` form, which is still used for the narrower "link a lesson to a
+      // meeting action item" / "capture another lesson on an already-closed issue" cases.
       if (screen === 'issues') newIssue();
-      else if (screen === 'lessons') newLesson(null);
+      else if (screen === 'lessons') newLessonAsClosedIssue();
     };
     $('il-refresh').onclick = function () {
       momReset();
@@ -291,8 +360,12 @@ window.IssuesLessons = (function () {
     // label changes with the screen because "Log" and "Library" name different things.
     Array.prototype.forEach.call(document.querySelectorAll('#il-viewtoggle [data-view]'), function (b) {
       b.onclick = function () {
-        if (screen === 'issues') _issMode = (b.dataset.view === 'log') ? 'log' : 'report';
-        else if (screen === 'lessons') _lessMode = (b.dataset.view === 'log') ? 'library' : 'report';
+        // ⚠️ ITEM #16: "Dashboard", not "Report"/"Library" — one pair of modes for both
+        // screens now. Switching away from 'detail' (if somehow active) is intentional:
+        // the toggle is hidden while in detail, but clicking it (e.g. via keyboard) should
+        // still leave detail cleanly rather than layering a second mode on top of it.
+        if (screen === 'issues') { _issMode = (b.dataset.view === 'log') ? 'log' : 'dashboard'; _issSel = null; _issNew = null; }
+        else if (screen === 'lessons') { _lessMode = (b.dataset.view === 'log') ? 'log' : 'dashboard'; _lessSel = null; _lessNew = null; }
         syncChrome();
         render();
       };
@@ -312,9 +385,12 @@ window.IssuesLessons = (function () {
   }
 
   function syncChrome() {
+    var curMode = screen === 'lessons' ? _lessMode : _issMode;
     // ⚠️ `canAdd`, not `canWrite`: raising an issue is open to any approved non-viewer
-    // (D1 — the DATABASE has always allowed it). Same rule for capturing a lesson.
-    var showNew = canAdd && (screen === 'issues' || screen === 'lessons');
+    // (D1 — the DATABASE has always allowed it). Same rule for capturing a lesson. Hidden
+    // while a single record is already open (`detail`) — there's nowhere for a second
+    // "+ New" to land that isn't confusing mid-edit.
+    var showNew = canAdd && (screen === 'issues' || screen === 'lessons') && curMode !== 'detail';
     var nb = $('il-new');
     nb.style.display = showNew ? '' : 'none';
     $('il-sep').style.display = showNew ? '' : 'none';
@@ -323,18 +399,15 @@ window.IssuesLessons = (function () {
       nb.title = screen === 'lessons' ? 'Capture a lesson learned' : 'Log a new issue';
     }
 
-    // The presentation switch belongs to the two record screens (both remaining
-    // ones use it now that Minutes of Meeting — which had its own Reporting view
-    // on the minute itself — moved to its own module).
+    // ⚠️ ITEM #16: Dashboard | Log for BOTH screens now — the old Report/Library wording is
+    // gone. Hidden while `detail` is open: there's nothing to switch between while reading/
+    // editing one record (that used to be what "Report" meant; it's the drill-down now).
     var tg = $('il-viewtoggle');
     if (tg) {
-      tg.hidden = false;
-      var mode = screen === 'lessons' ? _lessMode : _issMode;
-      var second = screen === 'lessons' ? 'library' : 'log';
-      var lbl = $('il-view-log'); if (lbl) lbl.textContent = screen === 'lessons' ? 'Library' : 'Log';
+      tg.hidden = curMode === 'detail';
       Array.prototype.forEach.call(tg.querySelectorAll('[data-view]'), function (b) {
         var isSecond = b.dataset.view === 'log';
-        b.classList.toggle('on', isSecond ? (mode === second) : (mode === 'report'));
+        b.classList.toggle('on', isSecond ? (curMode === 'log') : (curMode === 'dashboard'));
       });
     }
   }
@@ -453,16 +526,189 @@ window.IssuesLessons = (function () {
     });
   }
 
-  // Dispatcher. Both presentations run off `issuesFiltered()`, so the filter bar and the
-  // KPIs mean the same thing in either — switching presentation never changes the set.
+  // ---- shared chart helpers (used by Issues AND Lessons dashboards) ---------
+  // A ring chart via stroke-dasharray on stacked circles — no library, matches
+  // this app's established "hand-rolled inline SVG" convention for dashboards
+  // (drawing-register's donutSVG, the equipment/manpower portfolio charts, …).
+  function donutChartSVG(slices, opts) {
+    opts = opts || {};
+    var size = opts.size || 130, sw = opts.stroke || 20;
+    var r = (size - sw) / 2, c = size / 2, circ = 2 * Math.PI * r;
+    var total = slices.reduce(function (s, x) { return s + x.value; }, 0);
+    var offset = 0, arcs;
+    if (!total) {
+      arcs = '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="var(--pd-line)" stroke-width="' + sw + '"></circle>';
+    } else {
+      arcs = slices.map(function (s) {
+        var frac = s.value / total, len = frac * circ;
+        var piece = '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="' + s.color +
+          '" stroke-width="' + sw + '" stroke-dasharray="' + len.toFixed(2) + ' ' + (circ - len).toFixed(2) +
+          '" stroke-dashoffset="' + (-offset).toFixed(2) + '" transform="rotate(-90 ' + c + ' ' + c + ')">' +
+          '<title>' + Fmt.esc(s.label) + ': ' + s.value + '</title></circle>';
+        offset += len;
+        return piece;
+      }).join('');
+    }
+    return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size +
+      '" role="img" aria-label="' + Fmt.esc(opts.aria || 'chart') + '">' + arcs + '</svg>';
+  }
+  // A small vertical bar chart, e.g. counts by aging bucket.
+  function barChartSVG(bars, opts) {
+    opts = opts || {};
+    var w = opts.width || 280, h = opts.height || 140, padTop = 22, padBottom = 20;
+    var bodyH = h - padTop - padBottom;
+    var max = Math.max(1, bars.reduce(function (m, b) { return Math.max(m, b.value); }, 0));
+    var bw = w / bars.length;
+    var bars_svg = bars.map(function (b, i) {
+      var bh = max ? Math.round((b.value / max) * bodyH) : 0;
+      var innerW = bw * 0.6, x = i * bw + (bw - innerW) / 2;
+      var y = padTop + (bodyH - bh);
+      return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + innerW.toFixed(1) +
+          '" height="' + Math.max(1, bh).toFixed(1) + '" fill="' + b.color + '" rx="3"><title>' +
+          Fmt.esc(b.label) + ': ' + b.value + '</title></rect>' +
+        '<text x="' + (x + innerW / 2).toFixed(1) + '" y="' + (y - 5).toFixed(1) +
+          '" text-anchor="middle" font-size="11" font-weight="700" fill="var(--pd-ink)">' + b.value + '</text>' +
+        '<text x="' + (x + innerW / 2).toFixed(1) + '" y="' + (h - 4).toFixed(1) +
+          '" text-anchor="middle" font-size="10" fill="var(--pd-muted)">' + Fmt.esc(b.label) + '</text>';
+    }).join('');
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="' + h + '" role="img" ' +
+      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet">' + bars_svg + '</svg>';
+  }
+  function agingBucketsOf(data) {
+    return AGING_BUCKETS.map(function (b, i) {
+      var n = data.filter(function (r) { var a = agingDays(r); return a != null && b.test(a); }).length;
+      return { key: b.key, label: b.label, value: n, color: CHART_COLORS[i % CHART_COLORS.length] };
+    });
+  }
+
+  // ---- shared History (item #11) --------------------------------------------
+  // ⚠️ ONE history table for both Issues and (via a closed issue) Lessons — a
+  // lesson-producing closure IS an issue update, so its history lives with the
+  // issue, not duplicated onto the lessons_learned row.
+  var HISTORY_TABLE = 'issues_lessons_history';
+  var ISSUE_HIST_LABELS = { create: 'Logged', update: 'Updated', hold: 'Put on hold', close: 'Closed' };
+  async function logHistory(issueId, projectId, action, beforeRow, note) {
+    // ⚠️ Best-effort and never awaited-into-failure: the real write (the issue
+    // itself) has already succeeded by the time this runs, and a missing
+    // migration or a transient failure here must not make that read as an
+    // error to the person who just saved.
+    try {
+      await sb().from(HISTORY_TABLE).insert({
+        issue_id: issueId, project_id: projectId, action: action, note: note || null,
+        snapshot: beforeRow || null, changed_by: UID,
+        changed_by_department: (profile && profile.department) || null,
+      });
+    } catch (e) { /* table not migrated yet, or a transient failure — silent */ }
+    loadIssueHistory(issueId);
+  }
+  async function loadIssueHistory(id) {
+    if (!id) return;
+    try {
+      var res = await sb().from(HISTORY_TABLE).select('*').eq('issue_id', id)
+        .order('changed_at', { ascending: false }).limit(200);
+      ISSUE_HISTORY[id] = res.error ? [] : (res.data || []);
+    } catch (e) { ISSUE_HISTORY[id] = []; }
+    if (_issSel === id && _issMode === 'detail') { renderIssues(); }
+  }
+  function historyHTML(id) {
+    var list = ISSUE_HISTORY[id];
+    if (list === undefined) return '<p class="il-mom-note">Loading history…</p>';
+    if (!list.length) {
+      return '<p class="il-mom-note">No changes recorded yet — Run <code>migrations/' +
+        '2026-08-31-issues-workflow-history.sql</code> if this issue has been updated and ' +
+        'nothing appears here.</p>';
+    }
+    return '<ul class="il-history">' + list.map(function (h) {
+      return '<li class="il-history-i"><div class="il-history-top">' +
+        '<span class="il-history-action">' + Fmt.esc(ISSUE_HIST_LABELS[h.action] || h.action) + '</span>' +
+        '<span class="il-history-when">' + Fmt.esc(Fmt.date(h.changed_at)) +
+        (h.changed_by_department ? ' · ' + Fmt.esc(h.changed_by_department) : '') + '</span></div>' +
+        (h.note ? '<div class="il-history-note">' + Fmt.esc(h.note).replace(/\n/g, '<br>') + '</div>' : '') +
+      '</li>';
+    }).join('') + '</ul>';
+  }
+
+  // Dispatcher. `dashboard`/`log` both run off `issuesFiltered()`, so the filter bar means
+  // the same thing in either. `detail` is a drill-down onto one record, reached from either.
   function renderIssues() {
     renderIssueKpis();
-    var anyF = ['search', 'status', 'department', 'champion', 'aging'].some(function (k) { return iFilters[k]; });
+    // ⚠️ status='Open' is the DEFAULT scope (items #1/#6), not "no filter" — so it must not
+    // count toward "any filter is active" or Clear would permanently show at rest.
+    var anyF = ['search', 'department', 'champion', 'aging'].some(function (k) { return iFilters[k]; }) ||
+      iFilters.status !== 'Open';
     var clr = $('il-clearfilters'); if (clr) clr.hidden = !anyF;
     var log = $('il-issues-log'), view = $('il-issues-view');
     if (log) log.hidden = _issMode !== 'log';
     if (view) view.hidden = _issMode === 'log';
-    if (_issMode === 'log') renderIssuesLog(); else renderIssuesReport();
+    if (_issMode === 'log') renderIssuesLog();
+    else if (_issMode === 'detail') renderIssueDetailView();
+    else renderIssueDashboard();
+  }
+
+  // ------------------------------------------------------------- Dashboard ---
+  // ⚠️ ITEM #1: this is now a real analytics landing page, not a single-record
+  // reading pane (that used to be called "report" — reading one issue is now
+  // the DETAIL drill-down, reached by clicking a row here or in the Log).
+  // Everything on it runs off `issuesFiltered()`, so it automatically respects
+  // whichever status the shared filter bar has — which defaults to Open
+  // (see wire()'s filter defaults), giving "by default only open issues".
+  function renderIssueDashboard() {
+    var host = $('il-issues-view'); if (!host) return;
+    host.classList.remove('il-mom-report');
+    if (!pid) {
+      host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Select a project to see its issues.</div>';
+      return;
+    }
+    var data = issuesFiltered();
+    var scopeLabel = iFilters.status ? (iFilters.status + ' issues') : 'All issues';
+    // "Category" reads as DEPARTMENT here — issues have no separate category
+    // field of their own, and department is this register's existing
+    // classifying dimension (the same one the Log/filter bar already group by).
+    var byDept = {};
+    data.forEach(function (r) { var k = r.department || '(no department)'; byDept[k] = (byDept[k] || 0) + 1; });
+    var deptSlices = Object.keys(byDept)
+      .sort(function (a, b) { return byDept[b] - byDept[a]; })
+      .map(function (k, i) { return { label: k, value: byDept[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
+    var buckets = agingBucketsOf(data);
+
+    host.innerHTML =
+      '<div class="il-dash-tile"><div class="il-dash-tile-val">' + data.length + '</div>' +
+        '<div class="il-dash-tile-label">' + Fmt.esc(scopeLabel) + '</div></div>' +
+      '<div class="il-dash-grid">' +
+        '<div class="pd-card il-dash-card il-dash-wide"><h4>Issues by champion</h4>' +
+          dashboardListHTML(data) + '</div>' +
+        '<div class="pd-card il-dash-card"><h4>By department</h4>' +
+          (deptSlices.length
+            ? '<div class="il-dash-chartwrap">' + donutChartSVG(deptSlices, { aria: 'Issues by department' }) +
+              '<div class="il-dash-legend">' + deptSlices.map(function (s) {
+                return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
+                  Fmt.esc(s.label) + ' (' + s.value + ')</span>';
+              }).join('') + '</div></div>'
+            : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+        '</div>' +
+        '<div class="pd-card il-dash-card"><h4>By aging</h4>' + barChartSVG(buckets, { aria: 'Issues by aging group' }) + '</div>' +
+      '</div>';
+    host.querySelectorAll('[data-open]').forEach(function (tr) { tr.onclick = function () { openIssue(tr.dataset.open); }; });
+  }
+
+  function dashboardListHTML(data) {
+    if (!data.length) return '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>';
+    var top = data.slice().sort(function (a, b) { return (agingDays(b) || 0) - (agingDays(a) || 0); }).slice(0, 12);
+    return '<div class="pd-tablewrap"><table class="il-dash-list"><thead><tr>' +
+      '<th>Issue</th><th>Champion</th><th>Department</th><th>Status</th><th>Aging</th></tr></thead><tbody>' +
+      top.map(function (r) {
+        var a = agingDays(r);
+        return '<tr data-open="' + Fmt.esc(r.id) + '">' +
+          '<td>' + Fmt.esc(clip(r.description, 70) || '(no issue text)') + '</td>' +
+          '<td>' + Fmt.esc(championText(r.champion_ids, r.champion) || '—') + '</td>' +
+          '<td>' + Fmt.esc(r.department || '—') + '</td>' +
+          '<td><span class="il-pill ' + statusClass(r.status) + '">' + Fmt.esc(r.status || 'Open') + '</span></td>' +
+          '<td>' + (a == null ? '—' : a + 'd') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>' +
+      (data.length > top.length
+        ? '<p class="il-mom-note">Showing the ' + top.length + ' longest-aging of ' + data.length +
+          ' matching issues — switch to Log for the full list.</p>' : '');
   }
 
   function renderIssuesLog() {
@@ -533,211 +779,238 @@ window.IssuesLessons = (function () {
     if (window.Icons) Icons.hydrate(t);
   }
 
-  // Open an issue in the report view (from the log, from a minute, from a lesson).
+  // Open an issue in the detail drill-down (from the log, the dashboard, a minute, a lesson).
   function openIssue(id) {
-    _issMode = 'report'; _issSel = id; _issNew = null;
+    _issPrevMode = (_issMode === 'detail') ? _issPrevMode : _issMode;
+    _issMode = 'detail'; _issSel = id; _issNew = null;
+    _issHoldOpen = false; _issCloseOpen = false;
+    loadIssueHistory(id);
     if (screen !== 'issues') switchScreen('issues');
     else { syncChrome(); renderIssues(); }
   }
 
-  function issReset() {
-    _issSel = null; _issNew = null; _issQ = ''; _issReport = false;
+  // "← Back" out of the detail drill-down, to whichever of Dashboard/Log was active before —
+  // OR back to the Lessons Learned screen, when this draft was started from its
+  // "+ New Lesson" button (item #15's standalone-lesson flow lives on the Issues screen's
+  // own detail form, since a lesson IS a closed issue; Back has to return to where the
+  // planner actually was).
+  function backFromIssueDetail() {
+    if (_issNew && !confirm('Discard the unsaved new issue?')) return;
+    var toLessons = !!_issNewFromLessons;
+    _issNewFromLessons = false;
+    _issMode = _issPrevMode || 'dashboard';
+    _issSel = null; _issNew = null; _issHoldOpen = false; _issCloseOpen = false;
+    if (toLessons) { switchScreen('lessons'); return; }
+    syncChrome(); renderIssues();
   }
 
-  // ------------------------------------------------- Issues: report view -----
-  // ⚠️ THIS IS THE POWER APPS "VIEW OPEN ISSUES" LAYOUT, and it is the point of the
-  // screen: a status panel beside the issue / cause / corrective action, one record at a
-  // time, readable aloud. The log is for finding a record; this is for reporting it.
+  function issReset() {
+    _issSel = null; _issNew = null; _issQ = ''; _issMode = 'dashboard'; _issPrevMode = 'dashboard';
+    _issHoldOpen = false; _issCloseOpen = false; _issCloseDraft = { report: '', lesson: '', category: '' };
+  }
+
+  function reqMark(editable) { return editable ? ' <span class="il-req" title="Required">*</span>' : ''; }
+
+  // ------------------------------------------------- Issues: detail view -----
+  // ⚠️ THIS IS STILL THE POWER APPS "VIEW OPEN ISSUES" LAYOUT — a status panel beside the
+  // issue / cause / corrective-or-hold-or-closure text — just reached as a drill-down now
+  // (items #1/#16) instead of being the screen's default landing presentation.
   //
   // ⚠️ ONE renderer for read-only and editable, disabled by field rather than a second
   // markup path — two paths drift the moment either is touched (the same call the minutes
-  // detail card documents).
-  function renderIssuesReport() {
+  // detail card documents). `ro` is now driven purely by EDIT PERMISSION (canEditRow) — the
+  // separate "Reporting view" read-only toggle this used to also fold in is gone; Detail
+  // itself is the single-record read/edit view now, and the toplevel Dashboard covers what
+  // "reporting" meant.
+  function renderIssueDetailView() {
     var host = $('il-issues-view'); if (!host) return;
+    host.classList.remove('il-mom-report');
     if (!pid) {
       host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Select a project to see its issues.</div>';
       return;
     }
-    var data = issuesFiltered();
-    // ⚠️ The selection is validated against the FILTERED set, not just against `rows`: a
-    // filter that hides the open issue must move the pane, or the reader is looking at a
-    // record the list beside it says is not there.
-    if (_issNew) _issSel = null;
-    else if (!data.some(function (r) { return r.id === _issSel; })) _issSel = data.length ? data[0].id : null;
-
     var cur = _issNew || rows.find(function (r) { return r.id === _issSel; }) || null;
-    var shown = issSearchList(data);
-
-    host.classList.toggle('il-mom-report', _issReport);
     host.innerHTML =
-      '<div class="il-mom-wrap"><div class="il-mom-list">' +
-        '<div class="il-mom-head">Issues <span>' + data.length + '</span></div>' +
-        (data.length > 6
-          ? '<input class="pd-input pd-input-sm il-mom-search" id="il-iss-q" ' +
-            'placeholder="Search these issues…" value="' + Fmt.esc(_issQ) + '">' : '') +
-        (_issNew ? '<button class="il-mom-item on" data-iss="__new__">' +
-          '<span class="il-mom-draft">New</span>Unsaved issue<small>Not yet in the register</small></button>' : '') +
-        (shown.length ? shown.map(issListRowHTML).join('')
-          : '<div class="il-empty" style="padding:14px;">' +
-            (rows.length ? 'No issue matches the current filters.'
-                         : 'No issues logged yet for this project.') + '</div>') +
-        (canAdd ? '<button class="pd-btn pd-btn-sm pd-btn-primary" id="il-iss-new" style="width:100%;margin-top:8px;">+ New issue</button>' : '') +
-      '</div><div class="il-mom-detail">' +
-        (cur ? issDetailHTML(cur)
-             : '<div class="il-empty" style="padding:28px;">' +
-               (rows.length ? 'Pick an issue to read it.' : 'Nothing to show yet.') + '</div>') +
-      '</div></div>';
+      '<button class="il-backlink" id="il-iss-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Issues</button>' +
+      (cur ? issDetailHTML(cur)
+           : '<div class="il-empty" style="padding:28px;">This issue is no longer in the current filter — ' +
+             '<button class="pd-btn pd-btn-sm" id="il-iss-back2">go back</button>.</div>');
     wireIssues();
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
-  }
-
-  function issSearchList(data) {
-    var q = _issQ.trim().toLowerCase();
-    if (!q) return data;
-    return data.filter(function (r) {
-      return [r.description, r.department, r.champion, r.caused_by, r.corrective_action]
-        .join(' ').toLowerCase().indexOf(q) >= 0;
-    });
-  }
-
-  function issListRowHTML(r) {
-    var a = agingDays(r);
-    return '<button class="il-mom-item' + (r.id === _issSel ? ' on' : '') + '" data-iss="' + Fmt.esc(r.id) + '">' +
-      '<span class="il-pill ' + statusClass(r.status) + ' il-iss-lpill">' + Fmt.esc(r.status || 'Open') + '</span>' +
-      Fmt.esc(clip(r.description, 90) || '(no issue text)') +
-      '<small>' + Fmt.esc(r.department || 'No department') +
-      (a == null ? '' : ' · ' + a + 'd aging') +
-      (lessonsOfIssue(r.id).length ? ' · lesson captured' : '') + '</small></button>';
   }
 
   function issDetailHTML(r) {
     var isNew = !r.id;
     var mayEdit = isNew ? canAdd : canEditRow(r);
-    var ro = !mayEdit || _issReport, d = ro ? ' disabled' : '';
+    var ro = !mayEdit, d = ro ? ' disabled' : '';
     var a = agingDays(r);
     var ls = isNew ? [] : lessonsOfIssue(r.id);
+    // ⚠️ ITEM #15's "standalone lesson" flow: a NEW issue started from the Lessons Learned
+    // screen's "+ New Lesson" carries `_forceClose` and is presented — and, on Save, written
+    // — as an already-Closed issue with its lesson attached in the SAME step, rather than
+    // going through Open → Put On Hold/Close Issue. Every OTHER field is exactly what a
+    // normal issue asks for, per the owner's own wording ("must still provide all the
+    // details required from adding issues up to closure report and lessons learned").
+    var forceClose = isNew && !!r._forceClose;
+    var status = forceClose ? 'Closed' : (r.status || 'Open');
 
     function opts(list, val, blank) {
       return (blank ? '<option value="">' + blank + '</option>' : '') +
         list.map(function (o) { return '<option' + (val === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>'; }).join('');
     }
 
+    // ---- item #12/#13: the ONE narrative field swaps with the issue's status --
+    var narrativeField;
+    if (status === 'Closed') {
+      narrativeField = ilField(ro, 'Closure Report' + reqMark(!ro), 'il-c-action',
+        '<textarea class="pd-textarea il-if" data-f="closure_report" rows="4" spellcheck="true" ' +
+          'placeholder="How was this issue resolved?"' + d + (ro ? '' : ' required') + '>' +
+          Fmt.esc(r.closure_report) + '</textarea>', r.closure_report) +
+        (forceClose && !ro
+          ? ilField(false, 'Lessons Learned' + reqMark(true), 'il-c-lesson',
+              '<textarea class="pd-textarea il-if" data-f="_lessonText" rows="4" spellcheck="true" ' +
+                'placeholder="What did the team learn from this issue?" required>' +
+                Fmt.esc(r._lessonText) + '</textarea>', r._lessonText) +
+            ilField(false, 'Lesson category <span style="font-weight:400;color:var(--pd-muted);">(optional)</span>', 'il-c-lessoncat',
+              '<select class="pd-select pd-input-sm il-if" data-f="_lessonCategory">' +
+                opts(LESSON_CATS, r._lessonCategory || '', '—') + '</select>', r._lessonCategory)
+          : '');
+    } else if (status === 'On Hold') {
+      narrativeField = ilField(ro, 'Reason for Hold' + reqMark(!ro), 'il-c-action',
+        '<textarea class="pd-textarea il-if" data-f="hold_reason" rows="4" spellcheck="true" ' +
+          'placeholder="Why is this issue on hold?"' + d + (ro ? '' : ' required') + '>' +
+          Fmt.esc(r.hold_reason) + '</textarea>', r.hold_reason);
+    } else {
+      narrativeField = ilField(ro, 'Corrective Action' + reqMark(!ro), 'il-c-action',
+        '<textarea class="pd-textarea il-if" data-f="corrective_action" rows="4" spellcheck="true" ' +
+          'placeholder="Actions taken / planned…"' + d + (ro ? '' : ' required') + '>' +
+          Fmt.esc(r.corrective_action) + '</textarea>', r.corrective_action);
+    }
+
+    // ---- items #10–13: Update / Put On Hold / Close Issue, replacing a status <select> ---
+    var canHold = mayEdit && !isNew && status === 'Open';
+    var canClose = mayEdit && !isNew && status !== 'Closed';
+    var workflowRow = (ro || _issHoldOpen || _issCloseOpen) ? '' :
+      '<div class="il-workflow-btns">' +
+        '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-iss-save">' +
+          (forceClose ? 'Close & save lesson' : (isNew ? 'Save issue' : 'Update Issue')) + '</button>' +
+        (canHold ? '<button class="pd-btn pd-btn-sm" id="il-iss-holdbtn">Put On Hold</button>' : '') +
+        (canClose ? '<button class="pd-btn pd-btn-sm" id="il-iss-closebtn">Close Issue</button>' : '') +
+        (isNew ? '<button class="pd-btn pd-btn-sm" id="il-iss-cancel">Cancel</button>'
+               : (isSteward
+                   ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-iss-del" style="margin-left:auto;">Delete issue…</button>'
+                   // Says why rather than showing a button the database would refuse: a
+                   // department raising an issue must not be able to make it disappear.
+                   : '<span class="il-raisedby" style="margin:0 0 0 auto;">Only a planner can delete an issue from the register.</span>')) +
+      '</div>';
+
+    var holdPanel = !_issHoldOpen ? '' :
+      '<div class="il-workflow-panel"><label>Reason for Hold' + reqMark(true) + '</label>' +
+        '<textarea class="pd-textarea" id="il-iss-holdnote" rows="3" spellcheck="true" required ' +
+          'placeholder="Why is this issue being put on hold?">' + Fmt.esc(_issHoldNote) + '</textarea>' +
+        '<div class="il-workflow-acts"><button class="pd-btn pd-btn-sm" id="il-iss-holdcancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-iss-holdconfirm">Confirm hold</button></div></div>';
+
+    var closePanel = !_issCloseOpen ? '' :
+      '<div class="il-workflow-panel">' +
+        '<label>Closure Report' + reqMark(true) + '</label>' +
+        '<textarea class="pd-textarea" id="il-iss-closereport" rows="3" spellcheck="true" required ' +
+          'placeholder="How was this issue resolved?">' + Fmt.esc(_issCloseDraft.report) + '</textarea>' +
+        '<label>Lessons Learned' + reqMark(true) + '</label>' +
+        '<textarea class="pd-textarea" id="il-iss-closelesson" rows="3" spellcheck="true" required ' +
+          'placeholder="What did the team learn from this issue?">' + Fmt.esc(_issCloseDraft.lesson) + '</textarea>' +
+        '<label>Lesson category <span style="font-weight:400;color:var(--pd-muted);">(optional)</span></label>' +
+        '<select class="pd-select pd-input-sm" id="il-iss-closecat">' +
+          opts(LESSON_CATS, _issCloseDraft.category || '', '—') + '</select>' +
+        '<p class="il-mom-note">Closing an issue always records a lesson — this is what "no need for the ' +
+          'capture a lesson button" means: closure IS the capture.</p>' +
+        '<div class="il-workflow-acts"><button class="pd-btn pd-btn-sm" id="il-iss-closecancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-iss-closeconfirm">Confirm closure</button></div></div>';
+
     return '<div class="il-mom-detail-card il-iss-card">' +
       '<div class="il-mom-toolbar">' +
-        '<span class="il-mom-state' + ((r.status || 'Open') === 'Closed' ? ' on' : '') + '">' +
+        '<span class="il-mom-state' + (status === 'Closed' ? ' on' : '') + '">' +
           (isNew ? 'New issue — not yet saved' : 'Issue in the register') + '</span>' +
-        '<div style="flex:1;"></div>' +
-        // A VIEW control, offered to everyone who can read the issue — unlike every other
-        // control on this card, which is gated on who may change the record.
-        (isNew ? '' :
-          '<button class="pd-btn pd-btn-sm' + (_issReport ? ' is-active' : '') + '" id="il-iss-report" ' +
-            'title="Present this issue as a clean read-only record">' +
-            (_issReport ? '✓ Reporting view' : 'Reporting view') + '</button>') +
       '</div>' +
 
       // ---- the Power Apps two-pane body -------------------------------------
+      // Reordered by CSS `order` at ≤700px (item #14): the status panel follows the
+      // issue/cause/action body on a narrow screen instead of leading it.
       '<div class="il-iss-split">' +
         '<div class="il-iss-panel">' +
-          ilField(_issReport, 'Status', 'il-c-status',
-            '<select class="pd-select pd-input-sm il-if" data-f="status"' + d + '>' +
-              opts(STATUSES, r.status || 'Open') + '</select>', r.status || 'Open') +
-          ilField(_issReport, 'Department', 'il-c-dept',
-            '<select class="pd-select pd-input-sm il-if" data-f="department"' + d + '>' +
-              opts(DEPARTMENTS, r.department || '', '—') + '</select>', r.department) +
+          '<div class="il-mi-f il-c-status"><label>Status</label>' +
+            '<span class="il-pill ' + statusClass(status) + '">' + Fmt.esc(status) + '</span></div>' +
+          ilField(ro, 'Department' + reqMark(!ro), 'il-c-dept',
+            '<select class="pd-select pd-input-sm il-if" data-f="department"' + d + (ro ? '' : ' required') + '>' +
+              opts(DEPARTMENTS, r.department || '', '— Select —') + '</select>', r.department) +
           // ⚠️ The picker replaces the old free-text box but does NOT drop free
           // text — it carries both, so a champion without an account is still
           // nameable and no existing value is lost on the next save.
-          ilField(_issReport, 'Champion(s)', 'il-c-champ',
+          ilField(ro, 'Champion(s)' + reqMark(!ro), 'il-c-champ',
             peoplePickerHTML('iss-champ', r.champion_ids, r.champion, ro),
             championText(r.champion_ids, r.champion)) +
-          ilField(_issReport, 'Date Presented', 'il-c-pres',
+          ilField(ro, 'Date Presented' + reqMark(!ro), 'il-c-pres',
             '<input class="pd-input pd-input-sm il-if" data-f="date_presented" type="date" value="' +
-              dateVal(r.date_presented) + '"' + d + '>',
+              dateVal(r.date_presented) + '"' + d + (ro ? '' : ' required') + '>',
             r.date_presented ? Fmt.date(r.date_presented) : '') +
           // ⚠️ DERIVED, never stored and never editable — 0 when Closed, else today minus
           // the date presented. A stored aging is wrong the next morning.
           '<div class="il-mi-f il-c-aging"><label>Days Aging</label>' +
-            '<div class="il-mi-val' + (a != null && a > 90 && (r.status || 'Open') !== 'Closed' ? ' is-hot' : '') + '">' +
+            '<div class="il-mi-val' + (a != null && a > 90 && status !== 'Closed' ? ' is-hot' : '') + '">' +
             (a == null ? '—' : a + ' day' + (a === 1 ? '' : 's')) + '</div></div>' +
-          ilField(_issReport, 'Date Resolved', 'il-c-res',
+          ilField(ro, 'Date Resolved', 'il-c-res',
             '<input class="pd-input pd-input-sm il-if" data-f="date_resolved" type="date" value="' +
               dateVal(r.date_resolved) + '"' + d + '>',
             r.date_resolved ? Fmt.date(r.date_resolved) : '') +
         '</div>' +
 
         '<div class="il-iss-body">' +
-          ilField(_issReport, 'Issue', 'il-c-issue',
-            '<textarea class="pd-textarea il-if" data-f="description" rows="4" ' +
-              'placeholder="Describe the issue or concern…"' + d + '>' + Fmt.esc(r.description) + '</textarea>',
+          ilField(ro, 'Issue' + reqMark(!ro), 'il-c-issue',
+            '<textarea class="pd-textarea il-if" data-f="description" rows="4" spellcheck="true" ' +
+              'placeholder="Describe the issue or concern…"' + d + (ro ? '' : ' required') + '>' + Fmt.esc(r.description) + '</textarea>',
             r.description) +
-          ilField(_issReport, 'Caused By', 'il-c-cause',
-            '<textarea class="pd-textarea il-if" data-f="caused_by" rows="3" ' +
-              'placeholder="Root cause…"' + d + '>' + Fmt.esc(r.caused_by) + '</textarea>', r.caused_by) +
-          ilField(_issReport, 'Corrective Action', 'il-c-action',
-            '<textarea class="pd-textarea il-if" data-f="corrective_action" rows="4" ' +
-              'placeholder="Actions taken / planned…"' + d + '>' + Fmt.esc(r.corrective_action) + '</textarea>',
-            r.corrective_action) +
+          ilField(ro, 'Caused By' + reqMark(!ro), 'il-c-cause',
+            '<textarea class="pd-textarea il-if" data-f="caused_by" rows="3" spellcheck="true" ' +
+              'placeholder="Root cause…"' + d + (ro ? '' : ' required') + '>' + Fmt.esc(r.caused_by) + '</textarea>', r.caused_by) +
+          narrativeField +
           (isNew ? '' : '<div class="il-iss-prov">' + (momTag(r) || '') +
             '<span class="il-raisedby">' + Fmt.esc(raisedByLabel(r)) + '</span></div>') +
         '</div>' +
       '</div>' +
 
+      holdPanel + closePanel + workflowRow +
+
       // ---- lessons, as their own records ------------------------------------
       // ⚠️ NOT fields on this form any more. A lesson lives in `lessons_learned` and is
       // shown here because this issue produced it — one issue can produce several, and a
-      // lesson outlives the issue. Editing one happens on the Lessons Learned screen.
+      // lesson outlives the issue. Closing (above) always creates the first one; this button
+      // is only for an EXTRA lesson on an issue already closed.
       '<div class="il-mom-actions il-iss-lessons"><h4>Lessons learned from this issue</h4>' +
-        '<p>A lesson is its own record in the library, linked back here. It stays there after ' +
-        'this issue closes — which is the point of keeping it.</p>' +
         (ls.length
           ? '<div class="il-lessons il-lessons-inline">' + ls.map(lessonCardHTML).join('') + '</div>'
           : '<div class="il-empty" style="padding:12px;">No lesson captured from this issue yet.</div>') +
-        (canAdd && !isNew && !_issReport
-          ? '<div class="il-mom-addrow"><button class="pd-btn pd-btn-sm" id="il-iss-addlesson">+ Capture a lesson</button></div>'
+        (canAdd && !isNew && status === 'Closed'
+          ? '<div class="il-mom-addrow"><button class="pd-btn pd-btn-sm" id="il-iss-addlesson">+ Capture another lesson</button></div>'
           : '') +
       '</div>' +
 
-      '<datalist id="il-champ-list">' + champDatalist() + '</datalist>' +
+      // ---- item #11: a per-issue audit trail --------------------------------
+      '<div class="il-mom-actions il-iss-history"><h4>History</h4>' +
+        (isNew ? '<p class="il-mom-note">History begins once this issue is saved.</p>' : historyHTML(r.id)) +
+      '</div>' +
 
-      (ro ? '' :
-        '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
-          (isNew
-            ? '<button class="pd-btn pd-btn-sm" id="il-iss-cancel">Cancel</button>'
-            : (isSteward
-                ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-iss-del">Delete issue…</button>'
-                // Says why rather than showing a button the database would refuse: a
-                // department raising an issue must not be able to make it disappear.
-                : '<span class="il-raisedby" style="margin:0;">Closing an issue is a status. ' +
-                  'Only a planner can delete it from the register.</span>')) +
-          '<div style="flex:1;"></div>' +
-          '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-iss-save">' +
-            (isNew ? 'Save issue' : 'Save changes') + '</button></div>') +
+      '<datalist id="il-champ-list">' + champDatalist() + '</datalist>' +
     '</div>';
   }
 
   function wireIssues() {
     var host = $('il-issues-view'); if (!host) return;
-    host.querySelectorAll('[data-iss]').forEach(function (b) {
-      b.onclick = function () {
-        if (b.dataset.iss === '__new__') return;
-        // ⚠️ Leaving an unsaved draft is confirmed. The draft is in memory only, so
-        // clicking another issue would otherwise discard typed work with no warning.
-        if (_issNew && !confirm('Discard the unsaved new issue?')) return;
-        _issNew = null; _issSel = b.dataset.iss; _issReport = false; renderIssues();
-      };
-    });
-    var q = host.querySelector('#il-iss-q');
-    if (q) q.oninput = function () {
-      _issQ = q.value;
-      var at = q.selectionStart; renderIssues();
-      var n = $('il-iss-q'); if (n) { n.focus(); try { n.setSelectionRange(at, at); } catch (e) {} }
-    };
+    var back = host.querySelector('#il-iss-back'); if (back) back.onclick = backFromIssueDetail;
+    var back2 = host.querySelector('#il-iss-back2'); if (back2) back2.onclick = backFromIssueDetail;
     var nb = host.querySelector('#il-iss-new'); if (nb) nb.onclick = newIssue;
-    var rep = host.querySelector('#il-iss-report');
-    if (rep) rep.onclick = function () { _issReport = !_issReport; renderIssues(); };
     var sv = host.querySelector('#il-iss-save'); if (sv) sv.onclick = saveIssue;
     var cn = host.querySelector('#il-iss-cancel');
-    if (cn) cn.onclick = function () { _issNew = null; renderIssues(); };
+    if (cn) cn.onclick = function () { _issNew = null; backFromIssueDetail(); };
     var dl = host.querySelector('#il-iss-del');
     if (dl) dl.onclick = function () { del(_issSel); };
     var al = host.querySelector('#il-iss-addlesson');
@@ -748,6 +1021,27 @@ window.IssuesLessons = (function () {
     host.querySelectorAll('[data-open-lesson]').forEach(function (b) {
       b.onclick = function () { openLesson(b.dataset.openLesson); };
     });
+
+    // ---- workflow: Put On Hold / Close Issue reveal panels ------------------
+    var hb = host.querySelector('#il-iss-holdbtn');
+    if (hb) hb.onclick = function () { _issHoldOpen = true; _issCloseOpen = false; _issHoldNote = ''; renderIssues(); };
+    var hc = host.querySelector('#il-iss-holdcancel');
+    if (hc) hc.onclick = function () { _issHoldOpen = false; renderIssues(); };
+    var hn = host.querySelector('#il-iss-holdnote');
+    if (hn) hn.oninput = function () { _issHoldNote = hn.value; };
+    var hcf = host.querySelector('#il-iss-holdconfirm');
+    if (hcf) hcf.onclick = confirmHoldIssue;
+
+    var cb = host.querySelector('#il-iss-closebtn');
+    if (cb) cb.onclick = function () { _issCloseOpen = true; _issHoldOpen = false; _issCloseDraft = { report: '', lesson: '', category: '' }; renderIssues(); };
+    var cc = host.querySelector('#il-iss-closecancel');
+    if (cc) cc.onclick = function () { _issCloseOpen = false; renderIssues(); };
+    var crp = host.querySelector('#il-iss-closereport'); if (crp) crp.oninput = function () { _issCloseDraft.report = crp.value; };
+    var cls = host.querySelector('#il-iss-closelesson'); if (cls) cls.oninput = function () { _issCloseDraft.lesson = cls.value; };
+    var ccat = host.querySelector('#il-iss-closecat'); if (ccat) ccat.onchange = function () { _issCloseDraft.category = ccat.value; };
+    var ccf = host.querySelector('#il-iss-closeconfirm');
+    if (ccf) ccf.onclick = confirmCloseIssue;
+
     // A draft's typing has to survive a re-render, so it is written into `_issNew` as it
     // is typed; a saved issue is read out of the form on Save.
     if (_issNew) {
@@ -761,7 +1055,8 @@ window.IssuesLessons = (function () {
       if (key === 'iss-champ' && _issNew) { _issNew.champion_ids = ids; _issNew.champion = text; }
     });
     // Broadcast the collab cursor for whichever issue is open.
-    broadcastCollabSel(_issNew ? null : _issSel, !_issReport);
+    var curR = _issNew || rows.find(function (x) { return x.id === _issSel; });
+    broadcastCollabSel(_issNew ? null : _issSel, !!(curR && (_issNew ? canAdd : canEditRow(curR))));
   }
 
   function newIssue() {
@@ -769,14 +1064,44 @@ window.IssuesLessons = (function () {
     if (!canAdd) return;
     // ⚠️ Defaults from the raiser's PROFILE (D1). Typing the department every time invites
     // the typo that silently splits the register's own Department filter in two.
+    // ⚠️ ITEM #10: no status field to fill in — every new issue is Open by default, and the
+    // only way OUT of Open is the Put On Hold / Close Issue buttons on a SAVED issue.
     _issNew = {
       status: 'Open',
       department: (profile && profile.department) || '',
       champion: '', champion_ids: [], description: '', caused_by: '', corrective_action: '',
       date_presented: todayISO(), date_resolved: '',
     };
-    _issSel = null; _issMode = 'report'; _issReport = false;
+    _issSel = null;
+    _issNewFromLessons = false;
+    _issPrevMode = (_issMode === 'detail') ? _issPrevMode : _issMode;
+    _issMode = 'detail';
     if (screen !== 'issues') switchScreen('issues'); else { syncChrome(); renderIssues(); }
+    var el = $('il-issues-view'); var f = el && el.querySelector('[data-f="description"]');
+    if (f) f.focus();
+  }
+
+  // ⚠️ ITEM #15: "+ New Lesson" on the Lessons Learned screen. A lesson captured without
+  // going through Issues first is still a real issue that reached Closed — it just skips
+  // the visible Open/On-Hold steps, and every field an ordinary issue requires (Issue,
+  // Caused By, Champion, Department, Date Presented) is required here too, PLUS the
+  // Closure Report and the Lessons Learned text (see the `_forceClose` branch of
+  // `issDetailHTML`/`saveIssue`). This reuses the Issues detail form and its validation
+  // rather than building a second, parallel "closed issue" editor that could drift from it.
+  function newLessonAsClosedIssue() {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!canAdd) return;
+    _issNew = {
+      status: 'Open', _forceClose: true, _lessonText: '', _lessonCategory: '',
+      department: (profile && profile.department) || '',
+      champion: '', champion_ids: [], description: '', caused_by: '',
+      closure_report: '', date_presented: todayISO(), date_resolved: '',
+    };
+    _issSel = null;
+    _issNewFromLessons = true;
+    _issPrevMode = 'dashboard';
+    _issMode = 'detail';
+    switchScreen('issues');
     var el = $('il-issues-view'); var f = el && el.querySelector('[data-f="description"]');
     if (f) f.focus();
   }
@@ -794,7 +1119,7 @@ window.IssuesLessons = (function () {
   function issChampion() {
     var host = $('il-issues-view');
     var root = host && host.querySelector('[data-people="iss-champ"]');
-    if (!root) {                       // reporting view renders text, not a control
+    if (!root) {                       // read-only renders text, not a control
       var r = _issNew || rows.find(function (x) { return x.id === _issSel; }) || {};
       return { ids: r.champion_ids || [], text: r.champion || '' };
     }
@@ -802,24 +1127,47 @@ window.IssuesLessons = (function () {
     return { ids: idsOf(root), text: free ? free.value.trim() : '' };
   }
 
+  // ⚠️ ITEM #8: every field of the issue is required — shared by the initial save AND every
+  // "Update Issue" on an existing one, so an edit cannot silently blank a required field
+  // either. Returns an error string, or null when everything required is present.
+  function validateIssueCommon(v, ch) {
+    if (!v.department) return 'Department is required.';
+    if (!ch.ids.length && !ch.text) return 'At least one champion is required.';
+    if (!(v.description || '').trim()) return 'The Issue field is required.';
+    if (!(v.caused_by || '').trim()) return 'Caused By is required.';
+    if (!v.date_presented) return 'Date Presented is required.';
+    return null;
+  }
+
   async function saveIssue() {
     var v = issFormValues();
     var ch = issChampion();
+    var forceClose = !!(_issNew && _issNew._forceClose);
+    var status = forceClose ? 'Closed'
+      : (_issNew ? 'Open' : ((rows.find(function (x) { return x.id === _issSel; }) || {}).status || 'Open'));
+    var err = validateIssueCommon(v, ch);
+    if (!err && status === 'Open' && !(v.corrective_action || '').trim()) err = 'Corrective Action is required.';
+    if (!err && status === 'On Hold' && !(v.hold_reason || '').trim()) err = 'Reason for Hold is required.';
+    if (!err && status === 'Closed' && !(v.closure_report || '').trim()) err = 'Closure Report is required.';
+    // ⚠️ ITEM #15's standalone-lesson requirement: a lesson is required too, in the SAME step.
+    if (!err && forceClose && !(v._lessonText || '').trim()) err = 'Lessons Learned is required.';
+    if (err) { UI.toast(err, 'warn'); return; }
     var data = {
-      project_id:        pid,
-      type:              'Issue',
-      status:            v.status || 'Open',
-      department:        v.department || null,
-      champion_ids:      ch.ids,
-      champion:          championText(ch.ids, ch.text),
-      description:       (v.description || '').trim(),
-      caused_by:         (v.caused_by || '').trim(),
-      corrective_action: (v.corrective_action || '').trim(),
-      date_presented:    v.date_presented || null,
-      date_resolved:     v.date_resolved || null,
-      updated_at:        new Date().toISOString(),
+      project_id:     pid,
+      type:           'Issue',
+      status:         status,
+      department:     v.department || null,
+      champion_ids:   ch.ids,
+      champion:       championText(ch.ids, ch.text),
+      description:    (v.description || '').trim(),
+      caused_by:      (v.caused_by || '').trim(),
+      date_presented: v.date_presented || null,
+      date_resolved:  v.date_resolved || (status === 'Closed' ? todayISO() : null),
+      updated_at:     new Date().toISOString(),
     };
-    if (!data.description) { UI.toast('The Issue field is required', 'warn'); return; }
+    if (status === 'Open') data.corrective_action = (v.corrective_action || '').trim();
+    else if (status === 'On Hold') data.hold_reason = (v.hold_reason || '').trim();
+    else if (status === 'Closed') data.closure_report = (v.closure_report || '').trim();
     try {
       if (_issNew) {
         data.created_by = UID;               // REQUIRED for RLS
@@ -829,12 +1177,31 @@ window.IssuesLessons = (function () {
         _issNew = null; _issSel = ins.data.id;
         if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
         populateFilterOptions();
+        logHistory(ins.data.id, pid, forceClose ? 'close' : 'create', null, forceClose ? data.closure_report : null);
+        if (forceClose) {
+          try {
+            var lrow = {
+              project_id: pid, issue_id: ins.data.id, mom_id: null,
+              department: data.department, category: v._lessonCategory || null,
+              lesson: (v._lessonText || '').trim(), recommendation: null,
+              date_captured: data.date_resolved, created_by: UID,
+            };
+            var lins = await sb().from(LESSON_TABLE).insert(lrow).select().single();
+            if (!lins.error) LESSONS.unshift(lins.data);
+            else UI.toast('Lesson logged as a closed issue, but the lesson record could not be saved: ' + lins.error.message, 'warn');
+          } catch (e2) { UI.toast('Lesson logged as a closed issue, but the lesson record could not be saved: ' + (e2.message || ''), 'warn'); }
+          UI.toast('Lesson captured', 'ok');
+          _issNewFromLessons = false;
+          switchScreen('lessons');
+          return;
+        }
         UI.toast('Issue logged', 'ok');
         renderIssues();
       } else {
         var r = rows.find(function (x) { return x.id === _issSel; });
         if (!r) return;
         if (!canEditRow(r)) { UI.toast('This issue was raised by someone else — ask a planner to change it.', 'warn'); return; }
+        var before = Object.assign({}, r);   // ⚠️ snapshot BEFORE mutating — item #11's history
         Object.assign(r, data);   // optimistic — applies whether online or queued offline
         if (window.PDSync) {
           var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: data });
@@ -846,8 +1213,82 @@ window.IssuesLessons = (function () {
         }
         populateFilterOptions();
         UI.toast('Saved', 'ok');
+        logHistory(r.id, pid, 'update', before, null);
         renderIssues();
       }
+    } catch (e) { UI.toast(e.message, 'error'); }
+  }
+
+  // ---- items #10, #12: Put On Hold — requires a reason, replaces the old status <select> --
+  async function confirmHoldIssue() {
+    var note = (_issHoldNote || '').trim();
+    if (!note) { UI.toast('A reason for the hold is required.', 'warn'); return; }
+    var r = rows.find(function (x) { return x.id === _issSel; });
+    if (!r || !canEditRow(r)) { UI.toast('This issue was raised by someone else — ask a planner to change it.', 'warn'); return; }
+    var before = Object.assign({}, r);
+    var data = { status: 'On Hold', hold_reason: note, updated_at: new Date().toISOString() };
+    try {
+      Object.assign(r, data);
+      if (window.PDSync) {
+        var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: data });
+        if (!w.ok) throw (w.error || new Error('Save failed'));
+        PDSync.cachePut(PID_PFX + ':' + pid, rows);
+      } else {
+        var upd = await sb().from(TABLE).update(data).eq('id', r.id);
+        if (upd.error) throw upd.error;
+      }
+      populateFilterOptions();
+      _issHoldOpen = false; _issHoldNote = '';
+      UI.toast('Issue put on hold', 'ok');
+      logHistory(r.id, pid, 'hold', before, note);
+      renderIssues();
+    } catch (e) { UI.toast(e.message, 'error'); }
+  }
+
+  // ---- items #10, #13, #15: Close Issue — requires BOTH a closure report AND a lessons
+  // learned entry (which is what closes the loop with the Lessons Learned screen: closing
+  // an issue is the ONLY way a lesson gets attached to it, and it always happens). ----
+  async function confirmCloseIssue() {
+    var report = (_issCloseDraft.report || '').trim();
+    var lesson = (_issCloseDraft.lesson || '').trim();
+    if (!report) { UI.toast('A closure report is required.', 'warn'); return; }
+    if (!lesson) { UI.toast('A lessons learned entry is required to close an issue.', 'warn'); return; }
+    var r = rows.find(function (x) { return x.id === _issSel; });
+    if (!r || !canEditRow(r)) { UI.toast('This issue was raised by someone else — ask a planner to change it.', 'warn'); return; }
+    var before = Object.assign({}, r);
+    var data = {
+      status: 'Closed', closure_report: report,
+      date_resolved: r.date_resolved || todayISO(),
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      Object.assign(r, data);
+      if (window.PDSync) {
+        var w = await PDSync.write({ table: TABLE, op: 'update', id: r.id, patch: data });
+        if (!w.ok) throw (w.error || new Error('Save failed'));
+        PDSync.cachePut(PID_PFX + ':' + pid, rows);
+      } else {
+        var upd = await sb().from(TABLE).update(data).eq('id', r.id);
+        if (upd.error) throw upd.error;
+      }
+      populateFilterOptions();
+      logHistory(r.id, pid, 'close', before, report);
+      // ⚠️ The lesson is captured HERE, not through a separate "capture a lesson" step
+      // (item #13's "no need for the capture a lesson button") — closing an issue always
+      // produces exactly one lesson, linked back to it.
+      try {
+        var lrow = {
+          project_id: pid, issue_id: r.id, mom_id: r.mom_id || null,
+          department: r.department || null, category: _issCloseDraft.category || null,
+          lesson: lesson, recommendation: null, date_captured: data.date_resolved, created_by: UID,
+        };
+        var lins = await sb().from(LESSON_TABLE).insert(lrow).select().single();
+        if (!lins.error) LESSONS.unshift(lins.data);
+        else UI.toast('Issue closed, but the lesson could not be saved: ' + lins.error.message, 'warn');
+      } catch (e2) { UI.toast('Issue closed, but the lesson could not be saved: ' + (e2.message || ''), 'warn'); }
+      _issCloseOpen = false; _issCloseDraft = { report: '', lesson: '', category: '' };
+      UI.toast('Issue closed', 'ok');
+      renderIssues();
     } catch (e) { UI.toast(e.message, 'error'); }
   }
 
@@ -1134,6 +1575,7 @@ window.IssuesLessons = (function () {
   function lessReset() {
     LESSONS = []; _lessLoaded = false; _lessErr = ''; _lessLegacy = false;
     _lessSel = null; _lessNew = null; _lessReport = false;
+    _lessMode = 'dashboard'; _lessPrevMode = 'dashboard';
   }
 
   async function loadLessons() {
@@ -1204,14 +1646,51 @@ window.IssuesLessons = (function () {
     });
   }
 
+  // ⚠️ ITEM #15: "the lessons learned … are exclusively for closed issues only." A CLOSED
+  // issue is where a lesson normally comes from now (closing one always requires and
+  // creates a lesson — see confirmCloseIssue/saveIssue's `_forceClose` branch), so the
+  // Lessons Dashboard/Log content is primarily THIS set, in the same shape Issues' own
+  // Dashboard/Log use (department, champion, dates, aging-since-closed…).
+  function closedIssuesFiltered() {
+    return rows.filter(function (r) {
+      if ((r.status || 'Open') !== 'Closed') return false;
+      if (lFilters.department && r.department !== lFilters.department) return false;
+      if (lFilters.search) {
+        var hay = [r.description, r.caused_by, r.closure_report, r.champion, r.department]
+          .join(' ').toLowerCase();
+        if (hay.indexOf(lFilters.search) === -1) return false;
+      }
+      return true;
+    });
+  }
+  // ⚠️ Lessons that do NOT correspond to a closed issue in this register — captured
+  // straight from a meeting action item (item #23's auto-push), or a legacy row from
+  // before this workflow existed. Kept visible rather than dropped: item #15 only scopes
+  // NEW standalone lessons through the full issue-closure flow, it does not say these stop
+  // existing.
+  function standaloneLessonsFiltered() {
+    return LESSONS.filter(function (l) {
+      if (l.issue_id) return false;
+      if (lFilters.department && l.department !== lFilters.department) return false;
+      if (lFilters.category && l.category !== lFilters.category) return false;
+      if (lFilters.search) {
+        var hay = [l.lesson, l.recommendation, l.category, l.department, lessonSourceText(l)]
+          .join(' ').toLowerCase();
+        if (hay.indexOf(lFilters.search) === -1) return false;
+      }
+      return true;
+    });
+  }
+
   function renderLessons() {
     renderLessonKpis();
     var anyF = ['search', 'department', 'category'].some(function (k) { return lFilters[k]; });
     var clr = $('il-lclearfilters'); if (clr) clr.hidden = !anyF;
     var host = $('il-lessons-view'); if (!host) return;
     if (!pid) { host.innerHTML = ''; return; }
-    if (_lessMode === 'library') renderLessonsLibrary(host);
-    else renderLessonsReport(host);
+    if (_lessMode === 'log') renderLessonsLogView(host);
+    else if (_lessMode === 'detail') renderLessonDetailView(host);
+    else renderLessonDashboard(host);
     if (window.Icons) Icons.hydrate(host);
   }
 
@@ -1229,69 +1708,114 @@ window.IssuesLessons = (function () {
     var cats = {}; all.forEach(function (l) { if (l.category) cats[l.category] = 1; });
     $('il-lkpis').innerHTML =
       kpi('Lessons captured', all.length, '') +
-      kpi('Linked to a record', linked, 'is-closed') +
+      kpi('From a closed issue', linked, 'is-closed') +
       kpi('Categories', Object.keys(cats).length, '');
   }
 
-  // The library: every lesson at once, for browsing. Unchanged in spirit from the original
-  // card grid — this is what people scan when starting a new project.
-  function renderLessonsLibrary(host) {
-    var data = lessonsFiltered();
+  // ---- Lessons Dashboard (items #1, #15, #16 — mirrors the Issues dashboard) ----
+  function renderLessonDashboard(host) {
     host.classList.remove('il-mom-report');
-    if (!LESSONS.length) {
-      host.innerHTML = migrateNoteHTML() +
-        '<div class="il-empty"><span data-ico="bulb" data-ico-size="40"></span>' +
-        '<div class="il-empty-title">No lessons captured yet.</div>' +
-        '<div>Use <strong>+ New lesson</strong>, or capture one from an issue or a meeting action item.</div>' +
-        '</div>';
-      return;
-    }
-    host.innerHTML = migrateNoteHTML() + (data.length
-      ? '<div class="il-lessons">' + data.map(lessonCardHTML).join('') + '</div>'
-      : '<div class="il-empty"><div class="il-empty-title">No lessons match the current filters.</div></div>');
-    host.querySelectorAll('[data-open-lesson]').forEach(function (b) {
-      b.onclick = function () { openLesson(b.dataset.openLesson); };
-    });
-    host.querySelectorAll('[data-open-issue]').forEach(function (b) {
-      b.onclick = function () { openIssue(b.dataset.openIssue); };
-    });
-  }
+    var closed = closedIssuesFiltered();
+    var standalone = standaloneLessonsFiltered();
+    var byCat = {};
+    closed.forEach(function (r) { lessonsOfIssue(r.id).forEach(function (l) {
+      var k = l.category || '(no category)'; byCat[k] = (byCat[k] || 0) + 1;
+    }); });
+    standalone.forEach(function (l) { var k = l.category || '(no category)'; byCat[k] = (byCat[k] || 0) + 1; });
+    var catSlices = Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; })
+      .map(function (k, i) { return { label: k, value: byCat[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
+    var byDept = {};
+    closed.forEach(function (r) { var k = r.department || '(no department)'; byDept[k] = (byDept[k] || 0) + 1; });
+    standalone.forEach(function (l) { var k = l.department || '(no department)'; byDept[k] = (byDept[k] || 0) + 1; });
+    var deptBars = Object.keys(byDept).sort(function (a, b) { return byDept[b] - byDept[a]; })
+      .map(function (k, i) { return { label: clip(k, 16), value: byDept[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
 
-  // The report: one lesson at a time, the same master/detail shape as the minutes and the
-  // register, so all three screens read the same way.
-  function renderLessonsReport(host) {
-    var data = lessonsFiltered();
-    if (_lessNew) _lessSel = null;
-    else if (!data.some(function (l) { return l.id === _lessSel; })) _lessSel = data.length ? data[0].id : null;
-    var cur = _lessNew || LESSONS.find(function (l) { return l.id === _lessSel; }) || null;
-
-    host.classList.toggle('il-mom-report', _lessReport);
     host.innerHTML = migrateNoteHTML() +
-      '<div class="il-mom-wrap"><div class="il-mom-list">' +
-        '<div class="il-mom-head">Lessons <span>' + LESSONS.length + '</span></div>' +
-        (_lessNew ? '<button class="il-mom-item on" data-less="__new__">' +
-          '<span class="il-mom-draft">New</span>Unsaved lesson<small>Not yet in the library</small></button>' : '') +
-        (data.length ? data.map(lessonListRowHTML).join('')
-          : '<div class="il-empty" style="padding:14px;">' +
-            (LESSONS.length ? 'No lesson matches the current filters.'
-                            : 'No lessons captured on this project yet.') + '</div>') +
-        (canAdd && !_lessLegacy
-          ? '<button class="pd-btn pd-btn-sm pd-btn-primary" id="il-less-new" style="width:100%;margin-top:8px;">+ New lesson</button>' : '') +
-      '</div><div class="il-mom-detail">' +
-        (cur ? lessonDetailHTML(cur)
-             : '<div class="il-empty" style="padding:28px;">' +
-               (LESSONS.length ? 'Pick a lesson to read it.' : 'Nothing to show yet.') + '</div>') +
-      '</div></div>';
-    wireLessons();
+      '<div class="il-dash-tile"><div class="il-dash-tile-val">' + (closed.length + standalone.length) + '</div>' +
+        '<div class="il-dash-tile-label">Lessons matching the current filter</div></div>' +
+      '<div class="il-dash-grid">' +
+        '<div class="pd-card il-dash-card il-dash-wide"><h4>From closed issues</h4>' +
+          lessonDashboardListHTML(closed) + '</div>' +
+        '<div class="pd-card il-dash-card"><h4>By category</h4>' +
+          (catSlices.length
+            ? '<div class="il-dash-chartwrap">' + donutChartSVG(catSlices, { aria: 'Lessons by category' }) +
+              '<div class="il-dash-legend">' + catSlices.map(function (s) {
+                return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
+                  Fmt.esc(s.label) + ' (' + s.value + ')</span>';
+              }).join('') + '</div></div>'
+            : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+        '</div>' +
+        '<div class="pd-card il-dash-card"><h4>By department</h4>' +
+          (deptBars.length ? barChartSVG(deptBars, { aria: 'Lessons by department' })
+                           : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+        '</div>' +
+      '</div>';
+    host.querySelectorAll('[data-open]').forEach(function (tr) { tr.onclick = function () { openIssue(tr.dataset.open); }; });
   }
 
-  function lessonListRowHTML(l) {
-    return '<button class="il-mom-item' + (l.id === _lessSel ? ' on' : '') + '" data-less="' + Fmt.esc(l.id) + '">' +
-      (l.category ? '<span class="il-chip is-cat il-less-lchip">' + Fmt.esc(l.category) + '</span>' : '') +
-      Fmt.esc(clip(l.lesson, 90) || '(no lesson text)') +
-      '<small>' + Fmt.esc(l.department || 'No department') +
-      (l.date_captured ? ' · ' + Fmt.date(l.date_captured) : '') +
-      ' · ' + Fmt.esc(lessonSourceText(l)) + '</small></button>';
+  function lessonDashboardListHTML(data) {
+    if (!data.length) return '<div class="il-empty" style="padding:16px;">No closed issues match the current filter.</div>';
+    var top = data.slice(0, 12);
+    return '<div class="pd-tablewrap"><table class="il-dash-list"><thead><tr>' +
+      '<th>Issue</th><th>Champion</th><th>Department</th><th>Closed</th></tr></thead><tbody>' +
+      top.map(function (r) {
+        return '<tr data-open="' + Fmt.esc(r.id) + '">' +
+          '<td>' + Fmt.esc(clip(r.description, 70) || '(no issue text)') + '</td>' +
+          '<td>' + Fmt.esc(championText(r.champion_ids, r.champion) || '—') + '</td>' +
+          '<td>' + Fmt.esc(r.department || '—') + '</td>' +
+          '<td>' + (r.date_resolved ? Fmt.date(r.date_resolved) : '—') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>' +
+      (data.length > top.length
+        ? '<p class="il-mom-note">Showing 12 of ' + data.length + ' — switch to Log for the full list.</p>' : '');
+  }
+
+  // ---- Lessons Log (items #6-analog, #15, #16) -------------------------------
+  // ⚠️ SAME COLUMN SHAPE as the Issues log, with Corrective Action replaced by Closure
+  // Report and a Lesson column — "similar in log content", per the owner's own wording —
+  // PLUS a second section for lessons with no full issue behind them (kept, not dropped).
+  function renderLessonsLogView(host) {
+    host.classList.remove('il-mom-report');
+    var closed = closedIssuesFiltered();
+    var standalone = standaloneLessonsFiltered();
+    var head = '<thead><tr><th>No.</th><th>Department</th><th>Issue</th><th>Champion</th>' +
+      '<th>Closure Report</th><th>Lesson</th><th>Date Resolved</th></tr></thead>';
+    var body = closed.map(function (r, i) {
+      var ls = lessonsOfIssue(r.id);
+      var lessonTxt = ls.map(function (l) { return l.lesson; }).filter(Boolean).join(' · ');
+      return '<tr data-open="' + Fmt.esc(r.id) + '" style="cursor:pointer;">' +
+        '<td class="il-cell-num">' + (i + 1) + '</td>' +
+        '<td data-l="Department">' + Fmt.esc(r.department) + '</td>' +
+        '<td class="il-cell-wrap" data-l="Issue"><div class="il-clip">' + Fmt.esc(r.description) + '</div></td>' +
+        '<td class="il-champ" data-l="Champion">' + Fmt.esc(championText(r.champion_ids, r.champion)) + '</td>' +
+        '<td class="il-cell-wrap" data-l="Closure report"><div class="il-clip">' + Fmt.esc(r.closure_report) + '</div></td>' +
+        '<td class="il-cell-wrap" data-l="Lesson"><div class="il-clip">' + Fmt.esc(lessonTxt) + '</div></td>' +
+        '<td data-l="Resolved">' + Fmt.date(r.date_resolved) + '</td>' +
+      '</tr>';
+    }).join('');
+    var table = '<div class="pd-card" style="padding:0;overflow:auto;"><table class="pd-table il-table">' + head +
+      '<tbody>' + (body || '<tr><td colspan="7" style="padding:24px;color:var(--pd-muted);">No closed issues match the current filters.</td></tr>') +
+      '</tbody></table></div>';
+    var standaloneSection = !standalone.length ? '' :
+      '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' +
+        'Lessons captured without a full issue</h4>' +
+      '<p class="il-mom-note">From a meeting action item, or captured before this workflow existed.</p>' +
+      '<div class="il-lessons">' + standalone.map(lessonCardHTML).join('') + '</div>';
+    host.innerHTML = migrateNoteHTML() + table + standaloneSection;
+    host.querySelectorAll('tr[data-open]').forEach(function (tr) { tr.onclick = function () { openIssue(tr.dataset.open); }; });
+    host.querySelectorAll('[data-open-lesson]').forEach(function (b) { b.onclick = function () { openLesson(b.dataset.openLesson); }; });
+    host.querySelectorAll('[data-open-issue]').forEach(function (b) { b.onclick = function () { openIssue(b.dataset.openIssue); }; });
+  }
+
+  // ---- standalone-lesson detail (unchanged editor, now reached as a drill-down) ----
+  function renderLessonDetailView(host) {
+    host.classList.remove('il-mom-report');
+    var cur = _lessNew || LESSONS.find(function (l) { return l.id === _lessSel; }) || null;
+    host.innerHTML = migrateNoteHTML() +
+      '<button class="il-backlink" id="il-less-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Lessons</button>' +
+      (cur ? lessonDetailHTML(cur)
+           : '<div class="il-empty" style="padding:28px;">Nothing to show — <button class="pd-btn pd-btn-sm" id="il-less-back2">go back</button>.</div>');
+    wireLessons();
   }
 
   // What produced this lesson, said in one phrase. ⚠️ "Captured on its own" is a real
@@ -1451,19 +1975,14 @@ window.IssuesLessons = (function () {
 
   function wireLessons() {
     var host = $('il-lessons-view'); if (!host) return;
-    host.querySelectorAll('[data-less]').forEach(function (b) {
-      b.onclick = function () {
-        if (b.dataset.less === '__new__') return;
-        if (_lessNew && !confirm('Discard the unsaved new lesson?')) return;
-        _lessNew = null; _lessSel = b.dataset.less; _lessReport = false; renderLessons();
-      };
-    });
+    var back = host.querySelector('#il-less-back'); if (back) back.onclick = backFromLessonDetail;
+    var back2 = host.querySelector('#il-less-back2'); if (back2) back2.onclick = backFromLessonDetail;
     var nb = host.querySelector('#il-less-new'); if (nb) nb.onclick = function () { newLesson(null); };
     var rep = host.querySelector('#il-less-report');
     if (rep) rep.onclick = function () { _lessReport = !_lessReport; renderLessons(); };
     var sv = host.querySelector('#il-less-save'); if (sv) sv.onclick = saveLesson;
     var cn = host.querySelector('#il-less-cancel');
-    if (cn) cn.onclick = function () { _lessNew = null; renderLessons(); };
+    if (cn) cn.onclick = function () { _lessNew = null; backFromLessonDetail(); };
     var dl = host.querySelector('#il-less-del'); if (dl) dl.onclick = delLesson;
 
     // The link pickers re-render, because changing the source changes which controls exist.
@@ -1528,15 +2047,25 @@ window.IssuesLessons = (function () {
       mom_id: (link && link.mom_id) || null,
       mom_item_id: (link && link.mom_item_id) || null,
     };
-    _lessSel = null; _lessMode = 'report'; _lessReport = false;
+    _lessPrevMode = (_lessMode === 'detail') ? _lessPrevMode : _lessMode;
+    _lessSel = null; _lessMode = 'detail';
     if (screen !== 'lessons') switchScreen('lessons'); else { syncChrome(); renderLessons(); }
     var el = $('il-lessons-view'); var f = el && el.querySelector('[data-f="lesson"]');
     if (f) f.focus();
   }
 
   function openLesson(id) {
-    _lessMode = 'report'; _lessSel = id; _lessNew = null; _lessReport = false;
+    _lessPrevMode = (_lessMode === 'detail') ? _lessPrevMode : _lessMode;
+    _lessMode = 'detail'; _lessSel = id; _lessNew = null;
     if (screen !== 'lessons') switchScreen('lessons'); else { syncChrome(); renderLessons(); }
+  }
+
+  // "← Back" out of a lesson's detail view, to whichever of Dashboard/Log was active before.
+  function backFromLessonDetail() {
+    if (_lessNew && !confirm('Discard the unsaved new lesson?')) return;
+    _lessMode = _lessPrevMode || 'dashboard';
+    _lessSel = null; _lessNew = null;
+    syncChrome(); renderLessons();
   }
 
   async function saveLesson() {

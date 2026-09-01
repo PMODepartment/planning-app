@@ -353,6 +353,9 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-30-photos-round2.sql','column','progress_photos','view_name'),
     ('2026-08-30-photos-round3.sql','column','progress_photos','adjustments'),
     ('2026-08-30-photos-round3.sql','column','progress_photos','thumb_url'),
+    ('2026-08-31-issues-workflow-history.sql','column','issues_lessons','closure_report'),
+    ('2026-08-31-issues-workflow-history.sql','column','issues_lessons','hold_reason'),
+    ('2026-08-31-issues-workflow-history.sql','table','issues_lessons_history',''),
     ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_positions','reports_to_id'),
     ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_activity_id'),
     ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_finish'),
@@ -363,7 +366,19 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','link_wbs'),
     ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','location'),
     ('2026-08-31-manpower-org-schedule-manhours.sql','function','project_location_values',''),
-    ('2026-08-31-manpower-org-schedule-manhours.sql','table','manpower_manhours','')
+    ('2026-08-31-manpower-org-schedule-manhours.sql','table','manpower_manhours',''),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','attendees_actual'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','attendees_optional'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','attendees_required'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','meeting_group'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','meeting_link'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','recording_url'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','schedule_id'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','venue'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','mom_items','closure_report'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','column','mom_items','hold_reason'),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','table','mom_items_history',''),
+    ('2026-09-01-mom-schedules-attendees-item-history.sql','table','mom_schedules','')
 ),
 missing as (
   select e.* from expected e

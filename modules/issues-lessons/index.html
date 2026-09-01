@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260831b" />
-  <link rel="stylesheet" href="module.css?v=20260831a" />
+  <link rel="stylesheet" href="module.css?v=20260831b" />
 </head>
 <body>
   <div class="pd-app">
@@ -53,7 +53,7 @@
                either as one readable record at a time (what gets reported) or as the
                scannable table (what gets worked through). -->
           <div class="il-viewtoggle" id="il-viewtoggle" hidden>
-            <button type="button" data-view="report" class="on">Report</button>
+            <button type="button" data-view="dashboard" class="on">Dashboard</button>
             <button type="button" data-view="log" id="il-view-log">Log</button>
           </div>
           <button class="pd-btn pd-btn-primary il-tb-labeled" id="il-new" title="Log a new issue">+ New issue</button>
@@ -67,7 +67,11 @@
 
       <div class="pd-main">
         <!-- ================= Issues & Concerns ================= -->
-        <div id="il-screen-issues" hidden>
+        <!-- Visible by default (matches the JS default screen='issues'), same
+             convention every other module in this app follows — a screen's
+             initial visibility must not depend solely on JS having run
+             switchScreen()/switchTab()/switchView() before paint. -->
+        <div id="il-screen-issues">
           <div class="il-filters">
             <span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>
             <input class="pd-input il-search" id="il-f-search" placeholder="Search issue, cause, corrective action, champion…" />
@@ -129,7 +133,7 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260831a"></script>
+  <script src="module.js?v=20260831b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
