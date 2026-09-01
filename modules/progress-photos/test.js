@@ -197,6 +197,10 @@ const documentStub = {
  'bim-new',
  // ppr.js's preview pane (audit section [35]'s _renderPreviewWithState hook).
  'ppr-preview-body',
+ // The "+ Add media" dropdown (button + its absolutely-positioned sibling
+ // menu) — _leavePhotosScreen() force-closes #pp-addmenu on every screen
+ // switch away from Gallery (see that section's own tests below).
+ 'pp-addmenu', 'pp-addmenu-wrap',
 ].forEach(ensure);
 
 // ------------------------------------------------------------------- globals --
@@ -384,23 +388,22 @@ eq('worksOf falls back to the legacy singular column pre-migration',
 console.log('\n[3] PPR renamed to Meeting, then to Presentation (2026-08-29 feedback item 3)');
 ok('tab label is Presentations', /data-screen="ppr">Presentations</.test(html));
 ok('primary action is + New Presentation', /\+ New Presentation/.test(html));
-// ⚠️ Superseded by the punch-list fix for "duplicate tab-name label"
-// (Gallery / Gallery): setScreen() used to overwrite #pp-screen-title with
-// `isPpr ? 'Presentations' : (isBim ? 'Plans' : 'Gallery')`, which repeated
-// exactly what the tab strip right below it already says. The <h1> is now a
-// STATIC "Progress Photos" (never rewritten per screen) and the tab strip
-// alone carries Gallery/Presentations/Plans — asserted here instead. Healthy
-// churn from an intentional change, same convention as every other rename
-// in this file's own history (see the 2026-08-29 PPR→Meeting/Presentation
-// entries), not a regression to chase.
-ok('the module title is now static ("Progress Photos") — setScreen() no longer overwrites #pp-screen-title per screen',
-   /<span class="pp-title-txt" id="pp-screen-title">Progress Photos<\/span>/.test(html) &&
-   /must NOT overwrite #pp-screen-title/.test(html) &&
-   !/document\.getElementById\('pp-screen-title'\)\.textContent =/.test(html));
-ok('…and each screen\'s own name lives ONLY on its tab button now (Gallery / Presentations / Plans), not duplicated in the title too',
-   /data-screen="photos">Gallery<\/button>/.test(html) &&
+// ⚠️ Superseded again (owner feedback, this round): the "duplicate tab-name
+// label" punch-list fix had already made the <h1> a STATIC "Progress Photos"
+// so the tab strip alone carried the per-screen name — but the owner then
+// asked for the <h1> to go entirely ("no need to show progress photos label
+// in secondary top bar"), since it duplicated the module's own name yet
+// again once the first tab was itself renamed to "Progress Photos". There is
+// now no <h1>/#pp-screen-title at all; the tab strip is the only place the
+// module's name (and each screen's own name) ever appears. Healthy churn
+// from an intentional change, same convention as every other rename in this
+// file's own history, not a regression to chase.
+ok('the standalone <h1>/#pp-screen-title module title is gone — only the tab strip names the module/screen now',
+   !/pp-screen-title/.test(html) && !/class="pp-title"/.test(html));
+ok('…each screen\'s own name lives ONLY on its tab button (renamed: "Gallery" -> "Progress Photos", "Plans" -> "Floor Plans"; internal data-screen values unchanged)',
+   /data-screen="photos">Progress Photos<\/button>/.test(html) &&
    /data-screen="ppr">Presentations<\/button>/.test(html) &&
-   /data-screen="bim">Plans<\/button>/.test(html));
+   /data-screen="bim">Floor Plans<\/button>/.test(html));
 ok('modal header New Presentation', /'New Presentation' : 'Edit Presentation'/.test(pjs));
 ok('list column header is Presentation Date', /<div>Presentation Date<\/div>/.test(pjs));
 // Strip // comments before asserting on user-facing copy — a stale comment
@@ -883,8 +886,8 @@ console.log('\n[misc] insert().select() returns the new row id');
    'function wireStageInteractions', 'function pinMarkerHTML'
   ].forEach((sig) => ok(sig + '() exists in bim.js', bmjs.includes(sig)));
 
-  ok('index.html has the Plans tab (renamed from Floor Plan, 2026-08-29) + tools + screen host',
-     /data-screen="bim">Plans</.test(html) && /id="bim-new"/.test(html) &&
+  ok('index.html has the Floor Plans tab (renamed from Floor Plan -> Plans -> Floor Plans) + tools + screen host',
+     /data-screen="bim">Floor Plans</.test(html) && /id="bim-new"/.test(html) &&
      /id="pp-screen-bim"/.test(html));
   // 2026-08-30 item 27: "Place pin" is REMOVED from index.html entirely — pin
   // placement now happens every time a photo is added, never on this screen.
@@ -966,9 +969,9 @@ console.log('\n[misc] insert().select() returns the new row id');
      !/\['ppr', 'rounds', 'pano', 'recon', 'bim'\]/.test(html) && /\['ppr', 'bim'\]\.indexOf\(saved\)/.test(html));
 
   // --- 360°/3D folded into Gallery, not deleted --------------------------
-  ok('the tab bar now has exactly three tabs: Gallery, Presentations, Plans',
+  ok('the tab bar now has exactly three tabs: Progress Photos, Presentations, Floor Plans (renamed from Gallery/Plans; data-screen values unchanged)',
      (html.match(/class="pp-tab[^"]*" data-screen="[a-z]+"/g) || []).length === 3 &&
-     /data-screen="photos">Gallery/.test(html) && /data-screen="ppr">Presentations/.test(html) && /data-screen="bim">Plans/.test(html));
+     /data-screen="photos">Progress Photos/.test(html) && /data-screen="ppr">Presentations/.test(html) && /data-screen="bim">Floor Plans/.test(html));
   ok('the Gallery screen carries a #pp-media-strip host for the folded 360°/3D content', /id="pp-media-strip"/.test(html));
   ok('module.js loads PANO/RECON data before rendering Gallery, so the strip has something to show without a separate screen visit',
      /PANO && PANO\.ensureLoaded[\s\S]{0,120}RECON && RECON\.ensureLoaded/.test(mjs));
@@ -1028,9 +1031,44 @@ console.log('\n[misc] insert().select() returns the new row id');
      /filters = \{ from: '', to: '', trade: '', works: '', locValues: \{\}, search: '', archived: filters\.archived \};/.test(mjs));
 
   // --- Edit/Delete presentation relocated (item 1) ------------------------
-  ok('wirePresActs wires the relocated edit/delete buttons to the same openPprForm/removePpr', /function wirePresActs\(p\)[\s\S]{0,200}openPprForm\(p\)[\s\S]{0,100}removePpr\(p\)/.test(pjs));
+  // ⚠️ Char budget widened 200/100 -> 400/100: wirePresActs now ALSO wires
+  // #ppr-slide-back first (owner feedback — "Back to List" belongs before
+  // the presentation details, see the .ppr-slidehead ordering below), which
+  // pushed openPprForm further from the function's own opening brace. Same
+  // wiring, just a few lines later — healthy churn from an intentional
+  // change, not a regression to chase.
+  ok('wirePresActs wires the relocated edit/delete buttons to the same openPprForm/removePpr', /function wirePresActs\(p\)[\s\S]{0,600}openPprForm\(p\)[\s\S]{0,100}removePpr\(p\)/.test(pjs));
   ok('wirePresActs is called on BOTH the empty-slides and normal render paths (not just one)',
      (pjs.match(/wireSlideNav\(s\); wirePresActs\(p\);/g) || []).length === 2);
+
+  // --- Owner feedback: "Back to List" reordered before the presentation
+  // details --------------------------------------------------------------
+  // The slide/presentation editor now carries its OWN back button
+  // (#ppr-slide-back), rendered FIRST inside .ppr-slidehead, so the visual
+  // order is Back Button > Presentation Details > action buttons — checked
+  // positionally (source-build order == render order, since the header is
+  // one concatenated string built top-to-bottom) rather than just asserting
+  // each piece exists somewhere.
+  (function () {
+    // Scoped to renderSlides()'s own source (a big enough slice to cover its
+    // whole header build) — "Presentation Date" also appears as a plain
+    // field label elsewhere in the file (e.g. openPprForm's edit modal), so
+    // a file-wide indexOf would compare against the WRONG occurrence.
+    var start = pjs.indexOf('function renderSlides()');
+    var chunk = pjs.slice(start, start + 3000);
+    var iBack = chunk.indexOf('id="ppr-slide-back"');
+    var iDate = chunk.indexOf('Presentation Date');
+    var iActs = chunk.indexOf('ppr-hspacer');
+    ok('#ppr-slide-back exists and is rendered BEFORE the Presentation Date field',
+       iBack >= 0 && iDate >= 0 && iBack < iDate);
+    ok('…and the Presentation Date field comes before the action-buttons group (ppr-hspacer)',
+       iDate < iActs);
+    ok('#ppr-slide-back is wired the same way #ppr-back always was (back to the list, re-render)',
+       /\$\('ppr-slide-back'\)\.onclick = function \(\) \{ screen = 'list'; render\(\); \};/.test(pjs));
+  })();
+  ok('the topbar\'s own #ppr-back is now scoped to the Templates screen only (the slides screen has its own in-header back button instead)',
+     /if \(back\) back\.style\.display = \(visible && onTmpl\) \? '' : 'none';/.test(pjs) &&
+     !/screen === 'slides' \|\| onTmpl/.test(pjs));
 
   // --- Shared location tile (items 3/4) — genuinely EXECUTED --------------
   eq('two photos at the same location share a tile', PPR._sameLocation({ location: 'Tower 1 - L5' }, { location: 'Tower 1 - L5' }), true);
@@ -2095,6 +2133,28 @@ console.log('\n[misc] insert().select() returns the new row id');
      /card\.classList\.remove\('pp-selrow'\)/.test(mjs) &&
      /var selAll = host\.querySelector\('#pp-selall'\);\s*if \(selAll\) selAll\.checked = false;/.test(mjs));
 
+  // --- "Add media" dropdown left open across screens (owner feedback) -------
+  // ⚠️ Real bug: #pp-addmenu is an absolutely-positioned SIBLING of the
+  // #pp-add button (not a child), so index.html's old PHOTO_TOOLS list
+  // (which only ever toggled #pp-add) could leave an already-OPENED
+  // dropdown floating on top of Presentations/Plans with no trigger button
+  // in sight. Fixed two ways: PHOTO_TOOLS now also hides the whole wrap
+  // (#pp-addmenu-wrap), and _leavePhotosScreen() force-closes the menu
+  // itself regardless of whether it was ever opened.
+  ok('_leavePhotosScreen force-closes #pp-addmenu',
+     /_leavePhotosScreen: function \(\) \{[\s\S]{0,1200}var addMenu = \$\('pp-addmenu'\); if \(addMenu\) addMenu\.hidden = true;/.test(mjs));
+  ok('index.html\'s PHOTO_TOOLS hides the whole #pp-addmenu-wrap (button + dropdown), not just #pp-add',
+     /var PHOTO_TOOLS = \['pp-add', 'pp-addmenu-wrap', /.test(html));
+
+  // Genuine execution: open the dropdown, leave the Photos screen, confirm
+  // it is force-closed — not just that the source LOOKS right.
+  (function () {
+    const menu = ctx.document.getElementById('pp-addmenu');
+    menu.hidden = false;
+    PP._leavePhotosScreen();
+    ok('genuinely executed: an OPEN "+ Add media" dropdown is closed by _leavePhotosScreen', menu.hidden === true);
+  })();
+
   // Genuine execution: with rows/selected pristine, this must be a safe,
   // silent no-op (no throw) whether or not #pp-view/the toolbar ids exist —
   // it's called on every non-Photos screen entry, including before the
@@ -2796,6 +2856,158 @@ console.log('\n[misc] insert().select() returns the new row id');
 
   ok('the two new ids (pp-plan-mlive / pp-stack-mlive) are each referenced exactly 3 times in module.js — once rendered, twice in the wiring ($(id) guard + $(id).onclick, the same shape every sibling stepper button already uses) — never a stray 4th reference suggesting a leftover or a duplicate',
      (mjs.match(/pp-plan-mlive/g) || []).length === 3 && (mjs.match(/pp-stack-mlive/g) || []).length === 3);
+
+  console.log('\n[41] Old-photo thumbnail backfill ("manually add the thumbnail data… for the app to fetch")');
+  ok('photosNeedingThumb() exists and scopes to real images missing thumb_url (never videos, which already get a free <video preload="metadata"> preview)',
+     /function photosNeedingThumb\(\) \{[\s\S]{0,300}media_type !== 'video';/.test(mjs));
+  ok('syncGenThumbsBtn() hides the button entirely for a non-writer, regardless of how many photos need one',
+     /function syncGenThumbsBtn\(\)[\s\S]{0,200}var need = canWrite \? photosNeedingThumb\(\) : \[\];/.test(mjs));
+  ok('backfillThumbnailBlob uses upsert:true (unlike the fresh-upload path\'s upsert:false) — a retry after a partial prior attempt (thumbnail uploaded, row update failed) must be able to overwrite the same object path',
+     /function backfillThumbnailBlob[\s\S]{0,400}upsert: true/.test(mjs));
+  ok('the button + progress label exist in index.html, wired to backfillThumbnails(); render() keeps the button in sync every repaint',
+     /id="pp-genthumbs"/.test(html) && /id="pp-genthumbs-prog"/.test(html) &&
+     /\$\('pp-genthumbs'\)\.onclick = function \(\) \{ backfillThumbnails\(\); \};/.test(mjs) &&
+     /renderMediaStrip\(\);\s*syncGenThumbsBtn\(\);/.test(mjs));
+
+  // Genuine execution: a photo with no thumb_url is correctly listed as
+  // needing one; a photo that already has one is correctly excluded; a
+  // video is excluded even with no thumb_url at all.
+  (function () {
+    var fixture = [
+      { id: 'old-1', photo_url: 'a/1.jpg', thumb_url: null, media_type: 'photo' },
+      { id: 'has-1', photo_url: 'a/2.jpg', thumb_url: 'a/2.jpg.thumb.jpg', media_type: 'photo' },
+      { id: 'vid-1', photo_url: 'a/3.mp4', thumb_url: null, media_type: 'video' },
+    ];
+    var need = PP._photosNeedingThumb(fixture);
+    eq('photosNeedingThumb picks only the real image with no thumb_url — not the already-thumbed one, not the video',
+       need.map(function (r) { return r.id; }), ['old-1']);
+  })();
+
+  // Genuine execution of the whole fetch -> downscale -> upload -> row-update
+  // chain, against the shared sbStub/store this file's other sections
+  // already use for progress_photos — proves a row's thumb_url is actually
+  // WRITTEN (in the fake DB store), not just that the surrounding code
+  // compiles and returns a plausible-looking value.
+  await (async function () {
+    store.progress_photos.push({ id: 'backfill-row-1', project_id: 'DEMO01', photo_url: 'DEMO01/oldphoto.jpg', thumb_url: null, media_type: 'photo' });
+    var row = store.progress_photos.find(function (r) { return r.id === 'backfill-row-1'; });
+    var realFetch = ctx.fetch;
+    ctx.fetch = async function () { return { ok: true, blob: async function () { return { type: 'image/jpeg' }; } }; };
+    var out;
+    try { out = await PP._backfillOneThumbnail(row); }
+    finally { ctx.fetch = realFetch; }
+    ok('genuinely executed: backfillOneThumbnail returns true on success', out === true);
+    ok('…and the row\'s thumb_url is now really SET in the store (a derived object path, not the original photo_url)',
+       typeof row.thumb_url === 'string' && row.thumb_url === 'DEMO01/oldphoto.jpg.thumb.jpg');
+    store.progress_photos = store.progress_photos.filter(function (r) { return r.id !== 'backfill-row-1'; });
+  })();
+
+  console.log('\n[42] Gallery tile size no longer changes when markup is hidden/shown (owner feedback)');
+  ok('module.css: .pp-mkwrap is display:block; width:100% (was display:inline-block with no width — an inline-block box cannot derive its shrink-to-fit size from a PERCENTAGE-width child, which is exactly what .pp-cardphoto is in Gallery view, so wrapping a photo in this span for its markup overlay silently fell back to the image\'s natural size instead of the grid cell\'s width)',
+     /\.pp-mkwrap \{ position: relative; display: block; width: 100%; \}/.test(cssFile));
+
+  console.log('\n[43] Markup "Add Text" fixed (a new text box was born with NO readable background) + text/textbox formatting');
+
+  // Genuinely execute the shared decision function both the live-typing
+  // overlay and the final canvas render now both read.
+  eq('textBoxFillColor: an object with NO fill key at all (a brand-new text object, the actual bug) gets the default readable white box',
+     PP._textBoxFillColor({}), 'rgba(255,255,255,.85)');
+  eq('textBoxFillColor: fill===false (an EXPLICIT off, e.g. someone unticked Fill on a selected object) means no box at all',
+     PP._textBoxFillColor({ fill: false }), null);
+  eq('textBoxFillColor: fill===true uses the object\'s own fillColor/fillAlpha',
+     PP._textBoxFillColor({ fill: true, fillColor: '#1E88E5', fillAlpha: 0.5 }), 'rgba(30,136,229,0.5)');
+  eq('textBoxFillColor: fill===true with no fillAlpha set defaults to 0.85 (matches the old fixed box\'s own opacity)',
+     PP._textBoxFillColor({ fill: true, fillColor: '#1E88E5' }), 'rgba(30,136,229,0.85)');
+  eq('textBoxFillColor: fill===true with no fillColor falls back through fillColorOf() to the object\'s own border colour',
+     PP._textBoxFillColor({ fill: true, color: '#231F20' }), 'rgba(35,31,32,0.85)');
+
+  ok('the root cause is fixed at the SOURCE: a new text object no longer stores an unconditional `fill: fillOn` (which bakes in an explicit `false` the instant Fill starts unticked) — `fill` is now omitted unless fillOn is actually true',
+     !/fill: fillOn, fillColor: fillColor, fillAlpha: fillAlpha \}\);\s*\n\s*selectedIdx = objs\.length - 1;\s*\n\s*redraw\(\);\s*\n\s*openTextEditAt\(selectedIdx\);/.test(mjs) &&
+     /if \(fillOn\) newTextObj\.fill = true;/.test(mjs));
+  ok('…and the new object carries bold\/italic\/boxBorder from the toolbar\'s own current defaults, so "format text and format textbox" has somewhere to write to from the moment a box is created',
+     /bold: textBold, italic: textItalic, boxBorder: textBorder/.test(mjs));
+
+  // Genuine execution of the render side: a fresh fakeCtx that actually
+  // records `font`/fillRect/strokeRect calls (the shared fakeCtxWithFill()
+  // above them ignores `font`, which this needs to assert bold/italic).
+  function fakeCtxFormatted() {
+    const calls = [];
+    return {
+      calls,
+      save() {}, restore() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
+      stroke() {}, fill() {}, ellipse() {}, arc() {}, measureText: () => ({ width: 40 }),
+      clearRect() {}, translate() {}, scale() {}, setLineDash() {}, rect() {},
+      fillText() { calls.push('fillText'); },
+      fillRect() { calls.push('fillRect:' + this._fill); },
+      strokeRect() { calls.push('strokeRect:' + this._stroke); },
+      set strokeStyle(v) { this._stroke = v; }, set fillStyle(v) { this._fill = v; },
+      set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set textBaseline(v) {}, set globalAlpha(v) {},
+      set font(v) { this._font = v; calls.push('font:' + v); },
+    };
+  }
+  {
+    // A freshly-created object (as the fixed creation code above now
+    // produces): no `fill` key at all. This is the exact case that used to
+    // render with zero background — proves it now DOES fill.
+    let c = fakeCtxFormatted();
+    PP._drawMarkupObjects(c, [{ type: 'text', x: 0.5, y: 0.5, text: 'Note', color: '#231F20' }], 200, 100);
+    ok('a brand-new text object (no fill key) DOES draw a fillRect for its background box — the actual "add text is not working" symptom (invisible/unreadable text) is fixed',
+       c.calls.some(x => x.startsWith('fillRect:')));
+
+    // An object with fill EXPLICITLY turned off must still respect that —
+    // the fix must not have swung the other way into always-on.
+    c = fakeCtxFormatted();
+    PP._drawMarkupObjects(c, [{ type: 'text', x: 0.5, y: 0.5, text: 'Note', color: '#231F20', fill: false }], 200, 100);
+    ok('…but an object with fill EXPLICITLY false still draws NO background box at all (the one genuinely-off state is preserved)',
+       !c.calls.some(x => x.startsWith('fillRect:')));
+
+    // Bold defaults true (matches every text object drawn before this
+    // feature, which was hardcoded 700-weight); bold:false drops to 400.
+    c = fakeCtxFormatted();
+    PP._drawMarkupObjects(c, [{ type: 'text', x: 0.5, y: 0.5, text: 'Note', color: '#231F20' }], 200, 100);
+    ok('a text object with no bold field set at all still renders BOLD (700) — the pre-existing look is unchanged for every object saved before this feature',
+       c.calls.some(x => x === 'font:700 18px Montserrat, Arial, sans-serif'));
+    c = fakeCtxFormatted();
+    PP._drawMarkupObjects(c, [{ type: 'text', x: 0.5, y: 0.5, text: 'Note', color: '#231F20', bold: false, italic: true, fontSize: 24 }], 200, 100);
+    ok('bold:false + italic:true together produce the expected CSS font string (400 weight, "italic " prefix, the object\'s own fontSize)',
+       c.calls.some(x => x === 'font:italic 400 24px Montserrat, Arial, sans-serif'));
+
+    // Border — an independent, optional stroke around the box, using the
+    // object's own colour/width, only drawn when boxBorder is set.
+    c = fakeCtxFormatted();
+    PP._drawMarkupObjects(c, [{ type: 'text', x: 0.5, y: 0.5, text: 'Note', color: '#EE3124', boxBorder: true }], 200, 100);
+    ok('boxBorder:true draws a strokeRect around the text box, in the object\'s own colour',
+       c.calls.some(x => x === 'strokeRect:#EE3124'));
+    c = fakeCtxFormatted();
+    PP._drawMarkupObjects(c, [{ type: 'text', x: 0.5, y: 0.5, text: 'Note', color: '#EE3124' }], 200, 100);
+    ok('…and omits the stroke entirely when boxBorder is unset — a plain unformatted text box looks exactly as it always has',
+       !c.calls.some(x => x.startsWith('strokeRect:')));
+  }
+
+  ok('the live-typing overlay (openTextEditAt) now reads the SAME shared textBoxFillColor() helper for its background — previously it duplicated the fill logic inline and disagreed with the final render for the undefined-fill case (coloured while typing, then reverting to plain white on commit)',
+     /var boxBg = textBoxFillColor\(o\);\s*\n\s*textEl\.style\.background = boxBg \|\| 'transparent';/.test(mjs));
+  ok('…and it also reflects bold\/italic\/boxBorder live while typing, so the overlay looks like the formatting that will actually be drawn on commit',
+     /textEl\.style\.fontWeight = o\.bold === false \? '400' : '700';/.test(mjs) &&
+     /textEl\.style\.fontStyle = o\.italic \? 'italic' : 'normal';/.test(mjs) &&
+     /textEl\.style\.border = o\.boxBorder \? '2px solid ' \+ \(o\.color \|\| color\) : 'none';/.test(mjs));
+
+  ok('Bold\/Italic toggle buttons + a Border checkbox exist in the toolbar\'s text-format group (pp-mk-textrow), addressing "format text and format textbox" — Fill colour\/transparency for the box are the EXISTING shared Fill group (fillableType already includes \'text\')',
+     /id="pp-mk-bold"[\s\S]{0,20}title="Bold"/.test(mjs) &&
+     /id="pp-mk-italic"[\s\S]{0,20}title="Italic"/.test(mjs) &&
+     /id="pp-mk-textborder"/.test(mjs));
+
+  ok('clicking Bold\/Italic, or toggling Border, edits the SELECTED text object live when one is selected — else it sets the default the next NEW text object will get (same "selection wins, else the default" convention as color\/fill\/size)',
+     /\$\('pp-mk-bold'\)\.onclick = function \(\) \{\s*\n\s*if \(selectedIdx >= 0 && objs\[selectedIdx\]\.type === 'text'\) \{/.test(mjs) &&
+     /\$\('pp-mk-italic'\)\.onclick = function \(\) \{\s*\n\s*if \(selectedIdx >= 0 && objs\[selectedIdx\]\.type === 'text'\) \{/.test(mjs) &&
+     /\$\('pp-mk-textborder'\)\.onchange = function \(\) \{\s*\n\s*if \(selectedIdx >= 0 && objs\[selectedIdx\]\.type === 'text'\) \{/.test(mjs));
+
+  ok('syncTextRow() reflects either the SELECTED text object\'s own bold\/italic\/border, or (nothing selected) the toolbar\'s own current defaults for the next new one — never left showing stale state from whatever was selected before',
+     /var b = sel \? sel\.bold !== false : textBold;/.test(mjs) &&
+     /var i = sel \? !!sel\.italic : textItalic;/.test(mjs) &&
+     /var bd = sel \? !!sel\.boxBorder : textBorder;/.test(mjs));
+
+  ok('module.css defines .pp-mk-toggle\/.active (Bold\/Italic buttons) and .pp-mk-checklabel (the Border checkbox\'s label) — both new controls actually have styling, not just markup',
+     /\.pp-mk-toggle \{/.test(cssFile) && /\.pp-mk-toggle\.active \{/.test(cssFile) && /\.pp-mk-checklabel \{/.test(cssFile));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

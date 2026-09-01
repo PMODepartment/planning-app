@@ -2,6 +2,108 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Six-item owner feedback round: old-photo thumbnail backfill, tile size, tab
+## labels, "Add Text" fixed + formatting, Add-media dropdown leak, back-button
+## order (2026-09-01)
+
+Six numbered items off the owner's own screenshot review.
+
+**1 — old-photo thumbnails backfilled, not just generated on new uploads.** Photos captured before
+the 2026-08-30 client-side thumbnail feature carry no `thumb_url` at all, so they've always loaded
+full-resolution and always will unless something writes a real thumbnail file for them after the
+fact. New **`backfillThumbnails()`**, triggered by a **"Generate thumbnails"** button in the list
+bar (writer-gated, hidden entirely when nothing is missing one — `syncGenThumbsBtn()`, re-checked
+on every render since a fresh upload can change the count) — fetches each such photo's original,
+downscales it through the SAME `makeThumbnailBlob` the upload path uses (so an old photo and a new
+one end up with byte-for-byte the same thumbnail shape/quality), uploads it, and patches
+`thumb_url`. ⚠️ **The upload uses `upsert:true`, unlike the fresh-upload path's `upsert:false`** — a
+retry after a partial prior attempt (thumbnail object written, row update failed) has to be able to
+overwrite the same path rather than erroring on a duplicate object. A per-file failure is skipped,
+not fatal to the batch, with a running "N of M" progress label.
+
+**2 — Gallery tile size no longer jumps when markup is hidden/shown.** ⚠️ Real bug, a plain CSS
+box-model trap: `.pp-mkwrap { display: inline-block }` wraps a tile's photo so the markup overlay
+canvas has something to position `absolute` against — but an `inline-block` box can only derive a
+shrink-to-fit width from its content's own INTRINSIC size, and `.pp-cardphoto` (the actual `<img>`
+inside it) is `width: 100%`, a *percentage*. A percentage-width child gives an inline-block parent
+nothing to shrink-to-fit from, so the wrapper silently fell back to the image's natural pixel size
+— different for every photo, and different again the instant the wrapper was added/removed by
+toggling markup visibility, which is exactly the reported symptom. Fixed to `display: block; width:
+100%` — a block box already fills its grid cell regardless of what's inside it, so the tile's own
+size is never a function of whether the markup wrapper exists.
+
+**3 — the redundant "Progress Photos" label removed from the secondary top bar; tabs renamed.** The
+screen already names itself via the tab strip directly below it (Gallery/Presentations/Plans), so a
+second, static `<h1>` repeating the module's own name added nothing. Removed, along with the dead
+`.pp-title*` CSS it left behind and a stale `setScreen()` comment that referenced the element by id.
+Tab labels: **"Gallery" → "Progress Photos"**, **"Plans" → "Floor Plans"** ("Presentations"
+unchanged). ⚠️ Labels only — `data-screen` values (`photos`/`ppr`/`bim`) are untouched, so nothing
+that branches on the screen name needed to change.
+
+**4 — "Add Text" fixed, plus real text/textbox formatting.** ⚠️ **Root cause, found by reading the
+object-creation code rather than assumed:** a new text object stored `fill: fillOn` **unconditionally**
+— and `fillOn` (the toolbar's own "Fill" checkbox) defaults to the boolean `false`, not `undefined`.
+`drawMarkupObjects`' rendering was already a deliberate three-state design (`fill === false` = the
+planner EXPLICITLY turned the box off; `fill` truthy = their own colour/alpha; anything else =
+"nobody's touched Fill yet, so default to a readable light box") — but because every freshly-typed
+text object was born with the explicit `false` rather than `undefined`, it **always** rendered with
+zero background, easy to lose against a busy site photo. That reads exactly like "add text is not
+working" even though the object was being created and saved correctly the whole time.
+- New shared **`textBoxFillColor(o)`** is the one place that decision is made now — read by BOTH
+  the live-typing overlay (`openTextEditAt`, which previously duplicated slightly different fallback
+  logic and could show a colour WHILE typing that reverted to plain white the instant it committed)
+  and the final canvas render, so the two can never disagree about what a given object's box looks
+  like. The creation payload now only sets `fill: true` when `fillOn` is actually on — omitted
+  (`undefined`) otherwise, letting the shared helper's own default apply.
+- **"Format text and format textbox"**: text objects gained `bold` (default true — matches every
+  text object drawn before this feature, which was hardcoded 700-weight, so nothing already saved
+  changes appearance), `italic` (default false) and `boxBorder` (an optional stroke around the box,
+  in the object's own colour/width — Fill colour/transparency were already covered by the existing
+  shared Fill group, since `fillableType()` already includes `'text'`). Two new toggle buttons
+  (Bold/Italic) + a Border checkbox sit in the text-format toolbar group, following the file's own
+  "edit the selection if one exists, else set the default for the next new object" convention every
+  other markup control already uses (`syncTextRow()` reflects whichever applies). The live-typing
+  overlay mirrors bold/italic/border while typing, so what's being typed looks like what will render.
+
+**5 — "+ Add media" dropdown no longer leaks across screens.** ⚠️ Real bug: `_leavePhotosScreen()`
+cleared the batch-selection toolbar on leaving the Photos screen but never closed the **`#pp-addmenu`
+dropdown itself** — hiding only the button that opens it, not the (`position:absolute`) menu, so a
+menu left open when switching to Presentations/Plans stayed visibly open on top of the new screen.
+Now force-closed (`addMenu.hidden = true`) in the same cleanup pass.
+
+**6 — Presentations header reordered.** `renderSlides()`'s header now renders in the order Back
+button → Presentation Details (date/description/slide-nav) → the action-button cluster
+(Preview/Download/Sort/Archive/Edit/Delete), matching the owner's explicit ordering. The back button
+(`#ppr-slide-back`) moved from the tail of the action cluster to the front of the whole header row;
+`wirePresActs()` updated to match; no permission/gating logic changed.
+
+### Verified
+
+**776 checks green** (was 757 before this round — 19 new, all genuinely executing the shipped
+`textBoxFillColor`/`drawMarkupObjects` via a fake canvas-2D recorder that tracks `font`/`fillRect`/
+`strokeRect` calls, not just regex-matched): confirms a brand-new text object (no `fill` key) now
+draws its background box where the pre-fix code drew none; an explicitly-off object (`fill:false`)
+still correctly draws nothing; bold/italic produce the right CSS font string; `boxBorder` draws (and
+its absence omits) a stroke; the live-typing overlay and the final render read the identical shared
+helper; the new Bold/Italic/Border controls exist, are wired to the "selection, else default"
+convention, and are styled. Plus the existing suite for items 1/2/3/5/6 re-confirmed unaffected. `node
+--check` clean on all three touched JS files; 0 NUL bytes across every touched file; CSS braces
+balanced (526/526); 0 duplicate DOM ids (82 unique); function-set diff against the prior commit shows
+**0 functions lost**, only the intentional new additions (`textBoxFillColor`, `applyTextStyleLive`,
+plus item 1's `photosNeedingThumb`/`syncGenThumbsBtn`/`updateProg`).
+
+⚠️ **The two pre-existing, unrelated test failures from before this round are unchanged** (confirmed
+via `git stash` before starting): `pane() reads each photo's own trade/works/location` and `every
+#fff use sits under a documented fixed-colour selector — [".ppr-panelabel.is-current"]`. Neither is
+touched by this round's six items; left as-is rather than silently "fixed" as a drive-by.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. No live
+click-through of the "Generate thumbnails" batch backfill, the Add Text overlay's real on-canvas
+typing with the new formatting controls, or the reordered Presentations header, in a real browser.
+
+`module.css/js`, `ppr.js` → `?v=20260901a`; `MODULE_V` (via `modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260901j`.
+
 ## Plan/Stack month steppers gain an explicit "Live" button (2026-09-01)
 
 Owner's punch-list item #9 ("Build a Stack view like Project Schedule's vertical-stacking… with the
