@@ -200,6 +200,18 @@ now comes back with only legitimate uses (backgrounds, washes, a legend swatch, 
 
 `epc-rcm.css` + both `module.css` → `?v=20260901h`; `MODULE_V` → `20260901k`.
 
+⚠️ **A TENTH defect, on the Cards view, found only once the probe covered card-only classes:**
+`.sm-card-plan-none` — the "No engagement plan yet" notice — used `--pd-warn` as 12px/400 text and
+measured **3.46:1 in light** (`#C77700`; the token is tuned for larger type). It is an *absence*
+notice, so it is now muted text (7.07 / 7.02) with the warn colour moved to a **left rail**, keeping
+the flag visible without colouring the sentence. Same shape as the status-chip fix.
+
+**Final live state, both registers, both themes: 57 surfaces each, 0 AA failures.** Worst margins
+4.67:1 (dark) and 4.83:1 (light), both on the 1st-Priority red — the tightest by design, since that
+fill is the one colour held fixed across themes.
+
+Stakeholder `module.css` → `?v=20260901i`; `MODULE_V` → `20260901l`.
+
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
 Owner, after running both RCM migrations: *"the user cannot access any admin features like add

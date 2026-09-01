@@ -184,7 +184,12 @@ html.pd-dark .sm-kpi.sm-k-satisfy .sm-kpi-val { color:#fbbf24; }
   /* Clamped, not truncated to one line: an engagement plan is a sentence or two
      and the point of the card is to be able to read it. */
   display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-.sm-card-plan-none { color:var(--pd-warn); font-style:italic; background:transparent; padding:0; }
+/* ⚠️ MUTED text with the warn colour on a RAIL, not warn-coloured text. --pd-warn is
+   #C77700 in light mode and measured 3.46:1 here at 12px/400 — it is tuned for larger
+   type. This is an absence notice, so muted reads correctly (7.07 light / 7.02 dark)
+   while the rail keeps the flag visible at a glance. */
+.sm-card-plan-none { color:var(--pd-muted); font-style:italic; background:transparent;
+  padding:0 0 0 8px; border-left:2px solid var(--pd-warn); }
 .sm-card-foot { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:auto;
   padding-top:8px; border-top:1px solid var(--pd-line); }
 .sm-card-cp { font-size:11px; color:var(--pd-muted); font-weight:600; }
