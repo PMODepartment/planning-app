@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901a" />
-  <link rel="stylesheet" href="module.css?v=20260831b" />
+  <link rel="stylesheet" href="module.css?v=20260901d" />
 </head>
 <body>
   <div class="pd-app">
@@ -37,25 +37,22 @@
           <select class="pd-select il-project" id="il-project" title="Project"></select>
         </div>
 
-        <!-- Top-level screens: what was raised is chased in the register, what it
-             taught is kept in the library. Minutes of Meeting moved to its own
-             module (modules/minutes-of-meeting/) — see that module's link back
-             here (the "From MOM" tag) and this module's link out to it (the
-             Lessons Learned screen's "A meeting action item" source). -->
+        <!-- Top-level tabs: what was raised is chased in the register, what it taught
+             is kept in the library, and Dashboard is a THIRD tab now (not a per-screen
+             Dashboard/Log toggle) combining both — every issue regardless of status,
+             plus every lesson, in one place. Minutes of Meeting moved to its own module
+             (modules/minutes-of-meeting/) — see that module's link back here (the
+             "From MOM" tag) and this module's link out to it (the Lessons Learned
+             screen's "A meeting action item" source). -->
         <div class="il-tabs" role="tablist">
           <button class="il-tab active" data-screen="issues">Issues &amp; Concerns</button>
           <button class="il-tab" data-screen="lessons">Lessons Learned</button>
+          <button class="il-tab" data-screen="dashboard">Dashboard</button>
         </div>
 
-        <!-- Tool cluster beside the profile: one labelled primary + icon tools -->
+        <!-- Tool cluster beside the profile: one labelled primary + icon tools. The
+             Dashboard/Log toggle that used to live here is gone — Dashboard is a tab now. -->
         <div class="il-topbar-tools">
-          <!-- Report / Log is a PRESENTATION switch, not a filter: the same records
-               either as one readable record at a time (what gets reported) or as the
-               scannable table (what gets worked through). -->
-          <div class="il-viewtoggle" id="il-viewtoggle" hidden>
-            <button type="button" data-view="dashboard" class="on">Dashboard</button>
-            <button type="button" data-view="log" id="il-view-log">Log</button>
-          </div>
           <button class="pd-btn pd-btn-primary il-tb-labeled" id="il-new" title="Log a new issue">+ New issue</button>
           <span class="il-tb-sep" id="il-sep"></span>
           <button class="pd-btn" id="il-refresh" title="Reload">
@@ -91,18 +88,21 @@
 
           <div class="il-kpis" id="il-kpis"></div>
 
-          <!-- REPORT: one issue at a time, laid out the way the Power Apps
-               "View Open Issues" screen reports it — status panel beside the
-               issue / cause / corrective action. This is the default. -->
-          <div id="il-issues-view"></div>
-
-          <!-- LOG: the register as a table. Kept, because scanning ten issues for
-               the one you want is a different job from reading one of them. -->
-          <div id="il-issues-log" hidden>
+          <!-- LOG: the register as a table — the default now (Dashboard moved to its
+               own tab; there is nothing left to toggle to from here). Scanning ten
+               issues for the one you want is a different job from reading one of them,
+               which is what the DETAIL drill-down (below) is for. -->
+          <div id="il-issues-log">
             <div class="pd-card" style="padding:0;overflow:auto;">
               <table class="pd-table il-table" id="il-table"></table>
             </div>
           </div>
+
+          <!-- DETAIL: one issue at a time, laid out the way the Power Apps "View Open
+               Issues" screen reports it — status panel beside the issue / cause /
+               corrective action. A drill-down reached from the log or the Dashboard
+               tab, hidden until then. -->
+          <div id="il-issues-view" hidden></div>
         </div>
 
         <!-- ================= Lessons Learned ================= -->
@@ -119,6 +119,15 @@
           <div class="il-kpis il-kpis-2" id="il-lkpis"></div>
           <div id="il-lessons-view"></div>
         </div>
+
+        <!-- ================= Dashboard =================
+             ⚠️ ONE combined analytics screen for both registers — every issue
+             regardless of status (open AND closed), plus every lesson, together.
+             Has no filter bar of its own; see renderDashboardScreen() in module.js
+             for why it deliberately ignores the Log screens' own filters. -->
+        <div id="il-screen-dashboard" hidden>
+          <div id="il-dashboard-view"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -133,7 +142,7 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260831b"></script>
+  <script src="module.js?v=20260901d"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -142,9 +151,9 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'issues-lessons', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
-      // Issues & Concerns / Lessons Learned as a Project-Schedule-style dropdown
-      // instead of a flat tab row (kept from before the Minutes of Meeting split —
-      // still worth it at 2 tabs, matching every other module's chrome).
+      // Issues & Concerns / Lessons Learned / Dashboard as a Project-Schedule-style
+      // dropdown instead of a flat tab row (kept from before the Minutes of Meeting
+      // split — still worth it at 3 tabs, matching every other module's chrome).
       UI.tabsToDropdown('.il-tabs');
       IssuesLessons.init(user, profile);
     });
