@@ -1,3 +1,64 @@
+## ⚠️ REGRESSION, same day: adoption built 1,584 TOP-LEVEL nodes — and my own harness said it was fine (2026-09-01) — fmlozano
+
+Owner, after running the migration and re-importing: *"See WBS Manager there are stray WBS... I think
+the import and replace doesn't affect the existing WBS"*, and vertical stacking still empty. The WBS
+Manager showed **1,632 nodes** listed as bare codes — `951 Wet Works`, `952 Window Installation` —
+which `computeWbsCodes()` only ever produces for a **top-level** node.
+
+### The regression
+
+The previous prompt's fix stopped writing a custom `code` for a purely numeric segment (correctly —
+it was mangling every path). But one line downstream still READ that column:
+
+```js
+(ins.data || []).forEach(function (n) { nodeByCode[n.code] = n.id; WBS_NODES.push(n); });
+```
+
+`n.code` is now **NULL** for every node in a P6 import, so `nodeByCode` was filled under the single
+key `"null"` and not one dotted code was ever registered. Cascade:
+
+1. depth 2 looked up `nodeByCode["1"]`, got nothing, inserted with `parent_id = NULL` — and so did
+   every level below. **1,584 of 1,623 nodes landed at the top level.**
+2. the link step resolves `nodeByCode[r.wbs]`, so it matched nothing: **11 of 1,626 summary rows
+   linked** (only the pre-existing locked skeleton).
+3. `wbs_link_activity_parents` builds its code → node map FROM those summary rows, so it had an
+   almost empty map — **11 of 4,393 activities attachable**. That is why running the migration
+   changed nothing and Vertical Stacking still read "0 execution-phase activities stacked".
+
+**Fix:** remember the dotted code per payload, keyed on `(parent_id, sort_order)` — unique within the
+adopt and returned on the inserted row — instead of reading it back off `n.code`. Not keyed on
+response order, which PostgREST does not promise.
+
+### ⚠️⚠️ WHY THE PREVIOUS PROMPT'S "VERIFIED" WAS WORTHLESS HERE
+
+The harness **reimplemented** `wbsAdopt`'s insert loop instead of executing it, and wrote the line the
+way it *ought* to be — `nodeByCode[code] = id`, using the local dotted code. So the harness was
+correct and the shipped code was not, and every number it produced (0 drift, 4,393 linked, 3,874
+`isExecPhase`) described a program that does not exist. The module's own log has said *"never
+reimplemented"* since the .xer work began; this is what happens when one line breaks that rule.
+
+`adopt.js` now executes the SHIPPED `wbsAdopt()` against a fake PostgREST that **returns inserted rows
+in a shuffled order on purpose**, and it asserts the tree it actually built. Its first version passed
+the pre-fix code too — because `build.js` had already adopted the tree, so `wbsAdopt` inserted nothing
+and the run was vacuous. It now hard-asserts `WBS_NODES.length === 8` (skeleton only) before running.
+
+### Verified, by executing the shipped function against both files
+
+| | pre-fix | fixed |
+|---|---|---|
+| top-level nodes (Avesta, expect 5) | **1,584** | **5** |
+| summary rows linked | 11 of 1,626 | **1,626 of 1,626** |
+| activities the heal can attach | 11 of 4,393 | **4,393 of 4,393** |
+| code drift | 0 | 0 |
+
+Strevi, fixed: **5** top-level, **12,467 of 12,467** linked, **16,393 of 16,393** attachable, 0 drift.
+The pre-fix run reproduces the owner's screenshot, so the harness bites.
+
+⚠️ **Recovery for a project already adopted with the broken build:** its stray top-level nodes are
+still there, and their computed codes (`1`…`1632`) now COLLIDE with the real depth-1 codes, so a
+re-adopt on top of them resolves parents onto garbage. The tree must be cleared first — see the
+Reset WBS work in the next entry.
+
 ## Imported activities were never attached to the WBS tree — "0 activities", and an empty Vertical Stacking (2026-09-01) — fmlozano
 
 Owner, on Avesta: *"The WBS isn't allocating it properly to its correct WBS"* (WBS Manager screenshot:

@@ -18892,7 +18892,7 @@
     if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
-    var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [];
+    var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [], codeByKey = {};
     // Activities indexed by their dotted code, once — see the note at the link step below.
     var actsByCode = {};
     rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && a.wbs) (actsByCode[String(a.wbs)] = actsByCode[String(a.wbs)] || []).push(a); });
@@ -18932,13 +18932,34 @@
         // reproduce, so that — and only that — is kept as a custom code, stripped to its own segment.
         var ownSeg = code.split('.').pop();
         if (!/^\d+$/.test(ownSeg)) { pl.code = ownSeg; pl.code_custom = true; }
+        // ⚠️⚠️ REMEMBER WHICH DOTTED CODE THIS PAYLOAD IS FOR — the inserted row cannot tell us.
+        // The loop below used to register each new node as `nodeByCode[n.code]`, which worked ONLY
+        // while `code` carried the whole dotted path. Now that a purely numeric segment is not
+        // custom (see the note above), `n.code` comes back NULL for every node in a P6 import — so
+        // `nodeByCode` was filled under the single key "null" and the real codes were never
+        // registered. Consequences, measured live on Avesta after a Replace re-import:
+        //   * depth 2 looked up nodeByCode["1"], got nothing, and was inserted with parent_id NULL
+        //     — and so was every level below it: 1,623 nodes ALL AT THE TOP LEVEL, which is why the
+        //     WBS Manager listed bare codes 1…1632 ("951 Wet Works") instead of a tree;
+        //   * the link step below resolves `nodeByCode[r.wbs]`, so it matched nothing and NO summary
+        //     row was linked — which in turn left `wbs_link_activity_parents` with an empty
+        //     code -> node map, so the activity heal found nothing to attach and Vertical Stacking
+        //     still drew "0 execution-phase activities stacked" even after the migration was run.
+        // Keyed on (parent_id, sort_order), which is unique per payload within this adopt and is
+        // returned on the inserted row — NOT on response order, which PostgREST does not promise
+        // (the same reason the .xer importer matches activity-code values back by (type,value)).
+        codeByKey[(parentId || '') + '|' + so] = code;
         return pl;
       });
       for (var c = 0; c < payloads.length; c += 500) {
         setLoading('Adopting WBS tree… level ' + depths[di] + ' (' + Math.min(c + 500, payloads.length) + '/' + payloads.length + ')');
         var ins = await sb().from('wbs_nodes').insert(payloads.slice(c, c + 500)).select();
         if (ins.error) { if (!silent) UI.toast('Adopt failed: ' + ins.error.message, 'error'); return 0; }
-        (ins.data || []).forEach(function (n) { nodeByCode[n.code] = n.id; WBS_NODES.push(n); });
+        (ins.data || []).forEach(function (n) {
+          var dotted = codeByKey[(n.parent_id || '') + '|' + n.sort_order];
+          if (dotted) nodeByCode[dotted] = n.id;
+          WBS_NODES.push(n);
+        });
       }
       group.forEach(function (r) {
         var id = nodeByCode[String(r.wbs)]; if (!id) return;
