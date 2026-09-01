@@ -28,6 +28,18 @@
 -- ⚠️ SECURITY DEFINER with a pinned search_path, like every other helper here
 -- (an RLS-filtered sub-select inside a policy is how this schema acquired a
 -- stack-depth recursion bug once — see 2026-06-18-fix-rls-recursion.sql).
+--
+-- ⚠️ DROP FIRST. This was originally a safe bare `create or replace` (this file
+-- was the only definition of app_people() in existence), but
+-- 2026-08-28-people-directory.sql later WIDENS this same function's return
+-- type to 5 columns. On any database where that later migration has already
+-- applied, running this file again — e.g. a full from-scratch rebuild that
+-- doesn't know what has already run — hits Postgres's "cannot change return
+-- type of existing function" (42P13), because CREATE OR REPLACE cannot narrow
+-- a function's OUT columns back down. Dropping first makes this file safe
+-- regardless of which order its sibling has or hasn't already run in.
+drop function if exists app_people();
+
 create or replace function app_people()
 returns table (id uuid, name text, department text)
 language sql

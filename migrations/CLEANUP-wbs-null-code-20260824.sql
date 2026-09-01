@@ -1,6 +1,18 @@
 -- Cleanup: WBS-Summary rows with no dotted code (NULL `wbs`).
 -- Written 2026-08-24. RUN THIS IN THE SUPABASE SQL EDITOR (it needs DDL for the backup table).
 --
+-- ⚠️ RENAMED 2026-09-01 from `2026-08-24-cleanup-null-code-wbs-rows.sql` (the historical
+-- CLAUDE.md changelog entries still use that old name — this is the same file). Deliberately
+-- NOT date-prefixed any more, same reason as `RUN-OUTSTANDING-2026-08-28-to-08-31.sql`:
+-- `gen-build.js`/`gen-verify.js` glob every `\d{4}-\d{2}-\d{2}-*.sql` file into the generated
+-- `supabase-build.sql`, and this is not a schema migration to sweep in there — it is a
+-- ONE-TIME, DESTRUCTIVE data cleanup (a real DELETE) with its own manual verification steps,
+-- already run and confirmed successful (see CLAUDE.md, 2026-08-24 entries: BAU101
+-- 112 -> 30 summary rows, as predicted). Its step 1 fails loudly on a second run BY DESIGN
+-- ("which is the point") — that must not be silently patched into an `if not exists` just to
+-- make it fit the bulk-build pattern; a destructive script re-announcing "I already ran" is
+-- the correct behavior, not a bug.
+--
 -- WHAT THESE ROWS ARE. They were written by the cross-project bug closed in the same day's commit
 -- "WBS: close the cross-project summary-row writer": `pid` is set early in load() while WBS_NODES is
 -- replaced later, so a projector pinned the NEW project id against the OLD project's nodes, and

@@ -1,5 +1,99 @@
 # Module: issues-lessons
 
+## 2026-09-01 (c) — Filters behind a button, click-to-open rows, step-through, detailed history, and the champion-concatenation bug
+
+Owner's 7-item list for Issues & Concerns. Items 1–2 were already delivered in the 2026-08-31(b)
+rebuild below (the combined Dashboard tab, and Date Resolved only required at closure) — checked
+against the live code and confirmed still present, not redone. This entry is items 3–7. **No
+migration.**
+
+### Item #3 — the filter bar is now called up by a button
+`.il-filters` (renamed `#il-issues-filters`) on the Issues screen defaults `hidden`, revealed by a
+new `.il-filt-toggle` button (`#il-filt-toggle`) that just flips `hidden` — the panel stays open
+until toggled shut again, and nothing in `iFilters` itself changes when it closes. ⚠️ **A closed
+panel must not hide an active filter from view entirely** — `renderIssues()` already computes
+`anyF` (a filter narrower than the "Open" default) for the Clear-filters button; the same flag now
+also toggles a small dot (`.il-filt-toggle.has-active`) on the toggle button, so "Open items only"
+narrowing the log stays visible even with the panel closed. Scoped to the Issues screen only, per
+the literal ask — the Lessons Learned filter bar is untouched.
+
+### Item #4 — no more edit icon; the whole row opens the issue
+`renderIssuesLog()`'s `<tr>` now carries `data-open="<id>"` and a click handler
+(`openIssue(tr.dataset.open)`), the same pattern this file already used for the Dashboard's issue
+list and the Lessons log. The separate `✎` edit button and its "—"/"raised by someone else" dash
+are gone. ⚠️ **This also closes a real pre-existing gap**: a row you cannot edit
+(`canEditRow(r)` false) previously had NO way to open it at all from the log — it now opens in
+`issDetailHTML`'s existing read-only (`ro`) rendering, so a viewer or another department can finally
+read a record from the log instead of only ever reaching it via the Dashboard's summary list. Only
+the delete icon (planner-only) remains, in its own cell, with `e.stopPropagation()` so clicking it
+does not also open the row underneath it. The actions `<th>`/`<td>` is now gated on `isSteward`
+rather than `canWrite` (the only thing left in it), and the "no results" row's colspan follows the
+same gate. Dead `.il-noedit` CSS rule removed (verified zero remaining references — a same-named
+rule in `minutes-of-meeting/module.css` is a separate file/module and untouched).
+
+### Item #5 — step through the filtered list from inside the detail view
+A Prev/Next control (`issStepHTML`/`stepIssue`) beside "← Back to Issues", walking
+`issuesFiltered()` — the SAME set the log/filter bar is currently showing, never all of `rows` — so
+stepping tracks whatever filter is applied. ⚠️ **Never offered for an unsaved draft (`_issNew`)**,
+which has no position in that list yet. ⚠️ **Degrades to a plain note ("Not in the current filter")
+rather than guessing a neighbour** when the open record has since fallen out of the active filter —
+e.g. closing an issue while "Open items only" is set. Stepping reuses `openIssue()` exactly as a row
+click would, so permission handling and history loading behave identically either way.
+
+### Item #6 — the history is now a field-by-field before → after record
+`logHistory()` already snapshotted the WHOLE row before every change (see the 2026-08-31 build) —
+the gap was `historyHTML()` only ever rendering the action label and a free-text note, never the
+snapshot itself. New `issHistDiffHTML(before, after)` walks every field the register actually asks
+for (Status, Department, Champion(s), Issue, Caused By, Corrective Action, Reason for Hold, Closure
+Report, Date Presented, Date Resolved) and prints only the ones that changed, as "Field: old →
+new". ⚠️ **Each entry's "after" state is reconstructed from its NEIGHBOUR, not stored separately** —
+entry i's after-state is the live row for the most recent entry, or the next-more-recent entry's
+own "before" snapshot otherwise (the list is newest-first), since a change's before-state IS the
+previous change's after-state. ⚠️ **A `create` entry has no "before" to diff against** (`logHistory`
+is passed `null` there) — it instead lists what was actually captured at creation, with no arrow, so
+"all issue details must be captured and saved" holds for the very first entry too. Champion is
+diffed as the already-resolved display TEXT (`champion`, kept in sync with `champion_ids` by
+`championText()` on every save), not the raw uuid array — readable, not clutter.
+
+### Item #7 — the champion-concatenation bug
+⚠️ **Root cause: the free-text box was seeded with the FULL saved `champion` string, not just the
+typed extra.** `champion` on a saved row is `championText(ids, extra)` = resolved names + extra,
+joined — but `issDetailHTML` fed that whole string back into the picker's free-text input on every
+render. So the box for an issue with Champion(s) "Alice Cruz" plus typed "External Consultant" was
+seeded with `"Alice Cruz; External Consultant"`, and the next "Update Issue" recomputed `champion =
+championText(ids, "Alice Cruz; External Consultant")` = `"Alice Cruz; Alice Cruz; External
+Consultant"` — doubling on every single click with no interaction needed, exactly the reported
+behaviour. New `championExtra(ids, champion)` reverses `championText`: it strips out any
+`;`-separated segment that exactly matches one of the CURRENTLY resolved names for `ids` (not by
+position, so it survives the ids being reordered) and keeps the rest, which is the genuine typed
+extra — including legacy free-text-only rows (`ids` empty), where every segment survives untouched.
+⚠️ **The identical bug existed in `minutes-of-meeting/module.js`'s copy-pasted People Picker**, for
+the action-item Responsible field (`owner`/`owner_ids`) — same fix applied there. That module's own
+Required/Optional/Actual attendee pickers were checked and are NOT affected: they store `{ids,
+text}` as a jsonb pair where `text` is already just the raw typed extra (read straight off the
+free-text box at save time, never run through `championText`), so nothing there needed changing.
+
+**Verified.** 10 checks on `championExtra` (a 5-repeated-"Update"-click simulation stays
+byte-stable at `"Alice Cruz; Bob Reyes; External Consultant"` instead of doubling every pass, and a
+reproduction of the pre-fix behaviour against the same inputs shows the doubling for comparison), 15
+on `issStepHTML`/`stepIssue` (boundary disabling, the filtered-out "Not in the current filter" case,
+and that stepping past a boundary is a no-op), 16 on `issHistDiffHTML` in isolation plus 10 more on
+`historyHTML`'s full create→update→hold→close chaining (including that the `create` entry correctly
+shows the ORIGINAL value of a field later edited in an update, proving the after-state
+reconstruction walks the chain rather than just diffing against the live row). All sliced from the
+shipped functions, never reimplemented. `node --check` clean on both module.js files; 0 NUL bytes;
+CSS braces balanced (239/239); **function-set diff against HEAD: 0 lost, 6 added** in issues-lessons
+(`championExtra`, `histNorm`, `histFieldHTML`, `issHistDiffHTML`, `issStepHTML`, `stepIssue`) and 1
+added in minutes-of-meeting (`championExtra`).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the filter toggle, row-click,
+step-through, or the champion-picker fix against real data.
+
+`module.css/js?v=20260901e` (issues-lessons); minutes-of-meeting `module.js?v=20260901b` (its
+`module.css` is unchanged this pass); `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/
+`modules.html`) → `20260901d`.
+
 ## 2026-08-31 (b) — Issues & Concerns rebuilt: dashboard, status workflow + history, required fields;
 ## Lessons Learned mirrors it for closed issues; three bugs fixed
 

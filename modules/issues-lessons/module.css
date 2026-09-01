@@ -61,7 +61,18 @@
 .il-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
 .il-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 
-/* ---- Filter bar ---------------------------------------------------------- */
+/* ---- Filter bar ----------------------------------------------------------
+   ITEM #3: filters are called up by a button, not shown by default. */
+.il-filtbar { margin-bottom: 10px; }
+.il-filt-toggle { position: relative; }
+.il-filt-toggle.is-open { background: var(--pd-bg); border-color: var(--pd-red); color: var(--pd-red); }
+/* A filter narrower than the Open default still narrows the log while the panel is
+   collapsed — this dot is the only signal of that once the panel is shut again. */
+.il-filt-toggle.has-active::after {
+  content: ''; position: absolute; top: 5px; right: 5px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--pd-red); border: 1.5px solid var(--pd-card);
+}
 .il-filters {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;
   background: var(--pd-card); border: 1px solid var(--pd-line);
@@ -124,9 +135,10 @@
 
 /* "Raised at a meeting" — the reciprocal of the schedule module's Minutes of Meeting.
    Deliberately quieter than the lesson tag: it is provenance, not a state to act on. */
-/* D1: a row this user may not edit, and the caption saying whose it is. Both are
-   quiet — a permission boundary should read as information, not as an error. */
-.il-noedit { display:inline-block; width:26px; text-align:center; color:var(--pd-muted); }
+/* D1: the caption saying whose row it is, in the detail view. Quiet — a permission
+   boundary should read as information, not as an error. (There is no per-row "you can't
+   edit this" dash in the LOG any more — item #4 made the whole row clickable instead,
+   and issDetailHTML renders it read-only there when canEditRow(r) is false.) */
 .il-raisedby { margin:6px 0 0; font-size:12px; color:var(--pd-muted); }
 .il-momtag { display:inline-flex; align-items:center; gap:4px; margin-top:4px; margin-left:6px;
   font-size:10.5px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
@@ -143,6 +155,9 @@
 .il-aging { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .il-aging.is-hot { color: var(--pd-bad); font-weight: 700; }
 
+/* ITEM #4: the whole log row opens the issue now (hover highlight already comes from
+   the shared .pd-table tr:hover rule — this only needs the cursor). */
+.il-clickrow { cursor: pointer; }
 .il-rowacts { white-space: nowrap; }
 .il-iconbtn {
   width: 30px; height: 30px; padding: 0; border: 1px solid var(--pd-line);
@@ -438,16 +453,6 @@
    report someone is presenting from into a different-looking screen mid-meeting.
    Its controls sit on a light surface with dark ink for the same reason.
    ========================================================================== */
-.il-viewtoggle { display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
-.il-viewtoggle[hidden] { display: none; }
-.il-viewtoggle button {
-  border: 0; background: var(--pd-card); color: var(--pd-muted);
-  font: 600 12px/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
-}
-.il-viewtoggle button + button { border-left: 1px solid var(--pd-line); }
-.il-viewtoggle button:hover:not(.on) { background: var(--pd-bg); color: var(--pd-ink); }
-.il-viewtoggle button.on { background: var(--pd-red); color: #fff; }
-
 .il-iss-split { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
 
 /* ⚠️ A PAIRED red for the panel's accent text, because one value cannot serve both
@@ -537,7 +542,6 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 
 @media (max-width: 700px) {
   .il-iss-panel { flex: 1 1 100%; }
-  .il-viewtoggle button { min-height: 44px; }
   /* ⚠️ ITEM #14: on a narrow screen the status group follows the issue / caused-by /
      narrative body instead of leading it — `.il-iss-split` is a flex row wrapping to a
      column here (each child at 100% width), so `order` alone reorders them without
@@ -556,6 +560,18 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   color: var(--pd-muted); font-size: 13px; font-weight: 600;
 }
 .il-backlink:hover { color: var(--pd-ink); }
+
+/* ITEM #5: step through the filtered list from inside the detail view. */
+.il-detail-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.il-detail-nav .il-backlink { margin-bottom: 0; }
+.il-steps { display: inline-flex; align-items: center; gap: 8px; }
+.il-stepnote { font-size: 12px; color: var(--pd-muted); white-space: nowrap; }
+.il-steps .il-iconbtn { width: 26px; height: 26px; font-size: 16px; line-height: 1; }
+.il-steps .il-iconbtn:disabled { opacity: .35; cursor: default; }
+.il-steps .il-iconbtn:disabled:hover { background: var(--pd-card); }
 
 /* ---- Status workflow: Put On Hold / Close Issue reveal panels (items #10-13) --
    Inline, not a modal — matches this app's established "no pop-ups" convention
@@ -579,16 +595,25 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-history-action { font-weight: 700; font-size: 12.5px; color: var(--pd-ink); }
 .il-history-when { font-size: 11.5px; color: var(--pd-muted); }
 .il-history-note { margin-top: 4px; font-size: 12.5px; color: var(--pd-ink); white-space: pre-wrap; }
-
-/* ---- Dashboard (items #1/#16) — a real analytics landing page, not a
-   single-record reading pane ------------------------------------------------ */
-.il-dash-tile {
-  display: inline-flex; flex-direction: column; gap: 2px; padding: 12px 20px;
-  border-radius: 10px; background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-left: 4px solid var(--pd-red); margin-bottom: 14px;
+/* ITEM #6: the field-by-field before -> after list under each history entry. */
+.il-history-diff {
+  list-style: none; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px dashed var(--pd-line);
+  display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--pd-muted);
 }
-.il-dash-tile-val { font-size: 28px; font-weight: 800; line-height: 1; color: var(--pd-ink); }
-.il-dash-tile-label { font-size: 12px; color: var(--pd-muted); text-transform: uppercase; letter-spacing: .04em; }
+.il-history-diff strong { color: var(--pd-ink); font-weight: 600; }
+.il-history-diff em { font-style: normal; opacity: .6; }
+
+/* ---- Dashboard tab — ONE combined analytics screen for Issues & Concerns AND
+   Lessons Learned (every status, every lesson — see renderDashboardScreen() in
+   module.js), not a per-screen Dashboard/Log toggle any more. ------------------ */
+/* An uppercase eyebrow separating the two halves of the combined page, matching
+   this app's established KPI-section-label convention. */
+.il-dash-sec-head {
+  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--pd-muted); margin: 18px 0 10px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--pd-line);
+}
+.il-dash-sec-head:first-child { margin-top: 0; }
 .il-dash-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; align-items: start; }
 .il-dash-card { padding: 14px 16px; }
 .il-dash-card h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
