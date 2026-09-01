@@ -1,5 +1,193 @@
 # Module: issues-lessons
 
+## 2026-09-01 (g) — Dashboard tile sizing/legends, list ordering, Lessons Learned reworked to embed the source issue, sortable columns
+
+Owner's 10-item list, verbatim: (1) the three dashboard chart tiles should share one height;
+(2) legends move to the top right to compact the view; (3) Open Issues sits above Lessons Learned;
+(4) the Lessons Learned tile carries a count of lessons; (5) the issues list label reads "X open of
+X total issues" instead of "X issues"; (6) the new-lesson form's labels all say "lesson", never
+"issue"; (7) the Lessons Learned list drops "Open the Issue", and opening a lesson shows the lesson
+on top with the full issue below it (details, other lessons, update history); (8) the Lessons
+Learned list matches the Issues list's shape — Department / Lessons / Date Resolved / Aging;
+(9) clicking a column header on either list cycles ascending → descending → natural order;
+(10) the Lessons Learned logo + label are dropped — the screen dropdown already names it.
+
+### Items 1/2/3/4/5 — the Dashboard tiles
+
+⚠️ **Height equality had to be a fixed box, not `align-items:stretch` alone.** `.il-dash-card`
+already stretched to match its row-mate under CSS Grid, which is why the earlier "size the Status
+tile to its content" pass (entry (f)) had them at different heights on purpose — this round asks
+for the opposite, so each card now carries a `.il-dash-cardhead` (title + legend, sized to its own
+content) over a fixed **340px `.il-dash-cardbody`**, the same box for the donut, the department bar
+and the champion bar regardless of how many rows/slices each one holds. The donut centres inside it
+(`.il-dash-cardbody-center`); the two bar charts scroll inside it when their row count would
+otherwise force the card taller (`.il-dash-cardbody-scroll`) — a bar chart with many departments no
+longer stretches its card past its siblings, it scrolls its own body instead.
+
+⚠️ **The legend moves to the card's header row, not just "up."** `barLegendTop`/`statusLegendTop`
+render inline beside the title (`.il-dash-cardhead` is a flex row, title left / legend right), so
+the chart body itself is legend-free — freeing real vertical room in the fixed 340px box rather
+than shrinking the chart to make space for a legend still sitting inside it.
+
+⚠️ **Open Issues now renders before Lessons Learned in source order**, not merely visually
+reordered with CSS — the two full-width tiles at the foot of the dashboard are built by one
+function each, called in the new order, so there is no `order:` override to drift out of sync with
+a future edit.
+
+⚠️ **The Lessons Learned tile reuses the same `.il-dash-fulllist-head`/`-count` pair Open Issues
+already had**, rather than inventing a second count style — "N lessons" sits in the same visual slot
+"N open of M total issues" does, so the two full-width tiles read as one family.
+
+⚠️ **The issues-list label change is a wording fix, not a new count.** `fullIssueListHTML` already
+received the filtered list; it just never received the *unfiltered total* to compare against. The
+function signature widened to take a second `totalCount` argument (both call sites — the Dashboard
+tile and wherever else it's built — pass the true unfiltered count), and the label became
+`"<open> open of <total> total issue(s)"`.
+
+### Item 6 — lesson-form labels no longer say "issue"
+
+⚠️ **The lesson editor was literally the issue editor with an `opts.excludeLessonId` filter** —
+`issDetailHTML(r, opts)` renders one shared template for both screens, so "toolbar state text",
+section headings ("Issue" / "Caused By" / "Date Raised"), and their placeholders all read as if
+the row being edited were an issue, even when it's a lesson's *linked* issue shown for context, or
+— per item 7 below — the issue is now embedded ABOVE the lesson rather than the other way around.
+A new `forceClose`-style gate (reusing the existing conditional-rendering shape the function already
+had for its Close-workflow copy) swaps every one of those strings to their lesson-facing equivalent
+("How It Was Resolved" / "What Happened" / "Root Cause" / "Date Captured") whenever the template is
+rendering in lesson context, so the same markup serves both screens without duplicating the layout.
+
+### Item 7 — opening a lesson now embeds its source issue, not the reverse
+
+⚠️ **This is the largest structural change in the batch, and it deliberately reuses the Issues
+screen's own renderer rather than building a second one.** `renderLessonDetailView(host)` is
+rewritten to render the lesson on top (`lessonDetailHTML`) and, when the lesson has a linked issue,
+the **full issue detail below it** — reusing `issDetailHTML`/`wireIssues` verbatim so the embedded
+issue gets the exact same Save/Hold/Reopen/Close/Delete affordances, History section and "other
+lessons on this issue" list the real Issues screen has, rather than a second, thinner read-only copy
+that would drift the moment either was edited.
+
+⚠️ **The embed borrows the Issues screen's own global state (`_issSel`/`_issMode`/the workflow
+toggles), and that state is saved and restored around the borrow.** Those globals are what every
+workflow button and `refreshIssueView()` call already act on, so reusing them (rather than adding a
+parallel `_embedIssSel`) is what makes the embedded buttons work correctly with zero new plumbing —
+but it also means viewing a lesson would silently overwrite whatever issue the real Issues screen
+had open. New `_issEmbedSaved` captures `{sel, mode, hold, close, reopen}` the moment a lesson's
+embed diverges from what Issues already had selected, and `switchScreen()` restores it the moment
+the Lessons screen is actually left — so returning to Issues shows what was really open there, not
+whatever a lesson happened to link to.
+
+⚠️ **The two screens' hosts are cleared on every screen switch**, not just repainted over — without
+this, reusing `issDetailHTML`'s ids inside `#il-lessons-view` while `#il-issues-view` still held its
+own copy from a previous session state would produce **duplicate DOM ids** (`il-iss-back`,
+`il-champ-list`, etc.), exactly the class of defect this module's own established verification
+checklist checks for. `switchScreen()` now blanks whichever of `#il-issues-view`/`#il-lessons-view`
+is NOT the target screen.
+
+⚠️ **History repaints on the embedded issue too, not only on the real Issues screen.**
+`loadIssueHistory`'s completion callback only ever repainted when `_issMode === 'detail'` — true
+only on the real screen — so the embedded issue's History section would have been stuck reading
+"Loading history…" forever. The condition is widened to also match
+`screen === 'lessons' && _lessMode === 'detail'`, and the fetch itself is triggered on entry to the
+lesson-detail view (fresh switch always fetches; revisiting the same lesson only fetches if not
+already cached, so re-renders don't refetch on every incidental repaint).
+
+⚠️ **Every `renderIssues()` call inside the workflow/save functions (hold, reopen, close, save,
+delete-lesson-quick-modal) is now `refreshIssueView()`** — a one-line dispatcher that repaints
+Lessons when that's the active screen and Issues otherwise, so saving/closing/reopening an issue
+from inside the embedded view repaints the Lessons screen it's actually showing on, rather than
+silently repainting a hidden `#il-issues-view` nobody is looking at. Left untouched: 8 other
+`renderIssues()` call sites that are already screen-aware by construction (filter handlers scoped
+to `#il-f-*`, the top-level dispatcher, `refreshIssueView()`'s own else-branch, and the
+open/back/new-issue screen-entry functions) — each was checked individually before being excluded.
+
+⚠️ **Item 10's "no Open the Issue button" falls out of this for free** — the Lessons Learned list
+never had a per-row navigation button pointed at the issue in the first place (it links by opening
+the lesson itself, which now shows the issue inline); nothing needed removing there beyond
+confirming it was never emitted, so this batch's #7 and #10 are one and the same fix from two
+different angles.
+
+### Item 8 — the Lessons Learned list matches the Issues list's shape
+
+`renderLessonsLogView(host)` is rewritten from a card grid into a `<table>` with the same four
+columns the Issues list already has where they apply to a lesson: **Department / Lessons / Date
+Resolved / Aging**. New helpers:
+
+```js
+function lessonResolvedDate(l) {
+  if (l && l.issue_id) {
+    var r = rows.find(function (x) { return x.id === l.issue_id; });
+    if (r && r.date_resolved) return r.date_resolved;
+  }
+  return null;
+}
+function lessonAgingDays(l) {
+  if (lessonResolvedDate(l)) return 0;
+  return daysSince(l && l.date_captured);
+}
+```
+
+⚠️ **A lesson has no resolution date of its own — it's read through its linked issue.** This
+module's established invariant is that `issues_lessons.date_resolved` is only ever set once
+`status === 'Closed'`, so resolving through the link is both correct and consistent with how
+"resolved" is defined everywhere else in the module. `lessonAgingDays` mirrors `agingDays()`'s own
+shape (0 once resolved, else days-since) via a newly extracted `daysSince()` primitive shared by
+both.
+
+⚠️ **No "Open the Issue" button in the list rows** (item 7's other half) — each row shows
+`lessonSourceText(l)` under the lesson text instead, naming where the lesson came from without a
+navigation control that duplicates clicking the row itself.
+
+### Item 9 — click-to-sort, cycling asc → desc → natural, on both lists
+
+New shared sort infrastructure, applied identically to the Issues log and the Lessons Learned list:
+
+```js
+var _issSort = { key: '', dir: 0 };
+var _lessSort = { key: '', dir: 0 };
+function cycleSort(state, key) {
+  if (state.key !== key) { state.key = key; state.dir = 1; }
+  else if (state.dir === 1) { state.dir = -1; }
+  else { state.key = ''; state.dir = 0; }
+}
+```
+
+⚠️ **Sorting and drag-reorder are mutually exclusive, following this app's own established
+convention** (Drawing Register set this precedent for exactly this conflict) — a sorted column's
+drag handle is blanked (`_issSort.key ? '' : dragGripHTML(r.id)`) and `wireReorder(...)` is only
+called when no sort is active, so a sorted view can't silently corrupt the manual order underneath
+it. A `.il-sortnote` banner ("Sorted by <label> — drag reorder disabled" + a "Restore manual order"
+button) appears whenever a sort is active, on both lists.
+
+⚠️ **Blanks sort last in both directions** (`sortCmp`'s null/undefined/empty-string handling) — an
+issue with no champion or a lesson with no resolution date reads as "unknown," not "earliest" or
+"latest," in either sort direction.
+
+⚠️ **`ISSUE_SORT_EXTRACT`/`LESSON_SORT_EXTRACT` are keyed by the same header labels the columns
+already show**, so `sortThHTML(label, key, state)` renders the arrow (▲/▼) only on the active
+column and every other header stays plain — clicking cycles the SAME column: asc → desc → off,
+never jumping to a different column's sort.
+
+### Verified
+
+Verified structurally after the branch restart below (git-policy — see that section) reapplied
+these edits on top of the merged `origin/main`, not just once before the restart:
+- `node --check` clean.
+- 0 NUL bytes across `module.js`/`module.css`/`index.html`.
+- CSS braces balanced (271/271).
+- 0 duplicate DOM `id=` attributes in `index.html` (38 total).
+- Function-name-set diff against the (post-restart) `origin/main`: **0 functions lost, 9 added**
+  (`applySort`, `cycleSort`, `daysSince`, `lessonAgingDays`, `lessonResolvedDate`,
+  `refreshIssueView`, `sortCmp`, `sortThHTML`, `wireSortHeaders`) — matching the pre-restart run
+  exactly, confirming the branch reset carried the working-tree edits through unchanged.
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing
+constraint for every UI pass in this module. No live click-through of the embedded-issue History
+repaint, the `_issEmbedSaved` save/restore round-trip on a real screen switch, or the click-to-sort
+cycle against real rows.
+
+`module.css/js?v=` → `20260901i`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260901r`.
+
 ## 2026-09-01 (f) — Dashboard cleanup off a screenshot, close-vs-lesson decoupled, and a popup for capturing a lesson from an issue
 
 Owner's 13-item list, verbatim, off a screenshot of the live Dashboard with the duplicate title and
