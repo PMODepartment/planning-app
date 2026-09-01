@@ -212,6 +212,21 @@ fill is the one colour held fixed across themes.
 
 Stakeholder `module.css` → `?v=20260901i`; `MODULE_V` → `20260901l`.
 
+⚠️ **An ELEVENTH, in the module's OWN palette rather than the shared one** — and it only appeared once
+the sweep was widened to the classes the Register tab never renders. `.sm-gm-lab`, the Mendelow map's
+10px/800 cell label, read `--sm-c` (the engagement-approach FILL) on a 15% wash of that same fill:
+**1.70:1 in dark for Monitor, 4.08:1 in light for Keep Satisfied.** Exactly the fill-as-text mistake
+the priority palette had, one file over. `.sm-a-*` now carries `--sm-c` (fill — white on it passes
+5.0–7.6 for all four) and `--sm-t` (text, per theme). **The lesson generalises: any palette that gets
+used as BOTH a fill and a label needs two tokens, and the label one needs two values.**
+
+⚠️ **And a lesson about the sweep itself:** every earlier pass measured what happened to be on the
+Register tab. The Cards and Impact/Influence views contributed two of the eleven defects and were
+invisible until their classes were synthesised into the probe. **Enumerate the stylesheet's classes,
+not the current DOM.**
+
+Stakeholder `module.css` → `?v=20260901j`.
+
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
 Owner, after running both RCM migrations: *"the user cannot access any admin features like add

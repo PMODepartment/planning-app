@@ -7713,6 +7713,52 @@
       return s;
     });
   }
+  // ---- Execution Phase scoping, for the IMPORTERS ---------------------------------------------
+  // ⚠️ Both post-hoc location tools scope to Execution Phase (`locExecScopedActs`) precisely so a
+  // Milestone or a Planning deliverable can never pick up a tower/floor/zone — but the IMPORTERS ran
+  // the same matcher over EVERY leaf in the file, which is where the location breakdown gets dirty
+  // before anyone can see it. Measured on the 4PH Strevi Residences .xer: mapping Tower produced 14
+  // values for 4 real towers — the Milestones branch contributed "Tower Handover", "Building
+  // Watertightness" and "Building Energization" (WBS headings, not places), and the Closeout branch
+  // contributed a SECOND, differently-spelled set of the same four towers ("Tower 1".."Tower 4"
+  // against Execution's "Tower A".."Tower D"), which no spelling merge can reconcile because they
+  // genuinely are different strings for the same building.
+  // The importer knows the scope without asking: the WBS-placement step in the same dialog is where
+  // the planner says which of the file's branches IS the Execution Phase. Falls back to the whole
+  // file (the old behaviour) when nothing is filed there, rather than silently mapping nothing.
+  function locImportScope(leafRecs, wbsPlace, el) {
+    var none = { recs: leafRecs, scoped: false, names: [], codes: null };
+    if (!wbsPlace || !el) return none;
+    var execKey = _wbsNameKey('Execution Phase');
+    var exec = _wbsSkeletonTargets().filter(function (t) { return _wbsNameKey(t.name) === execKey; })[0];
+    if (!exec) return none;
+    var plan = (wbsPlace.read(el) || {}).plan || [];
+    var picked = plan.filter(function (p) { return p.target && String(p.target) === String(exec.code); });
+    if (!picked.length) return none;
+    return { scoped: true, names: picked.map(function (p) { return p.name || p.prefix; }),
+      codes: picked.map(function (p) { return String(p.prefix); }),
+      recs: locScopeByCodes(leafRecs, picked.map(function (p) { return String(p.prefix); })) };
+  }
+  // Says out loud which part of the file the mapping is reading, so the scoping is visible rather
+  // than a silent difference between the preview's numbers and the file's size.
+  function locScopeNoteHTML(sc, total) {
+    if (!sc || !sc.scoped) {
+      return '<div style="margin-bottom:6px;">Reading <strong>all ' + total + '</strong> activities — nothing is filed under Execution Phase above, so location is matched across the whole file (Milestones and Closeout headings can leak in).</div>';
+    }
+    return '<div style="margin-bottom:6px;">Reading the <strong>' + sc.recs.length + '</strong> activities under ' +
+      esc(sc.names.join(', ')) + ' (filed under Execution Phase). Milestones, Planning and Closeout are left without a location.</div>';
+  }
+  // Leaf records at or under any of `codes` (boundary-safe: "4" matches "4.1", never "40.1").
+  function locScopeByCodes(leafRecs, codes) {
+    if (!codes || !codes.length) return leafRecs;
+    var exact = {}; codes.forEach(function (c) { exact[c] = 1; });
+    var pre = codes.map(function (c) { return c + '.'; });
+    return leafRecs.filter(function (r) {
+      var c = String(r.code); if (exact[c]) return true;
+      for (var i = 0; i < pre.length; i++) if (c.indexOf(pre[i]) === 0) return true;
+      return false;
+    });
+  }
   // Spreadsheet-column sources. cols = the headers the importer's fixed detection didn't claim;
   // valOf(rec, header) reads that column's cell.
   function locSrcsCols(cols, valOf) {
@@ -7864,7 +7910,15 @@
   var LOC_ORD = { first:1, second:2, third:3, fourth:4, fifth:5, sixth:6, seventh:7, eighth:8,
     eight:8, ninth:9, nineth:9, tenth:10, eleventh:11, twelfth:12, thirteenth:13, fourteenth:14,
     fifteenth:15, sixteenth:16, seventeenth:17, eighteenth:18, nineteenth:19, twentieth:20 };
+  // Memoised: called once per record per mapped level in BOTH the merge pass and the plan pass, over
+  // a value set that is tiny (a couple of dozen distinct spellings) next to the record count.
+  var _locNormMemo = Object.create(null);
   function locNormKey(v) {
+    var _k = String(v == null ? '' : v), _c = _locNormMemo[_k];
+    if (_c !== undefined) return _c;
+    return (_locNormMemo[_k] = _locNormKeyCalc(_k));
+  }
+  function _locNormKeyCalc(v) {
     var s = String(v == null ? '' : v).toLowerCase().replace(/[‘’']/g, '');
     s = s.replace(/[a-z]+/g, function (w) { return LOC_ORD[w] != null ? String(LOC_ORD[w]) : w; });
     s = s.replace(/(\d+)(st|nd|rd|th)(?![a-z])/g, '$1');   // 2nd → 2, 10th → 10
@@ -9114,7 +9168,7 @@
   }
   function impPackageRead(el) { var s2 = el.querySelector('#ps-imp-pkg'); return (s2 && s2.value) || null; }
 
-  async function doImport(recs, replace, fname, locMap, placement, discOnImport, pkgId) {
+  async function doImport(recs, replace, fname, locMap, placement, discOnImport, pkgId, locScopeCodes) {
     showLoading('Preparing import…');
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
@@ -9148,7 +9202,8 @@
     if (locMap.length) {
       setLoading('Setting up the location breakdown…');
       if (await locEnsureLevels(locMap)) {
-        locMapPlan(recs.filter(function(r){ return r.isLeaf; }), locMap, function(){ return null; }, true)
+        // Scoped to the branches filed under Execution Phase in the preview — see locImportScope.
+        locMapPlan(locScopeByCodes(recs.filter(function(r){ return r.isLeaf; }), locScopeCodes), locMap, function(){ return null; }, true)
           .ups.forEach(function(u){ u.rec.loc = u.loc; });
         populateGroupSelect(); seedExtraHidden(); renderHeader();
       } else locMap = [];
@@ -9226,7 +9281,13 @@
       .toLowerCase()
       .replace(/\([^)]*\)/g, ' ')
       .replace(/[^a-z0-9]+/g, ' ')
-      .replace(/\b(the|project|overall|main|general|key)\b/g, ' ')
+      // ⚠️ "phase" is a generic qualifier like the leading ones, and it is the one that actually bit:
+      // the seeded skeleton says "Closeout Phase" while the 4PH Strevi .xer's own branch is called
+      // "Closeout", so the two did not match — the file's branch was filed as a SIXTH top-level
+      // branch beside the skeleton's empty "Closeout Phase", the exact duplicate-top-level shape the
+      // placement step exists to prevent. Dropping it keeps every skeleton phase distinct
+      // (initiation / planning / execution / closeout / milestone) so no real pair collapses.
+      .replace(/\b(the|project|overall|main|general|key|phase)\b/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .replace(/s$/, '');
@@ -9447,20 +9508,31 @@
       locSection+
       '<div style="text-align:right;"><button class="pd-btn" id="ps-imp-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-imp-go">Import '+recs.length+' rows</button></div>');
     if (locUI) {
-      locUI.bind(m.el, function(){
+      // Same scoping + debounce as the .xer path — see locImportScope and the note there.
+      var prevEl0 = m.el.querySelector('#imp-locprev'), prevT0 = null;
+      var repaint0 = function(){
         var map = locUI.read(m.el);
-        m.el.querySelector('#imp-locprev').innerHTML = locPreviewHTML(map, locMapPlan(leafRecs, map, function(){ return null; }, true), leafRecs.length);
+        var sc = locImportScope(leafRecs, wbsPlace, m.el);
+        prevEl0.innerHTML = locScopeNoteHTML(sc, leafRecs.length) +
+          locPreviewHTML(map, locMapPlan(sc.recs, map, function(){ return null; }, true), sc.recs.length);
+      };
+      var onChange0 = function(){ clearTimeout(prevT0); prevT0 = setTimeout(repaint0, 250); };
+      locUI.bind(m.el, onChange0);
+      Array.prototype.forEach.call(m.el.querySelectorAll('.ps-impwbs'), function(s){
+        var prior = s.onchange;
+        s.onchange = function(e){ if (prior) prior.call(this, e); onChange0(); };
       });
-      m.el.querySelector('#imp-locprev').innerHTML = '';
+      prevEl0.innerHTML = '';
     }
     m.el.querySelector('#ps-imp-x').onclick = m.close;
     m.el.querySelector('#ps-imp-go').onclick = function(){
       var rep=m.el.querySelector('#ps-imp-rep').checked;
       var locMap = locUI ? locUI.read(m.el) : [];
+      var locScopeCodes = locUI ? locImportScope(leafRecs, wbsPlace, m.el).codes : null;
       var placement = wbsPlace ? wbsPlace.read(m.el) : null;
       var dsc = m.el.querySelector('#ps-imp-disc'); dsc = !dsc || dsc.checked;
       var pkgId = impPackageRead(m.el);
-      m.close(); doImport(recs, rep, fname, locMap, placement, dsc, pkgId);
+      m.close(); doImport(recs, rep, fname, locMap, placement, dsc, pkgId, locScopeCodes);
     };
   }
 
@@ -9739,16 +9811,34 @@
       '<p style="font-size:12px;color:var(--pd-muted);">Also imports the P6 calendar(s), activity codes and resource master into this project (added alongside anything already there — not replaced). Calendars that already exist on this project — same name, same working week, same hours — are <strong>reused</strong> rather than copied, so re-importing the same file no longer multiplies them.</p>' +
       '<div style="text-align:right;"><button class="pd-btn" id="ps-impx-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ps-impx-go">Import ' + recs.length + ' rows</button></div>');
     if (locUI) {
-      locUI.bind(m.el, function () {
+      var prevEl = m.el.querySelector('#impx-locprev');
+      // ⚠️ DEBOUNCED. onChange is wired to `oninput` on the keyword-terms box, and the plan it runs
+      // walks every leaf in the file — ~0.3s for this .xer even after the memoisation above, which
+      // per keystroke makes the field unusable. 250ms is below the "did it hear me" threshold and
+      // above a fast typist's inter-key gap.
+      var prevT = null;
+      var repaint = function () {
         var map = locUI.read(m.el);
-        m.el.querySelector('#impx-locprev').innerHTML = locPreviewHTML(map, locMapPlan(leafRecs, map, function () { return null; }, true), leafRecs.length);
+        var sc = locImportScope(leafRecs, wbsPlace, m.el);
+        prevEl.innerHTML = locScopeNoteHTML(sc, leafRecs.length) +
+          locPreviewHTML(map, locMapPlan(sc.recs, map, function () { return null; }, true), sc.recs.length);
+      };
+      var onChange = function () { clearTimeout(prevT); prevT = setTimeout(repaint, 250); };
+      locUI.bind(m.el, onChange);
+      // The placement selects decide the scope, so they repaint the preview too.
+      Array.prototype.forEach.call(m.el.querySelectorAll('.ps-impwbs'), function (s) {
+        var prior = s.onchange;
+        s.onchange = function (e) { if (prior) prior.call(this, e); onChange(); };
       });
-      m.el.querySelector('#impx-locprev').innerHTML = '';
+      prevEl.innerHTML = '';
     }
     m.el.querySelector('#ps-impx-x').onclick = m.close;
     m.el.querySelector('#ps-impx-go').onclick = function () {
       var rep = m.el.querySelector('#ps-impx-rep').checked;
       parsed.locMap = locUI ? locUI.read(m.el) : [];
+      // Captured HERE, from the same dialog state the preview showed — doImportXER has no element to
+      // re-read, and re-deriving it there could disagree with what the planner just approved.
+      parsed.locScopeCodes = locUI ? locImportScope(leafRecs, wbsPlace, m.el).codes : null;
       parsed.wbsPlacement = wbsPlace ? wbsPlace.read(m.el) : null;
       var dscx = m.el.querySelector('#ps-imp-disc'); parsed.discOnImport = !dscx || dscx.checked;
       m.close(); doImportXER(parsed, rep, fname);
@@ -9861,7 +9951,11 @@
     if (locMap.length) {
       setLoading('Setting up the location breakdown…');
       if (await locEnsureLevels(locMap)) {
-        locMapPlan(parsed.recs.filter(function (r) { return r.isLeaf; }), locMap, function () { return null; }, true)
+        // Scoped to the branches the planner filed under Execution Phase — see locImportScope. Runs
+        // on the ORIGINAL codes, before applyWbsPlacement rewrites them, which is what the captured
+        // `locScopeCodes` are expressed in.
+        var locRecs = locScopeByCodes(parsed.recs.filter(function (r) { return r.isLeaf; }), parsed.locScopeCodes);
+        locMapPlan(locRecs, locMap, function () { return null; }, true)
           .ups.forEach(function (u) { u.rec.loc = u.loc; });
         populateGroupSelect(); seedExtraHidden(); renderHeader();
       }

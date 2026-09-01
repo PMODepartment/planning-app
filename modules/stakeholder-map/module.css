@@ -144,10 +144,20 @@ html.pd-dark .sm-kpi.sm-k-satisfy .sm-kpi-val { color:#fbbf24; }
 /* ---- Engagement approach + relationship strategy chips ----------------- */
 /* Semantic and fixed in both themes: these are the controlled document's own
    four quadrants, and a pale amber in dark mode stops meaning "Keep Satisfied". */
-.sm-a-manage  { --sm-c:#b91c1c; }
-.sm-a-satisfy { --sm-c:#b45309; }
-.sm-a-inform  { --sm-c:#1d4ed8; }
-.sm-a-monitor { --sm-c:#4b5563; }
+/* ⚠️ Same fill/text split as epc-rcm.css's priority palette, for the same measured
+   reason. --sm-c is the FILL: white sits on it (.sm-appr passes 5.0-7.6 for all four).
+   --sm-t is the same meaning as TEXT, and it needs a different value per theme —
+   .sm-gm-lab (the Mendelow map's 10px/800 cell label on a 15% wash of its own fill)
+   measured 1.70:1 in dark for Monitor and 4.08:1 in light for Keep Satisfied while it
+   read --sm-c. A fill light enough to read as text on dark cannot carry white. */
+.sm-a-manage  { --sm-c:#b91c1c; --sm-t:#991b1b; }
+.sm-a-satisfy { --sm-c:#b45309; --sm-t:#854d0e; }
+.sm-a-inform  { --sm-c:#1d4ed8; --sm-t:#1e3a8a; }
+.sm-a-monitor { --sm-c:#4b5563; --sm-t:#374151; }
+html.pd-dark .sm-a-manage  { --sm-t:#f87171; }
+html.pd-dark .sm-a-satisfy { --sm-t:#fbbf24; }
+html.pd-dark .sm-a-inform  { --sm-t:#93c5fd; }
+html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
 .sm-appr { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700;
   white-space:nowrap; color:#fff; background:var(--sm-c, var(--pd-muted)); }
 .sm-leg-sw { width:12px; height:12px; border-radius:3px; display:inline-block; background:var(--sm-c, var(--pd-line)); }
@@ -205,7 +215,7 @@ html.pd-dark .sm-kpi.sm-k-satisfy .sm-kpi-val { color:#fbbf24; }
 .rcm-gcell.sm-gm { background:color-mix(in srgb, var(--sm-c, transparent) 15%, var(--pd-card));
   border-color:color-mix(in srgb, var(--sm-c, var(--pd-line)) 55%, transparent); }
 .sm-gm-lab { display:block; font-size:10px; font-weight:800; text-transform:uppercase;
-  letter-spacing:.02em; color:var(--sm-c, var(--pd-muted)); }
+  letter-spacing:.02em; color:var(--sm-t, var(--pd-muted)); }
 .sm-gm-faces { display:flex; flex-wrap:wrap; gap:3px; margin-top:6px; align-items:center; }
 
 /* ---- Add/Edit form furniture ------------------------------------------ */
