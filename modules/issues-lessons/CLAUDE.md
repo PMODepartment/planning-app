@@ -1,5 +1,116 @@
 # Module: issues-lessons
 
+## 2026-09-01 (d) — Progress-Photos-style search/filter chrome, drag-to-reorder, a leaner log, and one combined dashboard with real charts
+
+Owner's 10-item list, verbatim: (1) same search/filter UX as Progress Photos everywhere in this
+module; (2) drag-to-reorder in the Issues log and the Lessons log; (3) no KPI tiles on the Issues
+detail view; (4) drop Lesson category — fold it into Department, the same field Issues already
+has; (5) Champion in the log/summary views shows only the LATEST champion, not the full history;
+(6) stop separating Issues from Lessons on the Dashboard; (7) a status pie chart instead of tiles;
+(8) a bar chart of Open vs Total; (9) a real by-champion visualization, also Open-vs-Total bars;
+(10) the full issue list below every chart, not a capped sample. **Migration
+`migrations/2026-09-01-issues-lessons-reorder.sql`.**
+
+### Item #1 — the topbar search + funnel toggle
+Copied Progress Photos' chrome, not reinvented: `.il-topsearch` (a compact box in the topbar tool
+cluster) + `.il-topfilttoggle` (an icon button that toggles `.open` on whichever filter panel the
+active screen owns). One pair of controls, three panels — `#il-issues-filters` /
+`#il-lessons-filters` / the new `#il-dashboard-filters` — decided by `screen` via
+`activeFilters()`/`activeFilterPanelId()`/`activeSearchPlaceholder()`. `wireTopFilters()` binds the
+box to `oninput` and the toggle to a class flip; `syncTopFilters()` re-seeds the box's value and
+placeholder and the toggle's open/closed state on every `switchScreen()` — so tabbing between
+Issues → Lessons → Dashboard never leaves the search box showing one screen's term while filtering
+another's. ⚠️ **Every panel's own `#…-search` input is kept in the DOM, `hidden`** — not deleted —
+so `iFilters.search`/`lFilters.search`/`dFilters.search` stay bound to a real element for any code
+still reading them by id; the topbar box is what a planner actually types into. `#il-filt-toggle`
+(the old per-screen button) is gone from Issues; Lessons never had one; the old always-visible
+`.il-filtbar` gave way to `.il-filters{display:none}` / `.il-filters.open{display:flex}` in CSS.
+
+### Item #2 — drag-to-reorder in both logs
+A nullable `sort_order` on both `issues_lessons` and `lessons_learned`. NULL means "nobody has
+touched the order yet" — `issueOrderCmp`/`lessonOrderCmp` fall back to the existing date-based sort
+(newest first) exactly as before, and an ordered row always sorts before an unordered one. A small
+inline-SVG 6-dot grip (`dragGripHTML`, not routed through `icons.js` — one glyph didn't earn a new
+shared-asset dependency) is the drag handle: in the Issues log, the Lessons screen's closed-issues
+table, and the standalone lesson-card grid (the whole card is `draggable="true"` there).
+`wireReorder(container, list, baseArr, cmp, table)` wires `dragstart`/`dragover`/`dragend`/`drop`
+with a red top/bottom insertion line (`.il-drop-before`/`.il-drop-after`); `applyReorder` renumbers
+**only the currently-displayed (filtered) list**, spaced by 10 so a later drop can slot between two
+values without a full renumber, writes **only the rows whose `sort_order` actually changed**, then
+re-sorts the real underlying array (`rows`/`LESSONS`) with the SAME comparator used at load — so
+display order and the in-memory array can never disagree. ⚠️ **Relies on `.filter()` preserving
+object references**: mutating `r.sort_order` on a row pulled from the filtered view is mutating the
+same object sitting in `rows`, so no separate write-back step is needed. Legacy standalone lessons
+(`isLegacyLesson(l)`) don't get a drag handle — there's no live row underneath them to persist an
+order onto.
+
+### Item #3 — no KPI tiles on the Issues detail view
+`renderIssues()` only calls `renderIssueKpis()` while `_issMode === 'log'`; opening an issue
+(`_issMode === 'detail'`) clears `#il-kpis` instead. The tiles exist to help you scan a list of many
+issues — once you've opened one, they're just three numbers that don't describe what's on screen.
+
+### Item #4 — Lesson category retired in favour of Department
+Removed `LESSON_CATS`, the category `<select>` from `lessonDetailHTML`, the category chip from
+`lessonCardHTML` (the department chip stays), `category`/`_lessonCategory` from every lesson-insert
+payload (`confirmCloseIssue`, `saveIssue`'s forceClose branch, `newLessonAsClosedIssue`'s draft,
+`newLesson()`'s initial object, `saveLesson()`'s payload), and the category filter from the Lessons
+filter panel + `lFilters` (now `{search, department}`). `renderLessonKpis()`'s third tile now counts
+distinct `department` values under "Departments" (was "Categories"). ⚠️ **The `lessons_learned`
+table's `category` column is untouched** — dropping a column is destructive and nothing here reads
+or writes it any more, so leaving it costs nothing and a future decision to actually remove it is
+the DB owner's, not silently taken here.
+
+### Item #5 — "latest champion" in log/summary views
+New `latestChampionText(r)`: reads the LAST element of `r.champion_ids` (the array is push-ordered
+by assignment, so the last id is the most-recently-assigned account) and resolves it to a name via
+`peopleNamesOf`; falls back to the last `;`-separated segment of the free-text `champion` string for
+legacy rows with no ids at all. Applied in the Issues log's Champion column, the Lessons screen's
+closed-issues table, and every champion reference on the new Dashboard. ⚠️ **The full editable
+Champion picker inside the detail/edit view is UNCHANGED** — it still shows and edits the complete
+assignment history. Only the places that summarize a row in one line were simplified; the record
+that actually tracks "everyone who has ever been champion" was never in question.
+
+### Items #6–10 — the Dashboard rebuilt as one combined analytics screen
+`renderDashboardScreen()`, `dashboardListHTML()`, `lessonDashboardListHTML()`, `agingBucketsOf()`
+and `CHART_COLORS` are gone, replaced by a single screen with its own filter state (`dFilters =
+{search, status, department, champion}` — deliberately independent of `iFilters`/`lFilters`, so
+opening the Dashboard never silently narrows what the Issues or Lessons screens later show):
+- **Status → pie chart** (existing `donutChartSVG`, Open/On Hold/Closed slices) instead of tiles.
+- **Open vs Total → a 2-bar chart** (existing `barChartSVG`).
+- **By champion → a NEW `groupedBarSVG(items, opts)`** (same hand-rolled inline-SVG style as the
+  existing `donutChartSVG`/`barChartSVG` — viewBox-based, `<title>` tooltips, `Fmt.esc()` on every
+  label, no charting library): two bars per champion (Open red, Total grey), the top 10 by total,
+  plus a full `champTableHTML` breakdown table beneath it for anyone champion #11 onward. ⚠️
+  Grouped by `latestChampionText(r)`, not the raw `champion` string, so "Alice Cruz; Bob Reyes"
+  attributes to whichever of the two was assigned most recently rather than creating a third,
+  unreadable combined bucket.
+- **Lessons folded into a one-line note** (`lessonsNote`, total lesson count + how many are
+  standalone vs linked to a closed issue) rather than a second set of charts — item 6's "no need to
+  separate" taken to mean lessons earn a mention, not equal screen real estate, since the ask was
+  specifically about not partitioning the ISSUES side of the dashboard by status.
+- **`fullIssueListHTML(data)`** below every chart: every row `dFilters` currently matches, **never
+  capped** (the old `dashboardListHTML` truncated to a sample) — clicking a row opens it via the
+  same `openIssue()` path a log row uses.
+
+**Verified.** `node --check module.js` clean. Function-set diff against HEAD: **lost** —
+`agingBucketsOf`, `dashboardListHTML`, `lessonDashboardListHTML` (all three deliberately superseded
+by the rebuild); **added** — `activeFilterPanelId`, `activeFilters`, `activeSearchPlaceholder`,
+`applyReorder`, `champTableHTML`, `dashIssuesFiltered`, `dragGripHTML`, `fullIssueListHTML`,
+`groupedBarSVG`, `issueOrderCmp`, `latestChampionText`, `lessonOrderCmp`, `syncTopFilters`,
+`wireReorder`, `wireTopFilters`. 0 duplicate DOM ids; `<div>`/`</div>` balanced in `index.html`
+(26/26); CSS braces balanced (255/255); 0 NUL bytes. Two stale leftovers caught by grepping for
+removed identifiers rather than by report, both fixed before shipping: `newLessonAsClosedIssue`'s
+draft still carried `_lessonCategory: ''`, and `renderLessons()`'s active-filter check still tested
+`['search','department','category']` against the now-two-key `lFilters`.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the drag-and-drop reorder (HTML5
+native DnD is awkward to simulate even signed in), the new charts against real data, or the
+migration itself, which has not been run.
+
+`module.css/js?v=20260901f`; `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/
+`modules.html`) → `20260901h`.
+
 ## 2026-09-01 (c) — Filters behind a button, click-to-open rows, step-through, detailed history, and the champion-concatenation bug
 
 Owner's 7-item list for Issues & Concerns. Items 1–2 were already delivered in the 2026-08-31(b)

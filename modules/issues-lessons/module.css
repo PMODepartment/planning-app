@@ -61,19 +61,38 @@
 .il-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
 .il-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 
-/* ---- Filter bar ----------------------------------------------------------
-   ITEM #3: filters are called up by a button, not shown by default. */
-.il-filtbar { margin-bottom: 10px; }
-.il-filt-toggle { position: relative; }
-.il-filt-toggle.is-open { background: var(--pd-bg); border-color: var(--pd-red); color: var(--pd-red); }
-/* A filter narrower than the Open default still narrows the log while the panel is
-   collapsed — this dot is the only signal of that once the panel is shut again. */
-.il-filt-toggle.has-active::after {
+/* ---- Topbar search + filter toggle ----------------------------------------
+   Item 1: the SAME search/filter UX as Progress Photos, on all three screens
+   (Issues, Lessons, Dashboard) — a compact search box in the topbar tool
+   cluster, plus a funnel button that reveals the rest of the filters in a
+   panel docked below. One shared pair of controls; which screen's filter
+   state they read/write is decided by whichever screen is active (see
+   wireTopFilters() in module.js). */
+.il-topsearch { display: flex; align-items: center; gap: 4px; flex: 0 1 220px; min-width: 90px; }
+.il-topsearch .pd-input { height: 34px; font-size: 13px; width: 100%; min-width: 0; }
+.il-topfilttoggle {
+  position: relative; height: 34px; width: 34px; padding: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; color: var(--pd-muted);
+  cursor: pointer; border-radius: var(--pd-radius);
+}
+.il-topfilttoggle:hover, .il-topfilttoggle.is-active { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-red); }
+/* A filter narrower than a screen's default (e.g. Issues' status=Open) still
+   narrows what's shown while the panel is collapsed — this dot is the only
+   signal of that once the panel is closed again. */
+.il-topfilttoggle.has-active::after {
   content: ''; position: absolute; top: 5px; right: 5px;
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--pd-red); border: 1.5px solid var(--pd-card);
 }
-.il-filters {
+
+/* ---- Docked filter panel ---------------------------------------------------
+   Collapsed by default at every width — opened via the topbar search/funnel
+   above. Shared by all three screens' own filter panels (#il-issues-filters /
+   #il-lessons-filters / #il-dashboard-filters), each still its own <div> with
+   its own controls, just the same open/closed mechanism. */
+.il-filters { display: none; }
+.il-filters.open {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;
   background: var(--pd-card); border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius); padding: 8px 12px;
@@ -222,7 +241,7 @@
 @media (max-width: 1000px) { .il-kpis { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 820px) {
   .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); }
-  .il-filters .il-search { flex: 1 1 100%; }
+  .il-filters.open .il-search { flex: 1 1 100%; }
 }
 
 /* ⚠️ REMOVED (2026-08-31, owner-reported bug #4): a `.il-title-txt { display:none }`
@@ -280,8 +299,8 @@
   /* An empty-state row spans the card, not a phantom column. */
   .il-table td[colspan] { text-align: center; }
 
-  .il-filters { flex-wrap: wrap; gap: 8px; }
-  .il-filters > * { flex: 1 1 100%; min-width: 0; }
+  .il-filters.open { flex-wrap: wrap; gap: 8px; }
+  .il-filters.open > * { flex: 1 1 100%; min-width: 0; }
   .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .il-lessons { grid-template-columns: 1fr; }
 }
@@ -638,6 +657,41 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   .il-dash-grid { grid-template-columns: 1fr; }
   .il-dash-wide { grid-column: auto; }
 }
+
+/* ---- Dashboard rework (items 6-10): one unified page, no Issues/Lessons
+   split — a status pie in place of tiles, an open-vs-total bar, a champion
+   breakdown (table + grouped bar), and the full issue list at the very
+   bottom, below every chart. ------------------------------------------- */
+.il-dash-note {
+  font-size: 12.5px; color: var(--pd-muted); margin: 0 0 14px;
+  display: flex; align-items: center; gap: 6px;
+}
+.il-dash-note strong { color: var(--pd-ink); font-weight: 700; }
+/* Grouped (Open vs Total) bars share one legend swatch pair everywhere they
+   appear, so a reader never has to re-learn the colour mapping per chart. */
+.il-dash-barlegend { display: flex; gap: 14px; font-size: 12px; color: var(--pd-muted); margin-top: 8px; flex-wrap: wrap; }
+.il-dash-barlegend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
+.il-dash-champ-table td.il-dc-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* ---- Item 10: the full list, at the bottom of every chart -------------- */
+.il-dash-fulllist-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 18px 0 8px;
+}
+.il-dash-fulllist-head h4 {
+  margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted);
+}
+.il-dash-fulllist-count { font-size: 12px; color: var(--pd-muted); }
+
+/* ---- Drag-to-reorder (item 2) ----------------------------------------- */
+[draggable="true"].il-reorderable { cursor: grab; }
+.il-dragging { opacity: .45; }
+.il-drop-before { box-shadow: inset 0 2px 0 0 var(--pd-red); }
+.il-drop-after { box-shadow: inset 0 -2px 0 0 var(--pd-red); }
+.il-draghandle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; color: var(--pd-line); cursor: grab; flex: none;
+}
+.il-draghandle:hover { color: var(--pd-muted); }
 
 /* ---- People picker (Champion / Responsible) ------------------------------
    Chips for accounts + one free-text line for people with no login. Both are

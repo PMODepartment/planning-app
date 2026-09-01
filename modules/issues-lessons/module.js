@@ -64,7 +64,7 @@ window.IssuesLessons = (function () {
   // Clicking "Put On Hold" / "Close Issue" opens one of these instead of changing
   // `status` directly — both require a narrative before anything is written.
   var _issHoldOpen = false, _issHoldNote = '';
-  var _issCloseOpen = false, _issCloseDraft = { report: '', lesson: '', category: '', dateResolved: '' };
+  var _issCloseOpen = false, _issCloseDraft = { report: '', lesson: '', dateResolved: '' };
   var ISSUE_HISTORY = {};              // issue id -> array of history rows (loaded on open)
   // Set while a NEW issue draft was started from the Lessons Learned screen's
   // "+ New Lesson" (item #15) — routes "Back"/"Cancel" to Lessons instead of Issues.
@@ -119,7 +119,13 @@ window.IssuesLessons = (function () {
   // what either presentation describes. Never silently reset to '' anywhere but the
   // explicit Clear-filters action, which restores THIS default rather than "All".
   var iFilters = { search: '', status: 'Open', department: '', champion: '', aging: '' };
-  var lFilters = { search: '', department: '', category: '' };
+  var lFilters = { search: '', department: '' };
+  // ⚠️ ITEM 1: the Dashboard's own filter state — deliberately SEPARATE from iFilters/
+  // lFilters, so switching screens never silently changes what a DIFFERENT screen is
+  // showing (the same rule the Dashboard's read of `rows`/`LESSONS` unfiltered has always
+  // followed — see renderDashboardScreen()). Scoped to what the dashboard actually charts:
+  // status/department/champion/search across issues.
+  var dFilters = { search: '', status: '', department: '', champion: '' };
 
   // ⚠️ THE OWNER'S OWN LIST, replacing the earlier invented starter vocabulary
   // (item #7). A department value already on a row that predates this list
@@ -134,19 +140,12 @@ window.IssuesLessons = (function () {
                      'Human Resources', 'Quality', 'Health and Safety', 'Operations',
                      'PMO', 'COO', 'CEO'];
   var STATUSES    = ['Open', 'On Hold', 'Closed'];
-  var LESSON_CATS = ['Schedule', 'Cost', 'Quality', 'Safety', 'Design', 'Procurement',
-                     'Contract', 'Communication', 'Resource', 'Stakeholder', 'Other'];
-  var AGING_BUCKETS = [
-    { key: '0-30',  label: '0–30 days',   test: function (a) { return a <= 30; } },
-    { key: '31-90', label: '31–90 days',  test: function (a) { return a >= 31 && a <= 90; } },
-    { key: '90+',   label: 'Over 90 days', test: function (a) { return a > 90; } },
-  ];
-  // A small fixed palette for the dashboard's pie/bar charts — reused across
-  // both Issues and Lessons so a department/category always reads the same
-  // colour wherever it appears. Chosen for contrast on both themes (checked
-  // against --pd-card in light and dark, min ~4.5:1 for the accompanying text).
-  var CHART_COLORS = ['#EE3124', '#2B6CB0', '#2F855A', '#B7791F', '#6B46C1',
-                       '#B83280', '#00838F', '#8D6E63', '#4A5568', '#5A67D8', '#C42127'];
+  // ⚠️ ITEM 4: a lesson used to carry its own "Lesson category" vocabulary, a second
+  // classifying dimension alongside Department that meant the same thing in practice and
+  // could disagree with it. Lessons are now classified by DEPARTMENT ONLY, the same field
+  // and the same list an issue already uses — LESSON_CATS and every `category`/
+  // `lesson_category` field this module wrote are gone (the underlying `category` COLUMN
+  // is untouched — pre-existing values are simply no longer surfaced or collected).
 
   function sb() { return AppAuth.getSB(); }
 
@@ -198,6 +197,101 @@ window.IssuesLessons = (function () {
   function hasLesson(r) {
     if (r && r.id && LESSONS.some(function (l) { return l.issue_id === r.id; })) return true;
     return !!(r && r.lesson_learned && r.lesson_learned.trim());
+  }
+
+  // ---- ITEM 2: drag-to-reorder — the display order the Issues list and the
+  // Lessons list draw from. `sort_order` is a plain nullable integer (migration
+  // 2026-09-01-issues-lessons-reorder.sql); a row nobody has dragged has none,
+  // so it falls back to the existing date-based order it always had. Once a
+  // list is reordered, every row in the reordered view carries an explicit
+  // sort_order (spaced by 10) and sorts ahead of any still-unordered row.
+  function issueOrderCmp(a, b) {
+    if (a.sort_order != null || b.sort_order != null) {
+      if (a.sort_order == null) return 1;
+      if (b.sort_order == null) return -1;
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+    }
+    var x = a.date_presented || '', y = b.date_presented || '';
+    if (!x !== !y) return x ? -1 : 1;
+    if (x !== y) return y.localeCompare(x);
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  }
+  function lessonOrderCmp(a, b) {
+    if (a.sort_order != null || b.sort_order != null) {
+      if (a.sort_order == null) return 1;
+      if (b.sort_order == null) return -1;
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+    }
+    var x = a.date_captured || '', y = b.date_captured || '';
+    if (!x !== !y) return x ? -1 : 1;
+    if (x !== y) return y.localeCompare(x);
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  }
+  // ⚠️ `list` is the CURRENTLY DISPLAYED (already filtered) view — reordering only ever
+  // renumbers what is actually on screen, and its members are the SAME objects that live
+  // in `baseArr` (a `.filter()` result, never a copy), so mutating `r.sort_order` here
+  // already updates the real row; `baseArr.sort(cmp)` after just re-settles its order.
+  var _dragReorderId = null;
+  function dragGripHTML(id) {
+    return '<span class="il-draghandle il-reorderable" draggable="true" data-reorder="' + Fmt.esc(id) +
+      '" title="Drag to reorder"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">' +
+      '<circle cx="3" cy="3" r="1.3"/><circle cx="9" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/>' +
+      '<circle cx="9" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="9" cy="13" r="1.3"/></svg></span>';
+  }
+  function wireReorder(container, list, baseArr, cmp, table) {
+    if (!container) return;
+    var els = container.querySelectorAll('[data-reorder]');
+    Array.prototype.forEach.call(els, function (el) {
+      // The handle itself must never also trigger a row/card's own "open" click.
+      el.onclick = function (e) { e.stopPropagation(); };
+      el.ondragstart = function (e) {
+        _dragReorderId = el.dataset.reorder;
+        try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _dragReorderId); } catch (e2) { /* some browsers refuse setData on certain drag sources — the id is already cached above */ }
+        el.classList.add('il-dragging');
+      };
+      el.ondragend = function () {
+        el.classList.remove('il-dragging');
+        Array.prototype.forEach.call(els, function (x) { x.classList.remove('il-drop-before', 'il-drop-after'); });
+        _dragReorderId = null;
+      };
+      el.ondragover = function (e) {
+        if (!_dragReorderId || _dragReorderId === el.dataset.reorder) return;
+        e.preventDefault();
+        var rect = el.getBoundingClientRect();
+        var before = (e.clientY - rect.top) < rect.height / 2;
+        Array.prototype.forEach.call(els, function (x) { if (x !== el) x.classList.remove('il-drop-before', 'il-drop-after'); });
+        el.classList.toggle('il-drop-before', before);
+        el.classList.toggle('il-drop-after', !before);
+      };
+      el.ondrop = function (e) {
+        e.preventDefault();
+        var targetId = el.dataset.reorder, dragId = _dragReorderId, before = el.classList.contains('il-drop-before');
+        el.classList.remove('il-drop-before', 'il-drop-after');
+        if (!dragId || dragId === targetId) return;
+        applyReorder(list, baseArr, cmp, table, dragId, targetId, before);
+      };
+    });
+  }
+  async function applyReorder(list, baseArr, cmp, table, dragId, targetId, before) {
+    var from = -1, targetIdx = -1;
+    for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(dragId)) { from = i; break; } }
+    if (from < 0) return;
+    var arr = list.slice();
+    var moved = arr.splice(from, 1)[0];
+    for (var j = 0; j < arr.length; j++) { if (String(arr[j].id) === String(targetId)) { targetIdx = j; break; } }
+    if (targetIdx < 0) targetIdx = arr.length;
+    arr.splice(before ? targetIdx : targetIdx + 1, 0, moved);
+    var writes = [];
+    arr.forEach(function (r, i) {
+      var next = (i + 1) * 10;
+      if (r.sort_order !== next) {
+        r.sort_order = next;
+        writes.push(sb().from(table).update({ sort_order: next }).eq('id', r.id));
+      }
+    });
+    try { await Promise.all(writes); } catch (e) { /* best-effort — a failed write just leaves that one row's order stale until the next reload */ }
+    baseArr.sort(cmp);
+    render();
   }
 
   // ========================================================================
@@ -306,16 +400,14 @@ window.IssuesLessons = (function () {
       b.onclick = function () { switchScreen(b.dataset.screen); if (histScreen) histScreen.push(); };
     });
 
-    // ITEM #3: filters are hidden until called up. The panel's own visibility is
-    // session state, not part of iFilters — closing it must never clear a filter.
-    var filtToggle = $('il-filt-toggle'), filtPanel = $('il-issues-filters');
-    if (filtToggle && filtPanel) filtToggle.onclick = function () {
-      filtPanel.hidden = !filtPanel.hidden;
-      filtToggle.setAttribute('aria-expanded', filtPanel.hidden ? 'false' : 'true');
-      filtToggle.classList.toggle('is-open', !filtPanel.hidden);
-    };
+    // ITEM 1: the topbar search box + funnel toggle, shared by all three screens —
+    // the SAME UX Progress Photos uses. Which filter object / panel they act on is
+    // whichever screen is currently active (see activeFilters()/activeFilterPanel()).
+    wireTopFilters();
 
-    // Issue filters
+    // Issue filters (panel content — search is bound to the topbar box now, see
+    // wireTopFilters(); this hidden field is kept so nothing else that reads it by
+    // id breaks)
     ['search', 'status', 'department', 'champion', 'aging'].forEach(function (k) {
       var el = $('il-f-' + k);
       if (el) el.oninput = el.onchange = function () {
@@ -332,11 +424,12 @@ window.IssuesLessons = (function () {
         var el = $('il-f-' + k); if (el) el.value = '';
       });
       var st = $('il-f-status'); if (st) st.value = 'Open';
+      syncTopFilters();
       renderIssues();
     };
 
-    // Lesson filters
-    ['search', 'department', 'category'].forEach(function (k) {
+    // Lesson filters — item 4 dropped the separate "category" filter.
+    ['search', 'department'].forEach(function (k) {
       var el = $('il-lf-' + k);
       if (el) el.oninput = el.onchange = function () {
         lFilters[k] = (k === 'search') ? this.value.toLowerCase().trim() : this.value;
@@ -344,11 +437,29 @@ window.IssuesLessons = (function () {
       };
     });
     $('il-lclearfilters').onclick = function () {
-      lFilters = { search: '', department: '', category: '' };
-      ['search', 'department', 'category'].forEach(function (k) {
+      lFilters = { search: '', department: '' };
+      ['search', 'department'].forEach(function (k) {
         var el = $('il-lf-' + k); if (el) el.value = '';
       });
+      syncTopFilters();
       renderLessons();
+    };
+
+    // Dashboard filters (item 1 — the same UX extended to the Dashboard tab).
+    ['search', 'status', 'department', 'champion'].forEach(function (k) {
+      var el = $('il-d-' + k);
+      if (el) el.oninput = el.onchange = function () {
+        dFilters[k] = (k === 'search') ? this.value.toLowerCase().trim() : this.value;
+        renderDashboardScreen();
+      };
+    });
+    $('il-dclearfilters').onclick = function () {
+      dFilters = { search: '', status: '', department: '', champion: '' };
+      ['search', 'status', 'department', 'champion'].forEach(function (k) {
+        var el = $('il-d-' + k); if (el) el.value = '';
+      });
+      syncTopFilters();
+      renderDashboardScreen();
     };
 
     $('il-new').onclick = function () {
@@ -367,6 +478,43 @@ window.IssuesLessons = (function () {
     // now (see `.il-tabs` in the HTML), so there is nothing left to wire here.
   }
 
+  // ---- ITEM 1: one shared topbar search box + funnel toggle -----------------
+  // Progress Photos' own pattern: a compact search input in the topbar tool
+  // cluster plus a funnel button that reveals the rest of a screen's filters in
+  // a panel docked below. Reused across all three screens here rather than
+  // building three separate topbar controls — which filter object / panel they
+  // read and write is decided by whichever screen is currently active.
+  function activeFilters() { return screen === 'lessons' ? lFilters : (screen === 'dashboard' ? dFilters : iFilters); }
+  function activeFilterPanelId() { return screen === 'lessons' ? 'il-lessons-filters' : (screen === 'dashboard' ? 'il-dashboard-filters' : 'il-issues-filters'); }
+  function activeSearchPlaceholder() {
+    return screen === 'lessons' ? 'Search lessons, recommendations…'
+      : screen === 'dashboard' ? 'Search issues, champions, departments…'
+      : 'Search issue, cause, corrective action, champion…';
+  }
+  function wireTopFilters() {
+    var ts = $('il-topsearch'), tf = $('il-topfilttoggle');
+    if (ts) ts.oninput = function () {
+      activeFilters().search = this.value.toLowerCase().trim();
+      if (screen === 'lessons') renderLessons();
+      else if (screen === 'dashboard') renderDashboardScreen();
+      else renderIssues();
+    };
+    if (tf) tf.onclick = function () {
+      var panel = $(activeFilterPanelId());
+      if (!panel) return;
+      panel.classList.toggle('open');
+      tf.classList.toggle('is-active', panel.classList.contains('open'));
+    };
+  }
+  // Called whenever the active screen changes (or a Clear-filters button
+  // resets a screen's own search) so the ONE shared search box always shows
+  // the right screen's own search text, not whatever was last typed elsewhere.
+  function syncTopFilters() {
+    var ts = $('il-topsearch'), tf = $('il-topfilttoggle');
+    if (ts) { ts.value = activeFilters().search || ''; ts.placeholder = activeSearchPlaceholder(); }
+    if (tf) { var p = $(activeFilterPanelId()); tf.classList.toggle('is-active', !!(p && p.classList.contains('open'))); }
+  }
+
   function switchScreen(s) {
     screen = s;
     $('il-screen-issues').hidden = s !== 'issues';
@@ -378,6 +526,7 @@ window.IssuesLessons = (function () {
       b.classList.toggle('active', b.dataset.screen === s);
     });
     syncChrome();
+    syncTopFilters();
     render();
   }
 
@@ -437,12 +586,7 @@ window.IssuesLessons = (function () {
         ((mres && !mres.error && mres.data) || []).forEach(function (m) { MOM_BY_ID[m.id] = m; });
       } else { MOM_BY_ID = {}; }
     } catch (e) { MOM_BY_ID = {}; }
-    rows.sort(function (a, b) {   // date_presented desc (blanks last), then created_at desc
-      var x = a.date_presented || '', y = b.date_presented || '';
-      if (!x !== !y) return x ? -1 : 1;
-      if (x !== y) return y.localeCompare(x);
-      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
-    });
+    rows.sort(issueOrderCmp);   // manual sort_order first (item 2), else date_presented desc
     if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);   // offline read-cache
     // ⚠️ Lessons load WITH the register, not lazily like the minutes. An issue's detail
     // pane states the lessons captured on it, so a lazily-loaded library would make the
@@ -462,24 +606,25 @@ window.IssuesLessons = (function () {
           return '<option' + (current === v ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>';
         }).join('');
     }
-    var depts = {}, champs = {}, cats = {};
+    var depts = {}, champs = {};
     rows.forEach(function (r) {
       if (r.department) depts[r.department] = 1;
       if (r.champion) champs[r.champion] = 1;
     });
-    // ⚠️ Lesson departments/categories come from the LESSONS table, not from the issues.
-    // A lesson can be captured on a meeting or on nothing at all, so filtering the library
-    // by the issues' vocabulary would hide every unlinked lesson's category.
-    LESSONS.forEach(function (l) {
-      if (l.department) depts[l.department] = 1;
-      if (l.category) cats[l.category] = 1;
-    });
+    // ⚠️ Lesson departments come from the LESSONS table too, not only from the issues —
+    // a lesson can be captured on a meeting or on nothing at all, so filtering the library
+    // by the issues' vocabulary alone would hide every unlinked lesson's department.
+    LESSONS.forEach(function (l) { if (l.department) depts[l.department] = 1; });
     var deptList = Object.keys(depts).sort();
+    var champList = Object.keys(champs).sort();
     fill($('il-f-status'), STATUSES, iFilters.status, 'All statuses');
     fill($('il-f-department'), deptList, iFilters.department, 'All departments');
-    fill($('il-f-champion'), Object.keys(champs).sort(), iFilters.champion, 'All champions');
+    fill($('il-f-champion'), champList, iFilters.champion, 'All champions');
     fill($('il-lf-department'), deptList, lFilters.department, 'All departments');
-    fill($('il-lf-category'), Object.keys(cats).sort(), lFilters.category, 'All categories');
+    // Item 1: the Dashboard's own filter panel — same vocabulary as the Issues panel.
+    fill($('il-d-status'), STATUSES, dFilters.status, 'All statuses');
+    fill($('il-d-department'), deptList, dFilters.department, 'All departments');
+    fill($('il-d-champion'), champList, dFilters.champion, 'All champions');
   }
 
   function render() {
@@ -561,11 +706,35 @@ window.IssuesLessons = (function () {
     return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="' + h + '" role="img" ' +
       'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet">' + bars_svg + '</svg>';
   }
-  function agingBucketsOf(data) {
-    return AGING_BUCKETS.map(function (b, i) {
-      var n = data.filter(function (r) { var a = agingDays(r); return a != null && b.test(a); }).length;
-      return { key: b.key, label: b.label, value: n, color: CHART_COLORS[i % CHART_COLORS.length] };
-    });
+  // ---- item 9: a grouped (Open vs Total) bar chart, e.g. per champion -------
+  // Two bars side by side per item, sharing one y-axis scaled off the larger
+  // TOTAL bars (Open can never exceed Total, so Total always sets the scale).
+  function groupedBarSVG(items, opts) {
+    opts = opts || {};
+    var w = opts.width || 420, h = opts.height || 190, padTop = 20, padBottom = 34, padSide = 10;
+    var bodyH = h - padTop - padBottom;
+    var max = Math.max(1, items.reduce(function (m, it) { return Math.max(m, it.total); }, 0));
+    var n = Math.max(1, items.length);
+    var groupW = (w - padSide * 2) / n;
+    var barW = Math.max(4, Math.min(18, groupW * 0.32));
+    var openColor = opts.openColor || '#EE3124', totalColor = opts.totalColor || 'var(--pd-line)';
+    var svg = items.map(function (it, i) {
+      var gx = padSide + i * groupW + groupW / 2;
+      var totalH = Math.max(1, Math.round((it.total / max) * bodyH));
+      var openH = Math.max(it.open ? 1 : 0, Math.round((it.open / max) * bodyH));
+      var totalY = padTop + (bodyH - totalH), openY = padTop + (bodyH - openH);
+      var x1 = gx - barW - 1.5, x2 = gx + 1.5;
+      return '<rect x="' + x1.toFixed(1) + '" y="' + totalY.toFixed(1) + '" width="' + barW.toFixed(1) +
+          '" height="' + totalH.toFixed(1) + '" fill="' + totalColor + '" rx="2">' +
+          '<title>' + Fmt.esc(it.label) + ' — Total: ' + it.total + '</title></rect>' +
+        '<rect x="' + x2.toFixed(1) + '" y="' + openY.toFixed(1) + '" width="' + barW.toFixed(1) +
+          '" height="' + openH.toFixed(1) + '" fill="' + openColor + '" rx="2">' +
+          '<title>' + Fmt.esc(it.label) + ' — Open: ' + it.open + '</title></rect>' +
+        '<text x="' + gx.toFixed(1) + '" y="' + (h - padBottom + 16).toFixed(1) +
+          '" text-anchor="middle" font-size="9.5" fill="var(--pd-muted)">' + Fmt.esc(clip(it.label, 9)) + '</text>';
+    }).join('');
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="' + h + '" role="img" ' +
+      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet">' + svg + '</svg>';
   }
 
   // ---- shared History (item #11) --------------------------------------------
@@ -661,16 +830,21 @@ window.IssuesLessons = (function () {
   // Dispatcher — just `log`/`detail` now (see the state comment above); the analytics
   // landing page moved out to its own top-level tab, `renderDashboardScreen()` below.
   function renderIssues() {
-    renderIssueKpis();
+    // ITEM 3: no tiles once an issue is open individually — a single record already
+    // states its own status; a project-wide count beside it answers a question nobody
+    // is asking on this screen.
+    if (_issMode === 'log') renderIssueKpis();
+    else { var kh = $('il-kpis'); if (kh) kh.innerHTML = ''; }
     // ⚠️ status='Open' is the DEFAULT scope (items #1/#6), not "no filter" — so it must not
     // count toward "any filter is active" or Clear would permanently show at rest.
     var anyF = ['search', 'department', 'champion', 'aging'].some(function (k) { return iFilters[k]; }) ||
       iFilters.status !== 'Open';
     var clr = $('il-clearfilters'); if (clr) clr.hidden = !anyF;
-    // ITEM #3: the filter panel can be collapsed, so a narrowed view needs a signal
+    // ITEM #3/#1: the filter panel can be collapsed, so a narrowed view needs a signal
     // that survives closing it — otherwise a hidden "Open items only" filter looks like
-    // a missing issue rather than a filter someone forgot was on.
-    var ft = $('il-filt-toggle'); if (ft) ft.classList.toggle('has-active', anyF);
+    // a missing issue rather than a filter someone forgot was on. The dot lives on the
+    // ONE shared topbar funnel now, and only reflects it while Issues is the active screen.
+    if (screen === 'issues') { var ft = $('il-topfilttoggle'); if (ft) ft.classList.toggle('has-active', anyF); }
     var log = $('il-issues-log'), view = $('il-issues-view');
     if (log) log.hidden = _issMode !== 'log';
     if (view) view.hidden = _issMode === 'log';
@@ -679,120 +853,134 @@ window.IssuesLessons = (function () {
   }
 
   // --------------------------------------------------------- Dashboard tab ---
-  // ⚠️ ONE combined analytics screen, not two per-screen ones (the owner's own
-  // wording: "Dashboard will be combined for issues and lessons ... both open
-  // and closed issues as well as additional lessons should be included all in
-  // the same dashboard"). It reads straight from `rows` / `LESSONS` rather than
-  // `issuesFiltered()` / the lessons filter bar's scoped helpers — those honour
-  // each Log screen's own filter bar (which defaults to Open-only for issues),
-  // and a dashboard whose numbers moved because a filter was left set on a
-  // different screen would be unreadable. This tab has no filter bar of its
-  // own; it always describes the whole project.
+  // Rebuilt (items 6-10) into ONE unified page, not an Issues section beside a
+  // Lessons section: a status pie in place of tiles, an open-vs-total bar, a
+  // champion breakdown (table + grouped open-vs-total bars), and the full
+  // matching issue list at the very bottom, below every chart. It has its own
+  // filter panel now (item 1), scoped by `dFilters` — deliberately separate
+  // from the Issues/Lessons Log screens' own filter state, so switching
+  // screens never silently changes what a DIFFERENT screen is showing.
+  function dashIssuesFiltered() {
+    return rows.filter(function (r) {
+      if (dFilters.status && (r.status || 'Open') !== dFilters.status) return false;
+      if (dFilters.department && r.department !== dFilters.department) return false;
+      if (dFilters.champion && r.champion !== dFilters.champion) return false;
+      if (dFilters.search) {
+        var hay = [r.description, r.caused_by, r.corrective_action, r.champion, r.department]
+          .join(' ').toLowerCase();
+        if (hay.indexOf(dFilters.search) === -1) return false;
+      }
+      return true;
+    });
+  }
+  function champTableHTML(list) {
+    if (!list.length) return '';
+    return '<div class="pd-tablewrap"><table class="il-dash-list il-dash-champ-table"><thead><tr>' +
+      '<th>Champion</th><th>Open</th><th>Total</th></tr></thead><tbody>' +
+      list.map(function (c) {
+        return '<tr><td>' + Fmt.esc(c.label) + '</td>' +
+          '<td class="il-dc-num">' + c.open + '</td>' +
+          '<td class="il-dc-num">' + c.total + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  // ITEM 10: the full matching list, below every chart — not capped like the
+  // dashboard's old 12-row summary, since this IS the full list.
+  function fullIssueListHTML(data) {
+    return '<div class="il-dash-fulllist-head"><h4>All matching issues</h4>' +
+      '<span class="il-dash-fulllist-count">' + data.length + ' issue' + (data.length === 1 ? '' : 's') + '</span></div>' +
+      (data.length
+        ? '<div class="pd-tablewrap"><table class="il-dash-list"><thead><tr>' +
+            '<th>Issue</th><th>Champion</th><th>Department</th><th>Status</th><th>Aging</th></tr></thead><tbody>' +
+            data.map(function (r) {
+              var a = agingDays(r);
+              return '<tr data-open="' + Fmt.esc(r.id) + '">' +
+                '<td>' + Fmt.esc(clip(r.description, 90) || '(no issue text)') + '</td>' +
+                // Item 5: latest champion only, same rule as the Issues log.
+                '<td>' + Fmt.esc(latestChampionText(r) || '—') + '</td>' +
+                '<td>' + Fmt.esc(r.department || '—') + '</td>' +
+                '<td><span class="il-pill ' + statusClass(r.status) + '">' + Fmt.esc(r.status || 'Open') + '</span></td>' +
+                '<td>' + (a == null ? '—' : a + 'd') + '</td>' +
+              '</tr>';
+            }).join('') + '</tbody></table></div>'
+        : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>');
+  }
   function renderDashboardScreen() {
     var host = $('il-dashboard-view'); if (!host) return;
+    var anyF = ['search', 'status', 'department', 'champion'].some(function (k) { return dFilters[k]; });
+    var clr = $('il-dclearfilters'); if (clr) clr.hidden = !anyF;
+    if (screen === 'dashboard') { var ft = $('il-topfilttoggle'); if (ft) ft.classList.toggle('has-active', anyF); }
     if (!pid) {
       host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Select a project to see its dashboard.</div>';
       return;
     }
-    // ---- issues, every status --------------------------------------------
-    var open = rows.filter(function (r) { return (r.status || 'Open') === 'Open'; }).length;
-    var hold = rows.filter(function (r) { return r.status === 'On Hold'; }).length;
-    var closedRows = rows.filter(function (r) { return r.status === 'Closed'; });
-    var ages = rows.filter(function (r) { return (r.status || 'Open') !== 'Closed'; })
-      .map(agingDays).filter(function (a) { return a != null; });
-    var avgAge = ages.length ? Math.round(ages.reduce(function (s, a) { return s + a; }, 0) / ages.length) : 0;
-    // "Category" reads as DEPARTMENT here — issues have no separate category field of
-    // their own, and department is this register's existing classifying dimension.
-    var byDept = {};
-    rows.forEach(function (r) { var k = r.department || '(no department)'; byDept[k] = (byDept[k] || 0) + 1; });
-    var deptSlices = Object.keys(byDept)
-      .sort(function (a, b) { return byDept[b] - byDept[a]; })
-      .map(function (k, i) { return { label: k, value: byDept[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
-    var agingBuckets = agingBucketsOf(rows);
+    var data = dashIssuesFiltered();
+    var open = data.filter(function (r) { return (r.status || 'Open') === 'Open'; }).length;
+    var hold = data.filter(function (r) { return r.status === 'On Hold'; }).length;
+    var closed = data.filter(function (r) { return r.status === 'Closed'; }).length;
+    var total = data.length;
 
-    // ---- lessons, unfiltered (not the Lessons screen's own filter bar) ----
+    // ITEM 7: status pie, replacing the tiles.
+    var statusSlices = [
+      { label: 'Open', value: open, color: '#dc2626' },
+      { label: 'On Hold', value: hold, color: '#d97706' },
+      { label: 'Closed', value: closed, color: '#16a34a' },
+    ];
+    // ITEM 8: open vs total, overall.
+    var openTotalBars = [
+      { label: 'Open', value: open, color: '#dc2626' },
+      { label: 'Total', value: total, color: '#94a3b8' },
+    ];
+    // ITEM 9: by champion — a table AND the same open-vs-total shape as item 8,
+    // one grouped pair of bars per champion. Grouped by latestChampionText()
+    // (item 5) — "who owns it now", not the full joined assignment history.
+    var byChamp = {};
+    data.forEach(function (r) {
+      var c = latestChampionText(r) || '(no champion)';
+      if (!byChamp[c]) byChamp[c] = { label: c, open: 0, total: 0 };
+      byChamp[c].total++;
+      if ((r.status || 'Open') === 'Open') byChamp[c].open++;
+    });
+    var champList = Object.keys(byChamp).map(function (k) { return byChamp[k]; })
+      .sort(function (a, b) { return b.total - a.total; });
+    var champTop = champList.slice(0, 10);
+
+    // ITEM 6: lessons are folded in as one line, never a separate section.
     var standalone = LESSONS.filter(function (l) { return !l.issue_id; });
-    var byCat = {};
-    closedRows.forEach(function (r) { lessonsOfIssue(r.id).forEach(function (l) {
-      var k = l.category || '(no category)'; byCat[k] = (byCat[k] || 0) + 1;
-    }); });
-    standalone.forEach(function (l) { var k = l.category || '(no category)'; byCat[k] = (byCat[k] || 0) + 1; });
-    var catSlices = Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; })
-      .map(function (k, i) { return { label: k, value: byCat[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
-    var byLDept = {};
-    closedRows.forEach(function (r) { var k = r.department || '(no department)'; byLDept[k] = (byLDept[k] || 0) + 1; });
-    standalone.forEach(function (l) { var k = l.department || '(no department)'; byLDept[k] = (byLDept[k] || 0) + 1; });
-    var lDeptBars = Object.keys(byLDept).sort(function (a, b) { return byLDept[b] - byLDept[a]; })
-      .map(function (k, i) { return { label: clip(k, 16), value: byLDept[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
+    var lessonsNote = '<p class="il-dash-note"><span data-ico="bulb" data-ico-size="14"></span>' +
+      '<strong>' + LESSONS.length + '</strong> lesson' + (LESSONS.length === 1 ? '' : 's') + ' captured' +
+      (standalone.length ? ' (' + standalone.length + ' without a full issue)' : '') +
+      ' — see the Lessons Learned screen.</p>';
 
-    host.innerHTML = migrateNoteHTML() +
-      '<div class="il-kpis">' +
-        kpi('Total issues', rows.length, '') +
-        kpi('Open', open, 'is-open') +
-        kpi('On Hold', hold, 'is-hold') +
-        kpi('Closed', closedRows.length, 'is-closed') +
-        kpi('Avg aging (open)', avgAge + 'd', '') +
-      '</div>' +
-      '<div class="il-dash-sec-head">Issues &amp; Concerns — every status</div>' +
+    host.innerHTML = migrateNoteHTML() + lessonsNote +
       '<div class="il-dash-grid">' +
-        '<div class="pd-card il-dash-card il-dash-wide"><h4>All issues by champion</h4>' +
-          dashboardListHTML(rows) + '</div>' +
-        '<div class="pd-card il-dash-card"><h4>By department</h4>' +
-          (deptSlices.length
-            ? '<div class="il-dash-chartwrap">' + donutChartSVG(deptSlices, { aria: 'Issues by department' }) +
-              '<div class="il-dash-legend">' + deptSlices.map(function (s) {
+        '<div class="pd-card il-dash-card"><h4>Status</h4>' +
+          (total
+            ? '<div class="il-dash-chartwrap">' + donutChartSVG(statusSlices, { aria: 'Issues by status' }) +
+              '<div class="il-dash-legend">' + statusSlices.map(function (s) {
                 return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
                   Fmt.esc(s.label) + ' (' + s.value + ')</span>';
               }).join('') + '</div></div>'
-            : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+            : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
         '</div>' +
-        '<div class="pd-card il-dash-card"><h4>By aging</h4>' + barChartSVG(agingBuckets, { aria: 'Issues by aging group' }) + '</div>' +
+        '<div class="pd-card il-dash-card"><h4>Open vs Total</h4>' +
+          barChartSVG(openTotalBars, { aria: 'Open vs total issues' }) +
+        '</div>' +
+        '<div class="pd-card il-dash-card il-dash-wide"><h4>By champion — open vs total</h4>' +
+          (champTop.length
+            ? groupedBarSVG(champTop, { aria: 'Issues by champion, open vs total' }) +
+              '<div class="il-dash-barlegend"><span><i style="background:#EE3124"></i>Open</span>' +
+                '<span><i style="background:#94a3b8"></i>Total</span></div>' +
+              champTableHTML(champList) +
+              (champList.length > champTop.length
+                ? '<p class="il-mom-note">Chart shows the top ' + champTop.length + ' of ' + champList.length +
+                  ' champions by total; the table above lists every one.</p>' : '')
+            : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
+        '</div>' +
       '</div>' +
-      '<div class="il-kpis il-kpis-2">' +
-        kpi('Lessons captured', LESSONS.length, '') +
-        kpi('From a closed issue', LESSONS.length - standalone.length, 'is-closed') +
-        kpi('Categories', Object.keys(byCat).length, '') +
-      '</div>' +
-      '<div class="il-dash-sec-head">Lessons Learned</div>' +
-      '<div class="il-dash-grid">' +
-        '<div class="pd-card il-dash-card il-dash-wide"><h4>Lessons from closed issues</h4>' +
-          lessonDashboardListHTML(closedRows) + '</div>' +
-        '<div class="pd-card il-dash-card"><h4>By category</h4>' +
-          (catSlices.length
-            ? '<div class="il-dash-chartwrap">' + donutChartSVG(catSlices, { aria: 'Lessons by category' }) +
-              '<div class="il-dash-legend">' + catSlices.map(function (s) {
-                return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
-                  Fmt.esc(s.label) + ' (' + s.value + ')</span>';
-              }).join('') + '</div></div>'
-            : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
-        '</div>' +
-        '<div class="pd-card il-dash-card"><h4>By department</h4>' +
-          (lDeptBars.length ? barChartSVG(lDeptBars, { aria: 'Lessons by department' })
-                             : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
-        '</div>' +
-      '</div>';
+      // ITEM 10: the full list, below every chart.
+      fullIssueListHTML(data);
     host.querySelectorAll('[data-open]').forEach(function (tr) { tr.onclick = function () { openIssue(tr.dataset.open); }; });
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
-  }
-
-  function dashboardListHTML(data) {
-    if (!data.length) return '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>';
-    var top = data.slice().sort(function (a, b) { return (agingDays(b) || 0) - (agingDays(a) || 0); }).slice(0, 12);
-    return '<div class="pd-tablewrap"><table class="il-dash-list"><thead><tr>' +
-      '<th>Issue</th><th>Champion</th><th>Department</th><th>Status</th><th>Aging</th></tr></thead><tbody>' +
-      top.map(function (r) {
-        var a = agingDays(r);
-        return '<tr data-open="' + Fmt.esc(r.id) + '">' +
-          '<td>' + Fmt.esc(clip(r.description, 70) || '(no issue text)') + '</td>' +
-          '<td>' + Fmt.esc(championText(r.champion_ids, r.champion) || '—') + '</td>' +
-          '<td>' + Fmt.esc(r.department || '—') + '</td>' +
-          '<td><span class="il-pill ' + statusClass(r.status) + '">' + Fmt.esc(r.status || 'Open') + '</span></td>' +
-          '<td>' + (a == null ? '—' : a + 'd') + '</td>' +
-        '</tr>';
-      }).join('') + '</tbody></table></div>' +
-      (data.length > top.length
-        ? '<p class="il-mom-note">Showing the ' + top.length + ' longest-aging of ' + data.length +
-          ' matching issues — switch to Log for the full list.</p>' : '');
   }
 
   function renderIssuesLog() {
@@ -811,7 +999,11 @@ window.IssuesLessons = (function () {
       return;
     }
     var data = issuesFiltered();
+    // Item 2: drag-to-reorder needs a leading handle column, present in both the
+    // header and every row so the column counts still match (this module's own
+    // standing rule).
     var head = '<thead><tr>' +
+      '<th class="il-dragcell"></th>' +
       '<th>No.</th><th>Department</th><th>Issue</th><th>Caused By</th>' +
       '<th>Corrective Action</th><th>Champion</th><th>Status</th>' +
       '<th>Date Presented</th><th>Days Aging</th><th>Date Resolved</th>' +
@@ -830,6 +1022,9 @@ window.IssuesLessons = (function () {
       // at phone width module.css hides the head and stacks each row into a card,
       // where every value needs its own inline label (.il-table td::before).
       return '<tr class="il-clickrow" data-open="' + Fmt.esc(r.id) + '">' +
+        // Item 2: drag handle — a separate element so the row's own click-to-open
+        // handler is never fought by the drag gesture.
+        '<td class="il-dragcell">' + dragGripHTML(r.id) + '</td>' +
         '<td class="il-cell-num">' + (i + 1) + '</td>' +
         '<td data-l="Department">' + Fmt.esc(r.department) + '</td>' +
         '<td class="il-cell-wrap il-cell-issue" data-l="Issue"><div class="il-clip">' + Fmt.esc(r.description) + '</div>' +
@@ -838,7 +1033,9 @@ window.IssuesLessons = (function () {
         '</td>' +
         '<td class="il-cell-wrap" data-l="Caused by"><div class="il-clip">' + Fmt.esc(r.caused_by) + '</div></td>' +
         '<td class="il-cell-wrap" data-l="Corrective action"><div class="il-clip">' + Fmt.esc(r.corrective_action) + '</div></td>' +
-        '<td class="il-champ" data-l="Champion">' + Fmt.esc(r.champion) + '</td>' +
+        // Item 5: only the LATEST champion, not the joined history of everyone
+        // ever assigned — see latestChampionText().
+        '<td class="il-champ" data-l="Champion">' + Fmt.esc(latestChampionText(r)) + '</td>' +
         '<td data-l="Status"><span class="il-pill ' + statusClass(r.status) + '">' + Fmt.esc(r.status || 'Open') + '</span></td>' +
         '<td data-l="Presented">' + Fmt.date(r.date_presented) + '</td>' +
         '<td class="il-aging' + (hot ? ' is-hot' : '') + '" data-l="Aging">' + agingTxt + '</td>' +
@@ -850,7 +1047,7 @@ window.IssuesLessons = (function () {
     }).join('');
 
     t.innerHTML = head + '<tbody>' + (body ||
-      '<tr><td colspan="' + (isSteward ? 11 : 10) + '" style="padding:24px;color:var(--pd-muted);">No issues match the current filters.</td></tr>') +
+      '<tr><td colspan="' + (isSteward ? 12 : 11) + '" style="padding:24px;color:var(--pd-muted);">No issues match the current filters.</td></tr>') +
       '</tbody>';
 
     // ⚠️ The row IS the editor entry point now. Its own click opens the issue; the
@@ -861,6 +1058,8 @@ window.IssuesLessons = (function () {
     t.querySelectorAll('[data-del]').forEach(function (b) {
       b.onclick = function (e) { e.stopPropagation(); del(b.dataset.del); };
     });
+    // Item 2: drag-to-reorder, scoped to whatever the current filter is showing.
+    wireReorder(t, data, rows, issueOrderCmp, TABLE);
     if (window.Icons) Icons.hydrate(t);
   }
 
@@ -994,10 +1193,9 @@ window.IssuesLessons = (function () {
           ? ilField(false, 'Lessons Learned' + reqMark(true), 'il-c-lesson',
               '<textarea class="pd-textarea il-if" data-f="_lessonText" rows="4" spellcheck="true" ' +
                 'placeholder="What did the team learn from this issue?" required>' +
-                Fmt.esc(r._lessonText) + '</textarea>', r._lessonText) +
-            ilField(false, 'Lesson category <span style="font-weight:400;color:var(--pd-muted);">(optional)</span>', 'il-c-lessoncat',
-              '<select class="pd-select pd-input-sm il-if" data-f="_lessonCategory">' +
-                opts(LESSON_CATS, r._lessonCategory || '', '—') + '</select>', r._lessonCategory)
+                Fmt.esc(r._lessonText) + '</textarea>', r._lessonText)
+          // Item 4: no separate "Lesson category" field — the lesson is classified by
+          // Department, which the issue already carries and this form already collects.
           : '');
     } else if (status === 'On Hold') {
       narrativeField = ilField(ro, 'Reason for Hold' + reqMark(!ro), 'il-c-action',
@@ -1051,9 +1249,6 @@ window.IssuesLessons = (function () {
         '<label>Lessons Learned' + reqMark(true) + '</label>' +
         '<textarea class="pd-textarea" id="il-iss-closelesson" rows="3" spellcheck="true" required ' +
           'placeholder="What did the team learn from this issue?">' + Fmt.esc(_issCloseDraft.lesson) + '</textarea>' +
-        '<label>Lesson category <span style="font-weight:400;color:var(--pd-muted);">(optional)</span></label>' +
-        '<select class="pd-select pd-input-sm" id="il-iss-closecat">' +
-          opts(LESSON_CATS, _issCloseDraft.category || '', '—') + '</select>' +
         '<p class="il-mom-note">Closing an issue always records a lesson — this is what "no need for the ' +
           'capture a lesson button" means: closure IS the capture.</p>' +
         '<div class="il-workflow-acts"><button class="pd-btn pd-btn-sm" id="il-iss-closecancel">Cancel</button>' +
@@ -1177,7 +1372,7 @@ window.IssuesLessons = (function () {
       _issCloseOpen = true; _issHoldOpen = false;
       // ⚠️ Pre-filled to today, like Date Presented is on Add — a required field the
       // planner can accept or change, not one they have to remember to fill in blank.
-      _issCloseDraft = { report: '', lesson: '', category: '', dateResolved: todayISO() };
+      _issCloseDraft = { report: '', lesson: '', dateResolved: todayISO() };
       renderIssues();
     };
     var cc = host.querySelector('#il-iss-closecancel');
@@ -1185,7 +1380,6 @@ window.IssuesLessons = (function () {
     var cdt = host.querySelector('#il-iss-closedate'); if (cdt) cdt.onchange = function () { _issCloseDraft.dateResolved = cdt.value; };
     var crp = host.querySelector('#il-iss-closereport'); if (crp) crp.oninput = function () { _issCloseDraft.report = crp.value; };
     var cls = host.querySelector('#il-iss-closelesson'); if (cls) cls.oninput = function () { _issCloseDraft.lesson = cls.value; };
-    var ccat = host.querySelector('#il-iss-closecat'); if (ccat) ccat.onchange = function () { _issCloseDraft.category = ccat.value; };
     var ccf = host.querySelector('#il-iss-closeconfirm');
     if (ccf) ccf.onclick = confirmCloseIssue;
 
@@ -1242,7 +1436,7 @@ window.IssuesLessons = (function () {
       // ⚠️ ITEM 2: date_resolved is pre-filled to today, NOT left blank — this draft is
       // ALREADY Closed (forceClose), so unlike an ordinary new (Open) issue, "Date
       // Resolved" is a real, required field here from the start. Editable if it wasn't today.
-      status: 'Open', _forceClose: true, _lessonText: '', _lessonCategory: '',
+      status: 'Open', _forceClose: true, _lessonText: '',
       department: (profile && profile.department) || '',
       champion: '', champion_ids: [], description: '', caused_by: '',
       closure_report: '', date_presented: todayISO(), date_resolved: todayISO(),
@@ -1339,7 +1533,7 @@ window.IssuesLessons = (function () {
           try {
             var lrow = {
               project_id: pid, issue_id: ins.data.id, mom_id: null,
-              department: data.department, category: v._lessonCategory || null,
+              department: data.department,
               lesson: (v._lessonText || '').trim(), recommendation: null,
               date_captured: data.date_resolved, created_by: UID,
             };
@@ -1439,14 +1633,14 @@ window.IssuesLessons = (function () {
       try {
         var lrow = {
           project_id: pid, issue_id: r.id, mom_id: r.mom_id || null,
-          department: r.department || null, category: _issCloseDraft.category || null,
+          department: r.department || null,
           lesson: lesson, recommendation: null, date_captured: data.date_resolved, created_by: UID,
         };
         var lins = await sb().from(LESSON_TABLE).insert(lrow).select().single();
         if (!lins.error) LESSONS.unshift(lins.data);
         else UI.toast('Issue closed, but the lesson could not be saved: ' + lins.error.message, 'warn');
       } catch (e2) { UI.toast('Issue closed, but the lesson could not be saved: ' + (e2.message || ''), 'warn'); }
-      _issCloseOpen = false; _issCloseDraft = { report: '', lesson: '', category: '', dateResolved: '' };
+      _issCloseOpen = false; _issCloseDraft = { report: '', lesson: '', dateResolved: '' };
       UI.toast('Issue closed', 'ok');
       renderIssues();
     } catch (e) { UI.toast(e.message, 'error'); }
@@ -1562,6 +1756,23 @@ window.IssuesLessons = (function () {
   function idsOf(root) {
     var v = (root && root.dataset.ids) || '';
     return v ? v.split(',').filter(Boolean) : [];
+  }
+  // ⚠️ ITEM 5: log/summary VIEWS show only the MOST RECENTLY assigned champion, not the
+  // full joined history every prior champion — that full history is still what the
+  // detail view's editable picker shows (it's what's needed to edit it), but a list
+  // scanning many rows reads as noise once a champion column tries to also be an
+  // ownership log. `champion_ids` is push-ordered (wirePeople's add handler always
+  // appends), so the LAST id is the most recently assigned account; for a legacy
+  // free-text-only champion (`champion_ids` empty), the last `;`-separated segment of
+  // the joined string is the closest available reading of "who is on it now".
+  function latestChampionText(r) {
+    var ids = (r && r.champion_ids) || [];
+    if (ids.length) {
+      var names = peopleNamesOf([ids[ids.length - 1]]);
+      if (names[0]) return names[0];
+    }
+    var parts = ((r && r.champion) || '').split(';').map(function (s) { return s.trim(); }).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : '';
   }
 
   // ⚠️ The qualifier is the COMPANY for a contact and the DEPARTMENT for an
@@ -1770,12 +1981,7 @@ window.IssuesLessons = (function () {
       _lessErr = (e && e.message) || 'load failed';
       return;
     }
-    LESSONS.sort(function (a, b) {                    // newest first, blanks last
-      var x = a.date_captured || '', y = b.date_captured || '';
-      if (!x !== !y) return x ? -1 : 1;
-      if (x !== y) return y.localeCompare(x);
-      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
-    });
+    LESSONS.sort(lessonOrderCmp);   // manual sort_order first (item 2), else newest first
   }
 
   // The pre-migration shape, presented as read-only lessons so nothing disappears.
@@ -1815,9 +2021,8 @@ window.IssuesLessons = (function () {
   function lessonsFiltered() {
     return LESSONS.filter(function (l) {
       if (lFilters.department && l.department !== lFilters.department) return false;
-      if (lFilters.category && l.category !== lFilters.category) return false;
       if (lFilters.search) {
-        var hay = [l.lesson, l.recommendation, l.category, l.department,
+        var hay = [l.lesson, l.recommendation, l.department,
                    lessonSourceText(l)].join(' ').toLowerCase();
         if (hay.indexOf(lFilters.search) === -1) return false;
       }
@@ -1851,9 +2056,8 @@ window.IssuesLessons = (function () {
     return LESSONS.filter(function (l) {
       if (l.issue_id) return false;
       if (lFilters.department && l.department !== lFilters.department) return false;
-      if (lFilters.category && l.category !== lFilters.category) return false;
       if (lFilters.search) {
-        var hay = [l.lesson, l.recommendation, l.category, l.department, lessonSourceText(l)]
+        var hay = [l.lesson, l.recommendation, l.department, lessonSourceText(l)]
           .join(' ').toLowerCase();
         if (hay.indexOf(lFilters.search) === -1) return false;
       }
@@ -1863,8 +2067,10 @@ window.IssuesLessons = (function () {
 
   function renderLessons() {
     renderLessonKpis();
-    var anyF = ['search', 'department', 'category'].some(function (k) { return lFilters[k]; });
+    var anyF = ['search', 'department'].some(function (k) { return lFilters[k]; });
     var clr = $('il-lclearfilters'); if (clr) clr.hidden = !anyF;
+    // Item 1: the dot on the shared topbar funnel, only while Lessons is active.
+    if (screen === 'lessons') { var ft = $('il-topfilttoggle'); if (ft) ft.classList.toggle('has-active', anyF); }
     var host = $('il-lessons-view'); if (!host) return;
     if (!pid) { host.innerHTML = ''; return; }
     // ⚠️ Just `log`/`detail` now — the analytics landing page moved out to its own
@@ -1885,34 +2091,13 @@ window.IssuesLessons = (function () {
   function renderLessonKpis() {
     var all = LESSONS;
     var linked = all.filter(function (l) { return l.issue_id || l.mom_id || l.mom_item_id; }).length;
-    var cats = {}; all.forEach(function (l) { if (l.category) cats[l.category] = 1; });
+    // Item 4: Department, not a separate "category" vocabulary — the same field an
+    // issue already carries.
+    var depts = {}; all.forEach(function (l) { if (l.department) depts[l.department] = 1; });
     $('il-lkpis').innerHTML =
       kpi('Lessons captured', all.length, '') +
       kpi('From a closed issue', linked, 'is-closed') +
-      kpi('Categories', Object.keys(cats).length, '');
-  }
-
-  // ⚠️ The per-screen Lessons Dashboard is gone — its content (the closed-issues list,
-  // category donut, department bar) now lives in the combined `renderDashboardScreen()`
-  // above, built from ALL lessons rather than `closedIssuesFiltered()`/
-  // `standaloneLessonsFiltered()` (those honour the Lessons Log's own filter bar, which
-  // the Dashboard tab must not depend on). `lessonDashboardListHTML` below is still used
-  // there.
-  function lessonDashboardListHTML(data) {
-    if (!data.length) return '<div class="il-empty" style="padding:16px;">No closed issues match the current filter.</div>';
-    var top = data.slice(0, 12);
-    return '<div class="pd-tablewrap"><table class="il-dash-list"><thead><tr>' +
-      '<th>Issue</th><th>Champion</th><th>Department</th><th>Closed</th></tr></thead><tbody>' +
-      top.map(function (r) {
-        return '<tr data-open="' + Fmt.esc(r.id) + '">' +
-          '<td>' + Fmt.esc(clip(r.description, 70) || '(no issue text)') + '</td>' +
-          '<td>' + Fmt.esc(championText(r.champion_ids, r.champion) || '—') + '</td>' +
-          '<td>' + Fmt.esc(r.department || '—') + '</td>' +
-          '<td>' + (r.date_resolved ? Fmt.date(r.date_resolved) : '—') + '</td>' +
-        '</tr>';
-      }).join('') + '</tbody></table></div>' +
-      (data.length > top.length
-        ? '<p class="il-mom-note">Showing 12 of ' + data.length + ' — switch to Log for the full list.</p>' : '');
+      kpi('Departments', Object.keys(depts).length, '');
   }
 
   // ---- Lessons Log (items #6-analog, #15, #16) -------------------------------
@@ -1923,33 +2108,41 @@ window.IssuesLessons = (function () {
     host.classList.remove('il-mom-report');
     var closed = closedIssuesFiltered();
     var standalone = standaloneLessonsFiltered();
-    var head = '<thead><tr><th>No.</th><th>Department</th><th>Issue</th><th>Champion</th>' +
+    // Item 2: a leading drag-handle column, present in both header and rows.
+    var head = '<thead><tr><th class="il-dragcell"></th><th>No.</th><th>Department</th><th>Issue</th><th>Champion</th>' +
       '<th>Closure Report</th><th>Lesson</th><th>Date Resolved</th></tr></thead>';
     var body = closed.map(function (r, i) {
       var ls = lessonsOfIssue(r.id);
       var lessonTxt = ls.map(function (l) { return l.lesson; }).filter(Boolean).join(' · ');
       return '<tr data-open="' + Fmt.esc(r.id) + '" style="cursor:pointer;">' +
+        '<td class="il-dragcell">' + dragGripHTML(r.id) + '</td>' +
         '<td class="il-cell-num">' + (i + 1) + '</td>' +
         '<td data-l="Department">' + Fmt.esc(r.department) + '</td>' +
         '<td class="il-cell-wrap" data-l="Issue"><div class="il-clip">' + Fmt.esc(r.description) + '</div></td>' +
-        '<td class="il-champ" data-l="Champion">' + Fmt.esc(championText(r.champion_ids, r.champion)) + '</td>' +
+        // Item 5: latest champion only, matching the Issues log.
+        '<td class="il-champ" data-l="Champion">' + Fmt.esc(latestChampionText(r)) + '</td>' +
         '<td class="il-cell-wrap" data-l="Closure report"><div class="il-clip">' + Fmt.esc(r.closure_report) + '</div></td>' +
         '<td class="il-cell-wrap" data-l="Lesson"><div class="il-clip">' + Fmt.esc(lessonTxt) + '</div></td>' +
         '<td data-l="Resolved">' + Fmt.date(r.date_resolved) + '</td>' +
       '</tr>';
     }).join('');
-    var table = '<div class="pd-card" style="padding:0;overflow:auto;"><table class="pd-table il-table">' + head +
-      '<tbody>' + (body || '<tr><td colspan="7" style="padding:24px;color:var(--pd-muted);">No closed issues match the current filters.</td></tr>') +
+    var table = '<div class="pd-card" style="padding:0;overflow:auto;"><table class="pd-table il-table" id="il-lessons-closed-table">' + head +
+      '<tbody>' + (body || '<tr><td colspan="8" style="padding:24px;color:var(--pd-muted);">No closed issues match the current filters.</td></tr>') +
       '</tbody></table></div>';
     var standaloneSection = !standalone.length ? '' :
       '<h4 style="margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' +
         'Lessons captured without a full issue</h4>' +
       '<p class="il-mom-note">From a meeting action item, or captured before this workflow existed.</p>' +
-      '<div class="il-lessons">' + standalone.map(lessonCardHTML).join('') + '</div>';
+      '<div class="il-lessons" id="il-lessons-standalone">' + standalone.map(lessonCardHTML).join('') + '</div>';
     host.innerHTML = migrateNoteHTML() + table + standaloneSection;
     host.querySelectorAll('tr[data-open]').forEach(function (tr) { tr.onclick = function () { openIssue(tr.dataset.open); }; });
     host.querySelectorAll('[data-open-lesson]').forEach(function (b) { b.onclick = function () { openLesson(b.dataset.openLesson); }; });
     host.querySelectorAll('[data-open-issue]').forEach(function (b) { b.onclick = function () { openIssue(b.dataset.openIssue); }; });
+    // Item 2: drag-to-reorder — the closed-issues table shares issues_lessons' own
+    // sort_order with the Issues log (they're the same rows); the standalone cards
+    // reorder lessons_learned's sort_order instead.
+    wireReorder(host.querySelector('#il-lessons-closed-table'), closed, rows, issueOrderCmp, TABLE);
+    wireReorder(host.querySelector('#il-lessons-standalone'), standalone, LESSONS, lessonOrderCmp, LESSON_TABLE);
   }
 
   // ---- standalone-lesson detail (unchanged editor, now reached as a drill-down) ----
@@ -1980,9 +2173,14 @@ window.IssuesLessons = (function () {
 
   function lessonCardHTML(l) {
     var src = lessonSourceText(l);
-    return '<div class="il-lcard">' +
+    // Item 2: reorderable unless it's a read-only legacy row (nothing to persist an
+    // order onto — see isLegacyLesson()).
+    var reorderAttrs = isLegacyLesson(l) ? ''
+      : ' draggable="true" data-reorder="' + Fmt.esc(l.id) + '" title="Drag to reorder"';
+    return '<div class="il-lcard il-reorderable"' + reorderAttrs + '>' +
       '<div class="il-lcard-top">' +
-        (l.category ? '<span class="il-chip is-cat">' + Fmt.esc(l.category) + '</span>' : '') +
+        // Item 4: department is the ONLY classification now — no separate "lesson
+        // category" chip alongside it (see the LESSON_CATS removal note above).
         (l.department ? '<span class="il-chip">' + Fmt.esc(l.department) + '</span>' : '') +
         '<span class="il-lcard-date">' + (l.date_captured ? Fmt.date(l.date_captured) : '—') + '</span>' +
       '</div>' +
@@ -2033,10 +2231,8 @@ window.IssuesLessons = (function () {
           'became records of their own. Run the migration named above to edit it here.</p>' : '') +
 
       '<div class="il-form-row">' +
-        '<div class="pd-field" style="flex:1 1 200px;">' +
-          ilField(_lessReport, 'Lesson category', 'il-c-cat',
-            '<select class="pd-select pd-input-sm il-lf-fld" data-f="category"' + d + '>' +
-            opts(LESSON_CATS, l.category || '', '—') + '</select>', l.category) + '</div>' +
+        // Item 4: no separate "Lesson category" field — Department is the one
+        // classification, same list and same field an issue already uses.
         '<div class="pd-field" style="flex:1 1 200px;">' +
           ilField(_lessReport, 'Department', 'il-c-dept',
             '<select class="pd-select pd-input-sm il-lf-fld" data-f="department"' + d + '>' +
@@ -2186,7 +2382,7 @@ window.IssuesLessons = (function () {
       return;
     }
     _lessNew = {
-      category: '', department: (link && link.department) || (profile && profile.department) || '',
+      department: (link && link.department) || (profile && profile.department) || '',
       lesson: '', recommendation: '', date_captured: todayISO(),
       issue_id: (link && link.issue_id) || null,
       mom_id: (link && link.mom_id) || null,
@@ -2223,7 +2419,6 @@ window.IssuesLessons = (function () {
       mom_id:         l.mom_id || null,
       mom_item_id:    l.mom_item_id || null,
       department:     l.department || null,
-      category:       l.category || null,
       lesson:         (l.lesson || '').trim(),
       recommendation: (l.recommendation || '').trim(),
       date_captured:  l.date_captured || null,
