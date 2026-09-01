@@ -84,6 +84,97 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (h) — Dashboard rebuilt: the two KPI rows replaced by a performance row, EVM/Claims/Matrix/Packages panels dropped, MoM + Issues in their place
+
+Owner sent a screenshot with a red rectangle and eight numbered items. The rectangle enclosed
+**both** card rows — the project-facts row and the four status cards — stopping above the decisions
+chips, so the chips were kept. ⚠️ The first screenshot arrived without the rectangle visible; rather
+than guess between "the facts row" and "the status row" (materially different work, and item 2
+suggested a third reading), the owner was asked and sent the marked-up version. Guessing here would
+have deleted the wrong four cards.
+
+**1 + 8. Both rows and the "Welcome, Fernando" heading removed.** The heading is the PROJECT now:
+`<h2 id="proj-title">` carries the project name and the sub-line carries the id. `renderKpis()`,
+`statCard()` and cards 1–4 of `renderStatus()` are gone; `renderStatus()` now does only the work the
+surviving decisions strip needs.
+
+**2. Location in the title bar.** `(OPW101) · Newport Boulevard…`. ⚠️ The segment is **omitted**
+when the project record has no location, never rendered as an em-dash: a placeholder in a title bar
+reads as a claim that the project has no location, while saying nothing is the truth when the field
+is simply unset.
+
+**3. The new performance row: S-Curve, Planned POC, Actual POC, SPI, CPI.**
+- ⚠️ **THE REAL DECISION HERE WAS THE BASIS, NOT THE LAYOUT.** `poc` is DURATION-weighted; the
+  pre-existing `pv` is COST-weighted. Shipping those two as "Actual POC" and "Planned POC" would
+  have put two different measurements side by side under labels that look like a matched pair, and
+  the card literally prints their difference — so the subtraction would have been meaningless.
+  A new **`pvDur`** metric (the same `elapsed` shape, weighted by `duration_days`) was added to
+  config.js so the pair shares a basis. `pv` stays cost-weighted because SPI is a money ratio and
+  EVM defines it that way, and each card names its own basis so the two families cannot be conflated.
+- Every card states what is missing rather than resting at a neutral-looking `0%` or `1.00`.
+- The S-Curve card draws a real 2-series sparkline. ⚠️ Each series is drawn only where IT has
+  values, so a curve whose actuals stop half way shows the planned line running on and the actual
+  line ending — joining across the gap would draw a segment that looks like progress nobody reported.
+
+**4. Trade dates added, and a REAL clipping bug found while checking the bars.**
+Each row now carries its own `from → to`, activity count and done count, and the header states the
+elapsed % of the programme.
+- ⚠️ **The bug the owner suspected was real, and it was the LABEL, not the geometry.** `.pd-pv-n`
+  was `position:absolute; right:6px` **inside** `.pd-pv-b`, which clips with `overflow:hidden`. On a
+  short trade the percentage was sliced mid-digit — Allied Services rendered as a bare `%` in the
+  owner's own screenshot. A number that can be truncated into a different number is worse than no
+  number. It is a real grid column now and cannot be clipped by the bar it describes.
+- ⚠️ **The geometry itself was checked and found CORRECT**, so it was not "fixed". Bar offset/width
+  and the fill are sound; what looked wrong was the ghost bar (the trade's span at .22 opacity)
+  being mistaken for a progress fill. A `.pd-pv-now` marker now shows where today falls inside each
+  trade's own span, so "0% done, 60% of the time gone" is legible rather than inferred from colour.
+
+**5 + 6. EVM, Contracts & Claims, Priority Matrix and Packages panels removed**, with their
+`gauge()`, `mx()`, `renderFlow()` and `renderMatrix()` code and all their dead CSS. **Minutes of
+Meeting** and **Issues & Concerns** panels replace the first two. ⚠️ Both follow the rule the old
+status band already held: a module with **no rows** reports "not in use", never "0 drafts" / "0
+open" — zero on an unused register reads as good news. The Issues panel also surfaces entries
+carrying **no status** as their own figure rather than silently counting them as closed.
+
+**7. Retired modules are clickable on the dashboard now.** `renderTiles()` had its own second copy
+of the disabled-card markup, so Drawing Register and Material Submittal Log were live links on
+modules.html and dead grey boxes here. The branch now delegates to the launcher's own
+`ModulesGrid.card(m)` (newly exported) — one builder, so the two screens cannot drift. Enabled
+modules keep the dashboard's own card, which carries live figures the launcher's has no place for.
+
+**New shared aggregation: `series`** (`db.js`) — one x column, N y columns, ordered. ⚠️ A point is
+kept when x exists and **at least one** y is numeric: dropping the row when one series is null would
+silently shorten the other, and keeping a row with no y at all would draw a gap that reads as zero.
+
+**Verified.** **45 checks** driving the SHIPPED functions in a Node `vm` sandbox — sliced out of
+dashboard.html by brace matching, never re-typed, so the suite cannot pass against a copy that
+drifted. SPI **0.84** and CPI **1.05** computed from EV 420 / PV 500 / AC 400; the POC pair reporting
+**−8 pts on one basis**; the stopped-series sparkline proven to emit one `M` and no `L`; every empty
+state proven to name its gap and print no `NaN`/`undefined`. Plus **9 checks** on the new `series`
+agg (sorting, null handling, numeric-string parsing, non-numeric → null not NaN).
+⚠️ **Two of the first run's failures were the TEST's fault, not the code's** — `"10 done"` contains
+the substring `"0 done"`, and the bar-width regex was also catching the fill widths, which
+legitimately reach 0. Corrected the assertions rather than the code, and said so.
+
+**Measured live in the browser** against the real stylesheet with synthetic data: 5 cards in 5
+columns, 2 sparkline paths, the programme grid at `126px 132px 763px 42px`, **0 of 6 percentage
+labels clipped** (including the short Allied Services bar that was the bug), 0 bars overflowing
+their track, 0 page horizontal scroll, 3 mini-cells in each new panel, no console errors.
+Structural: 0 duplicate DOM ids, all 13 `getElementById` targets present in markup, 0 NUL bytes,
+CSS braces 60/60, 0 emitted classes without a rule.
+
+⚠️ **NOT verified signed in, and NOT screenshotted.** The dashboard redirects to login and this
+environment holds no credentials, so nothing above ran against real Supabase data — in particular
+`pvDur`, the MoM metrics and the `s-curve` series have never been fetched through PostgREST, only
+fed in as fixtures. The Browser pane was again not compositing (the hidden-tab family already in
+this log), so every visual claim is measured DOM geometry, not a rendered image. The `max-width:720px`
+rule is verified as AUTHORED (`96px 1fr 40px`, dates hidden) via the CSSOM — the pane reports
+`innerWidth: 1280` whatever preset is set, so it was never actually rendered narrow.
+
+`config.js?v=` → `20260901a` (26 files), `db.js?v=` → `20260901a` (22), `modules-grid.js?v=` →
+`20260901c` (2). No `MODULE_V` bump: no module's index.html changed structurally.
+
+
 ### 2026-09-01 (g) — RunPod 3D reconstruction cancelled; both Edge Functions undeployed
 
 Owner: *"Let's cancel the runpod feature since it requires a subscription."* **Reverses entry (f),

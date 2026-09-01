@@ -41,46 +41,31 @@
       </div>
 
       <div class="pd-main">
+        <!-- ⚠️ The heading is the PROJECT, not the reader. "Welcome, <name>" was removed
+             2026-09-01 (owner): it told a planner something they already knew and pushed the
+             one fact they came for — which project am I looking at — into a subtitle. The
+             location now sits beside the id, since two Megawide projects can share a name. -->
         <div class="pd-home-head">
-          <h2 id="welcome">Dashboard</h2>
+          <h2 id="proj-title">Loading…</h2>
           <p id="dash-sub">Loading this project…</p>
         </div>
 
-        <!-- ---- Project facts ------------------------------------------- -->
-        <div class="pd-kpis" id="kpis"></div>
-
         <!-- ---- Project status (management band) ------------------------
-             Four cards + a decisions strip, every figure from a module's own
-             declared dash.metrics. See renderStatus() below. -->
+             ⚠️ 2026-09-01 (owner): the two card rows that stood here — the project-facts row
+             (Status / Original Budget / Forecast Start / Forecast Finish / Location) and the
+             four status cards (Schedule / Progress / Cost / Needs attention) — were REMOVED
+             and replaced by the performance row below. The decisions strip was explicitly
+             kept: it sits outside the removal in the owner's screenshot and is the one part
+             of the old band that names something a planner must act on. -->
         <section class="pd-stat-band" id="stat-band" aria-label="Project status">
-          <div class="pd-stat-grid" id="stat-grid"></div>
+          <div class="pd-perf-grid" id="perf-grid"></div>
           <div class="pd-stat-strip" id="stat-strip"></div>
           <div class="pd-viz" id="viz-program"></div>
           <div class="pd-viz-2col">
-            <div class="pd-viz" id="viz-evm"></div>
-            <div class="pd-viz" id="viz-flow"></div>
+            <div class="pd-viz" id="viz-mom"></div>
+            <div class="pd-viz" id="viz-issues"></div>
           </div>
-          <div class="pd-viz-2col">
-            <div class="pd-viz" id="viz-matrix"></div>
-            <div class="pd-viz" id="viz-photos"></div>
-          </div>
-        </section>
-
-        <!-- ---- Packages (A3): a contract package lives inside a project -->
-        <!-- ⚠️ THE PACKAGES PANEL MOVED to Contracts & Claims → Packages (2026-08-26).
-             Owner: *"I think the packages in the dashboard is misplaced it should be within
-             the contract module itself."* A contract package is a scope division that comes
-             off the CONTRACT DOCUMENTS, so the contract module owns it — the same principle
-             that put "— Create from this contract —" on the Add-record form.
-             ⚠️ The old "Select" button is NOT carried over: it wrote `pd_package` into
-             sessionStorage and nothing ever read it, so it narrowed nothing. Every module
-             that really does narrow by package has its own filter. -->
-        <section class="pd-card pd-pkg-card">
-          <div class="pd-sec-head"><h3>Packages</h3></div>
-          <p class="pd-sec-note">Contract packages are managed in
-            <a href="modules/contracts-claims/index.html" style="color:var(--pd-red);font-weight:600;text-decoration:none;">Contracts &amp; Claims → Packages</a>,
-            where the contract that defines them lives. The schedule, BOQ, procurement and
-            engineering all file against them from there.</p>
+          <div class="pd-viz" id="viz-photos" style="margin-top:12px;"></div>
         </section>
 
         <!-- ---- My items on this project --------------------------------
@@ -103,42 +88,40 @@
   </div>
 
   <style>
-    /* EVM band — the figures the Project Schedule's Cost / EVM tab used to carry, now on the
-       dashboard. Tokens throughout, so it follows the theme switch. */
-    .pd-evm-band { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin:10px 0 14px; }
-    .pd-evm-c { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; background:var(--pd-card); border-left-width:3px; }
-    .pd-evm-c.ok { border-left-color:var(--pd-ok,#16a34a); }
-    .pd-evm-c.bad { border-left-color:var(--pd-bad,#dc2626); }
-    .pd-evm-l { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-    .pd-evm-v { display:block; font-size:17px; font-weight:800; line-height:1.2; margin-top:3px; font-variant-numeric:tabular-nums; }
-    .pd-evm-c.ok .pd-evm-v { color:var(--pd-ok,#16a34a); }
-    .pd-evm-c.bad .pd-evm-v { color:var(--pd-bad,#dc2626); }
-    .pd-evm-s { display:block; font-size:10.5px; color:var(--pd-muted); margin-top:2px; }
-    /* Project status band. Uses the shared tokens throughout so it follows the theme switch and
-       never hard-codes a colour that only works on one background. */
     .pd-stat-band { margin:0 0 18px; }
-    .pd-stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(228px, 1fr)); gap:12px; }
-    .pd-stat {
-      position:relative; overflow:hidden; padding:14px 16px 13px; border-radius:12px;
+    /* ---- Performance row (2026-09-01) --------------------------------------------------------
+       Replaces .pd-stat-grid / .pd-stat, which went with the two card rows the owner removed.
+       .pd-stat-strip and friends BELOW are still live — the decisions chips were kept. */
+    .pd-perf-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(196px, 1fr)); gap:12px; }
+    .pd-perf {
+      position:relative; overflow:hidden; padding:13px 15px 12px; border-radius:12px;
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line);
     }
-    /* A 3px spine in the card's own accent — enough to group the four at a glance without four
-       competing filled panels shouting at each other. */
-    .pd-stat::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--sc, var(--pd-muted)); }
-    .pd-stat-k { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
-    .pd-stat-v { font-size:25px; font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
-    .pd-stat-v.sm { font-size:17px; font-weight:700; }
+    .pd-perf::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pc, var(--pd-muted)); }
+    .pd-perf-l { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
+    .pd-perf-v { display:block; font-size:25px; font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
+    /* An empty card must not look like a measured one: smaller, muted, and it states the gap. */
+    .pd-perf-em { font-size:15px; font-weight:700; color:var(--pd-muted); }
+    .pd-perf-bar { position:relative; height:5px; border-radius:3px; background:var(--pd-line); margin-top:9px; overflow:hidden; }
+    .pd-perf-bar > i { display:block; height:100%; border-radius:3px; background:var(--pc, var(--pd-muted)); }
     /* ⚠️ The basis line is not decoration: a number with no stated basis gets trusted further than
        it deserves. Every card carries one, including the empty ones. */
-    .pd-stat-b { font-size:11.5px; color:var(--pd-muted); margin-top:5px; line-height:1.45; }
-    .pd-stat-none .pd-stat-v { color:var(--pd-muted); font-weight:700; font-size:17px; }
-    .pd-stat-bar { height:5px; border-radius:3px; background:var(--pd-line); margin-top:9px; overflow:hidden; }
-    .pd-stat-bar > i { display:block; height:100%; border-radius:3px; background:var(--sc, var(--pd-muted)); }
-    /* The planned marker on the progress bar — where the plan says we should be. */
-    .pd-stat-bar { position:relative; }
-    .pd-stat-bar > u { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--pd-fg); opacity:.55; }
-    .pd-stat-d { font-size:11px; font-weight:700; margin-top:6px; }
-    .pd-stat-late { color:#E5534B; } .pd-stat-early { color:#2FA36B; } .pd-stat-flat { color:var(--pd-muted); }
+    .pd-perf-b { display:block; font-size:11.5px; color:var(--pd-muted); margin-top:6px; line-height:1.45; }
+    .pd-perf-good { color:#2FA36B; }
+    .pd-perf-none .pd-perf-b { opacity:.9; }
+    .pd-spark { display:block; width:100%; height:26px; margin-top:8px; overflow:visible; }
+    @media (max-width:640px) { .pd-perf-v { font-size:21px; } }
+
+    /* ---- Mini stat band, shared by the Minutes of Meeting and Issues panels ------------------- */
+    .pd-mini-band { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:8px; }
+    .pd-mini-c { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; background:var(--pd-card); border-left-width:3px; }
+    .pd-mini-c.ok { border-left-color:var(--pd-ok, #2FA36B); }
+    .pd-mini-c.bad { border-left-color:#E5534B; }
+    .pd-mini-l { display:block; font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); font-weight:700; }
+    .pd-mini-v { display:block; font-size:19px; font-weight:800; line-height:1.2; margin-top:3px; letter-spacing:-.02em; }
+    .pd-mini-s { display:block; font-size:10.5px; color:var(--pd-muted); margin-top:3px; line-height:1.4; }
+    .pd-mini-bar { height:5px; border-radius:3px; background:var(--pd-line); margin-top:11px; overflow:hidden; }
+    .pd-mini-bar > i { display:block; height:100%; border-radius:3px; background:#2FA36B; }
 
     /* Decisions strip: only what is non-zero, so an empty strip is a real "nothing waiting". */
     .pd-stat-strip { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; }
@@ -167,42 +150,27 @@
     .pd-viz-legend i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
 
     /* Programme view — one row per trade */
-    .pd-pv { display:grid; grid-template-columns:126px 1fr; gap:5px 11px; align-items:center; }
+    .pd-pv { display:grid; grid-template-columns:126px 132px 1fr 42px; gap:7px 11px; align-items:center; }
     .pd-pv-l { font-size:11.5px; color:var(--pd-muted); text-align:right; white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; }
+    /* Each trade's own span, per the owner's request — the header dates are the whole programme's,
+       which said nothing about the individual bar a reader is looking at. */
+    .pd-pv-d { font-size:10.5px; color:var(--pd-muted); line-height:1.3; white-space:nowrap; }
+    .pd-pv-d small { display:block; font-size:9.5px; opacity:.8; }
     .pd-pv-t { position:relative; height:16px; border-radius:8px; background:var(--pd-line); overflow:hidden; }
     .pd-pv-b { position:absolute; top:0; bottom:0; border-radius:8px; }
     .pd-pv-f { position:absolute; top:0; bottom:0; left:0; border-radius:8px; opacity:.95; }
-    .pd-pv-n { position:absolute; right:6px; top:0; line-height:16px; font-size:9.5px; font-weight:700;
-      color:var(--pd-fg); opacity:.85; }
-
-    /* Gauges */
-    .pd-gauges { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .pd-gauge { text-align:center; }
-    .pd-gauge-v { font-size:23px; font-weight:800; margin-top:-30px; }
-    .pd-gauge-k { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); font-weight:700; }
-    .pd-gauge-c { font-size:11px; color:var(--pd-muted); margin-top:4px; }
-
-    /* Money flow */
-    .pd-flow { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:9px; align-items:center; }
-    .pd-flow-n { padding:11px 12px; border-radius:10px; border:1px solid var(--pd-line); text-align:center; }
-    .pd-flow-v { font-size:17px; font-weight:800; letter-spacing:-.02em; }
-    .pd-flow-k { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-top:3px; font-weight:700; }
-    .pd-flow-a { color:var(--pd-muted); font-size:15px; }
-    .pd-flow-co { display:grid; gap:6px; }
-    .pd-flow-p { padding:7px 10px; border-radius:8px; font-size:11px; display:flex; justify-content:space-between; gap:8px; }
-
-    /* 2x2 matrices */
-    .pd-mx-wrap { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    .pd-mx { display:grid; grid-template-columns:14px 1fr 1fr; grid-template-rows:1fr 1fr 15px; gap:4px; }
-    .pd-mx-c { border-radius:8px; padding:9px 10px; min-height:52px; display:flex; flex-direction:column; justify-content:center; }
-    .pd-mx-n { font-size:19px; font-weight:800; line-height:1; }
-    .pd-mx-t { font-size:9.5px; margin-top:3px; opacity:.85; font-weight:600; }
-    .pd-mx-y { grid-row:1 / span 2; writing-mode:vertical-rl; transform:rotate(180deg);
-      font-size:9.5px; color:var(--pd-muted); text-align:center; letter-spacing:.05em; text-transform:uppercase; }
-    .pd-mx-x { grid-column:2 / span 2; font-size:9.5px; color:var(--pd-muted); text-align:center;
-      letter-spacing:.05em; text-transform:uppercase; }
-    .pd-mx-h { font-size:11.5px; font-weight:700; margin-bottom:8px; }
+    /* Where TODAY falls inside this trade's own span. */
+    .pd-pv-now { position:absolute; top:-1px; bottom:-1px; width:2px; background:var(--pd-fg);
+      opacity:.5; border-radius:1px; }
+    /* ⚠️ NOT absolutely positioned inside .pd-pv-b any more. It used to be, and .pd-pv-b clips with
+       overflow:hidden, so a short trade's label was sliced mid-digit ("%" or "0" instead of "40%").
+       It is a real grid column now and cannot be truncated by the bar it describes. */
+    .pd-pv-n { font-size:10.5px; font-weight:700; text-align:right; opacity:.95; }
+    @media (max-width:720px) {
+      .pd-pv { grid-template-columns:96px 1fr 40px; }
+      .pd-pv-d { display:none; }
+    }
 
     /* Photo strip */
     .pd-ph { display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:8px; }
@@ -214,9 +182,9 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260831a"></script>
+  <script src="assets/js/config.js?v=20260901a"></script>
   <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260827c"></script>
+  <script src="assets/js/db.js?v=20260901a"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260831c"></script>
   <script src="assets/js/icons.js?v=20260830c"></script>
@@ -235,7 +203,6 @@
       CURUSER = user;
       UI.renderUserBar(profile);
       var first = (profile.name || profile.email || '').split(' ')[0];
-      document.getElementById('welcome').textContent = first ? ('Welcome, ' + first) : 'Dashboard';
       canWrite = ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1;
       isAdmin = ['admin', 'super_admin'].indexOf(profile.role) !== -1;
       // Draw the shell immediately from what's already known (sessionStorage) —
@@ -284,7 +251,6 @@
       curProj = PROJ.find(function (p) { return p.id === pid; }) ||
         { id: pid, name: sessionStorage.getItem('pd_project_name') || pid };
       renderHeader();
-      renderKpis();
       loadStatus();
       // Independent of one another: a packages failure must not blank the tiles.
       renderTiles();
@@ -303,8 +269,14 @@
       return g ? g.name : p.group_head_id;
     }
     function renderHeader() {
-      var label = (curProj.name || curProj.id) + ' (' + curProj.id + ')';
-      document.getElementById('dash-sub').textContent = label;
+      // ⚠️ Location is shown ONLY when the project record carries one. A placeholder dash in a
+      // title bar reads as "this project has no location", which is a claim about the project;
+      // omitting the segment says nothing, which is the truth when the field is simply unset.
+      var loc = (curProj.location || '').trim();
+      document.getElementById('proj-title').textContent = curProj.name || curProj.id;
+      document.getElementById('dash-sub').textContent =
+        '(' + curProj.id + ')' + (loc ? '  ·  ' + loc : '');
+      document.getElementById('dash-sub').title = loc || '';
       // Re-render the picker + nav now that the authoritative project list/name are
       // in — cheap, and the first pass above already made the shell usable. This is
       // what gives the picker's popover the FULL project list (it only offers
@@ -314,32 +286,6 @@
         active: 'dashboard', base: '', isAdmin: isAdmin, pname: curProj.name || curProj.id, modules: APP_CONFIG.MODULES,
       });
     }
-
-    // ---- Project facts ----
-    function kpi(label, value, sub) {
-      return '<div class="pd-kpi"><span class="pd-kpi-label">' + Fmt.esc(label) + '</span>' +
-        '<strong class="pd-kpi-value">' + value + '</strong>' +
-        (sub ? '<small class="pd-kpi-sub">' + sub + '</small>' : '') + '</div>';
-    }
-    function renderKpis() {
-      var p = curProj;
-      var gh = groupHead(p);
-      document.getElementById('kpis').innerHTML =
-        kpi('Status', '<span class="pd-pill ' + ((p.status || 'active') === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok') + '">' +
-          Fmt.esc(((p.status || 'active').charAt(0).toUpperCase() + (p.status || 'active').slice(1))) + '</span>',
-          gh ? Fmt.esc(gh) : 'No group head') +
-        kpi('Original Budget', p.original_budget != null ? Fmt.moneyShort(p.original_budget) : '—',
-          p.estimated_cost != null ? 'Est. cost ' + Fmt.moneyShort(p.estimated_cost) : '') +
-        kpi('Forecast Start', Fmt.date(p.forecast_start || p.start_date), '') +
-        kpi('Forecast Finish', Fmt.date(p.forecast_finish || p.end_date), '') +
-        kpi('Location', p.location ? Fmt.esc(p.location) : '—', '');
-    }
-
-    /* ⚠️ The package CRUD, the share button and the "Select" control that lived here
-       all moved to Contracts & Claims → Packages on 2026-08-26 (modules/contracts-claims/
-       packages.js). A contract package comes off the contract documents, so the contract
-       module owns it. Nothing was reimplemented — same `packages` table, same PDb calls,
-       same guarded delete RPC — so every consumer is untouched. */
 
     // ---- Module tiles (A5) ----
     // Each enabled module gets a tile. Figures come from the module's own `dash`
@@ -355,110 +301,21 @@
       if (!x || !y || isNaN(+x) || isNaN(+y)) return null;
       return Math.round((y - x) / 86400000);
     }
-    function statCard(o) {
-      var none = !o.value;
-      return '<div class="pd-stat' + (none ? ' pd-stat-none' : '') + '" style="--sc:' + (o.color || 'var(--pd-muted)') + '">' +
-        '<div class="pd-stat-k">' + Fmt.esc(o.label) + '</div>' +
-        '<div class="pd-stat-v' + (o.small ? ' sm' : '') + '">' + (o.value || o.empty || '—') + '</div>' +
-        (o.bar != null
-          ? '<div class="pd-stat-bar"><i style="width:' + Math.max(0, Math.min(100, o.bar)) + '%"></i>' +
-            (o.mark != null ? '<u style="left:' + Math.max(0, Math.min(100, o.mark)) + '%"></u>' : '') + '</div>'
-          : '') +
-        (o.delta ? '<div class="pd-stat-d ' + o.deltaCls + '">' + Fmt.esc(o.delta) + '</div>' : '') +
-        '<div class="pd-stat-b">' + o.basis + '</div>' +
-        '</div>';
-    }
-
+    // ⚠️ 2026-09-01: statCard() and the four cards it built (Schedule / Progress / Cost /
+    // Needs attention) were removed with the rest of the red-rectangle band. What survives is
+    // the decisions STRIP, which the owner kept — so this function now does only the work the
+    // strip needs, and `srcs` stays because the strip reads it.
     function renderStatus() {
-      var grid = document.getElementById('stat-grid'), strip = document.getElementById('stat-strip');
-      if (!grid) return;
+      var strip = document.getElementById('stat-strip');
+      if (!strip) return;
       var sch = MET['project-schedule'] || {};
-      var acts = sch.__rows || 0;
-
-      // ---- 1. Schedule -----------------------------------------------------------------------
-      var start = sch.start || null, finish = sch.finish || null;
-      var dur = _days(start, finish);
-      var card1;
-      if (!finish) {
-        card1 = statCard({ label: 'Schedule', value: '', empty: 'No schedule yet', color: 'var(--pd-muted)',
-          basis: acts ? 'Activities exist but carry no dates.' : 'Push a programme from Schedule Builder, or add activities.' });
-      } else {
-        // ⚠️ Measured against the CONTRACT date when the project record has one — that is the date
-        // that costs money. Falls back to stating the span, never to a silent comparison.
-        var cd = curProj && (curProj.forecast_finish || curProj.end_date) || null;
-        var slip = cd ? _days(cd, finish) : null;
-        card1 = statCard({ label: 'Schedule', value: Fmt.date(finish), small: false, color: '#4F8EF7',
-          delta: slip == null ? '' : (slip > 0 ? slip + ' days past the project finish date'
-                 : slip < 0 ? (-slip) + ' days inside the project finish date' : 'on the project finish date'),
-          deltaCls: slip == null ? 'pd-stat-flat' : (slip > 0 ? 'pd-stat-late' : slip < 0 ? 'pd-stat-early' : 'pd-stat-flat'),
-          basis: 'Forecast finish of ' + acts + ' activit' + (acts === 1 ? 'y' : 'ies') +
-                 (start ? ', from ' + Fmt.esc(Fmt.date(start)) : '') +
-                 (dur ? ' · ' + dur + ' days' : '') +
-                 (cd ? '' : '<br>No project finish date set, so there is nothing to compare against.') });
-      }
-
-      // ---- 2. Progress -----------------------------------------------------------------------
-      var poc = _n(sch.poc);
-      var blN = _n(sch.baselined) || 0;
-      var card2;
-      if (poc == null) {
-        card2 = statCard({ label: 'Progress', value: '', empty: acts ? 'Not started' : 'No activities',
-          color: 'var(--pd-muted)', bar: acts ? 0 : null,
-          basis: acts ? 'No progress recorded against any activity yet.' : 'Nothing to report on.' });
-      } else {
-        // ⚠️ No planned marker without baselines. Comparing progress to the current dates would be
-        // comparing the schedule with itself — the module holds the same line for Planned Value %.
-        var cover = acts ? Math.round(blN / acts * 100) : 0;
-        card2 = statCard({ label: 'Progress', value: Math.round(poc) + '%', color: '#2FA36B', bar: poc,
-          basis: 'Duration-weighted across ' + acts + ' activities.<br>' +
-                 (blN === 0
-                   ? '<span class="pd-stat-warn">No baseline captured — there is no planned % to compare this against.</span>'
-                   : cover < 100
-                     ? '<span class="pd-stat-warn">' + cover + '% of activities are baselined.</span>'
-                     : 'All activities baselined.') });
-      }
-
-      // ---- 3. Cost ---------------------------------------------------------------------------
-      var bud = _n(sch.budget), act = _n(sch.actual);
-      var card3;
-      if (bud == null) {
-        card3 = statCard({ label: 'Cost', value: '', empty: 'Not cost-loaded', color: 'var(--pd-muted)',
-          basis: 'No planned cost on any activity. Load costs in Project Schedule to see a position here.' });
-      } else {
-        var spent = act || 0, pctSpent = bud > 0 ? (spent / bud * 100) : 0;
-        card3 = statCard({ label: 'Cost', value: Fmt.moneyShort(bud), color: '#C9A227', bar: pctSpent,
-          delta: act == null ? '' : Fmt.moneyShort(spent) + ' recorded (' + Math.round(pctSpent) + '%)',
-          deltaCls: 'pd-stat-flat',
-          basis: 'Planned cost loaded on the schedule.' +
-                 (act == null ? '<br><span class="pd-stat-warn">No actual cost recorded yet.</span>' : '') });
-      }
-
-      // ---- 4. Attention ----------------------------------------------------------------------
-      // ⚠️ A register with NO ROWS is reported as "not in use", never as "0 open". "0 risks" on an
-      // unused register is the most dangerous figure a dashboard can show: it reads as good news.
+      // ⚠️ A register with NO ROWS contributes nothing rather than a zero. "0 risks" on an unused
+      // register is the most dangerous figure a dashboard can show: it reads as good news.
       var srcs = [
         { key: 'risk-register',    label: 'risks',  color: '#E5534B' },
         { key: 'issues-lessons',   label: 'issues', color: '#E08A3C' },
         { key: 'contracts-claims', label: 'claims', color: '#7A6FF0' }
       ];
-      var live = 0, unused = [];
-      srcs.forEach(function (x) {
-        var m = MET[x.key] || {};
-        if (!m.__rows) { unused.push(x.label); return; }
-        // ⚠️ 'open' where the module declares one, then a module-specific open figure — never a plain
-        // record count, which would report every signed contract as something needing attention.
-        var v = _n(m.open); if (v == null) v = _n(m.claimOpen);
-        live += (v || 0);
-      });
-      var card4 = statCard({
-        label: 'Needs attention', value: live ? String(live) : '', empty: unused.length === 3 ? 'Registers not in use' : 'Nothing open',
-        color: live ? '#E5534B' : 'var(--pd-muted)',
-        basis: live ? 'Open items across the risk, issue and claim registers.'
-             : unused.length
-               ? '<span class="pd-stat-warn">No entries in: ' + Fmt.esc(unused.join(', ')) + '. An empty register is not the same as a clear one.</span>'
-               : 'Nothing open across risks, issues and claims.' });
-
-      grid.innerHTML = card1 + card2 + card3 + card4;
 
       // ---- the decisions strip ---------------------------------------------------------------
       // Only non-zero entries, so an empty strip genuinely means nothing is waiting.
@@ -479,6 +336,353 @@
       }
       strip.innerHTML = chips.length ? chips.join('')
         : '<span class="pd-stat-ok">Nothing flagged for a decision right now.</span>';
+    }
+
+    // ---- Performance row (2026-09-01) ---------------------------------------------------------
+    // Five cards: S-Curve, Planned POC, Actual POC, SPI, CPI. These REPLACE the project-facts row
+    // and the four status cards the owner removed.
+    // ⚠️ EVERY CARD NAMES ITS BASIS, because these five are NOT all measured the same way and a row
+    //    of bare numbers invites a reader to combine them:
+    //      · Planned POC / Actual POC are both DURATION-weighted, so they are directly comparable
+    //        and their difference is meaningful. That is why `pvDur` was added to config.js — the
+    //        pre-existing `pv` is COST-weighted, and pairing it with `poc` would have put two
+    //        different bases side by side under two labels that look like a matched pair.
+    //      · SPI and CPI stay COST ratios (EV/PV, EV/AC), because that is what EVM defines them as.
+    // ⚠️ A card with no inputs says what is missing and stays grey. None of them fall back to a
+    //    neutral-looking 1.00 or 0% — a needle resting at "fine" because nothing is loaded is the
+    //    most misleading thing this row could do.
+    function perfCard(o) {
+      var none = !o.value;
+      return '<div class="pd-perf' + (none ? ' pd-perf-none' : '') + '" style="--pc:' + (o.color || 'var(--pd-muted)') + '">' +
+        '<span class="pd-perf-l">' + Fmt.esc(o.label) + '</span>' +
+        (o.value
+          ? '<strong class="pd-perf-v">' + o.value + '</strong>'
+          : '<strong class="pd-perf-v pd-perf-em">' + Fmt.esc(o.empty || 'No data') + '</strong>') +
+        (o.bar != null ? '<div class="pd-perf-bar"><i style="width:' + Math.max(0, Math.min(100, o.bar)) + '%"></i></div>' : '') +
+        (o.art || '') +
+        (o.basis ? '<small class="pd-perf-b">' + o.basis + '</small>' : '') + '</div>';
+    }
+
+    // A two-series sparkline for the S-curve card. Plain SVG, no library.
+    // ⚠️ Each series is drawn only across the points where IT has a value, so a curve whose actuals
+    //    stop halfway shows a planned line running on and an actual line that ends — which is the
+    //    real reading. Joining across the gap would draw a straight segment that looks like
+    //    recorded progress nobody reported.
+    function spark(pts, keys, cols, w, h) {
+      var xs = pts.length - 1 || 1;
+      var all = [];
+      keys.forEach(function (k) { pts.forEach(function (pt) { if (pt[k] != null) all.push(pt[k]); }); });
+      if (!all.length) return '';
+      var lo = Math.min(0, Math.min.apply(null, all)), hi = Math.max(100, Math.max.apply(null, all));
+      var rng = (hi - lo) || 1;
+      function xy(i, v) { return [(i / xs) * w, h - ((v - lo) / rng) * h]; }
+      var paths = keys.map(function (k, ki) {
+        var d = '', open = false;
+        pts.forEach(function (pt, i) {
+          if (pt[k] == null) { open = false; return; }
+          var c = xy(i, pt[k]);
+          d += (open ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + ' ';
+          open = true;
+        });
+        return d ? '<path d="' + d.trim() + '" fill="none" stroke="' + cols[ki] + '" stroke-width="2" ' +
+          'stroke-linecap="round" stroke-linejoin="round"/>' : '';
+      }).join('');
+      return '<svg class="pd-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+        paths + '</svg>';
+    }
+
+    function renderPerf() {
+      var host = document.getElementById('perf-grid'); if (!host) return;
+      var sch = MET['project-schedule'] || {}, sc = MET['s-curve'] || {};
+      var acts = sch.__rows || 0;
+      var poc = _n(sch.poc), planned = _n(sch.pvDur);
+      var ev = _n(sch.ev), ac = _n(sch.actual), bac = _n(sch.budget), pvPct = _n(sch.pv);
+      var pv = (bac != null && pvPct != null) ? (bac * pvPct / 100) : null;
+      var spi = (ev != null && pv) ? (ev / pv) : null;
+      var cpi = (ev != null && ac) ? (ev / ac) : null;
+      var blN = _n(sch.baselined) || 0;
+      function r2(v) { return (Math.round(v * 100) / 100).toFixed(2); }
+      function tone(ok) { return ok ? 'pd-perf-good' : 'pd-stat-warn'; }
+
+      // ---- 1. S-Curve ----
+      var pts = (sc.curve || []).filter(function (pt) {
+        return pt.percent_planned != null || pt.percent_actual != null;
+      });
+      var scMod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 's-curve'; });
+      var c1;
+      if (!pts.length) {
+        c1 = perfCard({ label: 'S-Curve', empty: 'No curve published',
+          basis: 'Publish periods in <b>S-Curve</b> to plot planned against actual here.' });
+      } else {
+        var last = pts[pts.length - 1];
+        var lp = last.percent_planned, la = last.percent_actual;
+        var gap = (lp != null && la != null) ? (la - lp) : null;
+        c1 = perfCard({ label: 'S-Curve', color: '#4F8EF7',
+          value: la != null ? Math.round(la) + '%' : (lp != null ? Math.round(lp) + '%' : ''),
+          art: spark(pts, ['percent_planned', 'percent_actual'], ['#8A93A6', '#2FA36B'], 100, 26),
+          basis: 'As at ' + Fmt.esc(Fmt.date(last.x)) + ' &middot; ' + pts.length +
+            ' period' + (pts.length === 1 ? '' : 's') + '.<br>' +
+            (gap == null
+              ? 'Only one of the two series is published for this period.'
+              : '<span class="' + tone(gap >= 0) + '">' + (gap >= 0 ? '+' : '') + Math.round(gap) +
+                ' pts vs planned ' + Math.round(lp) + '%</span>') });
+      }
+
+      // ---- 2. Planned POC ----
+      var c2 = planned == null
+        ? perfCard({ label: 'Planned POC', empty: blN ? 'No baseline dates' : 'Not baselined',
+            basis: 'Needs <b>bl_start</b> and <b>bl_finish</b> on the activities. Capture a baseline in <b>Project Schedule</b>.' })
+        : perfCard({ label: 'Planned POC', value: Math.round(planned) + '%', color: '#8A93A6', bar: planned,
+            basis: 'Where the baseline says this project should be today.<br>Duration-weighted across ' +
+              blN + ' baselined activit' + (blN === 1 ? 'y' : 'ies') + '.' });
+
+      // ---- 3. Actual POC ----
+      var c3;
+      if (poc == null) {
+        c3 = perfCard({ label: 'Actual POC', empty: acts ? 'Not started' : 'No activities',
+          basis: acts ? 'No progress recorded against any activity yet.' : 'Nothing to report on.' });
+      } else {
+        var gap2 = planned == null ? null : (poc - planned);
+        c3 = perfCard({ label: 'Actual POC', value: Math.round(poc) + '%', color: '#2FA36B', bar: poc,
+          basis: 'Duration-weighted across ' + acts + ' activities.<br>' +
+            (gap2 == null
+              ? '<span class="pd-stat-warn">No baseline, so there is no planned % to compare this against.</span>'
+              : '<span class="' + tone(gap2 >= 0) + '">' + (gap2 >= 0 ? '+' : '') + Math.round(gap2) +
+                ' pts vs planned</span> &mdash; same duration weighting.') });
+      }
+
+      // ---- 4. SPI ----
+      var c4 = spi == null
+        ? perfCard({ label: 'SPI', empty: 'No planned value',
+            basis: 'SPI is EV &divide; PV. Needs a <b>baseline</b> and <b>planned cost</b> to measure against.' })
+        : perfCard({ label: 'SPI', value: r2(spi), color: spi >= 1 ? '#2FA36B' : '#E5534B',
+            basis: '<span class="' + tone(spi >= 1) + '">' + (spi >= 1 ? 'On or ahead of plan' : 'Behind schedule') +
+              '</span><br>Earned &divide; planned value, by cost.' });
+
+      // ---- 5. CPI ----
+      var c5 = cpi == null
+        ? perfCard({ label: 'CPI', empty: 'No actual cost',
+            basis: 'CPI is EV &divide; AC. Needs recorded <b>actual cost</b> on the schedule.' })
+        : perfCard({ label: 'CPI', value: r2(cpi), color: cpi >= 1 ? '#2FA36B' : '#E5534B',
+            basis: '<span class="' + tone(cpi >= 1) + '">' + (cpi >= 1 ? 'Under budget' : 'Over budget') +
+              '</span><br>Earned &divide; actual cost.' });
+
+      host.innerHTML = c1 + c2 + c3 + c4 + c5;
+      // The S-Curve card is the row's one entry point — the other four have no screen of their own.
+      if (scMod) {
+        var a = host.querySelector('.pd-perf');
+        if (a) {
+          a.style.cursor = 'pointer';
+          a.addEventListener('click', function () { location.href = ModulesGrid.href(scMod); });
+        }
+      }
+    }
+
+    // ---- shared bits -------------------------------------------------------------------------
+    function vizHead(t, sub, legend) {
+      return '<div class="pd-viz-h"><div><div class="pd-viz-t">' + Fmt.esc(t) + '</div>' +
+        (sub ? '<div class="pd-viz-s">' + sub + '</div>' : '') + '</div>' +
+        (legend ? '<div class="pd-viz-legend">' + legend + '</div>' : '') + '</div>';
+    }
+    function vizEmpty(host, title, why) {
+      var el = document.getElementById(host); if (!el) return;
+      el.innerHTML = vizHead(title) + '<div class="pd-viz-empty">' + why + '</div>';
+    }
+    var C_OK = '#2FA36B', C_LATE = '#E5534B', C_WARN = '#E08A3C', C_BLUE = '#4F8EF7', C_GOLD = '#C9A227', C_VIO = '#7A6FF0';
+
+    // ---- 1. Programme view -------------------------------------------------------------------
+    // One bar per trade, positioned on the project's own timeline. Colour is STATE, not decoration:
+    // complete / behind the plan / on track.
+    function renderProgram() {
+      var sch = MET['project-schedule'] || {}, rowsPv = sch.program || [];
+      rowsPv = rowsPv.filter(function (r) { return r.from && r.to; });
+      if (!rowsPv.length) return vizEmpty('viz-program', 'Project Schedule & Milestones',
+        'No dated activities with a trade yet. Push a programme from Schedule Builder, or set the Trade on the activities.');
+      var min = null, max = null;
+      rowsPv.forEach(function (r) { if (!min || r.from < min) min = r.from; if (!max || r.to > max) max = r.to; });
+      var span = Math.max(1, _days(min, max));
+      // Trades in the project's own build order — earliest start first, which is how a programme reads.
+      rowsPv.sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
+      var today = new Date().toISOString().slice(0, 10);
+      var elapsed = Math.max(0, Math.min(100, _days(min, today) / span * 100));
+      var body = rowsPv.slice(0, 9).map(function (r) {
+        var x = _days(min, r.from) / span * 100, w = Math.max(1.2, (_days(r.from, r.to) + 1) / span * 100);
+        var pct = r.pct == null ? 0 : Math.round(r.pct);
+        // ⚠️ "Behind" is only claimable against elapsed TIME on this bar, which is a rough read and
+        // is labelled as such in the legend — not presented as a baseline variance.
+        var own = Math.max(0, Math.min(100, (elapsed - x) / w * 100));
+        var col = pct >= 100 ? C_OK : (own > 5 && pct < own - 10) ? C_LATE : C_BLUE;
+        // ⚠️ THE LABEL LIVES OUTSIDE THE BAR (2026-09-01). It used to sit inside the clipped
+        // `overflow:hidden` track, so on a short trade the percentage was sliced to "%" or "0"
+        // with the digits cut off — visible on Allied Services in the owner's screenshot. A
+        // number that can be truncated to a different number is worse than no number.
+        // ⚠️ `own` is the % of THIS trade's own span that has elapsed; the thin marker below
+        // draws it, so "0% complete but 60% of the time gone" is legible rather than inferred
+        // from the bar's colour alone.
+        var marker = (own > 0 && own < 100)
+          ? '<i class="pd-pv-now" style="left:' + own.toFixed(2) + '%" title="' + Math.round(own) +
+            '% of this trade’s own duration has elapsed"></i>' : '';
+        return '<div class="pd-pv-l" title="' + Fmt.esc(r.key) + '">' + Fmt.esc(r.key) + '</div>' +
+          '<div class="pd-pv-d">' + Fmt.esc(Fmt.date(r.from)) + ' &rarr; ' + Fmt.esc(Fmt.date(r.to)) +
+            '<small>' + r.n + ' activit' + (r.n === 1 ? 'y' : 'ies') +
+            (r.done ? ' &middot; ' + r.done + ' done' : '') + '</small></div>' +
+          '<div class="pd-pv-t">' +
+            '<div class="pd-pv-b" style="left:' + x.toFixed(2) + '%;width:' + w.toFixed(2) + '%;background:' + col + ';opacity:.22"></div>' +
+            '<div class="pd-pv-b" style="left:' + x.toFixed(2) + '%;width:' + w.toFixed(2) + '%;overflow:hidden;background:transparent">' +
+              '<div class="pd-pv-f" style="width:' + pct + '%;background:' + col + '"></div>' + marker +
+            '</div>' +
+          '</div>' +
+          '<div class="pd-pv-n" style="color:' + col + '">' + pct + '%</div>';
+      }).join('');
+      document.getElementById('viz-program').innerHTML =
+        vizHead('Project Schedule & Milestones',
+          Fmt.date(min) + ' &rarr; ' + Fmt.date(max) + ' · ' + rowsPv.length + ' trades · ' +
+          Math.round(elapsed) + '% of the programme elapsed',
+          '<span><i style="background:' + C_OK + '"></i>Complete</span>' +
+          '<span><i style="background:' + C_BLUE + '"></i>On track</span>' +
+          '<span><i style="background:' + C_LATE + '"></i>Behind elapsed time</span>') +
+        '<div class="pd-pv">' + body + '</div>' +
+        (rowsPv.length > 9 ? '<div class="pd-viz-s" style="margin-top:8px;">Showing the 9 earliest of ' + rowsPv.length + ' trades.</div>' : '');
+    }
+
+    // ---- Performance row (2026-09-01) ---------------------------------------------------------
+    // Five cards: S-Curve, Planned POC, Actual POC, SPI, CPI. These REPLACE the project-facts row
+    // and the four status cards the owner removed.
+    // ⚠️ EVERY CARD NAMES ITS BASIS, because these five are NOT all measured the same way and a row
+    //    of bare numbers invites a reader to combine them:
+    //      · Planned POC / Actual POC are both DURATION-weighted, so they are directly comparable
+    //        and their difference is meaningful. That is why `pvDur` was added to config.js — the
+    //        pre-existing `pv` is COST-weighted, and pairing it with `poc` would have put two
+    //        different bases side by side under two labels that look like a matched pair.
+    //      · SPI and CPI stay COST ratios (EV/PV, EV/AC), because that is what EVM defines them as.
+    // ⚠️ A card with no inputs says what is missing and stays grey. None of them fall back to a
+    //    neutral-looking 1.00 or 0% — a needle resting at "fine" because nothing is loaded is the
+    //    most misleading thing this row could do.
+    function perfCard(o) {
+      var none = !o.value;
+      return '<div class="pd-perf' + (none ? ' pd-perf-none' : '') + '" style="--pc:' + (o.color || 'var(--pd-muted)') + '">' +
+        '<span class="pd-perf-l">' + Fmt.esc(o.label) + '</span>' +
+        (o.value
+          ? '<strong class="pd-perf-v">' + o.value + '</strong>'
+          : '<strong class="pd-perf-v pd-perf-em">' + Fmt.esc(o.empty || 'No data') + '</strong>') +
+        (o.bar != null ? '<div class="pd-perf-bar"><i style="width:' + Math.max(0, Math.min(100, o.bar)) + '%"></i></div>' : '') +
+        (o.art || '') +
+        (o.basis ? '<small class="pd-perf-b">' + o.basis + '</small>' : '') + '</div>';
+    }
+
+    // A two-series sparkline for the S-curve card. Plain SVG, no library.
+    // ⚠️ Each series is drawn only across the points where IT has a value, so a curve whose actuals
+    //    stop halfway shows a planned line running on and an actual line that ends — which is the
+    //    real reading. Joining across the gap would draw a straight segment that looks like
+    //    recorded progress nobody reported.
+    function spark(pts, keys, cols, w, h) {
+      var xs = pts.length - 1 || 1;
+      var all = [];
+      keys.forEach(function (k) { pts.forEach(function (pt) { if (pt[k] != null) all.push(pt[k]); }); });
+      if (!all.length) return '';
+      var lo = Math.min(0, Math.min.apply(null, all)), hi = Math.max(100, Math.max.apply(null, all));
+      var rng = (hi - lo) || 1;
+      function xy(i, v) { return [(i / xs) * w, h - ((v - lo) / rng) * h]; }
+      var paths = keys.map(function (k, ki) {
+        var d = '', open = false;
+        pts.forEach(function (pt, i) {
+          if (pt[k] == null) { open = false; return; }
+          var c = xy(i, pt[k]);
+          d += (open ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + ' ';
+          open = true;
+        });
+        return d ? '<path d="' + d.trim() + '" fill="none" stroke="' + cols[ki] + '" stroke-width="2" ' +
+          'stroke-linecap="round" stroke-linejoin="round"/>' : '';
+      }).join('');
+      return '<svg class="pd-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+        paths + '</svg>';
+    }
+
+    function renderPerf() {
+      var host = document.getElementById('perf-grid'); if (!host) return;
+      var sch = MET['project-schedule'] || {}, sc = MET['s-curve'] || {};
+      var acts = sch.__rows || 0;
+      var poc = _n(sch.poc), planned = _n(sch.pvDur);
+      var ev = _n(sch.ev), ac = _n(sch.actual), bac = _n(sch.budget), pvPct = _n(sch.pv);
+      var pv = (bac != null && pvPct != null) ? (bac * pvPct / 100) : null;
+      var spi = (ev != null && pv) ? (ev / pv) : null;
+      var cpi = (ev != null && ac) ? (ev / ac) : null;
+      var blN = _n(sch.baselined) || 0;
+      function r2(v) { return (Math.round(v * 100) / 100).toFixed(2); }
+      function tone(ok) { return ok ? 'pd-perf-good' : 'pd-stat-warn'; }
+
+      // ---- 1. S-Curve ----
+      var pts = (sc.curve || []).filter(function (pt) {
+        return pt.percent_planned != null || pt.percent_actual != null;
+      });
+      var scMod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 's-curve'; });
+      var c1;
+      if (!pts.length) {
+        c1 = perfCard({ label: 'S-Curve', empty: 'No curve published',
+          basis: 'Publish periods in <b>S-Curve</b> to plot planned against actual here.' });
+      } else {
+        var last = pts[pts.length - 1];
+        var lp = last.percent_planned, la = last.percent_actual;
+        var gap = (lp != null && la != null) ? (la - lp) : null;
+        c1 = perfCard({ label: 'S-Curve', color: '#4F8EF7',
+          value: la != null ? Math.round(la) + '%' : (lp != null ? Math.round(lp) + '%' : ''),
+          art: spark(pts, ['percent_planned', 'percent_actual'], ['#8A93A6', '#2FA36B'], 100, 26),
+          basis: 'As at ' + Fmt.esc(Fmt.date(last.x)) + ' &middot; ' + pts.length +
+            ' period' + (pts.length === 1 ? '' : 's') + '.<br>' +
+            (gap == null
+              ? 'Only one of the two series is published for this period.'
+              : '<span class="' + tone(gap >= 0) + '">' + (gap >= 0 ? '+' : '') + Math.round(gap) +
+                ' pts vs planned ' + Math.round(lp) + '%</span>') });
+      }
+
+      // ---- 2. Planned POC ----
+      var c2 = planned == null
+        ? perfCard({ label: 'Planned POC', empty: blN ? 'No baseline dates' : 'Not baselined',
+            basis: 'Needs <b>bl_start</b> and <b>bl_finish</b> on the activities. Capture a baseline in <b>Project Schedule</b>.' })
+        : perfCard({ label: 'Planned POC', value: Math.round(planned) + '%', color: '#8A93A6', bar: planned,
+            basis: 'Where the baseline says this project should be today.<br>Duration-weighted across ' +
+              blN + ' baselined activit' + (blN === 1 ? 'y' : 'ies') + '.' });
+
+      // ---- 3. Actual POC ----
+      var c3;
+      if (poc == null) {
+        c3 = perfCard({ label: 'Actual POC', empty: acts ? 'Not started' : 'No activities',
+          basis: acts ? 'No progress recorded against any activity yet.' : 'Nothing to report on.' });
+      } else {
+        var gap2 = planned == null ? null : (poc - planned);
+        c3 = perfCard({ label: 'Actual POC', value: Math.round(poc) + '%', color: '#2FA36B', bar: poc,
+          basis: 'Duration-weighted across ' + acts + ' activities.<br>' +
+            (gap2 == null
+              ? '<span class="pd-stat-warn">No baseline, so there is no planned % to compare this against.</span>'
+              : '<span class="' + tone(gap2 >= 0) + '">' + (gap2 >= 0 ? '+' : '') + Math.round(gap2) +
+                ' pts vs planned</span> &mdash; same duration weighting.') });
+      }
+
+      // ---- 4. SPI ----
+      var c4 = spi == null
+        ? perfCard({ label: 'SPI', empty: 'No planned value',
+            basis: 'SPI is EV &divide; PV. Needs a <b>baseline</b> and <b>planned cost</b> to measure against.' })
+        : perfCard({ label: 'SPI', value: r2(spi), color: spi >= 1 ? '#2FA36B' : '#E5534B',
+            basis: '<span class="' + tone(spi >= 1) + '">' + (spi >= 1 ? 'On or ahead of plan' : 'Behind schedule') +
+              '</span><br>Earned &divide; planned value, by cost.' });
+
+      // ---- 5. CPI ----
+      var c5 = cpi == null
+        ? perfCard({ label: 'CPI', empty: 'No actual cost',
+            basis: 'CPI is EV &divide; AC. Needs recorded <b>actual cost</b> on the schedule.' })
+        : perfCard({ label: 'CPI', value: r2(cpi), color: cpi >= 1 ? '#2FA36B' : '#E5534B',
+            basis: '<span class="' + tone(cpi >= 1) + '">' + (cpi >= 1 ? 'Under budget' : 'Over budget') +
+              '</span><br>Earned &divide; actual cost.' });
+
+      host.innerHTML = c1 + c2 + c3 + c4 + c5;
+      // The S-Curve card is the row's one entry point — the other four have no screen of their own.
+      if (scMod) {
+        var a = host.querySelector('.pd-perf');
+        if (a) {
+          a.style.cursor = 'pointer';
+          a.addEventListener('click', function () { location.href = ModulesGrid.href(scMod); });
+        }
+      }
     }
 
     // ---- shared bits -------------------------------------------------------------------------
@@ -529,154 +733,90 @@
         (rowsPv.length > 9 ? '<div class="pd-viz-s" style="margin-top:8px;">Showing the 9 earliest of ' + rowsPv.length + ' trades.</div>' : '');
     }
 
-    // ---- 2. EVM gauges -----------------------------------------------------------------------
-    // ⚠️ A gauge is drawn ONLY when its inputs exist. A needle resting at 1.00 because nothing is
-    // cost-loaded looks like a healthy project and is the most misleading thing this panel could do.
-    function gauge(label, val, good, caption) {
-      var W = 148, H = 84, cx = W / 2, cy = 74, R = 58;
-      function pt(f) { var a = Math.PI * (1 - f); return [cx + R * Math.cos(a), cy - R * Math.sin(a)]; }
-      function arc(f0, f1, col, w) {
-        var a = pt(f0), b = pt(f1);
-        return '<path d="M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + ' A' + R + ' ' + R + ' 0 0 1 ' +
-          b[0].toFixed(1) + ' ' + b[1].toFixed(1) + '" fill="none" stroke="' + col + '" stroke-width="' + w + '" stroke-linecap="round"/>';
+    // ---- 2. Minutes of Meeting (2026-09-01, replaces the EVM panel) ---------------------------
+    // ⚠️ A module with NO ROWS is reported as "not in use", never as "0 drafts". The rule the
+    //    old status band applied to registers applies here too: zero on an unused module reads
+    //    as good news, and "no minutes have ever been recorded" is not good news.
+    function renderMom() {
+      var m = MET['minutes-of-meeting'] || {};
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'minutes-of-meeting'; });
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open module</a>' : '';
+      if (!m.__rows) {
+        return vizEmpty('viz-mom', 'Minutes of Meeting',
+          'No minutes recorded on this project yet. Record one in <b>Minutes of Meeting</b> — ' +
+          'issues raised on the register are pulled onto the next agenda from there.');
       }
-      // 0.80 -> 1.20 mapped across the dial; anything outside is pinned to the end and still readable.
-      var f = Math.max(0, Math.min(1, ((val - 0.8) / 0.4)));
-      var n = pt(f);
-      return '<div class="pd-gauge"><svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '">' +
-        arc(0, 0.5, C_LATE, 9) + arc(0.5, 0.75, C_WARN, 9) + arc(0.75, 1, C_OK, 9) +
-        '<line x1="' + cx + '" y1="' + cy + '" x2="' + n[0].toFixed(1) + '" y2="' + n[1].toFixed(1) +
-          '" stroke="var(--pd-fg)" stroke-width="2.5" stroke-linecap="round"/>' +
-        '<circle cx="' + cx + '" cy="' + cy + '" r="3.5" fill="var(--pd-fg)"/></svg>' +
-        '<div class="pd-gauge-v" style="color:' + (good ? C_OK : C_WARN) + '">' + val.toFixed(2) + '</div>' +
-        '<div class="pd-gauge-k">' + Fmt.esc(label) + '</div>' +
-        '<div class="pd-gauge-c">' + Fmt.esc(caption) + '</div></div>';
-    }
-    // ---- 2. Cost performance (EVM) ------------------------------------------------------------
-    // ⚠️⚠️ THIS IS WHERE COST / EVM LIVES NOW. Owner 2026-08-26: *"for Cost / EVM, remove that
-    // sub-module in the project schedule module. Meaning the EVM should be displayed in the planners
-    // dashboard."* The Project Schedule's Cost / EVM tab is gone; this panel carries the full band
-    // it used to show.
-    // ⚠️ COMPUTED FROM THE FOUR DECLARED METRICS, NOT FROM A ROW FETCH. The whole band derives from
-    // budget / actual / ev / pv, which `PDb.moduleSummary` already aggregates SERVER-SIDE for the
-    // tiles. Fetching the project's activities to recompute it here would put a 17,000-row read on
-    // the landing page for figures that are already in hand — and it is a landing page, so it has to
-    // stay cheap. It costs nothing extra.
-    // ⚠️ Every figure is null-not-zero when its input is missing, and a missing figure is printed as
-    // an em-dash rather than 0: "no cost is loaded" and "this project has spent nothing" are
-    // opposite facts, and only one of them is good news.
-    function renderEvm() {
-      var sch = MET['project-schedule'] || {};
-      var ev = _n(sch.ev), ac = _n(sch.actual), bac = _n(sch.budget), pvPct = _n(sch.pv);
-      var pv = (bac != null && pvPct != null) ? (bac * pvPct / 100) : null;
-      var cpi = (ev != null && ac) ? (ev / ac) : null;
-      var spi = (ev != null && pv) ? (ev / pv) : null;
-      if (bac == null && ev == null && ac == null) {
-        return vizEmpty('viz-evm', 'Cost Performance (EVM)',
-          'No cost is loaded on this schedule, so there is no earned value to measure.' +
-          '<br>Load it in <b>Project Schedule &rarr; Cost Loading</b> (enlist &rarr; assign &rarr; distribute &rarr; spread &rarr; apply). ' +
-          'SPI additionally needs a <b>baseline</b>, which is what the planned value is measured against.');
-      }
-      // SV / CV are variances, so they only exist when BOTH sides of the subtraction do.
-      var sv = (ev != null && pv != null) ? (ev - pv) : null;
-      var cv = (ev != null && ac != null) ? (ev - ac) : null;
-      // ⚠️ EAC extrapolates the cost performance seen SO FAR; with no CPI there is nothing to
-      // extrapolate from, so it falls back to the budget rather than inventing a forecast.
-      var eac = (cpi && cpi > 0 && bac != null && ac != null) ? (ac + (bac - ev) / cpi) : bac;
-      var vac = (bac != null && eac != null) ? (bac - eac) : null;
-      // ⚠️ TCPI is the efficiency the REMAINING work must achieve. Undefined once the remaining
-      // budget is zero — dividing by it would print Infinity as a target.
-      var tcpi = (bac != null && ac != null && ev != null && (bac - ac) !== 0) ? ((bac - ev) / (bac - ac)) : null;
-      function m(v) { return v == null ? '&mdash;' : Fmt.moneyShort(v); }
-      function sm(v) { return v == null ? '&mdash;' : ((v > 0 ? '+' : '') + Fmt.moneyShort(v)); }
-      function r2(v) { return v == null ? '&mdash;' : (Math.round(v * 100) / 100).toFixed(2); }
-      // good === null means 'no opinion' — a neutral figure must not be coloured as if it were a verdict.
-      function cell(label, value, good, sub) {
-        return '<div class="pd-evm-c' + (good === true ? ' ok' : good === false ? ' bad' : '') + '">' +
-          '<span class="pd-evm-l">' + Fmt.esc(label) + '</span>' +
-          '<strong class="pd-evm-v">' + value + '</strong>' +
-          (sub ? '<small class="pd-evm-s">' + sub + '</small>' : '') + '</div>';
-      }
-      var band =
-        cell('BAC — budget at completion', m(bac), null, 'Planned IBB across the schedule') +
-        cell('PV — planned value', m(pv), null, pvPct == null ? 'Needs a baseline' : (Math.round(pvPct) + '% of the plan is due by today')) +
-        cell('EV — earned value', m(ev), null, 'Planned IBB &times; activity % complete') +
-        cell('AC — actual cost', m(ac), null, 'Recorded spend to date') +
-        cell('SV — schedule variance', sm(sv), sv == null ? null : sv >= 0, sv == null ? 'Needs PV' : (sv >= 0 ? 'Ahead of plan' : 'Behind plan')) +
-        cell('CV — cost variance', sm(cv), cv == null ? null : cv >= 0, cv == null ? 'Needs AC' : (cv >= 0 ? 'Under budget' : 'Over budget')) +
-        cell('EAC — estimate at completion', m(eac), (vac == null) ? null : vac >= 0, cpi ? 'Extrapolated at the CPI so far' : 'No CPI yet — shown at budget') +
-        cell('VAC — variance at completion', sm(vac), vac == null ? null : vac >= 0, vac == null ? '' : (vac >= 0 ? 'Forecast underspend' : 'Forecast overrun')) +
-        cell('TCPI — to-complete index', r2(tcpi), tcpi == null ? null : tcpi <= 1, tcpi == null ? 'Needs a budget and actuals' : 'Efficiency the remaining work must hit');
-      var g = '';
-      g += cpi != null ? gauge('CPI (Cost Performance)', cpi, cpi >= 1, cpi >= 1 ? 'Under budget' : 'Over budget')
-        : '<div class="pd-gauge"><div class="pd-viz-empty">No earned value or actual cost recorded, so there is no CPI.</div></div>';
-      g += spi != null ? gauge('SPI (Schedule Performance)', spi, spi >= 1, spi >= 1 ? 'On or ahead of plan' : 'Behind schedule')
-        : '<div class="pd-gauge"><div class="pd-viz-empty">SPI needs a baseline and planned cost to measure against.</div></div>';
-      var sc = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 's-curve'; });
-      document.getElementById('viz-evm').innerHTML =
-        vizHead('Cost Performance (EVM)',
-          'Earned ' + m(ev) + ' · actual ' + m(ac) + ' · planned to date ' + m(pv),
-          sc ? '<a class="pd-viz-s" href="' + ModulesGrid.href(sc) + '">Cost S-Curve</a>' : '') +
-        '<div class="pd-evm-band">' + band + '</div>' +
-        '<div class="pd-gauges">' + g + '</div>';
-    }
-
-    // ---- 3. Contracts money flow -------------------------------------------------------------
-    function renderFlow() {
-      var cc = MET['contracts-claims'] || {};
-      if (!cc.__rows) return vizEmpty('viz-flow', 'Contracts & Claims',
-        'No contracts, change orders or claims recorded for this project yet.');
-      var base = _n(cc.contractAmt), appr = _n(cc.coApprovedAmt) || 0, all = _n(cc.coOtherAmt) || 0;
-      var pend = Math.max(0, all - appr), pendN = (_n(cc.coAllN) || 0) - (_n(cc.coApprovedN) || 0);
-      var revised = (base == null) ? null : base + appr;
-      var node = function (v, k) { return '<div class="pd-flow-n"><div class="pd-flow-v">' + v + '</div><div class="pd-flow-k">' + k + '</div></div>'; };
-      document.getElementById('viz-flow').innerHTML =
-        vizHead('Contracts & Claims', (_n(cc.coAllN) || 0) + ' change order(s) · ' + (_n(cc.claimN) || 0) + ' claim(s)') +
-        '<div class="pd-flow">' +
-          node(base == null ? '&mdash;' : Fmt.moneyShort(base), 'Original contract') +
-          '<div class="pd-flow-a">&rarr;</div>' +
-          '<div class="pd-flow-co">' +
-            '<div class="pd-flow-p" style="background:rgba(47,163,107,.14);color:' + C_OK + '"><span>Approved ' + (_n(cc.coApprovedN) || 0) + '</span><b>' + Fmt.moneyShort(appr) + '</b></div>' +
-            '<div class="pd-flow-p" style="background:rgba(224,138,60,.14);color:' + C_WARN + '"><span>Pending ' + Math.max(0, pendN) + '</span><b>' + Fmt.moneyShort(pend) + '</b></div>' +
-          '</div>' +
-          '<div class="pd-flow-a">&rarr;</div>' +
-          node(revised == null ? '&mdash;' : Fmt.moneyShort(revised), 'Revised value') +
+      var total = m.__rows || 0, draft = _n(m.draft) || 0, latest = m.latest || null;
+      var issued = Math.max(0, total - draft);
+      var pctIssued = total ? Math.round(issued / total * 100) : 0;
+      document.getElementById('viz-mom').innerHTML =
+        vizHead('Minutes of Meeting',
+          total + ' meeting' + (total === 1 ? '' : 's') +
+          (latest ? ' &middot; latest ' + Fmt.esc(Fmt.date(latest)) : ' &middot; no meeting date set'),
+          link) +
+        '<div class="pd-mini-band">' +
+          miniCell('Meetings', String(total), null, 'Recorded on this project') +
+          miniCell('Distributed', String(issued), issued === total ? true : null,
+            pctIssued + '% of the minutes are out') +
+          miniCell('Draft', String(draft), draft ? false : true,
+            draft ? 'Not yet distributed' : 'Nothing sitting in draft') +
         '</div>' +
-        (base == null
-          ? '<div class="pd-viz-s" style="margin-top:10px;">No record of type &ldquo;Contract&rdquo; carries an amount, so there is no original value to add change orders to.</div>'
-          : '<div class="pd-viz-s" style="margin-top:10px;">Revised value = original contract + APPROVED change orders only. Pending ones are shown but not added.</div>');
+        '<div class="pd-mini-bar" title="' + issued + ' distributed of ' + total + '">' +
+          '<i style="width:' + pctIssued + '%"></i></div>' +
+        (draft
+          ? '<div class="pd-viz-s" style="margin-top:10px;"><span class="pd-stat-warn">' + draft +
+            ' minute' + (draft === 1 ? '' : 's') + ' still in draft.</span> A minute nobody has ' +
+            'received cannot carry an action.</div>'
+          : '<div class="pd-viz-s" style="margin-top:10px;">Every recorded minute has been distributed.</div>');
     }
 
-    // ---- 4. The two priority matrices ---------------------------------------------------------
-    function mx(title, m, labels, axisX, axisY, cols) {
-      if (!m || !m.n) return '<div><div class="pd-mx-h">' + Fmt.esc(title) + '</div>' +
-        '<div class="pd-viz-empty">' + (m ? 'No entries scored on both axes yet.' : 'Not in use.') + '</div></div>';
-      var cell = function (n, t, c) {
-        return '<div class="pd-mx-c" style="background:' + c + '1f;border:1px solid ' + c + '4d">' +
-          '<div class="pd-mx-n" style="color:' + c + '">' + n + '</div><div class="pd-mx-t">' + Fmt.esc(t) + '</div></div>';
-      };
-      return '<div><div class="pd-mx-h">' + Fmt.esc(title) + '</div><div class="pd-mx">' +
-        '<div class="pd-mx-y">' + Fmt.esc(axisY) + '</div>' +
-        cell(m.lh, labels[0], cols[0]) + cell(m.hh, labels[1], cols[1]) +
-        cell(m.ll, labels[2], cols[2]) + cell(m.hl, labels[3], cols[3]) +
-        '<div></div><div class="pd-mx-x">' + Fmt.esc(axisX) + '</div>' +
-        '</div></div>';
-    }
-    function renderMatrix() {
-      var rk = (MET['risk-register'] || {}).matrix, sh = (MET['stakeholder-map'] || {}).matrix;
-      if ((!rk || !rk.n) && (!sh || !sh.n)) return vizEmpty('viz-matrix', 'Priority Matrix',
-        'Neither the Risk Register nor the Stakeholder Map has entries scored on both axes yet.');
-      document.getElementById('viz-matrix').innerHTML =
-        vizHead('Priority Matrix', 'Open risks by impact &times; likelihood · stakeholders by interest &times; influence') +
-        '<div class="pd-mx-wrap">' +
-          mx('Risk (open)', rk, ['Monitor', 'Act now', 'Low', 'Watch impact'], 'Impact', 'Likelihood',
-             [C_WARN, C_LATE, C_OK, C_GOLD]) +
-          mx('Stakeholders', sh, ['Keep satisfied', 'Key players', 'Monitor', 'Keep informed'], 'Interest', 'Influence',
-             [C_GOLD, C_VIO, C_OK, C_BLUE]) +
-        '</div>';
+    // ---- 3. Issues & Concerns (2026-09-01, replaces the Contracts & Claims panel) --------------
+    // ⚠️ 'On Hold' counts as OPEN here, the same rule the register, its PDF and the carry-over
+    //    logic already follow. A held issue is unresolved work, not a closed one.
+    function renderIssues() {
+      var m = MET['issues-lessons'] || {};
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'issues-lessons'; });
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open module</a>' : '';
+      if (!m.__rows) {
+        return vizEmpty('viz-issues', 'Issues &amp; Concerns',
+          'Nothing on this register yet. ⚠️ An empty register is not the same as a clear one — ' +
+          'if issues are being raised in meetings, they belong here too.');
+      }
+      var total = m.__rows || 0, open = _n(m.open) || 0, closed = _n(m.closed) || 0;
+      var other = Math.max(0, total - open - closed);
+      var pctClosed = total ? Math.round(closed / total * 100) : 0;
+      document.getElementById('viz-issues').innerHTML =
+        vizHead('Issues &amp; Concerns',
+          total + ' entr' + (total === 1 ? 'y' : 'ies') +
+          (m.latest ? ' &middot; latest raised ' + Fmt.esc(Fmt.date(m.latest)) : ''),
+          link) +
+        '<div class="pd-mini-band">' +
+          miniCell('Open', String(open), open ? false : true, 'Open or On Hold') +
+          miniCell('Closed', String(closed), closed ? true : null, pctClosed + '% of the register') +
+          miniCell('Unclassified', String(other), other ? null : true,
+            other ? 'No status set' : 'Every entry has a status') +
+        '</div>' +
+        '<div class="pd-mini-bar" title="' + closed + ' closed of ' + total + '">' +
+          '<i style="width:' + pctClosed + '%"></i></div>' +
+        (other
+          ? '<div class="pd-viz-s" style="margin-top:10px;"><span class="pd-stat-warn">' + other +
+            ' entr' + (other === 1 ? 'y carries' : 'ies carry') + ' no status</span>, so ' +
+            (other === 1 ? 'it is' : 'they are') + ' counted as neither open nor closed.</div>'
+          : open
+            ? '<div class="pd-viz-s" style="margin-top:10px;">Open items are pulled onto the next ' +
+              'meeting agenda from Minutes of Meeting.</div>'
+            : '<div class="pd-viz-s" style="margin-top:10px;">Nothing open on this register.</div>');
     }
 
-    // ---- 5. Progress photos -------------------------------------------------------------------
+    // Shared by both panels above. `good` === null means "no opinion" — a neutral figure must not
+    // be coloured as if it were a verdict, the same rule the old EVM cells followed.
+    function miniCell(label, value, good, sub) {
+      return '<div class="pd-mini-c' + (good === true ? ' ok' : good === false ? ' bad' : '') + '">' +
+        '<span class="pd-mini-l">' + Fmt.esc(label) + '</span>' +
+        '<strong class="pd-mini-v">' + Fmt.esc(value) + '</strong>' +
+        (sub ? '<small class="pd-mini-s">' + Fmt.esc(sub) + '</small>' : '') + '</div>';
+    }
+
     function renderPhotos() {
       var ph = MET['progress-photos'] || {}, rec = ph.recent || [];
       var mod = (APP_CONFIG.MODULES || []).find(function (m) { return m.key === 'progress-photos'; });
@@ -698,10 +838,11 @@
 
     function renderViz() {
       // Each panel is independent: one module's missing data must not blank the others.
+      // Each panel is independently guarded: one module's bad data must not blank the rest.
+      try { renderPerf(); } catch (e) { var pg = document.getElementById('perf-grid'); if (pg) pg.innerHTML = '<div class="pd-viz-empty">Could not draw the performance row.</div>'; }
       try { renderProgram(); } catch (e) { vizEmpty('viz-program', 'Project Schedule & Milestones', 'Could not draw this panel.'); }
-      try { renderEvm(); } catch (e) { vizEmpty('viz-evm', 'Performance Indicators (EVM)', 'Could not draw this panel.'); }
-      try { renderFlow(); } catch (e) { vizEmpty('viz-flow', 'Contracts & Claims', 'Could not draw this panel.'); }
-      try { renderMatrix(); } catch (e) { vizEmpty('viz-matrix', 'Priority Matrix', 'Could not draw this panel.'); }
+      try { renderMom(); } catch (e) { vizEmpty('viz-mom', 'Minutes of Meeting', 'Could not draw this panel.'); }
+      try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
       try { renderPhotos(); } catch (e) { vizEmpty('viz-photos', 'Latest Progress Photos', 'Could not draw this panel.'); }
     }
 
@@ -720,15 +861,14 @@
       var grid = document.getElementById('tile-grid');
       var mods = APP_CONFIG.MODULES || [];
       grid.innerHTML = mods.map(function (m) {
-        if (!m.enabled) {
-          var sub = m.retiredTo
-            ? '<span class="pd-badge-soon">Moved to ' + Fmt.esc(m.retiredTo) + '</span>'
-            : '<span class="pd-badge-soon">In development</span>';
-          return '<div class="pd-module-card disabled">' +
-            '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
-            '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
-            '<div class="pd-module-sub">' + sub + '</div></div></div>';
-        }
+        // ⚠️ Delegated to the LAUNCHER's own card builder (2026-09-01, owner). This branch used
+        // to render its own dead grey box, so Drawing Register and Material Submittal Log were
+        // clickable on modules.html — where ModulesGrid.card() sends a retired module to the
+        // Engineering App in a new tab — and inert here. Two builders for one card is how the
+        // two screens came to disagree; there is one now, and the dashboard gets the external
+        // link for free. Enabled modules keep the dashboard's OWN card below, because it carries
+        // live figures the launcher's card has no place for.
+        if (!m.enabled) return ModulesGrid.card(m);
         return '<a class="pd-module-card" href="' + ModulesGrid.href(m) + '">' +
           '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
           '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +

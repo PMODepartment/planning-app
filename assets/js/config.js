@@ -52,9 +52,17 @@ window.APP_CONFIG = {
     // issue far more often than from a meeting). The link between the two is
     // kept as light cross-module reads, not a shared editor — see each
     // module's own CLAUDE.md.
-    { key: 'minutes-of-meeting', name: 'Minutes of Meeting',                   path: 'modules/minutes-of-meeting/index.html', icon: 'calendar',  enabled: true, dash: { table: 'meeting_minutes', unit: 'meetings', attention: { column: 'is_distributed', values: [false], label: 'draft' } } },
+    { key: 'minutes-of-meeting', name: 'Minutes of Meeting',                   path: 'modules/minutes-of-meeting/index.html', icon: 'calendar',  enabled: true, dash: { table: 'meeting_minutes', unit: 'meetings', attention: { column: 'is_distributed', values: [false], label: 'draft' },
+      metrics: [
+        { key: 'draft',  agg: 'countWhere', column: 'is_distributed', values: [false] },
+        { key: 'latest', agg: 'max', column: 'meeting_date' }
+      ] } },
     { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
-      metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] } ] } },
+      metrics: [
+        { key: 'open',   agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] },
+        { key: 'closed', agg: 'countWhere', column: 'status', values: ['Closed'] },
+        { key: 'latest', agg: 'max', column: 'date_raised' }
+      ] } },
     { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
       metrics: [
         { key: 'records', agg: 'countWhere', column: 'id' },
@@ -131,11 +139,20 @@ window.APP_CONFIG = {
         // loaded" while the schedule grid showed money on every line.
         { key: 'ev', agg: 'sumEarned', column: 'earned_value', amount: 'planned_cost', pct: 'percent_complete' },
         { key: 'pv', agg: 'elapsed', from: 'bl_start', to: 'bl_finish', weight: 'planned_cost' },
+        // ⚠️ The SAME elapsed shape, weighted by DURATION rather than cost. This exists so the
+        // dashboard's "Planned POC" and "Actual POC" cards are measured the same way: `poc` is a
+        // duration-weighted % complete, so comparing it against the COST-weighted `pv` would put
+        // two different bases side by side and invite a reader to subtract one from the other.
+        // `pv` stays cost-weighted because SPI is a money ratio and EVM defines it that way.
+        { key: 'pvDur', agg: 'elapsed', from: 'bl_start', to: 'bl_finish', weight: 'duration_days' },
         // The programme view: one bar per trade, its span, its weighted % and how many are done.
         { key: 'program', agg: 'groupSpan', group: 'work_type', from: 'start_date', to: 'end_date',
           pct: 'percent_complete', weight: 'duration_days', doneCol: 'status', doneValues: ['Completed'] }
       ] } },
-    { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points' } },
+    { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points',
+      // The published curve, ordered by period. The engine is told which column is the x axis and
+      // which are the y series — it is not told that this module is about money or time.
+      metrics: [ { key: 'curve', agg: 'series', x: 'period', y: ['percent_planned', 'percent_actual'] } ] } },
     { key: 'resource-loading',  name: 'Resource & Role Master',                path: 'modules/resource-loading/index.html',  icon: 'users',      enabled: true, dash: { table: 'resources', unit: 'resources' } },
     { key: 'equipment-loading', name: 'Equipment Loading',                      path: 'modules/equipment-loading/index.html', icon: 'box',        enabled: true, dash: { table: 'equipment_items', unit: 'equipment' } },
     // ⚠️ No `attention` key. The obvious one would be "positions short this month", but that is
