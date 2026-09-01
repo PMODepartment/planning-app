@@ -1,5 +1,566 @@
 # Module: issues-lessons
 
+## 2026-09-01 (d) — Progress-Photos-style search/filter chrome, drag-to-reorder, a leaner log, and one combined dashboard with real charts
+
+Owner's 10-item list, verbatim: (1) same search/filter UX as Progress Photos everywhere in this
+module; (2) drag-to-reorder in the Issues log and the Lessons log; (3) no KPI tiles on the Issues
+detail view; (4) drop Lesson category — fold it into Department, the same field Issues already
+has; (5) Champion in the log/summary views shows only the LATEST champion, not the full history;
+(6) stop separating Issues from Lessons on the Dashboard; (7) a status pie chart instead of tiles;
+(8) a bar chart of Open vs Total; (9) a real by-champion visualization, also Open-vs-Total bars;
+(10) the full issue list below every chart, not a capped sample. **Migration
+`migrations/2026-09-01-issues-lessons-reorder.sql`.**
+
+### Item #1 — the topbar search + funnel toggle
+Copied Progress Photos' chrome, not reinvented: `.il-topsearch` (a compact box in the topbar tool
+cluster) + `.il-topfilttoggle` (an icon button that toggles `.open` on whichever filter panel the
+active screen owns). One pair of controls, three panels — `#il-issues-filters` /
+`#il-lessons-filters` / the new `#il-dashboard-filters` — decided by `screen` via
+`activeFilters()`/`activeFilterPanelId()`/`activeSearchPlaceholder()`. `wireTopFilters()` binds the
+box to `oninput` and the toggle to a class flip; `syncTopFilters()` re-seeds the box's value and
+placeholder and the toggle's open/closed state on every `switchScreen()` — so tabbing between
+Issues → Lessons → Dashboard never leaves the search box showing one screen's term while filtering
+another's. ⚠️ **Every panel's own `#…-search` input is kept in the DOM, `hidden`** — not deleted —
+so `iFilters.search`/`lFilters.search`/`dFilters.search` stay bound to a real element for any code
+still reading them by id; the topbar box is what a planner actually types into. `#il-filt-toggle`
+(the old per-screen button) is gone from Issues; Lessons never had one; the old always-visible
+`.il-filtbar` gave way to `.il-filters{display:none}` / `.il-filters.open{display:flex}` in CSS.
+
+### Item #2 — drag-to-reorder in both logs
+A nullable `sort_order` on both `issues_lessons` and `lessons_learned`. NULL means "nobody has
+touched the order yet" — `issueOrderCmp`/`lessonOrderCmp` fall back to the existing date-based sort
+(newest first) exactly as before, and an ordered row always sorts before an unordered one. A small
+inline-SVG 6-dot grip (`dragGripHTML`, not routed through `icons.js` — one glyph didn't earn a new
+shared-asset dependency) is the drag handle: in the Issues log, the Lessons screen's closed-issues
+table, and the standalone lesson-card grid (the whole card is `draggable="true"` there).
+`wireReorder(container, list, baseArr, cmp, table)` wires `dragstart`/`dragover`/`dragend`/`drop`
+with a red top/bottom insertion line (`.il-drop-before`/`.il-drop-after`); `applyReorder` renumbers
+**only the currently-displayed (filtered) list**, spaced by 10 so a later drop can slot between two
+values without a full renumber, writes **only the rows whose `sort_order` actually changed**, then
+re-sorts the real underlying array (`rows`/`LESSONS`) with the SAME comparator used at load — so
+display order and the in-memory array can never disagree. ⚠️ **Relies on `.filter()` preserving
+object references**: mutating `r.sort_order` on a row pulled from the filtered view is mutating the
+same object sitting in `rows`, so no separate write-back step is needed. Legacy standalone lessons
+(`isLegacyLesson(l)`) don't get a drag handle — there's no live row underneath them to persist an
+order onto.
+
+### Item #3 — no KPI tiles on the Issues detail view
+`renderIssues()` only calls `renderIssueKpis()` while `_issMode === 'log'`; opening an issue
+(`_issMode === 'detail'`) clears `#il-kpis` instead. The tiles exist to help you scan a list of many
+issues — once you've opened one, they're just three numbers that don't describe what's on screen.
+
+### Item #4 — Lesson category retired in favour of Department
+Removed `LESSON_CATS`, the category `<select>` from `lessonDetailHTML`, the category chip from
+`lessonCardHTML` (the department chip stays), `category`/`_lessonCategory` from every lesson-insert
+payload (`confirmCloseIssue`, `saveIssue`'s forceClose branch, `newLessonAsClosedIssue`'s draft,
+`newLesson()`'s initial object, `saveLesson()`'s payload), and the category filter from the Lessons
+filter panel + `lFilters` (now `{search, department}`). `renderLessonKpis()`'s third tile now counts
+distinct `department` values under "Departments" (was "Categories"). ⚠️ **The `lessons_learned`
+table's `category` column is untouched** — dropping a column is destructive and nothing here reads
+or writes it any more, so leaving it costs nothing and a future decision to actually remove it is
+the DB owner's, not silently taken here.
+
+### Item #5 — "latest champion" in log/summary views
+New `latestChampionText(r)`: reads the LAST element of `r.champion_ids` (the array is push-ordered
+by assignment, so the last id is the most-recently-assigned account) and resolves it to a name via
+`peopleNamesOf`; falls back to the last `;`-separated segment of the free-text `champion` string for
+legacy rows with no ids at all. Applied in the Issues log's Champion column, the Lessons screen's
+closed-issues table, and every champion reference on the new Dashboard. ⚠️ **The full editable
+Champion picker inside the detail/edit view is UNCHANGED** — it still shows and edits the complete
+assignment history. Only the places that summarize a row in one line were simplified; the record
+that actually tracks "everyone who has ever been champion" was never in question.
+
+### Items #6–10 — the Dashboard rebuilt as one combined analytics screen
+`renderDashboardScreen()`, `dashboardListHTML()`, `lessonDashboardListHTML()`, `agingBucketsOf()`
+and `CHART_COLORS` are gone, replaced by a single screen with its own filter state (`dFilters =
+{search, status, department, champion}` — deliberately independent of `iFilters`/`lFilters`, so
+opening the Dashboard never silently narrows what the Issues or Lessons screens later show):
+- **Status → pie chart** (existing `donutChartSVG`, Open/On Hold/Closed slices) instead of tiles.
+- **Open vs Total → a 2-bar chart** (existing `barChartSVG`).
+- **By champion → a NEW `groupedBarSVG(items, opts)`** (same hand-rolled inline-SVG style as the
+  existing `donutChartSVG`/`barChartSVG` — viewBox-based, `<title>` tooltips, `Fmt.esc()` on every
+  label, no charting library): two bars per champion (Open red, Total grey), the top 10 by total,
+  plus a full `champTableHTML` breakdown table beneath it for anyone champion #11 onward. ⚠️
+  Grouped by `latestChampionText(r)`, not the raw `champion` string, so "Alice Cruz; Bob Reyes"
+  attributes to whichever of the two was assigned most recently rather than creating a third,
+  unreadable combined bucket.
+- **Lessons folded into a one-line note** (`lessonsNote`, total lesson count + how many are
+  standalone vs linked to a closed issue) rather than a second set of charts — item 6's "no need to
+  separate" taken to mean lessons earn a mention, not equal screen real estate, since the ask was
+  specifically about not partitioning the ISSUES side of the dashboard by status.
+- **`fullIssueListHTML(data)`** below every chart: every row `dFilters` currently matches, **never
+  capped** (the old `dashboardListHTML` truncated to a sample) — clicking a row opens it via the
+  same `openIssue()` path a log row uses.
+
+**Verified.** `node --check module.js` clean. Function-set diff against HEAD: **lost** —
+`agingBucketsOf`, `dashboardListHTML`, `lessonDashboardListHTML` (all three deliberately superseded
+by the rebuild); **added** — `activeFilterPanelId`, `activeFilters`, `activeSearchPlaceholder`,
+`applyReorder`, `champTableHTML`, `dashIssuesFiltered`, `dragGripHTML`, `fullIssueListHTML`,
+`groupedBarSVG`, `issueOrderCmp`, `latestChampionText`, `lessonOrderCmp`, `syncTopFilters`,
+`wireReorder`, `wireTopFilters`. 0 duplicate DOM ids; `<div>`/`</div>` balanced in `index.html`
+(26/26); CSS braces balanced (255/255); 0 NUL bytes. Two stale leftovers caught by grepping for
+removed identifiers rather than by report, both fixed before shipping: `newLessonAsClosedIssue`'s
+draft still carried `_lessonCategory: ''`, and `renderLessons()`'s active-filter check still tested
+`['search','department','category']` against the now-two-key `lFilters`.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the drag-and-drop reorder (HTML5
+native DnD is awkward to simulate even signed in), the new charts against real data, or the
+migration itself, which has not been run.
+
+`module.css/js?v=20260901f`; `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/
+`modules.html`) → `20260901h`.
+
+## 2026-09-01 (c) — Filters behind a button, click-to-open rows, step-through, detailed history, and the champion-concatenation bug
+
+Owner's 7-item list for Issues & Concerns. Items 1–2 were already delivered in the 2026-08-31(b)
+rebuild below (the combined Dashboard tab, and Date Resolved only required at closure) — checked
+against the live code and confirmed still present, not redone. This entry is items 3–7. **No
+migration.**
+
+### Item #3 — the filter bar is now called up by a button
+`.il-filters` (renamed `#il-issues-filters`) on the Issues screen defaults `hidden`, revealed by a
+new `.il-filt-toggle` button (`#il-filt-toggle`) that just flips `hidden` — the panel stays open
+until toggled shut again, and nothing in `iFilters` itself changes when it closes. ⚠️ **A closed
+panel must not hide an active filter from view entirely** — `renderIssues()` already computes
+`anyF` (a filter narrower than the "Open" default) for the Clear-filters button; the same flag now
+also toggles a small dot (`.il-filt-toggle.has-active`) on the toggle button, so "Open items only"
+narrowing the log stays visible even with the panel closed. Scoped to the Issues screen only, per
+the literal ask — the Lessons Learned filter bar is untouched.
+
+### Item #4 — no more edit icon; the whole row opens the issue
+`renderIssuesLog()`'s `<tr>` now carries `data-open="<id>"` and a click handler
+(`openIssue(tr.dataset.open)`), the same pattern this file already used for the Dashboard's issue
+list and the Lessons log. The separate `✎` edit button and its "—"/"raised by someone else" dash
+are gone. ⚠️ **This also closes a real pre-existing gap**: a row you cannot edit
+(`canEditRow(r)` false) previously had NO way to open it at all from the log — it now opens in
+`issDetailHTML`'s existing read-only (`ro`) rendering, so a viewer or another department can finally
+read a record from the log instead of only ever reaching it via the Dashboard's summary list. Only
+the delete icon (planner-only) remains, in its own cell, with `e.stopPropagation()` so clicking it
+does not also open the row underneath it. The actions `<th>`/`<td>` is now gated on `isSteward`
+rather than `canWrite` (the only thing left in it), and the "no results" row's colspan follows the
+same gate. Dead `.il-noedit` CSS rule removed (verified zero remaining references — a same-named
+rule in `minutes-of-meeting/module.css` is a separate file/module and untouched).
+
+### Item #5 — step through the filtered list from inside the detail view
+A Prev/Next control (`issStepHTML`/`stepIssue`) beside "← Back to Issues", walking
+`issuesFiltered()` — the SAME set the log/filter bar is currently showing, never all of `rows` — so
+stepping tracks whatever filter is applied. ⚠️ **Never offered for an unsaved draft (`_issNew`)**,
+which has no position in that list yet. ⚠️ **Degrades to a plain note ("Not in the current filter")
+rather than guessing a neighbour** when the open record has since fallen out of the active filter —
+e.g. closing an issue while "Open items only" is set. Stepping reuses `openIssue()` exactly as a row
+click would, so permission handling and history loading behave identically either way.
+
+### Item #6 — the history is now a field-by-field before → after record
+`logHistory()` already snapshotted the WHOLE row before every change (see the 2026-08-31 build) —
+the gap was `historyHTML()` only ever rendering the action label and a free-text note, never the
+snapshot itself. New `issHistDiffHTML(before, after)` walks every field the register actually asks
+for (Status, Department, Champion(s), Issue, Caused By, Corrective Action, Reason for Hold, Closure
+Report, Date Presented, Date Resolved) and prints only the ones that changed, as "Field: old →
+new". ⚠️ **Each entry's "after" state is reconstructed from its NEIGHBOUR, not stored separately** —
+entry i's after-state is the live row for the most recent entry, or the next-more-recent entry's
+own "before" snapshot otherwise (the list is newest-first), since a change's before-state IS the
+previous change's after-state. ⚠️ **A `create` entry has no "before" to diff against** (`logHistory`
+is passed `null` there) — it instead lists what was actually captured at creation, with no arrow, so
+"all issue details must be captured and saved" holds for the very first entry too. Champion is
+diffed as the already-resolved display TEXT (`champion`, kept in sync with `champion_ids` by
+`championText()` on every save), not the raw uuid array — readable, not clutter.
+
+### Item #7 — the champion-concatenation bug
+⚠️ **Root cause: the free-text box was seeded with the FULL saved `champion` string, not just the
+typed extra.** `champion` on a saved row is `championText(ids, extra)` = resolved names + extra,
+joined — but `issDetailHTML` fed that whole string back into the picker's free-text input on every
+render. So the box for an issue with Champion(s) "Alice Cruz" plus typed "External Consultant" was
+seeded with `"Alice Cruz; External Consultant"`, and the next "Update Issue" recomputed `champion =
+championText(ids, "Alice Cruz; External Consultant")` = `"Alice Cruz; Alice Cruz; External
+Consultant"` — doubling on every single click with no interaction needed, exactly the reported
+behaviour. New `championExtra(ids, champion)` reverses `championText`: it strips out any
+`;`-separated segment that exactly matches one of the CURRENTLY resolved names for `ids` (not by
+position, so it survives the ids being reordered) and keeps the rest, which is the genuine typed
+extra — including legacy free-text-only rows (`ids` empty), where every segment survives untouched.
+⚠️ **The identical bug existed in `minutes-of-meeting/module.js`'s copy-pasted People Picker**, for
+the action-item Responsible field (`owner`/`owner_ids`) — same fix applied there. That module's own
+Required/Optional/Actual attendee pickers were checked and are NOT affected: they store `{ids,
+text}` as a jsonb pair where `text` is already just the raw typed extra (read straight off the
+free-text box at save time, never run through `championText`), so nothing there needed changing.
+
+**Verified.** 10 checks on `championExtra` (a 5-repeated-"Update"-click simulation stays
+byte-stable at `"Alice Cruz; Bob Reyes; External Consultant"` instead of doubling every pass, and a
+reproduction of the pre-fix behaviour against the same inputs shows the doubling for comparison), 15
+on `issStepHTML`/`stepIssue` (boundary disabling, the filtered-out "Not in the current filter" case,
+and that stepping past a boundary is a no-op), 16 on `issHistDiffHTML` in isolation plus 10 more on
+`historyHTML`'s full create→update→hold→close chaining (including that the `create` entry correctly
+shows the ORIGINAL value of a field later edited in an update, proving the after-state
+reconstruction walks the chain rather than just diffing against the live row). All sliced from the
+shipped functions, never reimplemented. `node --check` clean on both module.js files; 0 NUL bytes;
+CSS braces balanced (239/239); **function-set diff against HEAD: 0 lost, 6 added** in issues-lessons
+(`championExtra`, `histNorm`, `histFieldHTML`, `issHistDiffHTML`, `issStepHTML`, `stepIssue`) and 1
+added in minutes-of-meeting (`championExtra`).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the filter toggle, row-click,
+step-through, or the champion-picker fix against real data.
+
+`module.css/js?v=20260901e` (issues-lessons); minutes-of-meeting `module.js?v=20260901b` (its
+`module.css` is unchanged this pass); `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/
+`modules.html`) → `20260901d`.
+
+## 2026-08-31 (b) — Issues & Concerns rebuilt: dashboard, status workflow + history, required fields;
+## Lessons Learned mirrors it for closed issues; three bugs fixed
+
+Owner sent a 24-item request spanning this module and Minutes of Meeting, off two screenshots (a
+phone-width topbar and a date-input field). Given the size, this pass **phases the delivery**: the
+three bugs first, then Issues & Concerns rebuilt in full, then Lessons Learned mirrored onto the same
+architecture for its one narrower case (item #15). Minutes of Meeting's own Dashboard/Meetings rework
+(items #2, #17–23) and the HTML/PDF/PPTX exports (#24) are **NOT started** — flagged below, not
+fabricated as done. **Run `migrations/2026-08-31-issues-workflow-history.sql`.**
+
+### Bug #3 — a fresh visit rendered nothing at all
+⚠️ **Root cause: `UI.bindHistoryState`'s `apply()` only runs if a URL hash for that key ALREADY
+exists.** On a first visit there is none, so `bindHistoryState` calls `writeUrl(true)`
+(`replaceState`) and returns — `apply()`, the callback that actually paints a screen, is never
+invoked. Every other module either renders unconditionally at load or has a screen visible by
+default in raw HTML; this module's `#il-screen-issues` carried a stray `hidden` attribute with no
+unconditional render before `bindHistoryState` ran, so the one path that should have painted it
+never fired and the app sat blank until some other interaction forced a re-render.
+- Fixed at the cause: `init()` now calls `switchScreen(screen)` unconditionally right after binding
+  history state — a harmless repaint if `apply()` already ran (nothing here calls `.push()` from
+  inside it, so no double-navigation), the only paint if it did not.
+- **Defense in depth:** removed the stray `hidden` from `#il-screen-issues` in `index.html` — a
+  screen's initial visibility must not depend solely on JS having run before paint, the convention
+  every other module already follows.
+- Checked all 11 other modules using the same `bindHistoryState` pattern — none share this defect;
+  every one of them either has no `hidden` default screen or renders unconditionally at load.
+
+### Bug #4 — the module icon and title stacked on separate lines on a phone
+⚠️ **A stale rule from before the shared-layer topbar restructuring.** `UI.initModuleTopbar()`
+(2026-07-24) moved every module's title out of `.pd-topbar` into a sibling `.pd-modulebar`, and a
+later shared-layer decision (root CLAUDE.md, 2026-07-24 "part 9") explicitly **restored** module
+title text at every width, superseding an earlier "hide the title text on narrow screens" rule. This
+module still carried its OWN copy of that superseded rule —
+`.il-title-txt { display: none }` inside `@media (max-width: 820px)`, plus a second, wider
+`@media (max-width: 1500px) { .il-title .il-title-txt { display: none } }` block — so the icon
+rendered alone with the title text hidden, and on the module's own two-row layout the icon and (once
+visible again above 1500px) the title text stacked instead of sitting on one line. Both rules
+removed, with an explanatory comment in their place. Also removed the identical stale rule from
+`modules/minutes-of-meeting/module.css` (copied at the module-split, same bug).
+
+### Bug #5 — date input fields rendered with visible clipping/misalignment
+Native `<input type="date">` controls inherited this module's 16px phone font (the iOS-zoom guard
+every input carries) with no compensating height/padding, so the browser's own date-picker chrome
+(calendar icon, segments) crowded against the box edges. Normalized with an explicit `height: 34px`
++ `line-height: 20px` + matched vertical padding + `box-sizing: border-box`, with a taller phone
+override. A defensible, general fix rather than a guess chasing one browser's rendering quirk from a
+static screenshot — this is a much smaller item than the 21 substantial feature items in the same
+request.
+
+### Items #1, #6–14, #16 — Issues & Concerns rebuilt around three modes: Dashboard · Log · Detail
+`_issMode` replaces the old `'report'|'library'` idea entirely — **Dashboard** (item #16 renames
+"Report"), **Log** (the table, unchanged in kind), and **Detail**, a drill-down reached from either.
+All three read the same `issuesFiltered()`, so switching presentation never changes the set in view.
+
+- **#1 — the Dashboard**, `renderIssueDashboard()`: a tile (issue count, labelled by the active
+  status scope — "Open issues" by default), a **summary list** of the filtered issues sorted
+  longest-aging-first (capped to 12, "switch to Log for the full list" beyond that) showing Issue /
+  Champion / Department / Status / Aging, a **donut** and a **bar** chart (hand-rolled inline SVG,
+  the app's established convention — no charting library). ⚠️ **"Category" reads as DEPARTMENT.**
+  Issues have no free-text category field of their own (unlike Lessons, which do); department is
+  this register's existing classifying dimension and the one the filter bar and log already group
+  by, so the donut is "by department" rather than inventing a second, parallel taxonomy. The bar
+  chart is "by aging group" against the same three buckets (0–30 / 31–90 / 90+) the filter bar
+  already offers (`AGING_BUCKETS`), via `agingBucketsOf()`.
+- **#6 — the Log defaults to Open**: `iFilters.status` now defaults to `'Open'` (was `''`), on both
+  Dashboard and Log — they share one filter state. ⚠️ Because Open is now the *default* scope and
+  not "no filter," it must not count toward "a filter is active" or the Clear-filters button would
+  show permanently at rest; `anyF` explicitly excludes `status === 'Open'` from that test.
+- **#7 — the department list** replaced with the owner's exact 11: Commercial and Contracts,
+  Engineering, Procurement, Finance, Human Resources, Quality, Health and Safety, Operations, PMO,
+  COO, CEO. Synced to `admin.html`'s own copy (its user-management Department column), which had
+  drifted onto an older, different list. ⚠️ Minutes of Meeting carries **no department picker of its
+  own** — it only displays a linked issue's department verbatim off the light `ISSUES` mirror — so
+  there is nothing to sync there.
+- **#8 — every field required**: department, champion(s), the issue text, caused-by and date
+  presented are `required` on the base form; the status-conditional narrative field (corrective
+  action / hold reason / closure report, see #10–13) is `required` too, whichever one is showing.
+  `reqMark()` renders a visible `*` beside each required label so this isn't only enforced silently
+  by the browser. Backed by `validateIssueCommon()` + per-status checks in `saveIssue()`, so a
+  bypassed `required` attribute (autofill, programmatic submit) still can't save an incomplete row.
+- **#9 — spellcheck** on every free-text textarea in the detail form (issue, caused-by, corrective
+  action, hold reason, closure report, the standalone-lesson text).
+- **#10–13 — status is no longer a field you set; it's driven by three buttons.**
+  - **Update Issue** — the existing Save path, now logging history (see #11) on every save.
+  - **Put On Hold** (`confirmHoldIssue`) — opens a reveal panel demanding a **Reason for Hold**
+    (`required`); on confirm, sets `status='On Hold'` + `hold_reason`, and the detail view swaps its
+    narrative field from **Corrective Action** to **Reason for Hold** (item #12) — the same field
+    slot, different label and column, so a hold reason can never be mistaken for a corrective action
+    once the issue reopens.
+  - **Close Issue** (`confirmCloseIssue`) — opens a reveal panel demanding BOTH a **Closure Report**
+    and a **Lessons Learned** entry (`required`, item #13); on confirm, the narrative field becomes
+    **Closure Report** and — this is the load-bearing decision — the lesson text is inserted straight
+    into `lessons_learned` (linked via `issue_id`) in the *same* action, so **"no need for the
+    capture a lesson button"** is not a missing feature, it's the point: closing an issue always
+    produces exactly one lesson, with no separate step to skip.
+  - ⚠️ **Two new columns, not a repurposed one** (`migrations/2026-08-31-issues-workflow-history.sql`):
+    `hold_reason` and `closure_report`, both `text`. Overloading `corrective_action` for all three
+    would make an On-Hold issue's "planned actions" column silently mean "why we paused," and a
+    Closed one mean "how we closed it" — one column answering three different questions is exactly
+    how a report ends up quoting the wrong thing.
+  - Adding a new issue no longer asks for a status at all (item #10) — `newIssue()` seeds
+    `status: 'Open'` directly; the only way out of Open is one of the two buttons above, on a saved row.
+- **#11 — every change is logged to a per-issue history**, new `issues_lessons_history` table.
+  - ⚠️ **Insert-only RLS on purpose — no update policy, no delete policy, anywhere.** An audit trail
+    a planner could edit or remove after the fact is not an audit trail; a bad entry from a future
+    bug is a manual, logged, out-of-band DBA fix, never a feature this app exposes.
+  - Every write path — create, update, hold, close, and the forced-closed-on-create path from item
+    #15 — captures a **snapshot of the row as it stood immediately before the change** (`before =
+    Object.assign({}, r)`, taken before the row is mutated) plus an `action` label and an optional
+    `note` (the hold reason / closure report / lessons text at that moment, so the history reads as
+    a story without decoding jsonb). `changed_by_department` is denormalized from the actor's own
+    profile at write time — resolving `created_by`→name later would need a `users` read a department
+    user has no business being granted, the same privacy floor `championText`/`raisedByLabel` already
+    hold in this module.
+  - ⚠️ **Best-effort, never load-bearing**: `logHistory()` runs *after* the real write has already
+    succeeded, wrapped in its own try/catch — a missing migration or a transient failure here must
+    never make a successful save read as an error to the person who just saved. `historyHTML()`
+    correctly distinguishes "no changes yet" from "the migration hasn't been run" only by naming the
+    file in the empty state, since both look identical from the client's side.
+- **#14 — narrow-screen field order**: `.il-iss-panel { order: 2 }` / `.il-iss-body { order: 1 }`
+  inside the existing `@media (max-width: 700px)` block, so on a phone the issue/caused-by/
+  corrective-action/narrative fields render ABOVE the status panel (department, champion, dates),
+  matching the flex column the module already switches to at that width.
+- **#16 — "Report" → "Dashboard"** everywhere the word appeared as a screen label (view toggle
+  buttons in `index.html`, `syncChrome()`'s labelling logic).
+
+### Item #15 — Lessons Learned mirrors Issues, closed-only, plus a standalone flow
+*"Lessons learned and issues and concerns should be similar in terms of report/dashboard content and
+log content except that the lessons learned are exclusively for closed issues only. Users can add
+lessons without going through issues but they must still provide all the details required from
+adding issues up to closure report and lessons learned."*
+
+⚠️ **Read literally, a standalone lesson under this model IS a full `issues_lessons` row created
+directly in Closed status** — not a second data model bolted beside the first. That reading is what
+let the Lessons screen reuse almost everything the Issues rebuild had just built:
+- `_lessMode`: `'dashboard' | 'log' | 'detail'`, same three-mode shape as Issues.
+- `renderLessonDashboard()` mirrors `renderIssueDashboard()`: a tile counting closed issues +
+  standalone `lessons_learned` rows together, a summary list of closed issues
+  (`lessonDashboardListHTML`), a donut **by lesson category** (the field Issues doesn't have but
+  Lessons always did), a bar **by department**.
+- `renderLessonsLogView()` shows the register-style table for `closedIssuesFiltered()` — issues where
+  `status === 'Closed'` — with a **secondary section beneath it** for
+  `standaloneLessonsFiltered()`: `lessons_learned` rows with **no** `issue_id`, i.e. lessons captured
+  straight from a meeting action item (via the cross-module deep link from Minutes of Meeting) or
+  written before this workflow existed. Kept visible rather than dropped — item #15 scopes *new*
+  standalone lessons through the full closure flow, it doesn't retire the legacy ones.
+- **"+ New Lesson" on the Lessons screen routes to `newLessonAsClosedIssue()`**, not the legacy
+  `newLesson()` — it opens the SAME Issues detail form (`_forceClose` flag on the draft), demanding
+  every field up through department/champion/dates AND the closure report AND the lesson text in one
+  save, then inserts both the `issues_lessons` row (Closed) and the `lessons_learned` row atomically
+  in `saveIssue()`'s forced-close branch. `_issNewFromLessons` routes "← Back" and a successful save
+  back to the Lessons screen instead of Issues'.
+- ⚠️ **The legacy `newLesson()`/`openLesson()` pair is kept, unchanged in purpose, for the ONE case
+  that still needs it**: a lesson with no full issue behind it (a meeting-linked or pre-migration
+  standalone `lessons_learned` row). Its own `_lessMode`/`_lessPrevMode` were carrying a stale
+  `'report'` value left over from before this rewrite (a bug introduced mid-session and caught before
+  landing) — fixed to `'detail'`, with `_lessPrevMode` tracked the same way `newIssue()` tracks
+  `_issPrevMode`, and a new `backFromLessonDetail()` written to mirror `backFromIssueDetail()`
+  (previously referenced by `wireLessons()` but never defined — also caught before landing).
+- Clicking a closed issue anywhere in the Lessons dashboard/log opens it via the shared `openIssue()`
+  — on the Issues screen, in Issues' own Detail view — since a closed issue **is** an Issues record;
+  the Lessons screen is a filtered lens onto it, not a second editor for the same row.
+
+### Verified
+- `node --check` clean throughout every edit in this pass.
+- CSS brace balance unchanged at **233/233** after all new `.il-req` / `.il-backlink` /
+  `.il-workflow-*` / `.il-history*` / `.il-dash-*` rules.
+- **0 NUL bytes** (checked with a raw byte count, not `grep -c` — a `grep -c $'\x00'` in this shell
+  reported a meaningless count and would have been a false alarm if trusted).
+- **Function-set diff against the last commit: 6 lost, all deliberate** (`issListRowHTML`,
+  `issSearchList`, `renderIssuesReport`, `lessonListRowHTML`, `renderLessonsLibrary`,
+  `renderLessonsReport` — the old Report/Library-mode renderers, wholly superseded), **21 added**
+  (the Dashboard renderers, the chart helpers, the workflow confirm/validate functions, the history
+  functions, `backFromLessonDetail`, `newLessonAsClosedIssue`, `closedIssuesFiltered`/
+  `standaloneLessonsFiltered`). Grepped for every removed name across the whole module + `index.html`
+  — zero remaining references.
+- Every static element id referenced via `$('…')`/`getElementById('…')` resolves against
+  `index.html`'s raw markup (dynamically-created ids reached via `host.querySelector` inside the
+  detail-view render functions are, correctly, not part of that check).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the dashboard charts, the
+Hold/Close workflow, the history table, or the standalone-lesson closure flow against real data; the
+migration has not been run.
+
+### Explicitly NOT done this pass — flagged, not silently skipped
+- **Item #2** (a Minutes-of-Meeting dashboard, mirroring this one) and **items #17–23** (Meetings tab
+  redesign: defined recurring meeting schedules, a calendar showing actual-or-planned dates per
+  frequency, agenda continuity from the previous meeting, required/optional/actual attendees, venue/
+  link/recording fields, Internal/External meeting-type grouping, a right-pane scheduler, and a
+  per-item history + hold/close narrative for `mom_items` mirroring what Issues just got) — a
+  substantial separate body of work (new tables for meeting schedules/frequency, new calendar/
+  right-pane/agenda UI) belonging in `modules/minutes-of-meeting/`, deliberately deferred to its own
+  pass rather than compressed into this one.
+  ⚠️ **DONE 2026-09-01 — see that module's own CLAUDE.md.**
+- **Item #24** (download as HTML / PDF / PPTX for Issues, Lessons, and Minutes) — Minutes of Meeting
+  already has a working PDF export from an earlier session (see that module's history below); Issues
+  and Lessons have no export at all yet, and no module has an HTML or PPTX export. Not started.
+
+`module.css/js?v=20260831b`; `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`)
+→ `20260831b`.
+
+## 2026-08-31 — Minutes of Meeting split out into its own module
+
+Owner: *"the minutes of the meeting and the issues and concerns should be two separate modules."*
+Full detail lives in `modules/minutes-of-meeting/CLAUDE.md`; this entry is the Issues & Concerns half.
+
+**What left this file:** the whole MoM screen — `renderMom`/`wireMom`/`momDetailHTML`/`momItemRowHTML`/
+distribute/carry-over/raise (now "Get from issue" on the other side)/attachments/the PDF export — moved
+wholesale to `window.MinutesOfMeeting` in the new module. The `il-tabs` strip is now two tabs (Issues &
+Concerns, Lessons Learned); default `screen` changed from `'mom'` to `'issues'`; the deep-link reader
+only accepts `?screen=issues|lessons` now.
+
+**What stayed, and why — the kept half is the LINK, not a leftover.**
+- `momTag()` — the register's "From MOM" tag — is untouched: it was always a light read of
+  `meeting_minutes` (id/title/meeting_date only, populated in `load()`), never dependent on the full
+  MoM editor.
+- `MOMS` / `MOM_ITEMS` / `momItemsOf()` / `loadMoms()` / `momReset()` survive in trimmed form, for
+  exactly one remaining consumer: `momLinkPickerHTML()`, the Lessons Learned "Source → A meeting action
+  item" picker. It still needs to list meetings and their action items to link a lesson to one; it
+  never needed the rest of the MoM apparatus (permissions, distribute state, attachments…), so none of
+  that moved back in.
+- ⚠️ **`momLoadDone()` is gone, not moved.** It existed to re-render the Lessons screen when a
+  background `loadMoms()` resolved; `momLinkPickerHTML()` already chains its own
+  `loadMoms().then(function(){renderLessons();})`, so the extra notification hook was redundant once
+  the MoM screen (its other caller) no longer exists here.
+
+**The new reciprocal link — receiving a deep link FROM Minutes of Meeting.** That module's "Capture
+lesson" / "N lessons" buttons now navigate here (Lessons Learned's editor is this module's, not
+theirs) instead of switching a local screen. `init()` reads `?momId=&momItem=&issueId=` or
+`?openLesson=` **after `load()` completes** (now `await`ed instead of fire-and-forget, specifically so
+this can run once `LESSONS`/`_lessLegacy` are actually populated) and calls the existing
+`newLesson({mom_id, mom_item_id, issue_id})` or `openLesson(id)` — the exact same functions a local
+"+ Capture lesson" click always called; only the trigger crossed a module boundary.
+
+**CSS.** Removed only rules verified to have zero remaining selector usage after the JS surgery —
+`.il-mi-cards/-card/-meta/-foot`, `.il-c-no/-reg/-del`, the activity-picker block (`.il-mom-act*`,
+`.il-mom-chip*`), `.il-mom-by`, and the carry-over/filter-bar/attachment blocks
+(`.il-mom-carry*`, `.il-mom-group*`, `.il-mom-filters*`, `.il-mom-count`, `.il-mom-file`).
+⚠️ **Everything else with an `.il-mom-*` name was deliberately KEPT** — `.il-mom-wrap/-list/-detail/
+-head/-item/-draft/-detail-card/-toolbar/-state/-note/-actions/-addrow/-search/-report` turned out to
+be a **shared master/detail list+detail pattern**, reused verbatim by Issues' and Lessons' own
+"View Open Issues"-style report screens (confirmed by grepping actual class usage in the trimmed file
+before removing anything — several looked MoM-exclusive by name alone and were not). Removing those
+would have broken the Issues/Lessons report views, not cleaned up dead code.
+
+**Verified.** `node --check` clean; CSS braces balanced (194/194); every class the trimmed JS emits
+resolves to a CSS rule except pre-existing JS-hook-only classes that had no dedicated styling before
+this change either (`il-if`, `il-c-aging`, `il-iss-card`, `il-lf-fld`) — confirmed pre-existing, not a
+regression. Grepped for every symbol this split was supposed to remove (`renderMom`, `wireMom`,
+`momDetailHTML`, `MOM_ACT_NAME`, `MOM_TYPES`, `canEditMinute`, `momLocked`, `MOM_BUCKET`,
+`momDownloadPDF`, `il-screen-mom`, `_momSel`, …) — zero remaining references.
+
+⚠️ **Not verified signed in** — no live click-through of the cross-module lesson deep-link, and no
+live confirmation that the "From MOM" tag still resolves against a meeting recorded in the sibling
+module (the underlying read is unchanged, but the split itself is untested against real data).
+
+`module.css/js?v=20260831a`; `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`)
+→ `20260831a`.
+
+## 2026-08-30 — Tabs become a dropdown (shared `UI.tabsToDropdown`)
+
+The shared UI pass converted this module's flat `.il-tabs` row (Minutes of Meeting / Issues &
+Concerns / Lessons Learned) into a single trigger-button + menu, matching Project Schedule's own
+`.ps-title-switch` pattern — one `UI.tabsToDropdown('.il-tabs')` call added to the existing
+`requireLogin` callback. It works by **clicking the real, now-hidden tab buttons** rather than
+reimplementing this module's own view-switching logic, so `switchScreen`/the MoM-vs-register
+selectors are untouched; a `MutationObserver` on each button's `class` keeps the trigger's label in
+sync with whichever screen is `.active`. Also part of the same pass: the module's title/tabs/tools
+moved out of `.pd-topbar` into a new sibling `.pd-modulebar` (`UI.initModuleTopbar`, shared code, no
+module-local change needed here). See the root `CLAUDE.md`'s 2026-08-30(g) entry for the full
+shared-layer rationale. Module-local files untouched by this change (shared `ui.js`/`dashboard.css`
+only), so no `module.css/js?v=` bump this pass.
+
+## 2026-08-28 (b) — Open issues onto the next agenda; the red panel stops being a slab; five smaller fixes
+
+Owner ran both migrations, then gave six items off live screenshots. `MODULE_V` → `20260828b`;
+`module.css/js?v=` → `20260828a`. **No migration.**
+
+**1. Issues raised are now logged onto the NEXT meeting's minutes** — *"similar to a carry over items
+but for issues and concerns"*, and built as carry-over's sibling so the two share their rules.
+- A **new minute is seeded automatically** with the register's still-open issues, and a button beside
+  the carry-over dropdown pulls in anything raised since. ⚠️ Only on a **brand-new** minute: re-running
+  it on every render would fight a planner who deliberately took an item off this week's agenda.
+- ⚠️ **It COPIES the register link, never re-raises** — one issue, N meetings. The row therefore shows
+  the register's live status and carries no Raise button, so it cannot be double-raised by hand
+  either. `issues_lessons.mom_id` is untouched: provenance names the meeting an issue was FIRST raised
+  from, which is what lets `canDeleteMinute()` ignore these links.
+- ⚠️ **Openness is decided by the REGISTER**, the rule the screen, the PDF and carry-over already
+  follow — a closed issue must not be dragged onto next week's agenda, and `On Hold` is still open.
+- ⚠️ **Idempotent by construction**: an issue already on THIS minute is skipped, so pressing the button
+  twice adds nothing. Scoped per minute, not globally — an issue discussed last week is still open and
+  belongs on this week's agenda too.
+- ⚠️ **`owner_ids` travels with `owner`**, so a pulled item still resolves on the champion's My Work
+  page; copying only the text would silently drop the assignment. Tolerant of the un-run assignment
+  migration — `owner_ids` is dropped and retried, so the agenda still gets its issues.
+- ⚠️ **The button is offered only when there is something to bring in, and says how many.** A
+  permanently-present button that usually does nothing is the invitation-to-a-no-op that the
+  carry-over dropdown already avoids.
+- ⚠️ **Flagged, not solved:** a project with forty open issues seeds forty action items into every new
+  minute. That is what was asked for and it is what an agenda is, but if it proves noisy the honest
+  fix is a filter (department, or aging) rather than a silent cap.
+
+**2. The status panel is no longer a solid brand-red slab.** Owner: *"the red tint is pleasing but
+hurts the eye… for both light and dark mode."*
+- ⚠️ **Red at ~260×600px of continuous fill, with white text and white inputs punched into it, is a
+  glare source.** #EE3124 is an accent chosen to be seen in small doses. That it hurt in BOTH themes is
+  the tell that the problem was area and saturation, not the theme mapping. Red is now a **rail and a
+  heading** over a normal card — the same move the Gantt pass made when red went back to meaning
+  progress.
+- ⚠️ **The RAIL is what survives of the original fixed-contrast rule** ("must not look like a different
+  screen mid-meeting"): the brand cue is identical in both themes while the surface follows the theme
+  like every other card. A slab that ignored the theme was the thing being complained about.
+- ⚠️ **Two real WCAG failures found by measuring my own first cut**, both the trap this repo has now
+  recorded three times: brand red as 10px heading text is **4.12:1** on the card, and the aging value
+  was **3.60:1** on the tint. Fixed with a **paired** accent — `--pd-bad` (#C42127) light, **#FF8A80**
+  dark, because `--pd-bad` remaps to #EF5350 and measures **4.02** on the dark card.
+- ⚠️ **`--pd-dark-red` IS NOT A TOKEN.** Writing it resolves to nothing, silently inherits ink, and
+  measures 16.3 — i.e. it looks like a pass. Verified against the real stylesheet.
+- **Measured after, both themes: min 5.11 light / 6.14 dark across heading, labels, aging and inputs.**
+
+**3. The action item is multiline, and Description comes first.** It was a single-line `<input>`, which
+clips its own value — an action of any length was unreadable in exactly the mode that exists for
+reading it, the same defect the reporting view fixed for Issue / Agenda. Order now follows how the item
+is written up: what was discussed, then what will be done.
+
+**4. The "Any aging" filter stopped clashing.** ⚠️ Two causes, neither of them width tuning:
+`flex: 0 0 auto` gives a select an **auto basis** — its own content width — and a flex item will not
+shrink below that, so the last filter ran past the card edge and was clipped rather than wrapping; and
+the fixed `height: 34px` against the shared 16px control font clipped its descenders. Now
+`flex: 1 1 150px; min-width: 0` (the `min-width` is load-bearing — the auto minimum reinstates the
+content width otherwise) and **min**-height. Measured at 1385px: one 56px row, aging 38px, 0 overflow,
+0 page h-scroll.
+
+**5. Meeting types are the project's own** — PPR Meeting / PSC Meeting / Client Meeting, replacing the
+invented starter vocabulary. Still no CHECK constraint, so a project's own wording still joins the list
+through `momOptions()`.
+
+**6. The topbar stopped spilling** (it was orphaning the avatar on its own line) — the module title
+text now hides at ≤1500px, keeping the icon, well before the row is forced to wrap. The Lessons Learned
+lead banner is removed at the owner's request; the screen says what it is, and the detail's "What
+produced this lesson" block already explains that a link is optional.
+
+**Verified: 135 checks executing the SHIPPED functions**, sliced by brace-matching and never
+reimplemented — 11 new on the agenda rules alone (closed excluded, On Hold and blank counted as open,
+already-on-this-minute skipped, an unlinked action not suppressing an issue, another minute's copy not
+blocking this one, and running it twice adding nothing). ⚠️ The suite **cannot run against the
+pre-change file at all**, so it bites. **0 functions lost / 2 added**; parses; 0 NUL bytes; CSS braces
+233/233. Contrast and layout measured in a real browser against the shipped stylesheets in both themes.
+
+⚠️ **Not verified signed in** — no live click-through of the seeding, the button, or the reordered
+fields against real data.
+⚠️ **A near miss worth recording:** I overwrote the repo's own `.claude/launch.json` while setting up a
+throwaway static server, not having checked that one already existed. Restored from git. The repo
+already ships `.claude/tools/static-server.ps1` — use it.
+
 ## 2026-08-26 — Testing the meeting-linked lesson picker found TWO real defects
 
 The one path the earlier signed-in pass could not exercise (that project's single meeting had

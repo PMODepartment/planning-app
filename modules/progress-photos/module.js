@@ -77,6 +77,8 @@ window.ProgressPhotos = (function () {
   var migrationWarnedMedia = false;        // same, for the 2026-08-29 media_type column (video upload)
   var migrationWarnedMarkup = false;       // same, for the 2026-08-29 markup column (Batch F)
   var migrationWarnedViewName = false;     // same, for the 2026-08-30 view_name column (item 7)
+  var migrationWarnedThumb = false;        // same, for the 2026-08-30 thumb_url column (item 1, round 2)
+  var migrationWarnedAdjust = false;       // same, for the 2026-08-30 adjustments column (item 5, round 2)
   // Today's Rounds (the streamlined-walkthrough screen) was removed entirely
   // per owner feedback (2026-08-29, "Rounds can be removed") — its state vars
   // (roundsFilter/roundsSelected/walkState/_roundsComboByKey) and its render/
@@ -220,7 +222,7 @@ window.ProgressPhotos = (function () {
       if (['list', 'gallery', 'plan', 'stack'].indexOf(v) >= 0) view = v;
       collapsed = JSON.parse(localStorage.getItem(uiKey('collapsed')) || '{}') || {};
       var g = localStorage.getItem(uiKey('gallerygroup'));
-      if (['month', 'trade', 'location'].indexOf(g) >= 0) galleryGroupBy = g;
+      if (['none', 'month', 'trade', 'location'].indexOf(g) >= 0) galleryGroupBy = g;
       var ts = parseFloat(localStorage.getItem(uiKey('tilescale')));
       if (ts && ts >= 0.2 && ts <= 2) gallerySizeScale = ts;
     } catch (e) { collapsed = {}; }
@@ -536,7 +538,41 @@ window.ProgressPhotos = (function () {
       renderLocFilterSelects();
       render();
     };
-    $('pp-add').onclick = function () { openUpload(); };
+    // Fifth round item 7: reflects and flips the same shared preference
+    // thumb()/paintThumbMarkups() and the lightbox's own toggle all read.
+    if ($('pp-mkvistoggle')) {
+      syncMkVisBtn();
+      $('pp-mkvistoggle').onclick = function () { setMarkupGlobalVisible(!markupGlobalVisible()); syncMkVisBtn(); render(); };
+    }
+    // Fifth round item 1: "+ Add media" is now a dropdown deciding the media
+    // type UP FRONT — Photo/Video open the same modal pre-set to that type
+    // (mediaTypeSelectorHTML/wireMediaTypeSelector both take the preset now);
+    // 360° goes straight to pano.js's capture flow, the same hand-off the
+    // modal's own in-place 360° button already did; 3D stays disabled.
+    if ($('pp-add')) $('pp-add').onclick = function (e) {
+      e.stopPropagation();
+      var menu = $('pp-addmenu');
+      if (!menu) { openUpload(); return; } // defensive fallback if the menu markup is ever missing
+      menu.hidden = !menu.hidden;
+    };
+    if ($('pp-addmenu')) {
+      Array.prototype.forEach.call($('pp-addmenu').querySelectorAll('[data-addtype]'), function (b) {
+        b.onclick = function () {
+          $('pp-addmenu').hidden = true;
+          var t = this.dataset.addtype;
+          if (t === '360') {
+            if (window.PANO && PANO.openCapture) PANO.openCapture();
+            else UI.toast('360° capture is not available', 'error');
+          } else {
+            openUpload({ mtype: t });
+          }
+        };
+      });
+      document.addEventListener('click', function (e) {
+        var wrap = $('pp-addmenu-wrap'), menu = $('pp-addmenu');
+        if (wrap && menu && !menu.hidden && !wrap.contains(e.target)) menu.hidden = true;
+      });
+    }
     $('pp-refresh').onclick = function () { load(); };
     if ($('pp-sync')) $('pp-sync').onclick = function () { flushQueue(); };
     wireSelBar();
@@ -564,9 +600,14 @@ window.ProgressPhotos = (function () {
     var ids = visibleSelectedIds();
     var has = ids.length > 0;
     // The upload action + its divider are planner+ only, AND hidden while a
-    // selection is active.
-    ['pp-add', 'pp-sep-photos'].forEach(function (id) {
-      var el = $(id); if (el) el.style.display = (has || !canWrite) ? 'none' : '';
+    // selection is active. Fifth round item 1: targets the whole
+    // pp-addmenu-wrap now (button + its dropdown), not just the button — the
+    // dropdown menu is a sibling of the button, not a child, so hiding only
+    // the button could leave an already-open menu visually stranded.
+    var hideAdd = (has || !canWrite) ? 'none' : '';
+    if ($('pp-addmenu') && hideAdd === 'none') $('pp-addmenu').hidden = true;
+    ['pp-addmenu-wrap', 'pp-sep-photos'].forEach(function (id) {
+      var el = $(id); if (el) el.style.display = hideAdd;
     });
     var refresh = $('pp-refresh'); if (refresh) refresh.style.display = has ? 'none' : '';
     var count = $('pp-selcount');
@@ -629,25 +670,35 @@ window.ProgressPhotos = (function () {
   }
 
   // Batch-sign every photo path in one request rather than one call per row.
-  // Item 14: tile/list previews now request a DOWNSCALED, lower-quality
-  // signed URL (Supabase Storage's image-transform option) instead of the
-  // full-resolution original — the same file transferred at a fraction of
-  // the bytes is most of why the grid felt slow, especially in Tile view
-  // where dozens of full photos load at once just to show a ~290px tile.
-  // The full-resolution URL is still cached separately (`urlCache`) and used
-  // everywhere quality actually matters — the lightbox, the markup editor,
-  // Edit-photo's preview, PPR panes/exports. Image transforms need the
-  // Storage add-on enabled on the project; if it isn't (or the whole call
-  // errors for any reason), `thumbCache` degrades to the SAME full-res URLs
-  // so nothing breaks — the grid just doesn't get the speed-up until the
-  // add-on is available.
+  // Item 1 (2026-08-30, fourth round): thumbUrlOf() now prefers a REAL,
+  // separately-uploaded small file (`r.thumb_url`, produced client-side at
+  // upload time by uploadThumbnailFor) over Supabase Storage's image-
+  // transform add-on (`THUMB_OPTS` below) — the transform approach silently
+  // degrades to full-res the moment that add-on isn't enabled on the
+  // project's plan (its own comment already said so), which is
+  // indistinguishable from "still slow" and is why this kept recurring as
+  // feedback. The transform request is KEPT as a second-line fallback for
+  // rows captured before this feature existed (no `thumb_url` yet) — those
+  // still get whatever speed-up the add-on can offer, or degrade further to
+  // full-res exactly as before if it can't. `thumb_url` paths are signed in
+  // the SAME batch as photo_url/key_plan_url, since a thumbnail is just
+  // another object in the same bucket, not a special request shape.
   var thumbCache = {};
-  var THUMB_OPTS = { transform: { width: 480, quality: 55, resize: 'contain' } };
+  // Fifth round item 9: shrunk 480->320 (and the client-generated
+  // THUMB_MAXW/THUMB_JPEG_Q below to match) after "still slow" feedback even
+  // with real client-side thumbnails already in place — the largest tile
+  // this now needs to look sharp at is the new 3-column phone Gallery grid
+  // (~125px per tile), not the old single-column layout it was originally
+  // sized for. ⚠️ Kept as two independent constants, same as before — see
+  // THUMB_MAXW's own comment for why they can't share one without a
+  // file-ordering hazard — so BOTH must be changed together if this is
+  // revisited again.
+  var THUMB_OPTS = { transform: { width: 320, quality: 50, resize: 'contain' } };
   async function signAll() {
     urlCache = {}; thumbCache = {};
     var seen = {}, paths = [];
     rows.forEach(function (r) {
-      [r.photo_url, r.key_plan_url].forEach(function (p) {
+      [r.photo_url, r.key_plan_url, r.thumb_url].forEach(function (p) {
         if (p && !seen[p]) { seen[p] = 1; paths.push(p); }
       });
     });
@@ -665,7 +716,11 @@ window.ProgressPhotos = (function () {
     } catch (e) { /* transform add-on unavailable — thumbOf() falls back to urlCache below */ }
   }
   function urlOf(r) { return r.photo_url ? urlCache[r.photo_url] : ''; }
-  function thumbUrlOf(r) { return r.photo_url ? (thumbCache[r.photo_url] || urlCache[r.photo_url]) : ''; }
+  function thumbUrlOf(r) {
+    if (r.thumb_url && urlCache[r.thumb_url]) return urlCache[r.thumb_url];
+    if (r.photo_url && thumbCache[r.photo_url]) return thumbCache[r.photo_url];
+    return r.photo_url ? (urlCache[r.photo_url] || '') : '';
+  }
 
   function distinct(field) {
     var seen = {}, out = [];
@@ -1008,9 +1063,20 @@ window.ProgressPhotos = (function () {
 
     // The count + view toggle live in the static list bar (Drawing Register's
     // .dr-listbar pattern), so they don't get rebuilt on every render.
+    // ⚠️ Sixth round item 4: this used to show the GALLERY's own filtered
+    // count (list.length of rows.length) UNCONDITIONALLY, even in Plan/Stack
+    // view — which read PROJECT-WIDE data narrowed by their OWN floor/month/
+    // location-level filters, not this count's `list`/`rows` at all. That's
+    // exactly the reported "Showing 3 of 3 photos" sitting above a Plan
+    // toolbar correctly saying "2 pinned items" for the SAME screen. Rather
+    // than try to keep two separately-computed counts in sync (a second way
+    // for them to disagree again the next time either filter changes), this
+    // bar is blank in Plan/Stack — each already states its own count in its
+    // own toolbar (Plan: "N pinned items"; Stack states its own row/column
+    // scope) — and only ever describes the Gallery grid it's the header of.
     var count = $('pp-count');
     if (count) {
-      count.textContent = rows.length
+      count.textContent = (rows.length && view !== 'plan' && view !== 'stack')
         ? 'Showing ' + list.length + ' of ' + rows.length + ' photo' + (rows.length === 1 ? '' : 's')
         : '';
     }
@@ -1065,6 +1131,7 @@ window.ProgressPhotos = (function () {
     host.innerHTML = (view === 'gallery' ? galleryHTML(list) : listHTML(list));
     hydrate(host);
     wireRows(host);
+    paintThumbMarkups(host);
     syncChrome();
     paintRemote();
   }
@@ -1082,7 +1149,14 @@ window.ProgressPhotos = (function () {
   // one persisted setting, via one #pp-groupby selector in the list bar.
   var MONTH_NAMES = ['January','February','March','April','May','June','July',
     'August','September','October','November','December'];
-  var galleryGroupBy = 'month';   // month (default) | trade | location
+  var galleryGroupBy = 'month';   // none | month (default) | trade | location
+  // The sentinel group key groupRows() returns for "None" (item 6) — a single
+  // bucket holding every row, unsorted. Every real key groupKeyOf() can
+  // produce is a month ("YYYY-MM" or "Undated"), a trade name or "Untagged",
+  // or a location string or "Unassigned" -- none of which is this literal, so
+  // the renderers can test g.key === NO_GROUP_KEY to decide whether to print
+  // a group header at all.
+  var NO_GROUP_KEY = '__none__';
 
   // Tile-size control (Gallery/Tile view only). A scale factor applied to the
   // BASE tile geometry (290px min-width, 210px photo height — the sizes the
@@ -1134,6 +1208,14 @@ window.ProgressPhotos = (function () {
     return key;
   }
   function groupRows(list) {
+    // Item 6 (2026-08-30): "None" is a real grouping mode, not merely one
+    // group that happens to hold everything with a header printed anyway --
+    // a single "All photos (42)" header above a flat list defeats the whole
+    // point of asking for no grouping. Short-circuits before groupKeyOf() is
+    // ever called, in the row's own existing order (whatever `visible()`'s
+    // filter/sort already produced), so the renderers' `g.key === NO_GROUP_KEY`
+    // check is what tells them to skip the header entirely.
+    if (galleryGroupBy === 'none') return [{ key: NO_GROUP_KEY, label: '', items: list }];
     var groups = {}, order = [];
     list.forEach(function (r) {
       var k = groupKeyOf(r);
@@ -1190,16 +1272,62 @@ window.ProgressPhotos = (function () {
     pins.forEach(function (p) { var d = itemDateForPin(p); if (d) set[d.slice(0, 7)] = true; });
     return Object.keys(set).sort();
   }
+  // Sixth round item 1: TRUE distance-based clustering — pins within
+  // PLAN_CELL (0.05 normalized) of each other combine into ONE marker,
+  // matching iOS Photos' own map-clustering behaviour. ⚠️ REVERSES the
+  // earlier grid-snap approach (round each pin to the nearest 0.05 grid
+  // line), which could leave two pins a hair's-width apart in DIFFERENT
+  // cells if they happened to straddle a grid boundary — exactly the
+  // "should have combined but didn't" gap the owner reported. Greedy
+  // single-pass agglomeration: a pin joins the first existing cluster
+  // whose CURRENT centroid is within threshold, else starts a new one:
+  // simple and deterministic (pins are processed in a stable id-sorted
+  // order, so the same input always produces the same clusters regardless
+  // of array order) rather than a full pairwise/optimal clustering, which
+  // is unnecessary for the small, spatially-sparse pin counts this map
+  // actually has to handle.
   function planClusters(pins, monthCutoff) {
-    var byCell = {};
+    var eligible = [];
     pins.forEach(function (p) {
       var d = itemDateForPin(p);
       if (monthCutoff && (!d || d.slice(0, 7) > monthCutoff)) return; // "as of" — cumulative up to and including the selected month
-      var cx = Math.round(p.x_norm / PLAN_CELL) * PLAN_CELL, cy = Math.round(p.y_norm / PLAN_CELL) * PLAN_CELL;
-      var key = cx.toFixed(2) + ',' + cy.toFixed(2);
-      (byCell[key] = byCell[key] || { x: cx, y: cy, pins: [] }).pins.push(p);
+      eligible.push(p);
     });
-    return Object.keys(byCell).map(function (k) { return byCell[k]; });
+    var sorted = eligible.slice().sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
+    var clusters = [];
+    sorted.forEach(function (p) {
+      var target = null;
+      for (var i = 0; i < clusters.length; i++) {
+        if (Math.hypot(p.x_norm - clusters[i].x, p.y_norm - clusters[i].y) <= PLAN_CELL) { target = clusters[i]; break; }
+      }
+      if (target) {
+        target.pins.push(p);
+        // Recompute the centroid so a THIRD pin compares against the
+        // cluster's current shape, not just its first member's position.
+        target.x = target.pins.reduce(function (s, q) { return s + q.x_norm; }, 0) / target.pins.length;
+        target.y = target.pins.reduce(function (s, q) { return s + q.y_norm; }, 0) / target.pins.length;
+      } else {
+        clusters.push({ x: p.x_norm, y: p.y_norm, pins: [p] });
+      }
+    });
+    return clusters;
+  }
+  // Sixth round item 2: "pins show number of photos. preview of the latest
+  // photo should also be shown" (iOS Photos map style — the pin itself IS a
+  // photo thumbnail, with a count badge). Only photos have a natural
+  // thumbnail source here (thumbUrlOf); a cluster whose latest item is a
+  // panorama/reconstruction falls back to the plain number badge, since
+  // neither has an equivalent still-image preview wired up yet.
+  function planClusterLatestThumb(cluster) {
+    var latest = null, latestDate = '';
+    cluster.pins.forEach(function (p) {
+      if (p.item_type !== 'photo') return;
+      var d = itemDateForPin(p) || '';
+      if (!latest || d > latestDate) { latest = p; latestDate = d; }
+    });
+    if (!latest) return null;
+    var r = byId(latest.item_id);
+    return r ? thumbUrlOf(r) : null;
   }
   function planPin(pinId, pins) { return pins.filter(function (p) { return p.id === pinId; })[0] || null; }
   // Opens a SPECIFIC photo's lightbox regardless of whatever the Gallery's
@@ -1265,24 +1393,32 @@ window.ProgressPhotos = (function () {
     var url = window.BIM ? BIM.planUrl(floor) : '';
     var aspect = (floor && floor.width_px && floor.height_px) ? (floor.height_px / floor.width_px) : 0.75;
     var pinCount = clusters.reduce(function (n, c) { return n + c.pins.length; }, 0);
+    // Sixth round item 3: the Floor row and the Month row read as two
+    // differently-built controls (a labelled <select> vs. a bare ‹value›
+    // stepper with no label at all, then a much longer trailing hint on only
+    // one of the two). Both are now the SAME shape — a plain-text label,
+    // then the stepper/control cluster, then one short trailing hint — so
+    // they read as one consistent toolbar instead of two unrelated rows.
     return '<div class="pp-plantoolbar">' +
       '<div class="pp-planfloorbar">' +
-        '<label class="pp-planfloorlabel">Floor ' +
-          '<select class="pd-select" id="pp-plan-floor">' +
-            floors.map(function (p) { return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === planFloorId ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>'; }).join('') +
-          '</select></label>' +
+        '<span class="pp-planfloorlabel">Floor</span>' +
+        '<select class="pd-select" id="pp-plan-floor">' +
+          floors.map(function (p) { return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === planFloorId ? ' selected' : '') + '>' + Fmt.esc(p.name) + '</option>'; }).join('') +
+        '</select>' +
         '<button class="pp-iconbtn" id="pp-plan-floorprev" title="Previous floor">‹</button>' +
         '<button class="pp-iconbtn" id="pp-plan-floornext" title="Next floor">›</button>' +
         '<button class="pd-btn" id="pp-plan-floorplay">' + (planFloorPlaying ? 'Stop' : '▶ Animate floors') + '</button>' +
+        '<span class="pp-hint">' + pinCount + ' pinned item' + (pinCount === 1 ? '' : 's') + '</span>' +
       '</div>' +
       (months.length
         ? '<div class="pp-planmonthbar">' +
+            '<span class="pp-planfloorlabel">Month</span>' +
             '<button class="pp-iconbtn" id="pp-plan-mprev" title="Earlier month">‹</button>' +
             '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
             '<button class="pp-iconbtn" id="pp-plan-mnext" title="Later month">›</button>' +
             '<button class="pd-btn" id="pp-plan-mplay">' + (planPlaying ? 'Stop' : '▶ Play') + '</button>' +
             '<button class="pd-btn pp-livebtn' + (planMonth == null ? ' is-live' : '') + '" id="pp-plan-mlive" title="Back to the latest month">Live</button>' +
-            '<span class="pp-hint">as of the end of this month · ' + pinCount + ' pinned item' + (pinCount === 1 ? '' : 's') + '</span>' +
+            '<span class="pp-hint">as of the end of this month</span>' +
           '</div>'
         : '<p class="pp-hint">No dated captures pinned on this floor yet.</p>') +
     '</div>' +
@@ -1293,8 +1429,16 @@ window.ProgressPhotos = (function () {
           // ⚠️ Audit fix: the only visible content was the bare pin count,
           // which a screen reader announces as just a number with no sense
           // of what the button does.
-          return '<button class="pp-plancluster" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;" ' +
-            'aria-label="' + c.pins.length + ' item' + (c.pins.length === 1 ? '' : 's') + ' at this location — view">' + c.pins.length + '</button>';
+          // Sixth round item 2: the marker itself shows the LATEST photo in
+          // the cluster (iOS Photos' own map style), with the count as a
+          // small badge rather than being the whole button's content —
+          // falls back to the old plain-number style when the cluster's
+          // latest item has no photo thumbnail (a panorama/reconstruction).
+          var thumb = planClusterLatestThumb(c);
+          return '<button class="pp-plancluster' + (thumb ? ' pp-plancluster-photo' : '') + '" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;' +
+            (thumb ? 'background-image:url(\'' + Fmt.esc(thumb) + '\');' : '') + '" ' +
+            'aria-label="' + c.pins.length + ' item' + (c.pins.length === 1 ? '' : 's') + ' at this location — view">' +
+            (thumb ? '<span class="pp-plancluster-badge">' + c.pins.length + '</span>' : c.pins.length) + '</button>';
         }).join('') +
       '</div>' +
     '</div>';
@@ -1405,6 +1549,27 @@ window.ProgressPhotos = (function () {
   // freshly-configured project with zero photos rendered as a bare "no
   // photos tagged" message instead of the empty grid a planner could check
   // their Location Breakdown against.
+  // Sixth round item 5: "retrieve the [look of the] stack view of the
+  // schedule module ... instead of dates and activities, photos are
+  // displayed in the vertical stack." Project Schedule's own Vertical
+  // Stacking always draws the HIGHEST level at the TOP of the stack (a
+  // building extruded upward) — a plain alphabetical sort put "1st Floor"
+  // above "9th Floor" (string comparison, not numeric), the opposite of a
+  // real building. Rows are now ordered by whatever number the level's own
+  // NAME embeds, descending — highest floor first — falling back to
+  // reverse-alphabetical for a level with no number in it at all (a named
+  // zone/tower rather than a storey), so it degrades sensibly rather than
+  // throwing on non-numeric level names.
+  function stackRowSort(names) {
+    return names.slice().sort(function (a, b) {
+      var na = (String(a).match(/\d+/) || [])[0];
+      var nb = (String(b).match(/\d+/) || [])[0];
+      if (na != null && nb != null) return (+nb) - (+na);
+      if (na != null) return -1;   // numbered levels sort above unnumbered ones
+      if (nb != null) return 1;
+      return String(b).localeCompare(String(a));
+    });
+  }
   function stackGrid(cutoff) {
     var rowLevel = stackRowLevel(), colLevel = stackColLevel();
     if (!rowLevel) return { rowLevel: null, colLevel: null, cols: [], rows: [] };
@@ -1416,7 +1581,7 @@ window.ProgressPhotos = (function () {
       var rv = lv[rowLevel.id]; if (rv) rowVals[rv] = true;
       if (colLevel) { var cv = lv[colLevel.id]; if (cv) colVals[cv] = true; }
     });
-    var rowNames = Object.keys(rowVals).sort();
+    var rowNames = stackRowSort(Object.keys(rowVals));
     var colNames = colLevel ? Object.keys(colVals).sort() : [];
     if (!colNames.length) colNames = [''];  // single-level project — one shared "All" column
     var gridRows = rowNames.map(function (rv) {
@@ -1485,8 +1650,11 @@ window.ProgressPhotos = (function () {
               // since that panel is exactly where quality matters.
               var url = thumbUrlOf(c.photo), fullUrl = urlOf(c.photo);
               var cap = r.row + (c.col ? ' · ' + c.col : '') + ' — ' + (c.photo.taken_at || '');
+              // Item 5: adjustments follow the photo into Stack view too —
+              // consistent everywhere it appears, however small the tile.
+              var cfilt = adjustmentsAreDefault(c.photo.adjustments) ? '' : ' style="filter:' + Fmt.esc(cssFilterFor(adjustmentsOf(c.photo))) + '"';
               return '<td class="pp-stackcell">' +
-                (url ? '<img class="pp-stackthumb" data-magnify="' + Fmt.esc(fullUrl) + '" data-cap="' + Fmt.esc(cap) + '" src="' + Fmt.esc(url) + '" alt="" />' : '—') +
+                (url ? '<img class="pp-stackthumb"' + cfilt + ' data-magnify="' + Fmt.esc(fullUrl) + '" data-cap="' + Fmt.esc(cap) + '" src="' + Fmt.esc(url) + '" alt="" />' : '—') +
               '</td>';
             }
             // Combined default (item 16) — every matching photo, not just the latest one.
@@ -1495,7 +1663,8 @@ window.ProgressPhotos = (function () {
             return '<td class="pp-stackcell"><div class="pp-stackcellphotos">' +
               shown.map(function (p) {
                 var u = thumbUrlOf(p);
-                return u ? '<img class="pp-stackthumb pp-stackthumb-sm" data-open="' + p.id + '" src="' + Fmt.esc(u) + '" alt="" title="' + Fmt.esc(p.taken_at || '') + '" />' : '';
+                var pfilt = adjustmentsAreDefault(p.adjustments) ? '' : ' style="filter:' + Fmt.esc(cssFilterFor(adjustmentsOf(p))) + '"';
+                return u ? '<img class="pp-stackthumb pp-stackthumb-sm"' + pfilt + ' data-open="' + p.id + '" src="' + Fmt.esc(u) + '" alt="" title="' + Fmt.esc(p.taken_at || '') + '" />' : '';
               }).join('') +
               (c.photos.length > STACK_COMBINE_MAX ? '<span class="pp-stackmore">+' + (c.photos.length - STACK_COMBINE_MAX) + '</span>' : '') +
             '</div></td>';
@@ -1578,8 +1747,70 @@ window.ProgressPhotos = (function () {
         '<video class="' + cls + '" preload="metadata" muted playsinline src="' + Fmt.esc(urlOf(r)) + '"></video>' +
         '<span class="pp-vidplay"></span></span>';
     }
-    return '<img class="' + cls + '" src="' + Fmt.esc(u) + '" loading="lazy" ' +
+    // Item 5: exposure/brightness/contrast render everywhere a photo tile
+    // does, via the same cheap CSS filter as the lightbox — `cssFilterFor`
+    // itself returns the literal string 'none' for an unadjusted photo, so
+    // this costs nothing extra for the overwhelming majority of rows that
+    // have never touched a slider.
+    var filt = adjustmentsAreDefault(r.adjustments) ? '' : ' style="filter:' + Fmt.esc(cssFilterFor(adjustmentsOf(r))) + '"';
+    var img = '<img class="' + cls + '" src="' + Fmt.esc(u) + '" loading="lazy"' + filt + ' ' +
            'alt="' + Fmt.esc(r.description || 'Progress photo') + '" data-act="open" data-id="' + r.id + '" />';
+    // Fifth round item 7: markup now shows on List/Gallery tiles by DEFAULT,
+    // gated by ONE shared toggle (markupGlobalVisible) so it can be hidden
+    // everywhere at once — not just in the lightbox, per the earlier
+    // "hidden on Gallery tiles by contract" decision this reverses. The
+    // wrapper only appears for rows that actually HAVE markup, so the
+    // overwhelming majority of tiles pay nothing extra (no canvas, no paint
+    // call) — same discipline as the CSS-filter check just above.
+    if (r.markup && r.markup.length && markupGlobalVisible()) {
+      return '<span class="pp-mkwrap">' + img + '<canvas class="pp-thumbmk" data-mkfor="' + r.id + '"></canvas></span>';
+    }
+    return img;
+  }
+  // One shared "show markup" preference for the whole module (item 7) —
+  // per project, so switching projects doesn't carry a hide/show decision
+  // that has nothing to do with the new project's own photos.
+  function markupVisKey() { return 'pp_markupvis_' + pid; }
+  function markupGlobalVisible() {
+    try { var v = localStorage.getItem(markupVisKey()); return v === null ? true : v === '1'; }
+    catch (e) { return true; }
+  }
+  function setMarkupGlobalVisible(v) {
+    try { localStorage.setItem(markupVisKey(), v ? '1' : '0'); } catch (e) {}
+  }
+  // Reflects the shared preference on the listbar toggle button (icon +
+  // active state) — called on wire() and every time the button itself
+  // flips it, so a stale icon can never disagree with what's actually shown.
+  // ⚠️ Icons.hydrate() sets a one-time `dataset.icoDone` guard and refuses to
+  // touch an element twice — calling it again here would silently no-op on
+  // the SECOND toggle onward, leaving the icon stuck on whatever it first
+  // rendered. Re-rendering the SVG directly sidesteps that guard entirely.
+  function syncMkVisBtn() {
+    var b = $('pp-mkvistoggle'); if (!b) return;
+    var on = markupGlobalVisible();
+    b.classList.toggle('is-active', on);
+    var ic = b.querySelector('[data-ico]');
+    if (ic && window.Icons) ic.innerHTML = Icons.svg(on ? 'eye' : 'eyeOff', 15);
+  }
+  // Sizes + draws each tile's markup overlay canvas onto its own sibling
+  // <img>'s ACTUAL rendered box (never assumed) — run after new tile HTML is
+  // inserted (render()) since a canvas's own width/height attributes have no
+  // relationship to its CSS box until explicitly set to match it.
+  function paintThumbMarkups(host) {
+    if (!host) return;
+    Array.prototype.forEach.call(host.querySelectorAll('.pp-thumbmk[data-mkfor]'), function (canvas) {
+      var r = byId(canvas.dataset.mkfor);
+      if (!r || !r.markup || !r.markup.length) return;
+      var img = canvas.previousElementSibling;
+      if (!img) return;
+      function paint() {
+        var w = img.clientWidth, h = img.clientHeight;
+        if (!w || !h) return;
+        canvas.width = w; canvas.height = h;
+        drawMarkupObjects(canvas.getContext('2d'), r.markup, w, h);
+      }
+      if (img.complete && img.naturalWidth) paint(); else img.onload = paint;
+    });
   }
 
   function listHTML(list) {
@@ -1598,34 +1829,40 @@ window.ProgressPhotos = (function () {
       '<div>Location</div><div>Capture Date</div></div>';
 
     var body = groupRows(list).map(function (g) {
+      // Item 6: "None" prints no header at all -- not a collapsible header
+      // with an empty label, which would still claim a row and a caret for a
+      // grouping the planner explicitly asked to turn off.
+      if (g.key === NO_GROUP_KEY) return g.items.map(rowHTML).join('');
       var isCol = !!collapsed[g.key];
       var header = '<div class="pp-group" data-group="' + Fmt.esc(g.key) + '">' +
         '<span class="pp-caret" data-ico="' + (isCol ? 'chevronRight' : 'chevronDown') + '" data-ico-size="14"></span>' +
         '<strong>' + Fmt.esc(g.label) + '</strong>' +
         '<span class="pp-groupcount">' + g.items.length + '</span></div>';
       if (isCol) return header;
-      return header + g.items.map(function (r) {
-        // data-l = the column's label. Unused on desktop (the sticky .pp-grid-head
-        // supplies the headings); at phone width the head is hidden and the row
-        // restacks under the thumbnail, where each value needs its own label —
-        // module.css renders these via .pp-cell[data-l]::before.
-        // Clicking the row opens the lightbox (item 7); the checkbox stops that
-        // click from bubbling (wired in wireRows) so selecting never opens it.
-        return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '" data-rowopen="' + r.id + '">' +
-          '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
-            Fmt.esc(r.description || 'this photo') + '"' +
-            (selected[r.id] ? ' checked' : '') + ' /></div>' +
-          '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
-          '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
-          '<div class="pp-cell" data-l="Trade">' + Fmt.esc(tradesOf(r).join(', ') || '—') + '</div>' +
-          '<div class="pp-cell" data-l="Works">' + Fmt.esc(worksOf(r).join(', ') || '—') + '</div>' +
-          '<div class="pp-cell" data-l="Location">' + Fmt.esc(r.location || '—') + '</div>' +
-          '<div class="pp-cell pp-date" data-l="Captured">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
-          '</div>';
-      }).join('');
+      return header + g.items.map(rowHTML).join('');
     }).join('');
 
     return '<div class="pp-grid">' + head + body + '</div>';
+
+    function rowHTML(r) {
+      // data-l = the column's label. Unused on desktop (the sticky .pp-grid-head
+      // supplies the headings); at phone width the head is hidden and the row
+      // restacks under the thumbnail, where each value needs its own label —
+      // module.css renders these via .pp-cell[data-l]::before.
+      // Clicking the row opens the lightbox (item 7); the checkbox stops that
+      // click from bubbling (wired in wireRows) so selecting never opens it.
+      return '<div class="pp-row' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '" data-rowopen="' + r.id + '">' +
+        '<div class="pp-cell pp-selcell"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
+          Fmt.esc(r.description || 'this photo') + '"' +
+          (selected[r.id] ? ' checked' : '') + ' /></div>' +
+        '<div class="pp-cell pp-thumbcell">' + thumb(r, 'pp-thumb') + '</div>' +
+        '<div class="pp-cell pp-desc">' + Fmt.esc(r.description || '—') + '</div>' +
+        '<div class="pp-cell" data-l="Trade">' + Fmt.esc(tradesOf(r).join(', ') || '—') + '</div>' +
+        '<div class="pp-cell" data-l="Works">' + Fmt.esc(worksOf(r).join(', ') || '—') + '</div>' +
+        '<div class="pp-cell" data-l="Location">' + Fmt.esc(r.location || '—') + '</div>' +
+        '<div class="pp-cell pp-date" data-l="Captured">' + (r.taken_at ? Fmt.date(r.taken_at) : '—') + '</div>' +
+        '</div>';
+    }
   }
 
   // Tile view: just the photo -- no description/table, no action icons on the
@@ -1635,30 +1872,37 @@ window.ProgressPhotos = (function () {
   // its own — see groupRows()'s own comment.
   function galleryHTML(list) {
     var body = groupRows(list).map(function (g) {
+      var cards = '<div class="pp-gallery">' + g.items.map(cardHTML).join('') + '</div>';
+      // Item 6: "None" is a flat grid -- no group-head wrapper (which would
+      // otherwise print an empty <strong></strong> and a redundant total
+      // count identical to the toolbar's own #pp-count above the grid).
+      if (g.key === NO_GROUP_KEY) return cards;
       return '<div class="pp-gallerygroup">' +
         '<div class="pp-gallerygrouphead"><strong>' + Fmt.esc(g.label) + '</strong>' +
           '<span class="pp-groupcount">' + g.items.length + '</span></div>' +
-        '<div class="pp-gallery">' + g.items.map(function (r) {
-          // Batch E item 8: a small expand icon appears ONLY when this photo
-          // has a floor-plan pin — never shown speculatively, since most
-          // photos won't have one and an always-present-but-usually-inert
-          // icon reads as broken. BIM.pinInfoFor may not have data yet on the
-          // very first paint (its own project load races this one) — the
-          // icon simply appears on the next render once it does, same
-          // trade-off this module already accepts for the 360°/3D strip.
-          var hasPin = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor('photo', r.id);
-          return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
-            '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
-              Fmt.esc(r.description || 'this photo') + '"' +
-              (selected[r.id] ? ' checked' : '') + ' /></span>' +
-            (hasPin ? '<button type="button" class="pp-pinbtn" data-pinpreview="' + r.id + '" ' +
-              'title="Show this photo\'s position on the floor plan">' +
-              '<span data-ico="mapPin" data-ico-size="13"></span></button>' : '') +
-            '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + '</div>' +
-          '</figure>';
-        }).join('') + '</div></div>';
+        cards + '</div>';
     }).join('');
     return body;
+
+    function cardHTML(r) {
+      // Batch E item 8: a small expand icon appears ONLY when this photo
+      // has a floor-plan pin — never shown speculatively, since most
+      // photos won't have one and an always-present-but-usually-inert
+      // icon reads as broken. BIM.pinInfoFor may not have data yet on the
+      // very first paint (its own project load races this one) — the
+      // icon simply appears on the next render once it does, same
+      // trade-off this module already accepts for the 360°/3D strip.
+      var hasPin = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor('photo', r.id);
+      return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
+        '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
+          Fmt.esc(r.description || 'this photo') + '"' +
+          (selected[r.id] ? ' checked' : '') + ' /></span>' +
+        (hasPin ? '<button type="button" class="pp-pinbtn" data-pinpreview="' + r.id + '" ' +
+          'title="Show this photo\'s position on the floor plan">' +
+          '<span data-ico="mapPin" data-ico-size="13"></span></button>' : '') +
+        '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + '</div>' +
+      '</figure>';
+    }
   }
 
   // Batch E item 8 — a cropped/zoomed view of the floor plan centred on this
@@ -1953,6 +2197,9 @@ window.ProgressPhotos = (function () {
       if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
       if (imgEl) { imgEl.hidden = false; imgEl.src = u || ''; }
     }
+    // Item 5: exposure/brightness/contrast render live via CSS filter —
+    // photos only (adjustments has no meaning for a video clip here).
+    if (imgEl) imgEl.style.filter = isVideo ? '' : cssFilterFor(adjustmentsOf(r));
     $('pp-lb-cap').innerHTML =
       '<strong>' + Fmt.esc(r.view_name || r.description || 'Progress photo') + '</strong>' +
       '<span>' + Fmt.esc(tradesOf(r).concat(worksOf(r), [r.location]).filter(Boolean).join(' · ')) +
@@ -1965,12 +2212,20 @@ window.ProgressPhotos = (function () {
     if (delBtn) delBtn.onclick = function () { closeLightbox(); remove(r); };
     var dlBtn = $('pp-lb-download');
     if (dlBtn) dlBtn.onclick = function () { download(r); };
-    // Markup (18-item list item 13) — hidden on Gallery tiles by contract,
-    // shown here only. Visibility is a per-session UI toggle (not persisted
-    // per photo — "show it right now" is a viewing preference, not data).
+    // Fifth round item 7: markup visibility is now ONE shared, persisted
+    // preference for the whole module (markupGlobalVisible), not a private
+    // per-session lightbox toggle — hiding it here also hides it on every
+    // List/Gallery tile, and vice versa. The lightbox still keeps its own
+    // `lightboxMarkupVisible` var (paintMarkupOverlay reads it), it's just
+    // seeded FROM and written BACK to the shared preference below.
     var mkBtn = $('pp-lb-markuptoggle'), mkEditBtn = $('pp-lb-markupedit');
     if (mkEditBtn) mkEditBtn.style.display = canWrite ? '' : 'none';
-    if (mkBtn) mkBtn.onclick = function () { lightboxMarkupVisible = !lightboxMarkupVisible; paintMarkupOverlay(r); };
+    if (mkBtn) mkBtn.onclick = function () {
+      lightboxMarkupVisible = !lightboxMarkupVisible;
+      setMarkupGlobalVisible(lightboxMarkupVisible);
+      paintMarkupOverlay(r);
+      render(); // repaints/removes every tile's own overlay to match
+    };
     if (mkEditBtn) mkEditBtn.onclick = function () {
       openMarkupEditor(u, r.markup || [], async function (newMarkup) {
         r.markup = newMarkup;
@@ -1980,7 +2235,21 @@ window.ProgressPhotos = (function () {
         paintMarkupOverlay(r);
       });
     };
-    lightboxMarkupVisible = true;
+    // Item 5 — same shape as the markup edit button above: hidden for a
+    // video (adjustments are photo-only) and for a read-only viewer.
+    var adjBtn = $('pp-lb-adjustedit');
+    if (adjBtn) {
+      adjBtn.style.display = (canWrite && !isVideo) ? '' : 'none';
+      adjBtn.onclick = function () {
+        openAdjustEditor(u, r.adjustments || {}, async function (newAdj) {
+          r.adjustments = newAdj;
+          if (imgEl) imgEl.style.filter = cssFilterFor(newAdj);
+          var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: { adjustments: newAdj, updated_at: new Date().toISOString() } });
+          if (!w.ok) UI.toast(w.error && w.error.message || 'Could not save adjustments', 'error');
+        });
+      };
+    }
+    lightboxMarkupVisible = markupGlobalVisible();
     paintMarkupOverlay(r);
     hydrate($('pp-lightbox'));
   }
@@ -2249,6 +2518,84 @@ window.ProgressPhotos = (function () {
     }
   }
 
+  // -------------------------------------------------- photo adjustments ---
+  // Item 5 (2026-08-30, fourth round): "adjust exposure, brightness, contrast
+  // and sharpness of photo." Stored as a plain {exposure,brightness,contrast,
+  // sharpness} object on progress_photos.adjustments, each -100..100 (0 =
+  // unchanged) — deliberately the SAME non-destructive, small-JSON-column
+  // convention as markup: the original file is never touched or re-uploaded,
+  // so a planner can always get back to exactly what the camera captured by
+  // resetting the sliders to 0.
+  //
+  // Exposure/Brightness/Contrast render live and CHEAPLY everywhere a photo
+  // appears (Gallery tiles, List rows, Stack cells, the lightbox) via the
+  // browser's own CSS `filter`, which a canvas 2D context can also apply
+  // verbatim (`ctx.filter = cssFilterFor(adj)`) — no per-frame pixel work,
+  // no cost to the tile-loading speed item 1 just fixed.
+  //
+  // Sharpness has NO CSS filter equivalent (there is no `filter: sharpen()`)
+  // — it needs real pixel convolution (getImageData/putImageData), which is
+  // too costly to run on every tile in a scrolling grid. It is therefore
+  // ONLY evaluated in the adjustment dialog's own live preview and — because
+  // that is the one other place a planner is looking closely at ONE photo,
+  // matching the exact "full resolution only when expanded" rule item 1
+  // established — the lightbox. Tiles show exposure/brightness/contrast
+  // only; the difference is invisible at tile size regardless.
+  var ADJUST_DEFAULTS = { exposure: 0, brightness: 0, contrast: 0, sharpness: 0 };
+  function adjustmentsOf(r) { return Object.assign({}, ADJUST_DEFAULTS, r && r.adjustments); }
+  function adjustmentsAreDefault(adj) {
+    return !adj || (Math.abs(adj.exposure || 0) < 0.5 && Math.abs(adj.brightness || 0) < 0.5 &&
+      Math.abs(adj.contrast || 0) < 0.5 && Math.abs(adj.sharpness || 0) < 0.5);
+  }
+  // Exposure and Brightness both map onto CSS's one `brightness()` filter
+  // (there is no separate "exposure" primitive in CSS) — they compose
+  // multiplicatively rather than fighting over the same knob, so the two
+  // sliders still do visibly different things together (e.g. +50 exposure
+  // and -50 brightness roughly cancel, exactly as a photographer would
+  // expect two opposing brightness-family controls to). Contrast maps onto
+  // CSS's own `contrast()` directly. Range -100..100 maps to roughly
+  // 0.3x..1.9x, clamped so an extreme slider can never invert or blank the
+  // image entirely (0x or negative would).
+  function pctToMultiplier(v) { return Math.max(0.3, Math.min(1.9, 1 + (v || 0) / 100)); }
+  function cssFilterFor(adj) {
+    adj = adj || ADJUST_DEFAULTS;
+    if (adjustmentsAreDefault(adj)) return 'none';
+    return 'brightness(' + pctToMultiplier(adj.exposure) + ') ' +
+           'brightness(' + pctToMultiplier(adj.brightness) + ') ' +
+           'contrast(' + pctToMultiplier(adj.contrast) + ')';
+  }
+  // A standard unsharp-mask-style 3x3 convolution: the centre pixel is
+  // boosted by (1+4k) and its four direct neighbours subtracted by k each —
+  // k=0 is a no-op (identity kernel), matching "sharpness 0 = unchanged".
+  // Applied to whatever is ALREADY drawn on the canvas (so it composes with
+  // ctx.filter's exposure/brightness/contrast, which runs at draw time,
+  // rather than needing its own separate light/dark handling).
+  function applySharpen(ctx, w, h, amount) {
+    if (!amount) return;
+    var k = Math.max(0, Math.min(1, amount / 100)) * 0.8;
+    if (!k) return;
+    var src, dst;
+    try { src = ctx.getImageData(0, 0, w, h); } catch (e) { return; } // e.g. a cross-origin canvas — degrade to unsharpened rather than throwing
+    dst = ctx.createImageData(w, h);
+    var sd = src.data, dd = dst.data;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var i = (y * w + x) * 4;
+        for (var c = 0; c < 3; c++) {
+          var center = sd[i + c];
+          var up = y > 0 ? sd[i - w * 4 + c] : center;
+          var down = y < h - 1 ? sd[i + w * 4 + c] : center;
+          var left = x > 0 ? sd[i - 4 + c] : center;
+          var right = x < w - 1 ? sd[i + 4 + c] : center;
+          var v = center * (1 + 4 * k) - k * (up + down + left + right);
+          dd[i + c] = Math.max(0, Math.min(255, v));
+        }
+        dd[i + 3] = sd[i + 3];
+      }
+    }
+    ctx.putImageData(dst, 0, 0);
+  }
+
   // ------------------------------------------------------- markup editor ---
   // 18-item list item 13/14, rebuilt 2026-08-30 per feedback item 4 into an
   // iOS-Photos-style tool set: pen, highlighter, ruler, shapes (rect/circle/
@@ -2339,10 +2686,41 @@ window.ProgressPhotos = (function () {
     var r = parseInt(h.slice(0, 2), 16) || 0, g = parseInt(h.slice(2, 4), 16) || 0, b = parseInt(h.slice(4, 6), 16) || 0;
     return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
-  function drawMarkupObjects(ctx, objs, w, h) {
+  // Item 3: fill and border/line colour can now be assigned independently.
+  // `fillColor` is a SEPARATE field from `color` (the stroke); it defaults
+  // to `color` when absent so every object saved BEFORE this feature
+  // (single colour for both) keeps rendering exactly as it always did.
+  function fillColorOf(o) { return o.fillColor || o.color || MARKUP_COLORS[0]; }
+  // Fifth round item 6 — rotation is a plain degrees field on EVERY object
+  // type, applied as a canvas transform around the object's own bounding-box
+  // centre (never baked into the stored coordinates) so a rotated shape's
+  // points stay in the same simple, resize-friendly local space they always
+  // were. markupCenterPx/rotatePointDeg are pure and genuinely executed by
+  // test.js, since a flipped sign here would silently rotate every future
+  // shape the wrong way with nothing in the UI to catch it.
+  function markupCenterPx(o, w, h) {
+    var box = markupBoundsPx(o, w, h);
+    if (!box) return null;
+    return { cx: (box.x0 + box.x1) / 2, cy: (box.y0 + box.y1) / 2 };
+  }
+  function rotatePointDeg(px, py, cx, cy, deg) {
+    var rad = deg * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    var dx = px - cx, dy = py - cy;
+    return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+  }
+  function drawMarkupObjects(ctx, objs, w, h, selectedIdx) {
     ctx.clearRect(0, 0, w, h);
-    objs.forEach(function (o) {
+    objs.forEach(function (o, oi) {
       var col = o.color || MARKUP_COLORS[0];
+      ctx.save();
+      // Rotate the WHOLE per-object draw (shape + its own selection box/
+      // handles below) around its own centre — so the handles always track
+      // the shape visually, and hit-testing only has to undo this one
+      // transform (markupToLocal) rather than track rotated geometry itself.
+      if (o.rotation) {
+        var rc = markupCenterPx(o, w, h);
+        if (rc) { ctx.translate(rc.cx, rc.cy); ctx.rotate(o.rotation * Math.PI / 180); ctx.translate(-rc.cx, -rc.cy); }
+      }
       ctx.strokeStyle = col; ctx.fillStyle = col;
       ctx.lineWidth = o.width || 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.globalAlpha = 1;
@@ -2350,6 +2728,19 @@ window.ProgressPhotos = (function () {
         ctx.beginPath();
         o.points.forEach(function (p, i) { var x = p[0] * w, y = p[1] * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
         ctx.stroke();
+      } else if (o.type === 'polygon' && o.points && o.points.length > 1) {
+        // Item 3: a closed multi-vertex shape — click to add each corner,
+        // double-click to close (see openMarkupEditor's polygon handling).
+        ctx.beginPath();
+        o.points.forEach(function (p, i) { var x = p[0] * w, y = p[1] * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+        ctx.closePath();
+        if (o.fill) { ctx.fillStyle = hexToRgba(fillColorOf(o), (o.fillAlpha == null ? 0.3 : o.fillAlpha)); ctx.fill(); }
+        ctx.strokeStyle = col; ctx.stroke();
+      } else if (o.type === 'line') {
+        // Item 3: a plain straight line — the tool-neutral primitive that
+        // Ruler (end-ticks) and Arrow (arrowhead) are each a decorated
+        // version of.
+        ctx.beginPath(); ctx.moveTo(o.x0 * w, o.y0 * h); ctx.lineTo(o.x1 * w, o.y1 * h); ctx.stroke();
       } else if (o.type === 'signature' && o.points && o.points.length) {
         // A thin, dark freehand stroke — visually distinct from an ordinary
         // pen mark so a signature reads as one on the page.
@@ -2367,7 +2758,7 @@ window.ProgressPhotos = (function () {
         ctx.globalAlpha = 1;
       } else if (o.type === 'rect' || o.type === 'circle') {
         var x0 = o.x0 * w, y0 = o.y0 * h, x1 = o.x1 * w, y1 = o.y1 * h;
-        if (o.fill) { ctx.fillStyle = hexToRgba(col, (o.fillAlpha == null ? 0.3 : o.fillAlpha)); }
+        if (o.fill) { ctx.fillStyle = hexToRgba(fillColorOf(o), (o.fillAlpha == null ? 0.3 : o.fillAlpha)); }
         if (o.type === 'rect') {
           if (o.fill) ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
           ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
@@ -2399,55 +2790,274 @@ window.ProgressPhotos = (function () {
         ctx.lineTo(ax1 - head * Math.cos(ang + Math.PI / 7), ay1 - head * Math.sin(ang + Math.PI / 7));
         ctx.closePath(); ctx.fill();
       } else if (o.type === 'text') {
-        ctx.font = '700 18px Montserrat, Arial, sans-serif';
+        // Fifth round item 5: an editable size (was a hardcoded 18px) and an
+        // optional box FILL reusing the same fillColor/fillAlpha fields every
+        // fillable shape already has (item 2's grouping applies to text too),
+        // instead of a fixed white-ish box nobody could turn off or recolour.
+        var fsz = o.fontSize || 18;
+        ctx.font = '700 ' + fsz + 'px Montserrat, Arial, sans-serif';
         ctx.textBaseline = 'top';
         var tx = o.x * w, ty = o.y * h;
         var metrics = ctx.measureText(o.text || '');
-        ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(tx - 3, ty - 2, metrics.width + 6, 22);
+        var padX = Math.max(3, fsz * 0.18), padY = Math.max(2, fsz * 0.12);
+        var boxW = metrics.width + padX * 2, boxH = fsz + padY * 2;
+        if (o.fill !== false) {
+          // Default ON (text is unreadable over a busy photo with no box at
+          // all) at a light, mostly-opaque backing — o.fill === false is the
+          // explicit "no box" state once a planner turns the Fill checkbox off.
+          ctx.fillStyle = o.fill ? hexToRgba(fillColorOf(o), (o.fillAlpha == null ? 0.85 : o.fillAlpha)) : 'rgba(255,255,255,.85)';
+          ctx.fillRect(tx - padX, ty - padY, boxW, boxH);
+        }
         ctx.fillStyle = col;
         ctx.fillText(o.text || '', tx, ty);
       } else if (o.type === 'icon') {
-        drawIconStamp(ctx, o.icon, o.x * w, o.y * h, 34, col);
+        drawIconStamp(ctx, o.icon, o.x * w, o.y * h, o.size || 34, col);
       }
+      // Item 3 (and item 6's resize/rotate below): a selected object gets a
+      // visible dashed bounding box with real, draggable corner handles and a
+      // rotate handle — drawn INSIDE this object's own rotation transform, so
+      // the handles visually track a rotated shape without any extra math
+      // here (markupHandleRects below undoes the same transform to hit-test).
+      if (oi === selectedIdx) {
+        var box = markupBoundsPx(o, w, h);
+        if (box) {
+          ctx.save();
+          ctx.globalAlpha = 1; ctx.strokeStyle = '#1E88E5'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+          ctx.strokeRect(box.x0 - 8, box.y0 - 8, (box.x1 - box.x0) + 16, (box.y1 - box.y0) + 16);
+          ctx.setLineDash([]);
+          var hs = markupHandleRectsLocal(box);
+          ctx.fillStyle = '#1E88E5';
+          ['nw', 'ne', 'sw', 'se'].forEach(function (k) {
+            ctx.beginPath(); ctx.rect(hs[k][0] - 5, hs[k][1] - 5, 10, 10); ctx.fill();
+          });
+          // Rotate handle: a small connector line up to a round grip.
+          ctx.beginPath(); ctx.moveTo((box.x0 + box.x1) / 2, box.y0 - 8); ctx.lineTo(hs.rotate[0], hs.rotate[1]); ctx.stroke();
+          ctx.beginPath(); ctx.arc(hs.rotate[0], hs.rotate[1], 6, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+      }
+      ctx.restore(); // matches the rotation-transform ctx.save() at the top of this object's block
     });
     ctx.globalAlpha = 1;
   }
-  // Nearest-object hit test for the eraser — "erase" on a vector layer means
-  // REMOVE THE OBJECT, not paint pixels transparent (there are no pixels);
-  // this is the vector equivalent the plan itself calls for ("eraser as a
-  // path-hit-test removal").
+  // Fixed handle POSITIONS in the object's own LOCAL (unrotated) space — the
+  // canvas transform already applied by drawMarkupObjects rotates them onto
+  // the screen for free when drawn; hit-testing undoes that same transform
+  // on the pointer instead of forward-rotating these (markupToLocal below).
+  function markupHandleRectsLocal(box) {
+    var pad = 8;
+    return {
+      nw: [box.x0 - pad, box.y0 - pad], ne: [box.x1 + pad, box.y0 - pad],
+      sw: [box.x0 - pad, box.y1 + pad], se: [box.x1 + pad, box.y1 + pad],
+      rotate: [(box.x0 + box.x1) / 2, box.y0 - pad - 24]
+    };
+  }
+  // Undoes an object's own rotation transform on a real (screen-space)
+  // pointer point, so hit-testing a rotated object can compare against its
+  // simple, never-rotated local geometry — the inverse of the ctx.rotate()
+  // drawMarkupObjects applies before drawing that same object.
+  function markupToLocal(px, py, o, w, h) {
+    if (!o.rotation) return [px, py];
+    var c = markupCenterPx(o, w, h);
+    if (!c) return [px, py];
+    return rotatePointDeg(px, py, c.cx, c.cy, -o.rotation);
+  }
+  // Which handle (if any) of the CURRENTLY SELECTED object the given
+  // screen-space point lands on — 'nw'/'ne'/'sw'/'se' (resize) or 'rotate',
+  // else null. Only ever tested against the one selected object, since
+  // handles only render for it.
+  function markupHandleHit(o, px, py, w, h) {
+    var box = markupBoundsPx(o, w, h);
+    if (!box) return null;
+    var local = markupToLocal(px, py, o, w, h);
+    var hs = markupHandleRectsLocal(box), R = 12;
+    var keys = ['nw', 'ne', 'sw', 'se', 'rotate'];
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (Math.hypot(local[0] - hs[k][0], local[1] - hs[k][1]) <= R) return k;
+    }
+    return null;
+  }
+  // The on-canvas pixel bounding box of one markup object — used for both the
+  // selection outline above and as the fallback "did I click this one"
+  // region for shapes markupHitTest's point-distance test alone would miss
+  // (e.g. clicking well inside a big rectangle, far from its centre).
+  function markupBoundsPx(o, w, h) {
+    if (o.type === 'text' || o.type === 'icon') {
+      var s = o.type === 'icon' ? (o.size || 34) / 2 : Math.max(10, (o.fontSize || 18) * 0.65);
+      return { x0: o.x * w - s, y0: o.y * h - s, x1: o.x * w + s, y1: o.y * h + s };
+    }
+    if (o.points && o.points.length) {
+      var xs = o.points.map(function (p) { return p[0] * w; }), ys = o.points.map(function (p) { return p[1] * h; });
+      return { x0: Math.min.apply(null, xs), y0: Math.min.apply(null, ys), x1: Math.max.apply(null, xs), y1: Math.max.apply(null, ys) };
+    }
+    if (o.x0 != null) {
+      return { x0: Math.min(o.x0, o.x1) * w, y0: Math.min(o.y0, o.y1) * h, x1: Math.max(o.x0, o.x1) * w, y1: Math.max(o.y0, o.y1) * h };
+    }
+    return null;
+  }
+  // Object hit test — used by BOTH the eraser (remove what's hit) and, since
+  // item 3 ("I can't select the markup or shape to edit"), the Select tool
+  // (grab what's hit, then let it be dragged/restyled/deleted). Two passes:
+  // shapes with a real filled/enclosed AREA (rect/circle/polygon) are hit by
+  // "is the point inside this shape's box", checked TOPMOST-OBJECT-FIRST
+  // (later objects are drawn over earlier ones, so a click should prefer
+  // whichever one is actually on top) — a bare centre-distance test would
+  // make a large rectangle nearly impossible to grab except dead-centre.
+  // Everything else (freehand strokes, lines, text, icons) keeps the
+  // original nearest-point/nearest-anchor distance test, since a bounding-
+  // box test on, say, a long diagonal signature would make almost the whole
+  // canvas count as "inside" it.
+  // ⚠️ Item 6: rotation-aware. A click is real screen-space, but a rotated
+  // object's own geometry is stored UN-rotated — so every candidate object's
+  // hit test now runs against the click point undone through THAT object's
+  // own rotation (markupToLocal), not the raw point. An object with no
+  // rotation is untouched (markupToLocal is a no-op then), so this is a
+  // strict superset of the pre-rotation behaviour, not a rewrite of it.
   function markupHitTest(objs, nx, ny, w, h) {
+    var px = nx * w, py = ny * h, PAD = 6;
+    for (var i = objs.length - 1; i >= 0; i--) {
+      var o = objs[i];
+      if (o.type !== 'rect' && o.type !== 'circle' && o.type !== 'polygon') continue;
+      var box = markupBoundsPx(o, w, h);
+      var lp = markupToLocal(px, py, o, w, h);
+      if (box && lp[0] >= box.x0 - PAD && lp[0] <= box.x1 + PAD && lp[1] >= box.y0 - PAD && lp[1] <= box.y1 + PAD) return i;
+    }
     var best = -1, bestDist = 26; // px tolerance
     objs.forEach(function (o, i) {
+      if (o.type === 'rect' || o.type === 'circle' || o.type === 'polygon') return; // handled above
+      var lp = markupToLocal(px, py, o, w, h), lx = lp[0], ly = lp[1];
       var d = Infinity;
       if (o.type === 'pen' || o.type === 'highlighter' || o.type === 'signature') {
-        (o.points || []).forEach(function (p) { d = Math.min(d, Math.hypot((p[0] - nx) * w, (p[1] - ny) * h)); });
+        (o.points || []).forEach(function (p) { d = Math.min(d, Math.hypot(p[0] * w - lx, p[1] * h - ly)); });
       } else if (o.type === 'text' || o.type === 'icon') {
-        d = Math.hypot((o.x - nx) * w, (o.y - ny) * h);
+        d = Math.hypot(o.x * w - lx, o.y * h - ly);
       } else {
-        var cx = (o.x0 + o.x1) / 2, cy = (o.y0 + o.y1) / 2;
-        d = Math.hypot((cx - nx) * w, (cy - ny) * h);
+        // line / ruler / arrow — the centre-of-the-endpoints test this file
+        // already used, kept as-is for these three.
+        var cx = (o.x0 + o.x1) / 2 * w, cy = (o.y0 + o.y1) / 2 * h;
+        d = Math.hypot(cx - lx, cy - ly);
       }
       if (d < bestDist) { bestDist = d; best = i; }
     });
     return best;
+  }
+  // Item 3's drag-to-move: shifts every coordinate an object carries by the
+  // same normalized delta, regardless of shape (points array vs x0/y0/x1/y1
+  // vs a bare x/y) — one function so dragging can never move only PART of a
+  // multi-point shape.
+  function translateMarkupObj(o, dx, dy) {
+    var n = Object.assign({}, o);
+    if (n.points) n.points = n.points.map(function (p) { return [p[0] + dx, p[1] + dy]; });
+    if (n.x0 != null) { n.x0 += dx; n.x1 += dx; n.y0 += dy; n.y1 += dy; }
+    if (n.x != null && n.y != null && !n.points) { n.x += dx; n.y += dy; }
+    return n;
+  }
+  // Item 6 — resize. The object's own NORMALIZED (never pixel) bounding box,
+  // used only by resizeBoxObj below — distinct from markupBoundsPx (which is
+  // pixel-space and also covers text/icon's synthetic box, neither of which
+  // resizeBoxObj handles: those two resize by SIZE, not geometry, via
+  // resizeSizeObj).
+  function markupBoundsNorm(o) {
+    if (o.points && o.points.length) {
+      var xs = o.points.map(function (p) { return p[0]; }), ys = o.points.map(function (p) { return p[1]; });
+      return { x0: Math.min.apply(null, xs), y0: Math.min.apply(null, ys), x1: Math.max.apply(null, xs), y1: Math.max.apply(null, ys) };
+    }
+    if (o.x0 != null) return { x0: Math.min(o.x0, o.x1), y0: Math.min(o.y0, o.y1), x1: Math.max(o.x0, o.x1), y1: Math.max(o.y0, o.y1) };
+    return null;
+  }
+  // Resizes a bounded shape (rect/circle/polygon/line/ruler/arrow/pen/
+  // highlighter/signature) by moving ONE corner to a new LOCAL (unrotated)
+  // pixel position while the OPPOSITE corner stays fixed — the standard
+  // anchor-corner resize every vector editor uses. `newLx/newLy` are already
+  // in the object's own local space (the caller undoes rotation via
+  // markupToLocal before calling this, same as the hit-test above) and in
+  // PIXEL units; `w,h` convert back to the object's normalized storage.
+  // Never mutates `o`. A drag collapsing the box to (or past) zero width/
+  // height is clamped to a tiny minimum rather than inverting or vanishing
+  // the shape out from under the user.
+  function resizeBoxObj(o, corner, newLx, newLy, w, h) {
+    var n = Object.assign({}, o);
+    var box = markupBoundsNorm(o);
+    if (!box) return n;
+    var anchorX = (corner === 'ne' || corner === 'se') ? box.x0 : box.x1;
+    var anchorY = (corner === 'sw' || corner === 'se') ? box.y0 : box.y1;
+    var newXNorm = newLx / w, newYNorm = newLy / h;
+    var oldW = box.x1 - box.x0, oldH = box.y1 - box.y0;
+    var rawW = newXNorm - anchorX, rawH = newYNorm - anchorY;
+    var MIN = 0.008;
+    var newW = Math.abs(rawW) < MIN ? (rawW < 0 ? -MIN : MIN) : rawW;
+    var newH = Math.abs(rawH) < MIN ? (rawH < 0 ? -MIN : MIN) : rawH;
+    var sx = oldW === 0 ? 1 : newW / oldW, sy = oldH === 0 ? 1 : newH / oldH;
+    function tx(x) { return anchorX + (x - anchorX) * sx; }
+    function ty(y) { return anchorY + (y - anchorY) * sy; }
+    if (n.points) n.points = o.points.map(function (p) { return [tx(p[0]), ty(p[1])]; });
+    if (n.x0 != null) { n.x0 = tx(o.x0); n.x1 = tx(o.x1); n.y0 = ty(o.y0); n.y1 = ty(o.y1); }
+    return n;
+  }
+  // Resizes a POINT object (text/icon) — there's no box to stretch, only a
+  // font size / icon size, so a corner drag instead scales that size by
+  // `scale` (the caller computes scale from how far the drag moved relative
+  // to where it started). Clamped so a wild drag can't shrink text to
+  // nothing or blow an icon up past the canvas.
+  function resizeSizeObj(o, scale) {
+    var n = Object.assign({}, o);
+    if (n.type === 'text') n.fontSize = Math.max(8, Math.min(96, Math.round((o.fontSize || 18) * scale)));
+    else if (n.type === 'icon') n.size = Math.max(12, Math.min(80, Math.round((o.size || 34) * scale)));
+    return n;
+  }
+  // Item 6 — rotation. Converts a pointer offset FROM AN OBJECT'S OWN CENTRE
+  // into a rotation in degrees, calibrated so a pointer straight above the
+  // centre (dx=0, dy<0) yields 0° — i.e. rotation=0 always means "the rotate
+  // handle points up", matching where drawMarkupObjects/markupHandleRectsLocal
+  // actually draws it before any rotation is applied.
+  function rotationFromPointer(dx, dy) {
+    return ((Math.atan2(dy, dx) * 180 / Math.PI) + 90 + 360) % 360;
   }
 
   // Opens the shared markup editor. `imageUrl` is any already-signed URL
   // (a photo, or a PPR pane's photo — the caller resolves that);
   // `initialMarkup` is the existing array (or []); `onSave(newMarkup)` is
   // called with the finished array on Save, never called on Cancel.
+  // Fourth feedback round, items 3/4 (2026-08-30): a real Select tool (drag
+  // to move, restyle, delete an already-placed object — "I can't select the
+  // markup or shape to edit"), independent border/fill colours, icon-only
+  // tool buttons, and two new primitives (Line, Polygon).
   function openMarkupEditor(imageUrl, initialMarkup, onSave) {
     var objs = (initialMarkup || []).map(function (o) { return Object.assign({}, o); }); // work on a copy — Cancel must leave the original untouched
-    var tool = 'pen', color = MARKUP_COLORS[0], iconChoice = 'camera';
-    var strokeWidth = MARKUP_WIDTHS[0], fillOn = false, fillAlpha = 0.3;
-    var undone = []; // undo stack of removed/added ops, simple whole-array snapshots (this layer is small — dozens of objects at most)
+    var tool = 'select', color = MARKUP_COLORS[0], fillColor = MARKUP_COLORS[0], iconChoice = 'camera';
+    var strokeWidth = MARKUP_WIDTHS[0], fillOn = false, fillAlpha = 0.3, fontSize = 18;
+    var selectedIdx = -1;   // item 3: the currently grabbed object, -1 = none
+    var undone = []; // redo stack (fifth round item 3) — cleared on any new edit, same as before
     var history = [objs.map(function (o) { return Object.assign({}, o); })];
-    var SHAPE_TOOLS = { rect: 1, circle: 1, arrow: 1, ruler: 1 };
-    var STROKE_TOOLS = { pen: 1, highlighter: 1, signature: 1 };
+    // Line joins the drag-from-point-A-to-B family; Ruler/Arrow keep their
+    // own decorated look, Line is the plain, undecorated version of the same
+    // gesture. Rect/Circle/Polygon/Text are the shapes with an interior a
+    // Fill colour can apply to (text's "interior" is its background box —
+    // fifth round item 5).
+    var SHAPE_TOOLS = { rect: 1, circle: 1, arrow: 1, ruler: 1, line: 1 };
+    var STROKE_TOOLS = { pen: 1, highlighter: 1 };
+    function fillableType(t) { return t === 'rect' || t === 'circle' || t === 'polygon' || t === 'text'; }
 
-    var TOOL_LABELS = { pen: 'Pen', highlighter: 'Highlighter', ruler: 'Ruler', rect: 'Rect',
-      circle: 'Circle', arrow: 'Arrow', text: 'Text', signature: 'Signature', icon: 'Sticker', erase: 'Eraser' };
+    // Fifth round item 4: reordered per the owner's explicit list and
+    // 'signature' removed as a pickable tool. drawMarkupObjects still knows
+    // how to RENDER an existing signature-type object (backward
+    // compatibility for markup saved before this round) — only the ability
+    // to draw a NEW one is gone, matching how 'erase' already only removes,
+    // never invents, an object type.
+    var TOOL_ICONS = { select: 'cursor', pen: 'pencil', highlighter: 'highlighter', line: 'line',
+      arrow: 'arrowRight', rect: 'square', circle: 'circleShape', polygon: 'polygon', ruler: 'ruler',
+      text: 'textTool', icon: 'box', erase: 'eraser' };
+    var TOOL_TITLES = { select: 'Select — tap a shape to move, resize, rotate, restyle, or delete it', pen: 'Pen',
+      highlighter: 'Highlighter', line: 'Line', arrow: 'Arrow', rect: 'Rectangle', circle: 'Circle',
+      polygon: 'Polygon — click each corner, double-click to finish', ruler: 'Ruler', text: 'Text — click, then type directly into the box',
+      icon: 'Sticker', erase: 'Eraser' };
+    var TOOL_ORDER = ['select', 'pen', 'highlighter', 'line', 'arrow', 'rect', 'circle', 'polygon', 'ruler', 'text', 'icon', 'erase'];
+    function toolBtnHTML(t) {
+      return '<button type="button" class="pp-mk-tool' + (t === tool ? ' active' : '') + '" data-tool="' + t +
+        '" title="' + Fmt.esc(TOOL_TITLES[t]) + '" aria-label="' + Fmt.esc(TOOL_TITLES[t]) + '">' +
+        (window.Icons ? Icons.svg(TOOL_ICONS[t], 18) : '') + '</button>';
+    }
     var html =
       '<div class="pd-modal-header"><h3>Markup</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
@@ -2458,11 +3068,7 @@ window.ProgressPhotos = (function () {
         // finds everything.
         '<div class="pp-mk-toolbar">' +
         '<div class="pp-mk-toolgroup">' +
-          '<div class="pp-mk-tools" role="tablist">' +
-            ['pen', 'highlighter', 'ruler', 'rect', 'circle', 'arrow', 'text', 'signature', 'icon', 'erase'].map(function (t) {
-              return '<button type="button" class="pp-mk-tool' + (t === tool ? ' active' : '') + '" data-tool="' + t + '">' + TOOL_LABELS[t] + '</button>';
-            }).join('') +
-          '</div>' +
+          '<div class="pp-mk-tools" role="tablist">' + TOOL_ORDER.map(toolBtnHTML).join('') + '</div>' +
           '<div class="pp-mk-icons pp-mk-stickers" id="pp-mk-icons" style="display:none;">' +
             STICKER_NAMES.map(function (ic) {
               // Camera/person/arrow aren't in MARKUP_STICKERS (they're hand-
@@ -2477,26 +3083,54 @@ window.ProgressPhotos = (function () {
                 '<span style="display:inline-block;width:20px;height:20px;">' + previewSvg + '</span></button>';
             }).join('') +
           '</div>' +
-          '<div class="pp-mk-colors">' + MARKUP_COLORS.map(function (c) {
-            return '<button type="button" class="pp-mk-swatch' + (c === color ? ' active' : '') + '" data-color="' + c + '" style="background:' + c + ';"></button>';
-          }).join('') + '</div>' +
-          '<div class="pp-mk-widths" id="pp-mk-widths">' + MARKUP_WIDTHS.map(function (wd, i) {
-            return '<button type="button" class="pp-mk-width' + (wd === strokeWidth ? ' active' : '') + '" data-width="' + wd + '" title="Line weight">' +
-              '<span style="width:' + (4 + i * 4) + 'px;height:' + (4 + i * 4) + 'px;"></span></button>';
-          }).join('') + '</div>' +
-          '<div class="pp-mk-fillrow" id="pp-mk-fillrow" style="display:none;">' +
-            '<label><input type="checkbox" id="pp-mk-fillon"' + (fillOn ? ' checked' : '') + ' /> Fill</label>' +
-            '<input type="range" id="pp-mk-fillalpha" min="0" max="100" value="' + Math.round(fillAlpha * 100) + '" />' +
+          // Fifth round item 2: Line colour + Line weight are now visually ONE
+          // labelled group, and Fill colour + Fill transparency are a
+          // SEPARATE labelled group — the two were adjacent, same-shaped
+          // swatch rows before, which is exactly what read as "mixed up".
+          '<div class="pp-mk-group pp-mk-group-line">' +
+            '<span class="pp-mk-grouplabel">Line</span>' +
+            '<div class="pp-mk-colors" id="pp-mk-colors" title="Line colour">' + MARKUP_COLORS.map(function (c) {
+              return '<button type="button" class="pp-mk-swatch' + (c === color ? ' active' : '') + '" data-color="' + c + '" style="background:' + c + ';"></button>';
+            }).join('') + '</div>' +
+            '<div class="pp-mk-widths" id="pp-mk-widths">' + MARKUP_WIDTHS.map(function (wd, i) {
+              return '<button type="button" class="pp-mk-width' + (wd === strokeWidth ? ' active' : '') + '" data-width="' + wd + '" title="Line weight">' +
+                '<span style="width:' + (4 + i * 4) + 'px;height:' + (4 + i * 4) + 'px;"></span></button>';
+            }).join('') + '</div>' +
+          '</div>' +
+          '<div class="pp-mk-group pp-mk-group-fill" id="pp-mk-fillrow" style="display:none;">' +
+            '<span class="pp-mk-grouplabel">Fill</span>' +
+            '<label><input type="checkbox" id="pp-mk-fillon"' + (fillOn ? ' checked' : '') + ' /> On</label>' +
+            '<div class="pp-mk-colors pp-mk-fillcolors" id="pp-mk-fillcolors" title="Fill colour">' + MARKUP_COLORS.map(function (c) {
+              return '<button type="button" class="pp-mk-swatch' + (c === fillColor ? ' active' : '') + '" data-fillcolor="' + c + '" style="background:' + c + ';"></button>';
+            }).join('') + '</div>' +
+            '<input type="range" id="pp-mk-fillalpha" min="0" max="100" value="' + Math.round(fillAlpha * 100) + '" title="Fill transparency" />' +
+          '</div>' +
+          // Fifth round item 5: text size, editable independently of line weight.
+          '<div class="pp-mk-group pp-mk-group-text" id="pp-mk-textrow" style="display:none;">' +
+            '<span class="pp-mk-grouplabel">Text size</span>' +
+            '<input type="range" id="pp-mk-fontsize" min="10" max="48" value="' + fontSize + '" title="Text size" />' +
           '</div>' +
         '</div>' +
         '<div class="pp-mk-actiongroup">' +
-          '<button type="button" class="pd-btn" id="pp-mk-undo">Undo</button>' +
+          '<button type="button" class="pd-btn" id="pp-mk-undo" title="Undo">' + (window.Icons ? Icons.svg('undo', 16) : 'Undo') + '</button>' +
+          // Fifth round item 3.
+          '<button type="button" class="pd-btn" id="pp-mk-redo" title="Redo">' + (window.Icons ? Icons.svg('redo', 16) : 'Redo') + '</button>' +
+          // Item 3: appears only once something is selected — deletes JUST
+          // that object, distinct from "Clear all" beside it.
+          '<button type="button" class="pd-btn pd-btn-danger" id="pp-mk-delsel" title="Delete selected" style="display:none;">' +
+            (window.Icons ? Icons.svg('trash', 16) : 'Delete') + '</button>' +
           '<button type="button" class="pd-btn" id="pp-mk-clear">Clear all</button>' +
         '</div>' +
         '</div>' +
         '<div class="pp-mk-canvaswrap" id="pp-mk-canvaswrap">' +
           '<img id="pp-mk-img" src="' + Fmt.esc(imageUrl) + '" alt="" />' +
           '<canvas id="pp-mk-canvas"></canvas>' +
+          // Fifth round item 5: real on-canvas typing, not a browser prompt() —
+          // this sits absolutely-positioned over the canvas, shown/hidden and
+          // repositioned by openTextEditAt() below, never rendered by
+          // drawMarkupObjects itself (the canvas draws the COMMITTED object;
+          // this is only visible mid-edit).
+          '<div class="pp-mk-textedit" id="pp-mk-textedit" contenteditable="true" style="display:none;"></div>' +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
@@ -2507,25 +3141,111 @@ window.ProgressPhotos = (function () {
     // — see openModal's own comment for the mechanism).
     var m = openModal(html, 900, function () { window.removeEventListener('resize', sizeCanvas); });
 
-    var canvas = $('pp-mk-canvas'), ctx = canvas.getContext('2d'), img = $('pp-mk-img');
+    var canvas = $('pp-mk-canvas'), ctx = canvas.getContext('2d'), img = $('pp-mk-img'), textEl = $('pp-mk-textedit');
     function sizeCanvas() {
       var r = img.getBoundingClientRect();
       canvas.width = r.width; canvas.height = r.height;
       canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
       redraw();
     }
-    function redraw() { drawMarkupObjects(ctx, objs, canvas.width, canvas.height); }
+    function redraw() { drawMarkupObjects(ctx, objs, canvas.width, canvas.height, selectedIdx); }
     function pushHistory() { history.push(objs.map(function (o) { return Object.assign({}, o); })); undone = []; }
     if (img.complete) sizeCanvas(); else img.onload = sizeCanvas;
     window.addEventListener('resize', sizeCanvas);
 
-    function syncFillRow() { var el = $('pp-mk-fillrow'); if (el) el.style.display = SHAPE_TOOLS[tool] && tool !== 'ruler' && tool !== 'arrow' ? '' : 'none'; }
+    function syncDelBtn() { var b = $('pp-mk-delsel'); if (b) b.style.display = selectedIdx >= 0 ? '' : 'none'; }
+    // Item 3: while something is selected, the toolbar reflects and edits
+    // THAT object's own properties (rather than "the next new shape's"
+    // defaults) — so a planner clicking a colour swatch after grabbing a
+    // rectangle sees, and changes, the rectangle they're looking at.
+    function syncFillRow() {
+      var el = $('pp-mk-fillrow'); if (!el) return;
+      var showFor = selectedIdx >= 0 ? objs[selectedIdx].type : tool;
+      el.style.display = fillableType(showFor) ? '' : 'none';
+    }
+    function syncTextRow() {
+      var el = $('pp-mk-textrow'); if (!el) return;
+      var showFor = selectedIdx >= 0 ? objs[selectedIdx].type : tool;
+      el.style.display = showFor === 'text' ? '' : 'none';
+    }
+    function syncControlsFromSelection() {
+      if (selectedIdx < 0) return;
+      var o = objs[selectedIdx];
+      var c = o.color || color, fc = fillColorOf(o), w = o.width || strokeWidth;
+      Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (x) { x.classList.toggle('active', x.dataset.color === c); });
+      Array.prototype.forEach.call(m.el.querySelectorAll('[data-fillcolor]'), function (x) { x.classList.toggle('active', x.dataset.fillcolor === fc); });
+      Array.prototype.forEach.call(m.el.querySelectorAll('[data-width]'), function (x) { x.classList.toggle('active', +x.dataset.width === w); });
+      if ($('pp-mk-fillon')) $('pp-mk-fillon').checked = !!o.fill;
+      if ($('pp-mk-fillalpha')) $('pp-mk-fillalpha').value = Math.round((o.fillAlpha == null ? 0.3 : o.fillAlpha) * 100);
+      if ($('pp-mk-fontsize') && o.type === 'text') $('pp-mk-fontsize').value = o.fontSize || 18;
+      syncFillRow(); syncTextRow();
+    }
+    // Cancels an in-progress, not-yet-finished polygon (e.g. the planner
+    // switched tools mid-click) — discarded rather than silently committed
+    // with too few vertices to be a real shape.
+    var polyPoints = null, polyObjIdx = null;
+    function cancelPolygon() {
+      if (polyObjIdx != null) objs.splice(polyObjIdx, 1);
+      polyPoints = null; polyObjIdx = null;
+    }
+    // ------------------------------------------------- fifth round item 5 ---
+    // Real on-canvas text entry. Opens a positioned, styled contenteditable
+    // box over `objs[idx]`'s own x/y — typing goes straight into it, Enter
+    // (no shift) or blur commits, Escape discards. `isNew` controls what
+    // "commit with empty text" means: a just-created object is REMOVED (the
+    // old prompt()'s "cancelled if blank" behaviour); an EXISTING object
+    // emptied out this way is also removed, since a text box with nothing in
+    // it isn't a markup worth keeping either way.
+    var editingTextIdx = -1, editingTextWasNew = false, editingOrigText = '';
+    function closeTextEdit(commit) {
+      if (editingTextIdx < 0) { textEl.style.display = 'none'; return; }
+      var idx = editingTextIdx, wasNew = editingTextWasNew;
+      textEl.onblur = null;
+      textEl.style.display = 'none';
+      editingTextIdx = -1;
+      if (!commit) {
+        if (wasNew) objs.splice(idx, 1); else objs[idx].text = editingOrigText;
+        redraw();
+        return;
+      }
+      var val = (textEl.innerText || textEl.textContent || '').replace(/\n+$/, '');
+      if (!val.trim()) { objs.splice(idx, 1); selectedIdx = -1; syncDelBtn(); }
+      else { objs[idx].text = val; }
+      pushHistory(); redraw();
+    }
+    function openTextEditAt(idx) {
+      var o = objs[idx];
+      editingTextIdx = idx; editingOrigText = o.text || '';
+      textEl.textContent = o.text || '';
+      textEl.style.left = (o.x * canvas.width) + 'px';
+      textEl.style.top = (o.y * canvas.height) + 'px';
+      textEl.style.fontSize = (o.fontSize || 18) + 'px';
+      textEl.style.color = o.color || color;
+      textEl.style.background = o.fill === false ? 'transparent' : hexToRgba(fillColorOf(o), o.fill ? (o.fillAlpha == null ? 0.85 : o.fillAlpha) : 0.85);
+      textEl.style.display = 'block';
+      textEl.onblur = function () { closeTextEdit(true); };
+      textEl.onkeydown = function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); textEl.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); closeTextEdit(false); }
+      };
+      textEl.focus();
+      // Select-all so typing over a re-opened existing caption replaces it
+      // rather than requiring a manual select first.
+      try {
+        var range = document.createRange(); range.selectNodeContents(textEl);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      } catch (e) {}
+    }
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-tool]'), function (b) {
       b.onclick = function () {
+        cancelPolygon();
+        if (editingTextIdx >= 0) closeTextEdit(true);
         tool = this.dataset.tool;
+        selectedIdx = -1; syncDelBtn();
         Array.prototype.forEach.call(m.el.querySelectorAll('[data-tool]'), function (x) { x.classList.toggle('active', x.dataset.tool === tool); });
         $('pp-mk-icons').style.display = tool === 'icon' ? '' : 'none';
-        syncFillRow();
+        syncFillRow(); syncTextRow();
+        redraw();
       };
     });
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-icon]'), function (b) {
@@ -2536,69 +3256,226 @@ window.ProgressPhotos = (function () {
     });
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (b) {
       b.onclick = function () {
-        color = this.dataset.color;
-        Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (x) { x.classList.toggle('active', x.dataset.color === color); });
+        var c = this.dataset.color;
+        if (selectedIdx >= 0) {
+          objs[selectedIdx].color = c; pushHistory(); redraw();
+          if (editingTextIdx === selectedIdx) textEl.style.color = c;
+        } else color = c;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-color]'), function (x) { x.classList.toggle('active', x.dataset.color === c); });
+      };
+    });
+    // Item 3: fill colour is a SEPARATE swatch row from border colour.
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-fillcolor]'), function (b) {
+      b.onclick = function () {
+        var c = this.dataset.fillcolor;
+        if (selectedIdx >= 0) { objs[selectedIdx].fillColor = c; pushHistory(); redraw(); }
+        else fillColor = c;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-fillcolor]'), function (x) { x.classList.toggle('active', x.dataset.fillcolor === c); });
       };
     });
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-width]'), function (b) {
       b.onclick = function () {
-        strokeWidth = +this.dataset.width;
-        Array.prototype.forEach.call(m.el.querySelectorAll('[data-width]'), function (x) { x.classList.toggle('active', +x.dataset.width === strokeWidth); });
+        var w = +this.dataset.width;
+        if (selectedIdx >= 0) { objs[selectedIdx].width = w; pushHistory(); redraw(); }
+        else strokeWidth = w;
+        Array.prototype.forEach.call(m.el.querySelectorAll('[data-width]'), function (x) { x.classList.toggle('active', +x.dataset.width === w); });
       };
     });
-    if ($('pp-mk-fillon')) $('pp-mk-fillon').onchange = function () { fillOn = this.checked; };
-    if ($('pp-mk-fillalpha')) $('pp-mk-fillalpha').oninput = function () { fillAlpha = (+this.value) / 100; };
+    if ($('pp-mk-fillon')) $('pp-mk-fillon').onchange = function () {
+      if (selectedIdx >= 0) { objs[selectedIdx].fill = this.checked; pushHistory(); redraw(); }
+      else fillOn = this.checked;
+    };
+    if ($('pp-mk-fillalpha')) $('pp-mk-fillalpha').oninput = function () {
+      var a = (+this.value) / 100;
+      if (selectedIdx >= 0) { objs[selectedIdx].fillAlpha = a; redraw(); }
+      else fillAlpha = a;
+    };
+    // Fifth round item 5: live text-size control, applies to the selected
+    // text object (or the next new one when nothing's selected).
+    if ($('pp-mk-fontsize')) $('pp-mk-fontsize').oninput = function () {
+      var v = +this.value;
+      if (selectedIdx >= 0 && objs[selectedIdx].type === 'text') {
+        objs[selectedIdx].fontSize = v; redraw();
+        if (editingTextIdx === selectedIdx) textEl.style.fontSize = v + 'px';
+      } else fontSize = v;
+    };
+    if ($('pp-mk-fontsize')) $('pp-mk-fontsize').onchange = function () { if (selectedIdx >= 0) pushHistory(); };
     $('pp-mk-undo').onclick = function () {
       if (history.length < 2) return;
       undone.push(history.pop());
       objs = history[history.length - 1].map(function (o) { return Object.assign({}, o); });
-      redraw();
+      selectedIdx = -1; syncDelBtn(); redraw();
     };
-    $('pp-mk-clear').onclick = function () { objs = []; pushHistory(); redraw(); };
+    // Fifth round item 3 — redo replays whatever undo just popped, mirroring
+    // it exactly: pop `undone`'s top back onto `history` and restore from it.
+    // A fresh edit (pushHistory) clears `undone`, so a stale redo can never
+    // resurrect a branch abandoned several edits ago.
+    $('pp-mk-redo').onclick = function () {
+      if (!undone.length) return;
+      history.push(undone.pop());
+      objs = history[history.length - 1].map(function (o) { return Object.assign({}, o); });
+      selectedIdx = -1; syncDelBtn(); redraw();
+    };
+    $('pp-mk-clear').onclick = function () { objs = []; selectedIdx = -1; syncDelBtn(); pushHistory(); redraw(); };
+    if ($('pp-mk-delsel')) $('pp-mk-delsel').onclick = function () {
+      if (selectedIdx < 0) return;
+      objs.splice(selectedIdx, 1); selectedIdx = -1; syncDelBtn(); pushHistory(); redraw();
+    };
 
-    var drawing = false, penPoints = null, shapeStart = null;
+    var drawing = false, penPoints = null, dragOrig = null, dragStart = null;
+    // Fifth round item 6 — resize/rotate interaction state. Only ever set
+    // while `tool === 'select'` and something is already selected; a plain
+    // move-drag (dragOrig above) and these are mutually exclusive per pointer
+    // gesture (pointerdown decides which, if any, applies).
+    var resizing = false, resizeCorner = null, resizeOrig = null, resizeStartDist = 0;
+    var rotating = false, rotateOrig = null, rotateCenter = null;
     function toNorm(e) {
       var r = canvas.getBoundingClientRect();
       return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
     }
     canvas.addEventListener('pointerdown', function (e) {
       canvas.setPointerCapture(e.pointerId);
+      if (editingTextIdx >= 0) closeTextEdit(true);
       var p = toNorm(e);
+      var px = p[0] * canvas.width, py = p[1] * canvas.height;
+      if (tool === 'select') {
+        // Fifth round item 6: a handle on the ALREADY-selected object takes
+        // priority over re-hit-testing/re-selecting — otherwise grabbing a
+        // corner handle that happens to sit over empty space near the shape
+        // would just deselect it instead of resizing.
+        if (selectedIdx >= 0) {
+          var h = markupHandleHit(objs[selectedIdx], px, py, canvas.width, canvas.height);
+          if (h === 'rotate') {
+            rotating = true; drawing = true;
+            rotateOrig = Object.assign({}, objs[selectedIdx]);
+            rotateCenter = markupCenterPx(objs[selectedIdx], canvas.width, canvas.height);
+            return;
+          }
+          if (h) {
+            resizing = true; drawing = true; resizeCorner = h;
+            resizeOrig = Object.assign({}, objs[selectedIdx]);
+            if (resizeOrig.type === 'text' || resizeOrig.type === 'icon') {
+              resizeStartDist = Math.max(1, Math.hypot(resizeOrig.x * canvas.width - px, resizeOrig.y * canvas.height - py));
+            }
+            return;
+          }
+        }
+        var hit = markupHitTest(objs, p[0], p[1], canvas.width, canvas.height);
+        selectedIdx = hit;
+        syncDelBtn();
+        if (hit >= 0) {
+          dragOrig = Object.assign({}, objs[hit]); dragStart = p; drawing = true;
+          syncControlsFromSelection();
+        } else {
+          drawing = false;
+          syncFillRow(); syncTextRow();
+        }
+        redraw();
+        return;
+      }
       if (tool === 'erase') {
         var idx = markupHitTest(objs, p[0], p[1], canvas.width, canvas.height);
         if (idx >= 0) { objs.splice(idx, 1); pushHistory(); redraw(); }
         return;
       }
       if (tool === 'text') {
-        var text = prompt('Text:'); if (!text) return;
-        objs.push({ type: 'text', x: p[0], y: p[1], text: text, color: color });
-        pushHistory(); redraw(); return;
+        // Fifth round item 5: no more prompt() — a blank object is created
+        // and immediately opened for direct on-canvas typing; closeTextEdit
+        // removes it again if nothing was ever typed (isNew=true).
+        objs.push({ type: 'text', x: p[0], y: p[1], text: '', color: color, fontSize: fontSize, fill: fillOn, fillColor: fillColor, fillAlpha: fillAlpha });
+        selectedIdx = objs.length - 1;
+        redraw();
+        openTextEditAt(selectedIdx);
+        editingTextWasNew = true;
+        return;
       }
       if (tool === 'icon') {
         objs.push({ type: 'icon', x: p[0], y: p[1], icon: iconChoice, color: color });
         pushHistory(); redraw(); return;
+      }
+      if (tool === 'polygon') {
+        // Item 3: click each corner; the shape's LAST point always tracks
+        // the pointer live (pointermove below) until the next click commits
+        // it and opens a fresh preview point after it.
+        if (polyPoints === null) {
+          polyPoints = [p];
+          objs.push({ type: 'polygon', points: [p, p], color: color, width: strokeWidth, fill: fillOn, fillColor: fillColor, fillAlpha: fillAlpha });
+          polyObjIdx = objs.length - 1;
+        } else {
+          polyPoints.push(p);
+          objs[polyObjIdx].points = polyPoints.concat([p]);
+        }
+        redraw();
+        return;
       }
       drawing = true;
       if (STROKE_TOOLS[tool]) {
         penPoints = [p];
         objs.push({ type: tool, points: penPoints, color: color, width: strokeWidth });
       } else {
-        shapeStart = p;
-        objs.push({ type: tool, x0: p[0], y0: p[1], x1: p[0], y1: p[1], color: color, width: strokeWidth, fill: fillOn, fillAlpha: fillAlpha });
+        objs.push({ type: tool, x0: p[0], y0: p[1], x1: p[0], y1: p[1], color: color, width: strokeWidth, fill: fillOn, fillColor: fillColor, fillAlpha: fillAlpha });
       }
     });
     canvas.addEventListener('pointermove', function (e) {
+      if (tool === 'polygon' && polyPoints !== null) {
+        // Live preview of the NEXT edge, before it's clicked into place.
+        objs[polyObjIdx].points = polyPoints.concat([toNorm(e)]);
+        redraw();
+        return;
+      }
       if (!drawing) return;
       var p = toNorm(e);
-      if (STROKE_TOOLS[tool]) { penPoints.push(p); }
-      else { var last = objs[objs.length - 1]; last.x1 = p[0]; last.y1 = p[1]; }
+      var px = p[0] * canvas.width, py = p[1] * canvas.height;
+      if (rotating) {
+        objs[selectedIdx] = Object.assign({}, rotateOrig, { rotation: rotationFromPointer(px - rotateCenter.cx, py - rotateCenter.cy) });
+        redraw(); return;
+      }
+      if (resizing) {
+        if (resizeOrig.type === 'text' || resizeOrig.type === 'icon') {
+          var dist = Math.hypot(resizeOrig.x * canvas.width - px, resizeOrig.y * canvas.height - py);
+          objs[selectedIdx] = resizeSizeObj(resizeOrig, dist / resizeStartDist);
+        } else {
+          var local = markupToLocal(px, py, resizeOrig, canvas.width, canvas.height);
+          objs[selectedIdx] = resizeBoxObj(resizeOrig, resizeCorner, local[0], local[1], canvas.width, canvas.height);
+        }
+        redraw(); return;
+      }
+      if (tool === 'select') {
+        if (selectedIdx < 0 || !dragOrig) return;
+        objs[selectedIdx] = translateMarkupObj(dragOrig, p[0] - dragStart[0], p[1] - dragStart[1]);
+      } else if (STROKE_TOOLS[tool]) {
+        penPoints.push(p);
+      } else {
+        var last = objs[objs.length - 1]; last.x1 = p[0]; last.y1 = p[1];
+      }
       redraw();
     });
     ['pointerup', 'pointercancel'].forEach(function (ev) {
       canvas.addEventListener(ev, function () {
         if (!drawing) return;
-        drawing = false; pushHistory();
+        drawing = false;
+        if (resizing || rotating) { resizing = false; rotating = false; resizeOrig = null; rotateOrig = null; }
+        if (tool === 'select') { dragOrig = null; }
+        pushHistory();
       });
+    });
+    // Polygon is finished by DOUBLE-CLICK, not pointerup — it's a multi-
+    // click gesture, not a drag. Fewer than 3 real vertices isn't a shape;
+    // it's discarded rather than saved as a degenerate 2-point sliver.
+    // Fifth round item 5: double-clicking an existing TEXT object (select
+    // tool) reopens it for direct editing instead.
+    canvas.addEventListener('dblclick', function (e) {
+      if (tool === 'polygon' && polyPoints !== null) {
+        if (polyPoints.length >= 3) { objs[polyObjIdx].points = polyPoints.slice(); pushHistory(); }
+        else { objs.splice(polyObjIdx, 1); }
+        polyPoints = null; polyObjIdx = null;
+        redraw();
+        return;
+      }
+      if (tool === 'select' && selectedIdx >= 0 && objs[selectedIdx].type === 'text') {
+        editingTextWasNew = false;
+        openTextEditAt(selectedIdx);
+      }
     });
 
     // ⚠️ Audit fix: the [data-close] re-wire that used to live here is
@@ -2607,8 +3484,88 @@ window.ProgressPhotos = (function () {
     // which this per-button re-wire never covered. m.close() below already
     // runs it, so no separate removeEventListener call is needed here either.
     $('pp-mk-save').onclick = function () {
+      cancelPolygon();
+      if (editingTextIdx >= 0) closeTextEdit(true);
       m.close();
       if (onSave) onSave(objs);
+    };
+  }
+
+  // ---------------------------------------------------- adjustments editor ---
+  // Item 5 (2026-08-30, fourth round). `onSave(newAdjustments)` mirrors
+  // openMarkupEditor's own contract exactly (never called on Cancel) so both
+  // editors' callers (Add Media's staged-file grid, the lightbox) look the
+  // same either way.
+  function openAdjustEditor(imageUrl, initialAdjustments, onSave) {
+    var adj = adjustmentsOf({ adjustments: initialAdjustments });
+    var FIELDS = [
+      { key: 'exposure', label: 'Exposure' },
+      { key: 'brightness', label: 'Brightness' },
+      { key: 'contrast', label: 'Contrast' },
+      { key: 'sharpness', label: 'Sharpness' }
+    ];
+    var html =
+      '<div class="pd-modal-header"><h3>Adjust</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        // The <img> stays visible and laid out (needed so getBoundingClientRect
+        // reports a real size to draw the canvas at) — the canvas sits
+        // absolutely on top of it and, since drawImage repaints the whole
+        // rect opaquely, fully covers it the instant the first redraw runs.
+        // Same overlay pairing openMarkupEditor's own canvas uses.
+        '<div class="pp-adj-canvaswrap pp-mk-canvaswrap" id="pp-adj-canvaswrap">' +
+          '<img id="pp-adj-img" src="' + Fmt.esc(imageUrl) + '" alt="" />' +
+          '<canvas id="pp-adj-canvas"></canvas>' +
+        '</div>' +
+        '<div class="pp-adj-sliders">' + FIELDS.map(function (f) {
+          return '<label class="pp-adj-row">' + f.label +
+            ' <span class="pp-adj-val" id="pp-adj-val-' + f.key + '">' + adj[f.key] + '</span>' +
+            '<input type="range" min="-100" max="100" value="' + adj[f.key] + '" id="pp-adj-' + f.key + '" /></label>';
+        }).join('') + '</div>' +
+        '<button type="button" class="pd-btn" id="pp-adj-reset">Reset to original</button>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp-adj-save">Save adjustments</button></div>';
+    // Same fix as openMarkupEditor's own onClose (2026-08-30): passed to
+    // openModal directly, which covers × / Cancel / backdrop-click alike —
+    // never a separate [data-close] re-wire, which would miss the backdrop
+    // path and leak this resize listener exactly like the audited bug did.
+    var m = openModal(html, 700, function () { window.removeEventListener('resize', redraw); });
+    var canvas = $('pp-adj-canvas'), ctx = canvas.getContext('2d'), img = $('pp-adj-img');
+    function redraw() {
+      var r = img.getBoundingClientRect();
+      // A 0-sized box (image not yet loaded/laid out — including the whole
+      // fake-DOM test harness, which never lays anything out) draws nothing
+      // rather than a canvas full of NaN geometry.
+      if (!r.width || !r.height) return;
+      canvas.width = r.width; canvas.height = r.height;
+      canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
+      ctx.filter = cssFilterFor(adj);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.filter = 'none'; // sharpen's own convolution must not be filtered AGAIN on top
+      applySharpen(ctx, canvas.width, canvas.height, adj.sharpness);
+    }
+    if (img.complete) redraw(); else img.onload = redraw;
+    window.addEventListener('resize', redraw);
+
+    FIELDS.forEach(function (f) {
+      var el = $('pp-adj-' + f.key); if (!el) return;
+      el.oninput = function () {
+        adj[f.key] = +this.value;
+        var v = $('pp-adj-val-' + f.key); if (v) v.textContent = this.value;
+        redraw();
+      };
+    });
+    if ($('pp-adj-reset')) $('pp-adj-reset').onclick = function () {
+      adj = Object.assign({}, ADJUST_DEFAULTS);
+      FIELDS.forEach(function (f) {
+        var el = $('pp-adj-' + f.key); if (el) el.value = 0;
+        var v = $('pp-adj-val-' + f.key); if (v) v.textContent = '0';
+      });
+      redraw();
+    };
+    $('pp-adj-save').onclick = function () {
+      m.close();
+      if (onSave) onSave(adj);
     };
   }
 
@@ -2777,14 +3734,6 @@ window.ProgressPhotos = (function () {
     var wrap = $(idPrefix + '-codes'); if (!wrap) return [];
     return Array.prototype.map.call(wrap.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
   }
-  // The `skipInitialFill` param is kept as a harmless no-op so existing call
-  // sites don't need to change -- Location label is fully independent now,
-  // never auto-filled from the picker (the breadcrumb is the one place the
-  // resolved Location Breakdown path is shown).
-  function wireLocationField(idPrefix, skipInitialFill) {
-    wireLocFields(idPrefix);
-    paintLocCtx(idPrefix);
-  }
   function paintLocCtx(idPrefix) {
     var ctx = $(idPrefix + '-actctx');
     var values = currentLocValues(idPrefix);
@@ -2834,8 +3783,8 @@ window.ProgressPhotos = (function () {
         '<button type="button" class="pp-mtype" disabled title="3D reconstruction is on hold">3D</button>' +
       '</div></div>';
   }
-  function wireMediaTypeSelector(idPrefix, onChange) {
-    var cur = 'photo';
+  function wireMediaTypeSelector(idPrefix, initial, onChange) {
+    var cur = initial || 'photo';
     var fileInput = $(idPrefix + '-files');
     function apply() {
       if (fileInput) fileInput.accept = cur === 'video' ? 'video/*' : 'image/*';
@@ -2878,6 +3827,10 @@ window.ProgressPhotos = (function () {
     // merged into that file's own `markup` column on save. Rebuilt every
     // time the file input changes (a fresh batch starts with no markup).
     var pendingMarkup = {};   // file-array index -> markup objects[]
+    // Item 5 (fourth round, 2026-08-30): exposure/brightness/contrast/
+    // sharpness, available at upload time for the same reason markup is —
+    // one in-memory {exposure,brightness,contrast,sharpness} per staged file.
+    var pendingAdjust = {};   // file-array index -> adjustments object
     var stagedUrls = [];      // parallel array of object URLs, revoked on close/replace
     function revokeStaged() {
       stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); stagedUrls = [];
@@ -2892,7 +3845,7 @@ window.ProgressPhotos = (function () {
       '<div class="pp-form">' +
         '<p class="pp-hint">Fields below apply to every file in this batch — edit any ' +
           'individual item afterwards.</p>' +
-        mediaTypeSelectorHTML('pp') +
+        mediaTypeSelectorHTML('pp', preset.mtype) +
         '<div class="pd-field" id="pp-filesfield"><label>Photos</label>' +
           '<input class="pd-input" type="file" id="pp-files" accept="image/*" capture="environment" multiple /></div>' +
         '<div class="pp-gallery" id="pp-stagedgrid" style="margin:8px 0;"></div>' +
@@ -2916,8 +3869,21 @@ window.ProgressPhotos = (function () {
     wireLocationField('pp');
     wireWorksMultiField('pp');
     if (window.BIM) BIM.wirePinField('pp');
-    var mtype = wireMediaTypeSelector('pp', function (t) {
+    // ⚠️ ROOT-CAUSE FIX (fifth round item 1): switching Photo<->Video after a
+    // file was already staged left the WRONG kind of file sitting there — a
+    // file input's own FileList can't be reassigned by script, so changing
+    // `accept`/`capture` did nothing to whatever was already chosen; only
+    // re-picking files through the input ever rebuilt the staged grid. Every
+    // type change now clears the whole staged batch (revoking object URLs,
+    // dropping pending markup/adjustments, resetting the input itself), so a
+    // photo staged for "Photo" can never survive into a "Video" upload.
+    var mtype = wireMediaTypeSelector('pp', preset.mtype, function (t) {
       var fld = $('pp-filesfield'); if (fld) fld.querySelector('label').textContent = t === 'video' ? 'Videos' : 'Photos';
+      var filesInput = $('pp-files');
+      if (filesInput && filesInput.value) filesInput.value = '';
+      revokeStaged();
+      pendingMarkup = {}; pendingAdjust = {};
+      var grid = $('pp-stagedgrid'); if (grid) grid.innerHTML = '';
     });
     // 360° hands off to pano.js's own real capture flow (item 17) — this
     // modal closes rather than trying to represent a recording/stitching
@@ -2941,7 +3907,7 @@ window.ProgressPhotos = (function () {
     // moment files are chosen (before Upload is ever pressed).
     if ($('pp-files')) $('pp-files').onchange = function () {
       revokeStaged();
-      pendingMarkup = {};
+      pendingMarkup = {}; pendingAdjust = {};
       var files = this.files || [];
       var grid = $('pp-stagedgrid');
       if (!grid) return;
@@ -2952,13 +3918,22 @@ window.ProgressPhotos = (function () {
         return '<figure class="pp-card" data-staged="' + i + '">' +
           (url ? '<div class="pp-cardimg"><img class="pp-cardphoto" src="' + Fmt.esc(url) + '" alt="" /></div>'
                : '<div class="pp-cardimg pp-noimg" style="height:210px;">' + Fmt.esc(f.name) + '</div>') +
-          (isImg ? '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>' : '') +
+          (isImg ? '<div class="pp-cardactions">' +
+              '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>' +
+              '<button type="button" class="pd-btn" style="margin:6px;" data-adjuststage="' + i + '">Adjust</button>' +
+            '</div>' : '') +
         '</figure>';
       }).join('');
       Array.prototype.forEach.call(grid.querySelectorAll('[data-markupstage]'), function (b) {
         b.onclick = function () {
           var i = +this.dataset.markupstage;
           openMarkupEditor(stagedUrls[i], pendingMarkup[i] || [], function (objs) { pendingMarkup[i] = objs; });
+        };
+      });
+      Array.prototype.forEach.call(grid.querySelectorAll('[data-adjuststage]'), function (b) {
+        b.onclick = function () {
+          var i = +this.dataset.adjuststage;
+          openAdjustEditor(stagedUrls[i], pendingAdjust[i] || {}, function (adj) { pendingAdjust[i] = adj; });
         };
       });
     };
@@ -3021,6 +3996,10 @@ window.ProgressPhotos = (function () {
             // with it into the very first insert — never a second write.
             var perFile = Object.assign({ sort_order: i }, shared);
             if (pendingMarkup[i] && pendingMarkup[i].length) perFile.markup = pendingMarkup[i];
+            // Item 5: same "travels with it into the very first insert" rule
+            // as markup — only when the planner actually touched a slider,
+            // never a default-valued object nobody asked for.
+            if (pendingAdjust[i] && !adjustmentsAreDefault(pendingAdjust[i])) perFile.adjustments = pendingAdjust[i];
             var r = await saveCapture(files[i], perFile);
             if (r.queued) queued++; else if (r.ok) { done++; if (r.id) newIds.push(r.id); } else failed.push(files[i].name);
           } catch (err) {
@@ -3059,6 +4038,69 @@ window.ProgressPhotos = (function () {
     var res = await sb().storage.from(BUCKET).upload(path, file, { upsert: false });
     if (res.error) throw res.error;
     return path;
+  }
+
+  // Item 1 (2026-08-30, fourth feedback round): "photo loading is still quite
+  // slow in tile modes... show only limited file size" — repeated feedback on
+  // the SAME complaint the 2026-08-29 pass tried to fix via Supabase
+  // Storage's image-transform add-on (THUMB_OPTS below). That fix degrades
+  // silently to full-res the moment the add-on isn't enabled on the project's
+  // plan tier (see signAll()'s own comment) — which is indistinguishable from
+  // "still slow" to a planner, and is the likely reason this kept recurring.
+  // This makes the speed-up NOT depend on any Supabase feature at all: a real,
+  // separate, small JPEG is generated client-side at upload time and stored
+  // as its own object — the same downscale-to-canvas technique ppr.js's
+  // offline export already uses (MAXW/JPEG_Q below intentionally mirror
+  // THUMB_OPTS' width so the two paths look the same regardless of which one
+  // actually rendered a given row).
+  // Fifth round item 9: 480->320 / 0.6->0.5 quality — "still takes time to
+  // load... minimize photo resolution" even after real thumbnails already
+  // shipped. Sized for the new 3-column phone Gallery grid (~125px/tile),
+  // not the old single-column layout this was originally tuned for.
+  var THUMB_MAXW = 320, THUMB_JPEG_Q = 0.5;
+  function fileToImage(file) {
+    return new Promise(function (resolve, reject) {
+      var u = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(u); resolve(img); };
+      img.onerror = function () { URL.revokeObjectURL(u); reject(new Error('Could not decode image')); };
+      img.src = u;
+    });
+  }
+  function canvasToBlob(c, type, q) {
+    return new Promise(function (resolve, reject) {
+      c.toBlob(function (b) { if (b) resolve(b); else reject(new Error('toBlob failed')); }, type, q);
+    });
+  }
+  async function makeThumbnailBlob(file) {
+    var img = await fileToImage(file);
+    var w = img.naturalWidth || THUMB_MAXW, h = img.naturalHeight || THUMB_MAXW;
+    var scale = Math.min(1, THUMB_MAXW / w);
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * scale));
+    c.height = Math.max(1, Math.round(h * scale));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return canvasToBlob(c, 'image/jpeg', THUMB_JPEG_Q);
+  }
+  // ⚠️ Never throws, and never blocks the real upload — a photo without a
+  // thumbnail is a slower tile, not a lost capture. Any failure (a corrupt
+  // file, an unsupported format, toBlob unsupported in some embedded
+  // webview) degrades to null, which the caller simply doesn't attach to the
+  // row; thumbUrlOf() then falls back the same way it already did before
+  // this feature existed. Skipped entirely for anything that isn't a real
+  // image file (videos already get a free, negligible-cost preview via
+  // `<video preload="metadata">` — generating a frame-grab thumbnail for
+  // them is a materially bigger, browser-inconsistent lift this pass did
+  // not attempt).
+  async function uploadThumbnailFor(file, mainPath) {
+    if (!/^image\//.test(file.type || '')) return null;
+    try {
+      var blob = await makeThumbnailBlob(file);
+      var thumbPath = mainPath + '.thumb.jpg';
+      var res = await sb().storage.from(BUCKET).upload(thumbPath, blob, { contentType: 'image/jpeg', upsert: false });
+      if (res.error) return null;
+      return thumbPath;
+    } catch (e) { return null; }
   }
 
   // ---------------------------------------------------- Key Plan (per photo)
@@ -3147,6 +4189,35 @@ window.ProgressPhotos = (function () {
         UI.toast('Saved without the view name — run migrations/2026-08-30-photos-round2.sql', 'warn');
       }
       return await doWrite(Object.assign({}, job, { patch: stripped5 }));
+    }
+    // Same tolerance for thumb_url (2026-08-30, item 1 round 2) — the
+    // thumbnail file itself is already sitting in Storage by the time this
+    // runs (uploadThumbnailFor uploads before the row insert), so a
+    // pre-migration DB simply doesn't get told about it; the photo still
+    // saves, it just renders full-res in the grid until the migration runs.
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('thumb_url' in job.patch)) {
+      var stripped6 = Object.assign({}, job.patch);
+      delete stripped6.thumb_url;
+      if (!migrationWarnedThumb) {
+        migrationWarnedThumb = true;
+        UI.toast('Saved without the fast-loading thumbnail — run migrations/2026-08-30-photos-round3.sql', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped6 }));
+    }
+    // Same tolerance for adjustments (2026-08-30 item 5, round 2) — a
+    // pre-migration save still lands the photo itself; the exposure/
+    // brightness/contrast/sharpness the planner just set are the only thing
+    // dropped, and they can be re-applied once the migration runs.
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('adjustments' in job.patch)) {
+      var stripped7 = Object.assign({}, job.patch);
+      delete stripped7.adjustments;
+      if (!migrationWarnedAdjust) {
+        migrationWarnedAdjust = true;
+        UI.toast('Saved without the exposure/brightness/contrast adjustment — run migrations/2026-08-30-photos-round3.sql', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped7 }));
     }
     // Same tolerance for markup (Batch F) — a pre-migration save drops the
     // just-drawn annotation rather than failing the whole update; the modal
@@ -3253,7 +4324,12 @@ window.ProgressPhotos = (function () {
       await refreshQueueBadge();
       return { queued: true };
     }
+    // Item 1: a real, small preview file, uploaded ALONGSIDE the original —
+    // never blocking the save if it can't be produced (see
+    // uploadThumbnailFor's own comment for why this never throws).
+    var thumbPath = await uploadThumbnailFor(file, path);
     var row = Object.assign({}, meta, { project_id: pid, created_by: uid, photo_url: path, title: file.name });
+    if (thumbPath) row.thumb_url = thumbPath;
     var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
     if (!w.ok) {
       // The file IS already uploaded — queue just the row write (skips a
@@ -3275,7 +4351,9 @@ window.ProgressPhotos = (function () {
       var item = mine[i];
       try {
         var path = item.uploadedPath || await uploadFile(item.blob);
+        var thumbPath = await uploadThumbnailFor(item.blob, path);
         var row = Object.assign({}, item.meta, { project_id: item.project_id, created_by: item.created_by, photo_url: path, title: item.fileName });
+        if (thumbPath) row.thumb_url = thumbPath;
         var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
         if (!w.ok) throw (w.error || new Error('write failed'));
         await OfflineQueue.remove(item.qid);
@@ -3393,7 +4471,11 @@ window.ProgressPhotos = (function () {
       this.disabled = true;
       var res = await sb().from(TABLE).delete().eq('id', r.id);
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
-      if (r.photo_url) { try { await sb().storage.from(BUCKET).remove([r.photo_url]); } catch (e) {} }
+      // Item 1's thumbnail is a real, separate object in the same bucket —
+      // deleting only the original would leave it orphaned forever (nothing
+      // else in the app ever points at it once this row is gone).
+      var toRemove = [r.photo_url, r.thumb_url].filter(Boolean);
+      if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
       m.close(); UI.toast('Photo deleted', 'ok');
       await load();
     };
@@ -3577,8 +4659,34 @@ window.ProgressPhotos = (function () {
     // rather than only regex-matching the source. A fake ctx recorder (built
     // in test.js) captures which canvas 2D calls actually fired per shape
     // type — the one way to tell "drew a rect" from "silently did nothing".
-    _drawMarkupObjects: function (ctx, objs, w, h) { drawMarkupObjects(ctx, objs, w, h); },
+    _drawMarkupObjects: function (ctx, objs, w, h, selectedIdx) { drawMarkupObjects(ctx, objs, w, h, selectedIdx); },
     _markupHitTest: function (objs, nx, ny, w, h) { return markupHitTest(objs, nx, ny, w, h); },
+    // Fourth round, item 3 — the drag-to-move math genuinely executed, same
+    // reasoning as every hook above: a wrong coordinate field here silently
+    // moves only PART of a multi-point shape while looking interactive.
+    _translateMarkupObj: function (o, dx, dy) { return translateMarkupObj(o, dx, dy); },
+    // Fifth round item 6 — resize/rotate, genuinely executed for the same
+    // reason: a flipped sign or swapped axis here silently resizes/rotates
+    // the wrong way while still LOOKING interactive.
+    _resizeBoxObj: function (o, corner, newLx, newLy, w, h) { return resizeBoxObj(o, corner, newLx, newLy, w, h); },
+    _resizeSizeObj: function (o, scale) { return resizeSizeObj(o, scale); },
+    _rotationFromPointer: function (dx, dy) { return rotationFromPointer(dx, dy); },
+    _rotatePointDeg: function (px, py, cx, cy, deg) { return rotatePointDeg(px, py, cx, cy, deg); },
+    _markupCenterPx: function (o, w, h) { return markupCenterPx(o, w, h); },
+    _markupHandleHit: function (o, px, py, w, h) { return markupHandleHit(o, px, py, w, h); },
+    // Fifth round item 7 — the shared show/hide-markup preference.
+    _markupGlobalVisible: function () { return markupGlobalVisible(); },
+    _setMarkupGlobalVisible: function (v) { setMarkupGlobalVisible(v); },
+    _thumb: function (r, cls) { return thumb(r, cls); },
+    // Test-only hooks for item 5's adjustments engine (2026-08-30, fourth
+    // round) — genuinely EXECUTE the CSS-filter mapping and the sharpen
+    // convolution, same convention as every hook above (a wrong coefficient
+    // here is silent: the image still renders, it just doesn't look right).
+    _cssFilterFor: function (adj) { return cssFilterFor(adj); },
+    _adjustmentsAreDefault: function (adj) { return adjustmentsAreDefault(adj); },
+    _adjustmentsOf: function (r) { return adjustmentsOf(r); },
+    _applySharpen: function (ctx, w, h, amount) { applySharpen(ctx, w, h, amount); },
+    openAdjustEditor: function (imageUrl, initialAdjustments, onSave) { openAdjustEditor(imageUrl, initialAdjustments, onSave); },
     // Item 16 (2026-08-29, second round) — Plan/Stack views relocated here
     // from bim.js. Genuinely EXECUTE the same "as of" cell rule and grid
     // builder bim.js's own tests already proved out, now against THIS
@@ -3602,6 +4710,15 @@ window.ProgressPhotos = (function () {
       try { return stackGrid(cutoff); }
       finally { LOC_LEVELS = savedLevels; rows = savedRows; SCHED_ACTS = savedActs; stackRowLevelId = null; stackColLevelId = null; }
     },
+    // Item 5 (2026-08-30, second round) — the numeric-aware "top floor
+    // first" row order. Pure, no closure state to save/restore.
+    _stackRowSort: function (names) { return stackRowSort(names); },
+    // Item 2 (2026-08-30, second round) — the Plan-view cluster marker's
+    // "latest photo" resolution, against an injected row set.
+    _planClusterLatestThumb: function (cluster, photosArr) {
+      var saved = rows; if (photosArr) rows = photosArr;
+      try { return planClusterLatestThumb(cluster); } finally { rows = saved; }
+    },
     // Test-only hook for the unified List+Gallery grouping (2026-08-29
     // follow-up item 6) — genuinely executes groupRows() with an INJECTED
     // mode, rather than only regex-checking the source, the same convention
@@ -3615,6 +4732,25 @@ window.ProgressPhotos = (function () {
     // exact three lines (desc / trade·works·location / date) every one of
     // the three export formats reads, so a change here provably affects all
     // three rather than only the one format someone happened to test by eye.
-    _dlCaptionLines: function (r) { return dlCaptionLines(r); }
+    _dlCaptionLines: function (r) { return dlCaptionLines(r); },
+    // Test-only hooks for item 1's client-side thumbnail generation
+    // (2026-08-30, fourth round) — genuinely EXECUTE the canvas downscale and
+    // the fail-safe upload wrapper, rather than only regex-checking the
+    // source, the same convention as every hook above.
+    _makeThumbnailBlob: function (file) { return makeThumbnailBlob(file); },
+    _uploadThumbnailFor: function (file, mainPath) { return uploadThumbnailFor(file, mainPath); },
+    // Runs the real signAll()/thumbUrlOf() pair against an injected row set,
+    // so a test can prove thumb_url actually wins once signed, and that the
+    // fallback chain (thumb_url -> transform thumbCache -> full-res) still
+    // resolves correctly when it's absent — save/restore `rows` around the
+    // call, same convention as _stackGrid's closure-state handling.
+    _thumbUrlsFor: function (rowsArr) {
+      var saved = rows; rows = rowsArr;
+      return signAll().then(function () {
+        var out = {};
+        rowsArr.forEach(function (r) { out[r.id] = thumbUrlOf(r); });
+        return out;
+      }).finally(function () { rows = saved; });
+    }
   };
 })();

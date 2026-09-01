@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
-  <link rel="apple-touch-icon" href="assets/img/icon.png" />
+  <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Admin · Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260901a" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260901b" />
   <style>
     .pd-tabs { display:flex; gap:4px; border-bottom:1px solid var(--pd-line); margin-bottom:18px; }
     .pd-tab { padding:10px 16px; cursor:pointer; border-bottom:2px solid transparent; color:var(--pd-muted); font-weight:600; }
@@ -63,12 +63,12 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260901a"></script>
-  <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260827c"></script>
+  <script src="assets/js/config.js?v=20260901c"></script>
+  <script src="assets/js/auth.js?v=20260901b"></script>
+  <script src="assets/js/db.js?v=20260901d"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/ui.js?v=20260901a"></script>
-  <script src="assets/js/icons.js?v=20260830a"></script>
+  <script src="assets/js/ui.js?v=20260901b"></script>
+  <script src="assets/js/icons.js?v=20260830c"></script>
   <script>
     var ME = null, ALL_PROJECTS = [];
 
@@ -115,8 +115,9 @@
       // shared: the contract forbids a module editing shared assets, so promoting it to
       // config.js is a change the module owner has to make. Keep the two lists in step —
       // a value here that the register does not offer becomes an unselectable default.
-      var DEPARTMENTS = ['PMO', 'Operations', 'Engineering', 'Design', 'QA/QC', 'Safety',
-                         'Procurement', 'Commercial', 'Finance', 'Human Resources', 'MEP', 'External'];
+      var DEPARTMENTS = ['Commercial and Contracts', 'Engineering', 'Procurement', 'Finance',
+                         'Human Resources', 'Quality', 'Health and Safety', 'Operations',
+                         'PMO', 'COO', 'CEO'];
       t.innerHTML = '<thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th>Projects</th><th>Actions</th></tr></thead><tbody>' +
         users.map(function (u) {
           var canSuper = ME.role === 'super_admin';

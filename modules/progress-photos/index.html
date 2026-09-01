@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
-  <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901a" />
-  <link rel="stylesheet" href="module.css?v=20260830b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901b" />
+  <link rel="stylesheet" href="module.css?v=20260830f" />
 </head>
 <body>
   <div class="pd-app">
@@ -29,12 +29,6 @@
     </aside>
     <div class="pd-content">
       <div class="pd-topbar">
-        <a class="pd-btn pp-modback" href="../../modules.html" title="Back to modules">
-          <span data-ico="arrowLeft" data-ico-size="18"></span></a>
-        <!-- Static module title — the tab strip below already names the active
-             screen (Gallery / Presentations / Plans), so mirroring that text here
-             read as "Gallery / Gallery". id kept for back-compat with anything
-             still reading #pp-screen-title; setScreen() no longer writes to it. -->
         <h1 class="pp-title" style="margin:0;">
           <span class="pp-title-ico" data-ico="camera" data-ico-size="20"></span>
           <span class="pp-title-txt" id="pp-screen-title">Progress Photos</span>
@@ -53,6 +47,15 @@
           <button class="pp-tab" data-screen="ppr">Presentations</button>
           <button class="pp-tab" data-screen="bim">Plans</button>
         </div>
+        <!-- Sixth round item 7: relocated OUT of the action-tool cluster
+             (where it sat wedged against the always-visible offline-sync
+             pill, reading as one more competing button rather than
+             navigation) and placed here, right beside the screen tabs — it
+             IS screen-level navigation ("you're inside one presentation,
+             this steps back up to the list"), so it belongs next to the
+             other screen-switching control, not among the action buttons. -->
+        <button class="pp-crumbback" id="ppr-back" title="Back to the presentation list" style="display:none;">
+          <span data-ico="arrowLeft" data-ico-size="14"></span> Presentations list</button>
 
         <!-- Tool cluster beside the profile: one labelled primary action per
              screen, everything else icon-only (Drawing Register / Cash Flow). -->
@@ -78,7 +81,28 @@
           </div>
           <button class="pp-topfilttoggle" id="pp-topfilttoggle" title="More filters">
             <span data-ico="filter" data-ico-size="16"></span></button>
-          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos, video, or other media">+ Add media</button>
+          <!-- Fifth round item 1: "+ Add media" is now a dropdown choosing
+               the media type UP FRONT (Photo/Video/360°/3D-on-hold), rather
+               than deciding it inside the modal after files may already be
+               staged — the very ambiguity that let a staged photo survive a
+               later switch to Video. Picking Photo/Video opens the same
+               upload modal pre-set to that type; 360° goes straight to
+               pano.js's capture flow, matching the modal's own former
+               in-place 360° button. -->
+          <div class="pp-addmenu-wrap" id="pp-addmenu-wrap">
+            <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos, video, or other media">
+              + Add media <span data-ico="chevronDown" data-ico-size="12"></span></button>
+            <div class="pp-addmenu" id="pp-addmenu" hidden>
+              <button type="button" class="pp-addmenu-item" data-addtype="photo">
+                <span data-ico="camera" data-ico-size="15"></span> Photo</button>
+              <button type="button" class="pp-addmenu-item" data-addtype="video">
+                <span data-ico="video" data-ico-size="15"></span> Video</button>
+              <button type="button" class="pp-addmenu-item" data-addtype="360">
+                <span data-ico="compass" data-ico-size="15"></span> 360°</button>
+              <button type="button" class="pp-addmenu-item" disabled title="3D reconstruction is on hold">
+                <span data-ico="box" data-ico-size="15"></span> 3D</button>
+            </div>
+          </div>
           <span class="pp-tb-sep" id="pp-sep-photos"></span>
           <button class="pd-btn" id="pp-refresh" title="Reload photos">
             <span data-ico="refresh" data-ico-size="16"></span></button>
@@ -101,8 +125,6 @@
           <button class="pd-btn" id="ppr-templates" title="Report templates (Section 5)" style="display:none;">
             <span data-ico="layers" data-ico-size="16"></span></button>
           <button class="pd-btn pd-btn-primary pp-tb-labeled" id="ppr-tmpl-new" title="Create a report template" style="display:none;">+ New template</button>
-          <button class="pd-btn pp-tb-labeled" id="ppr-back" title="Back to the presentation list" style="display:none;">
-            <span data-ico="arrowLeft" data-ico-size="16"></span> Presentations list</button>
           <!-- PPR multi-select batch actions (item 14) — same swap-in pattern as
                the Gallery's own selection tools: replace "+ New Presentation"
                the moment 1+ rows are checked, restored by
@@ -169,6 +191,7 @@
             <span class="pp-countbar" id="pp-count"></span>
             <label class="pp-groupby">Group by
               <select class="pd-select" id="pp-groupby">
+                <option value="none">None</option>
                 <option value="month">Month captured</option>
                 <option value="trade">Trade</option>
                 <option value="location">Location</option>
@@ -183,6 +206,12 @@
               <input type="range" id="pp-tilesize" min="0.2" max="2" step="0.05" value="0.3333" />
               <span data-ico="gridView" data-ico-size="18"></span>
             </label>
+            <!-- Fifth round item 7: markup now shows by default on every
+                 tile that has any; this is the one shared switch to hide it
+                 (the lightbox's own markup-toggle button drives and reflects
+                 the SAME preference, see openLightbox/markupGlobalVisible). -->
+            <button class="pd-btn pp-mkvistoggle" id="pp-mkvistoggle" title="Show/hide markup on photo tiles">
+              <span data-ico="eye" data-ico-size="15"></span> Markup</button>
             <!-- Item 3: Tile (Gallery) is the DEFAULT view (module.js's own
                  `view = 'gallery'`), so its button leads the group — List
                  moves to second place. -->
@@ -255,6 +284,9 @@
       <button class="pp-lb-tool" id="pp-lb-markuptoggle" title="Show/hide markup"><span data-ico="eye" data-ico-size="16"></span></button>
       <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-markupedit" title="Add or edit markup on this photo — pencil, shapes, icons, text">
         <span data-ico="palette" data-ico-size="16"></span><span>Markup</span></button>
+      <!-- Item 5 (2026-08-30, fourth round): exposure/brightness/contrast/sharpness. -->
+      <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-adjustedit" title="Adjust exposure, brightness, contrast and sharpness">
+        <span data-ico="sliders" data-ico-size="16"></span><span>Adjust</span></button>
       <button class="pp-lb-tool" id="pp-lb-edit" title="Edit details"><span data-ico="pencil" data-ico-size="16"></span></button>
       <button class="pp-lb-tool pp-lb-tool-danger" id="pp-lb-delete" title="Delete"><span data-ico="trash" data-ico-size="16"></span></button>
     </div>
@@ -285,20 +317,20 @@
        r128 PLYLoader (classic global THREE.PLYLoader), same pinned Three.js
        revision as the 360° viewer above — one version of THREE for the page. -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
-  <script src="../../assets/js/config.js?v=20260901a"></script>
-  <script src="../../assets/js/auth.js?v=20260814a"></script>
-  <script src="../../assets/js/db.js?v=20260827c"></script>
+  <script src="../../assets/js/config.js?v=20260901c"></script>
+  <script src="../../assets/js/auth.js?v=20260901b"></script>
+  <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260901a"></script>
-  <script src="../../assets/js/icons.js?v=20260830a"></script>
+  <script src="../../assets/js/ui.js?v=20260901b"></script>
+  <script src="../../assets/js/icons.js?v=20260830c"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260830b"></script>
-  <script src="ppr.js?v=20260830b"></script>
+  <script src="module.js?v=20260830f"></script>
+  <script src="ppr.js?v=20260830f"></script>
   <script src="pano.js?v=20260830b"></script>
   <script src="recon.js?v=20260830b"></script>
-  <script src="bim.js?v=20260830b"></script>
+  <script src="bim.js?v=20260830e"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -307,15 +339,31 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'progress-photos', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
-      ProgressPhotos.init(user, profile);
-      PPR.init(user, profile);
-      PANO.init(user, profile);
-      RECON.init(user, profile);
-      BIM.init(user, profile);
+      // Item 6: Gallery/Presentations/Plans as a Project-Schedule-style
+      // dropdown instead of a flat tab row.
+      UI.tabsToDropdown('.pp-tabs');
+      // ⚠️ Each sub-module's init() is isolated in its own try/catch. Before
+      // this, a throw anywhere in ProgressPhotos.init()/PPR.init()/etc. (e.g.
+      // a project load failing, or any future bug in one file) aborted every
+      // init() call AND the tab-wiring/setScreen() block below it, since none
+      // of this ran inside a try — the module.js's own openModal() recursion
+      // bug (2026-08-30) demonstrated exactly how one un-caught throw upstream
+      // can silently strand the whole page's interactive state. Isolating each
+      // init() call means a failure in, say, BIM.init() can no longer prevent
+      // PPR's or the top-level screen switch's setup from running — and it is
+      // reported instead of silently vanishing into the console.
+      function safeInit(fn, label) {
+        try { fn(); } catch (e) { console.error('[progress-photos] ' + label + ' init failed:', e); }
+      }
+      safeInit(function () { ProgressPhotos.init(user, profile); }, 'ProgressPhotos');
+      safeInit(function () { PPR.init(user, profile); }, 'PPR');
+      safeInit(function () { PANO.init(user, profile); }, 'PANO');
+      safeInit(function () { RECON.init(user, profile); }, 'RECON');
+      safeInit(function () { BIM.init(user, profile); }, 'BIM');
 
-      document.getElementById('pp-lb-close').onclick = ProgressPhotos._closeLightbox;
-      document.getElementById('pp-lb-prev').onclick  = function () { ProgressPhotos._stepLightbox(-1); };
-      document.getElementById('pp-lb-next').onclick  = function () { ProgressPhotos._stepLightbox(1); };
+      if (document.getElementById('pp-lb-close')) document.getElementById('pp-lb-close').onclick = ProgressPhotos._closeLightbox;
+      if (document.getElementById('pp-lb-prev')) document.getElementById('pp-lb-prev').onclick  = function () { ProgressPhotos._stepLightbox(-1); };
+      if (document.getElementById('pp-lb-next')) document.getElementById('pp-lb-next').onclick  = function () { ProgressPhotos._stepLightbox(1); };
 
       // Top-level screen switch (Photos / PPRs) — each screen owns its own tools.
       var PHOTO_TOOLS = ['pp-add', 'pp-sep-photos', 'pp-refresh', 'pp-topsearch-wrap', 'pp-topfilttoggle'];
@@ -343,10 +391,26 @@
         document.getElementById('pp-screen-ppr').hidden = !isPpr;
         document.getElementById('pp-screen-bim').hidden = !isBim;
         // Title is static ("Progress Photos") — the .pp-tab active state already
-        // names the screen, so this no longer overwrites #pp-screen-title.
-        show(PHOTO_TOOLS, isPhotos);
+        // names the screen, so this must NOT overwrite #pp-screen-title (that
+        // was the "Gallery / Gallery" duplicate-label bug this line used to
+        // reintroduce).
+        // ⚠️ Every one of these four calls is now isolated. Before, a throw
+        // in ANY of them (e.g. PPR._syncTools reading `screen` before PPR.init
+        // ever ran, because safeInit() above swallowed an earlier failure)
+        // aborted setScreen() partway through — and since `show(PHOTO_TOOLS,
+        // isPhotos)` had already run but PPR._syncTools/BIM._syncTools had
+        // not, the Gallery's own "+ Add media" would be correctly shown while
+        // "+ New Presentation"/"+ Upload floor plan" were left showing
+        // whatever they last were (their initial inline `display:none` is
+        // safe on first load, but NOT safe after switching screens once).
+        // Wrapping each call means one module's bug can never leave another
+        // module's topbar button stuck in the wrong screen's state.
+        function safeSync(fn, label) {
+          try { fn(); } catch (e) { console.error('[progress-photos] ' + label + ' syncTools failed:', e); }
+        }
+        safeSync(function () { show(PHOTO_TOOLS, isPhotos); }, 'Gallery tools');
         // Each module re-asserts its own tools' visibility (role + inner screen).
-        PPR._syncTools(isPpr);
+        safeSync(function () { PPR._syncTools(isPpr); }, 'PPR');
         // pano.js/recon.js's own screens (#pp-screen-pano/#pp-screen-recon)
         // stay in the DOM, permanently hidden — their load()/render() both
         // bail out early if their host div is missing, and PANO.ensureLoaded/
@@ -357,14 +421,13 @@
         // (#pano-new/#pano-compare-btn/#recon-new) were removed from this
         // page (2026-08-29 feedback item 2); calling it would just be a
         // harmless no-op, but there is nothing left for it to do.
-        BIM._syncTools(isBim);
+        safeSync(function () { BIM._syncTools(isBim); }, 'BIM');
         // ⚠️ Audit fix: a batch selection made on Gallery used to survive a
         // tab switch — its selection-only toolbar (count/Download/Add to
         // Presentation/Archive) stayed visible on top of whichever screen
         // opened next, and the checkboxes stayed silently checked in memory
         // for a planner who had moved on and forgotten what was selected.
-        if (isPhotos) ProgressPhotos._syncChrome();
-        else ProgressPhotos._leavePhotosScreen();
+        safeSync(function () { if (isPhotos) ProgressPhotos._syncChrome(); else ProgressPhotos._leavePhotosScreen(); }, 'Gallery chrome');
         Array.prototype.forEach.call(document.querySelectorAll('.pp-tab[data-screen]'), function (b) {
           b.classList.toggle('active', b.dataset.screen === s);
         });

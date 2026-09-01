@@ -1,5 +1,43 @@
 # Module: risk-register
 
+## Rebuilt as an EPC Risk & Control Matrix (2026-09-01) — fmlozano
+Rebuilt against **`SLN101. OPS. Risk Register. 2025 07 01.xlsx`**. The register is no longer a flat
+CRUD table: it is the workbook's **RCM**, banded Identification → Assessment → Response → Residual →
+Audit Plan, grouped by the **5-PMLC activity** each risk is registered against.
+
+**Four views** (was Register + Risk Matrix): **Register** (26 columns behind 5 toggleable band
+groups, `rr_bands`, collapsible activity groups) · **Heat Map** (5×5, replaces `matrix`) · **Risk
+Universe** (the 10×29 taxonomy with this project's counts, zero-count branches flagged — the point of
+the view is blind spots) · **Criteria** (the workbook's own rating tables).
+
+⚠️ **`?rr_view=matrix` is a RETIRED view name.** `switchView` maps it to `heat` and anything else
+unrecognised to `list`. Without that a bookmark carrying the old hash hides all four panes and renders
+a **blank page with no error** — verified in a browser before and after.
+
+**Derived, never stored:** importance (impact × likelihood), priority (`EPCRCM.riskPriority`, a 5×5
+**lookup** — see below), residual score + band. ⚠️ **`rating` IS still written**, solely to keep the
+pre-existing dashboard tile working; it is the one exception and it is commented as such.
+
+⚠️ **Priority is a LOOKUP, not a band on the product.** A product of 4 is answered three ways by the
+sheet: impact 2 × probability 2 → 4th, impact 1 × probability 4 → 3rd, impact 4 × probability 1 → 3rd.
+A threshold on impact × probability would be wrong. Asserted in `test-rcm.js`.
+
+**Shared engine `assets/js/epc-rcm.js`** — the vocabulary, the scales, the grids and the Control
+Masterlist, used by this module *and* stakeholder-map. Transcribing them twice would guarantee drift.
+
+**Migration `../../migrations/2026-09-01-risk-register-rcm.sql` (USER MUST RUN)** — add-only,
+idempotent: 22 columns + an activity index. No storage bucket.
+⚠️ Supersedes this file's old claims that the module needed *no schema change* and had *no bucket*.
+
+**Verified:** `node modules/risk-register/test-rcm.js` — **146 checks**, executing the shipped
+functions (sliced by brace matching, never reimplemented), asserting both grids against **the
+workbooks' own computed output** (13/13 risk pairs, 7/7 stakeholder pairs). ⚠️ The suite **bites**:
+transposing `STK_GRID` to the risk workbook's table fails 4. Driven in a browser: 0 console errors,
+the retired hash rendering the Heat Map, heat-map click-to-filter, 33 zero-count universe branches.
+⚠️ **Not verified signed in; the migration has not been run.** ⚠️ **No geometry or contrast measured**
+— the Browser pane was not compositing (`visibilityState: hidden`, `innerWidth: 0`), so every layout
+number it reports is void. Do not read its `pageHScroll` as a defect.
+
 ## Live collaboration + offline (Phase 1 & 2) (2026-07-26) — fmlozano
 Wired PDCollab (Realtime) + PDSync (offline). Modal-edit register → **row-level cursor**: `openForm`
 calls `wireModalCursor(m, r)` which broadcasts "editing this row" (cleared on cancel/save/backdrop);

@@ -26,6 +26,13 @@
   --pd-ok: #1f8f4e;
   --pd-warn: #C77700;
   --pd-bad: #C42127;
+  /* ⚠️ Destructive text on a CARD surface, paired per theme. Brand --pd-red is
+     an accent, not a text colour at this size: measured on the account menu it
+     is 4.12:1 on white and 3.40:1 on the dark card, both under AA. --pd-bad
+     cannot serve both either (it remaps to #EF5350 on dark = 4.02). This pair
+     measures 5.84 light / 6.14 dark. Same trap, same fix, as the contracts
+     `claim` mark (2026-08-25) and the issues aging value (2026-08-28). */
+  --pd-danger-text: #C42127;
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --pd-radius: 4px;
@@ -199,12 +206,28 @@ a:hover { text-decoration: underline; }
 .pd-usermenu-head { padding: 14px 16px; border-bottom: 1px solid var(--pd-line); }
 .pd-usermenu-name { font-size: 13px; font-weight: 600; color: var(--pd-ink); }
 .pd-usermenu-role { font-size: 11px; color: var(--pd-muted); margin-top: 2px; text-transform: capitalize; }
+/* System destinations (Projects / My Work / Admin). These live in the account
+   menu because it is the only chrome present on every page — see the note in
+   ui.js renderUserBar. Normal ink, so Sign out keeps red to itself. */
+.pd-usermenu-links { border-bottom: 1px solid var(--pd-line); padding: 4px 0; }
+.pd-usermenu-link {
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+  font-size: 13px; font-weight: 500; color: var(--pd-ink);
+  text-decoration: none; cursor: pointer;
+}
+.pd-usermenu-link:hover { background: var(--pd-bg); }
+.pd-usermenu-link svg { flex: none; opacity: .7; }
 .pd-usermenu-signout {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px;
-  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--pd-red);
+  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--pd-danger-text);
   background: none; border: none; cursor: pointer; text-align: left;
 }
 .pd-usermenu-signout:hover { background: var(--pd-bg); }
+/* Touch minimum — the account menu is the main nav on a phone now. */
+@media (max-width: 700px) {
+  .pd-usermenu-link { min-height: 44px; }
+  .pd-usermenu-signout { min-height: 44px; }
+}
 .pd-main { padding: 22px; }
 
 /* ---- Cards ---- */
@@ -282,9 +305,10 @@ a:hover { text-decoration: underline; }
 .pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 
 /* ---- Project selector (UI.enhanceProjectSelect) ----
-   Shared across every module: the Project-Schedule-style OPC folder browser —
-   drill Workspace → Program → Group one level at a time (scales to 100s of
-   projects), with a breadcrumb and a search box that flattens across the tree.
+   Shared across every module: a button that opens the same Portfolio +
+   Group-Head nav tree the topbar switcher and the landing page use (see the
+   .pd-nt-* rules below and UI.renderNavListInto in ui.js) — "the same
+   dropdown for navigating across portfolio and projects" everywhere.
    The trigger button copies the native <select>'s classes/inline style, so a
    module's per-topbar look (borderless, max-width) carries over unchanged. */
 .pd-psel { position: relative; display: inline-flex; vertical-align: middle; }
@@ -299,31 +323,32 @@ a:hover { text-decoration: underline; }
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
   box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 0;
 }
-/* Folder-browser internals (ported from Project Schedule's .ps-pss-*) */
-.pd-pss-search { position: sticky; top: 0; background: var(--pd-card); padding: 8px; border-bottom: 1px solid var(--pd-line); z-index: 1; }
-.pd-pss-search input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--pd-line); border-radius: 6px; font: inherit; background: var(--pd-bg); color: var(--pd-ink); }
-.pd-pss-search input:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
-.pd-pss-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 8px; font-size: 11.5px; }
-.pd-pss-crumb { cursor: pointer; color: var(--pd-muted); padding: 2px 5px; border-radius: 5px; white-space: nowrap; }
-.pd-pss-crumb:hover { background: var(--pd-bg); color: var(--pd-ink); }
-.pd-pss-crumb:last-child { color: var(--pd-ink); font-weight: 700; }
-.pd-pss-sep { color: var(--pd-muted); opacity: .6; }
-.pd-pss-tree { padding: 4px 0; }
-.pd-pss-folder { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--pd-ink); border-bottom: 1px solid var(--pd-line); }
-.pd-pss-folder:hover { background: var(--pd-bg); }
-.pd-pss-folder [data-ico], .pd-pss-folder svg { color: var(--pd-red); flex: none; }
-.pd-pss-count { font-size: 11px; font-weight: 700; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px; padding: 1px 8px; flex: none; }
-.pd-pss-chev { color: var(--pd-muted); font-size: 16px; flex: none; }
-.pd-pss-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pd-pss-badge { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; font-weight: 700; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--pd-line); color: var(--pd-muted); }
-.pd-pss-badge.pd-pss-program { color: #2563EB; border-color: rgba(37,99,235,.35); }
-.pd-pss-badge.pd-pss-group { color: var(--pd-red); border-color: rgba(238,49,36,.35); }
-.pd-pss-proj { display: flex; align-items: center; gap: 7px; padding: 7px 10px; cursor: pointer; font-size: 13px; color: var(--pd-ink); }
-.pd-pss-proj svg { color: var(--pd-muted); flex: none; }
-.pd-pss-proj:hover { background: var(--pd-red-light); }
-.pd-pss-proj.sel { background: var(--pd-red); color: #fff; }
-.pd-pss-proj.sel svg { color: #fff; }
-.pd-pss-empty { padding: 20px 12px; text-align: center; color: var(--pd-muted); font-size: 12.5px; }
+/* Shared nav-tree list body — built by UI.renderNavListInto and reused
+   verbatim by three call sites: this popover, the topbar UI.renderSwitcher
+   menu, and the standalone landing page (home.html). "Portfolio" is always
+   the first row (a real destination, not a project); Group Heads are plain
+   labels, never clickable, with their projects indented beneath. Always
+   fully expanded — no drill-down, no breadcrumb — with a search box that
+   flattens across every group. */
+.pd-nt-search { position: sticky; top: 0; background: var(--pd-card); padding: 8px; border-bottom: 1px solid var(--pd-line); z-index: 1; }
+.pd-nt-search input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--pd-line); border-radius: 6px; font: inherit; background: var(--pd-bg); color: var(--pd-ink); }
+.pd-nt-search input:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
+.pd-nt-portfolio { display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer;
+  font-size: 13.5px; font-weight: 700; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
+.pd-nt-portfolio:hover { background: var(--pd-red-light); }
+.pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; }
+.pd-nt-portfolio [data-ico], .pd-nt-portfolio svg { color: var(--pd-red); flex: none; }
+.pd-nt-portfolio.sel [data-ico], .pd-nt-portfolio.sel svg { color: #fff; }
+.pd-nt-list { padding: 4px 0; }
+.pd-nt-ghlabel { padding: 9px 10px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
+.pd-nt-ghlabel-none { font-style: italic; text-transform: none; }
+.pd-nt-ghkids { padding-bottom: 2px; }
+.pd-nt-proj { display: flex; align-items: center; gap: 7px; padding: 7px 10px 7px 22px; cursor: pointer; font-size: 13px; color: var(--pd-ink); }
+.pd-nt-proj svg { color: var(--pd-muted); flex: none; }
+.pd-nt-proj:hover { background: var(--pd-red-light); }
+.pd-nt-proj.sel { background: var(--pd-red); color: #fff; }
+.pd-nt-proj.sel svg { color: #fff; }
+.pd-nt-empty { padding: 20px 12px; text-align: center; color: var(--pd-muted); font-size: 12.5px; }
 
 /* ---- Tables ---- */
 .pd-table { width: 100%; border-collapse: collapse; background: var(--pd-card); }
@@ -438,6 +463,7 @@ html.pd-dark {
   --pd-red-light: #3D1A19;            /* red tint on dark */
   --pd-red-mid: #6E2A25;
   --pd-ok: #34D27B; --pd-warn: #E0A008; --pd-bad: #EF5350;
+  --pd-danger-text: #FF8A80;          /* see the light-mode note: 6.14:1 here */
   --pd-shadow: 0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4);
   background: #1C1C1C;
 }
@@ -500,7 +526,14 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 
 /* projects table */
 .pd-proj-table { border: 1px solid var(--pd-line); border-radius: var(--pd-radius); overflow: hidden; }
-.pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+/* Denser rows than the shared .pd-table default (10px/13.5-14px) — this list can
+   run to dozens/hundreds of projects, so a shorter row + smaller type lets more
+   of it show at once without opening each project just to scan the list.
+   Scoped to .pd-proj-table (layered on the same <table> as .pd-table) so no
+   other table in the app — e.g. admin.html's Users table — is affected. */
+.pd-proj-table th, .pd-proj-table td { padding: 6px 12px; font-size: 12.5px; }
+.pd-proj-table th { font-size: 10.5px; }
+.pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
 /* PRC's grouped-table header (_ghHeadCells): a tinted chip with a RED LEFT
    BORDER, then a muted "N projects" beside it. ⚠️ Deliberately NOT a solid-red
    pill — PRC's own note records that as user feedback ("no red overlay behind
@@ -536,18 +569,6 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-proj-card-meta span { display: block; font-size: 11px; font-weight: 500; color: var(--pd-muted); }
 .pd-proj-card-loc { margin-top: 10px; font-size: 12px; color: var(--pd-muted); }
 
-/* Landing choice on Projects (item 2): a project below, or a portfolio-wide view here. */
-.pd-landing-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 18px; }
-.pd-landing-card {
-  display: flex; align-items: center; gap: 12px; background: var(--pd-sidebar-bg); color: #fff;
-  border-radius: 12px; padding: 16px 18px; text-decoration: none; transition: background .15s, transform .1s;
-}
-.pd-landing-card:hover { background: #333; transform: translateY(-1px); text-decoration: none; }
-.pd-landing-ic { flex: none; color: var(--pd-red); }
-.pd-landing-card strong { display: block; font-size: 14px; font-weight: 600; }
-.pd-landing-card small { display: block; font-size: 12px; color: rgba(255,255,255,.55); margin-top: 2px; }
-.pd-landing-arrow { margin-left: auto; flex: none; color: rgba(255,255,255,.5); }
-
 /* Manage Group Heads modal (item 6) */
 .pd-ghm-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--pd-line); border-radius: 10px; }
 .pd-ghm-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--pd-line); }
@@ -575,26 +596,11 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
   box-shadow: var(--pd-shadow); min-width: 320px; max-height: 60vh; overflow: auto; }
 .pd-projsw-menu.open { display: block; }
-.pd-projsw-menu-head { padding: 10px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
-  color: var(--pd-muted); border-bottom: 1px solid var(--pd-line); }
-/* Parent-project heading inside the switcher — the sibling projects of one development
-   (AVR101 + AVR102 = Avesta Residences). Rendered only for a parent with more than one
-   member; the indent below is the only thing saying which projects belong to it. */
-.pd-projsw-group { padding: 9px 14px 5px; font-size: 11px; font-weight: 700; letter-spacing: .02em;
-  color: var(--pd-muted); background: var(--pd-bg); border-bottom: 1px solid var(--pd-line); }
-.pd-projsw-kids > button { padding-left: 26px; }
-.pd-projsw-menu button { display: block; width: 100%; text-align: left; border: none; background: none;
-  padding: 9px 14px; cursor: pointer; color: var(--pd-ink); border-bottom: 1px solid var(--pd-line); }
-.pd-projsw-menu button:hover { background: var(--pd-red-light); }
-.pd-projsw-menu button.cur { background: var(--pd-red-light); }
-.pd-projsw-menu button strong { display: block; font-size: 13.5px; }
-.pd-projsw-menu button small { color: var(--pd-muted); font-size: 11.5px; }
-.pd-projsw-all { display: block; padding: 11px 14px; color: var(--pd-red); font-weight: 600; font-size: 13px; }
+/* The list body inside .pd-projsw-menu is the shared .pd-nt-* nav tree (see
+   above) mounted into a .pd-nt-mount div, so the switcher's own CSS only
+   needs to style the static "All projects" link that sits below it. */
+.pd-projsw-all { display: block; padding: 11px 14px; color: var(--pd-red); font-weight: 600; font-size: 13px; border-top: 1px solid var(--pd-line); }
 .pd-projsw-all:hover { background: var(--pd-bg); }
-/* The pinned "Portfolio" entry at the top of the shared switcher (UI.renderSwitcher) —
-   set apart from the project list beneath it, since it is a mode, not a project. */
-.pd-projsw-menu > button[data-goto-portfolio] { border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
-.pd-projsw-menu > button[data-goto-portfolio] strong { color: var(--pd-red); }
 
 .pd-tabbar { display: flex; gap: 2px; padding: 0 24px; background: var(--pd-card);
   border-bottom: 1px solid var(--pd-line); }
@@ -843,7 +849,7 @@ body { overflow-x: clip; }
 
 /* ---- Small phone ---- */
 @media (max-width: 420px) {
-  .pd-topbar h1 { font-size: 14px; }
+  .pd-modulebar h1 { font-size: 14px; }
   .pd-main { padding: 10px; }
   .pd-card { padding: 12px; }
   .pd-userbar-role, .pd-userbar-name { display: none; }   /* the avatar carries identity */
@@ -851,106 +857,128 @@ body { overflow-x: clip; }
 }
 
 /* ============================================================================
-   MODULE TOPBAR — two-row layout on phones/tablets
+   MODULE TOPBAR — pure app chrome, plus a module bar below it
    ----------------------------------------------------------------------------
-   ui.js `initModuleTopbar()` wraps the topbar's children into .pd-tb-main
-   (back · icon · title · theme · avatar) and .pd-tb-tools (project select ·
-   view tabs · action buttons). Both are display:contents here, so on desktop
-   the topbar is byte-for-byte the flat flex row it has always been — the
-   wrappers do not participate in layout at all.
-
-   Below 900px they become real rows: identity stays on one line, and the
-   controls collapse into ONE horizontally-scrolling strip instead of wrapping
-   into four full-height rows that push the content off the screen.
+   ui.js `initModuleTopbar()` now keeps the topbar down to FOUR things only:
+   the sidebar toggle, the shared Portfolio/Group-Head/Project dropdown
+   (`UI.renderNavListInto`, wherever a `-projctx`/`#ctx-switcher` element used
+   to sit), the theme toggle, and the avatar. EVERYTHING module-specific — the
+   module's own icon+title, its view tabs, its action buttons — is pulled out
+   of the topbar entirely into a new sibling bar, `.pd-modulebar`, rendered
+   directly below it. This is a deliberate app-wide restructuring, not a
+   per-module choice: the topbar is now the SAME four controls on every page
+   in the app (shell pages included), and a module's own identity/controls
+   live in one place, below it, where they have room to show their labels.
    ============================================================================ */
-.pd-tb-main, .pd-tb-tools { display: contents; }
-
-/* ⚠️ `display:contents` makes the wrappers invisible to layout, but the DOM
-   REGROUPING is still real: the account controls now precede the tool cluster
-   in source order, which on desktop dropped the avatar into the middle of the
-   bar. `order` restores the original left-to-right sequence — back/title, then
-   tools, then theme + avatar. Required on desktop; harmless on mobile, where it
-   happens to be the order each row wants anyway. */
-.pd-topbar .pd-tb-tools > * { order: 1; }
-.pd-topbar .pd-tb-main > #pd-theme-toggle,
-.pd-topbar .pd-tb-main > #user-bar { order: 2; }
-
 /* ⚠️ Every module.css re-declares `.pd-topbar { display:flex; flex-wrap:wrap }`
    and loads AFTER this file, so a bare `.pd-topbar` here loses on source order
-   (a media query adds no specificity). These rules are qualified with `.pd-app`
-   / `.pd-topbar` purely to outrank that — do not "simplify" the selectors. */
+   (a later rule at equal specificity wins). These rules are qualified with
+   `.pd-app` / `.pd-topbar` purely to outrank that — do not "simplify" them. */
+.pd-app .pd-topbar.pd-tb-split {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 0; flex-wrap: nowrap; padding: 0;
+}
+.pd-topbar.pd-tb-split .pd-tb-main {
+  display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap;
+  padding: 10px 22px; min-height: 58px;
+}
+
+/* Sidebar toggle + dropdown lead the row; theme + avatar trail it — DOM order
+   already gives this (toggle, dropdown, theme, avatar), so no `order` is
+   needed at this width. The dropdown sits comfortably between them, shrinkable
+   so it never pushes theme/avatar off the row on a laptop-width window. */
+.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"],
+.pd-topbar.pd-tb-split .pd-tb-main #ctx-switcher {
+  flex: 1 1 220px; min-width: 0; max-width: 420px;
+}
+.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-select,
+.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-psel,
+.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; max-width: none; }
+.pd-topbar.pd-tb-split .pd-tb-main #pd-theme-toggle { margin-left: auto; }
+/* ⚠️ #user-bar carries `margin-left:auto` of its own (line ~173, for the pages that are NOT
+   topbar-split). Inside the split topbar that made TWO auto margins in one flex row, and two
+   auto margins share the free space BETWEEN them — which is why the theme button sat stranded
+   in the middle of the bar with the avatar far to its right. The toggle's auto margin is the
+   one that belongs: it pushes the whole account cluster right as a unit. */
+.pd-topbar.pd-tb-split .pd-tb-main #user-bar { margin-left: 0; }
+
+/* ⚠️ ONE project-selector look for every page. Modules each declared their own
+   (`.il-project`, `.mom-project`, …) while dashboard.html's `.dh-project` declared NOTHING, so
+   the dashboard fell back to the full-size `.pd-select` — a visibly bigger, heavier control than
+   the identical picker on every module. Styling the `-projctx` wrapper's select directly covers
+   every page including ones added later, which is what "consistent" has to mean here. The module
+   rules still load after this file and set the same values, so nothing changes for them. */
+.pd-topbar [class$="-projctx"] > .pd-select {
+  max-width: 230px; min-width: 120px; height: 34px;
+  font-weight: 600; font-size: 13px;
+  background: transparent; border-color: transparent;
+}
+.pd-topbar [class$="-projctx"] > .pd-select:hover,
+.pd-topbar [class$="-projctx"] > .pd-select:focus {
+  background: var(--pd-card); border-color: var(--pd-line);
+}
+
+/* ---- Below the topbar: the module's own icon+title, tabs, and tools ---- */
+.pd-modulebar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; row-gap: 8px;
+  padding: 10px 22px; min-height: 52px;
+  border-bottom: 1px solid var(--pd-line); background: var(--pd-card);
+}
+.pd-modulebar:empty { display: none; }
+/* The module's icon + title text — text is shown again now that it has its
+   own bar with real room, rather than competing with tabs/tools for a single
+   compact row. */
+.pd-modulebar > h1 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 700; flex: none; }
+/* A title rendered as a view-switch BUTTON rather than a plain <h1> (e.g.
+   Project Schedule's own dropdown) falls in here unstyled beyond flex
+   defaults — it already carries its own look. */
+.pd-modulebar > [class$="-tabs"] {
+  display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
+}
+.pd-modulebar > [class$="-topbar-tools"],
+.pd-modulebar > [id$="-topbar-tools"] {
+  display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0;
+  margin-left: auto; justify-content: flex-end;
+}
+
+/* ---- Tablet: tighter row padding ---- */
+@media (max-width: 1024px) {
+  .pd-topbar.pd-tb-split .pd-tb-main,
+  .pd-modulebar { padding-left: 16px; padding-right: 16px; }
+}
+
+/* ---- Drawer breakpoint: the dropdown moves to its OWN row, BELOW the
+   toggle/theme/avatar cluster — the opposite order from the wide layout,
+   where it leads. `order` (not DOM order) is what makes the same three
+   chrome controls stay together on row 1 while the dropdown, now ordered
+   last, wraps onto row 2 by itself via its 100% basis. ---- */
+@media (max-width: 820px) {
+  .pd-topbar.pd-tb-split .pd-tb-main { row-gap: 8px; }
+  .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"],
+  .pd-topbar.pd-tb-split .pd-tb-main #ctx-switcher { flex-basis: 100%; order: 5; max-width: none; }
+}
+
 @media (max-width: 900px) {
-  .pd-app .pd-topbar.pd-tb-split { flex-direction: column; align-items: stretch; gap: 8px; flex-wrap: nowrap; }
-
-  .pd-topbar .pd-tb-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  /* The Megawide mark is `width:auto`, so a stretching column would blow it up
-     to full width. This is what produced the giant red bars on the shell pages. */
-  .pd-topbar .pd-tb-main > img { flex: none; width: auto; align-self: center; }
-  /* The title takes the slack and truncates, so the avatar can never be pushed
-     onto a line of its own (what the topbar did when it simply wrapped). */
-  .pd-topbar .pd-tb-main h1 { flex: 1 1 auto; min-width: 0; overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap; }
-  .pd-topbar .pd-tb-main > a, .pd-topbar .pd-tb-main > button,
-  .pd-topbar .pd-tb-main > #user-bar,
-  .pd-topbar .pd-tb-main > #pd-theme-toggle { flex: none; }
-  /* The avatar's desktop divider reads as a stray rule once it is the row's
-     last item against the screen edge. */
-  .pd-topbar .pd-tb-main > #user-bar { margin-left: auto; padding-left: 0; border-left: 0; }
-
-  /* ⚠️ The controls row WRAPS — it is deliberately not a horizontal scroller.
+  /* ⚠️ The module bar WRAPS — it is deliberately not a horizontal scroller.
      A scroller was tried first and failed on two counts: it pushed the leading
-     view tab half off the left edge (so the "Photos" tab was unreachable unless
-     you guessed there was a hidden scroll), and `overflow-x:auto` establishes a
+     view tab half off the left edge (so a first tab was unreachable unless you
+     guessed there was a hidden scroll), and `overflow-x:auto` establishes a
      clipping context that cuts off every dropdown opened from inside it — the
-     project switcher, the add menus, the module tool menus. Wrapping keeps all
-     controls visible and all popovers unclipped. */
-  .pd-topbar .pd-tb-tools {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px;
-  }
-  .pd-topbar .pd-tb-tools button, .pd-topbar .pd-tb-tools .pd-btn { white-space: nowrap; }
-  /* Pairs with a narrow tab strip when both fit (the project name truncates in
-     that case, which the owner has accepted) and takes a full row of its own
-     otherwise. Not `1 1 100%` — see the note below on why that costs height. */
-  /* ⚠️ 120px is measured, not arbitrary. It is the largest basis at which
-     Material Submittal's selector still pairs with its tab strip instead of
-     taking a 4th row (at 130px it wraps: 221px vs 169px). Raising this costs a
-     whole row on that module; lowering it buys nothing — Issues and Contracts
-     have tab labels too long to pair at any basis, even 110px. */
-  .pd-topbar .pd-tb-tools > [class$="-projctx"] { flex: 1 1 120px; min-width: 0; }
-  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
-  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-psel,
-  .pd-topbar .pd-tb-tools > [class$="-projctx"] > button { width: 100%; max-width: none; }
-
-  /* ---- Make the wrapped rows look designed rather than merely wrapped ----
-     Tabs plus three action buttons genuinely cannot fit one 351px line, so the
-     controls occupy a few rows. Left to itself that reads as broken wrapping:
-     the modules push their tool cluster right with `margin-left:auto`, which on
-     its own row leaves it floating half-centred, misaligned with the tabs above
-     it. Instead each group claims a full row and divides it evenly, so every row
-     is a deliberate full-width control. Suffix selectors — every module names
-     these consistently (`-tabs`, `-topbar-tools`, `-tb-sep`). */
-  .pd-topbar .pd-tb-tools > * { margin-left: 0; margin-right: 0; }
-
-  .pd-topbar .pd-tb-tools > [class$="-tabs"] {
-    flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
-  }
-  /* On a phone the action cluster keeps its own row — its buttons carry the
-     longest labels ("+ Add photos", "+ New PPR") and squeezing them beside tabs
-     truncates them. A tablet has the width to share, so it only claims a full
-     row below 700px; at 700–900px it sits beside whatever fits. */
-  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
-  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] {
-    flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0;
-  }
+     module's own add menus, tool menus, and (for a module using item 6's
+     tabs-as-dropdown pattern) the tab menu itself. Wrapping keeps everything
+     visible and every popover unclipped. */
+  .pd-modulebar > [class$="-tabs"],
+  .pd-modulebar > [class$="-topbar-tools"],
+  .pd-modulebar > [id$="-topbar-tools"] { flex: 1 1 100%; margin-left: 0; }
+  .pd-modulebar button, .pd-modulebar .pd-btn { white-space: nowrap; }
 }
 
 @media (max-width: 700px) {
-  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"],
-  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] { flex: 1 1 100%; }
+  .pd-modulebar > h1 { flex: 1 1 100%; min-width: 0; }
   /* Equal segments, like a native segmented control. ⚠️ `min-height` matters:
      the modules size these to 28px, well under the 44px touch minimum — they
      were among the hardest things on the page to hit accurately. */
-  .pd-topbar .pd-tb-tools > [class$="-tabs"] > button {
+  .pd-modulebar > [class$="-tabs"] > button {
     flex: 1 1 0; justify-content: center; min-height: var(--pd-tap);
     /* ⚠️ `min-width:0` + wrapping are load-bearing for long tab labels. A flex
        item will not shrink below its text width by default, so Contracts &
@@ -962,31 +990,21 @@ body { overflow-x: clip; }
     min-width: 0; white-space: normal; line-height: 1.15;
     font-size: 12.5px; padding-left: 6px; padding-right: 6px; text-align: center;
   }
-  /* Same for the project selector — it was 34px. */
-  .pd-topbar .pd-tb-tools > [class$="-projctx"] .pd-select,
-  .pd-topbar .pd-tb-tools > [class$="-projctx"] > button { min-height: var(--pd-tap); height: auto; }
+  /* Dropdown, moved to row 2 of .pd-tb-main at 820px, gets the same
+     touch-target rule row 1's own controls already carry. */
+  .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-select,
+  .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { min-height: var(--pd-tap); height: auto; }
   /* Actions share their row proportionally, so a labelled button keeps its words
      while an icon-only one stays compact. */
-  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > .pd-btn,
-  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] > .pd-btn,
-  .pd-topbar .pd-tb-tools > [class$="-topbar-tools"] > button,
-  .pd-topbar .pd-tb-tools > [id$="-topbar-tools"] > button {
+  .pd-modulebar > [class$="-topbar-tools"] > .pd-btn,
+  .pd-modulebar > [id$="-topbar-tools"] > .pd-btn,
+  .pd-modulebar > [class$="-topbar-tools"] > button,
+  .pd-modulebar > [id$="-topbar-tools"] > button {
     flex: 1 1 auto; justify-content: center; min-height: var(--pd-tap);
   }
   /* Vertical rules were dividing a horizontal cluster; on its own row they just
      add noise between full-width buttons. */
-  .pd-topbar .pd-tb-tools [class$="-tb-sep"] { display: none; }
-}
-
-/* ---- Phone: module title + filter panels ---- */
-@media (max-width: 900px) {
-  /* Every module hides its own title TEXT on narrow screens (`.rr-title-txt`,
-     `.pp-title-txt`, … at 820–1250px) to buy room in the single-row topbar,
-     which now leaves the identity row showing a bare unlabelled icon. The
-     two-row layout has the space, so put the words back. Selector is
-     `.pd-tb-main [class$=…]` (0,2,0) to outrank the modules' own (0,1,0) rule
-     in a stylesheet that loads after this one. */
-  .pd-topbar .pd-tb-main [class$="-title-txt"] { display: inline !important; }
+  .pd-modulebar [class$="-tb-sep"] { display: none; }
 }
 
 @media (max-width: 700px) {
@@ -1016,14 +1034,39 @@ body { overflow-x: clip; }
      container, not the filter bar — leave those alone. */
   .pd-app .pd-main table .pd-select, .pd-app .pd-main table .pd-input,
   .pd-app .pd-main .pd-viewtoggle .pd-select { width: auto; height: 34px; min-height: 0; }
-
-  /* ⚠️ The module title keeps its TEXT at every width (owner's call) — do not
-     re-add a phone-width `display:none` here. The modules' own CSS hides
-     `.xx-title-txt` below 820–1250px for the old single-row bar; the ≤900px
-     rule above overrides that, and this block must not undo it. The title takes
-     the slack and ellipsises if a module name is long. */
-  .pd-topbar .pd-tb-main h1 { flex: 1 1 auto; min-width: 0; font-size: 15px; }
 }
+
+/* ---- Item 6: a tab strip converted to a Project-Schedule-style dropdown
+   (UI.tabsToDropdown). The original buttons stay in the DOM (still what
+   drives the module's own view-switching JS) but are visually hidden; this
+   single trigger + menu replaces them on screen. ---- */
+.pd-tabsdrop-src { display: none !important; }
+.pd-tabsdrop { position: relative; flex: none; }
+.pd-tabsdrop-btn {
+  display: inline-flex; align-items: center; gap: 8px; background: none; border: 1px solid transparent;
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; font-weight: 700; font-size: 15px;
+  color: var(--pd-ink);
+}
+.pd-tabsdrop-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
+.pd-tabsdrop-caret { color: var(--pd-muted); flex: none; }
+.pd-tabsdrop-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; display: none;
+  min-width: 220px; background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
+  box-shadow: var(--pd-shadow); overflow: hidden;
+}
+.pd-tabsdrop-menu.open { display: block; }
+.pd-tabsdrop-menu button {
+  display: block; width: 100%; text-align: left; border: none; background: none;
+  padding: 9px 14px; cursor: pointer; color: var(--pd-ink); font-size: 13.5px; border-bottom: 1px solid var(--pd-line);
+}
+.pd-tabsdrop-menu button:last-child { border-bottom: none; }
+.pd-tabsdrop-menu button:hover { background: var(--pd-red-light); }
+.pd-tabsdrop-menu button.cur { background: var(--pd-red-light); color: var(--pd-red); font-weight: 700; }
+@media (max-width: 700px) {
+  .pd-tabsdrop { flex: 1 1 100%; }
+  .pd-tabsdrop-btn { width: 100%; justify-content: space-between; min-height: var(--pd-tap); }
+}
+
 
 /* ---------------------------------------------------------------------------
    Group-head scope pane + grouped card view

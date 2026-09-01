@@ -1,3 +1,119 @@
+## Vertical stacking banded by the TOWER, so the floors ran sideways (2026-09-01) — fmlozano
+
+Owner: *"for multiple towers, i have identified and matched WBS to tower location, and as well as
+defined the level locations. but in vertical stacking the level locations are not properly stacked.
+they are stacked horizontally."* Their data was right; the view was reading the wrong level.
+
+⚠️ **ROOT CAUSE: `_vsTowerSVG` banded by `LOC_LEVELS[0]`, and on a `Tower › Level › Zone` breakdown
+that IS the Tower.** Every card is already scoped to ONE tower (the per-tower scope, or the Tower
+selector), so every activity in it shares one tower value → **exactly one band** — and `_vsRowCells`
+then split that band by `LOC_LEVELS.slice(1, detail)`, which is Level and Zone. So the floors came out
+as the band's **cells, running horizontally**. A building drawn on its side, from one index.
+
+⚠️ **The tower was being expressed three times and only needed two.** It is the card, it is the
+selector in the bar — and it was also the band axis. New **`_vsAxis()`** = the location levels minus
+the tower level (resolved by `_vsTowerLevelId`, so it works whether the tower is first or merely
+named "Building"/"Block"). Storeys take the vertical axis; the tower stays the card.
+- ⚠️ **Falls back to the full list** when removing the tower would leave nothing — a project whose
+  ONLY location level is the tower genuinely stacks by it, and an empty axis draws no building at all.
+  A one-level project is byte-identical to before.
+- ⚠️ **This is the principle the stacking MODAL already settled on 2026-08-17** ("floors always take
+  the vertical axis"). That fix went into `stkGridHTML` and was never applied to this view — which is
+  why one half of the module got it right and the other did not.
+- ⚠️ Cached on the level-id **signature**, not on `LOC_LEVELS` identity: `_vsRowCells` calls it per
+  row per render, and it must re-resolve the moment the breakdown is reloaded or edited.
+- Everything keyed off it moves together: the band axis, the detail cells, **Detail's maximum** (a
+  `Tower › Level › Zone` project now offers 1–2, not 1–3 with a dead first step), the detail-button
+  tooltips, the bar's "Level › Zone" caption and the PDF's Detail line.
+
+**The two warnings were about the same level and are now about the right ones.**
+`_vsHasLevel` tested the tower, so on the owner's project it reported every activity as levelled while
+the stack showed one band. It tests the **axis** level now.
+- ⚠️ The **Assign** repair is still about the TOWER, so it is split out rather than re-pointed:
+  offering "assign all 2,561 activities to one **floor**" would be nonsense. It fires only when the
+  tower is a level of its own, none of the work carries it, and the work is otherwise located — and it
+  now says plainly that the **stack is unaffected** (it bands by the floor) and only the Tower picker
+  is left with nothing to switch between. The two banners render **independently**; a project can
+  legitimately have both.
+- ⚠️ **`_vsStampTopLevel` wrote `LOC_LEVELS[0]`**, not the tower. On a project whose levels are
+  ordered differently that is a floor, and the repair would have filed every activity on a floor
+  nobody put it on. It resolves the tower the same way `_vsTowerOf` does now.
+
+**Verified 17/17** executing the SHIPPED `_vsTowerLevelId` / `_vsAxis` / `_vsMaxDetail` / `_vsHasLevel` /
+`_vsRowCells` (sliced out by brace-matching, not reimplemented): on `Tower › Level › Zone` the axis is
+**Level › Zone**, bands are Levels, **detail 2's cells are Zones** (they were Levels), max detail 2, a
+tower-only activity correctly reports NO level; a tower named "Building" sitting second is still
+excluded; a project with no tower-ish name keeps its first level as the tower; and a **single-level
+project falls back unchanged**. Parses (1 block, 0 fail); **0 functions lost, 1 added**; 0 NUL bytes; no
+`LOC_LEVELS[0]` left in the stacking code except the tower tie-breaker itself.
+⚠️ **Not verified signed in** — the anon key has no grants, so the owner's project was not opened. The
+stack should now show one row per floor with the zones across. `MODULE_V` → `20260901b`.
+
+## Vertical stacking: export the displayed report as a PDF (2026-09-01) — fmlozano
+
+Owner: *"add an option wherein users are able to convert the displayed report in the vertical stacking
+into PDF format. please make the report very simple yet aesthetic."* New **PDF** button in the stacking
+toolbar, beside Magnify.
+
+- ⚠️ **No PDF library.** This app is a no-build vanilla page; jsPDF/html2canvas would add a vendored
+  megabyte and **rasterise** the buildings. A print window + the browser's own "Save as PDF" keeps the
+  SVG **vector**, so the zone dates stay sharp at any zoom — which is the whole point of printing this
+  view. Same pattern the Reports library already uses (`runReport`).
+- ⚠️ **The svg is CLONED from the screen, never re-derived.** Re-deriving would be a second renderer to
+  keep in step with `_vsTowerSVG`, and the first divergence would be a report that disagrees with the
+  screen it was exported from.
+- ⚠️ **Two things must travel with the clone.** The cells carry `var(--pd-line)` / `var(--pd-muted)`
+  fills, so the vars are re-declared in the print document — as a **fixed LIGHT palette**, because a
+  planner on dark mode must not get a black page of ink. And the cells reference the hatch patterns from
+  `_vsHatchDefs()`, so that defs svg is copied in **ahead of** the buildings that reference it.
+- ⚠️ **`width`/`height` attributes are stripped from the clone**; the viewBox carries the geometry, so
+  each building scales to the page. Left as-is, a wide tower prints off the right margin.
+- ⚠️ `break-inside:avoid` sits on the building **section**, not the svg — a building split across two
+  pages is unreadable.
+- The page states the basis it was exported under (Tower / View / Detail / Dates / Trades) plus the
+  legend for the current basis, so a printed sheet cannot be misread as a different scope. Compare basis
+  prints the four slip colours; otherwise the solid/hatched progress key.
+- A4 portrait, 12mm margins, brand-red rule under the title, one card per building, footer with the data
+  date. Pop-ups blocked or nothing on screen → a toast, not a silent no-op.
+
+**Verified:** inline script parses (1 block, 0 fail); **0 functions lost, 1 added** against HEAD; 0 NUL
+bytes; every helper it calls (`_vsDetailNow`, `_vsBasisWord`, `projName`, `esc`, `dstr`, `today`, the four
+`VS_SLIP_*`) confirmed present.
+⚠️ **Not verified signed in** — the anon key has no grants, so no real project was opened and no PDF was
+produced. The first real export is the test. `MODULE_V` → `20260901a`.
+
+## Fix: narrow-width topbar-tools cluster overflowed past the module bar (2026-08-30) — fmlozano
+
+Owner sent a screenshot at a narrow ("tablet"/narrow-desktop, roughly 820–955px — the band the shared
+`.pd-modulebar` layer does NOT force a wrap at, unlike ≤900px) width: the project dropdown, the title
+switcher and the workspace subline visually crowded together, and below them "Actions ▾" / "+ Add
+activity" / undo-redo / "File ▾" / "Group: WBS ▾" collided with faintly-visible "Reports"/"Health" text
+and icons — reading exactly like the row of action buttons had been "lost".
+
+⚠️ **Root cause: `#ps-topbar-tools` (undo/redo/File▾/Reports/Health/filter/refresh, 7+ controls) had
+`display:flex` with no `flex-wrap` at all (defaults to `nowrap`) and nothing catching an overflow** —
+neither a scrollbar nor a clip. At any width too narrow to fit all seven controls on one line, they
+simply overflowed PAST `.pd-modulebar`'s right edge and painted on top of `.ps-toolbar`'s row in
+`.pd-main` directly below it. That is every element in the screenshot: the topbar-tools cluster
+spilling downward onto the schedule's own Actions/Add/Group row.
+- ⚠️ Ruled out first, not guessed away: a sticky-positioning stacking collision (grepped every
+  `position:sticky|fixed|absolute` in the file — none touch `.pd-topbar-tools`/`.pd-modulebar`/
+  `.ps-toolbar`/`.pd-main`); leftover `position:absolute` on `.ps-datadate-badge`/`.ps-fresh`/
+  `.ps-title-btn` from before the 2026-08-30 topbar restructure (none carry a position); and
+  `.pd-tb-main`/`.pd-modulebar` mis-sizing around wrapped content (`.pd-modulebar` is `flex-wrap:wrap`
+  with no fixed height, so it grows to fit any number of wrapped rows — confirmed, not the cause).
+- **Fix:** `.ps-topbar-tools` gets `flex-wrap:wrap; row-gap:4px` — the same shape the shared
+  `.pd-modulebar` container around it already uses. At any width where the 7 controls don't fit one
+  line, they now wrap to a second line INSIDE the cluster instead of overflowing past it; the parent
+  `.pd-modulebar` (itself `flex-wrap:wrap`, `min-height` not fixed) sizes around the extra line with no
+  clipping. Composes cleanly with the shared ≤900px rule that forces the whole cluster onto its own
+  full-width row — that rule still applies unchanged, this only fixes the band above it where the
+  cluster stays inline but couldn't wrap on its own.
+- Also dropped a harmless duplicate `margin-left:auto` on the same rule (declared twice, no behaviour
+  change).
+- `MODULE_V` → `20260830f` (bumped in `dashboard.html`/`modules.html`'s `modules-grid.js?v=` tag, which
+  is what the constant is actually derived from — see that file's own header note).
+
 ## Stacking: the trade chips become a multi-select filter (2026-08-27) — fmlozano
 
 `_vsTrade` (a single value) → `_vsTradeSel` (a list) + `_vsTradeOn` / `_vsTradeToggle`.

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HARNESS · Risk Register</title>
+  <script src="../../assets/js/theme.js"></script>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css" />
+  <link rel="stylesheet" href="../../assets/css/epc-rcm.css" />
+  <link rel="stylesheet" href="module.css" />
+</head>
+<body>
+  <div class="pd-app">
+    <aside class="pd-sidebar">
+      <div class="pd-brand">Planners Dashboard<small>Planning Suite</small></div>
+      <nav id="side-nav"></nav>
+    </aside>
+    <div class="pd-content">
+      <div class="pd-topbar">
+        <h1 class="rr-title" style="margin:0;">
+          <span class="rr-title-ico" data-ico="risk" data-ico-size="20"></span>
+          <span class="rr-title-txt">Risk Register</span>
+        </h1>
+        <div class="rr-projctx"><select class="pd-select rr-project" id="rr-project"></select></div>
+        <div class="rr-tabs" role="tablist">
+          <button class="rr-tab active" data-view="list">Register</button>
+          <button class="rr-tab" data-view="heat">Heat Map</button>
+          <button class="rr-tab" data-view="universe">Risk Universe</button>
+          <button class="rr-tab" data-view="criteria">Criteria</button>
+        </div>
+        <div class="rr-topbar-tools">
+          <button class="pd-btn" id="rr-export">Export</button>
+          <button class="pd-btn pd-btn-primary rr-tb-labeled" id="rr-add">+ Add risk event</button>
+        </div>
+        <div id="rr-presence"></div><div id="user-bar"></div>
+      </div>
+      <div class="pd-main">
+        <div class="rr-filters" id="rr-filters">
+          <span class="rr-filt-ico" data-ico="filter" data-ico-size="15"></span>
+          <select class="pd-select" id="rr-f-activity" style="max-width:230px;"></select>
+          <select class="pd-select" id="rr-f-category" style="max-width:170px;"></select>
+          <select class="pd-select" id="rr-f-sub" style="max-width:190px;" disabled></select>
+          <select class="pd-select" id="rr-f-priority" style="max-width:150px;">
+            <option value="">All priorities</option>
+            <option>1st Priority</option><option>2nd Priority</option>
+            <option>3rd Priority</option><option>4th Priority</option>
+          </select>
+          <select class="pd-select" id="rr-f-status" style="max-width:140px;">
+            <option value="">All statuses</option><option>Open</option><option>In Progress</option><option>Closed</option>
+          </select>
+          <input class="pd-input rr-search" id="rr-f-search" placeholder="Search the register…" />
+          <button class="rr-clear" id="rr-clear"><span data-ico="x" data-ico-size="14"></span>Clear</button>
+        </div>
+        <div class="rr-bands" id="rr-bands"></div>
+        <div class="rr-kpis" id="rr-kpis"></div>
+        <div id="rr-view-list"><div class="pd-card" style="padding:0;overflow:auto;">
+          <table class="pd-table rr-table" id="rr-table"></table></div></div>
+        <div id="rr-view-heat" style="display:none;">
+          <div class="pd-card"><h2 style="margin-top:0;">Risk assessment heat map</h2>
+            <div class="rr-heatwrap"><div id="rr-heat"></div></div><div id="rr-heat-legend"></div></div>
+          <div class="pd-card"><h2 style="margin-top:0;">Residual risk — after controls</h2><div id="rr-res-summary"></div></div>
+        </div>
+        <div id="rr-view-universe" style="display:none;"><div class="pd-card"><div id="rr-universe"></div></div></div>
+        <div id="rr-view-criteria" style="display:none;"><div id="rr-criteria"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../assets/js/config.js"></script>
+  <script src="harness-stub.js"></script>
+  <script src="../../assets/js/db.js"></script>
+  <script src="../../assets/js/ui.js"></script>
+  <script src="../../assets/js/icons.js"></script>
+  <script src="../../assets/js/epc-rcm.js"></script>
+  <script src="module.js"></script>
+  <script>
+    // Fixtures transcribed from the real workbook so the harness exercises the
+    // shapes the register actually holds — including the awkward ones (a row with
+    // no activity, a legacy off-taxonomy category, an unscored risk).
+    PDHarness.install({
+      projects: [{ id: 'SLN101', name: '4PH Strevi Residence' }],
+      risk_register: [
+        { id: 'a1', project_id: 'SLN101', activity_no: 2, activity: 'BID PREPARATION', sub_process: 'Bids Preparation',
+          risk_code: 'R-001', category: 'Commercial', sub_category: 'IBB',
+          title: 'Missed-out in the Scope of work and Quantities', description: 'Bid deliverables not cross-checked against the contract documents.',
+          owner: 'Bids Department', risk_champion: 'Contracts Manager', impact: 4, likelihood: 4, rating: 16,
+          response: 'Treat / Mitigate', control_type: 'Document Preparation, Review and Approval',
+          mitigation: 'The Contracts Manager shall review all bid deliverables at least five (5) working days before bid submission.',
+          control_owner: 'Contracts Manager', response_cost: 150000, status: 'Open', sort_order: 10 },
+        { id: 'a2', project_id: 'SLN101', activity_no: 8, activity: 'PROCUREMENT', sub_process: 'Procurement',
+          risk_code: 'R-002', category: 'Procurement', sub_category: 'PO / JO',
+          title: 'Delay in PO/JO Awarding to Vendors', owner: 'Procurement Manager', risk_champion: 'Project Manager',
+          impact: 5, likelihood: 5, rating: 25, response: 'Treat / Mitigate',
+          mitigation: '1. Conduct weekly procurement review meetings. 2. Escalate approval delays. 3. Prequalify alternative suppliers.',
+          control_owner: 'Procurement Manager/Project Manager', status: 'Open',
+          res_impact: 3, res_possibility: 3, res_detectability: 2, sort_order: 10 },
+        { id: 'a3', project_id: 'SLN101', activity_no: 9, activity: 'MOBILIZATION / OPERATIONS', sub_process: 'Mobilization',
+          risk_code: 'R-003', category: 'Stakeholders', sub_category: 'LGUs',
+          title: 'LGU-Ordered Work Stoppage Due to Community Complaints',
+          owner: 'Project Manager', impact: 5, likelihood: 5, rating: 25, response: 'Terminate / Avoid',
+          mitigation: '1. Ensure proper planning and management of logistics. 2. Conduct regular coordination meetings with Barangay.',
+          control_owner: 'Project Manager', status: 'In Progress',
+          res_impact: 5, res_possibility: 4, res_detectability: 4,
+          audit_procedures: 'Review barangay coordination minutes', required_documents: 'MOM, notices issued', audit_timing: 'Monthly', sort_order: 10 },
+        { id: 'a4', project_id: 'SLN101', activity_no: 9, activity: 'MOBILIZATION / OPERATIONS', sub_process: 'Operation',
+          risk_code: 'R-004', category: 'Operational', sub_category: 'Schedule',
+          title: 'Delay in BU-Precast Production and Delivery', owner: 'Project Manager',
+          impact: 5, likelihood: 4, rating: 20, response: 'Treat / Mitigate', status: 'Open', sort_order: 20 },
+        { id: 'a5', project_id: 'SLN101', activity_no: 17, activity: 'PUNCHLIST CLOSE OUT', sub_process: 'Punchlist Close Out',
+          risk_code: 'R-005', category: 'Operational', sub_category: 'Quality',
+          title: 'Discovery of new defects', owner: 'QAQC Engineer', impact: 2, likelihood: 1, rating: 2,
+          response: 'Tolerate / Accept', status: 'Closed', sort_order: 10 },
+        // A pre-RCM row: legacy category, no activity, unscored. Must not break anything.
+        { id: 'a6', project_id: 'SLN101', risk_code: 'OLD-1', category: 'Financial',
+          title: 'Legacy row written before the RCM taxonomy', status: 'Open' }
+      ]
+    });
+    RiskRegister.init({ id: 'u1' }, { id: 'u1', name: 'Harness User' });
+  </script>
+</body>
+</html>

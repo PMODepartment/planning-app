@@ -24,10 +24,6 @@
   width: 34px; height: 34px; padding: 0; margin-left: 4px; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.pp-modback {
-  width: 36px; height: 36px; padding: 0; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-}
 .pp-title { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; overflow: hidden; }
 .pp-title .pp-title-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp-title-ico { color: var(--pd-red); vertical-align: -3px; margin-right: 2px; }
@@ -75,6 +71,17 @@
 }
 .pp-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
 .pp-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
+/* Sixth round item 7: a quiet, breadcrumb-style "back to the list" link,
+   deliberately NOT styled like the bordered .pd-btn action buttons it used
+   to sit among (jammed against the always-on offline-sync pill, reading as
+   one more competing button). Living right beside the screen tabs instead
+   of inside the action-tool cluster, it now reads as navigation. */
+.pp-crumbback {
+  display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 10px;
+  background: transparent; border: 1px solid transparent; border-radius: var(--pd-radius);
+  color: var(--pd-muted); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.pp-crumbback:hover { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-ink); }
 
 /* ---- Item 2: a topbar search box + a filter-reveal toggle -----------------
    Replaces the old always-expanded filter row (which took up "a big portion
@@ -207,6 +214,14 @@
   display: flex; align-items: center; justify-content: center;
   color: var(--pd-muted); cursor: default;
 }
+/* Fifth round item 7 — markup shows on List/Gallery tiles by default now,
+   not only in the lightbox. inline-block so the wrapper takes exactly the
+   photo's own box (whatever cls's own width/height/aspect-ratio rule gives
+   it) rather than forcing block/full-width in a flex or grid cell; the
+   overlay canvas is pointer-events:none so it never intercepts the tile's
+   own click-to-open. */
+.pp-mkwrap { position: relative; display: inline-block; max-width: 100%; }
+.pp-thumbmk { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 /* ---- Icon buttons (used by the lightbox tools + PPR's own row actions) --- */
 .pp-iconbtn {
@@ -306,6 +321,22 @@
 .pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
 .pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
 
+/* Fifth round item 1: "+ Add media" as a dropdown choosing the media type up
+   front (Photo/Video/360°/3D), instead of deciding it inside the modal after
+   files may already be staged. */
+.pp-addmenu-wrap { position: relative; }
+.pp-addmenu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 150px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 4px; display: flex; flex-direction: column; gap: 2px;
+}
+.pp-addmenu-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; background: transparent;
+  color: var(--pd-ink); font-size: 13px; text-align: left; border-radius: 4px; cursor: pointer;
+}
+.pp-addmenu-item:hover:not(:disabled) { background: var(--pd-bg); }
+.pp-addmenu-item:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
+
 /* Group-by control (item 6 — now ONE shared selector living in .pp-listbar,
    not a per-view bar of its own) + the group headings both List and Gallery
    render from it. */
@@ -314,6 +345,10 @@
   font-size: 12.5px; color: var(--pd-muted);
 }
 .pp-groupby .pd-select { width: auto; }
+/* Fifth round item 7 — subtle, not filled: "markup visible" is the default/
+   common state, so this shouldn't read as an alarming always-on red button. */
+.pp-mkvistoggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; }
+.pp-mkvistoggle.is-active { color: var(--pd-red); border-color: var(--pd-red); }
 .pp-gallerygroup { margin-bottom: 20px; }
 .pp-gallerygrouphead {
   display: flex; align-items: center; gap: 9px; margin: 0 0 9px;
@@ -665,16 +700,25 @@
 .ppr-kpbtn:hover { border-color: var(--pd-red); color: var(--pd-red); }
 .ppr-kpnone { color: var(--pd-muted); }
 
-.ppr-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ppr-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 /* A slide with no before photo shows just the current photo, centered */
 .ppr-pair-single { grid-template-columns: minmax(0, 620px); justify-content: center; }
-.ppr-pane { margin: 0; }
-.ppr-panelabel {
-  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--pd-muted); margin-bottom: 5px;
+/* Sixth round item 9: "looks very plain" — each pane is now a real card
+   (surface, border, radius, a little breathing room) instead of a bare
+   image with text floating above it directly on the page background. */
+.ppr-pane {
+  margin: 0; background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); padding: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
 }
-.ppr-panetags { font-size: 11.5px; color: var(--pd-muted); margin-top: 4px; }
-
+/* A small coloured chip instead of plain muted text — Current is the stage
+   being reported on (brand-red, filled); Previous is context (outlined,
+   quieter) — so which pane is which reads at a glance, not just by position. */
+.ppr-panelabel {
+  display: inline-flex; font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; padding: 3px 9px; border-radius: 999px; margin-bottom: 8px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); color: var(--pd-muted);
+}
+.ppr-panelabel.is-current { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 /* Presentation-only markup overlay (18-item list item 14) — a SEPARATE store
    from the photo's own permanent markup (ppr_slide_markups, keyed by
    ppr_slide_id+pane), toggled/edited per pane, never shown on Gallery tiles. */
@@ -707,10 +751,18 @@
 .ppr-sortthumb { width: 100%; height: 96px; object-fit: cover; display: block; }
 .ppr-sortthumb.pp-noimg { display: flex; align-items: center; justify-content: center; color: var(--pd-muted); }
 /* Item 19 — location details per photo, under its thumbnail */
+/* Sixth round item 8: the current photo's Works value, shown above the
+   location line (a bolder ink weight so it reads as "what this slide is
+   OF", with location as the supporting detail beneath it). */
+.ppr-sortworks {
+  padding: 3px 6px 0; font-size: 11px; font-weight: 700; color: var(--pd-ink);
+  background: var(--pd-bg); line-height: 1.3;
+}
 .ppr-sortloc {
   padding: 3px 6px; font-size: 10.5px; color: var(--pd-muted); background: var(--pd-bg);
   border-top: 1px solid var(--pd-line); line-height: 1.3;
 }
+.ppr-sortworks + .ppr-sortloc { border-top: none; }
 .ppr-sortno {
   position: absolute; top: 5px; left: 5px; min-width: 20px; height: 20px; padding: 0 5px;
   display: flex; align-items: center; justify-content: center;
@@ -752,8 +804,10 @@
    pair when both photos are at the same place, instead of repeating it on
    each pane's own tags line below. */
 .ppr-sharedloc {
-  display: flex; align-items: center; gap: 6px; justify-content: center;
-  font-size: 12.5px; font-weight: 600; color: var(--pd-ink); margin: -4px 0 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--pd-ink); margin: 0 0 12px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px;
+  padding: 5px 12px; left: 50%; position: relative; transform: translateX(-50%);
 }
 .ppr-sharedloc span[data-ico] { color: var(--pd-red); }
 
@@ -952,8 +1006,12 @@
 .pp-planfloorbar, .pp-planmonthbar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
 }
-.pp-planfloorlabel { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pd-muted); }
-.pp-planfloorlabel .pd-select { width: auto; min-width: 140px; }
+/* Sixth round item 3: a plain text label — same role in BOTH the Floor and
+   Month bars, so the two rows read as one consistent toolbar shape (label,
+   then the stepper/control cluster, then one short trailing hint) instead
+   of a labelled <select> on one row and a bare, unlabelled stepper on the other. */
+.pp-planfloorlabel { font-size: 12.5px; font-weight: 600; color: var(--pd-muted); }
+.pp-planfloorbar .pd-select { width: auto; min-width: 140px; }
 .pp-planmonthbar strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
 /* "Live" jump-back button (Plan + Stack month steppers) — same on/off shape
    as .pp-tab.active / .pd-btn-primary: a solid brand-red fill with white
@@ -973,6 +1031,19 @@
   font-size: 13px; font-weight: 700; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
+/* Sixth round item 2 — a photo-backed cluster marker, iOS Photos map style:
+   the pin itself is a circular photo thumbnail, with the count as a small
+   badge in the corner rather than being the whole button's content. */
+.pp-plancluster-photo {
+  width: 44px; height: 44px; min-width: 44px; padding: 0; border-radius: 50%;
+  background-size: cover; background-position: center; position: absolute;
+}
+.pp-plancluster-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 999px; background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff;
+  border: 2px solid #fff; font-size: 10.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
 
 /* Gallery Stack view (item 16 — relocated + re-defaulted from bim.js's old
    Stack mode: "combine across all months" is now the default, step-through
@@ -981,20 +1052,26 @@
 .pp-stacklevels label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pd-muted); }
 .pp-stacklevels .pd-select { width: auto; min-width: 140px; }
 .pp-stackwrap { overflow-x: auto; }
+/* Sixth round item 5: styled to read as Project Schedule's Vertical
+   Stacking view (a building extruded upward, one horizontal BAND per level,
+   towers/zones as columns) rather than a plain spreadsheet grid — a red
+   rail on each row's header, taller bands, a subtle alternating tint. */
 .pp-stacktable { border-collapse: collapse; width: 100%; }
 .pp-stacktable th, .pp-stacktable td { border: 1px solid var(--pd-line); padding: 4px; text-align: center; }
 .pp-stacktable thead th { background: var(--pd-bg); font-size: 11.5px; color: var(--pd-muted); font-weight: 600; white-space: nowrap; }
+.pp-stacktable tbody tr:nth-child(even) td { background: var(--pd-bg); }
 .pp-stacktable tbody th {
-  background: var(--pd-bg); font-size: 12.5px; font-weight: 600; text-align: left;
-  padding: 4px 10px; white-space: nowrap; position: sticky; left: 0;
+  background: var(--pd-card); font-size: 12.5px; font-weight: 700; text-align: left;
+  padding: 4px 10px 4px 12px; white-space: nowrap; position: sticky; left: 0;
+  border-left: 3px solid var(--pd-red);
 }
-.pp-stackcell { width: 70px; height: 52px; padding: 0 !important; }
+.pp-stackcell { width: 76px; height: 64px; padding: 0 !important; }
 .pp-stackcell-empty { color: var(--pd-muted); font-size: 12px; }
-.pp-stackthumb { width: 100%; height: 52px; object-fit: cover; display: block; cursor: zoom-in; }
+.pp-stackthumb { width: 100%; height: 64px; object-fit: cover; display: block; cursor: zoom-in; }
 /* Combined-mode cell — several small thumbnails instead of one, since a
    location can hold many months of photos at once by default now. */
-.pp-stackcellphotos { display: flex; gap: 2px; height: 52px; align-items: center; justify-content: center; overflow: hidden; }
-.pp-stackthumb-sm { width: 24px; height: 46px; object-fit: cover; cursor: pointer; border-radius: 2px; flex: 0 0 auto; }
+.pp-stackcellphotos { display: flex; gap: 2px; height: 64px; align-items: center; justify-content: center; overflow: hidden; }
+.pp-stackthumb-sm { width: 26px; height: 58px; object-fit: cover; cursor: pointer; border-radius: 2px; flex: 0 0 auto; }
 .pp-stackmore { font-size: 10.5px; color: var(--pd-muted); flex: 0 0 auto; padding-left: 2px; }
 .pp-stackmag {
   position: fixed; right: 24px; bottom: 24px; z-index: 50; width: 280px;
@@ -1046,30 +1123,29 @@
 .bim-plantree-item.no-plan .bim-plantree-dot { background: var(--pd-line); }
 @media (max-width: 820px) { .bim-withtree { grid-template-columns: 1fr; } .bim-plantree { max-height: 220px; } }
 
-/* ---- Item 28: the in-photo pin + field-of-view cone -----------------------
-   Replaces the separate circular direction widget below the plan image: the
-   cone is drawn AS A POLYGON DIRECTLY OVER the same image the pin sits on,
-   with two draggable endpoint handles at its far corners. Rendered at
-   moderate transparency so the plan/photo underneath stays legible.
-   Percentage-positioned HTML elements (pin dot, handles) — same technique
-   `.bim-pinstage-dot` already uses — so non-square images place them
-   correctly without any aspect-ratio math; only the WEDGE fill needs true
-   polygon geometry, so that alone is an SVG with a 0–100 viewBox stretched
-   `preserveAspectRatio="none"` to match, `vector-effect:non-scaling-stroke`
-   keeping its outline a constant width regardless of image aspect. */
+/* ---- Item 28 / fifth round item 8: the in-photo pin + field-of-view cone --
+   A true pie/circular-sector (an SVG <path> with an ARC, drawn by bim.js'
+   coneSvg — never a straight-edged polygon any more) directly over the same
+   image the pin sits on, with radial-gradient FILL only — dark at the pin,
+   fading to nothing at the arc — and NO stroke/border at all, per the
+   explicit ask. Percentage-positioned HTML elements (pin dot, the ONE
+   handle) — same technique `.bim-pinstage-dot` already used — so non-square
+   images place them correctly without any aspect-ratio math; only the wedge
+   itself needs true arc geometry, hence the 0–100 viewBox stretched
+   `preserveAspectRatio="none"` to match. */
 .bim-conestage { position: relative; max-width: 100%; touch-action: none; }
 .bim-conestage img { width: 100%; display: block; cursor: crosshair; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
 .bim-conestage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.bim-conewedge {
-  fill: color-mix(in srgb, var(--pd-red) 32%, transparent);
-  stroke: color-mix(in srgb, var(--pd-red) 70%, transparent);
-  vector-effect: non-scaling-stroke; stroke-width: 1.5; cursor: pointer;
-}
-.bim-conewedge.is-na { fill: color-mix(in srgb, var(--pd-muted) 22%, transparent); stroke: var(--pd-muted); stroke-dasharray: 4 3; }
+.bim-conewedge { cursor: grab; }
+.bim-conewedge:active { cursor: grabbing; }
+/* Fifth round item 8: "only 1/4 the size of the pin" — the pin dot
+   (.bim-pinstage-dot below) is 14px, so this is 4px, down from 16px. A
+   round white-fill/red-outline dot stays legible at that size against
+   almost any photo. */
 .bim-conehandle-el {
-  position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px;
-  border-radius: 50%; background: #fff; border: 2px solid var(--pd-red);
-  cursor: grab; z-index: 2; box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  position: absolute; width: 4px; height: 4px; margin: -2px 0 0 -2px;
+  border-radius: 50%; background: #fff; border: 1.5px solid var(--pd-red);
+  cursor: grab; z-index: 2; box-shadow: 0 1px 2px rgba(0, 0, 0, .5);
 }
 .bim-conehandle-el:active { cursor: grabbing; }
 .bim-conehint { font-size: 12px; color: var(--pd-muted); margin: 6px 0 0; }
@@ -1077,6 +1153,17 @@
   display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
   color: var(--pd-muted); margin-top: 4px;
 }
+/* Fifth round item 8: "does not apply" now hides the wedge ENTIRELY (bim.js
+   stops rendering it, rather than this class dimming a still-visible
+   placeholder) — the pin dot itself is the only thing marking the spot, and
+   it dims slightly so a top-view photo's pin doesn't compete visually with
+   ordinary directional ones. */
+/* ⚠️ .bim-pinstage-dot is pointer-events:none by default (deliberately — a
+   click near the pin should pass through to the image underneath and move
+   it, not be swallowed by the dot). When NA is set the wedge is gone, so the
+   dot is the ONLY thing left to double-click back on — auto here is what
+   actually makes that dblclick handler reachable at all. */
+.bim-pinstage-dot.is-na { opacity: .55; pointer-events: auto; cursor: pointer; }
 
 /* ---- Item 21: per-pane Key Plan icon + popup ------------------------------
    A small icon anchored to the top-right of EACH pane's own image (not a
@@ -1129,7 +1216,14 @@
 .ppr-panehead-loc span[data-ico] { color: var(--pd-red); }
 .ppr-panehead .ppr-capdate { font-size: 13.5px; color: var(--pd-ink); }
 .ppr-panehead .ppr-captxt { font-style: italic; font-size: 12.5px; color: var(--pd-muted); margin-top: 2px; }
-.ppr-panehead .ppr-panetags { font-size: 11.5px; color: var(--pd-muted); margin-top: 3px; }
+/* Sixth round items 10/11: an explicit label before each value (Date /
+   Description / Location were previously bare, unlabelled values) — a
+   quieter uppercase tag so it reads as a field name, not a second value.
+   `font-style:normal` overrides the italic .ppr-captxt inherits it from. */
+.ppr-panehead-lbl {
+  font-style: normal; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--pd-muted); margin-right: 3px;
+}
 
 /* ---- Item 6: Works multi-select ("Add works" pop-list) --------------------
    Replaces the single-value schedule-derived <select> with a button that
@@ -1194,10 +1288,14 @@
 .pp-mk-toolgroup { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
 .pp-mk-actiongroup { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; }
 .pp-mk-tools { display: flex; flex-wrap: wrap; gap: 3px; background: var(--pd-bg); border-radius: 999px; padding: 3px; }
+/* Fourth round, item 3: "use icons instead" of text labels — the button is
+   now a plain square (was inline-flex + gap, sized for an icon+label pair
+   that no longer exists), the icon centred by flex. Title/aria-label carry
+   the name for anyone who needs it (tooltip, screen reader). */
 .pp-mk-tool {
-  height: 32px; padding: 0 12px; border-radius: 999px; border: 0; cursor: pointer;
-  background: transparent; color: var(--pd-ink); font-size: 12.5px; font-weight: 600;
-  display: inline-flex; align-items: center; gap: 5px;
+  width: 32px; height: 32px; padding: 0; border-radius: 999px; border: 0; cursor: pointer;
+  background: transparent; color: var(--pd-ink);
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .pp-mk-tool.active { background: var(--pd-red); color: #fff; }
 .pp-mk-tool:hover:not(.active) { background: var(--pd-card); }
@@ -1225,11 +1323,51 @@
 }
 .pp-mk-width span { border-radius: 50%; background: currentColor; display: block; }
 .pp-mk-width.active { border-color: var(--pd-red); color: var(--pd-red); }
-.pp-mk-fillrow { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--pd-muted); }
-.pp-mk-fillrow input[type=range] { width: 80px; }
+/* Fifth round item 2: Line (colour+weight) and Fill (colour+transparency)
+   are now two visually SEPARATE labelled groups, replacing the bare
+   `.pp-mk-fillrow` that used to sit right beside the border-colour swatches
+   with nothing distinguishing the two — "the current UI almost mixes the
+   two up." A light bordered box + a small caps-label per group. */
+.pp-mk-group {
+  display: flex; align-items: center; gap: 8px; padding: 4px 10px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+}
+.pp-mk-grouplabel {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--pd-muted); white-space: nowrap;
+}
+.pp-mk-group-fill input[type=range] { width: 70px; }
+.pp-mk-group-fill label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--pd-ink); white-space: nowrap; }
+/* Fourth round, item 3: fill colour is a SECOND, independent swatch row
+   nested in the fill controls — smaller than the main border-colour row so
+   the two are visually distinct at a glance (border = the bigger swatches
+   in the main toolbar row; fill = these, right beside the Fill checkbox). */
+.pp-mk-fillcolors { display: flex; gap: 4px; }
+.pp-mk-fillcolors .pp-mk-swatch { width: 18px; height: 18px; }
+.pp-mk-group-text input[type=range] { width: 100px; }
 .pp-mk-canvaswrap { position: relative; max-width: 100%; touch-action: none; }
 .pp-mk-canvaswrap img { width: 100%; display: block; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
 .pp-mk-canvaswrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+/* Fifth round item 5: real on-canvas typing, replacing the browser prompt().
+   Positioned/sized by openTextEditAt() in module.js; a plain outline (no
+   solid fill of its own — the object's OWN fill, if any, is set as this
+   element's background live) makes clear it's an active input, not a second
+   rendering of the committed text underneath. min-width keeps an
+   empty/just-started box grabbable/visible before anything's typed. */
+.pp-mk-textedit {
+  position: absolute; min-width: 60px; min-height: 1.3em; padding: 2px 4px;
+  font: 700 18px Montserrat, Arial, sans-serif; line-height: 1.15; white-space: pre-wrap; word-break: break-word;
+  outline: 2px solid var(--pd-red); border-radius: 2px; cursor: text; touch-action: none;
+}
+
+/* ---- Item 5 (fourth round): exposure/brightness/contrast/sharpness ------- */
+.pp-adj-sliders { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.pp-adj-row { display: grid; grid-template-columns: 90px 32px 1fr; align-items: center; gap: 8px; font-size: 13px; color: var(--pd-ink); }
+.pp-adj-val { color: var(--pd-muted); font-size: 12px; text-align: right; }
+.pp-adj-row input[type=range] { width: 100%; }
+
+/* ---- Staged-file grid (Add Media): a Markup AND an Adjust button per file  */
+.pp-cardactions { display: flex; flex-wrap: wrap; }
 
 /* ---- Item 8: inline "upload a floor plan now" mini-form (Add Media) ------ */
 .pp-inlineplanform {
@@ -1327,5 +1465,27 @@
   .pp-lb-close { width: 44px; height: 44px; top: max(10px, env(safe-area-inset-top)); right: 10px; }
   .pp-lb-cap { padding: 0 12px; }
 
-  .pp-gallery { grid-template-columns: 1fr; gap: 12px; }
+  /* Gallery view on phone: iOS Photos' own dense small-square grid, not a
+     single full-width column of large cards (2026-08-30 owner feedback — the
+     one-column layout was slow to scan AND made "loading is slow" read as
+     worse than it is, since every tile filled the whole viewport). Three
+     columns, hairline gap, square tiles — the recognisable iOS Photos shape.
+     ⚠️ Card chrome (border/radius/background) is dropped at rest so tiles sit
+     edge-to-edge like the real app; the SAME .pp-selrow rule still applies a
+     red border on selection, it just has nothing to override at rest now. */
+  .pp-gallery { grid-template-columns: repeat(3, 1fr); gap: 2px; }
+  .pp-card { border: none; border-radius: 0; background: transparent; }
+  .pp-card.pp-selrow { border: 2px solid var(--pd-red); }
+  /* Square crop, not the desktop's fixed 210px rectangle — a 3-per-row grid
+     needs its tile height to follow the column width, not a constant. */
+  .pp-cardphoto, .pp-vidthumb video { aspect-ratio: 1; height: auto; }
+  .pp-cardimg .pp-noimg { aspect-ratio: 1; height: auto; }
+  .pp-vidthumb { aspect-ratio: 1; }
+  /* Overlays scale down to match — a 210px-card-sized badge on a ~120px
+     phone tile would cover a third of the photo. */
+  .pp-cardsel, .pp-pinbtn { padding: 2px; top: 3px; }
+  .pp-cardsel { left: 3px; }
+  .pp-pinbtn { right: 3px; }
+  .pp-cardsel input[type=checkbox] { width: 14px; height: 14px; }
+  .pp-vidplay { border-width: 8px 0 8px 13px; }
 }

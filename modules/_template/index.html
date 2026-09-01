@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
-  <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Module Template · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901b" />
   <link rel="stylesheet" href="module.css" />
 </head>
 <body>
@@ -31,16 +31,28 @@
       <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
     </aside>
     <div class="pd-content">
+      <!-- Uniform top bar (see MODULE_CONTRACT.md "Uniform top bar"): a flat list of
+           children, split by ui.js's initModuleTopbar() into a permanent two-row
+           layout — row 1 (identity: icon + project selector + theme + avatar) is the
+           same on every module; row 2 (this module's own tabs + action buttons) is
+           yours. No back button — the browser's own Back covers it. -->
       <div class="pd-topbar">
-        <a class="pd-btn" href="../../modules.html" title="Back to modules"><span data-ico="arrowLeft" data-ico-size="18"></span></a>
-        <h1 id="page-title" style="margin:0;"><span data-ico="box" data-ico-size="20" style="color:var(--pd-red);vertical-align:-3px;margin-right:6px;"></span>Module Template</h1>
+        <h1 class="tpl-title" style="margin:0;">
+          <span class="tpl-title-ico" data-ico="box" data-ico-size="20"></span>
+          <span class="tpl-title-txt">Module Template</span>
+        </h1>
+        <div class="tpl-projctx">
+          <select class="pd-select tpl-project" id="tpl-project" title="Project"></select>
+        </div>
+        <div class="tpl-tabs" role="tablist">
+          <button class="tpl-tab active" data-view="list">Records</button>
+        </div>
+        <div class="tpl-topbar-tools">
+          <button class="pd-btn pd-btn-primary" id="btn-add">+ Add record</button>
+        </div>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main">
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;">
-          <select class="pd-select" id="project-picker" style="max-width:280px;"></select>
-          <button class="pd-btn pd-btn-primary" id="btn-add">+ Add record</button>
-        </div>
         <div class="pd-card" style="padding:0;overflow:auto;">
           <table class="pd-table" id="records"></table>
         </div>
@@ -49,12 +61,12 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="../../assets/js/config.js?v=20260901a"></script>
-  <script src="../../assets/js/auth.js?v=20260814a"></script>
-  <script src="../../assets/js/db.js?v=20260827c"></script>
+  <script src="../../assets/js/config.js?v=20260901c"></script>
+  <script src="../../assets/js/auth.js?v=20260901b"></script>
+  <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260901a"></script>
-  <script src="../../assets/js/icons.js?v=20260830a"></script>
+  <script src="../../assets/js/ui.js?v=20260901b"></script>
+  <script src="../../assets/js/icons.js?v=20260830c"></script>
   <script src="module.js"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {

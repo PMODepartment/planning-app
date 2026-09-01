@@ -40,16 +40,33 @@ window.APP_CONFIG = {
   //   attention  — OPTIONAL {column, values, label}. Declare it only where the
   //                vocabulary is known from the schema; a guessed one reads 0
   //                forever and looks like good news.
-  // ⚠️ Sidebar/nav order (2026-09-01): risk-register, stakeholder-map, project-schedule,
-  // s-curve, manpower-loading, equipment-loading, productivity-rates, issues-lessons,
-  // progress-photos, contracts-claims, cash-flow. `resource-loading` is deliberately
-  // REMOVED from this list (not merely disabled) — its functionality is meant to be
-  // folded into equipment-loading / manpower-loading / project-schedule rather than
-  // stand alone. The module folder, its data and its tables are untouched; only the
-  // nav/launcher entry is gone. See modules/resource-loading/CLAUDE.md for the gap
-  // this leaves (Project Schedule has no UI to create a brand-new `resources` master
-  // row outside the XER importer).
+  // ⚠️ Sidebar/nav order (2026-09-01): Meetings, Risk Register, Stakeholder Map,
+  // Schedule, S Curve, Manpower Loading, Equipment Loading, Productivity Rates,
+  // Issues and Concerns, Progress Photos, Contracts and Claims Register, Cash Flow.
+  // `resource-loading` is deliberately REMOVED from this list (not merely disabled)
+  // — its functionality is meant to be folded into equipment-loading /
+  // manpower-loading / project-schedule rather than stand alone. The module folder,
+  // its data and its tables are untouched; only the nav/launcher entry is gone. See
+  // modules/resource-loading/CLAUDE.md for the gap this leaves (Project Schedule has
+  // no UI to create a brand-new `resources` master row outside the XER importer).
+  // ⚠️ `minutes-of-meeting` is labelled 'Meetings' here (not its module-internal
+  // "Minutes of Meeting" name) to match the sidebar wording asked for — the array
+  // order IS the nav order (renderNav's mods.map iterates it directly), so no
+  // separate hardcoded nav entry is needed the way it was before this module split
+  // out of issues-lessons.
   MODULES: [
+    { key: 'minutes-of-meeting', name: 'Meetings',                             path: 'modules/minutes-of-meeting/index.html', icon: 'calendar',  enabled: true, dash: { table: 'meeting_minutes', unit: 'meetings', attention: { column: 'is_distributed', values: [false], label: 'draft' },
+      recent: { orderBy: 'meeting_date', limit: 4, columns: ['title', 'meeting_date', 'venue', 'meeting_group', 'is_distributed'] },
+      // The action items, so the dashboard can show what the LATEST meeting actually decided
+      // rather than only how many meetings there have been.
+      sub: { table: 'mom_items', columns: ['mom_id', 'item_no', 'action_item', 'description', 'owner', 'due_date', 'status', 'type'] },
+      metrics: [
+        { key: 'draft',    agg: 'countWhere', column: 'is_distributed', values: [false] },
+        { key: 'latest',   agg: 'max', column: 'meeting_date' },
+        { key: 'earliest', agg: 'min', column: 'meeting_date' },
+        // Recurring series: a minute created off a schedule carries the schedule's id.
+        { key: 'series',   agg: 'countWhere', column: 'schedule_id' }
+      ] } },
     { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true, dash: { table: 'risk_register', unit: 'risks', attention: { column: 'status', values: ['Open'], label: 'open' },
       metrics: [
         { key: 'open', agg: 'countWhere', column: 'status', values: ['Open'] },
@@ -66,6 +83,37 @@ window.APP_CONFIG = {
       // on the card (a 500-activity project reads as 800) and drag the weighted % toward whatever
       // the branches happen to store.
       exclude: { column: 'activity_type', values: ['WBS Summary'] },
+      // ⚠️ Declares that this module publishes an S-CURVE, computed by assets/js/scurve.js —
+      // the same engine the S-Curve module itself uses, so the dashboard panel and the module
+      // cannot disagree about one project's curve. Duration basis, matching the module's own
+      // default: a project with no cost loading must not silently open on a money curve built
+      // from a handful of priced activities.
+      curve: { basis: 'dur' },
+      // Approaching deadlines. ⚠️ `from: -30` deliberately reaches into the PAST: an activity that
+      // was due last week and is still not finished is the most urgent thing on this list, and a
+      // window that started at today would hide exactly those. Milestones and tasks both qualify —
+      // a slipped milestone is the one a planner most needs to see.
+      // ⚠️ `percent_complete` is filtered as well as `status`, and it has to be: the two are set
+      // independently, so an activity finished on site and ticked to 100% but never moved off
+      // 'In Progress' would otherwise headline this panel as overdue. Unfinished means BOTH.
+      lists: [
+        { key: 'dueSoon', orderBy: 'end_date', dir: 'asc', limit: 8,
+          columns: ['activity_id', 'activity_name', 'end_date', 'percent_complete', 'status', 'work_type', 'activity_type'],
+          where: [
+            { column: 'status', notValues: ['Completed'] },
+            { column: 'percent_complete', below: 100 },
+            { column: 'end_date', withinDays: { from: -30, to: 30 } }
+          ] },
+        // ⚠️ The same rows, past-due only. It exists for its COUNT: the panel shows at most 8 rows
+        // and must not report "1 overdue" by counting the 8 it happens to be showing.
+        { key: 'overdue', orderBy: 'end_date', dir: 'asc', limit: 1,
+          columns: ['activity_id', 'end_date'],
+          where: [
+            { column: 'status', notValues: ['Completed'] },
+            { column: 'percent_complete', below: 100 },
+            { column: 'end_date', withinDays: { from: -30, to: -1 } }
+          ] }
+      ],
       metrics: [
         { key: 'start',   agg: 'min',  column: 'start_date' },
         { key: 'finish',  agg: 'max',  column: 'end_date' },
@@ -89,20 +137,59 @@ window.APP_CONFIG = {
         // loaded" while the schedule grid showed money on every line.
         { key: 'ev', agg: 'sumEarned', column: 'earned_value', amount: 'planned_cost', pct: 'percent_complete' },
         { key: 'pv', agg: 'elapsed', from: 'bl_start', to: 'bl_finish', weight: 'planned_cost' },
+        // ⚠️ The SAME elapsed shape, weighted by DURATION rather than cost. This exists so the
+        // dashboard's "Planned POC" and "Actual POC" cards are measured the same way: `poc` is a
+        // duration-weighted % complete, so comparing it against the COST-weighted `pv` would put
+        // two different bases side by side and invite a reader to subtract one from the other.
+        // `pv` stays cost-weighted because SPI is a money ratio and EVM defines it that way.
+        { key: 'pvDur', agg: 'elapsed', from: 'bl_start', to: 'bl_finish', weight: 'duration_days' },
         // The programme view: one bar per trade, its span, its weighted % and how many are done.
         { key: 'program', agg: 'groupSpan', group: 'work_type', from: 'start_date', to: 'end_date',
           pct: 'percent_complete', weight: 'duration_days', doneCol: 'status', doneValues: ['Completed'] }
       ] } },
     { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points' } },
+    // ⚠️ NO dash.metrics on s-curve, deliberately. A `series` metric over the `s_curve` TABLE was
+    // added here on 2026-09-01 and removed the same day: the S-Curve module derives its curve from
+    // `project_schedule` (which is the correct design — the curve IS the schedule, re-cut by
+    // month), and NOTHING writes the `s_curve` table. The metric therefore read an empty table and
+    // the dashboard card said "No curve published" on every project, forever. The dashboard's own
+    // S-curve must be derived the same way the module derives it, from the schedule.
+    { key: 'manpower-loading', name: 'Manpower Loading',                        path: 'modules/manpower-loading/index.html', icon: 'users',      enabled: true, dash: { table: 'manpower_positions', unit: 'positions' } },
     // ⚠️ No `attention` key. The obvious one would be "positions short this month", but that is
     // a comparison between two columns of manpower_loading, not a status value on this table —
     // the tile reader can only count rows matching fixed values, so a guessed rule would read 0
     // forever and look like good news. The Portfolio tab is where the shortfall is answered.
-    { key: 'manpower-loading', name: 'Manpower Loading',                        path: 'modules/manpower-loading/index.html', icon: 'users',      enabled: true, dash: { table: 'manpower_positions', unit: 'positions' } },
     { key: 'equipment-loading', name: 'Equipment Loading',                      path: 'modules/equipment-loading/index.html', icon: 'box',        enabled: true, dash: { table: 'equipment_items', unit: 'equipment' } },
     { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: 'barChart',   enabled: true, dash: { table: 'productivity_entries', unit: 'entries' } },
+    // ⚠️ Minutes of Meeting and Issues & Concerns are now TWO SEPARATE MODULES
+    // (owner's explicit call) — they used to be screens in one combined module.
+    // Lessons Learned stayed with the register (a lesson is captured FROM an
+    // issue far more often than from a meeting). The link between the two is
+    // kept as light cross-module reads, not a shared editor — see each
+    // module's own CLAUDE.md.
     { key: 'issues-lessons',    name: 'Issues and Concerns',                   path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
-      metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] } ] } },
+      recent: { orderBy: 'date_raised', limit: 4, columns: ['title', 'date_raised', 'status', 'severity', 'department'] },
+      // ⚠️ A separate OPEN list rather than filtering `recent` in the panel: `recent` is capped at
+      // the 4 newest entries, so on a register whose latest rows are all closed the panel would
+      // have shown "nothing open" while the register carried a dozen open items.
+      lists: [
+        { key: 'open', orderBy: 'date_raised', dir: 'asc', limit: 5,
+          columns: ['title', 'date_raised', 'status', 'severity', 'department', 'champion'],
+          where: [{ column: 'status', values: ['Open', 'On Hold'] }] }
+      ],
+      metrics: [
+        { key: 'open',     agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] },
+        { key: 'onHold',   agg: 'countWhere', column: 'status', values: ['On Hold'] },
+        { key: 'closed',   agg: 'countWhere', column: 'status', values: ['Closed'] },
+        { key: 'latest',   agg: 'max', column: 'date_raised' },
+        // ⚠️ Severity is counted only for rows that are still OPEN. A register's worth of CLOSED
+        // criticals is history, not a call to action, and adding them would make a well-run
+        // project look like a burning one.
+        { key: 'critical', agg: 'countWhere', column: 'severity', values: ['Critical'],
+          where: [{ column: 'status', values: ['Open', 'On Hold'] }] },
+        { key: 'high',     agg: 'countWhere', column: 'severity', values: ['High'],
+          where: [{ column: 'status', values: ['Open', 'On Hold'] }] }
+      ] } },
     { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos',
       // ⚠️ The bucket is named HERE, by the module that owns it. The shell signs whatever bucket it
       // is told about and knows nothing about where progress photos live.

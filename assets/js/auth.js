@@ -30,12 +30,44 @@
 
   function profKey(uid) { return 'pd_prof_' + uid; }
 
+  // ⚠️ THE CACHE USED TO BE RETURNED UNCONDITIONALLY AND NEVER REVALIDATED, so a
+  // role or status change did not reach a tab that had already cached the old
+  // one — sessionStorage lives until the tab closes, and every page in the app
+  // reads through this. An admin promoting someone to admin, or approving a
+  // pending user, appeared to do nothing until that person happened to open a
+  // fresh tab, which looks exactly like "the app will not give me my access".
+  // The cache is still returned immediately (it is what keeps first paint fast),
+  // but it is now checked against the server in the background.
+  function revalidateProfile(user, cached) {
+    getSB().from('users').select('*').eq('id', user.id).single().then(function (r) {
+      if (r.error || !r.data) return;              // offline / transient — keep the cache
+      try { sessionStorage.setItem(profKey(user.id), JSON.stringify(r.data)); } catch (e) {}
+      // Only role and status change what the user may DO, so only those are
+      // worth interrupting the page for. Any other edit (name, projects) simply
+      // corrects the cache for the next navigation.
+      if (r.data.role === cached.role && r.data.status === cached.status) return;
+      // ⚠️ Reload at most once PER OBSERVED STATE, not once ever: a second
+      // legitimate change in the same tab must still take effect, while a
+      // reload can never loop (after it, cache and server agree and the
+      // early-return above fires first).
+      try {
+        var k = 'pd_prof_rl_' + user.id;                     // cleared by logout()
+        var sig = r.data.role + '|' + r.data.status;
+        if (sessionStorage.getItem(k) === sig) return;
+        sessionStorage.setItem(k, sig);
+      } catch (e) { return; }                                // no storage → do not reload
+      location.reload();
+    }, function () { /* network error — keep the cache, never sign the user out */ });
+  }
+
   async function loadProfile(user) {
     // Try the sessionStorage cache first.
+    var cached = null;
     try {
-      var cached = sessionStorage.getItem(profKey(user.id));
-      if (cached) return JSON.parse(cached);
+      var raw = sessionStorage.getItem(profKey(user.id));
+      if (raw) cached = JSON.parse(raw);
     } catch (e) {}
+    if (cached) { revalidateProfile(user, cached); return cached; }
 
     var { data, error } = await getSB()
       .from('users').select('*').eq('id', user.id).single();
@@ -116,16 +148,16 @@
 
   // loginWithMicrosoft(): redirects to Microsoft (Azure AD) via Supabase's
   // "azure" OAuth provider. Only called from index.html (root), so the
-  // redirect target is always the root projects.html. On return, Supabase
-  // completes the session from the URL automatically (detectSessionInUrl, on
-  // by default) — the landing page just calls requireLogin() as usual, which
-  // self-heals a profile row for a first-time Microsoft sign-in the same way
-  // email sign-up does.
+  // redirect target is always the root home.html landing page. On return,
+  // Supabase completes the session from the URL automatically
+  // (detectSessionInUrl, on by default) — the landing page just calls
+  // requireLogin() as usual, which self-heals a profile row for a first-time
+  // Microsoft sign-in the same way email sign-up does.
   async function loginWithMicrosoft() {
     return getSB().auth.signInWithOAuth({
       provider: 'azure',
       options: {
-        redirectTo: location.origin + location.pathname.replace(/index\.html$/, '') + 'projects.html',
+        redirectTo: location.origin + location.pathname.replace(/index\.html$/, '') + 'home.html',
         scopes: 'email',
       },
     });

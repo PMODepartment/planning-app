@@ -331,7 +331,18 @@ window.PPR = (function () {
     $('ppr-countbar').style.display = screen === 'list' ? '' : 'none';
     if ($('ppr-tmpl-wrap')) $('ppr-tmpl-wrap').hidden = screen !== 'templates';
     if ($('ppr-view')) $('ppr-view').hidden = screen === 'templates';
-    syncTools(true);
+    // ⚠️ ROOT-CAUSE FIX (2026-08-30): this was `syncTools(true)`, unconditionally,
+    // on EVERY render — including one triggered by load()'s own async
+    // completion, which runs well after index.html's setScreen() has already
+    // correctly hidden this screen's tools because the Gallery (or Plans) tab
+    // is the one actually active. That silently re-showed "+ New Presentation"
+    // on top of a screen it doesn't belong to — the exact symptom reported
+    // live and reproduced in the browser, with no console error, because
+    // nothing here ever threw. Replaying the last-known value (set by
+    // index.html's setScreen -> PPR._syncTools) keeps a later re-render from
+    // overriding a screen switch that already happened. bim.js had the
+    // identical bug (also fixed 2026-08-30).
+    syncTools(toolsVisible);
     if (screen === 'slides') renderSlides();
     else if (screen === 'templates') renderTemplates();
     else renderList();
@@ -844,8 +855,12 @@ window.PPR = (function () {
           // (was a generic "layout" icon that read as unrelated to reordering).
           (s.length > 1 ? '<button class="pp-iconbtn" id="ppr-sort" title="Reorder slides">' +
             '<span data-ico="swap" data-ico-size="15"></span></button>' : '') +
-          '<button class="pp-iconbtn" id="ppr-pres-preview" title="Full-size preview">' +
-            '<span data-ico="eye" data-ico-size="15"></span></button>' +
+          // Sixth round item 6: "no need for the full size preview button" —
+          // this button opened a modal reproducing the SAME pane already on
+          // screen (you're already viewing this exact slide full-size while
+          // editing it). The list screen's own row-level "Preview" action
+          // (openPreviewModal, opened without entering the editor at all)
+          // is a different, still-useful feature and is untouched.
           '<button class="pp-iconbtn" id="ppr-pres-dl" title="Download this presentation">' +
             '<span data-ico="download" data-ico-size="15"></span></button>' +
           '<button class="pp-iconbtn" id="ppr-pres-arch" title="' + (p.archived ? 'Restore from archive' : 'Archive presentation') + '">' +
@@ -916,7 +931,6 @@ window.PPR = (function () {
     if ($('ppr-sort')) $('ppr-sort').onclick = function () { openSlideSorter(p); };
     if ($('ppr-pres-arch')) $('ppr-pres-arch').onclick = function () { toggleArchive(p); };
     if ($('ppr-pres-dl')) $('ppr-pres-dl').onclick = function () { openDownloadChoice(p); };
-    if ($('ppr-pres-preview')) $('ppr-pres-preview').onclick = function () { openPreviewModal(p); };
   }
 
   // ------------------------------------------------------ slide-sorter (item 12) ---
@@ -945,17 +959,22 @@ window.PPR = (function () {
     // Item 19: "add also the location details per photo" — each slide's
     // current (and, if different, previous) photo location, since the two
     // aren't required to match (2026-08-29 feedback already made that a
-    // real possibility).
+    // real possibility). Sixth round item 8: the CURRENT photo's Works value
+    // is shown too — that's the one thing this pop-up needs to say what a
+    // slide is actually OF, since the thumbnail alone can't (and the reorder
+    // decision is usually "which stage of work goes first").
     function thumbHTML(sl, i) {
       var u = urlOfPhoto(sl.after_photo_id) || urlOfPhoto(sl.before_photo_id);
       var aph = photoById(sl.after_photo_id), bph = photoById(sl.before_photo_id);
       var locs = [];
       if (aph && aph.location) locs.push(aph.location);
       if (bph && bph.location && bph.location !== aph.location) locs.push(bph.location + ' (previous)');
+      var works = (aph && aph.works) || sl.works || '';
       return '<div class="ppr-sortitem" draggable="true" data-i="' + i + '">' +
         '<span class="ppr-sortno">' + (i + 1) + '</span>' +
         (u ? '<img class="ppr-sortthumb" src="' + esc(u) + '" alt="Slide ' + (i + 1) + '" />'
            : '<div class="ppr-sortthumb pp-noimg"><span data-ico="camera" data-ico-size="16"></span></div>') +
+        (works ? '<div class="ppr-sortworks">' + esc(works) + '</div>' : '') +
         (locs.length ? '<div class="ppr-sortloc">' + esc(locs.join(' · ')) + '</div>' : '') +
         '</div>';
     }
@@ -1064,10 +1083,14 @@ window.PPR = (function () {
         'title="Show/hide this photo\'s key plan"><span data-ico="mapPin" data-ico-size="14"></span></button>'
       : '';
     var kpPopup = (kpOpen && kpPath) ? '<div class="ppr-kppopup"><img src="' + esc(urlOfPath(kpPath)) + '" alt="Key plan" /></div>' : '';
-    // Each pane carries its own Trade · Works · Location, since the two photos
-    // are no longer required to share a location.
-    var loc = hideLocation ? null : (ph ? ph.location : sl.location);
-    var tagsNoLoc = [ph ? ph.trade : sl.trade, ph ? ph.works : sl.works].filter(Boolean).join(' · ');
+    // Each pane carries its own Location, since the two photos are no longer
+    // required to share one. Sixth round item 10: location is now ALWAYS
+    // rendered (an em-dash when unset, matching Date/Description below)
+    // rather than silently vanishing whenever the photo has none — it must
+    // not read as "the location line disappeared", only "not set".
+    // `hideLocation` still suppresses it here specifically because the SAME
+    // value is already shown once, above the pair, when both photos agree.
+    var loc = hideLocation ? null : (ph ? ph.location : sl.location) || '';
     // Presentation-only markup (item 14) — never on the offline/PDF/PPTX
     // exports (those are the record of what was PRESENTED; this overlay is a
     // live annotation aid), and never shown at all without an actual photo.
@@ -1092,12 +1115,22 @@ window.PPR = (function () {
       // file — it's a private parameter value, never displayed, and renaming
       // it everywhere (this function, keyPlanPathFor, slideFigureHTML, the
       // form field ids) would touch ~30 call sites for no user-visible gain.
-      '<div class="ppr-panelabel">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
+      // Sixth round item 9: Current gets the filled brand-red chip (it's the
+      // stage being reported on), Previous the quieter outlined one — so the
+      // two panes read as distinct at a glance, not just by left/right order.
+      '<div class="ppr-panelabel' + (which === 'after' ? ' is-current' : '') + '">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
+      // Sixth round items 10/11: Location is always shown (never silently
+      // absent when unset), and Date/Description each carry an explicit
+      // label — previously both were bare values with no indication of
+      // which was which. The Trade/Works tag line is gone entirely: "no
+      // need to include as caption all the activities performed or assigned
+      // to the photo" — the caption is now Location, Date and Description
+      // only.
       '<div class="ppr-panehead">' +
-        (loc ? '<div class="ppr-panehead-loc"><span data-ico="mapPin" data-ico-size="12"></span>' + esc(loc) + '</div>' : '') +
-        '<div class="ppr-capdate">' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
-        '<div class="ppr-captxt">' + esc(cap || '—') + '</div>' +
-        (tagsNoLoc ? '<div class="ppr-panetags">' + esc(tagsNoLoc) + '</div>' : '') +
+        (hideLocation ? '' : '<div class="ppr-panehead-loc"><span data-ico="mapPin" data-ico-size="12"></span>' +
+          '<span class="ppr-panehead-lbl">Location</span> ' + (loc ? esc(loc) : '—') + '</div>') +
+        '<div class="ppr-capdate"><span class="ppr-panehead-lbl">Date</span> ' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
+        '<div class="ppr-captxt"><span class="ppr-panehead-lbl">Description</span> ' + esc(cap || '—') + '</div>' +
       '</div>' +
       '<div class="ppr-imgwrap">' +
         (u ? '<img class="ppr-img" src="' + esc(u) + '" alt="' + esc(cap) + '" />'
@@ -1802,9 +1835,12 @@ window.PPR = (function () {
     var ph = photoById(which === 'before' ? sl.before_photo_id : sl.after_photo_id);
     var cap = (which === 'before' ? sl.before_caption : sl.after_caption) ||
               (ph && ph.description) || '';
-    var fields = ph ? [ph.trade, ph.works, hideLocation ? null : ph.location]
-                    : [sl.trade, sl.works, hideLocation ? null : sl.location];
-    var tags = fields.filter(Boolean).join(' · ');
+    // Sixth round items 10/11, mirrored into the exports so a downloaded
+    // file never shows a different caption than the live editor did: no
+    // Trade/Works tags line, Location always present (em-dash when unset,
+    // suppressed only when the shared tile above the pair already said it),
+    // and Date/Description each carry a label.
+    var loc = hideLocation ? null : (ph ? ph.location : sl.location) || '';
     var kp = urlOfPath(keyPlanPathFor(sl, which));
     var phUrl = urlOfPhoto(ph && ph.id);
     function im(url, cls, alt) {
@@ -1816,9 +1852,10 @@ window.PPR = (function () {
       '<div class="lbl">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
       '<div class="phwrap">' + im(phUrl, 'ph', cap) +
         (kp && imgs[kp] ? im(kp, 'kpimg', 'Key plan') : '') + '</div>' +
-      '<figcaption><div class="d">' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
-      '<div class="c">' + esc(cap) + '</div>' +
-      (tags ? '<div class="t">' + esc(tags) + '</div>' : '') +
+      '<figcaption>' +
+      (hideLocation ? '' : '<div class="loc">Location: ' + (loc ? esc(loc) : '—') + '</div>') +
+      '<div class="d">Date: ' + esc(ph && ph.taken_at ? capDate(ph.taken_at) : '—') + '</div>' +
+      '<div class="c">Description: ' + esc(cap || '—') + '</div>' +
       '</figcaption></figure>';
   }
 
@@ -1877,10 +1914,13 @@ window.PPR = (function () {
     '.pair.single{grid-template-columns:minmax(0,760px);justify-content:center}' +
     'figure{margin:0}' +
     '.lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b6b6b;margin-bottom:4px}' +
-    'figcaption .t{font-size:11.5px;color:#6b6b6b;margin-top:3px}' +
     '.ph{width:100%;display:block;border:1px solid #DCDBDB;background:#F4F4F4}' +
     '.missing{padding:40px;text-align:center;color:#9a9a9a;font-size:13px}' +
     'figcaption{text-align:center;margin-top:6px}' +
+    // Sixth round items 10/11: the tags (.t) line is gone (no Trade/Works in
+    // the caption); Location (.loc) is new, always present, styled like the
+    // date line it now sits above.
+    'figcaption .loc{font-size:12px;font-weight:600;color:#231F20}' +
     'figcaption .d{font-size:13px}' +
     'figcaption .c{font-style:italic;font-size:12.5px;color:#4a4a4a;margin-top:2px}' +
     'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +
@@ -2351,6 +2391,20 @@ window.PPR = (function () {
   return {
     init: init,
     _syncTools: syncTools,
+    // Test-only hook, same convention as the others below — genuinely
+    // executes render() so a regression of the 2026-08-30 syncTools(true)
+    // bug (a re-render silently re-showing "+ New Presentation" on a screen
+    // it doesn't belong to) is caught by running the real code, not just by
+    // reading it.
+    _render: function () { render(); },
+    // Test-only hook — sets canWrite directly, bypassing init()'s
+    // onProject()/load() machinery, so the syncTools(true)-vs-toolsVisible
+    // regression test can actually tell the two apart. Every real button
+    // syncTools touches is ALSO gated on canWrite (role-based), so with
+    // canWrite left at its harness default of false both a fixed and a
+    // buggy render() produce the same 'none' — the bug is invisible without
+    // this. Never called from production code.
+    _setCanWrite: function (v) { canWrite = v; },
     _addSlide: function () { openSlideForm(null); },
     _screen: function () { return screen; },
     // Archived presentations are excluded — a retired one is not a sensible

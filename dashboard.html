@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
-  <link rel="apple-touch-icon" href="assets/img/icon.png" />
+  <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260901a" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260901b" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260827a" />
 </head>
 <body>
@@ -32,60 +32,47 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
-        <!-- Portfolio ⇄ Project switcher, shared across every shell page. -->
-        <div id="ctx-switcher"></div>
+        <!-- Project selector — the SAME searchable, Group-Head-grouped picker every
+             module uses (UI.enhanceProjectSelect), not a separate switcher component. -->
+        <div class="dh-projctx">
+          <select class="pd-select dh-project" id="dh-project" title="Project"></select>
+        </div>
         <div id="user-bar"></div>
       </div>
 
       <div class="pd-main">
+        <!-- ⚠️ The heading is the PROJECT, not the reader. "Welcome, <name>" was removed
+             2026-09-01 (owner): it told a planner something they already knew and pushed the
+             one fact they came for — which project am I looking at — into a subtitle. The
+             location now sits beside the id, since two Megawide projects can share a name. -->
         <div class="pd-home-head">
-          <h2 id="welcome">Dashboard</h2>
+          <h2 id="proj-title">Loading…</h2>
           <p id="dash-sub">Loading this project…</p>
         </div>
 
-        <!-- ---- Project facts ------------------------------------------- -->
-        <div class="pd-kpis" id="kpis"></div>
-
         <!-- ---- Project status (management band) ------------------------
-             Four cards + a decisions strip, every figure from a module's own
-             declared dash.metrics. See renderStatus() below. -->
+             ⚠️ 2026-09-01 (owner): the two card rows that stood here — the project-facts row
+             (Status / Original Budget / Forecast Start / Forecast Finish / Location) and the
+             four status cards (Schedule / Progress / Cost / Needs attention) — were REMOVED
+             and replaced by the performance row below. The decisions strip was explicitly
+             kept: it sits outside the removal in the owner's screenshot and is the one part
+             of the old band that names something a planner must act on. -->
         <section class="pd-stat-band" id="stat-band" aria-label="Project status">
-          <div class="pd-stat-grid" id="stat-grid"></div>
-          <div class="pd-stat-strip" id="stat-strip"></div>
+          <div class="pd-perf-grid" id="perf-grid"></div>
+          <div class="pd-viz" id="viz-scurve"></div>
           <div class="pd-viz" id="viz-program"></div>
           <div class="pd-viz-2col">
-            <div class="pd-viz" id="viz-evm"></div>
-            <div class="pd-viz" id="viz-flow"></div>
+            <div class="pd-viz" id="viz-mom"></div>
+            <div class="pd-viz" id="viz-issues"></div>
           </div>
-          <div class="pd-viz-2col">
-            <div class="pd-viz" id="viz-matrix"></div>
-            <div class="pd-viz" id="viz-photos"></div>
-          </div>
+          <!-- ⚠️ Approaching Deadlines sits BELOW the two registers at the owner's request
+               (2026-09-01). The order it makes is a reading order: the curve and the programme
+               say where the project stands, the two registers say what is being talked about,
+               and this says what falls due next — the thing you leave the dashboard to act on. -->
+          <div class="pd-viz" id="viz-due"></div>
+          <div class="pd-viz" id="viz-photos" style="margin-top:12px;"></div>
         </section>
 
-        <!-- ---- Packages (A3): a contract package lives inside a project -->
-        <!-- ⚠️ THE PACKAGES PANEL MOVED to Contracts & Claims → Packages (2026-08-26).
-             Owner: *"I think the packages in the dashboard is misplaced it should be within
-             the contract module itself."* A contract package is a scope division that comes
-             off the CONTRACT DOCUMENTS, so the contract module owns it — the same principle
-             that put "— Create from this contract —" on the Add-record form.
-             ⚠️ The old "Select" button is NOT carried over: it wrote `pd_package` into
-             sessionStorage and nothing ever read it, so it narrowed nothing. Every module
-             that really does narrow by package has its own filter. -->
-        <section class="pd-card pd-pkg-card">
-          <div class="pd-sec-head"><h3>Packages</h3></div>
-          <p class="pd-sec-note">Contract packages are managed in
-            <a href="modules/contracts-claims/index.html" style="color:var(--pd-red);font-weight:600;text-decoration:none;">Contracts &amp; Claims → Packages</a>,
-            where the contract that defines them lives. The schedule, BOQ, procurement and
-            engineering all file against them from there.</p>
-        </section>
-
-        <!-- ---- My items on this project --------------------------------
-             ⚠️ Rendered by the SAME code as the cross-project My Work page
-             (assets/js/my-work.js), never a second copy of the rules — two
-             screens each computing "my items" their own way is how one page
-             comes to disagree with the other about what a planner owes. -->
-        <section class="mw-sec" id="mw-block"></section>
 
         <!-- ---- Module summaries (A5) ----------------------------------- -->
         <section>
@@ -96,60 +83,210 @@
           <div class="pd-module-grid" id="tile-grid"></div>
         </section>
       </div>
+
+      <!-- ---- "My items" drawer (2026-09-01) ---------------------------
+           ⚠️ Rendered by the SAME code as the cross-project My Work page
+           (assets/js/my-work.js), never a second copy of the rules — two
+           screens each computing "my items" their own way is how one page
+           comes to disagree with the other about what a planner owes.
+           It moved out of the page flow at the owner's request: it is a
+           personal to-do list, not a project fact, and it was sitting
+           between the project's own panels and the module grid. -->
+      <button type="button" class="mw-fab" id="mw-fab" aria-expanded="false" aria-controls="mw-drawer">
+        <span class="mw-fab-ico" aria-hidden="true">☑</span>
+        <span class="mw-fab-txt">My items</span>
+        <span class="mw-fab-n" id="mw-fab-n" hidden></span>
+      </button>
+      <div class="mw-scrim" id="mw-scrim" hidden></div>
+      <aside class="mw-drawer" id="mw-drawer" hidden aria-label="My items on this project">
+        <div class="mw-drawer-head">
+          <strong>My items on this project</strong>
+          <button type="button" class="mw-drawer-x" id="mw-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="mw-drawer-body"><section class="mw-sec" id="mw-block"></section></div>
+      </aside>
     </div>
   </div>
 
   <style>
-    /* EVM band — the figures the Project Schedule's Cost / EVM tab used to carry, now on the
-       dashboard. Tokens throughout, so it follows the theme switch. */
-    .pd-evm-band { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin:10px 0 14px; }
-    .pd-evm-c { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; background:var(--pd-card); border-left-width:3px; }
-    .pd-evm-c.ok { border-left-color:var(--pd-ok,#16a34a); }
-    .pd-evm-c.bad { border-left-color:var(--pd-bad,#dc2626); }
-    .pd-evm-l { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-    .pd-evm-v { display:block; font-size:17px; font-weight:800; line-height:1.2; margin-top:3px; font-variant-numeric:tabular-nums; }
-    .pd-evm-c.ok .pd-evm-v { color:var(--pd-ok,#16a34a); }
-    .pd-evm-c.bad .pd-evm-v { color:var(--pd-bad,#dc2626); }
-    .pd-evm-s { display:block; font-size:10.5px; color:var(--pd-muted); margin-top:2px; }
-    /* Project status band. Uses the shared tokens throughout so it follows the theme switch and
-       never hard-codes a colour that only works on one background. */
     .pd-stat-band { margin:0 0 18px; }
-    .pd-stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(228px, 1fr)); gap:12px; }
-    .pd-stat {
-      position:relative; overflow:hidden; padding:14px 16px 13px; border-radius:12px;
+    /* ---- Performance row (2026-09-01) --------------------------------------------------------
+       Replaces .pd-stat-grid / .pd-stat, which went with the two card rows the owner removed.
+       The decisions chips that sat below them went on 2026-09-01 at the owner's request. */
+    .pd-perf-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(196px, 1fr)); gap:12px; }
+    .pd-perf {
+      position:relative; overflow:hidden; padding:13px 15px 12px; border-radius:12px;
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line);
     }
-    /* A 3px spine in the card's own accent — enough to group the four at a glance without four
-       competing filled panels shouting at each other. */
-    .pd-stat::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--sc, var(--pd-muted)); }
-    .pd-stat-k { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
-    .pd-stat-v { font-size:25px; font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
-    .pd-stat-v.sm { font-size:17px; font-weight:700; }
+    .pd-perf::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pc, var(--pd-muted)); }
+    .pd-perf-l { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
+    .pd-perf-v { display:block; font-size:25px; font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
+    /* An empty card must not look like a measured one: smaller, muted, and it states the gap. */
+    .pd-perf-em { font-size:15px; font-weight:700; color:var(--pd-muted); }
+    .pd-perf-bar { position:relative; height:5px; border-radius:3px; background:var(--pd-line); margin-top:9px; overflow:hidden; }
+    .pd-perf-bar > i { display:block; height:100%; border-radius:3px; background:var(--pc, var(--pd-muted)); }
     /* ⚠️ The basis line is not decoration: a number with no stated basis gets trusted further than
        it deserves. Every card carries one, including the empty ones. */
-    .pd-stat-b { font-size:11.5px; color:var(--pd-muted); margin-top:5px; line-height:1.45; }
-    .pd-stat-none .pd-stat-v { color:var(--pd-muted); font-weight:700; font-size:17px; }
-    .pd-stat-bar { height:5px; border-radius:3px; background:var(--pd-line); margin-top:9px; overflow:hidden; }
-    .pd-stat-bar > i { display:block; height:100%; border-radius:3px; background:var(--sc, var(--pd-muted)); }
-    /* The planned marker on the progress bar — where the plan says we should be. */
-    .pd-stat-bar { position:relative; }
-    .pd-stat-bar > u { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--pd-fg); opacity:.55; }
-    .pd-stat-d { font-size:11px; font-weight:700; margin-top:6px; }
-    .pd-stat-late { color:#E5534B; } .pd-stat-early { color:#2FA36B; } .pd-stat-flat { color:var(--pd-muted); }
-
-    /* Decisions strip: only what is non-zero, so an empty strip is a real "nothing waiting". */
-    .pd-stat-strip { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; }
-    .pd-stat-chip {
-      display:inline-flex; align-items:center; gap:7px; padding:6px 11px; border-radius:999px;
-      border:1px solid var(--pd-line); background:var(--pd-card, var(--pd-bg));
-      font-size:12px; color:var(--pd-fg); text-decoration:none; white-space:nowrap;
-    }
-    .pd-stat-chip:hover { border-color:var(--pd-muted); }
-    .pd-stat-chip b { font-size:13px; }
-    .pd-stat-chip .dot { width:7px; height:7px; border-radius:50%; background:var(--cc, var(--pd-muted)); flex:none; }
-    .pd-stat-ok { font-size:12px; color:var(--pd-muted); }
+    .pd-perf-b { display:block; font-size:11.5px; color:var(--pd-muted); margin-top:6px; line-height:1.45; }
+    .pd-perf-good { color:#2FA36B; }
+    .pd-perf-none .pd-perf-b { opacity:.9; }
+    @media (max-width:640px) { .pd-perf-v { font-size:21px; } }
+    /* Kept from the retired chips block: the perf cards and both list panels still use it. */
     .pd-stat-warn { font-size:11.5px; color:var(--pd-muted); }
-    @media (max-width:640px) { .pd-stat-v { font-size:21px; } }
+
+    /* ---- Mini stat band, shared by the Minutes of Meeting and Issues panels ------------------- */
+    .pd-mini-band { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:8px; }
+    .pd-mini-c { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; background:var(--pd-card); border-left-width:3px; }
+    .pd-mini-c.ok { border-left-color:var(--pd-ok, #2FA36B); }
+    .pd-mini-c.bad { border-left-color:#E5534B; }
+    .pd-mini-l { display:block; font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); font-weight:700; }
+    .pd-mini-v { display:block; font-size:19px; font-weight:800; line-height:1.2; margin-top:3px; letter-spacing:-.02em; }
+    .pd-mini-s { display:block; font-size:10.5px; color:var(--pd-muted); margin-top:3px; line-height:1.4; }
+    .pd-mini-bar { height:5px; border-radius:3px; background:var(--pd-line); margin-top:11px; overflow:hidden; }
+    .pd-mini-bar > i { display:block; height:100%; border-radius:3px; background:#2FA36B; }
+    .pd-mini-note { margin-top:10px; }
+    /* A capped list -- four rows at most, set in config.js. A panel that grew with the register
+       would push everything below it off the page on a busy project. */
+    .pd-list { list-style:none; margin:12px 0 0; padding:10px 0 0; border-top:1px solid var(--pd-line); display:grid; gap:7px; }
+    .pd-list-r { display:flex; align-items:center; gap:8px; font-size:11.5px; min-width:0; }
+    .pd-list-d { color:var(--pd-muted); flex:none; font-variant-numeric:tabular-nums; width:86px; }
+    .pd-list-t { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pd-tag { flex:none; font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:999px;
+      border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg); }
+    .pd-tag-ok { color:#2FA36B; border-color:#2FA36B55; }
+    .pd-tag-warn { color:#E08A3C; border-color:#E08A3C55; }
+    .pd-tag-bad { color:#E5534B; border-color:#E5534B55; }
+    @media (max-width:520px) { .pd-list-d { display:none; } }
+
+    /* ---- S-Curve panel ------------------------------------------------------------------------ */
+    .pd-sc-kpi { display:flex; flex-wrap:wrap; gap:16px; font-size:11.5px; color:var(--pd-muted); margin-bottom:8px; }
+    .pd-sc-kpi b { font-size:15px; color:var(--pd-ink); font-weight:800; letter-spacing:-.02em; }
+    .pd-sc-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:10.5px; color:var(--pd-muted); margin-bottom:6px; }
+    .pd-sc-legend i, .pd-sc-tip i { display:inline-block; width:14px; height:0; border-top-width:2px; border-top-style:solid; margin-right:6px; vertical-align:middle; }
+    .pd-sc-legend i.pl, .pd-sc-tip i.pl { border-top-color:#8A93A6; }
+    .pd-sc-legend i.ac, .pd-sc-tip i.ac { border-top-color:#2FA36B; }
+    .pd-sc-legend i.fc, .pd-sc-tip i.fc { border-top-color:#C9A227; border-top-style:dashed; }
+    .pd-sc-legend i.nw { border-top-color:var(--pd-red); }
+    /* ⚠️ ONE scroller around the chart AND the table, so a table column is always under the point
+       it describes. Two scrollers drift apart the moment either is touched. */
+    .pd-sc-scroll { position:relative; overflow-x:auto; overflow-y:hidden; padding-bottom:4px; }
+    .pd-sc-inner { position:relative; }
+    .pd-sc-svg { display:block; }
+    .pd-sc-grid { stroke:var(--pd-line); stroke-width:1; }
+    .pd-sc-year { stroke:var(--pd-line); stroke-width:1; stroke-dasharray:2 4; }
+    .pd-sc-now  { stroke:var(--pd-red); stroke-width:1.5; opacity:.75; }
+    .pd-sc-guide{ stroke:var(--pd-ink); stroke-width:1; opacity:0; pointer-events:none; }
+    .pd-sc-pl { fill:none; stroke:#8A93A6; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+    .pd-sc-ac { fill:none; stroke:#2FA36B; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
+    .pd-sc-fc { fill:none; stroke:#C9A227; stroke-width:2; stroke-dasharray:5 4; stroke-linejoin:round; stroke-linecap:round; }
+    .pd-sc-tbl { border-collapse:collapse; font-size:10px; table-layout:fixed; margin-top:6px; }
+    /* ⚠️ The 46px here is only a FALLBACK. The real widths come from the <colgroup> the panel
+       emits, because the column width is computed per render (see scColFor) and the chart and the
+       table must be laid out from one number. Under `table-layout:fixed` a col's width beats a
+       cell's, so the colgroup wins wherever both are present. */
+    .pd-sc-tbl th, .pd-sc-tbl td { width:46px; text-align:center; padding:3px 0; color:var(--pd-muted);
+      white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .pd-sc-tbl th { font-weight:700; border-bottom:1px solid var(--pd-line); }
+    .pd-sc-tbl th small { display:block; font-size:8.5px; opacity:.75; font-weight:600; }
+    /* ⚠️ th.k AND td.k, both. Under `table-layout:fixed` the FIRST row sets every column width,
+       and that row is the header — so styling only `td.k` left the header's corner cell at the
+       month width, the whole table 46px narrower than it declared, and every month column sitting
+       one column to the RIGHT of the chart point it labels. The table looked perfectly tidy and
+       was labelling every figure with the wrong month. */
+    /* ⚠️ box-sizing:border-box, and it is load-bearing. The default content-box adds the 6px
+       padding-right ON TOP of the declared 64px, so the key column measured 70 and every month
+       column sat 6px right of its chart point — a small, plausible-looking drift that is still
+       the table disagreeing with the chart. The declared width must BE the width, because
+       SC_KEY in the script indents the plot by exactly this number. */
+    .pd-sc-tbl th.k, .pd-sc-tbl td.k { box-sizing:border-box; position:sticky; left:0; z-index:2;
+      width:78px; text-align:left; font-weight:700; background:var(--pd-card, var(--pd-bg));
+      padding-right:6px; }
+    .pd-sc-tbl th.k { border-bottom:1px solid var(--pd-line); }
+    /* ⚠️ The row label says WHICH LINE with a swatch, not by tinting its own text. Tinting put
+       10px bold type at 2.42:1 (Forecast) and 3.09:1 (Planned) against the card — a label that
+       names a line you cannot read is not colour-coding. The swatch carries the colour; the text
+       carries the normal foreground. Same swatch vocabulary as the legend above the chart. */
+    .pd-sc-tbl td.k::before { content:''; display:inline-block; width:12px; height:0; margin-right:5px;
+      border-top:2px solid transparent; vertical-align:middle; }
+    .pd-sc-tbl tr.pl td.k::before { border-top-color:#8A93A6; }
+    .pd-sc-tbl tr.ac td.k::before { border-top-color:#2FA36B; }
+    .pd-sc-tbl tr.fc td.k::before { border-top-color:#C9A227; border-top-style:dashed; }
+    .pd-sc-tbl .now { color:var(--pd-ink); font-weight:800; }
+    .pd-sc-tip { position:absolute; top:6px; z-index:3; pointer-events:none; min-width:150px;
+      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); border-radius:8px;
+      padding:7px 9px; font-size:10.5px; color:var(--pd-muted); display:grid; gap:2px;
+      box-shadow:0 6px 18px rgba(0,0,0,.28); }
+    .pd-sc-tip b { color:var(--pd-ink); font-size:11px; margin-bottom:2px; }
+    .pd-sc-tip-s { font-size:9.5px; opacity:.85; margin-bottom:2px; }
+
+    /* Period switch. ⚠️ Deliberately the SAME segmented control the S-Curve module uses for its
+       Duration/Cost switch (`.sc-seg` there) — a planner moving between the panel and the module
+       should not have to learn a second control for the same kind of choice. */
+    .pd-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .pd-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:11px;
+      font-weight:700; padding:5px 11px; cursor:pointer; line-height:1.3; }
+    .pd-seg button + button { border-left:1px solid var(--pd-line); }
+    .pd-seg button:hover { background:var(--pd-bg); }
+    /* ⚠️ Brand red with white text is the app's established ACTIVE state — the sidebar's current
+       nav item, .pd-btn-primary, the node tree's selection and the view tabs all use exactly this
+       pair. It measures 4.12:1, under AA for 11px text, and that is a property of the brand red
+       rather than of this control: forking it here would make one panel's toggle the only active
+       state in the app that looks different. Raised deliberately rather than silently diverged. */
+    .pd-seg button.on { background:var(--pd-red); color:#fff; }
+    /* ⚠️ 44px on a phone, per the rule assets/css/dashboard.css states for exactly this shape:
+       segmented buttons sized to their text were "among the hardest things on the page to hit
+       accurately". The desktop size is unchanged — this is the tap area, not visual bulk. */
+    @media (max-width:700px) { .pd-seg button { min-height:var(--pd-tap); padding:8px 13px; } }
+    /* The head puts the legend slot on the right; the switch shares it with the module link. */
+    .pd-viz-h .pd-viz-legend { align-items:center; gap:12px; }
+
+    /* ---- list extras shared by the deadline / MoM / Issues panels ---------------------------- */
+    .pd-list-top { margin-top:0; padding-top:0; border-top:0; }
+    .pd-list-h { font-size:10.5px; color:var(--pd-muted); margin-top:12px; padding-top:10px;
+      border-top:1px solid var(--pd-line); font-weight:600; }
+    .pd-list-h + .pd-list { margin-top:7px; padding-top:0; border-top:0; }
+    .pd-list-t small { display:block; font-size:9.5px; color:var(--pd-muted); font-weight:500;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pd-list-r.done .pd-list-t { opacity:.6; }
+    .pd-list-r .pd-no { color:var(--pd-muted); font-weight:700; font-size:10px; }
+    .pd-ms { color:#C9A227; }
+    .pd-due-r.late .pd-list-t { color:var(--pd-ink); }
+    .pd-due-p { flex:none; width:34px; text-align:right; font-size:10.5px; font-weight:700;
+      color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+
+    /* ---- "My items" drawer -------------------------------------------------------------------- */
+    .mw-fab { position:fixed; right:18px; bottom:18px; z-index:60; display:inline-flex; align-items:center;
+      gap:8px; padding:11px 15px; border-radius:999px; border:1px solid var(--pd-line);
+      background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:12.5px; font-weight:700;
+      cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.32); }
+    .mw-fab:hover { border-color:var(--pd-muted); }
+    .mw-fab.has { border-color:var(--pd-red); }
+    .mw-fab-ico { font-size:14px; line-height:1; }
+    .mw-fab-n { min-width:19px; height:19px; padding:0 5px; border-radius:999px; background:var(--pd-red);
+      color:#fff; font-size:10.5px; line-height:19px; text-align:center; font-weight:800; }
+    .mw-scrim { position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.42);
+      opacity:0; transition:opacity .18s ease; }
+    .mw-scrim.open { opacity:1; }
+    .mw-drawer { position:fixed; top:0; right:0; bottom:0; z-index:71; width:min(460px, 94vw);
+      display:flex; flex-direction:column; background:var(--pd-card, var(--pd-bg));
+      border-left:1px solid var(--pd-line); box-shadow:-12px 0 34px rgba(0,0,0,.34);
+      transform:translateX(100%); transition:transform .2s ease; }
+    .mw-drawer.open { transform:translateX(0); }
+    .mw-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:14px 18px; border-bottom:1px solid var(--pd-line); font-size:14px; flex:none; }
+    .mw-drawer-x { background:none; border:0; color:var(--pd-muted); font-size:24px; line-height:1;
+      cursor:pointer; padding:0 4px; }
+    .mw-drawer-x:hover { color:var(--pd-ink); }
+    .mw-drawer-body { overflow-y:auto; padding:14px 18px 22px; flex:1 1 auto; }
+    /* The block was written for a full-width page section; inside a 460px drawer its own head
+       is redundant (the drawer has one) and its tables must be allowed to scroll. */
+    .mw-drawer-body .mw-sechead { display:none; }
+    .mw-drawer-body table { width:100%; }
+    .mw-drawer-body .mw-tblwrap, .mw-drawer-body .mw-scroll { overflow-x:auto; }
+    @media (prefers-reduced-motion:reduce) {
+      .mw-drawer, .mw-scrim { transition:none; }
+    }
+    @media (max-width:640px) { .mw-fab-txt { display:none; } .mw-fab { padding:12px; } }
 
     /* ---- Visual panels ---------------------------------------------------------------------- */
     .pd-viz { margin-top:12px; padding:15px 17px 16px; border-radius:12px;
@@ -163,43 +300,47 @@
     .pd-viz-legend { display:flex; gap:13px; flex-wrap:wrap; font-size:10.5px; color:var(--pd-muted); }
     .pd-viz-legend i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
 
-    /* Programme view — one row per trade */
-    .pd-pv { display:grid; grid-template-columns:126px 1fr; gap:5px 11px; align-items:center; }
-    .pd-pv-l { font-size:11.5px; color:var(--pd-muted); text-align:right; white-space:nowrap;
+    /* Programme view — one row per trade.
+       ⚠️ The colour rule: NEUTRAL means "when", COLOUR means "how much". The old bar painted the
+       trade's date span in the status colour, so a 0%-complete trade showed a big red band that
+       read as three-quarters finished. Only the fill and the shortfall band carry colour now. */
+    .pd-pv { display:grid; grid-template-columns:196px 1fr 62px; gap:9px 12px; align-items:center; }
+    .pd-pv-l { min-width:0; line-height:1.3; }
+    .pd-pv-l b { display:block; font-size:11.5px; font-weight:700; color:var(--pd-ink);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pd-pv-l small { display:block; font-size:10px; color:var(--pd-muted); white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; }
-    .pd-pv-t { position:relative; height:16px; border-radius:8px; background:var(--pd-line); overflow:hidden; }
-    .pd-pv-b { position:absolute; top:0; bottom:0; border-radius:8px; }
-    .pd-pv-f { position:absolute; top:0; bottom:0; left:0; border-radius:8px; opacity:.95; }
-    .pd-pv-n { position:absolute; right:6px; top:0; line-height:16px; font-size:9.5px; font-weight:700;
-      color:var(--pd-fg); opacity:.85; }
-
-    /* Gauges */
-    .pd-gauges { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .pd-gauge { text-align:center; }
-    .pd-gauge-v { font-size:23px; font-weight:800; margin-top:-30px; }
-    .pd-gauge-k { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); font-weight:700; }
-    .pd-gauge-c { font-size:11px; color:var(--pd-muted); margin-top:4px; }
-
-    /* Money flow */
-    .pd-flow { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:9px; align-items:center; }
-    .pd-flow-n { padding:11px 12px; border-radius:10px; border:1px solid var(--pd-line); text-align:center; }
-    .pd-flow-v { font-size:17px; font-weight:800; letter-spacing:-.02em; }
-    .pd-flow-k { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-top:3px; font-weight:700; }
-    .pd-flow-a { color:var(--pd-muted); font-size:15px; }
-    .pd-flow-co { display:grid; gap:6px; }
-    .pd-flow-p { padding:7px 10px; border-radius:8px; font-size:11px; display:flex; justify-content:space-between; gap:8px; }
-
-    /* 2x2 matrices */
-    .pd-mx-wrap { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-    .pd-mx { display:grid; grid-template-columns:14px 1fr 1fr; grid-template-rows:1fr 1fr 15px; gap:4px; }
-    .pd-mx-c { border-radius:8px; padding:9px 10px; min-height:52px; display:flex; flex-direction:column; justify-content:center; }
-    .pd-mx-n { font-size:19px; font-weight:800; line-height:1; }
-    .pd-mx-t { font-size:9.5px; margin-top:3px; opacity:.85; font-weight:600; }
-    .pd-mx-y { grid-row:1 / span 2; writing-mode:vertical-rl; transform:rotate(180deg);
-      font-size:9.5px; color:var(--pd-muted); text-align:center; letter-spacing:.05em; text-transform:uppercase; }
-    .pd-mx-x { grid-column:2 / span 2; font-size:9.5px; color:var(--pd-muted); text-align:center;
-      letter-spacing:.05em; text-transform:uppercase; }
-    .pd-mx-h { font-size:11.5px; font-weight:700; margin-bottom:8px; }
+    .pd-pv-l small.dim { opacity:.75; }
+    .pd-pv-t { position:relative; height:18px; border-radius:9px; background:var(--pd-line); overflow:hidden; }
+    /* The span answers WHEN. Neutral by design. */
+    .pd-pv-span { position:absolute; top:0; bottom:0; border-radius:9px; overflow:hidden;
+      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); }
+    /* The fill answers HOW MUCH, and is the only thing that carries the status colour. */
+    .pd-pv-f { position:absolute; top:0; bottom:0; left:0; border-radius:9px 0 0 9px; opacity:.95; }
+    /* Time gone that work has not caught up with — hatched, so it cannot be mistaken for progress. */
+    .pd-pv-gap { position:absolute; top:0; bottom:0; opacity:.5;
+      background:repeating-linear-gradient(135deg, #E5534B 0 4px, transparent 4px 8px); }
+    /* ⚠️⚠️ THIS MARKER WAS INVISIBLE, and had been since it shipped. It read `var(--pd-fg)`,
+       and THERE IS NO --pd-fg TOKEN in this app — assets/css/dashboard.css defines --pd-ink.
+       An undefined custom property is not a no-op: on an INHERITED property (color, stroke) it
+       falls back to the inherited value and looks right by accident, which is why every text
+       rule using it seemed fine. `background` is NOT inherited, so it computed to the initial
+       value — transparent. The elapsed-time marker, its legend swatch and the S-curve's hover
+       guide were all drawing nothing. Found by measuring computed styles, not by looking:
+       a marker that is not there and a marker at 0% look identical on a bar. */
+    .pd-pv-now { position:absolute; top:-1px; bottom:-1px; width:2px; background:var(--pd-ink);
+      opacity:.55; border-radius:1px; }
+    /* Its own grid cell, never inside the clipped track — a % that can be sliced mid-digit into a
+       different number is worse than no %. */
+    .pd-pv-n { font-size:11px; font-weight:700; text-align:right; line-height:1.25; }
+    .pd-pv-n small { display:block; font-size:9px; font-weight:600; color:var(--pd-muted); }
+    .pd-viz-legend i.pd-lg-span { background:var(--pd-card); border:1px solid var(--pd-line); }
+    .pd-viz-legend i.pd-lg-gap { background:repeating-linear-gradient(135deg, #E5534B 0 3px, transparent 3px 6px); }
+    .pd-viz-legend i.pd-lg-now { background:var(--pd-ink); opacity:.55; width:3px; border-radius:1px; }
+    @media (max-width:720px) {
+      .pd-pv { grid-template-columns:132px 1fr 52px; gap:8px; }
+      .pd-pv-l small.dim { display:none; }
+    }
 
     /* Photo strip */
     .pd-ph { display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:8px; }
@@ -207,18 +348,19 @@
     .pd-ph-i img { display:block; width:100%; height:74px; object-fit:cover; }
     .pd-ph-x { height:74px; display:flex; align-items:center; justify-content:center; color:var(--pd-muted); font-size:10px; }
     .pd-ph-c { padding:5px 7px 6px; font-size:9.5px; color:var(--pd-muted); line-height:1.35; }
-    .pd-ph-c b { display:block; color:var(--pd-fg); font-size:10px; font-weight:700;
+    .pd-ph-c b { display:block; color:var(--pd-ink); font-size:10px; font-weight:700;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260901a"></script>
-  <script src="assets/js/auth.js?v=20260814a"></script>
-  <script src="assets/js/db.js?v=20260827c"></script>
+  <script src="assets/js/config.js?v=20260901c"></script>
+  <script src="assets/js/auth.js?v=20260901b"></script>
+  <script src="assets/js/db.js?v=20260901d"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
-  <script src="assets/js/ui.js?v=20260901a"></script>
-  <script src="assets/js/icons.js?v=20260830a"></script>
-  <script src="assets/js/modules-grid.js?v=20260830a"></script>
-  <script src="assets/js/my-work.js?v=20260827a"></script>
+  <script src="assets/js/scurve.js?v=20260901a"></script>
+  <script src="assets/js/ui.js?v=20260901b"></script>
+  <script src="assets/js/icons.js?v=20260830c"></script>
+  <script src="assets/js/modules-grid.js?v=20260901h"></script>
+  <script src="assets/js/my-work.js?v=20260901a"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');
@@ -232,7 +374,6 @@
       CURUSER = user;
       UI.renderUserBar(profile);
       var first = (profile.name || profile.email || '').split(' ')[0];
-      document.getElementById('welcome').textContent = first ? ('Welcome, ' + first) : 'Dashboard';
       canWrite = ['super_admin', 'admin', 'planner'].indexOf(profile.role) !== -1;
       isAdmin = ['admin', 'super_admin'].indexOf(profile.role) !== -1;
       // Draw the shell immediately from what's already known (sessionStorage) —
@@ -241,9 +382,36 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'dashboard', base: '', isAdmin: isAdmin, pname: pnameNow, modules: APP_CONFIG.MODULES,
       });
-      UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'project', base: '', pid: pid, pname: pnameNow });
+      // Fast paint from sessionStorage alone (a single option) — refreshed with the
+      // real full list the moment boot()'s fetch resolves, in renderHeader() below.
+      renderProjPicker([{ id: pid, name: pnameNow }]);
       boot();
     });
+
+    // Project selector — same searchable, Group-Head-grouped picker every module's
+    // topbar uses (UI.enhanceProjectSelect). `list` is either the sessionStorage-only
+    // fast-paint fallback (one option) or the real project list once PROJ has loaded.
+    function renderProjPicker(list) {
+      var sel = document.getElementById('dh-project');
+      if (!sel) return;
+      sel.innerHTML = (list || []).map(function (p) {
+        return '<option value="' + Fmt.esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' +
+          Fmt.esc(p.name || p.id) + '</option>';
+      }).join('');
+      UI.enhanceProjectSelect(sel);
+      sel.onchange = function () {
+        var id = this.value;
+        var p = (PROJ || []).filter(function (x) { return x.id === id; })[0];
+        sessionStorage.setItem('pd_project', id);
+        sessionStorage.setItem('pd_project_name', (p && p.name) || id);
+        sessionStorage.setItem('pd_group_head', (p && p.group_head_id) || '');
+        // ⚠️ A package belongs to the OLD project — carrying it across would
+        // scope the shell to a package this project does not contain.
+        sessionStorage.removeItem('pd_package');
+        sessionStorage.removeItem('pd_package_name');
+        location.reload();
+      };
+    }
 
     async function boot() {
       try {
@@ -254,14 +422,13 @@
       curProj = PROJ.find(function (p) { return p.id === pid; }) ||
         { id: pid, name: sessionStorage.getItem('pd_project_name') || pid };
       renderHeader();
-      renderKpis();
       loadStatus();
       // Independent of one another: a packages failure must not blank the tiles.
       renderTiles();
       // ⚠️ Not awaited, and its own failure is contained inside renderBlock —
       // a personal panel must never be able to stop the project dashboard from
       // rendering. Base is '' because dashboard.html sits at the app root.
-      MyWork.renderBlock(document.getElementById('mw-block'), CURUSER, pid, '');
+      initMyDrawer();
     }
 
     // The project's own tag — there is no workspace ancestry to walk any more.
@@ -273,45 +440,23 @@
       return g ? g.name : p.group_head_id;
     }
     function renderHeader() {
-      var label = (curProj.name || curProj.id) + ' (' + curProj.id + ')';
-      var gh = groupHead(curProj);
-      document.getElementById('dash-sub').textContent = label;
-      // Re-render the switcher + nav now that the authoritative name/group head
-      // are in — cheap, and the first pass above already made the shell usable.
-      UI.renderSwitcher(document.getElementById('ctx-switcher'), {
-        mode: 'project', base: '', pid: pid, pname: curProj.name || curProj.id,
-        ghLabel: gh ? ('Group Head: ' + gh) : '',
-      });
+      // ⚠️ Location is shown ONLY when the project record carries one. A placeholder dash in a
+      // title bar reads as "this project has no location", which is a claim about the project;
+      // omitting the segment says nothing, which is the truth when the field is simply unset.
+      var loc = (curProj.location || '').trim();
+      document.getElementById('proj-title').textContent = curProj.name || curProj.id;
+      document.getElementById('dash-sub').textContent =
+        '(' + curProj.id + ')' + (loc ? '  ·  ' + loc : '');
+      document.getElementById('dash-sub').title = loc || '';
+      // Re-render the picker + nav now that the authoritative project list/name are
+      // in — cheap, and the first pass above already made the shell usable. This is
+      // what gives the picker's popover the FULL project list (it only offers
+      // projects that are actually present as <option>s on the underlying select).
+      renderProjPicker(PROJ);
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'dashboard', base: '', isAdmin: isAdmin, pname: curProj.name || curProj.id, modules: APP_CONFIG.MODULES,
       });
     }
-
-    // ---- Project facts ----
-    function kpi(label, value, sub) {
-      return '<div class="pd-kpi"><span class="pd-kpi-label">' + Fmt.esc(label) + '</span>' +
-        '<strong class="pd-kpi-value">' + value + '</strong>' +
-        (sub ? '<small class="pd-kpi-sub">' + sub + '</small>' : '') + '</div>';
-    }
-    function renderKpis() {
-      var p = curProj;
-      var gh = groupHead(p);
-      document.getElementById('kpis').innerHTML =
-        kpi('Status', '<span class="pd-pill ' + ((p.status || 'active') === 'archived' ? 'pd-pill-muted' : 'pd-pill-ok') + '">' +
-          Fmt.esc(((p.status || 'active').charAt(0).toUpperCase() + (p.status || 'active').slice(1))) + '</span>',
-          gh ? Fmt.esc(gh) : 'No group head') +
-        kpi('Original Budget', p.original_budget != null ? Fmt.moneyShort(p.original_budget) : '—',
-          p.estimated_cost != null ? 'Est. cost ' + Fmt.moneyShort(p.estimated_cost) : '') +
-        kpi('Forecast Start', Fmt.date(p.forecast_start || p.start_date), '') +
-        kpi('Forecast Finish', Fmt.date(p.forecast_finish || p.end_date), '') +
-        kpi('Location', p.location ? Fmt.esc(p.location) : '—', '');
-    }
-
-    /* ⚠️ The package CRUD, the share button and the "Select" control that lived here
-       all moved to Contracts & Claims → Packages on 2026-08-26 (modules/contracts-claims/
-       packages.js). A contract package comes off the contract documents, so the contract
-       module owns it. Nothing was reimplemented — same `packages` table, same PDb calls,
-       same guarded delete RPC — so every consumer is untouched. */
 
     // ---- Module tiles (A5) ----
     // Each enabled module gets a tile. Figures come from the module's own `dash`
@@ -327,130 +472,80 @@
       if (!x || !y || isNaN(+x) || isNaN(+y)) return null;
       return Math.round((y - x) / 86400000);
     }
-    function statCard(o) {
+    // ---- Performance row -----------------------------------------------------------------------
+    // Four cards: Planned POC, Actual POC, SPI, CPI. (The S-Curve started here as a fifth, small
+    // card on 2026-09-01 and was promoted to its own panel the same day — a curve is a shape, and
+    // a shape does not fit in a stat tile.)
+    // ⚠️ EVERY CARD NAMES ITS BASIS, because these four are NOT all measured the same way and a row
+    //    of bare numbers invites a reader to combine them:
+    //      · Planned POC / Actual POC are both DURATION-weighted, so they are directly comparable
+    //        and their difference is meaningful. That is why `pvDur` exists in config.js — the
+    //        pre-existing `pv` is COST-weighted, and pairing it with `poc` would have put two
+    //        different bases side by side under labels that look like a matched pair.
+    //      · SPI and CPI stay COST ratios (EV/PV, EV/AC), because that is what EVM defines them as.
+    // ⚠️ A card with no inputs says what is missing and stays grey. None fall back to a
+    //    neutral-looking 1.00 or 0% — a needle resting at "fine" because nothing is loaded is the
+    //    most misleading thing this row could do.
+    function perfCard(o) {
       var none = !o.value;
-      return '<div class="pd-stat' + (none ? ' pd-stat-none' : '') + '" style="--sc:' + (o.color || 'var(--pd-muted)') + '">' +
-        '<div class="pd-stat-k">' + Fmt.esc(o.label) + '</div>' +
-        '<div class="pd-stat-v' + (o.small ? ' sm' : '') + '">' + (o.value || o.empty || '—') + '</div>' +
-        (o.bar != null
-          ? '<div class="pd-stat-bar"><i style="width:' + Math.max(0, Math.min(100, o.bar)) + '%"></i>' +
-            (o.mark != null ? '<u style="left:' + Math.max(0, Math.min(100, o.mark)) + '%"></u>' : '') + '</div>'
-          : '') +
-        (o.delta ? '<div class="pd-stat-d ' + o.deltaCls + '">' + Fmt.esc(o.delta) + '</div>' : '') +
-        '<div class="pd-stat-b">' + o.basis + '</div>' +
-        '</div>';
+      return '<div class="pd-perf' + (none ? ' pd-perf-none' : '') + '" style="--pc:' + (o.color || 'var(--pd-muted)') + '">' +
+        '<span class="pd-perf-l">' + Fmt.esc(o.label) + '</span>' +
+        (o.value
+          ? '<strong class="pd-perf-v">' + o.value + '</strong>'
+          : '<strong class="pd-perf-v pd-perf-em">' + Fmt.esc(o.empty || 'No data') + '</strong>') +
+        (o.bar != null ? '<div class="pd-perf-bar"><i style="width:' + Math.max(0, Math.min(100, o.bar)) + '%"></i></div>' : '') +
+        (o.basis ? '<small class="pd-perf-b">' + o.basis + '</small>' : '') + '</div>';
     }
 
-    function renderStatus() {
-      var grid = document.getElementById('stat-grid'), strip = document.getElementById('stat-strip');
-      if (!grid) return;
+    function renderPerf() {
+      var host = document.getElementById('perf-grid'); if (!host) return;
       var sch = MET['project-schedule'] || {};
       var acts = sch.__rows || 0;
-
-      // ---- 1. Schedule -----------------------------------------------------------------------
-      var start = sch.start || null, finish = sch.finish || null;
-      var dur = _days(start, finish);
-      var card1;
-      if (!finish) {
-        card1 = statCard({ label: 'Schedule', value: '', empty: 'No schedule yet', color: 'var(--pd-muted)',
-          basis: acts ? 'Activities exist but carry no dates.' : 'Push a programme from Schedule Builder, or add activities.' });
-      } else {
-        // ⚠️ Measured against the CONTRACT date when the project record has one — that is the date
-        // that costs money. Falls back to stating the span, never to a silent comparison.
-        var cd = curProj && (curProj.forecast_finish || curProj.end_date) || null;
-        var slip = cd ? _days(cd, finish) : null;
-        card1 = statCard({ label: 'Schedule', value: Fmt.date(finish), small: false, color: '#4F8EF7',
-          delta: slip == null ? '' : (slip > 0 ? slip + ' days past the project finish date'
-                 : slip < 0 ? (-slip) + ' days inside the project finish date' : 'on the project finish date'),
-          deltaCls: slip == null ? 'pd-stat-flat' : (slip > 0 ? 'pd-stat-late' : slip < 0 ? 'pd-stat-early' : 'pd-stat-flat'),
-          basis: 'Forecast finish of ' + acts + ' activit' + (acts === 1 ? 'y' : 'ies') +
-                 (start ? ', from ' + Fmt.esc(Fmt.date(start)) : '') +
-                 (dur ? ' · ' + dur + ' days' : '') +
-                 (cd ? '' : '<br>No project finish date set, so there is nothing to compare against.') });
-      }
-
-      // ---- 2. Progress -----------------------------------------------------------------------
-      var poc = _n(sch.poc);
+      var poc = _n(sch.poc), planned = _n(sch.pvDur);
+      var ev = _n(sch.ev), ac = _n(sch.actual), bac = _n(sch.budget), pvPct = _n(sch.pv);
+      var pv = (bac != null && pvPct != null) ? (bac * pvPct / 100) : null;
+      var spi = (ev != null && pv) ? (ev / pv) : null;
+      var cpi = (ev != null && ac) ? (ev / ac) : null;
       var blN = _n(sch.baselined) || 0;
-      var card2;
+      function r2(v) { return (Math.round(v * 100) / 100).toFixed(2); }
+      function tone(ok) { return ok ? 'pd-perf-good' : 'pd-stat-warn'; }
+
+      var c1 = planned == null
+        ? perfCard({ label: 'Planned POC', empty: blN ? 'No baseline dates' : 'Not baselined',
+            basis: 'Needs <b>bl_start</b> and <b>bl_finish</b> on the activities. Capture a baseline in <b>Project Schedule</b>.' })
+        : perfCard({ label: 'Planned POC', value: Math.round(planned) + '%', color: '#8A93A6', bar: planned,
+            basis: 'Where the baseline says this project should be today.<br>Duration-weighted across ' +
+              blN + ' baselined activit' + (blN === 1 ? 'y' : 'ies') + '.' });
+
+      var c2;
       if (poc == null) {
-        card2 = statCard({ label: 'Progress', value: '', empty: acts ? 'Not started' : 'No activities',
-          color: 'var(--pd-muted)', bar: acts ? 0 : null,
+        c2 = perfCard({ label: 'Actual POC', empty: acts ? 'Not started' : 'No activities',
           basis: acts ? 'No progress recorded against any activity yet.' : 'Nothing to report on.' });
       } else {
-        // ⚠️ No planned marker without baselines. Comparing progress to the current dates would be
-        // comparing the schedule with itself — the module holds the same line for Planned Value %.
-        var cover = acts ? Math.round(blN / acts * 100) : 0;
-        card2 = statCard({ label: 'Progress', value: Math.round(poc) + '%', color: '#2FA36B', bar: poc,
+        var gap = planned == null ? null : (poc - planned);
+        c2 = perfCard({ label: 'Actual POC', value: Math.round(poc) + '%', color: '#2FA36B', bar: poc,
           basis: 'Duration-weighted across ' + acts + ' activities.<br>' +
-                 (blN === 0
-                   ? '<span class="pd-stat-warn">No baseline captured — there is no planned % to compare this against.</span>'
-                   : cover < 100
-                     ? '<span class="pd-stat-warn">' + cover + '% of activities are baselined.</span>'
-                     : 'All activities baselined.') });
+            (gap == null
+              ? '<span class="pd-stat-warn">No baseline, so there is no planned % to compare this against.</span>'
+              : '<span class="' + tone(gap >= 0) + '">' + (gap >= 0 ? '+' : '') + Math.round(gap) +
+                ' pts vs planned</span> &mdash; same duration weighting.') });
       }
 
-      // ---- 3. Cost ---------------------------------------------------------------------------
-      var bud = _n(sch.budget), act = _n(sch.actual);
-      var card3;
-      if (bud == null) {
-        card3 = statCard({ label: 'Cost', value: '', empty: 'Not cost-loaded', color: 'var(--pd-muted)',
-          basis: 'No planned cost on any activity. Load costs in Project Schedule to see a position here.' });
-      } else {
-        var spent = act || 0, pctSpent = bud > 0 ? (spent / bud * 100) : 0;
-        card3 = statCard({ label: 'Cost', value: Fmt.moneyShort(bud), color: '#C9A227', bar: pctSpent,
-          delta: act == null ? '' : Fmt.moneyShort(spent) + ' recorded (' + Math.round(pctSpent) + '%)',
-          deltaCls: 'pd-stat-flat',
-          basis: 'Planned cost loaded on the schedule.' +
-                 (act == null ? '<br><span class="pd-stat-warn">No actual cost recorded yet.</span>' : '') });
-      }
+      var c3 = spi == null
+        ? perfCard({ label: 'SPI', empty: 'No planned value',
+            basis: 'SPI is EV &divide; PV. Needs a <b>baseline</b> and <b>planned cost</b> to measure against.' })
+        : perfCard({ label: 'SPI', value: r2(spi), color: spi >= 1 ? '#2FA36B' : '#E5534B',
+            basis: '<span class="' + tone(spi >= 1) + '">' + (spi >= 1 ? 'On or ahead of plan' : 'Behind schedule') +
+              '</span><br>Earned &divide; planned value, by cost.' });
 
-      // ---- 4. Attention ----------------------------------------------------------------------
-      // ⚠️ A register with NO ROWS is reported as "not in use", never as "0 open". "0 risks" on an
-      // unused register is the most dangerous figure a dashboard can show: it reads as good news.
-      var srcs = [
-        { key: 'risk-register',    label: 'risks',  color: '#E5534B' },
-        { key: 'issues-lessons',   label: 'issues', color: '#E08A3C' },
-        { key: 'contracts-claims', label: 'claims', color: '#7A6FF0' }
-      ];
-      var live = 0, unused = [];
-      srcs.forEach(function (x) {
-        var m = MET[x.key] || {};
-        if (!m.__rows) { unused.push(x.label); return; }
-        // ⚠️ 'open' where the module declares one, then a module-specific open figure — never a plain
-        // record count, which would report every signed contract as something needing attention.
-        var v = _n(m.open); if (v == null) v = _n(m.claimOpen);
-        live += (v || 0);
-      });
-      var card4 = statCard({
-        label: 'Needs attention', value: live ? String(live) : '', empty: unused.length === 3 ? 'Registers not in use' : 'Nothing open',
-        color: live ? '#E5534B' : 'var(--pd-muted)',
-        basis: live ? 'Open items across the risk, issue and claim registers.'
-             : unused.length
-               ? '<span class="pd-stat-warn">No entries in: ' + Fmt.esc(unused.join(', ')) + '. An empty register is not the same as a clear one.</span>'
-               : 'Nothing open across risks, issues and claims.' });
+      var c4 = cpi == null
+        ? perfCard({ label: 'CPI', empty: 'No actual cost',
+            basis: 'CPI is EV &divide; AC. Needs recorded <b>actual cost</b> on the schedule.' })
+        : perfCard({ label: 'CPI', value: r2(cpi), color: cpi >= 1 ? '#2FA36B' : '#E5534B',
+            basis: '<span class="' + tone(cpi >= 1) + '">' + (cpi >= 1 ? 'Under budget' : 'Over budget') +
+              '</span><br>Earned &divide; actual cost.' });
 
-      grid.innerHTML = card1 + card2 + card3 + card4;
-
-      // ---- the decisions strip ---------------------------------------------------------------
-      // Only non-zero entries, so an empty strip genuinely means nothing is waiting.
-      var chips = [];
-      srcs.forEach(function (x) {
-        var m = MET[x.key] || {};
-        var n = _n(m.open); if (n == null) n = _n(m.claimOpen);
-        if (!m.__rows || !n) return;
-        var mod = (APP_CONFIG.MODULES || []).find(function (mm) { return mm.key === x.key; });
-        chips.push('<a class="pd-stat-chip" style="--cc:' + x.color + '"' +
-          (mod ? ' href="' + ModulesGrid.href(mod) + '"' : '') + '>' +
-          '<span class="dot"></span><b>' + n + '</b> open ' + Fmt.esc(x.label) + '</a>');
-      });
-      if (_n(sch.active)) {
-        var ms = (APP_CONFIG.MODULES || []).find(function (mm) { return mm.key === 'project-schedule'; });
-        chips.push('<a class="pd-stat-chip" style="--cc:#4F8EF7"' + (ms ? ' href="' + ModulesGrid.href(ms) + '"' : '') + '>' +
-          '<span class="dot"></span><b>' + _n(sch.active) + '</b> activities in progress</a>');
-      }
-      strip.innerHTML = chips.length ? chips.join('')
-        : '<span class="pd-stat-ok">Nothing flagged for a decision right now.</span>';
+      host.innerHTML = c1 + c2 + c3 + c4;
     }
 
     // ---- shared bits -------------------------------------------------------------------------
@@ -468,6 +563,388 @@
     // ---- 1. Programme view -------------------------------------------------------------------
     // One bar per trade, positioned on the project's own timeline. Colour is STATE, not decoration:
     // complete / behind the plan / on track.
+    // How many days from today, negative = overdue. Null when the row carries no date.
+    function _dueIn(d) {
+      if (!d) return null;
+      var t = new Date(); t.setHours(0, 0, 0, 0);
+      var m = String(d).match(/(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return null;
+      return Math.round((new Date(+m[1], +m[2] - 1, +m[3]) - t) / 86400000);
+    }
+    // ⚠️ "Overdue" is stated as a fact, never softened into "due 3 days ago". A planner scanning
+    //    this list is looking for the word.
+    function _dueChip(d) {
+      var n = _dueIn(d);
+      if (n == null) return '<span class="pd-tag">No date</span>';
+      if (n < 0) return '<span class="pd-tag pd-tag-bad">' + Math.abs(n) + 'd overdue</span>';
+      if (n === 0) return '<span class="pd-tag pd-tag-warn">Due today</span>';
+      if (n <= 7) return '<span class="pd-tag pd-tag-warn">in ' + n + 'd</span>';
+      return '<span class="pd-tag">in ' + n + 'd</span>';
+    }
+
+    // ---- Approaching deadlines ------------------------------------------------------------------
+    function renderDue() {
+      var sch = MET['project-schedule'] || {};
+      var list = (sch.lists && sch.lists.dueSoon) || [];
+      var total = (sch.lists && sch.lists.dueSoon__total) || 0;
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'project-schedule'; });
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open schedule</a>' : '';
+      if (!sch.__rows) {
+        return vizEmpty('viz-due', 'Approaching Deadlines',
+          'No schedule on this project yet, so nothing can be due.');
+      }
+      if (!list.length) {
+        return vizEmpty('viz-due', 'Approaching Deadlines',
+          'Nothing unfinished falls due in the next 30 days, and nothing is overdue from the last 30. ' +
+          '⚠️ Activities with <b>no finish date</b> are not counted here — they cannot be late if nobody said when they were due.');
+      }
+      // ⚠️ The overdue figure is the DECLARED `overdue` list's total, not a count of the rows on
+      //    screen. Counting the visible slice would have said "1 already overdue" over a schedule
+      //    with nine — the eight-row cap is a display limit, and a headline number must not inherit
+      //    it. The two lists share their where-clauses; only the date window differs.
+      var overdue = (sch.lists && sch.lists.overdue__total) || 0;
+      var body = list.map(function (r) {
+        var isMs = String(r.activity_type || '').toLowerCase().indexOf('milestone') !== -1;
+        var pc = Math.max(0, Math.min(100, Math.round(r.percent_complete || 0)));
+        var n = _dueIn(r.end_date);
+        return '<li class="pd-list-r pd-due-r' + (n != null && n < 0 ? ' late' : '') + '">' +
+          '<span class="pd-list-t" title="' + Fmt.esc(r.activity_name || '') + '">' +
+            (isMs ? '<b class="pd-ms">◆</b> ' : '') + Fmt.esc(r.activity_name || r.activity_id || 'Untitled') +
+            '<small>' + Fmt.esc(r.activity_id || '') + (r.work_type ? ' &middot; ' + Fmt.esc(r.work_type) : '') + '</small>' +
+          '</span>' +
+          '<span class="pd-due-p">' + pc + '%</span>' +
+          '<span class="pd-list-d">' + Fmt.esc(Fmt.date(r.end_date)) + '</span>' +
+          _dueChip(r.end_date) + '</li>';
+      }).join('');
+      document.getElementById('viz-due').innerHTML =
+        vizHead('Approaching Deadlines',
+          // ⚠️ The window is stated in full. "Due within 30 days" would be a half-truth: the list
+          //    deliberately reaches 30 days into the PAST, because an activity that was due last
+          //    week and is still unfinished is the most urgent thing on it.
+          total + ' unfinished activit' + (total === 1 ? 'y' : 'ies') + ' due in the next 30 days or the last 30' +
+          (overdue ? ' &middot; <span class="pd-stat-warn">' + overdue + ' already overdue</span>' : ''),
+          link) +
+        '<ul class="pd-list pd-list-top">' + body + '</ul>' +
+        (total > list.length
+          ? '<div class="pd-viz-s pd-mini-note">Showing the ' + list.length + ' soonest of ' + total + '.</div>'
+          : '');
+    }
+
+    // ---- S-Curve panel -------------------------------------------------------------------------
+    // Baseline (planned), actual and forecast, from PDScurve — the SAME engine the S-Curve module
+    // runs, so the two screens cannot disagree about one project's curve.
+    // ⚠️ The chart and the period table share ONE horizontal scroller and one column width, so a
+    //    column in the table is always under the point it describes. Two scrollers would drift the
+    //    moment either one was touched, and a table that disagrees with the chart above it is worse
+    //    than no table.
+    // ⚠️ A MINIMUM, not a fixed width. 46px is what "100.00" needs at 10px tabular figures, and a
+    //    narrower column clips a figure into a different number. But a QUARTERLY axis is a third of
+    //    the columns, and at a fixed width a two-year programme drew a chart that stopped two-thirds
+    //    of the way across the panel with its gridlines ending in mid-air — which reads as a chart
+    //    that has been cut off, not as one that fits. When the whole axis fits, the columns share
+    //    the room out instead.
+    var SC_COL = 46;      // px per period, MINIMUM — the scroll unit for both the chart and the table
+    var SC_H = 150;       // px, plot height
+    // ⚠️ The table carries a row-label column the chart does not. The SVG is therefore INDENTED by
+    //    exactly that width, so month i sits at the same x in both. Every mouse-x, tooltip and
+    //    scroll figure below goes through it — it is not a style, it is part of the alignment.
+    var SC_KEY = 78;      // px, the 'Planned / Actual / Forecast' label column (swatch + word)
+
+    // ⚠️ THE PERIOD IS A VIEW OVER THE ENGINE'S MONTHLY SERIES, NOT A SECOND COMPUTATION.
+    //    PDScurve walks months; quarterly re-groups what it returned. Recomputing the curve on a
+    //    quarterly axis would be a second engine, and the two would eventually disagree.
+    // ⚠️ A quarter's value is the value at the quarter's END, never a sum of its months. These are
+    //    CUMULATIVE series — adding three cumulative points gives a number roughly three times the
+    //    truth, and on a chart that reaches 100% it would look like nothing worse than optimism.
+    // ⚠️ The first and last groups are routinely PARTIAL (a project starting in February gives a
+    //    two-month Q1). That is correct for a cumulative read — the end of the group is still the
+    //    end of the group — but the header would say "Q1" over two months of data, so the tooltip
+    //    names the real month span rather than letting the label speak for it.
+    function scPeriods(c, mode) {
+      var out = [];
+      if (mode !== 'q') {
+        c.months.forEach(function (m, k) {
+          out.push({ first: k, last: k, year: m.getFullYear(),
+                     label: m.toLocaleDateString('en-US', { month: 'short' }), newYear: m.getMonth() === 0 });
+        });
+        return out;
+      }
+      var i = 0;
+      while (i < c.months.length) {
+        var m = c.months[i], q = Math.floor(m.getMonth() / 3), y = m.getFullYear(), first = i;
+        while (i < c.months.length &&
+               c.months[i].getFullYear() === y && Math.floor(c.months[i].getMonth() / 3) === q) i++;
+        out.push({ first: first, last: i - 1, year: y, label: 'Q' + (q + 1), newYear: q === 0 });
+      }
+      return out;
+    }
+
+    // The three display series, one point per period, plus which period holds the data date.
+    // ⚠️ THE CURRENT PERIOD IS READ AT TODAY, every other one at its end — the same rule the
+    //    monthly view has always used, generalised. Reading the current quarter's ACTUAL at the
+    //    quarter end would report a figure from `actualC`'s post-data-date padding, i.e. zero, and
+    //    a project would appear to have un-built itself the moment you switched to quarterly.
+    function scSeries(c, P) {
+      var TOT = c.TOT;
+      function at(arr, idx) {
+        var v = arr[idx];
+        return v == null ? null : { y: TOT ? Math.max(0, Math.min(100, v / TOT * 100)) : 0 };
+      }
+      var ti = 0;
+      P.forEach(function (p, k) { if (c.ti >= p.first && c.ti <= p.last) ti = k; });
+      return {
+        ti: ti,
+        pl: P.map(function (p) { return at(c.plannedC, p.last); }),
+        // null once the period starts after the data date: an actual for the future is not a low
+        // number, it is not a number.
+        ac: P.map(function (p) { return p.first > c.ti ? null : at(c.actualC, Math.min(p.last, c.ti)); }),
+        // null before the data date — a forecast of the past is a claim about history, and history
+        // is what `actual` is for.
+        fc: P.map(function (p) {
+          if (p.last < c.ti) return null;
+          return at(c.forecastC, p.first <= c.ti ? c.ti : p.last);
+        })
+      };
+    }
+
+    // ⚠️ The column width is a per-render figure, so it is PASSED rather than read from the
+    //    constant. Every x in the panel — path, gridline, now-line, table column, hover — has to
+    //    come from the same number, and a helper quietly using the constant while the table uses
+    //    the computed one is exactly the chart-vs-table drift this panel has already been bitten by.
+    // ⚠️ The cap's only job is the DEGENERATE axis — a one- or two-period programme, where sharing
+    //    the whole panel out gives a single 700px column and a "curve" that is one dot. It is not
+    //    there to stop the chart filling the width: this is a line chart, and a six-quarter
+    //    programme spread across the panel is exactly what the quarterly view is for. Set low
+    //    (104px) it left a fifth of the plot empty and the gridlines still ended in mid-air.
+    var SC_COL_MAX = 160;
+    function scColFor(host, n) {
+      var avail = (host && host.clientWidth ? host.clientWidth : 0) - 34 - SC_KEY;  // 34 = panel padding
+      if (!(avail > 0) || !n) return SC_COL;
+      return Math.max(SC_COL, Math.min(SC_COL_MAX, Math.floor(avail / n)));
+    }
+    function scPath(pts, COL) {
+      var d = '', open = false;
+      pts.forEach(function (p, i) {
+        if (!p) { open = false; return; }
+        var x = i * COL + COL / 2, y = SC_H - (p.y / 100) * SC_H;
+        d += (open ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+        open = true;
+      });
+      return d.trim();
+    }
+
+    // ⚠️ TWO DECIMALS, and the '%' lives in the ROW LABEL rather than in every cell (owner,
+    //    2026-09-01: *"at least 2 decimal points in the table"*). Repeating the sign 78 times is
+    //    noise, and at 10px it is the difference between "100.00" fitting a column and being
+    //    clipped to a different number. The tooltip keeps its '%' — there it is prose, not a grid.
+    function scPct(p) { return p == null ? '—' : p.y.toFixed(2); }
+    // The same figure with its sign, for prose. ⚠️ No '%' on the em dash — the dash means "there is
+    // no number here", and "—%" reads as a number that failed to print rather than an absence.
+    function scPctU(p) { return p == null ? '—' : p.y.toFixed(2) + '%'; }
+
+    // The chosen period. ⚠️ THE STATE LIVES IN A VARIABLE; localStorage only SEEDS it and is a
+    //    best-effort place to remember it. Reading the mode straight out of storage on every render
+    //    looks tidier and makes the control DEAD wherever storage is unavailable — a private window,
+    //    or a browser set to block site data — because the write throws, the read throws, and the
+    //    repaint comes back with the mode it started on. Clicking "Quarterly" would do nothing at
+    //    all, with no error and nothing to see. Found in the harness, which runs from a `data:` URL
+    //    where localStorage throws outright.
+    var SC_PERIOD_KEY = 'pd_dash_sc_period';
+    var scMode = (function () {
+      try { return localStorage.getItem(SC_PERIOD_KEY) === 'q' ? 'q' : 'm'; } catch (e) { return 'm'; }
+    })();
+    function scPeriodMode() { return scMode === 'q' ? 'q' : 'm'; }
+    function scSetPeriodMode(v) {
+      scMode = v === 'q' ? 'q' : 'm';
+      try { localStorage.setItem(SC_PERIOD_KEY, scMode); } catch (e) { /* the view still switches */ }
+    }
+
+    function renderScurve() {
+      var host = document.getElementById('viz-scurve'); if (!host) return;
+      var sch = MET['project-schedule'] || {};
+      var c = sch.curve;
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 's-curve'; });
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open S-Curve</a>' : '';
+
+      if (!c || c.empty) {
+        // ⚠️ Three DIFFERENT empty states, because they send a planner to three different places.
+        var why = c && c.noCost
+          ? 'The schedule is fine — the <b>cost loading</b> has not been done, so there is no money curve to draw. ' +
+            'Load it in <b>Project Schedule → Cost Loading</b>, or read the duration curve in <b>S-Curve</b>.'
+          : c && c.noEngine
+            ? 'The curve engine did not load on this page.'
+            : 'No dated activities yet, so there is nothing to plot. Push a programme from <b>Schedule Builder</b>, ' +
+              'or set start and finish dates on the activities.';
+        return vizEmpty('viz-scurve', 'S-Curve', why);
+      }
+
+      var mode = scPeriodMode();
+      var P = scPeriods(c, mode), n = P.length;
+      var S = scSeries(c, P), pl = S.pl, ac = S.ac, fc = S.fc, ti = S.ti;
+      var COL = scColFor(host, n);
+      var W = n * COL;
+      var unit = mode === 'q' ? 'quarter' : 'month';
+
+      // Gridlines at 0/25/50/75/100% and a year rule at the first period of each year.
+      var grid = '';
+      [0, 25, 50, 75, 100].forEach(function (g) {
+        var y = SC_H - (g / 100) * SC_H;
+        grid += '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) + '" class="pd-sc-grid"/>';
+      });
+      P.forEach(function (p, i) {
+        if (!p.newYear || i === 0) return;
+        var x = (i * COL).toFixed(1);
+        grid += '<line x1="' + x + '" y1="0" x2="' + x + '" y2="' + SC_H + '" class="pd-sc-year"/>';
+      });
+      // The data date — where "actual" stops being a record and "forecast" starts being a guess.
+      var tx = (ti * COL + COL / 2).toFixed(1);
+      grid += '<line x1="' + tx + '" y1="0" x2="' + tx + '" y2="' + SC_H + '" class="pd-sc-now"/>';
+
+      var svg =
+        '<svg class="pd-sc-svg" width="' + W + '" height="' + SC_H + '" viewBox="0 0 ' + W + ' ' + SC_H + '"' +
+          ' style="margin-left:' + SC_KEY + 'px" aria-hidden="true">' +
+          grid +
+          '<path d="' + scPath(pl, COL) + '" class="pd-sc-pl"/>' +
+          '<path d="' + scPath(fc, COL) + '" class="pd-sc-fc"/>' +
+          '<path d="' + scPath(ac, COL) + '" class="pd-sc-ac"/>' +
+          '<line id="sc-guide" x1="0" y1="0" x2="0" y2="' + SC_H + '" class="pd-sc-guide" style="opacity:0"/>' +
+        '</svg>';
+
+      var head = '', rPl = '', rAc = '', rFc = '';
+      P.forEach(function (p, i) {
+        var yr = (p.newYear || i === 0) ? '<small>' + p.year + '</small>' : '';
+        var nw = i === ti ? ' class="now"' : '';
+        head += '<th' + nw + '>' + p.label + yr + '</th>';
+        rPl += '<td' + nw + '>' + scPct(pl[i]) + '</td>';
+        rAc += '<td' + nw + '>' + scPct(ac[i]) + '</td>';
+        rFc += '<td' + nw + '>' + scPct(fc[i]) + '</td>';
+      });
+      // ⚠️ The header needs the CORNER cell, and that cell needs the KEY column's WIDTH (see the
+      // th.k rule). Both halves matter and only one of them is visible: without the cell, thead has
+      // one fewer column than every tbody row; with the cell but at the period width, the table is
+      // narrower than it declares and slides a whole column off the chart. Either way the figures
+      // are labelled with the wrong period and the table looks perfectly tidy.
+      // ⚠️ Caught by measuring the 'now' header's centre against the chart's now-line — they must
+      //    be the same x — not by looking at it.
+      // ⚠️ One <colgroup> rather than a width on 27 cells: under `table-layout:fixed` a col's width
+      // beats a cell's, so this is the single place the table's geometry comes from, and it is the
+      // same COL the chart above it was drawn with.
+      var cols = '<colgroup><col style="width:' + SC_KEY + 'px">' +
+        P.map(function () { return '<col style="width:' + COL + 'px">'; }).join('') + '</colgroup>';
+      var table =
+        '<table class="pd-sc-tbl" style="width:' + (W + SC_KEY) + 'px">' + cols +
+          '<thead><tr><th class="k"></th>' + head + '</tr></thead><tbody>' +
+          '<tr class="pl"><td class="k">Planned %</td>' + rPl + '</tr>' +
+          '<tr class="ac"><td class="k">Actual %</td>' + rAc + '</tr>' +
+          '<tr class="fc"><td class="k">Forecast %</td>' + rFc + '</tr>' +
+          '</tbody></table>';
+
+      var vari = c.variance;
+      var sub = (c.money ? 'Cost-weighted' : 'Duration-weighted') + ' &middot; ' + c.activities + ' activities &middot; ' +
+        'forecast finish ' + Fmt.esc(Fmt.date(c.fcFinish)) + (c.manual ? ' (pinned)' : ' (from SPI ' + (Math.round(c.spi * 100) / 100).toFixed(2) + ')');
+      var seg =
+        '<span class="pd-seg" id="sc-period" role="group" aria-label="Period">' +
+          '<button type="button" data-p="m"' + (mode === 'm' ? ' class="on"' : '') +
+            ' aria-pressed="' + (mode === 'm') + '">Monthly</button>' +
+          '<button type="button" data-p="q"' + (mode === 'q' ? ' class="on"' : '') +
+            ' aria-pressed="' + (mode === 'q') + '">Quarterly</button>' +
+        '</span>';
+
+      host.innerHTML =
+        vizHead('S-Curve', sub, seg + link) +
+        '<div class="pd-sc-kpi">' +
+          '<span><b>' + c.plannedPct.toFixed(2) + '%</b> planned to date</span>' +
+          '<span><b>' + c.actualPct.toFixed(2) + '%</b> actual</span>' +
+          '<span class="' + (vari >= 0 ? 'pd-perf-good' : 'pd-stat-warn') + '"><b>' +
+            (vari >= 0 ? '+' : '') + vari.toFixed(2) + ' pts</b> variance</span>' +
+        '</div>' +
+        '<div class="pd-sc-legend">' +
+          '<span><i class="pl"></i>Planned (baseline)</span>' +
+          '<span><i class="ac"></i>Actual</span>' +
+          '<span><i class="fc"></i>Forecast</span>' +
+          '<span><i class="nw"></i>Today</span>' +
+        '</div>' +
+        '<div class="pd-sc-scroll" id="sc-scroll">' +
+          '<div class="pd-sc-inner" style="width:' + (W + SC_KEY) + 'px">' + svg + table + '</div>' +
+          '<div class="pd-sc-tip" id="sc-tip" hidden></div>' +
+        '</div>' +
+        // ⚠️ The scroll hint is CONDITIONAL. On a quarterly axis the columns share the panel out and
+        //    there is usually nothing to scroll, and an instruction to do something the page will not
+        //    do reads as a broken control rather than as a leftover sentence.
+        '<div class="pd-viz-s pd-mini-note">' +
+          (W + SC_KEY > (host.clientWidth || 0) - 34 ? 'Scroll sideways for the whole programme; hover' : 'Hover') +
+          ' a ' + unit + ' for its figures. Percentages are of the project total, so they are ' +
+          'comparable across ' + unit + 's. ' + (mode === 'q'
+            ? 'A quarter reads at its <b>end</b> — these are cumulative curves, so quarters are never added up. '
+            : '') +
+          'The <b>' + unit + ' in progress</b> is read at today, not at its end.</div>';
+
+      // ---- the period toggle ----
+      // A repaint, never a re-fetch: the curve is already computed and held in MET.
+      host.querySelectorAll('#sc-period [data-p]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          if (b.dataset.p === mode) return;
+          scSetPeriodMode(b.dataset.p);
+          renderScurve();
+        });
+      });
+
+      // ---- hover: one guide line + a tooltip, driven off the pointer's column ----
+      var scroll = document.getElementById('sc-scroll');
+      var tip = document.getElementById('sc-tip');
+      var guide = host.querySelector('#sc-guide');
+      if (!scroll || !tip || !guide) return;
+      var MON = { month: 'short' }, MONY = { month: 'short', year: 'numeric' };
+      scroll.addEventListener('mousemove', function (e) {
+        var r = scroll.getBoundingClientRect();
+        var x = e.clientX - r.left + scroll.scrollLeft - SC_KEY;
+        var i = Math.max(0, Math.min(n - 1, Math.floor(x / COL)));
+        var cx = i * COL + COL / 2;
+        var p = P[i];
+        guide.setAttribute('x1', cx); guide.setAttribute('x2', cx);
+        guide.style.opacity = '1';
+        tip.hidden = false;
+        // ⚠️ The span is spelled out, not implied by the label. On a partial group "Q1 2026" covers
+        //    whatever months the programme actually occupies, and a reader comparing it with a full
+        //    quarter beside it deserves to be told which.
+        var span = p.first === p.last
+          ? c.months[p.first].toLocaleDateString('en-US', MONY)
+          : c.months[p.first].toLocaleDateString('en-US', MON) + '–' +
+            c.months[p.last].toLocaleDateString('en-US', MONY);
+        tip.innerHTML =
+          '<b>' + Fmt.esc(mode === 'q' ? p.label + ' ' + p.year : span) + '</b>' +
+          (mode === 'q' ? '<span class="pd-sc-tip-s">' + Fmt.esc(span) + '</span>' : '') +
+          (i === ti ? '<span class="pd-sc-tip-s">read at today</span>' : '') +
+          '<span><i class="pl"></i>Planned ' + scPctU(pl[i]) + '</span>' +
+          '<span><i class="ac"></i>Actual ' + scPctU(ac[i]) + '</span>' +
+          '<span><i class="fc"></i>Forecast ' + scPctU(fc[i]) + '</span>';
+      // Keep the tip inside the scroller rather than letting it hang off the right edge.
+        var left = cx + SC_KEY - scroll.scrollLeft + 12;
+        if (left + 150 > r.width) left = Math.max(4, left - 174);
+        tip.style.left = left + 'px';
+      });
+      scroll.addEventListener('mouseleave', function () {
+        tip.hidden = true; guide.style.opacity = '0';
+      });
+      // Open on the data date rather than at month 1 — the current position is what a planner
+      // came to see, and on a three-year programme month 1 is a year of scrolling away.
+      // ⚠️ `ti`, the PERIOD index — not `c.ti`, which is the engine's MONTHLY one. On a quarterly
+      //    axis the monthly index is about three times too far right, so the panel would have opened
+      //    scrolled past the data date it exists to show. Every other x here was converted; this one
+      //    reads correctly either way on the monthly axis, which is how it survived the conversion.
+      scroll.scrollLeft = Math.max(0, ti * COL + SC_KEY - scroll.clientWidth / 2);
+    }
+
+    // ---- Trades programme ------------------------------------------------------------------------
+    // ⚠️ WHAT THE OWNER SAW AND WHY IT WAS WRONG (2026-09-01): every bar showed a big RED FILL while
+    //    every trade read 0%. That coloured band was never progress — it was the trade's DATE SPAN,
+    //    tinted with the row's status colour at .22 opacity. So "0% complete" and "a bar that looks
+    //    three-quarters full" were on screen together, and the only honest reading of that is that
+    //    the chart is lying. A shape that means "when" must not be painted in the colour that means
+    //    "how much".
+    //    Now: the span is NEUTRAL (it answers *when*), the progress fill is the only coloured thing
+    //    (it answers *how much*), and a separate hatched region shows time elapsed but unearned —
+    //    which is what "behind" actually looks like.
     function renderProgram() {
       var sch = MET['project-schedule'] || {}, rowsPv = sch.program || [];
       rowsPv = rowsPv.filter(function (r) { return r.from && r.to; });
@@ -476,179 +953,212 @@
       var min = null, max = null;
       rowsPv.forEach(function (r) { if (!min || r.from < min) min = r.from; if (!max || r.to > max) max = r.to; });
       var span = Math.max(1, _days(min, max));
-      // Trades in the project's own build order — earliest start first, which is how a programme reads.
       rowsPv.sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
-      var elapsed = Math.max(0, Math.min(100, _days(min, new Date().toISOString().slice(0, 10)) / span * 100));
+      var today = new Date().toISOString().slice(0, 10);
+      var elapsed = Math.max(0, Math.min(100, _days(min, today) / span * 100));
+
       var body = rowsPv.slice(0, 9).map(function (r) {
         var x = _days(min, r.from) / span * 100, w = Math.max(1.2, (_days(r.from, r.to) + 1) / span * 100);
         var pct = r.pct == null ? 0 : Math.round(r.pct);
-        // ⚠️ "Behind" is only claimable against elapsed TIME on this bar, which is a rough read and
-        // is labelled as such in the legend — not presented as a baseline variance.
+        // `own` = how much of THIS trade's own duration has gone, 0..100.
         var own = Math.max(0, Math.min(100, (elapsed - x) / w * 100));
-        var col = pct >= 100 ? C_OK : (own > 5 && pct < own - 10) ? C_LATE : C_BLUE;
-        return '<div class="pd-pv-l" title="' + Fmt.esc(r.key) + '">' + Fmt.esc(r.key) + '</div>' +
-          '<div class="pd-pv-t"><div class="pd-pv-b" style="left:' + x.toFixed(2) + '%;width:' + w.toFixed(2) + '%;background:' + col + ';opacity:.22">' +
-          '</div><div class="pd-pv-b" style="left:' + x.toFixed(2) + '%;width:' + w.toFixed(2) + '%;overflow:hidden;background:transparent">' +
-          '<div class="pd-pv-f" style="width:' + pct + '%;background:' + col + '"></div>' +
-          '<span class="pd-pv-n">' + pct + '%</span></div></div>';
-      }).join('');
-      document.getElementById('viz-program').innerHTML =
-        vizHead('Project Schedule & Milestones', Fmt.date(min) + ' &rarr; ' + Fmt.date(max) + ' · ' + rowsPv.length + ' trades',
-          '<span><i style="background:' + C_OK + '"></i>Complete</span>' +
-          '<span><i style="background:' + C_BLUE + '"></i>On track</span>' +
-          '<span><i style="background:' + C_LATE + '"></i>Behind elapsed time</span>') +
-        '<div class="pd-pv">' + body + '</div>' +
-        (rowsPv.length > 9 ? '<div class="pd-viz-s" style="margin-top:8px;">Showing the 9 earliest of ' + rowsPv.length + ' trades.</div>' : '');
-    }
-
-    // ---- 2. EVM gauges -----------------------------------------------------------------------
-    // ⚠️ A gauge is drawn ONLY when its inputs exist. A needle resting at 1.00 because nothing is
-    // cost-loaded looks like a healthy project and is the most misleading thing this panel could do.
-    function gauge(label, val, good, caption) {
-      var W = 148, H = 84, cx = W / 2, cy = 74, R = 58;
-      function pt(f) { var a = Math.PI * (1 - f); return [cx + R * Math.cos(a), cy - R * Math.sin(a)]; }
-      function arc(f0, f1, col, w) {
-        var a = pt(f0), b = pt(f1);
-        return '<path d="M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + ' A' + R + ' ' + R + ' 0 0 1 ' +
-          b[0].toFixed(1) + ' ' + b[1].toFixed(1) + '" fill="none" stroke="' + col + '" stroke-width="' + w + '" stroke-linecap="round"/>';
-      }
-      // 0.80 -> 1.20 mapped across the dial; anything outside is pinned to the end and still readable.
-      var f = Math.max(0, Math.min(1, ((val - 0.8) / 0.4)));
-      var n = pt(f);
-      return '<div class="pd-gauge"><svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '">' +
-        arc(0, 0.5, C_LATE, 9) + arc(0.5, 0.75, C_WARN, 9) + arc(0.75, 1, C_OK, 9) +
-        '<line x1="' + cx + '" y1="' + cy + '" x2="' + n[0].toFixed(1) + '" y2="' + n[1].toFixed(1) +
-          '" stroke="var(--pd-fg)" stroke-width="2.5" stroke-linecap="round"/>' +
-        '<circle cx="' + cx + '" cy="' + cy + '" r="3.5" fill="var(--pd-fg)"/></svg>' +
-        '<div class="pd-gauge-v" style="color:' + (good ? C_OK : C_WARN) + '">' + val.toFixed(2) + '</div>' +
-        '<div class="pd-gauge-k">' + Fmt.esc(label) + '</div>' +
-        '<div class="pd-gauge-c">' + Fmt.esc(caption) + '</div></div>';
-    }
-    // ---- 2. Cost performance (EVM) ------------------------------------------------------------
-    // ⚠️⚠️ THIS IS WHERE COST / EVM LIVES NOW. Owner 2026-08-26: *"for Cost / EVM, remove that
-    // sub-module in the project schedule module. Meaning the EVM should be displayed in the planners
-    // dashboard."* The Project Schedule's Cost / EVM tab is gone; this panel carries the full band
-    // it used to show.
-    // ⚠️ COMPUTED FROM THE FOUR DECLARED METRICS, NOT FROM A ROW FETCH. The whole band derives from
-    // budget / actual / ev / pv, which `PDb.moduleSummary` already aggregates SERVER-SIDE for the
-    // tiles. Fetching the project's activities to recompute it here would put a 17,000-row read on
-    // the landing page for figures that are already in hand — and it is a landing page, so it has to
-    // stay cheap. It costs nothing extra.
-    // ⚠️ Every figure is null-not-zero when its input is missing, and a missing figure is printed as
-    // an em-dash rather than 0: "no cost is loaded" and "this project has spent nothing" are
-    // opposite facts, and only one of them is good news.
-    function renderEvm() {
-      var sch = MET['project-schedule'] || {};
-      var ev = _n(sch.ev), ac = _n(sch.actual), bac = _n(sch.budget), pvPct = _n(sch.pv);
-      var pv = (bac != null && pvPct != null) ? (bac * pvPct / 100) : null;
-      var cpi = (ev != null && ac) ? (ev / ac) : null;
-      var spi = (ev != null && pv) ? (ev / pv) : null;
-      if (bac == null && ev == null && ac == null) {
-        return vizEmpty('viz-evm', 'Cost Performance (EVM)',
-          'No cost is loaded on this schedule, so there is no earned value to measure.' +
-          '<br>Load it in <b>Project Schedule &rarr; Cost Loading</b> (enlist &rarr; assign &rarr; distribute &rarr; spread &rarr; apply). ' +
-          'SPI additionally needs a <b>baseline</b>, which is what the planned value is measured against.');
-      }
-      // SV / CV are variances, so they only exist when BOTH sides of the subtraction do.
-      var sv = (ev != null && pv != null) ? (ev - pv) : null;
-      var cv = (ev != null && ac != null) ? (ev - ac) : null;
-      // ⚠️ EAC extrapolates the cost performance seen SO FAR; with no CPI there is nothing to
-      // extrapolate from, so it falls back to the budget rather than inventing a forecast.
-      var eac = (cpi && cpi > 0 && bac != null && ac != null) ? (ac + (bac - ev) / cpi) : bac;
-      var vac = (bac != null && eac != null) ? (bac - eac) : null;
-      // ⚠️ TCPI is the efficiency the REMAINING work must achieve. Undefined once the remaining
-      // budget is zero — dividing by it would print Infinity as a target.
-      var tcpi = (bac != null && ac != null && ev != null && (bac - ac) !== 0) ? ((bac - ev) / (bac - ac)) : null;
-      function m(v) { return v == null ? '&mdash;' : Fmt.moneyShort(v); }
-      function sm(v) { return v == null ? '&mdash;' : ((v > 0 ? '+' : '') + Fmt.moneyShort(v)); }
-      function r2(v) { return v == null ? '&mdash;' : (Math.round(v * 100) / 100).toFixed(2); }
-      // good === null means 'no opinion' — a neutral figure must not be coloured as if it were a verdict.
-      function cell(label, value, good, sub) {
-        return '<div class="pd-evm-c' + (good === true ? ' ok' : good === false ? ' bad' : '') + '">' +
-          '<span class="pd-evm-l">' + Fmt.esc(label) + '</span>' +
-          '<strong class="pd-evm-v">' + value + '</strong>' +
-          (sub ? '<small class="pd-evm-s">' + sub + '</small>' : '') + '</div>';
-      }
-      var band =
-        cell('BAC — budget at completion', m(bac), null, 'Planned IBB across the schedule') +
-        cell('PV — planned value', m(pv), null, pvPct == null ? 'Needs a baseline' : (Math.round(pvPct) + '% of the plan is due by today')) +
-        cell('EV — earned value', m(ev), null, 'Planned IBB &times; activity % complete') +
-        cell('AC — actual cost', m(ac), null, 'Recorded spend to date') +
-        cell('SV — schedule variance', sm(sv), sv == null ? null : sv >= 0, sv == null ? 'Needs PV' : (sv >= 0 ? 'Ahead of plan' : 'Behind plan')) +
-        cell('CV — cost variance', sm(cv), cv == null ? null : cv >= 0, cv == null ? 'Needs AC' : (cv >= 0 ? 'Under budget' : 'Over budget')) +
-        cell('EAC — estimate at completion', m(eac), (vac == null) ? null : vac >= 0, cpi ? 'Extrapolated at the CPI so far' : 'No CPI yet — shown at budget') +
-        cell('VAC — variance at completion', sm(vac), vac == null ? null : vac >= 0, vac == null ? '' : (vac >= 0 ? 'Forecast underspend' : 'Forecast overrun')) +
-        cell('TCPI — to-complete index', r2(tcpi), tcpi == null ? null : tcpi <= 1, tcpi == null ? 'Needs a budget and actuals' : 'Efficiency the remaining work must hit');
-      var g = '';
-      g += cpi != null ? gauge('CPI (Cost Performance)', cpi, cpi >= 1, cpi >= 1 ? 'Under budget' : 'Over budget')
-        : '<div class="pd-gauge"><div class="pd-viz-empty">No earned value or actual cost recorded, so there is no CPI.</div></div>';
-      g += spi != null ? gauge('SPI (Schedule Performance)', spi, spi >= 1, spi >= 1 ? 'On or ahead of plan' : 'Behind schedule')
-        : '<div class="pd-gauge"><div class="pd-viz-empty">SPI needs a baseline and planned cost to measure against.</div></div>';
-      var sc = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 's-curve'; });
-      document.getElementById('viz-evm').innerHTML =
-        vizHead('Cost Performance (EVM)',
-          'Earned ' + m(ev) + ' · actual ' + m(ac) + ' · planned to date ' + m(pv),
-          sc ? '<a class="pd-viz-s" href="' + ModulesGrid.href(sc) + '">Cost S-Curve</a>' : '') +
-        '<div class="pd-evm-band">' + band + '</div>' +
-        '<div class="pd-gauges">' + g + '</div>';
-    }
-
-    // ---- 3. Contracts money flow -------------------------------------------------------------
-    function renderFlow() {
-      var cc = MET['contracts-claims'] || {};
-      if (!cc.__rows) return vizEmpty('viz-flow', 'Contracts & Claims',
-        'No contracts, change orders or claims recorded for this project yet.');
-      var base = _n(cc.contractAmt), appr = _n(cc.coApprovedAmt) || 0, all = _n(cc.coOtherAmt) || 0;
-      var pend = Math.max(0, all - appr), pendN = (_n(cc.coAllN) || 0) - (_n(cc.coApprovedN) || 0);
-      var revised = (base == null) ? null : base + appr;
-      var node = function (v, k) { return '<div class="pd-flow-n"><div class="pd-flow-v">' + v + '</div><div class="pd-flow-k">' + k + '</div></div>'; };
-      document.getElementById('viz-flow').innerHTML =
-        vizHead('Contracts & Claims', (_n(cc.coAllN) || 0) + ' change order(s) · ' + (_n(cc.claimN) || 0) + ' claim(s)') +
-        '<div class="pd-flow">' +
-          node(base == null ? '&mdash;' : Fmt.moneyShort(base), 'Original contract') +
-          '<div class="pd-flow-a">&rarr;</div>' +
-          '<div class="pd-flow-co">' +
-            '<div class="pd-flow-p" style="background:rgba(47,163,107,.14);color:' + C_OK + '"><span>Approved ' + (_n(cc.coApprovedN) || 0) + '</span><b>' + Fmt.moneyShort(appr) + '</b></div>' +
-            '<div class="pd-flow-p" style="background:rgba(224,138,60,.14);color:' + C_WARN + '"><span>Pending ' + Math.max(0, pendN) + '</span><b>' + Fmt.moneyShort(pend) + '</b></div>' +
+        var behind = own > 5 && pct < own - 10;
+        // ⚠️ THE FILL IS NEVER RED. It is work that has actually been done, and the legend has one
+        //    swatch for that. Painting a behind trade's completed 12% red said "this 12% is the
+        //    problem" when the problem is the 18% beside it that is missing — and it contradicted
+        //    the very legend printed above it. Red belongs to the shortfall band alone; the
+        //    percentage TEXT still carries the status colour, which is where a reader looks for it.
+        var col = pct >= 100 ? C_OK : C_BLUE;
+        var txtCol = pct >= 100 ? C_OK : behind ? C_LATE : C_BLUE;
+        // The shortfall band: time gone that work has NOT caught up with. The only red on the bar,
+        // and drawn only where it actually exists.
+        var shortfall = behind ? (own - pct) : 0;
+        return '<div class="pd-pv-l"><b title="' + Fmt.esc(r.key) + '">' + Fmt.esc(r.key) + '</b>' +
+            '<small>' + Fmt.esc(Fmt.date(r.from)) + ' &rarr; ' + Fmt.esc(Fmt.date(r.to)) + '</small>' +
+            '<small class="dim">' + r.n + ' activit' + (r.n === 1 ? 'y' : 'ies') +
+              (r.done ? ' &middot; ' + r.done + ' done' : '') + '</small></div>' +
+          '<div class="pd-pv-t">' +
+            // the span: neutral, so it reads as "when", never as "how much"
+            '<div class="pd-pv-span" style="left:' + x.toFixed(2) + '%;width:' + w.toFixed(2) + '%">' +
+              (shortfall > 0
+                ? '<div class="pd-pv-gap" style="left:' + pct + '%;width:' + shortfall.toFixed(2) + '%"></div>'
+                : '') +
+              '<div class="pd-pv-f" style="width:' + pct + '%;background:' + col + '"></div>' +
+              (own > 0 && own < 100
+                ? '<i class="pd-pv-now" style="left:' + own.toFixed(2) + '%" title="' + Math.round(own) +
+                  '% of this trade’s duration has elapsed"></i>' : '') +
+            '</div>' +
           '</div>' +
-          '<div class="pd-flow-a">&rarr;</div>' +
-          node(revised == null ? '&mdash;' : Fmt.moneyShort(revised), 'Revised value') +
+          '<div class="pd-pv-n" style="color:' + txtCol + '">' + pct + '%' +
+            (behind ? '<small>' + Math.round(own) + '% elapsed</small>' : '') + '</div>';
+      }).join('');
+
+      document.getElementById('viz-program').innerHTML =
+        vizHead('Project Schedule & Milestones',
+          Fmt.date(min) + ' &rarr; ' + Fmt.date(max) + ' &middot; ' + rowsPv.length + ' trades &middot; ' +
+          Math.round(elapsed) + '% of the programme elapsed',
+          '<span><i class="pd-lg-span"></i>Trade span</span>' +
+          '<span><i style="background:' + C_BLUE + '"></i>Work done</span>' +
+          '<span><i style="background:' + C_OK + '"></i>Complete</span>' +
+          '<span><i class="pd-lg-gap"></i>Time gone, work not done</span>' +
+          '<span><i class="pd-lg-now"></i>Today</span>') +
+        '<div class="pd-pv">' + body + '</div>' +
+        (rowsPv.length > 9 ? '<div class="pd-viz-s pd-mini-note">Showing the 9 earliest of ' + rowsPv.length + ' trades.</div>' : '');
+    }
+
+    // ---- 2. Minutes of Meeting -----------------------------------------------------------------
+    // ⚠️ A module with NO ROWS is reported as "not in use", never as "0 drafts". The rule the old
+    //    status band applied to registers applies here too: zero on an unused module reads as good
+    //    news, and "no minutes have ever been recorded" is not good news.
+    function renderMom() {
+      var m = MET['minutes-of-meeting'] || {};
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'minutes-of-meeting'; });
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open module</a>' : '';
+      if (!m.__rows) {
+        return vizEmpty('viz-mom', 'Minutes of Meeting',
+          'No minutes recorded on this project yet. Record one in <b>Minutes of Meeting</b> — ' +
+          'issues raised on the register are pulled onto the next agenda from there.');
+      }
+      var total = m.__rows || 0, draft = _n(m.draft) || 0, latest = m.latest || null;
+      var issued = Math.max(0, total - draft);
+      var pctIssued = total ? Math.round(issued / total * 100) : 0;
+      var series = _n(m.series) || 0;
+      // ⚠️ Escape the DATES, not the assembled string. Wrapping the whole thing in Fmt.esc()
+      // turned the '&rarr;' entity into a literal "&rarr;" on screen — the same double-escape
+      // that made the Issues panel read "Issues &amp; Concerns".
+      var span = (m.earliest && latest && m.earliest !== latest)
+        ? Fmt.esc(Fmt.date(m.earliest)) + ' &rarr; ' + Fmt.esc(Fmt.date(latest))
+        : (latest ? Fmt.esc(Fmt.date(latest)) : null);
+
+      // ⚠️ The LATEST MEETING'S ACTION ITEMS, not a list of meeting titles (owner, 2026-09-01). A
+      // list of titles tells a planner nothing they cannot get from the count above it; what they
+      // came for is what was decided and who owes it.
+      var last = (m.recent || [])[0] || null;
+      var items = last ? (m.sub || []).filter(function (r) { return r.mom_id === last.id; }) : [];
+      // Open first, then by due date — the ones with no date last, since an undated item cannot
+      // be ranked against a dated one without inventing a deadline for it.
+      items.sort(function (a, b) {
+        var ao = a.status === 'Closed' ? 1 : 0, bo = b.status === 'Closed' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        if (!a.due_date) return b.due_date ? 1 : 0;
+        if (!b.due_date) return -1;
+        return a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0;
+      });
+      var openN = items.filter(function (r) { return r.status !== 'Closed'; }).length;
+      var rows = items.slice(0, 4).map(function (r) {
+        var txt = r.action_item || r.description || 'Untitled item';
+        var closed = r.status === 'Closed';
+        return '<li class="pd-list-r' + (closed ? ' done' : '') + '">' +
+          '<span class="pd-list-t" title="' + Fmt.esc(txt) + '">' +
+            (r.item_no ? '<b class="pd-no">' + Fmt.esc(r.item_no) + '</b> ' : '') + Fmt.esc(txt) +
+            (r.owner ? '<small>' + Fmt.esc(r.owner) + '</small>' : '') + '</span>' +
+          (closed ? '<span class="pd-tag pd-tag-ok">Closed</span>' : _dueChip(r.due_date)) +
+          '</li>';
+      }).join('');
+      var itemsHead = last
+        ? '<div class="pd-list-h">From ' + Fmt.esc(last.title || 'the latest meeting') +
+          (last.meeting_date ? ' &middot; ' + Fmt.esc(Fmt.date(last.meeting_date)) : '') +
+          ' &mdash; ' + (items.length ? openN + ' open of ' + items.length + ' item' + (items.length === 1 ? '' : 's')
+                                      : 'no action items recorded') + '</div>'
+        : '';
+
+      document.getElementById('viz-mom').innerHTML =
+        vizHead('Minutes of Meeting',
+          total + ' meeting' + (total === 1 ? '' : 's') + (span ? ' &middot; ' + span : ''),
+          link) +
+        '<div class="pd-mini-band">' +
+          miniCell('Meetings', String(total), null, 'Recorded on this project') +
+          miniCell('Distributed', String(issued), issued === total ? true : null, pctIssued + '% are out') +
+          miniCell('Draft', String(draft), draft ? false : true, draft ? 'Not yet distributed' : 'None in draft') +
+          miniCell('Recurring', String(series), null,
+            series ? 'From a meeting schedule' : 'All one-off meetings') +
         '</div>' +
-        (base == null
-          ? '<div class="pd-viz-s" style="margin-top:10px;">No record of type &ldquo;Contract&rdquo; carries an amount, so there is no original value to add change orders to.</div>'
-          : '<div class="pd-viz-s" style="margin-top:10px;">Revised value = original contract + APPROVED change orders only. Pending ones are shown but not added.</div>');
+        '<div class="pd-mini-bar" title="' + issued + ' distributed of ' + total + '"><i style="width:' + pctIssued + '%"></i></div>' +
+        (last ? itemsHead : '') +
+        (rows ? '<ul class="pd-list">' + rows + '</ul>' : '') +
+        (draft
+          ? '<div class="pd-viz-s pd-mini-note"><span class="pd-stat-warn">' + draft +
+            ' minute' + (draft === 1 ? '' : 's') + ' still in draft.</span> A minute nobody has ' +
+            'received cannot carry an action.</div>'
+          : '<div class="pd-viz-s pd-mini-note">Every recorded minute has been distributed.</div>');
     }
 
-    // ---- 4. The two priority matrices ---------------------------------------------------------
-    function mx(title, m, labels, axisX, axisY, cols) {
-      if (!m || !m.n) return '<div><div class="pd-mx-h">' + Fmt.esc(title) + '</div>' +
-        '<div class="pd-viz-empty">' + (m ? 'No entries scored on both axes yet.' : 'Not in use.') + '</div></div>';
-      var cell = function (n, t, c) {
-        return '<div class="pd-mx-c" style="background:' + c + '1f;border:1px solid ' + c + '4d">' +
-          '<div class="pd-mx-n" style="color:' + c + '">' + n + '</div><div class="pd-mx-t">' + Fmt.esc(t) + '</div></div>';
-      };
-      return '<div><div class="pd-mx-h">' + Fmt.esc(title) + '</div><div class="pd-mx">' +
-        '<div class="pd-mx-y">' + Fmt.esc(axisY) + '</div>' +
-        cell(m.lh, labels[0], cols[0]) + cell(m.hh, labels[1], cols[1]) +
-        cell(m.ll, labels[2], cols[2]) + cell(m.hl, labels[3], cols[3]) +
-        '<div></div><div class="pd-mx-x">' + Fmt.esc(axisX) + '</div>' +
-        '</div></div>';
-    }
-    function renderMatrix() {
-      var rk = (MET['risk-register'] || {}).matrix, sh = (MET['stakeholder-map'] || {}).matrix;
-      if ((!rk || !rk.n) && (!sh || !sh.n)) return vizEmpty('viz-matrix', 'Priority Matrix',
-        'Neither the Risk Register nor the Stakeholder Map has entries scored on both axes yet.');
-      document.getElementById('viz-matrix').innerHTML =
-        vizHead('Priority Matrix', 'Open risks by impact &times; likelihood · stakeholders by interest &times; influence') +
-        '<div class="pd-mx-wrap">' +
-          mx('Risk (open)', rk, ['Monitor', 'Act now', 'Low', 'Watch impact'], 'Impact', 'Likelihood',
-             [C_WARN, C_LATE, C_OK, C_GOLD]) +
-          mx('Stakeholders', sh, ['Keep satisfied', 'Key players', 'Monitor', 'Keep informed'], 'Interest', 'Influence',
-             [C_GOLD, C_VIO, C_OK, C_BLUE]) +
-        '</div>';
+    // ---- 3. Issues & Concerns ------------------------------------------------------------------
+    // ⚠️ 'On Hold' counts as OPEN here, the same rule the register, its PDF and the carry-over
+    //    logic already follow. A held issue is unresolved work, not a closed one.
+    function renderIssues() {
+      var m = MET['issues-lessons'] || {};
+      var mod = (APP_CONFIG.MODULES || []).find(function (x) { return x.key === 'issues-lessons'; });
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open module</a>' : '';
+      // ⚠️ PLAIN '&', not '&amp;'. vizHead escapes its title, so a pre-escaped entity was escaped
+      //    a second time and the panel rendered the literal text "Issues &amp; Concerns".
+      if (!m.__rows) {
+        return vizEmpty('viz-issues', 'Issues & Concerns',
+          'Nothing on this register yet. ⚠️ An empty register is not the same as a clear one — ' +
+          'if issues are being raised in meetings, they belong here too.');
+      }
+      var total = m.__rows || 0, open = _n(m.open) || 0, closed = _n(m.closed) || 0;
+      var hold = _n(m.onHold) || 0, crit = _n(m.critical) || 0, high = _n(m.high) || 0;
+      var other = Math.max(0, total - open - closed);
+      var pctClosed = total ? Math.round(closed / total * 100) : 0;
+
+      // ⚠️ The OPEN list, oldest first — not `recent`. `recent` is the 4 newest entries, so on a
+      // register whose latest rows happen to be closed this panel would have shown a tidy list
+      // while a dozen open items sat below the fold. Oldest first because an issue open since
+      // June is worse news than one raised yesterday.
+      var openRows = (m.lists && m.lists.open) || [];
+      var openTotal = (m.lists && m.lists.open__total) || 0;
+      var rows = openRows.slice(0, 4).map(function (r) {
+        var st = String(r.status || '').trim();
+        var sev = String(r.severity || '').trim();
+        var sevCls = sev === 'Critical' ? ' pd-tag-bad' : sev === 'High' ? ' pd-tag-warn' : '';
+        var age = _dueIn(r.date_raised);
+        return '<li class="pd-list-r">' +
+          '<span class="pd-list-t" title="' + Fmt.esc(r.title || '') + '">' + Fmt.esc(r.title || 'Untitled entry') +
+            '<small>' + (r.date_raised ? 'raised ' + Fmt.esc(Fmt.date(r.date_raised)) +
+              (age != null && age < 0 ? ' &middot; ' + Math.abs(age) + ' days open' : '') : 'no date raised') +
+              (r.champion ? ' &middot; ' + Fmt.esc(r.champion) : '') + '</small></span>' +
+          (sev ? '<span class="pd-tag' + sevCls + '">' + Fmt.esc(sev) + '</span>' : '') +
+          '<span class="pd-tag' + (st === 'On Hold' ? ' pd-tag-warn' : '') + '">' + Fmt.esc(st || 'No status') + '</span>' +
+          '</li>';
+      }).join('');
+      var openHead = openRows.length
+        ? '<div class="pd-list-h">Open items, oldest first' +
+          (openTotal > openRows.length ? ' &mdash; showing ' + openRows.length + ' of ' + openTotal : '') + '</div>'
+        : '';
+
+      document.getElementById('viz-issues').innerHTML =
+        vizHead('Issues & Concerns',
+          total + ' entr' + (total === 1 ? 'y' : 'ies') +
+          (m.latest ? ' &middot; latest raised ' + Fmt.esc(Fmt.date(m.latest)) : ''),
+          link) +
+        '<div class="pd-mini-band">' +
+          miniCell('Open', String(open), open ? false : true, hold ? hold + ' of them on hold' : 'None on hold') +
+          miniCell('Critical', String(crit), crit ? false : true, crit ? 'Open and critical' : 'None open') +
+          miniCell('High', String(high), high ? false : null, high ? 'Open and high' : 'None open') +
+          miniCell('Closed', String(closed), closed ? true : null, pctClosed + '% of the register') +
+        '</div>' +
+        '<div class="pd-mini-bar" title="' + closed + ' closed of ' + total + '"><i style="width:' + pctClosed + '%"></i></div>' +
+        openHead +
+        (rows ? '<ul class="pd-list">' + rows + '</ul>' : '') +
+        (other
+          ? '<div class="pd-viz-s pd-mini-note"><span class="pd-stat-warn">' + other +
+            ' entr' + (other === 1 ? 'y carries' : 'ies carry') + ' no status</span>, so ' +
+            (other === 1 ? 'it is' : 'they are') + ' counted as neither open nor closed.</div>'
+          : open
+            ? '<div class="pd-viz-s pd-mini-note">Open items are pulled onto the next meeting agenda from Minutes of Meeting.</div>'
+            : '<div class="pd-viz-s pd-mini-note">Nothing open on this register.</div>');
     }
 
-    // ---- 5. Progress photos -------------------------------------------------------------------
+    // Shared by both panels above. `good` === null means "no opinion" — a neutral figure must not
+    // be coloured as if it were a verdict, the same rule the old EVM cells followed.
+    function miniCell(label, value, good, sub) {
+      return '<div class="pd-mini-c' + (good === true ? ' ok' : good === false ? ' bad' : '') + '">' +
+        '<span class="pd-mini-l">' + Fmt.esc(label) + '</span>' +
+        '<strong class="pd-mini-v">' + Fmt.esc(value) + '</strong>' +
+        (sub ? '<small class="pd-mini-s">' + Fmt.esc(sub) + '</small>' : '') + '</div>';
+    }
+
     function renderPhotos() {
       var ph = MET['progress-photos'] || {}, rec = ph.recent || [];
       var mod = (APP_CONFIG.MODULES || []).find(function (m) { return m.key === 'progress-photos'; });
@@ -670,10 +1180,13 @@
 
     function renderViz() {
       // Each panel is independent: one module's missing data must not blank the others.
+      // Each panel is independently guarded: one module's bad data must not blank the rest.
+      try { renderPerf(); } catch (e) { var pg = document.getElementById('perf-grid'); if (pg) pg.innerHTML = '<div class="pd-viz-empty">Could not draw the performance row.</div>'; }
+      try { renderDue(); } catch (e) { vizEmpty('viz-due', 'Approaching Deadlines', 'Could not draw this panel.'); }
+      try { renderScurve(); } catch (e) { vizEmpty('viz-scurve', 'S-Curve', 'Could not draw this panel.'); }
       try { renderProgram(); } catch (e) { vizEmpty('viz-program', 'Project Schedule & Milestones', 'Could not draw this panel.'); }
-      try { renderEvm(); } catch (e) { vizEmpty('viz-evm', 'Performance Indicators (EVM)', 'Could not draw this panel.'); }
-      try { renderFlow(); } catch (e) { vizEmpty('viz-flow', 'Contracts & Claims', 'Could not draw this panel.'); }
-      try { renderMatrix(); } catch (e) { vizEmpty('viz-matrix', 'Priority Matrix', 'Could not draw this panel.'); }
+      try { renderMom(); } catch (e) { vizEmpty('viz-mom', 'Minutes of Meeting', 'Could not draw this panel.'); }
+      try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
       try { renderPhotos(); } catch (e) { vizEmpty('viz-photos', 'Latest Progress Photos', 'Could not draw this panel.'); }
     }
 
@@ -685,22 +1198,71 @@
       Promise.all(mods.map(function (m) {
         return PDb.moduleMetrics(m.dash, pid).then(function (r) { MET[m.key] = r || {}; },
           function () { MET[m.key] = {}; });
-      })).then(function () { renderStatus(); renderViz(); }, function () { renderStatus(); renderViz(); });
+      })).then(function () { renderViz(); }, function () { renderViz(); });
+    }
+
+    // ---- "My items" drawer -----------------------------------------------------------------
+    // ⚠️ Rendered ONCE, lazily, on first open — not on page load. It is three extra queries for a
+    //    panel most visits never open, and the dashboard's own panels should not queue behind a
+    //    personal to-do list. The badge count is the one thing computed eagerly, because a drawer
+    //    that hides an overdue item behind a click nobody knows to make is worse than no drawer.
+    var mwLoaded = false;
+    function initMyDrawer() {
+      var fab = document.getElementById('mw-fab'), dr = document.getElementById('mw-drawer'),
+          sc = document.getElementById('mw-scrim'), x = document.getElementById('mw-close'),
+          host = document.getElementById('mw-block');
+      if (!fab || !dr || !host) return;
+
+      function open() {
+        dr.hidden = false; sc.hidden = false;
+        // Two frames: `hidden` must be off and the element laid out before the class that
+        // transitions it, or the browser paints it already-open and there is no animation.
+        requestAnimationFrame(function () { requestAnimationFrame(function () { dr.classList.add('open'); sc.classList.add('open'); }); });
+        fab.setAttribute('aria-expanded', 'true');
+        if (!mwLoaded) {
+          mwLoaded = true;
+          try { MyWork.renderBlock(host, CURUSER, pid, ''); }
+          catch (e) { host.innerHTML = '<p class="mw-empty">Could not load your items.</p>'; }
+        }
+        x.focus();
+      }
+      function close() {
+        dr.classList.remove('open'); sc.classList.remove('open');
+        fab.setAttribute('aria-expanded', 'false');
+        // Wait out the transition before hiding, or it snaps shut.
+        setTimeout(function () { dr.hidden = true; sc.hidden = true; }, 200);
+        fab.focus();
+      }
+      fab.addEventListener('click', function () { dr.hidden ? open() : close(); });
+      x.addEventListener('click', close);
+      sc.addEventListener('click', close);
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !dr.hidden) close(); });
+
+      // The badge: my OPEN items on this project, counted by MyWork itself so the drawer and the
+      // cross-project page cannot disagree about what "mine" means.
+      if (MyWork.countOpen) {
+        MyWork.countOpen(CURUSER.id, pid).then(function (n) {
+          var b = document.getElementById('mw-fab-n');
+          if (!b || !n) return;
+          b.textContent = n > 99 ? '99+' : String(n);
+          b.hidden = false;
+          fab.classList.add('has');
+        }).catch(function () { /* a badge is not worth a visible failure */ });
+      }
     }
 
     function renderTiles() {
       var grid = document.getElementById('tile-grid');
       var mods = APP_CONFIG.MODULES || [];
       grid.innerHTML = mods.map(function (m) {
-        if (!m.enabled) {
-          var sub = m.retiredTo
-            ? '<span class="pd-badge-soon">Moved to ' + Fmt.esc(m.retiredTo) + '</span>'
-            : '<span class="pd-badge-soon">In development</span>';
-          return '<div class="pd-module-card disabled">' +
-            '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
-            '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +
-            '<div class="pd-module-sub">' + sub + '</div></div></div>';
-        }
+        // ⚠️ Delegated to the LAUNCHER's own card builder (2026-09-01, owner). This branch used
+        // to render its own dead grey box, so Drawing Register and Material Submittal Log were
+        // clickable on modules.html — where ModulesGrid.card() sends a retired module to the
+        // Engineering App in a new tab — and inert here. Two builders for one card is how the
+        // two screens came to disagree; there is one now, and the dashboard gets the external
+        // link for free. Enabled modules keep the dashboard's OWN card below, because it carries
+        // live figures the launcher's card has no place for.
+        if (!m.enabled) return ModulesGrid.card(m);
         return '<a class="pd-module-card" href="' + ModulesGrid.href(m) + '">' +
           '<div class="pd-module-icon">' + Icons.svg(m.icon, 24) + '</div>' +
           '<div class="pd-module-body"><div class="pd-module-title">' + Fmt.esc(m.name) + '</div>' +

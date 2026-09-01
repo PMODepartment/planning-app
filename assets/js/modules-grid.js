@@ -33,7 +33,7 @@
       var m = s && s.match(/[?&]v=([^&]+)/);
       if (m) return decodeURIComponent(m[1]);
     } catch (e) {}
-    return '20260829a';
+    return '20260901b';
   })();
 
   function href(m) {
@@ -75,6 +75,11 @@
   window.ModulesGrid = {
     MODULE_V: MODULE_V,
     href: href,
+    // ⚠️ Exported so the DASHBOARD's tile grid can reuse the retired-module card verbatim
+    // rather than keeping a second, dumber copy that rendered Drawing Register and Material
+    // Submittal as dead grey boxes while the launcher made the same two modules clickable.
+    // One card builder, so the two screens cannot drift about what a retired module looks like.
+    card: card,
     render: function (host) {
       if (!host) return;
       host.innerHTML = (APP_CONFIG.MODULES || []).map(card).join('');

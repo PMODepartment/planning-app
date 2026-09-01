@@ -58,6 +58,14 @@ update public.mom_items set status = 'Open' where status is null;
 -- `not valid` is deliberately NOT used: (2) has just made every row conform, and a
 -- constraint left unvalidated would not be trusted by later reads or by anyone
 -- reading the schema to learn what the column may hold.
+-- ⚠️ DROP-THEN-ADD BY NAME, not a bare `add constraint` — Postgres has no
+-- `ADD CONSTRAINT IF NOT EXISTS` for table constraints (unlike columns, indexes
+-- and policies elsewhere in this repo), so a bare add fails with "already exists"
+-- on any re-run once this migration has applied once. This constraint's name is
+-- OURS (chosen here, not Postgres-generated), so dropping it by name is safe —
+-- unlike step (1) above, which has to hunt the OLD constraint by definition
+-- because its name was never under our control.
+alter table public.mom_items drop constraint if exists mom_items_status_chk;
 alter table public.mom_items
   add constraint mom_items_status_chk
   check (status in ('Open', 'On Hold', 'Closed'));

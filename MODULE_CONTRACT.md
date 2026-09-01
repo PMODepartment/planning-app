@@ -24,6 +24,7 @@ Your module key (folder name) is fixed — use exactly the one assigned in
 | Module | key |
 |---|---|
 | Progress Photos | `progress-photos` |
+| Minutes of Meeting | `minutes-of-meeting` |
 | Issues, Concerns & Lessons Learned | `issues-lessons` |
 | Contracts & Claims Register | `contracts-claims` |
 | Risk Register | `risk-register` |
@@ -57,7 +58,7 @@ Your page is **one level deeper** than the shell, so shared assets load with a
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
-  <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js"></script>   <!-- dark mode; load in <head> -->
   <title>Risk Register · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css" />
@@ -143,12 +144,14 @@ users to login automatically — you never roll your own auth.
 - `UI.modal(html, opts)`
 - `UI.enhanceProjectSelect(selectEl)` — **use this for the project picker.** Populate a
   native `<option>` list as usual, set the current value, then call it once: it upgrades
-  the `<select>` into the shared **OPC folder browser** (drill Workspace → Program → Group
-  with a breadcrumb + search that flattens across the tree; scales to 100s of projects)
-  while keeping the `<select>` as the source of truth, so your existing `onchange` still
-  fires. It builds the tree from `PDb.getProjects` + `PDb.getWorkspaces`, filtered to the
-  ids in your options (so any access filtering you applied is respected). Safe to call
-  again to refresh after repopulating.
+  the `<select>` into a searchable popover — one level deep, grouped by **Group Head**
+  (root: a folder per group head that actually has projects here, plus a "— No group
+  head —" bucket; drill into one to pick a project), with a search box that flattens to
+  matching projects across every group — while keeping the `<select>` as the source of
+  truth, so your existing `onchange` still fires. It builds the list from
+  `PDb.getProjects` + `PDb.getGroupHeads`, filtered to the ids in your options (so any
+  access filtering you applied is respected). Safe to call again to refresh after
+  repopulating.
 
 **Sidebar (required, 2026-08-30).** Every module carries the persistent
 `.pd-app > .pd-sidebar + .pd-content` shell — this reverses the earlier
@@ -162,12 +165,48 @@ APP_CONFIG.MODULES})` — `active` must match your module's `key` in `config.js`
 your row highlights. Don't hand-write the nav's `<a>` links; `UI.renderNav` builds
 them from `APP_CONFIG.MODULES` so they stay in sync with what's actually enabled.
 
-**Uniform top bar (required).** Every module keeps the same top-bar order inside
-`.pd-content`: a 36×36 back button (`data-ico="arrowLeft"` → `dashboard.html`), then an
-`<h1>` whose title is **preceded by the module's brand-red icon** (the `icon` from
-`config.js`, e.g. `<span data-ico="camera" style="color:var(--pd-red)"></span>`), then the
-project selector (enhanced per above), then a tool cluster beside the profile, then
-`#user-bar`. Copy Progress Photos / Drawing Register for the exact markup.
+**Uniform top bar — a permanent two-row split (required, 2026-08-30).** `.pd-topbar`
+is one `<div>`; `ui.js`'s `initModuleTopbar()` splits its children into two ALWAYS-VISIBLE
+rows (not just on a phone — a single row was the recurring source of the overlap/collision
+bugs this section exists to prevent):
+- **Row 1 (`.pd-tb-main`, app-wide identity — same shape on every module):** the
+  hamburger (injected automatically), an `<h1 class="X-title">` wrapping just the
+  module's brand-red icon in a `<span class="X-title-ico">` (its text label, in a
+  sibling `<span class="X-title-txt">`, is hidden by the shared CSS — the current
+  screen is named by the tabs in row 2, not repeated as prose above them; still wrap
+  the text in that span so the hiding rule applies), the project selector (a `<div
+  class="X-projctx">` wrapping your enhanced `<select>` — matched by the CSS via its
+  `-projctx` suffix), the theme toggle, `#user-bar`.
+- **Row 2 (`.pd-tb-tools`, module-specific):** your own view tabs (`<div
+  class="X-tabs" role="tablist">…</div>`) and your own action buttons (`<div
+  class="X-topbar-tools">…</div>`, or an element whose **id** ends `-topbar-tools`) —
+  matched by the same suffix convention. `initModuleTopbar()` buckets by class-name
+  suffix and element type; it does not need markup nesting, so build the flat list in
+  document order shown below and it sorts itself into the right row.
+- **No back button.** The browser's own Back covers it — don't add one.
+
+Markup order (flat, all direct children of `.pd-topbar`):
+```html
+<div class="pd-topbar">
+  <h1 class="X-title" style="margin:0;">
+    <span class="X-title-ico" data-ico="ICON_NAME" data-ico-size="20"></span>
+    <span class="X-title-txt">Module Name</span>
+  </h1>
+  <div class="X-projctx">
+    <select class="pd-select X-project" id="X-project" title="Project"></select>
+  </div>
+  <div class="X-tabs" role="tablist">
+    <button class="X-tab active" data-view="...">First view</button>
+    <button class="X-tab" data-view="...">Second view</button>
+  </div>
+  <div class="X-topbar-tools">
+    <button class="pd-btn pd-btn-primary" id="X-add" title="...">+ Add ...</button>
+  </div>
+  <div id="X-presence" title="People viewing this project"></div>
+  <div id="user-bar"></div>
+</div>
+```
+Copy `modules/_template/index.html` for the exact, currently-correct markup.
 
 **Styles** — use the shared classes/tokens in `dashboard.css`: `.pd-card`,
 `.pd-btn`, `.pd-btn-primary`, `.pd-input`, `.pd-select`, `.pd-table`,

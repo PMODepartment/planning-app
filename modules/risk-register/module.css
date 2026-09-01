@@ -1,4 +1,6 @@
-/* Risk Register module styles — all classes prefixed .rr- to avoid collisions. */
+/* Risk Register module styles — all classes prefixed .rr- to avoid collisions.
+   The RCM furniture shared with the Stakeholder Register (priority pills,
+   criteria tables, heat-map grid) lives in ../../assets/css/epc-rcm.css. */
 
 /* ---- Uniform module chrome (matches every other enabled module). Keep in
    sync with those. 2026-08-30: modules gained a persistent sidebar (see
@@ -7,10 +9,8 @@
    the right size next to `.pd-sidebar` in the `.pd-app` flex row. Re-adding a
    width:100% override here would fight the sidebar for space again. ---- */
 .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
-.pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
 .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
 .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
-.rr-modback { width:36px; height:36px; padding:0; flex:none; display:inline-flex; align-items:center; justify-content:center; }
 .rr-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
 .rr-title .rr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
@@ -31,58 +31,153 @@
 
 /* Filter bar (card, matches the suite) */
 .rr-filters {
-  display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px;
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px;
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px;
 }
 .rr-filt-ico { color:var(--pd-muted); flex:none; }
 .rr-filters .pd-input, .rr-filters .pd-select { height:34px; font-size:13px; }
 .rr-filters .rr-search { flex:1 1 220px; min-width:160px; }
+/* Shown by module.js only while a filter is actually set — a permanently
+   visible Clear reads as "something is filtered" when nothing is. */
+.rr-clear { display:none; align-items:center; gap:5px; border:1px solid var(--pd-line); background:var(--pd-card);
+  color:var(--pd-muted); border-radius:var(--pd-radius); height:34px; padding:0 10px; font-size:12px;
+  font-weight:600; cursor:pointer; font-family:var(--pd-font); }
+.rr-clear.show { display:inline-flex; }
+.rr-clear:hover { color:var(--pd-ink); border-color:var(--pd-red-mid); }
 
-.rr-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
+/* ---- RCM band toggles ---------------------------------------------------- */
+.rr-bands { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:16px; }
+.rr-bands-lab { color:var(--pd-muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-right:2px; }
+.rr-band { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
+  border-radius:999px; padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; font-family:var(--pd-font); }
+.rr-band:hover { border-color:var(--pd-red-mid); color:var(--pd-ink); }
+.rr-band.on { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red-dark); }
 
 /* KPIs */
-.rr-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:18px; }
+.rr-kpis { display:grid; grid-template-columns:repeat(6, 1fr); gap:12px; margin-bottom:18px; }
 .rr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   box-shadow:var(--pd-shadow); padding:14px 16px; }
-.rr-kpi-val { font-size:26px; font-weight:800; line-height:1; }
+.rr-kpi-val { font-size:24px; font-weight:800; line-height:1; }
 .rr-kpi-label { color:var(--pd-muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-top:6px; }
-.rr-kpi.rr-high .rr-kpi-val { color:var(--pd-bad); }
-.rr-kpi.rr-med  .rr-kpi-val { color:var(--pd-warn); }
+.rr-kpi-sub { color:var(--pd-muted); font-size:11px; margin-top:3px; }
+/* Only the NUMBER takes the semantic colour; the card keeps the normal surface
+   so the label stays readable in both themes. */
+.rr-kpi.rcm-p1 .rr-kpi-val, .rr-kpi.rcm-p2 .rr-kpi-val,
+.rr-kpi.rcm-res-high .rr-kpi-val { color:var(--rcm-c); }
 
-/* Table */
+.rr-help { color:var(--pd-muted); margin-top:0; font-size:13px; line-height:1.55; max-width:80ch; }
+
+/* ---- Register table ----------------------------------------------------- */
+.rr-table { font-size:13px; }
 .rr-table td .rr-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
-  max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.rr-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; }
+  max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rr-table td.rr-c-title { min-width:230px; }
+/* ⚠️ min-width, not just max-width. Without a floor the auto table layout
+   squeezed the control-description column to ~115px and its 3-sentence
+   procedure wrapped to 14 lines, making every cell in the row 209px tall —
+   one risk per screen. */
+.rr-table td.rr-c-ctrl { min-width:240px; max-width:340px; white-space:normal; }
+.rr-table td.rr-c-wide { min-width:200px; max-width:280px; white-space:normal; }
+/* Clamped to three lines; the full text is the title attribute, the edit modal
+   and the CSV export. Needs to be a block child of the <td> — line-clamping the
+   cell itself would change its display and break the table layout. */
+.rr-clamp { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+  overflow:hidden; line-height:1.45; }
+.rr-table td.rr-num, .rr-table th.rr-num, .rr-num { text-align:right; white-space:nowrap; }
+.rr-cat { font-weight:600; }
 
-/* Rating band backgrounds — ONLY on pills and matrix cells, never the KPI
-   cards (the KPI cards keep the normal card surface; only their number is
-   colored, via the .rr-kpi.* rules above, so the text stays readable). */
-.rr-pill.rr-low,  .rr-cell.rr-low  { background:#16a34a; color:#fff; }
-.rr-pill.rr-med,  .rr-cell.rr-med  { background:#d97706; color:#fff; }
-.rr-pill.rr-high, .rr-cell.rr-high { background:#dc2626; color:#fff; }
+/* The band header row above the column names, so the register reads like the sheet. */
+.rr-bands-row th.rr-bandhead {
+  background:var(--pd-bg); color:var(--pd-red-dark); text-align:center;
+  font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  padding:5px 8px; border-bottom:1px solid var(--pd-line);
+  border-left:1px solid var(--pd-line);
+}
+.rr-bands-row th.rr-bandhead-x { color:transparent; border-left-color:transparent; }
 
-/* 5×5 matrix */
-.rr-matrix { border-collapse:collapse; }
-.rr-matrix td, .rr-matrix th { width:54px; height:48px; text-align:center; }
-.rr-axis { color:var(--pd-muted); font-size:12px; font-weight:700; }
-.rr-cell { color:#fff; font-weight:800; cursor:pointer; border:2px solid #fff;
-  border-radius:6px; transition:transform .06s ease; }
-.rr-cell:hover { transform:scale(1.06); }
-.rr-cell-active { outline:3px solid var(--pd-ink); outline-offset:-3px; }
+/* Activity group header rows */
+.rr-grow > td { background:var(--pd-bg); cursor:pointer; padding:9px 12px !important; }
+.rr-grow:hover > td { background:var(--pd-red-light); }
+.rr-gcar { display:inline-block; width:14px; color:var(--pd-muted); transition:transform .12s; }
+.rr-gcar.col { transform:rotate(-90deg); }
+.rr-gno { display:inline-block; min-width:22px; text-align:center; font-weight:800; font-size:11px;
+  color:#fff; background:var(--pd-muted); border-radius:4px; padding:1px 4px; margin-right:8px; }
+.rr-gname { font-weight:800; letter-spacing:.02em; text-transform:uppercase; font-size:12px; }
+.rr-gcount { color:var(--pd-muted); font-size:12px; margin:0 10px; }
+.rr-grow .rcm-pill-o { margin-right:5px; }
+.rr-gobj { color:var(--pd-muted); font-size:12px; margin-top:3px; font-weight:400; text-transform:none;
+  max-width:110ch; line-height:1.45; }
 
-@media (max-width:700px) { .rr-kpis { grid-template-columns:repeat(2,1fr); } }
+/* Status chips */
+.rr-st { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;
+  border:1px solid var(--pd-line); color:var(--pd-muted); }
+.rr-st-open { color:var(--pd-bad); border-color:var(--pd-bad); }
+.rr-st-inprogress { color:var(--pd-warn); border-color:var(--pd-warn); }
+.rr-st-closed { color:var(--pd-ok); border-color:var(--pd-ok); }
 
-/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
+/* ---- Heat map view ------------------------------------------------------ */
+.rr-heatwrap { overflow-x:auto; }          /* the grid scrolls in its card, never the page */
+.rr-refgrid { max-width:560px; overflow-x:auto; }
+.rr-resrow { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.rr-rescard { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  padding:14px 16px; box-shadow:var(--pd-shadow); border-top:3px solid var(--rcm-c, var(--pd-line)); }
+.rr-rescard .rr-kpi-val { color:var(--rcm-c, var(--pd-ink)); }
+
+/* ---- Risk Universe view ------------------------------------------------- */
+.rr-uni td:first-child { min-width:190px; }
+.rr-unicat > td { background:var(--pd-bg); }
+.rr-unizero td { color:var(--pd-muted); }
+
+/* ---- Add/Edit form furniture -------------------------------------------- */
+.rr-fsec { font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--pd-red-dark); margin:18px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--pd-line); }
+.rr-fsec:first-of-type { margin-top:10px; }
+.rr-fsec-hint { color:var(--pd-muted); font-weight:600; letter-spacing:0; text-transform:none; margin-left:6px; }
+.rr-lbl-hint { color:var(--pd-muted); font-weight:400; }
+.rr-frow { display:flex; gap:10px; flex-wrap:wrap; }
+.rr-frow > .pd-field { min-width:140px; }
+  /* ⚠️ The band pills are the one control the shared phone rules know nothing
+     about (they are not .pd-btn / .pd-select / .pd-input), so they measured 25px
+     against this app's 44px touch minimum. Kept as pills that share rows rather
+     than hidden: a stacked card still honours the band toggles, and showing
+     every band by default would make each card six screens long. */
+  .rr-band { min-height:44px; padding:4px 16px; }
+  .rr-bands { gap:8px; }
+  /* Same reason as the band pills: the suggestion chips are buttons the shared
+     phone rules do not match, so they measured under the 44px touch minimum. */
+  .rr-sug { min-height:44px; padding:6px 12px; }
+.rr-actinfo { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  padding:9px 11px; font-size:12px; color:var(--pd-ink); line-height:1.5; margin:0 0 10px; }
+.rr-actinfo-t { color:var(--pd-muted); font-size:10px; font-weight:800; letter-spacing:.05em;
+  text-transform:uppercase; margin-top:6px; }
+.rr-actinfo-t:first-child { margin-top:0; }
+.rr-suggest { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.rr-sug-lab { color:var(--pd-muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; align-self:center; }
+.rr-sug { border:1px dashed var(--pd-line); background:transparent; color:var(--pd-muted);
+  border-radius:4px; padding:3px 7px; font-size:11px; cursor:pointer; font-family:var(--pd-font);
+  max-width:100%; text-align:left; }
+.rr-sug:hover { border-style:solid; border-color:var(--pd-red-mid); color:var(--pd-ink); background:var(--pd-red-light); }
+
+@media (max-width:1400px) { .rr-kpis { grid-template-columns:repeat(3,1fr); } }
+@media (max-width:900px)  { .rr-resrow { grid-template-columns:repeat(2,1fr); } }
+@media (max-width:700px)  { .rr-kpis { grid-template-columns:repeat(2,1fr); } }
+
+/* ---- Mobile & tablet ----------------------------------------------------
    Shared chrome comes from dashboard.css. The register is read-mostly (all
-   editing happens in a modal), so below 700px each row becomes a CARD:
+   editing happens in a modal), so on a narrow screen each row becomes a CARD:
    thead hidden, cells stacked and labelled from data-l (set in module.js).
+
+   ⚠️ The breakpoint is 900px, not the 700px the pre-RCM table used: with the
+   Identification, Assessment and Response bands on, the register is ~16 columns
+   wide, and between 700 and 900px it was a side-scroller so narrow that two
+   columns were visible at a time.
 
    NOTE: the table also carries the shared '.pd-table' class, whose phone rule
    makes it a nowrap horizontal scroller. These selectors are written
    '.pd-table.rr-table' / '.rr-table td' so they outrank it — dropping the
    '.pd-table' qualifier silently restores side-scrolling.
    -------------------------------------------------------------------------- */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .pd-table.rr-table { display: block; min-width: 0; overflow-x: visible; white-space: normal; background: none; }
   .rr-table thead { display: none; }
   .rr-table tbody { display: block; }
@@ -90,21 +185,24 @@
     background: var(--pd-card); border: 1px solid var(--pd-line);
     border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); }
   .rr-table tr:hover td { background: none; }
-  .rr-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: 13px; }
+  .rr-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: 13px; max-width:none; }
   .rr-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px; }
-  /* Title is the card headline; code is a small index above it. */
+  .rr-table td .rr-sub { white-space: normal; max-width:none; }
+  /* A stacked card has the room the table row did not — show the whole control. */
+  .rr-clamp { -webkit-line-clamp:none; display:block; }
+  /* Risk event is the card headline; code is a small index above it. */
   .rr-table td.rr-c-title { font-size: 14px; padding-bottom: 6px; }
   .rr-table td.rr-c-code { font-size: 11px; color: var(--pd-muted); }
   .rr-table td.rr-rowacts { display: flex; gap: 8px; margin-top: 8px; white-space: normal !important; }
-  /* Sized to content, not stretched to fill the row — two buttons each
-     expanding to half the card width read as oversized pills for a short
-     label; still >=44px tall via the shared .pd-btn phone rule. */
+  /* Sized to content, not stretched to fill the row. Still >=44px tall via the
+     shared .pd-btn phone rule. */
   .rr-table td.rr-rowacts .pd-btn { flex: 0 1 auto; justify-content: center; }
   .rr-table td.rr-rowacts .pd-btn:only-child { flex: 1 1 auto; }
-  .rr-table td[colspan] { text-align: center; }
+  /* An activity group header is a full-width band, not a stacked card. */
+  .rr-table tr.rr-grow { display:block; padding:0; margin:14px 0 8px; border:0; box-shadow:none; background:none; }
+  .rr-table tr.rr-grow > td { display:block; border-radius:var(--pd-radius); }
+  .rr-table td[colspan]:not(.rr-grow td) { text-align: center; }
   .rr-filters { flex-wrap: wrap; gap: 8px; }
   .rr-filters > * { flex: 1 1 100%; min-width: 0; }
-  /* Matrix cells shrink so the 5x5 grid still fits a phone. */
-  .rr-matrix td, .rr-matrix th { font-size: 11px; }
-  .rr-cell { width: auto; height: 54px; }
+  .rr-frow > .pd-field { flex: 1 1 100% !important; }
 }

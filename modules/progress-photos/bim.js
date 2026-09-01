@@ -33,6 +33,12 @@ window.BIM = (function () {
   var allPins = [];
   var registrations = [];  // floor_plan_registrations rows, all plans (Batch H)
   var actualView = false;  // Batch H: show the warped photo instead of the drawing
+  // Last-known value passed to syncTools by index.html's setScreen — render()
+  // must replay THIS, never a hardcoded true, or the Plans tools stay visible
+  // after any async re-render (e.g. load()'s own completion) even when the
+  // top-level screen is Gallery/Presentations, not Plans. Same convention and
+  // same bug this fixes as ppr.js's own toolsVisible.
+  var toolsVisible = false;
 
   // Pan/zoom state for the stage — plain translate+scale on a wrapper div,
   // not an SVG viewBox/CTM: simpler to reason about and to test (normalized
@@ -80,6 +86,7 @@ window.BIM = (function () {
     // up the real, working identical handler.
   }
   function syncTools(visible) {
+    toolsVisible = visible;
     if ($('bim-new')) $('bim-new').style.display = (visible && canWrite) ? '' : 'none';
     if ($('bim-place')) $('bim-place').style.display = (visible && canWrite && activePlanId) ? '' : 'none';
   }
@@ -243,7 +250,18 @@ window.BIM = (function () {
   function render() {
     var host = $('bim-view');
     if (!host) return;
-    syncTools(true);
+    // ⚠️ ROOT-CAUSE FIX (2026-08-30): this was `syncTools(true)`, unconditionally,
+    // on EVERY render — including one triggered by load()'s own async
+    // completion, which runs well after index.html's setScreen() has already
+    // correctly hidden this screen's tools because the Gallery (or
+    // Presentations) tab is the one actually active. That silently re-showed
+    // "+ Upload floor plan" on top of a screen it doesn't belong to — the
+    // exact symptom reported live and reproduced in the browser, with no
+    // console error, because nothing here ever threw. Replaying the
+    // last-known value (set by index.html's setScreen -> BIM._syncTools)
+    // keeps a later re-render from overriding a screen switch that already
+    // happened.
+    syncTools(toolsVisible);
 
     if (!plans.length) {
       // Even with zero plans uploaded, a project WITH a Location Breakdown
@@ -1034,6 +1052,33 @@ window.BIM = (function () {
     var mx = ((e1x + e2x) / 2) * w, my = ((e1y + e2y) / 2) * h;
     return bearingFromTo(pinXNorm * w, pinYNorm * h, mx, my);
   }
+  // ---------------------------------------------------------------------
+  // Fifth round item 8: the field-of-view widget is rebuilt as a pie/sector
+  // with ONE handle (was a straight-edged triangle with two independent
+  // handles). `edge1_x/y`/`edge2_x/y` STAY the persisted shape (no schema
+  // change) — only how they're derived and manipulated changes:
+  //   - direction  = the bisector bearing (which way the camera faces)
+  //   - halfWidth  = half the field-of-view's angular spread
+  //   - reach      = how far out the sector extends (its radius)
+  // Dragging the SECTOR BODY changes only `direction` (halfWidth/reach
+  // unchanged); dragging the ONE handle (sitting at the sector's right/
+  // clockwise edge) changes `halfWidth` and `reach` together, exactly the
+  // "one button… both the depth and the angle width" ask — direction and
+  // width+depth are simply two different gestures on two different targets,
+  // rather than trying to pack three degrees of freedom into one point.
+  function coneParamsFromEdges(px, py, e1x, e1y, e2x, e2y) {
+    var b1 = bearingFromTo(px, py, e1x, e1y), b2 = bearingFromTo(px, py, e2x, e2y);
+    var d1 = Math.hypot(e1x - px, e1y - py), d2 = Math.hypot(e2x - px, e2y - py);
+    // Signed shortest angular difference b1->b2, so a cone that happens to
+    // straddle the 0°/360° seam still resolves to the correct small gap
+    // instead of the ~360°-wide "long way round".
+    var diff = ((b2 - b1 + 540) % 360) - 180;
+    return { dir: (b1 + diff / 2 + 360) % 360, halfW: Math.abs(diff) / 2, reach: (d1 + d2) / 2 };
+  }
+  function edgesFromCone(px, py, dir, halfW, reach) {
+    var e1 = pointAtBearing(px, py, dir - halfW, reach), e2 = pointAtBearing(px, py, dir + halfW, reach);
+    return { e1x: e1.x, e1y: e1.y, e2x: e2.x, e2y: e2.y };
+  }
 
   function pinFieldHTML(idPrefix, existing) {
     if (!plans.length) {
@@ -1134,6 +1179,27 @@ window.BIM = (function () {
       var st = $(idPrefix + '-pin-status');
       if (st) st.textContent = s ? 'Pin placed — click the plan to move it.' : 'Click the plan to drop a pin.';
     }
+    // Fifth round item 8 — a true pie slice (M pin, L edge1, ARC to edge2, Z)
+    // instead of a 3-point polygon, with a radial gradient dark-at-the-pin
+    // fading to light-at-the-arc, and no stroke at all. ⚠️ Suppressed
+    // ENTIRELY (not a grey placeholder) when `s.na` — "does not apply" now
+    // means genuinely invisible, matching the ask that double-clicking to
+    // mark a top-view photo makes the camera angle disappear.
+    function coneSvg(px, py, dir, halfW, reach) {
+      var e = edgesFromCone(px, py, dir, halfW, reach);
+      var P = [px * 100, py * 100], E1 = [e.e1x * 100, e.e1y * 100], E2 = [e.e2x * 100, e.e2y * 100];
+      var R = reach * 100;
+      var largeArc = halfW * 2 > 180 ? 1 : 0;
+      var gradId = idPrefix + '-conegrad';
+      return '<svg viewBox="0 0 100 100" preserveAspectRatio="none">' +
+        '<defs><radialGradient id="' + gradId + '" gradientUnits="userSpaceOnUse" cx="' + P[0] + '" cy="' + P[1] + '" r="' + R + '">' +
+          '<stop offset="0%" style="stop-color:var(--pd-red);stop-opacity:.85" />' +
+          '<stop offset="100%" style="stop-color:var(--pd-red);stop-opacity:0" />' +
+        '</radialGradient></defs>' +
+        '<path class="bim-conewedge" id="' + idPrefix + '-pin-wedge" fill="url(#' + gradId + ')" stroke="none" ' +
+          'd="M ' + P[0] + ',' + P[1] + ' L ' + E1[0] + ',' + E1[1] + ' A ' + R + ',' + R + ' 0 ' + largeArc + ',1 ' + E2[0] + ',' + E2[1] + ' Z" />' +
+      '</svg>';
+    }
     function stageHTML(planId, s) {
       var plan = planById(planId), url = planUrl(plan);
       if (!url) return '<div class="pp-empty">Plan image not available</div>';
@@ -1145,13 +1211,15 @@ window.BIM = (function () {
         ? '<embed id="' + idPrefix + '-pin-img" src="' + esc(url) + '" type="application/pdf" style="width:100%;height:320px;border:0;display:block;" />'
         : '<img id="' + idPrefix + '-pin-img" src="' + esc(url) + '" draggable="false" />';
       if (s) {
-        var pts = (s.x * 100) + ',' + (s.y * 100) + ' ' + (s.e1x * 100) + ',' + (s.e1y * 100) + ' ' + (s.e2x * 100) + ',' + (s.e2y * 100);
-        body += '<svg viewBox="0 0 100 100" preserveAspectRatio="none">' +
-          '<polygon class="bim-conewedge' + (s.na ? ' is-na' : '') + '" id="' + idPrefix + '-pin-wedge" points="' + pts + '"></polygon>' +
-        '</svg>' +
-        '<div class="bim-pinstage-dot" style="left:' + (s.x * 100) + '%;top:' + (s.y * 100) + '%"></div>' +
-        '<div class="bim-conehandle-el" data-h="1" style="left:' + (s.e1x * 100) + '%;top:' + (s.e1y * 100) + '%"></div>' +
-        '<div class="bim-conehandle-el" data-h="2" style="left:' + (s.e2x * 100) + '%;top:' + (s.e2y * 100) + '%"></div>';
+        var cone = coneParamsFromEdges(s.x, s.y, s.e1x, s.e1y, s.e2x, s.e2y);
+        var handlePt = pointAtBearing(s.x, s.y, cone.dir + cone.halfW, cone.reach);
+        // Fifth round item 8: NA hides the wedge outright, and the handle
+        // (which exists only to resize a wedge that isn't there) hides with
+        // it — the pin dot itself becomes the only thing left to
+        // double-click back into a visible cone.
+        body += (s.na ? '' : coneSvg(s.x, s.y, cone.dir, cone.halfW, cone.reach)) +
+        '<div class="bim-pinstage-dot' + (s.na ? ' is-na' : '') + '" id="' + idPrefix + '-pin-dot" style="left:' + (s.x * 100) + '%;top:' + (s.y * 100) + '%"></div>' +
+        (s.na ? '' : '<div class="bim-conehandle-el" id="' + idPrefix + '-cone-handle" style="left:' + (handlePt.x * 100) + '%;top:' + (handlePt.y * 100) + '%"></div>');
       }
       return '<div class="bim-conestage">' + body + '</div>';
     }
@@ -1165,11 +1233,32 @@ window.BIM = (function () {
       var rect = img.getBoundingClientRect();
       return { x: (clientX - rect.left) / rect.width, y: (clientY - rect.top) / rect.height };
     }
+    // Fifth round item 8: repaints the wedge/gradient/handle IN PLACE
+    // (attribute updates only, never innerHTML) during a drag — replacing
+    // the DOM mid-gesture would drop the pointer capture the drag itself
+    // set up, silently ending it on the very next move.
+    function paintConeLive(cur) {
+      var cone = coneParamsFromEdges(cur.x, cur.y, cur.e1x, cur.e1y, cur.e2x, cur.e2y);
+      var e = edgesFromCone(cur.x, cur.y, cone.dir, cone.halfW, cone.reach);
+      var wedge = $(idPrefix + '-pin-wedge');
+      if (wedge) {
+        var P = [cur.x * 100, cur.y * 100], E1 = [e.e1x * 100, e.e1y * 100], E2 = [e.e2x * 100, e.e2y * 100], R = cone.reach * 100;
+        var largeArc = cone.halfW * 2 > 180 ? 1 : 0;
+        wedge.setAttribute('d', 'M ' + P[0] + ',' + P[1] + ' L ' + E1[0] + ',' + E1[1] + ' A ' + R + ',' + R + ' 0 ' + largeArc + ',1 ' + E2[0] + ',' + E2[1] + ' Z');
+        var grad = document.getElementById(idPrefix + '-conegrad');
+        if (grad) { grad.setAttribute('cx', P[0]); grad.setAttribute('cy', P[1]); grad.setAttribute('r', R); }
+      }
+      var handle = $(idPrefix + '-cone-handle');
+      if (handle) {
+        var hp = pointAtBearing(cur.x, cur.y, cone.dir + cone.halfW, cone.reach);
+        handle.style.left = (hp.x * 100) + '%'; handle.style.top = (hp.y * 100) + '%';
+      }
+    }
     function wireStage(s) {
       var img = $(idPrefix + '-pin-img'); if (!img) return;
-      // Clicking the BARE image (no pin yet, or clicking outside the
-      // existing handles) drops/moves the pin and re-seeds a fresh default
-      // cone facing the image's centre.
+      // Clicking the BARE image (no pin yet, or clicking outside the wedge/
+      // handle) drops/moves the pin and re-seeds a fresh default cone facing
+      // the image's centre.
       img.onclick = function (e) {
         var rect = img.getBoundingClientRect();
         var n = toNorm(img, e.clientX, e.clientY);
@@ -1177,39 +1266,59 @@ window.BIM = (function () {
         setState({ x: n.x, y: n.y, e1x: cone.edge1_x, e1y: cone.edge1_y, e2x: cone.edge2_x, e2y: cone.edge2_y, na: false });
         repaint();
       };
-      var wedge = $(idPrefix + '-pin-wedge');
-      if (wedge) wedge.ondblclick = function (e) {
+      var wedge = $(idPrefix + '-pin-wedge'), dot = $(idPrefix + '-pin-dot'), handle = $(idPrefix + '-cone-handle');
+      // Fifth round item 8: double-clicking the wedge (visible) turns it off;
+      // once off the wedge (and its handle) render nothing at all, so the
+      // PIN DOT itself becomes the only thing left to double-click back on.
+      function toggleNA(e) {
         e.stopPropagation();
         var cur = state(); if (!cur) return;
-        cur.na = !cur.na; setState(cur);
-        var b = $(idPrefix + '-pin-wedge'); if (b) b.classList.toggle('is-na', cur.na);
+        cur.na = !cur.na; setState(cur); repaint();
+      }
+      if (wedge) wedge.ondblclick = toggleNA;
+      if (dot) dot.ondblclick = toggleNA;
+      if (!s || s.na) return; // nothing else to wire — no wedge/handle rendered
+      // Dragging the SECTOR BODY changes only the facing DIRECTION
+      // (halfWidth/reach untouched) — recomputed from the pin to wherever
+      // the pointer currently is.
+      if (wedge) wedge.onpointerdown = function (e) {
+        e.stopPropagation();
+        wedge.setPointerCapture(e.pointerId);
+        function move(ev) {
+          var n = toNorm(img, ev.clientX, ev.clientY);
+          var cur = state(); if (!cur) return;
+          var cone = coneParamsFromEdges(cur.x, cur.y, cur.e1x, cur.e1y, cur.e2x, cur.e2y);
+          var newDir = bearingFromTo(cur.x, cur.y, n.x, n.y);
+          var edges = edgesFromCone(cur.x, cur.y, newDir, cone.halfW, cone.reach);
+          cur.e1x = edges.e1x; cur.e1y = edges.e1y; cur.e2x = edges.e2x; cur.e2y = edges.e2y;
+          setState(cur); paintConeLive(cur);
+        }
+        function up() { wedge.onpointermove = null; window.removeEventListener('pointerup', up); }
+        wedge.onpointermove = move;
+        window.addEventListener('pointerup', up);
       };
-      // Drag either endpoint handle — free-form (independent angle AND
-      // range per handle, per the literal ask: "drag the end points... to
-      // adjust angle and range"), redrawing the wedge live on every move.
-      Array.prototype.forEach.call((wrap_or_doc()).querySelectorAll('[data-h]'), function (h) {
-        h.onpointerdown = function (e) {
-          e.stopPropagation();
-          h.setPointerCapture(e.pointerId);
-          var which = h.dataset.h;
-          function move(ev) {
-            var n = toNorm(img, ev.clientX, ev.clientY);
-            var cur = state(); if (!cur) return;
-            if (which === '1') { cur.e1x = n.x; cur.e1y = n.y; } else { cur.e2x = n.x; cur.e2y = n.y; }
-            setState(cur);
-            h.style.left = (n.x * 100) + '%'; h.style.top = (n.y * 100) + '%';
-            var w2 = $(idPrefix + '-pin-wedge');
-            if (w2) w2.setAttribute('points', (cur.x * 100) + ',' + (cur.y * 100) + ' ' + (cur.e1x * 100) + ',' + (cur.e1y * 100) + ' ' + (cur.e2x * 100) + ',' + (cur.e2y * 100));
-          }
-          function up() {
-            h.onpointermove = null;
-            window.removeEventListener('pointerup', up);
-          }
-          h.onpointermove = move;
-          window.addEventListener('pointerup', up);
-        };
-      });
-      function wrap_or_doc() { return $(idPrefix + '-pin-imgwrap') || document; }
+      // Dragging the ONE handle changes BOTH half-width (angle) and reach
+      // (depth) together — "one button to adjust both", per the ask —
+      // direction stays whatever the body-drag above last set it to.
+      if (handle) handle.onpointerdown = function (e) {
+        e.stopPropagation();
+        handle.setPointerCapture(e.pointerId);
+        function move(ev) {
+          var n = toNorm(img, ev.clientX, ev.clientY);
+          var cur = state(); if (!cur) return;
+          var cone = coneParamsFromEdges(cur.x, cur.y, cur.e1x, cur.e1y, cur.e2x, cur.e2y);
+          var newBearing = bearingFromTo(cur.x, cur.y, n.x, n.y);
+          var newReach = Math.max(0.02, Math.hypot(n.x - cur.x, n.y - cur.y));
+          var diff = ((newBearing - cone.dir + 540) % 360) - 180;
+          var newHalfW = Math.max(4, Math.min(88, Math.abs(diff)));
+          var edges = edgesFromCone(cur.x, cur.y, cone.dir, newHalfW, newReach);
+          cur.e1x = edges.e1x; cur.e1y = edges.e1y; cur.e2x = edges.e2x; cur.e2y = edges.e2y;
+          setState(cur); paintConeLive(cur);
+        }
+        function up() { handle.onpointermove = null; window.removeEventListener('pointerup', up); }
+        handle.onpointermove = move;
+        window.addEventListener('pointerup', up);
+      };
     }
     if (planSel) planSel.onchange = function () { setState(null); repaint(); };
     repaint();
@@ -1272,6 +1381,15 @@ window.BIM = (function () {
   return {
     init: init,
     _syncTools: syncTools,
+    // Test-only hook, same convention as ppr.js's — genuinely executes
+    // render() so a regression of the 2026-08-30 syncTools(true) bug (a
+    // re-render silently re-showing "+ Upload floor plan" on a screen it
+    // doesn't belong to) is caught by running the real code, not just by
+    // reading it. Guards on host existing, same as render() itself.
+    _render: function () { render(); },
+    // Test-only hook — same reasoning as ppr.js's own _setCanWrite. Never
+    // called from production code.
+    _setCanWrite: function (v) { canWrite = v; },
     // Gallery upload follow-up (Batch E) — see openPinPickerFor's own comment.
     openPinPickerFor: openPinPickerFor,
     // 2026-08-29 item 11 — the embeddable form field, see pinFieldHTML's own
@@ -1316,6 +1434,11 @@ window.BIM = (function () {
     // sign is silent (the widget still LOOKS interactive; it just records the
     // wrong angle for every future pin).
     _directionDegFromDrag: function (dx, dy) { return directionDegFromDrag(dx, dy); },
+    // Fifth round item 8 — the pie-cone math, genuinely executed for the same
+    // reason directionDegFromDrag already is: a flipped sign silently points
+    // or resizes the cone wrong while it still LOOKS interactive.
+    _coneParamsFromEdges: function (px, py, e1x, e1y, e2x, e2y) { return coneParamsFromEdges(px, py, e1x, e1y, e2x, e2y); },
+    _edgesFromCone: function (px, py, dir, halfW, reach) { return edgesFromCone(px, py, dir, halfW, reach); },
     // Item 28 — the in-photo cone geometry, same reasoning: a wrong sign or
     // a wrong reach fraction is silent (the widget still looks interactive).
     _defaultCone: function (xNorm, yNorm, w, h) { return defaultCone(xNorm, yNorm, w, h); },

@@ -58,6 +58,572 @@ current, correct behaviour instead of the retired one.
 ⚠️ **Not verified signed in** — same standing caveat as the rest of this module; no live click-through
 of the button's real click/render cycle in a browser, only structural source verification.
 
+## 3D reconstruction CANCELLED — both Edge Functions undeployed, code shelved intact (2026-09-01)
+
+Owner: *"Let's cancel the runpod feature since it requires a subscription."* RunPod's GPU service is
+paid, and the feature cannot work without it, so the chain is abandoned rather than left waiting on
+an account that will not be opened.
+
+**Undeployed** `submit-reconstruction` and `reconstruction-webhook` (deployed only hours earlier).
+The project is back to its original five functions; both URLs return **404**. ⚠️ The webhook in
+particular was deployed `--no-verify-jwt`, i.e. publicly invokable by design — leaving an
+unauthenticated endpoint up for a feature nobody will ever finish is a worse default than removing
+it, which is why this happened before asking how deep to go on the rest.
+
+**Nothing to revoke, nothing to cancel.** `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` were never set
+(confirmed against `secrets list`), and no RunPod account was ever created — so there is no
+subscription, no billing relationship and no live credential anywhere from this feature.
+
+**Owner chose to SHELVE the code, not strip it** (asked explicitly, three options offered):
+- `recon.js` (422 lines), the `#pp-screen-recon` screen, the `RECON` global and the
+  `item_type === 'reconstruction'` branches in `module.js`/`bim.js` all stay.
+- The 3D button stays `disabled title="3D reconstruction is on hold"` — already the case since
+  2026-08-29, so **no user-visible change**; nobody could reach this feature today anyway.
+- `reconstruction_requests` stays (empty). `services/reconstruction-worker/` and both Edge Function
+  sources stay in the repo.
+- ⚠️ **The reasoning, which matters more than the choice:** the reconstruction branches are
+  *interleaved* with live panorama and photo paths — pin dispatch, the media-strip merge, cluster
+  badge fallbacks — so ripping them out is real surgery on a module that has just been through seven
+  feedback rounds, in exchange for deleting code that costs nothing to leave inert. Reviving it later
+  is one `functions deploy`.
+
+⚠️ **Known cosmetic staleness, deliberately not fixed:** the disabled button's tooltip still says
+"on hold", which now understates it — the honest word is "cancelled". Left alone because the owner
+chose no code change; a one-line tooltip edit is available on request.
+
+
+## Reconstruction prerequisites: the migration and both Edge Functions are now done (2026-09-01)
+
+Updates the standing "NOT verified, and this is the real gap" caveat on the 3D-reconstruction entry
+below. Of the three prerequisites named there:
+
+- **(a) a RunPod account + deployed serverless endpoint — STILL OPEN.** Owner-only; nothing here
+  changes it. `services/reconstruction-worker/` remains written-but-never-built.
+- **(b) the two Edge Functions deployed — DONE, then UNDEPLOYED the same day.**
+  ⚠️ **Superseded — see the cancellation entry above.** Both functions were deleted from the
+  project hours later when the feature was cancelled; the paragraph below describes a state that
+  no longer holds and is kept only as the record of what was verified while they were live.
+  Original note: `submit-reconstruction` (JWT check on) and
+  `reconstruction-webhook` (`--no-verify-jwt`, the deliberate exception) are both ACTIVE at version 1
+  on `bgupuqnkqhixpuctyder`. Live probes: the webhook answers its own 400 with no JWT, proving the
+  flag took effect; submit answers 401 at the platform gate, proving its check is on.
+  ⚠️ `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` are **not set**, so submit fails pre-flight with a clean
+  500 rather than reaching anyone's money.
+- **(c) the migration run — DONE.** `2026-08-29-reconstruction-requests.sql` applied 2026-09-01 and
+  confirmed by `VERIFY-schema.sql` returning no rows against its regenerated 342-object list.
+
+⚠️ **The end-to-end chain is still unexercised.** insert→approve→RunPod→webhook→viewer has never run,
+the webhook's token-comparison branch has never executed (a probe with a nonexistent id returns 404
+on the row lookup, which sits before the token check), and the 3D tab still correctly shows an empty
+approval queue. The first real Approve click remains the actual integration test.
+
+
+## Seventh feedback round: 11 items — Plan-view clustering/thumbnails, the stale "3 of 3" count, Stack view's look, and a Presentation-pane rework (2026-08-30)
+
+Owner sent this batch mid-session, with 4 screenshots, while the sixth-round batch above was still
+being verified — a Photos-map reference image (iOS Photos' pin-clustering style, illustrating the
+*visual language* wanted for items 1/2, not a bug report about this app), and three screenshots of
+this app's own Plan view, Presentations list, and an open slide.
+
+### Items 1/2 — Plan-view pins: real distance clustering + a photo-thumbnail marker
+
+`planClusters()` was a grid-snap (round each pin to the nearest 0.05-cell) — two pins a hair's width
+apart could land in different cells if they straddled a boundary, never combining. Rewritten as a
+genuine greedy single-pass clustering: each pin (processed in a stable id-sorted order for
+determinism) joins the first existing cluster whose **current, recomputed centroid** is within
+`PLAN_CELL` (0.05, unchanged) of it, else starts a new cluster — matching the reference screenshot's
+"0.05 apart combine into one pin" ask literally, by distance rather than by a fixed cell.
+
+**A cluster marker now shows the latest photo in it**, iOS-Photos-style, with the item count as a
+small corner badge (`.pp-plancluster-photo`/`.pp-plancluster-badge`) — falling back to the old plain
+number badge when the cluster's most recent item has no photo thumbnail (a panorama or a 3D
+reconstruction, neither of which has a `thumb_url`).
+
+### Item 3 — the Floor row and the Month row now read as ONE toolbar
+
+They were built two different ways: Floor was a labelled `<select>` (`Floor [Ground Floor ▾]`),
+Month was a bare `‹ value ›` stepper with no label at all, and only Month carried a long trailing
+hint. Both are now the same shape — a plain-text label ("Floor" / "Month"), then the stepper/control
+cluster, then one short trailing hint each (the pinned-item count moved to the Floor row, since it's
+about the floor being shown, not the month).
+
+### Item 4 — the top "Showing N of M photos" bar disagreed with Plan/Stack's own counts
+
+⚠️ **Real bug, confirmed by reading the code, not just believed from the screenshot.** `render()`
+set `#pp-count`'s text from the Gallery's own filtered `list`/`rows` **unconditionally**, before
+ever checking which view was active — so in Plan view it showed the Gallery's whole-project count
+while the Plan toolbar, right below it, correctly showed its own floor/date-narrowed "N pinned
+items". Two different, correctly-computed numbers on screen at once is exactly what the screenshot
+shows ("3 of 3" above, "2 pinned items" below). The user's own note that Stack view "still says 3 of
+3" is the same bug — Stack has no top-level count of its own to disagree with, so the stale Gallery
+count sitting above it was simply wrong. Fixed by blanking `#pp-count` whenever `view === 'plan' ||
+view === 'stack'`, rather than trying to keep two separately-computed counts in sync — a second
+mechanism that agrees with the first *today* is exactly how this bug happened in the first place.
+
+### Item 5 — the Stack view restyled toward Project Schedule's Vertical Stacking
+
+Two changes, both scoped to what a plain HTML table can reasonably carry, not a full port of that
+module's SVG-based bands/scrub-magnifier system (a much larger rebuild than this batch's other ten
+items justify):
+- **Rows now order top-floor-first** (`stackRowSort`) — the previous plain alphabetical sort put
+  "1st Floor" above "9th Floor" (string comparison, not numeric), the opposite of a real building
+  read top-down. Rows are now sorted by whatever integer a level's own name embeds, **descending**
+  (highest floor first), falling back to reverse-alphabetical for a level with no number in it at
+  all (a named zone/tower rather than a storey) so it degrades sensibly instead of throwing.
+- **Visual language borrowed from Project Schedule's stacking bands**: each row is now a taller band
+  (52px → 64px) with a **red-railed** row header (`border-left:3px solid var(--pd-red)`) and
+  alternating row tint — reading as stacked floor slices rather than a spreadsheet grid.
+- ⚠️ **Not built**: the docked hover-magnifier is Stack view's *existing* one (a plain `<img>` swap
+  into a fixed panel, already present); no per-tower SVG cloning, no scrub-by-drag timeline beyond
+  the month stepper Stack already had. A genuine like-for-like port of the schedule module's stacking
+  view is a separate, materially larger piece of work.
+
+### Item 6 — the "Full-size preview" button removed from the opened presentation
+
+It duplicated the pane already on screen (you're already viewing the slide full-size while editing
+it). ⚠️ **The list screen's own separate "Preview" row action (`openPreviewModal`) is untouched** —
+that one opens a presentation's slides *without* entering the editor at all, a genuinely different,
+still-useful feature the owner didn't ask to remove.
+
+### Item 7 — "Presentations list" back button relocated
+
+It lived deep inside the action-tool cluster (`.pp-topbar-tools`), where it ended up as the one
+visible button beside the always-present offline-sync pill (`#pp-sync`, "N pending — Sync now") the
+moment every other list-only tool hid itself on the slides screen — reading as one more competing
+action button parked next to a status pill, exactly the "quite off" the screenshot shows. Moved to
+sit beside the screen tabs (Gallery/Presentations/Plans) instead, since it *is* screen-level
+navigation ("you're inside one presentation, step back up to the list"), and restyled as a quiet
+breadcrumb link (`.pp-crumbback` — no border at rest, muted text) rather than a bordered `.pd-btn`,
+so it reads as navigation rather than another action even where it does end up near the sync pill on
+a narrow layout.
+
+### Item 8 — the reorder-slides pop-up shows Location AND the current photo's Works
+
+Location was already added in an earlier round; the current (after) photo's **Works** value is now
+shown above it in each thumbnail card (`.ppr-sortworks`) — the thing a reorder decision usually turns
+on ("which stage of work comes first"), which the thumbnail alone can't convey.
+
+### Items 9/10/11 — the Presentation pane: a real card, always-shown Location, labelled fields, no tags line
+
+- **Item 9 ("looks very plain")**: each pane (`.ppr-pane`) is now a real card — surface, border,
+  radius, a subtle shadow — instead of an image floating directly on the page background. The
+  Previous/Current label became a small pill chip: Current filled brand-red (it's the stage being
+  reported on), Previous outlined and quieter — so the two panes read as distinct at a glance, not
+  only by left/right position. The shared-location banner above the pair got the same pill treatment.
+- **Item 10 ("location... must be shown")**: ⚠️ **Location previously vanished silently whenever a
+  photo had none set at all** — `loc ? '<div>...' : ''` rendered nothing, unlike Date/Description,
+  which already always render with an em-dash fallback. Location now always renders too (labelled,
+  em-dash when unset) — it only ever disappears when the SHARED-location tile above the pair has
+  already said it once for both photos. The key-plan icon was already top-right-of-the-photo
+  (confirmed against the shipped CSS, `.ppr-kpicon { position:absolute; top:8px; right:8px }`) — no
+  change needed there, it already matched the ask.
+- **Item 11 (labels + no activity-list caption)**: Date and Description now carry explicit small
+  uppercase labels (`.ppr-panehead-lbl`) — both were bare values before, with nothing distinguishing
+  which line was which. The Trade/Works tags line under the caption is **removed entirely** — "no
+  need to include as caption all the activities performed or assigned to the photo" — the caption is
+  now Location, Date and Description only. The now-orphaned `.ppr-panetags` CSS rules were deleted
+  rather than left as dead weight.
+- ⚠️ **Mirrored into the export path too** (`slideFigureHTML`, shared by the offline HTML/PDF/PPTX
+  downloads and the in-app preview modal) — dropping the tags line and adding the label/always-shown-
+  location rule only in the live editor would have left a downloaded file showing a caption the
+  on-screen view no longer does. The dead `.t`/tags rule in `EXPORT_CSS` was replaced with a `.loc`
+  rule for the new Location line.
+
+### Verified
+
+⚠️ **This round could NOT be verified by executing the test suite — no `node` binary was reachable
+in this session** (checked via `where node`, a filesystem search, and a direct invocation; none
+resolved), unlike every prior round in this file, all of which ran `test.js`'s Node `vm` harness.
+What WAS done instead, and what remains unproven:
+- **0 NUL bytes** and **CSS braces balanced (518/518)** across `module.css`, `module.js`, `ppr.js`,
+  `index.html` (byte-level Python checks, not a shell `grep` pattern).
+- **0 duplicate DOM `id=` attributes** in `index.html` after the `ppr-back` relocation.
+- Every edited region was re-read in full after editing and confirmed structurally well-formed
+  (matching quotes/parens/string concatenation, no dangling operators) — a manual review, not a
+  parser.
+- A rough paren-count check on `ppr.js` shows a pre-existing 1-paren imbalance that **already existed
+  at the last commit, before this round's edits** (confirmed via `git show HEAD`) — almost certainly
+  a decorative parenthesis inside a comment/string rather than a real syntax defect, given the file
+  loads and every edited region reads correctly, but flagged rather than silently waved off, since it
+  could not be confirmed with a real parser this round.
+- **`test.js` was NOT extended or re-run this round** — a real gap against this module's own
+  established practice. The next session with a working `node` should run the existing 734-check
+  suite unmodified first (to confirm nothing broke) and then add genuinely-executed coverage for
+  `stackRowSort` (numeric-descending + the no-number fallback) and the rewritten `planClusters`
+  (the id-sorted, recomputed-centroid distance join, replacing the old grid-snap tests).
+- Test-only hooks (`_stackRowSort`, `_planClusterLatestThumb`) were added to `module.js`'s exported
+  object anyway, in the same shape as every existing hook, so that follow-up work is a call away
+  rather than a rewrite.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. In particular: the
+real click-through of the relocated back button at a narrow viewport, the Plan-view thumbnail
+clustering against real pin data, and the Presentation pane's new card styling against a real render
+are all unverified beyond the structural checks above.
+
+`module.css/js`, `ppr.js` → `?v=20260830f`. (`bim.js` untouched this round, stays `?v=20260830e`.)
+
+## Sixth feedback round: 9 items — Add-media type-switch bug + dropdown, markup grouping/redo/reorder/resize/rotate/text, markup-by-default, the pie-shaped camera cone, smaller thumbnails (2026-08-30)
+
+Owner sent 9 items in one message, the largest single batch in this module's history — 6 of the 9
+concentrate on the markup editor.
+
+### Item 1 — Add Media type-switch bug + a dropdown trigger
+
+⚠️ **Real bug, confirmed by reading the code, not just believed from the report.**
+`wireMediaTypeSelector`'s `onChange` callback only relabelled the file-field's `<label>` text — it
+never touched `#pp-stagedgrid`, `stagedUrls`, `pendingMarkup`/`pendingAdjust`, or the `#pp-files`
+input itself, and a `<input type=file>`'s already-chosen `FileList` can't be reassigned by script
+anyway. So switching Photo→Video after staging a photo left the wrong-kind file sitting there with
+no way for the code to notice. Every type change now clears the whole staged batch (revokes object
+URLs, drops pending markup/adjustments, resets the input, empties the grid).
+
+**"+ Add media" is now a dropdown** — Photo / Video / 360° / 3D (disabled) — matching the owner's
+suggestion. `wireMediaTypeSelector(idPrefix, initial, onChange)` gained an `initial` parameter so
+picking Photo/Video from the dropdown opens the upload modal pre-set to that type; 360° hands off
+straight to `PANO.openCapture()`, the same behaviour the modal's own in-place 360° button already
+had. New `video` icon added to the shared `icons.js` (bumped app-wide, 19 files).
+
+### Items 2/3/4 — the markup toolbar: grouped controls, Redo, reordered icons
+
+- **Item 2**: Line (colour + weight) and Fill (colour + transparency) are now two visually SEPARATE
+  labelled boxes (`.pp-mk-group-line`/`.pp-mk-group-fill`, each with a small uppercase caption) —
+  previously two same-shaped swatch rows sat directly adjacent with nothing distinguishing them.
+- **Item 3**: a Redo button beside Undo. ⚠️ The `undone` stack already existed (populated by Undo)
+  but nothing ever read it back — Redo just pops it onto `history` and restores from there, the
+  exact mirror of what Undo does.
+- **Item 4**: `TOOL_ORDER` reordered to the owner's explicit list — select, pen, highlighter, line,
+  arrow, rect, circle, polygon, ruler, text, sticker(icon), eraser — and **signature removed** as a
+  pickable tool. ⚠️ `drawMarkupObjects` still knows how to RENDER an existing signature-type object
+  (backward compatibility for markup saved before this round); only the ability to create a new one
+  is gone.
+
+### Item 5 — real on-canvas text entry, editable size, fillable background box
+
+`prompt('Text:')` is gone. Clicking with the Text tool creates a blank text object and immediately
+opens a real, positioned `contenteditable` overlay (`#pp-mk-textedit`) directly over the canvas at
+the click point — typing goes straight into it, Enter (no shift) or blur commits, Escape discards.
+Double-clicking an existing text object (Select tool) reopens it for direct editing with its current
+text pre-selected. Text objects gained `fontSize` (a new size slider, shown only for text) and joined
+`fillableType()` alongside rect/circle/polygon, so its background box's colour and transparency are
+now editable through the same Fill group everything else uses — replacing the old fixed, un-turnable-
+off `rgba(255,255,255,.85)` box. ⚠️ A commit with empty text REMOVES the object (matches `prompt()`'s
+old "cancelled if blank" behaviour, whether the object is brand new or was just emptied out).
+
+### Item 6 — resize and rotate
+
+Every markup object gained a `rotation` field (degrees, default 0), applied as a canvas transform
+around the object's own bounding-box centre — never baked into the stored coordinates, so the
+resize math stays simple regardless of rotation. Selecting an object now shows real, draggable corner
+handles (resize) and a rotate handle above the box, not just decorative dots.
+- **Resize** (`resizeBoxObj`): dragging a corner moves that corner to the new local position while
+  the OPPOSITE corner stays fixed — the standard anchor-corner resize. Text/icon have no box to
+  stretch, so `resizeSizeObj` scales their `fontSize`/`size` instead, based on distance from the
+  object's own point.
+- **Rotate** (`rotationFromPointer`): dragging the rotate handle sets rotation from the bearing to
+  the pointer, calibrated so the handle's own drawn position (straight up) is 0°.
+- **Hit-testing is now rotation-aware** (`markupToLocal`) — a rotated object's clickable region
+  rotates WITH it, not with its stored (unrotated) coordinates. ⚠️ **Genuinely proven, not assumed**:
+  a 90°-rotated wide-short rect's hit region was confirmed, by running the shipped code, to correctly
+  MISS a point inside its stored box and HIT a point outside it once rotated — the exact case a
+  naive "rotate the object, forget the hit-test" implementation would get backwards.
+- ⚠️ **DOM updates during a drag are in-place attribute writes, never a re-render** — replacing the
+  canvas/DOM mid-gesture would drop whatever pointer capture the drag itself just set up.
+
+### Item 7 — markup shows by default everywhere, one shared toggle
+
+Previously markup only ever rendered in the lightbox ("hidden on Gallery tiles by contract"). Now
+`thumb()` wraps any tile whose photo actually has markup in a positioned overlay canvas
+(`.pp-mkwrap`/`.pp-thumbmk`), drawn via the same `drawMarkupObjects` the editor uses, sized to the
+tile's own real rendered box. ⚠️ **Cost-gated**: only rows with `r.markup.length` get the wrapper at
+all — the overwhelming majority of tiles pay nothing extra, same discipline as the adjustments CSS
+filter. **One shared, persisted preference** (`markupGlobalVisible()`, per project) drives List,
+Gallery AND the lightbox — the lightbox's own toggle button now WRITES this shared flag (and
+re-renders the grid) instead of being a private per-session switch, and opening a photo seeds
+`lightboxMarkupVisible` FROM it instead of always defaulting to `true`. A new listbar button
+(`#pp-mkvistoggle`) gives a way to hide/show it without opening a photo first.
+- ⚠️ **Real bug caught before shipping**: `Icons.hydrate()` sets a one-time `dataset.icoDone` guard
+  and refuses to touch an element twice — re-hydrating the toggle button's icon after the FIRST
+  flip would have silently done nothing on every flip after that. Fixed by re-rendering the icon's
+  SVG directly (`Icons.svg(...)`) instead of calling `hydrate()` again.
+- ⚠️ **Scope**: List + Gallery + Lightbox only. Stack view keeps its own inline `<img>` rendering,
+  not `thumb()` — deferred given this round's size, flagged rather than silently left inconsistent.
+
+### Item 8 — the camera-angle cone: a real pie, one handle, gradient, hidden when N/A
+
+Replaces the straight-edged 2-handle triangle. `edge1_x/y`/`edge2_x/y` stay the persisted DB shape
+(no migration) — only how they're derived and manipulated changes:
+- **Shape**: a true SVG `<path>` with an ARC command (pin → edge1 → arc → edge2 → close), not a
+  3-point polygon. Fill is a radial gradient (`<radialGradient>` centred on the pin) — solid dark
+  near the pin, fading to nothing at the arc — with **no stroke at all**.
+- **One handle, sized 1/4 of the 14px pin dot (4px, was 16px)**, sitting at the sector's own
+  clockwise edge. Two DIFFERENT gestures now drive the cone, since one 2D point can't cleanly carry
+  three degrees of freedom: **dragging the SECTOR BODY** rotates only the facing direction
+  (half-width/reach untouched); **dragging the ONE handle** changes half-width (angle) and reach
+  (depth) TOGETHER — the literal "one button to adjust both" ask.
+- ⚠️ **Double-clicking to mark "does not apply" now hides the wedge and its handle ENTIRELY** — the
+  previous grey-dashed placeholder is gone; the pin dot itself (dimmed, `pointer-events:auto` only
+  in this state) is the sole remaining thing to double-click back on. ⚠️ **Real bug caught before
+  shipping**: `.bim-pinstage-dot` is `pointer-events:none` by default (deliberately, so a click near
+  the pin passes through to the image and moves it) — without an `.is-na` override, the dot's own
+  double-click handler would have been unreachable in exactly the one state that needs it.
+- ⚠️ **Live drag updates are in-place SVG attribute writes** (`setAttribute('d', …)`,
+  `setAttribute('cx'/'cy'/'r', …)`), never innerHTML replacement — same pointer-capture reasoning as
+  item 6's resize/rotate.
+- ⚠️ **A math property proven, not assumed**: `coneParamsFromEdges` (the inverse of `edgesFromCone`)
+  resolves a cone straddling the 0°/360° seam (e.g. spanning 355°→15°) to the correct SHORT 10°
+  half-width — a naive `b2-b1` subtraction would silently produce the ~350°-wide "long way round".
+
+### Item 9 — smaller thumbnails, again
+
+"Still slow" even after real client-generated thumbnails shipped last round. `THUMB_MAXW`/
+`THUMB_JPEG_Q` (the client-generated thumbnail) and `THUMB_OPTS.transform.width`/`.quality` (the
+Storage-transform fallback) both shrunk 480→320px / quality 0.6→0.5 / 0.55→0.5. Sized for the new
+3-column phone Gallery grid (~125px/tile) rather than the old single-column layout these were
+originally tuned for. ⚠️ Kept as two independent constants (as before) — no shared-constant
+cross-reference, since `THUMB_OPTS` is defined earlier in the file than `THUMB_MAXW` and referencing
+one from the other would read `undefined` at that point in the file's execution order.
+
+### Verified
+
+**734 checks, all green** — 684 → 734 (39 new genuinely-executed geometry/behaviour checks + a
+handful of pre-existing structural assertions updated in place for shape changes this round made
+deliberately, e.g. the TOOL_ORDER count/order, the `wireMediaTypeSelector` signature). Several
+findings came from EXECUTING the real code, not from reading it:
+- The rotate-handle hit-test's exact screen position, the resize anchor-corner invariant (dragging
+  one corner must never move the opposite one), and the rotated-hit-test boundary were all confirmed
+  by running the shipped functions against hand-built fixtures — one of my OWN first-draft test
+  coordinates was wrong (computed by hand against the 6px hit-pad without accounting for it) and was
+  corrected by empirically probing the actual shipped code rather than re-deriving by hand a second
+  time. The cone's seam-straddling case (355°→15°) and its edges↔params round-trip were checked the
+  same way.
+- `node --check` clean on every touched JS file; 0 NUL bytes; CSS braces balanced (511/511); 0
+  duplicate DOM ids. Function-set diff against the prior commit: 0 lost.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. In particular: the
+real drag-to-resize/rotate pointer gestures, the on-canvas text overlay's actual positioning against
+a real rendered image, and the cone's two-gesture interaction (body-drag vs. handle-drag) are
+verified by genuine execution of the underlying math/DOM-update functions, not by driving a live
+browser session.
+
+`module.css/js`/`bim.js` → `?v=20260830e`; `assets/js/icons.js` → `?v=20260830c` (app-wide, 19 files).
+
+## Fifth feedback round: the REAL topbar-button root cause found live, and iOS-Photos-style phone tiles (2026-08-30)
+
+Owner sent a phone screenshot: *"1. when first opening the progress photos app, the buttons for
+the gallery tab are still not right. 2. loading of photos preview is also quite slow. photo
+previews in the gallery view can be smaller. in a phone view, copy size of ios photo gallery"*.
+Item 1 is the SAME defect the fourth-round entry below reported as "no code-level cause found" —
+that conclusion was wrong, and this time it was chased down live in a real browser instead of by
+static tracing.
+
+### ⚠️ THE REAL ROOT CAUSE — `render()` hardcoded `syncTools(true)` in BOTH ppr.js and bim.js
+
+Reproduced live on the deployed site (Chrome, real session): `getComputedStyle` on `#ppr-new` and
+`#bim-new` while sitting on the **Gallery** screen showed **`display: flex`** on both — all three
+topbar buttons ("+ Add media", "+ New Presentation", "+ Upload floor plan") visible at once,
+exactly the screenshot. No console error at all — nothing threw.
+
+Isolated the cause by calling `PPR._syncTools(false)` directly in the live page: it correctly hid
+both buttons with **zero errors**, proving `syncTools` itself was never the bug — the fourth
+round's `safeInit`/`safeSync` hardening had been solving a problem that didn't exist, while the
+real one hid in plain sight one call deeper. Fetching the live `ppr.js`/`bim.js` source and
+grepping every `syncTools(` call site found it: **`render()` in both files calls
+`syncTools(true)` unconditionally**, on *every* re-render — including the one triggered by their
+own **async `load()` completing**, which runs well after `index.html`'s `setScreen()` has already
+correctly called `PPR._syncTools(false)` / `BIM._syncTools(false)` because the active screen is
+Gallery, not Presentations/Plans. The async re-render silently threw that decision away and
+re-showed the button. Every other `syncTools(...)` call site in `ppr.js` already replays a cached
+`toolsVisible` (`syncTools(toolsVisible)`, e.g. the checkbox-select handlers) — `render()` was the
+one place that didn't, and `bim.js` had no such cache at all.
+
+- Fixed identically in both files: `render()` now calls `syncTools(toolsVisible)`. `bim.js` gained
+  the `toolsVisible` module variable it never had (ppr.js already had one).
+- ⚠️ **Why the fourth round's `safeInit`/`safeSync` hardening never caught this**: nothing throws
+  here — it's a plain logic error, and a try/catch around a call that succeeds catches nothing.
+  That hardening is still worth keeping (a genuinely different module could still misbehave and
+  strand another's button), but it was never going to fix this class of bug on its own.
+- ⚠️ **Verification trap, found and fixed in the course of proving this**: the harness's `canWrite`
+  defaults to `false` (no `init()`/session is exercised), and every real button `syncTools` touches
+  is *also* gated on `canWrite` — so with `canWrite` false, `syncTools(true)` (the bug) and
+  `syncTools(toolsVisible)` (the fix) are **indistinguishable**: both compute to `'none'` regardless.
+  A first draft of the genuine-execution test therefore passed against the **buggy** code too,
+  proving nothing — confirmed by actually reverting both files and re-running. New test-only
+  `_setCanWrite(v)` hooks (both files) make the two states differ, so the test can tell them apart.
+- ⚠️ **A second trap while re-verifying against the reverted code**: a throwaway Python revert
+  script wrote the file back out in Python's default Windows text mode, which silently converts
+  every `\n` to `\r\n` on write — inflating the whole file and breaking six *unrelated* pre-existing
+  regex assertions that match a literal `\n` (e.g. `hydrate\(\);\n  \}`), producing a wall of
+  spurious failures that had nothing to do with the change being tested. Diagnosed by diffing with
+  `--strip-trailing-cr` (showed only the one intended line differed) and confirming determinism.
+  **For any future revert-and-re-test cycle on this repo: use `sed -i` or the Edit/Write tools, never
+  raw Python `open(...).write()`, on Windows** — it silently corrupts line endings.
+- **Verified: 6 new checks genuinely executing the real code** (`PPR._render()`/`BIM._render()`,
+  new test-only hooks alongside `_setCanWrite`) — confirmed by reverting to `syncTools(true)` and
+  re-running: **both execution assertions fail against the pre-fix code, both pass against the
+  fix**, isolated from the `canWrite` masking trap above. Plus 2 source-level regex regression
+  guards. Function-set diff against `main`: **0 lost, 0 named-function additions** (the two new
+  hooks are anonymous export-object properties, the same under-counting this file's own convention
+  already notes elsewhere). 0 NUL bytes; both files parse.
+
+### Item 2 (phone tiles) — Gallery view now matches iOS Photos' own dense small-square grid
+
+The phone `@media (max-width: 700px)` block previously collapsed `.pp-gallery` to **one full-width
+column** (`grid-template-columns: 1fr`) — the opposite of what was asked, and also the reason
+"loading is slow" read as worse than it is: every tile filled the whole screen, so scrolling past
+a handful felt like a lot of loading for not much scanned.
+- **Three columns, a 2px hairline gap, square-cropped tiles** (`aspect-ratio: 1` on `.pp-cardphoto`/
+  `.pp-vidthumb`/the no-image placeholder, replacing the desktop's fixed 210px rectangle) — the
+  recognisable iOS Photos shape. Only inside the phone media query; desktop's 290px-minmax card
+  grid is untouched.
+- ⚠️ **Card chrome (border/border-radius/background) drops to nothing at rest on phone**, so tiles
+  sit edge-to-edge the way the real app's do — the existing `.pp-card.pp-selrow` red-border
+  selection rule still works unmodified, it simply has nothing to override at rest any more (a
+  2px border is added only when a tile is actually selected).
+- The corner overlays (`.pp-cardsel`'s select checkbox, `.pp-pinbtn`'s key-plan badge) shrink to
+  match — sized for a 210px desktop tile, either would cover close to a third of a ~120px phone tile.
+- **Verified: 6 new checks** against the real `module.css`, scoped to the phone media-query block
+  specifically (sliced from its own start to end-of-file) so an identically-named desktop rule
+  elsewhere in the file can't produce a false pass. Confirmed to bite: reverted just the
+  `.pp-gallery` grid line via `sed` (byte-safe on Windows, unlike Python's default text mode) and
+  re-ran — both the "multi-column" and "hairline gap" assertions fail against the old line, and
+  nothing else in the 690-check suite is disturbed. CSS braces balanced (498/498).
+
+### Verified (whole round)
+
+690 checks, all green, executing the shipped functions. `node --check` clean on `ppr.js`/`bim.js`/
+`test.js`; 0 NUL bytes across every touched file; CSS braces balanced.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. This round's
+fix WAS, however, reproduced and diagnosed live (Chrome DevTools-equivalent inspection of the
+actual deployed site), which is a step beyond this module's usual "structural only" verification
+for exactly the class of bug (an async-timing interaction) that structural checks alone had missed
+twice before.
+
+## Fourth feedback round: 7 items — real thumbnails, the wireLocFields regression, markup select/line/polygon, photo adjustments (2026-08-30)
+
+**Run `migrations/2026-08-30-photos-round3.sql`.**
+
+### ⚠️ THE ROOT-CAUSE FIND — items 2, 4 and most of item 7 were ONE bug
+
+`module.js` carried **two** `function wireLocationField(idPrefix)` declarations. JS function-
+declaration hoisting means the second silently wins — and the second called `wireLocFields(idPrefix)`,
+a helper a *previous* refactor had already deleted from this file. Every call to `wireLocationField`
+(both `openUpload`'s Add Media modal and `openForm`'s Edit Photo modal) therefore threw a
+`ReferenceError` the instant it ran. Neither call site wraps it in a try/catch, so the throw silently
+aborted **every wiring statement that ran after it in the same function** — `wireWorksMultiField`,
+`BIM.wirePinField`, `wireMediaTypeSelector`, the file-input change handler, and critically the
+**Save/Upload button's own `onclick`**. That is exactly "Key Plan doesn't work, Works and Location
+don't work, and Add Media regressed" reported together (item 7) — all four are downstream of the one
+throw. It also explains item 4 ("Save markup does not work"): the staged-file grid that wires the
+Markup button is set up in that same doomed tail of `openUpload`, so it never rendered at all.
+- Fixed by deleting the stale, dead second declaration. Both call sites always passed exactly one
+  argument, so the fix needed no caller changes.
+- Regression-guarded: a structural test asserts `wireLocFields` is gone entirely and exactly one
+  `wireLocationField` declaration exists.
+- **No code bug was found for item 2** (topbar buttons regressing) after exhaustive tracing — both
+  `ppr-new`/`bim-new` default to `display:none` in the static HTML, so no crash-then-skip-hiding path
+  can explain "all three shown at once." As a hardening regardless (and because it is the same failure
+  *class* the bug above turned out to be), `index.html`'s bootstrap now isolates every sub-module
+  `init()` call and every one of `setScreen()`'s four visibility calls in their own try/catch, so a
+  future bug in one module's setup can no longer strand another module's topbar button in the wrong
+  screen's state.
+
+### Item 1 — thumbnails are now a REAL, separate file, not a request-time transform
+
+The prior fix (Storage's image-transform add-on) silently degrades to full-resolution the moment that
+add-on isn't enabled on the project's plan tier — indistinguishable from "still slow," which is
+presumably why this was reported again. `uploadThumbnailFor`/`makeThumbnailBlob` now generate a real,
+separately-uploaded ~480px JPEG **client-side at upload time** (canvas downscale, the same technique
+`ppr.js`'s offline export already uses) and store its Storage path on a new `thumb_url` column.
+`thumbUrlOf(r)` prefers `thumb_url` → falls back to the transform request (old rows) → full-res.
+- Wired into both save paths (`saveCapture` and the offline-queue `flushQueue`), and into delete (a
+  thumbnail is a real object and would otherwise be orphaned forever).
+- ⚠️ Never blocks the real upload — any failure (corrupt file, unsupported format, `toBlob`
+  unavailable) degrades to `null`, and the photo still saves at full-res.
+- Plan/Stack views were re-audited too: Plan renders no photo thumbnails at all (only text labels in
+  its cluster popup, and the floor-plan *drawing* itself — a different asset); Stack already used
+  `thumbUrlOf` for its cells and reserved full-res for the hover magnifier, which is correctly the
+  "expanded" view per the item's own rule.
+- **Verified: 15 checks genuinely executing** `makeThumbnailBlob`/`uploadThumbnailFor` (a fake `Image`
+  + `<canvas>.toBlob` stub in test.js), including the video-is-skipped case and the
+  fails-degrades-to-null case, plus the full `thumbUrlOf` fallback chain against injected rows.
+
+### Item 6 — "Group by: None"
+
+A real grouping mode, not a fake "one group that still prints a header" — `groupRows()` short-circuits
+to a single un-sorted bucket carrying a sentinel key (`NO_GROUP_KEY`); both `listHTML` and `galleryHTML`
+check for that sentinel and print **no header/wrapper at all** rather than an empty `<strong></strong>`.
+Listed first in the `#pp-groupby` select, ahead of Month.
+
+### Items 3/4 — the markup editor rebuilt: select-to-edit, independent fill colour, icons, Line/Polygon
+
+- **Select tool (new, and the default tool on open)** — `markupHitTest` now does a proper
+  bounding-box-and-topmost-first hit test for area shapes (rect/circle/polygon), falling back to the
+  original nearest-point test for strokes/lines/text/icons. Clicking a shape selects it (drawn with a
+  dashed outline + corner handles), dragging moves it (`translateMarkupObj`, applied against a
+  snapshot taken at drag-start so a fast drag can't compound its own delta), and a "Delete selected"
+  button (separate from "Clear all") removes just that object. The toolbar restyles the **selected
+  object live** — click a colour swatch after grabbing a shape and it changes that shape, not "the
+  next new shape's default." Switching tools clears the selection so the toolbar can't stay ambiguous
+  about which it's editing.
+- **Independent fill/border colour** — `fillColor` is a genuinely separate field from `color`
+  (`fillColorOf(o)` falls back to `color` only for objects saved before this feature existed, so old
+  markup keeps rendering identically). A second, smaller swatch row sits inside the Fill controls.
+- **Icons instead of text labels** — all 13 tools are now icon-only square buttons
+  (`title`/`aria-label` carry the name). Nine new icons added to the shared `assets/js/icons.js`:
+  `cursor`, `highlighter`, `square`, `circleShape`, `line`, `polygon`, `textTool`, `signature`,
+  `eraser` (pencil/ruler/arrowRight/trash/undo were already there and are reused).
+- **Line** — the plain, undecorated version of the drag-a-segment gesture Ruler/Arrow already had.
+- **Polygon** — click each corner (the shape's last point live-tracks the pointer between clicks),
+  double-click to close. Fewer than 3 real vertices on close is discarded, not saved as a degenerate
+  sliver; switching tools or saving mid-polygon likewise discards the unfinished shape.
+- **Verified: 40+ checks genuinely executing** `drawMarkupObjects`/`markupHitTest`/`translateMarkupObj`
+  against a fake canvas-2D recorder — Line drawing a plain stroke (no arrowhead fill), Polygon closing
+  + filling with its own `fillColor` + stroking with its own `color`, the selection outline appearing
+  only when `selectedIdx` matches, and translate correctly shifting every coordinate shape variant
+  (`points` array / `x0,y0,x1,y1` / bare `x,y`) without mutating the original object.
+
+### Item 5 — Exposure / Brightness / Contrast / Sharpness
+
+Non-destructive, stored as `{exposure,brightness,contrast,sharpness}` (each -100..100, 0 = unchanged)
+on a new `adjustments` column — the original file is never touched or re-uploaded, so resetting to 0
+always recovers exactly what the camera captured.
+- **Exposure/Brightness/Contrast render everywhere a photo appears** (Gallery tiles, List rows, Stack
+  cells, the lightbox) via the browser's own CSS `filter` — cheap and GPU-accelerated, so this costs
+  nothing for the overwhelming majority of unadjusted rows (`cssFilterFor` returns the literal string
+  `'none'` when nothing was touched, and `thumb()`/the Stack cells skip the `style` attribute entirely
+  in that case). Exposure and Brightness both map onto CSS's one `brightness()` primitive (there is no
+  separate "exposure" filter) and compose multiplicatively; Contrast maps onto `contrast()` directly.
+  Both are clamped to 0.3x–1.9x so an extreme slider can never invert or blank the image.
+- **Sharpness has no CSS filter equivalent** — it needs real pixel convolution
+  (`getImageData`/`putImageData`), which is too costly to run on every tile in a scrolling grid. It is
+  therefore evaluated *only* in the adjustment dialog's own live preview (a standard unsharp-mask 3x3
+  kernel, `applySharpen`) — the one other place a planner is looking closely at one photo, matching
+  item 1's own "full resolution only when expanded" rule.
+- New `openAdjustEditor` dialog (canvas preview + 4 sliders + Reset), reachable from the same two
+  places Markup is: the lightbox ("Adjust" button beside "Markup") and the staged-file grid during
+  upload (an "Adjust" button beside "Markup" per file, before the file is even saved).
+- ⚠️ A default (all-zero) adjustment is never attached to a save payload — no accidental
+  `adjustments:{}` write for a photo nobody touched.
+- **Verified: 20+ checks genuinely executing** `cssFilterFor`/`adjustmentsAreDefault`/`applySharpen` —
+  including the clamp ceiling/floor, sharpness contributing nothing to the CSS filter string, a flat
+  image sharpening to a no-op (proves the kernel math nets to zero, not just "did it run"), and a
+  bright-centre/dark-neighbour fixture proving the convolution pushes the centre up and pulls a
+  neighbour down — the defining behaviour of an unsharp mask, not just "some numbers changed."
+
+### Verification (whole round)
+
+617 → **678 checks**, all green, executing the shipped functions (never regex-only for anything
+genuinely computable) via `test.js`'s Node `vm` harness. `node --check` clean on every touched file;
+0 NUL bytes; CSS braces balanced (488/488); function-set diff against the prior commit shows **0
+functions lost, 20 added**. `assets/js/icons.js` bumped app-wide (`?v=20260830b`, 19 referencing
+files); this module's own `module.css`/`module.js` bumped to `?v=20260830c`.
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing caveat for
+this entire module. No live click-through of the Select/drag-to-move interaction, the Polygon
+double-click gesture, the Adjust dialog's live canvas preview, or the thumbnail generation against a
+real upload. `migrations/2026-08-30-photos-round3.sql` has not been run.
+
 ## Third feedback round: 30 items across Gallery/Add-Media/Markup, Presentations, Plans (2026-08-30)
 
 Owner sent 30 items in one message with an explicit instruction to work unattended overnight
