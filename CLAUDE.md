@@ -84,6 +84,49 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (l) — Verified live, and the live run found a bug the harness was structurally incapable of finding
+
+Owner: *"After performing the prompts. Verify live via out of app browser."* Driven through the
+**deployed** site in the owner's own signed-in Chrome, on **Westside City Site B (WCB363)** — a real
+project with **16,256 activities**. ⚠️ **Read-only throughout.** The S-Curve panel is derived from
+`project_schedule` and writes nothing; no row anywhere was created, edited or deleted.
+
+**The two requested changes are correct on real data.** Two decimals throughout — *99.97% planned to
+date, 59.49% actual, −40.49 pts variance* — and the Monthly/Quarterly switch present and rendering.
+A 16,256-activity schedule also exercises the widened select from entry (j) (the curve's ten columns
+through `PDb.selectAll`'s pagination), which had never actually hit PostgREST before.
+
+**⚠️⚠️ THE BUG: THE FORECAST FINISH RENDERED AS `Tue Sep 01 2026 00:00:00 GMT+0800 (China Standard
+Time)`.** `PDScurve` returns `fcFinish` as a **Date object**. `Fmt.date` (in `assets/js/db.js`) tests
+`String(d).match(/^(\d{4})-(\d{2})-(\d{2})/)` and, on no match, **returns its input unchanged** — so
+the raw JS date string went straight to the screen, escaped and all.
+
+**⚠️ THE HARNESS COULD NOT HAVE CAUGHT THIS, AND THAT IS THE REAL FINDING.** The generated preview
+page stubbed `Fmt` with a hand-written version that happened to accept a Date. It rendered a tidy
+"Nov 7, 2028" and every check passed. **A stub kinder than the real thing does not test the page, it
+tests the stub** — and this one was kinder in exactly the direction that mattered. The generator now
+**lifts the real `Fmt` out of `db.js`** rather than approximating it, which is the same rule already
+applied to the panel functions, the panel band and the CSS: extract, never retype.
+
+**The fix is in `Fmt.date`, not at the call site.** A formatter that silently returns its input is the
+failure mode here, and a `Date` is the single most obvious thing to hand a date formatter. The
+fall-through is deliberately kept — callers pass `'TBD'` and similar through it — but a Date is
+formatted now, and an *invalid* Date returns the em dash rather than "Invalid Date".
+
+⚠️ **Something to raise rather than change.** This project reads *"forecast finish Sep 1, 2026"* —
+today — while sitting 40 points behind. That is the shared engine's long-standing rule
+(`remMs = max(0, plannedEnd − today)`, so a programme already past its planned end has nothing left
+to stretch) and the S-Curve module has always behaved the same way. It is arguably wrong — a project
+40 points behind will not finish today — but it is **existing behaviour in shared code**, not
+something this round introduced, so it is reported here rather than quietly altered.
+
+⚠️ **Not exercised live:** the Quarterly axis on this project was not clicked through before the fix
+was deployed, and the other four panels sat in their empty states (WCB363 carries no trades, minutes
+or register entries), so **Approaching Deadlines, Minutes of Meeting, Issues & Concerns and the My
+items drawer have still only been seen against fixtures.**
+
+`db.js` → `20260901d`.
+
 ### 2026-09-01 (k) — S-Curve panel: two decimals and a Monthly/Quarterly switch, plus three defects the switch exposed
 
 Owner: *"In the S-curve kpi panel let's have at least 2 decimal points in the table. Let's have a

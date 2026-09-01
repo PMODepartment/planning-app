@@ -626,6 +626,18 @@
     },
     date: function (d) {
       if (!d) return '—';
+      // ⚠️ A DATE OBJECT IS A DATE. Without this branch `String(d)` is
+      // "Tue Sep 01 2026 00:00:00 GMT+0800 (Singapore Standard Time)", the anchored regex below
+      // does not match, and the fall-through returns the input UNCHANGED — so the raw JS date
+      // string is what reaches the screen. That is what the dashboard's S-Curve panel printed for
+      // its forecast finish, live, having looked perfect in a harness whose Fmt stub happened to
+      // accept a Date. A formatter that silently returns its input is the failure mode here: the
+      // fall-through is kept (callers pass 'TBD' and the like through it deliberately), but the
+      // one type this function most obviously ought to take is no longer part of it.
+      if (typeof d === 'object' && typeof d.getTime === 'function') {
+        if (isNaN(+d)) return '—';
+        return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+      }
       var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
       if (!m) return d;
       var dt = new Date(+m[1], +m[2] - 1, +m[3]);
