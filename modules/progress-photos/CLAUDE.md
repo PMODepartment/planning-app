@@ -2,6 +2,40 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 3D reconstruction CANCELLED — both Edge Functions undeployed, code shelved intact (2026-09-01)
+
+Owner: *"Let's cancel the runpod feature since it requires a subscription."* RunPod's GPU service is
+paid, and the feature cannot work without it, so the chain is abandoned rather than left waiting on
+an account that will not be opened.
+
+**Undeployed** `submit-reconstruction` and `reconstruction-webhook` (deployed only hours earlier).
+The project is back to its original five functions; both URLs return **404**. ⚠️ The webhook in
+particular was deployed `--no-verify-jwt`, i.e. publicly invokable by design — leaving an
+unauthenticated endpoint up for a feature nobody will ever finish is a worse default than removing
+it, which is why this happened before asking how deep to go on the rest.
+
+**Nothing to revoke, nothing to cancel.** `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` were never set
+(confirmed against `secrets list`), and no RunPod account was ever created — so there is no
+subscription, no billing relationship and no live credential anywhere from this feature.
+
+**Owner chose to SHELVE the code, not strip it** (asked explicitly, three options offered):
+- `recon.js` (422 lines), the `#pp-screen-recon` screen, the `RECON` global and the
+  `item_type === 'reconstruction'` branches in `module.js`/`bim.js` all stay.
+- The 3D button stays `disabled title="3D reconstruction is on hold"` — already the case since
+  2026-08-29, so **no user-visible change**; nobody could reach this feature today anyway.
+- `reconstruction_requests` stays (empty). `services/reconstruction-worker/` and both Edge Function
+  sources stay in the repo.
+- ⚠️ **The reasoning, which matters more than the choice:** the reconstruction branches are
+  *interleaved* with live panorama and photo paths — pin dispatch, the media-strip merge, cluster
+  badge fallbacks — so ripping them out is real surgery on a module that has just been through seven
+  feedback rounds, in exchange for deleting code that costs nothing to leave inert. Reviving it later
+  is one `functions deploy`.
+
+⚠️ **Known cosmetic staleness, deliberately not fixed:** the disabled button's tooltip still says
+"on hold", which now understates it — the honest word is "cancelled". Left alone because the owner
+chose no code change; a one-line tooltip edit is available on request.
+
+
 ## Reconstruction prerequisites: the migration and both Edge Functions are now done (2026-09-01)
 
 Updates the standing "NOT verified, and this is the real gap" caveat on the 3D-reconstruction entry
@@ -9,7 +43,11 @@ below. Of the three prerequisites named there:
 
 - **(a) a RunPod account + deployed serverless endpoint — STILL OPEN.** Owner-only; nothing here
   changes it. `services/reconstruction-worker/` remains written-but-never-built.
-- **(b) the two Edge Functions deployed — DONE.** `submit-reconstruction` (JWT check on) and
+- **(b) the two Edge Functions deployed — DONE, then UNDEPLOYED the same day.**
+  ⚠️ **Superseded — see the cancellation entry above.** Both functions were deleted from the
+  project hours later when the feature was cancelled; the paragraph below describes a state that
+  no longer holds and is kept only as the record of what was verified while they were live.
+  Original note: `submit-reconstruction` (JWT check on) and
   `reconstruction-webhook` (`--no-verify-jwt`, the deliberate exception) are both ACTIVE at version 1
   on `bgupuqnkqhixpuctyder`. Live probes: the webhook answers its own 400 with no JWT, proving the
   flag took effect; submit answers 401 at the platform gate, proving its check is on.

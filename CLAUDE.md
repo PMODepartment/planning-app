@@ -84,6 +84,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (g) — RunPod 3D reconstruction cancelled; both Edge Functions undeployed
+
+Owner: *"Let's cancel the runpod feature since it requires a subscription."* **Reverses entry (f),
+three prompts old.** No code change, no `MODULE_V` bump, no user-visible change.
+
+**Undeployed both functions.** `functions list` is back to the original five (`sync-wpm`, `sync-eng`,
+`push-need-by`, `push-packages`, `push-vendor-perf`); POSTing either reconstruction URL now returns
+**404**. Done before asking how far to go on the rest, because `reconstruction-webhook` was deployed
+`--no-verify-jwt` — publicly invokable by design — and an unauthenticated endpoint for an abandoned
+feature is the one part of this that is worse left up than taken down.
+
+**No credential or billing exposure to unwind:** `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` were never
+set, and no RunPod account was ever created. There is no subscription to cancel — the feature was
+abandoned before it ever cost anything, which is the cheapest possible point to stop.
+
+**Code SHELVED, not stripped** — owner's explicit choice from three offered options (shelve / strip
+the client code / full removal including a `DROP TABLE` migration). `recon.js`, the `RECON` global,
+the `reconstruction` pin branches, `reconstruction_requests`, `services/reconstruction-worker/` and
+both function sources all remain. ⚠️ The 3D button has been `disabled` since 2026-08-29, so **no user
+could reach this feature today and none will notice its cancellation.**
+
+⚠️ **Why shelving was recommended over stripping**, since "delete the dead feature" is the tidier
+instinct: the reconstruction branches are interleaved with LIVE panorama and photo paths — pin
+dispatch, the media-strip merge, cluster-badge fallbacks — so removal is genuine surgery on a module
+fresh off seven feedback rounds, spending real regression risk to delete code that is already inert.
+
+⚠️ **The verifier and the schema are deliberately left alone.** `reconstruction_requests` stays, so
+`VERIFY-schema.sql` keeps expecting it and keeps returning no rows. Dropping the table would have
+required a new migration AND a `gen-verify.js` regeneration; that is the full-removal path, and it
+was not chosen.
+
+
 ### 2026-09-01 (f) — The two reconstruction Edge Functions deployed
 
 Owner: *"deploy the two edge functions"*. Both are **new deploys, not overwrites** — a
