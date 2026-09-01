@@ -84,6 +84,48 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (c) — One combined SQL file for the 14 migrations still outstanding
+
+Owner asked which migrations from Friday 2026-08-28 onward still need running, then for the
+outstanding ones bundled into a single file. **No app-code change, no `MODULE_V` bump** — this
+touches nothing the browser loads.
+
+**Sixteen migrations were added 08-28 → 08-31; three are already applied.**
+`2026-08-26-people-and-assignment.sql` and `2026-08-28-people-directory.sql` (owner ran both, entry
+2026-08-28 (b)), and `2026-08-27-manpower-loading.sql` (confirmed applied signed-in on the QADEMO
+sandbox, manpower-loading entry 2026-08-28 (live)). The other **14 are outstanding** — 13 from
+Progress Photos' six overnight feedback rounds, plus `2026-08-31-manpower-org-schedule-manhours.sql`.
+
+**New `migrations/RUN-OUTSTANDING-2026-08-28-to-08-31.sql`** — the 14 concatenated in filename
+(= intended application) order, 806 lines.
+- ⚠️ **Deliberately NOT date-prefixed.** Both `gen-verify.js` and `gen-build.js` glob
+  `/^\d{4}-\d{2}-\d{2}-.*\.sql$/`; a `2026-09-01-…` name would make each generator read every object
+  in the bundle a second time and declare the schema doubly-defined. The `VERIFY-schema.sql` naming
+  style is followed instead, for the same reason it has that shape.
+- ⚠️ **No wrapping BEGIN/COMMIT, on purpose.** One transaction around all 14 means one late failure
+  silently discards thirteen good migrations. Each constituent file is already idempotent
+  (`IF NOT EXISTS`, `DROP POLICY` before `CREATE POLICY`), so the recovery from a partial run is to
+  fix the failing statement and re-run the whole file — which is only true because nothing rolls back.
+- The three applied migrations are **excluded rather than included-and-relied-on-to-no-op**, so the
+  file cannot be misread as the full 08-28→08-31 set. The header names them, and names
+  `2026-08-27-manpower-loading.sql` as the prerequisite of the last file in the bundle.
+
+**Verified.** Concatenation is lossless: source lines stripped of blanks **639**, bundle stripped of
+its generated header/banners **639** — a single diff hunk of **0 removals / 23 additions**, all of
+them the header comment, so every source line survives verbatim and in order. Across the bundle:
+parens **337/337**, `$$` **4** (the two pairs, in `2026-08-29-floor-plans` and the manpower file),
+semicolons **152 in the sources, 152 in the bundle**, **0 NUL bytes**, all 14 banners present. No
+constituent file contains a psql meta-command or its own transaction block, which is what makes
+plain concatenation safe here — checked, not assumed.
+
+⚠️ **NOT verified: that these 14 are genuinely un-run.** There is no live database credential in this
+environment and the anon key has no schema grants, so the applied/outstanding split above is read out
+of this repo's own changelogs, not out of `information_schema`. A migration run outside a logged
+session would make the bundle over-report. Re-running an applied file is a no-op, so the failure mode
+is wasted work rather than damage — but `migrations/VERIFY-schema.sql` remains the authoritative
+check, and should be run after the bundle.
+
+
 ### 2026-09-01 (b) — Vertical stacking: the floors were running sideways
 Owner, on a multi-tower project with towers matched and levels defined: *"in vertical stacking the level
 locations are not properly stacked. they are stacked horizontally."* Their data was right; the view read
