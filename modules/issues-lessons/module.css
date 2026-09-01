@@ -639,18 +639,27 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    benefit from more horizontal room for their labels + bars) split what's left.
    (The old `.il-dash-wide`, which put the champion card on its own row under a
    1.4fr/1fr/1fr template, is long gone — this is a plain, predictable 3-up row.) */
-.il-dash-grid { display: grid; grid-template-columns: 0.8fr 1.6fr 1.6fr; gap: 14px; align-items: start; }
-.il-dash-card { padding: 14px 16px; }
-.il-dash-card h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
-.il-dash-chartwrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.il-dash-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; min-width: 0; }
-.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); }
-.il-dash-legend-i i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
+.il-dash-grid { display: grid; grid-template-columns: 0.8fr 1.6fr 1.6fr; gap: 14px; align-items: stretch; }
+.il-dash-card { padding: 14px 16px; display: flex; flex-direction: column; }
+.il-dash-card h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+/* ---- Items 1/2 (2026-09-01 round): the three chart tiles share ONE fixed
+   content height instead of each drifting to whatever its own chart needs,
+   and each tile's own legend moves into ITS OWN HEADER, top right, as a
+   compact swatch+label row — replacing the donut's side column and the two
+   bar tiles' below-chart legend row. This is what makes the three read as a
+   real row. */
+.il-dash-cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+.il-dash-legend-top { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 10px; max-width: 60%; }
+.il-dash-legend-top .il-dash-legend-i { font-size: 11px; white-space: nowrap; }
+.il-dash-cardbody { height: 340px; }
+.il-dash-cardbody-center { display: flex; align-items: center; justify-content: center; }
 /* ---- Item 5: the horizontal "N open of N issues" bar charts (department /
    champion) — rows are never capped (see hbarSVG in module.js), so a tile with
-   many departments/champions scrolls internally rather than growing without
-   bound. */
-.il-dash-hbar-wrap { max-height: 340px; overflow-y: auto; padding-right: 2px; }
+   many departments/champions scrolls internally within its fixed-height body
+   rather than growing the tile without bound. */
+.il-dash-cardbody-scroll { overflow-y: auto; padding-right: 2px; }
+.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); }
+.il-dash-legend-i i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
 /* ---- Item 6: the full issue list, in its own tile, Issue column widened --
    `.il-dash-list` is used ONLY by the full-list table now (the champion
    breakdown table it used to also serve is gone — item 5's bar rows already
@@ -689,10 +698,9 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    (each a real tile, all three in one row on a wide screen), a Lessons
    Learned tile (item 8), and the open-issues list at the very bottom, in its
    own tile too (item 7). -------------------------------------------------- */
-/* Item 5: the two horizontal-bar tiles share one legend swatch pair, so a
-   reader never has to re-learn the colour mapping between them. */
-.il-dash-barlegend { display: flex; gap: 14px; font-size: 12px; color: var(--pd-muted); margin-top: 8px; flex-wrap: wrap; }
-.il-dash-barlegend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
+/* Item 5: the two bar-chart tiles' legend now lives in their own header
+   (`.il-dash-legend-top`, above) — the below-chart `.il-dash-barlegend` row
+   this used to be is gone; see the 2026-09-01 note beside `.il-dash-cardhead`. */
 /* ---- Items 7/8: the two list tiles below the chart row ------------------ */
 .il-dash-lessons-card { margin-top: 14px; }
 .il-dash-fulllist-card { margin-top: 14px; }
@@ -757,3 +765,28 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-pp-newrow .pd-input { flex:1 1 150px; min-width:0; }
 .il-pp-newact { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .il-pp-nnote { font-size:11px; color:var(--pd-muted); flex:1 1 200px; }
+
+/* ---- ITEM 9 (2026-09-01): click-a-column-header sort — Issues log + the new
+   Lessons table (see sortThHTML/cycleSort in module.js). ---------------- */
+.il-th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+.il-th-sort:hover { color: var(--pd-ink); }
+.il-th-sort.is-active { color: var(--pd-red); }
+.il-sort-arrow { display: inline-block; margin-left: 3px; font-size: 9px; }
+/* Shown above the table only while a sort is active — the way back to manual
+   (drag) order, since a sorted view and a dragged position can't coexist. */
+.il-sortnote {
+  font-size: 12px; color: var(--pd-muted); margin-bottom: 8px;
+  padding: 6px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line);
+}
+.il-sortnote button {
+  border: 0; background: none; color: var(--pd-red); cursor: pointer;
+  font-size: 12px; font-weight: 700; padding: 0; margin-left: 4px;
+}
+.il-sortnote button:hover { text-decoration: underline; }
+
+/* ---- ITEM 7 (2026-09-01): a lesson's linked issue, embedded below the
+   lesson's own fields on the Lessons Learned detail page (see
+   renderLessonDetailView). `.il-dash-sec-head` (the dashboard's own uppercase
+   eyebrow separator) is reused as the divider between the two, rather than a
+   third separator style. */
+.il-less-issuewrap { margin-top: 18px; }
