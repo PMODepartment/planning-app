@@ -244,10 +244,19 @@
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled; });
+      // ⚠️ "Meetings" is a fixed nav entry, not a config.js MODULES row — it is the
+      // issues-lessons module deep-linked to its `mom` screen (see that module's
+      // `?screen=` support), so it needs a hardcoded position in the list rather
+      // than sorting wherever "Issues and Concerns" (the same module, plain link)
+      // happens to land. Built through ModulesGrid.href() on a synthetic module
+      // object so it still picks up the shared MODULE_V cache-bust query string.
+      var meetingsMod = { path: 'modules/issues-lessons/index.html?screen=mom' };
+      var meetingsHref = window.ModulesGrid ? base + ModulesGrid.href(meetingsMod) : base + meetingsMod.path;
       html = '<div class="pd-navsec">Project</div>' +
         '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
-          '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard' +
-          (ctx.pname ? '<small class="pd-nav-sub">' + esc(ctx.pname) + '</small>' : '') + '</span></a>' +
+          '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard</span></a>' +
+        '<a href="' + meetingsHref + '"' + cls('meetings') + ' title="Meetings">' +
+          '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Meetings</span></a>' +
         mods.map(function (m) {
           var href = window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path;
           return '<a href="' + href + '"' + cls(m.key) + ' title="' + esc(m.name) + '">' +

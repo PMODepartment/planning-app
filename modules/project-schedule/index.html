@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260829a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901a" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -76,45 +76,16 @@
        and set off the user avatar from the tools with a divider. */
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
-    /* OPC-style project context: project name over workspace subline, both left-aligned.
-       The select is borderless and title-styled; name & workspace share left padding so they line up. */
-    .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; position:relative; }
-    .ps-projctx .pd-select { border-color:transparent; background:transparent; font-weight:700; font-size:15px;
-      height:24px; line-height:24px; padding:0 24px 0 6px; max-width:300px; color:var(--pd-ink); cursor:pointer; }
-    .ps-projctx .pd-select:hover, .ps-projctx .pd-select:focus { background:var(--pd-bg); border-color:var(--pd-line); outline:none; }
-    .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }
-    /* OPC-style project browser (Workspace → Program → Group → Project) */
-    .ps-projsel-btn { display:inline-flex; align-items:center; gap:5px; background:transparent; border:1px solid transparent;
-      border-radius:6px; cursor:pointer; font-weight:700; font-size:15px; color:var(--pd-ink); height:24px; padding:0 6px; max-width:320px; }
-    .ps-projsel-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
-    .ps-projsel-btn > span:first-child { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ps-projsel-btn [data-ico] { color:var(--pd-muted); }
-    #ps-projsel-menu.ps-projsel-menu { min-width:340px; max-width:460px; max-height:72vh; overflow:auto; padding:0; }
-    .ps-pss-search { position:sticky; top:0; background:var(--pd-card); padding:8px; border-bottom:1px solid var(--pd-line); z-index:1; }
-    .ps-pss-search input { width:100%; box-sizing:border-box; padding:6px 9px; border:1px solid var(--pd-line); border-radius:6px; font:inherit; background:var(--pd-bg); color:var(--pd-ink); }
-    .ps-pss-crumbs { display:flex; flex-wrap:wrap; align-items:center; gap:2px; margin-top:8px; font-size:11.5px; }
-    .ps-pss-crumb { cursor:pointer; color:var(--pd-muted); padding:2px 5px; border-radius:5px; white-space:nowrap; }
-    .ps-pss-crumb:hover { background:var(--pd-bg); color:var(--pd-ink); }
-    .ps-pss-crumb:last-child { color:var(--pd-ink); font-weight:700; }
-    .ps-pss-sep { color:var(--pd-muted); opacity:.6; }
-    .ps-pss-tree { padding:4px 0; }
-    .ps-pss-folder { display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer; font-size:13px; font-weight:600; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
-    .ps-pss-folder:hover { background:var(--pd-bg); }
-    .ps-pss-folder [data-ico], .ps-pss-folder svg { color:var(--pd-red); flex:none; }
-    .ps-pss-count { font-size:11px; font-weight:700; color:var(--pd-muted); background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; flex:none; }
-    .ps-pss-chev { color:var(--pd-muted); font-size:16px; flex:none; }
-    .ps-pss-node { display:flex; align-items:center; gap:6px; padding:5px 10px; cursor:pointer; font-size:12.5px; font-weight:700; color:var(--pd-ink); }
-    .ps-pss-node:hover { background:var(--pd-bg); }
-    .ps-pss-caret { width:12px; color:var(--pd-muted); font-size:10px; flex:none; }
-    .ps-pss-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ps-pss-badge { font-size:9px; text-transform:uppercase; letter-spacing:.03em; font-weight:700; padding:1px 6px; border-radius:999px;
-      background:var(--pd-bg); color:var(--pd-muted); border:1px solid var(--pd-line); flex:none; }
-    .ps-pss-badge.ps-pss-program { color:#2563EB; border-color:rgba(37,99,235,.35); }
-    .ps-pss-badge.ps-pss-group { color:var(--pd-red); border-color:rgba(238,49,36,.35); }
-    .ps-pss-proj { display:flex; align-items:center; gap:7px; padding:5px 10px; cursor:pointer; font-size:13px; color:var(--pd-ink); }
-    .ps-pss-proj:hover { background:var(--pd-red-light); }
-    .ps-pss-proj.sel { background:var(--pd-red); color:#fff; }
-    .ps-pss-empty { padding:20px 12px; text-align:center; color:var(--pd-muted); font-size:12.5px; }
+    /* Project context: project name over group-head subline, both left-aligned. `.ps-project`
+       is styled exactly like every other module's project select (cash-flow's `.cf-project` /
+       s-curve's `.sc-project`) — a borderless-until-hover trigger — so this module lines up
+       with the app-wide shared searchable picker (UI.enhanceProjectSelect) it now uses instead
+       of a bespoke Workspace/Program/Group browser. `enhanceProjectSelect` copies the select's
+       classes onto its trigger button, so this rule also styles that button. */
+    .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; flex:0 1 auto; }
+    .ps-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .ps-project:hover, .ps-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
+    .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
     /* icon-only toolbar buttons (square, centered glyph; tooltip via title) */
     .ps-toolbar .ps-icobtn { width:36px; padding:0; justify-content:center; }
     /* Labeled mode: reveal each icon button's word (from data-label) so first-time users aren't
@@ -2018,8 +1989,17 @@
        `overflow:visible`). At 768px that pushed the row ~126px past the viewport
        and gave the whole PAGE a horizontal scroll, so the trailing tools drifted
        off-screen. Phones drop the toolbar entirely (below), so this only needs to
-       cover the tablet band. */
-    @media (min-width:701px) and (max-width:900px) {
+       cover the tablet band.
+       ⚠️ The persistent module sidebar (2026-08-30) claims --pd-sidebar-w (240px,
+       or 64px collapsed) out of the viewport for every width ≥821px, so the
+       content column the toolbar actually has to fit in is narrower than the
+       viewport by that much. The upper bound here was 900px from before the
+       sidebar existed; it is now 900+240=1140px so the row still wraps for every
+       viewport width where a 240px-narrower content column would otherwise
+       overflow — collapsed (64px) is a strictly safer case and wraps sooner than
+       it needs to, which is harmless. Below 821px the sidebar is an off-canvas
+       drawer (zero layout width), so this band is unaffected there. */
+    @media (min-width:701px) and (max-width:1140px) {
       .ps-toolbar .ps-tb-row { flex-wrap:wrap; row-gap:6px; }
     }
 
@@ -2446,14 +2426,14 @@
           <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
       </div>
-      <!-- Project context sits next to the title (OPC-style), name over workspace, left-aligned.
-           The hidden <select> is kept as the source of truth; the visible button opens an
-           OPC-style Workspace → Program → Group → Project browser. -->
+      <!-- Project context sits next to the title, name over group-head subline, left-aligned.
+           Uses the app-wide shared searchable project selector (UI.enhanceProjectSelect) — the
+           same picker every other module uses — so this module's dropdown is aligned with the
+           rest of the suite. The <select> stays the source of truth; enhanceProjectSelect wraps
+           it in a borderless-until-hover trigger + searchable popup, in place. -->
       <div class="ps-projctx">
-        <select class="pd-select" id="ps-project" title="Project" style="display:none;"></select>
-        <button class="ps-projsel-btn" id="ps-projsel-btn" title="Browse projects by Workspace / Program / Group"><span id="ps-projsel-name">— Select project —</span><span class="ps-projsel-chev" data-ico="chevronDown" data-ico-size="15"></span></button>
+        <select class="pd-select ps-project" id="ps-project" title="Project"></select>
         <div class="ps-ws" id="ps-workspace"></div>
-        <div class="ps-menu ps-projsel-menu" id="ps-projsel-menu"></div>
       </div>
       <span class="ps-fresh" id="ps-fresh" style="display:none;"></span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
@@ -3107,11 +3087,11 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260828b"></script>
+<script src="../../assets/js/config.js?v=20260901a"></script>
 <script src="../../assets/js/auth.js?v=20260814a"></script>
 <script src="../../assets/js/db.js?v=20260827c"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260830a"></script>
+<script src="../../assets/js/ui.js?v=20260901a"></script>
 <script src="../../assets/js/icons.js?v=20260830a"></script>
 <script src="../../assets/js/calendar.js?v=20260824a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -6106,13 +6086,14 @@
     sel.innerHTML = '<option value="">— Select project —</option>' + projects.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
-    updateProjSelLabel();
+    // Shared searchable project picker (UI.enhanceProjectSelect) — the same one every other
+    // module uses. It builds/copies its trigger button's label from the select on its own, so
+    // no separate label-sync call is needed here the way the old bespoke browser required.
+    if (window.UI && UI.enhanceProjectSelect) UI.enhanceProjectSelect(sel);
     updateGroupHeadCaption();
     if (pid) load();
   }
-  // OPC-style: show the project's group head under the project name. (Was the
-  // workspace/program path; those levels no longer exist -- the group head is
-  // the whole of a project's org context now.)
+  // Show the project's group head under the project name/select.
   function updateGroupHeadCaption() {
     var el = document.getElementById('ps-workspace'); if (!el) return;
     var p = PROJECTS.find(function (x) { return x.id === pid; });
@@ -6120,93 +6101,20 @@
     el.textContent = g ? g.name : (p && p.group_head_id ? p.group_head_id : '');
     el.title = el.textContent;
   }
-  function updateProjSelLabel() {
-    var nm = document.getElementById('ps-projsel-name'); if (!nm) return;
-    var p = PROJECTS.find(function (x) { return x.id === pid; });
-    nm.textContent = p ? (p.name || p.id) : '— Select project —';
-    nm.title = nm.textContent;
-  }
-  // Central project switch (used by the browser + kept in sync with the hidden <select>).
+  // Central project switch — invoked by #ps-project's own `change` event (fired either by a
+  // real user pick or by the shared picker's `choose()`, which sets the select's value and
+  // dispatches `change` itself, so this is always reached through the <select>, never bypassing it).
   function selectProject(id) {
     pid = id || null;
     var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
     if (pid) sessionStorage.setItem('pd_project', pid);
-    updateProjSelLabel(); updateGroupHeadCaption();
+    updateGroupHeadCaption();
     // ⚠️ Kill any pending collapse save BEFORE pid changes — otherwise a toggle made <500ms ago
     // fires after the switch and writes the OUTGOING project's map under the INCOMING project's key.
     _cancelCollapseSave();
     collapsed = {}; _wbsSel = null; _wbsCollapsed = {}; _wbsSearch = ''; _wbsCollapseInit = false;
     var wsi = document.getElementById('ps-wbs-search'); if (wsi) wsi.value = '';
     resetUndo(); load();
-  }
-  // OPC-style project browser — a FOLDER navigator so it scales to hundreds of schedules.
-  // `_pssPath` = current folder (group-head id; '' = root, `_PSS_NONE` = the unassigned bucket).
-  // ⚠️ This was a recursive Workspace → Program → Group walk; the depth is fixed at ONE now, so
-  // there is no ancestor chain and no descendant count to memoize — a group head's count IS the
-  // number of projects tagged with it. Breadcrumb navigates back up; the search box flattens to
-  // matching projects across every group.
-  var _PSS_NONE = '__nogh__';
-  var _pssPath = '', _pssSearch = '';
-  function _pssNode(id) { return GROUPHEADS.find(function (g) { return g.id === id; }); }
-  function _pssLabel(id) { var g = _pssNode(id); return g ? g.name : (id === _PSS_NONE ? '— No group head —' : id); }
-  // Which folder the browser opens into: the current project's group (so it is
-  // visible immediately), or the root when nothing is selected.
-  function _pssOpenPath() {
-    var p = PROJECTS.find(function (x) { return x.id === pid; });
-    return p ? (p.group_head_id || _PSS_NONE) : '';
-  }
-  function renderProjectSelector() {
-    var m = document.getElementById('ps-projsel-menu'); if (!m) return;
-    var pm = {}; PROJECTS.forEach(function (p) { var k = p.group_head_id || _PSS_NONE; (pm[k] = pm[k] || []).push(p); });
-    function projRow(p) { return '<div class="ps-pss-proj' + (p.id === pid ? ' sel' : '') + '" data-proj="' + esc(p.id) + '">' + Icons.svg('calendar', 14) + '<span>' + esc(p.name || p.id) + '</span></div>'; }
-    var q = _pssSearch.trim().toLowerCase(), body = '';
-    if (q) {
-      var matches = PROJECTS.filter(function (p) { return (p.name || '').toLowerCase().indexOf(q) !== -1 || (p.id || '').toLowerCase().indexOf(q) !== -1; })
-        .sort(function (a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); });
-      body = matches.length ? matches.map(projRow).join('') : '<div class="ps-pss-empty">No projects match “' + esc(_pssSearch) + '”.</div>';
-      m.innerHTML = pssHead('') + '<div class="ps-pss-tree">' + body + '</div>';
-    } else {
-      if (!_pssPath) {
-        // Root: one folder per group head that has projects, unassigned last. An
-        // empty group head is not listed — it would be a dead end.
-        var folders = GROUPHEADS.slice().sort(function (a, b) {
-          return (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name));
-        }).filter(function (g) { return (pm[g.id] || []).length; });
-        body += folders.map(function (g) {
-          var n = (pm[g.id] || []).length;
-          return '<div class="ps-pss-folder" data-open="' + esc(g.id) + '">' + Icons.svg('folder', 15) +
-            '<span class="ps-pss-name">' + esc(g.name) + '</span>' +
-            '<span class="ps-pss-badge ps-pss-group">group head</span>' +
-            '<span class="ps-pss-count" title="' + n + ' project' + (n === 1 ? '' : 's') + '">' + n + '</span>' +
-            '<span class="ps-pss-chev">›</span></div>';
-        }).join('');
-        if ((pm[_PSS_NONE] || []).length) {
-          body += '<div class="ps-pss-folder" data-open="' + _PSS_NONE + '">' + Icons.svg('folder', 15) +
-            '<span class="ps-pss-name">— No group head —</span>' +
-            '<span class="ps-pss-count">' + pm[_PSS_NONE].length + '</span>' +
-            '<span class="ps-pss-chev">›</span></div>';
-        }
-        if (!body) body = '<div class="ps-pss-empty">No projects available.</div>';
-      } else {
-        body += (pm[_pssPath] || []).slice()
-          .sort(function (a, b) { return String(a.name || a.id).localeCompare(String(b.name || b.id)); })
-          .map(projRow).join('');
-        if (!body) body = '<div class="ps-pss-empty">No projects in this group.</div>';
-      }
-      m.innerHTML = pssHead(_pssPath) + '<div class="ps-pss-tree">' + body + '</div>';
-    }
-    var qi = m.querySelector('#ps-pss-q');
-    if (qi) qi.oninput = function () { var pos = qi.selectionStart; _pssSearch = qi.value; renderProjectSelector(); var q2 = m.querySelector('#ps-pss-q'); if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} } };
-    m.querySelectorAll('.ps-pss-crumb').forEach(function (c) { c.onclick = function (e) { e.stopPropagation(); _pssPath = c.dataset.crumb || ''; renderProjectSelector(); }; });
-    m.querySelectorAll('.ps-pss-folder').forEach(function (f) { f.onclick = function (e) { e.stopPropagation(); _pssPath = f.dataset.open; renderProjectSelector(); }; });
-    m.querySelectorAll('.ps-pss-proj').forEach(function (r) { r.onclick = function (e) { e.stopPropagation(); m.classList.remove('open'); selectProject(r.dataset.proj); }; });
-    // Build the sticky header: search box + breadcrumb (hidden while searching).
-    function pssHead(pathId) {
-      // One level deep, so the trail is at most All › <group head>.
-      var bc = q ? '' : '<div class="ps-pss-crumbs"><span class="ps-pss-crumb" data-crumb="">All</span>' +
-        (pathId ? '<span class="ps-pss-sep">›</span><span class="ps-pss-crumb" data-crumb="' + esc(pathId) + '">' + esc(_pssLabel(pathId)) + '</span>' : '') + '</div>';
-      return '<div class="ps-pss-search"><input type="text" id="ps-pss-q" placeholder="Search all projects…" value="' + esc(_pssSearch) + '">' + bc + '</div>';
-    }
   }
   // ---- Cache-first load (stale-while-revalidate) ----------------------------------------------
   // Opening a big schedule cold takes seconds (dominated by the sequential paginated round-trips, not
@@ -27918,12 +27826,11 @@
     var lMenu = document.getElementById('ps-layout-menu');
     var colsMenu = document.getElementById('ps-cols-menu');
     var tMenu = document.getElementById('ps-title-menu');
-    var pssMenu = document.getElementById('ps-projsel-menu');
     var fileMenu = document.getElementById('ps-file-menu');
     var analyzeMenu = document.getElementById('ps-analyze-menu');
     var oMenu = document.getElementById('ps-open-menu');
     var colorsMenu = document.getElementById('ps-colors-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); pssMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // ⚠️ CLIPPING FIX. `.ps-menu` is `position:absolute; left:0`, so a menu opened from a button
@@ -27970,8 +27877,6 @@
     document.getElementById('ps-analyzebtn').onclick = function (e) { e.stopPropagation(); var o = analyzeMenu.classList.contains('open'); closeMenus(); if (!o) analyzeMenu.classList.add('open'); };
     analyzeMenu.addEventListener('click', function (e) { e.stopPropagation(); setTimeout(_syncAnalyzeBtn, 0); });
     analyzeMenu.querySelectorAll('[data-spot]').forEach(function (b) { b.onclick = function () { analyzeMenu.classList.remove('open'); if (b.dataset.spot === 'clear') clearSpotlight(); else advanceSpotlight(b.dataset.spot); }; });
-    pssMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    document.getElementById('ps-projsel-btn').onclick = function (e) { e.stopPropagation(); var o = pssMenu.classList.contains('open'); closeMenus(); if (!o) { _pssSearch = ''; _pssPath = _pssOpenPath(); renderProjectSelector(); pssMenu.classList.add('open'); var qi = pssMenu.querySelector('#ps-pss-q'); if (qi) qi.focus(); } };
     // Title dropdown → switch Project Schedule / Cost Loading
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
@@ -28761,8 +28666,6 @@
       ganttScale: { get: function () { return ganttScale; }, set: function (v) { ganttScale = v; }, enumerable: true },
       dataDate: { get: function () { return dataDate; }, set: function (v) { dataDate = v; }, enumerable: true },
       MON3: { get: function () { return MON3; }, set: function (v) { MON3 = v; }, enumerable: true },
-      _pssPath: { get: function () { return _pssPath; }, set: function (v) { _pssPath = v; }, enumerable: true },
-      _pssSearch: { get: function () { return _pssSearch; }, set: function (v) { _pssSearch = v; }, enumerable: true },
       _cacheDbP: { get: function () { return _cacheDbP; }, set: function (v) { _cacheDbP = v; }, enumerable: true },
       _cacheSaveT: { get: function () { return _cacheSaveT; }, set: function (v) { _cacheSaveT = v; }, enumerable: true },
       _editSeq: { get: function () { return _editSeq; }, set: function (v) { _editSeq = v; }, enumerable: true },

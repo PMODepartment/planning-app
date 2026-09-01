@@ -348,9 +348,22 @@ eq('worksOf falls back to the legacy singular column pre-migration',
 console.log('\n[3] PPR renamed to Meeting, then to Presentation (2026-08-29 feedback item 3)');
 ok('tab label is Presentations', /data-screen="ppr">Presentations</.test(html));
 ok('primary action is + New Presentation', /\+ New Presentation/.test(html));
-ok('screen title is Presentations', /isPpr \? 'Presentations'/.test(html));
-ok('Plans/Gallery screen titles renamed too (2026-08-29 tab-label pass)',
-   /isBim \? 'Plans' : 'Gallery'/.test(html));
+// ⚠️ Superseded by the punch-list fix for "duplicate tab-name label"
+// (Gallery / Gallery): setScreen() used to overwrite #pp-screen-title with
+// `isPpr ? 'Presentations' : (isBim ? 'Plans' : 'Gallery')`, which repeated
+// exactly what the tab strip right below it already says. The <h1> is now a
+// STATIC "Progress Photos" (never rewritten per screen) and the tab strip
+// alone carries Gallery/Presentations/Plans — asserted here instead. Healthy
+// churn from an intentional change, same convention as every other rename
+// in this file's own history (see the 2026-08-29 PPR→Meeting/Presentation
+// entries), not a regression to chase.
+ok('the module title is now static ("Progress Photos") — setScreen() no longer overwrites #pp-screen-title per screen',
+   /<span class="pp-title-txt" id="pp-screen-title">Progress Photos<\/span>/.test(html) &&
+   /setScreen\(\) no longer writes to it\./.test(html));
+ok('…and each screen\'s own name lives ONLY on its tab button now (Gallery / Presentations / Plans), not duplicated in the title too',
+   /data-screen="photos">Gallery<\/button>/.test(html) &&
+   /data-screen="ppr">Presentations<\/button>/.test(html) &&
+   /data-screen="bim">Plans<\/button>/.test(html));
 ok('modal header New Presentation', /'New Presentation' : 'Edit Presentation'/.test(pjs));
 ok('list column header is Presentation Date', /<div>Presentation Date<\/div>/.test(pjs));
 // Strip // comments before asserting on user-facing copy — a stale comment
@@ -560,7 +573,12 @@ console.log('\n[misc] insert().select() returns the new row id');
   // knob with a red ring, deliberately theme-independent since it sits over
   // an arbitrary floor-plan/photo image) join the allow-list on the same
   // basis as the entries already documented above.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.ppr-kpicon\b/;
+  // Punch-list #9: .pp-livebtn.is-live (the Plan/Stack month steppers' new
+  // "Live" jump-back button) is the SAME family as .pp-tab.active/
+  // .pd-btn-primary two lines up — a solid var(--pd-red) fill with white
+  // text, always legible regardless of theme, so it's exempt for the same
+  // reason those two already are.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mediatile-badge|\.pp-pinbtn\b|\.pp-pinpreview-dot|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.ppr-kpicon\b|\.pp-livebtn\.is-live\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -2131,6 +2149,46 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('stitchFrames: srcMat/dstMat/Hmat (the per-frame warpPerspective inputs/output) are now wrapped in try/finally too — the same fix, same reasoning, for the loop\'s OTHER Mat trio',
      /var srcMat, dstMat, Hmat;\s*try \{\s*srcMat = cv\.imread\(frameCanvases\[i\]\);/.test(pnjs) &&
      /\} finally \{\s*if \(srcMat\) srcMat\.delete\(\);\s*if \(dstMat\) dstMat\.delete\(\);\s*if \(Hmat\) Hmat\.delete\(\);\s*\}/.test(pnjs));
+
+  // =========================================================== [37] =========
+  // Task #9 (punch-list): Plan view and Stack view's month steppers each
+  // gain an explicit "Live" button, matching Project Schedule's Vertical
+  // Stacking timeline (`data-tllive`, styled `.on`/here `.is-live` when
+  // scrubbed back to the latest month, "Back to recorded progress"). Both
+  // steppers already used the identical null-is-live/value-is-scrubbed
+  // convention (`planMonth`/`stackMonth`) — this only adds the one-click
+  // way back, it doesn't change what null already meant.
+  console.log('\n[37] Plan/Stack month steppers gain an explicit "Live" jump-back button (Project Schedule Vertical Stacking parity)');
+
+  ok('Plan view\'s month stepper renders a Live button, styled is-live exactly when planMonth is null (the existing "latest month" state)',
+     /'<button class="pd-btn pp-livebtn' \+ \(planMonth == null \? ' is-live' : ''\) \+ '" id="pp-plan-mlive" title="Back to the latest month">Live<\/button>' \+/.test(mjs));
+  ok('…and it sits in the SAME month bar as prev\\/next\\/play, after Play — one control cluster, not a second row',
+     /pp-plan-mnext"[\s\S]{0,100}pp-plan-mplay">[\s\S]{0,200}pp-plan-mlive"/.test(mjs));
+  ok('wirePlanView(): clicking Live stops any running month-play timer FIRST, then snaps planMonth back to null (never leaves a timer ticking toward a month that no longer matters) and re-renders',
+     /if \(\$\('pp-plan-mlive'\)\) \$\('pp-plan-mlive'\)\.onclick = function \(\) \{\s*if \(planMonth == null\) return;[^\n]*\s*stopPlanMonthPlay\(\);\s*planMonth = null; render\(\);\s*\};/.test(mjs));
+  ok('…and clicking Live while already live is a genuine no-op (guarded, doesn\'t stop a timer or force an unnecessary render)',
+     /if \(planMonth == null\) return;   \/\/ already live/.test(mjs));
+
+  ok('Stack view\'s step-mode month stepper renders the same Live button, styled is-live exactly when stackMonth is null',
+     /'<button class="pd-btn pp-livebtn' \+ \(stackMonth == null \? ' is-live' : ''\) \+ '" id="pp-stack-mlive" title="Back to the latest month">Live<\/button>' \+/.test(mjs));
+  ok('…placed after Play, before the "as of the end of this month" hint — same cluster shape as Plan view',
+     /id="pp-stack-mplay">[\s\S]{0,120}'<button class="pd-btn pp-livebtn' \+ \(stackMonth == null \? ' is-live' : ''\) \+ '" id="pp-stack-mlive"[\s\S]{0,120}as of the end of this month/.test(mjs));
+  ok('wireStackView(): clicking Live stops the Stack play timer first, then snaps stackMonth back to null and re-renders — only wired while step mode is actually on',
+     /if \(\$\('pp-stack-mlive'\)\) \$\('pp-stack-mlive'\)\.onclick = function \(\) \{\s*if \(stackMonth == null\) return;[^\n]*\s*stopStackPlay\(\);\s*stackMonth = null; render\(\);\s*\};/.test(mjs));
+  ok('…that wiring lives inside the `if (stackStepMode) { ... }` block, alongside mprev\\/mnext\\/mplay — combine mode never wires a stepper it doesn\'t render',
+     (function () {
+       const m = /function wireStackView\(\) \{([\s\S]*?)\n  \}/.exec(mjs);
+       if (!m) return false;
+       const stepBlock = /if \(stackStepMode\) \{([\s\S]*?)\n\s*\} else \{/.exec(m[1]);
+       return !!stepBlock && /pp-stack-mlive/.test(stepBlock[1]) && /pp-stack-mprev/.test(stepBlock[1]);
+     })());
+
+  ok('module.css: .pp-livebtn / .is-live are defined (a solid brand-red fill + white text — same fixed-background exemption from the dark-mode #fff audit as .pp-tab.active / .pd-btn-primary)',
+     /\.pp-livebtn \{ padding: 4px 12px; font-size: 12px; \}/.test(cssFile) &&
+     /\.pp-livebtn\.is-live \{ background: var\(--pd-red\); border-color: var\(--pd-red\); color: #fff;/.test(cssFile));
+
+  ok('the two new ids (pp-plan-mlive / pp-stack-mlive) are each referenced exactly 3 times in module.js — once rendered, twice in the wiring ($(id) guard + $(id).onclick, the same shape every sibling stepper button already uses) — never a stray 4th reference suggesting a leftover or a duplicate',
+     (mjs.match(/pp-plan-mlive/g) || []).length === 3 && (mjs.match(/pp-stack-mlive/g) || []).length === 3);
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

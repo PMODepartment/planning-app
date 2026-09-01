@@ -40,35 +40,16 @@ window.APP_CONFIG = {
   //   attention  — OPTIONAL {column, values, label}. Declare it only where the
   //                vocabulary is known from the schema; a guessed one reads 0
   //                forever and looks like good news.
+  // ⚠️ Sidebar/nav order (2026-09-01): risk-register, stakeholder-map, project-schedule,
+  // s-curve, manpower-loading, equipment-loading, productivity-rates, issues-lessons,
+  // progress-photos, contracts-claims, cash-flow. `resource-loading` is deliberately
+  // REMOVED from this list (not merely disabled) — its functionality is meant to be
+  // folded into equipment-loading / manpower-loading / project-schedule rather than
+  // stand alone. The module folder, its data and its tables are untouched; only the
+  // nav/launcher entry is gone. See modules/resource-loading/CLAUDE.md for the gap
+  // this leaves (Project Schedule has no UI to create a brand-new `resources` master
+  // row outside the XER importer).
   MODULES: [
-    { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos',
-      // ⚠️ The bucket is named HERE, by the module that owns it. The shell signs whatever bucket it
-      // is told about and knows nothing about where progress photos live.
-      recent: { orderBy: 'taken_at', limit: 6, columns: ['title', 'works', 'taken_at', 'location'],
-                bucket: 'progress-photos', pathCol: 'photo_url', ttl: 3600 } } },
-    { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
-      metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] } ] } },
-    { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
-      metrics: [
-        { key: 'records', agg: 'countWhere', column: 'id' },
-        // The flow the dashboard draws: original contract value, then change orders by state, then
-        // the revised total. record_type is a fixed vocabulary in this schema (Contract | Claim |
-        // Change Order), which is what makes these safe to declare.
-        { key: 'contractAmt', agg: 'sumWhere', column: 'amount', where: [{ column: 'record_type', values: ['Contract'] }] },
-        { key: 'coApprovedAmt', agg: 'sumWhere', column: 'amount',
-          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Approved'] }] },
-        { key: 'coApprovedN', agg: 'countWhere', column: 'id',
-          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Approved'] }] },
-        // ⚠️ "Pending" is everything that is a change order and NOT approved. Listing the pending
-        // words instead would silently drop any status nobody thought of.
-        { key: 'coOtherAmt', agg: 'sumWhere', column: 'amount', where: [{ column: 'record_type', values: ['Change Order'] }] },
-        { key: 'coAllN', agg: 'countWhere', column: 'id', where: [{ column: 'record_type', values: ['Change Order'] }] },
-        { key: 'claimN', agg: 'countWhere', column: 'id', where: [{ column: 'record_type', values: ['Claim'] }] },
-        // ⚠️ The figure the dashboard's attention count uses. A record COUNT cannot answer "what is
-        // outstanding": an unresolved claim is one with no date_resolved.
-        { key: 'claimOpen', agg: 'countWhere', column: 'id',
-          where: [{ column: 'record_type', values: ['Claim'] }, { column: 'date_resolved', absent: true }] }
-      ] } },
     { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true, dash: { table: 'risk_register', unit: 'risks', attention: { column: 'status', values: ['Open'], label: 'open' },
       metrics: [
         { key: 'open', agg: 'countWhere', column: 'status', values: ['Open'] },
@@ -80,23 +61,7 @@ window.APP_CONFIG = {
       // ⚠️ influence and interest are 1..4 here (and stored as TEXT), so the split is 3, not the
       // risk register's midpoint. Declaring it per module is why one engine can serve both.
       metrics: [ { key: 'matrix', agg: 'matrix2', x: 'interest', y: 'influence', split: 3 } ] } },
-    // ⚠️ RETIRED — these two moved to the ENGINEERING APP, which is now the single
-    // source for both registers. The modules and their tables are still here, and the
-    // rows in them are the pre-cutover originals: readable, but STALE the moment
-    // anyone edits the real register next door. Turning them off is what stops two
-    // registers drifting apart while both look authoritative.
-    //
-    // The Project Schedule's Design Development branch no longer reads these tables
-    // either — it reads the `eng_design_progress` mirror (Edge Function `sync-eng`).
-    //
-    // ⚠️ Dropping `drawing_register` / `material_submittal` here is a SEPARATE,
-    // deliberate step, not part of this change: verify the mirror end-to-end first,
-    // and confirm nothing in the local tables was left behind by the cutover. A
-    // disabled module is reversible; a dropped table is not.
-    { key: 'drawing-register',  name: 'Drawing Register',                      path: 'modules/drawing-register/index.html',  icon: 'ruler',      enabled: false, retiredTo: 'the Engineering App', externalUrl: 'https://pmodepartment.github.io/engineering-app/' },
-    { key: 'material-submittal',name: 'Material Submittal Log',                path: 'modules/material-submittal/index.html',icon: 'box',        enabled: false, retiredTo: 'the Engineering App', externalUrl: 'https://pmodepartment.github.io/engineering-app/' },
-    // ---- Phase 2 ----
-    { key: 'project-schedule',  name: 'Project Schedule & Cost Loading',       path: 'modules/project-schedule/index.html', icon: 'calendar',    enabled: true, dash: { table: 'project_schedule', unit: 'activities',
+    { key: 'project-schedule',  name: 'Schedule',                              path: 'modules/project-schedule/index.html', icon: 'calendar',    enabled: true, dash: { table: 'project_schedule', unit: 'activities',
       // ⚠️ WBS Summary rows are roll-up headings, not work. Counting them would inflate every figure
       // on the card (a 500-activity project reads as 800) and drag the weighted % toward whatever
       // the branches happen to store.
@@ -129,14 +94,56 @@ window.APP_CONFIG = {
           pct: 'percent_complete', weight: 'duration_days', doneCol: 'status', doneValues: ['Completed'] }
       ] } },
     { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points' } },
-    { key: 'resource-loading',  name: 'Resource & Role Master',                path: 'modules/resource-loading/index.html',  icon: 'users',      enabled: true, dash: { table: 'resources', unit: 'resources' } },
-    { key: 'equipment-loading', name: 'Equipment Loading',                      path: 'modules/equipment-loading/index.html', icon: 'box',        enabled: true, dash: { table: 'equipment_items', unit: 'equipment' } },
     // ⚠️ No `attention` key. The obvious one would be "positions short this month", but that is
     // a comparison between two columns of manpower_loading, not a status value on this table —
     // the tile reader can only count rows matching fixed values, so a guessed rule would read 0
     // forever and look like good news. The Portfolio tab is where the shortfall is answered.
     { key: 'manpower-loading', name: 'Manpower Loading',                        path: 'modules/manpower-loading/index.html', icon: 'users',      enabled: true, dash: { table: 'manpower_positions', unit: 'positions' } },
+    { key: 'equipment-loading', name: 'Equipment Loading',                      path: 'modules/equipment-loading/index.html', icon: 'box',        enabled: true, dash: { table: 'equipment_items', unit: 'equipment' } },
     { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: 'barChart',   enabled: true, dash: { table: 'productivity_entries', unit: 'entries' } },
+    { key: 'issues-lessons',    name: 'Issues and Concerns',                   path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
+      metrics: [ { key: 'open', agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] } ] } },
+    { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos',
+      // ⚠️ The bucket is named HERE, by the module that owns it. The shell signs whatever bucket it
+      // is told about and knows nothing about where progress photos live.
+      recent: { orderBy: 'taken_at', limit: 6, columns: ['title', 'works', 'taken_at', 'location'],
+                bucket: 'progress-photos', pathCol: 'photo_url', ttl: 3600 } } },
+    { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
+      metrics: [
+        { key: 'records', agg: 'countWhere', column: 'id' },
+        // The flow the dashboard draws: original contract value, then change orders by state, then
+        // the revised total. record_type is a fixed vocabulary in this schema (Contract | Claim |
+        // Change Order), which is what makes these safe to declare.
+        { key: 'contractAmt', agg: 'sumWhere', column: 'amount', where: [{ column: 'record_type', values: ['Contract'] }] },
+        { key: 'coApprovedAmt', agg: 'sumWhere', column: 'amount',
+          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Approved'] }] },
+        { key: 'coApprovedN', agg: 'countWhere', column: 'id',
+          where: [{ column: 'record_type', values: ['Change Order'] }, { column: 'status', values: ['Approved'] }] },
+        // ⚠️ "Pending" is everything that is a change order and NOT approved. Listing the pending
+        // words instead would silently drop any status nobody thought of.
+        { key: 'coOtherAmt', agg: 'sumWhere', column: 'amount', where: [{ column: 'record_type', values: ['Change Order'] }] },
+        { key: 'coAllN', agg: 'countWhere', column: 'id', where: [{ column: 'record_type', values: ['Change Order'] }] },
+        { key: 'claimN', agg: 'countWhere', column: 'id', where: [{ column: 'record_type', values: ['Claim'] }] },
+        // ⚠️ The figure the dashboard's attention count uses. A record COUNT cannot answer "what is
+        // outstanding": an unresolved claim is one with no date_resolved.
+        { key: 'claimOpen', agg: 'countWhere', column: 'id',
+          where: [{ column: 'record_type', values: ['Claim'] }, { column: 'date_resolved', absent: true }] }
+      ] } },
     { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: 'cash',       enabled: true, dash: { table: 'cash_flow_rollup', unit: 'periods' } },
+    // ⚠️ RETIRED — these two moved to the ENGINEERING APP, which is now the single
+    // source for both registers. The modules and their tables are still here, and the
+    // rows in them are the pre-cutover originals: readable, but STALE the moment
+    // anyone edits the real register next door. Turning them off is what stops two
+    // registers drifting apart while both look authoritative.
+    //
+    // The Project Schedule's Design Development branch no longer reads these tables
+    // either — it reads the `eng_design_progress` mirror (Edge Function `sync-eng`).
+    //
+    // ⚠️ Dropping `drawing_register` / `material_submittal` here is a SEPARATE,
+    // deliberate step, not part of this change: verify the mirror end-to-end first,
+    // and confirm nothing in the local tables was left behind by the cutover. A
+    // disabled module is reversible; a dropped table is not.
+    { key: 'drawing-register',  name: 'Drawing Register',                      path: 'modules/drawing-register/index.html',  icon: 'ruler',      enabled: false, retiredTo: 'the Engineering App', externalUrl: 'https://pmodepartment.github.io/engineering-app/' },
+    { key: 'material-submittal',name: 'Material Submittal Log',                path: 'modules/material-submittal/index.html',icon: 'box',        enabled: false, retiredTo: 'the Engineering App', externalUrl: 'https://pmodepartment.github.io/engineering-app/' },
   ],
 };

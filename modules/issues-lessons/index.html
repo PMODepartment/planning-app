@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260829a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901a" />
   <link rel="stylesheet" href="module.css?v=20260830b" />
 </head>
 <body>
@@ -141,11 +141,11 @@
   <!-- Minutes of Meeting PDF export. Same library and version the standalone mom-app
        uses, so the exported sheet is byte-for-byte the same layout engine. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="../../assets/js/config.js?v=20260828b"></script>
+  <script src="../../assets/js/config.js?v=20260901a"></script>
   <script src="../../assets/js/auth.js?v=20260814a"></script>
   <script src="../../assets/js/db.js?v=20260827c"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260830a"></script>
+  <script src="../../assets/js/ui.js?v=20260901a"></script>
   <script src="../../assets/js/icons.js?v=20260830a"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -156,8 +156,12 @@
       UI.renderUserBar(profile);
       UI.initShell();
       var pname = sessionStorage.getItem('pd_project_name') || sessionStorage.getItem('pd_project') || '';
+      // ⚠️ "Meetings" and "Issues and Concerns" are two nav entries pointing at this SAME module,
+      // distinguished only by ?screen=. Reading it back here is what lets the sidebar highlight
+      // the entry the user actually clicked, instead of always lighting "Issues and Concerns".
+      var navScreen = (function () { try { return new URLSearchParams(location.search).get('screen'); } catch (e) { return null; } })();
       UI.renderNav(document.getElementById('side-nav'), 'project', {
-        active: 'issues-lessons', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
+        active: navScreen === 'mom' ? 'meetings' : 'issues-lessons', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
       IssuesLessons.init(user, profile);
     });
