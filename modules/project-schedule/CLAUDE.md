@@ -1,3 +1,110 @@
+## Imported activities were never attached to the WBS tree — "0 activities", and an empty Vertical Stacking (2026-09-01) — fmlozano
+
+Owner, on Avesta: *"The WBS isn't allocating it properly to its correct WBS"* (WBS Manager screenshot:
+every branch reading **0 activities**), then *"after importing and defined the location breakdown, this
+is what happens in the vertical stacking"* (**"0 execution-phase activities stacked"** on a project
+holding 3,874 of them).
+
+Both files were re-run headlessly through the SHIPPED functions before anything was changed — sliced
+out of `index.html` by brace-matching, never reimplemented. **The placement work from the previous
+prompt holds: code drift 0 on both files**, and the tree the harness produces is the screenshot,
+branch for branch (Execution Phase › General Requirements / Construction Phase / Site Development
+Works; Closeout Phase › Tower 1…7 — those towers are the FILE's own closeout structure, not a
+misfiling). So the structure was already right. What was wrong was that nothing was attached to it.
+
+### ⚠️⚠️ THE ROOT CAUSE — one line, three symptoms
+
+`wbsAdopt()` linked SUMMARY rows, and activities only where an activity's dotted code **equalled** a
+branch's code. An imported activity never does: it carries its own **leaf** code — `4.2.3.1.5` under
+branch `4.2.3.1`. So every import finished with `wbs_node_id = NULL` on **every** activity —
+**4,393 of 4,393 (Avesta), 16,393 of 16,393 (Strevi)**.
+
+The grid never showed it, because `rebuild()` derives ancestry by SPLITTING the dotted code. Everything
+keyed on the NODE saw an empty project:
+
+| | before | after |
+|---|---|---|
+| WBS Manager "N activities" | 0 of 1,623 / 0 of 12,464 nodes | **1,111 / 7,442 nodes** |
+| `isExecPhase` → Vertical Stacking | **0** of 4,393 / 0 of 16,393 | **3,874 / 16,000** |
+| `workOf()` (trade from the branch) | 0 / 0 | **4,393 / 16,393** |
+
+`phaseOf(r)` is `r.phase || _nodePhase(r.wbs_node_id)`, so with no node there is no phase; `_vsActs()`
+filters on `isExecPhase`, so the stack drew nothing. Same for the Contract Scope column ("—").
+
+**Fix:** `_wbsLinkActivityParents()` — an activity belongs to the node whose code is **its own code
+minus the last segment**. Verified: every activity resolves, **0 orphans** on both files.
+
+### ⚠️ The guard that makes the link safe — `_wbsResyncCodes` would have flattened the schedule
+
+That function rewrites `wbs` to `codeOf[wbs_node_id]` for every row carrying a node id. That is right
+for a summary row (**it IS its node**) and catastrophic for an activity: it would collapse every
+activity in a branch onto the branch's single code, which `rebuild()` then reads as ancestry.
+Measured on the newly-linked rows: the un-guarded rule rewrites **4,393 / 16,393 rows — the whole
+schedule — on the first `load()` after adoption.** Depth is the discriminator, and it is exact: a
+Builder-pushed activity is filed AT its node and carries the node's code (same depth, unchanged);
+an imported activity is strictly deeper, so only the BRANCH part of its code moves and its own tail
+segment is kept. **Guarded rule: 0 rewrites** on both files.
+
+Two more things that fell out of it:
+- **The fetch would have doubled on every load** (13 → 29 round-trips on Strevi) now that activities
+  carry node ids. Split into two phases with an EXACT short-circuit: an activity's target is its
+  node's code plus its tail, so if no summary code drifted, no activity's can have — the second page
+  is skipped. A healthy project now pays **less** than before this change.
+- **The rebase is bounded.** One UPDATE per target code, and an activity's target code is unique to
+  it, so a renumber that moved a big branch would issue one request per activity — the request storm
+  `_wbsLinkRows` exists to kill. Over 500 codes the branches are still re-synced and the mass activity
+  rebase is **reported instead of run**; skipping it corrupts nothing (those rows keep their codes).
+
+### The heal, for every project already imported
+
+Every project imported before today carries all of its activities unattached, and the symptom is
+silent. `load()` now runs the linker when — and only when — an in-memory test finds an activity whose
+parent code resolves to a node, so a healthy project performs **no query at all**. Idempotent:
+re-running it matches 0 rows.
+
+**`wbs_link_activity_parents(project_id)` sends NO PAYLOAD.** The project's own WBS-Summary rows ARE
+the (code → node id) map, so the join runs inside the database — unlike `wbs_link_codes`, which has to
+upload one pair per branch. That matters here: the client-side alternative is one PATCH per activity,
+16,393 requests. So this one has **no row-by-row fallback** — without the function it says so and
+leaves the data alone rather than hanging the app. `security invoker`, so RLS still applies.
+⚠️ **The owner must run `migrations/2026-09-01-wbs-link-rpc.sql`** (it now carries both functions).
+
+### Also fixed: the WBS Manager was computing codes by its own, pre-fix rule
+
+`_wbsBuildIndex()` held a private copy of the code walk that read `n.code` **raw** for a custom code —
+exactly the rule `computeWbsCodes()` carries a long warning about, one function over: a custom code is
+a SEGMENT of the path, never a replacement for it. A Builder branch coded `AR-F11` was therefore drawn
+in the WBS Manager as a top-level-looking `AR-F11` while the schedule showed it at `4.2.3.AR-F11` —
+one node, two codes, two views. It now calls `computeWbsCodes()`; there is no second rule to keep in step.
+
+### Verified
+
+By executing the shipped functions over both real exports (Avesta 4,393 activities / 1,623 nodes;
+Strevi 16,393 / 12,464):
+
+1. WBS code drift after adoption **0 / 0**
+2. activities attached **4,393 / 16,393**, unattached **0 / 0**
+3. `isExecPhase` **3,874 / 16,000**; trade **4,393 / 16,393**
+4. WBS Manager counts **1,111 / 7,442** nodes, totalling every activity
+5. `_wbsResyncCodes` on a steady-state load — old rule 4,393 / 16,393 rewrites, **shipped rule 0 / 0**
+6. second run of the heal **0 rows** (idempotent)
+7. location plan, scoped to Execution Phase and seeded by `locSeedTerms`:
+   Avesta **Tower 7 · Level 15 · Zone 2**, 3,818 of 3,874 located;
+   Strevi **Tower 7 (4 real + 3 site-dev mentions ≤4 acts) · Level 19 · Zone 9**, 15,903 of 16,000
+8. Vertical Stacking input: **3,617 / 15,704** execution-phase activities carrying the stacking axis
+
+Whole file: 0 NUL bytes, 1 inline script, parses clean, 1,554 function definitions.
+
+⚠️ **NOT verified signed in** — the anon key has no grants, so the two RPCs have never been called
+against Supabase. The migration is the prerequisite; the first real load of Avesta is the test.
+
+⚠️ **Two things in the screenshot this does NOT explain, and they are not from this file.** The nine
+extra top-level branches (`6 BOQ Tower`, `7 BOQ Site Development`, `8`–`14 Tower 1…7`) are not
+produced by importing this .xer into a seeded skeleton — the harness yields exactly five top-level
+branches. They are left over from earlier work in that project. `_clearWbsTree()` drops every unlocked
+node, so a **Replace** import removes them; an Append does not. Likewise the live tree's **944 nodes**
+is short of the 1,623 this file adopts to, so that project's tree is not a complete adoption of it.
+
 ## The .xer import "bugged completely" on 4PH Strevi — the WBS code was being mangled (2026-09-01) — fmlozano
 
 Owner: *"I tried importing the detailed program for Strevi Residences in the importer and it bugged

@@ -6395,6 +6395,20 @@
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
+    // Self-heal activities that were imported before the adoption step attached them to the tree
+    // (see _wbsLinkActivityParents). Every project imported before this fix carries ALL of its
+    // activities unattached, and the symptom is silent: the grid looks right while Vertical
+    // Stacking, the WBS Manager's counts and the Contract Scope column all read empty. Gated on an
+    // in-memory test, so a healthy project performs no query at all.
+    if (_wbsUnlinkedActs()) {
+      var linkedN = await _wbsLinkActivityParents(true);
+      if (gen !== _loadGen) return;
+      if (linkedN) {
+        rebuild(); _cachePut(pid, rows); renderAll();
+        UI.toast('Attached ' + linkedN.toLocaleString() + ' imported activit' + (linkedN === 1 ? 'y' : 'ies') + ' to the WBS tree — phase, trade and Vertical Stacking now read from it.', 'success');
+      }
+    }
+    if (gen !== _loadGen) return;
     // Mirror the two registers into the Design Development branch. Runs AFTER the WBS is
     // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
     // leaves the branch as it was rather than blocking the schedule.
@@ -17190,14 +17204,14 @@
       arr.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
     });
     for (var k = 0; k < rows.length; k++) { var r = rows[k]; if (!isWbs(r) && r.wbs_node_id) actCount.set(r.wbs_node_id, (actCount.get(r.wbs_node_id) || 0) + 1); }
-    var codeOf = {};
-    (function walk(parentId, parentCode) {
-      (childrenOf.get(parentId) || []).forEach(function (n, i) {
-        var auto = (parentCode ? parentCode + '.' : '') + (i + 1);
-        codeOf[n.id] = (n.code_custom && n.code) ? n.code : auto;
-        walk(n.id, codeOf[n.id]);
-      });
-    })(null, '');
+    // ⚠️ THE SAME CODES THE SCHEDULE USES, from the one function that owns the rule. This used to be
+    // a private copy of the walk that read `n.code` RAW for a custom code — i.e. the pre-fix rule
+    // `computeWbsCodes()` carries a long warning about, one function over: a custom code is a SEGMENT
+    // of the path, never a replacement for it. So a Builder branch coded "AR-F11" was drawn in the
+    // WBS Manager as a top-level-looking "AR-F11" while the schedule showed it at "4.2.3.AR-F11" —
+    // the same node, two different codes, in two views of one tree. There is no second rule to keep
+    // in step now.
+    var codeOf = computeWbsCodes();
     return { byId: byId, childrenOf: childrenOf, actCount: actCount, codeOf: codeOf };
   }
   // Build one row's HTML from a flat descriptor. Shared by the full render + the virtual window.
@@ -17717,23 +17731,81 @@
     if (_resyncingCodes) return 0;
     _resyncingCodes = true;
     try {
-      var ownPid = pid, codeOf = computeWbsCodes(), all = [], from = 0;
-      for (;;) {
-        var q = await sb().from(TABLE).select('id,wbs,wbs_node_id').eq('project_id', ownPid)
-          .not('wbs_node_id', 'is', null).range(from, from + 999);
-        if (q.error) return 0;
-        if (pid !== ownPid) return 0;
-        all = all.concat(q.data || []);
-        if (!q.data || q.data.length < 1000) break;
-        from += 1000;
+      var ownPid = pid, codeOf = computeWbsCodes(), all = [], bad = false;
+      // ⚠️ TWO PHASES, and the second one usually does not run. Until activities were attached to the
+      // tree (_wbsLinkActivityParents) "linked rows" and "summary rows" were the same set, so one
+      // unfiltered page-through was free. Now every activity carries a node id too, and paging them
+      // all in would DOUBLE this query on every single load — 29 round-trips instead of 13 on the
+      // Strevi project — to discover, almost always, that nothing drifted.
+      // The short-circuit is exact rather than a heuristic: an activity's target code is its node's
+      // code plus its own tail, so if not one summary row's code has moved, no activity's can have
+      // either. A healthy project therefore pays LESS than before this change, not more.
+      async function page(summariesOnly) {
+        var out = [], from = 0;
+        for (;;) {
+          var qb = sb().from(TABLE).select('id,wbs,wbs_node_id,activity_type').eq('project_id', ownPid)
+            .not('wbs_node_id', 'is', null);
+          if (summariesOnly) qb = qb.eq('activity_type', 'WBS Summary');
+          else qb = qb.neq('activity_type', 'WBS Summary');
+          var q = await qb.range(from, from + 999);
+          if (q.error || pid !== ownPid) { bad = true; return out; }
+          out = out.concat(q.data || []);
+          if (!q.data || q.data.length < 1000) return out;
+          from += 1000;
+        }
+      }
+      all = await page(true);
+      if (bad) return 0;
+      var _summaryDrift = all.some(function (r) {
+        var w = codeOf[r.wbs_node_id];
+        return w && String(r.wbs) !== String(w);
+      });
+      if (_summaryDrift) {
+        all = all.concat(await page(false));
+        if (bad) return 0;
       }
       // Group the drifted rows by the code they SHOULD carry — one UPDATE per target code.
       var byCode = {}, n = 0;
       all.forEach(function (r) {
         var want = codeOf[r.wbs_node_id];
-        if (!want || String(r.wbs) === String(want)) return;
+        if (!want) return;
+        // ⚠️⚠️ A SUMMARY ROW *IS* ITS NODE; AN IMPORTED ACTIVITY SITS ONE LEVEL BELOW IT.
+        // Until activities were attached to the tree (_wbsLinkActivityParents) every row reaching
+        // this loop was a summary row, so "the row's code is the node's code" held. It does not hold
+        // for an activity: an imported activity carries its own leaf segment — "4.2.3.1.5" under
+        // branch "4.2.3.1" — and rewriting it to the branch code would collapse EVERY activity in a
+        // branch onto one shared code, which rebuild() then reads as ancestry. Measured against the
+        // real files: the un-guarded rule rewrites 4,393 (Avesta) / 16,393 (Strevi) activity codes,
+        // i.e. the entire schedule, on the first load() after adoption. Only the BRANCH part of the
+        // code may move; the row's own tail segment is its identity and is kept.
+        // Depth is the discriminator and it is reliable: a Builder-pushed / manually-added activity
+        // is filed AT its node and carries exactly the node's code (same depth → take `want` as-is,
+        // unchanged behaviour), while an imported activity is strictly deeper.
+        if (r.activity_type !== 'WBS Summary') {
+          var segs = String(r.wbs == null ? '' : r.wbs).split('.'), wSegs = String(want).split('.');
+          if (segs.length > wSegs.length) want = want + '.' + segs[segs.length - 1];
+        }
+        if (String(r.wbs) === String(want)) return;
         (byCode[want] = byCode[want] || []).push(r.id); n++;
       });
+      // ⚠️ One UPDATE per TARGET CODE, and an activity's target code is unique to it — so a renumber
+      // that moves a big branch would issue one request per activity, the same request storm
+      // `_wbsLinkRows` was written to kill. Bounded rather than silently slow: the summary rows (few,
+      // and the ones the tree is drawn from) are always re-synced; a mass activity rebase is reported
+      // instead of run. Nothing is corrupted by skipping it — those rows keep the codes they already had.
+      var _codeKeys = Object.keys(byCode);
+      if (_codeKeys.length > 500) {
+        var _keep = {}, _kept = 0;
+        all.forEach(function (r) {
+          if (r.activity_type !== 'WBS Summary') return;
+          var w = codeOf[r.wbs_node_id];
+          if (!w || String(r.wbs) === String(w)) return;
+          (_keep[w] = _keep[w] || []).push(r.id); _kept++;
+        });
+        UI.toast((n - _kept).toLocaleString() + ' activity codes still point at the old WBS numbering. ' +
+          'The branches were re-synced; re-import or re-adopt to renumber the activities.', 'warn');
+        byCode = _keep; n = _kept;
+      }
       if (!n) return 0;
       var codes = Object.keys(byCode), failed = 0;
       for (var i = 0; i < codes.length; i++) {
@@ -18885,8 +18957,66 @@
       });
     }
     await _wbsLinkRows(linkByCode, schedUp);
+    // ⚠️⚠️ AND NOW ATTACH THE ACTIVITIES. Everything above links SUMMARY rows (and the rare activity
+    // that carries a branch's own code). An IMPORTED activity carries its own LEAF code — "4.2.3.1.5"
+    // under branch "4.2.3.1" — so it matched nothing here and came out of every import with
+    // `wbs_node_id = null`. Measured: 4,393 of 4,393 (Avesta) and 16,393 of 16,393 (Strevi)
+    // activities unattached. The grid still looked right, because rebuild() derives ancestry by
+    // SPLITTING the dotted code — but every NODE-keyed feature saw an empty project:
+    //   • the WBS Manager's "N activities" read 0 on all 1,623 / 12,464 nodes;
+    //   • phaseOf() = `r.phase || _nodePhase(r.wbs_node_id)` returned null for every activity, so
+    //     isExecPhase() was false everywhere and Vertical Stacking drew "0 execution-phase
+    //     activities stacked" on a project holding 3,874 of them;
+    //   • workOf() fell back to '' and the Contract Scope column read "—".
+    // Linking each activity to the node whose code is its PARENT code fixes all three at once:
+    // measured isExecPhase 0 → 3,874 (Avesta) / 0 → 16,000 (Strevi), trade 0 → 4,393 / 16,393,
+    // and 0 → 1,111 / 7,442 nodes reporting a count. Every activity resolved (0 orphans).
+    await _wbsLinkActivityParents(silent);
     if (!silent) { renderWbsManager(); UI.toast('Adopted ' + legacy.length + ' WBS nodes into the tree.', 'success'); }
     return legacy.length;
+  }
+  // Activities whose branch is known but whose `wbs_node_id` is still null — the in-memory test that
+  // gates the healer below, so a healthy project pays no round-trip at all.
+  function _wbsUnlinkedActs() {
+    var nodeByCode = {};
+    for (var i = 0; i < rows.length; i++) { var s = rows[i]; if (isWbs(s) && s.wbs && s.wbs_node_id) nodeByCode[String(s.wbs)] = 1; }
+    var n = 0;
+    for (var j = 0; j < rows.length; j++) {
+      var r = rows[j];
+      if (isWbs(r) || r.wbs_node_id || !r.wbs) continue;
+      var p = String(r.wbs).split('.').slice(0, -1).join('.');
+      if (p && nodeByCode[p]) n++;
+    }
+    return n;
+  }
+  // Attach every un-attached activity to the WBS node that owns its parent code.
+  // ⚠️ ZERO PAYLOAD. The project's own WBS-Summary rows already hold (dotted code → node id), so the
+  // whole join happens server-side and nothing is uploaded — unlike `wbs_link_codes`, which has to
+  // send one {code,node_id} pair per branch. That matters at this scale: the per-row PATCH fallback
+  // would be 16,393 requests, the very runaway `_wbsLinkRows` exists to avoid. So there is NO row-by-row
+  // fallback here: without the function we say so and leave the data alone rather than hanging the app.
+  async function _wbsLinkActivityParents(silent) {
+    if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
+    var n = 0;
+    try {
+      var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid });
+      if (rp.error) throw rp.error;
+      n = rp.data || 0;
+    } catch (e) {
+      if (!silent) UI.toast('Activities could not be attached to the WBS tree — run migrations/2026-09-01-wbs-link-rpc.sql.', 'warn');
+      return 0;
+    }
+    if (!n) return 0;
+    // Mirror into memory so the next render is right without a refetch — same contract as _wbsResyncCodes.
+    var nodeByCode = {};
+    rows.forEach(function (s) { if (isWbs(s) && s.wbs && s.wbs_node_id) nodeByCode[String(s.wbs)] = s.wbs_node_id; });
+    rows.forEach(function (r) {
+      if (isWbs(r) || r.wbs_node_id || !r.wbs) return;
+      var p = String(r.wbs).split('.').slice(0, -1).join('.');
+      if (p && nodeByCode[p]) r.wbs_node_id = nodeByCode[p];
+    });
+    _clearPhaseMemo();   // phase / trade / scope / package are all derived from the node
+    return n;
   }
   // Auto-adopt after an import (tolerant — never blocks the import if the wbs_nodes table/write fails).
   /* After an import has adopted its WBS tree, move that tree UNDER the package's own
