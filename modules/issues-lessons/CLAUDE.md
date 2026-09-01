@@ -1,5 +1,171 @@
 # Module: issues-lessons
 
+## 2026-09-01 (h) — Mobile pass off a phone screenshot: the duplicate title, KPI/chart tile layout, touch reorder, and the lesson detail's field arrangement
+
+Owner sent a phone screenshot of the live Issues & Concerns screen — the module `<h1>` ("Issues &
+Concerns") crossed out in red, sitting directly above the tabs-dropdown trigger reading the same
+thing — with 10 items. Two touch shared files (`assets/js/ui.js`, `assets/css/dashboard.css`); the
+rest are module-local.
+
+### Item 1 — the duplicate title on mobile
+
+⚠️ **The earlier fix (entry (f)) only hid the duplicate ≥701px.** `UI.tabsToDropdown()` marks the
+title text `.pd-title-hasdrop`, and dashboard.css hid it `@media (min-width:701px)` on purpose —
+below 700px `.pd-modulebar > h1` is forced onto its own full-width row (the phone stacking rule),
+and hiding just the TEXT there would leave a bare icon alone on that row with the dropdown
+trigger's own label on the row after it, which is the exact "icon alone / label on the next line"
+defect this file's own history (`issues-lessons/module.css`, "REMOVED 2026-08-31") already fixed
+once. The screenshot showed the opposite problem — the FULL duplicate text, not a bare icon — so
+the earlier caution didn't actually cover this case.
+
+Fixed by marking the **`<h1>` itself**, not just its text span (`pd-h1-hasdrop`, added in
+`tabsToDropdown()` right beside the existing `pd-title-hasdrop`), and hiding the whole element
+below 700px (`.pd-modulebar > h1.pd-h1-hasdrop { display: none; }`). ⚠️ **This removes the row
+entirely rather than leaving it half-empty** — with no separate icon row left at all, there is
+nothing left to read as "alone", so the old defect can't recur through this door either. Desktop
+(≥701px) is untouched: the icon still rides the same row as the dropdown trigger and tools, which
+is the wanted look there.
+
+### Item 2 — the 5-tile KPI band compresses to two rows on narrow screens
+
+⚠️ **Root cause: `.il-kpis` (the Issues screen's 5-tile band) was narrowed to 2 COLUMNS at both
+≤820px and ≤700px**, and 5 items over 2 columns auto-place as 2+2+1 — three rows, with the last
+tile (AVG AGING) stranded alone on a mostly-empty third row, exactly the screenshot. Fixed by
+**not** narrowing `.il-kpis` (without the `-2` suffix) below the existing ≤1000px rule, which
+already sets it to 3 columns — kept at 3 all the way to phone width, so 5 tiles over 3 columns
+auto-place as 3+2, always exactly two rows, the tiles just getting narrower rather than gaining a
+third row. ⚠️ `.il-kpis-2` (the smaller 3-tile bands — e.g. the Lessons screen's own band, item 10
+below) is untouched and still narrows to 2 columns at ≤820px — a 3-tile band reading fine at 3
+columns needs no such fix.
+
+### Item 3 — reordering on a touch device did nothing
+
+⚠️ **Not a bug in the drag code — a whole input model that doesn't exist on touch.**
+`dragGripHTML`/`wireReorder` are pure HTML5 native drag-and-drop (`draggable="true"`,
+`ondragstart`/`ondragover`/`ondrop`), and touch devices never fire those events at all — reordering
+"does nothing" on a phone by construction, not by a fault in the gesture handling.
+
+Rather than reimplement drag-and-drop on top of touch/pointer events (real risk of fighting the
+page's own scroll gesture, and nothing here can be verified against a real touchscreen in this
+environment), a **move-up / move-down button pair** does the same job with no gesture at all.
+`moveButtonsHTML(id, isFirst, isLast)` renders two small buttons; `wireReorder` now also wires
+`[data-moveup]`/`[data-movedown]` clicks, computing the row's neighbour in the currently-displayed
+`list` and calling the **same `applyReorder`** the drag handle already uses (fed a computed
+neighbour id instead of a drop target) — so drag and the buttons can never disagree about what
+"move" means, and there is exactly one reorder/renumber code path, not two. CSS shows the drag grip
+by default and swaps to the move buttons below 700px, since dragging genuinely doesn't work there
+and a control that does nothing is worse than none.
+
+⚠️ **Sized smaller than this app's usual 44px touch minimum, deliberately** — a full-size control
+here would make every row noticeably taller across the whole register for one small cell, and a
+step button's target (move one place) tolerates an imprecise tap far better than a primary action
+does: a miss just needs a second tap, not the wrong record touched.
+
+### Item 4 — dashboard chart tiles need not share height below 1000px
+
+⚠️ **Reverses part of entry (g)'s item 1**, on purpose, per this round's explicit ask. The fixed
+`.il-dash-cardbody { height: 340px; }` (and the internal scroller it exists to bound) is now a
+wide-screen-only rule — below 1000px the three tiles are no longer a strict single row (they stack
+2-up or 1-up per the existing `.il-dash-grid` breakpoints), so forcing three differently-shaped
+charts to share one height stops being what makes them read as "one row"; each tile now sizes to
+its own content there instead.
+
+### Item 5 — donut chart: a label beside each section
+
+`donutChartSVG` gained per-slice labels, not just the top-right legend added in entry (g). Each
+non-zero slice's midpoint angle is computed from its own cumulative arc offset, and a label
+("Open (2)") is placed just outside the ring at that angle, anchored toward whichever side of the
+circle it falls on (right of the ring reads outward from it; left of the ring anchors from its own
+end so it also reads away from the arc; top/bottom centre) — so a label never sits through the arc
+it names. ⚠️ **A zero-value slice gets no label** — "Closed (0)" floating beside an otherwise-empty
+arc position would read as a data point that exists when it doesn't.
+
+⚠️ The viewBox is widened to give the labels room, with the ring drawn inside a translated `<g>` so
+its own coordinate math (built for the un-padded box) needed no changes. The SVG renders at
+`width="100%"` (matching `hbarSVG`'s own scaling convention) so it shrinks to fit a narrow tile
+instead of a fixed pixel width overflowing it, capped by a new `.il-donut-svg { max-width: 260px; }`
+so it can't grow oversized on a wide single-column mobile layout.
+
+### Item 6 — department/champion bar labels overflow instead of truncating
+
+`hbarSVG`'s row labels were character-truncated to 24 chars with an ellipsis (`clip(it.label, 24)`)
+— removed; the full label now renders regardless of length. ⚠️ Most browsers default a root `<svg>`
+to `overflow:hidden`, which would have silently clipped anything running past the viewBox even
+without the character truncation — the returned `<svg>` now carries `overflow="visible"` so a long
+name genuinely overflows past the fixed label column rather than being cut, matching the literal
+ask. The `.il-dash-cardbody-scroll` wrapper's own `overflow-y:auto` already computes `overflow-x`
+to `auto` too per the CSS spec's cross-axis rule (an explicit `overflow-y` value forces a `visible`
+`overflow-x` to compute as `auto`), so an overflowing label scrolls into view horizontally rather
+than spilling onto neighbouring page content.
+
+### Item 7 — the Open Issues and Lessons Learned dashboard tiles scroll internally
+
+Both tiles' inner `.pd-tablewrap` (the shared horizontal-scroll wrapper every wide table in this
+app uses) now also caps at `max-height: 400px; overflow-y: auto;` — scoped to
+`.il-dash-fulllist-card .pd-tablewrap`/`.il-dash-lessons-card .pd-tablewrap` specifically, since
+`.pd-tablewrap` itself is a shared utility class used unbounded everywhere else in the app and must
+stay that way.
+
+### Item 8 — the lesson detail view now mirrors the issue detail's own field arrangement
+
+⚠️ **Corrects entry (g)'s item 7**, which built the lesson's own fields in a bespoke shape (a
+`.il-form-row` pair, one textarea, a "what produced it" section, a save row) stacked ABOVE a
+completely separately-shaped, full `issDetailHTML` block for the linked issue. This round's ask —
+"same contents as issues including order and arrangement of fields, only the header differs" —
+reads as: the lesson's OWN block should use the same STRUCTURE issues use, not a second, different
+layout.
+
+`lessonDetailHTML` now builds its content with the identical `.il-iss-split` /
+`.il-iss-panel` / `.il-iss-body` two-pane layout `issDetailHTML` already uses (reused verbatim, not
+a second copy of the classes), in the same relative order: **panel** — Department, then Date
+Captured (the same relative order Department and Date Raised hold in an issue's own panel); **body**
+— the Lesson Learned textarea (the position an issue's primary narrative field occupies), then, at
+the foot of the body pane, "what produced this lesson" when unlinked — the same structural position
+an issue's provenance line (`il-iss-prov`) occupies. Save/Cancel/Delete sit below the split, in the
+same position `issDetailHTML`'s workflow row does. ⚠️ Only the toolbar's state text (already
+lesson-worded via `lessonSourceText`) and the field labels differ from an issue's page — the
+arrangement itself is now identical. The embedded full issue block below (when linked) is
+unchanged from entry (g) — this round's wording doesn't retract it, only corrects the shape of the
+lesson's own block above it.
+
+### Item 9 — lesson list labels: "Lesson Learned", and "From an issue" → "Issue"
+
+The Lessons Learned list's column header (and its mobile-stacked `data-l` label) changed from
+"Lessons" to **"Lesson Learned"**. `lessonSourceText(l)`'s issue-linked case changed from
+`'From an issue' + ...` to `'Issue' + ...` — the only case the ask named; the meeting-linked and
+standalone cases ("From a meeting", "Captured on its own") are untouched.
+
+### Item 10 — the Lessons Learned KPI band is exactly three tiles
+
+`renderLessonKpis()` rewritten from `Lessons captured / From a closed issue / Departments` to
+exactly three: **Lessons learned** (count), **Issues closed** (project-wide `rows` count of
+`status === 'Closed'`, not scoped to only issues with a lesson attached — the two registers read
+side by side), and **Avg aging (d)** — the mean of every lesson's own `lessonAgingDays(l)`. ⚠️ Reuses
+the SAME function the list's own Aging column already reads, so the tile and the column can never
+disagree about what one lesson's aging is.
+
+### Verified
+
+- `node --check` clean on both touched JS files (`module.js`, `assets/js/ui.js`).
+- 0 NUL bytes across every touched file.
+- CSS braces balanced: `module.css` 285/285, `dashboard.css` 427/427.
+- 0 duplicate DOM `id=` attributes in `index.html` (unchanged this round — no markup was added or
+  removed there; every new control is rendered dynamically by JS into existing containers).
+- `<div>` tags balanced (26/26, unchanged — `index.html` untouched this round).
+- Function-name-set diff against `main`: **0 functions lost, 1 added** (`moveButtonsHTML`) in
+  `module.js`; **0 lost, 0 added** in `ui.js` (the fix there is inline inside the existing
+  `tabsToDropdown`, not a new named function).
+- 0 leftover git conflict markers repo-wide after the branch restart (see below).
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing constraint
+for every UI pass in this module. No live click-through of the move-up/move-down buttons on a real
+touch device, the donut label placement against real slice values, the bar-label horizontal
+overflow-scroll, or the restructured lesson detail view's live save/cancel/delete cycle.
+
+`module.css/js?v=` → `20260901j`; shared `assets/js/ui.js?v=` / `assets/css/dashboard.css?v=` →
+`20260901d` (app-wide — 20/28 referencing files respectively); `MODULE_V` (via `modules-grid.js?v=`
+on `dashboard.html`/`modules.html`) → `20260901s`.
+
 ## 2026-09-01 (g) — Dashboard tile sizing/legends, list ordering, Lessons Learned reworked to embed the source issue, sortable columns
 
 Owner's 10-item list, verbatim: (1) the three dashboard chart tiles should share one height;

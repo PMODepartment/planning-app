@@ -84,6 +84,33 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (p) — Issues Dashboard mobile pass: the title-hide fix widened for phone width, plus nine module-local items
+
+Owner sent a phone screenshot — the same duplicate module `<h1>` / tabs-dropdown title entry (o)'s
+`tabsToDropdown` fix already addressed, still showing on a narrow screen — with 10 items covering
+the mobile KPI/chart layout, touch reordering, and the Lessons Learned detail view's field
+arrangement. Full detail in `modules/issues-lessons/CLAUDE.md` (2026-09-01 (h)); this entry covers
+the two **shared** files touched.
+
+**`assets/js/ui.js` (`tabsToDropdown`) + `assets/css/dashboard.css` — the title-hide widened to
+mobile, without reopening the bug it was built to avoid.** Entry (o)'s fix deliberately hid the
+duplicate title TEXT only `@media (min-width:701px)` — below 700px `.pd-modulebar > h1` is forced
+onto its own full-width row, and hiding just the text there would leave a bare icon alone on that
+row with the dropdown trigger's label on the row after it, the "icon alone / label on the next
+line" defect this repo had already fixed once. The screenshot showed the opposite shape — the FULL
+duplicate text on its own row, not a bare icon — so that caution didn't actually cover this case.
+⚠️ Fixed by marking the **`<h1>` element itself**, not just its text span
+(`pd-h1-hasdrop`, alongside the existing `pd-title-hasdrop`), and hiding the WHOLE element below
+700px. With no separate icon row left at all, there is nothing left to read as "alone" — the old
+defect can't recur through this door either, and desktop (≥701px) is untouched.
+
+**Verified:** `node --check` clean on both files; the module's own suite of structural checks
+(0 NUL bytes, CSS braces balanced, 0 duplicate DOM ids, 0 functions lost) all green — see the
+module's own CLAUDE.md entry for the full list. ⚠️ **Not verified signed-in.**
+
+`ui.js`/`dashboard.css?v=` → `20260901d` (app-wide — 20/28 referencing files respectively);
+`MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260901s`.
+
 ### 2026-09-01 (o) — Issues Dashboard cleanup off a screenshot; the shared tabs-dropdown fix that almost reintroduced a fixed bug
 
 Owner sent a screenshot of the live Issues & Concerns Dashboard with the duplicate "Dashboard" /

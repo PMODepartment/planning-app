@@ -989,6 +989,16 @@ body { overflow-x: clip; }
 
 @media (max-width: 700px) {
   .pd-modulebar > h1 { flex: 1 1 100%; min-width: 0; }
+  /* Item 1 (2026-09-01, mobile round): a module whose tab strip already got a
+     dropdown (UI.tabsToDropdown) drops its <h1> ENTIRELY here — "the dropdown
+     should suffice". Above, hiding just the text still leaves an icon-only h1
+     claiming a full-width row for itself; this rule (higher specificity than
+     the bare `.pd-modulebar > h1` above, so `display:none` wins over the
+     `flex:1 1 100%`) removes the row outright, so there's no separate icon
+     row left to read as "alone". Desktop (≥701px) is untouched — there the
+     icon rides on the SAME row as the dropdown trigger and tools, which is
+     the wanted look; only the stacked-rows shape below 700px changes. */
+  .pd-modulebar > h1.pd-h1-hasdrop { display: none; }
   /* Equal segments, like a native segmented control. ⚠️ `min-height` matters:
      the modules size these to 28px, well under the 44px touch minimum — they
      were among the hardest things on the page to hit accurately. */
