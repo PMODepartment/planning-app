@@ -2,7 +2,7 @@
 // Issues, Concerns & Lessons Learned
 // ----------------------------------------------------------------------------
 // Reproduces the Power Apps "Issues & Concerns" log (Status · Department ·
-// Champion · Issue · Caused By · Corrective Action · Date Presented · Days
+// Champion · Issue · Caused By · Corrective Action · Date Raised · Days
 // Aging · Date Resolved) and ADDS a Lessons Learned capability: every issue can
 // carry a lesson, and a dedicated "Lessons Learned" library screen collects all
 // captured lessons so management/operations can reference them on future work.
@@ -73,6 +73,15 @@ window.IssuesLessons = (function () {
   // Set while a NEW issue draft was started from the Lessons Learned screen's
   // "+ New Lesson" (item #15) — routes "Back"/"Cancel" to Lessons instead of Issues.
   var _issNewFromLessons = false;
+  // ITEM 7 (2026-09-01): while a lesson's linked issue is embedded on the
+  // Lessons screen, that embed borrows `_issSel`/`_issMode`/the workflow-panel
+  // flags — the SAME state the real Issues screen uses — so its Save/Hold/
+  // Reopen/Close/Delete buttons act on the right row. This is the saved copy
+  // of whatever the Issues screen itself had selected, restored the moment the
+  // Lessons screen is actually left (see switchScreen), so returning to Issues
+  // shows what was really open there rather than whatever a lesson happened to
+  // link to.
+  var _issEmbedSaved = null;
 
   // ---- Lessons Learned ------------------------------------------------------
   // A lesson is its OWN record now (table `lessons_learned`), linked to the issue and/or
@@ -186,14 +195,19 @@ window.IssuesLessons = (function () {
   }
 
   // ---- derived Days Aging ----
-  function agingDays(r) {
-    if ((r.status || '') === 'Closed') return 0;
-    if (!r.date_presented) return null;
-    var m = String(r.date_presented).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // Shared "how many whole days since this ISO date" primitive — used by an
+  // issue's own aging AND, from item 8 (2026-09-01), a lesson's.
+  function daysSince(iso) {
+    if (!iso) return null;
+    var m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!m) return null;
     var d0 = new Date(+m[1], +m[2] - 1, +m[3]);
     var now = new Date(); now.setHours(0, 0, 0, 0);
     return Math.max(0, Math.round((now - d0) / 86400000));
+  }
+  function agingDays(r) {
+    if ((r.status || '') === 'Closed') return 0;
+    return daysSince(r.date_presented);
   }
   // ⚠️ Reads the LESSONS library first and the old column only as a fallback. A lesson is
   // its own record now, so an issue can carry several — or one captured by someone else —
@@ -297,6 +311,72 @@ window.IssuesLessons = (function () {
     baseArr.sort(cmp);
     render();
   }
+
+  // ---- ITEM 9 (2026-09-01): click-a-column-header sort, cycling asc -> desc ->
+  // natural — the same 3-state convention this app already established
+  // elsewhere (Drawing Register). Reordering by drag (above) and sorting by
+  // column are mutually exclusive views of the SAME list: a drag position means
+  // nothing once a column sort has reshuffled the rows, so drag is switched off
+  // while a sort is active (see renderIssuesLog / renderLessonsLogView) rather
+  // than left silently fighting it.
+  var _issSort = { key: '', dir: 0 };
+  var _lessSort = { key: '', dir: 0 };
+  function cycleSort(state, key) {
+    if (state.key !== key) { state.key = key; state.dir = 1; }
+    else if (state.dir === 1) { state.dir = -1; }
+    else { state.key = ''; state.dir = 0; }
+  }
+  function sortThHTML(label, key, state) {
+    var active = state.key === key;
+    return '<th class="il-th-sort' + (active ? ' is-active' : '') + '" data-sortkey="' + Fmt.esc(key) + '" title="Click to sort">' +
+      Fmt.esc(label) + '<span class="il-sort-arrow">' + (active ? (state.dir === 1 ? '▲' : '▼') : '') + '</span></th>';
+  }
+  function wireSortHeaders(theadEl, state, onSorted) {
+    if (!theadEl) return;
+    theadEl.querySelectorAll('[data-sortkey]').forEach(function (th) {
+      th.onclick = function () { cycleSort(state, th.dataset.sortkey); onSorted(); };
+    });
+  }
+  // Blanks/nulls always sort LAST regardless of direction — a missing value is
+  // not "smaller" or "larger" than a real one, it is unknown, and burying it at
+  // the bottom in either direction is the one reading that never misleads.
+  function sortCmp(a, b, dir) {
+    var an = (a === null || a === undefined || a === '');
+    var bn = (b === null || b === undefined || b === '');
+    if (an && bn) return 0;
+    if (an) return 1;
+    if (bn) return -1;
+    var c = (typeof a === 'number' && typeof b === 'number') ? (a - b)
+      : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+    return dir === -1 ? -c : c;
+  }
+  function applySort(list, state, extractors) {
+    if (!state.key || !extractors[state.key]) return list;
+    var fn = extractors[state.key];
+    return list.slice().sort(function (a, b) { return sortCmp(fn(a), fn(b), state.dir); });
+  }
+  var ISSUE_SORT_EXTRACT = {
+    department: function (r) { return r.department || ''; },
+    issue: function (r) { return r.description || ''; },
+    caused: function (r) { return r.caused_by || ''; },
+    corrective: function (r) { return r.corrective_action || ''; },
+    champion: function (r) { return latestChampionText(r) || ''; },
+    status: function (r) { return r.status || 'Open'; },
+    raised: function (r) { return r.date_presented || ''; },
+    aging: function (r) { return agingDays(r); },
+    resolved: function (r) { return r.date_resolved || ''; },
+  };
+  var ISSUE_SORT_LABELS = {
+    department: 'Department', issue: 'Issue', caused: 'Caused By', corrective: 'Corrective Action',
+    champion: 'Champion', status: 'Status', raised: 'Date Raised', aging: 'Days Aging', resolved: 'Date Resolved',
+  };
+  var LESSON_SORT_EXTRACT = {
+    department: function (l) { return l.department || ''; },
+    lesson: function (l) { return l.lesson || ''; },
+    resolved: function (l) { return lessonResolvedDate(l) || ''; },
+    aging: function (l) { return lessonAgingDays(l); },
+  };
+  var LESSON_SORT_LABELS = { department: 'Department', lesson: 'Lessons', resolved: 'Date Resolved', aging: 'Aging' };
 
   // ========================================================================
   async function init(user, prof) {
@@ -532,15 +612,43 @@ window.IssuesLessons = (function () {
   }
 
   function switchScreen(s) {
+    var prevScreen = screen;
     screen = s;
     $('il-screen-issues').hidden = s !== 'issues';
     $('il-screen-lessons').hidden = s !== 'lessons';
     $('il-screen-dashboard').hidden = s !== 'dashboard';
+    // Item 1: "Dashboard" -> "Issues Dashboard" — matches the renamed tab.
     $('il-screen-title').textContent =
-      s === 'lessons' ? 'Lessons Learned' : (s === 'dashboard' ? 'Dashboard' : 'Issues & Concerns');
+      s === 'lessons' ? 'Lessons Learned' : (s === 'dashboard' ? 'Issues Dashboard' : 'Issues & Concerns');
     Array.prototype.forEach.call(document.querySelectorAll('.il-tab[data-screen]'), function (b) {
       b.classList.toggle('active', b.dataset.screen === s);
     });
+    // ITEM 10 (2026-09-01): the module title (icon + text) is dropped on
+    // Lessons Learned only — the tabs-dropdown trigger already names the
+    // active screen, so there it is pure duplication. Issues & Concerns /
+    // Issues Dashboard keep theirs (see dashboard.css's width-gated
+    // `.pd-title-hasdrop` rule, which prevents the "icon alone on a line" bug
+    // for THOSE two screens by hiding the label only above 700px); this is a
+    // full always-hide, scoped to Lessons alone, which cannot reproduce that
+    // bug — nothing is left standing alone once both icon and text are gone.
+    var titleEl = document.querySelector('.il-title');
+    if (titleEl) titleEl.style.display = s === 'lessons' ? 'none' : '';
+    // ITEM 7 (2026-09-01): a linked issue can now render TWICE — once as the
+    // Issues screen's own drill-down, once embedded below its lesson on the
+    // Lessons screen — and DOM ids must stay unique, so whichever screen is
+    // being LEFT has its detail markup cleared. Both screens fully rebuild
+    // their own view on becoming active again, so this costs nothing.
+    if (s !== 'issues') { var iv = $('il-issues-view'); if (iv) iv.innerHTML = ''; }
+    if (s !== 'lessons') { var lv = $('il-lessons-view'); if (lv) lv.innerHTML = ''; }
+    // Leaving Lessons restores whatever the Issues screen itself had selected
+    // before a lesson's embed borrowed `_issSel` to point at its own linked
+    // issue — otherwise returning to Issues could show a different issue than
+    // the one actually left open there.
+    if (prevScreen === 'lessons' && s !== 'lessons' && _issEmbedSaved) {
+      _issSel = _issEmbedSaved.sel; _issMode = _issEmbedSaved.mode;
+      _issHoldOpen = _issEmbedSaved.hold; _issCloseOpen = _issEmbedSaved.close; _issReopenOpen = _issEmbedSaved.reopen;
+      _issEmbedSaved = null;
+    }
     syncChrome();
     syncTopFilters();
     render();
@@ -714,8 +822,13 @@ window.IssuesLessons = (function () {
   // (`.il-dash-hbar-wrap`) so a long list doesn't blow out the tile.
   function hbarSVG(items, opts) {
     opts = opts || {};
-    var w = opts.width || 380, rowH = 22, gap = 10, padTop = 4, padLeft = 108, labelW = 92;
-    var trackW = Math.max(24, w - padLeft - labelW);
+    var w = opts.width || 380, rowH = 22, gap = 10, padTop = 4;
+    // ITEM 5: labels are LEFT-aligned now (were right-aligned and grew off the
+    // left edge on a long department/champion name — align-left fixes that by
+    // construction, since a left-anchored label's READABLE beginning is always
+    // what's visible, never a clipped tail). padLeft is the fixed label column.
+    var padLeft = 132, padRight = 6;
+    var trackW = Math.max(24, w - padLeft - padRight);
     var n = Math.max(1, items.length);
     var h = padTop * 2 + n * rowH + (n - 1) * gap;
     var max = Math.max(1, items.reduce(function (m, it) { return Math.max(m, it.total); }, 0));
@@ -725,15 +838,22 @@ window.IssuesLessons = (function () {
       var midY = y + rowH / 2 + 4;
       var totalW = Math.max(2, (it.total / max) * trackW);
       var openW = Math.max(it.open ? 2 : 0, (it.open / max) * trackW);
-      return '<text x="' + (padLeft - 8) + '" y="' + midY.toFixed(1) +
-          '" text-anchor="end" font-size="11.5" fill="var(--pd-ink)">' + Fmt.esc(clip(it.label, 20)) + '</text>' +
+      var midX = padLeft + totalW / 2;   // ITEM 6: centred ON the bar, not after it.
+      return '<text x="4" y="' + midY.toFixed(1) +
+          '" text-anchor="start" font-size="11.5" fill="var(--pd-ink)">' + Fmt.esc(clip(it.label, 24)) + '</text>' +
         '<rect x="' + padLeft + '" y="' + y.toFixed(1) + '" width="' + totalW.toFixed(1) + '" height="' + rowH +
           '" rx="4" fill="' + totalColor + '"><title>' + Fmt.esc(it.label) + ' — Total: ' + it.total + '</title></rect>' +
         '<rect x="' + padLeft + '" y="' + y.toFixed(1) + '" width="' + openW.toFixed(1) + '" height="' + rowH +
           '" rx="4" fill="' + openColor + '"><title>' + Fmt.esc(it.label) + ' — Open: ' + it.open + '</title></rect>' +
-        '<text x="' + (padLeft + trackW + 8) + '" y="' + midY.toFixed(1) +
-          '" font-size="11" fill="var(--pd-muted)">' + it.open + ' open of ' + it.total +
-          ' issue' + (it.total === 1 ? '' : 's') + '</text>';
+        // ITEM 6: the "N open of N issues" label sits centred ON the bar now. A
+        // stroke halo (the tile's own card colour) keeps it legible whichever
+        // segment it lands over — the red "open" fill or the grey/near-black
+        // "total" remainder (dark in light mode, near-transparent-white-on-dark
+        // in dark mode) — a single fixed text colour can't read on both.
+        '<text x="' + midX.toFixed(1) + '" y="' + midY.toFixed(1) +
+          '" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--pd-ink)" ' +
+          'paint-order="stroke" stroke="var(--pd-card)" stroke-width="3" stroke-linejoin="round">' +
+          it.open + ' open of ' + it.total + ' issue' + (it.total === 1 ? '' : 's') + '</text>';
     }).join('');
     return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="' + h + '" role="img" ' +
       'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet">' + svg + '</svg>';
@@ -766,7 +886,10 @@ window.IssuesLessons = (function () {
         .order('changed_at', { ascending: false }).limit(200);
       ISSUE_HISTORY[id] = res.error ? [] : (res.data || []);
     } catch (e) { ISSUE_HISTORY[id] = []; }
-    if (_issSel === id && _issMode === 'detail') { renderIssues(); }
+    // ITEM 7: this issue's history can now be on screen embedded below its own
+    // lesson (screen === 'lessons') as well as the Issues drill-down — repaint
+    // whichever one is actually showing it.
+    if (_issSel === id && (_issMode === 'detail' || (screen === 'lessons' && _lessMode === 'detail'))) refreshIssueView();
   }
   // ⚠️ ITEM #6: the fields shown as a before -> after line whenever they changed —
   // every field this register actually asks for, not just the action label + a
@@ -780,7 +903,7 @@ window.IssuesLessons = (function () {
     // Item 1: captured when an On Hold issue is reopened — see confirmReopenIssue().
     ['action_plan', 'Action Plan'],
     ['closure_report', 'Closure Report'],
-    ['date_presented', 'Date Presented'], ['date_resolved', 'Date Resolved'],
+    ['date_presented', 'Date Raised'], ['date_resolved', 'Date Resolved'],
   ];
   function histNorm(v) { return (v === null || v === undefined) ? '' : String(v); }
   function histFieldHTML(key, val) {
@@ -856,6 +979,16 @@ window.IssuesLessons = (function () {
     else renderIssueDetailView();
   }
 
+  // ITEM 7 (2026-09-01): the issue detail markup can render in TWO places now —
+  // the Issues screen's own drill-down, or embedded below a linked lesson on
+  // the Lessons screen (see renderLessonDetailView) — so every save/hold/
+  // reopen/close handler repaints whichever one is actually on screen instead
+  // of always assuming the Issues screen.
+  function refreshIssueView() {
+    if (screen === 'lessons') renderLessons();
+    else renderIssues();
+  }
+
   // --------------------------------------------------------- Dashboard tab ---
   // Rebuilt (items 6-10) into ONE unified page, not an Issues section beside a
   // Lessons section: a status pie in place of tiles, an open-vs-total bar, a
@@ -877,11 +1010,17 @@ window.IssuesLessons = (function () {
       return true;
     });
   }
-  // ITEM 10: the full matching list, below every chart — not capped like the
-  // dashboard's old 12-row summary, since this IS the full list.
-  function fullIssueListHTML(data) {
-    return '<div class="il-dash-fulllist-head"><h4>All matching issues</h4>' +
-      '<span class="il-dash-fulllist-count">' + data.length + ' issue' + (data.length === 1 ? '' : 's') + '</span></div>' +
+  // ITEM 10/7: the full list of OPEN issues, below every chart — not capped like
+  // the dashboard's old 12-row summary, since this IS the full list. `data` is
+  // already narrowed to open issues by the caller (renderDashboardScreen).
+  // ⚠️ ITEM 5 (2026-09-01): the count reads "N open of M total issues" — `data`
+  // is the open subset, `totalCount` the same filter set BEFORE the open-only
+  // narrowing (dashIssuesFiltered()'s own length), so the label states both
+  // halves instead of just the open count alone.
+  function fullIssueListHTML(data, totalCount) {
+    return '<div class="il-dash-fulllist-head"><h4>Open Issues</h4>' +
+      '<span class="il-dash-fulllist-count">' + data.length + ' open of ' + totalCount +
+        ' total issue' + (totalCount === 1 ? '' : 's') + '</span></div>' +
       (data.length
         ? '<div class="pd-tablewrap"><table class="il-dash-list"><thead><tr>' +
             '<th>Issue</th><th>Champion</th><th>Department</th><th>Status</th><th>Aging</th></tr></thead><tbody>' +
@@ -898,6 +1037,31 @@ window.IssuesLessons = (function () {
             }).join('') + '</tbody></table></div>'
         : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>');
   }
+  // ITEM 8: a real tile for lessons, replacing the removed "N lessons captured"
+  // note (item 2 of this round) with something a planner can actually read and
+  // click into. ⚠️ Filtered by the dashboard's DEPARTMENT filter only — the one
+  // `dFilters` field that means the same thing on a lesson as it does on an
+  // issue (status/champion/search are issue-shaped and don't apply to a lesson
+  // the same way).
+  function dashLessonsFiltered() {
+    return LESSONS.filter(function (l) {
+      if (dFilters.department && l.department !== dFilters.department) return false;
+      return true;
+    });
+  }
+  function lessonsTileHTML(list) {
+    if (!list.length) return '<div class="il-empty" style="padding:16px;">No lessons captured yet.</div>';
+    return '<div class="pd-tablewrap"><table class="il-dash-list il-dash-lesson-list"><thead><tr>' +
+      '<th>Lesson</th><th>Department</th><th>Captured</th></tr></thead><tbody>' +
+      list.map(function (l) {
+        return '<tr data-open-lesson="' + Fmt.esc(l.id) + '">' +
+          '<td>' + Fmt.esc(clip(l.lesson, 90) || '(no lesson text)') + '</td>' +
+          '<td>' + Fmt.esc(l.department || '—') + '</td>' +
+          '<td>' + (l.date_captured ? Fmt.date(l.date_captured) : '—') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
   function renderDashboardScreen() {
     var host = $('il-dashboard-view'); if (!host) return;
     var anyF = ['search', 'status', 'department', 'champion'].some(function (k) { return dFilters[k]; });
@@ -922,7 +1086,10 @@ window.IssuesLessons = (function () {
     // ITEMS 5/8: open vs total, one horizontal bar per DEPARTMENT — replaces the
     // old single overall "Open vs Total" pair (see hbarSVG above for the shape:
     // a track sized to Total, the Open count filled on top, every row printing
-    // "N open of N issues").
+    // "N open of N issues"). ⚠️ ITEM 5: sorted by the DEPARTMENTS dropdown's own
+    // canonical order, not by count — a legacy/free-text department that isn't
+    // in that list sorts after every canonical one (indexOf returns -1), never
+    // interleaved among them.
     var byDept = {};
     data.forEach(function (r) {
       var dn = r.department || '(no department)';
@@ -931,12 +1098,18 @@ window.IssuesLessons = (function () {
       if ((r.status || 'Open') === 'Open') byDept[dn].open++;
     });
     var deptList = Object.keys(byDept).map(function (k) { return byDept[k]; })
-      .sort(function (a, b) { return b.total - a.total; });
+      .sort(function (a, b) {
+        var ia = DEPARTMENTS.indexOf(a.label), ib = DEPARTMENTS.indexOf(b.label);
+        if (ia === -1) ia = DEPARTMENTS.length;
+        if (ib === -1) ib = DEPARTMENTS.length;
+        return ia !== ib ? ia - ib : a.label.localeCompare(b.label);
+      });
     // ITEMS 5/9: the same shape, one horizontal bar per CHAMPION — replaces the old
     // grouped (vertical) bar chart AND its separate breakdown table (every row
     // already states its own open/total, so a second table repeating the same
-    // numbers is gone). Grouped by latestChampionText() (item 5) — "who owns it
-    // now", not the full joined assignment history. ⚠️ Never capped — see hbarSVG.
+    // numbers is gone). Grouped by latestChampionText() (item 5 of the prior
+    // round) — "who owns it now", not the full joined assignment history.
+    // ⚠️ Never capped — see hbarSVG. ⚠️ ITEM 5 (this round): sorted A→Z, not by count.
     var byChamp = {};
     data.forEach(function (r) {
       var c = latestChampionText(r) || '(no champion)';
@@ -945,55 +1118,86 @@ window.IssuesLessons = (function () {
       if ((r.status || 'Open') === 'Open') byChamp[c].open++;
     });
     var champList = Object.keys(byChamp).map(function (k) { return byChamp[k]; })
-      .sort(function (a, b) { return b.total - a.total; });
+      .sort(function (a, b) { return a.label.localeCompare(b.label); });
 
-    // ITEM 6: lessons are folded in as one line, never a separate section.
-    var standalone = LESSONS.filter(function (l) { return !l.issue_id; });
-    var lessonsNote = '<p class="il-dash-note"><span data-ico="bulb" data-ico-size="14"></span>' +
-      '<strong>' + LESSONS.length + '</strong> lesson' + (LESSONS.length === 1 ? '' : 's') + ' captured' +
-      (standalone.length ? ' (' + standalone.length + ' without a full issue)' : '') +
-      ' — see the Lessons Learned screen.</p>';
+    // ITEM 2 (2026-09-01): every tile's legend moves into its OWN HEADER, top
+    // right, as a compact swatch+label row — replacing the donut's side column
+    // and the two bar tiles' below-chart legend row. One shared bar-legend
+    // string (Open/Total) for both bar tiles, so they can't disagree.
+    var barLegendTop = '<span class="il-dash-legend-i"><i style="background:#EE3124"></i>Open</span>' +
+      '<span class="il-dash-legend-i"><i style="background:var(--pd-line)"></i>Total</span>';
+    var statusLegendTop = statusSlices.map(function (s) {
+      return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
+        Fmt.esc(s.label) + ' (' + s.value + ')</span>';
+    }).join('');
 
-    var barLegend = '<div class="il-dash-barlegend"><span><i style="background:#EE3124"></i>Open</span>' +
-      '<span><i style="background:var(--pd-line)"></i>Total</span></div>';
+    var lessonsList = dashLessonsFiltered();
 
-    // ITEM 4: all three tiles in one row on a wide screen — a plain 3-column grid
-    // now (see .il-dash-grid in module.css), no card spanning extra columns.
-    host.innerHTML = migrateNoteHTML() + lessonsNote +
+    // ITEM 4: all three tiles in one row on a wide screen; ITEM 3: the Status
+    // column is sized to just what its donut+legend need, the remaining width
+    // split between the two bar-chart tiles (see .il-dash-grid in module.css).
+    // ITEM 1 (2026-09-01): the three now share ONE fixed content height
+    // (.il-dash-cardbody), so they read as a real row instead of each one
+    // drifting to whatever its own chart happens to need.
+    host.innerHTML = migrateNoteHTML() +
       '<div class="il-dash-grid">' +
-        '<div class="pd-card il-dash-card"><h4>Status</h4>' +
-          (total
-            ? '<div class="il-dash-chartwrap">' + donutChartSVG(statusSlices, { aria: 'Issues by status' }) +
-              '<div class="il-dash-legend">' + statusSlices.map(function (s) {
-                return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
-                  Fmt.esc(s.label) + ' (' + s.value + ')</span>';
-              }).join('') + '</div></div>'
-            : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
+        '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardhead"><h4>Issues by Status</h4>' +
+            (total ? '<div class="il-dash-legend-top">' + statusLegendTop + '</div>' : '') +
+          '</div>' +
+          '<div class="il-dash-cardbody il-dash-cardbody-center">' +
+            (total ? donutChartSVG(statusSlices, { aria: 'Issues by status' })
+              : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
+          '</div>' +
         '</div>' +
-        '<div class="pd-card il-dash-card"><h4>Open vs Total by Department</h4>' +
-          (deptList.length
-            ? '<div class="il-dash-hbar-wrap">' + hbarSVG(deptList, { aria: 'Open vs total issues by department' }) + '</div>' + barLegend
-            : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
+        '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardhead"><h4>Issues by Department</h4>' +
+            (deptList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
+          '</div>' +
+          '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
+            (deptList.length ? hbarSVG(deptList, { aria: 'Open vs total issues by department' })
+              : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
+          '</div>' +
         '</div>' +
-        '<div class="pd-card il-dash-card"><h4>Open vs Total by Champion</h4>' +
-          (champList.length
-            ? '<div class="il-dash-hbar-wrap">' + hbarSVG(champList, { aria: 'Open vs total issues by champion' }) + '</div>' + barLegend
-            : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
+        '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardhead"><h4>Issues by Champion</h4>' +
+            (champList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
+          '</div>' +
+          '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
+            (champList.length ? hbarSVG(champList, { aria: 'Open vs total issues by champion' })
+              : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
+          '</div>' +
         '</div>' +
       '</div>' +
-      // ITEM 6: the full list is its own tile too, not bare under the grid.
-      '<div class="pd-card il-dash-card il-dash-fulllist-card">' + fullIssueListHTML(data) + '</div>';
+      // ITEM 3 (2026-09-01): Open Issues renders ABOVE Lessons Learned now —
+      // was the reverse. ITEM 7: open issues only, in its own tile — see
+      // fullIssueListHTML.
+      '<div class="pd-card il-dash-card il-dash-fulllist-card">' +
+        fullIssueListHTML(data.filter(function (r) { return (r.status || 'Open') === 'Open'; }), total) +
+      '</div>' +
+      // ITEM 8: a real Lessons Learned tile. ITEM 4 (2026-09-01): its own count
+      // label, the same "N of…" head shape the Open Issues tile above uses.
+      '<div class="pd-card il-dash-card il-dash-lessons-card">' +
+        '<div class="il-dash-fulllist-head"><h4>Lessons Learned</h4>' +
+          '<span class="il-dash-fulllist-count">' + lessonsList.length + ' lesson' + (lessonsList.length === 1 ? '' : 's') + '</span></div>' +
+        lessonsTileHTML(lessonsList) +
+      '</div>';
     host.querySelectorAll('[data-open]').forEach(function (tr) { tr.onclick = function () { openIssue(tr.dataset.open); }; });
+    host.querySelectorAll('[data-open-lesson]').forEach(function (tr) { tr.onclick = function () { openLesson(tr.dataset.openLesson); }; });
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
   }
 
   function renderIssuesLog() {
     var t = $('il-table');
+    var card = t.parentElement;
+    var sortNote = card && card.querySelector('#il-issues-sortnote');
     if (!pid) {
+      if (sortNote) sortNote.remove();
       t.innerHTML = '<tr><td style="padding:24px;color:var(--pd-muted);">Select a project to see its issues.</td></tr>';
       return;
     }
     if (!rows.length) {
+      if (sortNote) sortNote.remove();
       t.innerHTML = '<tr><td style="padding:0;">' +
         '<div class="il-empty"><span data-ico="clipboard" data-ico-size="40"></span>' +
         '<div class="il-empty-title">No issues logged yet for this project.</div>' +
@@ -1003,14 +1207,24 @@ window.IssuesLessons = (function () {
       return;
     }
     var data = issuesFiltered();
+    // ITEM 9: a column sort, when active, replaces the log's own manual/date
+    // order; drag-to-reorder (item 2) is switched off while it is (see below).
+    data = applySort(data, _issSort, ISSUE_SORT_EXTRACT);
     // Item 2: drag-to-reorder needs a leading handle column, present in both the
     // header and every row so the column counts still match (this module's own
-    // standing rule).
+    // standing rule). ITEM 9: every OTHER column header is now click-to-sort.
     var head = '<thead><tr>' +
       '<th class="il-dragcell"></th>' +
-      '<th>No.</th><th>Department</th><th>Issue</th><th>Caused By</th>' +
-      '<th>Corrective Action</th><th>Champion</th><th>Status</th>' +
-      '<th>Date Presented</th><th>Days Aging</th><th>Date Resolved</th>' +
+      '<th>No.</th>' +
+      sortThHTML('Department', 'department', _issSort) +
+      sortThHTML('Issue', 'issue', _issSort) +
+      sortThHTML('Caused By', 'caused', _issSort) +
+      sortThHTML('Corrective Action', 'corrective', _issSort) +
+      sortThHTML('Champion', 'champion', _issSort) +
+      sortThHTML('Status', 'status', _issSort) +
+      sortThHTML('Date Raised', 'raised', _issSort) +
+      sortThHTML('Days Aging', 'aging', _issSort) +
+      sortThHTML('Date Resolved', 'resolved', _issSort) +
       (isSteward ? '<th></th>' : '') + '</tr></thead>';
 
     // ⚠️ ITEM #4: no per-row edit button any more — the WHOLE ROW opens the issue
@@ -1027,8 +1241,10 @@ window.IssuesLessons = (function () {
       // where every value needs its own inline label (.il-table td::before).
       return '<tr class="il-clickrow" data-open="' + Fmt.esc(r.id) + '">' +
         // Item 2: drag handle — a separate element so the row's own click-to-open
-        // handler is never fought by the drag gesture.
-        '<td class="il-dragcell">' + dragGripHTML(r.id) + '</td>' +
+        // handler is never fought by the drag gesture. ITEM 9: blank while a
+        // column sort is active (see the note above the table) — a handle that
+        // would just be discarded by the next sorted render.
+        '<td class="il-dragcell">' + (_issSort.key ? '' : dragGripHTML(r.id)) + '</td>' +
         '<td class="il-cell-num">' + (i + 1) + '</td>' +
         '<td data-l="Department">' + Fmt.esc(r.department) + '</td>' +
         '<td class="il-cell-wrap il-cell-issue" data-l="Issue"><div class="il-clip">' + Fmt.esc(r.description) + '</div>' +
@@ -1041,7 +1257,7 @@ window.IssuesLessons = (function () {
         // ever assigned — see latestChampionText().
         '<td class="il-champ" data-l="Champion">' + Fmt.esc(latestChampionText(r)) + '</td>' +
         '<td data-l="Status"><span class="il-pill ' + statusClass(r.status) + '">' + Fmt.esc(r.status || 'Open') + '</span></td>' +
-        '<td data-l="Presented">' + Fmt.date(r.date_presented) + '</td>' +
+        '<td data-l="Raised">' + Fmt.date(r.date_presented) + '</td>' +
         '<td class="il-aging' + (hot ? ' is-hot' : '') + '" data-l="Aging">' + agingTxt + '</td>' +
         '<td data-l="Resolved">' + Fmt.date(r.date_resolved) + '</td>' +
         (isSteward ? '<td class="il-rowacts">' +
@@ -1062,8 +1278,29 @@ window.IssuesLessons = (function () {
     t.querySelectorAll('[data-del]').forEach(function (b) {
       b.onclick = function (e) { e.stopPropagation(); del(b.dataset.del); };
     });
-    // Item 2: drag-to-reorder, scoped to whatever the current filter is showing.
-    wireReorder(t, data, rows, issueOrderCmp, TABLE);
+    // ITEM 9: the click-to-sort headers, plus a note (and a way back to manual
+    // order) whenever a sort is active. The note lives OUTSIDE the table, as a
+    // sibling inside the same card — `t.innerHTML` above only ever touches the
+    // table itself, so it has to be managed separately or a stale one from a
+    // previous render survives.
+    wireSortHeaders(t.querySelector('thead'), _issSort, renderIssuesLog);
+    if (_issSort.key) {
+      if (!sortNote) {
+        sortNote = document.createElement('div');
+        sortNote.id = 'il-issues-sortnote';
+        sortNote.className = 'il-sortnote';
+        if (card) card.insertBefore(sortNote, t);
+      }
+      sortNote.innerHTML = 'Sorted by ' + Fmt.esc(ISSUE_SORT_LABELS[_issSort.key] || _issSort.key) +
+        ' (' + (_issSort.dir === 1 ? 'ascending' : 'descending') + ') — drag-to-reorder is off while a sort is active. ' +
+        '<button id="il-issues-sortclear">Restore manual order</button>';
+      var sortClearBtn = sortNote.querySelector('#il-issues-sortclear');
+      if (sortClearBtn) sortClearBtn.onclick = function () { _issSort = { key: '', dir: 0 }; renderIssuesLog(); };
+    } else {
+      if (sortNote) sortNote.remove();
+      // Item 2: drag-to-reorder, scoped to whatever the current filter is showing.
+      wireReorder(t, data, rows, issueOrderCmp, TABLE);
+    }
     if (window.Icons) Icons.hydrate(t);
   }
 
@@ -1166,12 +1403,18 @@ window.IssuesLessons = (function () {
     if (next) openIssue(next.id);
   }
 
-  function issDetailHTML(r) {
+  // ITEM 7 (2026-09-01): `opts.excludeLessonId` omits one lesson from this
+  // issue's own "Lessons learned from this issue" list — used when this exact
+  // markup is embedded below THAT lesson's own detail page (see
+  // renderLessonDetailView), so the lesson being viewed doesn't also show up
+  // in its own issue's list of "other" lessons.
+  function issDetailHTML(r, opts) {
     var isNew = !r.id;
     var mayEdit = isNew ? canAdd : canEditRow(r);
     var ro = !mayEdit, d = ro ? ' disabled' : '';
     var a = agingDays(r);
-    var ls = isNew ? [] : lessonsOfIssue(r.id);
+    var excludeId = opts && opts.excludeLessonId;
+    var ls = isNew ? [] : lessonsOfIssue(r.id).filter(function (l) { return l.id !== excludeId; });
     // ⚠️ ITEM #15's "standalone lesson" flow: a NEW issue started from the Lessons Learned
     // screen's "+ New Lesson" carries `_forceClose` and is presented — and, on Save, written
     // — as an already-Closed issue with its lesson attached in the SAME step, rather than
@@ -1189,9 +1432,10 @@ window.IssuesLessons = (function () {
     // ---- item #12/#13: the ONE narrative field swaps with the issue's status --
     var narrativeField;
     if (status === 'Closed') {
-      narrativeField = ilField(ro, 'Closure Report' + reqMark(!ro), 'il-c-action',
+      // ITEM 6: "Closure Report" -> "How It Was Resolved" while forceClose.
+      narrativeField = ilField(ro, (forceClose ? 'How It Was Resolved' : 'Closure Report') + reqMark(!ro), 'il-c-action',
         '<textarea class="pd-textarea il-if" data-f="closure_report" rows="4" spellcheck="true" ' +
-          'placeholder="How was this issue resolved?"' + d + (ro ? '' : ' required') + '>' +
+          'placeholder="' + (forceClose ? 'How was this resolved?' : 'How was this issue resolved?') + '"' + d + (ro ? '' : ' required') + '>' +
           Fmt.esc(r.closure_report) + '</textarea>', r.closure_report) +
         (forceClose && !ro
           ? ilField(false, 'Lessons Learned' + reqMark(true), 'il-c-lesson',
@@ -1254,31 +1498,40 @@ window.IssuesLessons = (function () {
         '<div class="il-workflow-acts"><button class="pd-btn pd-btn-sm" id="il-iss-reopencancel">Cancel</button>' +
         '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-iss-reopenconfirm">Confirm reopen</button></div></div>';
 
+    // ⚠️ ITEM 9: a lesson can now be added at any time (see the "+ Add another
+    // lesson" popup below), so closing no longer ALWAYS has to be the moment a
+    // lesson gets captured — only when one genuinely isn't on record yet.
+    var closeNeedsLesson = !isNew && !hasLesson(r);
     var closePanel = !_issCloseOpen ? '' :
       '<div class="il-workflow-panel">' +
-        // ⚠️ ITEM 2: this is the ONE place a planner is actually asked for a Date
-        // Resolved — at the moment of closing, not when the issue was raised.
-        // Defaults to today (pre-filled, like Date Presented does on Add) but is a
-        // real required field so a planner closing out a backlog of old issues can
-        // still date each one correctly.
+        // ⚠️ ITEM 2 (prior round): this is the ONE place a planner is actually
+        // asked for a Date Resolved — at the moment of closing, not when the
+        // issue was raised. Defaults to today (pre-filled, like Date Raised
+        // does on Add) but is a real required field so a planner closing out a
+        // backlog of old issues can still date each one correctly.
         '<label>Date Resolved' + reqMark(true) + '</label>' +
         '<input class="pd-input pd-input-sm" id="il-iss-closedate" type="date" required value="' +
           dateVal(_issCloseDraft.dateResolved || todayISO()) + '">' +
         '<label>Closure Report' + reqMark(true) + '</label>' +
         '<textarea class="pd-textarea" id="il-iss-closereport" rows="3" spellcheck="true" required ' +
           'placeholder="How was this issue resolved?">' + Fmt.esc(_issCloseDraft.report) + '</textarea>' +
-        '<label>Lessons Learned' + reqMark(true) + '</label>' +
-        '<textarea class="pd-textarea" id="il-iss-closelesson" rows="3" spellcheck="true" required ' +
-          'placeholder="What did the team learn from this issue?">' + Fmt.esc(_issCloseDraft.lesson) + '</textarea>' +
-        '<p class="il-mom-note">Closing an issue always records a lesson — this is what "no need for the ' +
-          'capture a lesson button" means: closure IS the capture.</p>' +
+        (closeNeedsLesson
+          ? '<label>Lessons Learned' + reqMark(true) + '</label>' +
+            '<textarea class="pd-textarea" id="il-iss-closelesson" rows="3" spellcheck="true" required ' +
+              'placeholder="What did the team learn from this issue?">' + Fmt.esc(_issCloseDraft.lesson) + '</textarea>' +
+            '<p class="il-mom-note">No lesson is on record for this issue yet, so closing it captures one now.</p>'
+          : '<p class="il-mom-note">A lesson is already on record for this issue — closing only needs the ' +
+            'date and closure report.</p>') +
         '<div class="il-workflow-acts"><button class="pd-btn pd-btn-sm" id="il-iss-closecancel">Cancel</button>' +
         '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-iss-closeconfirm">Confirm closure</button></div></div>';
 
     return '<div class="il-mom-detail-card il-iss-card">' +
       '<div class="il-mom-toolbar">' +
         '<span class="il-mom-state' + (status === 'Closed' ? ' on' : '') + '">' +
-          (isNew ? 'New issue — not yet saved' : 'Issue in the register') + '</span>' +
+          // ITEM 6 (2026-09-01): while capturing a standalone lesson
+          // (forceClose) every label on this form reads as a lesson, not an
+          // issue.
+          (forceClose ? 'New lesson — not yet saved' : (isNew ? 'New issue — not yet saved' : 'Issue in the register')) + '</span>' +
       '</div>' +
 
       // ---- the Power Apps two-pane body -------------------------------------
@@ -1297,7 +1550,11 @@ window.IssuesLessons = (function () {
           ilField(ro, 'Champion(s)' + reqMark(!ro), 'il-c-champ',
             peoplePickerHTML('iss-champ', r.champion_ids, championExtra(r.champion_ids, r.champion), ro),
             championText(r.champion_ids, r.champion)) +
-          ilField(ro, 'Date Presented' + reqMark(!ro), 'il-c-pres',
+          // Item 13: "Date Presented" -> "Date Raised" — the underlying column
+          // (date_presented) is untouched, only the label a planner sees.
+          // ITEM 6 (2026-09-01): "Date Raised" -> "Date Captured" while
+          // capturing a standalone lesson.
+          ilField(ro, (forceClose ? 'Date Captured' : 'Date Raised') + reqMark(!ro), 'il-c-pres',
             '<input class="pd-input pd-input-sm il-if" data-f="date_presented" type="date" value="' +
               dateVal(r.date_presented) + '"' + d + (ro ? '' : ' required') + '>',
             r.date_presented ? Fmt.date(r.date_presented) : '') +
@@ -1321,11 +1578,13 @@ window.IssuesLessons = (function () {
         '</div>' +
 
         '<div class="il-iss-body">' +
-          ilField(ro, 'Issue' + reqMark(!ro), 'il-c-issue',
+          // ITEM 6: "Issue" -> "What Happened", "Caused By" -> "Root Cause"
+          // while capturing a standalone lesson.
+          ilField(ro, (forceClose ? 'What Happened' : 'Issue') + reqMark(!ro), 'il-c-issue',
             '<textarea class="pd-textarea il-if" data-f="description" rows="4" spellcheck="true" ' +
-              'placeholder="Describe the issue or concern…"' + d + (ro ? '' : ' required') + '>' + Fmt.esc(r.description) + '</textarea>',
+              'placeholder="' + (forceClose ? 'What happened?' : 'Describe the issue or concern…') + '"' + d + (ro ? '' : ' required') + '>' + Fmt.esc(r.description) + '</textarea>',
             r.description) +
-          ilField(ro, 'Caused By' + reqMark(!ro), 'il-c-cause',
+          ilField(ro, (forceClose ? 'Root Cause' : 'Caused By') + reqMark(!ro), 'il-c-cause',
             '<textarea class="pd-textarea il-if" data-f="caused_by" rows="3" spellcheck="true" ' +
               'placeholder="Root cause…"' + d + (ro ? '' : ' required') + '>' + Fmt.esc(r.caused_by) + '</textarea>', r.caused_by) +
           narrativeField +
@@ -1339,28 +1598,46 @@ window.IssuesLessons = (function () {
       // ---- lessons, as their own records ------------------------------------
       // ⚠️ NOT fields on this form any more. A lesson lives in `lessons_learned` and is
       // shown here because this issue produced it — one issue can produce several, and a
-      // lesson outlives the issue. Closing (above) always creates the first one; this button
-      // is only for an EXTRA lesson on an issue already closed.
+      // lesson outlives the issue. ⚠️ ITEM 9: no longer gated on `status === 'Closed'` —
+      // a lesson can be added at ANY time, open or on hold or closed, not only once the
+      // issue is closed (closing still captures one automatically if none exists yet —
+      // see closePanel/confirmCloseIssue above).
+      // ITEM 6 (2026-09-01): hidden entirely while capturing a standalone
+      // lesson (forceClose) — `ls` is always empty at that point (the record
+      // doesn't exist yet), so all this section could show is a confusing "No
+      // lesson captured from this issue yet" while the very lesson being typed
+      // below IS that lesson.
+      (forceClose ? '' :
       '<div class="il-mom-actions il-iss-lessons"><h4>Lessons learned from this issue</h4>' +
         (ls.length
-          ? '<div class="il-lessons il-lessons-inline">' + ls.map(lessonCardHTML).join('') + '</div>'
+          // ITEM 10: `{hideIssueLink:true}` — this card list already IS the issue's own
+          // page, so a per-lesson "Open the issue →" button here would point at the page
+          // you're already on. Every OTHER lessonCardHTML caller (the unified Lessons
+          // screen) still gets that link — it's a genuine way out from there.
+          ? '<div class="il-lessons il-lessons-inline">' +
+              ls.map(function (l) { return lessonCardHTML(l, { hideIssueLink: true }); }).join('') +
+            '</div>'
           : '<div class="il-empty" style="padding:12px;">No lesson captured from this issue yet.</div>') +
-        (canAdd && !isNew && status === 'Closed'
-          ? '<div class="il-mom-addrow"><button class="pd-btn pd-btn-sm" id="il-iss-addlesson">+ Capture another lesson</button></div>'
+        (canAdd && !isNew
+          // ITEM 12: "Capture another lesson" -> "Add another lesson".
+          ? '<div class="il-mom-addrow"><button class="pd-btn pd-btn-sm" id="il-iss-addlesson">+ Add another lesson</button></div>'
           : '') +
-      '</div>' +
+      '</div>') +
 
       // ---- item #11: a per-issue audit trail --------------------------------
       '<div class="il-mom-actions il-iss-history"><h4>History</h4>' +
-        (isNew ? '<p class="il-mom-note">History begins once this issue is saved.</p>' : historyHTML(r.id)) +
+        (isNew ? '<p class="il-mom-note">History begins once this ' + (forceClose ? 'lesson' : 'issue') + ' is saved.</p>' : historyHTML(r.id)) +
       '</div>' +
 
       '<datalist id="il-champ-list">' + champDatalist() + '</datalist>' +
     '</div>';
   }
 
-  function wireIssues() {
-    var host = $('il-issues-view'); if (!host) return;
+  // ITEM 7 (2026-09-01): `hostOverride` lets this SAME wiring drive an issue
+  // embedded on the Lessons screen (see renderLessonDetailView) — every
+  // selector below is already scoped to `host`, so nothing else here changes.
+  function wireIssues(hostOverride) {
+    var host = hostOverride || $('il-issues-view'); if (!host) return;
     var back = host.querySelector('#il-iss-back'); if (back) back.onclick = backFromIssueDetail;
     var back2 = host.querySelector('#il-iss-back2'); if (back2) back2.onclick = backFromIssueDetail;
     var nb = host.querySelector('#il-iss-new'); if (nb) nb.onclick = newIssue;
@@ -1370,19 +1647,17 @@ window.IssuesLessons = (function () {
     var dl = host.querySelector('#il-iss-del');
     if (dl) dl.onclick = function () { del(_issSel); };
     var al = host.querySelector('#il-iss-addlesson');
-    if (al) al.onclick = function () {
-      var r = rows.find(function (x) { return x.id === _issSel; }) || {};
-      newLesson({ issue_id: _issSel, mom_id: r.mom_id || null, department: r.department || null });
-    };
+    // ITEM 11: a popup, not a screen switch — see openQuickLessonModal().
+    if (al) al.onclick = function () { openQuickLessonModal(_issSel); };
     host.querySelectorAll('[data-open-lesson]').forEach(function (b) {
       b.onclick = function () { openLesson(b.dataset.openLesson); };
     });
 
     // ---- workflow: Put On Hold / Reopen / Close Issue reveal panels ---------
     var hb = host.querySelector('#il-iss-holdbtn');
-    if (hb) hb.onclick = function () { _issHoldOpen = true; _issCloseOpen = false; _issReopenOpen = false; _issHoldNote = ''; renderIssues(); };
+    if (hb) hb.onclick = function () { _issHoldOpen = true; _issCloseOpen = false; _issReopenOpen = false; _issHoldNote = ''; refreshIssueView(); };
     var hc = host.querySelector('#il-iss-holdcancel');
-    if (hc) hc.onclick = function () { _issHoldOpen = false; renderIssues(); };
+    if (hc) hc.onclick = function () { _issHoldOpen = false; refreshIssueView(); };
     var hn = host.querySelector('#il-iss-holdnote');
     if (hn) hn.oninput = function () { _issHoldNote = hn.value; };
     var hcf = host.querySelector('#il-iss-holdconfirm');
@@ -1390,9 +1665,9 @@ window.IssuesLessons = (function () {
 
     // ⚠️ ITEM 1: On Hold's own way back to Open — same reveal-panel shape as Hold.
     var rb = host.querySelector('#il-iss-reopenbtn');
-    if (rb) rb.onclick = function () { _issReopenOpen = true; _issHoldOpen = false; _issCloseOpen = false; _issReopenNote = ''; renderIssues(); };
+    if (rb) rb.onclick = function () { _issReopenOpen = true; _issHoldOpen = false; _issCloseOpen = false; _issReopenNote = ''; refreshIssueView(); };
     var rc = host.querySelector('#il-iss-reopencancel');
-    if (rc) rc.onclick = function () { _issReopenOpen = false; renderIssues(); };
+    if (rc) rc.onclick = function () { _issReopenOpen = false; refreshIssueView(); };
     var rn = host.querySelector('#il-iss-reopennote');
     if (rn) rn.oninput = function () { _issReopenNote = rn.value; };
     var rcf = host.querySelector('#il-iss-reopenconfirm');
@@ -1401,13 +1676,13 @@ window.IssuesLessons = (function () {
     var cb = host.querySelector('#il-iss-closebtn');
     if (cb) cb.onclick = function () {
       _issCloseOpen = true; _issHoldOpen = false; _issReopenOpen = false;
-      // ⚠️ Pre-filled to today, like Date Presented is on Add — a required field the
+      // ⚠️ Pre-filled to today, like Date Raised is on Add — a required field the
       // planner can accept or change, not one they have to remember to fill in blank.
       _issCloseDraft = { report: '', lesson: '', dateResolved: todayISO() };
-      renderIssues();
+      refreshIssueView();
     };
     var cc = host.querySelector('#il-iss-closecancel');
-    if (cc) cc.onclick = function () { _issCloseOpen = false; renderIssues(); };
+    if (cc) cc.onclick = function () { _issCloseOpen = false; refreshIssueView(); };
     var cdt = host.querySelector('#il-iss-closedate'); if (cdt) cdt.onchange = function () { _issCloseDraft.dateResolved = cdt.value; };
     var crp = host.querySelector('#il-iss-closereport'); if (crp) crp.oninput = function () { _issCloseDraft.report = crp.value; };
     var cls = host.querySelector('#il-iss-closelesson'); if (cls) cls.oninput = function () { _issCloseDraft.lesson = cls.value; };
@@ -1456,7 +1731,7 @@ window.IssuesLessons = (function () {
   // ⚠️ ITEM #15: "+ New Lesson" on the Lessons Learned screen. A lesson captured without
   // going through Issues first is still a real issue that reached Closed — it just skips
   // the visible Open/On-Hold steps, and every field an ordinary issue requires (Issue,
-  // Caused By, Champion, Department, Date Presented) is required here too, PLUS the
+  // Caused By, Champion, Department, Date Raised) is required here too, PLUS the
   // Closure Report and the Lessons Learned text (see the `_forceClose` branch of
   // `issDetailHTML`/`saveIssue`). This reuses the Issues detail form and its validation
   // rather than building a second, parallel "closed issue" editor that could drift from it.
@@ -1510,7 +1785,7 @@ window.IssuesLessons = (function () {
     if (!ch.ids.length && !ch.text) return 'At least one champion is required.';
     if (!(v.description || '').trim()) return 'The Issue field is required.';
     if (!(v.caused_by || '').trim()) return 'Caused By is required.';
-    if (!v.date_presented) return 'Date Presented is required.';
+    if (!v.date_presented) return 'Date Raised is required.';
     return null;
   }
 
@@ -1578,7 +1853,7 @@ window.IssuesLessons = (function () {
           return;
         }
         UI.toast('Issue logged', 'ok');
-        renderIssues();
+        refreshIssueView();
       } else {
         var r = rows.find(function (x) { return x.id === _issSel; });
         if (!r) return;
@@ -1596,7 +1871,7 @@ window.IssuesLessons = (function () {
         populateFilterOptions();
         UI.toast('Saved', 'ok');
         logHistory(r.id, pid, 'update', before, null);
-        renderIssues();
+        refreshIssueView();
       }
     } catch (e) { UI.toast(e.message, 'error'); }
   }
@@ -1623,7 +1898,7 @@ window.IssuesLessons = (function () {
       _issHoldOpen = false; _issHoldNote = '';
       UI.toast('Issue put on hold', 'ok');
       logHistory(r.id, pid, 'hold', before, note);
-      renderIssues();
+      refreshIssueView();
     } catch (e) { UI.toast(e.message, 'error'); }
   }
 
@@ -1649,23 +1924,27 @@ window.IssuesLessons = (function () {
       _issReopenOpen = false; _issReopenNote = '';
       UI.toast('Issue reopened', 'ok');
       logHistory(r.id, pid, 'reopen', before, note);
-      renderIssues();
+      refreshIssueView();
     } catch (e) { UI.toast(e.message, 'error'); }
   }
 
-  // ---- items #10, #13, #15: Close Issue — requires BOTH a closure report AND a lessons
-  // learned entry (which is what closes the loop with the Lessons Learned screen: closing
-  // an issue is the ONLY way a lesson gets attached to it, and it always happens). ----
+  // ---- items #10, #13, #15 (and ITEM 9 of this round): Close Issue — always
+  // requires a closure report and a Date Resolved; a lessons learned entry is
+  // required ONLY IF nothing has been captured on this issue yet (see
+  // `hasLesson`). A lesson can now be added at any time via the "+ Add another
+  // lesson" popup (item 9/11), so closing is no longer the only way to attach
+  // one — it's a fallback for whenever it's the FIRST one.
   async function confirmCloseIssue() {
+    var r = rows.find(function (x) { return x.id === _issSel; });
+    if (!r || !canEditRow(r)) { UI.toast('This issue was raised by someone else — ask a planner to change it.', 'warn'); return; }
+    var needsLesson = !hasLesson(r);
     var report = (_issCloseDraft.report || '').trim();
     var lesson = (_issCloseDraft.lesson || '').trim();
     var dateResolved = _issCloseDraft.dateResolved || '';
     if (!report) { UI.toast('A closure report is required.', 'warn'); return; }
-    if (!lesson) { UI.toast('A lessons learned entry is required to close an issue.', 'warn'); return; }
-    // ⚠️ ITEM 2: asked for HERE, at the moment of closing — never on Add.
+    if (needsLesson && !lesson) { UI.toast('A lessons learned entry is required to close an issue.', 'warn'); return; }
+    // ⚠️ ITEM 2 (prior round): asked for HERE, at the moment of closing — never on Add.
     if (!dateResolved) { UI.toast('Date Resolved is required to close an issue.', 'warn'); return; }
-    var r = rows.find(function (x) { return x.id === _issSel; });
-    if (!r || !canEditRow(r)) { UI.toast('This issue was raised by someone else — ask a planner to change it.', 'warn'); return; }
     var before = Object.assign({}, r);
     var data = {
       status: 'Closed', closure_report: report,
@@ -1684,22 +1963,24 @@ window.IssuesLessons = (function () {
       }
       populateFilterOptions();
       logHistory(r.id, pid, 'close', before, report);
-      // ⚠️ The lesson is captured HERE, not through a separate "capture a lesson" step
-      // (item #13's "no need for the capture a lesson button") — closing an issue always
-      // produces exactly one lesson, linked back to it.
-      try {
-        var lrow = {
-          project_id: pid, issue_id: r.id, mom_id: r.mom_id || null,
-          department: r.department || null,
-          lesson: lesson, recommendation: null, date_captured: data.date_resolved, created_by: UID,
-        };
-        var lins = await sb().from(LESSON_TABLE).insert(lrow).select().single();
-        if (!lins.error) LESSONS.unshift(lins.data);
-        else UI.toast('Issue closed, but the lesson could not be saved: ' + lins.error.message, 'warn');
-      } catch (e2) { UI.toast('Issue closed, but the lesson could not be saved: ' + (e2.message || ''), 'warn'); }
+      // ⚠️ ITEM 9: the lesson is only captured HERE when this issue didn't
+      // already have one — otherwise closing must not create a second,
+      // possibly-empty lesson row alongside the one added earlier.
+      if (needsLesson) {
+        try {
+          var lrow = {
+            project_id: pid, issue_id: r.id, mom_id: r.mom_id || null,
+            department: r.department || null,
+            lesson: lesson, recommendation: null, date_captured: data.date_resolved, created_by: UID,
+          };
+          var lins = await sb().from(LESSON_TABLE).insert(lrow).select().single();
+          if (!lins.error) LESSONS.unshift(lins.data);
+          else UI.toast('Issue closed, but the lesson could not be saved: ' + lins.error.message, 'warn');
+        } catch (e2) { UI.toast('Issue closed, but the lesson could not be saved: ' + (e2.message || ''), 'warn'); }
+      }
       _issCloseOpen = false; _issCloseDraft = { report: '', lesson: '', dateResolved: '' };
       UI.toast('Issue closed', 'ok');
-      renderIssues();
+      refreshIssueView();
     } catch (e) { UI.toast(e.message, 'error'); }
   }
 
@@ -2087,6 +2368,27 @@ window.IssuesLessons = (function () {
     });
   }
 
+  // ITEM 8 (2026-09-01): "Date Resolved" for a lesson mirrors an issue's own —
+  // when the lesson is linked to an issue, that issue's own date_resolved
+  // (which this app never sets unless status is Closed, so a truthy value here
+  // already means "closed"); a lesson with no link, or linked to one still
+  // open, has no resolved date at all.
+  function lessonResolvedDate(l) {
+    if (l && l.issue_id) {
+      var r = rows.find(function (x) { return x.id === l.issue_id; });
+      if (r && r.date_resolved) return r.date_resolved;
+    }
+    return null;
+  }
+  // Same "0 once resolved" shape agingDays() uses for an issue: once a lesson
+  // has a resolved date, aging stops (0); until then it keeps counting from
+  // when the lesson itself was captured — the lesson-side analog of "days
+  // since raised."
+  function lessonAgingDays(l) {
+    if (lessonResolvedDate(l)) return 0;
+    return daysSince(l && l.date_captured);
+  }
+
   function renderLessons() {
     renderLessonKpis();
     var anyF = ['search', 'department'].some(function (k) { return lFilters[k]; });
@@ -2134,32 +2436,111 @@ window.IssuesLessons = (function () {
   function renderLessonsLogView(host) {
     host.classList.remove('il-mom-report');
     var list = lessonsFiltered();
-    var body = !list.length
-      ? '<div class="il-empty"><span data-ico="bulb" data-ico-size="40"></span>' +
+    // ITEM 9: a column sort, when active, replaces the manual/captured order.
+    list = applySort(list, _lessSort, LESSON_SORT_EXTRACT);
+    if (!list.length) {
+      host.innerHTML = migrateNoteHTML() +
+        '<div class="il-empty"><span data-ico="bulb" data-ico-size="40"></span>' +
         '<div class="il-empty-title">No lessons captured yet for this project.</div>' +
         (canAdd ? '<div>Use <strong>+ New lesson</strong> to capture the first one.</div>' : '') +
-        '</div>'
-      : '<div class="il-lessons" id="il-lessons-list">' + list.map(lessonCardHTML).join('') + '</div>';
-    host.innerHTML = migrateNoteHTML() + body;
+        '</div>';
+      if (window.Icons) Icons.hydrate(host);
+      return;
+    }
+    // ITEM 8 (2026-09-01): the same tabular shape the Issues log uses — a real
+    // <table>, Department / Lessons / Date Resolved / Aging — instead of a
+    // card grid, so the two registers read the same way. ⚠️ No "Open the
+    // Issue" button here (item 7) — the row opens the LESSON; the source line
+    // under the lesson text (lessonSourceText) already names the issue
+    // without a second click-through competing with it.
+    var head = '<thead><tr>' +
+      '<th class="il-dragcell"></th>' +
+      sortThHTML('Department', 'department', _lessSort) +
+      sortThHTML('Lessons', 'lesson', _lessSort) +
+      sortThHTML('Date Resolved', 'resolved', _lessSort) +
+      sortThHTML('Aging', 'aging', _lessSort) +
+      '</tr></thead>';
+    var body = list.map(function (l) {
+      var resolved = lessonResolvedDate(l);
+      var aging = lessonAgingDays(l);
+      var canDrag = !isLegacyLesson(l) && !_lessSort.key;
+      return '<tr class="il-clickrow" data-open-lesson="' + Fmt.esc(l.id) + '">' +
+        '<td class="il-dragcell">' + (canDrag ? dragGripHTML(l.id) : '') + '</td>' +
+        '<td data-l="Department">' + Fmt.esc(l.department || '—') + '</td>' +
+        '<td class="il-cell-wrap il-cell-issue" data-l="Lessons"><div class="il-clip">' + Fmt.esc(l.lesson) + '</div>' +
+          '<div class="il-lcard-src"><span class="il-src-issue">' + Fmt.esc(lessonSourceText(l)) + '</span></div>' +
+        '</td>' +
+        '<td data-l="Date resolved">' + (resolved ? Fmt.date(resolved) : '—') + '</td>' +
+        '<td class="il-aging' + (aging != null && aging > 90 ? ' is-hot' : '') + '" data-l="Aging">' +
+          (aging == null ? '—' : aging + ' day' + (aging === 1 ? '' : 's')) + '</td>' +
+      '</tr>';
+    }).join('');
+    // ITEM 9: the sort note (and the way back to manual order), present only
+    // while a sort is active.
+    var sortNoteHTML = _lessSort.key
+      ? '<div class="il-sortnote">Sorted by ' + Fmt.esc(LESSON_SORT_LABELS[_lessSort.key] || _lessSort.key) +
+        ' (' + (_lessSort.dir === 1 ? 'ascending' : 'descending') + ') — drag-to-reorder is off while a sort is active. ' +
+        '<button id="il-lessons-sortclear">Restore manual order</button></div>'
+      : '';
+    host.innerHTML = migrateNoteHTML() + sortNoteHTML +
+      '<div class="pd-card" style="padding:0;overflow:auto;">' +
+        '<table class="pd-table il-table" id="il-lessons-table">' + head + '<tbody>' + body + '</tbody></table>' +
+      '</div>';
     if (window.Icons) Icons.hydrate(host);
-    host.querySelectorAll('[data-open-lesson]').forEach(function (b) { b.onclick = function () { openLesson(b.dataset.openLesson); }; });
-    // ⚠️ stopPropagation: this button sits inside the same card as the drag handle
-    // and "Open this lesson →" — its own click must not also trigger either.
-    host.querySelectorAll('[data-open-issue]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openIssue(b.dataset.openIssue); }; });
-    // Item 2: drag-to-reorder, now uniform across every lesson in the one list —
-    // no more split between an issue-derived table and a standalone-cards section.
-    wireReorder(host.querySelector('#il-lessons-list'), list, LESSONS, lessonOrderCmp, LESSON_TABLE);
+    var table = host.querySelector('#il-lessons-table');
+    table.querySelectorAll('tr[data-open-lesson]').forEach(function (tr) {
+      tr.onclick = function () { openLesson(tr.dataset.openLesson); };
+    });
+    wireSortHeaders(table.querySelector('thead'), _lessSort, function () { renderLessons(); });
+    var sortClearBtn = host.querySelector('#il-lessons-sortclear');
+    if (sortClearBtn) sortClearBtn.onclick = function () { _lessSort = { key: '', dir: 0 }; renderLessons(); };
+    if (!_lessSort.key) {
+      // Item 2: drag-to-reorder, uniform across every lesson in the one table.
+      wireReorder(table, list, LESSONS, lessonOrderCmp, LESSON_TABLE);
+    }
   }
 
   // ---- standalone-lesson detail (unchanged editor, now reached as a drill-down) ----
+  // ⚠️ ITEM 7 (2026-09-01): when this lesson is linked to a real issue, that
+  // issue's FULL page — status panel, issue/caused/narrative body, its OTHER
+  // lessons, and its own update history — renders BELOW the lesson's own
+  // fields ("lessons learned on top, full issue details underneath, then
+  // history"), by reusing issDetailHTML wholesale rather than a second,
+  // parallel renderer that could drift from the real Issues detail view. The
+  // CURRENT lesson is excluded from that embedded issue's own "lessons
+  // learned from this issue" list (excludeLessonId) so it isn't shown twice.
   function renderLessonDetailView(host) {
     host.classList.remove('il-mom-report');
     var cur = _lessNew || LESSONS.find(function (l) { return l.id === _lessSel; }) || null;
+    var issueRow = (cur && cur.issue_id) ? rows.find(function (x) { return x.id === cur.issue_id; }) : null;
+    // The embedded issue view reads/writes the SAME module state the real
+    // Issues screen uses — keep it pointed at whichever issue is on screen so
+    // its Save/Hold/Reopen/Close/Delete/History all act on the right record.
+    // `_issEmbedSaved` (see switchScreen) preserves whatever the Issues screen
+    // itself had selected, restored the moment Lessons is actually left.
+    if (issueRow) {
+      if (_issSel !== issueRow.id) {
+        if (!_issEmbedSaved) {
+          _issEmbedSaved = { sel: _issSel, mode: _issMode, hold: _issHoldOpen, close: _issCloseOpen, reopen: _issReopenOpen };
+        }
+        _issSel = issueRow.id; _issNew = null;
+        _issHoldOpen = false; _issCloseOpen = false; _issReopenOpen = false;
+        loadIssueHistory(issueRow.id);
+      } else if (ISSUE_HISTORY[issueRow.id] === undefined) {
+        loadIssueHistory(issueRow.id);
+      }
+    }
     host.innerHTML = migrateNoteHTML() +
       '<button class="il-backlink" id="il-less-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Lessons</button>' +
       (cur ? lessonDetailHTML(cur)
-           : '<div class="il-empty" style="padding:28px;">Nothing to show — <button class="pd-btn pd-btn-sm" id="il-less-back2">go back</button>.</div>');
+           : '<div class="il-empty" style="padding:28px;">Nothing to show — <button class="pd-btn pd-btn-sm" id="il-less-back2">go back</button>.</div>') +
+      (issueRow
+        ? '<div class="il-less-issuewrap"><div class="il-dash-sec-head">The issue this lesson came from</div>' +
+            issDetailHTML(issueRow, { excludeLessonId: cur.id }) +
+          '</div>'
+        : '');
     wireLessons();
+    if (issueRow) wireIssues(host);
   }
 
   // What produced this lesson, said in one phrase. ⚠️ "Captured on its own" is a real
@@ -2177,7 +2558,14 @@ window.IssuesLessons = (function () {
     return 'Captured on its own';
   }
 
-  function lessonCardHTML(l) {
+  // ITEM 10: `opts.hideIssueLink` suppresses "Open the issue →" — used when this
+  // card is already rendered ON that issue's own page. ⚠️ Guarded against
+  // `typeof opts === 'object'` because `Array.prototype.map(lessonCardHTML)`
+  // (the unified Lessons screen's own call, which WANTS the issue link) passes
+  // the array INDEX as the second argument — a bare `opts = opts || {}` would
+  // treat that number as truthy and misread it as options.
+  function lessonCardHTML(l, opts) {
+    opts = (opts && typeof opts === 'object') ? opts : {};
     var src = lessonSourceText(l);
     // Item 2: reorderable unless it's a read-only legacy row (nothing to persist an
     // order onto — see isLegacyLesson()).
@@ -2195,7 +2583,7 @@ window.IssuesLessons = (function () {
       '<div class="il-lcard-src"><span class="il-src-issue">' + Fmt.esc(src) + '</span></div>' +
       '<div class="il-lcard-acts">' +
         '<button class="il-lcard-open" data-open-lesson="' + Fmt.esc(l.id) + '">Open this lesson →</button>' +
-        (l.issue_id && rows.some(function (x) { return x.id === l.issue_id; })
+        (!opts.hideIssueLink && l.issue_id && rows.some(function (x) { return x.id === l.issue_id; })
           ? '<button class="il-lcard-open" data-open-issue="' + Fmt.esc(l.issue_id) + '">Open the issue →</button>' : '') +
       '</div>' +
     '</div>';
@@ -2408,6 +2796,71 @@ window.IssuesLessons = (function () {
     if (screen !== 'lessons') switchScreen('lessons'); else { syncChrome(); renderLessons(); }
     var el = $('il-lessons-view'); var f = el && el.querySelector('[data-f="lesson"]');
     if (f) f.focus();
+  }
+
+  // ITEM 11: "+ Add another lesson" from an issue's own detail page opens a small
+  // popup instead of switching to the Lessons screen — a planner working an issue
+  // shouldn't have to leave it, and lose their place, just to log one more lesson
+  // against it. Mirrors the full lesson editor's field set exactly (Department /
+  // Date captured / Lesson — see lessonDetailHTML, where Recommendation and the
+  // source picker were already dropped from that form) rather than inventing a
+  // second, shorter definition of what a lesson record needs. The source (which
+  // issue) is already known, so — same as the full editor when `l.issue_id` is
+  // set — there is no source picker here either.
+  function openQuickLessonModal(issueId) {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (!canAdd) return;
+    if (_lessLegacy) {
+      UI.toast('Run migrations/2026-08-26-lessons-learned.sql before capturing lessons.', 'warn');
+      return;
+    }
+    var r = rows.find(function (x) { return x.id === issueId; }) || {};
+    function opts(list, val, blank) {
+      return (blank ? '<option value="">' + blank + '</option>' : '') +
+        list.map(function (o) { return '<option' + (val === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>'; }).join('');
+    }
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>Add another lesson</h2>' +
+        '<button class="pd-modal-close" id="il-ql-x">&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Department</label>' +
+            '<select class="pd-select pd-input-sm" id="il-ql-dept">' +
+              opts(DEPARTMENTS, r.department || '', '—') + '</select></div>' +
+          '<div class="pd-field" style="flex:1 1 160px;"><label>Date captured</label>' +
+            '<input class="pd-input pd-input-sm" id="il-ql-date" type="date" value="' + todayISO() + '"></div>' +
+        '</div>' +
+        '<div class="pd-field"><label>Lesson learned</label>' +
+          '<textarea class="pd-textarea" id="il-ql-lesson" rows="4" ' +
+            'placeholder="What did the team learn?"></textarea></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="il-ql-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="il-ql-save">Save lesson</button></div>');
+    var el = m.el;
+    el.querySelector('#il-ql-x').onclick = el.querySelector('#il-ql-cancel').onclick = function () { m.close(); };
+    var lf = el.querySelector('#il-ql-lesson'); if (lf) lf.focus();
+    el.querySelector('#il-ql-save').onclick = async function () {
+      var lesson = (el.querySelector('#il-ql-lesson').value || '').trim();
+      if (!lesson) { UI.toast('A lesson is required.', 'warn'); return; }
+      var lrow = {
+        project_id: pid, issue_id: issueId, mom_id: r.mom_id || null,
+        department: el.querySelector('#il-ql-dept').value || null,
+        lesson: lesson, recommendation: null,
+        date_captured: el.querySelector('#il-ql-date').value || todayISO(),
+        created_by: UID,
+      };
+      try {
+        var ins = await sb().from(LESSON_TABLE).insert(lrow).select().single();
+        if (ins.error) throw ins.error;
+        LESSONS.unshift(ins.data);
+        m.close();
+        UI.toast('Lesson captured', 'ok');
+        refreshIssueView();
+      } catch (e) {
+        UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
+          ? 'Run migrations/2026-08-26-lessons-learned.sql in Supabase first.' : e.message, 'error');
+      }
+    };
   }
 
   function openLesson(id) {

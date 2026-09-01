@@ -932,6 +932,20 @@ body { overflow-x: clip; }
 /* A title rendered as a view-switch BUTTON rather than a plain <h1> (e.g.
    Project Schedule's own dropdown) falls in here unstyled beyond flex
    defaults — it already carries its own look. */
+/* Item 1 (2026-09-01): UI.tabsToDropdown() marks a module's static title text
+   `.pd-title-hasdrop` once it has built a dropdown trigger that already names
+   the current screen — e.g. "Issues & Concerns" sitting right beside a
+   trigger reading "Issues & Concerns ▾". Hidden ONLY here, above 700px, where
+   `.pd-modulebar > h1` keeps its normal `flex:none` and rides on the SAME row
+   as the trigger, so the duplicate text has something to be redundant WITH.
+   ⚠️ Below 700px `.pd-modulebar > h1` is forced onto its own full-width row
+   (see the ≤700px block further down) with the trigger on the row after it —
+   hiding the text there would leave a bare icon on one line and the label on
+   the next, the exact defect this file's own history already fixed once
+   (search "REMOVED" in issues-lessons/module.css) and says not to bring back. */
+@media (min-width: 701px) {
+  .pd-modulebar > h1 .pd-title-hasdrop { display: none; }
+}
 .pd-modulebar > [class$="-tabs"] {
   display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
 }

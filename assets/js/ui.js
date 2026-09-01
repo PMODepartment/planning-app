@@ -539,6 +539,29 @@
     tabs.__pdTabsDrop = true;
     tabs.classList.add('pd-tabsdrop-src');
 
+    // ⚠️ The dropdown trigger built below already names the current screen (see
+    // sync()'s `trig.innerHTML`), so a module's own static/dynamic title TEXT
+    // sitting beside it is a duplicate label — "Dashboard" next to a trigger
+    // also reading "Dashboard ▾". Only a CLASS is added here; dashboard.css
+    // decides WHEN to actually hide it (`.pd-title-hasdrop`, min-width:701px) —
+    // never unconditionally in JS. Two reasons:
+    // 1. By the time this runs, initModuleTopbar() (bound to DOMContentLoaded,
+    //    so it always runs first) has already moved this tab strip OUT of
+    //    `.pd-topbar` and into the sibling `.pd-modulebar` bar alongside the
+    //    module's own <h1> — `tabs.closest('.pd-topbar')` finds nothing at this
+    //    point; `.closest('.pd-modulebar')` is the shared ancestor now.
+    // 2. Below 700px `.pd-modulebar > h1` is forced onto its OWN full-width row
+    //    (dashboard.css's ≤700px stacking rule), with the dropdown trigger on
+    //    the row after it — hiding the title text there leaves a bare icon on
+    //    one line and the trigger's label on the next, exactly the "icon
+    //    alone / label on the next line" defect this app's own history
+    //    (issues-lessons/module.css, "REMOVED 2026-08-31") already fixed once
+    //    and says not to reintroduce. A width-gated CSS rule can't recreate it;
+    //    an unconditional JS hide can and did.
+    var modBar = tabs.closest('.pd-modulebar');
+    var titleTxt = modBar && modBar.querySelector('[class$="-title-txt"]');
+    if (titleTxt) titleTxt.classList.add('pd-title-hasdrop');
+
     var wrap = document.createElement('div');
     wrap.className = 'pd-tabsdrop';
     var trig = document.createElement('button');

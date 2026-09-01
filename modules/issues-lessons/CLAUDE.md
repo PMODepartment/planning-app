@@ -1,5 +1,333 @@
 # Module: issues-lessons
 
+## 2026-09-01 (g) — Dashboard tile sizing/legends, list ordering, Lessons Learned reworked to embed the source issue, sortable columns
+
+Owner's 10-item list, verbatim: (1) the three dashboard chart tiles should share one height;
+(2) legends move to the top right to compact the view; (3) Open Issues sits above Lessons Learned;
+(4) the Lessons Learned tile carries a count of lessons; (5) the issues list label reads "X open of
+X total issues" instead of "X issues"; (6) the new-lesson form's labels all say "lesson", never
+"issue"; (7) the Lessons Learned list drops "Open the Issue", and opening a lesson shows the lesson
+on top with the full issue below it (details, other lessons, update history); (8) the Lessons
+Learned list matches the Issues list's shape — Department / Lessons / Date Resolved / Aging;
+(9) clicking a column header on either list cycles ascending → descending → natural order;
+(10) the Lessons Learned logo + label are dropped — the screen dropdown already names it.
+
+### Items 1/2/3/4/5 — the Dashboard tiles
+
+⚠️ **Height equality had to be a fixed box, not `align-items:stretch` alone.** `.il-dash-card`
+already stretched to match its row-mate under CSS Grid, which is why the earlier "size the Status
+tile to its content" pass (entry (f)) had them at different heights on purpose — this round asks
+for the opposite, so each card now carries a `.il-dash-cardhead` (title + legend, sized to its own
+content) over a fixed **340px `.il-dash-cardbody`**, the same box for the donut, the department bar
+and the champion bar regardless of how many rows/slices each one holds. The donut centres inside it
+(`.il-dash-cardbody-center`); the two bar charts scroll inside it when their row count would
+otherwise force the card taller (`.il-dash-cardbody-scroll`) — a bar chart with many departments no
+longer stretches its card past its siblings, it scrolls its own body instead.
+
+⚠️ **The legend moves to the card's header row, not just "up."** `barLegendTop`/`statusLegendTop`
+render inline beside the title (`.il-dash-cardhead` is a flex row, title left / legend right), so
+the chart body itself is legend-free — freeing real vertical room in the fixed 340px box rather
+than shrinking the chart to make space for a legend still sitting inside it.
+
+⚠️ **Open Issues now renders before Lessons Learned in source order**, not merely visually
+reordered with CSS — the two full-width tiles at the foot of the dashboard are built by one
+function each, called in the new order, so there is no `order:` override to drift out of sync with
+a future edit.
+
+⚠️ **The Lessons Learned tile reuses the same `.il-dash-fulllist-head`/`-count` pair Open Issues
+already had**, rather than inventing a second count style — "N lessons" sits in the same visual slot
+"N open of M total issues" does, so the two full-width tiles read as one family.
+
+⚠️ **The issues-list label change is a wording fix, not a new count.** `fullIssueListHTML` already
+received the filtered list; it just never received the *unfiltered total* to compare against. The
+function signature widened to take a second `totalCount` argument (both call sites — the Dashboard
+tile and wherever else it's built — pass the true unfiltered count), and the label became
+`"<open> open of <total> total issue(s)"`.
+
+### Item 6 — lesson-form labels no longer say "issue"
+
+⚠️ **The lesson editor was literally the issue editor with an `opts.excludeLessonId` filter** —
+`issDetailHTML(r, opts)` renders one shared template for both screens, so "toolbar state text",
+section headings ("Issue" / "Caused By" / "Date Raised"), and their placeholders all read as if
+the row being edited were an issue, even when it's a lesson's *linked* issue shown for context, or
+— per item 7 below — the issue is now embedded ABOVE the lesson rather than the other way around.
+A new `forceClose`-style gate (reusing the existing conditional-rendering shape the function already
+had for its Close-workflow copy) swaps every one of those strings to their lesson-facing equivalent
+("How It Was Resolved" / "What Happened" / "Root Cause" / "Date Captured") whenever the template is
+rendering in lesson context, so the same markup serves both screens without duplicating the layout.
+
+### Item 7 — opening a lesson now embeds its source issue, not the reverse
+
+⚠️ **This is the largest structural change in the batch, and it deliberately reuses the Issues
+screen's own renderer rather than building a second one.** `renderLessonDetailView(host)` is
+rewritten to render the lesson on top (`lessonDetailHTML`) and, when the lesson has a linked issue,
+the **full issue detail below it** — reusing `issDetailHTML`/`wireIssues` verbatim so the embedded
+issue gets the exact same Save/Hold/Reopen/Close/Delete affordances, History section and "other
+lessons on this issue" list the real Issues screen has, rather than a second, thinner read-only copy
+that would drift the moment either was edited.
+
+⚠️ **The embed borrows the Issues screen's own global state (`_issSel`/`_issMode`/the workflow
+toggles), and that state is saved and restored around the borrow.** Those globals are what every
+workflow button and `refreshIssueView()` call already act on, so reusing them (rather than adding a
+parallel `_embedIssSel`) is what makes the embedded buttons work correctly with zero new plumbing —
+but it also means viewing a lesson would silently overwrite whatever issue the real Issues screen
+had open. New `_issEmbedSaved` captures `{sel, mode, hold, close, reopen}` the moment a lesson's
+embed diverges from what Issues already had selected, and `switchScreen()` restores it the moment
+the Lessons screen is actually left — so returning to Issues shows what was really open there, not
+whatever a lesson happened to link to.
+
+⚠️ **The two screens' hosts are cleared on every screen switch**, not just repainted over — without
+this, reusing `issDetailHTML`'s ids inside `#il-lessons-view` while `#il-issues-view` still held its
+own copy from a previous session state would produce **duplicate DOM ids** (`il-iss-back`,
+`il-champ-list`, etc.), exactly the class of defect this module's own established verification
+checklist checks for. `switchScreen()` now blanks whichever of `#il-issues-view`/`#il-lessons-view`
+is NOT the target screen.
+
+⚠️ **History repaints on the embedded issue too, not only on the real Issues screen.**
+`loadIssueHistory`'s completion callback only ever repainted when `_issMode === 'detail'` — true
+only on the real screen — so the embedded issue's History section would have been stuck reading
+"Loading history…" forever. The condition is widened to also match
+`screen === 'lessons' && _lessMode === 'detail'`, and the fetch itself is triggered on entry to the
+lesson-detail view (fresh switch always fetches; revisiting the same lesson only fetches if not
+already cached, so re-renders don't refetch on every incidental repaint).
+
+⚠️ **Every `renderIssues()` call inside the workflow/save functions (hold, reopen, close, save,
+delete-lesson-quick-modal) is now `refreshIssueView()`** — a one-line dispatcher that repaints
+Lessons when that's the active screen and Issues otherwise, so saving/closing/reopening an issue
+from inside the embedded view repaints the Lessons screen it's actually showing on, rather than
+silently repainting a hidden `#il-issues-view` nobody is looking at. Left untouched: 8 other
+`renderIssues()` call sites that are already screen-aware by construction (filter handlers scoped
+to `#il-f-*`, the top-level dispatcher, `refreshIssueView()`'s own else-branch, and the
+open/back/new-issue screen-entry functions) — each was checked individually before being excluded.
+
+⚠️ **Item 10's "no Open the Issue button" falls out of this for free** — the Lessons Learned list
+never had a per-row navigation button pointed at the issue in the first place (it links by opening
+the lesson itself, which now shows the issue inline); nothing needed removing there beyond
+confirming it was never emitted, so this batch's #7 and #10 are one and the same fix from two
+different angles.
+
+### Item 8 — the Lessons Learned list matches the Issues list's shape
+
+`renderLessonsLogView(host)` is rewritten from a card grid into a `<table>` with the same four
+columns the Issues list already has where they apply to a lesson: **Department / Lessons / Date
+Resolved / Aging**. New helpers:
+
+```js
+function lessonResolvedDate(l) {
+  if (l && l.issue_id) {
+    var r = rows.find(function (x) { return x.id === l.issue_id; });
+    if (r && r.date_resolved) return r.date_resolved;
+  }
+  return null;
+}
+function lessonAgingDays(l) {
+  if (lessonResolvedDate(l)) return 0;
+  return daysSince(l && l.date_captured);
+}
+```
+
+⚠️ **A lesson has no resolution date of its own — it's read through its linked issue.** This
+module's established invariant is that `issues_lessons.date_resolved` is only ever set once
+`status === 'Closed'`, so resolving through the link is both correct and consistent with how
+"resolved" is defined everywhere else in the module. `lessonAgingDays` mirrors `agingDays()`'s own
+shape (0 once resolved, else days-since) via a newly extracted `daysSince()` primitive shared by
+both.
+
+⚠️ **No "Open the Issue" button in the list rows** (item 7's other half) — each row shows
+`lessonSourceText(l)` under the lesson text instead, naming where the lesson came from without a
+navigation control that duplicates clicking the row itself.
+
+### Item 9 — click-to-sort, cycling asc → desc → natural, on both lists
+
+New shared sort infrastructure, applied identically to the Issues log and the Lessons Learned list:
+
+```js
+var _issSort = { key: '', dir: 0 };
+var _lessSort = { key: '', dir: 0 };
+function cycleSort(state, key) {
+  if (state.key !== key) { state.key = key; state.dir = 1; }
+  else if (state.dir === 1) { state.dir = -1; }
+  else { state.key = ''; state.dir = 0; }
+}
+```
+
+⚠️ **Sorting and drag-reorder are mutually exclusive, following this app's own established
+convention** (Drawing Register set this precedent for exactly this conflict) — a sorted column's
+drag handle is blanked (`_issSort.key ? '' : dragGripHTML(r.id)`) and `wireReorder(...)` is only
+called when no sort is active, so a sorted view can't silently corrupt the manual order underneath
+it. A `.il-sortnote` banner ("Sorted by <label> — drag reorder disabled" + a "Restore manual order"
+button) appears whenever a sort is active, on both lists.
+
+⚠️ **Blanks sort last in both directions** (`sortCmp`'s null/undefined/empty-string handling) — an
+issue with no champion or a lesson with no resolution date reads as "unknown," not "earliest" or
+"latest," in either sort direction.
+
+⚠️ **`ISSUE_SORT_EXTRACT`/`LESSON_SORT_EXTRACT` are keyed by the same header labels the columns
+already show**, so `sortThHTML(label, key, state)` renders the arrow (▲/▼) only on the active
+column and every other header stays plain — clicking cycles the SAME column: asc → desc → off,
+never jumping to a different column's sort.
+
+### Verified
+
+Verified structurally after the branch restart below (git-policy — see that section) reapplied
+these edits on top of the merged `origin/main`, not just once before the restart:
+- `node --check` clean.
+- 0 NUL bytes across `module.js`/`module.css`/`index.html`.
+- CSS braces balanced (271/271).
+- 0 duplicate DOM `id=` attributes in `index.html` (38 total).
+- Function-name-set diff against the (post-restart) `origin/main`: **0 functions lost, 9 added**
+  (`applySort`, `cycleSort`, `daysSince`, `lessonAgingDays`, `lessonResolvedDate`,
+  `refreshIssueView`, `sortCmp`, `sortThHTML`, `wireSortHeaders`) — matching the pre-restart run
+  exactly, confirming the branch reset carried the working-tree edits through unchanged.
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing
+constraint for every UI pass in this module. No live click-through of the embedded-issue History
+repaint, the `_issEmbedSaved` save/restore round-trip on a real screen switch, or the click-to-sort
+cycle against real rows.
+
+`module.css/js?v=` → `20260901i`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260901r`.
+
+## 2026-09-01 (f) — Dashboard cleanup off a screenshot, close-vs-lesson decoupled, and a popup for capturing a lesson from an issue
+
+Owner's 13-item list, verbatim, off a screenshot of the live Dashboard with the duplicate title and
+the two bar tiles' clipped/mis-placed labels circled: (1) remove the redundant module-name label
+next to the tabs-dropdown trigger, app-wide, and rename the tab "Dashboard" → "Issues Dashboard";
+(2) drop the "X lessons captured" note; (3) size the Status tile to its content, split the rest
+between the two bar tiles; (4) rename the three tiles Issues by Status / Department / Champion;
+(5) make the bar-chart row labels readable and left-aligned, sort department rows by the dropdown's
+own order and champion rows A→Z; (6) centre "X open of X issues" ON the bar; (7) the issue-list
+tile shows Open issues only, retitled; (8) add a Lessons Learned tile; (9) closing an issue only
+requires a lesson if none exists yet — otherwise just date + closure report; (10) drop the
+"Open the issue →" button from a lesson card shown on that issue's own page; (11) capturing another
+lesson from an issue's page opens a popup, not a screen switch; (12) "Capture another lesson" →
+"Add another lesson"; (13) "Date Presented" → "Date Raised" (label only).
+
+### Item 1 — the duplicate title, fixed in the SHARED layer, not per-module
+⚠️ **`UI.tabsToDropdown()` already builds a trigger that names the current screen** (`sync()`'s
+`trig.innerHTML`), so the module's own static `<h1>` text sitting beside it was a literal
+duplicate — "Dashboard" next to a trigger also reading "Dashboard ▾", exactly what the screenshot
+circled. Fixed once in `assets/js/ui.js` (`tabsToDropdown`), not in this module alone, since
+**progress-photos is the other current caller** and carries the identical redundancy.
+⚠️ **The obvious fix — unconditionally hide the title text — was wrong twice, both caught before
+shipping.** First: by the time `tabsToDropdown()` runs, `initModuleTopbar()` (bound to
+`DOMContentLoaded`, so it always runs first) has already moved the tab strip OUT of `.pd-topbar`
+and into the sibling `.pd-modulebar` bar alongside the module's own `<h1>` — so
+`tabs.closest('.pd-topbar')` finds nothing, and a first draft of this fix would have had **no
+effect at all**. Fixed by walking to `.closest('.pd-modulebar')` instead, the element the title
+and the tabs actually share now. Second: **an unconditional hide reproduces a bug this repo's own
+history already fixed once.** Below 700px `.pd-modulebar > h1` is forced onto its own full-width
+row with the dropdown trigger on the row after it — hiding the title there leaves a bare icon on
+one line and the label on the next, which is precisely the "icon alone / label on the next line"
+defect `module.css`'s own `⚠️ REMOVED (2026-08-31, owner-reported bug #4)` comment says never to
+bring back. So the JS only adds a CLASS (`pd-title-hasdrop`); a new `dashboard.css` rule
+(`@media (min-width:701px) { .pd-modulebar > h1 .pd-title-hasdrop { display:none } }`) decides
+WHEN to actually hide it — only where the title and the trigger genuinely sit on one row together.
+Below 700px the title stays exactly as the 2026-08-31 fix left it.
+**The tab is also renamed** "Dashboard" → "Issues Dashboard" (`index.html`'s `.il-tabs` button and
+`switchScreen()`'s `#il-screen-title` text), matching the owner's wording.
+
+### Item 2 — the "X lessons captured" note is gone
+Removed with item 8's real tile below it — a one-line count naming a number is redundant the
+moment there's a tile that actually lists them.
+
+### Item 3/4 — tile sizing and names
+`.il-dash-grid`'s template changes from `repeat(3, 1fr)` to `0.8fr 1.6fr 1.6fr` — Status only
+needs room for its donut + a short legend, so the two bar tiles (whose rows now carry a label,
+a full-width track and a centred count — item 5/6) get the width back. Renamed **Issues by
+Status / Issues by Department / Issues by Champion**.
+
+### Item 5 — `hbarSVG` rewritten: left-aligned labels, canonical/alphabetical sort
+⚠️ **The old chart right-aligned its labels** (`text-anchor="end"`), which on a long department or
+champion name clips the READABLE start of the label and keeps the unreadable tail — exactly what
+the screenshot showed. Switched to `text-anchor="start"` at a small fixed left margin, so a label
+always shows from its beginning outward, truncated (`clip(..., 24)`) rather than clipped by the
+SVG's own edge.
+**Department rows sort by the `DEPARTMENTS` dropdown's own canonical order** (`DEPARTMENTS.indexOf`,
+unknown/legacy department names falling to the end via a `-1 → DEPARTMENTS.length` remap, then
+alphabetical among themselves) — not by count, so the tile reads in the same order a planner
+already expects from every department picker in this module. **Champion rows sort A→Z**
+(`localeCompare`).
+
+### Item 6 — "N open of N issues" centred on its own bar
+The label's `x` is now the midpoint of the row's TOTAL bar (`padLeft + totalW/2`), not a fixed
+offset past the track — so it always sits over the bar it describes regardless of how short that
+bar is. ⚠️ **Legibility across an open (red) vs. remaining (grey/line-token) two-tone bar, and
+across both themes**, is handled with an SVG text halo — `paint-order="stroke"` +
+`stroke="var(--pd-card)"` — rather than picking one fixed text colour that would fail contrast on
+one segment or the other (the two-tone bar's colours are drastically different between light-mode
+`--pd-line` and dark-mode's translucent white).
+
+### Item 7 — the issue-list tile is Open issues only
+`fullIssueListHTML(data)`'s heading is now "Open Issues"; its caller filters to
+`(r.status || 'Open') === 'Open'` before handing it the data, so a planner who has additionally
+narrowed the dashboard's own Status filter to e.g. Closed correctly sees an empty tile — the
+dashboard's filter is still respected, "Open issues" is layered on top of it, not instead of it.
+
+### Item 8 — a real Lessons Learned tile
+New `dashLessonsFiltered()` (scoped to the dashboard's own Department filter only — the one
+`dFilters` field that means the same thing on a lesson as it does on an issue; Status/Champion/
+search are issue-shaped and don't carry over) + `lessonsTileHTML(list)`, a compact Lesson /
+Department / Captured table, clicking a row into that lesson's own detail (`openLesson`).
+
+### Item 9 — closing an issue only asks for a lesson when one doesn't exist yet
+`hasLesson(r)` was already the existing helper (checks `LESSONS` for `issue_id === r.id`, plus the
+legacy inline field). `closeNeedsLesson = !isNew && !hasLesson(r)` gates a Lessons Learned field
+inside the close panel; `confirmCloseIssue()` re-derives the same `needsLesson` and only validates/
+inserts a lesson when it's true. ⚠️ **The other half of item 9 — "users can add lessons learned
+even without closing the issue" — was already true of the existing "+ Capture another lesson"
+button**, which has never been gated on status; confirmed it stays that way (see item 11's
+comment in `issDetailHTML`).
+
+### Item 10 — no "Open the issue →" on that issue's own page
+`lessonCardHTML(l, opts)` takes a second, optional `opts` argument; `opts.hideIssueLink` suppresses
+the button. ⚠️ **Guarded with `typeof opts === 'object'`, not a bare `opts = opts || {}`** — the
+unified Lessons screen's own call site is `list.map(lessonCardHTML)`, and `Array.prototype.map`
+calls its callback with `(item, index, array)`, so a bare fallback would read the array INDEX as
+`opts` and (being a truthy number past index 0) misinterpret it as an options object. The issue
+detail's own card list passes `{hideIssueLink: true}` explicitly; the Lessons screen's list still
+gets the link — a genuine way out from there.
+
+### Item 11 — "+ Add another lesson" opens a popup, not a screen switch
+New `openQuickLessonModal(issueId)`, `UI.modal()`-based, following the shared
+`.pd-modal-header`/`.pd-modal-body`/`.pd-modal-footer` convention. Mirrors the FULL lesson editor's
+current field set exactly (Department / Date captured / Lesson — see `lessonDetailHTML`, where
+Recommendation and the source picker were already dropped from that form on 2026-09-01(e)) rather
+than inventing a second, shorter definition of what a lesson record needs. No source picker: the
+issue is already known, the same rule the full editor already follows when `l.issue_id` is set.
+On save: inserts into `lessons_learned`, unshifts into `LESSONS`, closes the modal, and calls
+`renderIssues()` — which re-renders the still-open issue detail in place (`issDetailHTML` recomputes
+`ls = lessonsOfIssue(r.id)` fresh), so the new card appears without leaving the page. The
+`#il-iss-addlesson` handler in `wireIssues()` now calls this instead of `newLesson(...)`, which
+used to switch `screen` to `'lessons'`.
+
+### Item 12 — "Capture another lesson" → "Add another lesson"
+
+### Item 13 — "Date Presented" → "Date Raised"
+Label-only, everywhere it's user-facing (the detail form's field label, the Issues log's `<th>`,
+its `data-l` stacked-card label, the history field name, and the required-field validation
+message). ⚠️ **The underlying column (`date_presented`) and every `r.date_presented`/
+`v.date_presented` reference are untouched** — renaming the column would touch the DB, the
+importer/export, and every history entry already logged against the old label.
+
+**Verified.** `node --check` clean on both `ui.js` and `module.js`; CSS braces balanced
+(dashboard.css 426/426, module.css unchanged at 262/262); 0 NUL bytes across all five touched
+files; 0 duplicate DOM ids; `<div>`/`</div>` balanced in `index.html` (26/26); every new modal id
+(`il-ql-x/-dept/-date/-lesson/-cancel/-save`) appears exactly once. Function-set diff against
+`origin/main`: **0 lost**, **added** — `dashLessonsFiltered`, `lessonsTileHTML`,
+`openQuickLessonModal` (plus a third local `opts()` closure, the same pattern the file already
+used twice). Every class the new modal emits (`il-form-row`, `pd-field`, `pd-select`,
+`pd-input-sm`, `pd-textarea`, `pd-modal-header/-body/-footer/-close`) resolves to a real,
+pre-existing CSS rule — no orphan classes.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the dashboard's new layout,
+the reworked close-issue panel, or the new quick-lesson popup against real data.
+
+`ui.js`/`dashboard.css?v=20260901c` (app-wide, both shared assets — 20/28 files respectively);
+`module.css/js?v=20260901h`; `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/
+`modules.html`) → `20260901q`.
+
 ## 2026-09-01 (e) — Reopen from On Hold, a leaner lesson form, lessons genuinely separate from issues, and the dashboard redrawn with horizontal "N open of N" bars
 
 Owner's 6-item list, verbatim: (1) once On Hold, a button to move back to Open, requiring an
