@@ -344,9 +344,139 @@
 .il-pp-newact { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .il-pp-nnote { font-size:11px; color:var(--pd-muted); flex:1 1 200px; }
 
+/* ---- Item #17: top-level Dashboard/Meetings tabs — copied verbatim from
+   Issues & Concerns' own .il-tabs/.il-tab (same visual language, two small
+   IIFEs in two files, no shared runtime to draw it from instead). --------- */
+.il-tabs {
+  display: inline-flex; border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); overflow: hidden; flex: none;
+}
+.il-tab {
+  border: 0; background: var(--pd-card); color: var(--pd-ink);
+  padding: 6px 14px; font-weight: 600; font-size: 13px; cursor: pointer;
+  font-family: var(--pd-font); transition: background .12s; white-space: nowrap;
+}
+.il-tab + .il-tab { border-left: 1px solid var(--pd-line); }
+.il-tab:hover:not(.active) { background: var(--pd-bg); }
+.il-tab.active { background: var(--pd-red); color: #fff; }
+
+/* ---- Required-field mark (items #20/#22 forms) ---------------------------- */
+.il-req { color: var(--pd-red); font-weight: 700; }
+
+/* ---- Item #23: per-action-item Put On Hold / Close workflow + history —
+   inline reveal panels, not a modal, matching this app's established
+   "no pop-ups" convention. --------------------------------------------------- */
+.il-mi-wfbtns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.il-workflow-panel {
+  margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.il-workflow-panel label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--pd-muted); margin-bottom: -2px;
+}
+.il-workflow-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.il-mi-hist { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--pd-line); }
+.il-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.il-history-i { padding: 8px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
+.il-history-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.il-history-action { font-weight: 700; font-size: 12.5px; color: var(--pd-ink); }
+.il-history-when { font-size: 11.5px; color: var(--pd-muted); }
+.il-history-note { margin-top: 4px; font-size: 12.5px; color: var(--pd-ink); white-space: pre-wrap; }
+
+/* ---- Dashboard (items #2/#18) ---------------------------------------------- */
+.il-mom-dashsec { margin: 18px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.il-dash-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; align-items: start; }
+.il-dash-card { padding: 14px 16px; }
+.il-dash-card h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.il-dash-wide { grid-column: 1 / 2; }
+.il-dash-chartwrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.il-dash-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; min-width: 0; }
+.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); }
+.il-dash-legend-i i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
+.il-dash-list { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 480px; }
+.il-dash-list th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--pd-muted); padding: 4px 8px 6px; border-bottom: 1px solid var(--pd-line); }
+.il-dash-list td { padding: 6px 8px; border-bottom: 1px solid var(--pd-line); vertical-align: top; }
+.il-dash-list tr:last-child td { border-bottom: 0; }
+.il-dash-list tr[data-openmom] { cursor: pointer; }
+.il-dash-list tr[data-openmom]:hover td { background: var(--pd-bg); }
+.il-mom-freqlist { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--pd-ink); }
+.il-mom-freqlist li { margin-bottom: 4px; }
+
+@media (max-width: 1000px) {
+  .il-dash-grid { grid-template-columns: 1fr 1fr; }
+  .il-dash-wide { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .il-dash-grid { grid-template-columns: 1fr; }
+  .il-dash-wide { grid-column: auto; }
+}
+
+/* ---- The attendance / open-minutes METER — a single proportion bar with a
+   label overlay, distinct from the donut/bar charts above (which break a
+   number into categories). `.is-battery` adds a small cap nub, purely
+   decorative, so the attendance figure reads like a battery gauge. --------- */
+.il-mom-meter { display: flex; flex-direction: column; gap: 6px; }
+.il-mom-meter-track {
+  height: 14px; border-radius: 7px; background: var(--pd-bg);
+  border: 1px solid var(--pd-line); overflow: hidden; position: relative;
+}
+.il-mom-meter.is-battery .il-mom-meter-track { border-radius: 3px; margin-right: 4px; }
+.il-mom-meter.is-battery .il-mom-meter-track::after {
+  content: ''; position: absolute; right: -4px; top: 3px; width: 3px; height: 8px;
+  background: var(--pd-line); border-radius: 0 2px 2px 0;
+}
+.il-mom-meter-fill { height: 100%; background: var(--pd-red); border-radius: inherit; transition: width .2s; }
+.il-mom-meter-label { font-size: 12.5px; color: var(--pd-ink); }
+
+/* ---- Items #19/#22: recurring meeting schedules --------------------------- */
+.il-mom-schedpanel { margin-bottom: 16px; padding: 14px 16px; border-radius: 10px; background: var(--pd-card); border: 1px solid var(--pd-line); }
+.il-mom-schedhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.il-mom-schedhead h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.il-mom-schedbody { display: flex; gap: 14px; align-items: flex-start; }
+.il-mom-schedlist { display: flex; flex-direction: column; gap: 6px; flex: 1 1 260px; min-width: 220px; }
+.il-mom-schedbody.has-sel .il-mom-schedlist { flex: 0 0 260px; }
+.il-mom-schedright { flex: 1 1 320px; min-width: 0; padding: 12px 14px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
+.il-mom-schedrow {
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 8px 10px; border-radius: 8px; border: 1px solid var(--pd-line);
+  background: var(--pd-bg); cursor: pointer; font-family: var(--pd-font); width: 100%;
+}
+.il-mom-schedrow:hover { border-color: var(--pd-red); }
+.il-mom-schedrow.active { border-color: var(--pd-red); background: var(--pd-red-light); }
+.il-mom-schedrow-title { font-weight: 700; font-size: 13px; color: var(--pd-ink); }
+.il-mom-schedrow-meta, .il-mom-schedrow-next { font-size: 11.5px; color: var(--pd-muted); }
+.il-mom-schedright-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.il-mom-schedright-acts { display: flex; gap: 6px; flex: none; }
+.il-mom-schedright-sub { margin: 14px 0 8px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.il-mom-schedpast { display: flex; flex-direction: column; gap: 4px; }
+.il-mom-schedpasti {
+  display: flex; justify-content: space-between; gap: 10px; text-align: left;
+  padding: 6px 8px; border-radius: 6px; border: 1px solid transparent; background: none;
+  cursor: pointer; font-family: var(--pd-font); font-size: 12.5px; color: var(--pd-ink); width: 100%;
+}
+.il-mom-schedpasti:hover { background: var(--pd-card); border-color: var(--pd-line); }
+.il-mom-schedform, .il-mom-occform {
+  margin-bottom: 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--pd-bg); border: 1px dashed var(--pd-line);
+}
+.il-mom-schedform-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+/* A PLANNED (not-yet-recorded) occurrence chip on the calendar — dashed and
+   muted, distinct from the solid ACTUAL chips its cell may also carry. */
+.il-mom-calchip.is-planned { background: none; border: 1px dashed var(--pd-line); color: var(--pd-muted); }
+.il-mom-calchip.is-planned:hover { border-color: var(--pd-red); color: var(--pd-red); }
+
+/* ---- Item #20: three attendee-tier People Pickers side by side ------------ */
+.il-mom-attgrid > .pd-field { min-width: 220px; }
+
 /* ---- Mobile & tablet ------------------------------------------------------ */
 @media (max-width: 700px) {
   .il-mom-browsebar { flex-wrap: wrap; }
   .il-mom-browsebar > * { flex: 1 1 100%; min-width: 0; }
   .il-mom-listtable { min-width: 0; }
+  .il-mom-schedbody { flex-direction: column; }
+  .il-mom-schedbody.has-sel .il-mom-schedlist { flex: 1 1 auto; }
 }

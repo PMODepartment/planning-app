@@ -92,6 +92,32 @@ window.MinutesOfMeeting = (function () {
   // "Get from issue" panel state (Detail view) — see momGetPanelHTML.
   var _momPickerOpen = false, _momPickerQ = '';
 
+  // ⚠️ ITEM #17 — top-level tabs. 'dashboard' | 'meetings'. Dashboard is the
+  // landing tab (matches the Issues & Concerns convention this module split
+  // from — item #16 renamed that module's own "Report" screen to "Dashboard"
+  // as the default view). Meetings hosts everything this module already had
+  // (List / Calendar / Detail) PLUS the recurring-schedule list (item #19).
+  var _momTab = 'dashboard';
+
+  // ==========================================================================
+  // RECURRING MEETING SCHEDULES (items #19, #22) — see the block above init()
+  // for the occurrence math (schedDatesInRange / schedNextOccurrence / …).
+  // ==========================================================================
+  var SCHEDULES = [];
+  // Which schedule's right-pane is open in the Meetings tab's "Recurring
+  // meetings" list (item #22), and the state of the two small forms it hosts.
+  var _schedSel = null;
+  var _schedFormOpen = false, _schedFormDraft = null;      // add/edit a SCHEDULE
+  var _schedOccOpen = false, _schedOccDraft = null;        // "+ Add a meeting" for it
+
+  // ⚠️ ITEM #23 — per-action-item hold/close, mirroring the Issues workflow
+  // (2026-08-31). Keyed by item id, unlike Issues' single `_issHoldOpen` /
+  // `_issCloseOpen`, because SEVERAL action-item cards are on screen at once
+  // here — one flag each would collide across rows.
+  var _momItemWF = {};          // itemId -> {mode:'hold'|'close', note, report, lesson}
+  var ITEM_HISTORY = {};        // itemId -> [] once loaded, for the "History" reveal
+  var _momItemHistOpen = {};    // itemId -> true while its history panel is open
+
   var histView = null;          // UI.bindHistoryState() handle — see init()
 
   function sb() { return AppAuth.getSB(); }
@@ -132,6 +158,75 @@ window.MinutesOfMeeting = (function () {
   function $(id) { return document.getElementById(id); }
   function statusClass(s) {
     return s === 'Closed' ? 'is-closed' : (s === 'On Hold' ? 'is-hold' : 'is-open');
+  }
+
+  // ==========================================================================
+  // DASHBOARD CHART HELPERS (item #18/#2) — hand-rolled inline SVG, no library,
+  // the app's established convention. ⚠️ Deliberately duplicated from Issues &
+  // Concerns rather than shared: these two modules are separate IIFEs in
+  // separate files with no shared runtime, and the module split already
+  // established (see this file's header comment, and the People Picker block
+  // above) that a small duplicated component beats widening the split into a
+  // shared-asset change nobody asked for.
+  // ==========================================================================
+  var CHART_COLORS = ['#EE3124', '#2B6CB0', '#2F855A', '#B7791F', '#6B46C1',
+                       '#B83280', '#00838F', '#8D6E63', '#4A5568', '#5A67D8', '#C42127'];
+
+  function donutChartSVG(slices, opts) {
+    opts = opts || {};
+    var size = opts.size || 130, sw = opts.stroke || 20;
+    var r = (size - sw) / 2, c = size / 2, circ = 2 * Math.PI * r;
+    var total = slices.reduce(function (s, x) { return s + x.value; }, 0);
+    var offset = 0, arcs;
+    if (!total) {
+      arcs = '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="var(--pd-line)" stroke-width="' + sw + '"></circle>';
+    } else {
+      arcs = slices.map(function (s) {
+        var frac = s.value / total, len = frac * circ;
+        var piece = '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="' + s.color +
+          '" stroke-width="' + sw + '" stroke-dasharray="' + len.toFixed(2) + ' ' + (circ - len).toFixed(2) +
+          '" stroke-dashoffset="' + (-offset).toFixed(2) + '" transform="rotate(-90 ' + c + ' ' + c + ')">' +
+          '<title>' + Fmt.esc(s.label) + ': ' + s.value + '</title></circle>';
+        offset += len;
+        return piece;
+      }).join('');
+    }
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size +
+      '" role="img" aria-label="' + Fmt.esc(opts.aria || 'chart') + '">' + arcs + '</svg>';
+  }
+
+  function barChartSVG(bars, opts) {
+    opts = opts || {};
+    var w = opts.width || 280, h = opts.height || 140, padTop = 22, padBottom = 20;
+    var bodyH = h - padTop - padBottom;
+    var max = Math.max(1, bars.reduce(function (m, b) { return Math.max(m, b.value); }, 0));
+    var bw = w / bars.length;
+    var barsSvg = bars.map(function (b, i) {
+      var bh = max ? Math.round((b.value / max) * bodyH) : 0;
+      var innerW = bw * 0.6, x = i * bw + (bw - innerW) / 2;
+      var y = padTop + (bodyH - bh);
+      return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + innerW.toFixed(1) +
+          '" height="' + Math.max(1, bh).toFixed(1) + '" fill="' + b.color + '" rx="3"><title>' +
+          Fmt.esc(b.label) + ': ' + b.value + '</title></rect>' +
+        '<text x="' + (x + innerW / 2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '" text-anchor="middle" ' +
+          'font-size="10" fill="var(--pd-ink)">' + b.value + '</text>' +
+        '<text x="' + (x + innerW / 2).toFixed(1) + '" y="' + (h - 4).toFixed(1) + '" text-anchor="middle" ' +
+          'font-size="9" fill="var(--pd-muted)">' + Fmt.esc(clip(b.label, 10)) + '</text>';
+    }).join('');
+    return '<svg width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" ' +
+      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet">' + barsSvg + '</svg>';
+  }
+
+  // A single horizontal proportion bar with a label overlay — used for the
+  // attendance "battery" and the open-minutes stat, both single numbers
+  // rather than a category breakdown (which is what the donut/bar above are
+  // for). `tone` = 'is-battery' adds the small nub CSS treats as a battery cap.
+  function meterHTML(pct, label, tone) {
+    pct = Math.max(0, Math.min(100, Math.round(pct || 0)));
+    return '<div class="il-mom-meter' + (tone ? ' ' + tone : '') + '">' +
+      '<div class="il-mom-meter-track"><div class="il-mom-meter-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="il-mom-meter-label">' + Fmt.esc(label) + '</div>' +
+    '</div>';
   }
 
   // ==========================================================================
@@ -418,6 +513,20 @@ window.MinutesOfMeeting = (function () {
   function momUsedMeetingTypes() {
     return MOMS.map(function (x) { return x.meeting_type; }).filter(Boolean);
   }
+  // ⚠️ ITEM #21 — <datalist> options, NOT <select> options: `<option>` inside
+  // a datalist takes no `selected` attribute (the bound <input>'s own value
+  // decides what shows), and offering a blank "— none —" entry here would
+  // just be typed over, unlike momOptions()'s select-value trap where a
+  // missing option silently rewrites the field.
+  function momTypeDatalistOptions() {
+    var seen = {}, out = [];
+    MOM_MEETING_TYPES.concat(momUsedMeetingTypes()).forEach(function (v) {
+      v = String(v == null ? '' : v).trim();
+      if (!v || seen[v.toLowerCase()]) return;
+      seen[v.toLowerCase()] = 1; out.push(v);
+    });
+    return out.map(function (v) { return '<option value="' + Fmt.esc(v) + '">'; }).join('');
+  }
 
   // ------------------------------------------------ action-item filters -----
   function momFilterOn() {
@@ -446,11 +555,14 @@ window.MinutesOfMeeting = (function () {
   function momStatusFilterOpts() { return STATUSES.slice(); }
 
   function momReset() {
-    MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = [];
+    MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = []; SCHEDULES = [];
     _momSel = null; _momErr = ''; _momLoaded = false;
     _momQ = ''; _momF = { q: '', cat: '', type: '', status: '' };
-    _momView = 'list'; _momBrowsePrev = 'list';
+    _momView = 'list'; _momBrowsePrev = 'list'; _momTab = 'dashboard';
     _momPickerOpen = false; _momPickerQ = '';
+    _schedSel = null; _schedFormOpen = false; _schedFormDraft = null;
+    _schedOccOpen = false; _schedOccDraft = null;
+    _momItemWF = {}; ITEM_HISTORY = {}; _momItemHistOpen = {};
     MOM_ACT_NAME = {};   // activity ids are project-scoped — this cache is too
   }
 
@@ -492,6 +604,13 @@ window.MinutesOfMeeting = (function () {
     catch (e) { ISSUES = []; }
     try { LESSONS = await PDb.selectAll('lessons_learned', function (q) { return q.eq('project_id', pid); }); }
     catch (e) { LESSONS = []; }
+    // ⚠️ Tolerant of the un-run 2026-09-01 migration, same as ISSUES/LESSONS
+    // above: no table means no schedules, and the Meetings tab's schedules
+    // list just says so rather than refusing the whole module.
+    try {
+      SCHEDULES = await PDb.selectAll('mom_schedules', function (q) { return q.eq('project_id', pid); });
+      SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
+    } catch (e) { SCHEDULES = []; }
     _momLoaded = true;
     render();
   }
@@ -539,6 +658,132 @@ window.MinutesOfMeeting = (function () {
     return itemId ? LESSONS.filter(function (l) { return l.mom_item_id === itemId; }) : [];
   }
 
+  // ==========================================================================
+  // SCHEDULE OCCURRENCE MATH (items #18, #19, #22)
+  // ⚠️ UTC throughout, matching the calendar view above — the local-vs-UTC
+  // off-by-one has bitten this app repeatedly (minusDays in both registers,
+  // the drawing importer), and a schedule's whole job is landing on the
+  // right day.
+  // ==========================================================================
+  var FREQUENCIES = [
+    { key: 'weekly',          label: 'Weekly (every N week(s), on a weekday)' },
+    { key: 'monthly_weekday', label: 'Monthly, on a weekday — e.g. "first Monday"' },
+    { key: 'monthly_date',    label: 'Monthly, on a date' },
+    { key: 'quarterly',       label: 'Quarterly, on a date' },
+  ];
+  var WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  var ORDINAL_NAMES = { '1': 'first', '2': 'second', '3': 'third', '4': 'fourth', '-1': 'last' };
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function isoOf(y, mIdx, day) { return y + '-' + pad2(mIdx + 1) + '-' + pad2(day); }
+  function utcDow(d) { return (d.getUTCDay() + 6) % 7; }   // Monday=0..Sunday=6
+
+  // The nth (1..4) or LAST (-1) weekday-of-month, as a day-of-month number.
+  // -1 finds the true last occurrence even in a month where a 5th doesn't
+  // exist, so "last Friday" stays meaningful every month.
+  function nthWeekdayOfMonth(y, mIdx, weekday, ordinal) {
+    var first = new Date(Date.UTC(y, mIdx, 1));
+    var offset = (weekday - utcDow(first) + 7) % 7;
+    if (ordinal === -1) {
+      var daysInMonth = new Date(Date.UTC(y, mIdx + 1, 0)).getUTCDate();
+      var day = 1 + offset;
+      while (day + 7 <= daysInMonth) day += 7;
+      return day;
+    }
+    return 1 + offset + (Math.max(1, ordinal) - 1) * 7;
+  }
+  function clampDom(y, mIdx, dom) {
+    return Math.min(dom, new Date(Date.UTC(y, mIdx + 1, 0)).getUTCDate());
+  }
+  function ordinalNum(n) {
+    var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  // Every occurrence of `sch` within [startISO, endISO] inclusive, on or
+  // after its own start_date. Walked month by month for every frequency
+  // (even 'weekly', which just emits each matching weekday within a month)
+  // so one function serves both the calendar's one-month-at-a-time need and
+  // schedNextOccurrence()'s short forward-looking window.
+  function schedDatesInRange(sch, startISO, endISO) {
+    var out = [];
+    if (!sch || sch.active === false) return out;
+    var lo = (sch.start_date && sch.start_date > startISO) ? sch.start_date : startISO;
+    if (lo > endISO) return out;
+    var loP = lo.split('-'), hiP = endISO.split('-');
+    var y = +loP[0], m = +loP[1] - 1, endY = +hiP[0], endM = +hiP[1] - 1;
+    var guard = 0;
+    while ((y < endY || (y === endY && m <= endM)) && guard++ < 600) {
+      if (sch.frequency === 'weekly') {
+        var interval = Math.max(1, sch.interval_n || 1);
+        var wd = sch.weekday == null ? 0 : sch.weekday;
+        var daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+        // ⚠️ Anchored to the schedule's own start_date, so "every 2 weeks"
+        // means every 2 weeks FROM WHEN IT STARTED — a week that lands on
+        // the right weekday but the wrong parity relative to the anchor is
+        // skipped, or "every other Monday" would silently become "every
+        // Monday that happens to fall in an even ISO week".
+        var anchor = new Date((sch.start_date || isoOf(y, m, 1)) + 'T00:00:00Z');
+        for (var day = 1; day <= daysInMonth; day++) {
+          var d = new Date(Date.UTC(y, m, day));
+          if (utcDow(d) !== wd) continue;
+          var weeksSince = Math.floor((d.getTime() - anchor.getTime()) / (7 * 86400000));
+          if (weeksSince < 0 || weeksSince % interval !== 0) continue;
+          out.push(isoOf(y, m, day));
+        }
+      } else if (sch.frequency === 'monthly_weekday') {
+        var wd2 = sch.weekday == null ? 0 : sch.weekday;
+        var ord = sch.week_ordinal == null ? 1 : sch.week_ordinal;
+        out.push(isoOf(y, m, nthWeekdayOfMonth(y, m, wd2, ord)));
+      } else if (sch.frequency === 'quarterly') {
+        // Quarters anchored to the schedule's OWN start month, not the
+        // calendar year — a schedule starting in February recurs in
+        // Feb/May/Aug/Nov, never silently shifted onto Jan/Apr/Jul/Oct.
+        var anchorM = sch.start_date ? (+sch.start_date.slice(5, 7) - 1) : m;
+        if (((m - anchorM) % 3 + 3) % 3 === 0) out.push(isoOf(y, m, clampDom(y, m, sch.day_of_month || 1)));
+      } else {   // 'monthly_date' (default)
+        out.push(isoOf(y, m, clampDom(y, m, sch.day_of_month || 1)));
+      }
+      m++; if (m > 11) { m = 0; y++; }
+    }
+    var loBound = sch.start_date || '0000-01-01';
+    return out.filter(function (iso) { return iso >= startISO && iso <= endISO && iso >= loBound; }).sort();
+  }
+
+  // The first occurrence on or after `fromISO`. Looks up to ~2 years ahead —
+  // headroom a rare cadence (quarterly) or a future-dated start needs.
+  function schedNextOccurrence(sch, fromISO) {
+    var endD = new Date(fromISO + 'T00:00:00Z'); endD.setUTCDate(endD.getUTCDate() + 730);
+    var end = endD.getUTCFullYear() + '-' + pad2(endD.getUTCMonth() + 1) + '-' + pad2(endD.getUTCDate());
+    var dates = schedDatesInRange(sch, fromISO, end);
+    return dates.length ? dates[0] : null;
+  }
+
+  // A short, readable statement of the recurrence — what item #18's dashboard
+  // and the schedules list both print ("every first Monday of the month").
+  function schedFrequencyLabel(sch) {
+    if (!sch) return '';
+    var wd = WEEKDAY_NAMES[sch.weekday == null ? 0 : sch.weekday];
+    if (sch.frequency === 'weekly') {
+      var n = Math.max(1, sch.interval_n || 1);
+      return n === 1 ? 'Every ' + wd : (n === 2 ? 'Every other ' + wd : 'Every ' + n + ' weeks, on ' + wd);
+    }
+    if (sch.frequency === 'monthly_weekday') {
+      var ord = ORDINAL_NAMES[String(sch.week_ordinal == null ? 1 : sch.week_ordinal)] || 'first';
+      return 'Every ' + ord + ' ' + wd + ' of the month';
+    }
+    if (sch.frequency === 'quarterly') return 'Every quarter, on the ' + ordinalNum(sch.day_of_month || 1);
+    return 'Every month, on the ' + ordinalNum(sch.day_of_month || 1);
+  }
+
+  function schedActiveList() { return SCHEDULES.filter(function (s) { return s.active !== false; }); }
+  // Actual recorded minutes tied to a schedule, most recent first — what the
+  // right-pane's "all previous occurrences" list (item #22) reads.
+  function schedMeetingsOf(schedId) {
+    return MOMS.filter(function (x) { return x.schedule_id === schedId; })
+      .slice().sort(function (a, b) { return (b.meeting_date || '').localeCompare(a.meeting_date || ''); });
+  }
+
   // ============================================================================
   async function init(user, prof) {
     profile = prof;
@@ -558,8 +803,9 @@ window.MinutesOfMeeting = (function () {
     // jumping straight past every view to the module launcher.
     histView = UI.bindHistoryState({
       key: 'mom_view',
-      get: function () { return { v: _momView, m: _momSel }; },
+      get: function () { return { t: _momTab, v: _momView, m: _momSel }; },
       apply: function (state) {
+        _momTab = state.t || 'dashboard';
         _momView = state.v || 'list'; _momSel = state.m || null;
         if (_momView === 'detail' && !_momSel) _momView = _momBrowsePrev || 'list';
         render();
@@ -597,13 +843,30 @@ window.MinutesOfMeeting = (function () {
     };
     var rb = $('il-refresh');
     if (rb) rb.onclick = function () { momReset(); load(); };
+    // ⚠️ ITEM #17 — the Dashboard/Meetings tab strip lives in the topbar
+    // (index.html), outside #il-mom-view, so it is wired ONCE here rather
+    // than in wireBrowse()/wireDetail(), which re-run on every repaint of
+    // the content below it.
+    document.querySelectorAll('.il-tabs [data-tab]').forEach(function (b) {
+      b.onclick = function () { _momTab = b.dataset.tab; render(); if (histView) histView.push(); };
+    });
   }
 
   // -------------------------------------------------------------- render ---
+  // ⚠️ ITEM #17: two top-level tabs, wired once in wire() (they live in the
+  // topbar, outside #il-mom-view, so they are never rebuilt by a re-render —
+  // only their `.active` class needs syncing here).
+  function syncTopTabs() {
+    document.querySelectorAll('.il-tabs [data-tab]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.tab === _momTab);
+    });
+  }
   function render() {
     if (!pid) { _paintEmpty('Select a project to see its minutes.'); return; }
     if (!_momLoaded) { _paintEmpty('Loading minutes…'); return; }
-    if (_momView === 'detail' && _momSel) renderDetail();
+    syncTopTabs();
+    if (_momTab === 'dashboard') renderMomDashboard();
+    else if (_momView === 'detail' && _momSel) renderDetail();
     else renderBrowse();
     if (window.Icons && Icons.hydrate) Icons.hydrate($('il-mom-view'));
     paintRemote();
@@ -626,11 +889,178 @@ window.MinutesOfMeeting = (function () {
   // List and Calendar are the two ways to browse EVERY meeting on this project —
   // the ask this module split out to satisfy. Selecting one (or creating a new
   // one) switches into Detail, the single-meeting editor.
+  // ==========================================================================
+  // DASHBOARD (items #2, #18) — the "similar concept to the dashboard for
+  // issues" ask. Two sections: a meetings summary (frequency, last held,
+  // attendance, open-minutes, on-schedule %) and an action-items summary
+  // mirroring the Issues & Concerns dashboard's own tile/list/pie/bar shape,
+  // scoped to MOM_ITEMS instead of issues_lessons rows.
+  // ==========================================================================
+  function momLastHeldDate() {
+    var today = momToday();
+    var held = MOMS.filter(function (m) { return m.meeting_date && m.meeting_date <= today; });
+    if (!held.length) return null;
+    return held.reduce(function (mx, m) { return m.meeting_date > mx ? m.meeting_date : mx; }, held[0].meeting_date);
+  }
+  function attendeeCount(obj) {
+    if (!obj) return null;
+    var ids = (obj.ids || []).length;
+    var extra = (obj.text || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean).length;
+    return ids + extra;
+  }
+  // ⚠️ Computed off the most recent HELD meeting that actually recorded
+  // structured Required/Actual attendees (item #20) — a legacy meeting with
+  // only the old free-text `attendees` field has nothing this can count, and
+  // reporting 0 there would read as "nobody attended" rather than "not asked".
+  function momAttendanceBattery() {
+    var today = momToday();
+    var held = MOMS.filter(function (m) { return m.meeting_date && m.meeting_date <= today; })
+      .slice().sort(function (a, b) { return (b.meeting_date || '').localeCompare(a.meeting_date || ''); });
+    var m = held.find(function (x) { return x.attendees_required || x.attendees_actual; });
+    if (!m) return null;
+    var req = attendeeCount(m.attendees_required) || 0;
+    var act = attendeeCount(m.attendees_actual) || 0;
+    return { title: m.title, date: m.meeting_date, required: req, actual: act,
+      pct: req ? Math.round(act / req * 100) : (act ? 100 : 0) };
+  }
+  // "Open minutes" = still in Draft (not yet distributed) — a minute is "open"
+  // in the same sense an issue is, until it is issued/closed off.
+  function momOpenMinutesStat() {
+    var total = MOMS.length;
+    var open = MOMS.filter(function (m) { return !m.is_distributed; }).length;
+    return { total: total, open: open, pct: total ? Math.round(open / total * 100) : 0 };
+  }
+  // ⚠️ Credit for a schedule is CAPPED at what was actually expected of it —
+  // summing raw actual counts would let one over-met schedule (extra ad-hoc
+  // sessions under the same recurring slot) mask another schedule's real
+  // shortfall in the combined percentage.
+  function momOnScheduleStats() {
+    var today = momToday();
+    var expected = 0, actual = 0;
+    schedActiveList().forEach(function (s) {
+      var exp = schedDatesInRange(s, s.start_date || today, today).length;
+      var act = schedMeetingsOf(s.id).filter(function (m) { return m.meeting_date && m.meeting_date <= today; }).length;
+      expected += exp;
+      actual += Math.min(act, exp || act);
+    });
+    return { expected: expected, actual: actual };
+  }
+  function momAllOpenItems() {
+    return MOM_ITEMS.filter(function (it) { return momItemStatus(it) !== 'Closed'; });
+  }
+  function momItemsDashListHTML(data) {
+    if (!data.length) return '<div class="il-empty" style="padding:16px;">No open action items.</div>';
+    var top = data.slice().sort(function (a, b) {
+      var ma = MOMS.find(function (m) { return m.id === a.mom_id; });
+      var mb = MOMS.find(function (m) { return m.id === b.mom_id; });
+      return ((mb && mb.meeting_date) || '').localeCompare((ma && ma.meeting_date) || '');
+    }).slice(0, 12);
+    return '<div class="pd-tablewrap"><table class="il-dash-list"><thead><tr>' +
+      '<th>Action</th><th>Meeting</th><th>Category</th><th>Status</th><th>Responsible</th></tr></thead><tbody>' +
+      top.map(function (it) {
+        var m = MOMS.find(function (x) { return x.id === it.mom_id; });
+        var actText = it.action_item || it.description || '';
+        return '<tr data-openmom="' + Fmt.esc(it.mom_id) + '">' +
+          '<td>' + Fmt.esc(clip(actText, 70) || '(no text)') + '</td>' +
+          '<td>' + Fmt.esc((m && m.title) || '—') + (m && m.meeting_date ? ' · ' + Fmt.esc(Fmt.date(m.meeting_date)) : '') + '</td>' +
+          '<td>' + Fmt.esc(it.category || '—') + '</td>' +
+          '<td><span class="il-pill ' + statusClass(momItemStatus(it)) + '">' + Fmt.esc(momItemStatus(it)) + '</span></td>' +
+          '<td>' + Fmt.esc(championText(it.owner_ids, it.owner) || '—') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>' +
+      (data.length > top.length
+        ? '<p class="il-mom-note">Showing the 12 most recent of ' + data.length +
+          ' — open a meeting from the Meetings tab for the rest.</p>' : '');
+  }
+  function renderMomActionDashboard() {
+    var data = momAllOpenItems();
+    var byCat = {};
+    data.forEach(function (it) { var k = it.category || '(no category)'; byCat[k] = (byCat[k] || 0) + 1; });
+    var catSlices = Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; })
+      .map(function (k, i) { return { label: k, value: byCat[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
+    var byType = {};
+    data.forEach(function (it) { var k = it.type || '(untyped)'; byType[k] = (byType[k] || 0) + 1; });
+    var typeBars = Object.keys(byType).sort(function (a, b) { return byType[b] - byType[a]; })
+      .map(function (k, i) { return { label: k, value: byType[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
+    return '<div class="pd-card il-dash-card il-dash-wide"><h4>Open action items</h4>' +
+        momItemsDashListHTML(data) + '</div>' +
+      '<div class="pd-card il-dash-card"><h4>By category</h4>' +
+        (catSlices.length
+          ? '<div class="il-dash-chartwrap">' + donutChartSVG(catSlices, { aria: 'Open action items by category' }) +
+            '<div class="il-dash-legend">' + catSlices.map(function (s) {
+              return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
+                Fmt.esc(s.label) + ' (' + s.value + ')</span>';
+            }).join('') + '</div></div>'
+          : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+      '</div>' +
+      '<div class="pd-card il-dash-card"><h4>By type</h4>' +
+        (typeBars.length ? barChartSVG(typeBars, { aria: 'Open action items by type' })
+                         : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+      '</div>';
+  }
+  function renderMomDashboard() {
+    var host = $('il-mom-view'); if (!host) return;
+    host.classList.remove('il-mom-report');
+    if (_momErr) {
+      host.innerHTML = '<div class="il-empty" style="padding:24px;">Could not load minutes: ' + Fmt.esc(_momErr) + '</div>';
+      return;
+    }
+    var last = momLastHeldDate();
+    var att = momAttendanceBattery();
+    var openStat = momOpenMinutesStat();
+    var sched = momOnScheduleStats();
+    // ⚠️ An empty pie (0 expected) reads as a real 0% conducted-as-scheduled,
+    // which is a false statement when there is simply no schedule to compare
+    // against yet — so the pie is withheld entirely rather than shown at 0/0.
+    var pieSlices = sched.expected
+      ? [{ label: 'Conducted as scheduled', value: sched.actual, color: '#2F855A' },
+         { label: 'Missed', value: Math.max(0, sched.expected - sched.actual), color: '#B7791F' }]
+      : [];
+
+    host.innerHTML =
+      '<div class="il-dash-grid">' +
+        '<div class="pd-card il-dash-card"><h4>Meeting frequency</h4>' +
+          (schedActiveList().length
+            ? '<ul class="il-mom-freqlist">' + schedActiveList().map(function (s) {
+                return '<li><b>' + Fmt.esc(s.title) + '</b> — ' + Fmt.esc(schedFrequencyLabel(s)) + '</li>';
+              }).join('') + '</ul>'
+            : '<p class="il-mom-note">No recurring schedule is defined yet — set one from the Meetings tab.</p>') +
+          '<p class="il-mom-note" style="margin-top:8px;">Last meeting held: ' +
+            (last ? '<b>' + Fmt.esc(Fmt.date(last)) + '</b>' : 'none recorded yet') + '</p>' +
+        '</div>' +
+        '<div class="pd-card il-dash-card"><h4>Attendance — last meeting held</h4>' +
+          (att
+            ? meterHTML(att.pct, att.actual + ' of ' + att.required + ' required attendees (' + att.pct + '%) — ' +
+                Fmt.esc(att.title || 'the last meeting'), 'is-battery')
+            : '<p class="il-mom-note">Not recorded yet — set Required and Actual attendees when saving a meeting.</p>') +
+        '</div>' +
+        '<div class="pd-card il-dash-card"><h4>Open minutes</h4>' +
+          meterHTML(openStat.pct, openStat.open + ' of ' + openStat.total + ' minutes still in Draft (' + openStat.pct + '%)') +
+        '</div>' +
+        '<div class="pd-card il-dash-card"><h4>Conducted as scheduled</h4>' +
+          (pieSlices.length
+            ? '<div class="il-dash-chartwrap">' + donutChartSVG(pieSlices, { aria: 'Meetings conducted as scheduled' }) +
+              '<div class="il-dash-legend">' + pieSlices.map(function (s) {
+                return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
+                  Fmt.esc(s.label) + ' (' + s.value + ')</span>';
+              }).join('') + '</div></div>'
+            : '<div class="il-empty" style="padding:16px;">Not enough schedule history yet.</div>') +
+        '</div>' +
+      '</div>' +
+      '<h4 class="il-mom-dashsec">Action items across all minutes</h4>' +
+      '<div class="il-dash-grid">' + renderMomActionDashboard() + '</div>';
+
+    host.querySelectorAll('[data-openmom]').forEach(function (tr) {
+      tr.onclick = function () { _momTab = 'meetings'; momOpenMeeting(tr.dataset.openmom); };
+    });
+  }
+
   function renderBrowse() {
     var host = $('il-mom-view'); if (!host) return;
     host.classList.remove('il-mom-report');
     var list = momSearchList();
     host.innerHTML =
+      schedulesPanelHTML() +
       '<div class="il-mom-browsebar">' +
         '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
         '<input class="pd-input pd-input-sm il-mom-search" id="il-mom-q" placeholder="Search meetings…" value="' + Fmt.esc(_momQ) + '">' +
@@ -645,6 +1075,178 @@ window.MinutesOfMeeting = (function () {
           '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-duration-scenarios-and-mom.sql</code>.</small></div>'
         : (_momView === 'calendar' ? renderMomCalendarHTML(list) : renderMomListHTML(list)));
     wireBrowse();
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+  }
+
+  // ==========================================================================
+  // ITEM #19/#22 — recurring meeting schedules: where they are DEFINED (this
+  // panel, at the top of the Meetings tab) and the right pane a click on one
+  // opens, showing its next planned date, every actual meeting recorded
+  // against it, and the "+ Add a meeting" form that copies its defaults from
+  // the last occurrence. Sits ABOVE the List/Calendar browse of individual
+  // meeting_minutes rows below it, which is unaffected — a schedule is a
+  // commitment, not a replacement for the meetings themselves.
+  // ==========================================================================
+  function schedulesPanelHTML() {
+    var scheds = schedActiveList();
+    var sel = _schedSel ? SCHEDULES.find(function (s) { return s.id === _schedSel; }) : null;
+    return '<div class="il-mom-schedpanel">' +
+      '<div class="il-mom-schedhead">' +
+        '<h4>Recurring meeting schedules</h4>' +
+        (canAdd && !_schedFormOpen ? '<button class="pd-btn pd-btn-sm" id="il-sched-new">+ New schedule</button>' : '') +
+      '</div>' +
+      (_schedFormOpen ? scheduleFormHTML(_schedFormDraft) : '') +
+      (scheds.length
+        ? '<div class="il-mom-schedbody' + (sel ? ' has-sel' : '') + '">' +
+            '<div class="il-mom-schedlist">' + scheds.map(scheduleRowHTML).join('') + '</div>' +
+            (sel ? '<div class="il-mom-schedright">' + scheduleRightPaneHTML(sel) + '</div>' : '') +
+          '</div>'
+        : (_schedFormOpen ? '' : '<p class="il-mom-note">No recurring meeting is defined yet — add one so the ' +
+            'calendar can show its planned dates and the dashboard can report how often it is actually held.</p>')) +
+    '</div>';
+  }
+
+  function scheduleRowHTML(s) {
+    var next = schedNextOccurrence(s, momToday());
+    var n = schedMeetingsOf(s.id).length;
+    return '<button type="button" class="il-mom-schedrow' + (s.id === _schedSel ? ' active' : '') +
+      '" data-sched="' + Fmt.esc(s.id) + '">' +
+      '<span class="il-mom-schedrow-title">' + Fmt.esc(s.title) + '</span>' +
+      '<span class="il-mom-schedrow-meta">' + Fmt.esc(schedFrequencyLabel(s)) + ' · ' + Fmt.esc(s.meeting_group || 'Internal') + '</span>' +
+      '<span class="il-mom-schedrow-next">' + (next ? 'Next: ' + Fmt.esc(Fmt.date(next)) : 'No upcoming date') + ' · ' + n + ' held</span>' +
+    '</button>';
+  }
+
+  function scheduleRightPaneHTML(s) {
+    var next = schedNextOccurrence(s, momToday());
+    var past = schedMeetingsOf(s.id);
+    return '<div class="il-mom-schedright-head">' +
+      '<div><b>' + Fmt.esc(s.title) + '</b><div class="il-mom-schedrow-meta">' + Fmt.esc(schedFrequencyLabel(s)) + '</div></div>' +
+      '<div class="il-mom-schedright-acts">' +
+        (canAdd ? '<button class="pd-btn pd-btn-sm" id="il-sched-edit">Edit</button>' : '') +
+        (canAdd ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-sched-del">Delete…</button>' : '') +
+        '<button class="pd-btn pd-btn-sm" id="il-sched-close" title="Close">' +
+          '<span data-ico="x" data-ico-size="14"></span></button>' +
+      '</div>' +
+    '</div>' +
+    (canAdd && !_schedOccOpen
+      ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-sched-addocc">+ Add a meeting' +
+          (next ? ' for ' + Fmt.esc(Fmt.date(next)) : '') + '</button>'
+      : '') +
+    (_schedOccOpen ? scheduleOccFormHTML(s) : '') +
+    '<h5 class="il-mom-schedright-sub">Previously held</h5>' +
+    (past.length
+      ? '<div class="il-mom-schedpast">' + past.map(function (m) {
+          return '<button type="button" class="il-mom-schedpasti" data-mom="' + Fmt.esc(m.id) + '">' +
+            '<span>' + Fmt.esc(m.title || '(untitled)') + '</span>' +
+            '<span class="il-mom-schedrow-meta">' + (m.meeting_date ? Fmt.esc(Fmt.date(m.meeting_date)) : '—') +
+              (m.is_distributed ? '' : ' · Draft') + '</span>' +
+          '</button>';
+        }).join('') + '</div>'
+      : '<p class="il-mom-note">No meeting has been recorded against this schedule yet.</p>');
+  }
+
+  // ⚠️ Re-rendered in place (into #il-sf-rulewrap) whenever the frequency
+  // select changes, so the fields relevant to weekly/monthly/quarterly show
+  // up without a full-form repaint that would drop other in-progress edits.
+  function scheduleRuleFieldsHTML(s) {
+    var freq = s.frequency || 'monthly_date';
+    var wdOpts = function (cur) {
+      return WEEKDAY_NAMES.map(function (n, i) {
+        return '<option value="' + i + '"' + (cur === i ? ' selected' : '') + '>' + n + '</option>';
+      }).join('');
+    };
+    if (freq === 'weekly') {
+      return '<div class="pd-field" style="flex:1 1 140px;"><label>Weekday</label>' +
+          '<select class="pd-select" id="il-sf-weekday">' + wdOpts(s.weekday == null ? 0 : s.weekday) + '</select></div>' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Every N week(s)</label>' +
+          '<input class="pd-input" type="number" min="1" id="il-sf-interval" value="' + (s.interval_n || 1) + '"></div>';
+    }
+    if (freq === 'monthly_weekday') {
+      return '<div class="pd-field" style="flex:1 1 140px;"><label>Which</label>' +
+          '<select class="pd-select" id="il-sf-ordinal">' +
+            [1, 2, 3, 4, -1].map(function (o) {
+              return '<option value="' + o + '"' + ((s.week_ordinal == null ? 1 : s.week_ordinal) === o ? ' selected' : '') +
+                '>' + ORDINAL_NAMES[String(o)] + '</option>';
+            }).join('') +
+          '</select></div>' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Weekday</label>' +
+          '<select class="pd-select" id="il-sf-weekday">' + wdOpts(s.weekday == null ? 0 : s.weekday) + '</select></div>';
+    }
+    // 'monthly_date' or 'quarterly'
+    return '<div class="pd-field" style="flex:1 1 140px;"><label>Day of month</label>' +
+      '<input class="pd-input" type="number" min="1" max="31" id="il-sf-dom" value="' + (s.day_of_month || 1) + '"></div>';
+  }
+
+  function scheduleFormHTML(draft) {
+    var s = draft || {};
+    var isNew = !s.id;
+    return '<div class="il-mom-schedform">' +
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:2 1 200px;"><label>Title</label>' +
+          '<input class="pd-input" id="il-sf-title" value="' + Fmt.esc(s.title || '') +
+          '" placeholder="e.g. Monthly PSC Meeting"></div>' +
+        '<div class="pd-field" style="flex:1 1 130px;"><label>Group</label>' +
+          '<select class="pd-select" id="il-sf-group">' +
+            ['Internal', 'External'].map(function (g) {
+              return '<option' + ((s.meeting_group || 'Internal') === g ? ' selected' : '') + '>' + g + '</option>';
+            }).join('') +
+          '</select></div>' +
+      '</div>' +
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency</label>' +
+          '<select class="pd-select" id="il-sf-freq">' +
+            FREQUENCIES.map(function (f) {
+              return '<option value="' + f.key + '"' + ((s.frequency || 'monthly_date') === f.key ? ' selected' : '') +
+                '>' + f.label + '</option>';
+            }).join('') +
+          '</select></div>' +
+        '<div class="pd-field" style="flex:1 1 150px;"><label>Starts from</label>' +
+          '<input class="pd-input" type="date" id="il-sf-start" value="' + dateVal(s.start_date || momToday()) + '"></div>' +
+      '</div>' +
+      '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML(s) + '</div>' +
+      '<div class="il-mom-schedform-acts">' +
+        '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-sf-save">' + (isNew ? 'Create schedule' : 'Save schedule') + '</button>' +
+        '<button class="pd-btn pd-btn-sm" id="il-sf-cancel">Cancel</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ⚠️ ITEM #22: "define date, optional and required attendees plus other
+  // details which are copied from the last meeting by default." Every field
+  // pre-fills from the schedule's most recent recorded occurrence (`last`)
+  // and falls back to the schedule's own next expected date when there is
+  // no prior occurrence to copy from — a brand-new schedule's first meeting.
+  function scheduleOccFormHTML(s) {
+    var last = schedMeetingsOf(s.id)[0];
+    var next = schedNextOccurrence(s, momToday());
+    // ⚠️ `_schedOccDraft.date` wins when set — the one path that sets it is a
+    // click on a specific PLANNED chip in the calendar, which names an exact
+    // day that may not be the schedule's bare "next" date if several of its
+    // occurrences are visible on screen at once.
+    var defDate = (_schedOccDraft && _schedOccDraft.date) || next || (last && last.meeting_date) || momToday();
+    var defVenue = (last && last.venue) || '';
+    var defLink = (last && last.meeting_link) || '';
+    var reqIds = (last && last.attendees_required && last.attendees_required.ids) || [];
+    var reqText = (last && last.attendees_required && last.attendees_required.text) || '';
+    var optIds = (last && last.attendees_optional && last.attendees_optional.ids) || [];
+    var optText = (last && last.attendees_optional && last.attendees_optional.text) || '';
+    return '<div class="il-mom-occform">' +
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label>' +
+          '<input class="pd-input" type="date" id="il-of-date" value="' + dateVal(defDate) + '"></div>' +
+        '<div class="pd-field" style="flex:1 1 160px;"><label>Venue</label>' +
+          '<input class="pd-input" id="il-of-venue" value="' + Fmt.esc(defVenue) + '"></div>' +
+        '<div class="pd-field" style="flex:1 1 160px;"><label>Meeting link</label>' +
+          '<input class="pd-input" id="il-of-link" value="' + Fmt.esc(defLink) + '"></div>' +
+      '</div>' +
+      '<div class="pd-field"><label>Required attendees</label>' + peoplePickerHTML('occ-req', reqIds, reqText, false) + '</div>' +
+      '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('occ-opt', optIds, optText, false) + '</div>' +
+      '<div class="il-mom-schedform-acts">' +
+        '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-of-create">Create this meeting</button>' +
+        '<button class="pd-btn pd-btn-sm" id="il-of-cancel">Cancel</button>' +
+      '</div>' +
+    '</div>';
   }
 
   // ---- List view --------------------------------------------------------
@@ -731,6 +1333,20 @@ window.MinutesOfMeeting = (function () {
       var key = x.meeting_date.slice(0, 10);
       (byDay[key] = byDay[key] || []).push(x);
     });
+    // ⚠️ ITEM #19 — "show actual meeting dates or planned if date not yet
+    // passed, depending on the defined meeting frequency." A planned
+    // occurrence renders ONLY where no actual meeting under that SAME
+    // schedule already sits on that day — a schedule that was kept exactly
+    // on its expected date must not show two chips (one real, one phantom)
+    // for the same session.
+    var monthStart = _momCalMonth + '-01', monthEnd = _momCalMonth + '-' + String(daysInMonth).padStart(2, '0');
+    var planned = {};
+    schedActiveList().forEach(function (s) {
+      schedDatesInRange(s, monthStart, monthEnd).forEach(function (iso) {
+        var already = (byDay[iso] || []).some(function (x) { return x.schedule_id === s.id; });
+        if (!already) (planned[iso] = planned[iso] || []).push(s);
+      });
+    });
     var todayISO = momToday();
     var cells = '';
     for (var i = 0; i < startDow; i++) cells += '<div class="il-mom-calcell is-blank"></div>';
@@ -745,6 +1361,11 @@ window.MinutesOfMeeting = (function () {
             Fmt.esc(clip(x.title || '(untitled)', 22)) + '</button>';
         }).join('') +
         (here.length > 4 ? '<div class="il-mom-calmore">+' + (here.length - 4) + ' more</div>' : '') +
+        (planned[iso] || []).map(function (s) {
+          return '<button type="button" class="il-mom-calchip is-planned" data-plansched="' + Fmt.esc(s.id) +
+            '" data-planiso="' + iso + '" title="Planned: ' + Fmt.esc(s.title) + '">' +
+            Fmt.esc(clip(s.title, 20)) + '</button>';
+        }).join('') +
       '</div>';
     }
     return '<div class="il-mom-cal">' +
@@ -786,8 +1407,21 @@ window.MinutesOfMeeting = (function () {
     host.querySelectorAll('.il-mom-lrow').forEach(function (tr) {
       tr.onclick = function () { momOpenMeeting(tr.dataset.mom); };
     });
-    host.querySelectorAll('.il-mom-calchip').forEach(function (b) {
+    host.querySelectorAll('.il-mom-calchip[data-mom]').forEach(function (b) {
       b.onclick = function () { momOpenMeeting(b.dataset.mom); };
+    });
+    // A PLANNED chip has no meeting to open yet — it opens the schedule's
+    // right pane with the "+ Add a meeting" form already showing, pre-dated
+    // to the day that was clicked (overriding the form's own default of the
+    // schedule's NEXT expected date, which may not be this exact day if
+    // several occurrences are visible on one screen).
+    host.querySelectorAll('.il-mom-calchip[data-plansched]').forEach(function (b) {
+      b.onclick = function () {
+        _schedSel = b.dataset.plansched; _schedOccOpen = true; _schedOccDraft = { date: b.dataset.planiso };
+        renderBrowse();
+        var panel = host.querySelector('.il-mom-schedpanel');
+        if (panel) panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      };
     });
     var prev = host.querySelector('#il-mom-calprev');
     if (prev) prev.onclick = function () { momCalShift(-1); renderBrowse(); };
@@ -795,9 +1429,164 @@ window.MinutesOfMeeting = (function () {
     if (next) next.onclick = function () { momCalShift(1); renderBrowse(); };
     var today = host.querySelector('#il-mom-caltoday');
     if (today) today.onclick = function () { _momCalMonth = null; momCalInit(); renderBrowse(); };
+
+    // ---- recurring schedules panel (items #19, #22) ------------------------
+    var sn = host.querySelector('#il-sched-new');
+    if (sn) sn.onclick = function () { _schedFormDraft = null; _schedFormOpen = true; renderBrowse(); };
+    var sc = host.querySelector('#il-sf-cancel');
+    if (sc) sc.onclick = function () { _schedFormOpen = false; _schedFormDraft = null; renderBrowse(); };
+    var freqSel = host.querySelector('#il-sf-freq');
+    if (freqSel) freqSel.onchange = function () {
+      var wrap = host.querySelector('#il-sf-rulewrap');
+      if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: freqSel.value });
+    };
+    var sv = host.querySelector('#il-sf-save');
+    if (sv) sv.onclick = scheduleFormSave;
+
+    host.querySelectorAll('.il-mom-schedrow[data-sched]').forEach(function (b) {
+      b.onclick = function () {
+        _schedSel = (_schedSel === b.dataset.sched) ? null : b.dataset.sched;
+        _schedOccOpen = false; _schedOccDraft = null;
+        renderBrowse();
+      };
+    });
+    var sclose = host.querySelector('#il-sched-close');
+    if (sclose) sclose.onclick = function () { _schedSel = null; _schedOccOpen = false; renderBrowse(); };
+    var sedit = host.querySelector('#il-sched-edit');
+    if (sedit) sedit.onclick = function () {
+      _schedFormDraft = SCHEDULES.find(function (x) { return x.id === _schedSel; });
+      _schedFormOpen = true; renderBrowse();
+    };
+    var sdel = host.querySelector('#il-sched-del');
+    if (sdel) sdel.onclick = function () { scheduleDelete(_schedSel); };
+    var saddocc = host.querySelector('#il-sched-addocc');
+    if (saddocc) saddocc.onclick = function () { _schedOccOpen = true; _schedOccDraft = null; renderBrowse(); };
+    var socancel = host.querySelector('#il-of-cancel');
+    if (socancel) socancel.onclick = function () { _schedOccOpen = false; _schedOccDraft = null; renderBrowse(); };
+    var socreate = host.querySelector('#il-of-create');
+    if (socreate) socreate.onclick = function () { scheduleCreateOccurrence(_schedSel); };
+    wirePeople(host, null);   // the occurrence form's Required/Optional pickers
+    host.querySelectorAll('.il-mom-schedpasti').forEach(function (b) {
+      b.onclick = function () { momOpenMeeting(b.dataset.mom); };
+    });
+  }
+
+  async function scheduleFormSave() {
+    var host = $('il-mom-view'); if (!host) return;
+    var g = function (id) { var e = host.querySelector('#' + id); return e ? e.value : ''; };
+    var payload = {
+      project_id: pid,
+      title: g('il-sf-title').trim() || '(untitled schedule)',
+      meeting_group: g('il-sf-group') || 'Internal',
+      frequency: g('il-sf-freq') || 'monthly_date',
+      start_date: g('il-sf-start') || momToday(),
+      weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
+    };
+    if (payload.frequency === 'weekly') {
+      payload.weekday = +g('il-sf-weekday') || 0;
+      payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
+    } else if (payload.frequency === 'monthly_weekday') {
+      payload.weekday = +g('il-sf-weekday') || 0;
+      payload.week_ordinal = +g('il-sf-ordinal') || 1;
+    } else {
+      payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
+    }
+    var editing = _schedFormDraft && _schedFormDraft.id;
+    try {
+      if (editing) {
+        var u = await sb().from('mom_schedules').update(payload).eq('id', editing);
+        if (u.error) throw u.error;
+        var s = SCHEDULES.find(function (x) { return x.id === editing; });
+        if (s) Object.assign(s, payload);
+        UI.toast('Schedule saved', 'ok');
+      } else {
+        payload.created_by = UID;
+        var ins = await sb().from('mom_schedules').insert(payload).select().single();
+        if (ins.error) throw ins.error;
+        SCHEDULES.push(ins.data);
+        SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
+        _schedSel = ins.data.id;
+        UI.toast('Schedule created', 'ok');
+      }
+      _schedFormOpen = false; _schedFormDraft = null;
+      renderBrowse();
+    } catch (e) {
+      UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
+        ? 'Run migrations/2026-09-01-mom-schedules-attendees-item-history.sql in Supabase first.' : e.message, 'error');
+    }
+  }
+
+  async function scheduleDelete(id) {
+    var s = SCHEDULES.find(function (x) { return x.id === id; });
+    if (!s) return;
+    var n = schedMeetingsOf(id).length;
+    if (!confirm('Delete the schedule "' + (s.title || '') + '"?' +
+      (n ? '\n\n' + n + ' recorded meeting(s) STAY — they simply stop pointing back at a recurring schedule.' : ''))) return;
+    try {
+      var dl = await sb().from('mom_schedules').delete().eq('id', id);
+      if (dl.error) throw dl.error;
+      SCHEDULES = SCHEDULES.filter(function (x) { return x.id !== id; });
+      if (_schedSel === id) _schedSel = null;
+      UI.toast('Schedule deleted', 'ok');
+      renderBrowse();
+    } catch (e) { UI.toast(e.message, 'error'); }
+  }
+
+  // ⚠️ Creates the meeting FIRST, then opens it in Detail before touching the
+  // header-save/carry-over machinery — momSaveHeader() (which momCarryOver
+  // always calls) reads its fields straight off the Detail form's DOM, which
+  // does not exist until momOpenMeeting() has rendered it. Getting this order
+  // backwards would resave the row with a blank "(untitled)" title (g() on a
+  // missing element returns '', not the row's real value).
+  async function scheduleCreateOccurrence(schedId) {
+    var s = SCHEDULES.find(function (x) { return x.id === schedId; });
+    if (!s) return;
+    var host = $('il-mom-view');
+    var dateEl = host.querySelector('#il-of-date'), venueEl = host.querySelector('#il-of-venue'),
+        linkEl = host.querySelector('#il-of-link');
+    var dateV = dateEl ? dateEl.value : '';
+    if (!dateV) { UI.toast('Pick a date for this meeting.', 'warn'); return; }
+    var reqRoot = host.querySelector('[data-people="occ-req"]'), optRoot = host.querySelector('[data-people="occ-opt"]');
+    var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? ((reqRoot.querySelector('.il-pp-free') || {}).value || '') : '';
+    var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? ((optRoot.querySelector('.il-pp-free') || {}).value || '') : '';
+    var last = schedMeetingsOf(schedId)[0];
+    try {
+      var ins = await sb().from('meeting_minutes').insert({
+        project_id: pid, schedule_id: schedId, title: s.title,
+        meeting_date: dateV, meeting_group: s.meeting_group || 'Internal',
+        venue: venueEl ? (venueEl.value.trim() || null) : null,
+        meeting_link: linkEl ? (linkEl.value.trim() || null) : null,
+        attendees_required: { ids: reqIds, text: reqText },
+        attendees_optional: { ids: optIds, text: optText },
+        created_by: UID,
+      }).select().single();
+      if (ins.error) throw ins.error;
+      MOMS.unshift(ins.data);
+      _schedOccOpen = false; _schedOccDraft = null; _schedSel = null;
+      momOpenMeeting(ins.data.id);   // renders Detail NOW — see the note above
+      // ⚠️ ITEM #19 — "starts always from previous meeting minutes." Seeded
+      // quietly with the register's own still-open issues (the same rule
+      // "+ New minutes" already follows), THEN the immediately-preceding
+      // occurrence of this schedule carries forward whatever is still open
+      // on it — one deliberate reuse of the existing carry-over rules
+      // (idempotent, register-decides-openness) rather than a second,
+      // competing definition of "copy the previous minutes".
+      try { await momPullIssues(ins.data.id, { quiet: true }); } catch (e) {}
+      if (last) { try { await momCarryOver(last.id); } catch (e) {} }
+      renderDetail();
+    } catch (e) {
+      UI.toast(/relation|does not exist|schema cache|column/i.test(e.message || '')
+        ? 'Run migrations/2026-09-01-mom-schedules-attendees-item-history.sql in Supabase first.' : e.message, 'error');
+    }
   }
 
   function momOpenMeeting(id) {
+    // ⚠️ Opening a meeting always means "show me the Meetings tab" — a caller
+    // on the Dashboard (item #18's action-items list) or the Meetings tab's
+    // own schedules panel both land here, and render() checks `_momTab`
+    // BEFORE `_momView`, so leaving this unset from the Dashboard would
+    // silently redraw the dashboard instead of the meeting just opened.
+    _momTab = 'meetings';
     if (_momView !== 'detail') _momBrowsePrev = _momView;
     _momSel = id; _momView = 'detail';
     _momF = { q: '', cat: '', type: '', status: '' };
@@ -843,6 +1632,7 @@ window.MinutesOfMeeting = (function () {
     var back = host.querySelector('#il-mom-back');
     if (back) back.onclick = function () {
       _momView = _momBrowsePrev || 'list'; _momSel = null; _momReport = false;
+      _momItemWF = {}; _momItemHistOpen = {};   // leave no half-open workflow behind
       render();
       if (histView) histView.push();
     };
@@ -888,12 +1678,55 @@ window.MinutesOfMeeting = (function () {
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Location</label><input class="pd-input" id="il-mom-loc" value="' + Fmt.esc(mom.location || '') + '"' + d + '></div>' +
-        '<div class="pd-field" style="flex:1 1 170px;"><label>Meeting type</label>' +
-          '<select class="pd-select" id="il-mom-type"' + d + '>' +
-            momOptions(MOM_MEETING_TYPES, momUsedMeetingTypes(), mom.meeting_type || '', '— none —') +
-          '</select></div>' +
       '</div>' +
-      '<div class="pd-field"><label>Attendees</label><input class="pd-input" id="il-mom-att" value="' + Fmt.esc(mom.attendees || '') + '" placeholder="Names, comma separated"' + d + '></div>' +
+      // ⚠️ ITEM #21 — the "Meeting type" DROPDOWN is now grouped Internal /
+      // External ONLY (writes `meeting_group`). Which specific standing
+      // meeting this is (PPR / PSC / Client…) is free TEXT now — "Meeting
+      // description" — with the old vocabulary offered as suggestions via a
+      // <datalist> rather than enforced as a closed list, per the owner's
+      // explicit instruction that this belongs in the description, not the
+      // dropdown. `meeting_type` is the same column as before; only what it
+      // means to the form changed.
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 130px;"><label>Group</label>' +
+          '<select class="pd-select" id="il-mom-group"' + d + '>' +
+            '<option value="Internal"' + ((mom.meeting_group || 'Internal') === 'Internal' ? ' selected' : '') + '>Internal</option>' +
+            '<option value="External"' + (mom.meeting_group === 'External' ? ' selected' : '') + '>External</option>' +
+          '</select></div>' +
+        '<div class="pd-field" style="flex:1 1 220px;"><label>Meeting description</label>' +
+          '<input class="pd-input" id="il-mom-type" list="il-mom-typelist" value="' + Fmt.esc(mom.meeting_type || '') +
+          '" placeholder="e.g. PPR Meeting, PSC Meeting"' + d + '>' +
+          '<datalist id="il-mom-typelist">' + momTypeDatalistOptions() + '</datalist></div>' +
+        '<div class="pd-field" style="flex:1 1 160px;"><label>Venue</label>' +
+          '<input class="pd-input" id="il-mom-venue" value="' + Fmt.esc(mom.venue || '') + '"' + d + '></div>' +
+      '</div>' +
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label>' +
+          '<input class="pd-input" id="il-mom-link" value="' + Fmt.esc(mom.meeting_link || '') + '" placeholder="https://…"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 200px;"><label>Recording</label>' +
+          '<input class="pd-input" id="il-mom-rec" value="' + Fmt.esc(mom.recording_url || '') + '" placeholder="https://… (optional)"' + d + '></div>' +
+      '</div>' +
+      // ⚠️ ITEM #20 — three attendee tiers, each the same hybrid ids+text
+      // People Picker used for Champion/Responsible elsewhere in this app.
+      // The legacy free-text `attendees` column is read verbatim below when
+      // NONE of the three structured columns has ever been filled in on this
+      // minute — hiding it outright would silently disappear real attendee
+      // data recorded before this feature existed.
+      '<div class="il-form-row il-mom-attgrid">' +
+        '<div class="pd-field" style="flex:1 1 220px;"><label>Required attendees</label>' +
+          peoplePickerHTML('mom-att-req', mom.attendees_required && mom.attendees_required.ids,
+            mom.attendees_required && mom.attendees_required.text, ro) + '</div>' +
+        '<div class="pd-field" style="flex:1 1 220px;"><label>Optional attendees</label>' +
+          peoplePickerHTML('mom-att-opt', mom.attendees_optional && mom.attendees_optional.ids,
+            mom.attendees_optional && mom.attendees_optional.text, ro) + '</div>' +
+        '<div class="pd-field" style="flex:1 1 220px;"><label>Actual attendees</label>' +
+          peoplePickerHTML('mom-att-act', mom.attendees_actual && mom.attendees_actual.ids,
+            mom.attendees_actual && mom.attendees_actual.text, ro) + '</div>' +
+      '</div>' +
+      (!mom.attendees_required && !mom.attendees_optional && !mom.attendees_actual && mom.attendees
+        ? '<p class="il-mom-note">Legacy attendees, recorded before Required / Optional / Actual existed: ' +
+          Fmt.esc(mom.attendees) + '</p>'
+        : '') +
       '<div class="pd-field il-mom-act"><label>Activity discussed ' +
         '<small style="font-weight:400;color:var(--pd-muted);">— optional; links these minutes to a schedule activity</small></label>' +
         '<input type="hidden" id="il-mom-act" value="' + Fmt.esc(act) + '">' +
@@ -1063,6 +1896,116 @@ window.MinutesOfMeeting = (function () {
     return ilField(_momReport, label, cls, control, raw, extra);
   }
 
+  // ==========================================================================
+  // ITEM #23 — per-action-item audit history + Update/Put On Hold/Close,
+  // mirroring the Issues & Concerns workflow (2026-08-31) at the level of one
+  // mom_items row instead of one whole detail page. Gated to UNLINKED items
+  // only (see momItemStatusCellHTML) — a LINKED item's status is the
+  // register's, and this module never writes issues_lessons.
+  // ==========================================================================
+  var HISTORY_TABLE_ITEM = 'mom_items_history';
+  var ITEM_HIST_LABELS = { create: 'Logged', update: 'Updated', hold: 'Put on hold', close: 'Closed' };
+
+  // ⚠️ Best-effort and never awaited-into-failure: the real mom_items write
+  // has already succeeded by the time this runs, and a missing migration or
+  // a transient failure here must not make that read as an error to whoever
+  // just saved. `reqMark` is reused from the Issues module's own naming, but
+  // this file has its own copy (defined below) — see that function's comment.
+  async function logItemHistory(itemId, projectId, action, beforeRow, note) {
+    try {
+      await sb().from(HISTORY_TABLE_ITEM).insert({
+        item_id: itemId, project_id: projectId || pid, action: action, note: note || null,
+        snapshot: beforeRow || null, changed_by: UID,
+        changed_by_department: (profile && profile.department) || null,
+      });
+    } catch (e) { /* table not migrated yet, or a transient failure — silent */ }
+    if (_momItemHistOpen[itemId]) loadItemHistory(itemId);
+  }
+  async function loadItemHistory(itemId) {
+    try {
+      var res = await sb().from(HISTORY_TABLE_ITEM).select('*').eq('item_id', itemId)
+        .order('changed_at', { ascending: false }).limit(200);
+      ITEM_HISTORY[itemId] = res.error ? [] : (res.data || []);
+    } catch (e) { ITEM_HISTORY[itemId] = []; }
+    if (_momSel && _momItemHistOpen[itemId]) renderDetail();
+  }
+  function itemHistoryHTML(itemId) {
+    var list = ITEM_HISTORY[itemId];
+    if (list === undefined) return '<p class="il-mom-note">Loading history…</p>';
+    if (!list.length) {
+      return '<p class="il-mom-note">No changes recorded yet — run <code>migrations/' +
+        '2026-09-01-mom-schedules-attendees-item-history.sql</code> if this item has been updated ' +
+        'and nothing appears here.</p>';
+    }
+    return '<ul class="il-history">' + list.map(function (h) {
+      return '<li class="il-history-i"><div class="il-history-top">' +
+        '<span class="il-history-action">' + Fmt.esc(ITEM_HIST_LABELS[h.action] || h.action) + '</span>' +
+        '<span class="il-history-when">' + Fmt.esc(Fmt.date(h.changed_at)) +
+          (h.changed_by_department ? ' · ' + Fmt.esc(h.changed_by_department) : '') + '</span></div>' +
+        (h.note ? '<div class="il-history-note">' + Fmt.esc(h.note).replace(/\n/g, '<br>') + '</div>' : '') +
+      '</li>';
+    }).join('') + '</ul>';
+  }
+  // Small `*` beside a required field's label — same shape as the Issues
+  // module's own reqMark(), duplicated here for the same reason the People
+  // Picker and chart helpers are: two small IIFEs in two files, not a shared
+  // runtime.
+  function reqMark(editable) { return editable ? ' <span class="il-req" title="Required">*</span>' : ''; }
+
+  // The status cell's whole control surface: a plain pill for a LINKED item
+  // (register-owned, see the comment at its call site), or — for an unlinked
+  // item — the pill plus Put On Hold / Close, or whichever reveal panel is
+  // open. `ro` already folds in both "not mine to edit" and "minutes locked".
+  function momItemStatusCellHTML(it, ro) {
+    if (it.issue_id) {
+      var iss = momIssueOf(it);
+      var v = iss ? (iss.status || 'Open') : (it.status || 'Open');
+      return '<span class="il-pill ' + statusClass(v) + '" title="Status follows the linked issue in Issues & Concerns">' +
+        Fmt.esc(v) + '</span>';
+    }
+    var cur = it.status || 'Open';
+    var wf = _momItemWF[it.id];
+    if (ro || !wf) {
+      var canHold = !ro && cur === 'Open', canClose = !ro && cur !== 'Closed';
+      return '<span class="il-pill ' + statusClass(cur) + '">' + Fmt.esc(cur) + '</span>' +
+        (ro ? '' : '<div class="il-mi-wfbtns">' +
+          (canHold ? '<button class="pd-btn pd-btn-sm il-mi-wfstart" data-item="' + Fmt.esc(it.id) +
+            '" data-wfstart="hold">Put On Hold</button>' : '') +
+          (canClose ? '<button class="pd-btn pd-btn-sm il-mi-wfstart" data-item="' + Fmt.esc(it.id) +
+            '" data-wfstart="close">Close</button>' : '') +
+        '</div>');
+    }
+    if (wf.mode === 'hold') {
+      return '<div class="il-workflow-panel il-mi-wfpanel">' +
+        '<label>Reason for Hold' + reqMark(true) + '</label>' +
+        '<textarea class="pd-textarea" rows="2" spellcheck="true" data-item="' + Fmt.esc(it.id) +
+          '" data-wf="note" placeholder="Why is this on hold?">' + Fmt.esc(wf.note || '') + '</textarea>' +
+        '<div class="il-workflow-acts">' +
+          '<button class="pd-btn pd-btn-sm il-mi-wfcancel" data-item="' + Fmt.esc(it.id) + '">Cancel</button>' +
+          '<button class="pd-btn pd-btn-primary pd-btn-sm il-mi-wfconfirm" data-item="' + Fmt.esc(it.id) +
+            '" data-wfaction="hold">Confirm hold</button>' +
+        '</div></div>';
+    }
+    // wf.mode === 'close' — ⚠️ ITEM #23: a closure narrative is required, a
+    // lesson is NOT — unlike closing an Issue (item #13), which always
+    // records one. If a lesson IS typed here it is pushed straight into
+    // `lessons_learned`, linked via `mom_item_id`, exactly the same table
+    // "+ Capture lesson" already writes to elsewhere on this card.
+    return '<div class="il-workflow-panel il-mi-wfpanel">' +
+      '<label>Closure note' + reqMark(true) + '</label>' +
+      '<textarea class="pd-textarea" rows="2" spellcheck="true" data-item="' + Fmt.esc(it.id) +
+        '" data-wf="report" placeholder="How was this resolved?">' + Fmt.esc(wf.report || '') + '</textarea>' +
+      '<label>Lessons learned <span style="font-weight:400;color:var(--pd-muted);">' +
+        '(optional — pushed to the Lessons Learned report if filled in)</span></label>' +
+      '<textarea class="pd-textarea" rows="2" spellcheck="true" data-item="' + Fmt.esc(it.id) +
+        '" data-wf="lesson" placeholder="What did the team learn? (optional)">' + Fmt.esc(wf.lesson || '') + '</textarea>' +
+      '<div class="il-workflow-acts">' +
+        '<button class="pd-btn pd-btn-sm il-mi-wfcancel" data-item="' + Fmt.esc(it.id) + '">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary pd-btn-sm il-mi-wfconfirm" data-item="' + Fmt.esc(it.id) +
+          '" data-wfaction="close">Confirm close</button>' +
+      '</div></div>';
+  }
+
   function momItemRowHTML(it, ro, d, mayEdit, locked, i) {
     var iss = momIssueOf(it);
     // ⚠️ Rows written before the 2026-08-21 migration hold their action text in
@@ -1091,25 +2034,13 @@ window.MinutesOfMeeting = (function () {
         '<option value="">—</option>' +
         MOM_TYPES.map(function (o) { return '<option' + (it.type === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
       '</select>', it.type) +
-      momFieldHTML('Status', 'il-c-status',
-        '<select class="pd-select pd-input-sm il-mi" data-f="status"' + d + '>' +
-        // ⚠️ No blank option: `status` carries a CHECK and the handler deliberately
-        // does NOT null-convert it, so an empty pick would write '' and be refused.
-        // `present` carries any off-list legacy value through so the select shows the
-        // truth instead of silently reporting 'Open' — the select-value trap.
-        // ⚠️ Deliberately NOT momOptions(): that helper always emits a blank first
-        // option, and picking it here would write '' into a CHECK-constrained column and
-        // be refused by the database. The list is closed, so an off-list LEGACY value is
-        // appended instead of being swallowed — otherwise the select silently reports
-        // 'Open' while the row holds something else (the select-value trap).
-        STATUSES.concat(it.status && STATUSES.indexOf(it.status) < 0 ? [it.status] : [])
-          .map(function (o) {
-            return '<option' + (it.status === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>';
-          }).join('') +
-      '</select>',
-        // ⚠️ Once raised, the REGISTER owns the status — the same rule the PDF follows.
-        // Showing `mom_items.status` on a raised action would put a stale word in the
-        // record beside a register pill saying something else.
+      // ⚠️ ITEM #23 — the free status <select> is gone. An UNLINKED item now
+      // carries its own Update/Put On Hold/Close workflow (mirroring items
+      // #10–13 in Issues & Concerns, and its history table); a LINKED item's
+      // status is still shown as a plain pill reading the REGISTER's live
+      // value — the same rule the PDF already follows — since editing
+      // `mom_items.status` there would change a field nothing displays.
+      momFieldHTML('Status', 'il-c-status', momItemStatusCellHTML(it, ro),
         iss ? (iss.status || 'Open') : (it.status || 'Open')) +
       // Same roster as the register's Champion, so an action raised into an issue
       // carries a responsible the personal view can actually resolve.
@@ -1146,6 +2077,19 @@ window.MinutesOfMeeting = (function () {
         '<textarea class="pd-textarea il-mi" data-f="action_item" rows="2" placeholder="What will be done"' + d + '>' +
         Fmt.esc(actText) + '</textarea>',
         actText) +
+      // ⚠️ ITEM #23 — the hold reason / closure note stays visible on the card
+      // once the workflow panel that captured it has closed, read-only, the
+      // same way it is recorded in the history below. Read-only ALWAYS (not
+      // gated on `ro`): re-editing a settled narrative belongs to a fresh
+      // Put On Hold / Close, not to typing over the last one.
+      (!it.issue_id && it.status === 'On Hold' && it.hold_reason
+        ? momFieldHTML('Reason for Hold', 'il-c-holdnote',
+            '<div class="il-mi-val">' + Fmt.esc(it.hold_reason).replace(/\n/g, '<br>') + '</div>', it.hold_reason)
+        : '') +
+      (!it.issue_id && it.status === 'Closed' && it.closure_report
+        ? momFieldHTML('Closure note', 'il-c-closenote',
+            '<div class="il-mi-val">' + Fmt.esc(it.closure_report).replace(/\n/g, '<br>') + '</div>', it.closure_report)
+        : '') +
       // ---- the footer: the two things the PDF has no equivalent for ----------
       '<div class="il-mi-foot">' +
       '<div class="il-mi-f il-c-file"><label>File</label>' + momAttachCellHTML(it, ro) + '</div>' +
@@ -1175,8 +2119,16 @@ window.MinutesOfMeeting = (function () {
           ? '<button class="pd-btn pd-btn-sm il-mi-lesson">+ Capture lesson</button>'
           : '<span class="il-noedit" title="No lesson captured from this action">—</span>';
       })() + '</div>' +
+      // ⚠️ ITEM #23 — "all items must have an updates history", so this is
+      // offered on EVERY item, linked or not (only the status workflow above
+      // is unlinked-only). Loaded lazily on first open, not with the rest of
+      // the minute — most cards on most days are never inspected for history.
+      '<div class="il-mi-f il-c-hist"><label>History</label>' +
+        '<button class="pd-btn pd-btn-sm il-mi-histbtn" data-item="' + Fmt.esc(it.id) + '">' +
+          (_momItemHistOpen[it.id] ? 'Hide' : 'Show') + '</button></div>' +
       (ro ? '' : '<div class="il-mi-f il-c-del"><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this action">Remove</button></div>') +
       '</div>' +
+      (_momItemHistOpen[it.id] ? '<div class="il-mi-hist">' + itemHistoryHTML(it.id) + '</div>' : '') +
     '</div>';
   }
 
@@ -1485,6 +2437,20 @@ window.MinutesOfMeeting = (function () {
   }
 
   // -------------------------------------------------------------- persist -----
+  // The three attendee tiers, read straight off their picker's DOM — same
+  // pattern as reading il-mom-title etc., since the whole header (structured
+  // attendees included) is saved together by one "Save minutes" click.
+  // ⚠️ Returns null, not an empty {ids:[],text:''} object, when nothing was
+  // entered — a stored null reads honestly as "not recorded" (what the
+  // dashboard's attendance battery and the legacy-attendees fallback note
+  // both test for), where an empty object would read as "zero attendees".
+  function momAttendeesOf(key) {
+    var root = document.querySelector('[data-people="' + key + '"]');
+    if (!root) return undefined;   // the field wasn't rendered at all (e.g. read-only)
+    var ids = idsOf(root), text = (root.querySelector('.il-pp-free') || {}).value || '';
+    return (ids.length || text.trim()) ? { ids: ids, text: text.trim() } : null;
+  }
+
   async function momSaveHeader() {
     var mom = MOMS.find(function (x) { return x.id === _momSel; });
     if (!mom || !canEditMinute(mom)) return false;
@@ -1494,33 +2460,109 @@ window.MinutesOfMeeting = (function () {
       meeting_date: g('il-mom-date') || null,
       location: g('il-mom-loc').trim() || null,
       meeting_type: g('il-mom-type').trim() || null,
-      attendees: g('il-mom-att').trim() || null,
+      meeting_group: g('il-mom-group') || 'Internal',
+      venue: g('il-mom-venue').trim() || null,
+      meeting_link: g('il-mom-link').trim() || null,
+      recording_url: g('il-mom-rec').trim() || null,
       notes: g('il-mom-notes').trim() || null,
       schedule_activity_id: g('il-mom-act').trim() || null,
     };
+    // ⚠️ `undefined` (the field was not rendered — a read-only view) leaves
+    // the column untouched rather than blanking a value nobody had a chance
+    // to edit; `null` (rendered, left empty) is a real "nothing entered".
+    var req = momAttendeesOf('mom-att-req'), opt = momAttendeesOf('mom-att-opt'), act = momAttendeesOf('mom-att-act');
+    if (req !== undefined) payload.attendees_required = req;
+    if (opt !== undefined) payload.attendees_optional = opt;
+    if (act !== undefined) payload.attendees_actual = act;
     try {
       var u = await sb().from('meeting_minutes').update(payload).eq('id', mom.id);
       if (u.error) throw u.error;
       Object.assign(mom, payload);
       return true;
-    } catch (e) { UI.toast(e.message, 'error'); return false; }
+    } catch (e) {
+      // ⚠️ Tolerant of the un-run 2026-09-01 migration — the same "drop the
+      // columns it added and retry" pattern this app uses elsewhere, since
+      // all of these columns come from that one file: a live database
+      // either has all of them or none of them, never some.
+      if (/column|schema cache/i.test(e.message || '')) {
+        var stripped = Object.assign({}, payload);
+        ['meeting_group', 'venue', 'meeting_link', 'recording_url',
+         'attendees_required', 'attendees_optional', 'attendees_actual'].forEach(function (k) { delete stripped[k]; });
+        try {
+          var u2 = await sb().from('meeting_minutes').update(stripped).eq('id', mom.id);
+          if (u2.error) throw u2.error;
+          Object.assign(mom, stripped);
+          UI.toast('Saved — Group/Venue/Link/Recording/Attendees need ' +
+            'migrations/2026-09-01-mom-schedules-attendees-item-history.sql', 'warn');
+          return true;
+        } catch (e2) { UI.toast(e2.message || e2, 'error'); return false; }
+      }
+      UI.toast(e.message, 'error'); return false;
+    }
   }
 
   // Action-item edits save on change, one field at a time — a planner typing into a
   // table expects it to stick, and a single Save that silently covers the header AND
   // every row is how a half-typed action gets written.
-  async function momSaveItem(id, patch) {
+  // ⚠️ ITEM #23: EVERY save through here is logged — `histAction`/`histNote`
+  // default to a plain 'update' with no note (an ordinary field edit); the
+  // Put On Hold / Close confirm handlers below pass 'hold'/'close' plus the
+  // narrative typed into the reveal panel, so the history reads as a story
+  // rather than a diff.
+  async function momSaveItem(id, patch, histAction, histNote) {
     // ⚠️ The action item has no owner of its own — it belongs to its minute, so the
     // question is whether that MINUTE is mine. Same derivation as the policy.
     var it0 = MOM_ITEMS.find(function (x) { return x.id === id; });
     if (!it0 || !canEditMinute(MOMS.find(function (m) { return m.id === it0.mom_id; }))) return false;
+    var before = Object.assign({}, it0);   // snapshot BEFORE mutating — for the history row
     try {
       var u = await sb().from('mom_items').update(patch).eq('id', id);
       if (u.error) throw u.error;
       var it = MOM_ITEMS.find(function (x) { return x.id === id; });
       if (it) Object.assign(it, patch);
+      logItemHistory(id, it0.project_id || pid, histAction || 'update', before, histNote || null);
       return true;
     } catch (e) { UI.toast(e.message, 'error'); return false; }
+  }
+
+  // ⚠️ ITEM #23: Put On Hold requires a reason (mirroring the Issues module's
+  // confirmHoldIssue); Close requires a closure NOTE but a lesson is
+  // optional — the one deliberate difference from closing an Issue (item
+  // #13), which always records one. If a lesson IS typed, it is pushed
+  // straight into `lessons_learned`, linked back via `mom_item_id`, exactly
+  // the same table "+ Capture lesson" already writes into on this same card.
+  async function momItemWorkflowConfirm(itemId, action) {
+    var wf = _momItemWF[itemId]; if (!wf) return;
+    var it = MOM_ITEMS.find(function (x) { return x.id === itemId; });
+    if (!it) return;
+    var mom = MOMS.find(function (m) { return m.id === it.mom_id; });
+    if (!mom || !canEditMinute(mom) || momLocked(mom)) return;
+    if (action === 'hold') {
+      var note = (wf.note || '').trim();
+      if (!note) { UI.toast('A reason for the hold is required.', 'warn'); return; }
+      var okH = await momSaveItem(itemId, { status: 'On Hold', hold_reason: note }, 'hold', note);
+      if (okH) { delete _momItemWF[itemId]; UI.toast('Action put on hold', 'ok'); renderDetail(); }
+      return;
+    }
+    var report = (wf.report || '').trim(), lesson = (wf.lesson || '').trim();
+    if (!report) { UI.toast('A closure note is required.', 'warn'); return; }
+    var okC = await momSaveItem(itemId, { status: 'Closed', closure_report: report }, 'close', report);
+    if (!okC) return;
+    if (lesson) {
+      try {
+        var lrow = {
+          project_id: pid, mom_id: it.mom_id, mom_item_id: itemId,
+          department: (profile && profile.department) || null, category: null,
+          lesson: lesson, recommendation: null, date_captured: momToday(), created_by: UID,
+        };
+        var lins = await sb().from('lessons_learned').insert(lrow).select().single();
+        if (!lins.error) LESSONS.unshift(lins.data);
+        else UI.toast('Action closed, but the lesson could not be saved: ' + lins.error.message, 'warn');
+      } catch (e2) { UI.toast('Action closed, but the lesson could not be saved: ' + (e2.message || ''), 'warn'); }
+    }
+    delete _momItemWF[itemId];
+    UI.toast('Action closed' + (lesson ? ' — lesson pushed to the Lessons Learned report' : ''), 'ok');
+    renderDetail();
   }
 
   // ------------------------------------------------------------ attachments ---
@@ -1713,6 +2755,10 @@ window.MinutesOfMeeting = (function () {
           // Blank when the action text CAME from description (a legacy row), or the
           // sheet prints the same sentence twice under two different headings.
           momPdfField('Description', it.description !== actText ? it.description : '') +
+          // ⚠️ ITEM #23 — the same narrative the screen keeps visible after
+          // the workflow panel that captured it has closed.
+          (!it.issue_id && it.status === 'On Hold' && it.hold_reason ? momPdfField('Reason for Hold', it.hold_reason) : '') +
+          (!it.issue_id && it.status === 'Closed' && it.closure_report ? momPdfField('Closure note', it.closure_report) : '') +
           // Not a mom-app block: mom-app has no register to point at. Printed only when
           // the action has actually been raised, so it never adds an empty row.
           // Named, never embedded: the bucket is private, so a link in the sheet would
@@ -1752,7 +2798,26 @@ window.MinutesOfMeeting = (function () {
       // substance — dropping them to match a narrower app would export a worse record —
       // so they print in the same field blocks, above the actions.
       var head = '';
-      if (mom.attendees) head += momPdfField('Attendees', mom.attendees);
+      // ⚠️ ITEM #20 — the STRUCTURED attendee tiers print when any of them has
+      // been filled in; the old free-text `attendees` column is the fallback
+      // for a minute recorded before they existed, never printed alongside
+      // them (that would show the same names twice under two headings).
+      if (mom.attendees_required || mom.attendees_optional || mom.attendees_actual) {
+        if (mom.attendees_required) head += momPdfField('Required attendees', championText(mom.attendees_required.ids, mom.attendees_required.text));
+        if (mom.attendees_optional) head += momPdfField('Optional attendees', championText(mom.attendees_optional.ids, mom.attendees_optional.text));
+        if (mom.attendees_actual) head += momPdfField('Actual attendees', championText(mom.attendees_actual.ids, mom.attendees_actual.text));
+      } else if (mom.attendees) {
+        head += momPdfField('Attendees', mom.attendees);
+      }
+      // ⚠️ ITEM #21 — the group (Internal/External) and the free-text
+      // description print together, since neither alone is what the old
+      // single "Meeting type" line used to say.
+      if (mom.meeting_group || mom.meeting_type) {
+        head += momPdfField('Meeting', [mom.meeting_group, mom.meeting_type].filter(Boolean).join(' — '));
+      }
+      if (mom.venue) head += momPdfField('Venue', mom.venue);
+      if (mom.meeting_link) head += momPdfField('Meeting link', mom.meeting_link);
+      if (mom.recording_url) head += momPdfField('Recording', mom.recording_url);
       if (mom.schedule_activity_id) {
         head += momPdfField('Activity discussed', mom.schedule_activity_id +
           (MOM_ACT_NAME[mom.schedule_activity_id] ? ' · ' + MOM_ACT_NAME[mom.schedule_activity_id] : ''));
@@ -1875,7 +2940,9 @@ window.MinutesOfMeeting = (function () {
           // problem before anyone typed what it was.
           type: 'FYI', status: 'Open' }).select().single();
         if (ins.error) throw ins.error;
-        MOM_ITEMS.push(ins.data); renderDetail();
+        MOM_ITEMS.push(ins.data);
+        logItemHistory(ins.data.id, pid, 'create', null, null);
+        renderDetail();
       } catch (e) { UI.toast(e.message, 'error'); }
     };
 
@@ -1892,6 +2959,39 @@ window.MinutesOfMeeting = (function () {
         momSaveItem(id, patch);
       };
     });
+
+    // ---- item #23: per-item Put On Hold / Close workflow -------------------
+    host.querySelectorAll('.il-mi-wfstart').forEach(function (b) {
+      b.onclick = function () {
+        _momItemWF[b.dataset.item] = { mode: b.dataset.wfstart, note: '', report: '', lesson: '' };
+        renderDetail();
+      };
+    });
+    host.querySelectorAll('.il-mi-wfcancel').forEach(function (b) {
+      b.onclick = function () { delete _momItemWF[b.dataset.item]; renderDetail(); };
+    });
+    // ⚠️ Kept in the draft object on every keystroke (not read fresh at
+    // confirm time), the same reason the Issues module tracks `_issCloseDraft`
+    // — a re-render mid-typing (a live-collaboration update, another row's
+    // interaction) must not throw away a half-written narrative.
+    host.querySelectorAll('.il-mi-wfpanel textarea[data-wf]').forEach(function (t) {
+      t.oninput = function () {
+        var wf = _momItemWF[t.dataset.item]; if (!wf) return;
+        wf[t.dataset.wf] = t.value;
+      };
+    });
+    host.querySelectorAll('.il-mi-wfconfirm').forEach(function (b) {
+      b.onclick = function () { momItemWorkflowConfirm(b.dataset.item, b.dataset.wfaction); };
+    });
+    host.querySelectorAll('.il-mi-histbtn').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.dataset.item;
+        _momItemHistOpen[id] = !_momItemHistOpen[id];
+        if (_momItemHistOpen[id] && ITEM_HISTORY[id] === undefined) loadItemHistory(id);
+        renderDetail();
+      };
+    });
+
     // ⚠️ ONE hidden <input type=file> reused by every row, not one per row: a table of
     // 40 actions would otherwise carry 40 file inputs, and the row that owns the
     // pending pick is tracked instead.

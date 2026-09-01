@@ -194,6 +194,7 @@ migration has not been run.
   substantial separate body of work (new tables for meeting schedules/frequency, new calendar/
   right-pane/agenda UI) belonging in `modules/minutes-of-meeting/`, deliberately deferred to its own
   pass rather than compressed into this one.
+  ⚠️ **DONE 2026-09-01 — see that module's own CLAUDE.md.**
 - **Item #24** (download as HTML / PDF / PPTX for Issues, Lessons, and Minutes) — Minutes of Meeting
   already has a working PDF export from an earlier session (see that module's history below); Issues
   and Lessons have no export at all yet, and no module has an HTML or PPTX export. Not started.
