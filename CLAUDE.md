@@ -84,6 +84,53 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (f) — The two reconstruction Edge Functions deployed
+
+Owner: *"deploy the two edge functions"*. Both are **new deploys, not overwrites** — a
+`functions list` before touching anything showed the project holding five functions
+(`sync-wpm`, `sync-eng`, `push-need-by`, `push-packages`, `push-vendor-perf`) and neither
+reconstruction function among them, so there was no previous version to lose. No code change, no
+`MODULE_V` bump.
+
+```
+supabase functions deploy submit-reconstruction --project-ref bgupuqnkqhixpuctyder
+supabase functions deploy reconstruction-webhook --no-verify-jwt --project-ref bgupuqnkqhixpuctyder
+```
+
+⚠️ **The `--no-verify-jwt` flag on the webhook is the one thing that had to be right.** RunPod holds
+no Supabase session, so a webhook deployed under the platform's default JWT check would have its
+callback rejected at the gateway before ever reaching the per-request token check that is its actual
+security. `submit-reconstruction` keeps the default check ON, matching all five existing functions.
+Confirmed in the platform's own metadata after deploying: `verify_jwt` **true** on submit,
+**false** on the webhook — the only `false` in the project.
+
+**Smoke-tested live, three probes, all writing nothing:**
+- Webhook POSTed with no query params → **400** *"request_id and token query params are required"*,
+  which is OUR code answering. This is the real proof `--no-verify-jwt` took effect end to end
+  rather than merely being recorded in metadata — under the default check the gateway would have
+  answered 401 first and our handler would never have run.
+- Webhook POSTed with a nonexistent request id → **404** before any write.
+- `submit-reconstruction` POSTed with no Authorization header → **401
+  `UNAUTHORIZED_NO_AUTH_HEADER`** from the platform gate, so JWT verification is genuinely on.
+
+⚠️ **NOT proven by these probes: the token comparison itself.** Probe 2 returned 404 on the row
+lookup, which sits BEFORE the `webhook_token !== token` check — so the branch that actually rejects a
+wrong token has still never executed. It needs a real queued request to exercise, which needs RunPod.
+
+⚠️ **`RUNPOD_API_KEY` and `RUNPOD_ENDPOINT_ID` are NOT set** — confirmed against `secrets list`,
+which holds twelve secrets and neither of these. `submit-reconstruction` therefore returns a clean
+**500 "RUNPOD_API_KEY / RUNPOD_ENDPOINT_ID not configured"** on the first line of its handler, before
+authorizing anyone or signing anything. That is the designed pre-flight failure, not a deploy defect.
+The secrets are the owner's to set — this environment does not handle API keys — and the endpoint
+they would point at **still does not exist**: no RunPod account, no serverless endpoint, and
+`services/reconstruction-worker/` is written-but-never-built (no Docker and no GPU here). Deploying
+these two functions closes prerequisite (b) of the three named in the 2026-08-29 reconstruction
+entry; (a) the RunPod endpoint remains open, and (c) the migration is now done.
+
+**Net effect for a user today:** unchanged. The 3D tab still shows an empty approval queue. What
+changed is that the chain is now blocked on one external account rather than on three things.
+
+
 ### 2026-09-01 (e) — All 14 migrations confirmed applied against the regenerated verifier
 
 Owner re-ran `VERIFY-schema.sql` after its regeneration: **no rows returned** again, this time

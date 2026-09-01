@@ -2,6 +2,28 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Reconstruction prerequisites: the migration and both Edge Functions are now done (2026-09-01)
+
+Updates the standing "NOT verified, and this is the real gap" caveat on the 3D-reconstruction entry
+below. Of the three prerequisites named there:
+
+- **(a) a RunPod account + deployed serverless endpoint — STILL OPEN.** Owner-only; nothing here
+  changes it. `services/reconstruction-worker/` remains written-but-never-built.
+- **(b) the two Edge Functions deployed — DONE.** `submit-reconstruction` (JWT check on) and
+  `reconstruction-webhook` (`--no-verify-jwt`, the deliberate exception) are both ACTIVE at version 1
+  on `bgupuqnkqhixpuctyder`. Live probes: the webhook answers its own 400 with no JWT, proving the
+  flag took effect; submit answers 401 at the platform gate, proving its check is on.
+  ⚠️ `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` are **not set**, so submit fails pre-flight with a clean
+  500 rather than reaching anyone's money.
+- **(c) the migration run — DONE.** `2026-08-29-reconstruction-requests.sql` applied 2026-09-01 and
+  confirmed by `VERIFY-schema.sql` returning no rows against its regenerated 342-object list.
+
+⚠️ **The end-to-end chain is still unexercised.** insert→approve→RunPod→webhook→viewer has never run,
+the webhook's token-comparison branch has never executed (a probe with a nonexistent id returns 404
+on the row lookup, which sits before the token check), and the 3D tab still correctly shows an empty
+approval queue. The first real Approve click remains the actual integration test.
+
+
 ## Seventh feedback round: 11 items — Plan-view clustering/thumbnails, the stale "3 of 3" count, Stack view's look, and a Presentation-pane rework (2026-08-30)
 
 Owner sent this batch mid-session, with 4 screenshots, while the sixth-round batch above was still
