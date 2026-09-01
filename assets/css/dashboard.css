@@ -26,6 +26,13 @@
   --pd-ok: #1f8f4e;
   --pd-warn: #C77700;
   --pd-bad: #C42127;
+  /* ⚠️ Destructive text on a CARD surface, paired per theme. Brand --pd-red is
+     an accent, not a text colour at this size: measured on the account menu it
+     is 4.12:1 on white and 3.40:1 on the dark card, both under AA. --pd-bad
+     cannot serve both either (it remaps to #EF5350 on dark = 4.02). This pair
+     measures 5.84 light / 6.14 dark. Same trap, same fix, as the contracts
+     `claim` mark (2026-08-25) and the issues aging value (2026-08-28). */
+  --pd-danger-text: #C42127;
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --pd-radius: 4px;
@@ -199,12 +206,28 @@ a:hover { text-decoration: underline; }
 .pd-usermenu-head { padding: 14px 16px; border-bottom: 1px solid var(--pd-line); }
 .pd-usermenu-name { font-size: 13px; font-weight: 600; color: var(--pd-ink); }
 .pd-usermenu-role { font-size: 11px; color: var(--pd-muted); margin-top: 2px; text-transform: capitalize; }
+/* System destinations (Projects / My Work / Admin). These live in the account
+   menu because it is the only chrome present on every page — see the note in
+   ui.js renderUserBar. Normal ink, so Sign out keeps red to itself. */
+.pd-usermenu-links { border-bottom: 1px solid var(--pd-line); padding: 4px 0; }
+.pd-usermenu-link {
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+  font-size: 13px; font-weight: 500; color: var(--pd-ink);
+  text-decoration: none; cursor: pointer;
+}
+.pd-usermenu-link:hover { background: var(--pd-bg); }
+.pd-usermenu-link svg { flex: none; opacity: .7; }
 .pd-usermenu-signout {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px;
-  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--pd-red);
+  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--pd-danger-text);
   background: none; border: none; cursor: pointer; text-align: left;
 }
 .pd-usermenu-signout:hover { background: var(--pd-bg); }
+/* Touch minimum — the account menu is the main nav on a phone now. */
+@media (max-width: 700px) {
+  .pd-usermenu-link { min-height: 44px; }
+  .pd-usermenu-signout { min-height: 44px; }
+}
 .pd-main { padding: 22px; }
 
 /* ---- Cards ---- */
@@ -440,6 +463,7 @@ html.pd-dark {
   --pd-red-light: #3D1A19;            /* red tint on dark */
   --pd-red-mid: #6E2A25;
   --pd-ok: #34D27B; --pd-warn: #E0A008; --pd-bad: #EF5350;
+  --pd-danger-text: #FF8A80;          /* see the light-mode note: 6.14:1 here */
   --pd-shadow: 0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4);
   background: #1C1C1C;
 }

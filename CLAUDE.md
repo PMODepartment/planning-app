@@ -84,6 +84,73 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
+
+Owner, after running both RCM migrations: *"the user cannot access any admin features like add
+project and user management."*
+
+**⚠️ NOTHING WAS WRONG WITH PERMISSIONS, WHICH IS WHY IT WAS WORTH TRACING RATHER THAN GUESSING.**
+All six shell pages compute `isAdmin` from `profile.role` identically and correctly, `admin.html` is
+still `requireAdmin`-gated, and neither 2026-09-01 migration touches `users`, `projects`, `is_admin()`
+or any RLS — they add columns and four storage policies scoped to `bucket_id = 'stakeholder-photos'`.
+**The links had simply stopped existing.** Mapping the navigation graph:
+
+- `renderNav`'s **`'project'`** branch — dashboard.html, modules.html and every module page, i.e.
+  where a planner spends the entire day — emits **only Dashboard + the module list**. No Admin, no
+  Projects, no Portfolio (the Portfolio section was removed at the owner's request on 2026-08-31).
+- **`home.html`, the landing page, has no sidebar at all** since its chrome was stripped (2026-08-30 (h)
+  / 2026-08-31), and offers exactly two destinations: dashboard.html and portfolio-overview.
+- The account menu carried **name, role and Sign out. Nothing else.**
+
+So the only surviving route to "+ Add project" or user management was: project dropdown → its
+**Portfolio** row → portfolio-overview → *its* sidebar → Projects/Admin. That control reads as
+"switch project", not "leave the project", so in practice both were unreachable. Each individual
+change was reasonable; nobody re-walked the graph after the last one.
+
+**Fix: the account menu carries the system destinations** — Projects · My Work · **Admin** (role-gated)
+— because it is the one piece of chrome rendered on *every* page. ⚠️ **This does NOT reinstate the
+Portfolio nav section the owner removed**: these are account/system destinations, not portfolio
+navigation. ⚠️ **Admin is gated inside `renderUserBar` on `profile.role`, not on a flag passed by the
+caller** — 20 call sites would have to pass it, several sit in modules owned by other developers, and
+a half-applied gate is a menu that offers Admin to a viewer on some pages and hides it from an admin
+on others. It is an affordance; `requireAdmin` and the DB remain the boundary.
+
+**⚠️ A SECOND, INDEPENDENT DEFECT THAT WOULD HAVE OUTLIVED THE FIRST FIX.** `loadProfile` returned the
+`sessionStorage` profile cache **unconditionally and never revalidated it**. sessionStorage lives until
+the tab closes and every page reads through this — so an admin promoting someone to admin, or
+approving a pending user, **did nothing visible in that person's open tab**, which looks exactly like
+"the app will not give me my access". The cache is still returned immediately (it is what keeps first
+paint fast) but is now checked against the server in the background. ⚠️ Only **role** and **status**
+interrupt the page; any other edit just corrects the cache. ⚠️ A transient network error **keeps the
+cache and never signs the user out**. ⚠️ The reload guard is keyed on the **observed state**, not
+once-ever, so a second legitimate change still applies while a reload can never loop.
+
+**⚠️ Pre-existing WCAG failure found by measuring, fixed while in the same component:** the account
+menu's **Sign out** was brand red on the card — **4.12:1 light / 3.40:1 dark**, both under AA. Byte-
+identical to HEAD, so not introduced here — and *the same numbers* as the contracts-claims `claim`
+mark (2026-08-25). ⚠️ `--pd-bad` cannot serve both themes either (it remaps to `#EF5350` = **4.02** on
+dark). New paired `--pd-danger-text` (#C42127 / #FF8A80) measures **5.84 light / 6.14 dark**, and Sign
+out stays visually distinct from the links. **Brand red is not a text colour at this size** — that is
+now four separate occasions.
+
+**⚠️ Also fixed: a shared asset was being served at two versions.** `modules/minutes-of-meeting` was
+still on `ui.js?v=20260830e` while the other 19 pages were on `20260831c` — so that one page would
+have kept serving the **old account menu** and stayed locked out even after this fix. The suite now
+asserts one version per shared asset app-wide.
+
+**Verified: 163 checks** (146 → 163), and the menu **driven in a real browser** against the shipped
+`ui.js` + `dashboard.css`: a super_admin gets Projects / My Work / **Admin**, a viewer gets the first
+two and **no Admin**, all with icons; from a module page the hrefs resolve — by the browser's own URL
+resolution — to `/projects.html`, `/my-work.html`, `/admin.html`; contrast **16.30 light / 12.22 dark**
+on the links and **5.84 / 6.14** on Sign out; no console errors.
+
+⚠️ **Not verified signed in** — no real session was driven, so the background revalidation has never
+actually observed a role change against PostgREST. ⚠️ **No geometry measured** (compositor stalled).
+
+`ui.js` / `auth.js` / `dashboard.css` → **`?v=20260901b`** across all 28 pages.
+⚠️ **Users must reload once** to pick up the new `ui.js`; a tab open from before still shows the old
+menu.
+
 ### 2026-09-01 (m) — Both registers rebuilt as EPC Risk & Control Matrices; the transcription verified against the workbooks themselves
 
 Owner: make the Stakeholder Map and the Risk Register *"more in-depth"*, each following its OPS

@@ -30,6 +30,35 @@
     if (!mount || !profile) return;
     var label = profile.name || profile.email || 'U';
     var initials = label.trim().split(/\s+/).map(function (n) { return n[0]; }).join('').slice(0, 2).toUpperCase();
+
+    // ⚠️ THE ACCOUNT MENU CARRIES THE SYSTEM DESTINATIONS, and it has to, because
+    // it is the ONLY chrome that renders on every page. renderNav's 'project'
+    // branch (dashboard.html, modules.html and every module page — i.e. where a
+    // planner spends the whole day) deliberately shows only Dashboard + modules
+    // since 2026-08-31, and home.html has no sidebar at all. That left Projects
+    // and Admin reachable ONLY via the project dropdown's Portfolio row →
+    // portfolio-overview → its sidebar, which reads as "switch project", not
+    // "leave the project" — so in practice "+ Add project" and user management
+    // became unreachable. Putting them here fixes all 20 pages from one place
+    // and does NOT reinstate the Portfolio nav section the owner removed:
+    // these are account/system destinations, not portfolio navigation.
+    //
+    // ⚠️ Admin is gated on `profile.role` HERE rather than on a flag passed by
+    // the caller. 20 call sites would have to pass it, several are in modules
+    // owned by other developers, and a half-applied gate is a menu that offers
+    // Admin to a viewer on some pages and hides it from an admin on others.
+    // admin.html is `requireAdmin`-gated and the DB enforces it regardless, so
+    // this is an affordance, never the security boundary.
+    var base = appBase();
+    var isAdmin = ['admin', 'super_admin'].indexOf(profile.role) !== -1;
+    function mIco(n) { return window.Icons ? Icons.svg(n, 16) : ''; }
+    var links =
+      '<a class="pd-usermenu-link" href="' + base + 'projects.html">' + mIco('grid') + 'Projects</a>' +
+      '<a class="pd-usermenu-link" href="' + base + 'my-work.html">' + mIco('clipboard') + 'My Work</a>' +
+      (isAdmin
+        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('settings') + 'Admin</a>'
+        : '');
+
     mount.innerHTML =
       '<div class="pd-user">' +
         '<button class="pd-avatar" id="pd-avatar-btn" type="button" title="' + esc(label) + '" aria-label="Account menu">' + esc(initials) + '</button>' +
@@ -38,6 +67,7 @@
             '<div class="pd-usermenu-name">' + esc(label) + '</div>' +
             '<div class="pd-usermenu-role">' + esc((profile.role || '').replace(/_/g, ' ')) + '</div>' +
           '</div>' +
+          '<div class="pd-usermenu-links">' + links + '</div>' +
           '<button class="pd-usermenu-signout" id="pd-signout" type="button">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
             '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>' +
