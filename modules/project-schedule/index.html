@@ -2624,6 +2624,7 @@
           <button class="pd-btn" id="ps-wbs-fromproj" title="Copy the WBS structure from another project"><span data-ico="download" data-ico-size="15"></span> From project…</button>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
+          <button class="pd-btn" id="ps-wbs-reset" title="Drop every custom / imported branch and rebuild the tree from the schedule's own WBS codes — the standard skeleton is kept"><span data-ico="refresh" data-ico-size="15"></span> Reset WBS…</button>
           <span class="ps-tb-div"></span>
           <!-- Design Development is MIRRORED from the Engineering App (drawing register +
                material submittal log). This pulls a fresh roll-up through the sync-eng
@@ -19039,6 +19040,75 @@
     _clearPhaseMemo();   // phase / trade / scope / package are all derived from the node
     return n;
   }
+  // ---- Reset WBS tree -------------------------------------------------------------------------
+  // Owner request: *"If we can have a clear WBS feature here to reset to default."* It exists because
+  // a tree can end up in a state no amount of editing recovers from — the adoption regression above
+  // left 1,584 of 1,623 nodes at the top level, and a re-adopt on top of THAT is worse, not better:
+  // the strays' computed codes ("1"…"1632") collide with the real depth-1 codes, so parents resolve
+  // onto garbage. The tree has to go before it can be rebuilt.
+  //
+  // ⚠️ SAFE BECAUSE THE DOTTED CODES ARE THE SOURCE OF TRUTH, NOT THE TREE. Every activity and
+  // summary row keeps its own `wbs` string; the tree is DERIVED from those. So dropping the nodes
+  // loses nothing that cannot be rebuilt, and "Rebuild" simply runs the same adoption an import does.
+  // ⚠️ `project_schedule.wbs_node_id` is a plain uuid column with NO foreign key (checked against
+  // supabase-build.sql — only progress_photos has one, `on delete set null`). Deleting nodes
+  // therefore cannot cascade into the schedule; it leaves dangling ids, which is what the update
+  // below clears.
+  async function wbsResetTree() {
+    if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
+    if (!canWrite || window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    var custom = (WBS_NODES || []).filter(function (n) { return !n.is_locked; }).length;
+    var legacyN = rows.filter(function (r) { return isWbs(r) && r.wbs; }).length;
+    var m = UI.modal('<h2 style="margin-top:0;">Reset WBS tree</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">Drops all <strong>' + custom +
+      '</strong> custom / imported branches. The standard <strong>Milestones · Initiation · Planning · Execution · Closeout</strong> ' +
+      'skeleton is kept — it is locked and is never deleted.</p>' +
+      '<p style="font-size:12.5px;margin:0 0 12px;">No activity is deleted either way. Every row keeps its own WBS code, ' +
+      'which is what the tree is built from — so this is reversible by rebuilding.</p>' +
+      '<div style="display:flex;flex-direction:column;gap:8px;">' +
+        '<button class="pd-btn pd-btn-primary" id="ps-wbsr-rebuild" style="text-align:left;padding:10px 12px;">' +
+          '<strong>Reset and rebuild from the schedule</strong><br>' +
+          '<span style="font-weight:400;font-size:12px;opacity:.85;">Recommended. Rebuilds the tree from the ' + legacyN +
+          ' WBS codes already in the schedule, then re-attaches the activities. This is what an import does.</span></button>' +
+        '<button class="pd-btn" id="ps-wbsr-bare" style="text-align:left;padding:10px 12px;">' +
+          '<strong>Reset to the standard skeleton only</strong><br>' +
+          '<span style="font-weight:400;font-size:12px;opacity:.85;">Leaves just the five locked phases. The schedule keeps ' +
+          'its codes and still groups by them, but nothing is attached to a tree until you rebuild.</span></button>' +
+      '</div>' +
+      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-wbsr-x">Cancel</button></div>');
+    m.el.querySelector('#ps-wbsr-x').onclick = m.close;
+    m.el.querySelector('#ps-wbsr-rebuild').onclick = function () { m.close(); _wbsResetGo(true); };
+    m.el.querySelector('#ps-wbsr-bare').onclick = function () { m.close(); _wbsResetGo(false); };
+  }
+  async function _wbsResetGo(rebuild_) {
+    showLoading('Clearing the WBS tree…');
+    var werr = await _clearWbsTree();
+    if (werr) { hideLoading(); UI.toast('Could not clear the WBS tree: ' + werr.message, 'error'); return; }
+    // Clear the now-dangling links. ⚠️ Expressed as "everything except the surviving locked nodes"
+    // rather than as a list of the deleted ids: the locked set is 5-8 rows, so this is ONE request,
+    // where an id list would be 1,584 (Avesta) or 12,459 (Strevi) ids in batches of 200 — the request
+    // storm this module keeps re-learning to avoid.
+    var keep = (WBS_NODES || []).map(function (n) { return n.id; });
+    try {
+      var q = sb().from(TABLE).update({ wbs_node_id: null }).eq('project_id', pid).not('wbs_node_id', 'is', null);
+      if (keep.length) q = q.not('wbs_node_id', 'in', '(' + keep.join(',') + ')');
+      var ures = await q;
+      if (ures.error) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it: ' + ures.error.message, 'error'); return; }
+    } catch (e) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it.', 'error'); return; }
+    var live = {}; keep.forEach(function (id) { live[id] = 1; });
+    rows.forEach(function (r) { if (r.wbs_node_id && !live[r.wbs_node_id]) r.wbs_node_id = null; });
+    _clearPhaseMemo();
+    if (!rebuild_) {
+      hideLoading(); collapsed = {}; await load();
+      UI.toast('WBS tree reset to the standard skeleton. Use “Adopt existing WBS” to rebuild it from the schedule.', 'success');
+      return;
+    }
+    setLoading('Rebuilding the WBS tree…');
+    var n = await wbsAdopt(true);
+    hideLoading(); collapsed = {}; await load();
+    UI.toast(n ? ('WBS tree rebuilt — ' + n.toLocaleString() + ' branches from the schedule’s own codes.')
+               : 'WBS tree reset. Nothing in the schedule carried a WBS code to rebuild from.', n ? 'success' : 'warn');
+  }
   // Auto-adopt after an import (tolerant — never blocks the import if the wbs_nodes table/write fails).
   /* After an import has adopted its WBS tree, move that tree UNDER the package's own
      root so the grid shows "PKG-2 — Towers 2-7" as a top-level row with the imported
@@ -28851,6 +28921,7 @@
     };
     document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
     document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
+    document.getElementById('ps-wbs-reset').onclick = wbsResetTree;
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
     var _pb = document.getElementById('ps-sync-prc'); if (_pb) _pb.onclick = syncProcurementApp;
     var _nb = document.getElementById('ps-push-needby'); if (_nb) _nb.onclick = pushNeedByToWpm;
