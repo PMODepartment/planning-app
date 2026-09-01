@@ -871,6 +871,28 @@ body { overflow-x: clip; }
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-psel,
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; max-width: none; }
 .pd-topbar.pd-tb-split .pd-tb-main #pd-theme-toggle { margin-left: auto; }
+/* ⚠️ #user-bar carries `margin-left:auto` of its own (line ~173, for the pages that are NOT
+   topbar-split). Inside the split topbar that made TWO auto margins in one flex row, and two
+   auto margins share the free space BETWEEN them — which is why the theme button sat stranded
+   in the middle of the bar with the avatar far to its right. The toggle's auto margin is the
+   one that belongs: it pushes the whole account cluster right as a unit. */
+.pd-topbar.pd-tb-split .pd-tb-main #user-bar { margin-left: 0; }
+
+/* ⚠️ ONE project-selector look for every page. Modules each declared their own
+   (`.il-project`, `.mom-project`, …) while dashboard.html's `.dh-project` declared NOTHING, so
+   the dashboard fell back to the full-size `.pd-select` — a visibly bigger, heavier control than
+   the identical picker on every module. Styling the `-projctx` wrapper's select directly covers
+   every page including ones added later, which is what "consistent" has to mean here. The module
+   rules still load after this file and set the same values, so nothing changes for them. */
+.pd-topbar [class$="-projctx"] > .pd-select {
+  max-width: 230px; min-width: 120px; height: 34px;
+  font-weight: 600; font-size: 13px;
+  background: transparent; border-color: transparent;
+}
+.pd-topbar [class$="-projctx"] > .pd-select:hover,
+.pd-topbar [class$="-projctx"] > .pd-select:focus {
+  background: var(--pd-card); border-color: var(--pd-line);
+}
 
 /* ---- Below the topbar: the module's own icon+title, tabs, and tools ---- */
 .pd-modulebar {

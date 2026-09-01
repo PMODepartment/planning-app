@@ -84,6 +84,92 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (i) — Dashboard round 2: a REGRESSION I shipped, the chips removed, MoM/Issues expanded, topbar made consistent
+
+Owner ran the two PR #35 migrations, then sent a screenshot with five items. Four are done here;
+the S-Curve panel (item 2) is deliberately not, and is explained at the bottom.
+
+**⚠️ ITEM 1 WAS MY OWN REGRESSION, SHIPPED IN ENTRY (h), AND THE TEST SUITE SAID IT WAS FINE.**
+The Project Schedule & Milestones panel rendered as scrambled two-per-row nonsense because
+`dashboard.html` held **two** `renderProgram` declarations — the splice that installed the new one
+ran with its insertion marker BEFORE its cut region, so instead of replacing the old function it
+duplicated a 188-line block. JS hoisting means the LAST declaration wins, so the **old**
+`renderProgram` ran: it emits 3 cells per trade into the new 4-column grid, and the rows wrapped.
+- ⚠️ **The suite passed 45/45 against code the browser never executed.** Its `slice()` helper finds
+  functions with `indexOf` — the FIRST match — so it tested the new function while the second one
+  shipped. A test that cannot tell which of two definitions runs is not testing the product.
+- **Fixed twice over:** the duplicate block is gone, and the harness now refuses to run unless every
+  named function is defined **exactly once** AND every deliberately-removed function is absent. The
+  second guard was added after the same session's *second* splice bug silently swallowed
+  `renderPerf` whole while deleting the function above it — and the suite still went green, because
+  nothing asserted the function had survived. Both guards are `process.exit(2)`, before any test.
+
+**2. S-Curve — the metric I added in (h) was reading a table nothing writes.** Owner: *"the S-Curve
+module should in itself be derived from the project schedule"* — correct, and that is exactly what
+the module does. My `series` metric over the **`s_curve` table** was therefore dead on arrival: no
+code anywhere writes that table, so the card read "No curve published" on every project and always
+would have. The metric is **removed**, the now-unused `series` aggregation is **removed from db.js**
+with it, and the small S-Curve card is off the performance row (which is 4 cards now).
+
+**3. Decisions chips removed** — markup, `renderStatus()` (which by then existed only to draw them),
+and their CSS. `.pd-stat-warn` was kept out of that block: the performance cards and both list
+panels still use it.
+
+**4. Minutes of Meeting and Issues & Concerns expanded, and a real escaping bug fixed.**
+- Both panels gained a fourth figure and a capped list of the four most recent rows, so they SHOW
+  what is happening rather than only counting it: MoM adds recurring-series count, the meeting-date
+  span, and per-row group/Draft tags; Issues adds on-hold, and **open** Critical/High counts.
+- ⚠️ **Severity is counted only for OPEN rows.** A register full of CLOSED criticals is history, and
+  including them would make a well-run project look like a burning one.
+- ⚠️ **`Issues &amp; Concerns` was rendering literally.** `vizHead()` escapes its title, so a
+  pre-escaped `&amp;` was escaped a second time into `&amp;amp;`. Passing a plain `&` fixes it.
+- ⚠️ **The SAME bug, found by the suite in the new code minutes later:** the MoM date span was built
+  as `date + ' &rarr; ' + date` and then wrapped in `Fmt.esc()`, so the arrow would have shipped as
+  a literal `&rarr;`. Escape the DATES, not the assembled markup. This one was caught before it
+  reached the owner only because a test asserted on the rendered arrow.
+
+**5. Topbar consistency — both halves were real CSS bugs, and both are fixed app-wide, not on the
+dashboard only.**
+- ⚠️ **Two `margin-left:auto` in one flex row.** `#user-bar` carries one (for non-split pages) and
+  `#pd-theme-toggle` carries another inside the split topbar. Two auto margins SHARE the free space
+  between them, which is precisely why the theme button sat stranded mid-bar with the avatar far to
+  its right. `#user-bar`'s is now zeroed inside the split topbar, so the toggle's auto margin moves
+  the whole account cluster right as one unit.
+- ⚠️ **`.dh-project` had no CSS at all.** Every module declares its own picker styling
+  (`.il-project`, and so on) while dashboard.html declared none, so it fell back to the full-size
+  `.pd-select` — a visibly larger, heavier control than the identical picker on every module. Rather
+  than adding a 12th copy, one rule now styles `[class$="-projctx"] > .pd-select` for every page,
+  including pages added later. The module rules load after this file and set the same values, so
+  nothing changes for them.
+
+**Verified.** **48 checks** driving the shipped functions in a Node `vm` sandbox, plus the two
+fatal structural guards above. **Measured live** against the real stylesheet: 4 performance cards
+reading 50% / 42% / 0.84 / 1.05; the programme grid at `126px 132px 763px 42px` with **24 children
+for 6 trades — exactly 4 per row, which is the regression check**; **0 of 6** percentage labels
+clipped; 6 date cells present; the Issues title reading `Issues & Concerns`; the MoM subtitle
+reading `10 meetings · Jun 2, 2026 → Aug 28, 2026`; no console errors, no page scroll.
+⚠️ **Three of the run's failures were the TEST's fault and one was the CODE's** — the two loose
+regexes were corrected, the double-escape was fixed in the product. Said plainly because the split
+matters: a suite that is always "right" about its own assertions is not being read.
+
+⚠️ **NOT verified signed in, and no screenshot** — the dashboard redirects to login, this
+environment holds no credentials, and the Browser pane again would not composite frames.
+
+⚠️ **ITEM 2 IS NOT DONE, and was not attempted half-way on purpose.** The owner wants the S-Curve as
+its own panel: baseline / actual / forecast curves, hoverable, over a scrollable period table. The
+S-Curve module computes exactly that from `project_schedule` — via ~150 lines covering two bases
+(cost-weighted and duration-weighted), per-activity spread curves (`cost_curve`: linear /
+front / back / bell) and an SPI-stretched forecast finish. **Writing a second copy of that on the
+dashboard is how the two screens would come to disagree about the same project's curve** — the
+failure this repo has documented repeatedly. The correct move is to extract that engine into a
+shared `assets/js/scurve.js` used by BOTH, which is a real change to the S-Curve module and belongs
+in its own commit rather than bolted onto this one. Until then the dashboard shows **no** S-curve,
+which is honest: the card it replaced was reading an empty table.
+
+`config.js?v=` / `db.js?v=` → `20260901b`, `dashboard.css?v=` → `20260901a` (28 files; this also
+unified `modules/minutes-of-meeting/index.html`, which was still pinned to a stale `20260830e`).
+
+
 ### 2026-09-01 (h) — Dashboard rebuilt: the two KPI rows replaced by a performance row, EVM/Claims/Matrix/Packages panels dropped, MoM + Issues in their place
 
 Owner sent a screenshot with a red rectangle and eight numbered items. The rectangle enclosed

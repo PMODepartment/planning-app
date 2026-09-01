@@ -53,15 +53,28 @@ window.APP_CONFIG = {
     // kept as light cross-module reads, not a shared editor — see each
     // module's own CLAUDE.md.
     { key: 'minutes-of-meeting', name: 'Minutes of Meeting',                   path: 'modules/minutes-of-meeting/index.html', icon: 'calendar',  enabled: true, dash: { table: 'meeting_minutes', unit: 'meetings', attention: { column: 'is_distributed', values: [false], label: 'draft' },
+      recent: { orderBy: 'meeting_date', limit: 4, columns: ['title', 'meeting_date', 'venue', 'meeting_group', 'is_distributed'] },
       metrics: [
-        { key: 'draft',  agg: 'countWhere', column: 'is_distributed', values: [false] },
-        { key: 'latest', agg: 'max', column: 'meeting_date' }
+        { key: 'draft',    agg: 'countWhere', column: 'is_distributed', values: [false] },
+        { key: 'latest',   agg: 'max', column: 'meeting_date' },
+        { key: 'earliest', agg: 'min', column: 'meeting_date' },
+        // Recurring series: a minute created off a schedule carries the schedule's id.
+        { key: 'series',   agg: 'countWhere', column: 'schedule_id' }
       ] } },
     { key: 'issues-lessons',    name: 'Issues, Concerns & Lessons Learned',    path: 'modules/issues-lessons/index.html',    icon: 'clipboard',  enabled: true, dash: { table: 'issues_lessons', unit: 'entries', attention: { column: 'status', values: ['Open', 'On Hold'], label: 'open' },
+      recent: { orderBy: 'date_raised', limit: 4, columns: ['title', 'date_raised', 'status', 'severity', 'department'] },
       metrics: [
-        { key: 'open',   agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] },
-        { key: 'closed', agg: 'countWhere', column: 'status', values: ['Closed'] },
-        { key: 'latest', agg: 'max', column: 'date_raised' }
+        { key: 'open',     agg: 'countWhere', column: 'status', values: ['Open', 'On Hold'] },
+        { key: 'onHold',   agg: 'countWhere', column: 'status', values: ['On Hold'] },
+        { key: 'closed',   agg: 'countWhere', column: 'status', values: ['Closed'] },
+        { key: 'latest',   agg: 'max', column: 'date_raised' },
+        // ⚠️ Severity is counted only for rows that are still OPEN. A register's worth of CLOSED
+        // criticals is history, not a call to action, and adding them would make a well-run
+        // project look like a burning one.
+        { key: 'critical', agg: 'countWhere', column: 'severity', values: ['Critical'],
+          where: [{ column: 'status', values: ['Open', 'On Hold'] }] },
+        { key: 'high',     agg: 'countWhere', column: 'severity', values: ['High'],
+          where: [{ column: 'status', values: ['Open', 'On Hold'] }] }
       ] } },
     { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
       metrics: [
@@ -149,10 +162,13 @@ window.APP_CONFIG = {
         { key: 'program', agg: 'groupSpan', group: 'work_type', from: 'start_date', to: 'end_date',
           pct: 'percent_complete', weight: 'duration_days', doneCol: 'status', doneValues: ['Completed'] }
       ] } },
-    { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points',
-      // The published curve, ordered by period. The engine is told which column is the x axis and
-      // which are the y series — it is not told that this module is about money or time.
-      metrics: [ { key: 'curve', agg: 'series', x: 'period', y: ['percent_planned', 'percent_actual'] } ] } },
+    { key: 's-curve',           name: 'S-Curve',                               path: 'modules/s-curve/index.html',           icon: 'trendingUp', enabled: true, dash: { table: 's_curve', unit: 'points' } },
+    // ⚠️ NO dash.metrics on s-curve, deliberately. A `series` metric over the `s_curve` TABLE was
+    // added here on 2026-09-01 and removed the same day: the S-Curve module derives its curve from
+    // `project_schedule` (which is the correct design — the curve IS the schedule, re-cut by
+    // month), and NOTHING writes the `s_curve` table. The metric therefore read an empty table and
+    // the dashboard card said "No curve published" on every project, forever. The dashboard's own
+    // S-curve must be derived the same way the module derives it, from the schedule.
     { key: 'resource-loading',  name: 'Resource & Role Master',                path: 'modules/resource-loading/index.html',  icon: 'users',      enabled: true, dash: { table: 'resources', unit: 'resources' } },
     { key: 'equipment-loading', name: 'Equipment Loading',                      path: 'modules/equipment-loading/index.html', icon: 'box',        enabled: true, dash: { table: 'equipment_items', unit: 'equipment' } },
     // ⚠️ No `attention` key. The obvious one would be "positions short this month", but that is

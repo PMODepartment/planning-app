@@ -301,30 +301,6 @@
           });
           return;
         }
-        // ---- an ordered series: one x column, N y columns ---------------------------------------
-        // Declared, not assumed: the module names its x axis and its y series, so this stays as
-        // ignorant of what an S-curve is as the rest of this engine.
-        // ⚠️ A point is kept only when x is present AND at least one y is numeric. Dropping the
-        // whole row when ONE series is null would silently shorten the other series; keeping a row
-        // with no y at all would draw a gap that looks like a reading of zero.
-        if (m.agg === 'series') {
-          var ys = [].concat(m.y || []);
-          var pts = [];
-          for (var si = 0; si < rows.length; si++) {
-            var sr = rows[si]; if (!keep(sr, m.where)) continue;
-            var xv2 = sr[m.x]; if (xv2 == null || xv2 === '') continue;
-            var pt = { x: xv2 }, any = false;
-            for (var yi = 0; yi < ys.length; yi++) {
-              var yv2 = numOf(sr[ys[yi]]);
-              pt[ys[yi]] = yv2;
-              if (yv2 != null) any = true;
-            }
-            if (any) pts.push(pt);
-          }
-          pts.sort(function (a, b) { return a.x < b.x ? -1 : a.x > b.x ? 1 : 0; });
-          out[m.key] = pts;
-          return;
-        }
         // ---- weighted % of TIME elapsed between two date columns, as at today -----------------
         // This is how a planned value is expressed without the shell knowing what a baseline is:
         // the module names the two date columns and the weight, and gets back "where the plan says
