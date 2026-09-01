@@ -84,6 +84,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (o) — Issues Dashboard cleanup off a screenshot; the shared tabs-dropdown fix that almost reintroduced a fixed bug
+
+Owner sent a screenshot of the live Issues & Concerns Dashboard with the duplicate "Dashboard" /
+"Dashboard ▾" title and two clipped/mis-placed bar-chart tiles circled, plus a 13-item list
+covering the dashboard layout, the close-issue workflow, and how a lesson is captured from an
+issue's own page. Full detail in `modules/issues-lessons/CLAUDE.md` (2026-09-01 (f)) — this entry
+covers the two **shared** files touched, since a module dev is only supposed to edit their own
+folder.
+
+**`assets/js/ui.js` (`tabsToDropdown`) — item 1's "remove the duplicate label, app-wide."**
+The dropdown trigger `tabsToDropdown()` builds already names the current screen, so a module's own
+static `<h1>` title sitting beside it duplicates it — fixed once here rather than per-module, since
+**progress-photos is the other current caller** and carries the identical redundancy.
+⚠️ **The first draft of this fix would have done nothing at all, and the second would have
+reintroduced an already-fixed bug — both caught before shipping, neither by the owner.**
+`initModuleTopbar()` (bound to `DOMContentLoaded`, always runs first) has already moved a module's
+tab strip OUT of `.pd-topbar` and into the sibling `.pd-modulebar` bar alongside its `<h1>` by the
+time `tabsToDropdown()` runs — so `tabs.closest('.pd-topbar')`, the obvious selector, finds
+nothing. And unconditionally hiding the title text (once the right ancestor is found) reproduces
+the exact "icon alone on a line, label appears on the next" defect `issues-lessons/module.css`'s
+own `⚠️ REMOVED (2026-08-31, owner-reported bug #4)` comment already fixed once: below 700px
+`.pd-modulebar > h1` is forced onto its own full-width row, with the dropdown trigger on the row
+after it. The fix is now two pieces on purpose — JS only marks the title `.pd-title-hasdrop`;
+`dashboard.css` decides WHEN to hide it (`@media (min-width:701px)`), so the mistake this repo
+already made once can't recur through the same door.
+
+**Verified:** `node --check` clean on `ui.js`; `dashboard.css` braces balanced (426/426); 0 NUL
+bytes. ⚠️ **Not verified signed in.**
+
+`ui.js`/`dashboard.css?v=` → `20260901c` (app-wide — 20/28 referencing files respectively);
+`MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260901q`.
+
 ### 2026-09-01 (m) — Live audit of both rebuilt registers: 8 real defects, and 4 of my own measurements were wrong first
 
 Owner: *"Let's instead audit and verify via out of app browser."* Driven through the **deployed** site in
