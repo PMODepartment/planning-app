@@ -84,6 +84,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-01 (e) — All 14 migrations confirmed applied against the regenerated verifier
+
+Owner re-ran `VERIFY-schema.sql` after its regeneration: **no rows returned** again, this time
+against the full **342 objects / 132 migrations** list that *does* include `2026-08-30-photos-round3`
+and `2026-08-31-manpower-org-schedule-manhours`. The 2-migration blind spot from entry (d) is closed.
+**The 14-migration backlog from 2026-08-28 → 08-31 is fully landed.** No code change, no `MODULE_V`
+bump — nothing the browser loads was touched by any of this.
+
+**Schema state as of now:** every object declared by every migration in this repo is present on the
+live database. That is the first time this file can say so without a named exception since the
+Progress Photos overnight rounds began on 08-28.
+
+⚠️ **This closes the SCHEMA question, not the "does it work" question.** The verifier checks object
+existence only — never RLS policies, grants, index definitions, trigger bodies or back-fills — and
+the bundle ran without a wrapping transaction, so a skipped policy block would still verify clean.
+Both modules that gained tables here still carry their standing **"nothing exercised signed in"**
+caveat: Progress Photos has never had a live click-through of thumbnail generation, pin-drop, markup
+persistence or floor-plan upload, and Manpower Loading's new org/schedule/manhours surfaces have only
+ever been driven against a stub. The tables existing is what made those checks *possible*, not what
+makes them unnecessary.
+
+⚠️ **Unchanged and still outstanding:** 3D reconstruction needs the two Edge Functions deployed
+(`submit-reconstruction`, `reconstruction-webhook`) and a RunPod endpoint that does not exist. No SQL
+affects this.
+
+
 ### 2026-09-01 (d) — The clean VERIFY result was real but incomplete: the verifier was two migrations stale
 
 Owner ran `RUN-OUTSTANDING-2026-08-28-to-08-31.sql`, then `VERIFY-schema.sql`, which returned
