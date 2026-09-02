@@ -1,3 +1,98 @@
+## Vertical stacking: expand a tower into a focus window, and put planned beside actual (2026-09-02) — fmlozano
+
+Owner: *"for this vertical stacking view, is there a way or can you make it more visually pleasing and
+appealing? or can you add an expand view wherein it would focus on that tower itself and then have a
+progress bar on the bottom. sort of like a pop up window. and then users are able to use mouse
+controls like scrollbar to zoom in and out, and then there is a hand cursor to pan if the tower is
+zoomed in. next there could be an option wherein for a specific trade, there is a tower on the left
+portraying the planned and the tower on the right portraying the actual. now for example if i hover
+something on the planned or panned something on the left (planned) it should also updated the right
+window (actual) and then the progress bar is still shown below, like a frozen row."*
+
+**Every tower card gains an expand button** (hover, or keyboard focus) that opens a focus window:
+the building alone, **scroll to zoom · drag to pan · double-click to fit**, a **Planned vs Actual,
+side by side** toggle, and a **frozen row** across the bottom carrying the activity count, the span,
+the variance in points, an actual-vs-planned progress bar and a live readout of whatever zone the
+pointer is over.
+
+**⚠️ THE TWO PANES SHARE ONE TRANSFORM STATE — "synced" is structural, not two states kept in step.**
+`_vsFocus` holds a single `{z, px, py}` and every pane's canvas is written from it, so there is
+nothing that *can* drift. The hover is the same shape: one `hoverKey`, marked in every pane.
+
+⚠️ **Panning is a transform, never `scrollLeft`.** Two scrollers in two panes cannot be held
+identical — their maximum scroll differs with their content width — and the moment they diverge the
+comparison is silently wrong: two floors side by side that are not the same floor. `overflow:hidden`
+plus `touch-action:none` on the viewport, or a finger drag scrolls the modal instead of the building.
+
+⚠️ **Both buildings come from the SAME `_vsTowerSVG` the cards use**, with `_vsBasis` swapped around
+the call and restored in a `finally`. A second renderer for the modal would be a second thing to keep
+in step with the view it was opened from, and the first divergence would be a focus window that
+disagrees with the card behind it. `_vsCells` and `_vsHatchSeen` are module-level accumulators that
+function writes into, so both are snapshotted and restored — a modal build must not leave the main
+view's cell map describing a basis the main view is not drawing.
+
+⚠️⚠️ **A REAL DEFECT THE BROWSER RUN FOUND AND READING DID NOT.** The first cut gave each pane its own
+key prefix (`…|FZ0`, `…|FZ1`), to keep the two builds' cell maps apart. A cell key is
+`prefix|level|zone` and the hover sync finds the twin zone by **comparing keys across panes** — so a
+per-pane prefix made every key unique to its own pane and **the two windows silently stopped
+following each other**, which is the one thing the split view exists to do. Measured: 1 of 2 panes
+marked on hover. They could never have collided anyway — `_vsFocusBuild` gives each build its own
+`_vsCells`. One prefix now, asserted.
+
+⚠️ **Zoom anchors at the pointer** (`px = cx − (cx − px)·nz/z`): without it, zooming in on the 14th
+floor walks you back to the ground. ⚠️ **The floor is 0.05, not 1** — a tall building in a short pane
+must shrink well below 100%, and a "Fit" that cannot shrink fits nothing. ⚠️ The wheel listener is
+**non-passive**, or `preventDefault` is ignored and the page scrolls behind the modal instead of the
+building zooming — i.e. the scroll-to-zoom the owner asked for would do nothing. ⚠️ `deltaMode` is
+normalised, or one Firefox notch zooms ~16× a Chrome one. ⚠️ `setPointerCapture`, so a drag survives
+the pointer leaving the pane, which on a zoomed-in building is most of the time. ⚠️ A fit taken
+before the modal has been laid out reads a 0×0 box, so it runs on the next frame and no-ops (rather
+than producing `NaN`) if the box is still empty.
+
+⚠️ **The frozen row is OUTSIDE the panning stage**, which is the whole point of asking for it to be
+frozen — a progress bar that pans away with the building is what it replaces. ⚠️ Its planned marker
+rides the **same** track as the fill: the gap between the two IS the variance, and stacking two
+tracks makes that a subtraction. ⚠️ The readout derives its own actual/planned figures from the
+cell's `list`, which is basis-independent, rather than trusting whichever basis the map was built at.
+
+⚠️ **Compare is session-only, never persisted** — it is a way of *looking* at a building, and a
+remembered split view is how someone opens this next week and reports the tower duplicated.
+⚠️ Toggling it **rebuilds** rather than showing a hidden pane: the second building has to be BUILT at
+its own basis.
+
+⚠️ **Clicking a cell does nothing in the focus window, deliberately.** The cell drill-down is a
+`UI.modal`, and opening one on top of another is a nesting this app has no pattern for; `ps-vs-cell`
+and the native `<title>` tooltips are stripped from the clone so the pointer cursor and the tooltips
+cannot fight the pan gesture and the frozen readout that replaces them.
+
+**Also — the "more visually pleasing" half:** a **4px progress meter** under each card's header
+(fill = actual, tick = planned). It restates a number the header already prints, which is the point:
+across six cards side by side the bars are comparable at a glance where six percentages are not, and
+it is deliberately the **same bar** as the focus window's frozen row so the two read as one system.
+⚠️ Blank when there is no baseline — an absent tick is honest; a tick at 0 would read as "nothing was
+planned by now", a different claim from "nobody has baselined this". ⚠️ The header's count now takes
+`margin-left:auto` rather than relying on `space-between`, which would have centred it once a third
+child joined the row.
+
+⚠️ **`icons.js` carries no maximise glyph** and is a SHARED asset the module contract forbids a module
+editing, so the expand button carries an inline SVG.
+
+**Verified: 26 checks in Node + 39 in a real browser**, both executing the SHIPPED functions sliced
+out of `index.html` by brace matching, never reimplemented. Node covers the pan/zoom/fit/hover
+algebra (anchor invariance, both clamps, a tall building fitting by shrinking, an unlaid-out pane
+no-oping, hover marking and clearing both panes, the readout reading the list). The browser drives
+the real thing at 1440 and 390px, light and dark: the modal opens, cursor `grab` → `grabbing`, a real
+wheel zooms and a real drag pans by exactly the pointer delta, **compare builds `planned,actual` in
+that order into two equal-width panes carrying one identical transform**, panning the planned window
+moves the actual one, hovering the actual window marks the same zone in both, the frozen row stays
+put at every zoom and pan, contrast ≥4.5 on every new dark surface, panes stack and controls reach
+44px on a phone, 0 page horizontal scroll, 0 console errors. **0 functions lost, 12 added**; parses;
+0 NUL bytes; CSS braces balanced; every new CSS class has an emitter.
+
+⚠️ **Not verified signed in** — the buildings under test come from a stub with the shape
+`_vsTowerSVG` emits, not from a real project's rows, so the focus window has never been opened over
+live data. `MODULE_V` → `20260902af`.
+
 ## The top-level WBS order is now ENFORCED, not merely seeded (2026-09-02) — eprobles
 
 Owner: *"also the arrangement of the WBS that is fixed should be milestones / initiation phase /

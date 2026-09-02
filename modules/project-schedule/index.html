@@ -1509,6 +1509,99 @@
     .ps-vs-stage.is-loupe-on .ps-vs-cell {
       cursor: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' stroke='%23231F20' stroke-width='3' opacity='.35'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M16.2 16.2 24 24' stroke-linecap='round'/%3E%3C/g%3E%3Cg fill='none' stroke='%23E4002B' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M16.2 16.2 24 24' stroke-linecap='round'/%3E%3Cpath d='M8 11h6M11 8v6' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 11 11, zoom-in !important;
     }
+
+    /* ---- Expand a tower: focus window (pan / zoom / compare) ---------------------------------
+       Owner 2026-09-02: *"can you add an expand view wherein it would focus on that tower itself and
+       then have a progress bar on the bottom… users are able to use mouse controls like scrollbar to
+       zoom in and out, and then there is a hand cursor to pan… there could be an option wherein for a
+       specific trade, there is a tower on the left portraying the planned and the tower on the right
+       portraying the actual… if i hover something on the planned or panned something on the left it
+       should also update the right window… and then the progress bar is still shown below, like a
+       frozen row."*
+       ⚠️ The panes share ONE transform state (_vsFocus.z / .px / .py), so "synced" is structural
+       rather than two states kept in step — they cannot drift because there is only one.
+       ⚠️ The footer is OUTSIDE the scrolling/panning stage on purpose: it is the frozen row, and a
+       progress bar that pans away with the building is the thing this replaces. */
+    .pd-modal.ps-vs-focus-modal { max-width:min(1680px, 97vw); width:min(1680px, 97vw);
+      height:92vh; max-height:92vh; display:flex; flex-direction:column; padding:0; overflow:hidden; }
+    .ps-vs-fz { display:flex; flex-direction:column; height:100%; min-height:0; }
+    .ps-vs-fz-head { flex:0 0 auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:12px 16px; border-bottom:1px solid var(--pd-line);
+      background:linear-gradient(180deg, var(--pd-card), var(--pd-bg)); }
+    .ps-vs-fz-title { display:flex; align-items:center; gap:9px; font-size:15px; font-weight:800;
+      min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-vs-fz-sub { font-size:11.5px; color:var(--pd-muted); font-weight:600; }
+    .ps-vs-fz-x { margin-left:auto; }
+    .ps-vs-fz-stage { flex:1 1 auto; min-height:0; display:flex; gap:0; background:var(--pd-bg); }
+    .ps-vs-fz-pane { flex:1 1 0%; min-width:0; display:flex; flex-direction:column; position:relative;
+      border-right:1px solid var(--pd-line); }
+    .ps-vs-fz-pane:last-child { border-right:0; }
+    .ps-vs-fz-panelab { flex:0 0 auto; display:flex; align-items:center; gap:7px; padding:6px 12px;
+      font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+      color:var(--pd-muted); background:var(--pd-card); border-bottom:1px solid var(--pd-line); }
+    .ps-vs-fz-panelab .sw { width:9px; height:9px; border-radius:2px; flex:none; }
+    /* ⚠️ touch-action:none, or a finger drag scrolls the modal instead of panning the building.
+       overflow:hidden because panning is a TRANSFORM here (one shared state), never scrollLeft —
+       two scrollers cannot be kept identical across two differently-sized panes. */
+    .ps-vs-fz-vp { flex:1 1 auto; min-height:0; position:relative; overflow:hidden;
+      cursor:grab; touch-action:none; }
+    .ps-vs-fz-vp.is-panning { cursor:grabbing; }
+    .ps-vs-fz-canvas { position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform; }
+    .ps-vs-fz-canvas > svg { display:block; }
+    .ps-vs-fz-hint { position:absolute; right:10px; bottom:10px; z-index:2; pointer-events:none;
+      font-size:10.5px; color:var(--pd-muted); background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:999px; padding:4px 10px; opacity:.92; }
+    /* ---- The frozen row -------------------------------------------------------------------- */
+    .ps-vs-fz-foot { flex:0 0 auto; border-top:1px solid var(--pd-line); background:var(--pd-card);
+      padding:10px 16px 12px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+    .ps-vs-fz-metrics { display:flex; gap:16px; align-items:center; flex-wrap:wrap; flex:0 0 auto; }
+    .ps-vs-fz-m { display:flex; flex-direction:column; gap:1px; }
+    .ps-vs-fz-m .k { font-size:9.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--pd-muted); }
+    .ps-vs-fz-m .v { font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; }
+    .ps-vs-fz-barwrap { flex:1 1 240px; min-width:200px; }
+    .ps-vs-fz-bartop { display:flex; align-items:baseline; gap:8px; font-size:11px; color:var(--pd-muted); margin-bottom:5px; }
+    .ps-vs-fz-bartop strong { font-size:13px; color:var(--pd-ink); font-variant-numeric:tabular-nums; }
+    .ps-vs-fz-bar { position:relative; height:14px; border-radius:999px; background:var(--pd-bg);
+      border:1px solid var(--pd-line); overflow:hidden; }
+    .ps-vs-fz-bar > .fill { position:absolute; left:0; top:0; bottom:0; border-radius:999px;
+      background:linear-gradient(90deg, var(--pd-red), var(--pd-red-dark, var(--pd-red))); transition:width .18s ease; }
+    /* The planned marker rides the SAME bar rather than getting a second track: the gap between the
+       fill edge and the marker IS the variance, and two stacked tracks make that a subtraction. */
+    .ps-vs-fz-bar > .plan { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--pd-ink); opacity:.8; }
+    .ps-vs-fz-bar > .planl { position:absolute; top:-14px; font-size:9px; font-weight:700; color:var(--pd-muted); transform:translateX(-50%); white-space:nowrap; }
+    .ps-vs-fz-read { flex:1 1 260px; min-width:220px; font-size:11.5px; line-height:1.5;
+      color:var(--pd-muted); border-left:1px solid var(--pd-line); padding-left:14px; }
+    .ps-vs-fz-read .h { font-weight:800; font-size:12.5px; color:var(--pd-ink); }
+    @media (max-width: 900px) {
+      .ps-vs-fz-stage { flex-direction:column; }
+      .ps-vs-fz-pane { border-right:0; border-bottom:1px solid var(--pd-line); }
+      .ps-vs-fz-read { border-left:0; padding-left:0; }
+      .ps-vs-fz-head button, .ps-vs-fz-foot button { min-height:44px; }
+    }
+    /* ---- Per-card progress meter -----------------------------------------------------------
+       A thin bar under each tower's header. It restates a number the header already prints — which
+       is the point: across six cards side by side the bars are comparable at a glance where six
+       percentages are not, and it is the SAME bar as the focus window's frozen row (fill = actual,
+       tick = planned), so the two read as one system rather than two conventions.
+       ⚠️ The planned tick rides the same track, never a second one: the gap between the fill edge
+       and the tick IS the variance, and stacking two tracks makes that a subtraction. */
+    .ps-vs-meter { position:relative; height:4px; background:var(--pd-bg);
+      border-top:1px solid var(--pd-line); border-bottom:1px solid var(--pd-line); overflow:hidden; }
+    .ps-vs-meter > i { position:absolute; left:0; top:0; bottom:0; display:block;
+      background:var(--tc, var(--pd-red)); transition:width .28s cubic-bezier(.22,.61,.36,1); }
+    .ps-vs-meter > b { position:absolute; top:0; bottom:0; width:2px; background:var(--pd-ink); opacity:.55; }
+    @media (prefers-reduced-motion: reduce) { .ps-vs-meter > i { transition:none; } }
+    /* Three children in the header now, so the count is pushed right by its own auto margin
+       rather than by space-between, which would have centred it once a button joined it. */
+    .ps-vs-towerh .ct { margin-left:auto; }
+    /* The expand affordance on each tower card. Opacity, not display, so it stays keyboard-reachable. */
+    .ps-vs-expand { flex:none; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center;
+      border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); color:var(--pd-muted);
+      cursor:pointer; opacity:0; transition:opacity .15s ease, border-color .15s ease, color .15s ease; }
+    .ps-vs-tower:hover .ps-vs-expand, .ps-vs-expand:focus-visible { opacity:1; }
+    .ps-vs-expand:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    @media (hover: none) { .ps-vs-expand { opacity:1; } }
+
     @media (max-width: 1100px) {
       .ps-vs-stage { flex-direction:column; }
       .ps-vs-loupe { position:static; flex:1 1 auto; width:100%; max-width:100%; }
@@ -13004,6 +13097,309 @@
       // still be read with the pointer off the building.
     });
   }
+  // ---- Expand one tower: a focus window with pan / zoom / planned-vs-actual --------------------
+  // Owner 2026-09-02: *"can you add an expand view wherein it would focus on that tower itself and
+  // then have a progress bar on the bottom. sort of like a pop up window. and then users are able to
+  // use mouse controls like scrollbar to zoom in and out, and then there is a hand cursor to pan if
+  // the tower is zoomed in. next there could be an option wherein for a specific trade, there is a
+  // tower on the left portraying the planned and the tower on the right portraying the actual. now
+  // for example if i hover something on the planned or panned something on the left (planned) it
+  // should also update the right window (actual) and then the progress bar is still shown below,
+  // like a frozen row."*
+  //
+  // ⚠️ THE TWO PANES SHARE ONE TRANSFORM STATE, they are not two states kept in step. `_vsFocus`
+  // holds a single {z, px, py} and every pane's canvas is written from it, so "synced" is structural:
+  // there is nothing to drift. The same goes for the hover — one key, highlighted in every pane.
+  // ⚠️ Panning is a TRANSFORM, never scrollLeft. Two scrollers in differently-sized panes cannot be
+  // held identical (their max scroll differs with their content width), and the moment they diverge
+  // the comparison is silently wrong — two floors side by side that are not the same floor.
+  // ⚠️ The buildings are built by the SAME `_vsTowerSVG` the main view uses, with `_vsBasis` swapped
+  // around the call and restored in a `finally`. A second renderer for the modal would be a second
+  // thing to keep in step with the cards behind it, and the first divergence would be a focus window
+  // that disagrees with the view it was opened from.
+  var _vsFocusCards = [];   // registry filled by renderVStack; the expand button carries an index
+  // The expand affordance. ⚠️ An inline SVG glyph, not `data-ico`: `icons.js` is a SHARED asset and
+  // carries no maximise icon, and the module contract forbids a module editing a shared file.
+  // ⚠️ Blank when there is no baseline — an absent tick is honest, a tick at 0 would read as
+  // "nothing was planned by now", which is a different claim from "nobody has baselined this".
+  function _vsCardMeter(list) {
+    var ap = Math.max(0, Math.min(100, _vsProgress(list))), pp = _vsPlanPct(list);
+    return '<div class="ps-vs-meter" aria-hidden="true"><i style="width:' + ap + '%"></i>' +
+      (pp == null ? '' : '<b style="left:' + Math.max(0, Math.min(100, pp)) + '%"></b>') + '</div>';
+  }
+  function _vsFocusReg(name, color, list, prefix) {
+    var i = _vsFocusCards.length;
+    _vsFocusCards.push({ name: String(name), color: color, list: list, prefix: prefix });
+    return '<button class="ps-vs-expand" data-vsx="' + i + '" aria-label="Expand ' + esc(String(name)) + '"' +
+      ' title="Expand ' + esc(String(name)) + ' \u2014 a focus window you can scroll to zoom and drag to pan, with the option of planned and actual side by side">' +
+      '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5l-4.6 4.6M2.5 13.5l4.6-4.6"/></svg></button>';
+  }
+  var _vsFocus = null;      // live state while the window is open
+
+  // Build one building at a chosen basis, without disturbing the view underneath.
+  // ⚠️ `_vsCells` and `_vsHatchSeen` are module-level accumulators that `_vsTowerSVG` writes into, so
+  // both are snapshotted and restored: a modal build must not leave the main view's cell map
+  // describing a basis the main view is not drawing.
+  function _vsFocusBuild(list, color, prefix, basis) {
+    var saveB = _vsBasis, saveC = _vsCells, saveH = _vsHatchSeen;
+    _vsCells = {}; _vsHatchSeen = {};
+    var html, cells;
+    try {
+      if (basis) _vsBasis = basis;
+      html = _vsTowerSVG(list, color, prefix);
+      cells = _vsCells;
+    } finally { _vsBasis = saveB; _vsCells = saveC; _vsHatchSeen = saveH; }
+    var box = document.createElement('div');
+    box.innerHTML = html;
+    var sv = box.querySelector('svg');
+    if (sv) {
+      // A VIEW, not a second set of controls: the native tooltips and the cell cursor would fight
+      // the pan gesture and the frozen readout that replaces them.
+      sv.querySelectorAll('title').forEach(function (t) { t.parentNode.removeChild(t); });
+      sv.querySelectorAll('.ps-vs-cell').forEach(function (r) { r.classList.remove('ps-vs-cell'); });
+    }
+    return { svg: sv, cells: cells };
+  }
+
+  function _vsFocusApply() {
+    var F = _vsFocus; if (!F) return;
+    var t = 'translate(' + F.px.toFixed(1) + 'px,' + F.py.toFixed(1) + 'px) scale(' + F.z.toFixed(4) + ')';
+    F.panes.forEach(function (p) { p.canvas.style.transform = t; });
+    if (F.zlab) F.zlab.textContent = Math.round(F.z * 100) + '%';
+  }
+  // Fit the whole building in the pane and centre it. Measured off the FIRST pane; the panes are
+  // equal-width flex siblings, so one measurement is true of both.
+  function _vsFocusFit() {
+    var F = _vsFocus; if (!F || !F.panes.length) return;
+    var p = F.panes[0], box = p.vp.getBoundingClientRect();
+    if (!(box.width > 0) || !(box.height > 0) || !(F.w > 0) || !(F.h > 0)) return;
+    var pad = 22;
+    // ⚠️ The floor is 0.05, not 1: a tall building in a short pane needs to shrink well below 100%,
+    // and a "Fit" that cannot shrink fits nothing.
+    F.z = Math.max(0.05, Math.min(4, Math.min((box.width - pad * 2) / F.w, (box.height - pad * 2) / F.h)));
+    F.px = (box.width - F.w * F.z) / 2;
+    F.py = Math.max(pad, (box.height - F.h * F.z) / 2);
+    _vsFocusApply();
+  }
+  function _vsFocusZoomAt(factor, cx, cy) {
+    var F = _vsFocus; if (!F) return;
+    var nz = Math.max(0.05, Math.min(8, F.z * factor));
+    if (nz === F.z) return;
+    // Keep the point under the cursor still — the standard anchor-at-pointer zoom. Without it,
+    // zooming in on the 14th floor walks you back to the ground.
+    F.px = cx - (cx - F.px) * (nz / F.z);
+    F.py = cy - (cy - F.py) * (nz / F.z);
+    F.z = nz;
+    _vsFocusApply();
+  }
+  // Highlight one zone in EVERY pane and write the frozen readout. `key` may be null (the pointer is
+  // over the label gutter or the gap between zones), which clears rather than keeping a stale mark.
+  function _vsFocusHover(key) {
+    var F = _vsFocus; if (!F) return;
+    if (F.hoverKey === key) return;
+    F.hoverKey = key;
+    F.panes.forEach(function (p) {
+      var prev = p.svg.querySelector('[data-vsk].is-loupe');
+      if (prev) prev.classList.remove('is-loupe');
+      if (!key) return;
+      // Compared in JS rather than through a [data-vsk="…"] selector: a level or zone name may
+      // contain a quote, which would break the selector string.
+      var all = p.svg.querySelectorAll('[data-vsk]');
+      for (var i = 0; i < all.length; i++) {
+        if (all[i].getAttribute('data-vsk') === key) { all[i].classList.add('is-loupe'); break; }
+      }
+    });
+    _vsFocusReadout();
+  }
+  function _vsFocusReadout() {
+    var F = _vsFocus; if (!F || !F.readEl) return;
+    var d = F.hoverKey ? (F.cells[F.hoverKey] || null) : null;
+    if (!d) {
+      F.readEl.innerHTML = '<div class="h">' + esc(F.name) + '</div>' +
+        'Hover a zone in either building for its dates and progress. Scroll to zoom, drag to pan — ' +
+        (F.panes.length > 1 ? 'both windows move together.' : 'the whole building stays in one frame.');
+      return;
+    }
+    var ap = _vsPct(d.list), pp = _vsPlanPct(d.list);
+    var af = _vsActualDate(d.list), plf = _vsPlanDate(d.list), sl = _vsSlip(d.list);
+    F.readEl.innerHTML = '<div class="h">' + esc(String(d.level) + (d.cell ? ' · ' + d.cell : '')) + '</div>' +
+      (d.done ? '<span style="font-weight:800;color:' + _vsSlipColor(d.fslip) + ';">✓ DONE · ' + esc(_vsSlipWord(d.fslip)) + '</span><br>' : '') +
+      d.list.length + ' activit' + (d.list.length === 1 ? 'y' : 'ies') + ' · actual <strong>' + ap + '%</strong>' +
+      (pp == null ? '' : ' · planned <strong>' + pp + '%</strong>') + '<br>' +
+      'Planned ' + _vsDateWord() + ' ' + esc(plf ? Fmt.date(dstr(plf)) : '—') +
+      ' · actual ' + esc(af ? Fmt.date(dstr(af)) : '—') +
+      (sl == null ? '' : ' · <strong style="color:' + _vsSlipColor(sl) + ';">' +
+        (sl > 0 ? sl + 'd late' : (sl < 0 ? (-sl) + 'd early' : 'on time')) + '</strong>');
+  }
+
+  function _vsOpenFocus(idx) {
+    var card = _vsFocusCards[idx]; if (!card || !card.list.length) return;
+    // Compare is remembered for the session only — it is a way of LOOKING at a building, and a
+    // remembered split view is how someone opens this next week and reports the tower duplicated.
+    var cmp = !!(_vsFocus && _vsFocus.cmp);
+    var m = UI.modal('<div class="ps-vs-fz" id="ps-vs-fz"></div>', { noBackdropClose: true });
+    var boxEl = m.el.querySelector('.pd-modal');
+    if (boxEl) boxEl.classList.add('ps-vs-focus-modal');
+    var wrap = m.el.querySelector('#ps-vs-fz');
+
+    function build() {
+      var panes = cmp
+        ? [{ lab: 'Planned — baseline', basis: 'planned' }, { lab: 'Actual — recorded / forecast', basis: 'actual' }]
+        : [{ lab: _vsBasisWord() === 'planned vs actual' ? 'Planned vs actual' : ('Dates: ' + _vsBasisWord()), basis: null }];
+      // ⚠️⚠️ BOTH PANES ARE BUILT AT THE SAME KEY PREFIX, AND THAT IS LOAD-BEARING. A cell key is
+      // `prefix|level|zone`, and the hover sync finds the twin zone by comparing keys ACROSS panes —
+      // so a per-pane prefix (which the first cut used, to keep the two builds' cell maps apart)
+      // makes every key unique to its own pane and the two windows silently stop following each
+      // other. They cannot collide anyway: _vsFocusBuild gives each build its own `_vsCells`.
+      // ⚠️ Measured, not read: with the suffix the browser run marked 1 of 2 panes on hover.
+      var built = panes.map(function (p) {
+        return _vsFocusBuild(card.list, card.color, card.prefix + '|FZ', p.basis);
+      });
+      var sv0 = built[0].svg;
+      var W = sv0 ? parseFloat(sv0.getAttribute('width')) || 0 : 0;
+      var H = sv0 ? parseFloat(sv0.getAttribute('height')) || 0 : 0;
+      var ap = _vsPct(card.list), pp = _vsPlanPct(card.list);
+      var sp = _vsSpan(card.list);
+      var gap = (pp == null) ? null : (ap - pp);
+      wrap.innerHTML =
+        '<div class="ps-vs-fz-head">' +
+          '<span class="ps-vs-fz-title"><span class="ps-vs-dot" style="background:' + card.color + '"></span>' + esc(card.name) +
+            '<span class="ps-vs-fz-sub">' + card.list.length + ' activities · ' +
+            esc(_vsAxis().slice(0, _vsDetailNow()).map(function (l) { return l.name; }).join(' › ')) + '</span></span>' +
+          '<span class="ps-vs-seg"><button id="ps-vs-fzcmp"' + (cmp ? ' class="on"' : '') +
+            ' title="Show the baseline building on the left and the recorded/forecast building on the right. Hovering or panning either one drives both.">Planned vs Actual, side by side</button></span>' +
+          '<span class="ps-tb-div"></span>' +
+          '<span class="ps-vs-seg"><button id="ps-vs-fzout" title="Zoom out">&#8722;</button>' +
+            '<button id="ps-vs-fzin" title="Zoom in">+</button></span>' +
+          '<span class="ps-vs-note" id="ps-vs-fzz" style="min-width:44px;text-align:center;">100%</span>' +
+          '<span class="ps-vs-seg"><button id="ps-vs-fzfit" title="Fit the whole building in the window (double-click the building does the same)">Fit</button></span>' +
+          '<span class="ps-vs-fz-x"><button class="pd-btn" id="ps-vs-fzx">Close</button></span>' +
+        '</div>' +
+        '<div class="ps-vs-fz-stage" id="ps-vs-fz-stage">' +
+          panes.map(function (p, i) {
+            return '<div class="ps-vs-fz-pane"><div class="ps-vs-fz-panelab">' +
+              '<span class="sw" style="background:' + (cmp ? (i === 0 ? 'var(--pd-muted)' : card.color) : card.color) + '"></span>' + esc(p.lab) + '</div>' +
+              '<div class="ps-vs-fz-vp" data-fzvp="' + i + '"><div class="ps-vs-fz-canvas" data-fzc="' + i + '"></div>' +
+              (i === 0 ? '<div class="ps-vs-fz-hint">scroll = zoom · drag = pan · double-click = fit</div>' : '') +
+              '</div></div>';
+          }).join('') +
+        '</div>' +
+        // ---- The frozen row -----------------------------------------------------------------
+        // ⚠️ Outside the panning stage, so it is still on screen at every pan and zoom — which is
+        // the whole point of asking for it to be frozen.
+        '<div class="ps-vs-fz-foot">' +
+          '<div class="ps-vs-fz-metrics">' +
+            '<div class="ps-vs-fz-m"><span class="k">Activities</span><span class="v">' + card.list.length + '</span></div>' +
+            '<div class="ps-vs-fz-m"><span class="k">Starts</span><span class="v" style="font-size:12.5px;">' +
+              esc(sp ? Fmt.date(dstr(sp.min)) : '—') + '</span></div>' +
+            '<div class="ps-vs-fz-m"><span class="k">Finishes</span><span class="v" style="font-size:12.5px;">' +
+              esc(sp ? Fmt.date(dstr(sp.max)) : '—') + '</span></div>' +
+            (gap == null ? '' : '<div class="ps-vs-fz-m"><span class="k">Vs plan</span><span class="v" style="color:' +
+              (gap < -0.5 ? VS_SLIP_LATE : (gap > 0.5 ? VS_SLIP_EARLY : VS_SLIP_ONTIME)) + ';">' +
+              (gap > 0 ? '+' : '') + gap.toFixed(1) + ' pp</span></div>') +
+          '</div>' +
+          '<div class="ps-vs-fz-barwrap">' +
+            '<div class="ps-vs-fz-bartop"><strong>' + ap + '%</strong> actual' +
+              (pp == null ? ' <span>· no baseline to compare against</span>' : ' <span>· ' + pp + '% planned by the data date</span>') + '</div>' +
+            '<div class="ps-vs-fz-bar"><div class="fill" style="width:' + Math.max(0, Math.min(100, ap)) + '%"></div>' +
+              (pp == null ? '' : '<div class="plan" style="left:' + Math.max(0, Math.min(100, pp)) + '%"></div>' +
+                '<div class="planl" style="left:' + Math.max(0, Math.min(100, pp)) + '%">plan</div>') +
+            '</div>' +
+          '</div>' +
+          '<div class="ps-vs-fz-read" id="ps-vs-fz-read"></div>' +
+        '</div>';
+
+      // ⚠️ The cells map comes from the LAST pane built, and in compare mode that is the actual
+      // basis. `list` is basis-independent, so the readout derives its own planned/actual figures
+      // from it rather than trusting whichever basis the map was built at.
+      _vsFocus = {
+        cmp: cmp, z: 1, px: 0, py: 0, w: W, h: H, name: card.name,
+        cells: built[built.length - 1].cells, hoverKey: undefined, panes: [],
+        zlab: wrap.querySelector('#ps-vs-fzz'), readEl: wrap.querySelector('#ps-vs-fz-read')
+      };
+      built.forEach(function (b, i) {
+        var canvas = wrap.querySelector('[data-fzc="' + i + '"]');
+        var vp = wrap.querySelector('[data-fzvp="' + i + '"]');
+        if (!b.svg || !canvas || !vp) return;
+        canvas.appendChild(b.svg);
+        _vsFocus.panes.push({ vp: vp, canvas: canvas, svg: b.svg });
+        _vsFocusWirePane(vp, b.svg);
+      });
+      _vsFocusReadout();
+      // Measured after layout: a getBoundingClientRect taken before the modal has been laid out
+      // reports 0 and the fit silently does nothing.
+      requestAnimationFrame(function () { _vsFocusFit(); });
+
+      wrap.querySelector('#ps-vs-fzx').onclick = function () { m.close(); };
+      wrap.querySelector('#ps-vs-fzfit').onclick = function () { _vsFocusFit(); };
+      wrap.querySelector('#ps-vs-fzin').onclick = function () { _vsFocusCentreZoom(1.25); };
+      wrap.querySelector('#ps-vs-fzout').onclick = function () { _vsFocusCentreZoom(1 / 1.25); };
+      wrap.querySelector('#ps-vs-fzcmp').onclick = function () {
+        cmp = !cmp;
+        build();   // rebuilt rather than toggled: the second building has to be BUILT at its own basis
+      };
+      if (window.Icons) Icons.hydrate(wrap);
+    }
+
+    build();
+    var onKey = function (e) { if (e.key === 'Escape') m.close(); };
+    document.addEventListener('keydown', onKey);
+    var _close = m.close;
+    m.close = function () { document.removeEventListener('keydown', onKey); _vsFocus = null; _close(); };
+  }
+  function _vsFocusCentreZoom(f) {
+    var F = _vsFocus; if (!F || !F.panes.length) return;
+    var b = F.panes[0].vp.getBoundingClientRect();
+    _vsFocusZoomAt(f, b.width / 2, b.height / 2);
+  }
+  // One pane's input. Every gesture writes the SHARED state, so it drives every pane by construction.
+  function _vsFocusWirePane(vp, svg) {
+    // ⚠️ Non-passive, or preventDefault is ignored and the page scrolls behind the modal instead of
+    // the building zooming — the exact "scrollbar to zoom" the owner asked for would do nothing.
+    vp.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var b = vp.getBoundingClientRect();
+      // deltaMode 1 is lines, 2 is pages: normalise or a Firefox notch zooms ~16x a Chrome one.
+      var d = e.deltaY * (e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 400 : 1));
+      _vsFocusZoomAt(Math.pow(0.9987, d), e.clientX - b.left, e.clientY - b.top);
+    }, { passive: false });
+
+    var drag = null;
+    vp.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      drag = { x: e.clientX, y: e.clientY, moved: false };
+      vp.classList.add('is-panning');
+      // setPointerCapture keeps the drag alive when the pointer leaves the pane mid-gesture —
+      // which on a zoomed-in building is most of the time.
+      try { vp.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    vp.addEventListener('pointermove', function (e) {
+      if (drag) {
+        var F = _vsFocus; if (!F) return;
+        F.px += e.clientX - drag.x; F.py += e.clientY - drag.y;
+        drag.x = e.clientX; drag.y = e.clientY; drag.moved = true;
+        _vsFocusApply();
+        return;
+      }
+      // Hover is throttled to a frame: pointermove fires far faster than the readout can usefully
+      // repaint, and each repaint walks every cell in every pane.
+      var F2 = _vsFocus; if (!F2) return;
+      var k = (e.target && e.target.getAttribute) ? e.target.getAttribute('data-vsk') : null;
+      if (F2._raf) { F2._pend = k; return; }
+      F2._pend = k;
+      F2._raf = requestAnimationFrame(function () { F2._raf = 0; _vsFocusHover(F2._pend); });
+    });
+    var end = function (e) {
+      if (!drag) return;
+      drag = null; vp.classList.remove('is-panning');
+      try { vp.releasePointerCapture(e.pointerId); } catch (err) {}
+    };
+    vp.addEventListener('pointerup', end);
+    vp.addEventListener('pointercancel', end);
+    vp.addEventListener('dblclick', function () { _vsFocusFit(); });
+  }
+
   // ---- Export the stacking as a PDF ------------------------------------------------------------
   // Owner 2026-09-01: *"add an option wherein users are able to convert the displayed report in the
   // vertical stacking into PDF format. please make the report very simple yet aesthetic."*
@@ -13343,7 +13739,7 @@
       (noTradeList.length === 1 ? 'y has' : 'ies have') + ' no Trade and no WBS branch to infer one from</strong> — set their Trade, ' +
       'or file them under a WBS branch. Actions → Diagnose data… lists them.');
 
-    _vsCells = {}; _vsHatchSeen = {};
+    _vsCells = {}; _vsHatchSeen = {}; _vsFocusCards = [];
     _vsLoupeSrc = _vsLoupeClone = _vsLoupeMark = _vsLoupeLast = null;   // the DOM they point at is replaced below
     var towers;
     if (!acts.length) {
@@ -13361,14 +13757,14 @@
         return '<div class="ps-vs-tower" style="--tc:' + col + '"><div class="ps-vs-towerh">' +
           '<span class="n"><span class="ps-vs-dot" style="background:' + col + '"></span>' + esc(t) + '</span>' +
           '<span class="ct">' + list.length + ' activities · ' + _vsProgress(list) + '% ' + _vsProgressWord() +
-          ' · ' + tt.length + ' trade' + (tt.length === 1 ? '' : 's') + '</span></div>' +
+          ' · ' + tt.length + ' trade' + (tt.length === 1 ? '' : 's') + '</span>' + _vsFocusReg(t, col, list, 'TW:' + t) + '</div>' + _vsCardMeter(list) +
           _vsTowerSVG(list, col, 'TW:' + t) + '</div>';
       }).join('');
     } else if (_vsScope === 'all') {
       towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; ' +
         (_vsTradeSel.length ? esc(tradesShown.join(', ')) : 'all trades') +
         (_vsTower === 'ALL' ? '' : ' &middot; ' + esc(_vsTower)) + '</span>' +
-        '<span class="ct">' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span></div>' +
+        '<span class="ct">' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span>' + _vsFocusReg('Consolidated', 'var(--pd-red)', acts, 'ALL') + '</div>' + _vsCardMeter(acts) +
         _vsTowerSVG(acts, 'var(--pd-red)', 'ALL') + '</div>';
     } else {
       towers = tradesShown.map(function (t) {
@@ -13376,7 +13772,7 @@
         var col = _vsColor(t);
         return '<div class="ps-vs-tower" style="--tc:' + col + '"><div class="ps-vs-towerh">' +
           '<span class="n"><span class="ps-vs-dot" style="background:' + col + '"></span>' + esc(t) + '</span>' +
-          '<span class="ct">' + list.length + ' activities · ' + _vsProgress(list) + '% ' + _vsProgressWord() + '</span></div>' +
+          '<span class="ct">' + list.length + ' activities · ' + _vsProgress(list) + '% ' + _vsProgressWord() + '</span>' + _vsFocusReg(t, col, list, t) + '</div>' + _vsCardMeter(list) +
           _vsTowerSVG(list, col, t) + '</div>';
       }).join('');
     }
@@ -13466,6 +13862,9 @@
       var inp = host.querySelector('#ps-vs-fixtw');
       _vsStampTopLevel(inp ? inp.value : '');
     };
+    host.querySelectorAll('[data-vsx]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); _vsOpenFocus(parseInt(b.dataset.vsx, 10)); };
+    });
     host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
     if (window.Icons) Icons.hydrate(host);
   }

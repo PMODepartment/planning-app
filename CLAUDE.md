@@ -84,6 +84,37 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (af) — Vertical stacking: expand a tower, and put planned beside actual
+Owner: *"can you make it more visually pleasing… or can you add an expand view wherein it would focus on
+that tower itself and then have a progress bar on the bottom… scrollbar to zoom in and out, and then there
+is a hand cursor to pan… for a specific trade, there is a tower on the left portraying the planned and the
+tower on the right portraying the actual… if i hover something on the planned or panned something on the
+left it should also update the right window… and then the progress bar is still shown below, like a frozen
+row."* Detail in `modules/project-schedule/CLAUDE.md`.
+- Every tower card gains an **expand** button opening a focus window: scroll to zoom, drag to pan (hand
+  cursor), double-click to fit, a **Planned vs Actual side by side** toggle, and a **frozen row** below
+  carrying the counts, the span, the variance in points, a progress bar and a live hovered-zone readout.
+- ⚠️⚠️ **The two panes share ONE transform state, so "synced" is structural rather than two states kept
+  in step** — there is nothing that can drift. Same for the hover: one key, marked in every pane.
+- ⚠️ **Panning is a transform, never `scrollLeft`.** Two scrollers in two panes cannot be held identical
+  (their max scroll differs with their content width) and the moment they diverge the comparison is
+  silently wrong — two floors side by side that are not the same floor.
+- ⚠️⚠️ **A REAL DEFECT THE BROWSER RUN FOUND AND READING DID NOT.** The first cut gave each pane its own
+  cell-key prefix to keep the two builds' cell maps apart. The hover sync finds the twin zone by
+  **comparing keys across panes**, so that made every key pane-unique and **the two windows silently
+  stopped following each other** — the one thing the split view exists to do. Measured: 1 of 2 panes
+  marked. They could never have collided anyway; each build already gets its own `_vsCells`.
+- ⚠️ Both buildings come from the **same `_vsTowerSVG` the cards use**, `_vsBasis` swapped and restored in
+  a `finally` — a second renderer would be a second thing to keep in step with the view it was opened from.
+- ⚠️ The frozen row sits **outside** the panning stage (a progress bar that pans away is what it replaces),
+  and its planned marker rides the **same** track as the fill, because the gap between them IS the variance.
+- **Cards:** a 4px meter under each header (fill = actual, tick = planned) — the same bar as the focus
+  window's, so the two read as one system. ⚠️ Blank with no baseline: a tick at 0 would claim "nothing was
+  planned by now", which is not "nobody has baselined this".
+- **26 checks in Node + 39 in a real browser**, both executing the shipped functions; 0 functions lost.
+  ⚠️ **Not verified signed in** — the focus window has never been opened over live data.
+  `MODULE_V` → `20260902af`.
+
 ### 2026-09-02 (ae) — The top-level WBS order is enforced, not merely seeded
 Owner: *"the arrangement of the WBS that is fixed should be milestones / initiation phase / planning phase /
 execution phase / close-out phase"* — the order `WBS_SKELETON` already seeds, which was being disturbed.
