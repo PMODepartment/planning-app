@@ -1,3 +1,47 @@
+## Vertical stacking: the cell body is never pale again — day mode was unreadable (2026-09-02) — eprobles
+
+Owner: *"is there a way you can improve the visuals in this vertical stacking? … if it is on day
+mode, please make it more visually appealing. Also for the color coding and visuals … choose better
+colors or colors of text. and also in terms of orientation of the windows."*
+
+⚠️ **ROOT CAUSE OF THE DAY-MODE COMPLAINT: every label was hard-coded `fill="#fff"`, and the light
+theme drew the cell body as a 16 %-opacity wash of the trade colour on a white card.** White text on
+a near-white box. Dark mode got away with it only because the card behind the wash is dark. The fix
+is not a heavier font — it is that **the cell body is now always a saturated colour in both
+themes**, and done vs remaining is a *brightness step on that one colour*:
+
+| layer | what it is |
+|---|---|
+| 1 | the category colour, solid, across the whole cell |
+| 2 | `--ps-vs-scrim` over it → the **remaining** tone (dimmer, same hue) |
+| 3 | `--ps-vs-veil` 45° hatch → the texture that says "remaining" at a glance |
+| 4 | the colour again, clean and undimmed, out to the POC → the **done** stretch |
+
+Layer 4 is drawn **last**, so the done stretch *erases* 2 and 3 rather than sitting over them and the
+boundary is a hard edge. Nothing about the meaning moved: fill = which trade, solid = how much is
+done, border = early/on time/late. Three facts, still three channels.
+
+- ⚠️ **The three tokens are CSS VARS (`--ps-vs-scrim` / `--ps-vs-veil` / `--ps-vs-edge`), not
+  literals in the JS** — precisely so the two themes can differ; the SVG resolves them from the
+  document. **They are re-declared in the PDF export's fixed light palette.** Change one and you
+  must change the other or the print comes out as flat colour blocks with no done/remaining split.
+- ⚠️ **The hatch pattern is a light veil now, not the trade colour.** It used to be the colour drawn
+  over a wash of the same colour, which is exactly what made the light theme pale-on-pale.
+- ⚠️ **Ink is chosen per cell from the colour's luminance** (`_vsLum` / `_vsInkFill` / `_vsTxtAttr`),
+  and the halo flips with it. White is right for most of the palette but not for its yellow/amber —
+  white on yellow is the same defect in a different hue. A non-hex colour (`var(--pd-muted)`, the
+  un-towered band) falls back to white.
+- ⚠️ The cell outline is `--ps-vs-edge`, not a fixed `rgba(0,0,0,.28)`: a black hairline is invisible
+  on a dark card and heavy on a light one.
+
+**The cards ("windows").** They still take their **content** width — that is deliberate and stays
+(a one-zone tower must not sit in 660 px of dead space). What changed is that a *row* of them now
+shares a height and hangs from a common top line instead of each card ending wherever its own drawing
+does, which is what made a row read as debris rather than as a set. Plus a softer 14 px radius, a
+two-stop shadow, a 1 px hover lift, and a header washed with the card's own `--tc` — on white that is
+what stops eight cards looking like one grey table.
+
+---
 ## Outline and Layouts folded into the View menu (2026-09-02c) — fmlozano
 
 Owner: *"Yes fold Outline and Layouts into View too"* — accepting the two candidates I named at the

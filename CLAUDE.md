@@ -84,6 +84,19 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (d) — Vertical stacking: readable in day mode, and the cards read as a set
+Owner: *"improve the visuals in this vertical stacking … if it is on day mode, please make it more visually
+appealing … choose better colors or colors of text … and also in terms of orientation of the windows."*
+- ⚠️ **Every stacking label was hard-coded `fill="#fff"` over a cell body drawn as a 16 % wash of the trade
+  colour** — white text on a near-white box on the light theme. The body is now always the saturated colour
+  and done-vs-remaining is a **brightness step on that one colour** (scrim + light veil hatch for remaining,
+  the clean colour out to the POC for done), so it carries a label at full contrast in either theme.
+- ⚠️ The three paint tokens are **CSS vars** (`--ps-vs-scrim/-veil/-edge`) so the themes can differ — and they
+  are **re-declared in the PDF export's fixed light palette**; change one without the other and the print goes flat.
+- ⚠️ **Ink is chosen per cell from the colour's luminance**, halo included: white is wrong on the palette's yellow.
+- Cards keep their content width (deliberate) but a row now shares a height and a top line, with a softer
+  radius, a two-stop shadow, a hover lift and a header washed in the card's own colour.
+- MODULE_V → `20260902d`.
 ### 2026-09-02 (c) — Project Schedule: Outline + Saved layouts folded into the View menu
 
 Owner: *"Yes fold Outline and Layouts into View too."* Two more toolbar buttons become sections of

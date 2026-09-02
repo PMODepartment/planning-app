@@ -1349,6 +1349,43 @@
     .ps-vs-scroll svg { display:block; height:auto; }
     .ps-vs-cell { cursor:pointer; }
     .ps-vs-cell:hover { filter:brightness(1.08); }
+    /* ---- Cell paint tokens (2026-09-02) ---------------------------------------------------
+       ⚠️ THE CELL BODY IS ALWAYS A SATURATED COLOUR NOW, in both themes. Owner: day mode was
+       unreadable — the old paint was a 0.16 wash of the trade colour + a colour hatch, which on a
+       white page renders a pale pink box, and every label on it is white text. White on pink is
+       the whole complaint. The fix is not a lighter font: it is to stop the cell body from ever
+       being near-white. The remaining stretch is now the SAME colour darkened by a scrim and
+       textured by a light veil, and the done stretch is the colour at full strength. So:
+         done      = bright solid colour
+         remaining = same colour, dimmed + fine light hatch
+       Both are dark enough for white text at every trade colour in the palette, and the
+       done/remaining boundary still reads at a glance because it is a brightness step, not a
+       hue change.
+       ⚠️ These are CSS VARS, not literals in the JS, precisely so the two themes can differ — the
+       SVG resolves them from the document. They are re-declared in the PDF export's fixed light
+       palette (_vsExportPDF); change one and you must change the other or the print goes flat. */
+    .ps-vstack, .ps-vs-loupe { --ps-vs-scrim:rgba(17,20,26,.34); --ps-vs-veil:rgba(255,255,255,.42); --ps-vs-edge:rgba(15,18,24,.34); }
+    html.pd-dark .ps-vstack, html.pd-dark .ps-vs-loupe { --ps-vs-scrim:rgba(0,0,0,.46); --ps-vs-veil:rgba(255,255,255,.24); --ps-vs-edge:rgba(255,255,255,.24); }
+    /* ---- The cards ("windows") -------------------------------------------------------------
+       Cards keep their content width (see the note above — that is deliberate), but a row of them
+       now shares a height and hangs from a common top line instead of each card ending wherever
+       its own drawing does, which is what made the row read as debris rather than as a set. */
+    .ps-vs-grid { align-items:stretch; align-content:flex-start; gap:16px 16px; }
+    .ps-vs-grid > .ps-vs-tower { display:flex; flex-direction:column; }
+    .ps-vs-grid > .ps-vs-tower > .ps-vs-scroll,
+    .ps-vs-grid > .ps-vs-tower > .ps-vs-stagewrap { flex:1 1 auto; }
+    .ps-vs-tower { border-radius:14px; border-top-width:3px;
+      box-shadow:0 1px 2px rgba(16,24,40,.06), 0 8px 22px rgba(16,24,40,.06); }
+    html.pd-dark .ps-vs-tower { box-shadow:0 1px 2px rgba(0,0,0,.5), 0 10px 26px rgba(0,0,0,.35); }
+    /* The header carries a whisper of the card's own colour, so the tower is identifiable before
+       any cell is read — on white this is what stops eight cards looking like one grey table. */
+    .ps-vs-towerh { padding:11px 14px; font-size:13px; letter-spacing:-.01em;
+      background:linear-gradient(180deg, color-mix(in srgb, var(--tc,var(--pd-line)) 9%, var(--pd-card)) 0%, var(--pd-card) 100%); }
+    html.pd-dark .ps-vs-towerh { background:linear-gradient(180deg, color-mix(in srgb, var(--tc,var(--pd-line)) 16%, var(--pd-card)) 0%, var(--pd-card) 100%); }
+    .ps-vs-towerh .ct { font-variant-numeric:tabular-nums; font-size:10.5px; letter-spacing:.01em; }
+    .ps-vs-tower:hover { transform:translateY(-1px); }
+    .ps-vs-tower { transition:box-shadow .2s ease, border-color .2s ease, transform .2s ease; }
+    @media (prefers-reduced-motion: reduce) { .ps-vs-tower:hover { transform:none; } }
     /* ---- Magnifier (loupe) ----------------------------------------------------------------
        Zones get small fast - a tall tower at detail 3 is a wall of 8pt dates, and the Zoom control
        fixes that only by making the whole building too wide to see at once. The loupe keeps the
@@ -11516,6 +11553,30 @@
   // Labels sit over solid, hatched AND tinted areas depending on progress, so they carry their own
   // outline (stroke painted UNDER the fill) instead of assuming a dark background.
   var VS_TXT = 'paint-order="stroke" stroke="rgba(0,0,0,.55)" stroke-width="2.4" stroke-linejoin="round"';
+  // ---- Cell ink: pick the label colour from the colour it is printed ON ------------------------
+  // Owner 2026-09-02: day mode was unreadable. Every label in the stacking was hard-coded #fff, which
+  // is only ever right if the cell body is dark — and until this change the light theme drew the cell
+  // as a 16%-opacity wash of the trade colour on a white card, i.e. near-white. The body is saturated
+  // now (see the --ps-vs-* tokens in the CSS), so white is right again for most trades — but not for
+  // the pale ones (the palette's yellow/amber), where white on yellow is the same defect in a
+  // different hue. So the ink is CHOSEN per colour from its luminance, and its halo flips with it.
+  // Falls back to white for a non-hex colour (`var(--pd-muted)` for the un-towered band).
+  function _vsLum(c) {
+    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim());
+    if (!m) return null;
+    var h = m[1]; if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var v = [0, 2, 4].map(function (i) {
+      var x = parseInt(h.substr(i, 2), 16) / 255;
+      return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  }
+  function _vsInkFill(c) { var L = _vsLum(c); return (L != null && L > 0.55) ? '#14181d' : '#ffffff'; }
+  function _vsTxtAttr(c) {
+    var L = _vsLum(c), dark = (L != null && L > 0.55);
+    return 'paint-order="stroke" stroke="' + (dark ? 'rgba(255,255,255,.70)' : 'rgba(9,11,15,.52)') +
+      '" stroke-width="2.4" stroke-linejoin="round"';
+  }
   // Level-1 building width: a fixed span so every card is the same size regardless of how many
   // zones the trade happens to have. In cell-units, so the zoom still works; the floor stops it
   // getting thin at the smallest zoom. See the note in _vsTowerSVG.
@@ -11696,8 +11757,23 @@
     return (mn && mx && +mx > +mn) ? { min: mn, max: mx } : null;
   }
   var _VS_MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var _vsPlayT = null;
-  function _vsStopPlay() { if (_vsPlayT) { clearInterval(_vsPlayT); _vsPlayT = null; } }
+  // ⚠️ PLAYBACK IS A rAF LOOP DRIVEN BY WALL-CLOCK TIME, NOT A setInterval THAT ADVANCES A FIXED
+  // STEP. The old version fired every 220ms and called renderVStack() straight from the timer, which
+  // lags in two compounding ways on a real project:
+  //   (a) a full stack render can cost MORE than 220ms, and setInterval keeps firing regardless, so
+  //       the callbacks queue up behind each other and the whole tab stutters; and
+  //   (b) it advanced a fixed slice per TICK, so whenever a frame was slow the playhead slowed with
+  //       it — the programme visibly crawled and jerked instead of running at a steady speed.
+  // A rAF loop can never queue: the browser calls back at most once per frame and only when it is
+  // ready to paint. Advancing by the ELAPSED time means a slow frame drops a frame rather than
+  // stretching the timeline, so playback runs at a constant real-time speed on any machine.
+  var _vsPlayT = null;            // the rAF handle, or null when stopped
+  var _vsPlayLast = 0;            // timestamp of the previous frame
+  var VS_PLAY_MS = 9000;          // how long the whole programme takes to play through
+  function _vsStopPlay() {
+    if (_vsPlayT) { cancelAnimationFrame(_vsPlayT); _vsPlayT = null; }
+    _vsPlayLast = 0;
+  }
   // The scrubber. Rendered under the stack; the whole thing is skipped when the programme has no
   // span to scrub through (a project with one date, or none).
   function _vsTimelineHTML(acts) {
@@ -11864,12 +11940,29 @@
       // ⚠️ Start from the BEGINNING when the scrub is live or already at the end — pressing play on
       // a finished programme should replay it, not sit still.
       if (_vsAsOf == null || _vsAsOf >= mx) _vsAsOf = mn;
-      var stepMs = Math.max(86400000, (mx - mn) / 60);   // ~60 frames end to end, min one day
-      _vsPlayT = setInterval(function () {
-        var next = (_vsAsOf == null ? mn : _vsAsOf) + stepMs;
+      // Programme-ms advanced per real ms, so the run takes VS_PLAY_MS however fast the machine is.
+      var rate = (mx - mn) / VS_PLAY_MS;
+      _vsPlayLast = 0;
+      var frame = function (ts) {
+        if (!_vsPlayT) return;                     // stopped between frames (Live, a step, a drag)
+        // ⚠️ The first frame advances NOTHING — `ts` is a page timestamp, so without this the very
+        // first delta would be the whole time since the page loaded and playback would jump to the
+        // end instantly.
+        if (!_vsPlayLast) { _vsPlayLast = ts; _vsPlayT = requestAnimationFrame(frame); return; }
+        // ⚠️ Clamped to 250ms: after a slow render (or a backgrounded tab, where rAF stops entirely)
+        // the raw delta can be seconds, and honouring it would teleport the playhead. Better to lose
+        // a little programme-time than to skip most of the building.
+        var dt = Math.min(250, ts - _vsPlayLast);
+        _vsPlayLast = ts;
+        var next = (_vsAsOf == null ? mn : _vsAsOf) + dt * rate;
         if (next >= mx) { _vsAsOf = mx; _vsStopPlay(); renderVStack(); return; }
-        _vsAsOf = next; renderVStack();
-      }, 220);
+        _vsAsOf = next;
+        // ⚠️ Rendered SYNCHRONOUSLY inside the frame, then the next frame is requested — so the loop
+        // self-throttles to whatever the render actually costs and can never build a backlog.
+        renderVStack();
+        if (_vsPlayT) _vsPlayT = requestAnimationFrame(frame);
+      };
+      _vsPlayT = requestAnimationFrame(frame);
       renderVStack();
     };
   }
@@ -11967,8 +12060,13 @@
       ids.map(function (col) {
         // 45° lines. The remaining area also carries a faint wash of the same colour, so a cell never
         // reads as empty background — see the tint rect in the cell renderer.
-        return '<pattern id="' + _vsHatchId(col) + '" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
-          '<line x1="0" y1="0" x2="0" y2="6" stroke="' + col + '" stroke-width="2.6" opacity="0.55"/></pattern>';
+        // ⚠️ The lines are a THEME-AWARE VEIL now, not the trade colour. They used to be drawn in the
+        // colour itself over a 16% wash of the same colour — which is why the light theme rendered
+        // every remaining stretch as pale-on-pale with white text over it. The remaining stretch is
+        // now the colour dimmed by --ps-vs-scrim, and these lines lighten it back in a fine 45°
+        // texture, so "hatched = remaining" still reads without the cell ever going near-white.
+        return '<pattern id="' + _vsHatchId(col) + '" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
+          '<line x1="0" y1="0" x2="0" y2="7" stroke="var(--ps-vs-veil)" stroke-width="2.4"/></pattern>';
       }).join('') + '</defs></svg>';
   }
   // Towers are not a code category, so catEntryByValue has no colour for them and _vsColor would
@@ -11998,6 +12096,26 @@
     });
     order.sort(function (a, b) { return cmpGroupName(a.label, b.label); });
     return order;
+  }
+  // Consolidated's cells: one per TRADE, in canonical construction order, each carrying its own
+  // colour. Owner: *"when clicking consolidated, the trades should be stacked all together (e.g.
+  // site works, structural, archi, mepf), however users should have options to pick the trades that
+  // will be stacked together."*
+  // ⚠️ Consolidated used to merge every trade into ONE cell per level painted brand red, so the one
+  // view whose whole purpose is comparing trades was the one view in which you could not tell them
+  // apart. Splitting by trade puts them side by side inside a single building.
+  // ⚠️ WHICH trades are stacked is the EXISTING chip row — no second picker. Two controls selecting
+  // trades would be able to disagree, and the chips already narrow `acts` for the counts, the time
+  // bar and the header, so a separate list would silently describe a different set.
+  // ⚠️ Ordered by the caller's canonical trade list, not by first appearance, so the columns sit in
+  // the same order in every level band and can be read down the building.
+  function _vsRowTradeCells(list, trades) {
+    var by = {}, out = [];
+    list.forEach(function (r) { var t = _vsTradeOf(r); (by[t] = by[t] || []).push(r); });
+    trades.forEach(function (t) { if (by[t]) { out.push({ label: t, list: by[t], color: _vsColor(t) }); delete by[t]; } });
+    // Anything the canonical list did not name still gets a column rather than vanishing.
+    Object.keys(by).sort(cmpGroupName).forEach(function (t) { out.push({ label: t, list: by[t], color: _vsColor(t) }); });
+    return out;
   }
   // One tower: level rows top-down (highest first), basements under a grade line — the same shape as
   // step 6, ordered by levelRank like the rest of the module, never alphabetically.
@@ -12043,7 +12161,9 @@
     });
     return true;
   }
-  function _vsTowerSVG(list, baseColor, keyPrefix) {
+  // `tradeSplit` (Consolidated only) = the canonical trade order; when present each level row is
+  // split by trade instead of by the location sub-path, and each cell paints its own trade colour.
+  function _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit) {
     // ⚠️ Bands by the AXIS level (the floor), never by LOC_LEVELS[0] — that is the tower on a
     // `Tower › Level › Zone` breakdown, and this card is already scoped to one tower, so banding by
     // it produced a single band with the floors running sideways. See _vsAxis.
@@ -12079,7 +12199,10 @@
     // the variance line — one more line than it used to, hence the extra height.
     var fh = (_vsBasis === 'compare') ? 60 : 44, gap = 6, pad = 14, labelW = 92;
     // How many cells the widest row holds at a given detail — the tower's width in "zone units".
-    function cellsAt(k) { return disp.reduce(function (m, v) { return Math.max(m, _vsRowCells(byLevel[v], k).length || 1); }, 1); }
+    // One place both the width measurement and the render resolve a row's cells, so they can
+    // never split on different axes.
+    function rowCells(l, k) { return tradeSplit ? _vsRowTradeCells(l, tradeSplit) : _vsRowCells(l, k); }
+    function cellsAt(k) { return disp.reduce(function (m, v) { return Math.max(m, rowCells(byLevel[v], k).length || 1); }, 1); }
     // ⚠️ At detail >= 2 the building's width comes from the ZONE breakdown and never shrinks below
     // it — every zone cell needs room for its date. Detail 3 may need more than the zone count, so
     // take whichever is wider.
@@ -12095,25 +12218,33 @@
     // zone count instead, and two cards side by side looked like different-sized buildings.
     // VS_L1_SPAN is in cell-units so it still scales with the zoom, and the absolute floor keeps it
     // readable ("not too thin") when zoomed all the way out.
-    var plotW = (detail === 1) ? Math.max(VS_L1_MIN_W, VS_L1_SPAN * cw) : maxCells * cw;
+    // ⚠️ The fixed detail-1 width exists so two cards read as the same-sized building. It must NOT
+    // apply to the trade split, whose width is the trade count and is meaningful.
+    var plotW = (!tradeSplit && detail === 1) ? Math.max(VS_L1_MIN_W, VS_L1_SPAN * cw) : maxCells * cw;
     var W = labelW + pad * 2 + plotW;
     var H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
     disp.forEach(function (v, i) {
       var y = pad + i * (fh + gap);
       svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="11.5" font-weight="700" fill="var(--pd-muted)">' + esc(String(v).slice(0, 16)) + '</text>';
-      var cells = _vsRowCells(byLevel[v], detail);
+      var cells = rowCells(byLevel[v], detail);
       var fcw = plotW / (cells.length || 1);
       cells.forEach(function (c, ci) {
         var cx = pad + labelW + ci * fcw, mid = cx + (fcw - 3) / 2;
         var pct = _vsProgress(c.list), fin = _vsDate(c.list);   // progress + date both follow the basis
         var planPct = _vsPlanPct(c.list);   // for the Compare marker and the tooltip
         var slip = _vsSlip(c.list), cmp = (_vsBasis === 'compare');
-        // ⚠️ Compare is filled by SLIP, not progress — see the note on the basis switcher. A late
-        // cell must look late however complete it is.
-        // The cell's colour still means its CATEGORY (trade, or slip in Compare). Progress is carried
-        // by how much of the cell is solid, so the two read independently: in Compare you can see
-        // "late AND only 40% done" at once, which an opacity ramp could never show.
-        var fill = cmp ? _vsSlipColor(slip) : baseColor;
+        // ⚠️⚠️ COMPARE KEEPS THE TRADE COLOUR. It used to REPLACE the fill with the slip colour, so
+        // switching to Planned vs Actual turned every building into four greys/reds and the trades
+        // became unidentifiable — owner: *"when clicking planned vs actual the color of the trades
+        // are gone."* Slip now rides the cell's OUTLINE instead (thicker, in the slip colour), so
+        // the three facts stay on three independent channels and can be read at once:
+        //   FILL   = which trade (or tower / package — the card's own category)
+        //   SOLID  = how much is done
+        //   BORDER = early / on time / late / no baseline
+        // A shared channel can only ever show one of them.
+        var fill = (c.color || baseColor);
+        // The label colour and its halo are derived from THIS cell's colour — see _vsInkFill.
+        var ink = _vsInkFill(fill), vtx = _vsTxtAttr(fill);
         _vsHatchSeen[fill] = 1;
         var key = keyPrefix + '|' + v + '|' + (c.label || '*');
         var isNo = (v === VS_NOLEV);   // project-wide band — drawn dashed, never as a storey
@@ -12127,20 +12258,28 @@
         // so 1% still shows a sliver rather than nothing and 100% never overruns the stroke.
         var doneW = pct <= 0 ? 0 : Math.max(2, Math.min(cw2 - 2, (cw2 - 2) * pct / 100));
         svg +=
-          // 1) faint wash of the category colour — a 0% cell is never blank background
-          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="' + fill + '" opacity="' + (isNo ? '0.10' : '0.16') + '" pointer-events="none"></rect>' +
-          // 2) hatch over the whole cell = the REMAINING work
-          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="url(#' + _vsHatchId(fill) + ')" opacity="' + (isNo ? '0.55' : '1') + '" pointer-events="none"></rect>' +
-          // 3) solid bar to POC = the work DONE. Square-ish inner corners on purpose: a rounded right
-          //    edge would make the boundary between done and remaining hard to read against the hatch.
-          (doneW > 0 ? '<rect x="' + (cx + 1) + '" y="' + (y + 1) + '" width="' + doneW.toFixed(1) + '" height="' + (fh - 2) + '" rx="3" fill="' + fill + '" opacity="' + (isNo ? '0.75' : '0.97') + '" pointer-events="none"></rect>' : '') +
+          // ⚠️ FOUR LAYERS, AND THE BODY IS NEVER PALE. The old paint was a 16% wash + a colour hatch,
+          // which on the light theme is a near-white box carrying white text — the day-mode
+          // illegibility the owner reported. Now the whole cell is the category colour at full
+          // strength and the DONE/REMAINING split is a BRIGHTNESS step on that one colour:
+          //   1) the colour, solid, across the whole cell
+          //   2) --ps-vs-scrim over it → that is the REMAINING tone (dimmer, still the same hue)
+          //   3) --ps-vs-veil hatch → the texture that says "remaining" at a glance
+          //   4) the colour again, clean and undimmed, out to the POC → the DONE stretch
+          // Layer 4 last means the done stretch erases 2 and 3 rather than being drawn over them, so
+          // the boundary is a hard edge. Both tones are dark enough (or, for a pale trade, light
+          // enough — see _vsInkFill) to carry the label at full contrast in either theme.
+          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="' + fill + '" opacity="' + (isNo ? '0.34' : '1') + '" pointer-events="none"></rect>' +
+          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="var(--ps-vs-scrim)" opacity="' + (isNo ? '0.5' : '1') + '" pointer-events="none"></rect>' +
+          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="url(#' + _vsHatchId(fill) + ')" opacity="' + (isNo ? '0.5' : '1') + '" pointer-events="none"></rect>' +
+          (doneW > 0 ? '<rect x="' + (cx + 1) + '" y="' + (y + 1) + '" width="' + doneW.toFixed(1) + '" height="' + (fh - 2) + '" rx="4" fill="' + fill + '" opacity="' + (isNo ? '0.7' : '1') + '" pointer-events="none"></rect>' : '') +
           // In Compare, mark where the BASELINE says progress should be, so "behind by this much" is
           // visible as a gap rather than something to work out from two numbers.
           ((cmp && planPct != null)
             ? _vsPlanMark(cx + 1 + (cw2 - 2) * Math.max(0, Math.min(100, planPct)) / 100, y + 1, fh - 2)
             : '') +
           // 4) the interactive outline last, so it owns the pointer and sits above the fills
-          '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="transparent" stroke="' + (isNo ? baseColor : 'rgba(0,0,0,.28)') + '" stroke-width="1"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsBasisWord() + ' · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—') +
+          '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="transparent" stroke="' + (isNo ? baseColor : (cmp ? _vsSlipColor(slip) : 'var(--ps-vs-edge)')) + '" stroke-width="' + (cmp && !isNo ? '2.5' : '1') + '"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsBasisWord() + ' · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—') +
           (cmp ? (' · planned ' + (_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') +
                   ' · ' + (slip == null ? 'no baseline' : (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time')))) : '') +
           ' · ' + _vsProgressWord() + ' ' + (pct >= 100 ? 'complete' : (pct <= 0 ? (_vsBasis === 'planned' ? 'not due to start yet' : 'not started') : pct + '%' + (_vsBasis === 'planned' ? ' due' : ' done, ' + (100 - pct) + '% remaining'))) +
@@ -12149,7 +12288,7 @@
                   : (' · planned ' + planPct + '% by today (the marker line), actual ' + pct + '% — ' +
                      (function () { var g = Math.round(pct - planPct); return g === 0 ? 'exactly on plan' : (g > 0 ? g + '% ahead of plan' : (-g) + '% behind plan'); })()))
                : '')) + '</title></rect>' +
-          (lbl ? '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10.5" font-weight="800" fill="#fff" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
+          (lbl ? '<text ' + vtx + ' x="' + mid + '" y="' + (y + 13) + '" text-anchor="middle" font-size="10.5" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(String(lbl).slice(0, 14)) + '</text>' : '') +
           (cmp
             // Compare reads as a two-row table: the PLANNED row and the ACTUAL row, each with its own
             // date and its own POC, then the variance line underneath. Dates are left-aligned and the
@@ -12160,8 +12299,8 @@
                 var yP = y + (lbl ? 24 : 20), yA = yP + 11, yV = yA + 12;
                 var xL = cx + 4, xR = cx + cw2 - 4;
                 function row(yy, tag, dt, pc, bold) {
-                  return '<text ' + VS_TXT + ' x="' + xL + '" y="' + yy + '" text-anchor="start" font-size="8.5" font-weight="' + (bold ? '700' : '400') + '" fill="#fff" pointer-events="none">' + tag + ' ' + esc(dt) + '</text>' +
-                    '<text ' + VS_TXT + ' x="' + xR + '" y="' + yy + '" text-anchor="end" font-size="8.5" font-weight="800" fill="#fff" pointer-events="none">' + esc(pc) + '</text>';
+                  return '<text ' + vtx + ' x="' + xL + '" y="' + yy + '" text-anchor="start" font-size="8.5" font-weight="' + (bold ? '700' : '400') + '" fill="' + ink + '" pointer-events="none">' + tag + ' ' + esc(dt) + '</text>' +
+                    '<text ' + vtx + ' x="' + xR + '" y="' + yy + '" text-anchor="end" font-size="8.5" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(pc) + '</text>';
                 }
                 var gap2 = _vsPocGap(c.list);
                 // The variance line carries BOTH variances — days of slip and points of POC — because
@@ -12173,10 +12312,10 @@
                   (gap2 == null ? '' : ' · ' + Math.abs(Math.round(gap2)) + '% ' + (gap2 > 0 ? 'ahead' : gap2 < 0 ? 'behind' : 'on plan'));
                 return row(yP, 'P', _vsDateShort(_vsPlanDate(c.list)), _vsPctTxt(planPct), false) +
                   row(yA, 'A', _vsDateShort(fin), _vsPctTxt(pct), true) +
-                  '<text ' + VS_TXT + ' x="' + mid + '" y="' + yV + '" text-anchor="middle" font-size="9" font-weight="800" fill="#fff" pointer-events="none">' + esc(vtxt) + '</text>';
+                  '<text ' + vtx + ' x="' + mid + '" y="' + yV + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(vtxt) + '</text>';
               })()
-            : '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '500' : '700') + '" fill="#fff" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
-              '<text ' + VS_TXT + ' x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="#fff" pointer-events="none">' + pct + '%</text>');
+            : '<text ' + vtx + ' x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '500' : '700') + '" fill="' + ink + '" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
+              '<text ' + vtx + ' x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + pct + '%</text>');
       });
     });
     var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
@@ -12427,7 +12566,11 @@
     w.document.write('<!doctype html><html><head><meta charset="utf-8">' +
       '<title>Vertical Stacking — ' + esc(projName()) + '</title><style>' +
       // A fixed light palette: the vars the cloned svg resolves against, plus the page's own ink.
-      ':root{--pd-ink:#231F20;--pd-muted:#6E7378;--pd-line:#DCE0E5;--pd-red:#EE3124;}' +
+      // ⚠️ The cell paint tokens travel too. The cloned buildings resolve --ps-vs-scrim / --ps-vs-veil
+      // for their remaining stretches; without them the print loses the done/remaining split entirely
+      // and every cell comes out as one flat colour block. Light values, to match the fixed palette.
+      ':root{--pd-ink:#231F20;--pd-muted:#6E7378;--pd-line:#DCE0E5;--pd-red:#EE3124;' +
+      '--ps-vs-scrim:rgba(17,20,26,.32);--ps-vs-veil:rgba(255,255,255,.46);--ps-vs-edge:rgba(15,18,24,.34);}' +
       '*{box-sizing:border-box;}' +
       'body{font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--pd-ink);margin:0;padding:22px 24px 28px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
       'header{border-bottom:2px solid var(--pd-red);padding-bottom:10px;margin-bottom:14px;}' +
