@@ -61,6 +61,24 @@
 .il-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
 .il-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 
+/* ITEM 8: the Export dropdown — Excel / PDF / HTML, in the topbar tool
+   cluster beside Refresh. Same anchored-popover pattern the topbar filter
+   funnel uses (open/close via a class toggle, outside-click closes it). */
+.il-exportwrap { position: relative; }
+#il-export-btn.is-active { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-red); }
+.il-export-menu {
+  display: none; position: absolute; top: 40px; right: 0; z-index: 20;
+  min-width: 200px; background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); box-shadow: var(--pd-shadow);
+  padding: 6px; flex-direction: column; gap: 2px;
+}
+.il-export-menu.open { display: flex; }
+.il-export-menu button {
+  text-align: left; background: none; border: 0; border-radius: 6px;
+  padding: 8px 10px; font-size: 13px; color: var(--pd-ink); cursor: pointer;
+}
+.il-export-menu button:hover { background: var(--pd-bg); color: var(--pd-red); }
+
 /* ---- Topbar search + filter toggle ----------------------------------------
    Item 1: the SAME search/filter UX as Progress Photos, on all three screens
    (Issues, Lessons, Dashboard) — a compact search box in the topbar tool
@@ -137,16 +155,23 @@
 .il-kpi.is-closed .il-kpi-val { color: #16a34a; }
 
 /* ---- Issues table -------------------------------------------------------- */
-.il-table { min-width: 980px; }
-.il-table th { white-space: nowrap; }
+/* ITEM 6 (this round): a smaller, denser read for both the Issues & the Lessons
+   Learned tables — "reduce font sizes to make more minimalist" — plus the Issue /
+   Caused By / Corrective Action / Lesson Learned columns widened and allowed to
+   wrap their full text rather than being clamped to 3 lines. min-width raised to
+   fit the wider columns without the header/body columns disagreeing. */
+.il-table { min-width: 1080px; font-size: 12.5px; }
+.il-table th { white-space: nowrap; font-size: 11px; }
 .il-table td { vertical-align: top; }
-.il-cell-wrap { max-width: 320px; white-space: normal; }
+.il-cell-wrap { max-width: 420px; white-space: normal; }
 .il-cell-num { color: var(--pd-muted); font-variant-numeric: tabular-nums; }
-.il-clip {
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.il-champ { font-size: 13px; white-space: normal; max-width: 150px; }
+/* ⚠️ No `-webkit-line-clamp` any more — a clamped cell hid text with nothing on
+   screen saying more was cut off. Text now wraps to as many lines as it needs
+   ("allow text overflows as needed"); `overflow:hidden` also dropped since
+   there's nothing left to clip. The mobile card view's OWN clamp (below, inside
+   the ≤700px block) is untouched — that's a different, deliberately-scoped rule. */
+.il-clip { white-space: normal; }
+.il-champ { font-size: 12px; white-space: normal; max-width: 150px; }
 .il-lessontag {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
   font-size: 11px; font-weight: 600; color: var(--pd-red);
@@ -193,36 +218,29 @@
 .il-lead-ico { color: var(--pd-red); flex: none; margin-top: 2px; }
 .il-lead-sub { color: var(--pd-muted); font-size: 13px; display: block; margin-top: 3px; }
 
-.il-lessons { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
-.il-lcard {
-  background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); box-shadow: var(--pd-shadow);
-  padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
-}
-.il-lcard-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.il-chip {
-  font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
-  padding: 2px 9px; border-radius: 999px; background: var(--pd-bg);
-  color: var(--pd-muted); border: 1px solid var(--pd-line);
-}
-.il-chip.is-cat { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
-.il-lcard-date { margin-left: auto; color: var(--pd-muted); font-size: 12px; }
-.il-lcard-lesson { font-size: 14px; line-height: 1.45; }
-.il-lcard-rec {
-  font-size: 13px; color: var(--pd-ink); background: var(--pd-bg);
-  border-left: 3px solid var(--pd-red); border-radius: 4px; padding: 8px 10px;
-}
-.il-lcard-rec b { color: var(--pd-red); }
+/* ⚠️ `.il-lessons`/`.il-lcard*`/`.il-chip` (the card/tile grid) are REMOVED this
+   round — their only emitter, `lessonCardHTML`, was deleted when item 5 replaced
+   the "Related lessons" section with a plain numbered list. `.il-lcard-src` /
+   `.il-src-issue` are KEPT: `renderLessonsLogView` still uses them for the
+   source line under a lesson's own row in the Lessons Learned table. */
 .il-lcard-src {
   border-top: 1px dashed var(--pd-line); padding-top: 8px; margin-top: 2px;
   font-size: 12px; color: var(--pd-muted);
 }
 .il-lcard-src .il-src-issue { color: var(--pd-ink); }
-.il-lcard-open {
-  align-self: flex-start; margin-top: 2px; background: transparent; border: 0;
-  color: var(--pd-red); font-weight: 600; font-size: 12px; cursor: pointer; padding: 0;
+
+/* ITEM 5 (this round): the "Related lessons" section on an issue's own page —
+   a plain numbered list of lesson text, nothing else (no department chip, date,
+   or action buttons). Each item IS the click target — a borderless full-width
+   button reading as a link, styled to look like ordinary body text until hovered
+   so the list reads as prose, not a row of controls. */
+.il-related-lessons { margin: 8px 0 0; padding-left: 22px; }
+.il-related-lessons li { margin: 0 0 6px; }
+.il-related-lesson-item {
+  display: inline; text-align: left; background: none; border: 0; padding: 0;
+  font: inherit; font-size: 13px; line-height: 1.5; color: var(--pd-ink); cursor: pointer;
 }
-.il-lcard-open:hover { text-decoration: underline; }
+.il-related-lesson-item:hover { color: var(--pd-red); text-decoration: underline; }
 
 /* ---- Empty states -------------------------------------------------------- */
 .il-empty { padding: 40px 24px; text-align: center; color: var(--pd-muted); }
@@ -300,7 +318,13 @@
   /* The issue text is the headline of the card, not a labelled field. */
   .il-table td.il-cell-issue { font-size: 14px; font-weight: 600; padding-bottom: 6px; }
   .il-table td.il-cell-issue::before { content: none; }
-  .il-table td.il-cell-issue .il-clip { -webkit-line-clamp: 4; }
+  /* ⚠️ The desktop `.il-clip` rule (above) dropped its clamp this round (item 6) —
+     this mobile-card clamp now carries its OWN full definition rather than
+     depending on the base rule for `display`/`-webkit-box-orient`/`overflow`, or
+     `-webkit-line-clamp` alone here would do nothing. */
+  .il-table td.il-cell-issue .il-clip {
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
   /* Row number reads as a card index, kept small and unlabelled. */
   .il-table td.il-cell-num { font-size: 11px; color: var(--pd-muted); }
   .il-table td.il-cell-num::before { content: "#"; }
@@ -317,7 +341,6 @@
      compressing into exactly two rows (3-over-2) instead of three. */
   .il-kpis { gap: 8px; }
   .il-kpis-2 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .il-lessons { grid-template-columns: 1fr; }
 }
 
 /* =========================================================================
@@ -433,50 +456,14 @@
   padding: 1px 6px; border-radius: 3px; margin-left: 6px;
   background: var(--pd-red-light); color: var(--pd-red);
 }
-/* --- Reporting view -------------------------------------------------------
-   Follows the Project Schedule's precedent exactly: hide the AUTHORING controls
-   and neutralise the edit affordances; keep every VIEW control (filters, search,
-   PDF, distribute state, and the toggle itself — the way back out).
-   ⚠️ Presentation only. Nothing here disables a write path, so this must never be
-   mistaken for a permission: the real gates stay canEditMinute() + RLS. */
-
-/* Inputs and selects become plain text. This is what makes the screen presentable
-   — a wall of bordered boxes is exactly what stops a live grid reading as a record. */
-.il-mom-report .pd-input,
-.il-mom-report .pd-select,
-.il-mom-report .pd-textarea {
-  border-color: transparent; background: transparent; box-shadow: none;
-  padding-left: 2px; pointer-events: none;
-  /* kills the dropdown arrow, which otherwise still reads as "editable" */
-  -webkit-appearance: none; -moz-appearance: none; appearance: none;
-}
-.il-mom-report .pd-textarea { resize: none; }
-/* ⚠️ Placeholders are hidden: "What will be done" is prompt text, and in a report
-   it would read as though it were the content. An empty cell reads as empty, which is
-   honest. (No ::after em-dash here — pseudo-elements do not render on <input>.) */
-.il-mom-report .pd-input::placeholder { color: transparent; }
-
-/* Authoring controls only. The toggle, PDF, filters and the distribute state stay. */
-.il-mom-report #il-mom-additem,
-.il-mom-report .il-mom-carry,
-.il-mom-report #il-mom-save,
-.il-mom-report #il-mom-del,
-.il-mom-report .il-mi-del,
-.il-mom-report .il-mi-fadd,
-.il-mom-report .il-c-del,
-.il-mom-report .il-mom-note { display: none !important; }
-
-/* Cards breathe — this is read across a room, not scanned at a desk. */
-.il-mom-report .il-mi-card { padding: 14px 16px; }
-.il-mom-report .il-mi-cards { gap: 12px; }
-.il-mom-report .il-mom-detail-card { padding: 18px 20px; }
-/* ⚠️ A dashed rule above the footer is an editing affordance; in a printed-looking
-   record it reads as a tear line. The footer still shows the file and the register
-   link — those are part of the record — just without the seam. */
-.il-mom-report .il-mi-foot { border-top-style: solid; }
-/* ⚠️ Reporting no longer renders form controls inside a card at all (momFieldHTML
-   emits the value as text), so the control-neutralising rules above do not reach the
-   action items — they still cover the minute's own header fields, which are inputs. */
+/* ⚠️ ITEM 7 (this round): the "Reporting view" CSS block that used to live here
+   is REMOVED. It was already 100% dead in this file — it targets ids
+   (`#il-mom-additem`, `#il-mom-carry`, `#il-mom-save`, …) that belong to the
+   Minutes of Meeting module this file predates the split from (see that
+   module's own `.il-mom-report` rules, which are the live copy), and nothing
+   in `module.js` has set `.il-mom-report` on an Issues/Lessons host since
+   entry (f)/(g) removed the toggle. "No need for reporting view" — confirmed
+   unreachable, not just unused. */
 
 /* ============================================================================
    REPORT / LOG PRESENTATION SWITCH  +  the Issues & Concerns report view
@@ -562,17 +549,8 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-mom-item .il-iss-lpill { transform: scale(.85); transform-origin: left center; display: block; margin-bottom: 2px; }
 .il-mom-item .il-less-lchip { display: inline-block; margin-bottom: 3px; }
 
-.il-iss-lessons .il-lessons-inline { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
-.il-lcard-acts { display: flex; gap: 12px; flex-wrap: wrap; }
-
 /* The action-item card's lesson cell, beside the register link. */
 .il-c-lesson { flex: 0 0 auto; }
-
-/* Reporting view hides the editing controls on these screens too (the class is set on
-   each screen's own host element, never on <body>). */
-.il-mom-report #il-iss-new, .il-mom-report #il-iss-save, .il-mom-report #il-iss-del,
-.il-mom-report #il-iss-addlesson, .il-mom-report #il-less-new, .il-mom-report #il-less-save,
-.il-mom-report #il-less-del { display: none !important; }
 
 @media (max-width: 700px) {
   .il-iss-panel { flex: 1 1 100%; }
