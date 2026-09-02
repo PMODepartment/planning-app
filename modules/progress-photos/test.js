@@ -3527,6 +3527,94 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('.pp-lb-tools-right is pinned to the right, offset to clear the close button — to its left, not overlapping it',
      /\.pp-lb-tools-right \{ position: absolute; top: 14px; right: 62px; display: flex; gap: 6px; z-index: 2; \}/.test(css));
 
+  // ============================================================================
+  // Report Type (Internal / External) filter on the Presentations list
+  // (2026-09-02 owner request) — reuses ppr_report_templates.meeting_type's own
+  // vocabulary ('internal'/'client') rather than a second spelling.
+  // ============================================================================
+  var reportTypeMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-09-02-ppr-presentation-report-type.sql');
+  var reportTypeMigrationSql = fs.readFileSync(reportTypeMigrationFile, 'utf8');
+  ok('migration adds ppr_presentations.report_type with NO default (a backfilled default would misclassify a real, already-external presentation)',
+     /alter table ppr_presentations add column if not exists report_type text;/.test(reportTypeMigrationSql) &&
+     !/add column if not exists report_type text default/.test(reportTypeMigrationSql));
+  ok('supabase-schema.sql folds report_type into the ppr_presentations CREATE TABLE, also with no default',
+     /report_type text,/.test(fs.readFileSync(schemaFile, 'utf8')) &&
+     !/report_type text default/.test(fs.readFileSync(schemaFile, 'utf8')));
+  ok('filters defaults to reportType: \'\' (All)', /reportType: ''\s*\};\s*\/\/ archived/.test(pjs));
+  ok('the filter <select> exists in index.html with All/Internal/External(Client) options, same .pd-select convention every other filter dropdown in this app uses',
+     /<select class="pd-select" id="ppr-f-reporttype"[\s\S]{0,120}<option value="">Report Type: All<\/option>[\s\S]{0,120}<option value="internal">Internal<\/option>[\s\S]{0,120}<option value="client">External \(Client\)<\/option>/.test(html));
+  ok('changing the filter select updates filters.reportType and re-renders — no full page reload',
+     /\$\('ppr-f-reporttype'\)\.onchange = function \(\) \{ filters\.reportType = this\.value; renderList\(\); \};/.test(pjs));
+  ok('Clear filters resets reportType to \'\' too, and clears the select\'s own value',
+     /filters = \{ from: '', to: '', archived: filters\.archived, reportType: '' \};/.test(pjs) &&
+     /if \(\$\('ppr-f-reporttype'\)\) \$\('ppr-f-reporttype'\)\.value = '';/.test(pjs));
+  ok('reportType is treated as a real narrowing filter (drives Clear-filters\' own visibility), unlike the archived view-toggle which deliberately does not',
+     /clr\.hidden = !\(filters\.from \|\| filters\.to \|\| filters\.reportType\);/.test(pjs));
+
+  // Genuinely EXECUTED against the real visiblePprs()/reportTypeLabel/
+  // reportTypePillHTML — not just regex-read — via the same save/restore
+  // hook convention as _renderPreviewWithState above.
+  var rtFixture = [
+    { id: 'p-int', archived: false, ppr_date: '2026-08-01', report_type: 'internal' },
+    { id: 'p-ext', archived: false, ppr_date: '2026-08-02', report_type: 'client' },
+    { id: 'p-legacy', archived: false, ppr_date: '2026-08-03', report_type: null }
+  ];
+  // archived/from/to pinned explicitly in every patch below (same defensive
+  // convention _renderPreviewWithState's own call sites already use) — this
+  // module-level `filters` object may already carry mutated state from an
+  // earlier test in the suite by the time this section runs.
+  eq('All (reportType \'\') shows every non-archived presentation, including an unclassified legacy one',
+     PPR._visiblePprsWithState(rtFixture, { archived: false, from: '', to: '', reportType: '' }).map(function (p) { return p.id; }),
+     ['p-int', 'p-ext', 'p-legacy']);
+  eq('Internal filter shows only report_type===\'internal\'',
+     PPR._visiblePprsWithState(rtFixture, { archived: false, from: '', to: '', reportType: 'internal' }).map(function (p) { return p.id; }),
+     ['p-int']);
+  eq('External (Client) filter shows only report_type===\'client\'',
+     PPR._visiblePprsWithState(rtFixture, { archived: false, from: '', to: '', reportType: 'client' }).map(function (p) { return p.id; }),
+     ['p-ext']);
+  eq('a legacy (NULL) presentation matches NEITHER specific filter — it only ever shows under All, never guessed into either bucket',
+     PPR._visiblePprsWithState(rtFixture, { archived: false, from: '', to: '', reportType: 'internal' }).concat(
+       PPR._visiblePprsWithState(rtFixture, { archived: false, from: '', to: '', reportType: 'client' })
+     ).some(function (p) { return p.id === 'p-legacy'; }), false);
+  eq('reportTypeLabel: internal', PPR._reportTypeLabel('internal'), 'Internal');
+  eq('reportTypeLabel: client shows the full "External (Client)" wording', PPR._reportTypeLabel('client'), 'External (Client)');
+  eq('reportTypeLabel: null/unset', PPR._reportTypeLabel(null), 'Not set');
+  ok('reportTypePillHTML: internal renders the muted pill with the shortened "Internal" text + a full title',
+     /<span class="pd-pill pd-pill-muted" title="Internal">Internal<\/span>/.test(PPR._reportTypePillHTML('internal')));
+  ok('reportTypePillHTML: client renders the WARN pill with the SHORTENED "External" text (fits the narrow list column) but the FULL "External (Client)" wording in its title',
+     /<span class="pd-pill pd-pill-warn" title="External \(Client\)">External<\/span>/.test(PPR._reportTypePillHTML('client')));
+  ok('reportTypePillHTML: an unclassified (null) row renders a muted em-dash, never a blank cell or a guessed value',
+     /<span class="pd-pill pd-pill-muted" title="Not set">—<\/span>/.test(PPR._reportTypePillHTML(null)));
+
+  ok('the Presentations list header gained exactly one new "Type" column (5 header divs total: checkbox/Date/Description/Type/Slides)',
+     /<div>Presentation Date<\/div><div>Description<\/div><div>Type<\/div>/.test(pjs));
+  ok('every row emits exactly one new Type cell (reportTypePillHTML), positioned between Description and the slide count — matching the header order exactly',
+     /<div class="ppr-cell">' \+ esc\(p\.description \|\| '—'\) \+ '<\/div>' \+\s*\n\s*'<div class="ppr-cell">' \+ reportTypePillHTML\(p\.report_type\) \+ '<\/div>' \+\s*\n\s*'<div class="ppr-cell ppr-num">'/.test(pjs));
+  ok('module.css: .ppr-head/.ppr-row grid gained exactly one new fixed-width track for Type (5 tracks total), the Templates table\'s own OVERRIDE selector is untouched',
+     /grid-template-columns: 34px 150px minmax\(120px, 1fr\) 90px 110px;/.test(css) &&
+     /\.ppr-tmpl-table \.ppr-head, \.ppr-tmpl-table \.ppr-row \{\s*\n\s*grid-template-columns: minmax\(140px, 1\.4fr\) 90px 100px 160px 210px;/.test(css));
+
+  // --- Report Type in the Add/Edit Presentation form -------------------------
+  ok('the Add/Edit form shows a Report Type <select> defaulting to Internal for both a brand-new presentation and a legacy (unset) one being edited — visible/changeable, never a silent backend backfill',
+     /var curType = p\.report_type \|\| 'internal';/.test(pjs) &&
+     /<option value="internal">Internal<\/option>/.test(pjs) &&
+     /<option value="client">External \(Client\)<\/option>/.test(pjs));
+  ok('the form reads the picked Report Type on Save and threads it through BOTH the direct-save path and the copy-wizard hand-off',
+     /var reportType = \$\('ppr-f-reporttype'\) \? \$\('ppr-f-reporttype'\)\.value : '';/.test(pjs) &&
+     /openCopyWizard\(\{ ppr_date: date, description: desc, report_type: reportType \}, copyFrom\);/.test(pjs) &&
+     /var data = \{ ppr_date: date, description: desc, report_type: reportType \};/.test(pjs));
+
+  // --- Tolerant of the migration not having run yet ---------------------------
+  ok('a shared insertPresentation()/updatePresentation() pair is used by EVERY ppr_presentations write that can carry report_type (openPprForm, createPresentationPlain, the copy wizard\'s finish(), and generateFromTemplate) — one retry rule, not four independent copies',
+     /async function insertPresentation\(data\) \{/.test(pjs) && /async function updatePresentation\(id, data\) \{/.test(pjs) &&
+     /r = await insertPresentation\(data\);/.test(pjs) && /r = await updatePresentation\(p\.id, data\);/.test(pjs) &&
+     /var r = await insertPresentation\(data\);/.test(pjs) && /var ir = await insertPresentation\(newData\);/.test(pjs) &&
+     /var ir = await insertPresentation\(\{ ppr_date: today, description: desc, report_type: tmpl\.meeting_type \}\);/.test(pjs));
+  ok('insertPresentation/updatePresentation strip ONLY report_type and retry on a missing-column error — the rest of the save (date/description) must never be blocked by one not-yet-migrated field',
+     /if \(res\.error && isMissingColumnErr\(res\.error\) && 'report_type' in data\) \{\s*\n\s*var retry = Object\.assign\(\{\}, data\); delete retry\.report_type;/.test(pjs));
+  ok('generateFromTemplate() carries the RUNNING TEMPLATE\'s own meeting_type onto the presentation it creates — the concrete "reuse the existing classification field" the owner asked to check for',
+     /report_type: tmpl\.meeting_type/.test(pjs));
+
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
 })();

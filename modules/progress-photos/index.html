@@ -274,6 +274,11 @@
               <input class="pd-input" type="date" id="ppr-f-from" title="Filter by presentation date start" /></label>
             <label class="pp-datefield">to
               <input class="pd-input" type="date" id="ppr-f-to" title="Filter by presentation date end" /></label>
+            <select class="pd-select" id="ppr-f-reporttype" title="Filter by report type">
+              <option value="">Report Type: All</option>
+              <option value="internal">Internal</option>
+              <option value="client">External (Client)</option>
+            </select>
             <label class="ppr-allloc"><input type="checkbox" id="ppr-f-archived" /> Show archived</label>
             <button class="pp-clear" id="ppr-clearfilters" title="Clear all filters" hidden>
               <span data-ico="x" data-ico-size="14"></span>Clear filters</button>

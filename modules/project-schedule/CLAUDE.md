@@ -1,3 +1,337 @@
+## Reset + rebuild ran, and proved the damage is in the DATA, not the tree (2026-09-02aa) — fmlozano
+
+Owner: *"Reset WBS and rebuild, then check."* Driven live on SLN101.
+
+### The run
+| | |
+|---|---|
+| tree cleared | **12,408 branches** |
+| dangling links cleared | **28,667**, in 4,000-row batches, ~29s |
+| rebuilt | 12,426 nodes against 12,442 summary rows |
+
+✅ **`wbs_unlink_dangling` earned its migration.** 28,667 rows updated in batches; as the single
+statement it replaced, that is 3.5× the 8-second `statement_timeout` — Reset WBS would simply have
+failed on this project.
+
+### ❌ But it did not fix the hierarchy, and the reason matters
+**Roots went 19 → 16, unlocked roots 14 → 11.** Better, not fixed. Then the decisive measurement:
+**all 11 remaining promoted roots carry SINGLE-SEGMENT stored codes** — `Cluster 4` = **"3"**,
+`Cluster 3` = "5", `Dry Works` = "10", `Wet Works` = "11", `Masonry Works` = "13", `Hardwares` = "17".
+
+⚠️⚠️ **A single-segment code IS a root**, so the rebuild reproduced the flattening *faithfully*. The
+tree is not what is broken any more — **the codes are**, and they are what the rebuild builds from.
+The reset dialog's promise that rebuilding is *"reversible, because every row keeps its own WBS
+code"* holds only while those codes still describe the real hierarchy.
+
+### The design flaw this exposes
+Two functions disagree about who owns the truth:
+- `wbsAdopt()` builds the **tree** from the dotted **codes**;
+- `_wbsResyncCodes()` rewrites the **codes** from the **tree**.
+
+Fine while the tree is right; **catastrophic when it is not**, because the error stops being a tree
+problem and becomes a *data* problem. Adopt rooted 14 branches it could not place, resync wrote their
+new positions back as codes, and the original deep P6 codes were **destroyed**.
+
+**Guarded:** `_wbsResyncCodes()` now refuses to run when any **unlocked node sits at the top level**.
+The five phases are locked and every real branch hangs under one, so an unlocked root means adoption
+failed to place something — precisely the state whose codes must not be written back. Cheap, specific,
+and it would have made this recoverable.
+
+### ⚠️ Recovery for SLN101: a fresh re-import, not another rebuild
+The deep codes only exist in the .xer now. Re-importing restores them, and with the deferral fix
+(2026-09-02z) adopt no longer roots what it cannot place, so the flattening should not recur.
+⚠️ Also still true right now: **16,202 of 16,396 activities are unlinked** — the link matches an
+activity's parent code against a summary row's code, and with the codes corrupted most resolve to
+nothing. That resolves itself on a clean import; it is a symptom, not a separate fault.
+
+- `MODULE_V` → `20260902aa`.
+
+---
+## ⚠⚠ The tree flattened: adopt was rooting any node whose parent it could not find (2026-09-02z) — fmlozano
+
+Owner: *"Stevi's schedule also bugged out let's check."* The grid's root showed **Milestones,
+Initiation Phase, Fire Exit 2, Planning Phase, Cluster 2 (Units 07 to 12)** — two deep branches sitting
+beside the phases, and no Execution or Closeout Phase in sight.
+
+### Measured
+**26 top-level rows**, and they are not stale codes — they are real roots. `parent_id IS NULL` in the
+database for `Cluster 2/3/4/5/6`, `Wet Works`, `Dry Works`, `Masonry Works`, `Fire Exit 2`,
+`Thermal and Moisture Protection`, `Drywall and Ceiling`, `Hardwares`, `Aluminum, Glass and Glazing`.
+`Execution Phase` had been pushed to code **7** and `Closeout Phase` to **8**, past the visible rows.
+
+⚠️ **I read this wrong earlier and said the tree was sound.** That measurement (`nodesAtRoot: 19`)
+was taken *before* the owner's later adopts; it was true then and I carried it forward as though it
+still held. The roots grew afterwards.
+
+### The cause, one line
+```js
+var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
+```
+⚠️ **`|| null` inserts the branch AT THE TOP LEVEL** whenever the parent code cannot be resolved —
+silently, and then **permanently**, because `_wbsResyncCodes()` rewrites the branch's dotted code to
+match its new position. This is the same flattening this file already records from an earlier
+regression (*1,584 of 1,623 nodes left at the top level*); rooting on a failed lookup is how it
+happens.
+
+**Fixed: a node whose parent cannot be resolved is DEFERRED, never rooted.** Safe and self-healing —
+the adopt runs depth-ascending and `autoAdoptAfterImport()` already loops while passes make progress,
+so a branch whose parent lands in pass N is adopted in pass N+1. A code with no parent segment is
+still legitimately a root. Deferrals are counted and logged, and the existing "tree is INCOMPLETE"
+toast reports whatever is left.
+
+⚠️ **The existing damage is not repaired by this.** SLN101's 7 promoted roots stay where they are
+until the tree is rebuilt: **WBS Manager → Reset WBS… → rebuild**, which now cannot flatten.
+
+---
+
+## The toolbar is one row again, and the View menu stops offering what it no longer owns (2026-09-02z)
+
+Owner: *"The progress and stacking buttons are still under the view button when we have already
+separated this entirely to the toolbar"* and *"the toolbar spilled over two rows now, we want this to
+be 1 row only."*
+
+- **Progress and Stacking are gone from the View menu.** ⚠️ I kept them last pass so the menu could
+  return you from a view its own button names — the 2026-08 defect that caused the fold. What makes
+  removing them safe now is that **each toolbar button toggles**: pressing the lit Stacking button
+  returns to `layoutMode`. `_viewKey()` still reports them, so *"View: Stacking"* keeps telling the
+  truth.
+- **The three controls are icon-only, and that is a measurement.** Measured on the shipped toolbar at
+  **1,344px available: the row needed 1,528px and wrapped onto 3 lines**, of which these three
+  labelled buttons were **284px** (94 + 92 + 98). Without them the row needs **1,229px** — what it was
+  before they were added. 3 × 36px saves **176px**, taking it to ~1,352px, which the flexible search
+  box (min 110px) absorbs.
+  ⚠️ **Icon-only is the only cut that does not spend the owner's own savings twice**: Scope, Zoom and
+  Group were deliberately folded from segments into labelled menus on 2026-09-02 to buy exactly this
+  space. ⚠️ `.ps-icobtn` is the toolbar's existing convention and already carries the lit `.active`
+  state, which is what keeps an unlabelled control readable — Progress and Stacking light red while
+  you are in them.
+
+- `MODULE_V` → `20260902z`.
+
+---
+
+## Schedule Builder → **Schedule Setup**, and the WBS tree moves into it (2026-09-02) — eprobles
+
+Owner: *"what are the current functions in the WBS manager that can be migrated instead to the
+Schedule Builder. also change the name of Schedule Builder to a more appropriate name. … to edit the
+WBS, it should be in the schedule builder instead, since the WBS manager is rendered useless given
+that the arrangement of the WBS can be modified in the project schedule instead."*
+
+### The name
+**Schedule Builder → Schedule Setup.** It no longer only builds a schedule: it owns the activity
+list, the location breakdown, the sequencing, the lifecycle phases and now the WBS, and the schedule
+itself is what it *pushes*. "Setup" is also the noun the screen already uses for its saved objects
+(`schedule_builder_setups` rows are called *setups* in its own dialogs).
+- ⚠️ **Only the display strings changed.** `ScheduleBuilder`, the `builder` tab key, the `sbld-*`
+  classes, the table name and the setup rows keep their names. Renaming those is churn with a
+  migration attached and no user-visible benefit — the tab key in particular is persisted in the URL
+  hash and in saved history rows.
+
+### What migrated, and what deliberately did not
+| WBS Manager function | Where it lives now | Why |
+|---|---|---|
+| The tree outliner (add / rename / indent / outdent / reorder / delete, keyboard) | **Schedule Setup → WBS step** | shaping the WBS *is* setup work |
+| Paste outline · Duplicate branch · From project | **Schedule Setup → WBS step** | bulk ways to author the same tree |
+| Expand / collapse / search + the "where will Add WBS land" hint | **Schedule Setup → WBS step** | they only make sense next to the tree |
+| **Adopt existing WBS** · **Reset WBS** | stays | repairs over a whole *imported* project, including phases the setup never generates — a setup-scoped screen is the wrong place to offer "drop every custom branch in this project" |
+| **Sync Engineering** · **Sync Procurement** · **Push need-by** | stays | other teams' apps, mirroring branches the setup does not own and must not write |
+| Node counts / activity counts | travels with the card | it is part of the tree's own header |
+
+So the WBS Manager is now the **repair-and-integrations** screen, and it says so where the editor
+used to be, with a button that opens the setup on the right step (`ScheduleBuilder.gotoStep('WBS')`
+— matched on the rail TITLE, because the step order has already changed twice today and an index
+would silently point at whatever now sits in that slot).
+
+### ⚠️⚠️ The tree is BORROWED, not copied
+`#ps-wbs-edittools` and `#ps-wbs-card` are the **same DOM nodes** declared in the WBS Manager's
+markup, relocated into the setup's panel by `sbWbsMount` and returned to a hidden `#ps-wbs-park` slot
+by `sbWbsPark`. A second editor in the builder was the obvious implementation and would have been
+wrong twice over:
+- the tree is a virtualized outliner whose selection, collapse map, search filter and flat row list
+  live in **module state** (`_wbsSel` / `_wbsCollapsed` / `_wbsSearch` / `_wbsFlat`) — two instances
+  would share that state and fight over it;
+- all ~30 of its handlers are bound **by id**, so a copy means either duplicate ids (first one wins,
+  silently) or a parallel handler set to keep in step forever.
+
+- ⚠️⚠️ **`sbWbsPark()` MUST run before any repaint of the host panel.** The builder rebuilds its panel
+  with `innerHTML` on every step change, which would take the borrowed nodes **out of the document
+  for the rest of the session** — the tree would be gone on both screens until a reload. It is
+  therefore called unconditionally at the top of the builder's `render()` (including on its
+  early-return path, which is itself one of those writes) and when switching away from the tab. This
+  is verified: a harness driving the real `sbWbsPark`/`sbWbsMount` shows the card back in the park
+  with its content and its click handler intact after a repaint — and **GONE** after a repaint with
+  the park call removed.
+- ⚠️ `renderWbsManager()` runs **after** the move, not before: the tree is virtualized off its own
+  `clientHeight`, and a walk measured while the node was parked (hidden, zero height) paints an
+  empty viewport.
+- ⚠️⚠️ **The keyboard gate had to follow the tree.** The type-to-build handler bailed unless
+  `#ps-view-wbs` was visible — which it is not on the screen that now owns the editing, so Enter,
+  Tab, Alt+arrows and Del would all have gone dead. It asks the **tree** where it is now
+  (`#ps-wbs-tree`.offsetParent), which is correct on either host.
+
+### Also
+- The help modal said *"The 6 steps"* and then listed **7** — stale before today, and there are ten
+  now. The heading and every step number are **derived** (`STEPS.length` / `_stepNo`) so the next
+  step added cannot make it lie again; Tower links was missing from the list entirely and is in it.
+- Step numbers baked into comments ("step 6") are replaced with the step's **name** for the same
+  reason.
+
+---
+## The No-level band stops blaming Schedule Builder (2026-09-02x) — fmlozano
+
+Owner: *"Reword the band text to point at the match table."*
+
+The banner read *"a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work —
+give the trade floors in step 2 and re-push"*. On an **imported** schedule nothing was pushed from the
+Builder, so it sent the planner to a step that had no part in it — and on 4PH Strevi it was the wrong
+instruction for **all 692** rows in the band.
+
+It now names the three real causes, in the order they actually occur, each with what to do:
+1. **A branch name is not matched** — read the *WBS branch* column; an abbreviation such as **RD** for
+   Roofdeck is the usual culprit; fix in *Group ▾ → Match WBS to locations…*. This is what 76 of 76
+   rows in the MEPF cell were.
+2. **The work genuinely has no storey** — substructure, footings, site works. Give them their own
+   Level value to have them banded, or leave them in the band. Not a defect.
+3. **A Builder push with no floors in step 2** — kept last, for the schedules where it is true.
+
+⚠️ **It does not guess which kind of project this is.** Provenance is not recorded anywhere, and a
+confidently wrong instruction is exactly what is being replaced — so all three are offered and the
+reader picks. The first one now leads, because the match table is what derives a location on *every*
+project, imported or pushed.
+
+- `MODULE_V` → `20260902x`.
+
+---
+## The No level band, answered: `RD` is not in the Level match table (2026-09-02w) — fmlozano
+
+Owner: *"Reopen the No level band and check the branch column."* With the column now walking the node
+tree, it answers the question that has been open since the first screenshot.
+
+### The reading
+**692 of 15,834 execution activities (4.4%) carry no Level.** The branch column shows real tree paths,
+and **not one row fell back to `by code:`** — every one resolved through `wbs_node_id`.
+
+| cause | evidence |
+|---|---|
+| **A — a floor the matcher missed** | The MEPF cell is **76 of 76** rows reading `… Tower D › MEPF Works › **RD** › 1st Fix`. The Structural cell is full of `… Superstructure › **RD** › Zone 1 › Horizontal › Structural Frame › Flat Slab`. |
+| **B — genuinely floorless** | `Execution Phase › Construction Phase › **Substructure** › Tower D › Slab-on-grade › Zone 1`, and the same for `Footing Tie Girder`. Below-grade work with no storey. |
+
+### ⚠️ The cause of (A), and it is one missing row in a table
+The project's saved Level match table has **17 entries**: `Roofdeck`, `Ground Floor`, `2nd Floor` …
+`16th Floor`. The stamped values agree — `Roofdeck` is on 51 activities. **But the .xer names that
+branch `RD` in most places and `Roofdeck` in a few**, and the table matches on the branch NAME
+exactly. So `RD` maps to nothing and every activity under it lands in the No-level band.
+
+⚠️ **THE IMPORTER IS NOT AT FAULT** — which is worth stating plainly, because the original ask was
+*"fix the importer"* and three passes were spent looking there. Location is DERIVED from branch names
+against the planner's own match table; the table is simply missing an alias the source file uses.
+**Fix: Group ▾ → Match WBS to locations…, map `RD` → Roofdeck.** That is the owner's decision to make,
+not a rule to hard-code — `RD` could as easily mean *Road* on a different project.
+
+⚠️ **(B) is not a defect at all.** Substructure, slab-on-grade and footing work has no storey. It
+either wants its own Level value (`Substructure` / `Foundation`, which the stacking would then band
+like any floor) or it belongs in the No-level band permanently. Also the owner's call.
+
+⚠️ **The band's own explanation is wrong for this project**: it reads *"a trade with no floors in
+Schedule Builder step 2 is pushed as whole-trade work"*, but nothing here came from the Builder. It
+should name the match table on an imported project. Not changed yet.
+
+---
+## The No level band, read at last — and the diagnostic column was lying (2026-09-02v) — fmlozano
+
+Owner: *"Let's check the No level band now."* The tree is healthy enough to answer, and the answer
+came with a defect in the tool I built to find it.
+
+### Vertical Stacking works, and here are the numbers
+Read off the module itself rather than inferred from codes:
+- **15,834 execution-phase activities stacked**, towers **A / B / C / D** (+ *— No tower —*).
+- **692 activities carry no Level** — **4.4%**, in the dashed No-level band.
+- The trades it names: *Punchlisting and Handover, Structural Works, MEPF Works, Allied Services,
+  General Preliminaries, Site Development, Painting Works, Construction Phase.*
+
+⚠️ **The band's explanation is wrong for an imported project.** It reads *"a trade with no floors in
+Schedule Builder step 2 is pushed as whole-trade work"* — but nothing here was pushed from the
+Builder; this came from a .xer. The sentence sends a planner to a step that had no part in it.
+
+### ⚠️⚠️ AND THE `WBS branch` COLUMN I ADDED FOR THIS WAS LYING
+Opened the band's dialog on the 156 Structural Works rows. Every one showed
+**`Planning Phase › Design Development`** — while the **Trade** column on the same rows read
+**`Structural Works`**. Two columns of one table disagreeing about one row.
+
+The Trade is right. It resolves through `wbs_node_id`; my column reconstructed a path by **splitting
+the dotted code**. ⚠️ `_wbsResyncCodes()` rewrites the SUMMARY rows' codes to match the node tree and
+does **not** touch the activities', so after any repair the two are in different numbering systems —
+and splitting an activity's code walks into whatever branch happens to hold that number now. On this
+project the phase codes have moved (`Planning Phase` computes to `4`, `Execution Phase` to `7`), so
+the reconstruction was confidently, consistently wrong.
+
+**Now walks `wbs_node_id` up the node tree.** The code-derived form survives only for a row that has
+no node yet, and is prefixed **`by code:`** so it can never again be mistaken for the tree.
+
+⚠️ **A diagnostic that can be wrong about the thing it exists to show is worse than none** — it cost a
+round of analysis that concluded the schedule was mis-filed under Design Development, which the Trade
+column had already contradicted on screen.
+
+⚠️ **The real No-level question is therefore still open.** The 692 rows have to be re-read with a
+truthful branch column before anything can be said about whether they are a matcher gap or genuinely
+floorless work.
+
+⚠️ **One thing measured on the way and worth keeping:** the dotted codes on activities and on summary
+rows are genuinely out of step on this project. The grid derives its hierarchy by splitting the
+activity's code, so it is worth checking whether the grid's tree still matches the WBS Manager's.
+
+- `MODULE_V` → `20260902v`.
+
+---
+## "Nothing resolved" and "nothing loaded" are different answers (2026-09-02u) — fmlozano
+
+Owner, third report of the same symptom: *"Closeout phase activities in the legend are still showing
+the colour activities. Let's scope the colour only for activities in the execution phase."*
+
+### Measured on the live project, both paints
+The scoping itself was never broken. `phaseOf` resolves those rows correctly — walked their node
+chains in the database: *Commercial Closeout → Tower 2 → Partial Closeout* → **`closeout`**, never
+`construction`. And once the tree is loaded the legend is right:
+
+| stage | legend |
+|---|---|
+| cached paint | **4 Closeout chips**, and NO plain-Activity chip — i.e. everything was in scope |
+| after the tree loads | **40 execution chips** + *"Activity outside the Execution Phase"* |
+
+⚠️ **The absent plain-Activity chip is the tell.** It is emitted only when a task on screen is OUT of
+scope, so its absence proves `catInScope()` was answering true for Closeout work — the fallback was
+on.
+
+### ⚠️⚠️ The defect
+`catScopeIsExec()` asked *"does any row resolve a phase?"* and treated **no** as *"this project does
+not use phases"*. But `phaseOf()` reads through `WBS_NODES`, which `load()` fetches **after** the
+cached paint — so on that paint the answer is not "no phases", it is **"not loaded yet"**, and the
+fallback coloured everything.
+
+⚠️ **And the window is not the 3.3s measured in (m).** It lasts as long as the live fetch of 28,958
+rows — tens of seconds on this project, which is why it read as a permanent bug rather than a flicker.
+⚠️ The persisted hint from (n) did not save it either: the stored value was a legitimate `false`,
+written while the activities were unlinked and genuinely nothing resolved a phase.
+
+### The fix, and the trade it makes
+The fallback now demands **proof**: it fires only when the tree **is** loaded and still nothing
+resolves a phase — the genuinely-unphased project it was written for. With the tree absent the answer
+is unknown, and **the safe unknown is SCOPED**.
+
+⚠️ **This is the trade (m) considered and declined, taken deliberately now.** On a cached paint no row
+can resolve a phase, so scoping on means **nothing is coloured for those seconds** and the key reads
+*"No Execution Phase activities yet — the colour key covers execution work only."* Under-colouring
+is explained on screen; over-colouring is indistinguishable from the feature being broken, and it put
+the exact activities the owner asked to exclude in front of them three times.
+
+⚠️ **Consequence for (n):** the persisted `catScope` hint now only does real work for the **unphased**
+case. A stored `true` changes nothing, because with no tree nothing resolves as execution either way.
+The flicker for a normal project is now *empty → correct* rather than *wrong → correct*.
+
+- `MODULE_V` → `20260902u`.
+
+---
+
 ## Schedule Builder: a step for the phases either side of construction (2026-09-02) — eprobles
 
 Owner: *"i was thinking for the schedule builder, make it that the schedule builder has another step,
@@ -66,7 +400,6 @@ finish precedes its start and break the chain for everything after it. Legacy se
 saved recipe, which they would then push without noticing, is not a default anyone asked for.
 
 ---
-
 ## Every activity is linked — and adopting twice duplicated 5,850 nodes (2026-09-02r) — fmlozano
 
 Owner ran `2026-09-02-wbs-link-batched.sql` and clicked **Adopt existing WBS** again.
