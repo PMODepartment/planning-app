@@ -1088,7 +1088,12 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('icon left-padding on the row (re-confirmed; already shipped in Batch A)', /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
 
   // --- Archive filter + toggle (item 1) -----------------------------------
-  ok('archived is hidden unless the toggle is on, never both at once', /!!p\.archived !== !!filters\.archived/.test(pjs) && /!!r\.archived !== !!filters\.archived/.test(mjs));
+  ok('Presentations: archived is hidden unless the toggle is on, never both at once', /!!p\.archived !== !!filters\.archived/.test(pjs));
+  // ⚠️ Owner feedback (progress-photos item 3): the Gallery's own toggle is
+  // no longer either/or — checking "Show archived" now shows BOTH archived
+  // and unarchived media together, rather than flipping to archived-only.
+  ok('Gallery: "Show archived" is additive — unchecked hides archived, checked shows both, never an either/or swap',
+     /if \(!filters\.archived && r\.archived\) return false;/.test(mjs) && !/!!r\.archived !== !!filters\.archived/.test(mjs));
   ok('index.html has a "Show archived" toggle on both the Presentations and Gallery filter bars', (html.match(/Show archived/g) || []).length === 2);
   ok('toggling archive is tolerant of the migration not having run yet', /migrations\/2026-08-29-archive-flag\.sql/.test(pjs) && /migrations\/2026-08-29-archive-flag\.sql/.test(mjs));
   ok('Clear filters does NOT reset the archived toggle — it is a separate view, not a search filter',
@@ -1254,7 +1259,13 @@ console.log('\n[misc] insert().select() returns the new row id');
   // style.display (see [29]'s own note on why: `hidden` never worked here).
   ok('the old standalone #pp-selbar box no longer exists in index.html', !/id="pp-selbar"/.test(html));
   ok('the selection actions now live in the topbar tools row, hidden by default via inline style',
-     /id="pp-sel-download" style="display:none;"/.test(html) && /id="pp-selcount" style="display:none;"/.test(html));
+     /id="pp-sel-download"[^>]*style="display:none;"/.test(html) && /id="pp-selcount" style="display:none;"/.test(html));
+  // Owner feedback (item 2): icons instead of words to compress the row —
+  // each selection button carries its label as a title tooltip instead.
+  ok('the selection buttons (Download/Add to Presentation/Archive/Delete) are icon-only, each with a title tooltip naming it',
+     /id="pp-sel-download" title="Download"/.test(html) && /id="pp-sel-addppr" title="Add to Presentation"/.test(html) &&
+     /id="pp-sel-archive" title="Archive"/.test(html) && /id="pp-sel-delete" title="Delete"/.test(html) &&
+     !/id="pp-sel-download"[^>]*>Download</.test(html));
   ok('syncChrome() swaps "+ Add media"/Refresh for the selection tools based on visibleSelectedIds().length',
      /function syncChrome\(\)[\s\S]{0,700}var has = ids\.length > 0;/.test(mjs));
   ok('Add to Presentation calls PPR.addPhotosToPresentation, not a re-implementation of slide-numbering', /PPR\.addPhotosToPresentation\(pprId, photoIds\)/.test(mjs));
@@ -1642,9 +1653,9 @@ console.log('\n[misc] insert().select() returns the new row id');
      /\(has \|\| !canWrite\) \? 'none' : ''/.test(mjs));
   ok('Refresh hides only while a selection is active (no role gate — everyone can refresh)',
      /refresh\.style\.display = has \? 'none' : '';/.test(mjs));
-  ok('the count text and all three selection buttons are driven by the SAME `has` flag, so they can never disagree',
+  ok('the count text and all four selection buttons (incl. Delete, item 1) are driven by the SAME `has` flag, so they can never disagree',
      (mjs.match(/= has \? '' : 'none'/g) || []).length >= 1 &&
-     /\['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'\]\.forEach/.test(mjs));
+     /\['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive', 'pp-sel-delete'\]\.forEach/.test(mjs));
 
   // --- Item 4: select-all header checkbox ------------------------------------
   ok('the select-all checkbox reflects "every visible row already checked" on render',
@@ -1870,10 +1881,19 @@ console.log('\n[misc] insert().select() returns the new row id');
      /function markupKey\(slideId, pane\) \{ return slideId \+ '\|' \+ pane; \}/.test(pjs));
   ok('the presentation pane reuses the SAME editor rather than re-implementing drawing a second time',
      /ProgressPhotos\.openMarkupEditor\(u, markupFor\(cur\.id, which\), function \(objs\) \{/.test(pjs));
-  ok('the lightbox\'s markup-edit button now carries a visible text label, not just an icon',
-     /pp-lb-tool-labeled" id="pp-lb-markupedit"[\s\S]{0,200}<span>Markup<\/span>/.test(html));
-  ok('the label styling widens the button rather than forcing text into a 38px square',
-     /\.pp-lb-tool-labeled \{ width: auto;/.test(css));
+  // ⚠️ Superseded (owner feedback, progress-photos item 5): the text labels
+  // on Markup/Adjust are gone again — icon-only, matching every other
+  // lightbox tool, with the title attribute still naming each on hover. The
+  // now-unused .pp-lb-tool-labeled rule is removed rather than left as dead
+  // CSS. Healthy churn from an intentional change, same convention this
+  // file follows throughout — not a regression to chase.
+  ok('the lightbox\'s markup-edit and adjust buttons are icon-only again — no text label, title still names each',
+     /id="pp-lb-markupedit" title="Add or edit markup[^"]*">\s*<span data-ico="palette"/.test(html) &&
+     /id="pp-lb-adjustedit" title="Adjust exposure[^"]*">\s*<span data-ico="sliders"/.test(html) &&
+     !/pp-lb-markupedit"[\s\S]{0,200}<span>Markup<\/span>/.test(html) &&
+     !/pp-lb-adjustedit"[\s\S]{0,200}<span>Adjust<\/span>/.test(html));
+  ok('the now-unused .pp-lb-tool-labeled rule is removed, not left as dead CSS',
+     !/\.pp-lb-tool-labeled/.test(css));
 
   // --- Fourth round, items 3/4 (2026-08-30): select-to-edit, Line, Polygon --
   // "I can't select the markup or shape to edit" — the biggest gap. Genuinely
@@ -2223,8 +2243,8 @@ console.log('\n[misc] insert().select() returns the new row id');
        const m = /_leavePhotosScreen: function \(\) \{([\s\S]*?)\n    \},/.exec(mjs);
        return !!m && !/syncChrome\(\)/.test(m[1]);
      })());
-  ok('_leavePhotosScreen hides all four selection-only toolbar controls by id',
-     /_leavePhotosScreen: function \(\) \{[\s\S]{0,120}pp-selcount[\s\S]{0,260}pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'\]\.forEach/.test(mjs));
+  ok('_leavePhotosScreen hides all five selection-only toolbar controls by id (incl. Delete, item 1)',
+     /_leavePhotosScreen: function \(\) \{[\s\S]{0,120}pp-selcount[\s\S]{0,260}pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive', 'pp-sel-delete'\]\.forEach/.test(mjs));
   ok('…and resets the (still-mounted, merely hidden) grid\'s own checkbox\/highlight residue, so a returning planner never sees stale checked boxes the cleared toolbar already disagrees with',
      /Array\.prototype\.forEach\.call\(host\.querySelectorAll\('\[data-sel\]'\), function \(cb\) \{\s*cb\.checked = false;/.test(mjs) &&
      /card\.classList\.remove\('pp-selrow'\)/.test(mjs) &&
@@ -2867,8 +2887,12 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var thumbPath = await uploadThumbnailFor\(item\.blob, path\);[\s\S]{0,200}if \(thumbPath\) row\.thumb_url = thumbPath;/.test(mjs));
   ok('tolerantWrite strips thumb_url and retries on a pre-migration database, naming the round-3 migration file',
      /'thumb_url' in job\.patch[\s\S]{0,400}2026-08-30-photos-round3\.sql/.test(mjs));
+  // ⚠️ Superseded (owner feedback item 1): the single-photo body moved into
+  // the shared openDeleteConfirm(ids) (also used for batch delete), whose
+  // cleanup loop covers photo_url + thumb_url for every id being deleted —
+  // healthy churn from an intentional change, not a regression.
   ok('deleting a photo also removes its thumbnail object from Storage, not just the original (no orphaned thumb files)',
-     /var toRemove = \[r\.photo_url, r\.thumb_url\]\.filter\(Boolean\);/.test(mjs));
+     /targetRows\.forEach\(function \(r\) \{ if \(r\.photo_url\) toRemove\.push\(r\.photo_url\); if \(r\.thumb_url\) toRemove\.push\(r\.thumb_url\); \}\);/.test(mjs));
   ok('migrations/2026-08-30-photos-round3.sql adds progress_photos.thumb_url, idempotently',
      /alter table progress_photos add column if not exists thumb_url text;/.test(
        fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-30-photos-round3.sql'), 'utf8')));
@@ -3396,8 +3420,13 @@ console.log('\n[misc] insert().select() returns the new row id');
   // --- "when opening the photo, the key plan button should be there" -------
   ok('index.html: #pp-lb-keyplan is a real lightbox toolbar button, hidden by default (shown only per-photo in paintLightbox), using the mapPin icon',
      /id="pp-lb-keyplan" title="Show\/hide key plan" style="display:none">.*data-ico="mapPin"/.test(html));
-  ok('index.html: #pp-lb-keyplan-overlay is a real <img> INSIDE .pp-lb-imgwrap, hidden by default',
-     /pp-lb-imgwrap[\s\S]*?<img class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" alt="Key plan" hidden \/>[\s\S]*?<\/div>/.test(html));
+  // ⚠️ Superseded (owner feedback item 7): the overlay is a small stage now
+  // — an <img> plus a pin dot plus a direction cone — not a lone <img>, so
+  // it can always show WHERE the photo was taken and, when recorded, WHICH
+  // WAY it faced, not just the bare plan image. Healthy churn from an
+  // intentional change, not a regression.
+  ok('index.html: #pp-lb-keyplan-overlay is a real <div> stage INSIDE .pp-lb-imgwrap (img + pin + cone), hidden by default',
+     /pp-lb-imgwrap[\s\S]*?<div class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" hidden>[\s\S]*?<img id="pp-lb-keyplan-overlay-img" alt="Key plan" \/>[\s\S]*?<span class="pp-lb-kpoverlay-pin" id="pp-lb-keyplan-overlay-pin" hidden><\/span>[\s\S]*?<span class="pp-lb-kpoverlay-cone" id="pp-lb-keyplan-overlay-cone" hidden><\/span>[\s\S]*?<\/div>[\s\S]*?<\/div>/.test(html));
   ok('paintLightbox() resolves the current row\'s pin POLYMORPHICALLY — under its OWN kind + real underlying id (r._kind/_src), never hardcoded to "photo" — the same rule cardHTML used to use before item 4 moved this into the lightbox',
      /var kpPinType = r\._kind \|\| 'photo';/.test(mjs) &&
      /var kpPinId = r\._src \? r\._src\.id : r\.id;/.test(mjs) &&
@@ -3408,17 +3437,95 @@ console.log('\n[misc] insert().select() returns the new row id');
      /lightboxKeyPlanVisible = false;\s*\n\s*paintKeyPlanOverlay\(r\);/.test(mjs));
   ok('clicking #pp-lb-keyplan toggles lightboxKeyPlanVisible and repaints the overlay for the CURRENT row (the same one paintLightbox closed over, not a re-read of lightboxIds[lightboxAt] which could have moved on)',
      /kpBtn\.onclick = function \(\) \{\s*\n\s*lightboxKeyPlanVisible = !lightboxKeyPlanVisible;\s*\n\s*paintKeyPlanOverlay\(r\);/.test(mjs));
-  ok('paintKeyPlanOverlay() exists, hides+clears the overlay img when NOT visible (never leaves a stale src around), and reflects the on/off state on the button via .is-active',
+  ok('paintKeyPlanOverlay() exists, hides+clears the overlay stage when NOT visible (never leaves a stale src around), and reflects the on/off state on the button via .is-active',
      /function paintKeyPlanOverlay\(r\) \{/.test(mjs) &&
      /if \(kpBtn\) kpBtn\.classList\.toggle\('is-active', lightboxKeyPlanVisible\);/.test(mjs) &&
-     /if \(!lightboxKeyPlanVisible\) \{ img\.hidden = true; img\.removeAttribute\('src'\); return; \}/.test(mjs));
+     /if \(!lightboxKeyPlanVisible\) \{\s*\n\s*wrap\.hidden = true;/.test(mjs));
   ok('paintKeyPlanOverlay() sets the overlay\'s src to the resolved plan URL and un-hides it only once one is actually found; a missing plan hides it and warns rather than showing a broken image',
-     /img\.src = info\.planUrl;\s*\n\s*img\.hidden = false;/.test(mjs) &&
-     /UI\.toast\('That floor plan image is not available', 'warn'\);/.test(mjs));
+     /if \(img\) img\.src = info\.planUrl;/.test(mjs) &&
+     /UI\.toast\('That floor plan image is not available', 'warn'\);/.test(mjs) &&
+     /wrap\.hidden = false;/.test(mjs));
+  // ⚠️ Owner feedback item 7: the pin + camera-facing cone are always drawn
+  // on the overlay too, positioned by the pin's own x_norm/y_norm — never
+  // just the bare plan image.
+  ok('paintKeyPlanOverlay() always positions the pin (and, when a direction was recorded and it isn\'t marked drone/top-view, the cone) from the resolved pin\'s own x_norm/y_norm',
+     /pinEl\.style\.left = \(pin\.x_norm \* 100\) \+ '%';/.test(mjs) &&
+     /pinEl\.style\.top = \(pin\.y_norm \* 100\) \+ '%';/.test(mjs) &&
+     /var hasDir = pin && !pin\.direction_na && pin\.direction_deg !== null && pin\.direction_deg !== undefined;/.test(mjs) &&
+     /coneEl\.style\.transform = 'translate\(-50%,-100%\) rotate\(' \+ pin\.direction_deg \+ 'deg\)';/.test(mjs));
   ok('module.css: .pp-lb-kpoverlay is pinned to the photo\'s own top-right corner and sized to 1/8 (12.5%) of it — "overlays on top of the photo at the top right corner with the size 1/8 of the photo", literally',
      /\.pp-lb-kpoverlay \{[^}]*top: 10px; right: 10px;[^}]*width: 12\.5%;/.test(css.replace(/\n/g, ' ')));
   ok('.pp-lb-kpoverlay carries no #fff of its own (its only colour is a --pd-card background + rgba box-shadow) — nothing new for the #fff-context allow-list to have to cover',
      !/\.pp-lb-kpoverlay\s*\{[^}]*#fff/.test(css.replace(/\n/g, ' ')));
+
+  console.log('\n[46] Owner feedback round (2026-09-02): delete + presentation-usage warning, icon-only batch actions, additive "Show archived", full-res on first open, minimalist filter panel');
+
+  // --- Item 1: delete with a presentation-usage warning ----------------------
+  ok('findPresentationUsage checks BOTH before_photo_id and after_photo_id via two plain .in() queries (no fragile .or() string-building over UUIDs)',
+     /function findPresentationUsage\(ids\)/.test(mjs) &&
+     /sb\(\)\.from\('ppr_slides'\)\.select\('ppr_id, before_photo_id'\)\.in\('before_photo_id', ids\)/.test(mjs) &&
+     /sb\(\)\.from\('ppr_slides'\)\.select\('ppr_id, after_photo_id'\)\.in\('after_photo_id', ids\)/.test(mjs));
+  ok('a failed usage check never blocks the delete — best-effort only',
+     /try \{ usage = await findPresentationUsage\(ids\); \} catch \(e\)/.test(mjs));
+  ok('openDeleteConfirm warns (via .pp-delwarn) when 1+ of the photos being deleted are cited by a presentation, naming how many presentations',
+     /if \(usage\.photoIds\.length\) \{/.test(mjs) &&
+     /class="pp-delwarn"/.test(mjs) &&
+     /used in ' \+ usage\.pprIds\.length \+ ' presentation'/.test(mjs));
+  ok('openDeleteConfirm is the ONE path for both the lightbox\'s single-photo Delete and the batch selection\'s Delete — remove(r) is a thin wrapper over it',
+     /function remove\(r\) \{ return openDeleteConfirm\(\[r\.id\]\); \}/.test(mjs) &&
+     (mjs.match(/openDeleteConfirm\(/g) || []).length === 3);   // definition + remove(r) + the batch handler
+  ok('the batch Delete button is scoped to real photos only, same 360°/3D-skip reasoning as Download/Add to Presentation',
+     mjs.indexOf("Select at least one photo — 360°/3D captures aren\\'t deleted from here") >= 0);
+  ok('deleting removes the ids from `selected` (a deleted photo can\'t remain "selected")',
+     /ids\.forEach\(function \(id\) \{ delete selected\[id\]; \}\);/.test(mjs));
+
+  // --- Item 2: icon-only batch actions ----------------------------------------
+  ok('the "archive" icon exists in the shared icon set (used by the batch Archive button)',
+     /archive:\s*'</.test(fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'js', 'icons.js'), 'utf8')));
+  ok('the batch Archive/Delete buttons use the archive/trash icons respectively, and Delete carries pd-btn-danger',
+     /id="pp-sel-archive" title="Archive"[^>]*>\s*<span data-ico="archive"/.test(html) &&
+     /pd-btn-sm pd-btn-danger" id="pp-sel-delete"/.test(html));
+
+  // --- Item 3: additive "Show archived" (also checked above, [1/2] section) --
+  ok('matchesFilters only excludes archived rows when the toggle is OFF — checked shows archived AND unarchived together',
+     (function () {
+       var body = /function matchesFilters\(r\) \{([\s\S]*?)\n  \}/.exec(mjs)[1];
+       return /if \(!filters\.archived && r\.archived\) return false;/.test(body);
+     })());
+
+  // --- Item 4: full-resolution swap is robust to `rows` being replaced -------
+  ok('paintLightbox compares the lightbox\'s CURRENT id, not object identity, before swapping in the full-res image — robust to `rows` being replaced for the same photo (e.g. a realtime UPDATE echo) between opening and the sign request resolving',
+     /var openedId = r\.id;/.test(mjs) &&
+     /ensureFullUrl\(r\)\.then\(function \(full\) \{\s*\n\s*if \(!full\) return;\s*\n\s*if \(lightboxIds\[lightboxAt\] !== openedId\) return;/.test(mjs) &&
+     !/if \(byId\(lightboxIds\[lightboxAt\]\) !== r\) return;/.test(mjs));
+
+  // --- Item 8: filter hints are bare names, no "Filter by " prefix -----------
+  ok('the Trade/Works filter selects default to bare "Trade"/"Works", not "Filter by Trade"/"Filter by Works"',
+     /<select class="pd-select" id="pp-f-trade"><option value="">Trade<\/option><\/select>/.test(html) &&
+     /<select class="pd-select" id="pp-f-works"><option value="">Works<\/option><\/select>/.test(html) &&
+     !/Filter by Trade/.test(html) && !/Filter by Works/.test(html));
+  ok('fillFilterOptions rebuilds the same two selects with the bare blank-option text',
+     /fill\('pp-f-trade', distinctMulti\('trades', 'trade'\), 'Trade'\);/.test(mjs) &&
+     /fill\('pp-f-works', distinctMulti\('works_multi', 'works'\), 'Works'\);/.test(mjs));
+  ok('per-level location filter selects use the bare level name too, with no "Filter by " prefix anywhere in renderLocFilterSelects',
+     /return '<select class="pd-select" data-lvl="' \+ l\.id \+ '" title="' \+ Fmt\.esc\(l\.name\) \+ '">' \+\s*\n\s*'<option value="">' \+ Fmt\.esc\(l\.name\) \+ '<\/option>' \+/.test(mjs));
+  ok('the filter panel is visibly denser (item 8): smaller control height/font, tighter panel padding/gap',
+     /\.pp-filters \{\s*\n\s*display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px;\s*\n\s*background: var\(--pd-card\); border: 1px solid var\(--pd-line\);\s*\n\s*border-radius: var\(--pd-radius\); padding: 6px 10px;/.test(css) &&
+     /\.pp-filters \.pd-input, \.pp-filters \.pd-select \{ height: 30px; font-size: 12px; \}/.test(css));
+
+  // --- Items 5/6: lightbox toolbar layout -------------------------------------
+  ok('#pp-lb-keyplan and #pp-lb-markuptoggle now live in their own right-hand cluster (#pp-lb-tools-right), not the main left toolbar',
+     (function () {
+       var rightIdx = html.indexOf('<div class="pp-lb-tools-right" id="pp-lb-tools-right">');
+       var leftIdx = html.indexOf('<div class="pp-lb-tools" id="pp-lb-tools">');
+       var leftBody = html.slice(leftIdx, rightIdx);   // the left cluster's own markup, bounded to before the right cluster starts
+       var rightBody = html.slice(rightIdx, rightIdx + 400);
+       return rightIdx > leftIdx &&
+         leftBody.indexOf('id="pp-lb-keyplan"') < 0 && leftBody.indexOf('id="pp-lb-markuptoggle"') < 0 &&
+         rightBody.indexOf('id="pp-lb-keyplan"') >= 0 && rightBody.indexOf('id="pp-lb-markuptoggle"') >= 0;
+     })());
+  ok('.pp-lb-tools-right is pinned to the right, offset to clear the close button — to its left, not overlapping it',
+     /\.pp-lb-tools-right \{ position: absolute; top: 14px; right: 62px; display: flex; gap: 6px; z-index: 2; \}/.test(css));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
