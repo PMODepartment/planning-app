@@ -2,6 +2,136 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Eight-item owner feedback round: delete + presentation-usage warning, icon-only
+## batch actions, additive archive filter, full-res-on-first-open fix, icon-only
+## markup/adjust, key-plan toggles moved beside close, pin+cone always drawn on
+## the key-plan overlay, a denser filter panel (2026-09-02)
+
+### Item 1 — batch delete, and a warning when a photo is cited by a presentation
+
+Single-photo delete already existed (the lightbox's Delete button); there was no
+way to delete more than one at a time. A **Delete** button joins Download/Add to
+Presentation/Archive in the selection toolbar, and both the single and batch
+paths now go through one shared **`openDeleteConfirm(ids)`** — `remove(r)` is a
+thin wrapper over it, so the two can never disagree about what gets checked or
+cleaned up.
+
+- **`findPresentationUsage(ids)`** runs two plain `.in()` reads against
+  `ppr_slides` (`before_photo_id`/`after_photo_id`) rather than one `.or()`
+  filter string — the ids are plain UUIDs with nothing to escape, so a second
+  query is simpler than getting PostgREST's `or()` delimiters right for no
+  benefit. ⚠️ **Best-effort, wrapped in try/catch** — a failed usage check must
+  never block a delete the planner already confirmed.
+- The confirm modal shows a `.pp-delwarn` line naming how many of the photos
+  being deleted are cited by how many presentations, when any are. ⚠️ It's a
+  **warning, not a block** — the FK is `on delete set null` (ppr.js), so the
+  slide survives with an empty frame; the warning just makes that consequence
+  visible before it happens instead of after.
+- Batch delete is scoped to real photos only (same reasoning as the existing
+  Download/Add to Presentation splits — a 360°/3D pseudo-row has no row in
+  `progress_photos` to delete), and clears deleted ids out of `selected`.
+
+### Item 2 — icon-only batch actions
+
+Download/Add to Presentation/Archive were labelled text buttons
+(`+ pp-tb-labeled`); all four (Delete included) are icon-only now, each
+carrying its label as a `title` tooltip — matching every other icon button in
+this module's topbar. New **`archive`** glyph added to the shared `icons.js`
+(a box with a lid); `layers`/`download`/`trash` are reused for the other three.
+
+### Item 3 — "Show archived" is additive, not either/or
+
+`matchesFilters` used to require `r.archived === filters.archived` exactly, so
+checking "Show archived" **swapped** the view to archived-only instead of
+adding to it. Now: `if (!filters.archived && r.archived) return false;` —
+unchecked hides archived (the normal, tidy view); checked shows **both**
+archived and unarchived together. Scoped to the Gallery's own toggle only; the
+Presentations list keeps its separate either/or "Show archived" filter
+unchanged (a different screen, not part of this ask).
+
+### Item 4 — full resolution only showed up on the SECOND open
+
+⚠️ **Real bug, not a loading-speed illusion.** `paintLightbox()`'s async
+full-res swap-in was guarded by `byId(lightboxIds[lightboxAt]) !== r` — OBJECT
+IDENTITY, not id. If `rows` gets a fresh object for the same photo between
+opening the lightbox and the sign request resolving (e.g. a realtime UPDATE
+echo replaces `rows[j]` with a new record — see `applyRemoteChange`), the guard
+wrongly read "the lightbox moved on" and silently dropped the swap — the tile
+kept showing the thumbnail stand-in until the photo was **reopened**, by which
+point `ensureFullUrl`'s cache already had the signed URL, so the second open
+"worked". Fixed by comparing the id the lightbox is currently pointed at
+(`lightboxIds[lightboxAt] !== openedId`) instead of object identity — the
+correct meaning of "has the lightbox moved on to a different photo", and
+robust to `rows` being replaced for the photo still being viewed.
+
+### Item 5 — Markup/Adjust go back to icon-only in the lightbox
+
+Reverses the 2026-08-29 "Item 12 follow-up" label. `#pp-lb-markupedit`/
+`#pp-lb-adjustedit` drop their `pp-lb-tool-labeled` class and `<span>Markup</
+span>`/`<span>Adjust</span>` text — icon + `title` tooltip only, matching every
+other lightbox tool. The now-unused `.pp-lb-tool-labeled` CSS rule is removed
+rather than left as dead weight.
+
+### Item 6 — Key Plan / Markup toggles move to their own cluster, left of Close
+
+A new **`.pp-lb-tools-right`** cluster (`#pp-lb-keyplan`, `#pp-lb-markuptoggle`)
+sits on the right side of the lightbox, offset 62px from the edge — enough to
+clear the close button (38px + 16px right + an 8px gap on desktop; 44px + 10px
++ 8px on the mobile close button size lands on the same figure, so one rule
+serves both breakpoints, with only `top` overridden to match the mobile safe-
+area offset). Download/Markup-edit/Adjust/Edit/Delete stay in the original
+left-hand `.pp-lb-tools` cluster.
+
+### Item 7 — the key-plan overlay always shows the pin and, when recorded, the
+### camera-facing cone
+
+⚠️ Previously the overlay was a bare `<img>` of the whole floor plan — it
+answered "which floor" but never "where on it, facing which way". It's now a
+small stage (`.pp-lb-kpoverlay` as a `<div>` holding an `<img>` + a pin dot +
+a direction cone), positioned from the resolved pin's own `x_norm`/`y_norm` —
+scaled-down copies of bim.js's own `.bim-pin`/`.bim-pincone` (that stage is
+sized for the full Plans-tab view; this corner overlay is 1/8-photo-width).
+- The pin colour follows `pin.item_type` (photo/panorama/reconstruction), same
+  three-way palette bim.js's own marker uses.
+- The cone is drawn **only** when a direction was actually recorded and the
+  item isn't marked drone/top-view (`direction_na`) — a fabricated cone would
+  claim a facing direction nobody captured.
+- `lightboxKeyPlanVisible` still resets to `false` on every `paintLightbox()`
+  call, so stepping ←/→ never carries a previous photo's overlay onto the next.
+
+### Item 8 — filter panel: bare hint text, denser and more minimalist
+
+- Trade/Works/each Location-Breakdown-level select's blank option and title
+  dropped the "Filter by " prefix — now just "Trade" / "Works" / the level's
+  own name (e.g. "Tower", "Level", "Zone"). Sitting inside the filter panel
+  already implies "filter by"; repeating it on every control was noise.
+- `.pp-filters` panel: padding 8px 12px → 6px 10px, gap 8px → 6px; controls
+  34px/13px → 30px/12px; date fields 145px/12px → 128px/11.5px; Clear-filters
+  and "Show archived" match the same reduced density (scoped to `.pp-filters
+  .ppr-allloc`, since `.ppr-allloc` is also a block label elsewhere and wasn't
+  redefined globally).
+
+### Verified
+
+**872 checks green** (was 853 before this round — 19 new, several updated in
+place where they encoded the exact behaviour this round deliberately reverses
+or replaces, e.g. the either/or archived filter, the labelled markup/adjust
+buttons, the bare `<img>` key-plan overlay, the four vs. five selection-toolbar
+ids). `node --check` clean on `module.js`/`test.js`/`icons.js`; 0 NUL bytes; CSS
+braces balanced (527/527); 0 duplicate DOM ids; a function-set diff against the
+prior commit shows **0 functions lost**, 2 intentional additions
+(`findPresentationUsage`, `openDeleteConfirm`).
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this
+file. In particular: the presentation-usage warning's real query against
+`ppr_slides`, the delete flow's actual storage cleanup, and the id-based
+lightbox guard's fix (which depends on a realtime UPDATE echo or similar
+`rows`-replacement timing to reproduce the original bug) are all verified by
+reading/structural checks, not by driving a live browser session.
+
+`module.css/js` → `?v=20260902a`. `assets/js/icons.js` → `?v=20260902e`
+(app-wide, 20 files — new `archive` glyph).
+
 ## Item 7 (11-item round) — 360° viewer smoothness: a real leaked `window` listener,
 ## and drag rendering with no requestAnimationFrame coalescing (2026-09-01)
 

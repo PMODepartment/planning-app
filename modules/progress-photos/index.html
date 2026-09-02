@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260901a" />
+  <link rel="stylesheet" href="module.css?v=20260902a" />
 </head>
 <body>
   <div class="pd-app">
@@ -114,11 +114,20 @@
           <!-- Selection-mode tools (item 3): replace the row above the moment
                a photo is selected, instead of a separate always-rendered box
                further down the page. module.js's syncChrome() toggles both
-               groups together so exactly one is ever visible. -->
+               groups together so exactly one is ever visible.
+               Owner feedback (item 2): icons instead of words, to compress
+               the row — each still carries its label as a title tooltip.
+               Delete (item 1) joins the cluster; deleting checks whether any
+               selected photo is used in a presentation and warns first. -->
           <span class="pp-selcount-tb" id="pp-selcount" style="display:none;"></span>
-          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-download" style="display:none;">Download</button>
-          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-addppr" style="display:none;">Add to Presentation</button>
-          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-archive" style="display:none;">Archive</button>
+          <button class="pd-btn pd-btn-sm" id="pp-sel-download" title="Download" style="display:none;">
+            <span data-ico="download" data-ico-size="15"></span></button>
+          <button class="pd-btn pd-btn-sm" id="pp-sel-addppr" title="Add to Presentation" style="display:none;">
+            <span data-ico="layers" data-ico-size="15"></span></button>
+          <button class="pd-btn pd-btn-sm" id="pp-sel-archive" title="Archive" style="display:none;">
+            <span data-ico="archive" data-ico-size="15"></span></button>
+          <button class="pd-btn pd-btn-sm pd-btn-danger" id="pp-sel-delete" title="Delete" style="display:none;">
+            <span data-ico="trash" data-ico-size="15"></span></button>
           <!-- PPR-screen tools. Item 2 parity: a funnel toggle reveals the
                same collapsed-by-default filter panel (#ppr-listbar shares
                the .pp-filters class, so the CSS/behaviour is identical —
@@ -178,8 +187,8 @@
                 <input class="pd-input" type="date" id="pp-f-from" title="Filter by capture start" /></label>
               <label class="pp-datefield">to
                 <input class="pd-input" type="date" id="pp-f-to" title="Filter by capture end" /></label>
-              <select class="pd-select" id="pp-f-trade"><option value="">Filter by Trade</option></select>
-              <select class="pd-select" id="pp-f-works"><option value="">Filter by Works</option></select>
+              <select class="pd-select" id="pp-f-trade"><option value="">Trade</option></select>
+              <select class="pd-select" id="pp-f-works"><option value="">Works</option></select>
               <div class="pp-locfilters" id="pp-f-loclevels"></div>
               <label class="ppr-allloc"><input type="checkbox" id="pp-f-archived" /> Show archived</label>
               <button class="pp-clear" id="pp-clearfilters" title="Clear all filters" hidden>
@@ -301,22 +310,27 @@
   <div class="pp-lightbox" id="pp-lightbox" hidden>
     <div class="pp-lb-tools" id="pp-lb-tools">
       <button class="pp-lb-tool" id="pp-lb-download" title="Download"><span data-ico="download" data-ico-size="16"></span></button>
-      <!-- Item 4 (11-item round): the key-plan button moved OUT of the Gallery
-           tile (cardHTML no longer renders .pp-pinbtn) and lives HERE instead —
-           "no need for the key plan button" in gallery/list, "but when opening
-           the photo, the key plan button should be there." Shown/hidden per
-           photo in paintLightbox() (only when BIM.pinInfoFor resolves a pin for
-           the item currently open); toggles the corner overlay in
-           .pp-lb-imgwrap via paintKeyPlanOverlay(). -->
-      <button class="pp-lb-tool" id="pp-lb-keyplan" title="Show/hide key plan" style="display:none"><span data-ico="mapPin" data-ico-size="16"></span></button>
-      <button class="pp-lb-tool" id="pp-lb-markuptoggle" title="Show/hide markup"><span data-ico="eye" data-ico-size="16"></span></button>
-      <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-markupedit" title="Add or edit markup on this photo — pencil, shapes, icons, text">
-        <span data-ico="palette" data-ico-size="16"></span><span>Markup</span></button>
-      <!-- Item 5 (2026-08-30, fourth round): exposure/brightness/contrast/sharpness. -->
-      <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-adjustedit" title="Adjust exposure, brightness, contrast and sharpness">
-        <span data-ico="sliders" data-ico-size="16"></span><span>Adjust</span></button>
+      <!-- Owner feedback (item 5): markup/adjust are icon-only now, matching
+           every other lightbox tool — the text labels these carried (added
+           when Markup was one bare icon among five and easy to miss) are
+           gone; the title attribute still names each tool on hover. -->
+      <button class="pp-lb-tool" id="pp-lb-markupedit" title="Add or edit markup on this photo — pencil, shapes, icons, text">
+        <span data-ico="palette" data-ico-size="16"></span></button>
+      <button class="pp-lb-tool" id="pp-lb-adjustedit" title="Adjust exposure, brightness, contrast and sharpness">
+        <span data-ico="sliders" data-ico-size="16"></span></button>
       <button class="pp-lb-tool" id="pp-lb-edit" title="Edit details"><span data-ico="pencil" data-ico-size="16"></span></button>
       <button class="pp-lb-tool pp-lb-tool-danger" id="pp-lb-delete" title="Delete"><span data-ico="trash" data-ico-size="16"></span></button>
+    </div>
+    <!-- Owner feedback (item 6): show/hide Key Plan and show/hide Markup move
+         to their own cluster on the RIGHT, immediately to the left of the
+         close button — everything else stays in the left-hand tool cluster
+         above. Item 4 (11-item round): key-plan is shown/hidden per photo in
+         paintLightbox() (only when BIM.pinInfoFor resolves a pin for the item
+         currently open); Item 7 (markup toggle) is the shared show/hide-
+         markup-on-tiles preference. -->
+    <div class="pp-lb-tools-right" id="pp-lb-tools-right">
+      <button class="pp-lb-tool" id="pp-lb-keyplan" title="Show/hide key plan" style="display:none"><span data-ico="mapPin" data-ico-size="16"></span></button>
+      <button class="pp-lb-tool" id="pp-lb-markuptoggle" title="Show/hide markup"><span data-ico="eye" data-ico-size="16"></span></button>
     </div>
     <button class="pp-lb-close" id="pp-lb-close" title="Close (Esc)">×</button>
     <button class="pp-lb-btn pp-lb-prev" id="pp-lb-prev" title="Previous (←)">‹</button>
@@ -325,8 +339,15 @@
       <video class="pp-lb-img" id="pp-lb-video" controls playsinline hidden></video>
       <canvas class="pp-lb-markup" id="pp-lb-markup-canvas"></canvas>
       <!-- Item 4: the key-plan corner overlay, top-right, sized to 1/8 of the
-           photo by paintKeyPlanOverlay() -->
-      <img class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" alt="Key plan" hidden />
+           photo by paintKeyPlanOverlay(). Item 7 (owner feedback): it must
+           always include the pin itself and, when recorded, the camera-
+           facing direction cone — not just the bare plan image — so it's a
+           small stage (img + pin + cone), not a lone <img>. -->
+      <div class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" hidden>
+        <img id="pp-lb-keyplan-overlay-img" alt="Key plan" />
+        <span class="pp-lb-kpoverlay-pin" id="pp-lb-keyplan-overlay-pin" hidden></span>
+        <span class="pp-lb-kpoverlay-cone" id="pp-lb-keyplan-overlay-cone" hidden></span>
+      </div>
     </div>
     <button class="pp-lb-btn pp-lb-next" id="pp-lb-next" title="Next (→)">›</button>
     <div class="pp-lb-cap" id="pp-lb-cap"></div>
@@ -353,11 +374,11 @@
   <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
   <script src="../../assets/js/ui.js?v=20260902a"></script>
-  <script src="../../assets/js/icons.js?v=20260901b"></script>
+  <script src="../../assets/js/icons.js?v=20260902e"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260901a"></script>
+  <script src="module.js?v=20260902a"></script>
   <script src="ppr.js?v=20260901a"></script>
   <script src="pano.js?v=20260901d"></script>
   <script src="recon.js?v=20260830b"></script>

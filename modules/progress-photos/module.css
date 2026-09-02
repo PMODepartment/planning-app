@@ -102,10 +102,14 @@
 .pp-topfilttoggle:hover, .pp-topfilttoggle.is-active { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-red); }
 
 /* ---- Slim filter bar (Drawing Register's .dr-filters) --------------------- */
+/* Owner feedback (item 8): denser and plainer — smaller controls, tighter
+   gaps/padding, a lighter panel — the previous sizing was tuned for an
+   always-visible row and read as too heavy for a panel that's now opened
+   on demand from the topbar funnel. */
 .pp-filters {
-  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px;
   background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); padding: 8px 12px;
+  border-radius: var(--pd-radius); padding: 6px 10px;
 }
 /* Item 2 (2026-08-30): filters are now collapsed by default at EVERY viewport
    size, not just on a phone — the topbar's own search box + funnel toggle
@@ -120,20 +124,25 @@
 .pp-filters-body { display: contents; }
 .pp-filttoggle { display: none; }
 .pp-filt-ico { color: var(--pd-muted); flex: none; }
-.pp-filters .pd-input, .pp-filters .pd-select { height: 34px; font-size: 13px; }
-.pp-filters .pp-search { flex: 1 1 300px; min-width: 180px; }
-.pp-filters .pd-select { flex: 0 0 auto; max-width: 180px; }
+.pp-filters .pd-input, .pp-filters .pd-select { height: 30px; font-size: 12px; }
+.pp-filters .pp-search { flex: 1 1 260px; min-width: 160px; }
+.pp-filters .pd-select { flex: 0 0 auto; max-width: 130px; }
 /* Date range: a muted caption + input reading as one control */
 .pp-datefield {
-  display: inline-flex; align-items: center; gap: 6px; flex: none;
-  font-size: 12px; color: var(--pd-muted); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  font-size: 11.5px; color: var(--pd-muted); white-space: nowrap;
 }
-.pp-datefield .pd-input { width: 145px; }
+.pp-datefield .pd-input { width: 128px; }
+/* "Show archived" reads as one more control among the others, so it takes
+   the same reduced density rather than the .ppr-allloc default (that class
+   is also used as a block label elsewhere, so it's scoped here, not
+   redefined). */
+.pp-filters .ppr-allloc { font-size: 11.5px; margin: 0; }
 /* Clear filters: a subtle, borderless ghost that only appears when a filter is
    active — sits inline after the filters (no margin-left:auto orphaning on wrap). */
 .pp-clear {
   display: inline-flex; align-items: center; gap: 5px; flex: none;
-  height: 34px; padding: 0 10px; font-size: 12px; font-weight: 500;
+  height: 30px; padding: 0 9px; font-size: 11.5px; font-weight: 500;
   color: var(--pd-muted); background: transparent;
   border: 0; border-radius: var(--pd-radius); cursor: pointer;
   transition: background .12s, color .12s;
@@ -421,13 +430,34 @@
 /* Item 4 (11-item round) — the lightbox's key-plan overlay: "overlays on top
    of the photo at the top right corner with the size 1/8 of the photo".
    Same corner-pinned-fraction shape as .ppr-kppopup (item 11) below, just
-   1/8 (12.5%) instead of 1/10, since the two asks named different sizes. */
+   1/8 (12.5%) instead of 1/10, since the two asks named different sizes.
+   ⚠️ Owner feedback (item 7): a bare plan image answers "which floor" but
+   not "where on it" — the overlay is now a small stage (img + a pin dot +,
+   when recorded, the camera-facing cone), not a lone <img>, so it always
+   shows where the photo was taken and which way it faced. */
 .pp-lb-kpoverlay {
   position: absolute; top: 10px; right: 10px; z-index: 3;
   width: 12.5%; min-width: 70px; max-width: 220px;
   border: 2px solid var(--pd-card); border-radius: 3px;
   box-shadow: 0 4px 18px rgba(0, 0, 0, .4); background: var(--pd-card);
   pointer-events: none;
+}
+.pp-lb-kpoverlay img { width: 100%; display: block; }
+/* Scaled-down copies of bim.js's own .bim-pin/.bim-pincone — that stage is
+   sized for a much larger, full-window plan view; a 1/8-photo-width corner
+   overlay needs a proportionally smaller marker. Positioned in JS
+   (paintKeyPlanOverlay) from the pin's own x_norm/y_norm, same convention. */
+.pp-lb-kpoverlay-pin {
+  position: absolute; transform: translate(-50%, -100%);
+  width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform-origin: center;
+  border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .45); pointer-events: none;
+}
+.pp-lb-kpoverlay-pin.pp-lb-kppin-photo { background: var(--pd-ok); }
+.pp-lb-kpoverlay-pin.pp-lb-kppin-panorama { background: var(--pd-red); }
+.pp-lb-kpoverlay-pin.pp-lb-kppin-reconstruction { background: var(--pd-dark); }
+.pp-lb-kpoverlay-cone {
+  position: absolute; width: 32px; height: 32px; pointer-events: none;
+  background: conic-gradient(from 0deg at 50% 100%, transparent 335deg, color-mix(in srgb, var(--pd-red) 40%, transparent) 335deg 360deg, color-mix(in srgb, var(--pd-red) 40%, transparent) 0deg 25deg, transparent 25deg);
 }
 .pp-lb-cap {
   margin-top: 12px; color: #fff; text-align: center;
@@ -459,11 +489,13 @@
 .pp-lb-tool:hover { background: rgba(255, 255, 255, .28); }
 .pp-lb-tool-danger:hover { background: var(--pd-red); }
 .pp-lb-tool.is-active { background: var(--pd-red); }
-/* Item 12 follow-up — the markup editor already existed but was one bare
-   icon among five crammed into the lightbox toolbar, easy to miss entirely.
-   A text label makes "this is where you add markup" unambiguous without
-   restyling the other icon-only tools. */
-.pp-lb-tool-labeled { width: auto; padding: 0 12px 0 10px; gap: 6px; font-size: 12.5px; font-weight: 600; }
+/* Owner feedback (item 6): a second tool cluster, pinned to the right side,
+   immediately to the left of the close button — holds show/hide Key Plan
+   and show/hide Markup only. The offset (62px) clears the close button
+   (38px wide + 16px right + an 8px gap) on desktop, and the same figure
+   happens to clear its 44px/right:10px mobile size too, so one rule serves
+   both — see the phone media query below for the matching `top`. */
+.pp-lb-tools-right { position: absolute; top: 14px; right: 62px; display: flex; gap: 6px; z-index: 2; }
 
 /* ---- Markup editor (18-item list item 13/14) ------------------------------
    A vector annotation layer over an <img>: toolbar (shape/pen/eraser/icon
@@ -498,6 +530,16 @@
 }
 .pp-progress {
   margin-top: 10px; font-size: 13px; color: var(--pd-muted);
+}
+/* Item 1 — the delete-confirm modal's warning when a photo being deleted is
+   used in one or more presentation slides. Same paired-token shape as the
+   equipment/recon "pending" badges (color-mix(--pd-warn) background, plain
+   --pd-warn text) — a solid --pd-warn fill would need a white-on-warn pair
+   this app doesn't otherwise carry, and warn-on-card already reads clearly. */
+.pp-delwarn {
+  margin-top: 10px; padding: 8px 10px; border-radius: var(--pd-radius);
+  background: color-mix(in srgb, var(--pd-warn) 16%, var(--pd-card));
+  color: var(--pd-warn); font-size: 12.5px; display: flex; align-items: flex-start; gap: 6px;
 }
 
 /* ---- Offline queue button (topbar, always visible — Rounds captures queue too) */
@@ -1507,6 +1549,7 @@
   .pp-lb-prev { left: 4px; }
   .pp-lb-next { right: 4px; }
   .pp-lb-close { width: 44px; height: 44px; top: max(10px, env(safe-area-inset-top)); right: 10px; }
+  .pp-lb-tools-right { top: max(10px, env(safe-area-inset-top)); }
   .pp-lb-cap { padding: 0 12px; }
 
   /* Gallery view on phone: iOS Photos' own dense small-square grid, not a
