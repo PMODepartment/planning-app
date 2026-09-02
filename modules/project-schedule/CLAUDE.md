@@ -1,3 +1,50 @@
+## The import's tree build stops half way and says nothing (2026-09-02p) — fmlozano
+
+Owner re-imported 4PH Strevi on the (o) build and asked for the output to be checked. The insert is
+**complete and correct** — 28,958 rows (16,485 activities + 12,473 WBS summary rows), matching the
+file. The **tree build is not**, and (o) is not the cause.
+
+### Measured, from the database rather than the grid
+| | |
+|---|---|
+| `wbs_nodes` | **6,623** — against 12,473 summary rows |
+| rows with a null `wbs_node_id` | 22,243 of 28,958 |
+| summary rows linked to a node | 6,623 — **exactly** the node count, so no orphan nodes |
+
+⚠️ **It is NOT a depth cut-off, which is what the first sampled look suggested.** Read in full rather
+than sampled, adopted and un-adopted rows exist at **every depth 2-10 in similar proportions**, and
+**5,833 of the 5,850 un-adopted rows have a parent that is also un-adopted**. Whole subtrees are
+missing, not a level. ⚠️ The earlier "parent also missing: 400/400" figure came from a 1,000-row
+sample of 6,623 adopted codes and was not trustworthy; this is the complete set.
+
+### ⚠️⚠️ THE REAL DEFECT IS THE SILENCE
+`wbsAdopt`'s insert error path was `if (!silent) UI.toast(...); return 0;` — and
+`autoAdoptAfterImport()` calls it with **`silent = true`** and only toasts on a truthy return. So a
+build that stopped half way produced **no toast, no console entry, and a half-built tree that looks
+finished**. That is the worst possible thing to be quiet about: a partial tree is exactly the state
+where `phaseOf()` returns null, `isExecPhase()` is false everywhere, Vertical Stacking draws nothing
+and every WBS Manager count reads 0 — while the grid looks perfect, because `rebuild()` derives
+ancestry by splitting the dotted code and never reads the node id.
+
+**Fixed two ways:**
+- **It reports.** The error path now logs to the console and raises a toast **regardless of `silent`**,
+  naming how many of how many branches landed, and returns the count actually adopted rather than 0.
+- **It verifies and resumes.** `wbsAdopt` was already documented as resuming from a partial tree (it
+  seeds `nodeByCode` from existing nodes), so `autoAdoptAfterImport()` now loops while passes keep
+  making progress, then **re-counts** and says plainly if branches remain. ⚠️ Gated on progress, not a
+  fixed retry count: a pass that adopts nothing new never will, and looping on it would hang the
+  import instead of telling the truth.
+
+⚠️ **The underlying reason a pass stops is still unidentified** — the failure was silent, so there is
+no error text to work from. This change is what makes the next occurrence diagnosable; it is not a
+fix for the cause.
+
+⚠️ **Recovery for the schedule as it stands:** WBS Manager → **"Adopt existing WBS"**. That path is
+non-silent, so it both resumes the tree and shows the error if one is waiting.
+
+- `MODULE_V` → `20260902p`.
+
+---
 ## ⚠⚠ I BROKE THE IMPORT IN (i): the mutation fence swallowed its own finishing pass (2026-09-02o) — fmlozano
 
 Found while checking the owner's re-import of 4PH Strevi, which is exactly what that check was for.

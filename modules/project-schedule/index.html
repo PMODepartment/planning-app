@@ -19848,6 +19848,7 @@
     var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; });
     if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
+    var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [], codeByKey = {};
     // Activities indexed by their dotted code, once — see the note at the link step below.
@@ -19911,7 +19912,21 @@
       for (var c = 0; c < payloads.length; c += 500) {
         setLoading('Adopting WBS tree… level ' + depths[di] + ' (' + Math.min(c + 500, payloads.length) + '/' + payloads.length + ')');
         var ins = await sb().from('wbs_nodes').insert(payloads.slice(c, c + 500)).select();
-        if (ins.error) { if (!silent) UI.toast('Adopt failed: ' + ins.error.message, 'error'); return 0; }
+        // ⚠️⚠️ `silent` USED TO SWALLOW THIS ENTIRELY — `if (!silent) UI.toast(...)` and then a bare
+        // `return 0`. autoAdoptAfterImport() calls this with silent=true and only toasts on a truthy
+        // return, so an insert that failed half way through produced NO message, NO console entry and
+        // a half-built tree that looks like a finished one. Measured on the owner's 4PH Strevi
+        // re-import: **6,623 nodes adopted of 12,473 summary rows**, the remainder whole subtrees
+        // spread across every depth, with nothing said. A partial tree is exactly the state that
+        // makes Vertical Stacking read empty and every node count read 0, so it is the last thing
+        // that should ever be silent.
+        if (ins.error) {
+          try { console.error('[ps] wbsAdopt insert failed at level ' + depths[di] + ', ' + adopted + ' node(s) in: ' + ins.error.message, ins.error); } catch (e2) {}
+          UI.toast('WBS adopt stopped after ' + adopted.toLocaleString() + ' of ' + legacy.length.toLocaleString() +
+                   ' branches: ' + ins.error.message + ' — reopen the WBS Manager and use "Adopt existing WBS" to resume.', 'error');
+          return adopted;
+        }
+        adopted += (ins.data || []).length;
         (ins.data || []).forEach(function (n) {
           var dotted = codeByKey[(n.parent_id || '') + '|' + n.sort_order];
           if (dotted) nodeByCode[dotted] = n.id;
@@ -20092,9 +20107,36 @@
     } catch (e) { /* best effort: a failure costs the nesting, never the import */ }
   }
 
+  // ⚠️⚠️ VERIFIES AND RESUMES. One call to wbsAdopt() was assumed to finish the tree; on the owner's
+  // 4PH Strevi re-import it built **6,623 of 12,473** branches and said nothing (see the insert error
+  // path above). wbsAdopt is documented as resuming cleanly from a partial tree — it seeds
+  // `nodeByCode` from the nodes that already exist — so the fix is to keep calling it while it is
+  // still making progress, and to REPORT what is left if it stops early.
+  // ⚠️ Gated on PROGRESS, not on a fixed number of tries: a pass that adopts nothing new will never
+  // adopt anything on the next one either, and looping on it would hang the import instead of
+  // telling the planner the truth.
   async function autoAdoptAfterImport() {
-    try { showLoading('Building WBS tree…'); var n = await wbsAdopt(true); hideLoading(); if (n) UI.toast('WBS tree built (' + n + ' nodes) — open the WBS Manager to edit it.', 'success'); }
-    catch (e) { hideLoading(); }
+    try {
+      showLoading('Building WBS tree…');
+      var total = 0, pass = 0;
+      for (; pass < 12; pass++) {
+        var remaining = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
+        if (!remaining) break;
+        setLoading('Building WBS tree… ' + remaining.toLocaleString() + ' branch(es) to go');
+        var n = await wbsAdopt(true);
+        total += n || 0;
+        if (!n) break;   // no progress — another identical pass cannot help
+      }
+      var left = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
+      hideLoading();
+      if (left) {
+        UI.toast('WBS tree is INCOMPLETE — ' + left.toLocaleString() + ' branch(es) still unadopted after ' +
+                 (pass + 1) + ' pass(es). Vertical Stacking, Trade and phase read from the tree, so they ' +
+                 'will be wrong until this finishes. Open the WBS Manager and use "Adopt existing WBS".', 'error');
+      } else if (total) {
+        UI.toast('WBS tree built (' + total.toLocaleString() + ' nodes) — open the WBS Manager to edit it.', 'success');
+      }
+    } catch (e) { hideLoading(); try { console.error('[ps] autoAdoptAfterImport', e); } catch (e2) {} }
   }
   // WBS parent picker for the Add/Edit activity modal — flat, indented options of every node.
   function wbsPickerOptions(selectedNodeId) {

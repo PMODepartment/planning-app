@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (p) — The import's tree build stops half way and says nothing
+
+Owner re-imported 4PH Strevi and asked for the output to be checked. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **The insert is complete and correct**: 28,958 rows (16,485 activities + 12,473 summary rows). **The
+  tree build is not** — `wbs_nodes` **6,623** against 12,473 summary rows, 22,243 rows unlinked — and
+  (o) is not the cause.
+- ⚠️ Read in full rather than sampled, it is **not a depth cut-off**: adopted and un-adopted rows exist
+  at every depth 2-10, and **5,833 of 5,850 un-adopted rows have a parent that is also un-adopted**.
+  Whole subtrees. ⚠️ My earlier "400/400" parent figure came from a 1,000-row sample and was wrong.
+- ⚠️⚠️ **The real defect is the silence.** `wbsAdopt`'s insert error did `if (!silent) toast; return 0`,
+  and `autoAdoptAfterImport` calls it with `silent = true` — so a half-built tree produced no toast, no
+  console entry, and looked finished. That is the state where Vertical Stacking draws nothing and every
+  node count reads 0, while the grid looks perfect because `rebuild()` splits the dotted code and never
+  reads the node id.
+- Fixed both ways: it now **reports regardless of `silent`** (naming how many of how many landed), and
+  `autoAdoptAfterImport` **verifies and resumes** while passes make progress, then says plainly if
+  branches remain. ⚠️ **The reason a pass stops is still unidentified** — the failure was silent, so
+  there is no error text yet. This makes the next occurrence diagnosable, it does not fix the cause.
+- ⚠️ **Recovery:** WBS Manager → **"Adopt existing WBS"** (non-silent). `MODULE_V` → `20260902p`.
+
 ### 2026-09-02 (o) — ⚠⚠ The (i) mutation fence swallowed the import's own finishing pass
 
 Found while checking the owner's re-import of 4PH Strevi. Detail in
