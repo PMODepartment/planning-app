@@ -82,7 +82,6 @@
     .ps-projctx .pd-select { border-color:transparent; background:transparent; font-weight:700; font-size:15px;
       height:24px; line-height:24px; padding:0 24px 0 6px; max-width:300px; color:var(--pd-ink); cursor:pointer; }
     .ps-projctx .pd-select:hover, .ps-projctx .pd-select:focus { background:var(--pd-bg); border-color:var(--pd-line); outline:none; }
-    .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }
     /* OPC-style project browser (Workspace → Program → Group → Project) */
     .ps-projsel-btn { display:inline-flex; align-items:center; gap:5px; background:transparent; border:1px solid transparent;
       border-radius:6px; cursor:pointer; font-weight:700; font-size:15px; color:var(--pd-ink); height:24px; padding:0 6px; max-width:320px; }
@@ -2450,7 +2449,6 @@
       <div class="ps-projctx">
         <select class="pd-select" id="ps-project" title="Project" style="display:none;"></select>
         <button class="ps-projsel-btn" id="ps-projsel-btn" title="Browse projects by Workspace / Program / Group"><span id="ps-projsel-name">— Select project —</span><span class="ps-projsel-chev" data-ico="chevronDown" data-ico-size="15"></span></button>
-        <div class="ps-ws" id="ps-workspace"></div>
         <div class="ps-menu ps-projsel-menu" id="ps-projsel-menu"></div>
       </div>
       <span class="ps-fresh" id="ps-fresh" style="display:none;"></span>
@@ -6105,18 +6103,7 @@
       return '<option value="' + esc(p.id) + '"' + (p.id === pid ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
     }).join('');
     updateProjSelLabel();
-    updateGroupHeadCaption();
     if (pid) load();
-  }
-  // OPC-style: show the project's group head under the project name. (Was the
-  // workspace/program path; those levels no longer exist -- the group head is
-  // the whole of a project's org context now.)
-  function updateGroupHeadCaption() {
-    var el = document.getElementById('ps-workspace'); if (!el) return;
-    var p = PROJECTS.find(function (x) { return x.id === pid; });
-    var g = p && p.group_head_id ? GROUPHEADS.find(function (x) { return x.id === p.group_head_id; }) : null;
-    el.textContent = g ? g.name : (p && p.group_head_id ? p.group_head_id : '');
-    el.title = el.textContent;
   }
   function updateProjSelLabel() {
     var nm = document.getElementById('ps-projsel-name'); if (!nm) return;
@@ -6129,7 +6116,7 @@
     pid = id || null;
     var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
     if (pid) sessionStorage.setItem('pd_project', pid);
-    updateProjSelLabel(); updateGroupHeadCaption();
+    updateProjSelLabel();
     // ⚠️ Kill any pending collapse save BEFORE pid changes — otherwise a toggle made <500ms ago
     // fires after the switch and writes the OUTGOING project's map under the INCOMING project's key.
     _cancelCollapseSave();
