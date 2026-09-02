@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260902a" />
+  <link rel="stylesheet" href="module.css?v=20260902g" />
 </head>
 <body>
   <div class="pd-app">
@@ -91,9 +91,14 @@
                than deciding it inside the modal after files may already be
                staged — the very ambiguity that let a staged photo survive a
                later switch to Video. Picking Photo/Video opens the same
-               upload modal pre-set to that type; 360° goes straight to
-               pano.js's capture flow, matching the modal's own former
-               in-place 360° button. -->
+               upload modal pre-set to that type.
+               ⚠️ 2026-09-02 owner feedback item 1: "the 360 photo feature is
+               quite buggy — let's discontinue it for now." 360° is disabled/
+               greyed out here the same way 3D already is, rather than removed
+               — the capture flow in pano.js is untouched (shelved, not
+               deleted), so re-enabling it later is a one-line change (drop
+               `disabled`, restore `data-addtype="360"`), matching how 3D
+               reconstruction was already put on hold in this same menu. -->
           <div class="pp-addmenu-wrap" id="pp-addmenu-wrap">
             <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos, video, or other media">
               + Add media <span data-ico="chevronDown" data-ico-size="12"></span></button>
@@ -102,7 +107,7 @@
                 <span data-ico="camera" data-ico-size="15"></span> Photo</button>
               <button type="button" class="pp-addmenu-item" data-addtype="video">
                 <span data-ico="video" data-ico-size="15"></span> Video</button>
-              <button type="button" class="pp-addmenu-item" data-addtype="360">
+              <button type="button" class="pp-addmenu-item" disabled title="360° capture is on hold">
                 <span data-ico="compass" data-ico-size="15"></span> 360°</button>
               <button type="button" class="pp-addmenu-item" disabled title="3D reconstruction is on hold">
                 <span data-ico="box" data-ico-size="15"></span> 3D</button>
@@ -247,12 +252,14 @@
                 <span data-ico="gridView" data-ico-size="15"></span></button>
               <button class="pd-vt" data-view="list" title="List view">
                 <span data-ico="listView" data-ico-size="15"></span></button>
-              <!-- Item 16 — Plan and Stack move here from the Plans tab (which
-                   keeps only "all plans", item 15). -->
+              <!-- Item 16 — Plan moves here from the Plans tab (which keeps
+                   only "all plans", item 15). ⚠️ Round-2 item 7 (2026-09-02)
+                   REMOVES Stack view entirely (owner: "remove stack view for
+                   the photos") — its button, and every renderStackView/
+                   wireStackView/stackGrid/mostRecentAsOf function it alone
+                   drove, are gone; see module.js's own retirement comment. -->
               <button class="pd-vt" data-view="plan" title="Plan view — floor plan with photos clustered by location">
                 <span data-ico="compass" data-ico-size="15"></span></button>
-              <button class="pd-vt" data-view="stack" title="Stack view — photos stacked by the schedule's Location Breakdown">
-                <span data-ico="layers" data-ico-size="15"></span></button>
             </div>
           </div>
           <!-- 360° panoramas + 3D scans render INSIDE #pp-view now (items
@@ -315,9 +322,10 @@
   <div class="pp-lightbox" id="pp-lightbox" hidden>
     <div class="pp-lb-tools" id="pp-lb-tools">
       <button class="pp-lb-tool" id="pp-lb-download" title="Download"><span data-ico="download" data-ico-size="16"></span></button>
-      <!-- Item 10 (2026-09-02): zoom, placed to the LEFT of show/hide markup. -->
-      <button class="pp-lb-tool" id="pp-lb-zoomout" title="Zoom out"><span data-ico="zoomOut" data-ico-size="16"></span></button>
-      <button class="pp-lb-tool" id="pp-lb-zoomin" title="Zoom in"><span data-ico="zoomIn" data-ico-size="16"></span></button>
+      <!-- Round-2 item 3 (2026-09-02): the Zoom out/in buttons that used to
+           sit here are GONE — "instead of zoom buttons in the image pop-up,
+           have a magnifier instead" (see .pp-lb-magnifier below, and
+           wireLightboxMagnifier in module.js). -->
       <!-- Owner feedback (item 5): markup/adjust are icon-only now, matching
            every other lightbox tool — the text labels these carried (added
            when Markup was one bare icon among five and easy to miss) are
@@ -350,6 +358,9 @@
       <img class="pp-lb-img" id="pp-lb-img" alt="" />
       <video class="pp-lb-img" id="pp-lb-video" controls playsinline hidden></video>
       <canvas class="pp-lb-markup" id="pp-lb-markup-canvas"></canvas>
+      <!-- Round-2 item 3: the magnifier lens — hidden until the pointer moves
+           over the photo (wireLightboxMagnifier in module.js). -->
+      <div class="pp-lb-magnifier" id="pp-lb-magnifier"></div>
       <!-- Item 4: the key-plan corner overlay, top-right, sized to 1/8 of the
            photo by paintKeyPlanOverlay(). Item 7 (owner feedback): it must
            always include the pin itself and, when recorded, the camera-
@@ -359,6 +370,11 @@
         <img id="pp-lb-keyplan-overlay-img" alt="Key plan" />
         <span class="pp-lb-kpoverlay-pin" id="pp-lb-keyplan-overlay-pin" hidden></span>
         <span class="pp-lb-kpoverlay-cone" id="pp-lb-keyplan-overlay-cone" hidden></span>
+        <!-- Round-2 item 4: drag the bottom-left corner to temporarily resize
+             the overlay (wireLightboxKpResizeDrag in module.js) — the box is
+             pinned top/right, so only the width changes; the <img>'s own
+             natural aspect ratio keeps the height following. -->
+        <div class="pp-lb-kpoverlay-resize" id="pp-lb-keyplan-resize" title="Drag to resize"></div>
       </div>
     </div>
     <button class="pp-lb-btn pp-lb-next" id="pp-lb-next" title="Next (→)">›</button>
@@ -390,11 +406,11 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260902a"></script>
-  <script src="ppr.js?v=20260902f"></script>
+  <script src="module.js?v=20260902g"></script>
+  <script src="ppr.js?v=20260902g"></script>
   <script src="pano.js?v=20260901d"></script>
   <script src="recon.js?v=20260830b"></script>
-  <script src="bim.js?v=20260902b"></script>
+  <script src="bim.js?v=20260902g"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
