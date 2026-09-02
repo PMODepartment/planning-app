@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (ad) — The lifecycle activities were pushed correctly and had no branch row to hang under
+Owner: *"good, the execution phase is migrated, however the WBS for the initiation, planning and close-out is
+not migrated now."* Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **`reused[nd.key]` suppressed the WBS-Summary payload, and that was the wrong test.** A branch renders
+  in the grid only if it has a summary ROW; `wbs_nodes` alone is the WBS Manager's tree. The push skipped
+  that row for any branch it reused, assuming an existing node is already projected — but
+  `_wbsEnsureSummaries` only runs on LOAD, bails on a read error, and the row can be deleted afterwards.
+  So the activities were filed with the right node id and code and had no parent row.
+- ⚠️ **That makes this report and the last one ONE bug.** Before, the push missed `Closeout Phase` by name and
+  *created* it — a created node is projected — which is why Close-out was the only phase that showed. Fixing
+  the name match made all three reused, so all three lost their row. The symptom inverted; the cause never
+  was the matching.
+- **Fix:** `_hasSummaryRow(nid)`, checked per node rather than assumed — and it tests `isWbs`, not merely a
+  matching node id, since an activity under the branch shares that id.
+- ⚠️⚠️ **"Execution Phase only" hides every lifecycle phase by design**, and it is a per-browser toggle — so a
+  planner who set it weeks ago pushes Initiation/Planning/Close-out work and sees none of it. The push now
+  clears it when it has just added non-execution work, and says so in the summary rather than silently.
+- The completion summary lists **each phase with its count** (from the payload, `Task` rows only — a branch
+  row carrying a phase is not an activity), so the next report of this shape answers itself.
+- **79 checks** executing the shipped emission line and exec-only block, sliced verbatim; 0 functions lost.
+  MODULE_V → `20260902ad`.
+
 ### 2026-09-02 (ac) — The Schedule Setup push renumbered the project root, so the execution work came out detached
 Owner: *"the activities generated under the execution phase was not migrated, as well as the WBS for the
 initiation and planning phase"* / *"when pushed, only activities under the close-out phase WBS was detected."*

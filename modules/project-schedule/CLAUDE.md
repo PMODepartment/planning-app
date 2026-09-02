@@ -1,3 +1,56 @@
+## `reused` meant "the node exists", not "it is in the schedule" — so the lifecycle work landed invisibly (2026-09-02) — eprobles
+
+Owner, after the previous fix: *"good, the execution phase is migrated, however the WBS for the
+initiation, planning and close-out is not migrated now."*
+
+**The activities were being inserted correctly all along. They had no branch row to hang under.**
+
+### ⚠️⚠️ `reused[nd.key]` suppressed the WBS-Summary payload, and that was the wrong test
+A branch renders in the grid only if it has a **WBS-Summary ROW** in `project_schedule`; `wbs_nodes`
+alone is the WBS Manager's tree, not the schedule's. The push skipped emitting that row for any
+branch it *reused*, on the assumption that a node which already exists is already projected.
+`_wbsEnsureSummaries` does project one per node — **but it runs on LOAD, it bails on any read error,
+and the row can be deleted afterwards.** So a reused branch with no row got none from the push
+either, and its activities — filed with the right `wbs_node_id` and the right dotted code — had no
+parent row.
+
+⚠️ **And this is what makes the previous report and this one one bug, not two.** Before, the push
+missed `Closeout Phase` by name and **created** it — a created node is projected, so it got a summary
+row, so *"only activities under the close-out phase WBS was detected."* Fixing the name match made all
+three phases reused, so all three lost their summary row and all three went invisible. The symptom
+inverted because the cause was never the matching; it was this.
+
+**Fix:** `_hasSummaryRow(nid)` — checked per node rather than assumed, so a reused-but-unprojected
+branch gets its row and a reused-and-projected one still does not (that check is what stops the "two
+rows for one `wbs_node_id`" duplication `_wbsEnsureSummaries` exists to heal). ⚠️ It tests `isWbs`,
+not merely a matching node id: an **activity** under the branch shares that id and must not be
+mistaken for the branch's own row.
+
+### ⚠️⚠️ And "Execution Phase only" hides every lifecycle phase — by design
+`buildNodes` drops the other phases outright when `_execOnly` is on. It is a **per-browser
+localStorage** toggle, so a planner who set it weeks ago pushes Initiation / Planning / Close-out work
+and then cannot see any of it — which reads exactly like *"the WBS was not migrated"*. The push now
+clears it when it has just added non-execution work, because a view that excludes non-execution work
+is no longer showing the schedule. ⚠️ Said in the summary rather than done silently, with the way to
+turn it back on. An execution-only push does not touch it.
+
+### The summary now answers the question that was asked
+A single total cannot answer *"where did the Initiation work go?"*, so the completion summary lists
+each phase with its count. ⚠️ Counted from the **payload**, `activity_type === 'Task'` only — a branch
+row carrying `phase: 'closeout'` is not an activity, and counting it would overstate every push.
+
+**Verified: 79 checks executing the shipped code** — the payload-emission line and the exec-only block
+**sliced verbatim out of the file and run**, not reimplemented: the reused-but-unprojected branch gets
+a row with its own phase and no contract scope, a projected one emits nothing, a new trade branch is
+unchanged, an activity sharing the node id does not count as a projection, and the owner's exact tree
+resolves to 1 trade + 3 phase rows before / 1 after. Plus the 54 checks from the previous fix, still
+green. **0 functions lost, 1 added**; 0 NUL bytes; parses.
+⚠️ **Two of my own assertions were wrong before the code was** (I expected `undefined` where the code
+initialises `false`, and my harness re-declared a `var` the sliced block already declares). Corrected
+to what was measured. ⚠️ **Not verified signed in** — the next real push is the test.
+
+---
+
 ## The push renumbered the project root, so the execution work came out detached (2026-09-02) — eprobles
 
 Owner: *"how come when a schedule was generated in the schedule setup, and pushed to project schedule,
