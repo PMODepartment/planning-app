@@ -255,7 +255,21 @@
          a row action you cannot reliably hit is a row action that is not there. */
       .mp-btn-sm { min-height:44px; padding:3px 12px; }
       .mp-seg button { min-height:44px; }
-      .mp-tab { min-height:44px; }
+      /* ⚠️ Real bug, found by measuring: `.mp-tab` is `display:inline-flex` (vestigial — these
+         tabs carry no icon, just bare text), which turns its own text into an anonymous flex item
+         whose default `min-width:auto` refuses to shrink below the width of its longest unbroken
+         WORD. That defeats the shared dashboard.css rule at this width (`.pd-modulebar >
+         [class$="-tabs"] > button { flex:1 1 0; min-width:0; white-space:normal; ... }`), whose
+         whole job is to wrap a long tab label onto two lines instead of letting it overflow — the
+         same bug already fixed once for Contracts & Claims. With 7 tabs at ~44px each, single
+         unbreakable words ("Mobilization", "Positions", "Activities", "Portfolio") don't wrap; they
+         overflow past their own tab and visibly overlap the neighbour on both sides. Measured:
+         "Mobilization"'s text ran 14px past its own tab's right edge into "Activities". Switching
+         `display` here to `block` removes the competing flex-item min-width (this button's own
+         children go back to normal block text flow), and `overflow-wrap`/`word-break` let a single
+         long word actually break mid-word so it can wrap within a ~44px column, which the shared
+         rule's `white-space:normal` alone cannot do for text with no spaces to break on. */
+      .mp-tab { min-height:44px; display:block; text-align:center; overflow-wrap:break-word; word-break:break-word; }
     }
   </style>
 </head>

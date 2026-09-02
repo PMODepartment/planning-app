@@ -160,6 +160,39 @@ returning `{error}`, so the retry moved into a `catch` that re-checks the same
 `/trade|column|schema cache/` message before falling back, and any other error still surfaces as
 `wpmStatus = 'error'`.
 
+## Fix: "Assumptions" button unreachable at tablet / small-laptop widths (2026-09-02)
+
+Found via a headless audit pass (mocked-Supabase Playwright harness rendering the real, unmodified
+module — no live report). A 768px screenshot showed the "Contract not set — open Assumptions" nudge
+banner with no `Assumptions` button anywhere on screen to click.
+
+⚠️ **The existing `@media (max-width: 700px)` fix only ever covered phones.** `.cf-controls` is
+`display:flex; flex-wrap:nowrap; overflow-x:auto` by design on desktop (a horizontally-scrolling
+toolbar strip), and `.cf-actions` (Sync from WPM / Actuals / **Assumptions**) sits inside it with
+`margin-left:auto; flex:none`. The phone block wraps both, but `.cf-controls`'s *natural* unwrapped
+width needs roughly 1015px before it stops overflowing its own scroller — so from 701px through
+~1040px (the entire tablet band, and most small-laptop windows) the exact same failure the phone
+fix's own comment describes was still happening. Measured directly (`getBoundingClientRect()` on
+`#cf-settings`): unreachable (`x` past the viewport, inside an `overflow-x:auto` ancestor with no
+page-level scroll to signal it) at every width from 750px through 1000px, reachable again only past
+~1050px.
+
+**Fix:** a second, separately-scoped block, `@media (min-width: 701px) and (max-width: 1060px)`,
+applying the same `flex-wrap: wrap` treatment to `.cf-controls`/`.cf-actions` — not by widening the
+phone-only block, which carries phone-tuned KPI/matrix sizing rules that shouldn't apply at tablet
+width (the same "add a narrow tablet-band sibling, don't widen the phone block" precedent Project
+Schedule's own tablet-band fix already established).
+
+**Verified:** a numeric sweep from 700px–1100px confirms `#cf-settings` is reachable (fully within
+the viewport, `controlsScrollWidth === controlsClientWidth`, i.e. genuinely wrapped rather than still
+sitting in an unreached scroll region) at every tested width after the fix, where it was unreachable
+from 750px–1000px before. Fresh screenshot + metrics at 768px confirm the button now renders visibly
+on its own row beneath the data-date/S-curve controls, with `scrollWidth === innerWidth` (0 page
+overflow) and no console errors.
+
+⚠️ **Not verified signed in** — found and fixed under a mocked Supabase backend; the cause is pure
+CSS layout, independent of any data, so the fix applies identically to a real session.
+
 ## Verified
 - JS parses (`node --check`). Engine math hand-checked on a synthetic fixture:
   DP/billing-net/retention/terms lag land in the correct months and totals

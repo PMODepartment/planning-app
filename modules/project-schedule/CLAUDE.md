@@ -1626,6 +1626,77 @@ minimized as well."* It now also hides the sidebar, the topbar and the module ba
 - ⚠️ **Not verified signed in** — no live project was opened, so `_repIdPaint` has never read a real
   `projName()`/group head, and the legend fold has never run against a real category list.
 - `MODULE_V` → `20260902a`.
+## The toolbar's page-level overflow fix went stale — recurred at ordinary 1280px desktop, not just tablet (2026-09-02)
+
+Found independently via a headless audit pass (mocked-Supabase Playwright harness rendering the
+real, unmodified module, tested under `role:'viewer'`), not a live report: at a plain 1280px
+desktop window (collapsed 64px sidebar) the page reported 136px of `document.documentElement
+.scrollWidth − innerWidth` — genuine page-level horizontal overflow, letting the whole document
+(sidebar, topbar, avatar, everything) scroll sideways.
+
+⚠️ **This looked like the tablet-band `@media (min-width:701px) and (max-width:1140px)` rule's
+1140px upper bound going stale**, and it was, on the version this was diagnosed against — that
+rule's own comment showed its math (the toolbar's fit-without-wrapping width was hand-calibrated
+once, "900px … it is now 900+240=1140px"), and 1280px sits comfortably above it;
+`.ps-tb-row`'s own `scrollWidth` measured **1340px** needed against only **~1192px** available at
+1280px. The fix drafted here dropped the upper bound entirely (`@media (min-width:701px) and
+(max-width:1140px)` → `@media (min-width:701px)`), reasoning that a capped magic number will just
+go stale again the next time a toolbar button is added.
+
+⚠️ **Superseded by a concurrent, broader fix on `main`, found while rebasing this branch.**
+`main`'s own commit `712436d` ("Reporting view becomes a screen; project switcher un-stretched;
+foldable legend; toolbar stops clipping") changed `.ps-toolbar .ps-tb-row`'s own BASE rule from
+`flex-wrap:nowrap` to **unconditionally `flex-wrap:wrap`** — so the tablet-band media query this
+entry widened (whether capped at 1140px or not) no longer does anything at any width; the row
+always wraps as soon as it doesn't fit, with no band-specific carve-out left to keep in sync at
+all. The widened, uncapped version of that media query rebased in cleanly (it's a strict subset of
+what the base rule now always does) and was left in place as harmless dead code rather than risk
+excising a comment block from this file mid-rebase — the real fix, and the one actually live, is
+`main`'s unconditional base rule.
+
+⚠️ **Not verified against real live data or a live login** — pure CSS layout, independent of any
+data, so both fixes (the superseded one drafted here and the broader one that shipped) apply
+identically to a real session regardless. Reproduced and diagnosed under `role:'viewer'` but the
+cause is role-independent.
+
+## `computeWbsCodes` could crash the whole module on a corrupted tree — RangeError, unguarded recursion (2026-09-02)
+
+Found via a headless audit pass (mocked-Supabase Playwright harness rendering the real, unmodified
+module), not a live report: opening this module's page threw an uncaught
+`RangeError: Maximum call stack size exceeded` and the page never rendered.
+
+⚠️ **The stack trace was useless.** This file's inline `<script>` is ~1.2 MB on essentially one
+logical line, so V8 reports the identical `index.html:3110:9` for every frame regardless of which
+function is actually recursing. Localizing it needed a different technique: monkey-patching
+`Array.prototype.forEach` globally to track recursion depth and, past a threshold, capture
+`String(cb)` (the recursing callback's own source text) rather than trust the line number. That
+pointed straight at `computeWbsCodes(nodeList)`'s inner `walk(parentId, parentCode)`.
+
+⚠️ **`walk` had no cycle guard.** It builds a `parent_id → children[]` map and recurses child-by-child
+to assign dotted WBS codes. If any row in `wbs_nodes` ends up transitively its own ancestor — this
+file's own changelog is a long record of exactly that happening in production (duplicate ids across
+projects, cross-project parent/child links, race-condition duplicate rows from concurrent pushes,
+partial/failed writes) — `walk` recurses forever and takes the entire module down with it, since this
+function runs on every load/edit/push.
+
+**Fix:** a `seen` Set inside `computeWbsCodes`, checked and populated at the top of the per-child
+callback; a node already visited is skipped rather than re-walked. In a well-formed tree every id is
+visited exactly once regardless, so this changes nothing for normal data — it only stops a corrupted
+row from hanging the module. Same shape as this file's existing `_traceWalk` cycle guard and its
+"must not hang on a cyclic tree" tests elsewhere in this module.
+
+**Verified two ways, both clean:**
+1. Re-ran the exact diagnostic that found the bug (the `forEach` recursion-depth monkey-patch) against
+   the fixed file — no `DEEP_RECURSION_DETECTED`, no page error; only the expected benign
+   `ERR_PROXY_CONNECTION_FAILED` noise from the sandboxed environment's Realtime websocket attempts.
+2. Re-ran the full 7-page batch audit (dashboard, modules, projects, my-work, manpower-loading,
+   minutes-of-meeting, project-schedule) — every page including this one reports `errors: []` and
+   `overflow: 0`.
+
+⚠️ **Not verified against real live data or a live login** — reproduced under a mocked Supabase
+backend whose insert stub happens to assign duplicate ids across separate inserts, which is what
+actually triggered the cycle in this environment. The guard is correct regardless of trigger: it only
+activates on an already-corrupted tree and is a no-op otherwise.
 
 ## ⚠️ REGRESSION, same day: adoption built 1,584 TOP-LEVEL nodes — and my own harness said it was fine (2026-09-01) — fmlozano
 
