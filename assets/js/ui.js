@@ -560,7 +560,20 @@
     //    an unconditional JS hide can and did.
     var modBar = tabs.closest('.pd-modulebar');
     var titleTxt = modBar && modBar.querySelector('[class$="-title-txt"]');
-    if (titleTxt) titleTxt.classList.add('pd-title-hasdrop');
+    if (titleTxt) {
+      titleTxt.classList.add('pd-title-hasdrop');
+      // Item 1 (2026-09-01, mobile round): below 700px, hiding just the TEXT
+      // (note above) still reserves a whole full-width row for the now-empty-
+      // but-for-its-icon <h1> — a bare icon sitting alone on its own line,
+      // which is a materially different shape from the "icon alone / label on
+      // the next line" defect that comment warns about (there the icon had a
+      // row and the trigger's label sat on the NEXT row; the reported bug here
+      // was the FULL duplicate text, not a bare icon). Marking the <h1> itself
+      // lets dashboard.css remove that row entirely below 700px, so there is
+      // no separate icon row left to be "alone" — see `.pd-h1-hasdrop`.
+      var h1 = titleTxt.closest('h1');
+      if (h1) h1.classList.add('pd-h1-hasdrop');
+    }
 
     var wrap = document.createElement('div');
     wrap.className = 'pd-tabsdrop';
