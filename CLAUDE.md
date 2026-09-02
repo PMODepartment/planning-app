@@ -84,6 +84,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (c) — Project Schedule: Outline + Saved layouts folded into the View menu
+
+Owner: *"Yes fold Outline and Layouts into View too."* Two more toolbar buttons become sections of
+`View ▾`. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️ **A folded-in menu can outgrow the viewport, and `.ps-menu` will not tell you.** It is
+  `position:absolute; overflow:hidden; max-height:none`. Measured with the real menu HTML: 804px of
+  content 209px down a 900px viewport, and `Reporting view` + `Reset layout` were **rendered, inside
+  the menu box, and un-hittable by `elementFromPoint`**. Third instance of this defect class in this
+  repo (column chooser, group menu). Fixed with the existing `anchorMenu()` pin-and-clamp — **any
+  `.ps-menu` that grows past ~20 rows needs it.**
+- ⚠️ **Sixth "brand red is not a text colour":** the Save-current-layout item came over as
+  `--pd-red` at 13px/600 — **4.12:1 light, 3.40:1 dark, dark fails AA.** Now `--pd-danger-text`
+  (5.84 / 6.14).
+- ⚠️ An attribute collision that would have been silent: saved layouts used `data-view`, which the
+  View menu already binds to the six view modes. Renamed `data-lyt`.
+- Row needs **1590px → 1381px**; one row now at a ~1486px viewport (was ~1720). **1440 is still two
+  lines, by 46px** — the last lever is a collapsing search box, not done.
+- `.gitignore` now has `**/_*_test.html`. The harness patterns were filename-specific despite their
+  own comment saying otherwise, and a new harness file slipped through — the same gap that put four
+  harness files into production on 2026-09-01.
+
+**42/42** executing the shipped section builders + binders, 33/33 and 40/40 regressions.
+⚠️ Not verified signed in. `MODULE_V` → `20260902c`.
+
 ### 2026-09-02 (b) — Project Schedule: contract scope + timeline zoom folded from segments into menus
 
 Owner: *"Yes let's fold the scope and zoom into menus."* Both 3-button segments become labelled menu

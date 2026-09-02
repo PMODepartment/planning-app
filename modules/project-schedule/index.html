@@ -261,7 +261,6 @@
        these controls are just as irrelevant when a planner opens the stacking to work. */
     body.ps-vstack-on #ps-groupbtn,
     body.ps-vstack-on #ps-zoom,
-    body.ps-vstack-on #ps-collapseto,
     body.ps-vstack-on #ps-colorsbtn,
     body.ps-vstack-on #ps-analyzebtn { display:none !important; }
     body.ps-vstack-on #ps-groupbtn + .ps-menu, body.ps-vstack-on #ps-colorsbtn + .ps-menu { display:none !important; }
@@ -1756,6 +1755,26 @@
        wins over the earlier .ps-cols-menu overflow:auto and clips the column chooser at its cap). */
     .ps-rowctx, .ps-colhdr-menu { max-height:82vh; overflow-y:auto; overflow-x:hidden; }
     .ps-cols-menu { overflow-y:auto; overflow-x:hidden; }
+    /* ---- View ▾ menu sections (Outline + Saved layouts were folded in from the toolbar) ----
+       ⚠️ The menu is now ~25 rows tall, past the viewport on a laptop, and `.ps-menu` is
+       `position:absolute; overflow:hidden` with NO max-height — so the bottom items (Reporting view,
+       Reset layout) would be clipped and unreachable. It goes through anchorMenu() for that reason,
+       the same pin-and-clamp the Colors menu already uses. */
+    .ps-lm-head { padding:6px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    /* WBS levels are chips on one wrapping line, not one row each: maxDepth() reaches 14 on a P6
+       import, which as stacked buttons is taller than everything else in the menu combined. */
+    .ps-lm-lvls { display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:2px 12px 8px; }
+    .ps-lm-lvls > span { font-size:11.5px; color:var(--pd-muted); margin-right:2px; }
+    .ps-menu .ps-lm-lvls button { display:inline-flex; align-items:center; justify-content:center;
+      width:24px; min-width:24px; height:24px; padding:0; border:1px solid var(--pd-line);
+      border-radius:4px; font-size:11.5px; font-variant-numeric:tabular-nums; }
+    .ps-lm-lyt { display:flex; align-items:center; }
+    .ps-menu .ps-lm-lyt button:first-child { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ps-menu .ps-lm-lyt button:last-child { flex:0 0 30px; width:30px; padding:8px 0; text-align:center; color:var(--pd-muted); }
+    .ps-lm-none { padding:8px 14px; color:var(--pd-muted); font-size:12px; }
+    /* ⚠️ --pd-danger-text, not --pd-red. Brand red on card is 3.74:1 — under AA for 13px text.
+       Sixth instance of that defect in this repo; the old Layouts menu shipped it. */
+    .ps-menu button.ps-lm-save { color:var(--pd-danger-text); font-weight:600; border-top:1px solid var(--pd-line); }
     .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:13px; }
     .ps-menu button:hover { background:var(--pd-red-light); }
@@ -2627,8 +2646,9 @@
                whether you were in it or not. The button now reads "View: Stacking", which answers
                where-am-I and what-else-is-there in one glance. See renderLayoutMenu. -->
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="View — Gantt, Grid, Split, Activity Network, Activity Progress, Vertical Stacking"><span data-ico="layout" data-ico-size="15"></span> <span id="ps-viewbtn-txt">View: Split</span> ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="15"></span> Outline ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views" title="Saved layouts (per project) — columns, filters, grouping &amp; Activity-Progress charts"><span data-ico="listView" data-ico-size="15"></span> Layouts ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
+          <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
+               the View ▾ menu now: both answer "how am I looking at this schedule", the same question
+               View already owns, and the row was two lines deep at laptop widths. See renderLayoutMenu. -->
           <span class="ps-tb-div"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight -->
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-analyzebtn" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="15"></span> Analyze ▾</button>
@@ -7213,7 +7233,7 @@
     groupBys = list.slice(); normalizeGroupBys();
     try { localStorage.setItem(_gbKey(), JSON.stringify(groupBys)); } catch (e) {}
     restoreCollapsedFor(_gbSig(), false); // was: collapsed = {} — now restores this grouping's tree
-    populateGroupSelect(); renderCollapseMenu(); renderGrid(); renderGantt();
+    populateGroupSelect(); renderGrid(); renderGantt();
   }
   function loadGroupBys() {
     groupBys = ['wbs'];
@@ -10361,12 +10381,20 @@
     var m = 0; rows.forEach(function (r) { var d = segs(r.wbs).length; if (d > m) m = d; });
     return (groupBys.length === 1 && groupBys[0] === 'wbs') ? m : m + groupBys.length;
   }
-  function renderCollapseMenu() {
-    var menu = document.getElementById('ps-collapse-menu'); if (!menu) return;
+  // ---- Outline section of the View ▾ menu (was the Outline ▾ toolbar button) ----
+  // Built as a fragment here and bound by renderLayoutMenu, which owns the menu and rebuilds it on
+  // every open — so unlike the old standalone menu there is nothing left to keep in sync from
+  // setGroupBys / applyView / the full repaint, and those calls are gone.
+  function outlineSectionHTML() {
     var mx = Math.max(1, maxDepth());
-    var html = '<button data-lvl="all"><span data-ico="layers" data-ico-size="14"></span> Expand all</button>';
-    for (var i = 1; i <= mx; i++) html += '<button data-lvl="' + i + '">WBS Level ' + i + '</button>';
-    menu.innerHTML = html;
+    var h = '<div class="ps-lm-head">Outline</div>' +
+      '<button data-lvl="all"><span data-ico="layers" data-ico-size="14"></span> Expand all</button>' +
+      '<div class="ps-lm-lvls"><span>Collapse to WBS level</span>';
+    // Chips on one wrapping line rather than a row each: maxDepth() reaches 14 on a P6 import.
+    for (var i = 1; i <= mx; i++) h += '<button data-lvl="' + i + '" title="Collapse the outline to WBS level ' + i + '">' + i + '</button>';
+    return h + '</div>';
+  }
+  function bindOutlineSection(menu) {
     menu.querySelectorAll('[data-lvl]').forEach(function (b) {
       b.onclick = function () {
         menu.classList.remove('open');
@@ -10799,7 +10827,7 @@
     // Paint only the list. The desktop pipeline is (re)built by renderAll when a
     // resize crosses back above 700px (see the resize handler above).
     if (psIsPhone()) { renderMobile(); return; }
-    renderHeader(); renderCollapseMenu(); renderGrid(); renderGantt(); renderActLegend(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); if (activeTab === 'costload' && typeof CostLoading !== 'undefined') CostLoading.repaint(); }
+    renderHeader(); renderGrid(); renderGantt(); renderActLegend(); renderDetails(); if (activeTab === 'planner') { renderPlanner(); openLastPlanner(); } else if (activeTab === 'wbs') renderWbsManager(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); if (activeTab === 'costload' && typeof CostLoading !== 'undefined') CostLoading.repaint(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -25227,15 +25255,25 @@
   // Saved layouts are PER PROJECT: ps_views = { <pid>: { <name>: view } }.
   function loadViews() { try { var all = JSON.parse(localStorage.getItem('ps_views') || '{}') || {}; return all[pid || 'none'] || {}; } catch (e) { return {}; } }
   function saveViews(v) { try { var all = JSON.parse(localStorage.getItem('ps_views') || '{}') || {}; all[pid || 'none'] = v; localStorage.setItem('ps_views', JSON.stringify(all)); } catch (e) {} }
-  function renderViewsMenu() {
-    var menu = document.getElementById('ps-views-menu'); if (!menu) return;
+  // ---- Saved-layouts section of the View ▾ menu (was the Layouts ▾ toolbar button) ----
+  // ⚠️ The attribute is `data-lyt`, NOT `data-view`: renderLayoutMenu already binds
+  // `[data-view]` to the six VIEW MODES, so reusing the old name here would make clicking a saved
+  // layout call _setView('<layout name>') and land on the fallback view.
+  function layoutsSectionHTML() {
     var vs = loadViews(), names = Object.keys(vs);
-    var html = names.length ? names.map(function (n) { return '<div style="display:flex;align-items:center;"><button data-view="' + esc(n) + '" style="flex:1;">' + esc(n) + '</button><button data-delview="' + esc(n) + '" title="Delete" style="width:30px;color:var(--pd-muted);">✕</button></div>'; }).join('') : '<div style="padding:8px 14px;color:var(--pd-muted);font-size:12px;">No saved layouts yet</div>';
-    html += '<button data-saveview="1" style="border-top:1px solid var(--pd-line);color:var(--pd-red);font-weight:600;">＋ Save current layout…</button>';
-    menu.innerHTML = html;
-    menu.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { menu.classList.remove('open'); applyView(loadViews()[b.dataset.view]); }; });
-    menu.querySelectorAll('[data-delview]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var v = loadViews(); delete v[b.dataset.delview]; saveViews(v); renderViewsMenu(); }; });
-    menu.querySelector('[data-saveview]').onclick = function () {
+    return '<div class="ps-lm-head">Saved layouts</div>' +
+      (names.length ? names.map(function (nm) {
+        return '<div class="ps-lm-lyt"><button data-lyt="' + esc(nm) + '" title="Restore “' + esc(nm) + '” — columns, filters, grouping, zoom and charts">' + esc(nm) + '</button>' +
+          '<button data-dellyt="' + esc(nm) + '" title="Delete this saved layout">✕</button></div>';
+      }).join('') : '<div class="ps-lm-none">No saved layouts yet</div>') +
+      '<button data-savelyt="1" class="ps-lm-save">＋ Save current layout…</button>';
+  }
+  function bindLayoutsSection(menu, rerender) {
+    menu.querySelectorAll('[data-lyt]').forEach(function (b) { b.onclick = function () { menu.classList.remove('open'); applyView(loadViews()[b.dataset.lyt]); }; });
+    // Deleting must NOT close the menu — a planner clearing out several stale layouts would have to
+    // reopen it each time. rerender() rebuilds in place (and re-anchors, since the menu got shorter).
+    menu.querySelectorAll('[data-dellyt]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); var v = loadViews(); delete v[b.dataset.dellyt]; saveViews(v); rerender(); }; });
+    menu.querySelector('[data-savelyt]').onclick = function () {
       var n = prompt('Save current layout as:'); if (!n) return;
       var v = loadViews();
       // A saved layout bundles filter + grouping + the whole column setup (hidden/sort/renames/widths)
@@ -25275,7 +25313,7 @@
     syncScopeSwitch();
     buildFilterMenu();
     applyColHidden();
-    renderCollapseMenu(); renderHeader(); renderGrid(); renderGantt();
+    renderHeader(); renderGrid(); renderGantt();
   }
 
   // ----- Critical Path -----
@@ -28632,9 +28670,7 @@
     scMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     zmMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     _paintZoomBtn(); renderZoomMenu();
-    // (Expand-all moved into the Outline ▾ menu — see renderCollapseMenu.)
-    var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
-    var vMenu = document.getElementById('ps-views-menu');
+    var fMenu = document.getElementById('ps-filter-menu');
     var aMenu = document.getElementById('ps-actions-menu');
     var lMenu = document.getElementById('ps-layout-menu');
     var colsMenu = document.getElementById('ps-cols-menu');
@@ -28643,7 +28679,7 @@
     var analyzeMenu = document.getElementById('ps-analyze-menu');
     var oMenu = document.getElementById('ps-open-menu');
     var colorsMenu = document.getElementById('ps-colors-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _sm = document.getElementById('ps-scope-menu'); if (_sm) _sm.classList.remove('open'); var _zm = document.getElementById('ps-zoom-menu'); if (_zm) _zm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    function closeMenus() { fMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _sm = document.getElementById('ps-scope-menu'); if (_sm) _sm.classList.remove('open'); var _zm = document.getElementById('ps-zoom-menu'); if (_zm) _zm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // ⚠️ CLIPPING FIX. `.ps-menu` is `position:absolute; left:0`, so a menu opened from a button
@@ -28804,6 +28840,10 @@
         opt('split', 'Split', 'grid + timeline') + opt('grid', 'Grid', 'spreadsheet only') +
         opt('gantt', 'Gantt', 'timeline only') + opt('network', 'Network', 'PERT diagram') +
         opt('progress', 'Progress', 'physical vs planned') + opt('stacking', 'Stacking', 'building model') +
+        // ⚠️ Outline is omitted in the stacking view, exactly as the old
+        // `body.ps-vstack-on #ps-collapseto` rule hid the toolbar button: there is no grid outline
+        // to collapse while the building model is open.
+        (cur === 'stacking' ? '' : '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' + outlineSectionHTML()) +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Row density</div>' +
         '<button data-den="comfortable">' + (_density !== 'compact' ? '● ' : '○ ') + 'Comfortable</button>' +
@@ -28811,6 +28851,8 @@
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>' +
         '<button data-ganttset><span data-ico="settings" data-ico-size="14"></span> Gantt settings…</button>' +
+        '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
+        layoutsSectionHTML() +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<button data-report title="Hide the authoring controls (Actions, Add activity, Schedule, Link, undo/redo, details panel, column filters) for meetings and screen-shares. View controls stay; nothing is written.">' +
           (_reporting ? '● ' : '○ ') + 'Reporting view</button>' +
@@ -28821,6 +28863,8 @@
         '<button data-resetlayout title="Put the grid/Gantt split, the column widths and the column order back to their defaults. Nothing in the schedule itself changes.">' +
           '<span data-ico="refresh" data-ico-size="14"></span> Reset layout to defaults</button>';
       lMenu.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { lMenu.classList.remove('open'); _setView(b.dataset.view); }; });
+      bindOutlineSection(lMenu);
+      bindLayoutsSection(lMenu, renderLayoutMenu);
       lMenu.querySelectorAll('[data-den]').forEach(function (b) { b.onclick = function () { applyDensity(b.dataset.den); renderLayoutMenu(); }; });
       lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
       lMenu.querySelector('[data-ganttset]').onclick = function () { lMenu.classList.remove('open'); openGanttSettings(); };
@@ -28836,11 +28880,15 @@
         applyLayout(); renderHeader(); renderGrid(); renderGantt(); renderLayoutMenu();
         UI.toast('Layout reset — grid/Gantt split, column widths and column order are back to their defaults.', 'success');
       };
+      // ⚠️ Injected markup, so the data-ico spans need hydrating — the DOMContentLoaded pass
+      // only covers static markup. Gantt settings and Reset layout were rendering iconless.
+      if (window.Icons && Icons.hydrate) Icons.hydrate(lMenu);
+      // ⚠️ Re-anchor on EVERY render, not just on open: deleting a saved layout or toggling
+      // density rebuilds the menu at a different height, and a stale clamp would clip the bottom.
+      if (lMenu.classList.contains('open')) anchorMenu(document.getElementById('ps-layoutbtn'), lMenu);
     }
     applyLayout();
-    document.getElementById('ps-collapseto').onclick = function (e) { e.stopPropagation(); closeMenus(); cMenu.classList.toggle('open'); };
     document.getElementById('ps-filterbtn').onclick = function (e) { e.stopPropagation(); var o = fMenu.classList.contains('open'); closeMenus(); if (!o) fMenu.classList.add('open'); };
-    document.getElementById('ps-views').onclick = function (e) { e.stopPropagation(); var o = vMenu.classList.contains('open'); closeMenus(); if (!o) { renderViewsMenu(); vMenu.classList.add('open'); } };
     document.getElementById('ps-schedbtn').onclick = function (e) { e.stopPropagation(); closeMenus(); openSchedule(); };
     var ddb = document.getElementById('ps-datadate-badge'); if (ddb) ddb.onclick = function (e) { e.stopPropagation(); closeMenus(); openSchedule(); };
     document.getElementById('ps-sched-x').onclick = closeSchedule;
@@ -28861,7 +28909,17 @@
     document.getElementById('ps-health').onclick = function (e) { e.stopPropagation(); openHealthPanel(); };
     document.getElementById('ps-undo').onclick = function (e) { e.stopPropagation(); undo(); };
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
-    document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
+    // ⚠️ `open` is added BEFORE the render, so renderLayoutMenu's own anchorMenu call fires.
+    // The menu carries Outline and Saved layouts now and runs past the bottom of a laptop viewport;
+    // `.ps-menu` is overflow:hidden with no max-height, so without the anchor the last items
+    // (Reporting view, Reset layout) would be silently unreachable.
+    (function () {
+      var lb = document.getElementById('ps-layoutbtn');
+      lb.onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { lMenu.classList.add('open'); renderLayoutMenu(); } };
+      var re = function () { if (lMenu.classList.contains('open')) anchorMenu(lb, lMenu); };
+      window.addEventListener('resize', re);
+      window.addEventListener('scroll', re, true);
+    })();
     // Progress and Stacking are entries in the View menu now (see renderLayoutMenu). The standalone
     // buttons are gone; setProgressMode/setVStackMode still guard on the element, so nothing throws.
     _paintViewBtn();
@@ -29090,9 +29148,7 @@
       grip.title = 'Drag to resize · double-click to auto-size';
     })();
     buildFilterMenu();
-    cMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
-    vMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', closeMenus);
     applyColors();
     document.getElementById('ps-refresh').onclick = function () { load(); };
