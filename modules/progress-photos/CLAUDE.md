@@ -2,6 +2,667 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Item 7 (11-item round) — 360° viewer smoothness: a real leaked `window` listener,
+## and drag rendering with no requestAnimationFrame coalescing (2026-09-01)
+
+Closes the last item of the 11-item round (items 1/2/4/6/8/9/10/11 are documented in the
+entries below; item 5, immediately below this one, was done first in the same turn). Read
+`mountCylinderViewer` (the single-panorama viewer's rendering/drag code) end to end before
+touching anything, and found two independent, real, well-justified issues — not a vague
+"make it faster" pass.
+
+**The high-confidence one: `window.addEventListener('mouseup', onUp)` was never matched by a
+`removeEventListener`.** ⚠️ **The exact same bug class this file's own earlier audit already
+fixed once, in `bim.js`'s `wireStageInteractions`** (documented above: "leaked two window
+listeners on every single `render()`… each closing over its own now-stale `dragging` flag,
+permanently firing on every mouse move across the whole page"). Here it's the SAME failure
+mode, in a different file: because a JS closure keeps its **whole enclosing scope** alive —
+not just the specific variables an inner function reads — one stray `window`-level listener
+kept the ENTIRE `mountCylinderViewer()` call reachable forever: the `WebGLRenderer`, its GL
+context, the `THREE.Scene`, the loaded texture, all of it. Every single-panorama view leaked
+one; the (confirmed dead, per this file's own earlier audit note) Compare viewer's `rebuild()`
+leaks one on every A/B dropdown change, since it disposes the old viewer before remounting but
+the old `dispose()` never actually cleaned up the listener it left behind. Opening/closing
+several panoramas across a session accumulates real GPU/memory pressure this way — precisely
+the shape of a report that reads as "gets less smooth over time" rather than "is slow from the
+first click." `dispose()` now removes the listener.
+
+**The second, independent fix: drag input was coupled directly to rendering, with no
+`requestAnimationFrame` at all.** `onMove` called `renderer.render(scene, camera)`
+**synchronously on every raw `mousemove`/`touchmove` event** — a browser can dispatch several
+move events between two actual display refreshes (high-poll-rate mice/trackpads, in
+particular), and each one triggered a full, separate WebGL render pass with no coalescing or
+vsync alignment. That unsynced, bursty render pattern is a textbook cause of perceived
+stutter during a drag, independent of the listener leak above. `onMove` now only updates
+`lon`/`lat` and sets a `needsRender` flag (cheap, no GPU work); a `renderLoop()` driven by
+`requestAnimationFrame` reads that flag and renders **at most once per animation frame**,
+always with the latest orientation — so however many move events land within one frame
+collapse into a single, vsync-aligned render.
+
+- ⚠️ **The loop is self-terminating, not an always-on background loop.** It only reschedules
+  itself (`if (dragging) rafId = requestAnimationFrame(renderLoop);`) while a drag is actually
+  in progress — an idle, static view costs nothing once the drag ends, rather than running a
+  render loop forever in the background burning CPU/battery for no visual change.
+- ⚠️ **`onDown` explicitly wakes the loop** (`wake()`, guarded on `rafId == null`) rather than
+  assuming it's still running — since the loop stops rescheduling itself the moment a drag
+  ends, a NEW drag starting some time later needs to restart it, not just flip `dragging` and
+  hope a stale loop is still ticking.
+- `dispose()` also cancels any pending `rafId` via `cancelAnimationFrame`, so a viewer closed
+  mid-drag can't leave a dangling animation-frame callback either.
+- ⚠️ **`setOpacity`/`setTexture` (the dormant Compare viewer's discrete texture-swap) are
+  deliberately LEFT as direct, immediate renders** — they fire once per discrete user action
+  (an A/B dropdown change, a slider crossing its 50% threshold), never as part of a continuous
+  drag, so routing them through the same rAF coalescing would add complexity for zero
+  perceptible benefit on a path that already renders once per action.
+- The initial mount-time render (`applyLook(); renderer.render(scene, camera);`, right before
+  the function returns) is untouched — a viewer still shows something the instant it opens,
+  before any drag has happened, exactly as before.
+
+### Verified
+
+New `test.js` section `[36c]`, 8 checks — structural assertions against the shipped source,
+matching this exact function's own established verification precedent (its prior dispose-leak
+fix, documented above, was likewise verified structurally rather than against a real WebGL/
+THREE.js stack — genuinely driving `mountCylinderViewer` would need a much larger fake
+`THREE`/`requestAnimationFrame`/canvas-2D-and-WebGL-context mock than this fix's scope
+justifies). Confirms: `dispose()` removes the `mouseup` listener AND cancels the rAF request;
+`onMove` no longer calls `renderer.render()` directly and only sets `needsRender`; `renderLoop`
+renders at most once per frame, only when dirty; the loop's self-terminating "only while
+dragging" condition; `onDown`'s explicit wake; the untouched initial render; and that
+`setOpacity`/`setTexture` deliberately stayed as direct renders.
+
+⚠️ **One pre-existing structural assertion was updated in place, not silently deleted** — the
+prior entry's own check for `dispose()`'s exact shape (`dispose: function () { try {
+renderer.dispose(); } catch (e) {} }`) necessarily changed, since `dispose` now does more than
+one thing. Rewritten to confirm `renderer.dispose()` still runs, alongside the new cleanup —
+the same "healthy churn from an intentional change" convention this file follows throughout.
+
+**Full suite: 853 passed, 2 failed** — the same two pre-existing, unrelated failures every
+other 2026-09-01 entry in this file already documents. `node --check` clean; 0 NUL bytes; a
+function-set diff of `pano.js` against the last commit shows **0 functions lost**, 5 additions
+total across items 5 and 7 this session (`fixInfiniteDuration`, its nested `onTimeUpdate`,
+`safeErrMessage`, `renderLoop`, `wake`).
+
+⚠️ **Not verified signed-in** — same standing caveat as this whole file, and the one that
+matters most for a "smoothness" fix specifically: nobody has actually dragged a real 360°
+viewer, before or after this change, in a real browser here to confirm the perceived
+difference. Both fixes are correct and well-justified by reading the code (a genuine,
+confirmed reference leak; a genuine, confirmed synchronous-render-per-input-event pattern with
+no frame coalescing) rather than inferred from a vague performance complaint — but "it feels
+smoother" is, honestly, the one claim in this whole 11-item round that can only be confirmed by
+a person actually dragging the viewer on a real device.
+
+`pano.js` → `?v=20260901d` (same version as item 5 — both landed in this file before any
+intervening deploy, so one cache-bust covers both).
+
+## Item 5 (11-item round) — 360° recording: the three reported capture failures
+## ("could not build panorama", "could not read video duration", "maximum call
+## stack exceeded") (2026-09-01)
+
+⚠️ **This environment cannot execute the real pipeline to observe a genuine browser stack
+trace** — `getUserMedia`/`MediaRecorder`/OpenCV.js's WASM module all need a real browser, and
+this module's own standing limitation (repeated throughout this file) is that no live signed-
+in session or real device is reachable here. What follows is: one bug fixed with high
+confidence (it matches the reported error message word-for-word and is a well-documented
+browser quirk with a well-documented fix), plus defence-in-depth at every plausible entry
+point for the harder-to-pin-down stack-overflow report, verified by genuine execution of every
+piece that IS pure/testable without a real browser.
+
+**"Could not read the video duration."** — this is the LITERAL string `extractFrames()`
+throws, and the fix is a textbook one: **a MediaRecorder-produced blob's container commonly
+has no duration atom at all**, since the recorder is writing the file header before it knows
+the final recorded length. Chrome (and others) therefore report `video.duration` as `Infinity`
+or `NaN` the first time a `<video>` loads such a blob — a genuine recorded capture hits this
+routinely; an uploaded pre-recorded file usually doesn't, because its container already has a
+real duration atom written by whatever produced it. That asymmetry is exactly why testing with
+uploads alone would never surface this.
+
+New `fixInfiniteDuration(video)`, called before giving up: seeks the video far past its
+(unknown) end (`video.currentTime = 1e101`), waits for the browser to settle on the real
+duration and fire `timeupdate`, then seeks back to the start — the standard documented
+workaround. ⚠️ **Times out and resolves anyway after 2s** (same discipline `seekTo()` already
+uses for its own known-flaky `seeked` event) rather than hanging the whole capture forever if
+a browser genuinely never fires the event; a seek that itself throws (a detached/corrupt
+video) is caught and treated the same way. `extractFrames` still rejects with the same clear
+message if the duration is STILL non-finite after the attempt — so the message a user sees
+never changes, only whether they see it at all.
+
+**Guarded the width/height Infinity edge case in the same function.** The old
+`Math.round(w * (video.videoHeight / video.videoWidth || 0.5625))` produced `Infinity`, not the
+intended 0.5625 fallback, whenever `videoWidth` was 0 but `videoHeight` wasn't (`Infinity ||
+0.5625` is `Infinity`, since `Infinity` is truthy) — assigning an infinite canvas height
+throws, and more importantly, a genuinely zero/garbage-dimension frame fed into OpenCV later is
+a **separate, documented cause of a stack-overflow-shaped crash** (a malformed Mat can trip
+OpenCV.js's own exception-formatting glue into re-entering the WASM module while it's already
+unwinding). Both dimensions are now guarded explicitly rather than relying on an `||` chain
+that can itself produce the failure mode it was meant to prevent.
+
+**"Maximum call stack size exceeded" — defence-in-depth at the three most plausible entry
+points, since no real crash trace was reproducible here:**
+1. **`stitchFrames` now refuses to feed OpenCV a zero-dimension frame at all** — checked
+   explicitly per pair before `cv.imread` ever runs (the width/height fix above should already
+   prevent this from ever happening, but this is the backstop if it somehow still does).
+2. **A THROW from `homographyBetween` on ONE frame pair no longer aborts the whole capture.**
+   It used to propagate straight out of `stitchFrames`, surfacing as the generic "Could not
+   build the panorama" for something that might only be one bad pair out of ten. It now
+   degrades that pair to `stitch_quality = 'poor'` — the SAME non-fatal path a genuinely
+   low-match pair already takes — and the loop continues. `prevMat`/`curMat` are still cleaned
+   up via their own inner `finally` regardless of which path is taken.
+3. **A new `safeErrMessage(e)` replaces the old, unguarded `e.message || e` in `processVideo`'s
+   catch block.** A raw OpenCV.js/Emscripten exception is often a bare WASM exception POINTER
+   (a plain number), not a JS `Error` — and per OpenCV.js's own documented issue history,
+   formatting such a value badly is itself a trigger for the module's exception-to-string glue
+   to re-enter the (already-unwinding) WASM module, which is exactly how an error HANDLER can
+   itself throw "Maximum call stack size exceeded" — the worst possible outcome, since a
+   crashing catch block leaves no toast and no clue at all. `safeErrMessage` only reads
+   `.message` when it's genuinely a string, falls back to `String(e)` inside its own try, and
+   degrades to a generic fallback string if even THAT throws.
+
+### Verified
+
+New `test.js` section `[36b]`, 16 checks: structural assertions against the real shipped
+`pano.js` source for every fix above, plus **genuine execution** of both pure/testable pieces —
+`fixInfiniteDuration` was driven against a hand-built fake `<video>` object (proving it resolves
+with the REAL duration once the browser "settles" on one, that it seeks past 1000 then back to
+0 in that order, and that it times out and resolves — never hangs — if the event never fires),
+and `safeErrMessage` was run across six input shapes: a real `Error`, a raw number (the
+documented OpenCV.js exception-pointer shape), a plain string, an object whose `.message`
+getter itself throws, an object whose `String()` conversion itself throws, and `null` — every
+one degrades to a safe string rather than propagating a second exception.
+
+⚠️ **One real bug was found and fixed in the TEST'S OWN fake video, not in pano.js** — the
+first draft fired `timeupdate` unconditionally on every `currentTime` write, including the
+code's own seek-back to 0 inside `onTimeUpdate` itself. Since a real browser fires `timeupdate`
+asynchronously on its own schedule (never synchronously and reentrantly on every write), that
+made the FAKE call `onTimeUpdate()` a second time before `removeEventListener` had run — a
+genuine infinite-recursion bug in the test harness, not the shipped code, and worth recording
+since it's precisely the failure class this item is about. Fixed by only firing `timeupdate` on
+the initial far-future seek (`t > 1000`), matching what the real fix actually depends on.
+
+**Full suite: 845 passed, 2 failed** — the same two pre-existing, unrelated failures this file's
+other 2026-09-01 entries already document. `node --check` clean; 0 NUL bytes; a function-set
+diff of `pano.js` against the last commit shows **0 functions lost**, only the three intentional
+additions (`fixInfiniteDuration`, its nested `onTimeUpdate`, `safeErrMessage`).
+
+⚠️ **Not verified signed-in, and this is the real gap for this item specifically.** No real
+recorded video has ever been run through this pipeline in a real browser since these fixes
+landed — the duration fix is high-confidence (it matches the exact reported message and is a
+textbook, widely-documented quirk), but the "maximum call stack exceeded" fixes are defence-in-
+depth at the most plausible entry points rather than a confirmed root-cause fix, since no real
+crash could be reproduced or observed here. **The first real recording is the actual test.**
+Item 7 (360° viewer smoothness/performance) is separately NOT started.
+
+`pano.js` → `?v=20260901d` (module-local; `module.css/js`/`ppr.js` stay at their existing
+`?v=20260901a`, `bim.js` at `?v=20260901c`, unchanged by this entry).
+
+## Eleven-item feedback round: 360°/3D/video folded into the normal grid, the key-plan
+## button moved from the Gallery tile into the lightbox, the pin-capture stage becomes
+## a real drag-and-drop widget, presentation-view polish (2026-09-01)
+
+Owner's numbered 11-item list. Items **5** ("360° recording still fails — could not build
+panorama / could not read video duration / maximum call stack exceeded") and **7** ("360
+view is also not that smooth — optimize performance") are **NOT started**; every other item
+is done, verified, and documented here — several of them (6, 8, 9, 10, 11) shipped a few
+turns earlier in this same round without a changelog entry, which this entry now closes.
+Items 1 and 2 were the very first two of the round and are already documented in this
+file's other 2026-09-01 entries above/below.
+
+### Items 6 + 8 — 360°/3D/video join the ordinary grid, and gain a "click to edit" affordance
+
+Panoramas and reconstructions used to render in a separate `#pp-media-strip` band below
+the Gallery grid, invisible to Group-by and to Filter — exactly the "should not be grouped
+separately" complaint. They're now merged into the SAME `rows` array the grid already
+filters/groups/selects, as normalized **pseudo-rows** (`panoPseudoRow`/`reconPseudoRow`):
+a panorama or a done reconstruction is given a photo-shaped stand-in object
+(`taken_at`/`location`/`location_values`/`archived`/`description`, `trades: []`/
+`works_multi: []` since neither carries either) with `_kind` (`'panorama'`/`'reconstruction'`)
+and `_src` (the real underlying row) attached, and an `id` prefixed `pano:`/`recon:` so it
+can share `selected{}`/the lightbox array with real photo ids without ever colliding.
+
+- ⚠️ **One filter predicate serves both families** (`matchesFilters`) rather than a second,
+  parallel filter for pseudo-rows — a Trade or Works filter being SET **excludes** every
+  pseudo-row (they carry neither), so "Structural Works only" genuinely narrows to
+  structural photos instead of leaving an unrelated 360° tile sitting in the filtered grid;
+  search additionally matches a pseudo-row's own kind label ("360° panorama"/"3D scan") so
+  typing "360" or "3d" finds every capture of that kind even with a blank description.
+- **Group-by now includes them for free** — since they're plain rows in the same array by
+  the time `groupRows()` runs, a Month/Trade/Location grouping picks them up exactly like a
+  photo, with no special-casing needed in the grouping code itself.
+- **Item 8's click-to-edit**: `mediaKindThumbHTML(r, cls)` renders the tile as a real
+  thumbnail (`PANO.urlOf` for a panorama; a compass/box icon placeholder otherwise) plus a
+  `.pp-mkbadge` ("360°"/"3D") and — for writers only — a small pencil `.pp-mkeditbtn`.
+  Clicking the tile itself (`data-act="open"`) opens the real viewer (`PANO.open`/
+  `RECON.openById`, never a re-implementation); clicking the pencil specifically opens
+  `openMediaKindEditor(row)`, a reduced-field modal (Location + whatever else the
+  underlying record actually has — no Trade/Works/free-text description, since neither
+  table stores them) reached via `byMergedId(id)`, which resolves a prefixed id back to a
+  live pseudo-row before editing.
+- ⚠️ **Every place that WRITES against an id has to branch on `_kind` first** — archive,
+  delete, and the batch-action handlers all check `r._kind` before deciding whether to hit
+  `progress_photos`, `panoramas`, or `reconstruction_requests`. `selected{}` itself stays a
+  plain id→true map, indifferent to which table an id ultimately belongs to.
+
+### Item 9 — the Presentation-editor back button
+
+`#ppr-slide-back` (and the Templates-screen's own `#ppr-back`) now read plain **"Back"**
+with the existing arrow icon, replacing "Presentations list" — the arrow already carried
+the direction, and the wordier label was the one thing left unaddressed after the button
+was relocated to sit beside the screen tabs on 2026-08-30.
+
+### Item 10 — "Preview this presentation's slides" replaced by a photo-markup toggle
+
+The header icon that opened a read-only slide preview is gone; a new toggle
+(`#ppr-photomk-toggle`) takes its place, controlling a **presentation-wide** flag
+(`showPhotoMarkup`, default true) that is a genuinely separate thing from the existing
+per-pane `showMarkup{}` (the slide's OWN annotations, drawn on `ppr-mkcanvas-<which>`).
+⚠️ **Two canvases, not one, and the distinction is the point** — `pane()` now also paints
+a second canvas (`ppr-photomkcanvas-<which>`), underneath the slide-markup one, from the
+underlying PHOTO's own permanent markup (`progress_photos.markup`, the same field the
+Gallery lightbox's markup toggle reads) via the shared `drawMarkupOnCanvas` export — never
+a second drawing implementation. Toggling `showPhotoMarkup` shows/hides that photo-markup
+canvas on both panes at once; it has no effect on `showMarkup{}`, which is unchanged.
+⚠️ **The export path (`slideFigureHTML`/`EXPORT_CSS`) is untouched** — this toggle is a
+live viewing aid over what a downloaded HTML/PDF/PPTX already bakes in, not a new export
+option.
+
+### Item 11 — a presentation-wide key-plan toggle in the header, per-pane popups retired
+
+Item 21's earlier per-pane `.ppr-kpicon` button (one icon per photo, each with its own
+open/closed state in a `keyPlanOpenPane = {before, after}` object) is retired in favour of
+a single header toggle (`#ppr-kp-toggle`), driven by one `showKeyPlan` flag —
+`openPpr()` resets it to `false` whenever a presentation is opened. The header toggle is
+offered only when the CURRENT slide actually has a key plan on at least one pane (never a
+speculative control that does nothing), and `pane()` still gates each side's own popup
+independently on whether THAT photo has a plan — so a slide with a plan on only the
+"after" photo shows exactly one popup, driven by the one shared flag. The popup itself
+(`.ppr-kppopup`) is pinned to the photo's own top-right corner and sized to 10% of it —
+unchanged geometry from item 21, only how it's toggled changed.
+
+### Verified (items 6/8/9/10/11)
+
+These shipped in an earlier turn of this same session and are verified by the existing,
+passing `test.js` suite (section `[44]`, 19 checks) — structural assertions against the
+real shipped source (never regex-only where the logic was genuinely computable, per this
+module's convention), confirming: the merged-row pipeline excludes pseudo-rows from the
+Trade/Works filters, `openMediaKindEditor`/`byMergedId` resolve prefixed ids correctly, the
+back-button text, the two-canvas photo-markup split reading from the photo's own
+`markup` field via the shared drawing helper, the export path's non-involvement, the
+single `showKeyPlan` flag replacing the retired per-pane state, and the retired
+`.ppr-kpicon` CSS rule's removal. This entry documents work that had already landed —
+nothing in this section was changed this turn.
+
+### Item 4 — "no need for the key plan button" in Gallery/List; it lives in the lightbox
+### instead, overlaying 1/8 of the opened photo
+
+The Gallery tile's `.pp-pinbtn` corner icon (added in an earlier Batch E round) — and its
+`openPinPreview()` Tight/Wide crop-zoom popup — are retired outright: `cardHTML(r)` no
+longer computes `hasPin`/`pinType`/`pinId` or emits the button at all, `wireRows(host)` no
+longer wires `[data-pinpreview]`, and the CSS for `.pp-pinbtn`/`.pp-pinpreview-box/-dot/
+-cone/-zoom` is gone. The Gallery/List screens now show only the photo itself and the
+select checkbox.
+
+The key-plan control moves into the **lightbox toolbar** instead — a new `#pp-lb-keyplan`
+button (styled like every other `.pp-lb-tool`, gated `style.display` per-photo, never
+CSS-only) sits beside Download. `paintLightbox()` resolves whether the CURRENT item has a
+pin **polymorphically**, the same way `cardHTML` used to before this change:
+`kpPinType = r._kind || 'photo'`, `kpPinId = r._src ? r._src.id : r.id` — so a 360°/3D
+pseudo-row opened from the merged grid (item 6/8, above) still shows its own key-plan
+button correctly, not just an ordinary photo. `BIM.pinInfoFor(itemType, itemId)` decides
+whether the button shows at all; it's hidden entirely for an item with no pin, never shown
+disabled.
+
+Clicking it toggles a new `lightboxKeyPlanVisible` flag and calls `paintKeyPlanOverlay(r)`,
+which shows/hides a new `<img id="pp-lb-keyplan-overlay">` inside `.pp-lb-imgwrap`, styled
+`.pp-lb-kpoverlay` — **top:10px/right:10px, width:12.5%** ("1/8 of the photo", literally),
+`border/box-shadow/background: var(--pd-card)`, `pointer-events:none` (so it never blocks
+the lightbox's own zoom/pan/markup interactions underneath it) — the exact same
+corner-overlay-at-a-fraction-of-the-photo shape item 11's `.ppr-kppopup` already
+established, just at 1/8 instead of 1/10 since the two asks named different sizes.
+
+- ⚠️ **`lightboxKeyPlanVisible` resets to `false` on EVERY `paintLightbox()` call** —
+  stepping ←/→ to a different photo must not carry a previous photo's overlay onto the next
+  one, the same "per-photo, not global" scope the button itself has.
+- ⚠️ **A missing plan warns rather than showing a broken image** — `paintKeyPlanOverlay`
+  checks `info.planUrl` before setting `img.src`; if it's absent it toasts and leaves the
+  overlay hidden, never assigning an empty/undefined src.
+- `openPinPreview`'s crop-zoom centring math (an image at `left:50%/top:50%` translated by
+  `-(x_norm*100%, y_norm*100%)` of its OWN box) is **not carried over** — the lightbox
+  overlay shows the plan at a fixed corner size rather than cropped/zoomed to the pin, since
+  the ask was "overlays on top of the photo… size 1/8 of the photo", not a Tight/Wide crop
+  like the retired popup. The function itself is deleted, not left dormant, since its only
+  caller is gone.
+
+⚠️ **A test-writing trap caught and fixed before the suite ran**: the first-draft test
+assertions used bare substring matches (`!/pp-pinbtn/.test(mjs)`) to confirm the retired
+icon was fully gone — which would fail against this entry's OWN retirement comments in
+`module.js`, which legitimately still say "pp-pinbtn" in prose explaining what was removed.
+The exact same trap item 11's own earlier fix already had to correct once (see that
+section's own note). Narrowed to real declaration/usage patterns instead
+(`class="pp-pinbtn`, `data-pinpreview="`, `function openPinPreview\(`,
+`querySelectorAll\('\[data-pinpreview\]'\)`), which only match actual code, never prose.
+
+### Item 3 — the pin-capture stage: the pin itself is now draggable, a second dedicated
+### handle adjusts facing direction alone, and switching camera/drone view is one click
+
+`bim.js`'s embedded pin-capture field (used by the Add/Edit Photo form's Key Plan section —
+distinct from the main Plans-screen pin renderer, which this item does not touch) had three
+real gaps against the ask: the pin dot had **no drag handler at all** (only a double-click
+to toggle "does not apply"); adjusting facing direction alone had **no dedicated visible
+handle** (only an implicit "drag anywhere on the shaded wedge" gesture, easy to miss); and
+switching between a ground-level camera view and a top-view drone shot needed a
+double-click on the wedge — which doesn't exist to click on once a photo IS marked drone/
+top-view, since the wedge is suppressed entirely in that state (leaving only the plain dot,
+also double-click).
+
+**The pin dot is a real drag target now.** `dot.onpointerdown` snapshots the pin's
+`x/y` and both cone edges (`e1x/e1y/e2x/e2y`) at drag-start — the same "snapshot at
+drag-start, never an incrementally reapplied delta" convention `module.js`'s own
+`translateMarkupObj` already documents, so a fast drag can't compound its own rounding
+error — and on every subsequent `pointermove` translates all three points by the SAME
+pixel delta (converted to normalized image-fraction units via the stage image's own
+`getBoundingClientRect()`), so the cone stays attached in exactly the same shape and
+orientation as the pin moves. ⚠️ **This only works because the edges are stored as
+ABSOLUTE points, not offsets relative to the pin** — translating the pin alone while
+leaving the edges untouched would silently detach the cone from its own pin the moment
+either was moved.
+
+**A genuine tap toggles camera/drone view; a real drag never does.** The same
+`onpointerdown` sequence tracks total pointer travel from the start point; if it never
+exceeds `DOT_TAP_THRESHOLD` (6px) by `pointerup`, the gesture is treated as a tap and
+flips `direction_na` (drone/top-view) — replacing the old double-click, and now reachable
+in BOTH states, including the drone state where the wedge (the double-click's old target)
+doesn't render at all. If the pointer DOES travel past the threshold at any point, the
+gesture becomes a drag and `na` is never touched, so a deliberate move can't accidentally
+also flip the camera/drone state.
+
+**The pin renders a person or drone icon**, not a plain circle — `Icons.svg(s.na ? 'drone'
+: 'person', 12)`, called directly (not via the `data-ico`/`hydrate` path, since `hydrate`'s
+one-time `data-ico-done` guard would make a second toggle silently do nothing — the exact
+trap this module's own Batch item-7 note already recorded for the markup-visibility
+toggle). Two new icon glyphs (`person`, `drone`) added to the shared `assets/js/icons.js`.
+The dot itself grew from 14px to 22px to comfortably hold a 12px icon, and is now
+`pointer-events: auto` unconditionally (was `none` at rest, `auto` only under `.is-na`) —
+a click precisely on the dot's small footprint is captured by it; a click anywhere else on
+the image still reaches `img.onclick` and places/moves the pin the old way, since the dot
+sits on top only at its own small area.
+
+**A second, dedicated handle adjusts ONLY the facing direction.** Positioned straight
+ahead of the pin at the cone's own bearing and reach (`pointAtBearing(x, y, cone.dir,
+cone.reach)` — literally "in the middle of the view"), styled `.bim-dirhandle-el` (same
+6px white-fill shape as the existing corner handle, but an ink-coloured border instead of
+red so the two are visually distinguishable). Dragging it recomputes ONLY `direction` from
+the pin to the pointer, passing `cone.halfW`/`cone.reach` straight through unchanged — the
+exact inverse of the existing corner handle, which changes angle+reach together and leaves
+direction alone. Both handles, and the implicit wedge-body-drag (still direction-only,
+kept rather than removed — the ask was to ADD a handle, not take away a working gesture),
+now coexist; `paintConeLive` updates all three live during any of the three drag types,
+since a drag on any one of them can move where the other two's own display points sit.
+
+- The hint text and the "Pin placed…" status line were rewritten to describe the new
+  model (drag the pin to move it; the two handles' separate roles; click the pin once to
+  switch views) — the old copy described double-clicking a "shaded area" that no longer
+  applies to the actual mechanism.
+- `.bim-conena-badge`'s icon changed from `eyeOff` to `drone`, and its wording from
+  `Marked "does not apply" (top-view photo)` to `Drone / top-view photo — no facing
+  direction recorded`, matching the new person/drone mental model rather than the old
+  abstract toggle wording.
+
+### Verified (item 3)
+
+Extended `test.js` section `[39]` (the pie-cone geometry tests from the earlier round this
+widget was built in) with 19 new checks — structural assertions against the shipped
+`bim.js`/`module.css` source, plus **genuine execution** of the new geometry: `pointAtBearing`
+(newly exported as `BIM._pointAtBearing`, same "exported so a flipped sign is silent
+otherwise" reasoning already applied to every other cone-math helper in this file) was run
+directly at bearing 0 (confirms straight "up" moves y negative, x unchanged) and bearing 90
+(confirms due "east" moves x positive, y unchanged), and cross-checked that the new
+direction handle's own position formula — derived from a real cone's `dir`/`reach` via
+`coneParamsFromEdges`/`edgesFromCone` — lands on the exact same point `pointAtBearing`
+computes independently, proving the handle sits precisely where the facing direction
+actually points rather than merely looking plausible.
+
+Five pre-existing assertions from the earlier cone round were **updated in place, not
+silently deleted**, since this change intentionally supersedes what they checked: "exactly
+ONE handle" → both handles now asserted; the 4px/14px handle-to-dot size ratio → the new
+6px/22px figures; the wedge/handle NA-hiding check → widened to cover the new direction
+handle too; and the double-click-to-toggle assertion → rewritten to confirm double-click is
+GENUINELY GONE (`!/dot\.ondblclick/`) alongside new coverage for the tap-vs-drag threshold
+logic that replaces it.
+
+**Full suite: 829 passed, 2 failed** — the same two pre-existing, unrelated failures this
+file's most recent entry above already documents (`pane() reads each photo's own trade/
+works/location`, `.ppr-panelabel.is-current` #fff contrast); confirmed via a clean re-run
+that neither newly fails nor newly passes as a result of this turn's work. `node --check`
+clean on `bim.js`/`icons.js`/`module.css`(N/A, CSS)/`index.html`(N/A); 0 NUL bytes across
+every touched file; CSS braces balanced (518/518); 0 duplicate DOM `id=` attributes; a
+function-set diff of `bim.js` against the last real commit shows **0 functions lost**.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. No live
+click-through of the drag-the-pin gesture, the tap-vs-drag threshold at real pointer
+speeds, or the person/drone icon rendering in an actual browser DOM.
+
+`assets/js/icons.js` → `?v=20260901b` (bumped across all 20 referencing HTML files —
+shared asset). `bim.js` → `?v=20260901c` (module-local; `module.css/js`/`ppr.js` stay at
+their existing `?v=20260901a` from this same day's earlier turns, unchanged by this entry).
+
+## Six-item owner feedback round: old-photo thumbnail backfill, tile size, tab
+## labels, "Add Text" fixed + formatting, Add-media dropdown leak, back-button
+## order (2026-09-01)
+
+Six numbered items off the owner's own screenshot review.
+
+**1 — old-photo thumbnails backfilled, not just generated on new uploads.** Photos captured before
+the 2026-08-30 client-side thumbnail feature carry no `thumb_url` at all, so they've always loaded
+full-resolution and always will unless something writes a real thumbnail file for them after the
+fact. New **`backfillThumbnails()`**, triggered by a **"Generate thumbnails"** button in the list
+bar (writer-gated, hidden entirely when nothing is missing one — `syncGenThumbsBtn()`, re-checked
+on every render since a fresh upload can change the count) — fetches each such photo's original,
+downscales it through the SAME `makeThumbnailBlob` the upload path uses (so an old photo and a new
+one end up with byte-for-byte the same thumbnail shape/quality), uploads it, and patches
+`thumb_url`. ⚠️ **The upload uses `upsert:true`, unlike the fresh-upload path's `upsert:false`** — a
+retry after a partial prior attempt (thumbnail object written, row update failed) has to be able to
+overwrite the same path rather than erroring on a duplicate object. A per-file failure is skipped,
+not fatal to the batch, with a running "N of M" progress label.
+
+**2 — Gallery tile size no longer jumps when markup is hidden/shown.** ⚠️ Real bug, a plain CSS
+box-model trap: `.pp-mkwrap { display: inline-block }` wraps a tile's photo so the markup overlay
+canvas has something to position `absolute` against — but an `inline-block` box can only derive a
+shrink-to-fit width from its content's own INTRINSIC size, and `.pp-cardphoto` (the actual `<img>`
+inside it) is `width: 100%`, a *percentage*. A percentage-width child gives an inline-block parent
+nothing to shrink-to-fit from, so the wrapper silently fell back to the image's natural pixel size
+— different for every photo, and different again the instant the wrapper was added/removed by
+toggling markup visibility, which is exactly the reported symptom. Fixed to `display: block; width:
+100%` — a block box already fills its grid cell regardless of what's inside it, so the tile's own
+size is never a function of whether the markup wrapper exists.
+
+**3 — the redundant "Progress Photos" label removed from the secondary top bar; tabs renamed.** The
+screen already names itself via the tab strip directly below it (Gallery/Presentations/Plans), so a
+second, static `<h1>` repeating the module's own name added nothing. Removed, along with the dead
+`.pp-title*` CSS it left behind and a stale `setScreen()` comment that referenced the element by id.
+Tab labels: **"Gallery" → "Progress Photos"**, **"Plans" → "Floor Plans"** ("Presentations"
+unchanged). ⚠️ Labels only — `data-screen` values (`photos`/`ppr`/`bim`) are untouched, so nothing
+that branches on the screen name needed to change.
+
+**4 — "Add Text" fixed, plus real text/textbox formatting.** ⚠️ **Root cause, found by reading the
+object-creation code rather than assumed:** a new text object stored `fill: fillOn` **unconditionally**
+— and `fillOn` (the toolbar's own "Fill" checkbox) defaults to the boolean `false`, not `undefined`.
+`drawMarkupObjects`' rendering was already a deliberate three-state design (`fill === false` = the
+planner EXPLICITLY turned the box off; `fill` truthy = their own colour/alpha; anything else =
+"nobody's touched Fill yet, so default to a readable light box") — but because every freshly-typed
+text object was born with the explicit `false` rather than `undefined`, it **always** rendered with
+zero background, easy to lose against a busy site photo. That reads exactly like "add text is not
+working" even though the object was being created and saved correctly the whole time.
+- New shared **`textBoxFillColor(o)`** is the one place that decision is made now — read by BOTH
+  the live-typing overlay (`openTextEditAt`, which previously duplicated slightly different fallback
+  logic and could show a colour WHILE typing that reverted to plain white the instant it committed)
+  and the final canvas render, so the two can never disagree about what a given object's box looks
+  like. The creation payload now only sets `fill: true` when `fillOn` is actually on — omitted
+  (`undefined`) otherwise, letting the shared helper's own default apply.
+- **"Format text and format textbox"**: text objects gained `bold` (default true — matches every
+  text object drawn before this feature, which was hardcoded 700-weight, so nothing already saved
+  changes appearance), `italic` (default false) and `boxBorder` (an optional stroke around the box,
+  in the object's own colour/width — Fill colour/transparency were already covered by the existing
+  shared Fill group, since `fillableType()` already includes `'text'`). Two new toggle buttons
+  (Bold/Italic) + a Border checkbox sit in the text-format toolbar group, following the file's own
+  "edit the selection if one exists, else set the default for the next new object" convention every
+  other markup control already uses (`syncTextRow()` reflects whichever applies). The live-typing
+  overlay mirrors bold/italic/border while typing, so what's being typed looks like what will render.
+
+**5 — "+ Add media" dropdown no longer leaks across screens.** ⚠️ Real bug: `_leavePhotosScreen()`
+cleared the batch-selection toolbar on leaving the Photos screen but never closed the **`#pp-addmenu`
+dropdown itself** — hiding only the button that opens it, not the (`position:absolute`) menu, so a
+menu left open when switching to Presentations/Plans stayed visibly open on top of the new screen.
+Now force-closed (`addMenu.hidden = true`) in the same cleanup pass.
+
+**6 — Presentations header reordered.** `renderSlides()`'s header now renders in the order Back
+button → Presentation Details (date/description/slide-nav) → the action-button cluster
+(Preview/Download/Sort/Archive/Edit/Delete), matching the owner's explicit ordering. The back button
+(`#ppr-slide-back`) moved from the tail of the action cluster to the front of the whole header row;
+`wirePresActs()` updated to match; no permission/gating logic changed.
+
+### Verified
+
+**776 checks green** (was 757 before this round — 19 new, all genuinely executing the shipped
+`textBoxFillColor`/`drawMarkupObjects` via a fake canvas-2D recorder that tracks `font`/`fillRect`/
+`strokeRect` calls, not just regex-matched): confirms a brand-new text object (no `fill` key) now
+draws its background box where the pre-fix code drew none; an explicitly-off object (`fill:false`)
+still correctly draws nothing; bold/italic produce the right CSS font string; `boxBorder` draws (and
+its absence omits) a stroke; the live-typing overlay and the final render read the identical shared
+helper; the new Bold/Italic/Border controls exist, are wired to the "selection, else default"
+convention, and are styled. Plus the existing suite for items 1/2/3/5/6 re-confirmed unaffected. `node
+--check` clean on all three touched JS files; 0 NUL bytes across every touched file; CSS braces
+balanced (526/526); 0 duplicate DOM ids (82 unique); function-set diff against the prior commit shows
+**0 functions lost**, only the intentional new additions (`textBoxFillColor`, `applyTextStyleLive`,
+plus item 1's `photosNeedingThumb`/`syncGenThumbsBtn`/`updateProg`).
+
+⚠️ **The two pre-existing, unrelated test failures from before this round are unchanged** (confirmed
+via `git stash` before starting): `pane() reads each photo's own trade/works/location` and `every
+#fff use sits under a documented fixed-colour selector — [".ppr-panelabel.is-current"]`. Neither is
+touched by this round's six items; left as-is rather than silently "fixed" as a drive-by.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. No live
+click-through of the "Generate thumbnails" batch backfill, the Add Text overlay's real on-canvas
+typing with the new formatting controls, or the reordered Presentations header, in a real browser.
+
+`module.css/js`, `ppr.js` → `?v=20260901a`; `MODULE_V` (via `modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260901j`.
+
+## Plan/Stack month steppers gain an explicit "Live" button (2026-09-01)
+
+Owner's punch-list item #9 ("Build a Stack view like Project Schedule's vertical-stacking… with the
+`‹ › play/Live` timeline scrub-bar UX, applied to Plan view too") — the Stack view and the Plan view
+already existed (see the 2026-08-29/30 entries below) with month-stepping infrastructure that
+matched Project Schedule's Vertical Stacking timeline in every respect **except the explicit "Live"
+button**: both already used the identical `null` = latest/live, a `'YYYY-MM'` string = scrubbed
+convention Project Schedule's own `_vsAsOf` established, and both already had `‹`/`›`/Play. Confirmed
+Project Schedule's exact reference markup (`modules/project-schedule/index.html`'s `.ps-vs-tlbtns`,
+`data-tllive`, styled `.on` when `_vsAsOf == null`, tooltip "Back to recorded progress") before
+building the equivalent here.
+
+- **Plan view**: `.pp-planmonthbar` gains a `pp-plan-mlive` button after Play, styled `is-live`
+  (a solid brand-red fill, matching `.pp-tab.active`) exactly when `planMonth == null`. Clicking it
+  stops the running month-play timer first (never leaves it ticking toward a month that no longer
+  matters, the same discipline `mnext`/`floorplay`'s mutual-exclusion already follows), snaps
+  `planMonth` back to `null`, and re-renders. A click while already live is a genuine no-op — it
+  neither stops a timer nor forces a redundant render.
+- **Stack view**: the identical button (`pp-stack-mlive`) in the step-mode stepper only — wired
+  inside the same `if (stackStepMode) { ... }` block as `mprev`/`mnext`/`mplay`, since combine mode
+  (the default; step-through is the opt-in checkbox) has no month cutoff to jump back to. Same
+  guard/stop-timer/snap-to-null/no-op-if-already-live shape as Plan view.
+- ⚠️ **Deliberately NOT added anywhere else that reads `null`-is-live** — `renderStackView`'s combine
+  mode, `renderPlanView`'s floor stepper, and Project Schedule's own timeline all keep whatever "Live"
+  affordance (or lack of one) they already had; this only closes the one gap the punch-list named.
+- New shared `.pp-livebtn`/`.pp-livebtn.is-live` CSS. ⚠️ `is-live`'s `#fff`-on-`var(--pd-red)` pairing
+  joins this file's own documented dark-mode `#fff` allow-list on the exact same basis as
+  `.pp-tab.active`/`.pd-btn-primary` — a solid brand-red fill with white text, always legible
+  regardless of theme, not a light surface needing a dark override.
+
+**Verified: 612/612 checks green** (was 607 — 5 new for this item), via `test.js`'s own established
+convention for this class of DOM-rendering function: structural regex assertions against the shipped
+`mjs`/`cssFile` source (genuine EXECUTION of `renderPlanView`/`wirePlanView`/`renderStackView`/
+`wireStackView` isn't practical without driving the module's full `init()`/auth/project-load chain,
+which is why the 2026-08-30 entry below verified the SAME two functions' Map/Stack relocation
+structurally too — not a lower bar invented for this item). Confirmed: the button renders in the
+right bar with the right conditional class, in the right position (after Play, same cluster as
+prev/next); the click handler stops the timer, snaps to `null`, no-ops if already live; the Stack
+wiring lives inside the step-mode-only guard so combine mode never wires a stepper it doesn't render;
+each new id is referenced exactly 3 times (rendered once, wired via the same `$(id)` guard +
+`$(id).onclick` shape every sibling stepper button already uses — never a stray 4th reference); the
+CSS rule exists and is on the `#fff` allow-list.
+
+⚠️ **Two PRE-EXISTING test failures found and fixed while running the suite, both from an earlier
+(already-shipped, unrelated) fix in this same punch-list — not caused by this change.** Punch-list
+item #7 ("remove duplicate tab-name label — Gallery / Gallery") had made `index.html`'s `<h1>` a
+STATIC "Progress Photos" and removed `setScreen()`'s per-screen title overwrite (the tab strip right
+below it already names Gallery/Presentations/Plans), but the two `test.js` assertions asserting the
+OLD dynamic-title strings (`isPpr ? 'Presentations'`, `isBim ? 'Plans' : 'Gallery'`) were never
+updated to match — healthy churn from an intentional change, the same convention this file's own
+2026-08-29 rename entries already establish for exactly this situation. Rewritten to assert the
+current, correct behaviour instead of the retired one.
+
+⚠️ **Not verified signed in** — same standing caveat as the rest of this module; no live click-through
+of the button's real click/render cycle in a browser, only structural source verification.
+
+## 3D reconstruction CANCELLED — both Edge Functions undeployed, code shelved intact (2026-09-01)
+
+Owner: *"Let's cancel the runpod feature since it requires a subscription."* RunPod's GPU service is
+paid, and the feature cannot work without it, so the chain is abandoned rather than left waiting on
+an account that will not be opened.
+
+**Undeployed** `submit-reconstruction` and `reconstruction-webhook` (deployed only hours earlier).
+The project is back to its original five functions; both URLs return **404**. ⚠️ The webhook in
+particular was deployed `--no-verify-jwt`, i.e. publicly invokable by design — leaving an
+unauthenticated endpoint up for a feature nobody will ever finish is a worse default than removing
+it, which is why this happened before asking how deep to go on the rest.
+
+**Nothing to revoke, nothing to cancel.** `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` were never set
+(confirmed against `secrets list`), and no RunPod account was ever created — so there is no
+subscription, no billing relationship and no live credential anywhere from this feature.
+
+**Owner chose to SHELVE the code, not strip it** (asked explicitly, three options offered):
+- `recon.js` (422 lines), the `#pp-screen-recon` screen, the `RECON` global and the
+  `item_type === 'reconstruction'` branches in `module.js`/`bim.js` all stay.
+- The 3D button stays `disabled title="3D reconstruction is on hold"` — already the case since
+  2026-08-29, so **no user-visible change**; nobody could reach this feature today anyway.
+- `reconstruction_requests` stays (empty). `services/reconstruction-worker/` and both Edge Function
+  sources stay in the repo.
+- ⚠️ **The reasoning, which matters more than the choice:** the reconstruction branches are
+  *interleaved* with live panorama and photo paths — pin dispatch, the media-strip merge, cluster
+  badge fallbacks — so ripping them out is real surgery on a module that has just been through seven
+  feedback rounds, in exchange for deleting code that costs nothing to leave inert. Reviving it later
+  is one `functions deploy`.
+
+⚠️ **Known cosmetic staleness, deliberately not fixed:** the disabled button's tooltip still says
+"on hold", which now understates it — the honest word is "cancelled". Left alone because the owner
+chose no code change; a one-line tooltip edit is available on request.
+
+
+## Reconstruction prerequisites: the migration and both Edge Functions are now done (2026-09-01)
+
+Updates the standing "NOT verified, and this is the real gap" caveat on the 3D-reconstruction entry
+below. Of the three prerequisites named there:
+
+- **(a) a RunPod account + deployed serverless endpoint — STILL OPEN.** Owner-only; nothing here
+  changes it. `services/reconstruction-worker/` remains written-but-never-built.
+- **(b) the two Edge Functions deployed — DONE, then UNDEPLOYED the same day.**
+  ⚠️ **Superseded — see the cancellation entry above.** Both functions were deleted from the
+  project hours later when the feature was cancelled; the paragraph below describes a state that
+  no longer holds and is kept only as the record of what was verified while they were live.
+  Original note: `submit-reconstruction` (JWT check on) and
+  `reconstruction-webhook` (`--no-verify-jwt`, the deliberate exception) are both ACTIVE at version 1
+  on `bgupuqnkqhixpuctyder`. Live probes: the webhook answers its own 400 with no JWT, proving the
+  flag took effect; submit answers 401 at the platform gate, proving its check is on.
+  ⚠️ `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` are **not set**, so submit fails pre-flight with a clean
+  500 rather than reaching anyone's money.
+- **(c) the migration run — DONE.** `2026-08-29-reconstruction-requests.sql` applied 2026-09-01 and
+  confirmed by `VERIFY-schema.sql` returning no rows against its regenerated 342-object list.
+
+⚠️ **The end-to-end chain is still unexercised.** insert→approve→RunPod→webhook→viewer has never run,
+the webhook's token-comparison branch has never executed (a probe with a nonexistent id returns 404
+on the row lookup, which sits before the token check), and the 3D tab still correctly shows an empty
+approval queue. The first real Approve click remains the actual integration test.
+
+
 ## Seventh feedback round: 11 items — Plan-view clustering/thumbnails, the stale "3 of 3" count, Stack view's look, and a Presentation-pane rework (2026-08-30)
 
 Owner sent this batch mid-session, with 4 screenshots, while the sixth-round batch above was still

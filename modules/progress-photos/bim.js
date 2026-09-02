@@ -129,13 +129,34 @@ window.BIM = (function () {
   // (Batch G) both need to look up a pin regardless of which plan is
   // currently selected in the toolbar.
   async function loadAllPins() {
-    if (!plans.length) { allPins = []; return; }
+    if (!plans.length) { allPins = []; allPinsIndex = null; return; }
     try {
       allPins = await PDb.selectAll(T_PIN, function (q) { return q.eq('project_id', pid); });
     } catch (e) { allPins = []; }
+    allPinsIndex = null;   // rebuilt lazily, on first pinsByItem() call after this load
+  }
+  // ⚠️ Real perf bug fixed: `pinsByItem` used to `.filter()` the WHOLE
+  // `allPins` array on every call, and the Gallery calls it ONCE PER TILE
+  // (cardHTML -> BIM.pinInfoFor -> pinsByItem) on every render — so a
+  // project with, say, 2,000 photos and 500 pins re-scanned up to a million
+  // pin records synchronously before a single tile could paint, entirely on
+  // the main thread, before the browser could even show the "loading"
+  // placeholder. Indexed once per allPins load (lazily, so a project with
+  // no plans/pins never builds an index it doesn't need) into a plain
+  // object keyed by "itemType:itemId" -> array of pins for that item —
+  // O(1) per tile instead of O(pins).
+  var allPinsIndex = null;
+  function ensureAllPinsIndex() {
+    if (allPinsIndex) return allPinsIndex;
+    allPinsIndex = {};
+    allPins.forEach(function (p) {
+      var k = p.item_type + ':' + p.item_id;
+      (allPinsIndex[k] || (allPinsIndex[k] = [])).push(p);
+    });
+    return allPinsIndex;
   }
   function pinsByItem(itemType, itemId) {
-    return allPins.filter(function (p) { return p.item_type === itemType && p.item_id === itemId; });
+    return ensureAllPinsIndex()[itemType + ':' + itemId] || [];
   }
   function planById(id) { return plans.filter(function (p) { return p.id === id; })[0] || null; }
 
@@ -494,7 +515,10 @@ window.BIM = (function () {
     var canvas = $('bim-actual-canvas'); if (!canvas) return;
     try {
       await ensureOpenCV();
-      var photoUrl = (window.ProgressPhotos && ProgressPhotos.urlOfPhotoId) ? ProgressPhotos.urlOfPhotoId(reg.photo_id) : '';
+      // ⚠️ urlOfPhotoId now returns a Promise (full-res is signed on
+      // demand, not pre-signed for the whole project) — awaited here,
+      // same as every other on-demand full-res consumer.
+      var photoUrl = (window.ProgressPhotos && ProgressPhotos.urlOfPhotoId) ? await ProgressPhotos.urlOfPhotoId(reg.photo_id) : '';
       if (!photoUrl) throw new Error('That registered photo is no longer available');
       var plan = planById(reg.floor_plan_id);
       var planW = (plan && plan.width_px) || 1200, planH = (plan && plan.height_px) || 900;
@@ -572,9 +596,16 @@ window.BIM = (function () {
         '<button class="pd-btn pd-btn-primary" id="bim-reg-save" disabled>Compute &amp; save</button></div>';
     var m = openModal(html, 760);
 
-    function setPhotoImg() {
-      var ph = photos.filter(function (p) { return p.id === chosenPhotoId; })[0];
-      var url = (window.ProgressPhotos && ProgressPhotos.urlOfPhotoId) ? ProgressPhotos.urlOfPhotoId(chosenPhotoId) : '';
+    // ⚠️ urlOfPhotoId now returns a Promise. This is genuinely on-demand
+    // work now, not a synchronous cache read — the <img> shows nothing
+    // until it resolves, guarded so a fast picker change can't have an
+    // older photo's sign request land after a newer one and show the
+    // wrong image.
+    async function setPhotoImg() {
+      var forId = chosenPhotoId;
+      if ($('bim-reg-photo-img')) $('bim-reg-photo-img').src = '';
+      var url = (window.ProgressPhotos && ProgressPhotos.urlOfPhotoId) ? await ProgressPhotos.urlOfPhotoId(chosenPhotoId) : '';
+      if (chosenPhotoId !== forId) return;   // the picker moved on while this was in flight
       if ($('bim-reg-photo-img')) $('bim-reg-photo-img').src = url || '';
     }
     setPhotoImg();
@@ -1103,11 +1134,12 @@ window.BIM = (function () {
         : '<input type="hidden" id="' + idPrefix + '-pin-plan" value="' + esc(chosenId) + '" />') +
       '<div id="' + idPrefix + '-pin-imgwrap"></div>' +
       '<p class="pp-hint" id="' + idPrefix + '-pin-status">' +
-        (existing ? 'Pin placed — click the plan to move it.' : 'Click the plan to drop a pin.') + '</p>' +
+        (existing ? 'Pin placed — drag it to move, or click elsewhere on the plan.' : 'Click the plan to drop a pin.') + '</p>' +
       (existing && existing.direction_na ? '<p class="bim-conena-badge" id="' + idPrefix + '-pin-nabadge">' +
-        '<span data-ico="eyeOff" data-ico-size="12"></span> Marked "does not apply" (top-view photo)</p>' : '') +
-      '<p class="bim-conehint">Drag either handle to adjust the camera\'s angle and range. Double-click the ' +
-        'shaded area if this is a top-view photo with no facing direction.</p>' +
+        '<span data-ico="drone" data-ico-size="12"></span> Drone / top-view photo — no facing direction recorded</p>' : '') +
+      '<p class="bim-conehint">Drag the pin to move it. Drag the small handle at the arc\'s edge to adjust the ' +
+        'camera\'s angle and range, or the handle straight ahead of the pin to adjust just the facing ' +
+        'direction. Click the pin once to switch between a ground-level camera view and a top-view drone shot.</p>' +
       '<input type="hidden" id="' + idPrefix + '-pin-x" value="' + (existing ? existing.x_norm : '') + '" />' +
       '<input type="hidden" id="' + idPrefix + '-pin-y" value="' + (existing ? existing.y_norm : '') + '" />' +
       '<input type="hidden" id="' + idPrefix + '-pin-e1x" value="' + (existing ? existing.edge1_x : '') + '" />' +
@@ -1177,7 +1209,7 @@ window.BIM = (function () {
       $(idPrefix + '-pin-e2x').value = s ? s.e2x : ''; $(idPrefix + '-pin-e2y').value = s ? s.e2y : '';
       $(idPrefix + '-pin-na').value = s && s.na ? '1' : '';
       var st = $(idPrefix + '-pin-status');
-      if (st) st.textContent = s ? 'Pin placed — click the plan to move it.' : 'Click the plan to drop a pin.';
+      if (st) st.textContent = s ? 'Pin placed — drag it to move, or click elsewhere on the plan.' : 'Click the plan to drop a pin.';
     }
     // Fifth round item 8 — a true pie slice (M pin, L edge1, ARC to edge2, Z)
     // instead of a 3-point polygon, with a radial gradient dark-at-the-pin
@@ -1213,13 +1245,31 @@ window.BIM = (function () {
       if (s) {
         var cone = coneParamsFromEdges(s.x, s.y, s.e1x, s.e1y, s.e2x, s.e2y);
         var handlePt = pointAtBearing(s.x, s.y, cone.dir + cone.halfW, cone.reach);
-        // Fifth round item 8: NA hides the wedge outright, and the handle
-        // (which exists only to resize a wedge that isn't there) hides with
-        // it — the pin dot itself becomes the only thing left to
-        // double-click back into a visible cone.
+        // Item 3 (this round): a SECOND drag point, straight ahead of the pin
+        // at the cone's own bearing/reach — "in the middle of the view" —
+        // that adjusts ONLY the facing direction, leaving angle/reach (the
+        // corner handle above) untouched. Both handles hide with the wedge
+        // when NA (nothing to point in a direction that doesn't apply).
+        var dirPt = pointAtBearing(s.x, s.y, cone.dir, cone.reach);
+        // Fifth round item 8: NA hides the wedge outright, and the handles
+        // (which exist only to adjust a wedge that isn't there) hide with
+        // it — the pin dot itself becomes the only thing left to click back
+        // into a visible cone (single click now, see wireStage below).
         body += (s.na ? '' : coneSvg(s.x, s.y, cone.dir, cone.halfW, cone.reach)) +
-        '<div class="bim-pinstage-dot' + (s.na ? ' is-na' : '') + '" id="' + idPrefix + '-pin-dot" style="left:' + (s.x * 100) + '%;top:' + (s.y * 100) + '%"></div>' +
-        (s.na ? '' : '<div class="bim-conehandle-el" id="' + idPrefix + '-cone-handle" style="left:' + (handlePt.x * 100) + '%;top:' + (handlePt.y * 100) + '%"></div>');
+        // Item 3: the dot itself is now DRAGGABLE (wireStage wires a real
+        // pointer-capture drag on it, same convention as the handles below)
+        // and renders a person/drone icon reflecting `na` — "the pin should
+        // switch from person icon to drone icon" — rather than a plain
+        // circle. `Icons.svg()` is called directly (not the data-ico/hydrate
+        // path) so the icon updates synchronously on every repaint/toggle
+        // with no separate hydrate pass needed.
+        '<div class="bim-pinstage-dot' + (s.na ? ' is-na' : '') + '" id="' + idPrefix + '-pin-dot" ' +
+          'title="Drag to move · click to switch camera/drone view" ' +
+          'style="left:' + (s.x * 100) + '%;top:' + (s.y * 100) + '%">' +
+          (window.Icons ? Icons.svg(s.na ? 'drone' : 'person', 12) : '') +
+        '</div>' +
+        (s.na ? '' : '<div class="bim-conehandle-el" id="' + idPrefix + '-cone-handle" title="Drag to adjust angle and range" style="left:' + (handlePt.x * 100) + '%;top:' + (handlePt.y * 100) + '%"></div>') +
+        (s.na ? '' : '<div class="bim-dirhandle-el" id="' + idPrefix + '-dir-handle" title="Drag to adjust facing direction" style="left:' + (dirPt.x * 100) + '%;top:' + (dirPt.y * 100) + '%"></div>');
       }
       return '<div class="bim-conestage">' + body + '</div>';
     }
@@ -1253,6 +1303,20 @@ window.BIM = (function () {
         var hp = pointAtBearing(cur.x, cur.y, cone.dir + cone.halfW, cone.reach);
         handle.style.left = (hp.x * 100) + '%'; handle.style.top = (hp.y * 100) + '%';
       }
+      // Item 3: keep the new direction-only handle glued to the arc's
+      // bearing/reach during any drag that moves the pin, the wedge, or the
+      // corner handle — all three change `cone.dir`/`cone.reach`, and this
+      // handle's position is a pure function of both.
+      var dirHandle = $(idPrefix + '-dir-handle');
+      if (dirHandle) {
+        var dp = pointAtBearing(cur.x, cur.y, cone.dir, cone.reach);
+        dirHandle.style.left = (dp.x * 100) + '%'; dirHandle.style.top = (dp.y * 100) + '%';
+      }
+      // Item 3: the pin dot's own screen position is set directly by the
+      // drag handler (dot.onpointerdown, below) rather than here, since a
+      // pin-drag changes `cur.x/y` itself (paintConeLive's inputs), not a
+      // value paintConeLive derives — but the dot's icon (person/drone) never
+      // changes mid-drag (only on a tap), so nothing else to touch here.
     }
     function wireStage(s) {
       var img = $(idPrefix + '-pin-img'); if (!img) return;
@@ -1267,20 +1331,72 @@ window.BIM = (function () {
         repaint();
       };
       var wedge = $(idPrefix + '-pin-wedge'), dot = $(idPrefix + '-pin-dot'), handle = $(idPrefix + '-cone-handle');
-      // Fifth round item 8: double-clicking the wedge (visible) turns it off;
-      // once off the wedge (and its handle) render nothing at all, so the
-      // PIN DOT itself becomes the only thing left to double-click back on.
+      // Fifth round item 8: double-clicking the wedge (visible) turns it off.
+      // Kept as a secondary way to toggle while the wedge is on screen —
+      // item 3's real fix is below, on the pin dot itself, which works in
+      // BOTH states (the wedge doesn't exist to double-click when NA).
       function toggleNA(e) {
         e.stopPropagation();
         var cur = state(); if (!cur) return;
         cur.na = !cur.na; setState(cur); repaint();
       }
       if (wedge) wedge.ondblclick = toggleNA;
-      if (dot) dot.ondblclick = toggleNA;
-      if (!s || s.na) return; // nothing else to wire — no wedge/handle rendered
+      // Item 3: the pin dot is now a real drag target — dragging it moves
+      // the pin AND translates both cone edges by the same delta, so the
+      // wedge stays attached in the same shape/orientation as the pin moves
+      // (edges are stored as ABSOLUTE points, never relative offsets, so
+      // both must move together or the cone silently detaches). A genuine
+      // TAP (movement stays under DOT_TAP_THRESHOLD the whole gesture) is
+      // instead a single-click toggle between camera view (person icon) and
+      // drone/top view (drone icon) — replacing the old double-click-the-
+      // wedge gesture, which only ever worked while a wedge existed to
+      // double-click. Wired for BOTH na states: dragging must work even with
+      // no cone, and a drone-marked pin must be one click away from
+      // switching back to camera view.
+      var DOT_TAP_THRESHOLD = 6; // px of pointer travel; below this = a tap
+      if (dot) dot.onpointerdown = function (e) {
+        e.stopPropagation();
+        var start = state(); if (!start) return;
+        var startClientX = e.clientX, startClientY = e.clientY;
+        // Snapshot taken at drag-start, same convention module.js's own
+        // translateMarkupObj() already documents — every move computes the
+        // TOTAL delta from this snapshot, never an incremental delta reapplied
+        // move-to-move, so a fast drag can't compound its own rounding error.
+        var startX = start.x, startY = start.y;
+        var startE1x = start.e1x, startE1y = start.e1y, startE2x = start.e2x, startE2y = start.e2y;
+        var moved = false;
+        dot.setPointerCapture(e.pointerId);
+        function move(ev) {
+          var dxPx = ev.clientX - startClientX, dyPx = ev.clientY - startClientY;
+          if (!moved && Math.hypot(dxPx, dyPx) > DOT_TAP_THRESHOLD) moved = true;
+          if (!moved) return; // still within tap range — don't nudge the pin for a click
+          var rect = img.getBoundingClientRect();
+          var dx = dxPx / rect.width, dy = dyPx / rect.height;
+          var cur = state(); if (!cur) return;
+          cur.x = Math.max(0, Math.min(1, startX + dx));
+          cur.y = Math.max(0, Math.min(1, startY + dy));
+          cur.e1x = startE1x + dx; cur.e1y = startE1y + dy;
+          cur.e2x = startE2x + dx; cur.e2y = startE2y + dy;
+          setState(cur);
+          dot.style.left = (cur.x * 100) + '%'; dot.style.top = (cur.y * 100) + '%';
+          paintConeLive(cur);
+        }
+        function up() {
+          dot.onpointermove = null;
+          window.removeEventListener('pointerup', up);
+          if (!moved) {
+            var cur = state(); if (!cur) return;
+            cur.na = !cur.na; setState(cur); repaint();
+          }
+        }
+        dot.onpointermove = move;
+        window.addEventListener('pointerup', up);
+      };
+      if (!s || s.na) return; // nothing else to wire — no wedge/handles rendered
       // Dragging the SECTOR BODY changes only the facing DIRECTION
       // (halfWidth/reach untouched) — recomputed from the pin to wherever
-      // the pointer currently is.
+      // the pointer currently is. Kept alongside the new dedicated direction
+      // handle below (item 3 asked to ADD a handle, not remove this gesture).
       if (wedge) wedge.onpointerdown = function (e) {
         e.stopPropagation();
         wedge.setPointerCapture(e.pointerId);
@@ -1297,9 +1413,9 @@ window.BIM = (function () {
         wedge.onpointermove = move;
         window.addEventListener('pointerup', up);
       };
-      // Dragging the ONE handle changes BOTH half-width (angle) and reach
-      // (depth) together — "one button to adjust both", per the ask —
-      // direction stays whatever the body-drag above last set it to.
+      // Dragging the CORNER handle changes BOTH half-width (angle) and reach
+      // (depth) together — "the existing one is for the angle and range",
+      // per the ask — direction stays whatever it was before this drag.
       if (handle) handle.onpointerdown = function (e) {
         e.stopPropagation();
         handle.setPointerCapture(e.pointerId);
@@ -1317,6 +1433,30 @@ window.BIM = (function () {
         }
         function up() { handle.onpointermove = null; window.removeEventListener('pointerup', up); }
         handle.onpointermove = move;
+        window.addEventListener('pointerup', up);
+      };
+      // Item 3: the NEW handle, sitting straight ahead of the pin at the
+      // cone's own bearing/reach — "one more small drag point for the
+      // direction of the camera angle in the middle of the view" — changes
+      // ONLY the facing direction, leaving half-width/reach exactly as they
+      // are (the inverse split from the corner handle above: that one keeps
+      // direction fixed and varies angle+reach; this one keeps angle+reach
+      // fixed and varies only direction).
+      var dirHandle = $(idPrefix + '-dir-handle');
+      if (dirHandle) dirHandle.onpointerdown = function (e) {
+        e.stopPropagation();
+        dirHandle.setPointerCapture(e.pointerId);
+        function move(ev) {
+          var n = toNorm(img, ev.clientX, ev.clientY);
+          var cur = state(); if (!cur) return;
+          var cone = coneParamsFromEdges(cur.x, cur.y, cur.e1x, cur.e1y, cur.e2x, cur.e2y);
+          var newDir = bearingFromTo(cur.x, cur.y, n.x, n.y);
+          var edges = edgesFromCone(cur.x, cur.y, newDir, cone.halfW, cone.reach);
+          cur.e1x = edges.e1x; cur.e1y = edges.e1y; cur.e2x = edges.e2x; cur.e2y = edges.e2y;
+          setState(cur); paintConeLive(cur);
+        }
+        function up() { dirHandle.onpointermove = null; window.removeEventListener('pointerup', up); }
+        dirHandle.onpointermove = move;
         window.addEventListener('pointerup', up);
       };
     }
@@ -1443,6 +1583,11 @@ window.BIM = (function () {
     // a wrong reach fraction is silent (the widget still looks interactive).
     _defaultCone: function (xNorm, yNorm, w, h) { return defaultCone(xNorm, yNorm, w, h); },
     _bearingFromTo: function (px, py, qx, qy) { return bearingFromTo(px, py, qx, qy); },
+    // Item 3 — the new direction-only handle's position is a pure function
+    // of pointAtBearing; exported for the same reason every other cone-math
+    // helper here is: a flipped sign is silent (the handle still looks
+    // interactive, it just sits somewhere geometrically wrong).
+    _pointAtBearing: function (px, py, bearingDeg, dist) { return pointAtBearing(px, py, bearingDeg, dist); },
     _bisectorBearing: function (px, py, e1x, e1y, e2x, e2y, w, h) { return bisectorBearing(px, py, e1x, e1y, e2x, e2y, w, h); },
     // Read accessors for module.js's own Gallery Plan/Stack views (item 16,
     // which relocated Map/Stack out of this screen per item 15). Plan view

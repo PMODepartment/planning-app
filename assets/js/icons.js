@@ -97,7 +97,11 @@
     eraser:      '<path d="M19 20H8l-5-5a2 2 0 0 1 0-2.8l9-9a2 2 0 0 1 2.8 0l6 6a2 2 0 0 1 0 2.8L13 20"/><line x1="13.5" y1="8.5" x2="19" y2="14"/>',
     // Photo adjustments (exposure/brightness/contrast/sharpness) — the
     // conventional three-slider "sliders/equalizer" glyph.
-    sliders:     '<line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2"/>'
+    sliders:     '<line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2"/>',
+    // Item 3 (progress-photos, camera/drone pin toggle): a person taking a
+    // ground-level photo vs. a quadcopter drone taking a top-view one.
+    person:      '<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7"/>',
+    drone:       '<rect x="10" y="10" width="4" height="4" rx="1"/><line x1="10" y1="10" x2="5" y2="5"/><line x1="14" y1="10" x2="19" y2="5"/><line x1="10" y1="14" x2="5" y2="19"/><line x1="14" y1="14" x2="19" y2="19"/><circle cx="5" cy="5" r="2.3"/><circle cx="19" cy="5" r="2.3"/><circle cx="5" cy="19" r="2.3"/><circle cx="19" cy="19" r="2.3"/>'
   };
 
   function svg(name, size) {

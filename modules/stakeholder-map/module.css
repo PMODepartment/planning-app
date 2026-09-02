@@ -1,21 +1,14 @@
-/* Stakeholder Map module styles — all classes prefixed .sm- to avoid collisions.
-   Structure mirrors risk-register (the reference CRUD + matrix module). */
+/* Stakeholder Register module styles — all classes prefixed .sm- to avoid
+   collisions. The RCM furniture shared with the Risk Register (priority pills,
+   criteria tables, heat-map grid) lives in ../../assets/css/mcc-rcm.css. */
 
-/* ---- Shared topbar chrome (VERBATIM from drawing-register/module.css) -----
-   Every uniform module carries this block. Without it the topbar inherits
-   dashboard.css's `gap:14px` with no wrapping, the avatar loses its left
-   divider, and theme.js's injected toggle keeps its default size instead of
-   matching the 34x34 tool buttons — which reads as "the buttons beside the
-   profile icon are misplaced". Do not drop it when copying this module.
-   2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) — the
-   old `.pd-content { width:100% }` override is gone; the shared `.pd-content
-   { flex:1; min-width:0 }` in dashboard.css already sizes it correctly next to
-   `.pd-sidebar`. Re-adding a width:100% override would fight it for space. */
+/* ---- Uniform module chrome (matches every other enabled module). Keep in
+   sync with those. .pd-content is NOT given width:100% here — the shared
+   `.pd-content { flex:1; min-width:0 }` rule in dashboard.css already sizes it
+   beside `.pd-sidebar`, and an override here fights the sidebar for space. ---- */
 .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
 .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
 .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
-
-/* ---- Topbar: back / title / project / tabs / tools ---------------------- */
 .sm-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; }
 .sm-title .sm-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sm-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
@@ -32,116 +25,302 @@
 .sm-topbar-tools .pd-btn.sm-tb-labeled { padding:0 12px; gap:6px; }
 .sm-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
 .sm-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
-@media (max-width:820px) { .sm-title-txt { display:none; } }
+@media (max-width:900px) { .sm-title-txt { display:none; } }
 
-/* ---- Filter bar (card, matches the suite) ------------------------------ */
+/* Filter bar */
 .sm-filters {
-  display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px;
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px;
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px;
 }
 .sm-filt-ico { color:var(--pd-muted); flex:none; }
 .sm-filters .pd-input, .sm-filters .pd-select { height:34px; font-size:13px; }
-.sm-filters .sm-search { flex:1 1 220px; min-width:160px; }
-.sm-clear { border:0; background:transparent; color:var(--pd-muted); cursor:pointer; height:34px;
-  display:none; align-items:center; gap:4px; padding:0 8px; border-radius:var(--pd-radius); font-family:var(--pd-font); }
-.sm-clear:hover { background:var(--pd-bg); color:var(--pd-ink); }
+.sm-filters .sm-search { flex:1 1 200px; min-width:150px; }
+.sm-clear { display:none; align-items:center; gap:5px; border:1px solid var(--pd-line); background:var(--pd-card);
+  color:var(--pd-muted); border-radius:var(--pd-radius); height:34px; padding:0 10px; font-size:12px;
+  font-weight:600; cursor:pointer; font-family:var(--pd-font); }
 .sm-clear.show { display:inline-flex; }
+.sm-clear:hover { color:var(--pd-ink); border-color:var(--pd-red-mid); }
 
-/* ---- KPIs -------------------------------------------------------------- */
-.sm-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:18px; }
+/* Band toggles */
+.sm-bands { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:16px; }
+.sm-bands-lab { color:var(--pd-muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-right:2px; }
+.sm-band { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
+  border-radius:999px; padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; font-family:var(--pd-font); }
+.sm-band:hover { border-color:var(--pd-red-mid); color:var(--pd-ink); }
+.sm-band.on { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red-dark); }
+
+/* ⚠️ Brand red is not a text colour on a dark surface, and this was measured on
+   the deployed site rather than assumed: --pd-red-dark reads 2.92:1 as the band
+   header (10px/800 on --pd-bg) and 2.64:1 on the lit band pill (--pd-red-light).
+   Both pass in light mode (5.31 / 5.11), so only dark is overridden — the light
+   look is unchanged. #FF8A80 is the shade this app already settled on for red
+   text on dark (issues-lessons, 2026-08-24): 7.5 on --pd-bg, 6.2 on a card. */
+html.pd-dark .sm-bands-row th.sm-bandhead { color:#FF8A80; }
+html.pd-dark .sm-band.on { color:#FF8A80; }
+
+/* KPIs */
+.sm-kpis { display:grid; grid-template-columns:repeat(7, 1fr); gap:12px; margin-bottom:18px; }
 .sm-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   box-shadow:var(--pd-shadow); padding:14px 16px; }
-.sm-kpi-val { font-size:26px; font-weight:800; line-height:1; }
+.sm-kpi-val { font-size:24px; font-weight:800; line-height:1; }
 .sm-kpi-label { color:var(--pd-muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-top:6px; }
-.sm-kpi.sm-manage .sm-kpi-val { color:var(--pd-red); }
-.sm-kpi.sm-satisfy .sm-kpi-val { color:#d97706; }
-.sm-kpi.sm-catchup .sm-kpi-val { color:#2563eb; }
+.sm-kpi-sub { color:var(--pd-muted); font-size:11px; margin-top:3px; }
+/* Only the NUMBER takes the semantic colour, so the label stays readable. */
+.sm-kpi.rcm-p1 .sm-kpi-val { color:var(--rcm-t); }
+.sm-kpi.sm-k-manage  .sm-kpi-val { color:#b91c1c; }
+.sm-kpi.sm-k-satisfy .sm-kpi-val { color:#b45309; }
+/* ⚠️ Both pass in light (3.46 / ~4.1 at 24px/800) and fail in dark — #b91c1c
+   measured 2.17:1 live on the dark card against the 3:1 large-text minimum.
+   Dark-only overrides, so the light look is untouched. */
+html.pd-dark .sm-kpi.sm-k-manage  .sm-kpi-val { color:#f87171; }
+html.pd-dark .sm-kpi.sm-k-satisfy .sm-kpi-val { color:#fbbf24; }
+.sm-kpi.sm-k-warn    .sm-kpi-val { color:var(--pd-warn); }
 
-/* ---- Table ------------------------------------------------------------- */
-.sm-table { min-width:1180px; }   /* many columns — scrolls inside its card */
+.sm-help { color:var(--pd-muted); margin-top:0; font-size:13px; line-height:1.55; max-width:88ch; }
+.sm-help code { font-size:12px; background:var(--pd-bg); padding:1px 4px; border-radius:3px; }
+
+/* ---- Avatars ------------------------------------------------------------ */
+.sm-av { display:inline-block; border-radius:50%; overflow:hidden; flex:none;
+  background:var(--pd-bg); border:1px solid var(--pd-line); vertical-align:middle; }
+.sm-av img { width:100%; height:100%; object-fit:cover; display:block; }
+.sm-av-xs { width:22px; height:22px; }
+.sm-av-sm { width:34px; height:34px; }
+.sm-av-lg { width:64px; height:64px; }
+/* Initials fallback — deterministic hue per name, so the same person is always
+   the same colour and a photo-less register still reads as a list of people. */
+.sm-av-i { display:inline-flex; align-items:center; justify-content:center;
+  font-weight:800; letter-spacing:.02em; color:#fff; border-color:transparent;
+  background:hsl(var(--sm-hue, 0) 42% 42%); }
+.sm-av-i.sm-av-xs { font-size:9px; }
+.sm-av-i.sm-av-sm { font-size:12px; }
+.sm-av-i.sm-av-lg { font-size:22px; }
+
+/* ---- Register table ---------------------------------------------------- */
+.sm-table { font-size:13px; }
 .sm-table td .sm-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
-  max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.sm-table td.sm-num { text-align:center; white-space:nowrap; }
-.sm-nick { color:var(--pd-muted); font-weight:600; font-size:12px; }
-.sm-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700; font-size:12px; color:#fff; white-space:nowrap; }
-.sm-cat { display:inline-block; padding:1px 8px; border-radius:6px; font-size:12px; font-weight:600;
-  background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
-.sm-strat { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:700; color:#fff; white-space:nowrap; }
-.sm-strat.sm-sCatchup { background:#dc2626; }
-.sm-strat.sm-sEnhance { background:#d97706; }
-.sm-strat.sm-sMaintain { background:#16a34a; }
+  max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-table td.sm-c-name { min-width:230px; }
+/* ⚠️ min-width, not just max-width. Without a floor the auto table layout
+   squeezed the engagement-plan column to ~120px and its sentence wrapped to ten
+   lines, making every cell in the row 191px tall — three stakeholders a screen. */
+.sm-table td.sm-c-wide { min-width:220px; max-width:320px; white-space:normal; }
+/* Clamped to three lines; the full text is the title attribute, the card, the
+   edit modal and the CSV export. Needs to be a block child of the <td> — line-
+   clamping the cell itself would change its display and break the table layout. */
+.sm-clamp { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+  overflow:hidden; line-height:1.45; }
+.sm-table td.sm-num, .sm-num { text-align:right; white-space:nowrap; }
+.sm-person { display:flex; gap:9px; align-items:center; }
+.sm-person-t { min-width:0; }
+.sm-nick { color:var(--pd-muted); font-weight:400; font-size:12px; }
+.sm-cat { font-weight:600; }
+/* The "this value was overridden by hand" marker. Deliberately quiet but
+   present: a derived column that someone has overruled must not look derived. */
+/* ⚠️ Per-theme, because the colour IS the signal here — a single ± glyph, so it cannot
+   be demoted to muted text with the flag moved to a border. --pd-warn measured 3.46:1
+   in light at 14px/800 (below the 18.66px large-text threshold, so 4.5 applies). */
+.sm-ovr { color:#8a5300; font-weight:800; cursor:help; }
+html.pd-dark .sm-ovr { color:#fbbf24; }
 
-/* Importance rank colours — ONLY on pills and grid cells, never the KPI cards. */
-.sm-pill.sm-imp-1, .sm-gcell.sm-imp-1 { background:#dc2626; }   /* 1st Manage Closely */
-.sm-pill.sm-imp-2, .sm-gcell.sm-imp-2 { background:#d97706; }   /* 2nd Keep Satisfied */
-.sm-pill.sm-imp-3, .sm-gcell.sm-imp-3 { background:#2563eb; }   /* 3rd Keep Informed  */
-.sm-pill.sm-imp-4, .sm-gcell.sm-imp-4 { background:#6b7280; }   /* 4th Monitor        */
-
-/* ---- Add/Edit form sections ------------------------------------------- */
-.sm-form-sec { font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:.04em;
-  color:var(--pd-muted); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--pd-line); }
-.sm-form-sec:first-of-type { margin-top:8px; }
-.sm-derived { text-transform:none; letter-spacing:0; font-weight:700; color:var(--pd-red); margin-left:8px; }
-.sm-frow { display:flex; gap:10px; flex-wrap:wrap; }
-.sm-frow .pd-field { min-width:120px; }
-
-/* ---- Impact / Interest grid (4×4) ------------------------------------- */
-.sm-grid-wrap { overflow-x:auto; }
-.sm-grid { border-collapse:separate; border-spacing:6px; margin:6px auto; }
-.sm-grid th.sm-axis { color:var(--pd-muted); font-size:12px; font-weight:700; padding:4px; }
-.sm-grid th.sm-axis-y { writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; }
-.sm-gcell {
-  width:160px; height:118px; vertical-align:top; text-align:left; color:#fff;
-  border-radius:8px; padding:8px; cursor:pointer; transition:transform .06s ease, filter .12s;
-  border:2px solid transparent;
+.sm-bands-row th.sm-bandhead {
+  background:var(--pd-bg); color:var(--pd-red-dark); text-align:center;
+  font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  padding:5px 8px; border-bottom:1px solid var(--pd-line); border-left:1px solid var(--pd-line);
 }
-.sm-gcell:hover { filter:brightness(1.06); }
-.sm-gcell.sm-cell-active { outline:3px solid var(--pd-ink); outline-offset:-3px; }
-.sm-gcell-strat { font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:.03em; opacity:.95; }
-.sm-gcell-count { float:right; font-weight:800; font-size:12px; background:rgba(0,0,0,.18); border-radius:999px; padding:0 7px; }
-.sm-gchips { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
-.sm-gchip { background:rgba(255,255,255,.22); border-radius:5px; padding:2px 6px; font-size:12px; font-weight:600;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.sm-gchip.sm-more { background:transparent; font-weight:700; opacity:.9; }
-.sm-grid-empty { color:rgba(255,255,255,.7); font-size:12px; font-style:italic; margin-top:4px; }
+.sm-bands-row th.sm-bandhead-x { color:transparent; border-left-color:transparent; }
 
-/* Legend */
-.sm-legend { display:flex; flex-wrap:wrap; gap:14px; margin-top:14px; }
-.sm-leg { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
-.sm-leg-sw { width:14px; height:14px; border-radius:4px; flex:none; }
+/* Activity group headers */
+.sm-grow > td { background:var(--pd-bg); cursor:pointer; padding:9px 12px !important; }
+.sm-grow:hover > td { background:var(--pd-red-light); }
+.sm-gcar { display:inline-block; width:14px; color:var(--pd-muted); transition:transform .12s; }
+.sm-gcar.col { transform:rotate(-90deg); }
+.sm-gno { display:inline-block; min-width:22px; text-align:center; font-weight:800; font-size:11px;
+  /* ⚠️ ink-on-card INVERTED, not white-on-muted. --pd-muted is a dark grey in light mode
+     but a LIGHT grey in dark mode, so white on it measured 2.00:1 live. This pairing
+     flips with the theme by construction: 16.3 light / 12.2 dark. */
+  color:var(--pd-card); background:var(--pd-ink); border-radius:4px; padding:1px 4px; margin-right:8px; }
+.sm-gname { font-weight:800; letter-spacing:.02em; text-transform:uppercase; font-size:12px; }
+.sm-gcount { color:var(--pd-muted); font-size:12px; margin:0 10px; }
+.sm-grow .rcm-pill-o { margin-right:5px; }
+.sm-gobj { color:var(--pd-muted); font-size:12px; margin-top:3px; font-weight:400; text-transform:none;
+  max-width:110ch; line-height:1.45; }
 
-.sm-gcell-strat { line-height:1.2; }
-@media (max-width:700px) { .sm-kpis { grid-template-columns:repeat(2,1fr); } .sm-gcell { width:118px; height:110px; } }
+/* ---- Engagement approach + relationship strategy chips ----------------- */
+/* Semantic and fixed in both themes: these are the controlled document's own
+   four quadrants, and a pale amber in dark mode stops meaning "Keep Satisfied". */
+/* ⚠️ Same fill/text split as mcc-rcm.css's priority palette, for the same measured
+   reason. --sm-c is the FILL: white sits on it (.sm-appr passes 5.0-7.6 for all four).
+   --sm-t is the same meaning as TEXT, and it needs a different value per theme —
+   .sm-gm-lab (the Mendelow map's 10px/800 cell label on a 15% wash of its own fill)
+   measured 1.70:1 in dark for Monitor and 4.08:1 in light for Keep Satisfied while it
+   read --sm-c. A fill light enough to read as text on dark cannot carry white. */
+.sm-a-manage  { --sm-c:#b91c1c; --sm-t:#991b1b; }
+.sm-a-satisfy { --sm-c:#b45309; --sm-t:#854d0e; }
+.sm-a-inform  { --sm-c:#1d4ed8; --sm-t:#1e3a8a; }
+.sm-a-monitor { --sm-c:#4b5563; --sm-t:#374151; }
+html.pd-dark .sm-a-manage  { --sm-t:#f87171; }
+html.pd-dark .sm-a-satisfy { --sm-t:#fbbf24; }
+html.pd-dark .sm-a-inform  { --sm-t:#93c5fd; }
+html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
+.sm-appr { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700;
+  white-space:nowrap; color:#fff; background:var(--sm-c, var(--pd-muted)); }
+.sm-leg-sw { width:12px; height:12px; border-radius:3px; display:inline-block; background:var(--sm-c, var(--pd-line)); }
+.sm-strat { display:inline-block; padding:1px 7px; border-radius:4px; font-size:11px; font-weight:700; white-space:nowrap; }
+.sm-s-Catchup  { background:#fee2e2; color:#991b1b; }
+.sm-s-Enhance  { background:#fef3c7; color:#92400e; }
+.sm-s-Maintain { background:#dcfce7; color:#166534; }
 
-/* ---- Mobile & tablet (2026-07-23) ----------------------------------------
-   Shared chrome comes from dashboard.css. Same treatment as risk-register:
-   the register is read-mostly (editing is modal-based), so below 700px each
-   row becomes a card with cells labelled from data-l (set in module.js).
-   14 columns at min-width:1180px is otherwise ~3 screens of side-scrolling.
+/* ---- Cards view -------------------------------------------------------- */
+.sm-cgroup { margin-bottom:24px; }
+.sm-chead { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.sm-cgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:12px; }
+.sm-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  box-shadow:var(--pd-shadow); padding:14px; cursor:pointer; transition:box-shadow .12s, transform .12s;
+  display:flex; flex-direction:column; gap:10px; }
+.sm-card:hover { box-shadow:0 3px 14px rgba(0,0,0,.14); transform:translateY(-1px); }
+.sm-card-top { display:flex; gap:12px; align-items:flex-start; }
+.sm-card-av { flex:none; line-height:0; }
+.sm-card-av.zoomable { cursor:zoom-in; }
+.sm-card-id { flex:1; min-width:0; }
+.sm-card-name { font-weight:800; font-size:14px; line-height:1.3; }
+.sm-card-role { color:var(--pd-ink); font-size:12px; margin-top:2px; }
+.sm-card-org  { color:var(--pd-muted); font-size:12px; margin-top:1px; }
+.sm-card-meters { display:flex; gap:16px; }
+.sm-meter { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--pd-muted); }
+.sm-meter-l { text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
+.sm-meter-b { display:inline-flex; gap:2px; }
+.sm-meter-b i { width:9px; height:9px; border-radius:2px; background:var(--pd-line); display:block; }
+.sm-meter-b i.on { background:var(--pd-red); }
+.sm-meter-v { font-weight:800; color:var(--pd-ink); }
+.sm-card-act { font-size:11px; color:var(--pd-muted); text-transform:uppercase; letter-spacing:.03em; font-weight:700; }
+.sm-card-plan { font-size:12px; color:var(--pd-ink); line-height:1.5;
+  background:var(--pd-bg); border-radius:var(--pd-radius); padding:8px 10px;
+  /* Clamped, not truncated to one line: an engagement plan is a sentence or two
+     and the point of the card is to be able to read it. */
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+/* ⚠️ MUTED text with the warn colour on a RAIL, not warn-coloured text. --pd-warn is
+   #C77700 in light mode and measured 3.46:1 here at 12px/400 — it is tuned for larger
+   type. This is an absence notice, so muted reads correctly (7.07 light / 7.02 dark)
+   while the rail keeps the flag visible at a glance. */
+.sm-card-plan-none { color:var(--pd-muted); font-style:italic; background:transparent;
+  padding:0 0 0 8px; border-left:2px solid var(--pd-warn); }
+.sm-card-foot { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:auto;
+  padding-top:8px; border-top:1px solid var(--pd-line); }
+.sm-card-cp { font-size:11px; color:var(--pd-muted); font-weight:600; }
+.sm-card-mail { font-size:11px; }
+.sm-card-edit { margin-left:auto; height:28px; padding:0 10px; font-size:12px; }
 
-   NOTE: written as '.pd-table.sm-table' to outrank the shared '.pd-table'
-   phone scroller rule — see the risk-register note.
-   -------------------------------------------------------------------------- */
-@media (max-width: 700px) {
-  .pd-table.sm-table { display: block; min-width: 0; overflow-x: visible; white-space: normal; background: none; }
-  .sm-table thead { display: none; }
-  .sm-table tbody { display: block; }
-  .sm-table tr { display: block; margin-bottom: 10px; padding: 12px;
-    background: var(--pd-card); border: 1px solid var(--pd-line);
-    border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); }
-  .sm-table tr:hover td { background: none; }
-  .sm-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: 13px; text-align: left; }
-  .sm-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px; }
-  .sm-table td.sm-c-name { font-size: 14px; padding-bottom: 6px; }
-  /* .sm-num is right-aligned for column comparison on desktop; in a stacked
-     card there is no column to align to, so it reads as a stray indent. */
-  .sm-table td.sm-num { text-align: left; }
-  .sm-table td.sm-rowacts { display: flex; gap: 8px; margin-top: 8px; white-space: normal !important; }
-  /* Sized to content, not stretched to fill the row — same fix as
-     risk-register's identical pattern (they were copied from one another). */
-  .sm-table td.sm-rowacts .pd-btn { flex: 0 1 auto; justify-content: center; }
-  .sm-table td.sm-rowacts .pd-btn:only-child { flex: 1 1 auto; }
-  .sm-table td[colspan] { text-align: center; }
-  .sm-filters { flex-wrap: wrap; gap: 8px; }
-  .sm-filters > * { flex: 1 1 100%; min-width: 0; }
+.sm-photoview img { max-width:100%; max-height:60vh; border-radius:var(--pd-radius); display:block; margin:0 auto; }
+.sm-photoview-cap { text-align:center; margin-top:10px; font-size:13px; line-height:1.5; }
+
+/* ---- Impact / Influence view ------------------------------------------ */
+.sm-gridwrap { overflow-x:auto; }      /* the grid scrolls in its card, never the page */
+.sm-refgrid { max-width:520px; overflow-x:auto; }
+.rcm-gcell.sm-gm { background:color-mix(in srgb, var(--sm-c, transparent) 15%, var(--pd-card));
+  border-color:color-mix(in srgb, var(--sm-c, var(--pd-line)) 55%, transparent); }
+.sm-gm-lab { display:block; font-size:10px; font-weight:800; text-transform:uppercase;
+  letter-spacing:.02em; color:var(--sm-t, var(--pd-muted)); }
+.sm-gm-faces { display:flex; flex-wrap:wrap; gap:3px; margin-top:6px; align-items:center; }
+
+/* ---- Add/Edit form furniture ------------------------------------------ */
+.sm-fsec { font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--pd-red-dark); margin:18px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--pd-line); }
+/* ⚠️ The third brand-red-as-text surface, and it was missed when the band header and
+   the lit band pill were fixed: 2.40:1 in dark (11px/800 --pd-red-dark on the modal).
+   Light passes, so dark only. If a fourth turns up, the honest fix is a --pd-red-text
+   token in dashboard.css rather than a fourth copy of this override. */
+html.pd-dark .sm-fsec { color:#FF8A80; }
+.sm-fsec:first-of-type { margin-top:10px; }
+.sm-fsec-hint { color:var(--pd-muted); font-weight:600; letter-spacing:0; text-transform:none; margin-left:6px; }
+.sm-lbl-hint { color:var(--pd-muted); font-weight:400; }
+.sm-frow { display:flex; gap:10px; flex-wrap:wrap; }
+.sm-frow > .pd-field { min-width:130px; }
+  /* ⚠️ The band pills are the one control the shared phone rules know nothing
+     about (they are not .pd-btn / .pd-select / .pd-input), so they measured 25px
+     against this app's 44px touch minimum. Kept as pills that share rows rather
+     than hidden: a stacked card still honours the band toggles, and showing
+     every band by default would make each card six screens long. */
+  .sm-band { min-height:44px; padding:4px 16px; }
+  .sm-bands { gap:8px; }
+  /* Same reason as the band pills: the suggestion chips are buttons the shared
+     phone rules do not match, so they measured under the 44px touch minimum. */
+  .sm-sug { min-height:44px; padding:6px 12px; }
+.sm-idrow { display:flex; gap:14px; align-items:flex-start; }
+.sm-idfields { flex:1; min-width:0; }
+
+/* The photo well IS the drop target and the file picker — one control, one job. */
+.sm-photowell { flex:none; width:118px; text-align:center; cursor:pointer;
+  border:1px dashed var(--pd-line); border-radius:var(--pd-radius); padding:10px;
+  transition:border-color .12s, background .12s; }
+.sm-photowell:hover, .sm-photowell:focus-visible, .sm-photowell.drop {
+  border-color:var(--pd-red); background:var(--pd-red-light); outline:none; }
+.sm-photowell-img { position:relative; width:94px; height:94px; margin:0 auto; }
+.sm-photowell-img img { width:100%; height:100%; object-fit:cover; border-radius:50%;
+  border:1px solid var(--pd-line); display:block; }
+.sm-photowell-ph { display:flex; align-items:center; justify-content:center; width:100%; height:100%;
+  border-radius:50%; background:var(--pd-bg); border:1px solid var(--pd-line);
+  color:var(--pd-muted); font-size:28px; font-weight:800; }
+.sm-photo-x { position:absolute; top:-4px; right:-4px; width:24px; height:24px; border-radius:50%;
+  border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
+  font-size:16px; line-height:1; cursor:pointer; font-family:var(--pd-font); }
+.sm-photo-x:hover { color:#fff; background:var(--pd-bad); border-color:var(--pd-bad); }
+.sm-photowell-hint { color:var(--pd-muted); font-size:11px; margin-top:8px; font-weight:600; }
+
+.sm-actinfo { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  padding:9px 11px; font-size:12px; color:var(--pd-ink); line-height:1.5; margin:0 0 10px; }
+.sm-actinfo-t { color:var(--pd-muted); font-size:10px; font-weight:800; letter-spacing:.05em;
+  text-transform:uppercase; margin-bottom:2px; }
+.sm-suggest { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.sm-sug-lab { color:var(--pd-muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; align-self:center; }
+.sm-sug { border:1px dashed var(--pd-line); background:transparent; color:var(--pd-muted);
+  border-radius:4px; padding:3px 7px; font-size:11px; cursor:pointer; font-family:var(--pd-font); }
+.sm-sug:hover { border-style:solid; border-color:var(--pd-red-mid); color:var(--pd-ink); background:var(--pd-red-light); }
+
+@media (max-width:1600px) { .sm-kpis { grid-template-columns:repeat(4,1fr); } }
+@media (max-width:1000px) { .sm-kpis { grid-template-columns:repeat(3,1fr); } }
+@media (max-width:700px)  { .sm-kpis { grid-template-columns:repeat(2,1fr); } }
+
+/* ---- Mobile & tablet ---------------------------------------------------
+   The register is read-mostly (all editing happens in a modal), so on a narrow
+   screen each row becomes a CARD: thead hidden, cells stacked and labelled from
+   data-l (set in module.js).
+
+   ⚠️ Breakpoint 900px, not 700px: with Identification, Assessment and
+   Engagement on, the register is ~18 columns wide, and between 700 and 900px it
+   was a side-scroller narrow enough to show two columns at a time.
+
+   NOTE: the table also carries the shared '.pd-table' class, whose phone rule
+   makes it a nowrap horizontal scroller. These selectors are written
+   '.pd-table.sm-table' / '.sm-table td' so they outrank it — dropping the
+   '.pd-table' qualifier silently restores side-scrolling.
+   ---------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .pd-table.sm-table { display:block; min-width:0; overflow-x:visible; white-space:normal; background:none; }
+  .sm-table thead { display:none; }
+  .sm-table tbody { display:block; }
+  .sm-table tr { display:block; margin-bottom:10px; padding:12px;
+    background:var(--pd-card); border:1px solid var(--pd-line);
+    border-radius:var(--pd-radius); box-shadow:var(--pd-shadow); }
+  .sm-table tr:hover td { background:none; }
+  .sm-table td { display:block; border:0; padding:3px 0; white-space:normal; font-size:13px; max-width:none; }
+  .sm-table td[data-l]::before { content:attr(data-l) ": "; color:var(--pd-muted); font-weight:600; font-size:12px; }
+  .sm-table td .sm-sub { white-space:normal; max-width:none; }
+  /* A stacked card has the room the table row did not — show the whole plan. */
+  .sm-clamp { -webkit-line-clamp:none; display:block; }
+  /* The person is the card headline — no inline label, and no avatar shrink. */
+  .sm-table td.sm-c-name { font-size:14px; padding-bottom:8px; }
+  .sm-table td.sm-c-name::before { content:none; }
+  .sm-table td.sm-rowacts { display:flex; gap:8px; margin-top:8px; white-space:normal !important; }
+  .sm-table td.sm-rowacts .pd-btn { flex:0 1 auto; justify-content:center; }
+  .sm-table td.sm-rowacts .pd-btn:only-child { flex:1 1 auto; }
+  /* An activity group header is a full-width band, not a stacked card. */
+  .sm-table tr.sm-grow { display:block; padding:0; margin:14px 0 8px; border:0; box-shadow:none; background:none; }
+  .sm-table tr.sm-grow > td { display:block; border-radius:var(--pd-radius); }
+  .sm-filters { flex-wrap:wrap; gap:8px; }
+  .sm-filters > * { flex:1 1 100%; min-width:0; }
+  .sm-frow > .pd-field { flex:1 1 100% !important; }
+  /* The photo well moves above the name fields rather than shrinking to nothing. */
+  .sm-idrow { flex-direction:column; align-items:center; }
+  .sm-photowell { width:100%; max-width:180px; }
+  .sm-cgrid { grid-template-columns:1fr; }
 }

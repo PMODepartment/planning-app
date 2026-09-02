@@ -26,6 +26,13 @@
   --pd-ok: #1f8f4e;
   --pd-warn: #C77700;
   --pd-bad: #C42127;
+  /* ⚠️ Destructive text on a CARD surface, paired per theme. Brand --pd-red is
+     an accent, not a text colour at this size: measured on the account menu it
+     is 4.12:1 on white and 3.40:1 on the dark card, both under AA. --pd-bad
+     cannot serve both either (it remaps to #EF5350 on dark = 4.02). This pair
+     measures 5.84 light / 6.14 dark. Same trap, same fix, as the contracts
+     `claim` mark (2026-08-25) and the issues aging value (2026-08-28). */
+  --pd-danger-text: #C42127;
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --pd-radius: 4px;
@@ -73,7 +80,7 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
 .pd-brand-logo {
-  display: block; width: 100%; height: auto;
+  display: block; width: 100%; max-width: 150px; height: auto;
   margin: 0 0 10px; object-fit: contain; object-position: left center;
 }
 .pd-sidebar .pd-brand small {
@@ -199,12 +206,28 @@ a:hover { text-decoration: underline; }
 .pd-usermenu-head { padding: 14px 16px; border-bottom: 1px solid var(--pd-line); }
 .pd-usermenu-name { font-size: 13px; font-weight: 600; color: var(--pd-ink); }
 .pd-usermenu-role { font-size: 11px; color: var(--pd-muted); margin-top: 2px; text-transform: capitalize; }
+/* System destinations (Projects / My Work / Admin). These live in the account
+   menu because it is the only chrome present on every page — see the note in
+   ui.js renderUserBar. Normal ink, so Sign out keeps red to itself. */
+.pd-usermenu-links { border-bottom: 1px solid var(--pd-line); padding: 4px 0; }
+.pd-usermenu-link {
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+  font-size: 13px; font-weight: 500; color: var(--pd-ink);
+  text-decoration: none; cursor: pointer;
+}
+.pd-usermenu-link:hover { background: var(--pd-bg); }
+.pd-usermenu-link svg { flex: none; opacity: .7; }
 .pd-usermenu-signout {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px;
-  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--pd-red);
+  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--pd-danger-text);
   background: none; border: none; cursor: pointer; text-align: left;
 }
 .pd-usermenu-signout:hover { background: var(--pd-bg); }
+/* Touch minimum — the account menu is the main nav on a phone now. */
+@media (max-width: 700px) {
+  .pd-usermenu-link { min-height: 44px; }
+  .pd-usermenu-signout { min-height: 44px; }
+}
 .pd-main { padding: 22px; }
 
 /* ---- Cards ---- */
@@ -440,6 +463,7 @@ html.pd-dark {
   --pd-red-light: #3D1A19;            /* red tint on dark */
   --pd-red-mid: #6E2A25;
   --pd-ok: #34D27B; --pd-warn: #E0A008; --pd-bad: #EF5350;
+  --pd-danger-text: #FF8A80;          /* see the light-mode note: 6.14:1 here */
   --pd-shadow: 0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4);
   background: #1C1C1C;
 }
@@ -502,7 +526,14 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 
 /* projects table */
 .pd-proj-table { border: 1px solid var(--pd-line); border-radius: var(--pd-radius); overflow: hidden; }
-.pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+/* Denser rows than the shared .pd-table default (10px/13.5-14px) — this list can
+   run to dozens/hundreds of projects, so a shorter row + smaller type lets more
+   of it show at once without opening each project just to scan the list.
+   Scoped to .pd-proj-table (layered on the same <table> as .pd-table) so no
+   other table in the app — e.g. admin.html's Users table — is affected. */
+.pd-proj-table th, .pd-proj-table td { padding: 6px 12px; font-size: 12.5px; }
+.pd-proj-table th { font-size: 10.5px; }
+.pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
 /* PRC's grouped-table header (_ghHeadCells): a tinted chip with a RED LEFT
    BORDER, then a muted "N projects" beside it. ⚠️ Deliberately NOT a solid-red
    pill — PRC's own note records that as user feedback ("no red overlay behind
@@ -864,6 +895,28 @@ body { overflow-x: clip; }
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-psel,
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; max-width: none; }
 .pd-topbar.pd-tb-split .pd-tb-main #pd-theme-toggle { margin-left: auto; }
+/* ⚠️ #user-bar carries `margin-left:auto` of its own (line ~173, for the pages that are NOT
+   topbar-split). Inside the split topbar that made TWO auto margins in one flex row, and two
+   auto margins share the free space BETWEEN them — which is why the theme button sat stranded
+   in the middle of the bar with the avatar far to its right. The toggle's auto margin is the
+   one that belongs: it pushes the whole account cluster right as a unit. */
+.pd-topbar.pd-tb-split .pd-tb-main #user-bar { margin-left: 0; }
+
+/* ⚠️ ONE project-selector look for every page. Modules each declared their own
+   (`.il-project`, `.mom-project`, …) while dashboard.html's `.dh-project` declared NOTHING, so
+   the dashboard fell back to the full-size `.pd-select` — a visibly bigger, heavier control than
+   the identical picker on every module. Styling the `-projctx` wrapper's select directly covers
+   every page including ones added later, which is what "consistent" has to mean here. The module
+   rules still load after this file and set the same values, so nothing changes for them. */
+.pd-topbar [class$="-projctx"] > .pd-select {
+  max-width: 230px; min-width: 120px; height: 34px;
+  font-weight: 600; font-size: 13px;
+  background: transparent; border-color: transparent;
+}
+.pd-topbar [class$="-projctx"] > .pd-select:hover,
+.pd-topbar [class$="-projctx"] > .pd-select:focus {
+  background: var(--pd-card); border-color: var(--pd-line);
+}
 
 /* ---- Below the topbar: the module's own icon+title, tabs, and tools ---- */
 .pd-modulebar {
@@ -879,6 +932,20 @@ body { overflow-x: clip; }
 /* A title rendered as a view-switch BUTTON rather than a plain <h1> (e.g.
    Project Schedule's own dropdown) falls in here unstyled beyond flex
    defaults — it already carries its own look. */
+/* Item 1 (2026-09-01): UI.tabsToDropdown() marks a module's static title text
+   `.pd-title-hasdrop` once it has built a dropdown trigger that already names
+   the current screen — e.g. "Issues & Concerns" sitting right beside a
+   trigger reading "Issues & Concerns ▾". Hidden ONLY here, above 700px, where
+   `.pd-modulebar > h1` keeps its normal `flex:none` and rides on the SAME row
+   as the trigger, so the duplicate text has something to be redundant WITH.
+   ⚠️ Below 700px `.pd-modulebar > h1` is forced onto its own full-width row
+   (see the ≤700px block further down) with the trigger on the row after it —
+   hiding the text there would leave a bare icon on one line and the label on
+   the next, the exact defect this file's own history already fixed once
+   (search "REMOVED" in issues-lessons/module.css) and says not to bring back. */
+@media (min-width: 701px) {
+  .pd-modulebar > h1 .pd-title-hasdrop { display: none; }
+}
 .pd-modulebar > [class$="-tabs"] {
   display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
 }
@@ -922,6 +989,16 @@ body { overflow-x: clip; }
 
 @media (max-width: 700px) {
   .pd-modulebar > h1 { flex: 1 1 100%; min-width: 0; }
+  /* Item 1 (2026-09-01, mobile round): a module whose tab strip already got a
+     dropdown (UI.tabsToDropdown) drops its <h1> ENTIRELY here — "the dropdown
+     should suffice". Above, hiding just the text still leaves an icon-only h1
+     claiming a full-width row for itself; this rule (higher specificity than
+     the bare `.pd-modulebar > h1` above, so `display:none` wins over the
+     `flex:1 1 100%`) removes the row outright, so there's no separate icon
+     row left to read as "alone". Desktop (≥701px) is untouched — there the
+     icon rides on the SAME row as the dropdown trigger and tools, which is
+     the wanted look; only the stacked-rows shape below 700px changes. */
+  .pd-modulebar > h1.pd-h1-hasdrop { display: none; }
   /* Equal segments, like a native segmented control. ⚠️ `min-height` matters:
      the modules size these to 28px, well under the 44px touch minimum — they
      were among the hardest things on the page to hit accurately. */

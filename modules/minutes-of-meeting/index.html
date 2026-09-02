@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
+  <script src="../../assets/js/theme.js?v=20260812b"></script>
+  <title>Minutes of Meeting · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901d" />
+  <link rel="stylesheet" href="module.css?v=20260901a" />
+</head>
+<body>
+  <div class="pd-app">
+    <!-- Persistent module sidebar (uniform across the suite — see MODULE_CONTRACT.md
+         §"Sidebar"). Contents are mode='project', rendered by UI.renderNav below. -->
+    <aside class="pd-sidebar">
+      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
+      <nav id="side-nav"></nav>
+      <div class="pd-nav-foot">
+        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
+          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+        </a>
+        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
+          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
+        </a>
+      </div>
+      <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
+    </aside>
+    <div class="pd-content">
+      <div class="pd-topbar">
+        <h1 class="il-title" style="margin:0;">
+          <span class="il-title-ico" data-ico="calendar" data-ico-size="20"></span>
+          <span class="il-title-txt">Minutes of Meeting</span>
+        </h1>
+        <div class="il-projctx">
+          <select class="pd-select il-project" id="il-project" title="Project"></select>
+        </div>
+
+        <!-- Item #17: Dashboard | Meetings. Wired once in module.js's wire();
+             .active is synced on every render() via syncTopTabs(). -->
+        <div class="il-tabs" role="tablist">
+          <button class="il-tab active" data-tab="dashboard">Dashboard</button>
+          <button class="il-tab" data-tab="meetings">Meetings</button>
+        </div>
+
+        <!-- Tool cluster beside the profile: this module has no "+ New" here — creating
+             a meeting is a List/Calendar action (see module.js renderBrowse), the same
+             way every other browse-then-open screen in this suite works. -->
+        <div class="il-topbar-tools">
+          <button class="pd-btn" id="il-refresh" title="Reload">
+            <span data-ico="refresh" data-ico-size="16"></span></button>
+        </div>
+        <div id="il-presence" title="People viewing this project"></div>
+        <div id="user-bar"></div>
+      </div>
+
+      <div class="pd-main">
+        <!-- One root: module.js swaps its whole content between the List/Calendar
+             browse views and the single-meeting Detail editor. See renderBrowse() /
+             renderDetail() in module.js. -->
+        <div id="il-mom-view"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Minutes of Meeting PDF export. Same library and version the standalone mom-app
+       uses, so the exported sheet is byte-for-byte the same layout engine. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="../../assets/js/config.js?v=20260901c"></script>
+  <script src="../../assets/js/auth.js?v=20260901b"></script>
+  <script src="../../assets/js/db.js?v=20260901d"></script>
+  <script src="../../assets/js/program.js?v=20260827a"></script>
+  <script src="../../assets/js/ui.js?v=20260902a"></script>
+  <script src="../../assets/js/icons.js?v=20260901b"></script>
+  <script src="../../assets/js/offline.js?v=20260812b"></script>
+  <script src="../../assets/js/collab.js?v=20260812b"></script>
+  <script src="../../assets/js/autosave.js?v=20260812b"></script>
+  <script src="module.js?v=20260901b"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      UI.initShell();
+      var pname = sessionStorage.getItem('pd_project_name') || sessionStorage.getItem('pd_project') || '';
+      UI.renderNav(document.getElementById('side-nav'), 'project', {
+        active: 'minutes-of-meeting', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
+      });
+      MinutesOfMeeting.init(user, profile);
+    });
+  </script>
+</body>
+</html>

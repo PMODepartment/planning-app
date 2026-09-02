@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260830e" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901d" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -456,12 +456,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260828b"></script>
-<script src="../../assets/js/auth.js?v=20260814a"></script>
-<script src="../../assets/js/db.js?v=20260827c"></script>
+<script src="../../assets/js/config.js?v=20260901c"></script>
+<script src="../../assets/js/auth.js?v=20260901b"></script>
+<script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260830e"></script>
-<script src="../../assets/js/icons.js?v=20260830c"></script>
+<script src="../../assets/js/ui.js?v=20260902a"></script>
+<script src="../../assets/js/icons.js?v=20260901b"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -618,7 +618,11 @@
     var host = document.getElementById('po-bars');
     if (!arr.length) { host.innerHTML = '<div class="po-empty">No budget figures captured yet. Add Original Budget / Estimated Cost on projects (Projects selector).</div>'; return; }
     var max = Math.max.apply(null, arr.map(function (g) { return Math.max(g.orig, g.est); })) || 1;
-    var rowH = 34, padL = 4, W = 560, barW = 360, labelW = 150, valX = padL + labelW + barW + 8;
+    // W leaves room past valX for the widest Fmt.moneyShort() output ("₱999.99M"/"₱999.99B",
+    // ~50 viewBox units at font-size 10) — too little margin here lets the SVG's own
+    // overflow:hidden silently clip the value label on months/billions with more digits
+    // (e.g. "₱910.00M" clipped while the shorter "₱1.82B" on the row above did not).
+    var rowH = 34, padL = 4, W = 580, barW = 360, labelW = 150, valX = padL + labelW + barW + 8;
     var H = arr.length * rowH + 10, out = '';
     arr.forEach(function (g, i) {
       var y = i * rowH + 6, bo = barW * g.orig / max, be = barW * g.est / max;

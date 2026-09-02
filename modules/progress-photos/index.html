@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260830e" />
-  <link rel="stylesheet" href="module.css?v=20260830f" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901d" />
+  <link rel="stylesheet" href="module.css?v=20260901a" />
 </head>
 <body>
   <div class="pd-app">
@@ -29,33 +29,38 @@
     </aside>
     <div class="pd-content">
       <div class="pd-topbar">
-        <h1 class="pp-title" style="margin:0;">
-          <span class="pp-title-ico" data-ico="camera" data-ico-size="20"></span>
-          <span class="pp-title-txt" id="pp-screen-title">Gallery</span>
-        </h1>
+        <!-- The standalone "Progress Photos" <h1> is gone (owner feedback):
+             it duplicated the module's own name in the secondary top bar
+             (.pd-modulebar — see initModuleTopbar in ui.js) for no reason,
+             since the tab strip right below it already names the module as
+             its first tab. -->
         <div class="pp-projctx">
           <select class="pd-select pp-project" id="pp-project" title="Project"></select>
         </div>
 
-        <!-- Top-level screens. Gallery, Presentations, Plans (Batch C,
-             2026-08-29: Rounds removed per owner feedback; 360°/3D folded
-             into Gallery as media types rather than separate tabs — their
-             screens/code stay in the file, just no longer reachable as a
-             top-level tab, since a capture now lives in the unified feed). -->
+        <!-- Top-level screens: Progress Photos (formerly "Gallery"),
+             Presentations, Floor Plans (formerly "Plans") — internal
+             data-screen values (photos/ppr/bim) are unchanged, only the
+             user-facing labels renamed. Rounds removed per owner feedback
+             (Batch C, 2026-08-29); 360°/3D folded into Progress Photos as
+             media types rather than separate tabs — their screens/code stay
+             in the file, just no longer reachable as a top-level tab, since
+             a capture now lives in the unified feed. -->
         <div class="pp-tabs" role="tablist">
-          <button class="pp-tab active" data-screen="photos">Gallery</button>
+          <button class="pp-tab active" data-screen="photos">Progress Photos</button>
           <button class="pp-tab" data-screen="ppr">Presentations</button>
-          <button class="pp-tab" data-screen="bim">Plans</button>
+          <button class="pp-tab" data-screen="bim">Floor Plans</button>
         </div>
-        <!-- Sixth round item 7: relocated OUT of the action-tool cluster
-             (where it sat wedged against the always-visible offline-sync
-             pill, reading as one more competing button rather than
-             navigation) and placed here, right beside the screen tabs — it
-             IS screen-level navigation ("you're inside one presentation,
-             this steps back up to the list"), so it belongs next to the
-             other screen-switching control, not among the action buttons. -->
+        <!-- Templates-screen-only "back to list" now (ppr.js/syncTools).
+             The slide/presentation editor carries its OWN back button
+             instead, rendered first inside .ppr-slidehead (owner feedback:
+             Back Button > Presentation Details > action buttons) — a
+             topbar breadcrumb sitting well above that content read as
+             detached from what it was navigating away from. -->
+        <!-- Item 9 (current round): label shortened to "Back" (the arrow
+             already carried the direction). -->
         <button class="pp-crumbback" id="ppr-back" title="Back to the presentation list" style="display:none;">
-          <span data-ico="arrowLeft" data-ico-size="14"></span> Presentations list</button>
+          <span data-ico="arrowLeft" data-ico-size="14"></span> Back</button>
 
         <!-- Tool cluster beside the profile: one labelled primary action per
              screen, everything else icon-only (Drawing Register / Cash Flow). -->
@@ -197,12 +202,34 @@
                 <option value="location">Location</option>
               </select>
             </label>
+            <!-- Tile size — Gallery/Tile view only (module.js toggles this
+                 field's display); the icons either side just label the
+                 slider's ends, not their own buttons. Default is 1/3 (see
+                 gallerySizeScale in module.js). -->
+            <label class="pp-tilesizefield" title="Tile size">
+              <span data-ico="gridView" data-ico-size="12"></span>
+              <input type="range" id="pp-tilesize" min="0.2" max="2" step="0.05" value="0.3333" />
+              <span data-ico="gridView" data-ico-size="18"></span>
+            </label>
             <!-- Fifth round item 7: markup now shows by default on every
                  tile that has any; this is the one shared switch to hide it
                  (the lightbox's own markup-toggle button drives and reflects
                  the SAME preference, see openLightbox/markupGlobalVisible). -->
             <button class="pd-btn pp-mkvistoggle" id="pp-mkvistoggle" title="Show/hide markup on photo tiles">
               <span data-ico="eye" data-ico-size="15"></span> Markup</button>
+            <!-- Slow-loading fix for OLDER photos: a real thumbnail file is
+                 generated + stored (thumb_url) for every NEW upload since
+                 the 2026-08-30 round (see thumbUrlOf()/uploadThumbnailFor()
+                 in module.js) — but that never reached photos captured
+                 BEFORE that shipped, which still load full-resolution on
+                 every request. This one-click backfill (planner+ only,
+                 hidden when nothing needs it) generates + stores real,
+                 small preview files for those older rows too, so the app
+                 fetches a small file for them from now on instead of
+                 recomputing/re-downloading the full original every time. -->
+            <button class="pd-btn" id="pp-genthumbs" title="" style="display:none;">
+              <span data-ico="refresh" data-ico-size="14"></span> Generate thumbnails</button>
+            <span class="pp-genthumbs-prog" id="pp-genthumbs-prog" style="display:none;"></span>
             <!-- Item 3: Tile (Gallery) is the DEFAULT view (module.js's own
                  `view = 'gallery'`), so its button leads the group — List
                  moves to second place. -->
@@ -219,13 +246,15 @@
                 <span data-ico="layers" data-ico-size="15"></span></button>
             </div>
           </div>
+          <!-- 360° panoramas + 3D scans render INSIDE #pp-view now (items
+               6/8, current round) -- merged into the same date/trade/location
+               grouping as ordinary photos via mergedRows(), not a separate
+               strip below the grid. pano.js/recon.js's own capture flows are
+               unchanged and reached via the "+ Capture 360°"/"+ Request 3D
+               scan" buttons in the topbar above; opening/editing one from the
+               grid dispatches to PANO.open/RECON.openById or this module's
+               own openMediaKindEditor, per tile kind. -->
           <div id="pp-view"></div>
-          <!-- 360° panoramas + 3D scans, folded into the Gallery screen
-               (2026-08-29 feedback) rather than kept as separate tabs. This
-               strip lists what's already captured; pano.js/recon.js's own
-               capture flows are unchanged and reached via the "+ Capture
-               360°"/"+ Request 3D scan" buttons in the topbar above. -->
-          <div id="pp-media-strip"></div>
         </div>
 
         <!-- ================= PPR Presentations ================= -->
@@ -272,6 +301,14 @@
   <div class="pp-lightbox" id="pp-lightbox" hidden>
     <div class="pp-lb-tools" id="pp-lb-tools">
       <button class="pp-lb-tool" id="pp-lb-download" title="Download"><span data-ico="download" data-ico-size="16"></span></button>
+      <!-- Item 4 (11-item round): the key-plan button moved OUT of the Gallery
+           tile (cardHTML no longer renders .pp-pinbtn) and lives HERE instead —
+           "no need for the key plan button" in gallery/list, "but when opening
+           the photo, the key plan button should be there." Shown/hidden per
+           photo in paintLightbox() (only when BIM.pinInfoFor resolves a pin for
+           the item currently open); toggles the corner overlay in
+           .pp-lb-imgwrap via paintKeyPlanOverlay(). -->
+      <button class="pp-lb-tool" id="pp-lb-keyplan" title="Show/hide key plan" style="display:none"><span data-ico="mapPin" data-ico-size="16"></span></button>
       <button class="pp-lb-tool" id="pp-lb-markuptoggle" title="Show/hide markup"><span data-ico="eye" data-ico-size="16"></span></button>
       <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-markupedit" title="Add or edit markup on this photo — pencil, shapes, icons, text">
         <span data-ico="palette" data-ico-size="16"></span><span>Markup</span></button>
@@ -287,6 +324,9 @@
       <img class="pp-lb-img" id="pp-lb-img" alt="" />
       <video class="pp-lb-img" id="pp-lb-video" controls playsinline hidden></video>
       <canvas class="pp-lb-markup" id="pp-lb-markup-canvas"></canvas>
+      <!-- Item 4: the key-plan corner overlay, top-right, sized to 1/8 of the
+           photo by paintKeyPlanOverlay() -->
+      <img class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" alt="Key plan" hidden />
     </div>
     <button class="pp-lb-btn pp-lb-next" id="pp-lb-next" title="Next (→)">›</button>
     <div class="pp-lb-cap" id="pp-lb-cap"></div>
@@ -308,20 +348,20 @@
        r128 PLYLoader (classic global THREE.PLYLoader), same pinned Three.js
        revision as the 360° viewer above — one version of THREE for the page. -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
-  <script src="../../assets/js/config.js?v=20260828b"></script>
-  <script src="../../assets/js/auth.js?v=20260814a"></script>
-  <script src="../../assets/js/db.js?v=20260827c"></script>
+  <script src="../../assets/js/config.js?v=20260901c"></script>
+  <script src="../../assets/js/auth.js?v=20260901b"></script>
+  <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260830e"></script>
-  <script src="../../assets/js/icons.js?v=20260830c"></script>
+  <script src="../../assets/js/ui.js?v=20260902a"></script>
+  <script src="../../assets/js/icons.js?v=20260901b"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260830f"></script>
-  <script src="ppr.js?v=20260830f"></script>
-  <script src="pano.js?v=20260830b"></script>
+  <script src="module.js?v=20260901a"></script>
+  <script src="ppr.js?v=20260901a"></script>
+  <script src="pano.js?v=20260901d"></script>
   <script src="recon.js?v=20260830b"></script>
-  <script src="bim.js?v=20260830e"></script>
+  <script src="bim.js?v=20260901c"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
@@ -357,7 +397,14 @@
       if (document.getElementById('pp-lb-next')) document.getElementById('pp-lb-next').onclick  = function () { ProgressPhotos._stepLightbox(1); };
 
       // Top-level screen switch (Photos / PPRs) — each screen owns its own tools.
-      var PHOTO_TOOLS = ['pp-add', 'pp-sep-photos', 'pp-refresh', 'pp-topsearch-wrap', 'pp-topfilttoggle'];
+      // ⚠️ 'pp-addmenu-wrap' (not just 'pp-add', the button inside it) — the
+      // "+ Add media" DROPDOWN (#pp-addmenu) is an absolutely-positioned
+      // SIBLING of the button, not a child, so hiding only the button left
+      // an already-open dropdown floating on top of every other screen with
+      // no visible trigger (see ProgressPhotos._leavePhotosScreen, which
+      // also force-closes it). Hiding the whole wrap hides both regardless
+      // of the dropdown's own open/closed state.
+      var PHOTO_TOOLS = ['pp-add', 'pp-addmenu-wrap', 'pp-sep-photos', 'pp-refresh', 'pp-topsearch-wrap', 'pp-topfilttoggle'];
       var curScreen = 'photos', histScreen = null;
       function show(ids, on) {
         ids.forEach(function (id) {
@@ -381,8 +428,10 @@
         document.getElementById('pp-screen-photos').hidden = !isPhotos;
         document.getElementById('pp-screen-ppr').hidden = !isPpr;
         document.getElementById('pp-screen-bim').hidden = !isBim;
-        document.getElementById('pp-screen-title').textContent =
-          isPpr ? 'Presentations' : isBim ? 'Plans' : 'Gallery';
+        // There is no module title element any more (removed per owner
+        // feedback — it duplicated the module's own name, which the first
+        // tab now carries directly: "Progress Photos"). The .pp-tab active
+        // state is the only place a screen's name is ever shown.
         // ⚠️ Every one of these four calls is now isolated. Before, a throw
         // in ANY of them (e.g. PPR._syncTools reading `screen` before PPR.init
         // ever ran, because safeInit() above swallowed an earlier failure)

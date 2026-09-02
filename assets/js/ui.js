@@ -30,6 +30,35 @@
     if (!mount || !profile) return;
     var label = profile.name || profile.email || 'U';
     var initials = label.trim().split(/\s+/).map(function (n) { return n[0]; }).join('').slice(0, 2).toUpperCase();
+
+    // ⚠️ THE ACCOUNT MENU CARRIES THE SYSTEM DESTINATIONS, and it has to, because
+    // it is the ONLY chrome that renders on every page. renderNav's 'project'
+    // branch (dashboard.html, modules.html and every module page — i.e. where a
+    // planner spends the whole day) deliberately shows only Dashboard + modules
+    // since 2026-08-31, and home.html has no sidebar at all. That left Projects
+    // and Admin reachable ONLY via the project dropdown's Portfolio row →
+    // portfolio-overview → its sidebar, which reads as "switch project", not
+    // "leave the project" — so in practice "+ Add project" and user management
+    // became unreachable. Putting them here fixes all 20 pages from one place
+    // and does NOT reinstate the Portfolio nav section the owner removed:
+    // these are account/system destinations, not portfolio navigation.
+    //
+    // ⚠️ Admin is gated on `profile.role` HERE rather than on a flag passed by
+    // the caller. 20 call sites would have to pass it, several are in modules
+    // owned by other developers, and a half-applied gate is a menu that offers
+    // Admin to a viewer on some pages and hides it from an admin on others.
+    // admin.html is `requireAdmin`-gated and the DB enforces it regardless, so
+    // this is an affordance, never the security boundary.
+    var base = appBase();
+    var isAdmin = ['admin', 'super_admin'].indexOf(profile.role) !== -1;
+    function mIco(n) { return window.Icons ? Icons.svg(n, 16) : ''; }
+    var links =
+      '<a class="pd-usermenu-link" href="' + base + 'projects.html">' + mIco('grid') + 'Projects</a>' +
+      '<a class="pd-usermenu-link" href="' + base + 'my-work.html">' + mIco('clipboard') + 'My Work</a>' +
+      (isAdmin
+        ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('settings') + 'Admin</a>'
+        : '');
+
     mount.innerHTML =
       '<div class="pd-user">' +
         '<button class="pd-avatar" id="pd-avatar-btn" type="button" title="' + esc(label) + '" aria-label="Account menu">' + esc(initials) + '</button>' +
@@ -38,6 +67,7 @@
             '<div class="pd-usermenu-name">' + esc(label) + '</div>' +
             '<div class="pd-usermenu-role">' + esc((profile.role || '').replace(/_/g, ' ')) + '</div>' +
           '</div>' +
+          '<div class="pd-usermenu-links">' + links + '</div>' +
           '<button class="pd-usermenu-signout" id="pd-signout" type="button">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
             '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>' +
@@ -124,19 +154,29 @@
   function renderNavListInto(container, projects, groupHeads, opts) {
     opts = opts || {};
     var search = '';
-    function paint() {
-      var q = search.trim();
-      container.innerHTML = '<div class="pd-nt-search"><input type="text" class="pd-nt-q" placeholder="Search all projects…" value="' + esc(q) + '"></div>' +
-        navListBody(projects, groupHeads, { search: q, portfolioActive: opts.portfolioActive, isSelected: opts.isSelected });
-      var qi = container.querySelector('.pd-nt-q');
-      if (qi) qi.oninput = function () {
-        var pos = qi.selectionStart; search = qi.value; paint();
-        var q2 = container.querySelector('.pd-nt-q');
-        if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} }
-      };
-      var pf = container.querySelector('[data-nt-portfolio]');
+    // ⚠️⚠️ YOU COULD NOT TYPE A SPACE IN THIS BOX, and the cause was one .trim().
+    // Reported 2026-09-02: *"i cannot add / type space in the search bar of the projects."*
+    // Every keystroke used to rebuild the WHOLE container — search input included — and it
+    // re-rendered that input with the TRIMMED query as its value. A space is only ever typed at the
+    // END of what you have typed so far, so it was trailing whitespace at the instant it was
+    // written, and the repaint deleted it before the next character arrived. "Test Project" could
+    // never be typed; "TestProject" was all the box would hold. It looked like a blocked keystroke
+    // and it was actually a value being rewritten underneath the caret.
+    // TWO fixes, and the second is what makes the first stay fixed:
+    //   1) the input keeps the RAW value — trimming is for the FILTER, never for the field;
+    //   2) typing no longer re-renders the input at all. The search box is painted once and only
+    //      the list body below it repaints, so there is no value to restore, no caret to put back,
+    //      and no way for a repaint to edit what someone is typing. (The old code had to save and
+    //      restore selectionStart precisely because it was destroying the live field.)
+    function paintBody() {
+      var host = container.querySelector('.pd-nt-body');
+      if (!host) return;
+      host.innerHTML = navListBody(projects, groupHeads, {
+        search: search, portfolioActive: opts.portfolioActive, isSelected: opts.isSelected
+      });
+      var pf = host.querySelector('[data-nt-portfolio]');
       if (pf) pf.onclick = function (e) { e.stopPropagation(); if (opts.onPortfolio) opts.onPortfolio(); };
-      container.querySelectorAll('[data-nt-proj]').forEach(function (r) {
+      host.querySelectorAll('[data-nt-proj]').forEach(function (r) {
         r.onclick = function (e) {
           e.stopPropagation();
           var id = r.dataset.ntProj;
@@ -144,7 +184,20 @@
           if (opts.onProject) opts.onProject(p);
         };
       });
-      if (window.Icons) Icons.hydrate(container);
+      if (window.Icons) Icons.hydrate(host);
+    }
+    function paint() {
+      container.innerHTML = '<div class="pd-nt-search"><input type="text" class="pd-nt-q" placeholder="Search all projects…"></div>' +
+        '<div class="pd-nt-body"></div>';
+      var qi = container.querySelector('.pd-nt-q');
+      if (qi) {
+        // ⚠️ Set as a PROPERTY, not as a value= attribute in the markup above: a query holding a
+        // quote would otherwise have to be escaped into the HTML, and that escaping is the other
+        // half of how a search box ends up editing what the user typed.
+        qi.value = search;
+        qi.oninput = function () { search = qi.value; paintBody(); };
+      }
+      paintBody();
     }
     paint();
     return {
@@ -264,12 +317,11 @@
     function cls(key) { return active === key ? ' class="active"' : ''; }
     var html;
     if (mode === 'portfolio') {
-      // Home (the Portfolio + Group-Head + Projects landing tree, item 1) >
       // Portfolio Dashboard > Personal Dashboard > Projects — the default
       // landing is the dashboard, not the plain project list, so it leads.
+      // (No "Home" link here — home.html is the landing/picker screen itself,
+      // not a destination to navigate back to from inside the app.)
       html = '<div class="pd-navsec">Portfolio</div>' +
-        '<a href="' + base + 'home.html"' + cls('home') + ' title="Home">' +
-          '<span class="pd-navico" data-ico="compass"></span><span class="pd-navtxt">Home</span></a>' +
         '<a href="' + base + 'modules/portfolio-overview/index.html"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
         '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
@@ -283,18 +335,18 @@
           : '');
     } else {
       var mods = (ctx.modules || []).filter(function (m) { return m.enabled; });
-      // A way back to Portfolio, always available — the shared project
-      // dropdown (UI.enhanceProjectSelect) also offers a Portfolio row now,
-      // but this stays as a second, always-visible path out of a project.
-      html = '<div class="pd-navsec">Portfolio</div>' +
-        '<a href="' + base + 'home.html" title="Home">' +
-          '<span class="pd-navico" data-ico="compass"></span><span class="pd-navtxt">Home</span></a>' +
-        '<a href="' + base + 'modules/portfolio-overview/index.html" title="Portfolio Dashboard">' +
-          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
-        '<div class="pd-navsec">Project</div>' +
+      // No "Portfolio" section here (owner's call, 2026-08-31) — the shared
+      // project dropdown (UI.enhanceProjectSelect) already offers a Portfolio
+      // row, so a project's own sidebar stays scoped to that project.
+      //
+      // ⚠️ "Meetings" is no longer a hardcoded nav entry deep-linking into
+      // issues-lessons — Minutes of Meeting split out into its own real
+      // module (`minutes-of-meeting`), so it now flows through mods.map()
+      // below like every other module; config.js's MODULES order is what
+      // puts it first, right after Dashboard.
+      html = '<div class="pd-navsec">Project</div>' +
         '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
-          '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard' +
-          (ctx.pname ? '<small class="pd-nav-sub">' + esc(ctx.pname) + '</small>' : '') + '</span></a>' +
+          '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard</span></a>' +
         mods.map(function (m) {
           var href = window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path;
           return '<a href="' + href + '"' + cls(m.key) + ' title="' + esc(m.name) + '">' +
@@ -509,6 +561,42 @@
     if (btns.length < 2) return;
     tabs.__pdTabsDrop = true;
     tabs.classList.add('pd-tabsdrop-src');
+
+    // ⚠️ The dropdown trigger built below already names the current screen (see
+    // sync()'s `trig.innerHTML`), so a module's own static/dynamic title TEXT
+    // sitting beside it is a duplicate label — "Dashboard" next to a trigger
+    // also reading "Dashboard ▾". Only a CLASS is added here; dashboard.css
+    // decides WHEN to actually hide it (`.pd-title-hasdrop`, min-width:701px) —
+    // never unconditionally in JS. Two reasons:
+    // 1. By the time this runs, initModuleTopbar() (bound to DOMContentLoaded,
+    //    so it always runs first) has already moved this tab strip OUT of
+    //    `.pd-topbar` and into the sibling `.pd-modulebar` bar alongside the
+    //    module's own <h1> — `tabs.closest('.pd-topbar')` finds nothing at this
+    //    point; `.closest('.pd-modulebar')` is the shared ancestor now.
+    // 2. Below 700px `.pd-modulebar > h1` is forced onto its OWN full-width row
+    //    (dashboard.css's ≤700px stacking rule), with the dropdown trigger on
+    //    the row after it — hiding the title text there leaves a bare icon on
+    //    one line and the trigger's label on the next, exactly the "icon
+    //    alone / label on the next line" defect this app's own history
+    //    (issues-lessons/module.css, "REMOVED 2026-08-31") already fixed once
+    //    and says not to reintroduce. A width-gated CSS rule can't recreate it;
+    //    an unconditional JS hide can and did.
+    var modBar = tabs.closest('.pd-modulebar');
+    var titleTxt = modBar && modBar.querySelector('[class$="-title-txt"]');
+    if (titleTxt) {
+      titleTxt.classList.add('pd-title-hasdrop');
+      // Item 1 (2026-09-01, mobile round): below 700px, hiding just the TEXT
+      // (note above) still reserves a whole full-width row for the now-empty-
+      // but-for-its-icon <h1> — a bare icon sitting alone on its own line,
+      // which is a materially different shape from the "icon alone / label on
+      // the next line" defect that comment warns about (there the icon had a
+      // row and the trigger's label sat on the NEXT row; the reported bug here
+      // was the FULL duplicate text, not a bare icon). Marking the <h1> itself
+      // lets dashboard.css remove that row entirely below 700px, so there is
+      // no separate icon row left to be "alone" — see `.pd-h1-hasdrop`.
+      var h1 = titleTxt.closest('h1');
+      if (h1) h1.classList.add('pd-h1-hasdrop');
+    }
 
     var wrap = document.createElement('div');
     wrap.className = 'pd-tabsdrop';

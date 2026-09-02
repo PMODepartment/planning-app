@@ -84,6 +84,1569 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (n) — The colour scope rides in the row cache, so the cached paint starts right
+
+Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint
+self-correct after 3.3s; this removes the 3.3s. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- The cache entry gains **`catScope`** — the answer the previous live load reached — seeded into
+  `_catExecCache` **before** `rebuild()`/`renderAll()`, both of which read it.
+- ⚠️ **Only written from a load that had the tree** (`WBS_NODES` non-empty), else `null`. Caching an
+  answer computed before the tree arrived would persist the very wrong answer this exists to avoid,
+  and it would be wrong *instantly* instead of for three seconds.
+- ⚠️ **A hint, not a source of truth**: the live pass still recomputes and repaints on disagreement, so
+  a stale hint costs one repaint and never a wrong final state. `null` behaves exactly like (m).
+- `MODULE_V` → `20260902n`.
+
+### 2026-09-02 (m) — The 92-entry key came back: (k) was verified on the one load that could not show it
+
+Owner on the cleared SLN101: *"Legend still shows activities that are not within the execution
+phase."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️⚠️ **`load()` paints from the localStorage cache before `wbs_nodes` are fetched.** `phaseOf()`
+  resolves through `WBS_NODES`, so at first paint on a cached load **no row resolves any phase**, the
+  fallback colours everything, and `catList()` memoises the 92-entry list.
+- ⚠️ `_clearPhaseMemo()` dropped `_catExecCache` but **not `_catCache`**, whose key
+  (`pid|field|rows.length|theme|keySet`) does not change when the tree arrives — so the stale list was
+  re-served for the whole session. ⚠️ And invalidating a cache **repaints nothing**; `load()` never
+  re-rendered the legend afterwards.
+- Fixed both: the memo drops `_catCache`, and `load()` compares the scope answer either side of
+  `loadResourcesAssignments()`, repainting only when it flips.
+- ⚠️ **The lesson is about the test.** (k) was verified live and reported 40 → 0 — on a **cold** load,
+  the one path where `WBS_NODES` are already in hand when the legend first renders, so the bug cannot
+  appear. A returning browser takes the **cached** path. **A module that paints twice must be verified
+  on both paints.**
+- **Verified on the cached paint**, sampled from first paint: **40 chips at 264ms → 0 at 3,590ms**, ending
+  Live with the empty-key message. ⚠️ **The cached paint is still wrong for ~3.3s** — before the tree
+  arrives the fallback cannot tell an unphased project from a not-yet-loaded one. It self-corrects.
+  ⚠️ Defaulting the other way would blank the colours for those seconds on every *normal* project; the
+  real fix is to persist the scope answer beside the cached rows, not done here. `MODULE_V` → `20260902m`.
+
+### 2026-09-02 (k) — An emptied schedule showed a 92-entry colour key
+
+Owner, on the just-cleared SLN101: *"Why are there still activities and shown in the legend"*. Two
+things. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **The 92 activities are the Design Development and Procurement mirrors**, all under Planning Phase,
+  re-projected by the next `load()` from the Engineering and Procurement apps. ⚠️ Derived data —
+  deleting them only makes them return — so they are now **named in the clear's dialog and toast**
+  instead of appearing unexplained.
+- ⚠️⚠️ **The legend was (h)'s fallback misfiring.** `catScopeIsExec()` asked *"does this project have
+  execution work?"* and coloured everything when the answer was no — but a **cleared** project is not
+  an **unphased** one. Measured live: all 92 resolve to `planning`, none to `construction`, so the
+  fallback fired and keyed 92 drawing-register and procurement names on an empty schedule. The test
+  now asks **"are phases in use at all"**; a genuinely unphased project still falls back.
+- **Verified live on the deployed build: category chips 40 → 0** against the cleared SLN101. ⚠️ Two
+  follow-ons that only appeared once the key was correctly empty: the empty-state message still said
+  *"Nothing expanded"* (wrong reason — there is simply no execution work), and the plain Activity chip
+  was emitted unconditionally rather than gated on a plain bar being on screen, which is not what (h)
+  claimed. Both fixed. `MODULE_V` → `20260902l`.
+
+### 2026-09-02 (j) — The clear measured live: 28,863 rows in 16 seconds, and one thing it never deleted
+
+Owner ran the RPC migration and authorised a destructive test on **SLN101 (4PH Strevi Bacoor)**,
+driven through the deployed site in their own signed-in Chrome. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **28,863 activities + 8,645 WBS nodes cleared in ~16 seconds**, in **2 RPC calls** where the old
+  path needed 174 requests and 5-10 minutes. Measured round trips: RPC ~110ms vs a 200-id chunk
+  ~210ms. ⚠️ The counter reported **exactly** the 28,863 measured beforehand, and the batch boundary
+  landed at 20,000 — `p_limit` behaving as designed. All 19 locked skeleton nodes survived.
+- ⚠️ The clear was deliberately started **while the heal chain was mid-"Attaching activities to the
+  WBS tree…"** — the precise race that used to leave a project un-clearable. It cleared cleanly, and
+  the new repair-chip states were confirmed live.
+- ⚠️⚠️ **`resource_assignments` went 167 → 167 — Clear schedule has never deleted them**, though both
+  import-REPLACE paths always have. Not debris: assignments join activities **by activity code**, so
+  re-importing the same P6 file would have silently re-attached all 167 to different work — defeating
+  the exact purpose the button is pressed for. Now cleared with the schedule, by code for a package
+  scope, and named in the confirmation dialog. ⚠️ That fix shipped after the run, so it is not itself
+  live-verified.
+- ⚠️ Correction carried from (i): SLN101 *is* 4PH Strevi Bacoor and held 28,863 rows, so the owner's
+  "29,605 removed" screenshot was never evidence of a runaway counter. `MODULE_V` → `20260902j`.
+
+### 2026-09-02 (i) — The delete loop belongs in the database; Progress / Stacking / Outline are buttons again
+
+Owner: the clear ran at *"100-200 activities per 2 seconds"*, stopped, and *"when I tried deleting
+schedule again it bugged"*; the Engineering/Procurement mirrors were suspected of corrupting imports;
+and the three folded-away view controls were wanted back on the toolbar. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠️⚠️ **That 10ms a row was never database time.** `project_schedule` has no trigger and nothing
+  references it, and it is indexed on `(project_id, id)` — the cost is the HTTP round trip. ⚠️ And the
+  chunk cannot just be made bigger: 200 uuids is already ~8KB of URL, near PostgREST's `in.(...)`
+  limit, so 20,000 rows is ~100 sequential requests however the client is written. **The loop moved
+  into the database** — `migrations/2026-09-02-clear-project-rpc.sql`. ⚠️ **Until that migration is
+  run the delete is exactly as slow as before**; the client keeps the old path as a fallback.
+- ⚠️ **The counter counted ids *sent*, not rows gone**, so a delete affecting nothing would re-read
+  the same page for ever. It now fails when the same first id comes back. ⚠️ **I first justified this
+  with the owner's "29,605 removed" screenshot and that was wrong** — checked live afterwards, SLN101
+  *is* 4PH Strevi Bacoor and holds **28,863 activities**, so 29,605 is a plausible real figure, not a
+  runaway. The live check does show the clear **never completed**: every row is still there.
+- ⚠️⚠️ **The clear was fighting the previous load.** `load()` runs four self-heal passes plus the
+  Design Development and Procurement mirrors — minutes of writes that all exist to **create** rows.
+  Nothing bumped the load generation when a destructive operation began, so the chain never learned
+  the schedule beneath it had been deleted: the clear deleted, the chain re-created, the project never
+  emptied. That is both "the delete stopped" and the suspected Engineering/Procurement corruption, and
+  it is now fenced with a nesting-safe mutation counter around both importers and the clear.
+- **Progress, Stacking and Outline are top-level again.** ⚠️ They route through `_setView`, so the old
+  bug where Progress and Stacking could both be on at once does not come back, and the two stay listed
+  in the View menu so it can still return you from the view it names. ⚠️ Costs ~280px: a 1440 laptop
+  is back to two toolbar lines, ~1920 stays on one.
+- **Verified:** parses, 5,116 → 5,132 functions, none lost. ⚠️ **Not verified signed in, and almost
+  nothing here can be** — the RPC, the retry, the guard and the race are server-and-timing facts.
+  ⚠️ **The importer was inspected, not exercised.** `MODULE_V` → `20260902i`.
+
+### 2026-09-02 (h) — Clear timed out, the network ignored every filter, colouring is the Execution Phase's
+
+Owner, five reports on Project Schedule after re-importing Avesta and 4PH Strevi. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠⚠ **"Canceling statement due to statement timeout" on Clear schedule.** `.delete().eq('project_id',
+  pid)` is ONE statement over every row and Postgres kills it — so it fails hardest on the projects
+  that most need clearing (4PH Strevi: 16,485 activities, 12,465 WBS nodes). ⚠️ **The package-scoped
+  paths always chunked at 200; only the "everything" paths were unbounded** — which is why *clear one
+  package* worked, *clear the schedule* did not, and a **REPLACE import** (which clears everything
+  first) failed the same way. Six sites, one bug, all now chunked. ⚠️ A timeout inside the WBS-tree
+  clear leaves no activities and a full tree, which re-projects on the next load and reads as "clear
+  did nothing" — **the most likely cause of the bugged re-imports.**
+- ⚠️ **"WBS isn't showing properly initially."** `load()` paints immediately, then runs four self-heal
+  passes over every row — minutes on a fresh import, during which the tree really is incomplete. The
+  freshness chip said **"Live" the whole time**. It now names the running pass and only says Live at
+  the end of the chain.
+- ⚠⚠ **The Activity Network ignored every filter — including the ones its own error message named.**
+  It read off `rows`, so Filter, Search and "Execution Phase only" changed the count by zero while
+  the over-300 message said to use them. Now scoped like the grid, with **per-level location pickers**
+  (Tower / Level / Zone), and the cap raised 300 → 1,200. It was never the threshold.
+- **Colouring is the Execution Phase's** — one switch in `catEntry()`, with a fallback that keeps
+  un-phased projects working. ⚠️ A schedule can now show BOTH bar treatments, so the plain Activity
+  chip is emitted (and named) when a plain bar is actually on screen.
+- **The "No level" band shows the WBS branch it came from.** ⚠️ Diagnostic, not a guess: no importer
+  rule changed, because whether a gabion belongs on a storey is the owner's modelling decision.
+- **Verified:** parses, 5,091 → 5,116 functions, none lost. ⚠️ **Not verified signed in, and the three
+  server-side fixes are precisely the ones that need it.** `MODULE_V` → `20260902h`.
+
+### 2026-09-02 (g) — You could not type a space in the project search; Equipment Loading's backdrop and workspace
+Owner: *"i cannot add / type space in the search bar of the projects."* and, on Equipment Loading,
+*"add an option where you can resize the image uploaded, and also adjust the transparency of the image.
+Furthermore, enlargen the workspace."*
+- ⚠️ **The space bug was one `.trim()`.** `UI.renderNavListInto` (the shared project tree behind the header
+  switcher and the Projects page) rebuilt its whole container on every keystroke and re-rendered the search
+  input **with the trimmed query as its value**. A space is trailing whitespace at the instant it is typed, so
+  the repaint deleted it before the next character arrived — "Test Project" could never be typed. Fixed twice
+  over: the field keeps the RAW value (trimming is for the filter), and **typing no longer re-renders the
+  input at all** — only the list below it repaints, so no repaint can edit what someone is typing (and the
+  save/restore of `selectionStart` that existed only to paper over this is gone).
+- Equipment Loading → Site Plan: an **Image…** panel (fade 10–100 %, size 25–400 %, nudge, reset). The picture
+  moves; the traced towers do not — that is how a skewed scan gets lined up with towers already traced.
+  Stored in the plan row, not localStorage: where the backdrop sits is project data, not a browser preference.
+  Defaults reproduce the old full-bleed rect exactly, so existing plans open unchanged.
+- Workspace: the pane grows to `clamp(420px, 78vh, 1200px)`, **Wide** hides the side rail, and **Full screen**
+  fullscreens the rail *and* canvas together — a fullscreened canvas alone would strand the equipment chips
+  on the page underneath.
+- ⚠️ `ui.js` is a SHARED asset: its `?v=` is bumped in all 20 HTML files, or the search fix reaches nobody.
+- MODULE_V → `20260902f`.
+
+### 2026-09-02 (f) — A legend regression from yesterday's legend fix, and EPC → MCC finished
+
+Owner: *"Separate the Progress and Stacking buttons, extract them within the View button"*,
+*"Shorten the Activity legend chip"*, *"Finish the EPC → MCC rename."* Detail in
+`modules/project-schedule/CLAUDE.md` and both register `CLAUDE.md`s.
+
+- ⚠️⚠️ **THE LEGEND COMPLAINT WAS A REGRESSION, NOT A DESIGN CALL.** `.lg-lsmon { display:none }` is
+  (0,1,0); retargeting the layout rule to `.ps-actlegend .lg` (0,2,0) yesterday — itself a correct fix
+  for dead CSS — put a **higher-specificity `display:inline-flex` above it**, so the LSM-only
+  coloured-bar chip has been drawn in the **plain view too** ever since. Two chips both labelled
+  *Activity*, saying different things about the same mark. Measured: **8 chips shown where 7 exist**,
+  and the row wrapped to **two lines (88px vs 41px)**. Now scoped to `.ps-actlegend .lg-lsmon`, which
+  wins on source order while the `.ps-lsm` rule (1,2,0) still decides when the chip appears.
+- ⚠️ **The 482px measurement that opened this thread was taken in the wrong view.** The previous
+  harness never set `.ps-lsm`, so it measured a chip that should not have been on screen. Right number,
+  wrong conclusion — a harness that can only render one state cannot check a rule about two.
+- **The three facts a bar encodes moved to their own caption line rather than being cut.** The chip is
+  **72px** now (was 482, against 77 / 113 / 128 / 136), and the whole legend is **2px taller**, not
+  shorter-by-losing-something. ⚠️ The caption's sentence sits in ONE child span because `.lg-note` is a
+  flex container and **flex strips the whitespace between items** — the identical defect that shipped
+  as `Activity(solid`.
+- **Progress and Stacking are their own section of the View menu** (*Schedule layout* / *Separate
+  views*). The split is the one the state already makes: the first four are `layoutMode` arrangements
+  of the same grid + timeline, the other two replace the screen outright.
+- **EPC → MCC finished** — `epc-rcm.js`/`.css` → `mcc-rcm.js`/`.css`, `window.EPCRCM` → `window.MCCRCM`,
+  and the `EPC Control Masterlist` caption that was missed last pass. ⚠️ **Smaller than it was flagged
+  as:** the "40-odd CSS classes" are `.rcm-*` and never said EPC. ⚠️ **Every remaining "EPC" is
+  transcribed workbook content** — activity 16 really is named "EPC FUNCTIONAL MEETINGS" — and renaming
+  data would make the file disagree with the register it came from. Written into the engine's header.
+- **Verified:** register suite **163 pass / 0 fail**; the module parses with **5,090 → 5,091** functions
+  and none lost; the legend measured in both view states in a browser. ⚠️ **Not verified signed in.**
+- `MODULE_V` → `20260902f`; shared RCM files and both registers' `module.js`/`module.css` → `?v=20260902a`.
+
+### 2026-09-02 (e) — Vertical stacking: a DONE status on finished zones, with the day variance
+Owner: *"show a status of done for zones or areas or units that have been declared as completed. and then
+show the variance in terms of days to determine if it was completed in time or not."*
+- A finished zone prints a **`✓ DONE` pill** where an unfinished one prints its percentage. The pill *is*
+  the variance: coloured by it (early / on time / late / no baseline) and carrying the figure (`✓ DONE +62d`).
+- ⚠️ **"Done" is not `pct >= 100`.** That number is rounded (99.6 % already prints 100 %) and it follows the
+  basis — on *Planned* it would badge a zone complete because it was **due**. `_vsDone` reads the activities'
+  own `percent_complete`: done means no activity in the cell is left short.
+- ⚠️ **The variance is `_vsFinSlip`, not `_vsSlip`.** `_vsSlip` follows the Start/Finish toggle, so on *Start*
+  it would have put a start variance inside a completion badge. `null` (no baseline) reads as unknown, never
+  as on time.
+- Explained in the tooltip, the magnifier readout, the on-screen legend and the PDF key.
+- MODULE_V → `20260902e`.
+
+### 2026-09-02 (d) — Vertical stacking: readable in day mode, and the cards read as a set
+Owner: *"improve the visuals in this vertical stacking … if it is on day mode, please make it more visually
+appealing … choose better colors or colors of text … and also in terms of orientation of the windows."*
+- ⚠️ **Every stacking label was hard-coded `fill="#fff"` over a cell body drawn as a 16 % wash of the trade
+  colour** — white text on a near-white box on the light theme. The body is now always the saturated colour
+  and done-vs-remaining is a **brightness step on that one colour** (scrim + light veil hatch for remaining,
+  the clean colour out to the POC for done), so it carries a label at full contrast in either theme.
+- ⚠️ The three paint tokens are **CSS vars** (`--ps-vs-scrim/-veil/-edge`) so the themes can differ — and they
+  are **re-declared in the PDF export's fixed light palette**; change one without the other and the print goes flat.
+- ⚠️ **Ink is chosen per cell from the colour's luminance**, halo included: white is wrong on the palette's yellow.
+- Cards keep their content width (deliberate) but a row now shares a height and a top line, with a softer
+  radius, a two-stop shadow, a hover lift and a header washed in the card's own colour.
+- MODULE_V → `20260902d`.
+### 2026-09-02 (c) — Project Schedule: Outline + Saved layouts folded into the View menu
+
+Owner: *"Yes fold Outline and Layouts into View too."* Two more toolbar buttons become sections of
+`View ▾`. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️ **A folded-in menu can outgrow the viewport, and `.ps-menu` will not tell you.** It is
+  `position:absolute; overflow:hidden; max-height:none`. Measured with the real menu HTML: 804px of
+  content 209px down a 900px viewport, and `Reporting view` + `Reset layout` were **rendered, inside
+  the menu box, and un-hittable by `elementFromPoint`**. Third instance of this defect class in this
+  repo (column chooser, group menu). Fixed with the existing `anchorMenu()` pin-and-clamp — **any
+  `.ps-menu` that grows past ~20 rows needs it.**
+- ⚠️ **Sixth "brand red is not a text colour":** the Save-current-layout item came over as
+  `--pd-red` at 13px/600 — **4.12:1 light, 3.40:1 dark, dark fails AA.** Now `--pd-danger-text`
+  (5.84 / 6.14).
+- ⚠️ An attribute collision that would have been silent: saved layouts used `data-view`, which the
+  View menu already binds to the six view modes. Renamed `data-lyt`.
+- Row needs **1590px → 1381px**; one row now at a ~1486px viewport (was ~1720). **1440 is still two
+  lines, by 46px** — the last lever is a collapsing search box, not done.
+- `.gitignore` now has `**/_*_test.html`. The harness patterns were filename-specific despite their
+  own comment saying otherwise, and a new harness file slipped through — the same gap that put four
+  harness files into production on 2026-09-01.
+
+**42/42** executing the shipped section builders + binders, 33/33 and 40/40 regressions.
+⚠️ Not verified signed in. `MODULE_V` → `20260902c`.
+
+### 2026-09-02 (b) — Project Schedule: contract scope + timeline zoom folded from segments into menus
+
+Owner: *"Yes let's fold the scope and zoom into menus."* Both 3-button segments become labelled menu
+buttons in the `View: Split ▾` pattern. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️ **I over-stated the win when I offered it.** The two segments were ~400px of the row, but the
+  menu buttons that replace them cost 286px back: measured **1705px → 1590px, 115px saved**. One row now
+  needs a ~1720px viewport (was ~1815) — so the owner's ~1920 screen was one row before and after, and
+  1440 is still two. Reaching one row at 1440 needs ~280px more (Outline + Layouts into the View menu,
+  or a collapsing search box); flagged, not done.
+- The scope button lights only when a scope filter is actually ON — red for Main, CO amber for change
+  orders. The segment always showed a lit pill including on the default, which is how a control stops
+  being seen.
+- ⚠️ A latent bug caught while rewiring: `applyView` re-synced the old segment with
+  `querySelectorAll('#ps-zoom button')`, which under the new markup also matches the trigger button
+  (no `dataset.zoom`) and would have silently cleared the active mark on every saved-layout restore.
+
+**40/40** executing the shipped functions; 0 functions lost. ⚠️ Not verified signed in.
+`MODULE_V` → `20260902b`.
+
+### 2026-09-02 — Project Schedule: toolbar finished, switcher un-stretched, foldable legend, Reporting view becomes a screen
+
+Four owner items. Detail in `modules/project-schedule/CLAUDE.md`; the two that matter beyond this module:
+
+- ⚠️ **A shared-CSS rule, not a module one, was stretching the project switcher.**
+  `UI.initModuleTopbar()` splits every module topbar, and `dashboard.css` then gives `-projctx`
+  `flex:1 1 220px; max-width:420px` and its trigger `width:100%; **max-width:none**` — cancelling the
+  module's own 260px cap. Measured 420px with a 259px gap to the caret → 167px with a 6px gap. Any
+  module whose `-projctx` looks over-wide has the same cause; the override needs (0,5,0) specificity
+  to beat dashboard.css's (0,4,0).
+- ⚠️ **A toolbar that silently clipped its own controls.** `.ps-tb-row` was `nowrap` +
+  `overflow:visible`, and `body { overflow-x:clip }` (from the mobile pass) means overflow is not
+  scrollable — it is simply gone. Measured at 1280: the row needed 1660px of 1256px, so six controls
+  including the search box were unreachable with nothing to say so. Now wraps. **Worth checking any
+  other module that pairs a nowrap row with `overflow:visible`.**
+- Reporting view now hides the sidebar, topbar and module bar (163px of vertical chrome and 64px of
+  sidebar reclaimed), carries the project/group/data-date identity into the toolbar so a screenshot
+  stays trustworthy, and gates itself on the Schedule tab so it can never strand a planner on a view
+  whose toolbar — and therefore whose only way out — is hidden.
+- ⚠️ Fifth instance of "brand red is not a text colour at this size": the reporting chip measured
+  **3.74:1** and now uses `--pd-danger-text` (5.31 light / 7.47 dark).
+
+`MODULE_V` → `20260902a`. ⚠️ Not verified signed in.
+
+### 2026-09-01 (p) — Issues Dashboard mobile pass: the title-hide fix widened for phone width, plus nine module-local items
+
+Owner sent a phone screenshot — the same duplicate module `<h1>` / tabs-dropdown title entry (o)'s
+`tabsToDropdown` fix already addressed, still showing on a narrow screen — with 10 items covering
+the mobile KPI/chart layout, touch reordering, and the Lessons Learned detail view's field
+arrangement. Full detail in `modules/issues-lessons/CLAUDE.md` (2026-09-01 (h)); this entry covers
+the two **shared** files touched.
+
+**`assets/js/ui.js` (`tabsToDropdown`) + `assets/css/dashboard.css` — the title-hide widened to
+mobile, without reopening the bug it was built to avoid.** Entry (o)'s fix deliberately hid the
+duplicate title TEXT only `@media (min-width:701px)` — below 700px `.pd-modulebar > h1` is forced
+onto its own full-width row, and hiding just the text there would leave a bare icon alone on that
+row with the dropdown trigger's label on the row after it, the "icon alone / label on the next
+line" defect this repo had already fixed once. The screenshot showed the opposite shape — the FULL
+duplicate text on its own row, not a bare icon — so that caution didn't actually cover this case.
+⚠️ Fixed by marking the **`<h1>` element itself**, not just its text span
+(`pd-h1-hasdrop`, alongside the existing `pd-title-hasdrop`), and hiding the WHOLE element below
+700px. With no separate icon row left at all, there is nothing left to read as "alone" — the old
+defect can't recur through this door either, and desktop (≥701px) is untouched.
+
+**Verified:** `node --check` clean on both files; the module's own suite of structural checks
+(0 NUL bytes, CSS braces balanced, 0 duplicate DOM ids, 0 functions lost) all green — see the
+module's own CLAUDE.md entry for the full list. ⚠️ **Not verified signed-in.**
+
+`ui.js`/`dashboard.css?v=` → `20260901d` (app-wide — 20/28 referencing files respectively);
+`MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260901s`.
+
+### 2026-09-01 (o) — Issues Dashboard cleanup off a screenshot; the shared tabs-dropdown fix that almost reintroduced a fixed bug
+
+Owner sent a screenshot of the live Issues & Concerns Dashboard with the duplicate "Dashboard" /
+"Dashboard ▾" title and two clipped/mis-placed bar-chart tiles circled, plus a 13-item list
+covering the dashboard layout, the close-issue workflow, and how a lesson is captured from an
+issue's own page. Full detail in `modules/issues-lessons/CLAUDE.md` (2026-09-01 (f)) — this entry
+covers the two **shared** files touched, since a module dev is only supposed to edit their own
+folder.
+
+**`assets/js/ui.js` (`tabsToDropdown`) — item 1's "remove the duplicate label, app-wide."**
+The dropdown trigger `tabsToDropdown()` builds already names the current screen, so a module's own
+static `<h1>` title sitting beside it duplicates it — fixed once here rather than per-module, since
+**progress-photos is the other current caller** and carries the identical redundancy.
+⚠️ **The first draft of this fix would have done nothing at all, and the second would have
+reintroduced an already-fixed bug — both caught before shipping, neither by the owner.**
+`initModuleTopbar()` (bound to `DOMContentLoaded`, always runs first) has already moved a module's
+tab strip OUT of `.pd-topbar` and into the sibling `.pd-modulebar` bar alongside its `<h1>` by the
+time `tabsToDropdown()` runs — so `tabs.closest('.pd-topbar')`, the obvious selector, finds
+nothing. And unconditionally hiding the title text (once the right ancestor is found) reproduces
+the exact "icon alone on a line, label appears on the next" defect `issues-lessons/module.css`'s
+own `⚠️ REMOVED (2026-08-31, owner-reported bug #4)` comment already fixed once: below 700px
+`.pd-modulebar > h1` is forced onto its own full-width row, with the dropdown trigger on the row
+after it. The fix is now two pieces on purpose — JS only marks the title `.pd-title-hasdrop`;
+`dashboard.css` decides WHEN to hide it (`@media (min-width:701px)`), so the mistake this repo
+already made once can't recur through the same door.
+
+**Verified:** `node --check` clean on `ui.js`; `dashboard.css` braces balanced (426/426); 0 NUL
+bytes. ⚠️ **Not verified signed in.**
+
+`ui.js`/`dashboard.css?v=` → `20260901c` (app-wide — 20/28 referencing files respectively);
+`MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260901q`.
+
+
+### 2026-09-01 (m) — Live audit of both rebuilt registers: 8 real defects, and 4 of my own measurements were wrong first
+
+Owner: *"Let's instead audit and verify via out of app browser."* Driven through the **deployed** site in
+the owner's own signed-in Chrome (super_admin). ⚠️ **Read-only on real data throughout** — no row was
+created, edited or deleted anywhere; the only writes are the source fixes below.
+
+**Both migrations are confirmed applied, and the probe was calibrated before it was trusted:** all 22
+`risk_register` and all 27 `stakeholder_map` RCM columns resolve, while an invented column correctly
+answers `42703`. So the two registers are running on the real schema, not degrading through their
+tolerant-write path.
+
+**The rebuild is correct against the real legacy rows** — which is the test a fixture cannot give.
+`DEMO01`'s three pre-RCM risks (categories `Regulatory`/`Commercial`/`Schedule`, responses
+`Mitigate`/`Transfer`/`Accept`, no activity, no residual) render under a `— UNASSIGNED ACTIVITY` group
+with the tally `2 × 2nd · 1 × 3rd`, and every derived priority matches the workbook's 5×5 by hand:
+4×4→2nd, 4×3→2nd, 3×3→3rd. `OPW101`'s one legacy stakeholder (impact 4 × influence 3) reads
+**12 → 1st Priority → Manage Closely**, with the BD relationship chain preserved (2→3, gap 1,
+**Enhance / Every two months**) and an initials avatar in place of the missing photo. Header and row
+cells align exactly in both registers (19/19 and 17/17); no page horizontal scroll.
+
+**⚠️ EIGHT REAL CONTRAST DEFECTS, ALL FOUND BY MEASURING THE DEPLOYED CSS, NONE VISIBLE BY READING IT.**
+And the interesting half is that they split across themes, so a one-theme check would have passed:
+
+| surface | light | dark |
+|---|---|---|
+| solid priority pill (white on fill) — orange/amber/green | **3.19–3.56** | same (fill is theme-independent) |
+| outline pill — **all seven levels** | **2.42–3.67** | pass (5.4–9.0) |
+| band header (`--pd-red-dark` 10px) | pass 5.31 | **2.92** |
+| lit band pill (`--pd-red-dark` on `--pd-red-light`) | pass 5.11 | **2.64** |
+| activity-number chip (white on `--pd-muted`) | pass 7.07 | **2.00** |
+| status chip | **In Progress 3.46 · Closed 4.12** | **Open 4.02** |
+| priority KPI value (24px/800) | pass | **2.90** |
+| stakeholder Manage-Closely KPI | pass 3.46 | **2.17** |
+
+⚠️ **An earlier pass had "fixed" the outline pill for dark only and never measured light — so it moved
+the failure rather than removing it.** The root cause is that one token was doing two jobs: a colour
+light enough to read on a dark card is too light to carry white, and a colour dark enough to carry
+white is too dark to read on a light wash. `epc-rcm.css` now carries **three roles** — `--rcm-c` the
+fill (fixed in both themes, because a priority colour is printed on the controlled document), and
+`--rcm-t` the text, with a **dark shade in light mode and a light shade in dark mode**. The fills were
+darkened so white passes. ⚠️ `--pd-muted` is a dark grey in light mode and a **light** grey in dark, so
+white-on-muted was never viable; the chip is ink-on-card inverted, which flips with the theme by
+construction. The status chip takes the repo's already-settled shape for this exact failure — ink text,
+semantic colour on the border. **30 combinations now predicted to pass, 0 failures**, tightest margin
+4.67.
+
+**⚠️ AND FOUR OF MY OWN MEASUREMENTS WERE WRONG BEFORE THEY WERE RIGHT — the transferable part:**
+1. **`getComputedStyle` returns a LIVE object.** Reading `cs.backgroundColor` after changing the
+   element's class returns the NEW value, so a probe that reused one element reported the outline
+   pill's 12% wash as the solid pill's fill. One fresh element per variant, value snapshotted
+   immediately.
+2. **`querySelector('.x')` and `querySelector('.x.on')` returned the SAME element** (the first band
+   pill is `.rr-band on`), so two lines of a report were one measurement wearing two labels. Enumerate
+   every instance and keep the worst.
+3. **A `color:transparent` spacer measures 1.00:1 and is not a defect** — `.rr-bandhead-x` is blank by
+   design. Skip elements with no text or a transparent colour, or the report cries wolf.
+4. **Module classes measured on another module's page are meaningless.** `.rr-st-*` probed on the
+   Stakeholder page returned a uniform 12.22 — that page never loads risk-register's stylesheet, so it
+   was measuring an unstyled span. All three status numbers agreeing was the tell.
+
+⚠️ **A fifth trap, environmental:** the automated tab reports `visibilityState: 'hidden'`, where timers
+are throttled to ~1/min — an `await new Promise(setTimeout)` inside a probe stalled the CDP call for
+45s and left the page mid-way through a theme toggle. **Style resolution is synchronous; measure
+without awaiting.**
+
+**⚠️ AND A PROCESS DEFECT OF MY OWN, SHIPPED TO PRODUCTION.** Commit `512d317` included **four
+verification harness files** — `modules/{risk-register,stakeholder-map}/harness.html` +
+`harness-stub.js` — so the deployed site carried two publicly reachable pages that render a fake
+register from fixtures with `window.getSB` and `AppAuth` stubbed out. No real data is exposed (every
+row is a literal in the page) and the stub only exists when that page loads it, so this is not a
+credential or RLS hole — but it is exactly what `.gitignore`'s *"throwaway; never commit"* rule exists
+to prevent, and the rule missed it because the pattern was **one filename** (`_ui_test.html`) rather
+than the word. Files removed; the pattern now matches `harness.html` / `harness-stub.js` / `*.harness.html`.
+
+**Also clean in the audit:** every JS file parses, 0 NUL bytes, CSS braces balanced in all three
+stylesheets, both migrations paren-balanced with `$$` paired and every policy preceded by a drop, both
+migrations present in the generated `supabase-build.sql`, and **no shared asset served at two versions
+and none unversioned**.
+
+⚠️ **Raised, not changed:** the sidebar still says **"Stakeholder Map"** while the page title and every
+heading now say **"Stakeholder Register"** — the name lives in `config.js`'s `MODULES` registry, a
+shared file, and renaming it is the app owner's call. Also cosmetic: the Code column is narrow enough
+to wrap `R-002` onto two lines.
+
+⚠️ **Not verified:** the photo upload against the real private bucket. `storage.from(b).list()` returns
+`[]` for a bucket that does not exist — the control proved it, so **the bucket cannot be probed
+read-only** and the only honest test is a real upload, which is a write. Left for the next pass rather
+than writing to a live project unasked.
+
+`epc-rcm.css` + both `module.css` → `?v=20260901g`; `MODULE_V` → `20260901j`.
+
+⚠️ **A NINTH defect and a SIXTH bad measurement, both found on the re-verify** — recorded because the
+second is the more useful one.
+
+**The parser in my own probe could not read `color-mix()`.** Chrome serializes a computed `color-mix`
+as `color(srgb 0.98 0.88 0.88 / 0.12)` with **0–1** components; the probe assumed **0–255**, so it read
+every such background as near-black. That silently corrupted the two surfaces whose background IS a
+`color-mix` — the outline pill and the heat-map cell label — and it is why a "failure" of 2.51:1 turned
+up on a pale pink wash, which is not a number that surface can produce. ⚠️ **The parser bug UNDERSTATED
+the problem, not overstated it:** re-tested with a self-checked parser by overriding only the two custom
+properties on a real shipped pill, the pre-change outline pill fails in **both** themes (light
+2.74–3.88, dark 2.67–3.65) and the new values pass in both (light 5.70–6.68, dark 4.67–7.40). So the
+dark-only `--rcm-t` an earlier pass added was itself measured with the broken parser and was never
+enough. The three-role model is right; it just needed a probe that could read the CSS.
+⚠️ A first attempt at that re-test returned ratios **in the millions** — impossible, the maximum is
+21:1 — because it built its own background instead of using the stylesheet's. Probes now carry a range
+guard that reports `bad` rather than a number, and the parser has a self-test that asserts a known mix.
+
+**The ninth defect:** `.rr-rescard .rr-kpi-val` was the one place the FILL token survived as a text
+colour — 2.80:1 in dark on the residual band cards. A sweep for `--rcm-c` reaching any text property
+now comes back with only legitimate uses (backgrounds, washes, a legend swatch, a 3px top border).
+
+**Live re-measure after the fix: 44 surfaces per theme, 0 failures in light, 0 in dark.**
+
+`epc-rcm.css` + both `module.css` → `?v=20260901h`; `MODULE_V` → `20260901k`.
+
+⚠️ **A TENTH defect, on the Cards view, found only once the probe covered card-only classes:**
+`.sm-card-plan-none` — the "No engagement plan yet" notice — used `--pd-warn` as 12px/400 text and
+measured **3.46:1 in light** (`#C77700`; the token is tuned for larger type). It is an *absence*
+notice, so it is now muted text (7.07 / 7.02) with the warn colour moved to a **left rail**, keeping
+the flag visible without colouring the sentence. Same shape as the status-chip fix.
+
+**Final live state, both registers, both themes: 57 surfaces each, 0 AA failures.** Worst margins
+4.67:1 (dark) and 4.83:1 (light), both on the 1st-Priority red — the tightest by design, since that
+fill is the one colour held fixed across themes.
+
+Stakeholder `module.css` → `?v=20260901i`; `MODULE_V` → `20260901l`.
+
+⚠️ **An ELEVENTH, in the module's OWN palette rather than the shared one** — and it only appeared once
+the sweep was widened to the classes the Register tab never renders. `.sm-gm-lab`, the Mendelow map's
+10px/800 cell label, read `--sm-c` (the engagement-approach FILL) on a 15% wash of that same fill:
+**1.70:1 in dark for Monitor, 4.08:1 in light for Keep Satisfied.** Exactly the fill-as-text mistake
+the priority palette had, one file over. `.sm-a-*` now carries `--sm-c` (fill — white on it passes
+5.0–7.6 for all four) and `--sm-t` (text, per theme). **The lesson generalises: any palette that gets
+used as BOTH a fill and a label needs two tokens, and the label one needs two values.**
+
+⚠️ **And a lesson about the sweep itself:** every earlier pass measured what happened to be on the
+Register tab. The Cards and Impact/Influence views contributed two of the eleven defects and were
+invisible until their classes were synthesised into the probe. **Enumerate the stylesheet's classes,
+not the current DOM.**
+
+Stakeholder `module.css` → `?v=20260901j`.
+
+⚠️ **A TWELFTH — and, more usefully, THE LIMIT OF "MEASURE EVERYTHING".** An exhaustive sweep of
+every class each stylesheet defines × every palette context (1,638 combinations per theme) reported
+**152 dark and 29 light failures**. All but one are **combinations the app never renders**, and
+reporting them as defects would have been worse than not sweeping:
+- 152 of 152 dark "failures" nest a shared class inside `.sm-s-*`. That is a self-contained strategy
+  chip with a light background and dark text, emitted only as `sm-strat sm-s-X` with its own text and
+  **no children** — grepped, not assumed. Nothing ever puts a heat-map cell inside one.
+- 11 light "failures" are `*-leg-sw`, which are **12×12 empty background swatches**
+  (`<span class="…-leg-sw …"></span>`). The probe injected text into them; the app never does.
+
+**The one real find: `.sm-ovr`**, the `±` "manually overridden" marker — `--pd-warn` at 14px/800 is
+**3.46:1 in light** (14px sits below the 18.66px large-text threshold, so 4.5 applies). Here the
+colour IS the signal — a single glyph cannot have its flag moved to a border — so it takes per-theme
+values (`#8a5300` light 6.33, `#fbbf24` dark 8.4).
+
+⚠️ **So the rule is: sweep broadly, then filter the output against what the JS actually EMITS.** An
+unfiltered exhaustive sweep buries one real defect under 180 impossible ones, and a reviewer who
+learns to skim it will miss the next real one.
+
+Stakeholder `module.css` → `?v=20260901k`; `MODULE_V` → `20260901n`.
+
+⚠️ **A THIRTEENTH, and the third instance of "brand red as text" in this pair of registers.** The
+Add/Edit form's section headers (`.rr-fsec` / `.sm-fsec`, 11px/800 `--pd-red-dark` on the modal)
+measured **2.40:1 in dark**. They were missed when the band header and the lit band pill were fixed
+because **the modal is not in the page until it is opened** — every sweep only ever saw what the
+register had already rendered. Dark-only override to `#FF8A80`. **If a fourth turns up, the honest fix
+is a `--pd-red-text` token in `dashboard.css`, not a fourth copy of the same two-line override.**
+
+**Final live state: both registers, both themes, 0 AA failures** — measured against the combinations
+the JS actually emits (57 surfaces on the Risk Register, 102 emitted combinations on the Stakeholder
+Register), worst margins 4.67:1 dark / 4.83:1 light.
+
+**Also, at the owner's request: "EPC Risk Universe" → "MCC Risk Universe" and "EPC Stakeholder
+Universe" → "MCC Stakeholder Universe"** — the two view headings, the shared criteria table, the
+off-taxonomy note and the test suite's section label. ⚠️ The shared file is still `epc-rcm.js` /
+`EPCRCM` / `.rcm-*`: renaming the module, its global and forty-odd CSS classes is a mechanical change
+with real blast radius across both registers, and the ask was about the headings.
+
+⚠️ **A CONCURRENCY HAZARD WORTH RECORDING, because it cost this pass an hour and nearly lost work.**
+Another session was editing `dashboard.html`, `modules.html` and `modules/project-schedule/index.html`
+in the same clone at the same time. Three things followed:
+1. **`git add -A` swept their uncommitted WIP into my commit.** Their 56-line change to
+   `project-schedule/index.html` was not in anything they had pushed, so it was live work.
+2. **They then `git reset --soft HEAD~1` MY commit** and committed the combined index under their own
+   message — so my changes briefly existed only under someone else's commit — then reset again.
+   Because the index is shared, every commit either session makes claims the other's staged work.
+3. **My work survived only as the unreachable commit object `a8e72c8`**, recovered from the reflog.
+
+**The rule that follows: in a clone another session is live in, never `git add -A`, and never rebase
+or reset shared HEAD.** This work was landed from an isolated `git worktree` checked out at
+`origin/main`, with my eight files taken verbatim out of my own commit object — which touches neither
+the shared index nor the shared HEAD, and let the other session keep working uninterrupted.
+
+⚠️ **`MODULE_V` deliberately NOT bumped here**, though both module `index.html` files changed their
+asset `?v=` strings. It lives in `dashboard.html`/`modules.html`, which the other session was actively
+editing — and they bumped it themselves in the same window. **Confirm a bump landed before trusting a
+returning browser to pick these up.**
+
+`epc-rcm.js` → `?v=20260901b`; both `module.js` → `?v=20260901g`; both `module.css` → `?v=20260901l`.
+
+### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
+
+Owner, after running both RCM migrations: *"the user cannot access any admin features like add
+project and user management."*
+
+**⚠️ NOTHING WAS WRONG WITH PERMISSIONS, WHICH IS WHY IT WAS WORTH TRACING RATHER THAN GUESSING.**
+All six shell pages compute `isAdmin` from `profile.role` identically and correctly, `admin.html` is
+still `requireAdmin`-gated, and neither 2026-09-01 migration touches `users`, `projects`, `is_admin()`
+or any RLS — they add columns and four storage policies scoped to `bucket_id = 'stakeholder-photos'`.
+**The links had simply stopped existing.** Mapping the navigation graph:
+
+- `renderNav`'s **`'project'`** branch — dashboard.html, modules.html and every module page, i.e.
+  where a planner spends the entire day — emits **only Dashboard + the module list**. No Admin, no
+  Projects, no Portfolio (the Portfolio section was removed at the owner's request on 2026-08-31).
+- **`home.html`, the landing page, has no sidebar at all** since its chrome was stripped (2026-08-30 (h)
+  / 2026-08-31), and offers exactly two destinations: dashboard.html and portfolio-overview.
+- The account menu carried **name, role and Sign out. Nothing else.**
+
+So the only surviving route to "+ Add project" or user management was: project dropdown → its
+**Portfolio** row → portfolio-overview → *its* sidebar → Projects/Admin. That control reads as
+"switch project", not "leave the project", so in practice both were unreachable. Each individual
+change was reasonable; nobody re-walked the graph after the last one.
+
+**Fix: the account menu carries the system destinations** — Projects · My Work · **Admin** (role-gated)
+— because it is the one piece of chrome rendered on *every* page. ⚠️ **This does NOT reinstate the
+Portfolio nav section the owner removed**: these are account/system destinations, not portfolio
+navigation. ⚠️ **Admin is gated inside `renderUserBar` on `profile.role`, not on a flag passed by the
+caller** — 20 call sites would have to pass it, several sit in modules owned by other developers, and
+a half-applied gate is a menu that offers Admin to a viewer on some pages and hides it from an admin
+on others. It is an affordance; `requireAdmin` and the DB remain the boundary.
+
+**⚠️ A SECOND, INDEPENDENT DEFECT THAT WOULD HAVE OUTLIVED THE FIRST FIX.** `loadProfile` returned the
+`sessionStorage` profile cache **unconditionally and never revalidated it**. sessionStorage lives until
+the tab closes and every page reads through this — so an admin promoting someone to admin, or
+approving a pending user, **did nothing visible in that person's open tab**, which looks exactly like
+"the app will not give me my access". The cache is still returned immediately (it is what keeps first
+paint fast) but is now checked against the server in the background. ⚠️ Only **role** and **status**
+interrupt the page; any other edit just corrects the cache. ⚠️ A transient network error **keeps the
+cache and never signs the user out**. ⚠️ The reload guard is keyed on the **observed state**, not
+once-ever, so a second legitimate change still applies while a reload can never loop.
+
+**⚠️ Pre-existing WCAG failure found by measuring, fixed while in the same component:** the account
+menu's **Sign out** was brand red on the card — **4.12:1 light / 3.40:1 dark**, both under AA. Byte-
+identical to HEAD, so not introduced here — and *the same numbers* as the contracts-claims `claim`
+mark (2026-08-25). ⚠️ `--pd-bad` cannot serve both themes either (it remaps to `#EF5350` = **4.02** on
+dark). New paired `--pd-danger-text` (#C42127 / #FF8A80) measures **5.84 light / 6.14 dark**, and Sign
+out stays visually distinct from the links. **Brand red is not a text colour at this size** — that is
+now four separate occasions.
+
+**⚠️ Also fixed: a shared asset was being served at two versions.** `modules/minutes-of-meeting` was
+still on `ui.js?v=20260830e` while the other 19 pages were on `20260831c` — so that one page would
+have kept serving the **old account menu** and stayed locked out even after this fix. The suite now
+asserts one version per shared asset app-wide.
+
+**Verified: 163 checks** (146 → 163), and the menu **driven in a real browser** against the shipped
+`ui.js` + `dashboard.css`: a super_admin gets Projects / My Work / **Admin**, a viewer gets the first
+two and **no Admin**, all with icons; from a module page the hrefs resolve — by the browser's own URL
+resolution — to `/projects.html`, `/my-work.html`, `/admin.html`; contrast **16.30 light / 12.22 dark**
+on the links and **5.84 / 6.14** on Sign out; no console errors.
+
+⚠️ **Not verified signed in** — no real session was driven, so the background revalidation has never
+actually observed a role change against PostgREST. ⚠️ **No geometry measured** (compositor stalled).
+
+`ui.js` / `auth.js` / `dashboard.css` → **`?v=20260901b`** across all 28 pages.
+⚠️ **Users must reload once** to pick up the new `ui.js`; a tab open from before still shows the old
+menu.
+
+### 2026-09-01 (m) — Both registers rebuilt as EPC Risk & Control Matrices; the transcription verified against the workbooks themselves
+
+Owner: make the Stakeholder Map and the Risk Register *"more in-depth"*, each following its OPS
+workbook, and give the Stakeholder Map **a complete add-a-stakeholder feature with photos**. A prior
+session built the bulk of this and was interrupted; this entry finishes it and verifies it.
+
+**Both registers are now the workbook's RCM**, banded Identification → Assessment → Response →
+Residual → Audit Plan (+ **Engagement** on the stakeholder side), grouped by the **5-PMLC activity**
+each row is registered against. Four views each. New shared **`assets/js/epc-rcm.js`** holds the
+vocabulary, the scales, the grids and the 836-row Control Masterlist **once** — transcribing them into
+two modules would guarantee the day a sub-category is added to one picker and not the other, after
+which the two registers can no longer be joined on category. Detail in the two module CLAUDE.md files.
+
+**⚠️⚠️ THE FINDING THAT MATTERS MOST: THE TWO WORKBOOKS ARE *NOT* THE SAME TEMPLATE FOR THE PRIORITY
+GRID.** Both carry a sheet named `Risk Assessment Criteria - old`, both `INDEX` into `D328:H332` on it
+— and the **contents of that range differ between the files**. Deriving the stakeholder grid from the
+risk workbook's table, which the shared formula makes very easy to do by accident, is wrong in **6 of
+16 cells** and wrong in the direction that **under-states** a stakeholder's priority. `RISK_GRID` and
+`STK_GRID` are therefore two separate transcriptions on purpose. I started from the "same template"
+assumption myself and the workbooks disproved it.
+
+**⚠️ TWO SHIPPED COMMENTS ASSERTED FACTS THEIR OWN TABLES CONTRADICT** — found because the suite
+encoded the comments and then failed. Both tables were correct; both explanations were wrong.
+(1) *"(5,1) and (1,5) both score 5 yet land on 3rd and 4th priority"* — the sheet gives **3rd for
+both**. The real demonstration that priority is a lookup and not a band on the product is a product of
+4, which the sheet answers three ways: **2×2 → 4th, 1×4 → 3rd, 4×1 → 3rd**. (2) *"(3,3) is Keep
+Informed by the lookup and Keep Satisfied by the map"* — the map gives **Manage Closely**. The
+disagreement is real, the values were not. Both comments corrected, both replaced by assertions, so
+the claim and the data cannot drift apart again. **A wrong comment above right code is how someone
+later "fixes" the code to match it.**
+
+**⚠️ Priority derives NOTHING from an unrated row** — no default, no 4th-by-omission. "Nobody has
+assessed this" and "this is low priority" are opposite facts and only one is a reason to act.
+
+**Photos (the specific ask).** Private `stakeholder-photos` bucket; the columns store **paths, not
+URLs** (a stored URL expires), signed in one **batched** call per load; client-side canvas downscale
+to a display image **and a real separate thumbnail**; drop-well, lightbox, initials fallback.
+⚠️ **The file is held in memory and uploaded on SAVE, not on pick**, so an abandoned modal leaves no
+orphan; old objects are deleted **only after** the row stops pointing at them.
+
+**Finished this session:** ⚠️ **`MODULE_V` had not been bumped** — both `index.html` files changed
+structurally (new `epc-rcm` tags, renamed tabs), so a returning browser would have served the **cached
+old page**, which never loads `epc-rcm.js` and throws on first use. This repo has mis-diagnosed exactly
+that as a code bug before (2026-08-25 (m)). → `20260901g`. ⚠️ **A retired view name rendered a blank
+page**: `#rr_view={"view":"matrix"}` matched no view, so all four panes hid with no error. Now mapped
+to `heat`, with anything unrecognised falling back to the register; the same guard added to
+stakeholder-map. **`VERIFY-schema.sql` regenerated** (342 → **406** objects, 132 → 136 migrations — it
+was two migrations stale, so a clean run would have proved nothing about this round, the 2026-09-01 (d)
+blind spot) and **`supabase-build.sql` regenerated**.
+
+**Verified: `node modules/risk-register/test-rcm.js` — 146 checks**, executing the shipped functions
+(sliced by brace matching, never reimplemented), including the derived helpers of **both** modules so
+the shared engine is proven to be doing its job. ⚠️ **The grids are asserted against the WORKBOOKS' OWN
+COMPUTED OUTPUT** — the values Excel itself last wrote into the Priority Level cells, grouped by their
+row's ratings: **13/13 risk pairs, 7/7 stakeholder pairs, all 16 Mendelow cells.** ⚠️ **The suite
+bites**: transposing `STK_GRID` to the risk workbook's table fails 4.
+
+**Driven in a browser** against the real modules with only the backend stubbed: 0 console errors, all
+four views in each module rendering exactly one pane, the retired hash now rendering the Heat Map,
+heat-map click-to-filter, 33 zero-count Risk Universe branches flagged, live in-form derivation
+matching the workbook (impact 4 × influence 3 → 1st Priority / Manage Closely; gap 1 → Enhance → Every
+two months), and the **whole photo path**: pick → a 300×200 blob preview with **nothing uploaded** →
+Save → main + thumb uploaded to `CSF101/<ts>_<rand>.jpg` → row inserted carrying both paths,
+`created_by` stamped, and **0 derived values persisted**.
+
+⚠️ **Three of my own assertions were wrong before the code ever was** — two encoding the bad comments
+above, and one reading `.src` on a `<div>` (the photo preview is an `<img>` inside it) and then
+`backgroundImage` on the same div. Said plainly because the split matters: a suite that is always
+"right" about its own expectations is not being read.
+
+⚠️ **NOT VERIFIED, and the owner actions that remain.** **Neither migration has been run** — until they
+are, every new column and the photo bucket are absent; both modules degrade with a toast naming their
+own file, so nothing breaks, but nothing new works either. **Nothing was exercised signed in**: the
+batched `createSignedUrls`, the upload/rollback ordering against real storage, the four bucket policies
+and every new column against PostgREST are all untested. ⚠️ **No geometry, layout or contrast was
+measured and there is no screenshot** — the Browser pane was not compositing (`visibilityState:
+hidden`, `innerWidth: 0`, `clientWidth: 0`), which first reported a plausible-looking **274px page
+h-scroll** that is pure artefact. Gate every measurement in this pane on `clientWidth` being non-zero,
+and do not chase its layout numbers as defects.
+
+### 2026-09-01 (l) — Verified live, and the live run found a bug the harness was structurally incapable of finding
+
+Owner: *"After performing the prompts. Verify live via out of app browser."* Driven through the
+**deployed** site in the owner's own signed-in Chrome, on **Westside City Site B (WCB363)** — a real
+project with **16,256 activities**. ⚠️ **Read-only throughout.** The S-Curve panel is derived from
+`project_schedule` and writes nothing; no row anywhere was created, edited or deleted.
+
+**The two requested changes are correct on real data.** Two decimals throughout — *99.97% planned to
+date, 59.49% actual, −40.49 pts variance* — and the Monthly/Quarterly switch present and rendering.
+A 16,256-activity schedule also exercises the widened select from entry (j) (the curve's ten columns
+through `PDb.selectAll`'s pagination), which had never actually hit PostgREST before.
+
+**⚠️⚠️ THE BUG: THE FORECAST FINISH RENDERED AS `Tue Sep 01 2026 00:00:00 GMT+0800 (China Standard
+Time)`.** `PDScurve` returns `fcFinish` as a **Date object**. `Fmt.date` (in `assets/js/db.js`) tests
+`String(d).match(/^(\d{4})-(\d{2})-(\d{2})/)` and, on no match, **returns its input unchanged** — so
+the raw JS date string went straight to the screen, escaped and all.
+
+**⚠️ THE HARNESS COULD NOT HAVE CAUGHT THIS, AND THAT IS THE REAL FINDING.** The generated preview
+page stubbed `Fmt` with a hand-written version that happened to accept a Date. It rendered a tidy
+"Nov 7, 2028" and every check passed. **A stub kinder than the real thing does not test the page, it
+tests the stub** — and this one was kinder in exactly the direction that mattered. The generator now
+**lifts the real `Fmt` out of `db.js`** rather than approximating it, which is the same rule already
+applied to the panel functions, the panel band and the CSS: extract, never retype.
+
+**The fix is in `Fmt.date`, not at the call site.** A formatter that silently returns its input is the
+failure mode here, and a `Date` is the single most obvious thing to hand a date formatter. The
+fall-through is deliberately kept — callers pass `'TBD'` and similar through it — but a Date is
+formatted now, and an *invalid* Date returns the em dash rather than "Invalid Date".
+
+⚠️ **Something to raise rather than change.** This project reads *"forecast finish Sep 1, 2026"* —
+today — while sitting 40 points behind. That is the shared engine's long-standing rule
+(`remMs = max(0, plannedEnd − today)`, so a programme already past its planned end has nothing left
+to stretch) and the S-Curve module has always behaved the same way. It is arguably wrong — a project
+40 points behind will not finish today — but it is **existing behaviour in shared code**, not
+something this round introduced, so it is reported here rather than quietly altered.
+
+⚠️ **Not exercised live:** the Quarterly axis on this project was not clicked through before the fix
+was deployed, and the other four panels sat in their empty states (WCB363 carries no trades, minutes
+or register entries), so **Approaching Deadlines, Minutes of Meeting, Issues & Concerns and the My
+items drawer have still only been seen against fixtures.**
+
+**Re-verified live after the fix shipped** (same project, `db.js?v=20260901d` confirmed served).
+*"forecast finish Sep 1, 2026"* — formatted, and **no raw JS date string anywhere on the page**.
+
+**Monthly and Quarterly both driven on the real 16,256-activity schedule** (Jul 2020 → Sep 2026):
+**75 monthly columns → 25 quarterly**, `misaligned: 0` and `clipped: 0` in **both**, the toggle
+switching each way, and the two modes agreeing on the current period (99.97 planned / 59.49 actual)
+— which is the anchoring rule holding on real data, not on a fixture. ⚠️ **Quarterly is what makes
+this project readable**: in monthly the −40 point gap is 75 columns of scrolling, and in quarterly
+the plan pulling away from a flat actual after Q3 2024 is a shape you see at a glance. No console
+errors.
+
+**The "My items" drawer is live-verified too** — it opens over a scrim, renders `my-work.js`'s real
+empty state against the live database (*"Nothing on this project is assigned to your account. Items
+whose champion or responsible was typed as free text cannot be matched to a login"*), and Escape
+closes it with focus returning to the button and `aria-expanded` back to false.
+
+⚠️ **Still fixture-only: Approaching Deadlines, Minutes of Meeting and Issues & Concerns.** WCB363
+carries no trades, minutes or register entries, so those three panels showed their empty states and
+their populated forms have never been seen against real rows.
+
+`db.js` → `20260901d`.
+
+### 2026-09-01 (k) — S-Curve panel: two decimals and a Monthly/Quarterly switch, plus three defects the switch exposed
+
+Owner: *"In the S-curve kpi panel let's have at least 2 decimal points in the table. Let's have a
+toggle to make the period switch to monthly and quarterly as well."* Both done, `dashboard.html`
+only — no shared asset moved, so nothing needed a `?v=` bump.
+
+**⚠️ THE PERIOD IS A VIEW OVER THE ENGINE'S MONTHLY SERIES, NOT A SECOND COMPUTATION.** `PDScurve`
+walks months; `scPeriods()` re-groups what it returned and `scSeries()` reads one point per group.
+Recomputing the curve on a quarterly axis would be a second engine, and the two would eventually
+disagree — which is the whole reason the engine was shared in the first place (entry (j)).
+
+**⚠️ A QUARTER IS READ AT ITS END, NEVER SUMMED.** These are cumulative curves: adding three
+cumulative points gives roughly three times the truth, and on a chart that tops out at 100% that
+reads as nothing worse than optimism. The suite asserts no quarter accidentally equals the sum of
+its months, which is the shape the mistake would take.
+
+**⚠️ AND THE CURRENT PERIOD IS READ AT TODAY, not at its end** — the same rule the monthly view has
+always used, generalised. This is not a nicety: `actualC` is padded past the data date, so reading
+the current quarter at its end would report ~0 and **a project would appear to have un-built itself
+the moment you switched to quarterly.** Asserted directly (`current QUARTER actual == overall %
+complete`), and separately for a schedule starting in each of the twelve months, because a fixture
+that happens to start in January never produces the partial leading group where this goes wrong.
+
+**⚠️ Partial groups are correct and are NAMED.** A February start gives a two-month Q1. The end of
+the group is still the end of the group, so the figure is right — but the header says "Q1" over two
+months of data, so the tooltip spells out the real span (*"Q1 2026 · Jan–Mar 2026"*, or *"Feb–Mar
+2026"* where that is what it is) rather than letting the label speak for it.
+
+**Two decimals, and the `%` moved to the row label.** Repeating the sign in 78 cells is noise, and at
+10px it is the difference between "100.00" fitting its column and being clipped into a different
+number. The KPI line took two decimals as well — the "now" column IS `plannedPct`, and a headline
+saying 46% over a cell saying 46.20 is the panel disagreeing with itself.
+
+**⚠️ DEFECT 1 — THE TOGGLE WOULD HAVE BEEN A DEAD CONTROL WHEREVER STORAGE IS BLOCKED.** The mode was
+read straight out of `localStorage` on every render. That looks tidier and it means that in a private
+window, or a browser set to block site data, the write throws, the read throws, and the repaint comes
+back on the mode it started on — clicking "Quarterly" does nothing at all, with no error and nothing
+to see. The mode is a variable now; storage only **seeds** it and is a best-effort place to remember
+it. Found because the harness runs from a `data:` URL, where `localStorage` throws outright.
+
+**⚠️ DEFECT 2 — THE PANEL WOULD HAVE OPENED SCROLLED PAST THE DATA DATE.** The opening scroll still
+used `c.ti`, the engine's **monthly** index, on an axis that is now quarterly — about three times too
+far right. Every other x in the panel was converted; this one survived because it reads correctly on
+the monthly axis, which is exactly why a conversion misses it. Caught by a replace that asserted its
+own target and refused to write when it did not match.
+
+**⚠️ DEFECT 3 — a fixed column width drew a chart that looked CUT OFF.** A quarterly axis is a third
+of the columns, so a two-year programme filled two thirds of the panel and its gridlines ended in
+mid-air. The column width is computed per render now and shared by the chart and the table through
+one `<colgroup>` — 46px is a **minimum** (what "100.00" needs at 10px tabular figures), and when the
+whole axis fits, the columns share the room out instead. ⚠️ The width is **passed** to `scPath`
+rather than read from the constant: a helper quietly using the constant while the table uses the
+computed one is precisely the chart-vs-table drift this panel was bitten by last round.
+
+Smaller: the tooltip read *"Forecast —%"* for a period with no forecast — the em dash means "there is
+no number here" and a percent sign on it claims there is. The scroll hint is conditional, because an
+instruction to scroll a panel that does not scroll reads as a broken control. The switch reuses the
+**same segmented control** the S-Curve module uses for Duration/Cost, and takes the app's own 44px
+tap minimum on a phone — `assets/css/dashboard.css` records that segmented buttons sized to their
+text were *"among the hardest things on the page to hit accurately"*.
+⚠️ **Its active state measures 4.12:1**, under AA for 11px. That is brand red with white text, which
+is the app's established active state everywhere — sidebar nav, `.pd-btn-primary`, the node tree, the
+view tabs. Raised deliberately rather than forked on one panel.
+
+**Verified: 58 new checks** on `scPeriods`/`scSeries`/`scColFor`/`scPath`/`scPct`, all lifted out of
+`dashboard.html` and executed, plus the 70 shell/engine checks and both equivalence runs (15,927 and
+11,510 compared values, 0 differing) still green. In a browser, both modes: **0 misaligned columns**
+(26 at 46px monthly, 9 at 79px quarterly), nothing clipped, hover naming the correct period, the
+quarterly axis filling the panel with no sideways scroll, and 7.07 light / 7.02 dark contrast.
+
+### 2026-09-01 (j) — Dashboard round 3: the S-curve engine shared, four owner items, and TWO defects the panels only revealed under measurement
+
+Owner, four items: *"I don't understand the Project Schedule & Milestones kpi panel. It has red fills
+inside the progress bars. What does this signify when all trades are 0%… Minutes of Meeting and
+Issues and Concerns should be interactable… My items on this project should be folded into a side
+toggle… I also want… a list of approaching deadline activities/Milestones."* Then, mid-build:
+*"I want the approaching deadlines card to be at the bottom of the minutes of meeting and issues and
+concerns cards."* All five are done.
+
+**⚠️ ITEM 1: THE RED FILL WAS NEVER PROGRESS — IT WAS THE DATE SPAN, PAINTED IN THE STATUS COLOUR.**
+Each trade's bar drew its span tinted with the row's status colour at .22 opacity, so "0% complete"
+and "a bar that looks three-quarters full" were on screen together. The only honest reading of that
+is that the chart is lying, and the owner read it correctly. **The rule now: neutral means WHEN,
+colour means HOW MUCH.** The span is neutral, the progress fill is the only coloured thing, and a
+hatched band shows time elapsed that work has not caught up with — which is what "behind" actually
+looks like. ⚠️ **The fill is never red**, even on a behind trade: painting a behind trade's completed
+12% red says "this 12% is the problem" when the problem is the 18% beside it that is missing, and it
+contradicted the legend printed directly above it. Red belongs to the shortfall band; the percentage
+*text* still carries the status colour.
+
+**⚠️⚠️ AND A SECOND DEFECT IN THAT SAME PANEL, OLDER AND INVISIBLE BY CONSTRUCTION.** The
+elapsed-time marker on every trade bar — added in entry (i) precisely so "0% complete but 60% of the
+time gone" would be legible — **has never once been drawn.** It read `background:var(--pd-fg)`, and
+**there is no `--pd-fg` token in this app**; `assets/css/dashboard.css` defines `--pd-ink`. An
+undefined custom property is not a no-op: on an **inherited** property (`color`, `stroke`) it falls
+back to the inherited value and looks correct by accident, which is why every text rule using it
+seemed fine and nobody caught it. `background` is **not** inherited, so it computed to the initial
+value — transparent. Eleven uses across the file; the three on non-inherited properties (the trade
+marker, its legend swatch, the S-curve's hover guide) were all drawing nothing. ⚠️ **Only a
+computed-style read could find this.** A marker that is absent and a marker sitting at 0% are the
+same picture, so the owner's complaint that the panel was unreadable was partly this, and neither of
+us could have seen which.
+
+**THE S-CURVE ENGINE IS NOW SHARED, NOT COPIED.** The dashboard needed the same curve the S-Curve
+module draws. Copying ~150 lines of two-basis, spread-curve, SPI-forecast maths onto a second screen
+is how two screens come to disagree about one project's progress, so it moved to
+**`assets/js/scurve.js` (`PDScurve`)** and **both** callers use it. ⚠️ **The module's RPC path is
+preserved, not replaced**: `schedule_scurve_agg` returns pre-summed month buckets and is far faster
+on a large schedule but is duration-only by construction, so the module still calls it and injects
+the result as `opts.series`; everything downstream is shared. ⚠️ `PDScurve.COLS` is exported so the
+two callers cannot drift on the select list — a column missing there does not throw, it reads
+undefined and quietly flattens the curve, which looks exactly like a project that has not started.
+⚠️ **`compute()` never invents data**: a schedule with no cost loaded returns `{empty, noCost}`, not
+a curve of zeroes, because a flat line at zero and "nobody has loaded the costs" look identical and
+mean completely different things. Four dead wrappers and a dead `isWbs` were removed from the module
+rather than left to imply it still has its own engine, and the long comment claiming the spread curve
+is *"TRANSCRIBED, not shared… asserted instead"* was rewritten — it is shared now, and a stale
+comment telling the next reader to keep two copies in agreement is worse than no comment.
+
+**⚠️⚠️ THE S-CURVE TABLE WAS LABELLING EVERY FIGURE WITH THE WRONG MONTH.** The chart and the period
+table share one horizontal scroller so a column always sits under the point it describes. It did not.
+Under `table-layout:fixed` the **first row** sets every column width — and that row is the header — so
+styling only `td.k` left the header's corner cell at the month width, the table 46px narrower than it
+declared, and every month column one whole column right of its chart point. A second, smaller drift
+sat underneath it: `content-box` added the 6px `padding-right` on top of the declared 64px. **Both
+were invisible.** The table looked perfectly tidy in both states. Caught by measuring the "now"
+header's centre against the chart's now-line and requiring them to be the same x — now **26 of 26
+columns align exactly**, and hovering any month names that month in the tooltip.
+
+**ITEM 2 — the two registers now show WHAT, not how many.** Minutes of Meeting lists the **latest
+meeting's action items** (owner, due chip, open-first then by due date) rather than a list of meeting
+titles, which tells a planner nothing the count above it did not. Issues & Concerns lists **open items
+oldest first with days-open and champion**. ⚠️ **A separate declared `open` list, not a filter over
+`recent`**: `recent` is the 4 newest rows, so on a register whose latest entries happen to be closed
+the panel would have shown a tidy list while a dozen open items sat below the fold.
+
+**ITEM 3 — "My items" is a right-hand drawer.** Same `assets/js/my-work.js` as the cross-project page,
+never a second copy of the rules. ⚠️ **Rendered once, lazily, on first open** — three extra queries
+for a panel most visits never open, and the dashboard's own panels must not queue behind a personal
+to-do list. ⚠️ **The badge count is the exception and is eager**, via a new `MyWork.countOpen()` that
+runs the *same* `fetchAll` + `counts()` the panel renders from: a badge computed its own way is a
+second definition of "mine", and the first time the two differ the badge is the one believed. A
+drawer that hides an overdue item behind a click nobody knows to make is worse than no drawer.
+
+**ITEM 4 — Approaching Deadlines**, moved **below** both registers at the owner's follow-up.
+⚠️ **The window reaches 30 days into the PAST**, not just forward: an activity that was due last week
+and is still unfinished is the most urgent thing on the list, and a window starting at today hides
+exactly those. The subtitle says so rather than claiming "due within 30 days". ⚠️ **The overdue
+headline is its own declared list's total, not a count of the visible rows** — the eight-row cap is a
+display limit and a headline number must not inherit it; it would have read "1 overdue" over a
+schedule with nine. ⚠️ **Unfinished means status AND percent**: the two are set independently, so an
+activity finished on site and ticked to 100% but never moved off 'In Progress' would otherwise
+headline this panel as overdue.
+
+**The shell learned three declared clauses, and knows nothing about what they mean.** `notValues`
+(⚠️ not sugar for `values` — "status is not Completed" must also keep rows whose status is NULL,
+because a module that has never set a status still has open work), `below` (⚠️ NULL reads as ZERO,
+not as a rejection — a `percent_complete` nobody has typed is 0% done, which is exactly what
+`below:100` is asking about), and `withinDays` (⚠️ local midnight, matching every other date
+comparison here — a UTC boundary moves "due today" by a day for half the working day in Manila).
+Undated rows sort **last** in either direction: sorting them to the front of a "due soonest" list
+would headline the activities nobody has dated.
+
+**⚠️ A THIRD DEFECT, found by contrast measurement.** The S-curve's row labels were colour-coded to
+their lines — 10px bold type at **2.42:1** (Forecast) and 3.09:1 (Planned) against the card. A label
+that names a line you cannot read is not colour-coding. The colour moved to a **line swatch**, the
+same vocabulary the legend already uses, and the text took the normal foreground.
+
+**VERIFIED, and every harness executes the SHIPPED source rather than a copy of it.** The previous
+preview harness was a hand-made transcription of the panel functions, which drifts the moment either
+file is edited; it is now **generated** — the real `<style>`, the real panel band (so the panel ORDER
+under test is the shipped order) and the real function bodies are extracted from `dashboard.html`
+every run. **70 shell/engine checks** executing `keep()`, the list comparator and `PDScurve` lifted
+from the deploying files. **Equivalence with the pre-extraction module: 125 schedules / 15,927
+compared values / 0 differing** across both bases, WBS rows, pinned and auto forecasts, and the
+empty / no-cost / all-complete / none-complete states — comparing every cumulative point, not the
+headline numbers, because a slightly wrong curve looks exactly like a right one. **The RPC branch
+too: 61 aggregates / 11,510 values / 0 differing**, which matters because that is the path a real
+large schedule actually takes. In a browser: all six panels render with zero failures, 26/26 columns
+aligned, hover naming the correct month, the drawer's open/close/Escape/scrim/focus cycle correct
+with `renderBlock` called **exactly once across four opens**, nothing overflowing outside a scroller
+at 375px, and every new surface at **7.07 light / 7.02 dark** minimum.
+
+⚠️ **One real bug in the shared engine, found by the equivalence run and not by reading.** `pd()`
+tested `v instanceof Date`, which is **per-realm** — a Date handed in from anywhere that is not this
+exact window failed the check, fell through to the string branch, and a **pinned forecast finish
+silently became null**. Duck-typed now.
+
+⚠️ **Not verified signed in.** Every check above runs against fixtures and lifted source; nothing has
+been read from PostgREST. The declared columns were confirmed to exist in `supabase-build.sql`
+(`mom_items.project_id`, `issues_lessons.champion`, `project_schedule.cost_curve`), but **no query
+has actually been run** — in particular the MoM sub-table fetch and the schedule select that now
+carries the curve's ten columns. That is the thing most worth a live look.
+
+`db.js` → `20260901c`, `config.js` → `20260901c`, `my-work.js` → `20260901a`,
+`modules-grid.js`/`MODULE_V` → `20260901e`, new `scurve.js` at `20260901a`.
+
+### 2026-09-01 (i) — Dashboard round 2: a REGRESSION I shipped, the chips removed, MoM/Issues expanded, topbar made consistent
+
+Owner ran the two PR #35 migrations, then sent a screenshot with five items. Four are done here;
+the S-Curve panel (item 2) is deliberately not, and is explained at the bottom.
+
+**⚠️ ITEM 1 WAS MY OWN REGRESSION, SHIPPED IN ENTRY (h), AND THE TEST SUITE SAID IT WAS FINE.**
+The Project Schedule & Milestones panel rendered as scrambled two-per-row nonsense because
+`dashboard.html` held **two** `renderProgram` declarations — the splice that installed the new one
+ran with its insertion marker BEFORE its cut region, so instead of replacing the old function it
+duplicated a 188-line block. JS hoisting means the LAST declaration wins, so the **old**
+`renderProgram` ran: it emits 3 cells per trade into the new 4-column grid, and the rows wrapped.
+- ⚠️ **The suite passed 45/45 against code the browser never executed.** Its `slice()` helper finds
+  functions with `indexOf` — the FIRST match — so it tested the new function while the second one
+  shipped. A test that cannot tell which of two definitions runs is not testing the product.
+- **Fixed twice over:** the duplicate block is gone, and the harness now refuses to run unless every
+  named function is defined **exactly once** AND every deliberately-removed function is absent. The
+  second guard was added after the same session's *second* splice bug silently swallowed
+  `renderPerf` whole while deleting the function above it — and the suite still went green, because
+  nothing asserted the function had survived. Both guards are `process.exit(2)`, before any test.
+
+**2. S-Curve — the metric I added in (h) was reading a table nothing writes.** Owner: *"the S-Curve
+module should in itself be derived from the project schedule"* — correct, and that is exactly what
+the module does. My `series` metric over the **`s_curve` table** was therefore dead on arrival: no
+code anywhere writes that table, so the card read "No curve published" on every project and always
+would have. The metric is **removed**, the now-unused `series` aggregation is **removed from db.js**
+with it, and the small S-Curve card is off the performance row (which is 4 cards now).
+
+**3. Decisions chips removed** — markup, `renderStatus()` (which by then existed only to draw them),
+and their CSS. `.pd-stat-warn` was kept out of that block: the performance cards and both list
+panels still use it.
+
+**4. Minutes of Meeting and Issues & Concerns expanded, and a real escaping bug fixed.**
+- Both panels gained a fourth figure and a capped list of the four most recent rows, so they SHOW
+  what is happening rather than only counting it: MoM adds recurring-series count, the meeting-date
+  span, and per-row group/Draft tags; Issues adds on-hold, and **open** Critical/High counts.
+- ⚠️ **Severity is counted only for OPEN rows.** A register full of CLOSED criticals is history, and
+  including them would make a well-run project look like a burning one.
+- ⚠️ **`Issues &amp; Concerns` was rendering literally.** `vizHead()` escapes its title, so a
+  pre-escaped `&amp;` was escaped a second time into `&amp;amp;`. Passing a plain `&` fixes it.
+- ⚠️ **The SAME bug, found by the suite in the new code minutes later:** the MoM date span was built
+  as `date + ' &rarr; ' + date` and then wrapped in `Fmt.esc()`, so the arrow would have shipped as
+  a literal `&rarr;`. Escape the DATES, not the assembled markup. This one was caught before it
+  reached the owner only because a test asserted on the rendered arrow.
+
+**5. Topbar consistency — both halves were real CSS bugs, and both are fixed app-wide, not on the
+dashboard only.**
+- ⚠️ **Two `margin-left:auto` in one flex row.** `#user-bar` carries one (for non-split pages) and
+  `#pd-theme-toggle` carries another inside the split topbar. Two auto margins SHARE the free space
+  between them, which is precisely why the theme button sat stranded mid-bar with the avatar far to
+  its right. `#user-bar`'s is now zeroed inside the split topbar, so the toggle's auto margin moves
+  the whole account cluster right as one unit.
+- ⚠️ **`.dh-project` had no CSS at all.** Every module declares its own picker styling
+  (`.il-project`, and so on) while dashboard.html declared none, so it fell back to the full-size
+  `.pd-select` — a visibly larger, heavier control than the identical picker on every module. Rather
+  than adding a 12th copy, one rule now styles `[class$="-projctx"] > .pd-select` for every page,
+  including pages added later. The module rules load after this file and set the same values, so
+  nothing changes for them.
+
+**Verified.** **48 checks** driving the shipped functions in a Node `vm` sandbox, plus the two
+fatal structural guards above. **Measured live** against the real stylesheet: 4 performance cards
+reading 50% / 42% / 0.84 / 1.05; the programme grid at `126px 132px 763px 42px` with **24 children
+for 6 trades — exactly 4 per row, which is the regression check**; **0 of 6** percentage labels
+clipped; 6 date cells present; the Issues title reading `Issues & Concerns`; the MoM subtitle
+reading `10 meetings · Jun 2, 2026 → Aug 28, 2026`; no console errors, no page scroll.
+⚠️ **Three of the run's failures were the TEST's fault and one was the CODE's** — the two loose
+regexes were corrected, the double-escape was fixed in the product. Said plainly because the split
+matters: a suite that is always "right" about its own assertions is not being read.
+
+⚠️ **NOT verified signed in, and no screenshot** — the dashboard redirects to login, this
+environment holds no credentials, and the Browser pane again would not composite frames.
+
+⚠️ **ITEM 2 IS NOT DONE, and was not attempted half-way on purpose.** The owner wants the S-Curve as
+its own panel: baseline / actual / forecast curves, hoverable, over a scrollable period table. The
+S-Curve module computes exactly that from `project_schedule` — via ~150 lines covering two bases
+(cost-weighted and duration-weighted), per-activity spread curves (`cost_curve`: linear /
+front / back / bell) and an SPI-stretched forecast finish. **Writing a second copy of that on the
+dashboard is how the two screens would come to disagree about the same project's curve** — the
+failure this repo has documented repeatedly. The correct move is to extract that engine into a
+shared `assets/js/scurve.js` used by BOTH, which is a real change to the S-Curve module and belongs
+in its own commit rather than bolted onto this one. Until then the dashboard shows **no** S-curve,
+which is honest: the card it replaced was reading an empty table.
+
+`config.js?v=` / `db.js?v=` → `20260901b`, `dashboard.css?v=` → `20260901a` (28 files; this also
+unified `modules/minutes-of-meeting/index.html`, which was still pinned to a stale `20260830e`).
+
+
+### 2026-09-01 (h) — Dashboard rebuilt: the two KPI rows replaced by a performance row, EVM/Claims/Matrix/Packages panels dropped, MoM + Issues in their place
+
+Owner sent a screenshot with a red rectangle and eight numbered items. The rectangle enclosed
+**both** card rows — the project-facts row and the four status cards — stopping above the decisions
+chips, so the chips were kept. ⚠️ The first screenshot arrived without the rectangle visible; rather
+than guess between "the facts row" and "the status row" (materially different work, and item 2
+suggested a third reading), the owner was asked and sent the marked-up version. Guessing here would
+have deleted the wrong four cards.
+
+**1 + 8. Both rows and the "Welcome, Fernando" heading removed.** The heading is the PROJECT now:
+`<h2 id="proj-title">` carries the project name and the sub-line carries the id. `renderKpis()`,
+`statCard()` and cards 1–4 of `renderStatus()` are gone; `renderStatus()` now does only the work the
+surviving decisions strip needs.
+
+**2. Location in the title bar.** `(OPW101) · Newport Boulevard…`. ⚠️ The segment is **omitted**
+when the project record has no location, never rendered as an em-dash: a placeholder in a title bar
+reads as a claim that the project has no location, while saying nothing is the truth when the field
+is simply unset.
+
+**3. The new performance row: S-Curve, Planned POC, Actual POC, SPI, CPI.**
+- ⚠️ **THE REAL DECISION HERE WAS THE BASIS, NOT THE LAYOUT.** `poc` is DURATION-weighted; the
+  pre-existing `pv` is COST-weighted. Shipping those two as "Actual POC" and "Planned POC" would
+  have put two different measurements side by side under labels that look like a matched pair, and
+  the card literally prints their difference — so the subtraction would have been meaningless.
+  A new **`pvDur`** metric (the same `elapsed` shape, weighted by `duration_days`) was added to
+  config.js so the pair shares a basis. `pv` stays cost-weighted because SPI is a money ratio and
+  EVM defines it that way, and each card names its own basis so the two families cannot be conflated.
+- Every card states what is missing rather than resting at a neutral-looking `0%` or `1.00`.
+- The S-Curve card draws a real 2-series sparkline. ⚠️ Each series is drawn only where IT has
+  values, so a curve whose actuals stop half way shows the planned line running on and the actual
+  line ending — joining across the gap would draw a segment that looks like progress nobody reported.
+
+**4. Trade dates added, and a REAL clipping bug found while checking the bars.**
+Each row now carries its own `from → to`, activity count and done count, and the header states the
+elapsed % of the programme.
+- ⚠️ **The bug the owner suspected was real, and it was the LABEL, not the geometry.** `.pd-pv-n`
+  was `position:absolute; right:6px` **inside** `.pd-pv-b`, which clips with `overflow:hidden`. On a
+  short trade the percentage was sliced mid-digit — Allied Services rendered as a bare `%` in the
+  owner's own screenshot. A number that can be truncated into a different number is worse than no
+  number. It is a real grid column now and cannot be clipped by the bar it describes.
+- ⚠️ **The geometry itself was checked and found CORRECT**, so it was not "fixed". Bar offset/width
+  and the fill are sound; what looked wrong was the ghost bar (the trade's span at .22 opacity)
+  being mistaken for a progress fill. A `.pd-pv-now` marker now shows where today falls inside each
+  trade's own span, so "0% done, 60% of the time gone" is legible rather than inferred from colour.
+
+**5 + 6. EVM, Contracts & Claims, Priority Matrix and Packages panels removed**, with their
+`gauge()`, `mx()`, `renderFlow()` and `renderMatrix()` code and all their dead CSS. **Minutes of
+Meeting** and **Issues & Concerns** panels replace the first two. ⚠️ Both follow the rule the old
+status band already held: a module with **no rows** reports "not in use", never "0 drafts" / "0
+open" — zero on an unused register reads as good news. The Issues panel also surfaces entries
+carrying **no status** as their own figure rather than silently counting them as closed.
+
+**7. Retired modules are clickable on the dashboard now.** `renderTiles()` had its own second copy
+of the disabled-card markup, so Drawing Register and Material Submittal Log were live links on
+modules.html and dead grey boxes here. The branch now delegates to the launcher's own
+`ModulesGrid.card(m)` (newly exported) — one builder, so the two screens cannot drift. Enabled
+modules keep the dashboard's own card, which carries live figures the launcher's has no place for.
+
+**New shared aggregation: `series`** (`db.js`) — one x column, N y columns, ordered. ⚠️ A point is
+kept when x exists and **at least one** y is numeric: dropping the row when one series is null would
+silently shorten the other, and keeping a row with no y at all would draw a gap that reads as zero.
+
+**Verified.** **45 checks** driving the SHIPPED functions in a Node `vm` sandbox — sliced out of
+dashboard.html by brace matching, never re-typed, so the suite cannot pass against a copy that
+drifted. SPI **0.84** and CPI **1.05** computed from EV 420 / PV 500 / AC 400; the POC pair reporting
+**−8 pts on one basis**; the stopped-series sparkline proven to emit one `M` and no `L`; every empty
+state proven to name its gap and print no `NaN`/`undefined`. Plus **9 checks** on the new `series`
+agg (sorting, null handling, numeric-string parsing, non-numeric → null not NaN).
+⚠️ **Two of the first run's failures were the TEST's fault, not the code's** — `"10 done"` contains
+the substring `"0 done"`, and the bar-width regex was also catching the fill widths, which
+legitimately reach 0. Corrected the assertions rather than the code, and said so.
+
+**Measured live in the browser** against the real stylesheet with synthetic data: 5 cards in 5
+columns, 2 sparkline paths, the programme grid at `126px 132px 763px 42px`, **0 of 6 percentage
+labels clipped** (including the short Allied Services bar that was the bug), 0 bars overflowing
+their track, 0 page horizontal scroll, 3 mini-cells in each new panel, no console errors.
+Structural: 0 duplicate DOM ids, all 13 `getElementById` targets present in markup, 0 NUL bytes,
+CSS braces 60/60, 0 emitted classes without a rule.
+
+⚠️ **NOT verified signed in, and NOT screenshotted.** The dashboard redirects to login and this
+environment holds no credentials, so nothing above ran against real Supabase data — in particular
+`pvDur`, the MoM metrics and the `s-curve` series have never been fetched through PostgREST, only
+fed in as fixtures. The Browser pane was again not compositing (the hidden-tab family already in
+this log), so every visual claim is measured DOM geometry, not a rendered image. The `max-width:720px`
+rule is verified as AUTHORED (`96px 1fr 40px`, dates hidden) via the CSSOM — the pane reports
+`innerWidth: 1280` whatever preset is set, so it was never actually rendered narrow.
+
+`config.js?v=` → `20260901a` (26 files), `db.js?v=` → `20260901a` (22), `modules-grid.js?v=` →
+**`20260901d`** (2). No `MODULE_V` bump: no module's index.html changed structurally.
+
+⚠️ **A cache-version COLLISION was caught while rebasing onto PR #35.** That PR bumped the
+`modules-grid.js?v=` query string to `20260901c` **without changing the file** — and this work had
+independently chosen `20260901c` for a modules-grid.js that DOES change (the new `card` export).
+Two different file contents behind one version string means any browser that already fetched their
+`c` would keep serving the old file and `ModulesGrid.card` would be undefined, breaking every tile
+on the dashboard. Bumped to `20260901d` instead. A query-string bump with no file change is what
+made this possible; the version means nothing if it is not tied to content.
+
+
+### 2026-09-01 (g) — RunPod 3D reconstruction cancelled; both Edge Functions undeployed
+
+Owner: *"Let's cancel the runpod feature since it requires a subscription."* **Reverses entry (f),
+three prompts old.** No code change, no `MODULE_V` bump, no user-visible change.
+
+**Undeployed both functions.** `functions list` is back to the original five (`sync-wpm`, `sync-eng`,
+`push-need-by`, `push-packages`, `push-vendor-perf`); POSTing either reconstruction URL now returns
+**404**. Done before asking how far to go on the rest, because `reconstruction-webhook` was deployed
+`--no-verify-jwt` — publicly invokable by design — and an unauthenticated endpoint for an abandoned
+feature is the one part of this that is worse left up than taken down.
+
+**No credential or billing exposure to unwind:** `RUNPOD_API_KEY` / `RUNPOD_ENDPOINT_ID` were never
+set, and no RunPod account was ever created. There is no subscription to cancel — the feature was
+abandoned before it ever cost anything, which is the cheapest possible point to stop.
+
+**Code SHELVED, not stripped** — owner's explicit choice from three offered options (shelve / strip
+the client code / full removal including a `DROP TABLE` migration). `recon.js`, the `RECON` global,
+the `reconstruction` pin branches, `reconstruction_requests`, `services/reconstruction-worker/` and
+both function sources all remain. ⚠️ The 3D button has been `disabled` since 2026-08-29, so **no user
+could reach this feature today and none will notice its cancellation.**
+
+⚠️ **Why shelving was recommended over stripping**, since "delete the dead feature" is the tidier
+instinct: the reconstruction branches are interleaved with LIVE panorama and photo paths — pin
+dispatch, the media-strip merge, cluster-badge fallbacks — so removal is genuine surgery on a module
+fresh off seven feedback rounds, spending real regression risk to delete code that is already inert.
+
+⚠️ **The verifier and the schema are deliberately left alone.** `reconstruction_requests` stays, so
+`VERIFY-schema.sql` keeps expecting it and keeps returning no rows. Dropping the table would have
+required a new migration AND a `gen-verify.js` regeneration; that is the full-removal path, and it
+was not chosen.
+
+
+### 2026-09-01 (f) — The two reconstruction Edge Functions deployed
+
+Owner: *"deploy the two edge functions"*. Both are **new deploys, not overwrites** — a
+`functions list` before touching anything showed the project holding five functions
+(`sync-wpm`, `sync-eng`, `push-need-by`, `push-packages`, `push-vendor-perf`) and neither
+reconstruction function among them, so there was no previous version to lose. No code change, no
+`MODULE_V` bump.
+
+```
+supabase functions deploy submit-reconstruction --project-ref bgupuqnkqhixpuctyder
+supabase functions deploy reconstruction-webhook --no-verify-jwt --project-ref bgupuqnkqhixpuctyder
+```
+
+⚠️ **The `--no-verify-jwt` flag on the webhook is the one thing that had to be right.** RunPod holds
+no Supabase session, so a webhook deployed under the platform's default JWT check would have its
+callback rejected at the gateway before ever reaching the per-request token check that is its actual
+security. `submit-reconstruction` keeps the default check ON, matching all five existing functions.
+Confirmed in the platform's own metadata after deploying: `verify_jwt` **true** on submit,
+**false** on the webhook — the only `false` in the project.
+
+**Smoke-tested live, three probes, all writing nothing:**
+- Webhook POSTed with no query params → **400** *"request_id and token query params are required"*,
+  which is OUR code answering. This is the real proof `--no-verify-jwt` took effect end to end
+  rather than merely being recorded in metadata — under the default check the gateway would have
+  answered 401 first and our handler would never have run.
+- Webhook POSTed with a nonexistent request id → **404** before any write.
+- `submit-reconstruction` POSTed with no Authorization header → **401
+  `UNAUTHORIZED_NO_AUTH_HEADER`** from the platform gate, so JWT verification is genuinely on.
+
+⚠️ **NOT proven by these probes: the token comparison itself.** Probe 2 returned 404 on the row
+lookup, which sits BEFORE the `webhook_token !== token` check — so the branch that actually rejects a
+wrong token has still never executed. It needs a real queued request to exercise, which needs RunPod.
+
+⚠️ **`RUNPOD_API_KEY` and `RUNPOD_ENDPOINT_ID` are NOT set** — confirmed against `secrets list`,
+which holds twelve secrets and neither of these. `submit-reconstruction` therefore returns a clean
+**500 "RUNPOD_API_KEY / RUNPOD_ENDPOINT_ID not configured"** on the first line of its handler, before
+authorizing anyone or signing anything. That is the designed pre-flight failure, not a deploy defect.
+The secrets are the owner's to set — this environment does not handle API keys — and the endpoint
+they would point at **still does not exist**: no RunPod account, no serverless endpoint, and
+`services/reconstruction-worker/` is written-but-never-built (no Docker and no GPU here). Deploying
+these two functions closes prerequisite (b) of the three named in the 2026-08-29 reconstruction
+entry; (a) the RunPod endpoint remains open, and (c) the migration is now done.
+
+**Net effect for a user today:** unchanged. The 3D tab still shows an empty approval queue. What
+changed is that the chain is now blocked on one external account rather than on three things.
+
+
+### 2026-09-01 (e) — All 14 migrations confirmed applied against the regenerated verifier
+
+Owner re-ran `VERIFY-schema.sql` after its regeneration: **no rows returned** again, this time
+against the full **342 objects / 132 migrations** list that *does* include `2026-08-30-photos-round3`
+and `2026-08-31-manpower-org-schedule-manhours`. The 2-migration blind spot from entry (d) is closed.
+**The 14-migration backlog from 2026-08-28 → 08-31 is fully landed.** No code change, no `MODULE_V`
+bump — nothing the browser loads was touched by any of this.
+
+**Schema state as of now:** every object declared by every migration in this repo is present on the
+live database. That is the first time this file can say so without a named exception since the
+Progress Photos overnight rounds began on 08-28.
+
+⚠️ **This closes the SCHEMA question, not the "does it work" question.** The verifier checks object
+existence only — never RLS policies, grants, index definitions, trigger bodies or back-fills — and
+the bundle ran without a wrapping transaction, so a skipped policy block would still verify clean.
+Both modules that gained tables here still carry their standing **"nothing exercised signed in"**
+caveat: Progress Photos has never had a live click-through of thumbnail generation, pin-drop, markup
+persistence or floor-plan upload, and Manpower Loading's new org/schedule/manhours surfaces have only
+ever been driven against a stub. The tables existing is what made those checks *possible*, not what
+makes them unnecessary.
+
+⚠️ **Unchanged and still outstanding:** 3D reconstruction needs the two Edge Functions deployed
+(`submit-reconstruction`, `reconstruction-webhook`) and a RunPod endpoint that does not exist. No SQL
+affects this.
+
+
+### 2026-09-01 (d) — The clean VERIFY result was real but incomplete: the verifier was two migrations stale
+
+Owner ran `RUN-OUTSTANDING-2026-08-28-to-08-31.sql`, then `VERIFY-schema.sql`, which returned
+*"Success. No rows returned"* — which that file's own header defines as every migration applied.
+**The result is genuine, but it did not cover the whole bundle.**
+
+⚠️ **`VERIFY-schema.sql` was last regenerated on 2026-08-30 and its `expected` list stopped at
+`2026-08-30-photos-round2.sql`.** The final two files of the 14-migration bundle —
+`2026-08-30-photos-round3.sql` and `2026-08-31-manpower-org-schedule-manhours.sql` — were declared
+**after** that regeneration and so were **never asked for**. A verifier cannot report a missing
+object it was never told to look for, so "no rows" proved 12 of 14, not 14 of 14. Caught by grepping
+each of the 14 filenames against the verifier's own value list rather than trusting the clean run.
+
+**Regenerated: `node migrations/gen-verify.js`** → **342 live objects from 132 migrations**
+(was 328/130). The 14 checks added are `progress_photos.thumb_url` / `.adjustments`, the
+`manpower_manhours` table, `manpower_positions.reports_to_id`, `manpower_roster.location` and its
+seven `link_*` columns, and `project_location_values`.
+
+⚠️ **One check MOVED rather than being added, and that is correct.** `project_location_values` was
+attributed to `2026-08-24-equipment-loading.sql`; the 08-31 migration `CREATE OR REPLACE`s it, and
+gen-verify models supersession, so the function is now checked against its latest declaration. Net
+`function` count is unchanged — a diff reader who sees one line removed should not read it as a lost
+object.
+
+**Still outstanding after this, and NOT a SQL problem:** 3D reconstruction remains non-functional.
+`reconstruction_requests` now exists, but the chain needs the two Edge Functions deployed
+(`supabase functions deploy submit-reconstruction` / `reconstruction-webhook`, plus
+`supabase secrets set`) and a RunPod serverless endpoint that has never been created. The module
+correctly shows an empty approval queue meanwhile. No new storage bucket is needed — every write
+path in this module still goes to the existing `progress-photos` bucket, confirmed by grepping
+`storage.from(` across all of `modules/progress-photos/`.
+
+⚠️ **What a clean verifier still does not prove**, per its own header: it checks object EXISTENCE
+only — never RLS policies, grants, index definitions, trigger bodies or back-fills. Because the
+bundle deliberately carried no wrapping transaction, a mid-file failure would have left earlier
+statements committed; a policy block skipped that way would still verify clean. Re-run the
+regenerated file to close the 2-migration gap before treating the bundle as fully landed.
+
+
+### 2026-09-01 (c) — One combined SQL file for the 14 migrations still outstanding
+
+Owner asked which migrations from Friday 2026-08-28 onward still need running, then for the
+outstanding ones bundled into a single file. **No app-code change, no `MODULE_V` bump** — this
+touches nothing the browser loads.
+
+**Sixteen migrations were added 08-28 → 08-31; three are already applied.**
+`2026-08-26-people-and-assignment.sql` and `2026-08-28-people-directory.sql` (owner ran both, entry
+2026-08-28 (b)), and `2026-08-27-manpower-loading.sql` (confirmed applied signed-in on the QADEMO
+sandbox, manpower-loading entry 2026-08-28 (live)). The other **14 are outstanding** — 13 from
+Progress Photos' six overnight feedback rounds, plus `2026-08-31-manpower-org-schedule-manhours.sql`.
+
+**New `migrations/RUN-OUTSTANDING-2026-08-28-to-08-31.sql`** — the 14 concatenated in filename
+(= intended application) order, 806 lines.
+- ⚠️ **Deliberately NOT date-prefixed.** Both `gen-verify.js` and `gen-build.js` glob
+  `/^\d{4}-\d{2}-\d{2}-.*\.sql$/`; a `2026-09-01-…` name would make each generator read every object
+  in the bundle a second time and declare the schema doubly-defined. The `VERIFY-schema.sql` naming
+  style is followed instead, for the same reason it has that shape.
+- ⚠️ **No wrapping BEGIN/COMMIT, on purpose.** One transaction around all 14 means one late failure
+  silently discards thirteen good migrations. Each constituent file is already idempotent
+  (`IF NOT EXISTS`, `DROP POLICY` before `CREATE POLICY`), so the recovery from a partial run is to
+  fix the failing statement and re-run the whole file — which is only true because nothing rolls back.
+- The three applied migrations are **excluded rather than included-and-relied-on-to-no-op**, so the
+  file cannot be misread as the full 08-28→08-31 set. The header names them, and names
+  `2026-08-27-manpower-loading.sql` as the prerequisite of the last file in the bundle.
+
+**Verified.** Concatenation is lossless: source lines stripped of blanks **639**, bundle stripped of
+its generated header/banners **639** — a single diff hunk of **0 removals / 23 additions**, all of
+them the header comment, so every source line survives verbatim and in order. Across the bundle:
+parens **337/337**, `$$` **4** (the two pairs, in `2026-08-29-floor-plans` and the manpower file),
+semicolons **152 in the sources, 152 in the bundle**, **0 NUL bytes**, all 14 banners present. No
+constituent file contains a psql meta-command or its own transaction block, which is what makes
+plain concatenation safe here — checked, not assumed.
+
+⚠️ **NOT verified: that these 14 are genuinely un-run.** There is no live database credential in this
+environment and the anon key has no schema grants, so the applied/outstanding split above is read out
+of this repo's own changelogs, not out of `information_schema`. A migration run outside a logged
+session would make the bundle over-report. Re-running an applied file is a no-op, so the failure mode
+is wasted work rather than damage — but `migrations/VERIFY-schema.sql` remains the authoritative
+check, and should be run after the bundle.
+
+
+### 2026-09-01 (b) — Vertical stacking: the floors were running sideways
+Owner, on a multi-tower project with towers matched and levels defined: *"in vertical stacking the level
+locations are not properly stacked. they are stacked horizontally."* Their data was right; the view read
+the wrong level.
+- ⚠️ **The stack banded by `LOC_LEVELS[0]`, which on a `Tower › Level › Zone` breakdown is the TOWER.**
+  Each card is already scoped to one tower, so that gave exactly **one band**, and the floors fell out as
+  that band's cells — a building drawn on its side.
+- New **`_vsAxis()`**: the tower is the CARD and the selector, never also the band axis. Storeys take the
+  vertical axis. Falls back to the full list on a project whose only level IS the tower, so a one-level
+  project is unchanged.
+- ⚠️ Same principle the stacking modal settled on 2026-08-17 — that fix went into `stkGridHTML` and was
+  never applied to this view.
+- ⚠️ The **Assign** repair stays about the TOWER and is split out rather than re-pointed: "assign every
+  activity to one floor" would be nonsense. And `_vsStampTopLevel` wrote `LOC_LEVELS[0]` rather than the
+  tower — on a differently-ordered breakdown that is a floor.
+- **17/17** executing the shipped axis functions; 0 functions lost, 1 added. Detail in
+  `modules/project-schedule/CLAUDE.md`. `MODULE_V` → `20260901b`.
+⚠️ **Not verified signed in** — the owner's project was not opened from here.
+
+
+### 2026-09-01 — Vertical stacking exports to PDF
+Owner asked for the displayed vertical-stacking report to be convertible to PDF, "very simple yet
+aesthetic". New **PDF** button in the stacking toolbar: opens a clean A4 print sheet — title, project,
+the basis it was exported under (tower / view / detail / dates / trades), the legend, one card per
+building, footer with the data date — and triggers the print dialog.
+- ⚠️ **No PDF library, deliberately.** A print window keeps the SVG **vector**; html2canvas would
+  rasterise the buildings and add a vendored megabyte to a no-build app. Same approach the Reports
+  library already uses.
+- ⚠️ **The buildings are cloned from the screen, not re-derived** — a second renderer would drift from
+  the one on screen. Their hatch `<defs>` are copied in ahead of them, and the CSS vars they resolve
+  against are re-declared as a **fixed light palette** so a planner on dark mode does not print a black
+  page.
+- Detail in `modules/project-schedule/CLAUDE.md`. `MODULE_V` → `20260901a`.
+⚠️ **Not verified signed in** — no PDF has actually been produced against real data.
+
+### 2026-08-31 (c) — Project-mode sidebar drops its "Portfolio" section
+
+Owner: *"from project, remove portfolio from sidebar."*
+
+- **`assets/js/ui.js` → `renderNav()`, project-mode (`else`) branch only:** the leading
+  `<div class="pd-navsec">Portfolio</div>` + "Portfolio Dashboard" link is gone; the sidebar now
+  opens directly on `<div class="pd-navsec">Project</div>` (Dashboard + the module list).
+  ⚠️ **Scoped to the project-mode branch — `mode === 'portfolio'`** (used by `projects.html`,
+  `admin.html`, `my-work.html`, `portfolio-overview`) **still shows its own "Portfolio Dashboard"
+  link**, unchanged; only a project's own sidebar (dashboard.html + every module page) drops it.
+- Not a dead end: the shared project dropdown (`UI.enhanceProjectSelect`) already offers a
+  Portfolio row from inside any project, so leaving a project for the Portfolio Dashboard is
+  still one click away — this just removes the second, always-visible path that duplicated it.
+- `.pd-navsec:first-child { padding-top: 0 }` needed no change — it applies positionally to
+  whichever section renders first, and "Project" now is that section.
+- Verified: `ui.js` parses; confirmed no page calls `renderNav(..., 'project', { active:
+  'portfolio-dashboard' })` (the only `active: 'portfolio-dashboard'` caller uses `mode:
+  'portfolio'`, unaffected).
+- Shared asset changed → **`ui.js?v=` bumped `20260831a` → `20260831c` across all 19
+  referencing HTML files** (`home.html` doesn't load `ui.js` any more, so it's not among them).
+
+### 2026-08-31 (b) — Projects page: denser rows in the list view
+
+Owner: *"in the projects list, the text size/row height of each project should be reduced."*
+Confirmed via `AskUserQuestion` this meant `projects.html` (the dedicated Project Selector), not
+`home.html`'s landing-page card list — the two are separate implementations and only one was
+in scope.
+
+- New rules scoped to `.pd-proj-table` (already layered onto the same `<table>` as the shared
+  `.pd-table` base — `class="pd-table pd-proj-table"` — so a later, equal-specificity rule here
+  wins by source order with no `!important` needed): cell padding `10px 12px` → **`6px 12px`**,
+  body text `14px` (inherited from `body`) → **`12.5px`**, header text `12px` → **`10.5px`**, the
+  project-id `<code>` chip `12px` → **`11px`**.
+- ⚠️ **Scoped deliberately to `.pd-proj-table`, not the shared `.pd-table` base** — `.pd-table` is
+  reused elsewhere in the app (e.g. `admin.html`'s Users table), and editing it directly would have
+  shrunk every other table in the app along with this one.
+- `.pd-proj-name` (no explicit font-size of its own) inherits the new 12.5px cell size for free.
+  Card view (`renderCards`) is untouched — the ask named "row height", which only applies to the
+  table-based List view (`renderList()`, the default view).
+- Verified: CSS brace-balance unchanged (414/414 before and after).
+- Shared asset changed → **`dashboard.css?v=` bumped `20260830e` → `20260831b` across all 27
+  referencing HTML files**, confirmed 0 stragglers on the old version.
+
+### 2026-08-31 — Landing page loses the shell chrome; "Home" dropped from the sidebar
+
+Owner: the `home.html` card from entry (h) below should have no sidebar/topbar around it — a pure
+picker screen, matching how the PRC screenshot it was modeled on has no app chrome either — and the
+sidebar's own "Home" link (added the same day as `home.html`, entry (g)) should go.
+
+- **`home.html`**: `<aside class="pd-sidebar">` and `<div class="pd-topbar">` (with `#user-bar`) are
+  gone; the card now sits directly in `.pd-app > .pd-content > .pd-main`, which already gave every
+  shell page its padding/background — no new wrapper needed. The matching JS calls
+  (`UI.renderUserBar`, `UI.renderNav`, `Icons.hydrate`) and their now-unused `ui.js`/`icons.js`
+  script tags are removed with them; the card itself never used a `data-ico` icon, so nothing was
+  hydrating anyway. `theme.js`'s dark/light toggle still appears — it already falls back to a
+  floating button on any page with no `.pd-topbar` (the same path the login/register pages use), so
+  removing the topbar didn't cost that control.
+  ⚠️ **Sign-out is now reachable only from inside a project/module** (the avatar menu on every other
+  shell page) — this page has no avatar any more. Not flagged as a gap: every destination from here
+  (Portfolio, a project) lands on a page with the full sidebar+topbar seconds later.
+- **`assets/js/ui.js` → `renderNav()`**: the `<a href="home.html">…Home</a>` entry is deleted from
+  **both** branches (`mode==='portfolio'` and the per-project `else`) — it was the only "Home" link in
+  the app, added alongside `home.html` itself in entry (g). `cls('home')`/`active==='home'` has no
+  remaining caller (grepped) and was the only place `home.html` was still linked from `ui.js`.
+- Verified: `home.html`'s inline `<script>` parses (`new Function`), its `<style>` block balances
+  (32/32), `node --check` on `ui.js`. ⚠️ **Not verified signed-in** — no live login is possible in
+  this environment, the standing constraint for every UI pass in this repo.
+- ⚠️ **`ui.js` is a shared asset and this is a real, visible change to every page's sidebar** (the
+  "Home" row disappears from all 19 `renderNav`-calling pages, not just `home.html`, which doesn't
+  even load `ui.js` any more) — so per this repo's own repeatedly-learned lesson (a browser caches a
+  script by its full URL; forgetting to bump the query string is how a shipped fix goes unseen),
+  `ui.js?v=` is bumped `20260830e` → `20260831a` across all 19 referencing HTML files.
+
+### 2026-08-31 — Minutes of Meeting split into its own module
+
+Owner: *"the minutes of the meeting and the issues and concerns should be two separate modules"*, with
+three concrete requirements: (1) keep the link between the two, (2) give Minutes of Meeting a List view
+and a Calendar view of every meeting on the project, (3) remove "Raise as issue" from the Add Minutes
+form and replace it with "Get from issue" — so action items for issues raised during a PPR get recorded
+by pulling them in, not by raising new ones from the minutes. **No migration** — `meeting_minutes` /
+`mom_items` are unchanged; only the code moved.
+
+**New module `modules/minutes-of-meeting/`** (`window.MinutesOfMeeting`, `config.js` key
+`minutes-of-meeting`, icon `calendar`), split out of the combined `window.IssuesLessons` module, which
+keeps Issues & Concerns + Lessons Learned as two screens (Lessons Learned stayed put — it is captured
+FROM an issue far more often than from a meeting, and a three-way split was not asked for). Full
+reasoning in both modules' own CLAUDE.md — `modules/minutes-of-meeting/CLAUDE.md` for the new module,
+`modules/issues-lessons/CLAUDE.md` for what stayed and why.
+
+- ⚠️ **The link is TWO LIGHT CROSS-MODULE READS, never a shared editor** — the same pattern every other
+  cross-module link in this app already uses (the schedule's `wpm_work_packages` mirror, Cash Flow's
+  WPM read). Minutes of Meeting reads a light copy of `issues_lessons` (for a linked item's live status
+  and the "Get from issue" picker) and of `lessons_learned` (for the "N lessons" badge); Issues &
+  Concerns keeps its existing light read of `meeting_minutes` for the "From MOM" tag. Neither module
+  writes to the other's table.
+- ⚠️ **"Raise as issue" is deleted, not hidden — and its replacement pulls in the OPPOSITE direction.**
+  The old button copied an action item's text into a brand-new `issues_lessons` row; new issues are
+  raised directly in Issues & Concerns now. **"Get from issue"** is a small searchable panel at the
+  action-items header (beside "+ Add action item") listing still-open issues not yet on this agenda,
+  each a one-click pull via `momPullOneIssue()` (factored to share its payload builder with the
+  existing bulk "+ Add all N" pull, so the two routes can't disagree). The underlying link
+  (`mom_items.issue_id → issues_lessons.id`) is unchanged — only which side creates the row reversed.
+  The auto-seed-on-a-new-minute bulk pull (still pulling every open issue quietly onto a fresh minute's
+  agenda) is untouched.
+- **List and Calendar views**, the module's new top-level way to browse every meeting on a project —
+  previously there was only the two-pane list+detail editor. List is a sortable table (Title / Type /
+  Date / Draft-or-Distributed / Action items / Recorded by, never a real name). Calendar is a
+  Monday-first month grid matching the Portfolio Overview milestones-calendar convention, with meeting
+  chips per day and Prev/Next/Today nav. ⚠️ Built on **UTC date arithmetic throughout**, matching a
+  meeting's date against its plain text rather than parsing it into a local `Date` — the local-vs-UTC
+  off-by-one this app has hit repeatedly. Selecting a meeting (or "+ New minutes") opens the existing
+  Detail editor, essentially unchanged; "← Back to meetings" returns to whichever browse mode was last
+  active. All three states are wired into the browser's own Back/Forward via `UI.bindHistoryState`.
+- Everything else in the Detail editor — the activity picker, distribute/revert, carry-over from
+  another meeting, attachments (the same private-bucket ordering rules), and the PDF export (still
+  byte-for-byte the mom-app-format sheet) — moved to the new module verbatim, unchanged in behaviour.
+
+**Shared assets touched:** `assets/js/config.js` (new MODULES entry), `assets/js/my-work.js` (the
+cross-project "My Work" page's row click now routes `data-screen="mom"` items to the new module instead
+of `issues-lessons`), `MODULE_CONTRACT.md` (module-key table). `MODULE_V` (derived from
+`modules-grid.js?v=` on `dashboard.html`/`modules.html`, per the 2026-08-25(m) stale-cache lesson) →
+`20260831a`, which is what makes the trimmed `issues-lessons/index.html` and the new module page both
+reach a browser rather than sitting behind a stale cached copy — the exact failure mode that entry
+documents.
+
+**Verified:** `node --check` clean on both modules' `module.js` and on `assets/js/my-work.js`; CSS brace
+balance confirmed on both modules' stylesheets (156/156 new, 194/194 trimmed); every class the trimmed
+`issues-lessons` JS emits still resolves to a CSS rule (a first cut over-trimmed — several `.il-mom-*`
+class names turned out to be a shared master/detail list+detail pattern **reused verbatim by Issues'
+and Lessons' own report screens**, not MoM-exclusive despite the prefix; caught by grepping actual usage
+before removing anything further, not by naming convention alone); every `mom`-prefixed function called
+in the new module resolves to a definition in the same file; grepped for every symbol the split was
+supposed to remove from `issues-lessons` (`renderMom`, `wireMom`, `momDetailHTML`, `canEditMinute`,
+`momLocked`, `MOM_BUCKET`, `momDownloadPDF`, `il-screen-mom`, `_momSel`, …) — zero remaining references.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing constraint
+for every UI pass in this repo. No live click-through of the List/Calendar views, "Get from issue", the
+cross-module lesson deep-link, or the PDF export against real data; the schema itself is unchanged from
+what the combined module already shipped against, so no new migration risk was introduced.
+
+### 2026-08-30 (h) — Landing page (`home.html`) restyled to match the Procurement Dashboard's "Select Dashboard" screen
+
+Owner shared a screenshot of the Procurement (PRC) app's post-login landing screen and asked this
+app's own landing page to match its look. `home.html` — added in entry (g) below as the plain,
+always-expanded `UI.renderNavListInto` tree — is rebuilt into a centered card: a red Megawide mark +
+"Planners Dashboard" / "Megawide Construction Corporation", a **"Select Dashboard"** heading, a
+"Hi &lt;first name&gt;! &lt;role&gt;" greeting, a red-bordered search box + a live "N projects" count,
+an always-highlighted **Portfolio — Consolidated View** row, and project rows carrying a red code pill
++ name + `location` subtitle, grouped under uppercase Group Head headers with a count pill — the same
+visual language as the PRC screenshot's status-grouped, pill-badged project cards.
+
+⚠️ **Deliberately BESPOKE markup, not a restyle of `UI.renderNavListInto`.** That function is shared by
+three other consumers — every module's `enhanceProjectSelect` popover and the shell's topbar
+`renderSwitcher` — and reshaping it into a card/pill/radio layout for this one page would risk
+regressing those compact dropdown use-cases. `home.html` now has its own small render function
+(`PDb.getProjects()`/`getGroupHeads()`, the same data source) instead.
+- ⚠️ **Grouping stayed Group-Head-based** (the app's existing data model — see entry (g)/2026-08-12),
+  restyled with the PRC screenshot's uppercase-label-plus-count-pill treatment rather than switched to
+  PRC's status ("ACTIVE") grouping, which this app has no equivalent concept for.
+- ⚠️ **Kept the existing immediate-navigate-on-click interaction** (click a project row → go straight
+  to `dashboard.html`; click Portfolio → `portfolio-overview`) rather than adopting the screenshot's
+  implied select-a-radio-then-press-"Open Dashboard" pattern — that would be a real behavior change to
+  a page every session passes through, not a visual one, and nothing indicated the current one-click
+  flow was itself a complaint.
+- ⚠️ **No "+ Add New Project" / "Sign out" added to the page.** Project creation lives in
+  `projects.html`/`admin.html`; Sign out is already one click away via the topbar avatar menu
+  (`UI.renderUserBar`) on every shell page including this one — duplicating it here would be a new
+  affordance nothing asked for.
+- The Portfolio row is drawn permanently in its "selected" visual state (pink tint, red left border,
+  filled radio) — matching the screenshot's own always-highlighted "ALL PROJECTS" row — since there is
+  no separate persisted "current view" selection to reflect.
+- Search filters by project name or ID and re-renders the grouped list + count live; the Portfolio row
+  is unaffected by the search box, since it isn't a project.
+- Verified: the inline `<script>` block parses (`new Function`), the `<style>` block's braces balance
+  (32/32). ⚠️ **Not verified signed-in** — no live login is possible in this environment, the standing
+  constraint for every UI pass in this repo.
+- No shared asset changed (`home.html` is a standalone page with its own scoped `<style>` and its own
+  small inline script) — no `?v=` bump needed anywhere else.
+
+### 2026-08-31 — Manpower Loading: Table of Organization, Mobilization dashboard, 5 categories, schedule/location tagging, Activities×Subcontractor matrix, vertical stacking, manhours
+
+Owner's 7-item list for the Manpower Loading module (already built 2026-08-27/28): a steppable
+planned-vs-actual Table of Organization; a mobilization/demobilization dashboard with contract-end
+alerts; widened workforce categories (Shared Staff / Project Staff / Skilled Admin / Skilled
+Self-Performed / Subcontractors); schedule-activity + location tagging for the two site-work
+categories; an Activities×Subcontractor matrix; a simplified vertical stacking view of
+subcontractors per activity/location; and manhours entry per subcontractor or per person.
+**Run `migrations/2026-08-31-manpower-org-schedule-manhours.sql`** (after the 2026-08-27 one — it
+only adds columns/a table, nothing destructive). Full design reasoning, the trade-offs taken
+(notably: the location/schedule link is a TAG, never a second source for the monthly headcount
+which is still contract-duration-derived; and the vertical stacking is a documented
+simplification of the schedule module's own floor-rank engine, not a port of it) and the 42-check
+verification are in `modules/manpower-loading/CLAUDE.md`. ⚠️ Not verified signed in — the anon key
+has no grants in this environment; verified as sliced, executed pure logic only. `0` functions
+lost, `44` added; no shared asset touched, so no app-wide cache-bust.
+
 ### 2026-08-30 (g) — Landing page, one topbar dropdown everywhere, module chrome moves below the topbar, tabs-as-dropdown
 
 Owner sent two more screenshots (a wide Project Schedule topbar, a narrow one showing the collision)
