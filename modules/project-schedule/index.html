@@ -12644,21 +12644,45 @@
   // The branch names above an activity, from its dotted code — built off the WBS-summary rows
   // already in `rows` rather than walking WBS_NODES, so it works on a project whose tree has not
   // been adopted yet (which is exactly the state a fresh import is in).
-  var _vsPathCache = null, _vsPathKey = null;
+  var _vsPathCache = null, _vsPathKey = null, _vsNodeById = null, _vsNodeKey = null;
+  // ⚠️⚠️ WALKS `wbs_node_id`, NOT THE DOTTED CODE — and the first cut of this did the latter,
+  // which made the column LIE on the very project it was added to diagnose. Measured on 4PH Strevi:
+  // the No-level band's Structural Works rows (Rebar / Concrete / Formworks) showed a branch of
+  // "Planning Phase › Design Development" while their **Trade** — which resolves through
+  // `wbs_node_id` — read "Structural Works". Two columns of one table disagreeing about one row.
+  // ⚠️ The node wins, because it is what every other feature reads. `_wbsResyncCodes()` rewrites the
+  // SUMMARY rows' dotted codes to match the node tree and does NOT touch the activities', so after a
+  // repair the two are in different numbering systems, and rebuilding a path by splitting an
+  // activity's code walks into whatever branch happens to hold that number now. A diagnostic that
+  // can be wrong about the thing it exists to show is worse than no diagnostic at all.
   function _vsWbsPath(r) {
+    var key = pid + '|' + (WBS_NODES ? WBS_NODES.length : 0);
+    if (_vsNodeKey !== key) {
+      _vsNodeById = {};
+      (WBS_NODES || []).forEach(function (n) { _vsNodeById[n.id] = n; });
+      _vsNodeKey = key;
+    }
+    var id = r && r.wbs_node_id;
+    if (id && _vsNodeById[id]) {
+      var out = [], n = _vsNodeById[id], guard = 0;
+      while (n && guard++ < 40) { out.unshift(n.name || ''); n = n.parent_id ? _vsNodeById[n.parent_id] : null; }
+      if (out.length) return out.join(' \u203a ');
+    }
+    // ⚠️ Fallback ONLY for a row with no node yet (a fresh import, mid-repair), and LABELLED as such
+    // so a reader is never shown a code-derived guess as though it were the tree.
     var code = String((r && r.wbs) || '').trim(); if (!code) return '';
-    var key = pid + '|' + rows.length;
-    if (_vsPathKey !== key) {
+    var ckey = pid + '|' + rows.length;
+    if (_vsPathKey !== ckey) {
       _vsPathCache = {};
       rows.forEach(function (x) { if (isWbs(x) && x.wbs) _vsPathCache[String(x.wbs)] = x.activity_name || ''; });
-      _vsPathKey = key;
+      _vsPathKey = ckey;
     }
-    var segs = code.split('.'), out = [];
+    var segs = code.split('.'), out2 = [];
     for (var i = 1; i <= segs.length; i++) {
       var nm = _vsPathCache[segs.slice(0, i).join('.')];
-      if (nm) out.push(nm);
+      if (nm) out2.push(nm);
     }
-    return out.join(' \u203a ');
+    return out2.length ? ('by code: ' + out2.join(' \u203a ')) : '';
   }
   function openVsCell(key) {
     var d = _vsCells[key]; if (!d) return;

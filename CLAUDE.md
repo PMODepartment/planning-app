@@ -84,6 +84,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (v) — The No level band, read at last; the diagnostic column was lying
+
+Owner: *"Let's check the No level band now."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **Vertical Stacking works:** **15,834 execution-phase activities stacked**, towers A/B/C/D, and
+  **692 carry no Level (4.4%)** — from Punchlisting and Handover, Structural Works, MEPF Works, Allied
+  Services, General Preliminaries, Site Development, Painting Works, Construction Phase. ⚠️ The band's
+  own explanation names *Schedule Builder step 2*, which had no part in an imported project.
+- ⚠️⚠️ **The `WBS branch` column added in (h) was lying.** All 156 Structural Works rows showed
+  *"Planning Phase › Design Development"* while the **Trade** column on the same rows read
+  *"Structural Works"*. The Trade is right: it resolves through `wbs_node_id`, whereas my column split
+  the **dotted code** — and `_wbsResyncCodes()` rewrites summary-row codes without touching the
+  activities', so the two are in different numbering systems after any repair (`Planning Phase`
+  computes to `4` here, `Execution Phase` to `7`). Now walks the node tree; the code-derived form is
+  kept only for a row with no node and is prefixed **`by code:`**.
+- ⚠️ **The No-level question is still open** — those 692 rows need re-reading with a truthful column
+  before anything can be concluded. `MODULE_V` → `20260902v`.
+
 ### 2026-09-02 (u) — "Nothing resolved" and "nothing loaded" are different answers
 
 Owner, third report: *"Closeout phase activities in the legend are still showing the colour

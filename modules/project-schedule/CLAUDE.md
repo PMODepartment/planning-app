@@ -1,3 +1,49 @@
+## The No level band, read at last — and the diagnostic column was lying (2026-09-02v) — fmlozano
+
+Owner: *"Let's check the No level band now."* The tree is healthy enough to answer, and the answer
+came with a defect in the tool I built to find it.
+
+### Vertical Stacking works, and here are the numbers
+Read off the module itself rather than inferred from codes:
+- **15,834 execution-phase activities stacked**, towers **A / B / C / D** (+ *— No tower —*).
+- **692 activities carry no Level** — **4.4%**, in the dashed No-level band.
+- The trades it names: *Punchlisting and Handover, Structural Works, MEPF Works, Allied Services,
+  General Preliminaries, Site Development, Painting Works, Construction Phase.*
+
+⚠️ **The band's explanation is wrong for an imported project.** It reads *"a trade with no floors in
+Schedule Builder step 2 is pushed as whole-trade work"* — but nothing here was pushed from the
+Builder; this came from a .xer. The sentence sends a planner to a step that had no part in it.
+
+### ⚠️⚠️ AND THE `WBS branch` COLUMN I ADDED FOR THIS WAS LYING
+Opened the band's dialog on the 156 Structural Works rows. Every one showed
+**`Planning Phase › Design Development`** — while the **Trade** column on the same rows read
+**`Structural Works`**. Two columns of one table disagreeing about one row.
+
+The Trade is right. It resolves through `wbs_node_id`; my column reconstructed a path by **splitting
+the dotted code**. ⚠️ `_wbsResyncCodes()` rewrites the SUMMARY rows' codes to match the node tree and
+does **not** touch the activities', so after any repair the two are in different numbering systems —
+and splitting an activity's code walks into whatever branch happens to hold that number now. On this
+project the phase codes have moved (`Planning Phase` computes to `4`, `Execution Phase` to `7`), so
+the reconstruction was confidently, consistently wrong.
+
+**Now walks `wbs_node_id` up the node tree.** The code-derived form survives only for a row that has
+no node yet, and is prefixed **`by code:`** so it can never again be mistaken for the tree.
+
+⚠️ **A diagnostic that can be wrong about the thing it exists to show is worse than none** — it cost a
+round of analysis that concluded the schedule was mis-filed under Design Development, which the Trade
+column had already contradicted on screen.
+
+⚠️ **The real No-level question is therefore still open.** The 692 rows have to be re-read with a
+truthful branch column before anything can be said about whether they are a matcher gap or genuinely
+floorless work.
+
+⚠️ **One thing measured on the way and worth keeping:** the dotted codes on activities and on summary
+rows are genuinely out of step on this project. The grid derives its hierarchy by splitting the
+activity's code, so it is worth checking whether the grid's tree still matches the WBS Manager's.
+
+- `MODULE_V` → `20260902v`.
+
+---
 ## "Nothing resolved" and "nothing loaded" are different answers (2026-09-02u) — fmlozano
 
 Owner, third report of the same symptom: *"Closeout phase activities in the legend are still showing
