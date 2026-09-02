@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901d" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -2390,6 +2390,35 @@
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; margin-bottom:8px; }
     .sbld-scope-col, .sbld-scope-row { cursor:pointer; user-select:none; }
     .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }
+    /* step — lifecycle phases (Initiation / Planning / Close-out around the generated Execution
+       Phase). Deliberately built on the builder's own .sbld-* look; only what this step needs is new. */
+    .sbld-phgrid { display:grid; gap:12px; margin-top:10px; }
+    .sbld-phcard { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); padding:11px 13px 12px; }
+    .sbld-phcard.on { border-color:var(--pd-red-mid, var(--pd-red)); box-shadow:var(--pd-shadow); }
+    /* The Execution Phase card is a STATEMENT, not a control — it is what the other steps built, so
+       it carries no tick and cannot be edited here. The tint is what says so at a glance. */
+    .sbld-phcard.is-exec { background:var(--pd-bg); border-style:dashed; }
+    .sbld-phhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .sbld-phname { font-size:13.5px; font-weight:800; display:inline-flex; align-items:center; gap:7px; cursor:pointer; }
+    .sbld-phcard.is-exec .sbld-phname { cursor:default; }
+    .sbld-phlock { margin-left:auto; font-size:11px; color:var(--pd-muted); }
+    .sbld-phmeta { margin:5px 0 0; font-size:12px; color:var(--pd-muted); }
+    .sbld-phmeta b { color:var(--pd-ink); }
+    .sbld-phlist { margin-top:9px; display:grid; gap:5px; }
+    /* name · days · computed window · delete. The window column is read-only output: the dates come
+       from the chain, so they are shown rather than entered. */
+    .sbld-phrow { display:grid; grid-template-columns:14px minmax(0,1fr) 74px 168px 34px; gap:7px; align-items:center; }
+    .sbld-phgrip { cursor:grab; color:var(--pd-muted); font-size:11px; line-height:1; letter-spacing:-2px;
+      user-select:none; text-align:center; }
+    .sbld-phgrip:active { cursor:grabbing; }
+    .sbld-phrow .pd-input { height:31px; font-size:12.5px; }
+    .sbld-phd { text-align:right; font-variant-numeric:tabular-nums; }
+    .sbld-phwin { font-size:11.5px; color:var(--pd-muted); font-variant-numeric:tabular-nums; white-space:nowrap;
+      overflow:hidden; text-overflow:ellipsis; }
+    .sbld-phtotal { margin:12px 0 0; font-size:12.5px; color:var(--pd-muted); }
+    .sbld-phtotal b { color:var(--pd-ink); font-variant-numeric:tabular-nums; }
+    @media (max-width:720px) { .sbld-phrow { grid-template-columns:14px minmax(0,1fr) 64px 34px; }
+      .sbld-phwin { display:none; } }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
     .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px; background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
@@ -3336,7 +3365,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260901c"></script>
+<script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
@@ -3377,9 +3406,25 @@
   // ⚠️ A COUNTER, not a boolean: an import calls the clear helpers inside itself, so the regions
   // nest and a boolean would be cleared by the inner one while the outer was still writing.
   var _mutating = 0;
-  function _beginMutation() { _mutating++; _loadGen++; }
-  function _endMutation() { _mutating = Math.max(0, _mutating - 1); }
+  // ⚠️⚠️ THE REGION HAS TO BE CLOSEABLE EARLY, AND THAT IS A BUG FIX, NOT A CONVENIENCE. Both
+  // importers finish with `await load(); await autoAdoptAfterImport();` — the steps that BUILD the
+  // tree and attach every imported activity to it. Wrapping the whole import in one region put that
+  // finishing sequence INSIDE the fence, so `load()`'s heal chain hit `if (_isMutating()) return;`
+  // and skipped every pass, `_wbsLinkActivityParents` included. Measured on the owner's re-import of
+  // 4PH Strevi: **21,569 of 28,958 rows left with a null `wbs_node_id`, and 7,297 wbs_nodes for
+  // 12,473 summary rows** — the tree half-built and the activities unattached, which is the exact
+  // symptom class (no phase, no trade, empty Vertical Stacking) the link pass exists to prevent.
+  // The token makes `_endMutation` idempotent, so the import can close its own region before the
+  // finishing load while the wrapper's `finally` stays as the guaranteed backstop.
+  function _beginMutation() { _mutating++; _loadGen++; return { done: false }; }
+  function _endMutation(tok) {
+    if (tok) { if (tok.done) return; tok.done = true; }
+    _mutating = Math.max(0, _mutating - 1);
+  }
   function _isMutating() { return _mutating > 0; }
+  // The region the CURRENT import owns, so its own tail can close it. Module-scope because the
+  // finishing sequence lives deep inside the import body, far from the wrapper that opened it.
+  var _importTok = null;
   var PROJECTS = [], GROUPHEADS = [], layoutMode = 'split', activeTab = 'schedule';
   // ---- Which view am I in? -----------------------------------------------------------------
   // ⚠️ The six view modes live in THREE pieces of state — `layoutMode` (split/grid/gantt/network),
@@ -9598,8 +9643,9 @@
   // would otherwise be writing into the same tree throughout. That is the corruption path the owner
   // asked to be checked.
   async function doImport() {
-    _beginMutation();
-    try { return await _doImportInner.apply(null, arguments); } finally { _endMutation(); }
+    var tok = _importTok = _beginMutation();
+    try { return await _doImportInner.apply(null, arguments); }
+    finally { _endMutation(tok); _importTok = null; }
   }
   async function _doImportInner(recs, replace, fname, locMap, placement, discOnImport, pkgId, locScopeCodes) {
     showLoading('Preparing import…');
@@ -9670,6 +9716,10 @@
       ok += Math.min(CH, payloads.length-i);
     }
     hideLoading();
+    // ⚠️ THE WRITES ARE DONE; everything below REBUILDS. Closing the region here is what lets
+    // load()'s heal chain run — without it the import ends with the tree half-built and every
+    // activity unattached (see _beginMutation). Idempotent, so the wrapper's finally is unaffected.
+    _endMutation(_importTok);
     if (err) { UI.toast('Insert error after '+ok+': '+err, 'error'); collapsed={}; resetUndo(); await load(); return; }
     collapsed={}; resetUndo(); await load();
     await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
@@ -10283,8 +10333,9 @@
     };
   }
   async function doImportXER() {
-    _beginMutation();
-    try { return await _doImportXERInner.apply(null, arguments); } finally { _endMutation(); }
+    var tok = _importTok = _beginMutation();
+    try { return await _doImportXERInner.apply(null, arguments); }
+    finally { _endMutation(tok); _importTok = null; }
   }
   async function _doImportXERInner(parsed, replace, fname) {
     showLoading('Preparing import…');
@@ -10463,6 +10514,9 @@
     colOrder = []; _colSeen = {};
     Object.keys(colHidden).forEach(function (k) { if (k.indexOf('udf:') === 0 || k.indexOf('code:') === 0) delete colHidden[k]; });
     try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {}
+    // ⚠️ Same as the workbook importer: the writes are done and everything below rebuilds, so the
+    // fence has to come down before load() or its heal chain skips every pass.
+    _endMutation(_importTok);
     collapsed = {}; resetUndo(); await load();
     if (err) return;
     await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
@@ -19795,9 +19849,52 @@
   // P6 imports). Resumes cleanly from a partial adoption (seeds from existing WBS_NODES). silent=true
   // skips the confirm + toasts (used by auto-adopt on import). Returns the count adopted.
   async function wbsAdopt(silent) {
-    var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; });
+    // ⚠️⚠️ WHAT IS ALREADY ADOPTED IS READ FROM THE SERVER, NEVER FROM `rows`. This function DECIDES
+    // WHAT TO INSERT, and `rows` is a cached, possibly minutes-old copy: a tab that painted before an
+    // adopt (its own, another tab's, or the one an import just ran) still shows every summary row
+    // with `wbs_node_id = null`, so every branch looks un-adopted and gets a SECOND node.
+    // ⚠️ That is not hypothetical. The owner clicked "Adopt existing WBS" twice on 4PH Strevi: the
+    // first run completed the tree (12,473 nodes, all summary rows linked), the second ran against
+    // that tab's stale rows and took `wbs_nodes` to **18,323 — 5,850 duplicates, exactly the count
+    // the first run had left outstanding**. And duplicates do not sit still: `_wbsEnsureSummaries()`
+    // projects a summary row for any node without one, so the next load would have manufactured
+    // 5,850 new WBS rows, which the next adopt would then adopt. That is the duplicate-WBS-row
+    // runaway this file already carries scar tissue for.
+    // One cheap paged read of (wbs, wbs_node_id) is the price of never doing that again.
+    var _adoptedCodes = Object.create(null), _refreshOk = false;
+    try {
+      for (var _f = 0; _f < 40000; _f += 1000) {
+        var _pg = await sb().from(TABLE).select('id,wbs,wbs_node_id')
+          .eq('project_id', pid).eq('activity_type', 'WBS Summary')
+          .order('id', { ascending: true }).range(_f, _f + 999);
+        if (_pg.error) throw _pg.error;
+        var _d = _pg.data || [];
+        _d.forEach(function (r) {
+          if (r.wbs_node_id && r.wbs) _adoptedCodes[String(r.wbs)] = r.wbs_node_id;
+          // Fold the server's truth back into the in-memory row, so the filter below and every later
+          // render agree with what the database actually holds.
+          var _m = rows.find(function (x) { return x.id === r.id; });
+          if (_m && r.wbs_node_id && !_m.wbs_node_id) _m.wbs_node_id = r.wbs_node_id;
+        });
+        if (_d.length < 1000) break;
+      }
+      _refreshOk = true;
+    } catch (e) {
+      try { console.error('[ps] wbsAdopt could not refresh adopted state', e); } catch (e2) {}
+    }
+    // ⚠️ REFUSES TO RUN BLIND. Without the refresh this cannot tell "not adopted" from "not loaded",
+    // and guessing wrong duplicates the whole tree. Stopping is the safe answer; the caller retries.
+    if (!_refreshOk) {
+      UI.toast('Could not check which WBS branches already exist, so the tree was not touched — ' +
+               'reload and try again.', 'error');
+      return 0;
+    }
+    var legacy = rows.filter(function (r) {
+      return isWbs(r) && !r.wbs_node_id && r.wbs && !_adoptedCodes[String(r.wbs)];
+    });
     if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
+    var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [], codeByKey = {};
     // Activities indexed by their dotted code, once — see the note at the link step below.
@@ -19805,6 +19902,13 @@
     rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && a.wbs) (actsByCode[String(a.wbs)] = actsByCode[String(a.wbs)] || []).push(a); });
     var codeOf0 = computeWbsCodes();
     WBS_NODES.forEach(function (n) { var c = codeOf0[n.id]; if (c) nodeByCode[c] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
+    // ⚠️ The SERVER's (code -> node) map wins over the computed one. `computeWbsCodes()` derives a
+    // code from a node's position in the tree, which disagrees with the stored dotted code whenever
+    // the tree is mid-repair — and this map is what decides whether a branch is re-inserted. Seeding
+    // it with what the database actually links is what makes a second adopt a no-op instead of a
+    // duplicate. Parent lookups below resolve through it too, so children of an already-adopted
+    // branch attach to the real parent rather than starting a parallel tree.
+    Object.keys(_adoptedCodes).forEach(function (c) { nodeByCode[c] = _adoptedCodes[c]; });
     var byDepth = {};
     legacy.forEach(function (r) { var d = String(r.wbs).split('.').length; (byDepth[d] = byDepth[d] || []).push(r); });
     var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return a - b; });
@@ -19861,7 +19965,21 @@
       for (var c = 0; c < payloads.length; c += 500) {
         setLoading('Adopting WBS tree… level ' + depths[di] + ' (' + Math.min(c + 500, payloads.length) + '/' + payloads.length + ')');
         var ins = await sb().from('wbs_nodes').insert(payloads.slice(c, c + 500)).select();
-        if (ins.error) { if (!silent) UI.toast('Adopt failed: ' + ins.error.message, 'error'); return 0; }
+        // ⚠️⚠️ `silent` USED TO SWALLOW THIS ENTIRELY — `if (!silent) UI.toast(...)` and then a bare
+        // `return 0`. autoAdoptAfterImport() calls this with silent=true and only toasts on a truthy
+        // return, so an insert that failed half way through produced NO message, NO console entry and
+        // a half-built tree that looks like a finished one. Measured on the owner's 4PH Strevi
+        // re-import: **6,623 nodes adopted of 12,473 summary rows**, the remainder whole subtrees
+        // spread across every depth, with nothing said. A partial tree is exactly the state that
+        // makes Vertical Stacking read empty and every node count read 0, so it is the last thing
+        // that should ever be silent.
+        if (ins.error) {
+          try { console.error('[ps] wbsAdopt insert failed at level ' + depths[di] + ', ' + adopted + ' node(s) in: ' + ins.error.message, ins.error); } catch (e2) {}
+          UI.toast('WBS adopt stopped after ' + adopted.toLocaleString() + ' of ' + legacy.length.toLocaleString() +
+                   ' branches: ' + ins.error.message + ' — reopen the WBS Manager and use "Adopt existing WBS" to resume.', 'error');
+          return adopted;
+        }
+        adopted += (ins.data || []).length;
         (ins.data || []).forEach(function (n) {
           var dotted = codeByKey[(n.parent_id || '') + '|' + n.sort_order];
           if (dotted) nodeByCode[dotted] = n.id;
@@ -19923,16 +20041,40 @@
   // send one {code,node_id} pair per branch. That matters at this scale: the per-row PATCH fallback
   // would be 16,393 requests, the very runaway `_wbsLinkRows` exists to avoid. So there is NO row-by-row
   // fallback here: without the function we say so and leave the data alone rather than hanging the app.
+  // ⚠️⚠️ BATCHED, AND IT REPORTS. Measured live against 4PH Strevi: the single-statement form
+  // answered **57014 "canceling statement due to statement timeout" after 8,173ms** — the
+  // deployment's statement_timeout is ~8s and one UPDATE over 16,485 activities joined to a GROUP BY
+  // over 12,473 summary rows needs more. ⚠️ The old code caught that and toasted only `if (!silent)`,
+  // and every caller that matters passes silent — so the import ended with a COMPLETE WBS tree
+  // (12,473 nodes, every summary row linked) and **16,393 of 16,485 activities still unattached**,
+  // with nothing said anywhere. That is the state where Vertical Stacking draws nothing, no activity
+  // has a phase or a trade, and every node count reads 0, while the grid looks perfect.
+  // ⚠️ A plpgsql loop inside the function would not have helped: the timeout is armed once, when the
+  // top-level statement starts. The bound has to be visible HERE, which is why the migration takes a
+  // `p_limit` and this loops until it gets 0 — the same shape as the clear.
   async function _wbsLinkActivityParents(silent) {
     if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
-    var n = 0;
-    try {
-      var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid });
-      if (rp.error) throw rp.error;
-      n = rp.data || 0;
-    } catch (e) {
-      if (!silent) UI.toast('Activities could not be attached to the WBS tree — run migrations/2026-09-01-wbs-link-rpc.sql.', 'warn');
-      return 0;
+    var n = 0, batch = 4000, lastErr = null;
+    for (var call = 0; call < 200; call++) {
+      var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid, p_limit: batch });
+      if (rp.error) {
+        // ⚠️ HALVE AND RETRY on a timeout rather than lose the whole operation — the batch that fits
+        // depends on the deployment's statement_timeout, which the client cannot read.
+        if (_isTimeout(rp.error) && batch > 125) { batch = Math.floor(batch / 2); continue; }
+        lastErr = rp.error; break;
+      }
+      var got = Number(rp.data) || 0;
+      n += got;
+      if (n) setLoading('Attaching activities to the WBS tree… ' + n.toLocaleString() + ' linked');
+      if (!got) break;
+    }
+    if (lastErr) {
+      // ⚠️ REPORTED WHETHER OR NOT `silent`. A half-attached tree is not a quiet condition, and the
+      // old silence is precisely why this survived two imports unnoticed.
+      try { console.error('[ps] wbs_link_activity_parents failed after ' + n + ' linked', lastErr); } catch (e2) {}
+      UI.toast('Activities could not all be attached to the WBS tree (' + n.toLocaleString() + ' linked): ' +
+               (lastErr.message || lastErr.code || 'unknown') +
+               ' — Vertical Stacking, Trade and phase read from the tree and will be incomplete.', 'error');
     }
     if (!n) return 0;
     // Mirror into memory so the next render is right without a refetch — same contract as _wbsResyncCodes.
@@ -19996,9 +20138,32 @@
     // storm this module keeps re-learning to avoid.
     var keep = (WBS_NODES || []).map(function (n) { return n.id; });
     try {
-      var q = sb().from(TABLE).update({ wbs_node_id: null }).eq('project_id', pid).not('wbs_node_id', 'is', null);
-      if (keep.length) q = q.not('wbs_node_id', 'in', '(' + keep.join(',') + ')');
-      var ures = await q;
+      // ⚠⚠ BATCHED THROUGH AN RPC. As one statement this is ~28,958 rows on 4PH Strevi, and this
+      // deployment's statement_timeout is ~8s — measured, not assumed (wbs_link_activity_parents
+      // returned 57014 after 8,173ms on 16,485 rows the same afternoon). So Reset WBS tree, the
+      // documented recovery from a broken tree, would itself time out on exactly the projects that
+      // need it, leaving the nodes deleted and every row still pointing at them.
+      // ⚠️ The RPC asks the better question too — "null the rows whose node no longer EXISTS" — so it
+      // needs no keep-list and cannot be wrong about which nodes survived.
+      var ures = { error: null }, _unl = 0, _ub = 4000, _rpcGone = false;
+      for (var _uc = 0; _uc < 200; _uc++) {
+        var _ur = await sb().rpc('wbs_unlink_dangling', { p_project_id: pid, p_limit: _ub });
+        if (_ur.error) {
+          if (_rpcMissing(_ur.error)) { _rpcGone = true; break; }
+          if (_isTimeout(_ur.error) && _ub > 125) { _ub = Math.floor(_ub / 2); continue; }
+          ures = { error: _ur.error }; break;
+        }
+        var _un = Number(_ur.data) || 0; _unl += _un;
+        if (_unl) setLoading('Clearing the WBS tree… ' + _unl.toLocaleString() + ' link(s) cleared');
+        if (!_un) break;
+      }
+      if (_rpcGone) {
+        // Pre-migration fallback: the original single statement. Fine on a small project, and the
+        // only thing available on a database that has not run 2026-09-02-wbs-unlink-batched.sql.
+        var q = sb().from(TABLE).update({ wbs_node_id: null }).eq('project_id', pid).not('wbs_node_id', 'is', null);
+        if (keep.length) q = q.not('wbs_node_id', 'in', '(' + keep.join(',') + ')');
+        ures = await q;
+      }
       if (ures.error) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it: ' + ures.error.message, 'error'); return; }
     } catch (e) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it.', 'error'); return; }
     var live = {}; keep.forEach(function (id) { live[id] = 1; });
@@ -20042,9 +20207,36 @@
     } catch (e) { /* best effort: a failure costs the nesting, never the import */ }
   }
 
+  // ⚠️⚠️ VERIFIES AND RESUMES. One call to wbsAdopt() was assumed to finish the tree; on the owner's
+  // 4PH Strevi re-import it built **6,623 of 12,473** branches and said nothing (see the insert error
+  // path above). wbsAdopt is documented as resuming cleanly from a partial tree — it seeds
+  // `nodeByCode` from the nodes that already exist — so the fix is to keep calling it while it is
+  // still making progress, and to REPORT what is left if it stops early.
+  // ⚠️ Gated on PROGRESS, not on a fixed number of tries: a pass that adopts nothing new will never
+  // adopt anything on the next one either, and looping on it would hang the import instead of
+  // telling the planner the truth.
   async function autoAdoptAfterImport() {
-    try { showLoading('Building WBS tree…'); var n = await wbsAdopt(true); hideLoading(); if (n) UI.toast('WBS tree built (' + n + ' nodes) — open the WBS Manager to edit it.', 'success'); }
-    catch (e) { hideLoading(); }
+    try {
+      showLoading('Building WBS tree…');
+      var total = 0, pass = 0;
+      for (; pass < 12; pass++) {
+        var remaining = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
+        if (!remaining) break;
+        setLoading('Building WBS tree… ' + remaining.toLocaleString() + ' branch(es) to go');
+        var n = await wbsAdopt(true);
+        total += n || 0;
+        if (!n) break;   // no progress — another identical pass cannot help
+      }
+      var left = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
+      hideLoading();
+      if (left) {
+        UI.toast('WBS tree is INCOMPLETE — ' + left.toLocaleString() + ' branch(es) still unadopted after ' +
+                 (pass + 1) + ' pass(es). Vertical Stacking, Trade and phase read from the tree, so they ' +
+                 'will be wrong until this finishes. Open the WBS Manager and use "Adopt existing WBS".', 'error');
+      } else if (total) {
+        UI.toast('WBS tree built (' + total.toLocaleString() + ' nodes) — open the WBS Manager to edit it.', 'success');
+      }
+    } catch (e) { hideLoading(); try { console.error('[ps] autoAdoptAfterImport', e); } catch (e2) {} }
   }
   // WBS parent picker for the Add/Edit activity modal — flat, indented options of every node.
   function wbsPickerOptions(selectedNodeId) {
@@ -21641,7 +21833,7 @@
       }
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'tower', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'tower', 'floor', 'zone', 'unit'], phases: {} }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -21730,6 +21922,30 @@
       d.floorLag = (c.floorLag && typeof c.floorLag === 'object') ? c.floorLag : {};      // per-trade: cure/lag days between a floor and the floor above
       d.zoneOrder = (c.zoneOrder && typeof c.zoneOrder === 'object') ? c.zoneOrder : {};  // per-trade: ordered list of zone codes (the sequence zones are worked in)
       d.locLevel = (['auto', 'floor', 'zone', 'unit'].indexOf(c.locLevel) >= 0) ? c.locLevel : 'auto';  // global activity/takt leaf level
+      // ---- Lifecycle phases (the step beside the Execution Phase) ---------------------------
+      // ⚠️⚠️ THIS CLAUSE IS LOAD-BEARING. normalize() builds `d` from blank() and copies only the keys
+      // it knows about, so an un-normalised key does not survive a save/load round trip: without this
+      // the phases a planner ticked would work for the rest of the session and be gone tomorrow.
+      // ⚠️ Only the three NON-execution codes are accepted, and only ones the database's phase CHECK
+      // allows (see SB_PHASE_DEFS) — a stale or hand-edited key cannot introduce a phase the insert
+      // would reject. 'construction' is never stored here: the Execution Phase is generated, not
+      // listed, and a config carrying it would offer a second, hand-typed construction phase.
+      d.phases = {};
+      var _srcPh = (c.phases && typeof c.phases === 'object') ? c.phases : {};
+      SB_PHASE_DEFS.forEach(function (pd2) {
+        if (pd2.when === 'exec') return;
+        var src = _srcPh[pd2.v];
+        if (!src || typeof src !== 'object') return;            // absent = off, filled in by sbPhases()
+        d.phases[pd2.v] = {
+          on: !!src.on,
+          acts: (Array.isArray(src.acts) ? src.acts : []).map(function (a) {
+            return { id: (a && a.id) || uidv(), n: String((a && a.n) || '').slice(0, 200),
+                     // ⚠️ Clamped to 1, never 0: a zero-day phase activity would push a row whose
+                     // finish precedes its start and break the chain for everything after it.
+                     d: Math.max(1, Math.min(999, Math.round(Number(a && a.d) || 1))) };
+          })
+        };
+      });
       return d;
     }
     function setState(t) {
@@ -22499,6 +22715,94 @@
     }
     function multiTower() { return towerList().length > 1; }
     function towerLinks() { return (cfg && Array.isArray(cfg.towerLinks)) ? cfg.towerLinks : []; }
+    // ---- LIFECYCLE PHASES ------------------------------------------------------------------
+    // Owner 2026-09-02: *"make it that the schedule builder has another step, being able to add
+    // phases like the initiation phase planning phase etc. and the established as of now, that is
+    // only applicable for the execution phase."*
+    //
+    // Everything the other steps build — trades, floors, zones, links, stacking — IS the Execution
+    // Phase, and it is the only phase that is generated. The phases added here are flat, hand-listed
+    // work (charter, permits, IFC drawings, commissioning, turnover): there is nothing to zone and
+    // nothing to repeat per floor, so they are a NAME and a DURATION, never a generator.
+    //
+    // ⚠️⚠️ THE FOUR CODES ARE ALL THERE ARE. `project_schedule.phase` carries a 4-value CHECK
+    // constraint in the database (initiation / planning / construction / closeout — see the note on
+    // PHASES). So this step OFFERS exactly those and cannot offer "Monitoring & Control" or any
+    // other lifecycle name, however reasonable: a fifth code would be rejected by the insert, and
+    // the push drops the phase column wholesale on a phase error (_dropScope), so one invented
+    // value would silently strip the phase off every row in the push. Adding one is a migration,
+    // not a list edit.
+    // ⚠️ 'construction' IS the execution phase — the stored code never changed, only the label.
+    var SB_PH_DEF = {
+      initiation: ['Project charter & scope sign-off:5', 'Contract award & notice to proceed:10', 'Permits & regulatory clearances:20'],
+      planning:   ['Design development & IFC drawings:30', 'Baseline schedule & method statements:15', 'Procurement & subcontractor packages:25'],
+      closeout:   ['Testing & commissioning:20', 'Punchlisting & rectification:20', 'As-built drawings & O&M manuals:15', 'Turnover & handover:10']
+    };
+    // ⚠️ ORDER IS THE LIFECYCLE, and the two 'before' phases are back-scheduled as a block onto the
+    // execution start while 'after' runs off the execution finish — see sbPhasePlan.
+    var SB_PHASE_DEFS = [
+      { v: 'initiation', when: 'before' },
+      { v: 'planning', when: 'before' },
+      { v: 'construction', when: 'exec' },
+      { v: 'closeout', when: 'after' }
+    ];
+    function sbPhAct(spec) { var i = spec.lastIndexOf(':'); return { id: uidv(), n: spec.slice(0, i), d: +spec.slice(i + 1) }; }
+    // The stored shape, with defaults filled in. ⚠️ A setup saved before today has no `phases` key at
+    // all, and must open with every extra phase OFF — turning three phases on inside somebody's saved
+    // recipe, which they would then push without noticing, is not a default anyone asked for.
+    function sbPhases() {
+      if (!cfg.phases || typeof cfg.phases !== 'object') cfg.phases = {};
+      SB_PHASE_DEFS.forEach(function (d) {
+        if (d.when === 'exec') return;
+        var cur = cfg.phases[d.v];
+        if (!cur || typeof cur !== 'object') cur = cfg.phases[d.v] = { on: false, acts: null };
+        if (!Array.isArray(cur.acts)) cur.acts = (SB_PH_DEF[d.v] || []).map(sbPhAct);
+        cur.on = !!cur.on;
+      });
+      return cfg.phases;
+    }
+    function sbPhOn(v) { var ph = sbPhases()[v]; return !!(ph && ph.on && ph.acts.length); }
+    function sbPhActs(v) { var ph = sbPhases()[v]; return (ph && ph.acts) || []; }
+    function sbPhDays(v) { return sbPhActs(v).reduce(function (t, a) { return t + Math.max(0, +a.d || 0); }, 0); }
+    // The dated plan for every enabled phase, around the generated execution window.
+    // ⚠️ CALENDAR DAYS, chained finish-to-start — the same arithmetic generate() uses for the
+    // execution rows (addD over a day count, no working-day calendar). Two different day models in
+    // one pushed schedule would show up as phases that do not meet the execution window they were
+    // measured against.
+    // ⚠️ The 'before' block is back-scheduled: the LAST before-phase ends the day before execution
+    // starts, and each earlier one ends the day before the next begins. That is what makes the
+    // lifecycle read as one continuous programme instead of three blocks with gaps nobody chose.
+    function sbPhasePlan(g) {
+      if (!g || !g.start) return [];
+      var out = [], before = [], after = [];
+      SB_PHASE_DEFS.forEach(function (d) {
+        if (d.when === 'exec' || !sbPhOn(d.v)) return;
+        (d.when === 'before' ? before : after).push(d);
+      });
+      // Walk the before-block BACKWARDS from the execution start.
+      var cursor = addD(g.start, -1);
+      before.slice().reverse().forEach(function (d) {
+        var acts = sbPhActs(d.v).slice().reverse(), rows = [];
+        acts.forEach(function (a) {
+          var dur = Math.max(1, +a.d || 1), fin = cursor, st = addD(cursor, -(dur - 1));
+          rows.unshift({ act: a, start: st, finish: fin, dur: dur });
+          cursor = addD(st, -1);
+        });
+        out.unshift({ v: d.v, when: d.when, rows: rows, start: rows.length ? rows[0].start : null, finish: rows.length ? rows[rows.length - 1].finish : null });
+      });
+      // …and the after-block forwards from the execution finish.
+      cursor = addD(g.finish, 1);
+      after.forEach(function (d) {
+        var rows = [];
+        sbPhActs(d.v).forEach(function (a) {
+          var dur = Math.max(1, +a.d || 1), st = cursor, fin = addD(cursor, dur - 1);
+          rows.push({ act: a, start: st, finish: fin, dur: dur });
+          cursor = addD(fin, 1);
+        });
+        out.push({ v: d.v, when: d.when, rows: rows, start: rows.length ? rows[0].start : null, finish: rows.length ? rows[rows.length - 1].finish : null });
+      });
+      return out;
+    }
     // Every floor across all trades in one tower, de-duplicated by code so the anchor picker offers
     // "Podium L4" once rather than once per trade that happens to define it.
     function towerFloorChoices(towerId) {
@@ -22804,6 +23108,7 @@
       { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
       { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
       { t: 'Stacking', s: 'Vertical stacking by trade', fn: stStacking },
+      { t: 'Project phases', s: 'Initiation → Close-out', fn: stPhases },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
 
@@ -24102,6 +24407,99 @@
       return '<div class="sbld-genpanel"><div class="sbld-genh" style="border-color:' + accent + ';color:' + accent + ';">' + e2(label) + ' schedule</div>' +
         kpis + miss + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
     }
+    // ---- Step: the phases either side of the Execution Phase --------------------------------
+    // ⚠️ This step does NOT generate anything. Every other step feeds the generator; this one edits
+    // a flat list per phase and prints the window it will occupy, because there is nothing about a
+    // charter or a turnover that repeats per floor or per zone.
+    function stPhases(host) {
+      var g = generate('int');
+      var plan = sbPhasePlan(g), planBy = {};
+      plan.forEach(function (pp) { planBy[pp.v] = pp; });
+      function win(st, fi) { return (st && fi) ? (fmtD(st) + ' → ' + fmtD(fi)) : '—'; }
+      var execRow = '<div class="sbld-phcard is-exec">' +
+        '<div class="sbld-phhead"><span class="sbld-phname">' + e2(PHASE_LABELS.construction) + '</span>' +
+        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Stacking') + '</span></div>' +
+        '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
+          ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p></div>';
+      var cards = SB_PHASE_DEFS.map(function (d) {
+        if (d.when === 'exec') return execRow;
+        var ph = sbPhases()[d.v], pl = planBy[d.v], on = !!ph.on;
+        var body = ph.acts.map(function (a, i) {
+          return '<div class="sbld-phrow" data-i="' + i + '">' +
+            '<span class="sbld-phgrip" draggable="true" title="Drag to reorder — the order is the chain, so it decides the dates">\u22ee\u22ee</span>' +
+            '<input class="pd-input sbld-phn" data-ph="' + d.v + '" data-i="' + i + '" value="' + e2(a.n) + '" placeholder="Activity name">' +
+            '<input class="pd-input sbld-phd" type="number" min="1" max="999" data-ph="' + d.v + '" data-i="' + i + '" value="' + (+a.d || 1) + '" title="Duration in calendar days">' +
+            '<span class="sbld-phwin">' + (on && pl && pl.rows[i] ? e2(win(pl.rows[i].start, pl.rows[i].finish)) : '&mdash;') + '</span>' +
+            '<button class="pd-btn sbld-del" data-phdel="' + d.v + '" data-i="' + i + '" title="Remove this activity"><span data-ico="trash" data-ico-size="14"></span></button>' +
+            '</div>';
+        }).join('');
+        return '<div class="sbld-phcard' + (on ? ' on' : '') + '">' +
+          '<div class="sbld-phhead">' +
+            '<label class="sbld-phname"><input type="checkbox" data-phon="' + d.v + '"' + (on ? ' checked' : '') + '> ' + e2(PHASE_LABELS[d.v]) + '</label>' +
+            '<span class="sbld-phlock">' + (d.when === 'before' ? 'ends before the Execution Phase starts' : 'starts after the Execution Phase finishes') + '</span>' +
+          '</div>' +
+          '<p class="sbld-phmeta">' + (on
+            ? '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · ' + sbPhDays(d.v) + ' days · ' +
+              (pl ? e2(win(pl.start, pl.finish)) : '—')
+            : 'Off — nothing is pushed for this phase.') + '</p>' +
+          (on ? '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' +
+                '<div class="sbld-sec-actions"><button class="pd-btn" data-phadd="' + d.v + '">+ Add activity</button>' +
+                '<button class="pd-btn" data-phreset="' + d.v + '">Reset to the typical set</button></div>' : '') +
+          '</div>';
+      }).join('');
+      var span = (function () {
+        if (!g.start) return '';
+        var a = (plan.length && plan[0].when === 'before' && plan[0].start) ? plan[0].start : g.start;
+        var last = plan.filter(function (x) { return x.when === 'after' && x.finish; }).pop();
+        var b = last ? last.finish : g.finish;
+        return '<p class="sbld-phtotal">Whole programme: <b>' + fmtD(a) + ' → ' + fmtD(b) + '</b> · ' +
+          (Math.round((+b - +a) / 86400000) + 1) + ' calendar days</p>';
+      })();
+      host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · The phases either side of construction</h2>' +
+        '<p class="sbld-lede">Everything the other steps build <b>is</b> the Execution Phase — trades, floors, zones and links only describe construction. Add the rest of the project lifecycle here as a plain list of activities with durations: they carry no location, and nothing repeats per zone. ' +
+        'The <b>before</b> phases are back-scheduled so they finish the day the Execution Phase starts, and <b>Close-out</b> picks up the day after it finishes, so the programme reads continuously.</p>' +
+        '<p class="sbld-hint">Only these phases exist: the schedule’s <code>phase</code> column is fixed to Initiation, Planning, Execution and Close-out in the database, so no other lifecycle name can be stored on an activity.</p>' +
+        '<div class="sbld-phgrid">' + cards + '</div>' + span;
+
+      host.querySelectorAll('[data-phon]').forEach(function (c) {
+        c.onchange = function () { sbPhases()[c.dataset.phon].on = c.checked; markDirty(); render(); };
+      });
+      host.querySelectorAll('[data-phadd]').forEach(function (b) {
+        b.onclick = function () { sbPhActs(b.dataset.phadd).push({ id: uidv(), n: '', d: 5 }); markDirty(); render(); };
+      });
+      host.querySelectorAll('[data-phreset]').forEach(function (b) {
+        b.onclick = function () {
+          var v = b.dataset.phreset;
+          if (!confirm('Replace this phase’s activities with the typical set?')) return;
+          sbPhases()[v].acts = (SB_PH_DEF[v] || []).map(sbPhAct); markDirty(); render();
+        };
+      });
+      host.querySelectorAll('[data-phdel]').forEach(function (b) {
+        b.onclick = function () { sbPhActs(b.dataset.phdel).splice(+b.dataset.i, 1); markDirty(); render(); };
+      });
+      // ⚠️ Names and durations commit on 'change', never on 'input': render() rebuilds the whole
+      // step, so a repaint per keystroke would take the focus out of the field being typed into.
+      host.querySelectorAll('.sbld-phn').forEach(function (el) {
+        el.onchange = function () { var a = sbPhActs(el.dataset.ph)[+el.dataset.i]; if (a) { a.n = el.value; markDirty(); render(); } };
+      });
+      host.querySelectorAll('.sbld-phd').forEach(function (el) {
+        el.onchange = function () {
+          var a = sbPhActs(el.dataset.ph)[+el.dataset.i];
+          if (a) { a.d = Math.max(1, Math.min(999, Math.round(+el.value || 1))); markDirty(); render(); }
+        };
+      });
+      // Drag to reorder — the order IS the chain, so it decides the dates.
+      // ⚠️ Only the GRIP is draggable, never the row: with a draggable row, dragging across the name
+      // field to select part of it starts a drag instead of selecting the text. dragstart on the grip
+      // still bubbles to the row's own listener, so wireDrag sees the row as the dragged element and
+      // nothing else about it changes.
+      host.querySelectorAll('.sbld-phrow').forEach(function (row) {
+        var f = row.querySelector('[data-ph]');
+        var v = f ? f.dataset.ph : null;
+        if (v) wireDrag(row, null, function () { return sbPhActs(v); });
+      });
+    }
+
     function stGenerate(host) {
       if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
       var gInt = generate('int'), gExt = generate('ext');
@@ -24295,6 +24693,17 @@
       ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:16px;">' +
         '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + gI.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule with their <b>relationships</b> (FS/SS/FF/SF + lag) as predecessors. Nothing is replaced.</p>' +
+        // ⚠️ Stated before the push, not only in the summary after it. A push that quietly created
+        // three extra top-level branches would be exactly the "where did these come from" surprise
+        // the package block above exists to prevent.
+        (function () {
+          var pl = sbPhasePlan(gI);
+          if (!pl.length) return '';
+          var n = pl.reduce(function (t, x) { return t + x.rows.length; }, 0);
+          return '<p class="sbld-hint" style="margin:-6px 0 12px;">Plus <b>' + n + '</b> activit' + (n === 1 ? 'y' : 'ies') +
+            ' in <b>' + pl.length + '</b> lifecycle phase branch' + (pl.length === 1 ? '' : 'es') + ' beside the Execution Phase (' +
+            pl.map(function (x) { return e2(PHASE_LABELS[x.v] || x.v); }).join(', ') + ') — from step ' + _stepNo('Project phases') + '.</p>';
+        })() +
         '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Schedule to push</label>' +
         '<select class="pd-select" id="sbpush-basis" style="width:100%;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
         pkgBlock +
@@ -24540,6 +24949,36 @@
            ⚠️ Orthogonal to scope_type on purpose: the row above may be a change order AND
            this package. Neither column is derived from the other. */
         package_id: usePkg || null }; }
+      // A lifecycle-phase activity's row. Deliberately NOT taskPayload: that one reads a generated
+      // row (trade, location, class code, zone predecessors, contract scope), and none of those are
+      // facts about a project charter or a turnover.
+      // ⚠️ NO `location`. Location describes construction — see the Execution Phase scoping note. An
+      // Initiation activity with a floor value would appear as a storey in the vertical stacking.
+      // ⚠️ NO `scope_type`. Contract scope is execution-only by design; 'main' here would invite
+      // "is the design review a variation?", the question that column refuses to ask.
+      // ⚠️ Predecessors chain each phase INTERNALLY only (activity i follows i-1). The link to the
+      // execution work is expressed by the DATES, not by a relationship: the execution rows'
+      // predecessors are generated from zone links and there is no single execution start activity
+      // to hang a phase off, so inventing one relationship would be a guess with a critical path
+      // attached to it.
+      // ⚠️ `_phPrevId` is what chains the phase: the id of the row emitted before this one WITHIN the
+      // same phase. It is a per-phase map, not one variable, because the payloads are emitted phase
+      // by phase and a single cursor would chain Close-out's first activity onto Planning's last.
+      var _phPrevId = {};
+      function phaseTaskPayload(t) {
+        var id = uniqId('PH' + String(t.v || '').slice(0, 3).toUpperCase() + '-' + (t.i + 1));
+        var row = {
+          project_id: pid, created_by: UID,
+          activity_id: id, activity_name: String(t.r.act.n || '').trim() || ((PHASE_LABELS[t.v] || 'Phase') + ' activity ' + (t.i + 1)),
+          activity_type: 'Task', status: 'Not Started',
+          start_date: iso2(t.r.start), end_date: iso2(t.r.finish), duration_days: t.r.dur,
+          percent_complete: 0, phase: t.v, seq_order: t.i,
+          predecessors: (t.i > 0 && _phPrevId[t.v]) ? _phPrevId[t.v] : null,
+          package_id: usePkg || null
+        };
+        _phPrevId[t.v] = id;
+        return row;
+      }
       // ---- Class codes -> activity codes ------------------------------------------------------
       // ⚠️ Ensured BEFORE the payloads are built, because taskPayload needs the value ids. Reuses an
       // existing "Class Code" type and any values already present, so a re-push adds nothing.
@@ -24595,6 +25034,18 @@
         // ("Structural F5 · Z1 — Formworks") because it had nowhere else to live; it is now real
         // data on the row (work_type + location) with its own columns and grouping levels.
         g.rows.forEach(function (r) { var p = taskPayload(r, r.act.name); p.project_id = pid; p.created_by = UID; p.wbs = code(base, ci++); payloads.push(p); });
+        // ⚠️ A flat push has no branches to put a phase under, but the phases the planner ticked must
+        // still land — dropping them silently because of a WBS setting would lose real data. They go
+        // in as flat rows beside the execution work, each still carrying its own `phase` code, so the
+        // grid's phase grouping and the "Execution Phase only" toggle both read them correctly even
+        // with no branch to inherit from.
+        sbPhasePlan(g).forEach(function (pp) {
+          pp.rows.forEach(function (r, i) {
+            var p2 = phaseTaskPayload({ k: null, v: pp.v, r: r, i: i });
+            p2.wbs = code(base, ci++);
+            payloads.push(p2);
+          });
+        });
       } else {
         // Grouped push — build a real Trade → Floor → Zone → Unit WBS tree and register it in the WBS
         // Manager (wbs_nodes), linking every summary + task by wbs_node_id. Falls back to plain dotted
@@ -24682,6 +25133,27 @@
         }
         buildTree(g.rows, (order && order.length ? order : cfg.wbsOrder).slice(), '__base__');
         wbsUnnamed = _unnamedDims;
+        // ---- The lifecycle phases, as SIBLINGS of the Execution Phase branch -----------------
+        // ⚠️⚠️ SIBLINGS, NOT CHILDREN. `parentCode` is always execPhaseCode(), so `base`/baseNodeId is
+        // the Execution Phase branch itself — filing Initiation under it would make the charter
+        // construction work by inheritance (phaseOf reads the nearest tagged ancestor), which is the
+        // precise mistake this step exists to avoid. Their parent is therefore the Execution Phase
+        // branch's OWN parent, resolved below: the project root on a normal push, and the package
+        // root when the build was redirected under a package (so each lot keeps its own lifecycle).
+        // ⚠️ Each branch is a nodeDesc like any other, so it inherits the whole machinery for free:
+        // one insert per depth, idempotent reuse of a branch that already exists under the same
+        // parent (a re-push does NOT create a second "Planning Phase"), the partial-tree rollback,
+        // and the dotted-code fallback for a project whose database predates wbs_nodes.
+        var phasePlan = sbPhasePlan(g), phaseTasks = [];
+        if (phasePlan.length) {
+          phasePlan.forEach(function (pp) {
+            if (!pp.rows.length) return;
+            var pkey = 'PH_' + pp.v;
+            ensureNode(pkey, '__phaseparent__', PHASE_LABELS[pp.v] || pp.v, null, null);
+            nodeByKey[pkey].phase = pp.v;
+            pp.rows.forEach(function (r, i) { phaseTasks.push({ k: pkey, v: pp.v, r: r, i: i }); });
+          });
+        }
         // base parent = the wbs_node behind the chosen WBS row (if any)
         var baseRow = rows.filter(function (r) { return isWbs(r) && String(r.wbs) === String(base); })[0];
         var baseNodeId = baseRow ? (baseRow.wbs_node_id || null) : null;
@@ -24710,7 +25182,14 @@
         // each duplicate node has its own), so they render as a full second copy of the branch.
         // `reused` also suppresses the WBS-Summary payload below: the surviving node already has one,
         // and writing another is exactly the "two rows for one wbs_node_id" duplication.
-        var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true, reused = {}, reusedN = 0, createdNodeIds = [];
+        // ⚠️ '__phaseparent__' MUST be resolved before the depth loop runs — the loop reads
+        // `keyToNodeId[nd.parentKey] || null`, and an unresolved key would silently put every
+        // lifecycle branch at the project root even on a package push.
+        // ⚠️ null is a legitimate answer (the Execution Phase branch sits at the top level), and it
+        // means "top level" to both the insert and existingChild(), which is exactly right.
+        var _execNode = baseNodeId ? WBS_NODES.find(function (n) { return n.id === baseNodeId; }) : null;
+        var keyToNodeId = { '__base__': baseNodeId, '__phaseparent__': (_execNode && _execNode.parent_id) || null },
+            soByParent = {}, wbsOk = true, reused = {}, reusedN = 0, createdNodeIds = [];
         // Reused branches needing a write: a wrong sibling position, and/or a stale name-derived
         // custom code from before the auto-numbering rule (clearing it lets computeWbsCodes
         // re-derive a correct dotted path, which _wbsResyncCodes then pushes onto every row).
@@ -24871,14 +25350,30 @@
           var codeOf = computeWbsCodes();
           // scope_type on the summary rows as well — the builder only ever produces main-contract
           // scope, so every row it writes says so rather than leaving the column blank.
-          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: 'construction', scope_type: 'main', created_by: UID }); });
+          // ⚠️ `nd.phase || 'construction'`, not a literal. Every branch this push creates used to be
+          // stamped as construction, which was true while the builder only ever built the Execution
+          // Phase. The lifecycle branches are siblings of it and carry their own phase code — and the
+          // phase on the BRANCH is what phaseOf() inherits down to every activity under it, so a
+          // hard-coded 'construction' here would file the Close-out Phase branch as construction and
+          // silently pull its work into every execution-only view (Contract scope, "Execution Phase
+          // only", the vertical stacking).
+          // ⚠️ scope_type likewise: contract scope is execution-only by design, so a lifecycle branch
+          // gets null rather than 'main' — see the note on SCOPES.
+          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
+          phaseTasks.forEach(function (t) {
+            var nidt = keyToNodeId[t.k] || null;
+            var p2 = phaseTaskPayload(t);
+            p2.wbs_node_id = nidt; p2.wbs = nidt ? (codeOf[nidt] || null) : null;
+            payloads.push(p2);
+          });
         } else {
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
           var codeByKey = {}, so2 = {};
           function childCode(pk) { var pc = pk === '__base__' ? base : codeByKey[pk]; if (so2[pk] == null) so2[pk] = nextChildIndex(pc); return code(pc, so2[pk]++); }
-          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: 'construction', scope_type: 'main', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; p.wbs = childCode(t.k); payloads.push(p); });
+          phaseTasks.forEach(function (t) { var p2 = phaseTaskPayload(t); p2.wbs = childCode(t.k); payloads.push(p2); });
         }
       }
 
@@ -24928,6 +25423,9 @@
                 (curSetupName || cfg.name || projName(curPid) || 'Schedule Builder'),
           tiles: [
             { n: taskN, l: 'Activities added' },
+            // ⚠️ Counted from the PAYLOAD, not from the config: what landed is what was inserted, and
+            // a phase whose activities were all blank contributes nothing.
+            { n: payloads.filter(function (pl2) { return pl2.phase && pl2.phase !== 'construction' && pl2.activity_type === 'Task'; }).length, l: 'Lifecycle-phase activities' },
             { n: cfg.links ? cfg.links.length : 0, l: 'Relationships' },
             { n: wbsCount, l: 'WBS branches' },
             { n: reorder.length, l: 'Branches corrected' },
@@ -30032,7 +30530,11 @@
       wbsDuplicate(_wbsSel);
     };
     document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
-    document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
+    // ⚠⚠ `onclick = wbsAdopt` PASSED THE CLICK EVENT AS `silent`, which is truthy. So the button
+    // documented (by me, last pass) as "the non-silent recovery path" skipped its own confirm, its
+    // success toast AND its error toast — the owner clicked Adopt existing WBS, the tree really did
+    // finish, and the screen said nothing at all. Call it explicitly.
+    document.getElementById('ps-wbs-adopt').onclick = function () { wbsAdopt(false); };
     document.getElementById('ps-wbs-reset').onclick = wbsResetTree;
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
     var _pb = document.getElementById('ps-sync-prc'); if (_pb) _pb.onclick = syncProcurementApp;

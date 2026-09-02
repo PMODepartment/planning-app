@@ -1,3 +1,284 @@
+## Schedule Builder: a step for the phases either side of construction (2026-09-02) — eprobles
+
+Owner: *"i was thinking for the schedule builder, make it that the schedule builder has another step,
+being able to add phases like the initiation phase planning phase etc. and the established as of
+now, that is only applicable for the execution phase."*
+
+New **step 8 · Project phases**, between Stacking and Generate. Everything the other steps build IS
+the Execution Phase — trades, floors, zones, links and stacking only ever describe construction — so
+this step adds the rest of the lifecycle as a flat list per phase: **Initiation**, **Planning**,
+**Close-out**, each an activity name and a duration.
+
+**Why they are not generated.** There is nothing about a charter, a permit or a turnover that repeats
+per floor or per zone, so a generator would have nothing to iterate. They carry **no location** (an
+Initiation activity with a floor value would appear as a storey in the vertical stacking) and **no
+contract scope** (scope is execution-only by design — "is the design review a variation?" is the
+question that column refuses to ask).
+
+⚠️⚠️ **THE FOUR CODES ARE ALL THERE ARE.** `project_schedule.phase` carries a 4-value CHECK
+constraint — `initiation / planning / construction / closeout`. So this step cannot offer
+"Monitoring & Control" or any other lifecycle name, however reasonable: a fifth value would be
+rejected by the insert, and because the push drops the phase column **wholesale** on a phase error
+(`_dropScope`), one invented code would silently strip the phase off *every row in the push*. Adding
+a phase is a migration, not a list edit.
+
+**The dates.** `sbPhasePlan` chains each phase's activities finish-to-start in **calendar days** —
+the same arithmetic `generate()` uses; two day models in one pushed schedule would show up as phases
+that miss the execution window they were measured against. The **before** block is *back-scheduled*:
+the last before-phase ends the day before execution starts, and each earlier one ends the day before
+the next begins, so the programme reads continuously instead of as blocks with gaps nobody chose.
+Close-out picks up the day after the execution finish. Reordering a row re-dates the phase, because
+the order **is** the chain.
+
+**On push:**
+- ⚠️⚠️ **SIBLINGS OF THE EXECUTION PHASE, NEVER CHILDREN.** `parentCode` is always `execPhaseCode()`,
+  so `baseNodeId` *is* the Execution Phase branch — filing Initiation under it would make the charter
+  construction work by inheritance (`phaseOf` reads the nearest tagged ancestor), which is the exact
+  mistake this step exists to avoid. Their parent is that branch's own parent (`__phaseparent__`),
+  resolved **before** the depth loop: the project root normally, the package root on a package push,
+  so each lot keeps its own lifecycle. `null` is a legitimate answer and means top level to both the
+  insert and `existingChild()`.
+- Each branch is an ordinary `nodeDesc`, so it inherits the whole machinery free: one insert per
+  depth, **idempotent reuse** (a re-push does not create a second "Planning Phase"), the
+  partial-tree rollback, and the dotted-code fallback for a pre-`wbs_nodes` database.
+- ⚠️ **The WBS-Summary payload was hard-coded `phase: 'construction'`** — true while the builder only
+  built one phase. It is `nd.phase || 'construction'` now: the phase on the BRANCH is what every
+  activity under it inherits, so the literal would have filed the Close-out branch as construction
+  and pulled its work into every execution-only view.
+- ⚠️ **A flat push still writes them.** No branches exist there, but dropping phases the planner
+  ticked because of a WBS setting would lose real data — they go in as flat rows still carrying their
+  own `phase` code, so phase grouping and the "Execution Phase only" toggle read them correctly.
+- Predecessors chain each phase **internally only**. The link to construction is expressed by the
+  dates, not a relationship: execution predecessors are generated from zone links and there is no
+  single execution start activity to hang a phase off, so inventing one would be a guess with a
+  critical path attached.
+- The push dialog **says** how many lifecycle activities and branches are coming, before the push —
+  three new top-level branches appearing unannounced is the "where did these come from" surprise the
+  package warning beside it already exists to prevent — and the completion summary counts them
+  separately, from the payload rather than the config.
+
+⚠️⚠️ **`normalize()` had to learn the key.** It rebuilds `cfg` from `blank()` and copies only what it
+knows, so without a clause there the phases would work all session and be **gone tomorrow**. Only
+the three non-execution codes are accepted (a stale or hand-edited key cannot introduce a phase the
+insert would reject), and durations are clamped to ≥ 1 — a zero-day activity would push a row whose
+finish precedes its start and break the chain for everything after it. Legacy setups have no
+`phases` key at all and open with every phase **off**: turning three phases on inside somebody's
+saved recipe, which they would then push without noticing, is not a default anyone asked for.
+
+---
+
+## Every activity is linked — and adopting twice duplicated 5,850 nodes (2026-09-02r) — fmlozano
+
+Owner ran `2026-09-02-wbs-link-batched.sql` and clicked **Adopt existing WBS** again.
+
+### ✅ The batched linker works
+**`activitiesUnlinked: 0` of 16,485.** Every activity is attached to its branch, which is the thing
+Vertical Stacking, Trade and phase all read from. The 8-second `statement_timeout` that produced
+57014 on the single-statement form is no longer reachable: the client loops in batches of 4,000 and
+halves on timeout.
+
+### ⚠️⚠️ But the second adopt created 5,850 duplicate nodes
+`wbs_nodes` **12,473 → 18,323**, against 12,473 summary rows. **5,850 duplicates — exactly the number
+the first adopt had left outstanding.**
+
+`wbsAdopt` decided what to insert from `rows`, the cached in-memory copy. The owner's tab had painted
+before the first adopt finished, so every one of those branches still showed `wbs_node_id = null`,
+looked un-adopted, and got a **second** node. ⚠️ The pre-existing guard
+(`group.filter(r => !nodeByCode[r.wbs])`) could not save it, because `nodeByCode` was seeded from
+`computeWbsCodes()` — a code derived from a node's POSITION, which disagrees with the stored dotted
+code whenever the tree is mid-repair.
+
+⚠️ **And duplicates do not sit still.** `_wbsEnsureSummaries()` projects a summary row for any node
+without one, so the next load would have manufactured 5,850 new WBS rows, which the next adopt would
+then adopt — the duplicate-WBS-row runaway this file already carries scar tissue for.
+
+### Fixed
+- **`wbsAdopt` reads what is already adopted from the SERVER**, never from `rows`: one cheap paged
+  read of `(id, wbs, wbs_node_id)` over the summary rows, folded back into memory, used both to
+  filter `legacy` and to seed `nodeByCode`. A second adopt is now a no-op.
+- ⚠️ **It refuses to run when that read fails.** Without it the function cannot tell *"not adopted"*
+  from *"not loaded"*, and guessing wrong duplicates the entire tree. Stopping is the safe answer.
+- ⚠️ **`Reset WBS tree` would itself have timed out.** It cleared the dangling `wbs_node_id`s with ONE
+  update over ~28,958 rows — the documented recovery from a broken tree, failing on exactly the
+  projects that need it. **`migrations/2026-09-02-wbs-unlink-batched.sql`** adds
+  `wbs_unlink_dangling(project, limit)`, which also asks the better question (*null the rows whose
+  node no longer EXISTS*) and so needs no keep-list, plus a pre-migration fallback to the old
+  statement.
+- The same migration adds **`wbs_delete_orphan_leaves`** for a targeted cleanup. ⚠️ **Leaves only** —
+  `parent_id` is `on delete cascade`, so deleting an orphan that is the PARENT of a referenced node
+  would take the good node with it. Peeling childless orphans repeatedly can never do that, and a
+  duplicated subtree still goes completely, one layer at a time. ⚠️ **Deliberately NOT wired into any
+  automatic heal**: `_wbsEnsureSummaries()` exists to PROJECT a summary row for a node that lacks
+  one, so an auto-deleter would be a second healer with the opposite opinion, and the two would
+  fight.
+
+### ⚠️ Recovery for SLN101 as it stands
+**WBS Manager → Reset WBS… → rebuild.** That drops every unlocked node (duplicates included) and
+rebuilds from the intact 12,473 summary rows, which is a tested path — and with the adopt fix the
+rebuild cannot duplicate. Needs the new migration first, or the unlink times out.
+
+⚠️ **Not verified end to end:** neither migration function has been exercised, and the duplicates are
+still in place.
+
+- `MODULE_V` → `20260902r`.
+
+---
+## The activity link times out at 8s, and three layers of silence hid it (2026-09-02q) — fmlozano
+
+Owner clicked **Adopt existing WBS** and asked what happened. The tree finished; the activities did
+not, and nothing said so.
+
+### The root cause, measured rather than inferred
+Calling the RPC directly in the owner's signed-in browser:
+
+```
+rpc('wbs_link_activity_parents', { p_project_id: 'SLN101' })
+  -> 57014  "canceling statement due to statement timeout"   after 8,173 ms
+```
+
+⚠️ **The deployment's `statement_timeout` is ~8 seconds**, and that function is ONE update over
+**16,485 activities** joined against a `GROUP BY` over **12,473 summary rows**, with the join key
+computed per row (`regexp_replace(wbs, '\.[^.]+$', '')`) — which no index can serve. It is the same
+class of defect as the original clear timeout: an unbounded server-side statement.
+
+**State it left behind:** WBS tree **complete** (12,473 nodes, all 12,473 summary rows linked) and
+**16,393 of 16,485 activities with `wbs_node_id = NULL`.** The 92 that were linked are the Design
+Development / Procurement mirrors, which never needed the RPC.
+
+### ⚠️⚠️ THREE LAYERS OF SILENCE, AND THAT IS THE REAL STORY
+1. `_wbsLinkActivityParents` caught the timeout and toasted only `if (!silent)`.
+2. Every caller that matters passes `silent`.
+3. ⚠️ **`document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;` passes the CLICK EVENT as the
+   `silent` argument** — truthy. So the button I documented last pass as *"the non-silent recovery
+   path"* skipped its confirm, its success toast **and** its error toast. The owner clicked it, the
+   tree really did finish, and the screen said nothing at all. That is why my own recommended
+   diagnostic produced no diagnosis.
+
+### Fixed
+- **`migrations/2026-09-02-wbs-link-batched.sql`** — `wbs_link_activity_parents(text, integer)` with a
+  `p_limit`, defaulting to 4,000. ⚠️ `drop function` first, deliberately: adding a defaulted second
+  parameter would leave both signatures in the catalog and PostgREST answers **PGRST203 (ambiguous)**
+  for a one-argument call. ⚠️ A plpgsql loop inside the function would not help — the timeout is armed
+  once, when the top-level statement starts — so the bound has to be visible to the client.
+- **The client loops** until a call returns 0 and **halves the batch on 57014**, because the batch that
+  fits depends on a `statement_timeout` the client cannot read. It reports progress as it goes.
+- **It reports failure regardless of `silent`**, with the count that did land.
+- **The Adopt button calls `wbsAdopt(false)` explicitly.**
+
+⚠️ **Not yet verified end to end:** the migration has not been run, so the batched link has never
+executed. Run it, then Adopt existing WBS — `activitiesLinked` should go 92 → ~16,485.
+
+- `MODULE_V` → `20260902q`.
+
+---
+## The import's tree build stops half way and says nothing (2026-09-02p) — fmlozano
+
+Owner re-imported 4PH Strevi on the (o) build and asked for the output to be checked. The insert is
+**complete and correct** — 28,958 rows (16,485 activities + 12,473 WBS summary rows), matching the
+file. The **tree build is not**, and (o) is not the cause.
+
+### Measured, from the database rather than the grid
+| | |
+|---|---|
+| `wbs_nodes` | **6,623** — against 12,473 summary rows |
+| rows with a null `wbs_node_id` | 22,243 of 28,958 |
+| summary rows linked to a node | 6,623 — **exactly** the node count, so no orphan nodes |
+
+⚠️ **It is NOT a depth cut-off, which is what the first sampled look suggested.** Read in full rather
+than sampled, adopted and un-adopted rows exist at **every depth 2-10 in similar proportions**, and
+**5,833 of the 5,850 un-adopted rows have a parent that is also un-adopted**. Whole subtrees are
+missing, not a level. ⚠️ The earlier "parent also missing: 400/400" figure came from a 1,000-row
+sample of 6,623 adopted codes and was not trustworthy; this is the complete set.
+
+### ⚠️⚠️ THE REAL DEFECT IS THE SILENCE
+`wbsAdopt`'s insert error path was `if (!silent) UI.toast(...); return 0;` — and
+`autoAdoptAfterImport()` calls it with **`silent = true`** and only toasts on a truthy return. So a
+build that stopped half way produced **no toast, no console entry, and a half-built tree that looks
+finished**. That is the worst possible thing to be quiet about: a partial tree is exactly the state
+where `phaseOf()` returns null, `isExecPhase()` is false everywhere, Vertical Stacking draws nothing
+and every WBS Manager count reads 0 — while the grid looks perfect, because `rebuild()` derives
+ancestry by splitting the dotted code and never reads the node id.
+
+**Fixed two ways:**
+- **It reports.** The error path now logs to the console and raises a toast **regardless of `silent`**,
+  naming how many of how many branches landed, and returns the count actually adopted rather than 0.
+- **It verifies and resumes.** `wbsAdopt` was already documented as resuming from a partial tree (it
+  seeds `nodeByCode` from existing nodes), so `autoAdoptAfterImport()` now loops while passes keep
+  making progress, then **re-counts** and says plainly if branches remain. ⚠️ Gated on progress, not a
+  fixed retry count: a pass that adopts nothing new never will, and looping on it would hang the
+  import instead of telling the truth.
+
+⚠️ **The underlying reason a pass stops is still unidentified** — the failure was silent, so there is
+no error text to work from. This change is what makes the next occurrence diagnosable; it is not a
+fix for the cause.
+
+⚠️ **Recovery for the schedule as it stands:** WBS Manager → **"Adopt existing WBS"**. That path is
+non-silent, so it both resumes the tree and shows the error if one is waiting.
+
+- `MODULE_V` → `20260902p`.
+
+---
+## ⚠⚠ I BROKE THE IMPORT IN (i): the mutation fence swallowed its own finishing pass (2026-09-02o) — fmlozano
+
+Found while checking the owner's re-import of 4PH Strevi, which is exactly what that check was for.
+
+### What (i) got wrong
+Both importers end with **`await load(); await autoAdoptAfterImport();`** — the steps that BUILD the
+tree and attach every imported activity to it. (i) wrapped each importer in **one** mutation region to
+keep the heal chain and the Engineering/Procurement mirrors from writing mid-import. That was right in
+principle and wrong in extent: the finishing sequence ended up **inside** the fence, so `load()`'s
+chain hit `if (_isMutating()) return;` and skipped **every** pass — `_wbsResyncCodes`,
+`_wbsDedupeSummariesByCode`, `_wbsEnsureSummaries` and, worst, `_wbsLinkActivityParents`.
+
+**Measured live on the owner's re-import:**
+| | |
+|---|---|
+| rows | 28,958 (16,485 activities + 12,473 WBS summary rows) |
+| `wbs_nodes` | **7,297** — against 12,473 summary rows |
+| rows with a null `wbs_node_id` | **21,569 of 28,958** |
+
+⚠️ That is the precise symptom the link pass exists to prevent, and its consequences are the ones
+already documented in `2026-09-01-wbs-link-rpc.sql`: **no phase, so `isExecPhase()` is false
+everywhere and Vertical Stacking reports nothing; no branch to infer a Trade from; the WBS Manager's
+per-node counts read 0.** The grid looks fine throughout, because `rebuild()` derives ancestry by
+splitting the dotted code and never touches the node id — which is why this was invisible until the
+numbers were read straight out of the database.
+
+### The fix
+`_beginMutation()` now returns a **token** and `_endMutation(tok)` is **idempotent**, so an importer can
+close its own region at the point its writes finish — immediately before the finishing `load()` — while
+the wrapper's `finally` stays as the guaranteed backstop. The fence still covers every write; it no
+longer covers the rebuild.
+
+⚠️ **RECOVERY FOR A PROJECT ALREADY IMPORTED UNDER (i)-(n): a reload is NOT enough.** The heal chain
+creates summary rows for nodes and links activities by code, but nothing on a normal load rebuilds
+MISSING NODES — `wbsAdopt()` runs only from `autoAdoptAfterImport()` or the WBS Manager's **"Adopt
+existing WBS"** button. It resumes cleanly from a partial tree, so that button finishes the job
+without a re-import.
+
+### The resource-assignment clear, now live-verified
+Owner: *"Let's clear them and reimport strevi again."* Full clear of SLN101 on the (o) build, sampled
+every 250ms:
+
+| t | caption |
+|---|---|
+| 1.0s | Clearing schedule… |
+| 8.0s | 20,000 removed |
+| 11.0s | **28,958 removed** — exactly the row count |
+| 17.2s | **Clearing resource assignments… 167 removed** |
+
+**After: `project_schedule` 111, `wbs_nodes` 19 (all locked), `resource_assignments` 0.** So the
+167 → 0 that shipped unverified in (j) is now watched happening, and the 42 codes that had silently
+re-attached to the re-imported activities are gone with them.
+
+⚠️ **One cosmetic loose end:** the WBS-tree clear ran between 11.0s and 17.2s without its
+*"Clearing the WBS tree… N removed"* caption appearing in the sampling — the previous caption stayed
+up for those six seconds. 7,278 unlocked nodes really were deleted, so the work happened; only the
+progress line did not update. Worth a look if a stall is ever reported there.
+
+- `MODULE_V` → `20260902o`.
+
+---
 ## The colour scope now rides in the row cache, so the cached paint starts right (2026-09-02n) — fmlozano
 
 Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint

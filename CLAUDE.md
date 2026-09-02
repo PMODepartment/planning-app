@@ -84,6 +84,223 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (s) — Schedule Builder: a step for the phases either side of construction
+Owner: *"make it that the schedule builder has another step, being able to add phases like the initiation
+phase planning phase etc. and the established as of now, that is only applicable for the execution phase."*
+- New **step 8 · Project phases**. Everything the other steps build IS the Execution Phase, so this step
+  adds **Initiation / Planning / Close-out** as a flat list of activities with durations — no location, no
+  contract scope, nothing to repeat per zone.
+- ⚠️⚠️ **Only four phase codes exist**: `project_schedule.phase` carries a 4-value CHECK, and the push drops
+  the phase column *wholesale* on a phase error — so one invented lifecycle name would silently strip the
+  phase off every row in the push. Another phase is a migration, not a list edit.
+- Dates chain finish-to-start in calendar days (the arithmetic `generate()` uses). The **before** phases are
+  back-scheduled onto the execution start, Close-out picks up after the execution finish, so the programme
+  reads continuously. Reordering a row re-dates the phase — the order *is* the chain.
+- ⚠️⚠️ The branches are pushed as **siblings** of the Execution Phase, never children: `phaseOf()` inherits
+  from the nearest tagged ancestor, so filing Initiation under it would make the charter construction work.
+  On a package push they land under that package's root, so each lot keeps its own lifecycle.
+- ⚠️ The WBS-Summary payload's hard-coded `phase: 'construction'` is now `nd.phase || 'construction'` — the
+  branch's phase is what every activity under it inherits.
+- ⚠️ `normalize()` rebuilds cfg from `blank()` and copies only known keys, so it had to learn `phases` or the
+  step would work all session and be empty tomorrow. Legacy setups open with every phase **off**.
+- MODULE_V → `20260902s`.
+
+### 2026-09-02 (r) — Every activity is linked; adopting twice duplicated 5,850 nodes
+
+Owner ran the batched-link migration and clicked Adopt existing WBS again. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ✅ **The batched linker works: `activitiesUnlinked: 0` of 16,485.** The 8s `statement_timeout` is no
+  longer reachable — the client loops in batches of 4,000 and halves on 57014.
+- ⚠️⚠️ **The second adopt created 5,850 duplicate nodes** (`wbs_nodes` 12,473 → 18,323 against 12,473
+  summary rows) — exactly the count the first adopt had left outstanding. `wbsAdopt` decided what to
+  insert from the cached `rows`, which still showed those branches unlinked. ⚠️ And duplicates spread:
+  `_wbsEnsureSummaries()` would project a summary row for each on the next load, which the next adopt
+  would adopt — the duplicate-WBS-row runaway.
+- Fixed: **`wbsAdopt` now reads the adopted state from the server**, not from `rows`, and ⚠️ **refuses
+  to run if that read fails** — it cannot otherwise tell "not adopted" from "not loaded".
+- ⚠️ **`Reset WBS tree` would itself have timed out** (one update over ~28,958 rows), so the recovery
+  failed on the projects needing it. **`migrations/2026-09-02-wbs-unlink-batched.sql`** batches it, and
+  adds `wbs_delete_orphan_leaves` for targeted cleanup — ⚠️ leaves only, because `parent_id` cascades,
+  and deliberately not auto-wired, since `_wbsEnsureSummaries` is a healer with the opposite opinion.
+- ⚠️ **Recovery for SLN101: WBS Manager → Reset WBS… → rebuild** (after running the migration).
+  ⚠️ Not verified end to end. `MODULE_V` → `20260902r`.
+
+### 2026-09-02 (q) — The activity link times out at 8s, and three layers of silence hid it
+
+Owner clicked **Adopt existing WBS**; the tree finished, the activities did not, nothing said so.
+Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **Measured live:** `wbs_link_activity_parents` answers **57014 "canceling statement due to statement
+  timeout" after 8,173ms**. The deployment's `statement_timeout` is ~8s and that is ONE update over
+  16,485 activities joined to a GROUP BY over 12,473 summary rows, on a key computed per row that no
+  index can serve. Same class as the original clear timeout.
+- **State left behind:** tree complete (12,473 nodes, all summary rows linked), **16,393 of 16,485
+  activities with a null `wbs_node_id`** — no phase, no trade, empty Vertical Stacking, every node
+  count 0, while the grid looks perfect.
+- ⚠️⚠️ **Three layers of silence:** the catch toasted only `if (!silent)`; every real caller passes
+  silent; and **`onclick = wbsAdopt` passed the click EVENT as `silent`** — truthy — so the button I
+  documented last pass as the *non-silent* recovery path skipped its confirm, its success toast and
+  its error toast. My own recommended diagnostic could not produce a diagnosis.
+- Fixed: **`migrations/2026-09-02-wbs-link-batched.sql`** adds `p_limit` (⚠️ `drop function` first, or
+  PostgREST answers PGRST203 for the one-arg call); the client loops, halves the batch on 57014 and
+  reports regardless of `silent`; the button calls `wbsAdopt(false)`.
+- ⚠️ **Not verified end to end — the migration has not been run.** `MODULE_V` → `20260902q`.
+
+### 2026-09-02 (p) — The import's tree build stops half way and says nothing
+
+Owner re-imported 4PH Strevi and asked for the output to be checked. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **The insert is complete and correct**: 28,958 rows (16,485 activities + 12,473 summary rows). **The
+  tree build is not** — `wbs_nodes` **6,623** against 12,473 summary rows, 22,243 rows unlinked — and
+  (o) is not the cause.
+- ⚠️ Read in full rather than sampled, it is **not a depth cut-off**: adopted and un-adopted rows exist
+  at every depth 2-10, and **5,833 of 5,850 un-adopted rows have a parent that is also un-adopted**.
+  Whole subtrees. ⚠️ My earlier "400/400" parent figure came from a 1,000-row sample and was wrong.
+- ⚠️⚠️ **The real defect is the silence.** `wbsAdopt`'s insert error did `if (!silent) toast; return 0`,
+  and `autoAdoptAfterImport` calls it with `silent = true` — so a half-built tree produced no toast, no
+  console entry, and looked finished. That is the state where Vertical Stacking draws nothing and every
+  node count reads 0, while the grid looks perfect because `rebuild()` splits the dotted code and never
+  reads the node id.
+- Fixed both ways: it now **reports regardless of `silent`** (naming how many of how many landed), and
+  `autoAdoptAfterImport` **verifies and resumes** while passes make progress, then says plainly if
+  branches remain. ⚠️ **The reason a pass stops is still unidentified** — the failure was silent, so
+  there is no error text yet. This makes the next occurrence diagnosable, it does not fix the cause.
+- ⚠️ **Recovery:** WBS Manager → **"Adopt existing WBS"** (non-silent). `MODULE_V` → `20260902p`.
+
+### 2026-09-02 (e) — "Contracts & Claims" rename, centered/padded sidebar logo, and Portfolio mode gets every module
+
+Three owner asks in one prompt. The third — *"when selecting portfolio, all modules from projects
+must also be inherited… contents shall be a consolidation of all project data"* — the owner
+confirmed (via `AskUserQuestion`) means **full cross-project consolidation for every module**, not
+just nav links, plus a genuinely separate Tasks page under Personal. Recorded here as one entry.
+
+**1. Sidebar module label.** `config.js` — "Contracts & Claims Register" → **"Contracts & Claims"**
+(module tile, sidebar, launcher — all read this one string).
+
+**2. Sidebar logo.** `.pd-sidebar .pd-brand` padding widened `18px 20px 16px` → `28px 20px 24px` +
+`text-align:center`; `.pd-brand-logo` margin `0 0 10px` → `0 auto 10px` (it is a block narrower than
+its container, so centering needs `margin:auto`, not `text-align` alone) and
+`object-position:center center`. Mirrored in the ≤820px drawer's duplicate padding rule.
+
+**3. Portfolio-mode sidebar restructured into the owner's three sections**, and Portfolio Overview
+gained the **7 remaining consolidated tabs** it was missing (Risk Register, Stakeholders, Issues,
+Meetings, Contracts, Photos, Productivity) so "inherited" is real, not aspirational — it already had
+Overview/S-Curve/Cash Flow/Resources/Equipment/Milestones from earlier prompts (see those modules'
+own dated entries above).
+
+- **`UI.renderNav`'s `'portfolio'` branch rebuilt**: Portfolio (Projects, Dashboard, then every
+  **enabled** module from the shared registry) → Personal (Dashboard = `my-work.html`, **Tasks** =
+  new `my-tasks.html`) → System (Admin, gated). ⚠️ **`ctx.modules` now defaults to
+  `window.APP_CONFIG.MODULES`** inside `renderNav` itself — the five portfolio-mode pages
+  (`projects.html`/`admin.html`/`my-work.html`/`portfolio-overview`/`my-tasks.html`) never had to
+  pass it before, and none of their call sites needed touching because of this default.
+- **A `PORTFOLIO_TAB` map (`ui.js`)** resolves each module key to the matching portfolio-overview
+  tab (`risk-register → risk`, `issues-lessons → issues`, …), and the link becomes
+  `modules/portfolio-overview/index.html#po_view={"v":"<tab>"}` — the **exact** hash shape
+  `UI.bindHistoryState` already reads on load (`{key:'po_view', get:()=>({v:view})}`), so this is not
+  a new mechanism, it is driving an existing one from outside the page for the first time.
+  ⚠️ `project-schedule` and `s-curve` both resolve to the `scurve` tab — there is no dedicated
+  cross-project Schedule view, and S-Curve (duration-weighted progress off `project_schedule`) is
+  the closest real equivalent; said in the code rather than inventing an eighth tab for one module.
+  ⚠️ **`manpower-loading` is deliberately absent from the map** — it already hosts its own
+  cross-project **Portfolio** tab *inside* the module (2026-08-28 (d) entry), so its sidebar link
+  goes straight to the module page rather than being forced through portfolio-overview a second time.
+  A module with neither falls back to its plain page, same as Project mode.
+
+⚠️ **A REAL, PREVIOUSLY-LATENT BUG THIS EXPOSED AND HAD TO BE FIXED: landing directly on a
+non-overview tab via the hash rendered blank.** `bindHistoryState`'s `apply(initial)` fires
+**synchronously** inside `requireLogin`'s callback, before the `PDb.getProjects()`/`getGroupHeads()`
+`Promise.all` resolves — so `switchView('risk')` ran while `PROJ` was still `[]`,
+`scopedProjectIds()` returned `[]`, every `loadX()` bailed on "no projects match" and — because that
+early-return path never sets `xLoadedIds` — nothing ever asked again. This was always true of the
+pre-existing S-Curve/Cash Flow/Equipment/Milestones tabs too, but nothing before this prompt
+navigated to the page with the hash **already set on load** — every prior hash change happened by
+clicking a tab on an already-loaded page, where `PROJ` was long since populated. The sidebar's new
+deep links are the first thing that actually lands cold on `#po_view=…`, so it would have made every
+one of them open to an empty tab. Fixed with one line: `switchView(view)` re-invoked right after
+`PROJ`/`GH` load, harmless when still on `'overview'` (`renderAll()` already painted it) and now
+correct for any other view.
+
+**The 7 new tabs, at a consistent depth (KPI band + one grouped/filterable `.po-table`,
+no bespoke chart) — deliberately narrower than S-Curve/Cash Flow's SVG-chart treatment, to keep 7
+new consolidations shippable in one pass rather than gold-plating one and leaving the rest thin:**
+- **Risk** — `risk_register`, priority via the **shared `EPCRCM.riskPriority` 5×5 lookup** (new
+  `epc-rcm.js?v=20260901a` script tag), never a re-derived threshold — the grid answers a product of
+  4 three different ways, so guessing at it here would disagree with the Risk Register module itself.
+- **Stakeholders** — `stakeholder_map`. ⚠️ **Reproduces the module's own column-reuse exactly**:
+  `influence` stores impact, `interest` stores influence (a historical naming mismatch documented in
+  `stakeholder-map/module.js`) — reading it any other way here would silently disagree with the
+  module. Approach via `EPCRCM.stkApproach`, overridden by a planner's own `mgmt_approach` where set.
+- **Issues** — `issues_lessons`, aging = `today − date_presented` only while open (the register's
+  own rule, reproduced not reinvented).
+- **Meetings** — `meeting_minutes` + `mom_items`, both carry their own `project_id` so no join is
+  needed. ⚠️ **Deliberately simplified**, said in the code: reads `mom_items.status` directly rather
+  than resolving a raised item through its linked `issues_lessons` row the way the module itself
+  does — this is a cross-project worklist (open action items only, oldest-due first), not the
+  register of record.
+- **Contracts** — `contracts_claims`, `record_type` in {Contract, Claim, Change Order, EOT},
+  Pending/Approved/Disapproved/Cancelled status vocabulary reproduced from the module.
+- **Photos** — `progress_photos`. ⚠️ Narrow on purpose: one shared bucket (`progress-photos`) across
+  every project, so a batched `createSignedUrls` call (the same primitive the module itself uses) is
+  enough for an 18-photo "most recently captured" strip; no cross-project PPR/presentation
+  consolidation, which stays a per-project screen.
+- **Productivity** — `productivity_activities` + `productivity_entries`, rate = `qty ÷ (crew × work
+  days)` reproduced verbatim from `productivity-rates/index.html`'s own `rateOf`.
+- Every one of the 7 reads via **`PDb.selectAll`, never a bare select** — this repo's own
+  most-repeated defect class is a table read silently truncated at PostgREST's 1000-row cap, and a
+  portfolio-wide read is exactly where that risk is highest.
+- Shared helpers added once (`clip(s,n)`, `statePill(label,tone)`) rather than seven near-identical
+  copies; two new pill tones (`.pd-pill-bad`/`.pd-pill-warn`) added to the **shared** `dashboard.css`
+  (only `-ok`/`-muted` existed), following the existing `-ok` pattern's own light-tint-not-remapped
+  convention rather than inventing a new one.
+- **`.po-tabs` now wraps at every width, not just ≤900px** (13 tabs, not 6) — `#po-projfilter-wrap`'s
+  dropdown is `position:absolute`, so an `overflow-x` scroller here would clip it, the exact trap
+  this file's own 2026-08-26 milestone-calendar entry already recorded once.
+
+**Tasks page (`my-tasks.html`, new)** — the "what I owe" half of My Work as its own screen, not a
+fourth definition of "mine": `assets/js/my-work.js` gained **`MyWork.renderTasks(host, user)`**, a
+**third host** on the same `fetchAll`/`counts` the Dashboard and the per-project block already share
+(champion issues + responsible action items only — raised issues / captured lessons are what the
+account has put in, not what it owes, and stay off this page). Unified into one sortable list
+(overdue/soon-due first, blanks last), filterable by search/status/project.
+⚠️ **The filter bar is a static shell built once; only the results body re-renders on a filter
+change** — rebuilding the search `<input>` itself on every keystroke would lose focus after one
+character, the standard trap of full-host `innerHTML` rebuilds on `oninput`.
+
+**Verified:** every inline script + both touched JS files (`ui.js`, `my-work.js`) pass `node --check`;
+0 duplicate DOM ids and 0 dangling `getElementById` targets across `portfolio-overview/index.html`
+and `my-tasks.html`; 0 duplicate top-level function names introduced; CSS braces balanced
+(168/168) in the portfolio-overview `<style>` block. ⚠️ **Not verified signed in** — no live session
+in this environment, the standing constraint for every UI pass in this repo; in particular the seven
+new `PDb.selectAll` reads have never hit PostgREST, and the `#po_view=` deep-link fix is verified by
+reading the timing, not by driving a real reload.
+
+Shared assets changed → **`ui.js`, `my-work.js`, `my-work.css`, `dashboard.css`, `config.js` all
+bumped to `?v=20260902a` across every referencing page**; `epc-rcm.js` referenced at its existing
+`?v=20260901a` (unchanged, no version bump needed since the file itself wasn't touched).
+
+### 2026-09-02 (o) — ⚠⚠ The (i) mutation fence swallowed the import's own finishing pass
+
+Found while checking the owner's re-import of 4PH Strevi. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- Both importers end with `await load(); await autoAdoptAfterImport();` — the steps that build the
+  tree and attach every activity to it. (i) wrapped each importer in **one** mutation region, so that
+  finishing sequence sat **inside** the fence and `load()`'s heal chain returned immediately, skipping
+  every pass including `_wbsLinkActivityParents`.
+- **Measured live:** 28,958 rows, **7,297 `wbs_nodes` against 12,473 summary rows**, and **21,569 rows
+  with a null `wbs_node_id`**. ⚠️ Exactly the failure `2026-09-01-wbs-link-rpc.sql` documents — no
+  phase, so Vertical Stacking reports nothing; no trade; WBS Manager counts read 0 — and invisible in
+  the grid, which derives ancestry from the dotted code and never reads the node id.
+- Fixed: `_beginMutation()` returns a token and `_endMutation(tok)` is idempotent, so an importer
+  closes its own region when its WRITES finish, before the rebuild, with the wrapper's `finally` as
+  the backstop.
+- ⚠️ **Recovery for a project imported under (i)-(n): a reload is not enough.** Nothing on a normal
+  load rebuilds missing NODES — use the WBS Manager's **"Adopt existing WBS"**, which resumes from a
+  partial tree. `MODULE_V` → `20260902o`.
+
 ### 2026-09-02 (n) — The colour scope rides in the row cache, so the cached paint starts right
 
 Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint
