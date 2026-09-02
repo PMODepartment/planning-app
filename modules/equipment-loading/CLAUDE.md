@@ -1,3 +1,45 @@
+## Site plan: the backdrop can be resized, moved and faded — and the workspace got bigger (2026-09-02) — eprobles
+
+Owner: *"add an option where you can resize the image uploaded, and also adjust the transparency of
+the image. Furthermore, enlargen the workspace."*
+
+**Image… (toolbar)** — a popover carrying **Fade** (10–100 %), **Size** (25–400 %), four nudge
+arrows and **Reset to fit**.
+
+- ⚠️ **THE SHAPES DO NOT MOVE WITH THE PICTURE.** The polygons are in plan units and the equipment
+  is attached to the polygon ids, so this moves only what is *under* them — which is the point: it
+  is how a scan that is not square to the sheet gets lined up with towers that were already traced.
+- ⚠️ **Scaling is about the CENTRE, not the top-left.** Anchored at the corner, enlarging throws the
+  plan off toward the bottom-right and every resize then needs a re-drag to recover — which is how a
+  resize control ends up feeling broken.
+- ⚠️ **Stored in the plan's jsonb (`PLAN.img`), beside the shapes — not in localStorage.** Where the
+  backdrop sits is a fact about the project: per-browser, two planners would be tracing towers
+  against two differently-placed pictures. (The *rail* toggle is the opposite case and IS
+  per-browser — how wide someone likes their own window is not project data.)
+- ⚠️ **`input` previews, `change` saves.** A slider fires `input` per pixel of the drag; one upsert
+  per pixel would hammer the table and race its own responses. The preview costs one style attribute
+  (`applyImgStyle`, which repaints the `<img>` in place rather than calling `renderSite` — a full
+  re-render drops the selected tower's handles and stutters on a big plan).
+- ⚠️ **`.eq-plan-img` lost `inset:0`** and takes its box inline. At the defaults (scale 1, no offset,
+  opacity 1) that resolves to exactly the old full-bleed rect, so every plan saved before today
+  opens unchanged — `imgCfg()` supplies those defaults for a row that has no `img` key at all.
+- ⚠️ `wireImagePanel()` is re-run from `renderSite` because the backdrop usually loads *after* the
+  toolbar is wired — that is what enables the button and puts the saved values on the sliders. Its
+  document-level close listener is therefore bound **once**, or every repaint would add a closer.
+
+**A bigger workspace**, three ways: the pane is `clamp(420px, 78vh, 1200px)` (was `360/66vh/780`);
+**Wide** hides the ~320 px side rail (display:none only, so the chips keep their handlers and coming
+back needs no re-render); **Full screen** puts the whole `.eq-site` into the Fullscreen API.
+
+- ⚠️ Fullscreen is on `.eq-site` — rail *and* canvas — not on `.eq-plan`. Dragging a chip onto a
+  tower is the point of this screen, and a fullscreened canvas alone would leave the chips on the
+  page underneath where they cannot be reached.
+- ⚠️ Both re-take the fit (`setZoom(fitZoom())` + scroll reset — there is no `fitPlan()` helper), and
+  the fullscreen one defers a frame: on entering fullscreen the element has not been re-laid-out
+  when `fullscreenchange` fires, so measuring immediately fits against the old box.
+
+---
+
 # Equipment Loading — module change log
 
 Per-project equipment register, its monthly planned/actual loading histogram, and a

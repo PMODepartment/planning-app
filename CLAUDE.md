@@ -84,6 +84,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (f) — You could not type a space in the project search; Equipment Loading's backdrop and workspace
+Owner: *"i cannot add / type space in the search bar of the projects."* and, on Equipment Loading,
+*"add an option where you can resize the image uploaded, and also adjust the transparency of the image.
+Furthermore, enlargen the workspace."*
+- ⚠️ **The space bug was one `.trim()`.** `UI.renderNavListInto` (the shared project tree behind the header
+  switcher and the Projects page) rebuilt its whole container on every keystroke and re-rendered the search
+  input **with the trimmed query as its value**. A space is trailing whitespace at the instant it is typed, so
+  the repaint deleted it before the next character arrived — "Test Project" could never be typed. Fixed twice
+  over: the field keeps the RAW value (trimming is for the filter), and **typing no longer re-renders the
+  input at all** — only the list below it repaints, so no repaint can edit what someone is typing (and the
+  save/restore of `selectionStart` that existed only to paper over this is gone).
+- Equipment Loading → Site Plan: an **Image…** panel (fade 10–100 %, size 25–400 %, nudge, reset). The picture
+  moves; the traced towers do not — that is how a skewed scan gets lined up with towers already traced.
+  Stored in the plan row, not localStorage: where the backdrop sits is project data, not a browser preference.
+  Defaults reproduce the old full-bleed rect exactly, so existing plans open unchanged.
+- Workspace: the pane grows to `clamp(420px, 78vh, 1200px)`, **Wide** hides the side rail, and **Full screen**
+  fullscreens the rail *and* canvas together — a fullscreened canvas alone would strand the equipment chips
+  on the page underneath.
+- ⚠️ `ui.js` is a SHARED asset: its `?v=` is bumped in all 20 HTML files, or the search fix reaches nobody.
+- MODULE_V → `20260902f`.
 ### 2026-09-02 (f) — A legend regression from yesterday's legend fix, and EPC → MCC finished
 
 Owner: *"Separate the Progress and Stacking buttons, extract them within the View button"*,
