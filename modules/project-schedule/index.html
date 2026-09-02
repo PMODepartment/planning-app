@@ -3389,9 +3389,25 @@
   // ⚠️ A COUNTER, not a boolean: an import calls the clear helpers inside itself, so the regions
   // nest and a boolean would be cleared by the inner one while the outer was still writing.
   var _mutating = 0;
-  function _beginMutation() { _mutating++; _loadGen++; }
-  function _endMutation() { _mutating = Math.max(0, _mutating - 1); }
+  // ⚠️⚠️ THE REGION HAS TO BE CLOSEABLE EARLY, AND THAT IS A BUG FIX, NOT A CONVENIENCE. Both
+  // importers finish with `await load(); await autoAdoptAfterImport();` — the steps that BUILD the
+  // tree and attach every imported activity to it. Wrapping the whole import in one region put that
+  // finishing sequence INSIDE the fence, so `load()`'s heal chain hit `if (_isMutating()) return;`
+  // and skipped every pass, `_wbsLinkActivityParents` included. Measured on the owner's re-import of
+  // 4PH Strevi: **21,569 of 28,958 rows left with a null `wbs_node_id`, and 7,297 wbs_nodes for
+  // 12,473 summary rows** — the tree half-built and the activities unattached, which is the exact
+  // symptom class (no phase, no trade, empty Vertical Stacking) the link pass exists to prevent.
+  // The token makes `_endMutation` idempotent, so the import can close its own region before the
+  // finishing load while the wrapper's `finally` stays as the guaranteed backstop.
+  function _beginMutation() { _mutating++; _loadGen++; return { done: false }; }
+  function _endMutation(tok) {
+    if (tok) { if (tok.done) return; tok.done = true; }
+    _mutating = Math.max(0, _mutating - 1);
+  }
   function _isMutating() { return _mutating > 0; }
+  // The region the CURRENT import owns, so its own tail can close it. Module-scope because the
+  // finishing sequence lives deep inside the import body, far from the wrapper that opened it.
+  var _importTok = null;
   var PROJECTS = [], GROUPHEADS = [], layoutMode = 'split', activeTab = 'schedule';
   // ---- Which view am I in? -----------------------------------------------------------------
   // ⚠️ The six view modes live in THREE pieces of state — `layoutMode` (split/grid/gantt/network),
@@ -9620,8 +9636,9 @@
   // would otherwise be writing into the same tree throughout. That is the corruption path the owner
   // asked to be checked.
   async function doImport() {
-    _beginMutation();
-    try { return await _doImportInner.apply(null, arguments); } finally { _endMutation(); }
+    var tok = _importTok = _beginMutation();
+    try { return await _doImportInner.apply(null, arguments); }
+    finally { _endMutation(tok); _importTok = null; }
   }
   async function _doImportInner(recs, replace, fname, locMap, placement, discOnImport, pkgId, locScopeCodes) {
     showLoading('Preparing import…');
@@ -9692,6 +9709,10 @@
       ok += Math.min(CH, payloads.length-i);
     }
     hideLoading();
+    // ⚠️ THE WRITES ARE DONE; everything below REBUILDS. Closing the region here is what lets
+    // load()'s heal chain run — without it the import ends with the tree half-built and every
+    // activity unattached (see _beginMutation). Idempotent, so the wrapper's finally is unaffected.
+    _endMutation(_importTok);
     if (err) { UI.toast('Insert error after '+ok+': '+err, 'error'); collapsed={}; resetUndo(); await load(); return; }
     collapsed={}; resetUndo(); await load();
     await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
@@ -10305,8 +10326,9 @@
     };
   }
   async function doImportXER() {
-    _beginMutation();
-    try { return await _doImportXERInner.apply(null, arguments); } finally { _endMutation(); }
+    var tok = _importTok = _beginMutation();
+    try { return await _doImportXERInner.apply(null, arguments); }
+    finally { _endMutation(tok); _importTok = null; }
   }
   async function _doImportXERInner(parsed, replace, fname) {
     showLoading('Preparing import…');
@@ -10485,6 +10507,9 @@
     colOrder = []; _colSeen = {};
     Object.keys(colHidden).forEach(function (k) { if (k.indexOf('udf:') === 0 || k.indexOf('code:') === 0) delete colHidden[k]; });
     try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {}
+    // ⚠️ Same as the workbook importer: the writes are done and everything below rebuilds, so the
+    // fence has to come down before load() or its heal chain skips every pass.
+    _endMutation(_importTok);
     collapsed = {}; resetUndo(); await load();
     if (err) return;
     await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately

@@ -1,3 +1,44 @@
+## ⚠⚠ I BROKE THE IMPORT IN (i): the mutation fence swallowed its own finishing pass (2026-09-02o) — fmlozano
+
+Found while checking the owner's re-import of 4PH Strevi, which is exactly what that check was for.
+
+### What (i) got wrong
+Both importers end with **`await load(); await autoAdoptAfterImport();`** — the steps that BUILD the
+tree and attach every imported activity to it. (i) wrapped each importer in **one** mutation region to
+keep the heal chain and the Engineering/Procurement mirrors from writing mid-import. That was right in
+principle and wrong in extent: the finishing sequence ended up **inside** the fence, so `load()`'s
+chain hit `if (_isMutating()) return;` and skipped **every** pass — `_wbsResyncCodes`,
+`_wbsDedupeSummariesByCode`, `_wbsEnsureSummaries` and, worst, `_wbsLinkActivityParents`.
+
+**Measured live on the owner's re-import:**
+| | |
+|---|---|
+| rows | 28,958 (16,485 activities + 12,473 WBS summary rows) |
+| `wbs_nodes` | **7,297** — against 12,473 summary rows |
+| rows with a null `wbs_node_id` | **21,569 of 28,958** |
+
+⚠️ That is the precise symptom the link pass exists to prevent, and its consequences are the ones
+already documented in `2026-09-01-wbs-link-rpc.sql`: **no phase, so `isExecPhase()` is false
+everywhere and Vertical Stacking reports nothing; no branch to infer a Trade from; the WBS Manager's
+per-node counts read 0.** The grid looks fine throughout, because `rebuild()` derives ancestry by
+splitting the dotted code and never touches the node id — which is why this was invisible until the
+numbers were read straight out of the database.
+
+### The fix
+`_beginMutation()` now returns a **token** and `_endMutation(tok)` is **idempotent**, so an importer can
+close its own region at the point its writes finish — immediately before the finishing `load()` — while
+the wrapper's `finally` stays as the guaranteed backstop. The fence still covers every write; it no
+longer covers the rebuild.
+
+⚠️ **RECOVERY FOR A PROJECT ALREADY IMPORTED UNDER (i)-(n): a reload is NOT enough.** The heal chain
+creates summary rows for nodes and links activities by code, but nothing on a normal load rebuilds
+MISSING NODES — `wbsAdopt()` runs only from `autoAdoptAfterImport()` or the WBS Manager's **"Adopt
+existing WBS"** button. It resumes cleanly from a partial tree, so that button finishes the job
+without a re-import.
+
+- `MODULE_V` → `20260902o`.
+
+---
 ## The colour scope now rides in the row cache, so the cached paint starts right (2026-09-02n) — fmlozano
 
 Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint

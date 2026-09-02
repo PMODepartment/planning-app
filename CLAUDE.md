@@ -84,6 +84,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (o) — ⚠⚠ The (i) mutation fence swallowed the import's own finishing pass
+
+Found while checking the owner's re-import of 4PH Strevi. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- Both importers end with `await load(); await autoAdoptAfterImport();` — the steps that build the
+  tree and attach every activity to it. (i) wrapped each importer in **one** mutation region, so that
+  finishing sequence sat **inside** the fence and `load()`'s heal chain returned immediately, skipping
+  every pass including `_wbsLinkActivityParents`.
+- **Measured live:** 28,958 rows, **7,297 `wbs_nodes` against 12,473 summary rows**, and **21,569 rows
+  with a null `wbs_node_id`**. ⚠️ Exactly the failure `2026-09-01-wbs-link-rpc.sql` documents — no
+  phase, so Vertical Stacking reports nothing; no trade; WBS Manager counts read 0 — and invisible in
+  the grid, which derives ancestry from the dotted code and never reads the node id.
+- Fixed: `_beginMutation()` returns a token and `_endMutation(tok)` is idempotent, so an importer
+  closes its own region when its WRITES finish, before the rebuild, with the wrapper's `finally` as
+  the backstop.
+- ⚠️ **Recovery for a project imported under (i)-(n): a reload is not enough.** Nothing on a normal
+  load rebuilds missing NODES — use the WBS Manager's **"Adopt existing WBS"**, which resumes from a
+  partial tree. `MODULE_V` → `20260902o`.
+
 ### 2026-09-02 (n) — The colour scope rides in the row cache, so the cached paint starts right
 
 Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint
