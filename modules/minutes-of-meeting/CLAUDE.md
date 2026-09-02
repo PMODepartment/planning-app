@@ -1,5 +1,191 @@
 # Module: minutes-of-meeting
 
+## 2026-09-02 (b) — The corrected spec: Meetings first, one toolbar row, filters
+## behind a button, and the minutes reworked end to end
+
+The owner's follow-up ("some of my prompts were not captured") supersedes parts of the
+10-item pass below. **Run `migrations/2026-09-02-meetings-rehaul.sql`** — it grew three
+columns this round: `meeting_minutes.agenda`, `mom_items.department`,
+`mom_items.schedule_activity_id`.
+
+### Module-level items
+
+**1 — Meetings is the FIRST and DEFAULT tab**, ahead of Meetings Dashboard, and the same
+tabs→dropdown conversion was applied to the other modules that carry a topbar tab strip:
+**contracts-claims**, **risk-register**, **stakeholder-map** (one `UI.tabsToDropdown()`
+call each). ⚠️ Body-level view switchers (equipment-loading, manpower-loading,
+portfolio-overview, productivity-rates, resource-loading, `_template`) were deliberately
+NOT converted — those are content tabs inside the page, not the topbar strip the ask is
+about, and collapsing them would hide a module's own primary navigation below the fold.
+⚠️ `_momTab` defaults to `'meetings'` in all three places that reset it; a strip whose
+first entry is not where the module opens reads as a bug.
+
+**2 — the secondary bar is one row.** `assets/css/dashboard.css` gains a
+`@media (min-width: 701px)` block making `.pd-modulebar` `flex-wrap: nowrap` with the
+project selector allowed to shrink and ellipsise. ⚠️ **It SHRINKS, it does not SCROLL** —
+`overflow-x: auto` would establish a clipping context and cut off every popover opened
+from inside that bar (the project switcher's own menu included), the exact trap the
+2026-07-24 part-6 pass recorded. ⚠️ Wrapping is left intact below 700px, where the 44px
+touch minimums need the room.
+
+**10 — one filter group, behind a button, with the search folded in.**
+`momBrowseFilterBarHTML()` renders a `Filters` toggle plus a collapsible group holding
+search / kind / state / group / starred / clear. `momUnifiedFilter()` replaces
+`momUnifiedSearch()`. ⚠️ The Draft and Distributed states exclude series rows **by
+construction** — a recurring series has no draft state — so the option says
+"(meetings only)" rather than silently returning nothing.
+
+**11 — "X of Y open" on the list.** `itemOpenCount()` counts through `momItemStatus`, so
+a minute pulled in from an issue is judged by the REGISTER's live status, exactly as the
+card, the filter and the PDF already do. A series row sums across every occurrence held
+under it. A meeting with no minutes reads `—`, never `0 of 0 open`.
+
+### Minutes-specific items
+
+**1 — "action items" are MINUTES, and the activity moved onto each one.** Same
+`mom_items` table; what changed is the name, because these ARE the minutes. The
+meeting-level **Activity discussed** picker is gone — one meeting routinely covers
+several activities, so a single link had to be wrong for all but one of its minutes. Each
+minute now carries its own, set through **one shared modal** (`openItemActPicker`).
+⚠️ One modal, not an inline search box per card: twenty minutes would otherwise mean
+twenty live inputs and twenty debounced queries against a 40k-row schedule.
+⚠️ `momSaveHeader` **no longer writes `schedule_activity_id` at all** — dropping it from
+the payload rather than writing `null`, so saving the header cannot blank a value stored
+before this change. That value is shown read-only on the meeting instead of hidden.
+
+**2 — Notes / discussion removed.** Same treatment and the same reason: the column is not
+written any more, and existing text renders read-only rather than disappearing. Exports
+still print it where a meeting has it.
+
+**3 — carry-over is a button + modal** (`openCarryOverModal`), not an always-visible
+dropdown. Only meetings that still have something open are listed, so the modal cannot
+offer a source that would carry nothing.
+
+**4 — ⚠️ "Get from issue button is not working" — it was NOT broken, and the diagnosis is
+the useful part.** A brand-new meeting auto-seeds *every* open issue, so
+`momOpenIssuesFor()` legitimately returned an empty set and the button rendered
+permanently `disabled` — which is indistinguishable from broken. `openGetIssueModal()` is
+always enabled and lists **every** issue on the project, with the ones already on this
+agenda ticked and disabled. ⚠️ A CLOSED issue is listed but not selectable: dragging
+something the register has settled onto next week's agenda is what the open-only rule
+existed to prevent, and it stays prevented. Field mapping is `momIssuePayload()`'s
+unchanged shape (issue ← description, description ← caused_by, action ← corrective
+action). ⚠️ Adds run **sequentially**, not `Promise.all` — the sequence number is derived
+from what is already on the agenda, so parallel pulls would race onto the same number.
+
+**5 — Department replaces Category**, from the Issues register's own `DEPARTMENTS` list
+(a verbatim copy — keep the two in step). ⚠️ The `category` COLUMN is not dropped and is
+never blanked: `momItemDept()` falls back to it and `momUsedDepartments()` offers whatever
+a project already stored, so a minute filed before this change round-trips through the
+select instead of silently reporting the first option.
+
+**6 — Put On Hold / Close moved to the card's action footer**, beside Remove, and their
+reveal panel is full-width below the text blocks instead of crammed into a grid cell
+sized for a status pill. The workflows are unchanged (reason required to hold, closure
+note required to close, lesson still optional).
+
+**7 — the history is always on screen**, with the Issues register's field-by-field
+before→after diff (`MI_HIST_FIELDS` / `miHistDiffHTML`, mirroring `HIST_FIELDS` /
+`issHistDiffHTML`). ⚠️ Issues can afford one fetch per detail page because a detail page
+IS one issue; a meeting is N minutes, so `loadItemHistories()` fetches the **whole
+meeting's history in one request** keyed on `.in('item_id', ids)` and fans it out — with
+an in-flight guard, because `renderDetail()` calls it and its completion repaints, which
+without the guard is an infinite fetch loop rather than a load.
+
+**8 — "Capture lesson" goes to the ordinary Add Lessons Learned page.** The link carries
+no `momId`/`momItem` any more, and `issues-lessons` learned a `?newLesson=1` deep link
+that opens its own plain form. ⚠️ The older LINKED form is kept — it is still how a lesson
+gets attached to a specific minute, and existing links stay openable.
+
+**9 — distribute / revert appear in each minute's history.** Distribution is a property
+of the MEETING, so it is logged onto every one of its minutes at once: the history a
+reader opens is that minute's, and "this was issued on the 4th" is part of its story even
+though the act covered its siblings.
+
+**10 — distributing prompts to email the attendees**, naming them, then hands off to the
+same `mailto:` the Email button uses.
+
+**12 — the reporting view is a slide deck.** `momApplySlides()` steps
+`#il-mom-slide-details` → `#il-mom-slide-agenda` → one `.il-mi-card` per minute, with
+prev/next, a dot strip and arrow keys. ⚠️ **The deck is a VIEW over the markup the editor
+already rendered** — same inputs, same handlers — not a second read-only rendering. That
+is what makes "while also editing" true rather than approximately true, and why there is
+no slide template to drift from the form. ⚠️ Consequently the old
+"render every field as static text" mode is GONE: `momFieldHTML` no longer passes
+`_momReport` to `ilField`, and the CSS that neutralised every control
+(`pointer-events:none`, transparent borders) is deleted. The clipping that mode existed to
+avoid was fixed at the source instead — Issue / Agenda, Description and Action item are
+all textareas now. ⚠️ Slides are found in the DOM, not counted from `MOM_ITEMS`: the
+minutes list is filterable, so a count taken from the data would step past cards that are
+not on screen. ⚠️ Arrow keys are ignored while focus is in a field, or typing would be
+impossible.
+
+**13 — the dashboard was rebuilt and everything else removed**, as instructed: Minutes by
+Status, Minutes by Department, Minutes by Responsible, Minutes per meeting, then the
+minutes grouped by meeting — plus a starred-only tick and a multi-select meeting
+dropdown. ⚠️ **These charts count EVERY minute, not only the open ones** — "Minutes by
+Status" is meaningless if Closed is filtered out before it is charted. ⚠️ An EMPTY
+multi-select means every meeting, never none. ⚠️ "Starred meetings only" accepts a star on
+the meeting's own row **or on its series**, or starring a recurring meeting would filter
+its own occurrences out. ⚠️ A meeting with no minutes is still listed, with a note — a
+meeting nobody minuted is a real state, and dropping it silently is how a gap goes
+unnoticed. `momAttendanceBattery` / `momOpenMinutesStat` / `momOnScheduleStats` /
+`momAllOpenItems` / `momItemsDashListHTML` / `meterHTML` / `momLastHeldDate` are deleted
+with the tiles they fed.
+
+**14 — no more bold.** Every `font-weight: 700/800` in `module.css` is `600`, and a scoped
+`#il-mom-view b, #il-mom-view strong { font-weight: 600 }` catches the inline emphasis the
+JS emits.
+
+**Module item 4 — an agenda can be added to an EXISTING meeting.** The Add-meeting modal
+could set one; nothing could edit it afterwards. `momAgendaSectionHTML()` is that editor
+and doubles as slide 2. ⚠️ The agenda is `meeting_minutes.agenda` (jsonb), NOT `mom_items`
+rows: an agenda TOPIC is what the meeting intends to cover, a MINUTE is what was recorded
+against it, and filing topics as minutes would put empty rows in the record and count them
+as open work. ⚠️ An empty agenda stores NULL, not `[]`.
+
+### Two defects found by checking rather than reading
+
+⚠️ **`UI.modal(html, opts)` wires NOTHING but the backdrop click** — it does not bind
+`[data-close]` and it ignores `opts.width`. Three new modals were written assuming both.
+`wireModalChrome(m, width)` now does it once; a modal whose × does nothing is exactly the
+silent failure this repo keeps recording.
+
+⚠️ **`momSlideLabel` fell through on a MISSING action-item element but not on an EMPTY
+one** — `el.querySelector(a) || el.querySelector(b)` takes the blank field and labels the
+slide "Minute 3" while the issue text sits right there. A minute recorded as "what was
+raised", with the action still to be agreed, is common. Caught by the harness.
+
+### Verified
+- **40 checks executing the SHIPPED functions**, sliced out of `module.js` by brace
+  matching and never reimplemented — and the constants (`MI_HIST_FIELDS`, `MIGRATE_COL`)
+  are lifted from the source too, since a hand-copied field list makes the suite agree
+  with itself rather than with the module. Covers the missing-column retry (including
+  that a constraint violation and an RLS refusal are NOT treated as missing columns), the
+  department fallback, the history diff, every dashboard filter combination, the open
+  counts, the slide labels and the activity label. ⚠️ **The suite cannot even LOAD against
+  the pre-change file** (`NOT FOUND`), so it is testing new behaviour, not restating old.
+- `node --check` clean on `module.js`, `issues-lessons/module.js` and `modules-grid.js`;
+  every inline `<script>` in the seven touched HTML files parses; CSS braces balanced
+  (302/302 module, 431/431 shared); 0 NUL bytes; 0 duplicate DOM ids; **no shared asset
+  served at two versions and none unversioned**.
+- **Function-set diff: 12 lost, all deliberate** (`meterHTML`, `momUsedCategories`,
+  `momLastHeldDate`, `momAttendanceBattery`, `momOpenMinutesStat`, `momOnScheduleStats`,
+  `momAllOpenItems`, `momItemsDashListHTML`, `renderMomActionDashboard` — the removed
+  dashboard; `momUnifiedSearch` → `momUnifiedFilter`; `momGetPanelHTML` → the modal;
+  `momActChipHTML` → the per-minute chip), **39 added**.
+
+⚠️ **Not verified signed in, and the migration has not been run.** No live click-through
+of the slide deck, the agenda editor, the Get-from-issue modal, the department select or
+the rebuilt dashboard against real data. Until the migration runs, `department` and
+`schedule_activity_id` are dropped from every write with a toast naming the file, and
+saving an agenda says which migration is missing.
+
+`module.css/js?v=20260902b`; `issues-lessons` `module.css/js?v=20260902a`;
+`dashboard.css?v=20260902a` app-wide (28 files — a shared file changed);
+`modules-grid.js?v=` (hence `MODULE_V`) → `20260902b`.
+
+
 ## 2026-09-02 — Full rehaul: dropdown tab, list/calendar icon toggle, a real "+ Add
 ## meeting" modal, favorites, series pages, a per-hour Week view, and exports
 

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Risk Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901c" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
   <link rel="stylesheet" href="../../assets/css/epc-rcm.css?v=20260901h" />
   <link rel="stylesheet" href="module.css?v=20260901h" />
 </head>
@@ -138,6 +138,10 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'risk-register', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
+      // Item 1 (2026-09-02) — see the note in minutes-of-meeting/index.html:
+      // the topbar tabs become one dropdown and the static module label beside
+      // them goes, since the trigger already names the active screen.
+      if (UI.tabsToDropdown) UI.tabsToDropdown('.rr-tabs');
       RiskRegister.init(user, profile);
     });
   </script>

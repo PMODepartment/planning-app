@@ -70,6 +70,53 @@ alter table mom_schedules add column if not exists attendees_optional jsonb;
 -- schedDatesInRange treats a null interval as falsy and falls back to 1
 -- anyway — the default just makes that explicit in the schema too.
 alter table mom_schedules add column if not exists interval_n int not null default 1;
+
+-- ---------------------------------------------------------------------------
+-- 3. meeting_minutes.agenda — the meeting's own agenda list.
+--
+-- ⚠️ WHY A jsonb ARRAY AND NOT `mom_items` ROWS. An agenda is the list of
+--    TOPICS a meeting intends to cover; a minute is the RECORD of what was
+--    said about one of them, with its own department, responsible, target
+--    date, hold/close workflow and audit history. Modelling the agenda as
+--    mom_items rows would mean every topic nobody ended up minuting still
+--    shows up as an empty minute in the register, in the exports and in the
+--    dashboard counts. Same array-of-strings shape as
+--    mom_schedules.default_agenda above, so a recurring series' default
+--    agenda copies straight across with no transformation.
+-- ---------------------------------------------------------------------------
+alter table meeting_minutes add column if not exists agenda jsonb;
+
+-- ---------------------------------------------------------------------------
+-- 4. mom_items — a minute's own department and its own discussed activity.
+--
+-- ⚠️ WHY `department` RATHER THAN REUSING `category`. `mom_items.category`
+--    came from mom-app's own taxonomy (Technical / Commercial / Safety / …),
+--    a second classifying dimension that meant roughly the same thing as the
+--    department already carried by every issue in Issues & Concerns — and
+--    could disagree with it, which is exactly the drift that made
+--    issues_lessons drop its own "lesson category" in favour of department
+--    (2026-09-01(d)). The department vocabulary is now the single one, read
+--    from the same 11-value list the register's own picker offers, so a
+--    minute pulled in from an issue keeps the department it was raised
+--    under instead of being re-classified into a parallel scheme.
+-- ⚠️ `category` IS NOT DROPPED. Existing rows still hold real values, the
+--    exports still print whatever is there, and a destructive drop of a
+--    populated column is not something a feature migration should do — it
+--    simply stops being offered as an editor.
+-- ---------------------------------------------------------------------------
+alter table mom_items add column if not exists department text;
+-- ⚠️ The activity discussed moves from the MEETING to the MINUTE. One
+--    meeting covers several activities; tagging the whole meeting with one
+--    of them was only ever true of a single-topic meeting, and it is the
+--    individual minute that a schedule activity is actually about.
+--    `meeting_minutes.schedule_activity_id` is left in place (populated on
+--    existing meetings, still printed by the exports) rather than migrated —
+--    a meeting-level tag is not wrong, only coarse, and rewriting it into
+--    one arbitrary minute would invent a precision nobody recorded.
+alter table mom_items add column if not exists schedule_activity_id text;
+-- One minute, one department index — the dashboard groups by it (Minutes by
+-- Department) across every meeting on the project.
+create index if not exists mom_items_department_idx on mom_items(project_id, department);
 -- ⚠️ A plain jsonb ARRAY OF STRINGS (["Review budget", "Site walk-through"]),
 -- not a table of its own. An agenda item defined at series-creation time is
 -- just a STARTING LIST of topics — the moment an occurrence is created each

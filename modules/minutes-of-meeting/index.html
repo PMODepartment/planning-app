@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Minutes of Meeting · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901c" />
-  <link rel="stylesheet" href="module.css?v=20260902a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
+  <link rel="stylesheet" href="module.css?v=20260902b" />
 </head>
 <body>
   <div class="pd-app">
@@ -45,9 +45,12 @@
              module.js for why that has to be conditional, not a bare hide).
              Wired once in module.js's wire(); .active synced on every
              render() via syncTopTabs(). -->
+        <!-- ⚠️ MEETINGS FIRST, and it is the landing tab (module.js `_momTab`
+             defaults to 'meetings' to match) — a strip whose first entry is
+             not where the module opens reads as a bug. -->
         <div class="il-tabs" role="tablist">
-          <button class="il-tab active" data-tab="dashboard">Meetings Dashboard</button>
-          <button class="il-tab" data-tab="meetings">Meetings</button>
+          <button class="il-tab active" data-tab="meetings">Meetings</button>
+          <button class="il-tab" data-tab="dashboard">Meetings Dashboard</button>
         </div>
 
         <!-- Tool cluster beside the profile. Item 2: an icon-only List/Calendar
@@ -98,7 +101,7 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260902a"></script>
+  <script src="module.js?v=20260902b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

@@ -53,7 +53,7 @@
 
 /* Status pill (reused for both a linked action item's live register status and
    the List view's Distributed state). */
-.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: 12px; color: #fff; white-space: nowrap; }
+.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: 12px; color: #fff; white-space: nowrap; }
 .il-pill.is-open   { background: #dc2626; }
 .il-pill.is-hold   { background: #d97706; }
 .il-pill.is-closed { background: #16a34a; }
@@ -105,7 +105,7 @@
 .il-mom-lrow { cursor: pointer; }
 .il-mom-lrow:hover td { background: var(--pd-bg); }
 .il-mom-draft {
-  display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .06em;
+  display: inline-block; font-size: 9px; font-weight: 600; letter-spacing: .06em;
   padding: 2px 7px; border-radius: 3px;
   background: var(--pd-red-light); color: var(--pd-red);
 }
@@ -115,17 +115,17 @@
    convention already established in this suite. */
 .il-mom-cal { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius); padding: 12px; }
 .il-mom-calnav { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.il-mom-calmonth { font-weight: 700; font-size: 14px; min-width: 140px; }
+.il-mom-calmonth { font-weight: 600; font-size: 14px; min-width: 140px; }
 .il-mom-caltoday { margin-left: auto; }
 .il-mom-calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.il-mom-calhead { margin-bottom: 4px; font-size: 11px; font-weight: 700; color: var(--pd-muted); text-align: center; text-transform: uppercase; letter-spacing: .04em; }
+.il-mom-calhead { margin-bottom: 4px; font-size: 11px; font-weight: 600; color: var(--pd-muted); text-align: center; text-transform: uppercase; letter-spacing: .04em; }
 .il-mom-calcell {
   min-height: 84px; border: 1px solid var(--pd-line); border-radius: 6px;
   padding: 4px; background: var(--pd-bg); display: flex; flex-direction: column; gap: 2px;
 }
 .il-mom-calcell.is-blank { border-color: transparent; background: transparent; }
 .il-mom-calcell.is-today { border-color: var(--pd-red); }
-.il-mom-caldate { font-size: 11px; font-weight: 700; color: var(--pd-muted); }
+.il-mom-caldate { font-size: 11px; font-weight: 600; color: var(--pd-muted); }
 .il-mom-calcell.is-today .il-mom-caldate { color: var(--pd-red); }
 .il-mom-calchip {
   display: block; width: 100%; text-align: left; border: 0; border-radius: 4px;
@@ -159,7 +159,7 @@
 button.il-mom-favbtn { font-size: 12px; }
 button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-recur {
-  display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .06em;
+  display: inline-block; font-size: 9px; font-weight: 600; letter-spacing: .06em;
   padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
   border: 1px solid var(--pd-line);
 }
@@ -196,9 +196,9 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   text-align: center; padding: 4px 2px; border-bottom: 1px solid var(--pd-line);
 }
 .il-mom-wk-head .il-mom-wk-daycol.is-today { color: var(--pd-red); }
-.il-mom-wk-dayname { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.il-mom-wk-dayname { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
 .il-mom-wk-head .il-mom-wk-daycol.is-today .il-mom-wk-dayname { color: var(--pd-red); }
-.il-mom-wk-daydate { font-size: 15px; font-weight: 700; }
+.il-mom-wk-daydate { font-size: 15px; font-weight: 600; }
 .il-mom-wk-allday { border-bottom: 1px solid var(--pd-line); padding-bottom: 4px; margin-bottom: 4px; }
 .il-mom-wk-allday .il-mom-wk-daycol { padding: 2px; display: flex; flex-direction: column; gap: 2px; }
 .il-mom-wk-scroll { max-height: 560px; overflow-y: auto; }
@@ -215,7 +215,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 }
 .il-mom-wk-event:hover { filter: brightness(.95); }
 .il-mom-wk-event.is-draft { background: var(--pd-bg); color: var(--pd-muted); border: 1px dashed var(--pd-line); }
-.il-mom-wk-eventtime { font-weight: 800; }
+.il-mom-wk-eventtime { font-weight: 600; }
 @media (max-width: 700px) {
   .il-mom-wk-gutter { flex-basis: 40px; }
   .il-mom-wk-daydate { font-size: 12px; }
@@ -278,7 +278,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mi-f + .il-mi-f { margin-top: 8px; }
 .il-mi-meta .il-mi-f + .il-mi-f { margin-top: 0; }
 .il-mi-f > label {
-  display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
   text-transform: uppercase; color: var(--pd-muted); margin-bottom: 3px;
 }
 .il-mi-f > label span { font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .75; }
@@ -320,6 +320,9 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-acres button:hover { background: var(--pd-bg); }
 .il-mom-acres button b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .il-mom-acres .il-mom-acnote { padding: 6px 10px; font-size: 11px; color: var(--pd-muted); }
+/* The per-minute activity modal reuses .il-mom-acres for its result pane; a
+   plain (non-button) .il-mom-acrow is its "Searching…" / "no match" line. */
+div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted); }
 .il-mom-chip {
   display: inline-flex; align-items: center; gap: 6px; background: var(--pd-bg);
   border: 1px solid var(--pd-line); border-radius: 999px; padding: 3px 6px 3px 10px;
@@ -337,27 +340,19 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 
 .il-mom-state {
-  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
   background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line);
 }
 .il-mom-state.on { background: #d4f5d4; color: #1a8f3a; border-color: #b6e8b6; }
 
 .il-mom-addrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-.il-mom-carry { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.il-mom-carry .pd-select { max-width: 320px; }
 .il-mom-carried {
-  display: inline-block; font-size: 9px; font-weight: 700; margin-top: 3px;
+  display: inline-block; font-size: 9px; font-weight: 600; margin-top: 3px;
   padding: 1px 5px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
 }
 .pd-btn.is-active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 
 /* ---- "Get from issue" panel — replaces the old "Raise as issue" button --- */
-.il-mom-getpanel {
-  margin-top: 8px; padding: 10px; border: 1px solid var(--pd-line); border-radius: 8px;
-  background: var(--pd-card); display: flex; flex-direction: column; gap: 8px;
-}
-.il-mom-getpanel-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.il-mom-getpanel-head input { flex: 1 1 200px; min-width: 0; }
 .il-mom-getlist { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
 .il-mom-geti {
   display: flex; flex-direction: column; gap: 2px; text-align: left;
@@ -383,34 +378,50 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 /* --- Attachment cell ------------------------------------------------------ */
 .il-mom-file { display: inline-flex; gap: 4px; align-items: center; }
 
-/* --- Reporting view (Detail only) -----------------------------------------
-   Same precedent as Project Schedule: hide AUTHORING controls, neutralise
-   edit affordances, keep every VIEW control (filters, search, PDF, distribute
-   state, and the "Back to meetings" way out). Presentation only — the real
-   gates stay canEditMinute() + RLS. */
-.il-mom-report .pd-input,
-.il-mom-report .pd-select,
-.il-mom-report .pd-textarea {
-  border-color: transparent; background: transparent; box-shadow: none;
-  padding-left: 2px; pointer-events: none;
-  -webkit-appearance: none; -moz-appearance: none; appearance: none;
-}
-.il-mom-report .pd-textarea { resize: none; }
-.il-mom-report .pd-input::placeholder { color: transparent; }
-.il-mom-report #il-mom-additem,
-.il-mom-report #il-mom-getissue,
-.il-mom-report .il-mom-getpanel,
-.il-mom-report .il-mom-carry,
-.il-mom-report #il-mom-save,
-.il-mom-report #il-mom-del,
-.il-mom-report .il-mi-del,
-.il-mom-report .il-mi-fadd,
-.il-mom-report .il-c-del,
-.il-mom-report .il-mom-note { display: none !important; }
-.il-mom-report .il-mi-card { padding: 14px 16px; }
-.il-mom-report .il-mi-cards { gap: 12px; }
+/* --- Reporting view = a slide deck (item 12, 2026-09-02) -------------------
+   ⚠️ THIS REPLACES the old "render everything as flat read-only text" mode.
+   The owner's instruction is "a powerpoint style view where user can navigate
+   and step through slides WHILE ALSO EDITING", so the fields stay live: the
+   pointer-events:none / transparent-border rules that used to neutralise every
+   control are GONE, and nothing here reaches an <input>. What reporting does
+   now is show ONE slide at a time and quieten the chrome around it. The real
+   gates are still canEditMinute() + RLS, exactly as before. */
+.il-mom-report .il-mi-card { padding: 16px 18px; }
 .il-mom-report .il-mom-detail-card { padding: 18px 20px; }
 .il-mom-report .il-mi-foot { border-top-style: solid; }
+/* One slide fills the card, so the list chrome around the minutes would repeat
+   above every single one of them. */
+.il-mom-slides .il-mom-actions > h4,
+.il-mom-slides .il-mom-actions > p,
+.il-mom-slides .il-mom-filters,
+.il-mom-slides .il-mom-addrow { display: none !important; }
+.il-mom-slides .il-mi-cards { gap: 0; }
+
+.il-mom-slidenav {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; margin-bottom: 12px;
+  border: 1px solid var(--pd-line); border-radius: 10px; background: var(--pd-bg);
+}
+.il-mom-slidename { flex: 1 1 160px; min-width: 0; font-size: 13.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.il-mom-slidename span { display: block; font-size: 11px; font-weight: 400; color: var(--pd-muted); }
+.il-mom-slidedots { display: flex; gap: 5px; flex-wrap: wrap; }
+.il-mom-slidedot {
+  width: 9px; height: 9px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 1px solid var(--pd-line); background: var(--pd-card);
+}
+.il-mom-slidedot.on { background: var(--pd-red); border-color: var(--pd-red); }
+.il-mom-slidedot:hover { border-color: var(--pd-red-mid); }
+/* A slide gets the whole card's width and a little breathing room, so a deck
+   reads as a deck rather than as the form with most of it hidden. */
+.il-mom-slides .il-slide { padding: 4px 0 2px; }
+
+/* --- The meeting's own agenda (module item 4) ------------------------------ */
+.il-mom-agenda { margin: 14px 0; padding-top: 12px; border-top: 1px dashed var(--pd-line); }
+.il-mom-agenda h4 { margin: 0 0 4px; font-size: 13.5px; }
+.il-mom-agview { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
+.il-mom-agview li { font-size: 13px; }
+.il-mom-slides .il-mom-agenda { border-top: 0; padding-top: 0; margin-top: 0; }
 
 /* ---- People picker (Responsible) ------------------------------------------
    Chips for accounts + one free-text line for people with no login. */
@@ -461,19 +472,18 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-tab.active { background: var(--pd-red); color: #fff; }
 
 /* ---- Required-field mark (items #20/#22 forms) ---------------------------- */
-.il-req { color: var(--pd-red); font-weight: 700; }
+.il-req { color: var(--pd-red); font-weight: 600; }
 
 /* ---- Item #23: per-action-item Put On Hold / Close workflow + history —
    inline reveal panels, not a modal, matching this app's established
    "no pop-ups" convention. --------------------------------------------------- */
-.il-mi-wfbtns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .il-workflow-panel {
   margin-top: 8px; padding: 10px 12px; border-radius: 10px;
   background: var(--pd-bg); border: 1px solid var(--pd-line);
   display: flex; flex-direction: column; gap: 8px;
 }
 .il-workflow-panel label {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
   color: var(--pd-muted); margin-bottom: -2px;
 }
 .il-workflow-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
@@ -481,7 +491,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .il-history-i { padding: 8px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .il-history-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.il-history-action { font-weight: 700; font-size: 12.5px; color: var(--pd-ink); }
+.il-history-action { font-weight: 600; font-size: 12.5px; color: var(--pd-ink); }
 .il-history-when { font-size: 11.5px; color: var(--pd-muted); }
 .il-history-note { margin-top: 4px; font-size: 12.5px; color: var(--pd-ink); white-space: pre-wrap; }
 
@@ -514,22 +524,43 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   .il-dash-wide { grid-column: auto; }
 }
 
-/* ---- The attendance / open-minutes METER — a single proportion bar with a
-   label overlay, distinct from the donut/bar charts above (which break a
-   number into categories). `.is-battery` adds a small cap nub, purely
-   decorative, so the attendance figure reads like a battery gauge. --------- */
-.il-mom-meter { display: flex; flex-direction: column; gap: 6px; }
-.il-mom-meter-track {
-  height: 14px; border-radius: 7px; background: var(--pd-bg);
-  border: 1px solid var(--pd-line); overflow: hidden; position: relative;
+/* ⚠️ The attendance / open-minutes METER rules were removed with the tiles they
+   styled (item 13, 2026-09-02: "remove all"). `meterHTML` went with them; the
+   donut / bar helpers stayed, because the rebuilt dashboard's four charts use
+   them. `.il-mom-freqlist` above is likewise unused by the dashboard now — the
+   series page still renders that shape. */
+
+/* ---- The rebuilt dashboard's filter row (item 13) ------------------------- */
+.il-mom-dashfilt {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px;
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); padding: 8px 12px;
 }
-.il-mom-meter.is-battery .il-mom-meter-track { border-radius: 3px; margin-right: 4px; }
-.il-mom-meter.is-battery .il-mom-meter-track::after {
-  content: ''; position: absolute; right: -4px; top: 3px; width: 3px; height: 8px;
-  background: var(--pd-line); border-radius: 0 2px 2px 0;
+.il-mom-favfilt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+/* The multi-select. ⚠️ `position:relative` on the wrapper and absolute on the
+   panel, so the checklist overlays the charts instead of shoving them down the
+   page every time it opens. */
+.il-mom-msel { position: relative; }
+.il-mom-mselpanel {
+  position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 320px; max-width: 460px;
+  max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
 }
-.il-mom-meter-fill { height: 100%; background: var(--pd-red); border-radius: inherit; transition: width .2s; }
-.il-mom-meter-label { font-size: 12.5px; color: var(--pd-ink); }
+
+/* ---- "Minutes by meeting" — the grouped summary (item 13) ----------------- */
+.il-mom-mgroup { padding: 0; overflow: hidden; margin-bottom: 12px; }
+.il-mom-mgrouphead {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; background: var(--pd-bg); border-bottom: 1px solid var(--pd-line);
+  cursor: pointer;
+}
+.il-mom-mgrouphead:hover { background: var(--pd-red-light); }
+.il-mom-mgroupt { font-size: 13.5px; font-weight: 600; }
+.il-mom-mgroupm { font-size: 11.5px; color: var(--pd-muted); }
+.il-mom-mgrouptbl { width: 100%; font-size: 12.5px; }
+.il-mom-mgrouptbl tr[data-openmom] { cursor: pointer; }
+.il-mom-mgroup > .il-mom-note { padding: 10px 14px; margin: 0; }
 
 /* ---- Items #19/#22: recurring meeting schedules --------------------------- */
 .il-mom-schedpanel { margin-bottom: 16px; padding: 14px 16px; border-radius: 10px; background: var(--pd-card); border: 1px solid var(--pd-line); }
@@ -546,7 +577,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 }
 .il-mom-schedrow:hover { border-color: var(--pd-red); }
 .il-mom-schedrow.active { border-color: var(--pd-red); background: var(--pd-red-light); }
-.il-mom-schedrow-title { font-weight: 700; font-size: 13px; color: var(--pd-ink); }
+.il-mom-schedrow-title { font-weight: 600; font-size: 13px; color: var(--pd-ink); }
 .il-mom-schedrow-meta, .il-mom-schedrow-next { font-size: 11.5px; color: var(--pd-muted); }
 .il-mom-schedright-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .il-mom-schedright-acts { display: flex; gap: 6px; flex: none; }
@@ -580,3 +611,51 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   .il-mom-schedbody { flex-direction: column; }
   .il-mom-schedbody.has-sel .il-mom-schedlist { flex: 1 1 auto; }
 }
+
+/* --------------------------------------------------------------------------
+   2026-09-02 rehaul, minutes-specific items.
+   -------------------------------------------------------------------------- */
+
+/* ITEM 6 — Put On Hold / Close moved out of the Status meta cell and into the
+   card's own action footer, beside Remove. */
+.il-c-wf { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-end; }
+
+/* ITEM 1 — the per-minute activity link. The chip carries the id and (once
+   resolved) the activity name; the button beside it opens the shared picker. */
+.il-mi-actchip { max-width: 100%; }
+.il-mi-actchip code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.il-mi-actchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.il-mi-actclear { background: none; border: 0; cursor: pointer; color: var(--pd-muted); font-size: 13px; line-height: 1; padding: 2px 4px; }
+.il-mi-actclear:hover { color: var(--pd-red); }
+
+/* ITEM 7 — the history is always on screen now, so it needs its own quiet
+   heading; without one it reads as loose list items hanging off the card. */
+.il-mi-histlab {
+  display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--pd-muted); margin-bottom: 6px;
+}
+/* The field-by-field before → after, mirroring the Issues register's own. */
+.il-history-diff { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.il-history-diff li { font-size: 12px; color: var(--pd-ink); }
+.il-history-diff strong { font-weight: 600; color: var(--pd-muted); }
+.il-history-diff em { color: var(--pd-muted); font-style: normal; }
+
+/* ITEM 4 — the Get-from-issue modal's tick list. A row already on the agenda,
+   or closed in the register, is shown disabled rather than hidden: "why is
+   that one missing" is a worse question than "that one is already here". */
+.il-gi-row {
+  display: grid; grid-template-columns: 18px 1fr; gap: 2px 10px; align-items: start;
+  padding: 8px 10px; border: 1px solid var(--pd-line); border-radius: 8px;
+  background: var(--pd-card); cursor: pointer;
+}
+.il-gi-row:hover { border-color: var(--pd-red-mid); background: var(--pd-red-light); }
+.il-gi-row input { grid-row: 1 / span 2; margin-top: 2px; }
+.il-gi-row.is-dis { opacity: .55; cursor: default; }
+.il-gi-row.is-dis:hover { border-color: var(--pd-line); background: var(--pd-card); }
+
+/* ITEM 14 — "refrain from using bold text style. the whole meeting module looks
+   quite chunky." Every 700/800 weight in this stylesheet is now 600, and the
+   inline <b>/<strong> the JS emits follow, so emphasis still reads as emphasis
+   without the whole screen shouting. Scoped to this module's own root so it
+   cannot reach the shared shell. */
+#il-mom-view b, #il-mom-view strong { font-weight: 600; }

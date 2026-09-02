@@ -84,6 +84,51 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (b) — Minutes of Meeting, corrected spec: the shared files, and a tabs-dropdown rollout
+
+The owner's follow-up ("some of my prompts were not captured") replaced the 10-item list
+below with 11 module-level + 14 minutes-specific items. Full detail in
+`modules/minutes-of-meeting/CLAUDE.md` (2026-09-02 (b)) — this entry covers only what a module
+dev is not meant to touch.
+
+**`assets/css/dashboard.css` — a new `@media (min-width: 701px)` block on `.pd-modulebar`**,
+for item 2 ("the whole secondary top bar should just be a single row"): `flex-wrap: nowrap`,
+with the project selector allowed to shrink and ellipsise. ⚠️ **It SHRINKS, it does not
+SCROLL.** `overflow-x: auto` on that bar would establish a clipping context and cut off every
+popover opened from inside it — the project switcher's own menu included — which is the exact
+trap the 2026-07-24 part-6 pass recorded and reversed. ⚠️ **Only safe now because the tab
+strip is one dropdown trigger** (`UI.tabsToDropdown`); with a real strip in there, nowrap would
+push controls off the edge. ⚠️ Wrapping is deliberately left intact below 700px, where the 44px
+touch minimums need the second row.
+
+**Three other modules gained the tabs→dropdown conversion** — `contracts-claims`,
+`risk-register`, `stakeholder-map` — one `UI.tabsToDropdown('.<x>-tabs')` line each in their
+`requireLogin` callback, per item 1's "apply same to other modules". ⚠️ **Body-level view
+switchers were NOT converted** (equipment-loading, manpower-loading, portfolio-overview,
+productivity-rates, resource-loading, `_template`): those are content tabs inside the page, not
+the topbar strip the ask names, and collapsing a module's primary in-page navigation into a
+dropdown below the fold would be a regression dressed as consistency.
+
+**`modules/issues-lessons/module.js` — one new deep link, `?screen=lessons&newLesson=1`**, for
+the minutes module's item 8 ("capturing lessons should go to the ordinary Add Lessons Learned
+page, no linking needed"). It opens the same form that module's own "+ Add" opens. ⚠️ The older
+`momId`/`momItem` linked form is **kept**: it is still how a lesson gets attached to a specific
+minute, and every existing link stays openable.
+
+**Nothing else shared was touched** — no `ui.js`, `db.js`, `config.js` or `icons.js` change.
+`migrations/2026-09-02-meetings-rehaul.sql` grew three columns (`meeting_minutes.agenda`,
+`mom_items.department`, `mom_items.schedule_activity_id`); no shared table.
+
+**Verified:** every inline `<script>` in the seven touched HTML files parses; `node --check`
+clean on all three JS files; `dashboard.css` braces balanced (431/431); 0 NUL bytes; **no
+shared asset served at two versions and none unversioned**; and 40 checks executing the
+module's shipped functions (which cannot load against the pre-change file at all). ⚠️ **Not
+verified signed in.**
+
+`dashboard.css?v=` → `20260902a` app-wide (28 files); `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260902b`, because this module's `index.html` changed
+structurally again (tab order) and three other modules' pages changed too.
+
 ### 2026-09-02 — Minutes of Meeting rehaul; MODULE_V bump for the structurally-changed page
 
 Owner's 10-item Minutes of Meeting rehaul (dropdown tab, icon-only list/calendar toggle, a

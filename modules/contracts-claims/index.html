@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901c" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
   <link rel="stylesheet" href="module.css?v=20260827b" />
 </head>
 <body>
@@ -108,6 +108,13 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'contracts-claims', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
+      // Item 1 (2026-09-02): the topbar tab strip becomes ONE dropdown, and the
+      // static module label beside it goes with it — the trigger already names
+      // the active screen, so the two together were a literal duplicate. Same
+      // shared component minutes-of-meeting / issues-lessons / progress-photos
+      // already use; it drives the real (now-hidden) buttons, so this module's
+      // own view-switching logic is untouched.
+      if (UI.tabsToDropdown) UI.tabsToDropdown('.cc-tabs');
       ContractsClaims.init(user, profile);
     });
   </script>
