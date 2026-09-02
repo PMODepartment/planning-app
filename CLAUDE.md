@@ -84,6 +84,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (ah) — The scrub goes smooth, and the trade colours were painting BLACK
+Owner: *"can you make the progress bar smoother, it has fps drop whenever i drag"* and *"how come the
+colors of the trades vanish when put into the full screen. it just turns into black."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **The black cells were real, and NOT a full-screen bug.** `--ps-vs-scrim` / `-veil` / `-edge` are
+  declared on `.ps-vstack`; `UI.modal` appends to **`document.body`**, so in the focus window all three
+  were **undefined** — and an undefined `var()` makes the property `unset`, `fill` is **inherited**, so
+  the remaining-work layer painted **solid black** over the trade colour (and the hatch stroke resolved
+  to `none`). True in every mode since the window shipped; full screen is just where it is big enough
+  to notice. ⚠️ `_vsExportPDF` already re-declares these tokens for the same reason and I did not join
+  the dots. Fixed twice over: the svg emits `var(--token, <fallback>)` so a clone into ANY container
+  can never paint black again, and the tokens are re-declared on the modal so dark mode gets its own.
+- ⚠️⚠️ **The lag was the full builder running on every rAF** — rewriting the modal's innerHTML,
+  re-deriving both buildings, re-parsing thousands of SVG nodes and **destroying the scrubber track the
+  pointer was on**, 60 times a second on a tower that can hold 2,500 activities.
+- ⚠️ **Re-deriving a building cannot be a 16ms job, so the fix is to stop the buildings gating the
+  CONTROL.** Chrome (handle, fill, date, footer bar) is style/text writes only on one rAF and is always
+  glued to the pointer; the buildings repaint on a budget **measured from how long the last repaint
+  actually took** (clamped 90–600ms), with a trailing repaint always landing on release.
+- ⚠️ `paint()` swaps **one node per pane**, so the track, the handle and every control are the same
+  elements throughout a drag. ⚠️ The cost is measured **around** the call, not taken from a figure
+  `paint` reports about itself — caught by the suite. ⚠️ The old `build(true)` path is **deleted**.
+- **29 checks in Node + 86 in a browser** (was 29 + 67): a 24-move drag against a deliberately
+  45ms-per-repaint tower gives **24 of 24 distinct handle positions**; the scrim is translucent in both
+  themes and the fallback holds with the declarations stripped. 0 functions lost.
+  ⚠️ **Honest limit:** on a very large tower the *buildings* still step while dragging — only the
+  handle, date and bar are now free of them. ⚠️ Not verified signed in. `MODULE_V` → `20260902ah`.
+
 ### 2026-09-02 (ag) — The focus window: crisp zoom, a real divider, a working scrubber, full screen
 Owner: *"the quality is too low, and can you enlargen the divider between the planned and actual. now
 also the progress bar below should be working or has a dragger. In addition, is there an option where you

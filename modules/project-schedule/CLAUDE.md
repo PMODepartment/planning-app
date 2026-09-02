@@ -1,3 +1,83 @@
+## The scrub is smooth, and the trade colours were painting BLACK (2026-09-02) — fmlozano
+
+Owner, two reports on the focus window: *"can you make the progress bar smoother, it has fps drop
+whenever i drag the progress bar, it results into lagging"* and *"how come the colors of the trades
+vanish when put into the full screen. it just turns into black."*
+
+### ⚠️⚠️ The black cells were a REAL bug, and NOT a full-screen one
+
+`--ps-vs-scrim` / `--ps-vs-veil` / `--ps-vs-edge` are declared on `.ps-vstack`. `UI.modal` appends its
+overlay to **`document.body`**, so inside the focus window all three were **undefined**. An undefined
+`var()` is the guaranteed-invalid value → the property becomes `unset` → **`fill` is inherited** →
+**black**. So the remaining-work layer painted solid black over the trade colour at full opacity, and
+the hatch's `stroke` resolved to `none`, so there was not even a texture left to see through.
+
+⚠️ **It has been true in every mode since the focus window shipped** — full screen is simply where a
+mostly-unstarted building is big enough to notice. Re-reading the owner's very first screenshot of
+this window confirms it: the PLANNED pane (100% done, so the clean-colour layer covers the cell) was
+red, and the ACTUAL pane (0% done, so nothing covers the scrim) was **black**. I read that at the time
+as "0% is a dim tone" and it was not.
+
+⚠️ **The module already knew about this trap and I did not join the dots**: `_vsExportPDF` re-declares
+the same three tokens for its print window, with a comment saying the cloned buildings would otherwise
+lose them. The focus window clones buildings into exactly the same situation.
+
+**Fixed in two places on purpose.** The svg now emits `var(--ps-vs-scrim, <light value>)` and the same
+for the veil and the edge — so a clone into **any** container can never paint black again, which is
+the durable fix and costs the main view nothing (the token is defined there, so the fallback never
+applies). And the tokens are re-declared on `.ps-vs-focus-modal` in both themes, so dark mode gets the
+dark values rather than the light fallback.
+
+### The scrub: two speeds, because one of them cannot be fast
+
+⚠️⚠️ The first cut called the **full builder on every rAF**: it rewrote the whole modal's `innerHTML`,
+re-derived both buildings through `_vsTowerSVG`, re-parsed thousands of SVG nodes and re-bound every
+handler — 60 times a second, on a tower that can hold 2,500 activities. It also **destroyed the
+scrubber track the pointer was on**, every frame. That is not a budget anything can meet.
+
+⚠️ **Re-deriving a building cannot be a 16ms job at that size, so the fix is not to make it faster —
+it is to stop the buildings gating the CONTROL.**
+- **Chrome** (handle, fill, date label, the footer bar and its plan tick, the Vs-plan metric, the Live
+  state) is **style and text writes only**, on one rAF, always glued to the pointer. Everything it
+  touches was given a stable id for that reason, and the Vs-plan metric is now always emitted and
+  hidden rather than created and destroyed — a metric that has to be built cannot be a style write.
+- **Buildings** repaint on an **adaptive budget measured from how long the last repaint actually
+  took** (clamped 90–600ms), so a small trade looks continuous and a huge one steps rather than
+  seizing. ⚠️ Measured, never a fixed interval: a fixed 100ms is far too slow for a 6-floor trade and
+  still far too fast for a 14-floor × 6-zone one.
+- ⚠️ **A trailing repaint always lands on pointerup**, because the budget can legitimately swallow the
+  last few moves and wherever the drag stopped must be what you end up looking at.
+
+⚠️ **`paint()` swaps ONE NODE PER PANE** (`canvas.replaceChild`) instead of rebuilding the modal. The
+viewport listeners are bound to the viewport, not the svg, so they survive; the scrubber, the header
+and every button are the same elements throughout a drag — asserted.
+
+⚠️ **The cost is measured AROUND the call, not taken from a figure `paint` reports about itself** —
+caught by the suite, which stubbed an expensive paint and watched the budget stay at 1ms. A budget
+that trusts the thing it is budgeting can be told anything, and the whole scheme is only as honest as
+that number.
+
+⚠️ **`build(true)` and `_vsFocus.rebuild` are DELETED, not left beside the new path.** `paint()` now
+owns the keep-the-view repaint and does it far more cheaply; a second, far more expensive path that
+nothing calls is rot that someone will later "restore".
+
+**Verified: 29 checks in Node + 86 in a real browser** (was 29 + 67), executing the shipped functions.
+New: the scrim resolving to a translucent colour rather than black **in both themes**, the cell outline
+likewise, and a probe proving the svg's own fallback holds with the declarations stripped; a 24-move
+drag against a **deliberately 45ms-per-repaint** tower giving **24 of 24 distinct handle positions** at
+a fraction of that many repaints, the handle and the fill written from one number, the trailing repaint
+landing, the budget measured from a real repaint and clamped, and the track/handle/controls being the
+**same elements** after a repaint. **0 functions lost, 3 added**; parses; 0 NUL bytes; braces balanced.
+
+⚠️ **The honest limit, stated because the owner should not expect otherwise:** on a very large tower
+the *buildings* will still step while you drag — re-deriving thousands of activities in 16ms is not
+possible without a targeted per-cell patcher, which is a much larger change to `_vsTowerSVG`. What is
+fixed is that the handle, the date and the bar no longer wait for them.
+
+⚠️ **Not verified signed in** — the towers under test come from a stub shaped like `_vsTowerSVG`'s
+output, so neither the real repaint cost nor the real colours have been seen over live rows.
+`MODULE_V` → `20260902ah`.
+
 ## Focus window round 2: the zoom is crisp, the bar drags, and it goes full screen (2026-09-02) — fmlozano
 
 Owner, on the shipped focus window: *"the quality is too low, and can you enlargen the divider between

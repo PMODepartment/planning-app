@@ -1522,6 +1522,21 @@
        rather than two states kept in step — they cannot drift because there is only one.
        ⚠️ The footer is OUTSIDE the scrolling/panning stage on purpose: it is the frozen row, and a
        progress bar that pans away with the building is the thing this replaces. */
+    /* ⚠️⚠️ THE CELL PAINT TOKENS HAVE TO BE RE-DECLARED HERE, AND THIS WAS A REAL BUG. Owner:
+       *"how come the colors of the trades vanish when put into the full screen. it just turns into
+       black."* `--ps-vs-scrim` / `--ps-vs-veil` / `--ps-vs-edge` are declared on `.ps-vstack`, but
+       `UI.modal` appends its overlay to `document.body` — so inside this window they were UNDEFINED.
+       An undefined `var()` is the guaranteed-invalid value, which makes the property `unset`, and
+       `fill` is INHERITED, so the remaining-work layer painted solid BLACK over the trade colour at
+       full opacity (and the hatch stroke resolved to `none`, so there was not even a texture left).
+       ⚠️ Not fullscreen-specific at all — it was true in every mode since this window shipped; full
+       screen is simply where a mostly-unstarted building is big enough to notice.
+       ⚠️ Fixed in TWO places on purpose: the svg now emits `var(--token, <light value>)` so a clone
+       into ANY container can never paint black again, and these declarations exist so DARK mode gets
+       the dark values rather than the light fallback. The PDF export already carries the same
+       re-declaration for the same reason — see _vsExportPDF. */
+    .pd-modal.ps-vs-focus-modal { --ps-vs-scrim:rgba(17,20,26,.34); --ps-vs-veil:rgba(255,255,255,.42); --ps-vs-edge:rgba(15,18,24,.34); }
+    html.pd-dark .pd-modal.ps-vs-focus-modal { --ps-vs-scrim:rgba(0,0,0,.46); --ps-vs-veil:rgba(255,255,255,.24); --ps-vs-edge:rgba(255,255,255,.24); }
     .pd-modal.ps-vs-focus-modal { max-width:min(1680px, 97vw); width:min(1680px, 97vw);
       height:92vh; max-height:92vh; display:flex; flex-direction:column; padding:0; overflow:hidden; }
     .ps-vs-fz { display:flex; flex-direction:column; height:100%; min-height:0; }
@@ -12618,7 +12633,7 @@
         // now the colour dimmed by --ps-vs-scrim, and these lines lighten it back in a fine 45°
         // texture, so "hatched = remaining" still reads without the cell ever going near-white.
         return '<pattern id="' + _vsHatchId(col) + '" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
-          '<line x1="0" y1="0" x2="0" y2="7" stroke="var(--ps-vs-veil)" stroke-width="2.4"/></pattern>';
+          '<line x1="0" y1="0" x2="0" y2="7" stroke="var(--ps-vs-veil, rgba(255,255,255,.42))" stroke-width="2.4"/></pattern>';
       }).join('') + '</defs></svg>';
   }
   // Towers are not a code category, so catEntryByValue has no colour for them and _vsColor would
@@ -12826,7 +12841,7 @@
           // the boundary is a hard edge. Both tones are dark enough (or, for a pale trade, light
           // enough — see _vsInkFill) to carry the label at full contrast in either theme.
           '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="' + fill + '" opacity="' + (isNo ? '0.34' : '1') + '" pointer-events="none"></rect>' +
-          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="var(--ps-vs-scrim)" opacity="' + (isNo ? '0.5' : '1') + '" pointer-events="none"></rect>' +
+          '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="var(--ps-vs-scrim, rgba(17,20,26,.34))" opacity="' + (isNo ? '0.5' : '1') + '" pointer-events="none"></rect>' +
           '<rect x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="url(#' + _vsHatchId(fill) + ')" opacity="' + (isNo ? '0.5' : '1') + '" pointer-events="none"></rect>' +
           (doneW > 0 ? '<rect x="' + (cx + 1) + '" y="' + (y + 1) + '" width="' + doneW.toFixed(1) + '" height="' + (fh - 2) + '" rx="4" fill="' + fill + '" opacity="' + (isNo ? '0.7' : '1') + '" pointer-events="none"></rect>' : '') +
           // In Compare, mark where the BASELINE says progress should be, so "behind by this much" is
@@ -12835,7 +12850,7 @@
             ? _vsPlanMark(cx + 1 + (cw2 - 2) * Math.max(0, Math.min(100, planPct)) / 100, y + 1, fh - 2)
             : '') +
           // 4) the interactive outline last, so it owns the pointer and sits above the fills
-          '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="transparent" stroke="' + (isNo ? baseColor : (cmp ? _vsSlipColor(slip) : 'var(--ps-vs-edge)')) + '" stroke-width="' + (cmp && !isNo ? '2.5' : '1') + '"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsBasisWord() + ' · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—') +
+          '<rect class="ps-vs-cell" data-vsk="' + esc(key) + '" x="' + cx + '" y="' + y + '" width="' + cw2 + '" height="' + fh + '" rx="5" fill="transparent" stroke="' + (isNo ? baseColor : (cmp ? _vsSlipColor(slip) : 'var(--ps-vs-edge, rgba(15,18,24,.34))')) + '" stroke-width="' + (cmp && !isNo ? '2.5' : '1') + '"' + (isNo ? ' stroke-dasharray="5 3"' : '') + '><title>' + esc(tip + ' — ' + c.list.length + ' activit' + (c.list.length === 1 ? 'y' : 'ies') + ' · ' + pct + '% · ' + _vsBasisWord() + ' · ' + _vsDateWord() + ' ' + (fin ? Fmt.date(dstr(fin)) : '—') +
           (cmp ? (' · planned ' + (_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') +
                   ' · ' + (slip == null ? 'no baseline' : (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time')))) : '') +
           ' · ' + _vsProgressWord() + ' ' + (pct >= 100 ? 'complete' : (pct <= 0 ? (_vsBasis === 'planned' ? 'not due to start yet' : 'not started') : pct + '%' + (_vsBasis === 'planned' ? ' due' : ' done, ' + (100 - pct) + '% remaining'))) +
@@ -13316,14 +13331,59 @@
   // Rebuild the buildings in place, keeping the zoom, the pan and the hovered zone — a scrub must
   // move the progress, not throw away where the planner had navigated to.
   function _vsFocusRepaint() {
-    var F = _vsFocus; if (!F || !F.rebuild) return;
-    F.rebuild();
+    var F = _vsFocus; if (!F) return;
+    if (F.chrome) F.chrome();
+    if (F.paint) _vsFocusRunPaint(F);
   }
-  var _vsFocusRaf = 0;
+  function _now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  // ---- Why the scrub is TWO SPEEDS ------------------------------------------------------------
+  // Owner: *"can you make the progress bar smoother, it has fps drop whenever i drag the progress
+  // bar, it results into lagging."*
+  // ⚠️⚠️ The first cut called the FULL builder on every rAF: it rewrote the whole modal's innerHTML,
+  // re-derived both buildings through `_vsTowerSVG`, re-parsed thousands of SVG nodes and re-bound
+  // every handler — 60 times a second, on a tower that can hold 2,500 activities. That is not a
+  // frame budget anything can meet, and it is why the handle fell behind the pointer.
+  // ⚠️ Re-deriving a building simply CANNOT be a 16ms job at that size, so the fix is not to make it
+  // faster — it is to stop the buildings gating the CONTROL. Two speeds:
+  //   • CHROME (handle, fill, date, the footer bar) — style and text writes only, one rAF, always
+  //     glued to the pointer. This is what "smooth" means to the person dragging.
+  //   • BUILDINGS — repainted on an ADAPTIVE budget measured from how long the last repaint actually
+  //     took, so a small tower looks continuous and a huge one steps rather than seizing. A trailing
+  //     repaint always lands, so wherever the drag stops is what you end up looking at.
+  // ⚠️ The budget is measured, never guessed at a fixed interval: a fixed 100ms is far too slow for
+  // a 6-floor trade and still far too fast for a 14-floor × 6-zone one.
+  var _vsFocusRaf = 0, _vsFocusTimer = 0, _vsFocusBuiltAt = 0, _vsFocusCost = 0;
   function _vsFocusScrubTo(ms, mn, mx) {
     _vsAsOf = Math.max(mn, Math.min(mx, ms));
-    if (_vsFocusRaf) return;
-    _vsFocusRaf = requestAnimationFrame(function () { _vsFocusRaf = 0; _vsFocusRepaint(); });
+    var F = _vsFocus; if (!F) return;
+    if (!_vsFocusRaf) {
+      _vsFocusRaf = requestAnimationFrame(function () {
+        _vsFocusRaf = 0;
+        if (_vsFocus && _vsFocus.chrome) _vsFocus.chrome();
+      });
+    }
+    _vsFocusSchedulePaint();
+  }
+  function _vsFocusSchedulePaint() {
+    var F = _vsFocus; if (!F || !F.paint || _vsFocusTimer) return;
+    // Never below ~90ms (a repaint that cheap is still a whole DOM swap), never above 600ms (past
+    // that the buildings stop feeling connected to the handle at all).
+    var budget = Math.max(90, Math.min(600, _vsFocusCost * 1.6));
+    var wait = Math.max(0, (_vsFocusBuiltAt + budget) - _now());
+    _vsFocusTimer = setTimeout(function () {
+      _vsFocusTimer = 0;
+      var G = _vsFocus; if (!G || !G.paint) return;
+      _vsFocusRunPaint(G);
+    }, wait);
+  }
+  // ⚠️ The cost is MEASURED AROUND THE CALL, not taken from a figure `paint` reports about itself.
+  // A budget that trusts the thing it is budgeting can be told anything — and the whole adaptive
+  // scheme is only as honest as that number.
+  function _vsFocusRunPaint(F) {
+    var t0 = _now();
+    F.paint();
+    _vsFocusBuiltAt = _now();
+    _vsFocusCost = _vsFocusBuiltAt - t0;
   }
   // The track, drawn from the same numbers the main view's bar uses.
   function _vsFocusScrubHTML(list) {
@@ -13370,7 +13430,12 @@
         _vsFocusScrubTo(mn + Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * (mx - mn), mn, mx);
       };
       move(e);
-      var up = function () { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+      // ⚠️ A trailing repaint on release, always: the adaptive budget can legitimately swallow the
+      // last few moves, and wherever the drag stopped must be what you end up looking at.
+      var up = function () {
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+        _vsFocusSchedulePaint();
+      };
       document.addEventListener('pointermove', move);
       document.addEventListener('pointerup', up);
     }
@@ -13384,7 +13449,7 @@
       };
     });
     var lv = wrap.querySelector('[data-fzlive]');
-    if (lv) lv.onclick = function () { _vsAsOf = null; _vsFocusRepaint(); };
+    if (lv) lv.onclick = function () { _vsAsOf = null; _vsFocusRepaint(); };   // a click is not a drag: repaint at once
   }
   // ---- Full screen -----------------------------------------------------------------------------
   // ⚠️ The API is tried first and `.is-maxed` is the fallback, because an embedded/iframed context or
@@ -13425,10 +13490,10 @@
     // nobody can see through is work paid for by a planner scrubbing a single building.
     var _asOfOnOpen = _vsAsOf;
 
-    // `keepView` is the scrub/repaint path: the buildings are rebuilt but the zoom, the pan and the
-    // hovered zone are kept — a scrub must move the progress, not throw away where you had navigated.
-    function build(keepView) {
-      var prev = (keepView && _vsFocus) ? { z: _vsFocus.z, px: _vsFocus.px, py: _vsFocus.py, hoverKey: _vsFocus.hoverKey } : null;
+    // Full construction: opening the window, and toggling compare (the second building has to be
+    // BUILT at its own basis). ⚠️ It is NOT the scrub path — see `_vsFocus.paint` below, which swaps
+    // one node per pane and keeps the zoom, the pan and the hovered zone by never touching them.
+    function build() {
       var panes = cmp
         ? [{ lab: 'Planned — baseline', basis: 'planned' }, { lab: 'Actual — recorded / forecast', basis: 'actual' }]
         : [{ lab: _vsBasisWord() === 'planned vs actual' ? 'Planned vs actual' : ('Dates: ' + _vsBasisWord()), basis: null }];
@@ -13444,19 +13509,8 @@
       var sv0 = built[0].svg;
       var W = sv0 ? parseFloat(sv0.getAttribute('width')) || 0 : 0;
       var H = sv0 ? parseFloat(sv0.getAttribute('height')) || 0 : 0;
-      // ⚠️⚠️ THE BAR READS `_vsProgress`, NOT `_vsPct` — caught by the browser run, not by reading.
-      // `_vsPct` is the raw recorded figure and ignores the scrubber, so the frozen row went on
-      // reporting today's percentage while the buildings above it re-read at the scrubbed date: a
-      // summary contradicting the cells it summarises, which is the exact trap this module's own log
-      // records. `_vsProgress` is what the towers are drawn from, so the two cannot disagree.
-      var scrubbed = (_vsAsOf != null);
-      var ap = _vsProgress(card.list);
-      // ⚠️ While scrubbed there is NO comparison to make: "scheduled by this date" against "planned
-      // by the data date" are two different questions, and a variance between them is a number that
-      // means nothing. The tick and the pp figure are withheld rather than computed anyway.
-      var pp = scrubbed ? null : _vsPlanPct(card.list);
       var sp = _vsSpan(card.list);
-      var gap = (pp == null) ? null : (ap - pp);
+      var gap = null;   // filled in by chrome() below, which is also what a scrub re-runs
       wrap.innerHTML =
         '<div class="ps-vs-fz-head">' +
           '<span class="ps-vs-fz-title"><span class="ps-vs-dot" style="background:' + card.color + '"></span>' + esc(card.name) +
@@ -13497,18 +13551,16 @@
               esc(sp ? Fmt.date(dstr(sp.min)) : '—') + '</span></div>' +
             '<div class="ps-vs-fz-m"><span class="k">Finishes</span><span class="v" style="font-size:12.5px;">' +
               esc(sp ? Fmt.date(dstr(sp.max)) : '—') + '</span></div>' +
-            (gap == null ? '' : '<div class="ps-vs-fz-m"><span class="k">Vs plan</span><span class="v" style="color:' +
-              (gap < -0.5 ? VS_SLIP_LATE : (gap > 0.5 ? VS_SLIP_EARLY : VS_SLIP_ONTIME)) + ';">' +
-              (gap > 0 ? '+' : '') + gap.toFixed(1) + ' pp</span></div>') +
+            // ⚠️ Always emitted, hidden when there is nothing to compare — the scrub updates this
+            // by style, and a metric that has to be created and destroyed cannot be a style write.
+            '<div class="ps-vs-fz-m" id="ps-vs-fz-gap"' + (gap == null ? ' style="display:none"' : '') +
+              '><span class="k">Vs plan</span><span class="v">' + (gap == null ? '—' : ((gap > 0 ? '+' : '') + gap.toFixed(1) + ' pp')) + '</span></div>' +
           '</div>' +
           '<div class="ps-vs-fz-barwrap">' +
-            '<div class="ps-vs-fz-bartop"><strong>' + ap + '%</strong> ' + (scrubbed ? 'scheduled by this date' : _vsProgressWord()) +
-              (scrubbed ? ' <span>· modelled from the activities\u2019 dates, not recorded history</span>'
-                        : (pp == null ? ' <span>· no baseline to compare against</span>'
-                                      : ' <span>· ' + pp + '% planned by the data date</span>')) + '</div>' +
-            '<div class="ps-vs-fz-bar"><div class="fill" style="width:' + Math.max(0, Math.min(100, ap)) + '%"></div>' +
-              (pp == null ? '' : '<div class="plan" style="left:' + Math.max(0, Math.min(100, pp)) + '%"></div>' +
-                '<div class="planl" style="left:' + Math.max(0, Math.min(100, pp)) + '%">plan</div>') +
+            '<div class="ps-vs-fz-bartop" id="ps-vs-fz-bartop"></div>' +
+            '<div class="ps-vs-fz-bar"><div class="fill" id="ps-vs-fz-barfill" style="width:0%"></div>' +
+              '<div class="plan" id="ps-vs-fz-barplan" style="display:none"></div>' +
+              '<div class="planl" id="ps-vs-fz-barplanl" style="display:none">plan</div>' +
             '</div>' +
           '</div>' +
           '<div class="ps-vs-fz-read" id="ps-vs-fz-read"></div>' +
@@ -13531,20 +13583,78 @@
         _vsFocus.panes.push({ vp: vp, canvas: canvas, svg: b.svg });
         _vsFocusWirePane(vp, b.svg);
       });
-      if (prev) {
-        _vsFocus.z = prev.z; _vsFocus.px = prev.px; _vsFocus.py = prev.py;
-        _vsFocusApply();
+      _vsFocusReadout();
+      // Measured after layout: a getBoundingClientRect taken before the modal has been laid out
+      // reports 0 and the fit silently does nothing.
+      requestAnimationFrame(function () { _vsFocusFit(); });
+      // ---- The two speeds --------------------------------------------------------------------
+      // ⚠️ `paint` swaps ONLY the svg in each pane. The first cut rewrote `wrap.innerHTML`, which
+      // destroyed and rebuilt the header, the footer and the scrubber TRACK THE POINTER WAS ON, and
+      // re-bound every handler — per frame. Swapping one node per pane leaves the viewport listeners
+      // (they are bound to the viewport, not the svg) and every control untouched.
+      _vsFocus.paint = function () {
+        var F = _vsFocus; if (!F || !F.panes.length) return;
+        F.panes.forEach(function (pn, i) {
+          var nb = _vsFocusBuild(card.list, card.color, card.prefix + '|FZ', panes[i] ? panes[i].basis : null);
+          if (!nb.svg || !pn.svg || !pn.svg.parentNode) return;
+          pn.canvas.replaceChild(nb.svg, pn.svg);
+          pn.svg = nb.svg;
+          if (i === F.panes.length - 1) F.cells = nb.cells;
+        });
+        _vsFocusApply();   // re-assert the svg sizing at the current zoom
         // ⚠️ hoverKey is forced to undefined first, or _vsFocusHover's own "same key, nothing to do"
-        // guard would skip re-marking the zone in the freshly rebuilt svgs and the outline would
-        // vanish on the first scrub.
-        var hk = prev.hoverKey; _vsFocus.hoverKey = undefined; _vsFocusHover(hk == null ? null : hk);
-      } else {
-        _vsFocusReadout();
-        // Measured after layout: a getBoundingClientRect taken before the modal has been laid out
-        // reports 0 and the fit silently does nothing.
-        requestAnimationFrame(function () { _vsFocusFit(); });
-      }
-      _vsFocus.rebuild = function () { build(true); };
+        // guard skips the freshly swapped svgs and the outline disappears on the first scrub.
+        var hk = F.hoverKey; F.hoverKey = undefined; _vsFocusHover(hk == null ? null : hk);
+      };
+      // ⚠️ `chrome` is style and text ONLY — no element is created or destroyed, which is what lets
+      // it run every frame. Everything it writes was given a stable id above for that reason.
+      _vsFocus.chrome = function () {
+        var scrubbed = (_vsAsOf != null);
+        // ⚠️ `_vsProgress`, never `_vsPct` — it is the function the towers are drawn from, so the
+        // bar and the buildings cannot report different numbers.
+        var ap = _vsProgress(card.list);
+        // ⚠️ While scrubbed there is NO comparison to make: "scheduled by this date" against
+        // "planned by the data date" are two different questions and the variance between them is a
+        // number that means nothing. Withheld rather than computed anyway.
+        var pp = scrubbed ? null : _vsPlanPct(card.list);
+        var g = (pp == null) ? null : (ap - pp);
+        var q = function (id) { return wrap.querySelector('#' + id); };
+        var top = q('ps-vs-fz-bartop');
+        if (top) top.innerHTML = '<strong>' + ap + '%</strong> ' + (scrubbed ? 'scheduled by this date' : _vsProgressWord()) +
+          (scrubbed ? ' <span>· modelled from the activities\u2019 dates, not recorded history</span>'
+                    : (pp == null ? ' <span>· no baseline to compare against</span>'
+                                  : ' <span>· ' + pp + '% planned by the data date</span>'));
+        var fillEl = q('ps-vs-fz-barfill'); if (fillEl) fillEl.style.width = Math.max(0, Math.min(100, ap)) + '%';
+        var pl = q('ps-vs-fz-barplan'), pll = q('ps-vs-fz-barplanl');
+        [pl, pll].forEach(function (e) {
+          if (!e) return;
+          if (pp == null) { e.style.display = 'none'; return; }
+          e.style.display = ''; e.style.left = Math.max(0, Math.min(100, pp)) + '%';
+        });
+        var gEl = q('ps-vs-fz-gap');
+        if (gEl) {
+          gEl.style.display = (g == null) ? 'none' : '';
+          if (g != null) {
+            var v = gEl.querySelector('.v');
+            v.textContent = (g > 0 ? '+' : '') + g.toFixed(1) + ' pp';
+            v.style.color = (g < -0.5 ? VS_SLIP_LATE : (g > 0.5 ? VS_SLIP_EARLY : VS_SLIP_ONTIME));
+          }
+        }
+        // The scrubber's own parts.
+        var sc = wrap.querySelector('.ps-vs-fz-scrub');
+        if (sc) {
+          var mn = +sc.dataset.min, mx = +sc.dataset.max;
+          var at = _vsAsOf == null ? mx : Math.max(mn, Math.min(mx, _vsAsOf));
+          var frac = (mx > mn) ? (at - mn) / (mx - mn) : 1;
+          var lab = sc.querySelector('.lab');
+          if (lab) lab.innerHTML = '<b>' + esc(Fmt.date(dstr(new Date(at)))) + '</b>' +
+            (scrubbed ? 'Modelled from the dates' : 'Live — recorded progress');
+          var fx = sc.querySelector('.fillx'); if (fx) fx.style.width = (frac * 100).toFixed(2) + '%';
+          var hd2 = sc.querySelector('.hd'); if (hd2) hd2.style.left = (frac * 100).toFixed(2) + '%';
+          var lv2 = sc.querySelector('[data-fzlive]'); if (lv2) lv2.classList.toggle('on', !scrubbed);
+        }
+      };
+      _vsFocus.chrome();
       _vsFocusWireScrub(wrap, card.list);
 
       wrap.querySelector('#ps-vs-fzx').onclick = function () { m.close(); };
