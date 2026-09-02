@@ -217,7 +217,7 @@ ok('each band carries its own action text from the sheet',
    /tolerated/i.test(E.residualBand(30).action) &&
    /acceptable, no further action/i.test(E.residualBand(5).action));
 
-console.log('\n--- 8. the taxonomy (EPC Risk Universe + the 5-PMLC spine) ---');
+console.log('\n--- 8. the taxonomy (MCC Risk Universe + the 5-PMLC spine) ---');
 eq('10 categories, matching the workbook\'s Dropdown List', E.CATEGORY_NAMES.length, 10);
 eq('20 activities in the 5-PMLC spine', E.ACTIVITIES.length, 20);
 ok('activity numbers are 1..20 with no gap or repeat',

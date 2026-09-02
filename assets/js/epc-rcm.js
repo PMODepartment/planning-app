@@ -9,7 +9,7 @@
 //   CSF101. OPS. Stakeholder Register. 2026 02 13.xlsx
 //
 // Every sheet below appears, byte-identical, in BOTH files: the 5-PMLC activity
-// list, the EPC Risk Universe (category > sub-category), the Control Masterlist,
+// list, the MCC Risk Universe (category > sub-category), the Control Masterlist,
 // "Criteria for Risk Assessment" and the priority heat map. Transcribing them
 // into each module would guarantee the two drift — a sub-category added to the
 // risk register's picker and not the stakeholder one, and then two registers
@@ -131,7 +131,7 @@ window.EPCRCM = (function () {
   }
 
   // =========================================================================
-  // 2) THE EPC RISK UNIVERSE — Risk / Stakeholder Category > Sub-Category
+  // 2) THE MCC RISK UNIVERSE — Risk / Stakeholder Category > Sub-Category
   // -------------------------------------------------------------------------
   // Sheet "EPC Project Risk Categorization" (risk file) / "Glossary of Terms"
   // (stakeholder file). L1 = the 10 categories, L2 = sub-categories.
@@ -543,7 +543,7 @@ window.EPCRCM = (function () {
                    esc(s.name), esc(s.desc)]);
       });
     });
-    return tbl('EPC Risk Universe — category › sub-category', ['Category', 'Sub-category', 'Description'], rows);
+    return tbl('MCC Risk Universe — category › sub-category', ['Category', 'Sub-category', 'Description'], rows);
   }
   function controlMasterlistHTML() {
     var rows = [];

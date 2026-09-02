@@ -565,7 +565,7 @@ window.RiskRegister = (function () {
     });
     var offKeys = Object.keys(off);
     if (offKeys.length) {
-      html += '<tr class="rr-unicat"><td colspan="3"><strong>Off-taxonomy</strong> <span class="rcm-muted">— rows written before the EPC Risk Universe; re-categorise them</span></td>' +
+      html += '<tr class="rr-unicat"><td colspan="3"><strong>Off-taxonomy</strong> <span class="rcm-muted">— rows written before the MCC Risk Universe; re-categorise them</span></td>' +
         '<td class="rr-num"><strong>' + offKeys.reduce(function (a, k) { return a + off[k]; }, 0) + '</strong></td></tr>';
       offKeys.sort().forEach(function (k) {
         html += '<tr><td></td><td>' + Fmt.esc(k) + '</td><td class="rcm-muted">not in the taxonomy</td><td class="rr-num">' + off[k] + '</td></tr>';

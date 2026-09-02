@@ -805,7 +805,7 @@ window.StakeholderMap = (function () {
         '⚠️ The BD workbook contradicts itself: its Guide sheet says Maintain = semi-annually and Enhance = quarterly, while the live cell formula — which the data actually follows — says the above. The live formula governs.') +
       '</div>' +
 
-      '<div class="pd-card"><h2 style="margin-top:0;">EPC Stakeholder Universe</h2>' +
+      '<div class="pd-card"><h2 style="margin-top:0;">MCC Stakeholder Universe</h2>' +
       '<p class="sm-help">The same 10-term taxonomy the Risk Register uses, so a stakeholder and the risks they create can be read against each other.</p>' +
       e.universeTableHTML() + '</div>';
   }

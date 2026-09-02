@@ -390,6 +390,45 @@ learns to skim it will miss the next real one.
 
 Stakeholder `module.css` → `?v=20260901k`; `MODULE_V` → `20260901n`.
 
+⚠️ **A THIRTEENTH, and the third instance of "brand red as text" in this pair of registers.** The
+Add/Edit form's section headers (`.rr-fsec` / `.sm-fsec`, 11px/800 `--pd-red-dark` on the modal)
+measured **2.40:1 in dark**. They were missed when the band header and the lit band pill were fixed
+because **the modal is not in the page until it is opened** — every sweep only ever saw what the
+register had already rendered. Dark-only override to `#FF8A80`. **If a fourth turns up, the honest fix
+is a `--pd-red-text` token in `dashboard.css`, not a fourth copy of the same two-line override.**
+
+**Final live state: both registers, both themes, 0 AA failures** — measured against the combinations
+the JS actually emits (57 surfaces on the Risk Register, 102 emitted combinations on the Stakeholder
+Register), worst margins 4.67:1 dark / 4.83:1 light.
+
+**Also, at the owner's request: "EPC Risk Universe" → "MCC Risk Universe" and "EPC Stakeholder
+Universe" → "MCC Stakeholder Universe"** — the two view headings, the shared criteria table, the
+off-taxonomy note and the test suite's section label. ⚠️ The shared file is still `epc-rcm.js` /
+`EPCRCM` / `.rcm-*`: renaming the module, its global and forty-odd CSS classes is a mechanical change
+with real blast radius across both registers, and the ask was about the headings.
+
+⚠️ **A CONCURRENCY HAZARD WORTH RECORDING, because it cost this pass an hour and nearly lost work.**
+Another session was editing `dashboard.html`, `modules.html` and `modules/project-schedule/index.html`
+in the same clone at the same time. Three things followed:
+1. **`git add -A` swept their uncommitted WIP into my commit.** Their 56-line change to
+   `project-schedule/index.html` was not in anything they had pushed, so it was live work.
+2. **They then `git reset --soft HEAD~1` MY commit** and committed the combined index under their own
+   message — so my changes briefly existed only under someone else's commit — then reset again.
+   Because the index is shared, every commit either session makes claims the other's staged work.
+3. **My work survived only as the unreachable commit object `a8e72c8`**, recovered from the reflog.
+
+**The rule that follows: in a clone another session is live in, never `git add -A`, and never rebase
+or reset shared HEAD.** This work was landed from an isolated `git worktree` checked out at
+`origin/main`, with my eight files taken verbatim out of my own commit object — which touches neither
+the shared index nor the shared HEAD, and let the other session keep working uninterrupted.
+
+⚠️ **`MODULE_V` deliberately NOT bumped here**, though both module `index.html` files changed their
+asset `?v=` strings. It lives in `dashboard.html`/`modules.html`, which the other session was actively
+editing — and they bumped it themselves in the same window. **Confirm a bump landed before trusting a
+returning browser to pick these up.**
+
+`epc-rcm.js` → `?v=20260901b`; both `module.js` → `?v=20260901g`; both `module.css` → `?v=20260901l`.
+
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
 Owner, after running both RCM migrations: *"the user cannot access any admin features like add

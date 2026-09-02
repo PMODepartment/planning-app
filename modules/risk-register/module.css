@@ -151,6 +151,11 @@ html.pd-dark .rr-band.on { color:#FF8A80; }
 /* ---- Add/Edit form furniture -------------------------------------------- */
 .rr-fsec { font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
   color:var(--pd-red-dark); margin:18px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--pd-line); }
+/* ⚠️ The third brand-red-as-text surface, and it was missed when the band header and
+   the lit band pill were fixed: 2.40:1 in dark (11px/800 --pd-red-dark on the modal).
+   Light passes, so dark only. If a fourth turns up, the honest fix is a --pd-red-text
+   token in dashboard.css rather than a fourth copy of this override. */
+html.pd-dark .rr-fsec { color:#FF8A80; }
 .rr-fsec:first-of-type { margin-top:10px; }
 .rr-fsec-hint { color:var(--pd-muted); font-weight:600; letter-spacing:0; text-transform:none; margin-left:6px; }
 .rr-lbl-hint { color:var(--pd-muted); font-weight:400; }
