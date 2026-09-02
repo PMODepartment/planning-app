@@ -84,6 +84,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (ag) — The focus window: crisp zoom, a real divider, a working scrubber, full screen
+Owner: *"the quality is too low, and can you enlargen the divider between the planned and actual. now
+also the progress bar below should be working or has a dragger. In addition, is there an option where you
+can full screen."* Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **"Quality is too low" was a real defect of mine: CSS `transform: scale()` stretching a bitmap.**
+  The canvas is rasterised at 1:1 and a scale blows that raster up, so at 180% every zone date was a
+  magnified 1x image. Zoom is now the **svg's own width/height** (viewBox untouched → vector re-render);
+  the transform carries **translate only**, because pan must not rasterise at the wrong resolution.
+- **The divider is a 16px gutter**, not a 1px border. ⚠️ **Decorative, never draggable:** the shared
+  transform is only truthful while the panes are equal width, so a drag would show different portions of
+  the two buildings while still claiming they are synced — a silent wrong answer.
+- **The progress bar is a scrubber** — handle, ticks, data date, month steps, Live — and dragging it
+  re-reads both buildings. ⚠️ **Modelled, not replayed** (one `percent_complete` per activity exists, and
+  it is today's), and it says so. ⚠️ The axis is measured at the ACTUAL basis whatever the panes show, or
+  the same date would sit in two places. ⚠️ A scrub keeps the zoom, pan and hovered zone. ⚠️ The stack
+  underneath is re-rendered **once on close**, not per frame behind a modal nobody can see through.
+- ⚠️⚠️ **A REAL DEFECT THE BROWSER RUN FOUND: the bar did not move with the buildings.** It read
+  `_vsPct` — the raw recorded figure, which ignores the scrubber — so the frozen row reported today's
+  percentage while the towers above it re-read at the scrubbed date. It reads `_vsProgress` now, the
+  same function the towers are drawn from. ⚠️ While scrubbed the planned tick is **withheld**, because
+  "scheduled by this date" vs "planned by the data date" is a variance that means nothing.
+- **Full screen.** ⚠️ Two mechanisms: the API on the modal box (so the overlay's dimming does not travel
+  with it) **plus** an in-page `.is-maxed` fallback, because an iframe or a permissions-policy can refuse
+  it. The button lights from what actually happened, never from intent.
+- **29 checks in Node + 67 in a browser** (was 26 + 39), executing the shipped functions; 0 functions
+  lost. ⚠️ Not verified signed in, and the real Fullscreen API path is untested (the harness forces the
+  fallback). `MODULE_V` → `20260902ag`.
+
 ### 2026-09-02 (af) — Vertical stacking: expand a tower, and put planned beside actual
 Owner: *"can you make it more visually pleasing… or can you add an expand view wherein it would focus on
 that tower itself and then have a progress bar on the bottom… scrollbar to zoom in and out, and then there

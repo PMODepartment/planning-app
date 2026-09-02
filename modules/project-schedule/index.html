@@ -1546,11 +1546,26 @@
     .ps-vs-fz-vp { flex:1 1 auto; min-height:0; position:relative; overflow:hidden;
       cursor:grab; touch-action:none; }
     .ps-vs-fz-vp.is-panning { cursor:grabbing; }
+    /* ⚠️ translate ONLY — the zoom is the svg's own width/height (see _vsFocusApply). A scale here
+       would stretch the rasterised layer and blur every date; will-change is safe on a translate. */
     .ps-vs-fz-canvas { position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform; }
     .ps-vs-fz-canvas > svg { display:block; }
     .ps-vs-fz-hint { position:absolute; right:10px; bottom:10px; z-index:2; pointer-events:none;
       font-size:10.5px; color:var(--pd-muted); background:var(--pd-card); border:1px solid var(--pd-line);
       border-radius:999px; padding:4px 10px; opacity:.92; }
+    /* ⚠️ A REAL GUTTER, not a 1px border. Owner: *"can you enlargen the divider between the planned
+       and actual"* — at one pixel the two buildings read as one wide picture, and the whole value of
+       the split is knowing which building you are looking at.
+       ⚠️ It is DECORATIVE, not draggable: the shared transform is only truthful while the panes are
+       equal width (one fit measurement is true of both). Let someone drag it and the two windows
+       show different portions of their buildings while claiming to be synced. */
+    .ps-vs-fz-div { flex:0 0 16px; align-self:stretch; position:relative;
+      background:linear-gradient(180deg, var(--pd-bg), var(--pd-card), var(--pd-bg));
+      border-left:1px solid var(--pd-line); border-right:1px solid var(--pd-line); }
+    .ps-vs-fz-div::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:2px;
+      margin-left:-1px; background:var(--pd-line); }
+    .ps-vs-fz-div::after { content:''; position:absolute; left:50%; top:50%; width:6px; height:34px;
+      margin:-17px 0 0 -3px; border-radius:3px; background:var(--pd-muted); opacity:.42; }
     /* ---- The frozen row -------------------------------------------------------------------- */
     .ps-vs-fz-foot { flex:0 0 auto; border-top:1px solid var(--pd-line); background:var(--pd-card);
       padding:10px 16px 12px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
@@ -1569,10 +1584,47 @@
        fill edge and the marker IS the variance, and two stacked tracks make that a subtraction. */
     .ps-vs-fz-bar > .plan { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--pd-ink); opacity:.8; }
     .ps-vs-fz-bar > .planl { position:absolute; top:-14px; font-size:9px; font-weight:700; color:var(--pd-muted); transform:translateX(-50%); white-space:nowrap; }
+    /* ---- The scrubber in the frozen row ---------------------------------------------------- */
+    .ps-vs-fz-scrub { flex:1 1 100%; order:9; display:flex; align-items:center; gap:10px;
+      padding-top:10px; margin-top:2px; border-top:1px solid var(--pd-line); }
+    .ps-vs-fz-scrub .lab { flex:0 0 auto; font-size:11px; color:var(--pd-muted); min-width:118px;
+      font-variant-numeric:tabular-nums; }
+    .ps-vs-fz-scrub .lab b { display:block; font-size:13px; color:var(--pd-ink); }
+    .ps-vs-fz-track { flex:1 1 auto; position:relative; height:26px; cursor:pointer;
+      touch-action:pan-y; user-select:none; min-width:160px; }
+    .ps-vs-fz-track .rail { position:absolute; left:0; right:0; top:11px; height:6px; border-radius:999px;
+      background:var(--pd-bg); border:1px solid var(--pd-line); }
+    .ps-vs-fz-track .fillx { position:absolute; left:0; top:11px; height:6px; border-radius:999px;
+      background:var(--pd-red); opacity:.85; }
+    .ps-vs-fz-track .tk { position:absolute; top:7px; width:1px; height:14px; background:var(--pd-line); }
+    .ps-vs-fz-track .tk.yr { top:4px; height:20px; background:var(--pd-muted); }
+    .ps-vs-fz-track .dd { position:absolute; top:4px; width:2px; height:20px; background:var(--pd-ok); }
+    .ps-vs-fz-track .hd { position:absolute; top:1px; width:24px; height:24px; margin-left:-12px;
+      border-radius:50%; background:var(--pd-red); border:2px solid var(--pd-card);
+      box-shadow:0 1px 4px rgba(0,0,0,.35); cursor:grab; }
+    .ps-vs-fz-track .hd:active { cursor:grabbing; }
+    .ps-vs-fz-scrub .ps-vs-seg button { min-height:28px; }
     .ps-vs-fz-read { flex:1 1 260px; min-width:220px; font-size:11.5px; line-height:1.5;
       color:var(--pd-muted); border-left:1px solid var(--pd-line); padding-left:14px; }
     .ps-vs-fz-read .h { font-weight:800; font-size:12.5px; color:var(--pd-ink); }
+    /* ---- Full screen ------------------------------------------------------------------------
+       Owner: *"is there an option where you can full screen. so it is better for the eye"*.
+       ⚠️ TWO mechanisms, and both are needed. The Fullscreen API is fullscreened on the MODAL BOX,
+       so the overlay's own dimming does not travel with it — hence the box paints its own edge-to-edge
+       geometry under :fullscreen. And a browser or an iframe that refuses the API (permissions-policy,
+       an embedded context) must still get the benefit, so `.is-maxed` does the same thing in-page. */
+    .pd-modal.ps-vs-focus-modal:fullscreen,
+    .pd-modal.ps-vs-focus-modal.is-maxed {
+      width:100vw; max-width:100vw; height:100vh; max-height:100vh; border-radius:0;
+      background:var(--pd-card);
+    }
+    .pd-modal-overlay:has(> .ps-vs-focus-modal.is-maxed) { padding:0; }
     @media (max-width: 900px) {
+      .ps-vs-fz-div { flex:0 0 auto; height:12px; align-self:auto; width:100%;
+        border-left:0; border-right:0; border-top:1px solid var(--pd-line); border-bottom:1px solid var(--pd-line); }
+      .ps-vs-fz-div::before { left:0; right:0; top:50%; bottom:auto; width:auto; height:2px; margin:-1px 0 0; }
+      .ps-vs-fz-div::after { width:34px; height:6px; margin:-3px 0 0 -17px; }
+      .ps-vs-fz-scrub .lab { min-width:0; }
       .ps-vs-fz-stage { flex-direction:column; }
       .ps-vs-fz-pane { border-right:0; border-bottom:1px solid var(--pd-line); }
       .ps-vs-fz-read { border-left:0; padding-left:0; }
@@ -13162,10 +13214,23 @@
     return { svg: sv, cells: cells };
   }
 
+  // ⚠️⚠️ ZOOM IS THE SVG'S OWN width/height, NEVER `transform: scale()`. Owner, on the first cut:
+  // *"the quality is too low"* — and they were right. A CSS transform scale on a composited layer
+  // stretches the BITMAP the browser already rasterised at 1:1, so at 180% every date and every
+  // stroke is a blown-up 1x raster. Sizing the svg re-renders it as vector at the new size, so the
+  // text is as sharp at 400% as at 100%, which is the entire reason this view is SVG and not canvas.
+  // ⚠️ PAN stays a transform (translate only — translate never rasterises the wrong resolution),
+  // because moving a laid-out element every frame is what makes the drag smooth.
   function _vsFocusApply() {
     var F = _vsFocus; if (!F) return;
-    var t = 'translate(' + F.px.toFixed(1) + 'px,' + F.py.toFixed(1) + 'px) scale(' + F.z.toFixed(4) + ')';
-    F.panes.forEach(function (p) { p.canvas.style.transform = t; });
+    var t = 'translate(' + F.px.toFixed(1) + 'px,' + F.py.toFixed(1) + 'px)';
+    F.panes.forEach(function (p) {
+      p.canvas.style.transform = t;
+      if (p.svg) {
+        p.svg.setAttribute('width', (F.w * F.z).toFixed(1));
+        p.svg.setAttribute('height', (F.h * F.z).toFixed(1));
+      }
+    });
     if (F.zlab) F.zlab.textContent = Math.round(F.z * 100) + '%';
   }
   // Fit the whole building in the pane and centre it. Measured off the FIRST pane; the panes are
@@ -13233,6 +13298,117 @@
         (sl > 0 ? sl + 'd late' : (sl < 0 ? (-sl) + 'd early' : 'on time')) + '</strong>');
   }
 
+  // ---- The frozen row's scrubber --------------------------------------------------------------
+  // Owner: *"the progress bar below should be working or has a dragger"*. It is the main view's time
+  // bar, scoped to this one building: drag it and both towers re-read at that date.
+  // ⚠️⚠️ MODELLED, NOT REPLAYED. The database keeps ONE `percent_complete` per activity — today's —
+  // so a scrubbed cell answers "what is SCHEDULED to be done by this date", never "what was done".
+  // The label says so on screen, because a building filling up as you drag looks exactly like
+  // recorded history. Same rule and same wording as the main view's bar.
+  // ⚠️ The axis is measured at the ACTUAL basis whatever the panes are showing: in compare mode the
+  // two panes have two different spans (baseline vs current), and a scrubber whose axis flipped with
+  // the pane would move the same date to two different places on the same track.
+  function _vsFocusSpan(list) {
+    var save = _vsBasis, sp;
+    try { _vsBasis = 'actual'; sp = _vsSpan(list); } finally { _vsBasis = save; }
+    return sp;
+  }
+  // Rebuild the buildings in place, keeping the zoom, the pan and the hovered zone — a scrub must
+  // move the progress, not throw away where the planner had navigated to.
+  function _vsFocusRepaint() {
+    var F = _vsFocus; if (!F || !F.rebuild) return;
+    F.rebuild();
+  }
+  var _vsFocusRaf = 0;
+  function _vsFocusScrubTo(ms, mn, mx) {
+    _vsAsOf = Math.max(mn, Math.min(mx, ms));
+    if (_vsFocusRaf) return;
+    _vsFocusRaf = requestAnimationFrame(function () { _vsFocusRaf = 0; _vsFocusRepaint(); });
+  }
+  // The track, drawn from the same numbers the main view's bar uses.
+  function _vsFocusScrubHTML(list) {
+    var sp = _vsFocusSpan(list);
+    if (!sp) return '';
+    var mn = +sp.min, mx = +sp.max, span = mx - mn;
+    var at = _vsAsOf == null ? mx : Math.max(mn, Math.min(mx, _vsAsOf));
+    var frac = span > 0 ? (at - mn) / span : 1;
+    var months = Math.max(1, Math.round(span / 2629800000));
+    var everyN = months > 48 ? 12 : (months > 18 ? 6 : 3);
+    var ticks = '', c = new Date(sp.min.getFullYear(), sp.min.getMonth(), 1), k = 0;
+    while (+c <= mx) {
+      if (+c >= mn) {
+        var pcx = ((+c - mn) / span) * 100, isYr = c.getMonth() === 0;
+        if (isYr || k % everyN === 0) ticks += '<div class="tk' + (isYr ? ' yr' : '') + '" style="left:' + pcx.toFixed(2) + '%"></div>';
+      }
+      c = new Date(c.getFullYear(), c.getMonth() + 1, 1); k++;
+    }
+    var dd = today(), ddm = '';
+    if (dd && +dd >= mn && +dd <= mx) ddm = '<div class="dd" title="Data date" style="left:' + (((+dd - mn) / span) * 100).toFixed(2) + '%"></div>';
+    var live = (_vsAsOf == null);
+    return '<div class="ps-vs-fz-scrub" data-min="' + mn + '" data-max="' + mx + '">' +
+      '<span class="lab"><b>' + esc(Fmt.date(dstr(new Date(at)))) + '</b>' +
+        (live ? 'Live — recorded progress' : 'Modelled from the dates') + '</span>' +
+      '<div class="ps-vs-fz-track" id="ps-vs-fz-track">' + ticks +
+        '<div class="rail"></div><div class="fillx" style="width:' + (frac * 100).toFixed(2) + '%"></div>' + ddm +
+        '<div class="hd" id="ps-vs-fz-hd" style="left:' + (frac * 100).toFixed(2) + '%" title="Drag to walk the programme"></div>' +
+      '</div>' +
+      '<span class="ps-vs-seg">' +
+        '<button data-fzstep="-1" title="Back one month">&#8249;</button>' +
+        '<button data-fzstep="1" title="Forward one month">&#8250;</button>' +
+        '<button data-fzlive' + (live ? ' class="on"' : '') + ' title="Back to recorded progress">Live</button>' +
+      '</span></div>';
+  }
+  function _vsFocusWireScrub(wrap, list) {
+    var el = wrap.querySelector('.ps-vs-fz-scrub'); if (!el) return;
+    var mn = +el.dataset.min, mx = +el.dataset.max;
+    var track = wrap.querySelector('#ps-vs-fz-track'), hd = wrap.querySelector('#ps-vs-fz-hd');
+    // ⚠️ The rect is captured at drag START. The track is REPLACED by every repaint, so anything
+    // measured per-move against the live element would jump the instant the first frame landed.
+    function drag(e) {
+      var rect = track.getBoundingClientRect(); if (!rect.width) return;
+      var move = function (ev) {
+        _vsFocusScrubTo(mn + Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * (mx - mn), mn, mx);
+      };
+      move(e);
+      var up = function () { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    }
+    if (track) track.addEventListener('pointerdown', function (e) { e.preventDefault(); drag(e); });
+    if (hd) hd.addEventListener('pointerdown', function (e) { e.stopPropagation(); e.preventDefault(); drag(e); });
+    wrap.querySelectorAll('[data-fzstep]').forEach(function (b) {
+      b.onclick = function () {
+        var cur = new Date(_vsAsOf == null ? mx : _vsAsOf);
+        cur.setMonth(cur.getMonth() + (parseInt(b.dataset.fzstep, 10) || 0));
+        _vsFocusScrubTo(+cur, mn, mx);
+      };
+    });
+    var lv = wrap.querySelector('[data-fzlive]');
+    if (lv) lv.onclick = function () { _vsAsOf = null; _vsFocusRepaint(); };
+  }
+  // ---- Full screen -----------------------------------------------------------------------------
+  // ⚠️ The API is tried first and `.is-maxed` is the fallback, because an embedded/iframed context or
+  // a permissions-policy can refuse `requestFullscreen` — and the ask ("better for the eye") is met
+  // by either. The button's own state is written from what actually happened, never from intent.
+  function _vsFocusFullscreen(boxEl, btn) {
+    var isFs = document.fullscreenElement === boxEl;
+    var mark = function () {
+      var on = (document.fullscreenElement === boxEl) || boxEl.classList.contains('is-maxed');
+      if (btn) btn.classList.toggle('on', on);
+      // The panes changed size, so the fit is stale — re-fit on the frame after the box has settled.
+      requestAnimationFrame(function () { requestAnimationFrame(function () { _vsFocusFit(); }); });
+    };
+    if (isFs || boxEl.classList.contains('is-maxed')) {
+      boxEl.classList.remove('is-maxed');
+      if (document.fullscreenElement === boxEl && document.exitFullscreen) {
+        document.exitFullscreen().then(mark, mark);
+      } else mark();
+      return;
+    }
+    if (boxEl.requestFullscreen) {
+      boxEl.requestFullscreen().then(mark, function () { boxEl.classList.add('is-maxed'); mark(); });
+    } else { boxEl.classList.add('is-maxed'); mark(); }
+  }
   function _vsOpenFocus(idx) {
     var card = _vsFocusCards[idx]; if (!card || !card.list.length) return;
     // Compare is remembered for the session only — it is a way of LOOKING at a building, and a
@@ -13242,8 +13418,17 @@
     var boxEl = m.el.querySelector('.pd-modal');
     if (boxEl) boxEl.classList.add('ps-vs-focus-modal');
     var wrap = m.el.querySelector('#ps-vs-fz');
+    function isMaxed() { return !!boxEl && (document.fullscreenElement === boxEl || boxEl.classList.contains('is-maxed')); }
+    // ⚠️ `_vsAsOf` is MODULE-level and the scrubber writes it, so the view underneath is out of date
+    // the moment it moves. It is re-rendered ONCE on close rather than on every frame of the drag:
+    // the main stack is every tower at every trade, and repainting it per frame behind a modal
+    // nobody can see through is work paid for by a planner scrubbing a single building.
+    var _asOfOnOpen = _vsAsOf;
 
-    function build() {
+    // `keepView` is the scrub/repaint path: the buildings are rebuilt but the zoom, the pan and the
+    // hovered zone are kept — a scrub must move the progress, not throw away where you had navigated.
+    function build(keepView) {
+      var prev = (keepView && _vsFocus) ? { z: _vsFocus.z, px: _vsFocus.px, py: _vsFocus.py, hoverKey: _vsFocus.hoverKey } : null;
       var panes = cmp
         ? [{ lab: 'Planned — baseline', basis: 'planned' }, { lab: 'Actual — recorded / forecast', basis: 'actual' }]
         : [{ lab: _vsBasisWord() === 'planned vs actual' ? 'Planned vs actual' : ('Dates: ' + _vsBasisWord()), basis: null }];
@@ -13259,7 +13444,17 @@
       var sv0 = built[0].svg;
       var W = sv0 ? parseFloat(sv0.getAttribute('width')) || 0 : 0;
       var H = sv0 ? parseFloat(sv0.getAttribute('height')) || 0 : 0;
-      var ap = _vsPct(card.list), pp = _vsPlanPct(card.list);
+      // ⚠️⚠️ THE BAR READS `_vsProgress`, NOT `_vsPct` — caught by the browser run, not by reading.
+      // `_vsPct` is the raw recorded figure and ignores the scrubber, so the frozen row went on
+      // reporting today's percentage while the buildings above it re-read at the scrubbed date: a
+      // summary contradicting the cells it summarises, which is the exact trap this module's own log
+      // records. `_vsProgress` is what the towers are drawn from, so the two cannot disagree.
+      var scrubbed = (_vsAsOf != null);
+      var ap = _vsProgress(card.list);
+      // ⚠️ While scrubbed there is NO comparison to make: "scheduled by this date" against "planned
+      // by the data date" are two different questions, and a variance between them is a number that
+      // means nothing. The tick and the pp figure are withheld rather than computed anyway.
+      var pp = scrubbed ? null : _vsPlanPct(card.list);
       var sp = _vsSpan(card.list);
       var gap = (pp == null) ? null : (ap - pp);
       wrap.innerHTML =
@@ -13274,11 +13469,18 @@
             '<button id="ps-vs-fzin" title="Zoom in">+</button></span>' +
           '<span class="ps-vs-note" id="ps-vs-fzz" style="min-width:44px;text-align:center;">100%</span>' +
           '<span class="ps-vs-seg"><button id="ps-vs-fzfit" title="Fit the whole building in the window (double-click the building does the same)">Fit</button></span>' +
+          '<span class="ps-vs-seg"><button id="ps-vs-fzfs"' + (isMaxed() ? ' class="on"' : '') +
+            ' title="Full screen \u2014 the building gets the whole display. Esc or this button comes back.">' +
+            '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;" aria-hidden="true">' +
+            '<path d="M5.5 1.5h-4v4M10.5 14.5h4v-4M1.5 10.5v4h4M14.5 5.5v-4h-4"/></svg> Full screen</button></span>' +
           '<span class="ps-vs-fz-x"><button class="pd-btn" id="ps-vs-fzx">Close</button></span>' +
         '</div>' +
         '<div class="ps-vs-fz-stage" id="ps-vs-fz-stage">' +
+          // ⚠️ A real gutter between the two windows, not the 1px border the first cut had — see the
+          // note on .ps-vs-fz-div for why it is decorative rather than draggable.
           panes.map(function (p, i) {
-            return '<div class="ps-vs-fz-pane"><div class="ps-vs-fz-panelab">' +
+            return (i ? '<div class="ps-vs-fz-div" aria-hidden="true"></div>' : '') +
+              '<div class="ps-vs-fz-pane"><div class="ps-vs-fz-panelab">' +
               '<span class="sw" style="background:' + (cmp ? (i === 0 ? 'var(--pd-muted)' : card.color) : card.color) + '"></span>' + esc(p.lab) + '</div>' +
               '<div class="ps-vs-fz-vp" data-fzvp="' + i + '"><div class="ps-vs-fz-canvas" data-fzc="' + i + '"></div>' +
               (i === 0 ? '<div class="ps-vs-fz-hint">scroll = zoom · drag = pan · double-click = fit</div>' : '') +
@@ -13300,14 +13502,17 @@
               (gap > 0 ? '+' : '') + gap.toFixed(1) + ' pp</span></div>') +
           '</div>' +
           '<div class="ps-vs-fz-barwrap">' +
-            '<div class="ps-vs-fz-bartop"><strong>' + ap + '%</strong> actual' +
-              (pp == null ? ' <span>· no baseline to compare against</span>' : ' <span>· ' + pp + '% planned by the data date</span>') + '</div>' +
+            '<div class="ps-vs-fz-bartop"><strong>' + ap + '%</strong> ' + (scrubbed ? 'scheduled by this date' : _vsProgressWord()) +
+              (scrubbed ? ' <span>· modelled from the activities\u2019 dates, not recorded history</span>'
+                        : (pp == null ? ' <span>· no baseline to compare against</span>'
+                                      : ' <span>· ' + pp + '% planned by the data date</span>')) + '</div>' +
             '<div class="ps-vs-fz-bar"><div class="fill" style="width:' + Math.max(0, Math.min(100, ap)) + '%"></div>' +
               (pp == null ? '' : '<div class="plan" style="left:' + Math.max(0, Math.min(100, pp)) + '%"></div>' +
                 '<div class="planl" style="left:' + Math.max(0, Math.min(100, pp)) + '%">plan</div>') +
             '</div>' +
           '</div>' +
           '<div class="ps-vs-fz-read" id="ps-vs-fz-read"></div>' +
+          _vsFocusScrubHTML(card.list) +
         '</div>';
 
       // ⚠️ The cells map comes from the LAST pane built, and in compare mode that is the actual
@@ -13326,13 +13531,26 @@
         _vsFocus.panes.push({ vp: vp, canvas: canvas, svg: b.svg });
         _vsFocusWirePane(vp, b.svg);
       });
-      _vsFocusReadout();
-      // Measured after layout: a getBoundingClientRect taken before the modal has been laid out
-      // reports 0 and the fit silently does nothing.
-      requestAnimationFrame(function () { _vsFocusFit(); });
+      if (prev) {
+        _vsFocus.z = prev.z; _vsFocus.px = prev.px; _vsFocus.py = prev.py;
+        _vsFocusApply();
+        // ⚠️ hoverKey is forced to undefined first, or _vsFocusHover's own "same key, nothing to do"
+        // guard would skip re-marking the zone in the freshly rebuilt svgs and the outline would
+        // vanish on the first scrub.
+        var hk = prev.hoverKey; _vsFocus.hoverKey = undefined; _vsFocusHover(hk == null ? null : hk);
+      } else {
+        _vsFocusReadout();
+        // Measured after layout: a getBoundingClientRect taken before the modal has been laid out
+        // reports 0 and the fit silently does nothing.
+        requestAnimationFrame(function () { _vsFocusFit(); });
+      }
+      _vsFocus.rebuild = function () { build(true); };
+      _vsFocusWireScrub(wrap, card.list);
 
       wrap.querySelector('#ps-vs-fzx').onclick = function () { m.close(); };
       wrap.querySelector('#ps-vs-fzfit').onclick = function () { _vsFocusFit(); };
+      var fsB = wrap.querySelector('#ps-vs-fzfs');
+      if (fsB) fsB.onclick = function () { _vsFocusFullscreen(boxEl, fsB); };
       wrap.querySelector('#ps-vs-fzin').onclick = function () { _vsFocusCentreZoom(1.25); };
       wrap.querySelector('#ps-vs-fzout').onclick = function () { _vsFocusCentreZoom(1 / 1.25); };
       wrap.querySelector('#ps-vs-fzcmp').onclick = function () {
@@ -13346,7 +13564,14 @@
     var onKey = function (e) { if (e.key === 'Escape') m.close(); };
     document.addEventListener('keydown', onKey);
     var _close = m.close;
-    m.close = function () { document.removeEventListener('keydown', onKey); _vsFocus = null; _close(); };
+    m.close = function () {
+      document.removeEventListener('keydown', onKey);
+      // Leaving full screen with the modal still open would strand the page in it.
+      if (document.fullscreenElement === boxEl && document.exitFullscreen) { try { document.exitFullscreen(); } catch (e) {} }
+      var moved = (_vsAsOf !== _asOfOnOpen);
+      _vsFocus = null; _close();
+      if (moved) renderVStack();   // once, so the stack behind agrees with the date you left on
+    };
   }
   function _vsFocusCentreZoom(f) {
     var F = _vsFocus; if (!F || !F.panes.length) return;

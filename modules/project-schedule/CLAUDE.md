@@ -1,3 +1,77 @@
+## Focus window round 2: the zoom is crisp, the bar drags, and it goes full screen (2026-09-02) — fmlozano
+
+Owner, on the shipped focus window: *"the quality is too low, and can you enlargen the divider between
+the planned and actual. now also the progress bar below should be working or has a dragger. In
+addition, is there an option where you can full screen. so it is better for the eye."* Four items, and
+the first was a genuine defect rather than a preference.
+
+**⚠️⚠️ "The quality is too low" was CSS `transform: scale()` stretching a bitmap, and it was mine.**
+The canvas was promoted to its own compositing layer and rasterised at 1:1; a transform scale then
+blows that raster up, so at the owner's 180% every zone date and every stroke was a magnified 1x
+image. The zoom is now the **svg's own `width`/`height`** (the viewBox is untouched, so the content
+re-renders as vector at the new size) and the transform carries **translate only**. Text is as sharp
+at 400% as at 100%, which is the entire reason this view is SVG and not canvas. ⚠️ Pan stays a
+transform — translate never rasterises at the wrong resolution, and moving a laid-out element every
+frame is what keeps the drag smooth. Asserted both ways: the svg's width triples with the zoom, and
+the transform string contains no `scale(`.
+
+**The divider is a real 16px gutter** with a centre rule and a grip, not the 1px border it was — at
+one pixel the two buildings read as one wide picture, which defeats the split. ⚠️ **Decorative, NOT
+draggable, deliberately:** the shared transform is only truthful while the panes are equal width (one
+fit measurement is true of both). Let someone drag it and the two windows show different portions of
+their buildings while still claiming to be synced — a silent wrong answer, which is worse than a
+fixed split. It rotates to a horizontal rule when the panes stack on a phone.
+
+**The frozen row's progress bar is now a scrubber** — a handle, month/year ticks, the data date
+marked, ‹ › month steps and **Live**. Dragging it re-reads both buildings at that date.
+⚠️⚠️ **MODELLED, NOT REPLAYED**, and the label says so: the database keeps ONE `percent_complete` per
+activity — today's — so a scrubbed cell answers *"what is scheduled to be done by this date"*, never
+*"what was done"*. A building filling up as you drag looks exactly like recorded history. Same rule
+and same wording as the main view's own time bar.
+- ⚠️ **The axis is measured at the ACTUAL basis whatever the panes show.** In compare mode the two
+  panes have two different spans (baseline vs current), and a scrubber whose axis flipped with the
+  pane would put the same date in two different places on the same track.
+- ⚠️ **A scrub keeps the zoom, the pan and the hovered zone** — it must move the progress, not throw
+  away where the planner had navigated to. `hoverKey` is forced to `undefined` before re-marking, or
+  `_vsFocusHover`'s own same-key guard skips the freshly rebuilt svgs and the outline vanishes.
+- ⚠️ **The drag captures the track's rect at pointerdown.** The track is replaced by every repaint, so
+  anything measured per-move against the live element jumps the instant the first frame lands.
+- ⚠️ **`_vsAsOf` is module-level, so the stack underneath goes stale the moment it moves.** It is
+  re-rendered **once, on close** rather than per frame: the main stack is every tower at every trade,
+  and repainting it behind a modal nobody can see through is work paid for by a planner scrubbing one
+  building.
+
+**⚠️⚠️ A REAL DEFECT THE BROWSER RUN FOUND AND READING DID NOT: the bar under the buildings did not
+move with them.** The footer read `_vsPct` — the raw recorded figure, which ignores the scrubber — so
+the frozen row went on reporting today's percentage while the towers above it re-read at the scrubbed
+date. A summary contradicting the cells it summarises, which is the exact trap this module's log
+already records once. It reads `_vsProgress` now — the same function the towers are drawn from, so
+the two cannot disagree. ⚠️ And while scrubbed the planned tick and the **pp** figure are **withheld**
+rather than computed anyway: "scheduled by this date" against "planned by the data date" are two
+different questions, and a variance between them is a number that means nothing.
+
+**Full screen** on the header. ⚠️ **Two mechanisms, and both are needed.** The Fullscreen API is
+requested on the **modal box**, so the overlay's dimming does not travel with it — hence the box
+paints its own edge-to-edge geometry under `:fullscreen`. And a context that refuses the API (an
+iframe, a permissions-policy) must still get the benefit, so an in-page `.is-maxed` class does the
+same thing as the fallback. ⚠️ The button's lit state is written from **what actually happened**,
+never from intent, and the panes have changed size so the fit is re-run on the frame after the box
+settles. ⚠️ Closing the modal exits full screen, or the page is stranded in it.
+
+**Verified: 29 checks in Node + 67 in a real browser** (was 26 + 39), both executing the SHIPPED
+functions sliced out of `index.html`, never reimplemented. New coverage: the svg resizing with the
+zoom while the transform stays scale-free, the divider's width and that it sits **between** the panes
+(and that there is exactly one, never a leading one), the handle's grab cursor, the scrubber living
+inside the frozen row, a real drag setting the date and re-reading both the buildings and the bar,
+the zoom/pan surviving a scrub, Live restoring, and full screen filling the viewport through the
+fallback path with the frozen row still on screen. **0 functions lost**; parses; 0 NUL bytes; CSS
+braces balanced; every new class has an emitter.
+
+⚠️ **Not verified signed in** — the buildings under test come from a stub with the shape
+`_vsTowerSVG` emits, so nothing here has been driven over live rows. ⚠️ **The real Fullscreen API
+path is untested**: the harness forces the fallback, because a headless run cannot grant fullscreen
+from a synthetic click. `MODULE_V` → `20260902ag`.
+
 ## Vertical stacking: expand a tower into a focus window, and put planned beside actual (2026-09-02) — fmlozano
 
 Owner: *"for this vertical stacking view, is there a way or can you make it more visually pleasing and
