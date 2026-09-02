@@ -889,9 +889,15 @@ window.PPR = (function () {
           // when on, matching the shared Gallery markup toggle's own styling
           // convention (module.js's #pp-mkvistoggle). A read, never gated by
           // canWrite, same as Download beside it.
+          // Icon mirrors the eye/eyeOff convention module.js's own markup
+          // toggles use (#pp-mkvistoggle, #pp-lb-markuptoggle) — a pencil
+          // read as "edit", not "show/hide", and the whole header re-renders
+          // fresh on every toggle (renderSlides() above), so the icon name
+          // simply follows showPhotoMarkup in the template rather than
+          // needing a separate live-DOM patch step.
           '<button class="pp-iconbtn' + (showPhotoMarkup ? ' is-active' : '') + '" id="ppr-photomk-toggle" ' +
             'title="Show/hide each photo\'s own markup">' +
-            '<span data-ico="pencil" data-ico-size="15"></span></button>' +
+            '<span data-ico="' + (showPhotoMarkup ? 'eye' : 'eyeOff') + '" data-ico-size="15"></span></button>' +
           // Item 11: "there should be a button at the top right corner to
           // hide or show key plans" — ONE button for the whole slide
           // (replacing item 21's two independent per-pane ppr-kp-<which>
