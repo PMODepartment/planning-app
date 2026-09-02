@@ -27969,8 +27969,22 @@
     if (_catExecKey === key && _catExecCache !== null) return _catExecCache;
     var any = false;
     for (var i = 0; i < rows.length; i++) { if (!isWbs(rows[i]) && phaseOf(rows[i])) { any = true; break; } }
-    _catExecKey = key; _catExecCache = any;
-    return any;
+    // ⚠⚠ "NOTHING RESOLVED" AND "NOTHING LOADED" ARE DIFFERENT ANSWERS, and conflating them is what
+    // the owner kept seeing. `phaseOf()` reads through `WBS_NODES`, which `load()` fetches only AFTER
+    // the cached paint — so on that paint no row resolves a phase, the old test concluded "this
+    // project does not use phases", and the fallback coloured EVERYTHING. On 4PH Strevi that is a
+    // ~500-entry key of Closeout and Planning work, on screen for as long as the live fetch of 28,958
+    // rows takes — tens of seconds, not the 3.3s measured on a small project. Owner, three times:
+    // *"Closeout phase activities in the legend are still showing the colour activities."*
+    // ⚠️ So the fallback now requires PROOF: it fires only when the tree IS loaded and still nothing
+    // resolves a phase, which is the genuinely-unphased project it was written for. With the tree
+    // absent the answer is unknown, and the safe unknown is SCOPED — an empty key that says
+    // "No Execution Phase activities yet" for a few seconds, rather than a wrong key of the very
+    // activities the owner asked to exclude. Under-colouring is explained on screen; over-colouring
+    // is indistinguishable from the feature being broken.
+    var ans = any || !(WBS_NODES && WBS_NODES.length);
+    _catExecKey = key; _catExecCache = ans;
+    return ans;
   }
   function catInScope(r) { return !catScopeIsExec() || isExecPhase(r); }
   function catEntry(r) {

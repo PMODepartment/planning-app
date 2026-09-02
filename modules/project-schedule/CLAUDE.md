@@ -1,3 +1,52 @@
+## "Nothing resolved" and "nothing loaded" are different answers (2026-09-02u) — fmlozano
+
+Owner, third report of the same symptom: *"Closeout phase activities in the legend are still showing
+the colour activities. Let's scope the colour only for activities in the execution phase."*
+
+### Measured on the live project, both paints
+The scoping itself was never broken. `phaseOf` resolves those rows correctly — walked their node
+chains in the database: *Commercial Closeout → Tower 2 → Partial Closeout* → **`closeout`**, never
+`construction`. And once the tree is loaded the legend is right:
+
+| stage | legend |
+|---|---|
+| cached paint | **4 Closeout chips**, and NO plain-Activity chip — i.e. everything was in scope |
+| after the tree loads | **40 execution chips** + *"Activity outside the Execution Phase"* |
+
+⚠️ **The absent plain-Activity chip is the tell.** It is emitted only when a task on screen is OUT of
+scope, so its absence proves `catInScope()` was answering true for Closeout work — the fallback was
+on.
+
+### ⚠️⚠️ The defect
+`catScopeIsExec()` asked *"does any row resolve a phase?"* and treated **no** as *"this project does
+not use phases"*. But `phaseOf()` reads through `WBS_NODES`, which `load()` fetches **after** the
+cached paint — so on that paint the answer is not "no phases", it is **"not loaded yet"**, and the
+fallback coloured everything.
+
+⚠️ **And the window is not the 3.3s measured in (m).** It lasts as long as the live fetch of 28,958
+rows — tens of seconds on this project, which is why it read as a permanent bug rather than a flicker.
+⚠️ The persisted hint from (n) did not save it either: the stored value was a legitimate `false`,
+written while the activities were unlinked and genuinely nothing resolved a phase.
+
+### The fix, and the trade it makes
+The fallback now demands **proof**: it fires only when the tree **is** loaded and still nothing
+resolves a phase — the genuinely-unphased project it was written for. With the tree absent the answer
+is unknown, and **the safe unknown is SCOPED**.
+
+⚠️ **This is the trade (m) considered and declined, taken deliberately now.** On a cached paint no row
+can resolve a phase, so scoping on means **nothing is coloured for those seconds** and the key reads
+*"No Execution Phase activities yet — the colour key covers execution work only."* Under-colouring
+is explained on screen; over-colouring is indistinguishable from the feature being broken, and it put
+the exact activities the owner asked to exclude in front of them three times.
+
+⚠️ **Consequence for (n):** the persisted `catScope` hint now only does real work for the **unphased**
+case. A stored `true` changes nothing, because with no tree nothing resolves as execution either way.
+The flicker for a normal project is now *empty → correct* rather than *wrong → correct*.
+
+- `MODULE_V` → `20260902u`.
+
+---
+
 ## Schedule Builder: a step for the phases either side of construction (2026-09-02) — eprobles
 
 Owner: *"i was thinking for the schedule builder, make it that the schedule builder has another step,
@@ -66,7 +115,6 @@ finish precedes its start and break the chain for everything after it. Legacy se
 saved recipe, which they would then push without noticing, is not a default anyone asked for.
 
 ---
-
 ## Every activity is linked — and adopting twice duplicated 5,850 nodes (2026-09-02r) — fmlozano
 
 Owner ran `2026-09-02-wbs-link-batched.sql` and clicked **Adopt existing WBS** again.
