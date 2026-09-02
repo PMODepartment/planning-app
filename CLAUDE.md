@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (s) — Schedule Builder: a step for the phases either side of construction
+Owner: *"make it that the schedule builder has another step, being able to add phases like the initiation
+phase planning phase etc. and the established as of now, that is only applicable for the execution phase."*
+- New **step 8 · Project phases**. Everything the other steps build IS the Execution Phase, so this step
+  adds **Initiation / Planning / Close-out** as a flat list of activities with durations — no location, no
+  contract scope, nothing to repeat per zone.
+- ⚠️⚠️ **Only four phase codes exist**: `project_schedule.phase` carries a 4-value CHECK, and the push drops
+  the phase column *wholesale* on a phase error — so one invented lifecycle name would silently strip the
+  phase off every row in the push. Another phase is a migration, not a list edit.
+- Dates chain finish-to-start in calendar days (the arithmetic `generate()` uses). The **before** phases are
+  back-scheduled onto the execution start, Close-out picks up after the execution finish, so the programme
+  reads continuously. Reordering a row re-dates the phase — the order *is* the chain.
+- ⚠️⚠️ The branches are pushed as **siblings** of the Execution Phase, never children: `phaseOf()` inherits
+  from the nearest tagged ancestor, so filing Initiation under it would make the charter construction work.
+  On a package push they land under that package's root, so each lot keeps its own lifecycle.
+- ⚠️ The WBS-Summary payload's hard-coded `phase: 'construction'` is now `nd.phase || 'construction'` — the
+  branch's phase is what every activity under it inherits.
+- ⚠️ `normalize()` rebuilds cfg from `blank()` and copies only known keys, so it had to learn `phases` or the
+  step would work all session and be empty tomorrow. Legacy setups open with every phase **off**.
+- MODULE_V → `20260902s`.
+
 ### 2026-09-02 (r) — Every activity is linked; adopting twice duplicated 5,850 nodes
 
 Owner ran the batched-link migration and clicked Adopt existing WBS again. Detail in

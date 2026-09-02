@@ -1,3 +1,72 @@
+## Schedule Builder: a step for the phases either side of construction (2026-09-02) — eprobles
+
+Owner: *"i was thinking for the schedule builder, make it that the schedule builder has another step,
+being able to add phases like the initiation phase planning phase etc. and the established as of
+now, that is only applicable for the execution phase."*
+
+New **step 8 · Project phases**, between Stacking and Generate. Everything the other steps build IS
+the Execution Phase — trades, floors, zones, links and stacking only ever describe construction — so
+this step adds the rest of the lifecycle as a flat list per phase: **Initiation**, **Planning**,
+**Close-out**, each an activity name and a duration.
+
+**Why they are not generated.** There is nothing about a charter, a permit or a turnover that repeats
+per floor or per zone, so a generator would have nothing to iterate. They carry **no location** (an
+Initiation activity with a floor value would appear as a storey in the vertical stacking) and **no
+contract scope** (scope is execution-only by design — "is the design review a variation?" is the
+question that column refuses to ask).
+
+⚠️⚠️ **THE FOUR CODES ARE ALL THERE ARE.** `project_schedule.phase` carries a 4-value CHECK
+constraint — `initiation / planning / construction / closeout`. So this step cannot offer
+"Monitoring & Control" or any other lifecycle name, however reasonable: a fifth value would be
+rejected by the insert, and because the push drops the phase column **wholesale** on a phase error
+(`_dropScope`), one invented code would silently strip the phase off *every row in the push*. Adding
+a phase is a migration, not a list edit.
+
+**The dates.** `sbPhasePlan` chains each phase's activities finish-to-start in **calendar days** —
+the same arithmetic `generate()` uses; two day models in one pushed schedule would show up as phases
+that miss the execution window they were measured against. The **before** block is *back-scheduled*:
+the last before-phase ends the day before execution starts, and each earlier one ends the day before
+the next begins, so the programme reads continuously instead of as blocks with gaps nobody chose.
+Close-out picks up the day after the execution finish. Reordering a row re-dates the phase, because
+the order **is** the chain.
+
+**On push:**
+- ⚠️⚠️ **SIBLINGS OF THE EXECUTION PHASE, NEVER CHILDREN.** `parentCode` is always `execPhaseCode()`,
+  so `baseNodeId` *is* the Execution Phase branch — filing Initiation under it would make the charter
+  construction work by inheritance (`phaseOf` reads the nearest tagged ancestor), which is the exact
+  mistake this step exists to avoid. Their parent is that branch's own parent (`__phaseparent__`),
+  resolved **before** the depth loop: the project root normally, the package root on a package push,
+  so each lot keeps its own lifecycle. `null` is a legitimate answer and means top level to both the
+  insert and `existingChild()`.
+- Each branch is an ordinary `nodeDesc`, so it inherits the whole machinery free: one insert per
+  depth, **idempotent reuse** (a re-push does not create a second "Planning Phase"), the
+  partial-tree rollback, and the dotted-code fallback for a pre-`wbs_nodes` database.
+- ⚠️ **The WBS-Summary payload was hard-coded `phase: 'construction'`** — true while the builder only
+  built one phase. It is `nd.phase || 'construction'` now: the phase on the BRANCH is what every
+  activity under it inherits, so the literal would have filed the Close-out branch as construction
+  and pulled its work into every execution-only view.
+- ⚠️ **A flat push still writes them.** No branches exist there, but dropping phases the planner
+  ticked because of a WBS setting would lose real data — they go in as flat rows still carrying their
+  own `phase` code, so phase grouping and the "Execution Phase only" toggle read them correctly.
+- Predecessors chain each phase **internally only**. The link to construction is expressed by the
+  dates, not a relationship: execution predecessors are generated from zone links and there is no
+  single execution start activity to hang a phase off, so inventing one would be a guess with a
+  critical path attached.
+- The push dialog **says** how many lifecycle activities and branches are coming, before the push —
+  three new top-level branches appearing unannounced is the "where did these come from" surprise the
+  package warning beside it already exists to prevent — and the completion summary counts them
+  separately, from the payload rather than the config.
+
+⚠️⚠️ **`normalize()` had to learn the key.** It rebuilds `cfg` from `blank()` and copies only what it
+knows, so without a clause there the phases would work all session and be **gone tomorrow**. Only
+the three non-execution codes are accepted (a stale or hand-edited key cannot introduce a phase the
+insert would reject), and durations are clamped to ≥ 1 — a zero-day activity would push a row whose
+finish precedes its start and break the chain for everything after it. Legacy setups have no
+`phases` key at all and open with every phase **off**: turning three phases on inside somebody's
+saved recipe, which they would then push without noticing, is not a default anyone asked for.
+
+---
+
 ## Every activity is linked — and adopting twice duplicated 5,850 nodes (2026-09-02r) — fmlozano
 
 Owner ran `2026-09-02-wbs-link-batched.sql` and clicked **Adopt existing WBS** again.
