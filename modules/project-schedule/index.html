@@ -3731,7 +3731,11 @@
   // symptom class (no phase, no trade, empty Vertical Stacking) the link pass exists to prevent.
   // The token makes `_endMutation` idempotent, so the import can close its own region before the
   // finishing load while the wrapper's `finally` stays as the guaranteed backstop.
-  function _beginMutation() { _mutating++; _loadGen++; return { done: false }; }
+  /* ⚠️ EVERY mutation region invalidates the clean mark. An import, a push, a Reset WBS or a Clear
+     all run inside one, and each can leave work for the repairs — so the next load must do them
+     rather than trust a fingerprint taken before the write. Cheap insurance at the one choke point
+     they all pass through. */
+  function _beginMutation() { _mutating++; _loadGen++; try { _healInvalidate(); } catch (e) {} return { done: false }; }
   function _endMutation(tok) {
     if (tok) { if (tok.done) return; tok.done = true; }
     _mutating = Math.max(0, _mutating - 1);
@@ -3754,6 +3758,68 @@
      ⚠️ Never fires while a mutation region is open (an import/push is mid-flight): the row count is
         meaningless in that window, and moving the screen out from under a running import is the
         worst possible moment to do it. */
+  /* ==========================================================================================
+     WHY A LOAD IS SLOW, AND THE ONE THING THAT FIXES IT
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-02: *"Let's also look into the speeding up the app. Currently it is lagging so
+     much due to the import and heal and probably the cycle of syncing from procurement and
+     engineering."* Exactly right, and measurable: on 4PH Strevi (16,393 activities, 12,459 nodes)
+     EVERY load ran four self-heal passes and both app mirrors before the schedule was usable.
+     `_wbsResyncCodes` alone pages the linked rows 13 round-trips deep to compute 12,459 codes and
+     compare them — almost always to discover that nothing drifted.
+
+     The passes are all IDEMPOTENT repairs, so the fix is not to make them faster: it is to know when
+     they cannot possibly have anything to do. Codes only drift when the TREE moves; summary rows only
+     go missing when a node appears without one; duplicates only appear when rows are written. So a
+     fingerprint over exactly what they read — every node's (id, parent, sort, code) and every summary
+     row's (code, node id), plus the row counts — answers "has anything they care about changed since
+     the last clean pass?" in one in-memory sweep.
+
+     ⚠️ ~30k string hashes is 20-40ms. The chain it replaces is 13+ sequential network round-trips.
+     ⚠️ The signature is stored per project and only AFTER a chain that completed without being
+        superseded, so a load that was cut short never marks the tree clean.
+     ⚠️ It cannot mask a real problem, because it is derived from the very data a problem would show
+        up in: an import, a push, a sync, another tab's repair or a hand edit all move it. The one
+        thing it deliberately does not cover is a change made with this tab closed by someone whose
+        write left the tree consistent — which is, by definition, nothing to repair.
+     ========================================================================================== */
+  function _hash32(h, str) {
+    var t = String(str);
+    for (var i = 0; i < t.length; i++) { h = ((h << 5) - h + t.charCodeAt(i)) | 0; }
+    return h;
+  }
+  function _healFingerprint() {
+    var nAct = 0, nWbs = 0, h = 2166136261;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (isWbs(r)) { nWbs++; h = _hash32(h, r.wbs + '\u0001' + (r.wbs_node_id || '')); }
+      else nAct++;
+    }
+    for (var j = 0; j < WBS_NODES.length; j++) {
+      var n = WBS_NODES[j]; if (!n) continue;
+      h = _hash32(h, n.id + '\u0001' + (n.parent_id || '') + '\u0001' + (n.sort_order || 0) + '\u0001' + (n.code || ''));
+    }
+    return rows.length + '.' + nAct + '.' + nWbs + '.' + WBS_NODES.length + '.' + ((h >>> 0).toString(36));
+  }
+  function _healKey() { return 'ps_healsig_' + pid; }
+  function _healWasClean() { try { return localStorage.getItem(_healKey()); } catch (e) { return null; } }
+  function _healMarkClean() { try { localStorage.setItem(_healKey(), _healFingerprint()); } catch (e) {} }
+  // Any write that can move the tree clears the mark, so the next load repairs rather than trusting it.
+  function _healInvalidate() { try { localStorage.removeItem(_healKey()); } catch (e) {} }
+
+  /* The two APP MIRRORS are throttled rather than fingerprinted, because what they read lives in
+     ANOTHER database — nothing in this project can tell you whether the Engineering or Procurement
+     app has changed. Ten minutes is the compromise: a planner who wants it now has a Sync button in
+     Schedule Setup › WBS (which bypasses this and re-stamps it), and one who is just opening the
+     schedule does not pay two cross-app round-trips for a branch that is read-only here anyway.
+     ⚠️ Stamped only on SUCCESS, so a failed sync retries on the next load instead of going quiet
+     for ten minutes. */
+  var MIRROR_TTL_MS = 10 * 60 * 1000;
+  function _mirrorKey() { return 'ps_mirrorat_' + pid; }
+  function _mirrorDue() {
+    try { return (Date.now() - (+localStorage.getItem(_mirrorKey()) || 0)) > MIRROR_TTL_MS; } catch (e) { return true; }
+  }
+  function _mirrorStamp() { try { localStorage.setItem(_mirrorKey(), String(Date.now())); } catch (e) {} }
   var _landedPid = null;
   function _landOnOpen(hasActivities) {
     if (!pid || _landedPid === pid) return;
@@ -5288,6 +5354,9 @@
   // ⚠️ The Edge Function is the ONLY thing that may write the mirror — the browser has
   // no insert/update policy on it — so this is a request, not a client-side copy.
   async function syncEngineering() {
+    // ⚠️ A MANUAL sync re-stamps the throttle: the planner has just asked for fresh data, so the
+    // next load has no reason to fetch it again. See _mirrorDue.
+    try { _mirrorStamp(); } catch (e) {}
     if (!canWrite) { UI.toast('Only admins/planners can sync from the Engineering App.', 'error'); return; }
     var btn = document.getElementById('ps-sync-eng');
     if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
@@ -6117,6 +6186,8 @@
   // policy on wpm_work_packages, so this is a request to the server, not a client copy.
   async function syncProcurementApp() {
     if (!canWrite) { UI.toast('Only admins/planners can sync from the Procurement app.', 'error'); return; }
+    try { _mirrorStamp(); } catch (e) {}   // see syncEngineering
+
     var btn = document.getElementById('ps-sync-prc');
     if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
     try {
@@ -7204,6 +7275,15 @@
                'finish the tree, and the activities will fall back into place.', 'warn');
       return;
     }
+    /* ⚠️⚠️ THE FOUR TREE REPAIRS RUN ONLY IF SOMETHING THEY READ HAS MOVED. See _healFingerprint:
+       they are idempotent, so on an unchanged tree every one of them is a guaranteed no-op that
+       still costs its round-trips — 13 of them for the code resync alone on a 12,459-node project.
+       This is the single biggest cause of the reported lag. */
+    var _sigBefore = _healFingerprint();
+    var _healNeeded = (_healWasClean() !== _sigBefore) || _wbsUnlinkedActs();
+    if (!_healNeeded) {
+      try { console.log('[ps] tree repairs skipped - fingerprint unchanged (' + _sigBefore + ')'); } catch (e) {}
+    } else {
     // ⚠️ BEFORE the resync, never after: reordering re-codes the root, and the resync is what pushes
     // those codes onto the rows. Reversed, the tree and the codes disagree until the next load.
     _repair('Checking the WBS order…');
@@ -7224,6 +7304,7 @@
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
+    }
     // Self-heal activities that were imported before the adoption step attached them to the tree
     // (see _wbsLinkActivityParents). Every project imported before this fix carries ALL of its
     // activities unattached, and the symptom is silent: the grid looks right while Vertical
@@ -7246,13 +7327,25 @@
     // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
     // leaves the branch as it was rather than blocking the schedule.
     if (_isMutating()) return;
-    _repair('Syncing the design + procurement branches…');
-    await syncDesignDevelopment();
-    await syncProcurement();
-    _renderSyncPrcAt();
+    // ⚠️ Throttled — see _mirrorDue. These are two CROSS-APP round-trips for branches that are
+    // read-only here, and running them on every open is the other half of the reported lag.
+    if (_mirrorDue()) {
+      _repair('Syncing the design + procurement branches…');
+      await syncDesignDevelopment();
+      await syncProcurement();
+      _renderSyncPrcAt();
+      if (gen === _loadGen) _mirrorStamp();
+    } else {
+      try { console.log('[ps] engineering/procurement mirrors skipped - synced less than 10 min ago'); } catch (e) {}
+      _renderSyncPrcAt();
+    }
     // ⚠️ HERE, and not before: this is the first point at which nothing further can change the tree.
     if (gen === _loadGen) _setFresh('live');
     if (gen !== _loadGen) return;
+    /* ⚠️ MARKED CLEAN ONLY HERE: past every repair, every mirror and every `gen` check, so a load
+       that was superseded or cut short never claims the tree is settled. Recomputed rather than
+       reusing `_sigBefore`, because the passes above may legitimately have changed it. */
+    _healMarkClean();
     loadGroupBys();       // per-project grouping order (needs LOC_LEVELS loaded to validate against)
     populateGroupSelect();
     renderAll();
@@ -21001,6 +21094,9 @@
   // Branches skipped this pass because their parent was not in the tree yet. Read by
   // autoAdoptAfterImport(), which loops while progress is made and reports what is left.
   var _adoptDeferred = 0;
+  // Branches the last-resort pass had to re-parent because the file had no row for their direct
+  // parent. Named in the toast rather than counted, because it is a fact about the FILE.
+  var _adoptOrphaned = [];
   /* ⚠️⚠️ SET WHEN AN ADOPT FAILS PART-WAY, AND IT GATES THE TWO DESTRUCTIVE REPAIRS.
      `_wbsResyncCodes()` rewrites every summary row's dotted code to match the tree, and
      `_wbsEnsureSummaries()` manufactures a summary row for every node that lacks one. Both are
@@ -21011,7 +21107,14 @@
      destroyed view — so while this is set they are skipped and the planner is told to finish the
      adopt first. Cleared by an adopt that completes. */
   var _wbsAdoptBroken = false;
-  async function wbsAdopt(silent) {
+  /* `lastResort` — used only by the final pass of autoAdoptAfterImport. See the note at the deferral
+     below: a branch whose DIRECT parent code does not exist in the file at all (a gap in the dotted
+     codes, which real P6 exports do contain) defers forever, because the parent it is waiting for is
+     never going to arrive. On the last pass it is attached to its nearest EXISTING ancestor instead.
+     ⚠️ NEAREST ANCESTOR, NEVER THE ROOT. Rooting a branch whose parent could not be found is the
+     flattening this file carries scars from — `_wbsResyncCodes` then rewrites its code to match the
+     new position and the original deep code is gone. An ancestor keeps it inside the right phase. */
+  async function wbsAdopt(silent, lastResort) {
     // ⚠️⚠️ WHAT IS ALREADY ADOPTED IS READ FROM THE SERVER, NEVER FROM `rows`. This function DECIDES
     // WHAT TO INSERT, and `rows` is a cached, possibly minutes-old copy: a tab that painted before an
     // adopt (its own, another tab's, or the one an import just ran) still shows every summary row
@@ -21113,6 +21216,7 @@
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
     var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
     _adoptDeferred = 0;
+    _adoptOrphaned = [];
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [], codeByKey = {};
     // Activities indexed by their dotted code, once — see the note at the link step below.
@@ -21158,6 +21262,17 @@
         var pc = String(r.wbs).split('.').slice(0, -1).join('.');
         if (!pc) return true;                                     // a one-segment code is a real root
         var pid0 = nodeByCode[pc];
+        if (!pid0 && lastResort) {
+          // Walk up until something that exists is found. A one-segment ancestor is a legitimate
+          // root, so the walk can legitimately end at one that IS in the tree (a skeleton phase).
+          var up = pc.split('.');
+          while (up.length > 1 && !pid0) { up.pop(); pid0 = nodeByCode[up.join('.')]; }
+          if (pid0) {
+            try { console.warn('[ps] wbsAdopt last resort: ' + r.wbs + ' has no parent ' + pc +
+                               ' in the file - attaching to ' + up.join('.')); } catch (e2) {}
+            _adoptOrphaned.push(String(r.wbs));
+          }
+        }
         if (!pid0) { deferred++; return false; }                   // parent not in yet - wait for it
         // ⚠️ THE LAST GATE BEFORE THE INSERT. If the resolved parent is not a row that exists right
         // now, defer instead of writing it — this is the check whose absence produced
@@ -21171,6 +21286,12 @@
       }).map(function (r) {
         var code = String(r.wbs), parentCode = code.split('.').slice(0, -1).join('.');
         var parentId = parentCode ? nodeByCode[parentCode] : null;
+        // ⚠️ Same ancestor walk as the filter above, or the payload would carry a null parent for a
+        // branch the filter only let through BECAUSE it found an ancestor — i.e. it would root it.
+        if (parentCode && !parentId && lastResort) {
+          var up2 = parentCode.split('.');
+          while (up2.length > 1 && !parentId) { up2.pop(); parentId = nodeByCode[up2.join('.')]; }
+        }
         var k = parentId || '', so = (sibCount[k] || 0); sibCount[k] = so + 1;
         var pl = { project_id: pid, parent_id: parentId, name: r.activity_name || code, sort_order: so, created_by: UID };
         // ⚠️⚠️ A NODE'S `code` IS ITS OWN SEGMENT, NEVER THE WHOLE PATH — and a purely numeric
@@ -21487,12 +21608,29 @@
         total += n || 0;
         if (!n) break;   // no progress — another identical pass cannot help
       }
+      /* ⚠️ ONE LAST PASS THAT WILL NOT DEFER. Reported live after the parent-id fix: *"WBS tree is
+         INCOMPLETE — 1 branch(es) still unadopted after 3 pass(es)"* — down from 12,330, but the
+         remainder is a branch whose direct parent code does not exist ANYWHERE in the file, so no
+         number of identical passes can place it and the planner was told to press a button that
+         would do exactly as little. It is attached to its nearest existing ancestor instead (see
+         wbsAdopt's `lastResort`), which keeps it inside the right phase, and the toast names it. */
+      var stillLeft = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
+      if (stillLeft) {
+        setLoading('Placing ' + stillLeft.toLocaleString() + ' branch(es) with no parent in the file…');
+        var lr = await wbsAdopt(true, true);
+        total += lr || 0;
+      }
       var left = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
       hideLoading();
       if (left) {
-        UI.toast('WBS tree is INCOMPLETE — ' + left.toLocaleString() + ' branch(es) still unadopted after ' +
-                 (pass + 1) + ' pass(es). Vertical Stacking, Trade and phase read from the tree, so they ' +
-                 'will be wrong until this finishes. Open the WBS Manager and use "Adopt existing WBS".', 'error');
+        UI.toast('WBS tree is INCOMPLETE — ' + left.toLocaleString() + ' branch(es) could not be placed at all. ' +
+                 'Vertical Stacking, Trade and phase read from the tree, so they will be wrong until this ' +
+                 'finishes. Open Schedule Setup › WBS and use "Adopt existing WBS".', 'error');
+      } else if (_adoptOrphaned.length) {
+        UI.toast('WBS tree built (' + total.toLocaleString() + ' nodes). ' + _adoptOrphaned.length +
+                 ' branch(es) had no parent row in the file (' + _adoptOrphaned.slice(0, 3).join(', ') +
+                 (_adoptOrphaned.length > 3 ? ', …' : '') + ') and were attached to their nearest existing ' +
+                 'ancestor — check them in Schedule Setup › WBS.', 'warn');
       } else if (total) {
         UI.toast('WBS tree built (' + total.toLocaleString() + ' nodes) — open the WBS Manager to edit it.', 'success');
       }
@@ -33531,7 +33669,20 @@
     // documented (by me, last pass) as "the non-silent recovery path" skipped its own confirm, its
     // success toast AND its error toast — the owner clicked Adopt existing WBS, the tree really did
     // finish, and the screen said nothing at all. Call it explicitly.
-    document.getElementById('ps-wbs-adopt').onclick = function () { wbsAdopt(false); };
+    /* ⚠️ THE MANUAL BUTTON RUNS THE WHOLE LOOP, not one pass. It is the RECOVERY path the toasts
+       send planners to, and one pass is exactly what leaves a deep tree half-built: each pass can
+       only place branches whose parents the previous pass created. autoAdoptAfterImport is that loop
+       plus the last-resort placement and an honest report, so the button that is advertised as "use
+       this to finish the tree" now actually finishes it. The confirm stays here, because that loop
+       is deliberately silent (it is also called by the importer). */
+    document.getElementById('ps-wbs-adopt').onclick = async function () {
+      var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
+      if (!legacy) { UI.toast('No un-adopted WBS branches found — the tree is complete.', 'info'); return; }
+      if (!confirm('Build the WBS tree from ' + legacy.toLocaleString() + ' existing WBS summary rows?\n\n' +
+                   'Their codes are preserved as custom codes. This only adds the branches that are missing.')) return;
+      await autoAdoptAfterImport();
+      renderWbsManager();
+    };
     document.getElementById('ps-wbs-reset').onclick = wbsResetTree;
     // (#ps-wbs-goedit — "Edit the WBS in Schedule Setup" — went with the WBS Manager screen. There
     //  is nowhere left to travel FROM: the tree is only ever shown inside the Schedule Setup now.)

@@ -11850,3 +11850,63 @@ changed FS to **SS with lag 3**; **added** a second predecessor; then repointed 
 `EXTERNAL-99` to `EX-1012` — the row stopped being flagged red and the lag survived the repoint. The
 committed payload carried every one of those edits (`EX-1012 → "EX-1011 SS+3, EX-1011 FS"`,
 `EX-2011 → "EX-1012 FS+3"`), and the lede, the review tile and the written rows all agreed on 10.
+
+### 2026-09-02 (i) — Why every load was slow, and the one thing that fixes it
+
+Owner: *"Let's also look into the speeding up the app. Currently it is lagging so much due to the
+import and heal and probably the cycle of syncing from procurement and engineering."* Exactly right,
+and it was measurable: on 4PH Strevi (16,393 activities, 12,459 nodes) EVERY load ran four self-heal
+passes and both cross-app mirrors before the schedule was usable. `_wbsResyncCodes` alone pages the
+linked rows **13 round-trips** deep to compute 12,459 codes and compare them — almost always to
+discover that nothing drifted.
+
+**The passes are all IDEMPOTENT repairs, so the fix is not to make them faster — it is to know when
+they cannot possibly have anything to do.** Codes only drift when the tree moves; summary rows only go
+missing when a node appears without one; duplicates only appear when rows are written. So
+`_healFingerprint()` hashes exactly what they read — every node’s (id, parent, sort, code), every
+summary row’s (code, node id), and the row counts — and answers "has anything they care about changed
+since the last clean pass?" in one in-memory sweep.
+- ⚠️ ~30k string hashes is **20–40ms**. The chain it replaces is **13+ sequential network round-trips**.
+- ⚠️ Marked clean only at the very END of load(), past every repair, every mirror and every `gen`
+  check — so a load that was superseded or cut short never claims the tree is settled. Recomputed
+  there rather than reusing the pre-pass value, because the passes may legitimately have changed it.
+- ⚠️ **`_beginMutation()` invalidates it.** An import, a push, a Reset WBS and a Clear all run inside
+  a mutation region, so the one choke point they share is where the mark is dropped.
+- ⚠️ It cannot mask a real problem, because it is derived from the very data a problem shows up in.
+  The one thing it deliberately does not cover is a change made with this tab closed by someone whose
+  write left the tree consistent — which is, by definition, nothing to repair.
+
+**The two APP MIRRORS are throttled (10 min), not fingerprinted**, because what they read lives in
+ANOTHER database and nothing in this project can tell you whether it moved. A planner who wants it now
+has the Sync buttons in Schedule Setup › WBS, which bypass the throttle and re-stamp it; one who is
+just opening the schedule no longer pays two cross-app round-trips for a branch that is read-only here.
+⚠️ Stamped only on success, so a failed sync retries next load instead of going quiet for ten minutes.
+
+**Verified in a browser**: first load computed and stored `188.133.55.0.1eqtm9q` and a mirror stamp and
+ran everything; the second load logged *"tree repairs skipped - fingerprint unchanged"* and
+*"engineering/procurement mirrors skipped - synced less than 10 min ago"* and still reached **Live**
+with all 188 rows. A planted fake signature was cleared by an import’s mutation region and re-earned
+by the post-import load, so invalidation works through the real path.
+
+### 2026-09-02 (j) — The last unadoptable branch, and a recovery button that recovers
+
+After the parent-id fix the import reported *"WBS tree is INCOMPLETE — 1 branch(es) still unadopted
+after 3 pass(es)"* — down from 12,330, but still wrong, and worse than wrong: it told the planner to
+press **Adopt existing WBS**, which would have done exactly as little.
+
+- ⚠️ **A branch whose direct parent code does not exist ANYWHERE in the file defers forever.** The
+  deferral is correct (never root a branch whose parent is missing — that is the flattening this file
+  carries scars from), but no number of identical passes can place it, because the parent it waits for
+  is never going to arrive. Real P6 exports do contain those gaps.
+- `wbsAdopt(silent, lastResort)`: on the final pass only, such a branch is attached to its **nearest
+  EXISTING ancestor**, walking up the dotted code until something in the tree is found. ⚠️ Nearest
+  ancestor, never the root — an ancestor keeps it inside the right phase, where a root would let
+  `_wbsResyncCodes` rewrite its code and lose the original deep one. The walk is applied in BOTH the
+  filter and the payload builder, or the filter would admit a branch the payload then rooted.
+- The toast now **names** the re-parented branches, because it is a fact about the FILE that the
+  planner should look at, not a silent repair.
+- ⚠️ **The manual button runs the whole loop now, not one pass.** It is the recovery path every one
+  of these toasts points at, and one pass is exactly what leaves a deep tree half-built: each pass can
+  only place branches whose parents the previous pass created. It calls `autoAdoptAfterImport` (the
+  loop + the last-resort placement + an honest report) behind its own confirm, so the button
+  advertised as "use this to finish the tree" actually finishes it.
