@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (z) — The tree flattened: adopt rooted any node whose parent it could not find
+
+Owner: *"Stevi's schedule also bugged out"*, plus two toolbar asks. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠⚠ **The grid's root had grown from the 5 phases to 26 branches** — `Fire Exit 2`, `Cluster 2`,
+  `Wet Works`, `Dry Works`, `Masonry Works` beside `Milestones`, with `Execution Phase` pushed to code
+  7 and off the visible rows. Not stale codes: `parent_id IS NULL` in the database for every one.
+- **Cause:** `var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;` — ⚠️ `|| null`
+  inserts at the TOP LEVEL when the parent cannot be resolved, silently, and then permanently because
+  `_wbsResyncCodes()` rewrites the code to match the new position. Same flattening this module records
+  from an earlier regression (1,584 of 1,623 nodes at top level).
+- **Fixed: deferred, never rooted.** Self-healing, since the adopt is depth-ascending and
+  `autoAdoptAfterImport()` loops while passes progress. ⚠️ **Existing damage is not repaired** —
+  SLN101 needs *WBS Manager → Reset WBS… → rebuild*, which now cannot flatten.
+- ⚠️ **I said the tree was sound earlier and it was not** — that `nodesAtRoot: 19` reading predated the
+  owner's later adopts, and I carried it forward as though it still held.
+- **Toolbar:** Progress and Stacking removed from the View menu (safe now that each button toggles
+  back out), and the three controls are **icon-only** — measured: the row needed **1,528px against
+  1,344 available and wrapped onto 3 lines**, these three were **284px** of it, and 3 × 36px saves
+  176px. `MODULE_V` → `20260902z`.
+
 ### 2026-09-02 (w) — Schedule Builder → Schedule Setup, and the WBS tree moves into it
 Owner: *"what are the current functions in the WBS manager that can be migrated instead to the Schedule
 Builder. also change the name … to edit the WBS, it should be in the schedule builder instead, since the WBS

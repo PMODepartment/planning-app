@@ -2778,7 +2778,7 @@
                that silently toggled a mode ON with no visible name), so "Stacking" looked identical
                whether you were in it or not. The button now reads "View: Stacking", which answers
                where-am-I and what-else-is-there in one glance. See renderLayoutMenu. -->
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="View — Gantt, Grid, Split, Activity Network, Activity Progress, Vertical Stacking"><span data-ico="layout" data-ico-size="15"></span> <span id="ps-viewbtn-txt">View: Split</span> ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="View — Gantt, Grid, Split, Activity Network. Progress and Stacking have their own buttons."><span data-ico="layout" data-ico-size="15"></span> <span id="ps-viewbtn-txt">View: Split</span> ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <!-- ⚠️ PROGRESS, STACKING AND OUTLINE ARE TOP-LEVEL AGAIN (owner 2026-09-02): *"it should
                have their own button each at the toolbar itself"* and *"I also need the outline view to
                be out of the view button as well, so users would not need to click on multiple buttons
@@ -2790,9 +2790,22 @@
                Removing them from the menu would leave the View button naming a view its own menu
                could not return you from, which is the 2026-08 defect that caused the fold. Outline
                DOES leave the menu: it is not a view, so nothing there has to name it. -->
-          <button class="pd-btn" id="ps-progressbtn" title="Activity Progress — physical vs planned, as a table"><span data-ico="trendingUp" data-ico-size="15"></span> Progress</button>
-          <button class="pd-btn" id="ps-vstackbtn" title="Vertical Stacking — the building model, one cell per zone"><span data-ico="box" data-ico-size="15"></span> Stacking</button>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-outlinebtn" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="layers" data-ico-size="15"></span> Outline ▾</button><div class="ps-menu" id="ps-outline-menu"></div></div>
+          <!-- ⚠️⚠️ ICON-ONLY, AND THAT IS A MEASUREMENT, NOT A PREFERENCE. Measured on the shipped
+               toolbar at 1,344px available: the row needed **1,528px and wrapped onto 3 lines**, and
+               these three labelled buttons were **284px** of it (94 + 92 + 98). Without them the row
+               needs 1,229px, which is what it was before they were added. Owner: *"the toolbar
+               spilled over two rows now, we want this to be 1 row only."*
+               ⚠️ Icon-only is the ONLY cut that does not undo the owner's own width decisions — Scope,
+               Zoom and Group were deliberately folded from segments into labelled menus on
+               2026-09-02 to buy exactly this space, and shortening them again would spend it twice.
+               3 x 36px = 108px, saving 176px and taking the row to ~1,352px, which the flexible
+               search box (min 110px) absorbs.
+               ⚠️ `.ps-icobtn` is the toolbar's existing convention and already carries the lit
+               `.active` state, which is what stops an unlabelled control being unreadable: Progress
+               and Stacking light red while you are in them. -->
+          <button class="pd-btn ps-icobtn" id="ps-progressbtn" aria-label="Activity Progress" title="Activity Progress — physical vs planned, as a table"><span data-ico="trendingUp" data-ico-size="15"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-vstackbtn" aria-label="Vertical Stacking" title="Vertical Stacking — the building model, one cell per zone"><span data-ico="box" data-ico-size="15"></span></button>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-outlinebtn" aria-label="Outline" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="layers" data-ico-size="15"></span></button><div class="ps-menu" id="ps-outline-menu"></div></div>
           <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
                the View ▾ menu now: both answer "how am I looking at this schedule", the same question
                View already owns, and the row was two lines deep at laptop widths. See renderLayoutMenu. -->
@@ -19970,6 +19983,9 @@
   // above, so it's O(maxDepth) round-trips instead of O(nodes) (the old per-node loop stalled on big
   // P6 imports). Resumes cleanly from a partial adoption (seeds from existing WBS_NODES). silent=true
   // skips the confirm + toasts (used by auto-adopt on import). Returns the count adopted.
+  // Branches skipped this pass because their parent was not in the tree yet. Read by
+  // autoAdoptAfterImport(), which loops while progress is made and reports what is left.
+  var _adoptDeferred = 0;
   async function wbsAdopt(silent) {
     // ⚠️⚠️ WHAT IS ALREADY ADOPTED IS READ FROM THE SERVER, NEVER FROM `rows`. This function DECIDES
     // WHAT TO INSERT, and `rows` is a cached, possibly minutes-old copy: a tab that painted before an
@@ -20017,6 +20033,7 @@
     if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
     var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
+    _adoptDeferred = 0;
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [], codeByKey = {};
     // Activities indexed by their dotted code, once — see the note at the link step below.
@@ -20041,9 +20058,27 @@
       // wbs_nodes untouched) inserts a second node for every code — the duplicated WBS levels. The
       // link loop below resolves each code through nodeByCode, so an existing node is picked up and
       // the fresh summary row is attached to it instead.
-      var payloads = group.filter(function (r) { return !nodeByCode[String(r.wbs)]; }).map(function (r) {
+      // ⚠⚠ A NODE WHOSE PARENT CANNOT BE RESOLVED IS DEFERRED, NEVER ROOTED. `parentId` used to fall
+      // back to `null`, which inserts the branch AT THE TOP LEVEL — silently, and permanently, because
+      // `_wbsResyncCodes()` then rewrites its dotted code to match that new position. Measured on 4PH
+      // Strevi after the owner's re-adopts: the grid's root had grown from the 5 phases to **26**
+      // branches, with `Fire Exit 2`, `Cluster 2 (Units 07 to 12)`, `Wet Works`, `Dry Works` and
+      // `Masonry Works` sitting beside `Milestones` — every one of them `parent_id IS NULL` in the
+      // database, and `Execution Phase` pushed to code 7 where the grid no longer showed it. This is
+      // the same flattening this file already records from an earlier regression (1,584 of 1,623
+      // nodes left at the top level); rooting on a failed lookup is how it happens.
+      // ⚠️ Deferring is safe and self-healing: the adopt runs depth-ascending, and
+      // `autoAdoptAfterImport()` loops while passes make progress, so a branch whose parent lands in
+      // pass N is adopted in pass N+1. A code with NO parent segment is still legitimately a root.
+      var deferred = 0;
+      var payloads = group.filter(function (r) {
+        if (nodeByCode[String(r.wbs)]) return false;
+        var pc = String(r.wbs).split('.').slice(0, -1).join('.');
+        if (pc && !nodeByCode[pc]) { deferred++; return false; }   // parent not in yet - wait for it
+        return true;
+      }).map(function (r) {
         var code = String(r.wbs), parentCode = code.split('.').slice(0, -1).join('.');
-        var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
+        var parentId = parentCode ? nodeByCode[parentCode] : null;
         var k = parentId || '', so = (sibCount[k] || 0); sibCount[k] = so + 1;
         var pl = { project_id: pid, parent_id: parentId, name: r.activity_name || code, sort_order: so, created_by: UID };
         // ⚠️⚠️ A NODE'S `code` IS ITS OWN SEGMENT, NEVER THE WHOLE PATH — and a purely numeric
@@ -20107,6 +20142,11 @@
           if (dotted) nodeByCode[dotted] = n.id;
           WBS_NODES.push(n);
         });
+      }
+      if (deferred) {
+        try { console.warn('[ps] wbsAdopt deferred ' + deferred + ' branch(es) at level ' + depths[di] +
+                           ' whose parent was not adopted yet - a later pass should pick them up'); } catch (e2) {}
+        _adoptDeferred += deferred;
       }
       group.forEach(function (r) {
         var id = nodeByCode[String(r.wbs)]; if (!id) return;
@@ -30273,11 +30313,15 @@
         hd('Schedule layout') +
         opt('split', 'Split', 'grid + timeline') + opt('grid', 'Grid', 'spreadsheet only') +
         opt('gantt', 'Gantt', 'timeline only') + opt('network', 'Network', 'PERT diagram') +
-        '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
-        hd('Separate views') +
-        opt('progress', 'Progress', 'physical vs planned') + opt('stacking', 'Stacking', 'building model') +
-        // ⚠️ Outline moved OUT to its own toolbar button (owner 2026-09-02) — collapsing to a WBS
-        // level was two clicks deep in a menu that is mostly about something else.
+        // ⚠️⚠️ PROGRESS AND STACKING ARE NOT LISTED HERE ANY MORE (owner 2026-09-02, second ask:
+        // *"still under the view button when we have already separated this entirely to the
+        // toolbar"*). I kept them last time so the menu could return you from a view its own button
+        // names — the 2026-08 defect that caused the fold. ⚠️ What makes removing them safe NOW is
+        // that each toolbar button TOGGLES: pressing the lit Stacking button returns to `layoutMode`.
+        // The escape hatch exists, it is just no longer in here. `_viewKey()` still reports them, so
+        // "View: Stacking" keeps telling the truth about where you are.
+        // ⚠️ Outline also lives on the toolbar now — collapsing to a WBS level was two clicks deep in
+        // a menu that is mostly about something else.
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Row density</div>' +
         '<button data-den="comfortable">' + (_density !== 'compact' ? '● ' : '○ ') + 'Comfortable</button>' +

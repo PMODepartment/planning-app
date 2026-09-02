@@ -1,3 +1,66 @@
+## ⚠⚠ The tree flattened: adopt was rooting any node whose parent it could not find (2026-09-02z) — fmlozano
+
+Owner: *"Stevi's schedule also bugged out let's check."* The grid's root showed **Milestones,
+Initiation Phase, Fire Exit 2, Planning Phase, Cluster 2 (Units 07 to 12)** — two deep branches sitting
+beside the phases, and no Execution or Closeout Phase in sight.
+
+### Measured
+**26 top-level rows**, and they are not stale codes — they are real roots. `parent_id IS NULL` in the
+database for `Cluster 2/3/4/5/6`, `Wet Works`, `Dry Works`, `Masonry Works`, `Fire Exit 2`,
+`Thermal and Moisture Protection`, `Drywall and Ceiling`, `Hardwares`, `Aluminum, Glass and Glazing`.
+`Execution Phase` had been pushed to code **7** and `Closeout Phase` to **8**, past the visible rows.
+
+⚠️ **I read this wrong earlier and said the tree was sound.** That measurement (`nodesAtRoot: 19`)
+was taken *before* the owner's later adopts; it was true then and I carried it forward as though it
+still held. The roots grew afterwards.
+
+### The cause, one line
+```js
+var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
+```
+⚠️ **`|| null` inserts the branch AT THE TOP LEVEL** whenever the parent code cannot be resolved —
+silently, and then **permanently**, because `_wbsResyncCodes()` rewrites the branch's dotted code to
+match its new position. This is the same flattening this file already records from an earlier
+regression (*1,584 of 1,623 nodes left at the top level*); rooting on a failed lookup is how it
+happens.
+
+**Fixed: a node whose parent cannot be resolved is DEFERRED, never rooted.** Safe and self-healing —
+the adopt runs depth-ascending and `autoAdoptAfterImport()` already loops while passes make progress,
+so a branch whose parent lands in pass N is adopted in pass N+1. A code with no parent segment is
+still legitimately a root. Deferrals are counted and logged, and the existing "tree is INCOMPLETE"
+toast reports whatever is left.
+
+⚠️ **The existing damage is not repaired by this.** SLN101's 7 promoted roots stay where they are
+until the tree is rebuilt: **WBS Manager → Reset WBS… → rebuild**, which now cannot flatten.
+
+---
+
+## The toolbar is one row again, and the View menu stops offering what it no longer owns (2026-09-02z)
+
+Owner: *"The progress and stacking buttons are still under the view button when we have already
+separated this entirely to the toolbar"* and *"the toolbar spilled over two rows now, we want this to
+be 1 row only."*
+
+- **Progress and Stacking are gone from the View menu.** ⚠️ I kept them last pass so the menu could
+  return you from a view its own button names — the 2026-08 defect that caused the fold. What makes
+  removing them safe now is that **each toolbar button toggles**: pressing the lit Stacking button
+  returns to `layoutMode`. `_viewKey()` still reports them, so *"View: Stacking"* keeps telling the
+  truth.
+- **The three controls are icon-only, and that is a measurement.** Measured on the shipped toolbar at
+  **1,344px available: the row needed 1,528px and wrapped onto 3 lines**, of which these three
+  labelled buttons were **284px** (94 + 92 + 98). Without them the row needs **1,229px** — what it was
+  before they were added. 3 × 36px saves **176px**, taking it to ~1,352px, which the flexible search
+  box (min 110px) absorbs.
+  ⚠️ **Icon-only is the only cut that does not spend the owner's own savings twice**: Scope, Zoom and
+  Group were deliberately folded from segments into labelled menus on 2026-09-02 to buy exactly this
+  space. ⚠️ `.ps-icobtn` is the toolbar's existing convention and already carries the lit `.active`
+  state, which is what keeps an unlabelled control readable — Progress and Stacking light red while
+  you are in them.
+
+- `MODULE_V` → `20260902z`.
+
+---
+
 ## Schedule Builder → **Schedule Setup**, and the WBS tree moves into it (2026-09-02) — eprobles
 
 Owner: *"what are the current functions in the WBS manager that can be migrated instead to the
@@ -65,7 +128,6 @@ wrong twice over:
   reason.
 
 ---
-
 ## The No-level band stops blaming Schedule Builder (2026-09-02x) — fmlozano
 
 Owner: *"Reword the band text to point at the match table."*
