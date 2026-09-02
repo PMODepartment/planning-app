@@ -11910,3 +11910,79 @@ press **Adopt existing WBS**, which would have done exactly as little.
   only place branches whose parents the previous pass created. It calls `autoAdoptAfterImport` (the
   loop + the last-resort placement + an honest report) behind its own confirm, so the button
   advertised as "use this to finish the tree" actually finishes it.
+
+### 2026-09-02 (k) — The mirrors stop running on load, and the duplicate branches get fixed at the cause
+
+**The Engineering + Procurement mirrors are manual-only now.** Owner, watching it: *"I think the
+syncing the design procurement branches is causing the lag. Let’s have this not automatic. It only
+syncs when prompted to. See screenshot its been a few mins already and the sync is still ongoing."*
+The ten-minute throttle I put in an hour earlier was the wrong shape — the first open of the day still
+paid it, and that is the open that matters. And the cost is not a fixed price: each mirror reads
+ANOTHER app’s tables, diffs a whole branch, then inserts, updates and sweeps nodes and summary rows.
+On a 12,459-node tree that is minutes, spent while the planner is looking at a schedule that is
+already fully loaded and correct.
+⚠️ **What it costs, stated plainly:** those two branches show what they showed at the last sync until
+somebody presses Sync. That is the right trade — they are read-only mirrors of other teams’ data,
+nobody edits them here, and the "synced &lt;date&gt;" label beside each button has always been what says
+how fresh they are. `_renderSyncPrcAt()` still runs on every load so those labels are painted.
+
+**⚠⚠⚠ AND THE DUPLICATE BRANCHES — FIXED AT THE CAUSE, not with the dedupe.** Owner: *"Why is there
+even duplicates in the first place? The dedupe is not the solution but should only be a backup.
+Duplicates should not occur in the first place."* Correct, and here is the hole they came through.
+
+`wbsAdopt` decided "does this branch already have a node?" purely by DOTTED CODE
+(`if (nodeByCode[r.wbs]) return false`), and `nodeByCode` is built from `computeWbsCodes()`, which
+derives a code from a node’s POSITION in the tree. Those two agree only while the stored code and the
+tree agree — and they stop agreeing the moment a summary row’s `wbs_node_id` fails to be written (a
+partial `_wbsLinkRows` batch, a superseded load, an RLS refusal). The row then still looks
+un-adopted while its node already exists, the tree’s computed codes have moved on from the file’s
+stored ones, the lookup misses, and the adopt inserts a **second node with the same parent and the
+same name**. Exactly what was on screen: `Slab-on-grade`, `Zone 2` and `Zone 1` twice each, whole
+subtrees doubled.
+
+**Identity is no longer positional.** A branch is matched by **(parent, name)** as well as by code: if
+the resolved parent already has a child of this name, the row is adopted ONTO that node and nothing is
+inserted. Maintained as rows are inserted, so two identical siblings inside one adopt run cannot both
+be created either. The toast reports how many branches were re-linked rather than duplicated — every
+one of those is a duplicate that did not happen.
+
+**And the backstop, for the trees already damaged** (the owner’s among them):
+`_wbsDedupeSiblingNodes()`. Neither existing pass could see this shape —
+`_wbsDedupeSummariesByCode` deliberately SKIPS a shared code whose rows are backed by two different
+nodes (rightly: those are usually two real branches whose codes collided, and deleting one would
+destroy a live branch that `_wbsEnsureSummaries` then re-creates, flapping on every load), and
+`_wbsDedupeSkeleton` only looks at the five locked roots. So a genuinely duplicated NODE had no owner.
+- ⚠️ **The merge rule is deliberately narrow, because this deletes WBS nodes.** A loser must share
+  BOTH its parent and its normalised name. Same name under a different parent is two different
+  branches ("Zone 1" exists under every floor); a different name under the same parent is two
+  different branches whatever their codes say. Nothing locked is ever a loser, and nothing with a
+  `source_kind` (another app’s mirror) is touched.
+- ⚠️ **The keeper is the one carrying the most work, then the oldest** — a tie broken by age is
+  stable, and two tabs repairing one project must pick the same keeper or they undo each other.
+- ⚠️ **Order is not arbitrary: children, then rows, then delete.** Both tables carry a foreign key to
+  `wbs_nodes`. An error stops the pass with the merge half-done, which is recoverable (the loser is
+  empty but still there) rather than destructive.
+- It runs BEFORE the row dedupe: two nodes for one branch is the cause, duplicate rows are the
+  symptom, and merging first is what leaves the row dedupe a pair it can safely act on.
+
+### 2026-09-02 (l) — "Check any activity in the file" finally checks something
+
+Owner: *"Check any activity in the live file doesn’t do much? Is it just a list of activities?"* It
+was. This panel has now been wrong twice — version one was "the first 25 in file order" (arbitrary,
+and on a 16,000-row file it showed 25 Milestones); version two added search and a phase column, which
+made it a nicer list but still only answered questions you already knew to ask. A step whose whole
+purpose is DATA CHECKING has to find the problems for you.
+
+It runs the checks a planner would otherwise meet weeks later, in the schedule: **no dates at all**,
+**finish before start**, **no activity ID** (cannot be a relationship target or take progress),
+**duplicate activity ID** (two rows claiming one ID — relationships and progress updates silently
+land on whichever wins), **progress with no actual start**, **100% with no actual finish**. Each is a
+chip that FILTERS the table, so "2 duplicates" is one click from being the list of the two, and every
+row carries its flags beside the phase it will land in.
+⚠️ None of them blocks the import — they are facts about the file and the planner decides. They are
+counted over the KEPT activities, so excluding a junk branch on the tree above makes its problems
+disappear from the count, which is the feedback loop the exclude tick is for.
+
+**Verified in a browser** on a file with one planted instance of each defect: all six chips read
+exactly 1 (duplicate ID reads 2, correctly — both rows are implicated), and clicking the duplicate
+chip narrowed the table to precisely those two rows with the flag shown.

@@ -2630,6 +2630,18 @@
        name and the select was squeezed into 74px showing "Miles…", "Initia…", "Plann…". Owner:
        *"The file's WBS: needs UI rework since the fields are clashing."*
        Its own template, sized for what it actually holds, with the name the only flexible track. */
+    /* The file-check chips. A count that cannot be clicked is a number you have to go and find
+       yourself, which is what the first two versions of this panel made you do. */
+    .sbld-checkchips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding-bottom:4px; }
+    .sbld-checkchip { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
+      border-radius:999px; padding:4px 11px; font:inherit; font-size:11.5px; cursor:pointer; white-space:nowrap; }
+    .sbld-checkchip:hover:not(:disabled) { border-color:var(--pd-muted); }
+    .sbld-checkchip.on { border-color:var(--pd-red); background:var(--pd-red-light); font-weight:700; }
+    .sbld-checkchip.bad { color:var(--pd-red); }
+    .sbld-checkchip.ok { color:var(--pd-muted); }
+    .sbld-checkchip:disabled { opacity:.5; cursor:default; }
+    .sbld-issue { display:inline-block; border:1px solid var(--pd-red); color:var(--pd-red); border-radius:4px;
+      padding:0 5px; margin:0 3px 0 0; font-size:10.5px; white-space:nowrap; }
     /* ---- The import's Relationships step (see stImpRels) ---------------------------------- */
     .sbld-relmodes { display:grid; gap:7px; margin:10px 0 14px; }
     .sbld-relmode { display:flex; gap:9px; align-items:flex-start; border:1px solid var(--pd-line);
@@ -3807,18 +3819,11 @@
   // Any write that can move the tree clears the mark, so the next load repairs rather than trusting it.
   function _healInvalidate() { try { localStorage.removeItem(_healKey()); } catch (e) {} }
 
-  /* The two APP MIRRORS are throttled rather than fingerprinted, because what they read lives in
-     ANOTHER database — nothing in this project can tell you whether the Engineering or Procurement
-     app has changed. Ten minutes is the compromise: a planner who wants it now has a Sync button in
-     Schedule Setup › WBS (which bypasses this and re-stamps it), and one who is just opening the
-     schedule does not pay two cross-app round-trips for a branch that is read-only here anyway.
-     ⚠️ Stamped only on SUCCESS, so a failed sync retries on the next load instead of going quiet
-     for ten minutes. */
-  var MIRROR_TTL_MS = 10 * 60 * 1000;
+  /* When the two app mirrors were last run from this browser. ⚠️ NOT A GATE ANY MORE — the mirrors
+     are manual-only (see the note in load()). It is kept because a planner who has just pressed Sync
+     and then reloads should see that it was seconds ago rather than a blank, and because the manual
+     handlers stamp it. */
   function _mirrorKey() { return 'ps_mirrorat_' + pid; }
-  function _mirrorDue() {
-    try { return (Date.now() - (+localStorage.getItem(_mirrorKey()) || 0)) > MIRROR_TTL_MS; } catch (e) { return true; }
-  }
   function _mirrorStamp() { try { localStorage.setItem(_mirrorKey(), String(Date.now())); } catch (e) {} }
   var _landedPid = null;
   function _landOnOpen(hasActivities) {
@@ -7292,8 +7297,23 @@
     _repair('Checking WBS codes…');
     await _wbsResyncCodes();
     if (gen !== _loadGen) return;
-    // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node-id dedupe
-    // below cannot see). Runs after the resync: it must judge duplicates on correct codes.
+    /* ⚠️ BEFORE the row dedupe, and BEFORE the code resync would have been wrong: two nodes for one
+       branch is the cause, duplicate rows are the symptom. Merging the nodes first means the row
+       dedupe then sees two rows sharing ONE node id — the shape it can safely act on — instead of
+       two rows backed by different nodes, which it correctly refuses to touch. Reversed, the symptom
+       is left on screen and the cause is still there next load. */
+    if (_isMutating()) return;
+    _repair('Checking for duplicate WBS branches…');
+    var mergedNodes = await _wbsDedupeSiblingNodes();
+    if (gen !== _loadGen) return;
+    if (mergedNodes) {
+      rebuild(); _cachePut(pid, rows); renderAll();
+      UI.toast('Merged ' + mergedNodes.toLocaleString() + ' duplicate WBS branch' + (mergedNodes === 1 ? '' : 'es') +
+               (_wbsDedupeNames.length ? ' (' + _wbsDedupeNames.join(', ') + (mergedNodes > _wbsDedupeNames.length ? ', …' : '') + ')' : '') +
+               ' — their activities and sub-branches were moved onto the surviving branch, nothing was lost.', 'success');
+    }
+    // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node dedupe above
+    // cannot see). Runs after the resync: it must judge duplicates on correct codes.
     if (_isMutating()) return;
     _repair('Checking for duplicate WBS rows…');
     await _wbsDedupeSummariesByCode();
@@ -7327,18 +7347,23 @@
     // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
     // leaves the branch as it was rather than blocking the schedule.
     if (_isMutating()) return;
-    // ⚠️ Throttled — see _mirrorDue. These are two CROSS-APP round-trips for branches that are
-    // read-only here, and running them on every open is the other half of the reported lag.
-    if (_mirrorDue()) {
-      _repair('Syncing the design + procurement branches…');
-      await syncDesignDevelopment();
-      await syncProcurement();
-      _renderSyncPrcAt();
-      if (gen === _loadGen) _mirrorStamp();
-    } else {
-      try { console.log('[ps] engineering/procurement mirrors skipped - synced less than 10 min ago'); } catch (e) {}
-      _renderSyncPrcAt();
-    }
+    /* ⚠️⚠️⚠️ THE TWO APP MIRRORS DO NOT RUN ON LOAD AT ALL. Owner 2026-09-02, after watching it:
+       *"I think the syncing the design procurement branches is causing the lag. Let's have this not
+       automatic. It only syncs when prompted to. See screenshot its been a few mins already and the
+       sync is still ongoing."*
+       A ten-minute throttle (the first attempt) was the wrong shape: the first open of the day still
+       paid it, and that first open is the one that matters. And the cost is not a fixed price — each
+       mirror reads ANOTHER app's tables, diffs a whole branch, then inserts, updates and sweeps
+       nodes and summary rows; on a 12,459-node tree that is minutes, and it happens while the
+       planner is looking at a schedule that is already fully loaded and correct.
+       ⚠️ WHAT THIS COSTS, STATED HONESTLY: the Design Development and Procurement branches now show
+       what they showed at the last sync until somebody presses Sync. That is the right trade — they
+       are read-only mirrors of other teams' data, nobody edits them here, and the "synced <date>"
+       label beside each button has always been what says how fresh they are. It is also how every
+       other cross-app read in this suite already behaves.
+       The buttons are in Schedule Setup › WBS. `_renderSyncPrcAt` still runs so the labels are
+       painted from the stored timestamps on every load. */
+    _renderSyncPrcAt();
     // ⚠️ HERE, and not before: this is the first point at which nothing further can change the tree.
     if (gen === _loadGen) _setFresh('live');
     if (gen !== _loadGen) return;
@@ -19918,6 +19943,114 @@
     } finally { _resyncingCodes = false; }
   }
   var _dedupingByCode = false;
+  /* ==========================================================================================
+     TWO NODES FOR ONE BRANCH — the duplicate the other two dedupes cannot see
+     ------------------------------------------------------------------------------------------
+     Reported live on 4PH Strevi after the import: the grid showed `4.2.2.1.8 Slab-on-grade` twice,
+     `4.2.2.1.8.1 Zone 2` twice and `4.2.2.1.8.2 Zone 1` twice — whole duplicated SUBTREES, not stray
+     rows.
+
+     Why neither existing pass catches it:
+       • `_wbsDedupeSummariesByCode` deliberately SKIPS a shared code whose rows are backed by two
+         DIFFERENT nodes, and it is right to: those are two real branches whose dotted codes merely
+         collided, and deleting one would destroy a live branch that `_wbsEnsureSummaries` would then
+         re-create — a pair that flaps on every load. Its cure for those is the code resync.
+       • `_wbsDedupeSkeleton` only looks at the five locked phase roots.
+     So a genuinely duplicated NODE — same parent, same name, created by a second adopt running over
+     stale in-memory rows before the live-id fix landed — had no owner. The codes resync apart
+     ("…1.8" and "…1.9"), both branches keep their rows, and the tree carries two of everything.
+
+     ⚠️⚠️ THE MERGE RULE IS DELIBERATELY NARROW, because this deletes WBS nodes. A loser must share
+     BOTH its parent and its normalised name with the keeper. Same name under a different parent is
+     two different branches ("Zone 1" exists under every floor); a different name under the same
+     parent is two different branches whatever their codes say. Nothing locked is ever a loser, and
+     nothing mirrored from another app (`source_kind`) is touched — those branches are rebuilt by
+     their own sync and must not be merged underneath it.
+     ⚠️ THE KEEPER IS THE ONE CARRYING THE MOST WORK, then the oldest. Keeping the node that already
+     has the activities attached makes the repoint below smaller, and a tie broken by age is stable
+     across runs — two tabs repairing the same project must pick the same keeper or they undo each
+     other.
+     ⚠️ ORDER MATTERS AND IS NOT ARBITRARY: children first, then rows, then delete. Both tables carry
+     a foreign key to `wbs_nodes`, so deleting before repointing either fails or cascades. Any error
+     stops the pass with the merge half-done, which is recoverable (the loser is empty but still
+     there) rather than destructive.
+     ========================================================================================== */
+  var _dedupingNodes = false;
+  async function _wbsDedupeSiblingNodes() {
+    if (!pid || !canWrite) return 0;
+    if (_dedupingNodes) return 0;
+    WBS_NODES = WBS_NODES.filter(Boolean);
+    if (WBS_NODES.length < 2) return 0;
+    // Group by (parent, normalised name) and keep only the groups with more than one member.
+    var groups = {};
+    WBS_NODES.forEach(function (n) {
+      if (n.source_kind) return;                       // another app's branch — its sync owns it
+      var key = (n.parent_id || '') + '\u0001' + _wbsNameKey(n.name || '');
+      if (!_wbsNameKey(n.name || '')) return;          // an unnamed node is not safely comparable
+      (groups[key] = groups[key] || []).push(n);
+    });
+    var dupes = Object.keys(groups).filter(function (k) { return groups[k].length > 1; });
+    if (!dupes.length) return 0;
+
+    // How much work hangs off each node, for the keeper choice and for the repoint.
+    var rowsByNode = {}, kidsByNode = {};
+    rows.forEach(function (r) { if (r.wbs_node_id) rowsByNode[r.wbs_node_id] = (rowsByNode[r.wbs_node_id] || 0) + 1; });
+    WBS_NODES.forEach(function (n) { if (n.parent_id) kidsByNode[n.parent_id] = (kidsByNode[n.parent_id] || 0) + 1; });
+
+    var merged = 0, names = [];
+    _dedupingNodes = true;
+    try {
+      for (var gi = 0; gi < dupes.length; gi++) {
+        var g = groups[dupes[gi]].slice();
+        // Locked nodes can only ever be the keeper.
+        g.sort(function (a, b) {
+          var al = a.is_locked ? 0 : 1, bl = b.is_locked ? 0 : 1;
+          if (al !== bl) return al - bl;
+          var ar = (rowsByNode[a.id] || 0) + (kidsByNode[a.id] || 0);
+          var br = (rowsByNode[b.id] || 0) + (kidsByNode[b.id] || 0);
+          if (ar !== br) return br - ar;
+          return String(a.created_at || a.id).localeCompare(String(b.created_at || b.id));
+        });
+        var keep = g[0], losers = g.slice(1).filter(function (n) { return !n.is_locked; });
+        if (!losers.length) continue;
+        setLoading('Merging duplicate WBS branch "' + (keep.name || '') + '"…');
+        for (var li = 0; li < losers.length; li++) {
+          var lose = losers[li];
+          // 1) children of the loser become children of the keeper
+          var kidIds = WBS_NODES.filter(function (n) { return n.parent_id === lose.id; }).map(function (n) { return n.id; });
+          for (var ci = 0; ci < kidIds.length; ci += 100) {
+            var kr = await sb().from('wbs_nodes').update({ parent_id: keep.id }).in('id', kidIds.slice(ci, ci + 100));
+            if (kr.error) { try { console.error('[ps] node dedupe: repoint children failed', kr.error); } catch (e) {} return merged; }
+          }
+          WBS_NODES.forEach(function (n) { if (n.parent_id === lose.id) n.parent_id = keep.id; });
+          // 2) schedule rows pointing at the loser point at the keeper
+          var rowIds = rows.filter(function (r) { return r.wbs_node_id === lose.id; }).map(function (r) { return r.id; });
+          for (var ri = 0; ri < rowIds.length; ri += 100) {
+            var rr = await sb().from(TABLE).update({ wbs_node_id: keep.id }).in('id', rowIds.slice(ri, ri + 100));
+            if (rr.error) { try { console.error('[ps] node dedupe: repoint rows failed', rr.error); } catch (e) {} return merged; }
+          }
+          rows.forEach(function (r) { if (r.wbs_node_id === lose.id) r.wbs_node_id = keep.id; });
+          // 3) and only now is the loser empty enough to delete
+          var dr = await sb().from('wbs_nodes').delete().eq('id', lose.id);
+          if (dr.error) { try { console.error('[ps] node dedupe: delete failed', dr.error); } catch (e) {} return merged; }
+          WBS_NODES = WBS_NODES.filter(function (n) { return n.id !== lose.id; });
+          merged++;
+          if (names.length < 4) names.push(String(keep.name || lose.name || '').slice(0, 28));
+        }
+      }
+    } finally { _dedupingNodes = false; }
+    if (merged) {
+      /* ⚠️ The projected summary rows are now two-per-branch (the keeper's own and the loser's,
+         repointed onto it), which is exactly the shape `_wbsDedupeSummariesByCode` DOES handle now
+         that both sides share one node id. Running it here rather than waiting for the next load is
+         what stops the grid showing the duplicate it was just told about. */
+      await _wbsDedupeSummariesByCode();
+      _wbsDedupeNames = names;
+    }
+    return merged;
+  }
+  var _wbsDedupeNames = [];
+
   async function _wbsDedupeSummariesByCode() {
     if (!pid || !canWrite) return 0;
     if (_dedupingByCode) return 0;
@@ -21097,6 +21230,9 @@
   // Branches the last-resort pass had to re-parent because the file had no row for their direct
   // parent. Named in the toast rather than counted, because it is a fact about the FILE.
   var _adoptOrphaned = [];
+  /* Rows that were attached to an EXISTING branch of the same name instead of getting a new node.
+     Every one of these is a duplicate that did not happen — see the nameByParent note in wbsAdopt. */
+  var _adoptRelinked = 0;
   /* ⚠️⚠️ SET WHEN AN ADOPT FAILS PART-WAY, AND IT GATES THE TWO DESTRUCTIVE REPAIRS.
      `_wbsResyncCodes()` rewrites every summary row's dotted code to match the tree, and
      `_wbsEnsureSummaries()` manufactures a summary row for every node that lacks one. Both are
@@ -21217,11 +21353,52 @@
     var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
     _adoptDeferred = 0;
     _adoptOrphaned = [];
+    _adoptRelinked = 0;
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [], codeByKey = {};
     // Activities indexed by their dotted code, once — see the note at the link step below.
     var actsByCode = {};
     rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && a.wbs) (actsByCode[String(a.wbs)] = actsByCode[String(a.wbs)] || []).push(a); });
+    /* ==========================================================================================
+       ⚠️⚠️⚠️ WHY DUPLICATES HAPPENED AT ALL, AND THE FIX FOR THE CAUSE
+       ------------------------------------------------------------------------------------------
+       Owner 2026-09-02: *"Why is there even duplicates in the first place? The dedupe is not the
+       solution but should only be a backup. Duplicates should not occur in the first place."* Right,
+       and here is the hole they came through.
+
+       This function decided "does this branch already have a node?" purely by DOTTED CODE:
+       `if (nodeByCode[r.wbs]) return false`. And `nodeByCode` is built from `computeWbsCodes()`,
+       which derives a code from a node's POSITION in the tree. Those two agree only while the stored
+       code and the tree agree. They stop agreeing the moment a summary row's `wbs_node_id` fails to
+       be written — a partial `_wbsLinkRows` batch, a superseded load, an RLS refusal — because the
+       row then still looks un-adopted while its node already exists, and the tree's computed codes
+       have moved on from the file's stored ones. The lookup misses, and the adopt inserts a SECOND
+       node with the same parent and the same name. Exactly what was on screen: `Slab-on-grade`,
+       `Zone 2` and `Zone 1` twice each, whole subtrees doubled.
+
+       So identity is no longer positional. A branch is matched by (parent, name) as well as by code:
+       if the resolved parent ALREADY has a child of this name, the row is adopted ONTO that node
+       instead of a twin being created. That is the same rule the dedupe uses to decide two nodes are
+       one branch — applied before the insert rather than after it, which is the difference between
+       preventing the duplicate and cleaning it up.
+       ⚠️ Maintained as rows are inserted below, so two identical siblings inside ONE adopt run cannot
+       both be created either.
+       ⚠️ The dedupe stays, as the backstop it should always have been: it is what repairs the trees
+       that were already damaged before this check existed.
+       ========================================================================================== */
+    var nameByParent = {};
+    function _nbpKey(pidv) { return pidv || '\u0000root'; }
+    function nbpGet(pidv, nm) {
+      var k = _wbsNameKey(nm || ''); if (!k) return null;
+      var m = nameByParent[_nbpKey(pidv)];
+      return (m && m[k]) || null;
+    }
+    function nbpSet(pidv, nm, id) {
+      var k = _wbsNameKey(nm || ''); if (!k) return;
+      var kk = _nbpKey(pidv);
+      (nameByParent[kk] = nameByParent[kk] || {})[k] = id;
+    }
+    WBS_NODES.forEach(function (n) { if (n && _liveIds[n.id]) nbpSet(n.parent_id, n.name, n.id); });
     var codeOf0 = computeWbsCodes();
     // ⚠️ `_liveIds[n.id]` — WBS_NODES was already filtered above, but this is the map that decides
     // what goes into a parent_id, so it states the invariant where it is relied on rather than
@@ -21281,6 +21458,16 @@
         if (!_liveIds[pid0]) {
           try { console.warn('[ps] wbsAdopt: parent code ' + pc + ' resolved to a node that no longer exists - deferring ' + r.wbs); } catch (e2) {}
           delete nodeByCode[pc]; deferred++; return false;
+        }
+        /* ⚠️ THE CHECK THAT STOPS THE DUPLICATE (see the note on nameByParent). The parent already
+           has a child of this name, so this row's branch is THAT node — register the mapping so the
+           link step below attaches the row to it and its children resolve through it, and insert
+           nothing. */
+        var twin = nbpGet(pid0, r.activity_name);
+        if (twin) {
+          nodeByCode[String(r.wbs)] = twin;
+          _adoptRelinked++;
+          return false;
         }
         return true;
       }).map(function (r) {
@@ -21358,6 +21545,7 @@
         (ins.data || []).forEach(function (n) {
           var dotted = codeByKey[(n.parent_id || '') + '|' + n.sort_order];
           if (dotted) nodeByCode[dotted] = n.id;
+          nbpSet(n.parent_id, n.name, n.id);   // two identical siblings cannot both be created
           _liveIds[n.id] = 1;   // it exists now, so it is a legal parent for the next depth
           WBS_NODES.push(n);
         });
@@ -21626,6 +21814,10 @@
         UI.toast('WBS tree is INCOMPLETE — ' + left.toLocaleString() + ' branch(es) could not be placed at all. ' +
                  'Vertical Stacking, Trade and phase read from the tree, so they will be wrong until this ' +
                  'finishes. Open Schedule Setup › WBS and use "Adopt existing WBS".', 'error');
+      } else if (_adoptRelinked) {
+        UI.toast('WBS tree complete' + (total ? ' (' + total.toLocaleString() + ' new nodes)' : '') + '. ' +
+                 _adoptRelinked.toLocaleString() + ' branch(es) already existed and were re-linked rather than ' +
+                 'duplicated' + (_adoptOrphaned.length ? '; ' + _adoptOrphaned.length + ' had no parent row in the file' : '') + '.', 'success');
       } else if (_adoptOrphaned.length) {
         UI.toast('WBS tree built (' + total.toLocaleString() + ' nodes). ' + _adoptOrphaned.length +
                  ' branch(es) had no parent row in the file (' + _adoptOrphaned.slice(0, 3).join(', ') +
@@ -26743,30 +26935,88 @@
           '</select></label></div>';
       }
 
-      /* ⚠️ WAS "First 25 activities that will be imported", AND THE OWNER WAS RIGHT TO ASK WHAT IT
-         MEANT: *"why are these particular activities are shown here?"* The answer was "the first 25
-         in file order", which is not an answer — it looked curated, it was arbitrary, and on a
-         16,000-row file it showed 25 Milestones and nothing else, so it could not be used to check
-         anything. A sample that cannot answer a question is decoration.
-         It is now a CHECKER: search it, and every row states the phase it will land in (resolved
-         through the same inheritance rule as the tally) and whether it is excluded. That makes the
-         two questions a planner actually has answerable — "did my file's activities come through
-         with their dates" and "where is THIS one going to end up". */
+      /* ⚠️⚠️ THIS PANEL HAS BEEN WRONG TWICE, and the second time the owner named it exactly:
+         *"Check any activity in the live file doesn't do much? Is it just a list of activities?"*
+         It was. Version one was "the first 25 in file order" (arbitrary, and on a 16,000-row file it
+         showed 25 Milestones); version two added search and a phase column, which made it a nicer
+         list but still only answered questions you already knew to ask. A step whose whole purpose is
+         DATA CHECKING has to find the problems for you.
+         So it runs the checks a planner would otherwise discover weeks later, in the schedule:
+           • no dates at all            — nothing to place on a Gantt
+           • finish before start        — a reversed pair the CPM cannot use
+           • no activity ID             — cannot be a relationship target or take progress
+           • duplicate activity ID      — two rows claiming one ID: relationships and progress
+                                          updates silently land on whichever one wins
+           • progress with no actual start / 100% with no actual finish — progress the schedule
+                                          cannot reconcile against dates
+         Each is a chip that FILTERS the table, so "12 duplicates" is one click from being a list of
+         the twelve. ⚠️ None of them blocks the import: they are facts about the file, and the planner
+         decides. They are counted over the KEPT activities, so excluding a junk branch on the tree
+         above makes its problems disappear from the count — which is exactly the feedback loop the
+         exclude tick is for. */
       var _q = String(imp.actQ || '').trim().toLowerCase();
       var _pool = impLeaves();
-      var _hits = _q ? _pool.filter(function (r) {
+      var _dupIds = (function () {
+        var seen = {}, dup = {};
+        impKeptLeaves().forEach(function (r) {
+          var k = String(r.id || '').trim(); if (!k) return;
+          if (seen[k]) dup[k] = 1; else seen[k] = 1;
+        });
+        return dup;
+      })();
+      function _issuesOf(r) {
+        var out = [];
+        if (!r.start && !r.finish) out.push('nodates');
+        if (r.start && r.finish && String(r.finish) < String(r.start)) out.push('reversed');
+        var idv = String(r.id || '').trim();
+        if (!idv) out.push('noid'); else if (_dupIds[idv]) out.push('dupid');
+        var pct = Number(r.pct || 0);
+        if (pct > 0 && !r.sA) out.push('nostart');
+        if (pct >= 100 && !r.fA) out.push('nofinish');
+        return out;
+      }
+      var CHECKS = [
+        ['nodates', 'No dates'], ['reversed', 'Finish before start'], ['noid', 'No activity ID'],
+        ['dupid', 'Duplicate activity ID'], ['nostart', 'Progress, no actual start'],
+        ['nofinish', '100%, no actual finish']
+      ];
+      var _issueOf = {}, _counts = {};
+      impKeptLeaves().forEach(function (r) {
+        var iss = _issuesOf(r);
+        if (iss.length) { _issueOf[String(r.code)] = iss; iss.forEach(function (k) { _counts[k] = (_counts[k] || 0) + 1; }); }
+      });
+      var _flag = imp.actFlag && _counts[imp.actFlag] ? imp.actFlag : null;
+      if (imp.actFlag && !_flag) imp.actFlag = null;   // the tick that fixed it also clears the filter
+      var _clean = impKeptLeaves().length - Object.keys(_issueOf).length;
+      var _chips = '<div class="sbld-checkchips">' +
+        '<button class="sbld-checkchip' + (!_flag ? ' on' : '') + '" data-actflag="">All kept · ' + impKeptLeaves().length.toLocaleString() + '</button>' +
+        CHECKS.map(function (c) {
+          var n = _counts[c[0]] || 0;
+          return '<button class="sbld-checkchip' + (n ? ' bad' : ' ok') + (_flag === c[0] ? ' on' : '') + '"' +
+            (n ? '' : ' disabled') + ' data-actflag="' + c[0] + '">' + e2(c[1]) + ' · ' + n.toLocaleString() + '</button>';
+        }).join('') +
+        '<span class="sbld-hint" style="margin-left:auto;">' + _clean.toLocaleString() + ' with nothing to flag</span></div>';
+      var _hits = _pool.filter(function (r) {
+        if (_flag && (_issueOf[String(r.code)] || []).indexOf(_flag) < 0) return false;
+        if (!_q) return true;
         return ((r.name || '') + ' ' + (r.id || '') + ' ' + r.code).toLowerCase().indexOf(_q) >= 0;
-      }) : _pool;
+      });
       var SAMPN = 100;
       var sample = _hits.slice(0, SAMPN).map(function (r) {
         var ex = impIsExcluded(r.code);
         var tgt = ex ? '<span style="color:var(--pd-red);">excluded</span>'
                      : e2(impTargetName(impEffectiveTarget(impParentCode(r.code) || r.code)));
+        var iss = _issueOf[String(r.code)] || [];
+        var issH = iss.map(function (k) {
+          var lbl = (CHECKS.filter(function (c) { return c[0] === k; })[0] || [k, k])[1];
+          return '<span class="sbld-issue">' + e2(lbl) + '</span>';
+        }).join('');
         return '<tr' + (ex ? ' style="opacity:.5;"' : '') + '><td>' + e2(String(r.name || '').slice(0, 70)) + '</td>' +
           '<td>' + e2(r.id || '') + '</td>' +
           '<td>' + (r.start ? Fmt.date(r.start) : '\u2014') + '</td><td>' + ((r.finish) ? Fmt.date(r.finish) : '\u2014') + '</td>' +
           '<td style="text-align:right;">' + (r.pct != null ? r.pct + '%' : '') + '</td>' +
-          '<td>' + tgt + '</td></tr>';
+          '<td>' + tgt + '</td>' +
+          '<td>' + (issH || '<span style="color:var(--pd-muted);">\u2014</span>') + '</td></tr>';
       }).join('');
 
       host.innerHTML = '<h2>' + _stepNo('Activities & phases') + ' · What came in, and which phase it belongs to</h2>' +
@@ -26778,12 +27028,13 @@
         flatPick +
         '<div class="pd-card ps-ck-card" style="margin-bottom:12px;"><div class="ps-ck-h"><span data-ico="layers" data-ico-size="15"></span> The file’s WBS</div>' +
         '<div class="sbld-hold-list" style="max-height:420px;overflow:auto;padding:6px 10px;">' + treeHtml + '</div></div>' +
-        '<div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="listView" data-ico-size="15"></span> Check any activity in the file' +
-          '<span class="ps-ck-trend-sub">' + _hits.length.toLocaleString() + (_q ? ' matching' : ' in the file') +
+        '<div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="risk" data-ico-size="15"></span> Check the file' +
+          '<span class="ps-ck-trend-sub">' + _hits.length.toLocaleString() + (_flag || _q ? ' shown' : ' in the file') +
           (_hits.length > SAMPN ? ' \u00b7 first ' + SAMPN + ' listed' : '') + '</span></div>' +
-        '<div style="padding:9px 12px 4px;"><input class="pd-input" id="b-impactq" placeholder="Search name, activity ID or WBS code\u2026" value="' + e2(imp.actQ || '') + '" style="height:32px;width:320px;max-width:100%;"></div>' +
-        '<div class="sbld-xlwrap" style="max-height:300px;overflow:auto;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>ID</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th><th>Lands under</th></tr></thead><tbody>' +
-          (sample || '<tr><td colspan="6">' + (_q ? 'Nothing in the file matches that search.' : 'Everything is excluded \u2014 nothing would be imported.') + '</td></tr>') + '</tbody></table></div></div>';
+        '<div style="padding:9px 12px 0;">' + _chips + '</div>' +
+        '<div style="padding:4px 12px;"><input class="pd-input" id="b-impactq" placeholder="Search name, activity ID or WBS code\u2026" value="' + e2(imp.actQ || '') + '" style="height:32px;width:320px;max-width:100%;"></div>' +
+        '<div class="sbld-xlwrap" style="max-height:320px;overflow:auto;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>ID</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th><th>Lands under</th><th>Flags</th></tr></thead><tbody>' +
+          (sample || '<tr><td colspan="7">' + (_flag || _q ? 'Nothing matches.' : 'Everything is excluded \u2014 nothing would be imported.') + '</td></tr>') + '</tbody></table></div></div>';
 
       host.querySelectorAll('.sbld-imptog').forEach(function (b) {
         b.onclick = function () { var c = b.dataset.tog; if (imp.open[c]) delete imp.open[c]; else imp.open[c] = 1; render(); };
@@ -26813,6 +27064,9 @@
       // the focus out of the box being typed into.
       var aq = host.querySelector('#b-impactq');
       if (aq) aq.onchange = function () { imp.actQ = aq.value; render(); };
+      host.querySelectorAll('[data-actflag]').forEach(function (b2) {
+        b2.onclick = function () { imp.actFlag = b2.dataset.actflag || null; render(); };
+      });
     }
 
     /* ---- STEP: Floors & Zones (import) -------------------------------------------------------
@@ -27394,7 +27648,7 @@
         // other teams' data, so mixing them into "Add WBS / Paste outline" would read as five more
         // ways to author a branch. With the WBS Manager screen gone this is their only home.
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-integ" style="margin-top:2px;"></div>' +
-        '<p class="sbld-hint" style="margin:2px 0 10px;"><b>Adopt existing WBS</b> builds the tree from an import’s own WBS-Summary rows; <b>Reset WBS</b> rebuilds it from the schedule’s codes. The <b>Engineering</b> and <b>Procurement</b> branches are mirrors of those apps and stay read-only here — <b>Push need-by</b> is the one control that writes back out.</p>' +
+        '<p class="sbld-hint" style="margin:2px 0 10px;"><b>Adopt existing WBS</b> builds the tree from an import’s own WBS-Summary rows; <b>Reset WBS</b> rebuilds it from the schedule’s codes. The <b>Engineering</b> and <b>Procurement</b> branches are mirrors of those apps and stay read-only here — <b>Push need-by</b> is the one control that writes back out. <b>The two Sync buttons are the only thing that refreshes those branches:</b> they no longer run when the schedule loads, because diffing a whole branch against another app’s database took minutes on a large tree. The date beside each button is how fresh it is.</p>' +
         '<div id="sbld-wbs-host"></div>';
       var ok = sbWbsMount(host.querySelector('#sbld-wbs-tools'), host.querySelector('#sbld-wbs-host'), host.querySelector('#sbld-wbs-integ'));
       if (!ok) {
@@ -28549,7 +28803,7 @@
           // Which field on a rec carries its predecessor text. The two parsers named it differently
           // and the relationships step has to read and rewrite exactly one of them.
           predField: (kind === 'xer') ? 'predText' : 'pred',
-          plan: {}, excl: {}, open: {}, phOpen: {}, locSel: null,
+          plan: {}, excl: {}, open: {}, phOpen: {}, locSel: null, actQ: '', actFlag: null,
           // relDrop = struck out · relEdit = type/lag overrides · relAdd = links the planner added.
           // ⚠️ Three maps LAYERED over the file's parse, which is never written to — see stImpRels.
           relMode: 'keep', relDrop: {}, relEdit: {}, relAdd: {}, relSel: null, relQ: '',
