@@ -556,7 +556,7 @@
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/epc-rcm.js?v=20260901a"></script>
+<script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
 <script src="../../assets/js/ui.js?v=20260902a"></script>
 <script src="../../assets/js/icons.js?v=20260901b"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -1897,13 +1897,13 @@
   }
 
   // ================= Portfolio Risk Register (cross-project) =================
-  // Priority uses the SAME 5×5 lookup the Risk Register module derives from (EPCRCM.riskPriority)
-  // rather than a re-guessed threshold on impact × probability — see epc-rcm.js for why a
+  // Priority uses the SAME 5×5 lookup the Risk Register module derives from (MCCRCM.riskPriority)
+  // rather than a re-guessed threshold on impact × probability — see mcc-rcm.js for why a
   // threshold on the product would be wrong (a product of 4 answers three different ways).
   var rkRows = null, rkLoadedIds = null, rkQuery = '', rkStatus = '';
   function rkPriority(r) {
     if (r.impact == null || r.likelihood == null) return '';
-    return (window.EPCRCM && EPCRCM.riskPriority) ? (EPCRCM.riskPriority(r.impact, r.likelihood) || '') : '';
+    return (window.MCCRCM && MCCRCM.riskPriority) ? (MCCRCM.riskPriority(r.impact, r.likelihood) || '') : '';
   }
   async function loadRisks(force) {
     var ids = scopedProjectIds();
@@ -1972,7 +1972,7 @@
   function shApproach(r) {
     if (r.mgmt_approach) return r.mgmt_approach;   // a planner's own judgement overrides the grid
     var i = shImpact(r), f = shInfluence(r);
-    return (i && f && window.EPCRCM && EPCRCM.stkApproach) ? (EPCRCM.stkApproach(i, f) || '') : '';
+    return (i && f && window.MCCRCM && MCCRCM.stkApproach) ? (MCCRCM.stkApproach(i, f) || '') : '';
   }
   async function loadStakeholders(force) {
     var ids = scopedProjectIds();

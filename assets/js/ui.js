@@ -154,19 +154,29 @@
   function renderNavListInto(container, projects, groupHeads, opts) {
     opts = opts || {};
     var search = '';
-    function paint() {
-      var q = search.trim();
-      container.innerHTML = '<div class="pd-nt-search"><input type="text" class="pd-nt-q" placeholder="Search all projects…" value="' + esc(q) + '"></div>' +
-        navListBody(projects, groupHeads, { search: q, portfolioActive: opts.portfolioActive, isSelected: opts.isSelected });
-      var qi = container.querySelector('.pd-nt-q');
-      if (qi) qi.oninput = function () {
-        var pos = qi.selectionStart; search = qi.value; paint();
-        var q2 = container.querySelector('.pd-nt-q');
-        if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} }
-      };
-      var pf = container.querySelector('[data-nt-portfolio]');
+    // ⚠️⚠️ YOU COULD NOT TYPE A SPACE IN THIS BOX, and the cause was one .trim().
+    // Reported 2026-09-02: *"i cannot add / type space in the search bar of the projects."*
+    // Every keystroke used to rebuild the WHOLE container — search input included — and it
+    // re-rendered that input with the TRIMMED query as its value. A space is only ever typed at the
+    // END of what you have typed so far, so it was trailing whitespace at the instant it was
+    // written, and the repaint deleted it before the next character arrived. "Test Project" could
+    // never be typed; "TestProject" was all the box would hold. It looked like a blocked keystroke
+    // and it was actually a value being rewritten underneath the caret.
+    // TWO fixes, and the second is what makes the first stay fixed:
+    //   1) the input keeps the RAW value — trimming is for the FILTER, never for the field;
+    //   2) typing no longer re-renders the input at all. The search box is painted once and only
+    //      the list body below it repaints, so there is no value to restore, no caret to put back,
+    //      and no way for a repaint to edit what someone is typing. (The old code had to save and
+    //      restore selectionStart precisely because it was destroying the live field.)
+    function paintBody() {
+      var host = container.querySelector('.pd-nt-body');
+      if (!host) return;
+      host.innerHTML = navListBody(projects, groupHeads, {
+        search: search, portfolioActive: opts.portfolioActive, isSelected: opts.isSelected
+      });
+      var pf = host.querySelector('[data-nt-portfolio]');
       if (pf) pf.onclick = function (e) { e.stopPropagation(); if (opts.onPortfolio) opts.onPortfolio(); };
-      container.querySelectorAll('[data-nt-proj]').forEach(function (r) {
+      host.querySelectorAll('[data-nt-proj]').forEach(function (r) {
         r.onclick = function (e) {
           e.stopPropagation();
           var id = r.dataset.ntProj;
@@ -174,7 +184,20 @@
           if (opts.onProject) opts.onProject(p);
         };
       });
-      if (window.Icons) Icons.hydrate(container);
+      if (window.Icons) Icons.hydrate(host);
+    }
+    function paint() {
+      container.innerHTML = '<div class="pd-nt-search"><input type="text" class="pd-nt-q" placeholder="Search all projects…"></div>' +
+        '<div class="pd-nt-body"></div>';
+      var qi = container.querySelector('.pd-nt-q');
+      if (qi) {
+        // ⚠️ Set as a PROPERTY, not as a value= attribute in the markup above: a query holding a
+        // quote would otherwise have to be escaped into the HTML, and that escaping is the other
+        // half of how a search box ends up editing what the user typed.
+        qi.value = search;
+        qi.oninput = function () { search = qi.value; paintBody(); };
+      }
+      paintBody();
     }
     paint();
     return {

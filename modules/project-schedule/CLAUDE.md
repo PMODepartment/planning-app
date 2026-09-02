@@ -1,3 +1,524 @@
+## The colour scope now rides in the row cache, so the cached paint starts right (2026-09-02n) — fmlozano
+
+Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint
+self-correct after **3.3 seconds**; this removes the 3.3 seconds.
+
+⚠️ **The cache entry gains `catScope`.** Whether the colour key is scoped to the Execution Phase is
+answered by `phaseOf()`, which resolves through `WBS_NODES` — fetched long after the cached paint. So
+the first paint could not tell an unphased project from a not-yet-loaded one and took the
+colour-everything fallback. It now starts from **the answer the previous live load reached**, seeded
+into `_catExecCache` before `rebuild()` and `renderAll()`, both of which read it.
+
+Three rules that make this safe rather than merely faster:
+- ⚠️ **Only ever written from a load that HAD the tree.** `_cachePut` stores `null` when `WBS_NODES` is
+  empty. Caching an answer computed before the tree arrived would persist the exact wrong answer this
+  exists to avoid — and it would then be wrong *instantly* rather than for three seconds, which is
+  worse than the bug.
+- ⚠️ **A hint, never a source of truth.** The live pass still recomputes and repaints on disagreement,
+  so a stale hint costs one repaint and can never leave a wrong final state. `null` (old build, or
+  cached too early) simply means "no hint" and behaves exactly like (m).
+- ⚠️ **Written only when it is missing or has changed.** The `_cachePut` in the paint path runs before
+  the tree exists, so it can only ever store `null`; the write that matters is the new one after
+  `loadResourcesAssignments()`. Re-caching structured-clones every row, and on a 16k-row project that
+  is not worth spending on a load that learned nothing.
+
+- `MODULE_V` → `20260902n`.
+
+---
+## The 92-entry key came back — (k) was verified on the one load that could not show it (2026-09-02m) — fmlozano
+
+Owner, on the cleared SLN101 after (l) shipped: *"Legend still shows activities that are not within
+the execution phase."* Correct, and the (k) fix was sound — what was wrong was the verification.
+
+⚠️⚠️ **`load()` PAINTS FROM THE localStorage CACHE BEFORE `wbs_nodes` HAVE BEEN FETCHED.** Bars and
+legend chips are both drawn from `catEntry()` → `catInScope()` → `phaseOf()`, and `phaseOf` resolves
+through `WBS_NODES`. On a cache-painted load that array is still **empty** at first paint, so **no row
+resolves any phase**, `catScopeIsExec()` answers false, the fallback colours everything, and
+`catList()` **memoises** the 92-entry list.
+
+Two things then kept it wrong for the rest of the session:
+- ⚠️ **`_clearPhaseMemo()` dropped `_catExecCache` but not `_catCache`.** `catList()`'s key is
+  `pid | field | rows.length | theme | keySet` — not one of which changes when the tree arrives. So
+  the stale everything-coloured list was re-served for ever.
+- ⚠️ **Invalidating caches repaints nothing**, and `load()` does not re-render the legend later. Even
+  with the cache dropped, what was already on screen stayed on screen.
+
+Fixed: `_clearPhaseMemo()` drops `_catCache` too, and `load()` answers `catScopeIsExec()` **before and
+after** `loadResourcesAssignments()`, re-rendering the legend and the bars when it flips. ⚠️ Gated on
+the answer actually changing — a full re-render costs about a second on a 16k-row project, and on a
+cold load nothing has changed.
+
+### ⚠️ THE LESSON, AND IT IS ABOUT THE TEST, NOT THE CODE
+(k) was checked live and reported **40 → 0 chips**. That check drove a **cold** load — no cached copy,
+so `WBS_NODES` were already in hand by the time the legend first rendered, and the bug is invisible on
+that path. The owner hit it immediately because a returning browser takes the **cached** path. **A
+module that paints twice — once from cache, once live — has to be verified on BOTH paints**, and this
+repo has a documented family of exactly this defect. One green live check is not coverage.
+
+### Verified on the CACHED paint this time, sampled every 250ms from first paint
+
+| t | chips | freshness chip |
+|---|---|---|
+| 264ms | **40** | Cached · updating… ← the defect, reproduced |
+| 512ms | 40 | Loading resources… |
+| **3,590ms** | **0** | Syncing the design + procurement branches… ← the repaint fires |
+| 4,591ms | 0 | Live |
+
+Final state: **0 chips**, and the empty-key message reads *"No Execution Phase activities yet."* A
+cold load in the same build never leaves 0. ⚠️ **Both paints are now covered by the check**, which is
+the thing (k) got wrong.
+
+⚠️ **STATED, NOT GLOSSED: the cached paint is still wrong for ~3.3 seconds.** The tree has not arrived,
+so the fallback genuinely cannot tell an unphased project from a not-yet-loaded one, and it
+over-colours until `loadResourcesAssignments()` returns. It self-corrects, which is the difference
+between this and the reported bug — but it is visible.
+⚠️ **The alternative was considered and NOT taken:** defaulting to "scope to exec" while the tree is
+unknown would blank the colours for those 3.3s on every NORMAL project, since an execution project's
+rows also resolve their phase only through the tree. That trades a brief over-colouring on the rare
+cleared project for a brief under-colouring on every ordinary one. **The real fix is to persist the
+scope answer beside the cached rows** so the cached paint starts from the previous live answer; not
+done here, and worth doing if the flicker annoys.
+
+- `MODULE_V` → `20260902m`.
+
+---
+## An emptied schedule showed a 92-entry colour key (2026-09-02k) — fmlozano
+
+Owner, on the just-cleared SLN101: *"Why are there still activities and shown in the legend"* — two
+separate things, and the second was a defect in yesterday's own colour-scope change.
+
+### The activities are real, and they are not schedule data
+Measured live: **111 rows = 19 locked WBS summary rows + 92 activities, every one under WBS `3`
+(Planning Phase)** — `3.2.1 Drawing Register` (*"Schematic Design — 590 of 600 drawings approved"*)
+and `3.3.x` Procurement (*"Clearing & Grubbing"*, *"Rebar Supply (G75)"*, *"Admin Workers"*). They are
+the **Design Development and Procurement mirrors**, re-projected by the very next `load()` from the
+Engineering and Procurement apps. ⚠️ **Derived data: deleting them only makes them come back**, so the
+fix is to SAY so — now named in the clear's confirmation dialog and in its success toast.
+
+### ⚠️⚠️ The legend was my own fallback misfiring
+`catScopeIsExec()` asked **"does this project have execution work?"** and fell back to colouring
+everything when the answer was no. That premise was *"a project that has never been phased would
+otherwise have the feature silently switched off"* — but a **cleared** project is not an unphased one.
+Measured on SLN101 after the clear: **all 92 activities carry `wbs_node_id`, none carries its own
+`phase`, and all 92 resolve to `planning`** through the Planning Phase node. Zero resolve to
+`construction`. So the test found no execution work, took the fallback, and coloured all 92 — an
+**emptied** schedule displaying a 92-entry key of drawing-register and procurement item names, which
+is the exact opposite of what scoping the key to the Execution Phase was asked for.
+⚠️ **The test is now "are phases in use at all" (`phaseOf(r)`), not "is there execution work"
+(`isExecPhase(r)`).** Phases are plainly in use on that project; there is simply no execution work
+yet, and the honest answer is an empty colour key. A genuinely unphased project still falls back, so
+the case the fallback exists for is unchanged.
+
+### Verified live, then two follow-ons the verification itself exposed
+Re-checked on the deployed build against the cleared SLN101: **category chips 40 → 0**, the marks
+row intact. Two things that only showed once the key was correctly empty:
+- ⚠️ **The empty-key message said the wrong thing.** It read *"Nothing expanded — open a WBS branch"*,
+  which since (h) is no longer the only reason: a project with **no execution work** legitimately has
+  no chips, and that sentence sends the reader expanding branches that can never produce one. The two
+  cases now say different things.
+- ⚠️ **The plain Activity chip was emitted unconditionally**, only its LABEL changing — which does not
+  match what (h) claimed it did, and put an unexplained second *Activity* chip in a legend containing
+  no plain bar. It is now genuinely gated on `_hasPlainBars`.
+
+- `MODULE_V` → `20260902l`.
+
+---
+## The clear, measured live: 28,863 rows in 16 seconds, and one thing it never deleted (2026-09-02j) — fmlozano
+
+Owner ran `migrations/2026-09-02-clear-project-rpc.sql`, then Clear schedule on **SLN101 — which is
+4PH Strevi Bacoor**. Driven through the deployed site in the owner's own signed-in Chrome, with the
+owner's explicit go-ahead for a destructive run on a live project.
+
+### Verified live, and it is the first time any of this pass could be
+- **All three `clear_project_*` functions are registered** — probed with a project id no project has,
+  so each matched zero rows and deleted nothing, and each answered `0` rather than PGRST202.
+- ⚠️ The **anon key still has no grants**: PostgREST's OpenAPI root answers 401 on both the anon key
+  and the user's own token, so the function list had to be established by probing, not by reading.
+- **SLN101 has no contract packages**, so Clear takes the `__all__` branch — the RPC path.
+- **Round trips, deleting nothing:** RPC **~110ms**, a 200-id chunk **~210ms**. For 28,863 rows that
+  is **2 calls against 174 requests**.
+
+**The run itself, sampled every 250ms:**
+
+| t | caption |
+|---|---|
+| 0.25s | Clearing schedule… |
+| 7.0s | Clearing schedule… **20,000 removed** (first RPC batch) |
+| 10.5s | Clearing schedule… **28,863 removed** |
+| 14.5s | Clearing the WBS tree… **8,645 removed** |
+| ~16.6s | done |
+
+⚠️ **28,863 is exactly the row count measured before the run**, so the counter is honest — and the
+batch boundary at 20,000 is the `p_limit` doing what it was written to do. **`project_schedule`
+28,863 → 111, `wbs_nodes` 8,664 → 19 (all 19 locked, all 8,645 unlocked gone).** The 111 are the
+re-seeded skeleton summaries and the two mirror branches. Against ~5-10 minutes on the old path.
+
+⚠️ **The clear was started WHILE the heal chain was mid-`_wbsLinkActivityParents`** — the chip read
+*"Attaching activities to the WBS tree…"* when the dialog opened. That is the exact race that used to
+leave a project un-clearable, and it cleared cleanly. **The `repair` chip states were also confirmed
+live** (*"Restoring missing WBS rows…"*, *"Attaching activities to the WBS tree…"*, then `Live`).
+
+### ⚠️⚠️ AND THE THING ONLY A LIVE RUN COULD HAVE FOUND: `resource_assignments` 167 → 167
+Clear schedule has **never** deleted them. Both import-REPLACE paths always have, so Clear was the
+odd one out, and nothing on screen said so.
+⚠️ **This is not debris.** `resource_assignments.activity_id` matches `project_schedule.activity_id`
+**by CODE, not by row id**. 167 assignments left pointing at deleted activities do not stay
+harmless: re-import the same P6 file — which re-uses the same activity codes — and **every one of
+them silently re-attaches to different work**. Clearing in order to re-import cleanly is the entire
+reason the button gets pressed, so this defeated the purpose in the quietest possible way.
+Now cleared with the schedule (chunked for `__all__`, **by activity code** for a package scope, since
+that is the join), reported separately on failure, and **named in the confirmation dialog** — which is
+what a planner reads before typing the project code.
+
+⚠️ **Not re-verified live**: the fix shipped after the sandbox was already cleared, so the
+167 → 0 has not been watched happening. Next clear on any project will show it.
+
+- `MODULE_V` → `20260902j`.
+
+---
+## The delete loop belongs in the database; Progress / Stacking / Outline are toolbar buttons again (2026-09-02i) — fmlozano
+
+### 1 ⚠️⚠ "100-200 activities per 2 seconds" — and that 10ms a row was never database time
+Yesterday's chunked delete fixed the timeout and left something almost as bad. ⚠️ **The cost is the
+HTTP round trip, not the DELETE.** `project_schedule` carries **no trigger, no rule, and nothing
+references it** (`grep -rn "references project_schedule"` over the whole schema: no matches), and it
+is indexed on `(project_id, id)` — deleting 16,485 rows server-side is one index scan. The 10ms is
+the request.
+⚠️ **And the chunk cannot simply be made bigger.** 200 uuids is already ~8KB of URL, near the
+practical limit for a PostgREST `in.(...)` filter. 20,000 rows is ~100 sequential requests however
+the client is written. **The loop has to move into the database**, so it did:
+`migrations/2026-09-02-clear-project-rpc.sql` — `clear_project_schedule`, `clear_project_wbs_nodes`,
+`clear_project_resource_assignments`.
+- ⚠️ **A row LIMIT, not a bare `delete where project_id = $1`** — the bare form is what timed out in
+  the first place, and a plpgsql loop inside one call does **not** get a fresh timeout per iteration
+  (the timer is armed once, when the top-level statement starts). The bound has to be visible to the
+  caller. The client asks for 20,000, and **halves the batch and retries on 57014** rather than
+  losing the operation.
+- ⚠️ **SECURITY INVOKER.** These wipe a project's schedule; definer rights would let any
+  authenticated caller wipe any project.
+- ⚠️ **The id-chunking path is kept as the fallback**, because the client ships independently of the
+  migration. **Until the migration is run, the delete is exactly as slow as before.**
+
+### 2 ⚠️ The counter counted ids SENT, not rows gone
+`total` counted the ids **sent**. A delete that affects nothing (an RLS policy permitting SELECT but
+not DELETE is the realistic case) re-reads the same page for ever and the counter climbs without
+bound. The fallback now fails when **the same first id comes back**, which is the only honest signal
+that nothing is moving, and says what it means.
+
+⚠️ **I FIRST WROTE THAT THE OWNER'S "29,605 removed" PROVED THIS, AND THAT WAS WRONG.** Checked live
+afterwards: **SLN101 *is* 4PH Strevi Bacoor**, and it holds **28,863 activities**. 29,605 is therefore
+well within what a real clear of that project could legitimately report — it is not evidence of a
+runaway at all. What the live check DOES establish is that the clear **did not complete**: all 28,863
+rows are still there. Whether the counter over-reported or the heal chain was re-creating rows as fast
+as they went (see 3) is not decidable from a screenshot, and both are now closed. **Do not cite that
+number as proof of the counter bug.**
+
+### 3 ⚠️⚠ "The delete stopped, and deleting again bugged" — the heal chain was fighting the clear
+This is the one that also answers *"items obtained from the Engineering App and Procurement App …
+may corrupt the import process."* `load()` paints, then runs four self-heal passes **plus** the
+Design Development and Procurement mirrors — minutes of writes, and every one of them exists to
+**create** rows. Clear the schedule while a previous load's chain is still running and the two
+fight: the clear deletes, the chain re-creates, and the project never empties.
+⚠️ **The `gen !== _loadGen` checks already in `load()` were not enough, because nothing bumped the
+generation when a destructive operation began** — the chain had no way to learn the schedule beneath
+it had been deleted. `_beginMutation()` bumps it (turning every existing checkpoint into an abort)
+and raises a counter that keeps the next load's chain, and both mirrors, out until the write is done.
+- ⚠️ **A counter, not a boolean**: an import calls the clear helpers inside itself, so the regions
+  nest and a boolean would be cleared by the inner one while the outer was still writing.
+- Both importers are wrapped the same way, via a thin outer function forwarding `arguments`.
+- ⚠️ `load()` is called **outside** the guarded region in the clear handler, or it could not run its
+  own heal chain afterwards.
+
+### 4 Progress, Stacking and Outline are top-level controls again
+Owner: *"it should have their own button each at the toolbar itself"*, and *"I also need the outline
+view to be out of the view button … so users would not need to click on multiple buttons just to
+collapse into a WBS level."* Folding them in bought toolbar width and cost a click on the three
+controls used most. That was the wrong trade.
+- ⚠️ **They go through `_setView`, not straight to `setProgressMode`/`setVStackMode`.** `_setView` is
+  what guarantees one view at a time — the OLD standalone buttons were independent toggles and it was
+  possible to be in Progress *and* Stacking at once. A shortcut to a view must not be a shortcut
+  around the rule that made the views coherent.
+- ⚠️ **Progress and Stacking stay listed in the View menu**, deliberately. Both surfaces are painted
+  from the one `_viewKey()`, so they cannot disagree; removing them would leave the View button
+  naming a view its own menu could not return you from, which is the defect that caused the fold.
+  **Outline does leave the menu** — it is not a view, so nothing there has to name it.
+- ⚠️ `#ps-vstackbtn.active` had **never existed** (that view was only ever a silent toggle) and
+  `#ps-progressbtn.active` had been dead CSS since the fold. Both now light.
+- ⚠️ **Cost, stated:** three controls add ~280px to a row that needs 1,377px. `.ps-tb-row` wraps, so
+  nothing clips, but a 1440-wide laptop is back to two toolbar lines. At the owner's ~1920 it is one.
+
+### Verification
+- Parses; **5,116 → 5,132 function definitions**, none lost. Ids unique, all four wired.
+- ⚠️ **Not verified signed in, and almost nothing here can be** — the RPC, the batch-halving retry,
+  the no-progress guard and the mutation race are all server-and-timing facts. **The migration has
+  not been run.** Run it, then clear SLN101: it should be one call, not 100.
+- ⚠️ **The importer was inspected, not exercised.** The Engineering/Procurement mirrors are now
+  fenced off from clears and imports, which is a real race closed — but whether the Avesta import is
+  otherwise correct is not something this pass proves.
+- `MODULE_V` → `20260902i`.
+
+---
+## Clear timed out; the network ignored every filter; colouring is the Execution Phase's (2026-09-02h) — fmlozano
+
+Owner, five reports in one pass. Three were the same class of defect — **a whole-project operation
+written as one statement, one unfiltered scan, or one silent wait** — and none of them fails on a
+small project, which is why they survived.
+
+### 1 ⚠⚠ "Canceling statement due to statement timeout" on Clear schedule
+`.delete().eq('project_id', pid)` is ONE statement covering every row, and Postgres kills it at
+`statement_timeout`. It fails hardest on the projects that most need clearing — 4PH Strevi carries
+**16,485 activities and 12,465 WBS nodes**.
+⚠️ **The package-scoped paths have always chunked at 200. Only the "everything" paths were
+unbounded**, which is why *clear one package* worked while *clear the schedule* did not — and why a
+**REPLACE import**, which clears everything first, failed the same way. **Six sites, one bug:** clear
+schedule, the Schedule Builder push, the import's replace, both `resource_assignments` clears, and
+`_clearWbsTree`'s unscoped path. All now go through `_deleteAllRows`.
+- ⚠️ It pages ids from the **start** each lap, never an offset: the rows it just read are the rows
+  it just deleted, so page 2 is always at offset 0. An OFFSET would skip a page every lap.
+- ⚠️ The 1,000-lap guard is not decoration. An RLS policy that permits SELECT but not DELETE returns
+  the same page for ever; the loop has to end with a sentence a human can read, not hang the tab.
+- ⚠️ A timeout inside `_clearWbsTree` is **worse** than one on the activities, because the caller has
+  usually already cleared those — a failed tree clear leaves no activities and a full tree, which
+  re-projects summary rows on the next load and reads as *"clear did nothing"*. **This is the most
+  likely cause of the bugged re-imports** and is the first thing to re-test.
+
+### 2 ⚠️ "WBS isn't showing properly initially" — the app said Live while it was still rebuilding
+`load()` paints from `rows` as soon as they arrive, then runs **four self-heal passes** — resync
+dotted codes, dedupe summaries, restore orphan nodes, attach imported activities — each many server
+round-trips over every row. On a fresh import that is minutes, and the WBS is genuinely incomplete
+for all of it. **The freshness chip said "Live" the whole time.** Nothing was broken except the
+claim. A third chip state now names the running pass, and **`Live` moved to the end of the chain**,
+after the last thing that can change the tree.
+
+### 3 ⚠⚠ The Activity Network ignored every filter in the app — including the ones it told you to use
+It read straight off `rows`, so the Filter menu, the search box and *Execution Phase only* changed
+its count by **zero** — while its own over-300 message said *"use Filter or Search to narrow the
+set."* The advice could not be followed, so on any real project the view never rendered. Owner:
+*"the PERT Diagram will always be not working since our activities exceed the 300 activity
+threshold."* **It was not the threshold.**
+- Now scoped exactly like the grid (`_execOnly` + `rowMatches`), so the advice is true.
+- **Location pickers**, one per level the project defines — Tower, Level, Zone, Unit. ⚠️ Each picker's
+  options come from the set already narrowed by the levels **above** it, and choosing a tower clears
+  the levels below: every tower has a "Zone 1", so a stale selection would carry across and show a
+  slice nobody asked for.
+- Cap 300 → **1,200**. It is a rendering limit (an SVG `<g>` + rect + two text runs per node), not a
+  policy, and 300 sat below every useful whole-tower slice.
+
+### 4 Colouring is the Execution Phase's
+Owner: *"only make the bars different exclusively [for] activities under Execution Phase … so the
+legend will only show activities relevant to the execution phase."* One switch — `catEntry()` returns
+null out of scope — and the bar renderer already falls back to the plain dark-bar + red-fill, so the
+legend list, the key-trades picker and the collapsed summary segments all follow from that one line.
+- ⚠️ **Falls back to colouring everything when the project has no execution-phase activity at all.**
+  `phaseOf` resolves through the WBS branch, so an un-phased project answers null for every row, and
+  scoping to a phase nothing is in would silently turn the feature off and read as a new bug.
+- ⚠️ **The plain Activity chip stops being `lg-lsmoff`.** That class means "only when colours are
+  off", which was true while colouring recoloured every bar. It no longer does — a schedule can now
+  carry **both** treatments at once — and hiding the chip left the plain bars unexplained. It is
+  emitted from `renderActLegend` because *"is a plain bar on screen right now"* is a question about
+  `DL` that no selector can ask, and in the mixed state it **names** the work it covers. Two chips
+  both reading "Activity" is the defect fixed earlier today; it is not being re-introduced.
+
+### 5 The "No level" band now shows the WBS branch — the diagnostic, not a guess
+A location value is **derived from the branch names**. An activity lands in "No level" precisely when
+no ancestor's name matched a term for the floor level, and that has two opposite causes: a floor the
+matcher missed (fixable in *Group ▾ → Match WBS to locations…*) or work that genuinely belongs to the
+site rather than a storey — the ordinary truth for General Requirements and most Site Development.
+**Without the path on screen the two are indistinguishable, and they need opposite responses.** The
+column is shown in that band only, where it answers something.
+⚠️ **No importer rule was changed.** Deciding that a gabion belongs on "Ground Floor" is a modelling
+decision about the owner's project, not a defect to patch, and inventing one would put a wrong level
+on 56 rows across two projects.
+
+### Verification
+- Parses; **5,091 → 5,116 function definitions**, none lost.
+- ⚠️ **Nothing here is verified signed in, and items 1-3 are exactly the ones that need it** — the
+  timeout, the heal chain's duration and the network's counts are all server-side facts a harness
+  cannot produce. The clear fix is the one to exercise first, on SLN101.
+- `MODULE_V` → `20260902h`.
+
+---
+## The Activity chip was 3.5x every other chip AND drawn in the wrong view (2026-09-02f) — fmlozano
+
+Owner: *"Shorten the Activity legend chip"* and *"Separate the Progress and Stacking buttons, extract
+them within the View button."* The first turned out to be two faults, and the larger one was a
+regression from yesterday's own legend fix rather than the design call the previous pass recorded.
+
+### 1 ⚠️⚠️ REGRESSION: the coloured-bar chip was showing in the PLAIN view, next to the chip it contradicts
+`.lg-lsmon { display:none }` is (0,1,0). Retargeting the layout rule to `.ps-actlegend .lg` (0,2,0) on
+2026-09-02d — itself a correct fix for dead CSS — put a **higher-specificity `display:inline-flex`
+eleven lines above it**, so from that deploy the hide rule lost and the LSM-only chip was drawn in
+**both** views. The plain view therefore carried two chips both labelled *Activity*:
+`Activity (red = % complete)` and `Activity (solid = done, pale = remaining · …)`, which describe the
+same mark differently. Measured in a harness built from the shipped CSS: **8 chips displayed where 7
+exist**, and the row wrapped to **two lines (88px vs 41px)** because the 482px chip could not fit
+beside the rest.
+⚠️ The fix is `.ps-actlegend .lg-lsmon { display:none }` — (0,2,0), and **later in source order** than
+`.ps-actlegend .lg`, which is what makes it win. The `#ps-view-schedule.ps-lsm` show rule is (1,2,0)
+and still beats both, so it alone decides when the chip appears. **Verified: 7 chips in the plain view,
+6 in the coloured one, both one line for the key.**
+⚠️ The previous pass measured 482px in a harness that never set `.ps-lsm` — i.e. in the plain view,
+where the chip should not have been at all. The number was right and the conclusion was not.
+
+### 2 The width: the three facts moved to their own line rather than being cut
+482px against 77 / 113 / 128 / 136. None of the three facts a bar encodes may be dropped — the wording
+was settled after *"still to do"* was read as a forecast date — so the parenthetical **moves** instead
+of shrinking. The chip is now `[bar sample] Activity` and a `.lg-note` caption under the key spells the
+three out with room to name them properly (*"where the bar ENDS"* rather than *"bar ="*).
+**Measured: Activity 72px** — now the narrowest chip in the row — **and the whole legend costs 2px more
+height (41 → 43px)**, because the note occupies one line that the wrapped chip was taking anyway.
+- ⚠️ **`BAR_NOTE_HTML` is separate from `MARKS_LEGEND_HTML` and appended LAST**, not tidiness:
+  `flex-basis:100%` takes a whole line wherever it sits, and inside the marks block it split the row
+  between the marks and the trade chips — one key over **three lines, 66px**.
+- ⚠️ **The sentence lives in ONE child span.** `.lg-note` carries `lg`, so it is a flex container, and
+  **flex strips the literal whitespace between items** — written as `<b>solid</b> = done` directly
+  inside it, it renders `Reading a bar:solid= done`. That is the identical defect that shipped as
+  `Activity(solid`. The gating rules set `display` from a selector carrying an ID, so it cannot be
+  turned off from here without a specificity fight; one child = one flex item, and the text inside it
+  is ordinary inline flow. **Verified against `innerText`, not `textContent`** — only the rendered text
+  shows a stripped space.
+
+### 3 Progress and Stacking are their own section of the View menu
+The six views were one flat list, which said they were six of a kind. They are not, and the **state
+already knew**: Split / Grid / Gantt / Network are `layoutMode`, arrangements of the same grid +
+timeline; Progress and Stacking are `progressMode` / `vstackMode`, separate screens that replace
+`.ps-split` outright. Now **Schedule layout** and **Separate views** under their own headings, split by
+a divider — so picking Stacking no longer looks like picking Gantt.
+⚠️ Costs one heading + one divider (~30px) on a menu already measured at 804px. Safe only because
+`anchorMenu` re-clamps `max-height` and `overflow-y` **on every render**, not just on open.
+
+### Verification
+- Harness regenerated from the shipped files: `dashboard.css` + the module's own `<style>` block +
+  `MARKS_LEGEND_HTML` and `BAR_NOTE_HTML` **sliced verbatim**, rendered twice — once plain, once with
+  `.ps-lsm` — because the display gating is the whole point and one state cannot show it.
+  Behind the standard gate (`visibilityState`, non-zero `clientWidth`).
+- Parses; **5,090 → 5,091 function definitions** (the `hd` heading helper), none lost.
+- All chips `swCentreOff: 0` in both modes; the note renders on one line at 1377px.
+- ⚠️ **Three harness faults of my own, all one trap wearing different clothes.** A backslash that has
+  to survive python → .js source → a JS string literal → a regex lost a layer on every inline attempt,
+  emitting `/s+/g`, which silently ate every letter **s** from the readout (*"Mile tone"*, *"WBS
+  ummary"*) — the same family as the template-literal version recorded in 2026-09-02d. It is now built
+  with `String.fromCharCode(92)`, which has nothing left to misread. Separately, writing the file with
+  python's default newline translation **converted 30,065 LF line endings to CRLF**; `.gitattributes`
+  normalises on commit so the diff never showed it, but the working file was rewritten wholesale.
+  Put back, and every edit since passes `newline=''`.
+- ⚠️ **Not verified signed in** — measured in the harness, not on a live project. The three changes are
+  CSS specificity, one moved string and one menu section, none of which touch data or the server.
+- `MODULE_V` → `20260902f`.
+
+---
+## Vertical stacking: a DONE status on finished zones, carrying the day variance (2026-09-02) — eprobles
+
+Owner: *"show a status of done for zones or areas or units that have been declared as completed. and
+then show the variance in terms of days to determine if it was completed in time or not."*
+
+A finished zone now prints a **`✓ DONE` pill** where an unfinished one prints its percentage, and the
+pill **is** the variance: it is coloured by it (green early / blue on time / red late / grey no
+baseline) and carries the figure (`✓ DONE +62d`). One mark, three facts — done, which way, how far.
+
+⚠️ **"Done" is NOT `pct >= 100`, and this is the whole point of `_vsDone`.** Two ways that number
+lies here:
+- `_vsPct` is duration-weighted and **rounded**, so a zone at 99.6 % already prints "100%". A zone
+  that says 100 % while one activity is still open is exactly what a completion badge must never
+  claim. Done means **no activity in the cell is left short** (≥ 99.5 absorbs schedules that store
+  99.99 rather than 100 — a rounding artefact, not open work).
+- `_vsProgress` **follows the basis**. On *Planned* it is where the baseline says the work should be,
+  so `pct >= 100` there would badge a zone as complete because it was *due* — the opposite of the
+  truth. `_vsDone` reads the activities' own `percent_complete`, so the badge means the same thing on
+  all three bases.
+- ⚠️ Under the **time scrub** it falls back to the modelled progress reaching 100. There is no
+  recorded history to ask (see the `_vsAsOf` note), so "declared complete" has no meaning at a past
+  date; "scheduled to be finished by then" is what every other number on a scrubbed cell already
+  means, and the bar says so on screen.
+
+⚠️ **The variance is `_vsFinSlip`, not `_vsSlip`.** `_vsSlip` follows the Start/Finish toggle, so on
+*Start* it answers "did it START on time" — a different question, and it would have put a start
+variance inside a completion badge. `_vsFinSlip` is finish vs baseline finish whichever way the
+toggle is set. `null` when there is no baseline finish, and that reads as **unknown**, never as on
+time.
+
+- ⚠️ The pill takes the **percentage's slot**, not a corner: the zone name is centred and up to 14
+  characters wide, so a corner badge collides with it. In Compare it **replaces** the variance line
+  rather than joining it — the two would otherwise say the same thing twice.
+- ⚠️ **The font shrinks before the words do.** A plain cell is ~75 px and `✓ DONE +62d` only fits
+  there at 8 px; at the badge's normal 8.6 every ordinary zone would fall through to the tick-only
+  form, which is precisely the status the owner asked to see.
+- The tooltip spells the whole thing out in words, the magnifier's readout leads with it, and both
+  the on-screen legend and the **PDF key** now explain the pill.
+
+---
+## Two toolbar defects with one cause each: the group head hung left, and `.lg` had lost its rule (2026-09-02d) — fmlozano
+
+Owner, from a live screenshot: *"The Ronquillo Group seem to be out of place from the project
+selector. I still think we can improve how the legend looks like for the Activity(solid = done, pale
+= remaining bar = forecast dates rail = planned)."* Both turned out to be measurable layout faults,
+not taste — and the second explains why the owner typed `Activity(solid` with no space.
+
+### 1 ⚠️ The group head hung 11.5px LEFT of the project it belongs to
+The project name is not a text node: `enhanceProjectSelect` replaces the `<select>` with a
+`.pd-psel-btn` that inherits `.pd-select`'s own padding + border, so its LABEL is inset from the
+control's left edge — while `.ps-ws` was inset by a flat `2px`. **Measured against the shipped CSS:
+name text at x=83.7, group-head text at x=72.2.** The two are stacked in the same column and are
+meant to read as one block, so 11.5px of disagreement is exactly what "out of place" looks like.
+`.ps-ws` now carries the trigger's own text inset (padding-left + border-width). **Verified: both
+text origins at x=83.7 — 0px.**
+⚠️ There is no CSS way to read a sibling's padding, so the value is a stated constant with a comment
+naming what it must equal, and the harness asserts the two origins land within 1px instead.
+
+### 2 ⚠️⚠️ `.ps-legend .lg` had been DEAD CSS since the marks were folded in
+This is the whole of the legend complaint, and it was one stale selector.
+
+When the marks became the leading entries of `#ps-actlegend` (2026-08-17) the `.ps-legend` wrapper
+was **deleted**, so `.ps-legend .lg { display:inline-flex; align-items:center; gap:6px }` stopped
+matching anything. Every chip in the activity legend has been unstyled ever since. Measured:
+
+- `align-items` computed **`normal`** on all five chips, so each swatch **baseline**-aligned instead
+  of centring — **`swCentreOff` −2 / −2 / −2 / −3**, the swatch riding above its own label.
+- ⚠️ **And that is where the owner's missing space came from.** `#ps-view-schedule.ps-lsm .lg-lsmon`
+  sets `display:inline-flex`, so the Activity chip — **alone among the five** — was a flex container
+  with `gap: normal` (0). Its ` Activity ` text node and its `<em>` are separate flex items, and
+  **flex strips the literal whitespace between items**. The other four chips were plain blocks, kept
+  their spaces, and looked fine. So one chip rendered `Activity(solid`, which is precisely the string
+  the owner quoted back. It was never a typo in the text.
+
+Retargeted to `.ps-actlegend .lg`. **Verified: all five chips `display:flex`, `align-items:center`,
+`gap:6px`, and `swCentreOff: 0` on every one** — plus the text now reads `Activity (solid = …)`.
+⚠️ Kept at (0,2,0) so the two `#ps-view-schedule.ps-lsm .lg-lsm*` display rules (1,2,0) still decide
+which chips are SHOWN; this only decides how a shown chip is laid out.
+
+### ⚠️ Still open, and it is a design call, not a defect
+The Activity chip measures **482px against 77 / 113 / 128 / 136** for the other four — 3.5× the
+widest trade chip, and it visually swamps the colour key a reader actually came for. Fixing the
+alignment makes it legible; it does not make it short. Put to the owner rather than chosen for them,
+because the honest options trade against a rule this file already fought over: the three facts a
+coloured bar encodes (rail = planned dates, extent = forecast dates, fill = done vs remaining) were
+worded deliberately after "still to do" was misread as a forecast, so dropping one from screen is not
+free. Not changed.
+
+### ⚠️ The toolbar-width thread is closed by the owner's own screenshot
+The previous entry left "1440 is still two lines — by 46px" open with the search box as the remaining
+lever. Re-measured in a harness carrying the **real shell** (`.pd-app` flex row + a 64px collapsed
+`.pd-sidebar` + `.pd-main`'s 22px padding — a bare toolbar over-reports available width by 108px and
+my first harness did exactly that): the row needs **1377px**. At the owner's ~1920 screen it is one
+line, which their screenshot confirms. No change made — the search box stays a real input.
+
+### Verification
+- Harness built from the shipped `<style>` block + `dashboard.css` + the real `ui.js` and `icons.js`,
+  with `MARKS_LEGEND_HTML` **sliced verbatim** out of `index.html` and the project selector driven
+  through the real `UI.enhanceProjectSelect`. Behind the standard gate (`visibilityState: visible`,
+  `--pd-red` resolving).
+- Parses (1 inline block); 0 NUL bytes; 1,447 function definitions, none lost; the dead
+  `.ps-legend .lg` rule is gone (the one remaining match is the comment naming it).
+- ⚠️ **Two harness faults of my own, both mine and not the code's:** `.replace(/\s+/g,' ')` written
+  inside a JS **template literal** degrades to `/s+/g`, which silently ate every letter `s` and made
+  the first text readout say `Mile tone` / `foreca t date`; and counting legend lines by distinct
+  child `top` values always reports one extra, because the 0-height `.ps-tb-spacer` is vertically
+  **centred** by `align-items:center` so its top is the line's midpoint. Count lines from the row's
+  height.
+- ⚠️ **Not verified signed in** — measured in the harness, not on a live project.
+- `MODULE_V` → `20260902e` (origin had already shipped `d` for a different module change, so `d` was
+  already in browsers and this fix would have sat behind a cached page).
+
 ## Vertical stacking: the cell body is never pale again — day mode was unreadable (2026-09-02) — eprobles
 
 Owner: *"is there a way you can improve the visuals in this vertical stacking? … if it is on day
@@ -42,6 +563,7 @@ two-stop shadow, a 1 px hover lift, and a header washed with the card's own `--t
 what stops eight cards looking like one grey table.
 
 ---
+
 ## Outline and Layouts folded into the View menu (2026-09-02c) — fmlozano
 
 Owner: *"Yes fold Outline and Layouts into View too"* — accepting the two candidates I named at the

@@ -196,6 +196,215 @@ Shared assets changed → **`ui.js`, `my-work.js`, `my-work.css`, `dashboard.css
 bumped to `?v=20260902a` across every referencing page**; `epc-rcm.js` referenced at its existing
 `?v=20260901a` (unchanged, no version bump needed since the file itself wasn't touched).
 
+### 2026-09-02 (n) — The colour scope rides in the row cache, so the cached paint starts right
+
+Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint
+self-correct after 3.3s; this removes the 3.3s. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- The cache entry gains **`catScope`** — the answer the previous live load reached — seeded into
+  `_catExecCache` **before** `rebuild()`/`renderAll()`, both of which read it.
+- ⚠️ **Only written from a load that had the tree** (`WBS_NODES` non-empty), else `null`. Caching an
+  answer computed before the tree arrived would persist the very wrong answer this exists to avoid,
+  and it would be wrong *instantly* instead of for three seconds.
+- ⚠️ **A hint, not a source of truth**: the live pass still recomputes and repaints on disagreement, so
+  a stale hint costs one repaint and never a wrong final state. `null` behaves exactly like (m).
+- `MODULE_V` → `20260902n`.
+
+### 2026-09-02 (m) — The 92-entry key came back: (k) was verified on the one load that could not show it
+
+Owner on the cleared SLN101: *"Legend still shows activities that are not within the execution
+phase."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️⚠️ **`load()` paints from the localStorage cache before `wbs_nodes` are fetched.** `phaseOf()`
+  resolves through `WBS_NODES`, so at first paint on a cached load **no row resolves any phase**, the
+  fallback colours everything, and `catList()` memoises the 92-entry list.
+- ⚠️ `_clearPhaseMemo()` dropped `_catExecCache` but **not `_catCache`**, whose key
+  (`pid|field|rows.length|theme|keySet`) does not change when the tree arrives — so the stale list was
+  re-served for the whole session. ⚠️ And invalidating a cache **repaints nothing**; `load()` never
+  re-rendered the legend afterwards.
+- Fixed both: the memo drops `_catCache`, and `load()` compares the scope answer either side of
+  `loadResourcesAssignments()`, repainting only when it flips.
+- ⚠️ **The lesson is about the test.** (k) was verified live and reported 40 → 0 — on a **cold** load,
+  the one path where `WBS_NODES` are already in hand when the legend first renders, so the bug cannot
+  appear. A returning browser takes the **cached** path. **A module that paints twice must be verified
+  on both paints.**
+- **Verified on the cached paint**, sampled from first paint: **40 chips at 264ms → 0 at 3,590ms**, ending
+  Live with the empty-key message. ⚠️ **The cached paint is still wrong for ~3.3s** — before the tree
+  arrives the fallback cannot tell an unphased project from a not-yet-loaded one. It self-corrects.
+  ⚠️ Defaulting the other way would blank the colours for those seconds on every *normal* project; the
+  real fix is to persist the scope answer beside the cached rows, not done here. `MODULE_V` → `20260902m`.
+
+### 2026-09-02 (k) — An emptied schedule showed a 92-entry colour key
+
+Owner, on the just-cleared SLN101: *"Why are there still activities and shown in the legend"*. Two
+things. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **The 92 activities are the Design Development and Procurement mirrors**, all under Planning Phase,
+  re-projected by the next `load()` from the Engineering and Procurement apps. ⚠️ Derived data —
+  deleting them only makes them return — so they are now **named in the clear's dialog and toast**
+  instead of appearing unexplained.
+- ⚠️⚠️ **The legend was (h)'s fallback misfiring.** `catScopeIsExec()` asked *"does this project have
+  execution work?"* and coloured everything when the answer was no — but a **cleared** project is not
+  an **unphased** one. Measured live: all 92 resolve to `planning`, none to `construction`, so the
+  fallback fired and keyed 92 drawing-register and procurement names on an empty schedule. The test
+  now asks **"are phases in use at all"**; a genuinely unphased project still falls back.
+- **Verified live on the deployed build: category chips 40 → 0** against the cleared SLN101. ⚠️ Two
+  follow-ons that only appeared once the key was correctly empty: the empty-state message still said
+  *"Nothing expanded"* (wrong reason — there is simply no execution work), and the plain Activity chip
+  was emitted unconditionally rather than gated on a plain bar being on screen, which is not what (h)
+  claimed. Both fixed. `MODULE_V` → `20260902l`.
+
+### 2026-09-02 (j) — The clear measured live: 28,863 rows in 16 seconds, and one thing it never deleted
+
+Owner ran the RPC migration and authorised a destructive test on **SLN101 (4PH Strevi Bacoor)**,
+driven through the deployed site in their own signed-in Chrome. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **28,863 activities + 8,645 WBS nodes cleared in ~16 seconds**, in **2 RPC calls** where the old
+  path needed 174 requests and 5-10 minutes. Measured round trips: RPC ~110ms vs a 200-id chunk
+  ~210ms. ⚠️ The counter reported **exactly** the 28,863 measured beforehand, and the batch boundary
+  landed at 20,000 — `p_limit` behaving as designed. All 19 locked skeleton nodes survived.
+- ⚠️ The clear was deliberately started **while the heal chain was mid-"Attaching activities to the
+  WBS tree…"** — the precise race that used to leave a project un-clearable. It cleared cleanly, and
+  the new repair-chip states were confirmed live.
+- ⚠️⚠️ **`resource_assignments` went 167 → 167 — Clear schedule has never deleted them**, though both
+  import-REPLACE paths always have. Not debris: assignments join activities **by activity code**, so
+  re-importing the same P6 file would have silently re-attached all 167 to different work — defeating
+  the exact purpose the button is pressed for. Now cleared with the schedule, by code for a package
+  scope, and named in the confirmation dialog. ⚠️ That fix shipped after the run, so it is not itself
+  live-verified.
+- ⚠️ Correction carried from (i): SLN101 *is* 4PH Strevi Bacoor and held 28,863 rows, so the owner's
+  "29,605 removed" screenshot was never evidence of a runaway counter. `MODULE_V` → `20260902j`.
+
+### 2026-09-02 (i) — The delete loop belongs in the database; Progress / Stacking / Outline are buttons again
+
+Owner: the clear ran at *"100-200 activities per 2 seconds"*, stopped, and *"when I tried deleting
+schedule again it bugged"*; the Engineering/Procurement mirrors were suspected of corrupting imports;
+and the three folded-away view controls were wanted back on the toolbar. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠️⚠️ **That 10ms a row was never database time.** `project_schedule` has no trigger and nothing
+  references it, and it is indexed on `(project_id, id)` — the cost is the HTTP round trip. ⚠️ And the
+  chunk cannot just be made bigger: 200 uuids is already ~8KB of URL, near PostgREST's `in.(...)`
+  limit, so 20,000 rows is ~100 sequential requests however the client is written. **The loop moved
+  into the database** — `migrations/2026-09-02-clear-project-rpc.sql`. ⚠️ **Until that migration is
+  run the delete is exactly as slow as before**; the client keeps the old path as a fallback.
+- ⚠️ **The counter counted ids *sent*, not rows gone**, so a delete affecting nothing would re-read
+  the same page for ever. It now fails when the same first id comes back. ⚠️ **I first justified this
+  with the owner's "29,605 removed" screenshot and that was wrong** — checked live afterwards, SLN101
+  *is* 4PH Strevi Bacoor and holds **28,863 activities**, so 29,605 is a plausible real figure, not a
+  runaway. The live check does show the clear **never completed**: every row is still there.
+- ⚠️⚠️ **The clear was fighting the previous load.** `load()` runs four self-heal passes plus the
+  Design Development and Procurement mirrors — minutes of writes that all exist to **create** rows.
+  Nothing bumped the load generation when a destructive operation began, so the chain never learned
+  the schedule beneath it had been deleted: the clear deleted, the chain re-created, the project never
+  emptied. That is both "the delete stopped" and the suspected Engineering/Procurement corruption, and
+  it is now fenced with a nesting-safe mutation counter around both importers and the clear.
+- **Progress, Stacking and Outline are top-level again.** ⚠️ They route through `_setView`, so the old
+  bug where Progress and Stacking could both be on at once does not come back, and the two stay listed
+  in the View menu so it can still return you from the view it names. ⚠️ Costs ~280px: a 1440 laptop
+  is back to two toolbar lines, ~1920 stays on one.
+- **Verified:** parses, 5,116 → 5,132 functions, none lost. ⚠️ **Not verified signed in, and almost
+  nothing here can be** — the RPC, the retry, the guard and the race are server-and-timing facts.
+  ⚠️ **The importer was inspected, not exercised.** `MODULE_V` → `20260902i`.
+
+### 2026-09-02 (h) — Clear timed out, the network ignored every filter, colouring is the Execution Phase's
+
+Owner, five reports on Project Schedule after re-importing Avesta and 4PH Strevi. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠⚠ **"Canceling statement due to statement timeout" on Clear schedule.** `.delete().eq('project_id',
+  pid)` is ONE statement over every row and Postgres kills it — so it fails hardest on the projects
+  that most need clearing (4PH Strevi: 16,485 activities, 12,465 WBS nodes). ⚠️ **The package-scoped
+  paths always chunked at 200; only the "everything" paths were unbounded** — which is why *clear one
+  package* worked, *clear the schedule* did not, and a **REPLACE import** (which clears everything
+  first) failed the same way. Six sites, one bug, all now chunked. ⚠️ A timeout inside the WBS-tree
+  clear leaves no activities and a full tree, which re-projects on the next load and reads as "clear
+  did nothing" — **the most likely cause of the bugged re-imports.**
+- ⚠️ **"WBS isn't showing properly initially."** `load()` paints immediately, then runs four self-heal
+  passes over every row — minutes on a fresh import, during which the tree really is incomplete. The
+  freshness chip said **"Live" the whole time**. It now names the running pass and only says Live at
+  the end of the chain.
+- ⚠⚠ **The Activity Network ignored every filter — including the ones its own error message named.**
+  It read off `rows`, so Filter, Search and "Execution Phase only" changed the count by zero while
+  the over-300 message said to use them. Now scoped like the grid, with **per-level location pickers**
+  (Tower / Level / Zone), and the cap raised 300 → 1,200. It was never the threshold.
+- **Colouring is the Execution Phase's** — one switch in `catEntry()`, with a fallback that keeps
+  un-phased projects working. ⚠️ A schedule can now show BOTH bar treatments, so the plain Activity
+  chip is emitted (and named) when a plain bar is actually on screen.
+- **The "No level" band shows the WBS branch it came from.** ⚠️ Diagnostic, not a guess: no importer
+  rule changed, because whether a gabion belongs on a storey is the owner's modelling decision.
+- **Verified:** parses, 5,091 → 5,116 functions, none lost. ⚠️ **Not verified signed in, and the three
+  server-side fixes are precisely the ones that need it.** `MODULE_V` → `20260902h`.
+
+### 2026-09-02 (g) — You could not type a space in the project search; Equipment Loading's backdrop and workspace
+Owner: *"i cannot add / type space in the search bar of the projects."* and, on Equipment Loading,
+*"add an option where you can resize the image uploaded, and also adjust the transparency of the image.
+Furthermore, enlargen the workspace."*
+- ⚠️ **The space bug was one `.trim()`.** `UI.renderNavListInto` (the shared project tree behind the header
+  switcher and the Projects page) rebuilt its whole container on every keystroke and re-rendered the search
+  input **with the trimmed query as its value**. A space is trailing whitespace at the instant it is typed, so
+  the repaint deleted it before the next character arrived — "Test Project" could never be typed. Fixed twice
+  over: the field keeps the RAW value (trimming is for the filter), and **typing no longer re-renders the
+  input at all** — only the list below it repaints, so no repaint can edit what someone is typing (and the
+  save/restore of `selectionStart` that existed only to paper over this is gone).
+- Equipment Loading → Site Plan: an **Image…** panel (fade 10–100 %, size 25–400 %, nudge, reset). The picture
+  moves; the traced towers do not — that is how a skewed scan gets lined up with towers already traced.
+  Stored in the plan row, not localStorage: where the backdrop sits is project data, not a browser preference.
+  Defaults reproduce the old full-bleed rect exactly, so existing plans open unchanged.
+- Workspace: the pane grows to `clamp(420px, 78vh, 1200px)`, **Wide** hides the side rail, and **Full screen**
+  fullscreens the rail *and* canvas together — a fullscreened canvas alone would strand the equipment chips
+  on the page underneath.
+- ⚠️ `ui.js` is a SHARED asset: its `?v=` is bumped in all 20 HTML files, or the search fix reaches nobody.
+- MODULE_V → `20260902f`.
+
+### 2026-09-02 (f) — A legend regression from yesterday's legend fix, and EPC → MCC finished
+
+Owner: *"Separate the Progress and Stacking buttons, extract them within the View button"*,
+*"Shorten the Activity legend chip"*, *"Finish the EPC → MCC rename."* Detail in
+`modules/project-schedule/CLAUDE.md` and both register `CLAUDE.md`s.
+
+- ⚠️⚠️ **THE LEGEND COMPLAINT WAS A REGRESSION, NOT A DESIGN CALL.** `.lg-lsmon { display:none }` is
+  (0,1,0); retargeting the layout rule to `.ps-actlegend .lg` (0,2,0) yesterday — itself a correct fix
+  for dead CSS — put a **higher-specificity `display:inline-flex` above it**, so the LSM-only
+  coloured-bar chip has been drawn in the **plain view too** ever since. Two chips both labelled
+  *Activity*, saying different things about the same mark. Measured: **8 chips shown where 7 exist**,
+  and the row wrapped to **two lines (88px vs 41px)**. Now scoped to `.ps-actlegend .lg-lsmon`, which
+  wins on source order while the `.ps-lsm` rule (1,2,0) still decides when the chip appears.
+- ⚠️ **The 482px measurement that opened this thread was taken in the wrong view.** The previous
+  harness never set `.ps-lsm`, so it measured a chip that should not have been on screen. Right number,
+  wrong conclusion — a harness that can only render one state cannot check a rule about two.
+- **The three facts a bar encodes moved to their own caption line rather than being cut.** The chip is
+  **72px** now (was 482, against 77 / 113 / 128 / 136), and the whole legend is **2px taller**, not
+  shorter-by-losing-something. ⚠️ The caption's sentence sits in ONE child span because `.lg-note` is a
+  flex container and **flex strips the whitespace between items** — the identical defect that shipped
+  as `Activity(solid`.
+- **Progress and Stacking are their own section of the View menu** (*Schedule layout* / *Separate
+  views*). The split is the one the state already makes: the first four are `layoutMode` arrangements
+  of the same grid + timeline, the other two replace the screen outright.
+- **EPC → MCC finished** — `epc-rcm.js`/`.css` → `mcc-rcm.js`/`.css`, `window.EPCRCM` → `window.MCCRCM`,
+  and the `EPC Control Masterlist` caption that was missed last pass. ⚠️ **Smaller than it was flagged
+  as:** the "40-odd CSS classes" are `.rcm-*` and never said EPC. ⚠️ **Every remaining "EPC" is
+  transcribed workbook content** — activity 16 really is named "EPC FUNCTIONAL MEETINGS" — and renaming
+  data would make the file disagree with the register it came from. Written into the engine's header.
+- **Verified:** register suite **163 pass / 0 fail**; the module parses with **5,090 → 5,091** functions
+  and none lost; the legend measured in both view states in a browser. ⚠️ **Not verified signed in.**
+- `MODULE_V` → `20260902f`; shared RCM files and both registers' `module.js`/`module.css` → `?v=20260902a`.
+
+### 2026-09-02 (e) — Vertical stacking: a DONE status on finished zones, with the day variance
+Owner: *"show a status of done for zones or areas or units that have been declared as completed. and then
+show the variance in terms of days to determine if it was completed in time or not."*
+- A finished zone prints a **`✓ DONE` pill** where an unfinished one prints its percentage. The pill *is*
+  the variance: coloured by it (early / on time / late / no baseline) and carrying the figure (`✓ DONE +62d`).
+- ⚠️ **"Done" is not `pct >= 100`.** That number is rounded (99.6 % already prints 100 %) and it follows the
+  basis — on *Planned* it would badge a zone complete because it was **due**. `_vsDone` reads the activities'
+  own `percent_complete`: done means no activity in the cell is left short.
+- ⚠️ **The variance is `_vsFinSlip`, not `_vsSlip`.** `_vsSlip` follows the Start/Finish toggle, so on *Start*
+  it would have put a start variance inside a completion badge. `null` (no baseline) reads as unknown, never
+  as on time.
+- Explained in the tooltip, the magnifier readout, the on-screen legend and the PDF key.
+- MODULE_V → `20260902e`.
+
 ### 2026-09-02 (d) — Vertical stacking: readable in day mode, and the cards read as a set
 Owner: *"improve the visuals in this vertical stacking … if it is on day mode, please make it more visually
 appealing … choose better colors or colors of text … and also in terms of orientation of the windows."*
@@ -501,6 +710,45 @@ unfiltered exhaustive sweep buries one real defect under 180 impossible ones, an
 learns to skim it will miss the next real one.
 
 Stakeholder `module.css` → `?v=20260901k`; `MODULE_V` → `20260901n`.
+
+⚠️ **A THIRTEENTH, and the third instance of "brand red as text" in this pair of registers.** The
+Add/Edit form's section headers (`.rr-fsec` / `.sm-fsec`, 11px/800 `--pd-red-dark` on the modal)
+measured **2.40:1 in dark**. They were missed when the band header and the lit band pill were fixed
+because **the modal is not in the page until it is opened** — every sweep only ever saw what the
+register had already rendered. Dark-only override to `#FF8A80`. **If a fourth turns up, the honest fix
+is a `--pd-red-text` token in `dashboard.css`, not a fourth copy of the same two-line override.**
+
+**Final live state: both registers, both themes, 0 AA failures** — measured against the combinations
+the JS actually emits (57 surfaces on the Risk Register, 102 emitted combinations on the Stakeholder
+Register), worst margins 4.67:1 dark / 4.83:1 light.
+
+**Also, at the owner's request: "EPC Risk Universe" → "MCC Risk Universe" and "EPC Stakeholder
+Universe" → "MCC Stakeholder Universe"** — the two view headings, the shared criteria table, the
+off-taxonomy note and the test suite's section label. ⚠️ The shared file is still `epc-rcm.js` /
+`EPCRCM` / `.rcm-*`: renaming the module, its global and forty-odd CSS classes is a mechanical change
+with real blast radius across both registers, and the ask was about the headings.
+
+⚠️ **A CONCURRENCY HAZARD WORTH RECORDING, because it cost this pass an hour and nearly lost work.**
+Another session was editing `dashboard.html`, `modules.html` and `modules/project-schedule/index.html`
+in the same clone at the same time. Three things followed:
+1. **`git add -A` swept their uncommitted WIP into my commit.** Their 56-line change to
+   `project-schedule/index.html` was not in anything they had pushed, so it was live work.
+2. **They then `git reset --soft HEAD~1` MY commit** and committed the combined index under their own
+   message — so my changes briefly existed only under someone else's commit — then reset again.
+   Because the index is shared, every commit either session makes claims the other's staged work.
+3. **My work survived only as the unreachable commit object `a8e72c8`**, recovered from the reflog.
+
+**The rule that follows: in a clone another session is live in, never `git add -A`, and never rebase
+or reset shared HEAD.** This work was landed from an isolated `git worktree` checked out at
+`origin/main`, with my eight files taken verbatim out of my own commit object — which touches neither
+the shared index nor the shared HEAD, and let the other session keep working uninterrupted.
+
+⚠️ **`MODULE_V` deliberately NOT bumped here**, though both module `index.html` files changed their
+asset `?v=` strings. It lives in `dashboard.html`/`modules.html`, which the other session was actively
+editing — and they bumped it themselves in the same window. **Confirm a bump landed before trusting a
+returning browser to pick these up.**
+
+`epc-rcm.js` → `?v=20260901b`; both `module.js` → `?v=20260901g`; both `module.css` → `?v=20260901l`.
 
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
