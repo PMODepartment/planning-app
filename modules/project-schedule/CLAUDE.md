@@ -1,3 +1,78 @@
+## The delete loop belongs in the database; Progress / Stacking / Outline are toolbar buttons again (2026-09-02i) — fmlozano
+
+### 1 ⚠️⚠ "100-200 activities per 2 seconds" — and that 10ms a row was never database time
+Yesterday's chunked delete fixed the timeout and left something almost as bad. ⚠️ **The cost is the
+HTTP round trip, not the DELETE.** `project_schedule` carries **no trigger, no rule, and nothing
+references it** (`grep -rn "references project_schedule"` over the whole schema: no matches), and it
+is indexed on `(project_id, id)` — deleting 16,485 rows server-side is one index scan. The 10ms is
+the request.
+⚠️ **And the chunk cannot simply be made bigger.** 200 uuids is already ~8KB of URL, near the
+practical limit for a PostgREST `in.(...)` filter. 20,000 rows is ~100 sequential requests however
+the client is written. **The loop has to move into the database**, so it did:
+`migrations/2026-09-02-clear-project-rpc.sql` — `clear_project_schedule`, `clear_project_wbs_nodes`,
+`clear_project_resource_assignments`.
+- ⚠️ **A row LIMIT, not a bare `delete where project_id = $1`** — the bare form is what timed out in
+  the first place, and a plpgsql loop inside one call does **not** get a fresh timeout per iteration
+  (the timer is armed once, when the top-level statement starts). The bound has to be visible to the
+  caller. The client asks for 20,000, and **halves the batch and retries on 57014** rather than
+  losing the operation.
+- ⚠️ **SECURITY INVOKER.** These wipe a project's schedule; definer rights would let any
+  authenticated caller wipe any project.
+- ⚠️ **The id-chunking path is kept as the fallback**, because the client ships independently of the
+  migration. **Until the migration is run, the delete is exactly as slow as before.**
+
+### 2 ⚠️ "29,605 removed" on a schedule that never held that many — the counter was counting the wrong thing
+`total` counted the ids **sent**, not rows gone. A delete that affects nothing (an RLS policy
+permitting SELECT but not DELETE is the realistic case) re-reads the same page for ever and the
+counter climbs past the project's own row count — which is what the owner photographed. The fallback
+now fails when **the same first id comes back**, which is the only honest signal that nothing is
+moving, and says what it means.
+
+### 3 ⚠️⚠ "The delete stopped, and deleting again bugged" — the heal chain was fighting the clear
+This is the one that also answers *"items obtained from the Engineering App and Procurement App …
+may corrupt the import process."* `load()` paints, then runs four self-heal passes **plus** the
+Design Development and Procurement mirrors — minutes of writes, and every one of them exists to
+**create** rows. Clear the schedule while a previous load's chain is still running and the two
+fight: the clear deletes, the chain re-creates, and the project never empties.
+⚠️ **The `gen !== _loadGen` checks already in `load()` were not enough, because nothing bumped the
+generation when a destructive operation began** — the chain had no way to learn the schedule beneath
+it had been deleted. `_beginMutation()` bumps it (turning every existing checkpoint into an abort)
+and raises a counter that keeps the next load's chain, and both mirrors, out until the write is done.
+- ⚠️ **A counter, not a boolean**: an import calls the clear helpers inside itself, so the regions
+  nest and a boolean would be cleared by the inner one while the outer was still writing.
+- Both importers are wrapped the same way, via a thin outer function forwarding `arguments`.
+- ⚠️ `load()` is called **outside** the guarded region in the clear handler, or it could not run its
+  own heal chain afterwards.
+
+### 4 Progress, Stacking and Outline are top-level controls again
+Owner: *"it should have their own button each at the toolbar itself"*, and *"I also need the outline
+view to be out of the view button … so users would not need to click on multiple buttons just to
+collapse into a WBS level."* Folding them in bought toolbar width and cost a click on the three
+controls used most. That was the wrong trade.
+- ⚠️ **They go through `_setView`, not straight to `setProgressMode`/`setVStackMode`.** `_setView` is
+  what guarantees one view at a time — the OLD standalone buttons were independent toggles and it was
+  possible to be in Progress *and* Stacking at once. A shortcut to a view must not be a shortcut
+  around the rule that made the views coherent.
+- ⚠️ **Progress and Stacking stay listed in the View menu**, deliberately. Both surfaces are painted
+  from the one `_viewKey()`, so they cannot disagree; removing them would leave the View button
+  naming a view its own menu could not return you from, which is the defect that caused the fold.
+  **Outline does leave the menu** — it is not a view, so nothing there has to name it.
+- ⚠️ `#ps-vstackbtn.active` had **never existed** (that view was only ever a silent toggle) and
+  `#ps-progressbtn.active` had been dead CSS since the fold. Both now light.
+- ⚠️ **Cost, stated:** three controls add ~280px to a row that needs 1,377px. `.ps-tb-row` wraps, so
+  nothing clips, but a 1440-wide laptop is back to two toolbar lines. At the owner's ~1920 it is one.
+
+### Verification
+- Parses; **5,116 → 5,132 function definitions**, none lost. Ids unique, all four wired.
+- ⚠️ **Not verified signed in, and almost nothing here can be** — the RPC, the batch-halving retry,
+  the no-progress guard and the mutation race are all server-and-timing facts. **The migration has
+  not been run.** Run it, then clear SLN101: it should be one call, not 100.
+- ⚠️ **The importer was inspected, not exercised.** The Engineering/Procurement mirrors are now
+  fenced off from clears and imports, which is a real race closed — but whether the Avesta import is
+  otherwise correct is not something this pass proves.
+- `MODULE_V` → `20260902i`.
+
+---
 ## Clear timed out; the network ignored every filter; colouring is the Execution Phase's (2026-09-02h) — fmlozano
 
 Owner, five reports in one pass. Three were the same class of defect — **a whole-project operation

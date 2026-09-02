@@ -1107,8 +1107,13 @@
     #ps-analyzebtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-analyzebtn.active .pd-ico { color:#fff; }
     /* ---- Activity Progress View ---- */
-    #ps-progressbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
-    #ps-progressbtn.active .pd-ico { color:#fff; }
+    /* ⚠️ BOTH buttons, together. The Progress rule survived the 2026-08 fold that removed the
+       buttons (dead CSS for a fortnight); the Stacking one did not exist, because that view was only
+       ever a silent toggle with no lit state — which is precisely why the toolbar could not say
+       where you were. Now they are top-level again (owner 2026-09-02) the lit state is the whole
+       point: it is what stops a standalone shortcut re-becoming a control you cannot read. */
+    #ps-progressbtn.active, #ps-vstackbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    #ps-progressbtn.active .pd-ico, #ps-vstackbtn.active .pd-ico { color:#fff; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
@@ -2749,6 +2754,20 @@
                whether you were in it or not. The button now reads "View: Stacking", which answers
                where-am-I and what-else-is-there in one glance. See renderLayoutMenu. -->
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="View — Gantt, Grid, Split, Activity Network, Activity Progress, Vertical Stacking"><span data-ico="layout" data-ico-size="15"></span> <span id="ps-viewbtn-txt">View: Split</span> ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <!-- ⚠️ PROGRESS, STACKING AND OUTLINE ARE TOP-LEVEL AGAIN (owner 2026-09-02): *"it should
+               have their own button each at the toolbar itself"* and *"I also need the outline view to
+               be out of the view button as well, so users would not need to click on multiple buttons
+               just to collapse into a WBS level."* Folding them in bought toolbar width and cost a
+               click on the three controls a planner uses most often, which is the wrong trade.
+               ⚠️ Progress and Stacking are STILL LISTED in the View menu, deliberately. They are not
+               duplicates competing to own the state — `setProgressMode` / `setVStackMode` paint BOTH
+               the `.active` class on these buttons and the "View: …" label, from the one `_viewKey()`.
+               Removing them from the menu would leave the View button naming a view its own menu
+               could not return you from, which is the 2026-08 defect that caused the fold. Outline
+               DOES leave the menu: it is not a view, so nothing there has to name it. -->
+          <button class="pd-btn" id="ps-progressbtn" title="Activity Progress — physical vs planned, as a table"><span data-ico="trendingUp" data-ico-size="15"></span> Progress</button>
+          <button class="pd-btn" id="ps-vstackbtn" title="Vertical Stacking — the building model, one cell per zone"><span data-ico="box" data-ico-size="15"></span> Stacking</button>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-outlinebtn" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="layers" data-ico-size="15"></span> Outline ▾</button><div class="ps-menu" id="ps-outline-menu"></div></div>
           <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
                the View ▾ menu now: both answer "how am I looking at this schedule", the same question
                View already owns, and the row was two lines deep at laptop widths. See renderLayoutMenu. -->
@@ -3354,6 +3373,25 @@
   // project is selected. Every await in load() re-checks this against its own gen and
   // bails if a newer load has started.
   var _loadGen = 0;
+  // ⚠️⚠️ REBUILD-IN-PROGRESS. `load()` paints, then runs FOUR self-heal passes plus the Design
+  // Development and Procurement mirrors — minutes of writes on a big project. Those passes exist to
+  // CREATE rows: `_wbsEnsureSummaries` inserts a summary row for any node without one, and the two
+  // syncs insert branches sourced from the Engineering and Procurement apps. Clear the schedule
+  // while a previous load's chain is still running and the two fight: the clear deletes, the chain
+  // re-creates, and the project never empties. Owner: *"the delete process also stopped and when I
+  // tried deleting schedule again it bugged"*, and *"items obtained from the Engineering App and
+  // Procurement App … may corrupt the import process and destroy the schedule completely."*
+  // ⚠️ The `gen !== _loadGen` checks already in load() are NOT enough on their own, because nothing
+  // bumped the generation when a destructive operation began — the chain had no way to learn that
+  // the schedule underneath it had been deleted. `_beginMutation()` bumps it, which makes every one
+  // of those existing checkpoints an abort; the counter then keeps the NEXT load's chain out until
+  // the write is finished.
+  // ⚠️ A COUNTER, not a boolean: an import calls the clear helpers inside itself, so the regions
+  // nest and a boolean would be cleared by the inner one while the outer was still writing.
+  var _mutating = 0;
+  function _beginMutation() { _mutating++; _loadGen++; }
+  function _endMutation() { _mutating = Math.max(0, _mutating - 1); }
+  function _isMutating() { return _mutating > 0; }
   var PROJECTS = [], GROUPHEADS = [], layoutMode = 'split', activeTab = 'schedule';
   // ---- Which view am I in? -----------------------------------------------------------------
   // ⚠️ The six view modes live in THREE pieces of state — `layoutMode` (split/grid/gantt/network),
@@ -5423,7 +5461,10 @@
   // Rebuild the Procurement branch from the mirror. Idempotent: a work package's
   // Activity ID is its WP number, so a re-sync patches in place.
   async function syncProcurement() {
-    if (!pid || !canWrite || _prcSyncing || window.__viewOnly || window.__archived) return;
+    // ⚠️ `_isMutating()` for the same reason as syncDesignDevelopment: this INSERTS branches
+    // sourced from the Procurement (WPM) app, and a clear or a re-import must not have work
+    // re-created underneath it mid-operation.
+    if (!pid || !canWrite || _prcSyncing || _isMutating() || window.__viewOnly || window.__archived) return;
     var prcNode = _skeletonRoot('procurement');
     // Lift back anything the old ambiguous resolver mis-nested, THEN re-resolve: the heal can
     // merge nodes (including, in principle, the one we just picked), so the root must be read
@@ -5754,7 +5795,10 @@
   // activity has a deterministic `activity_id`, so a re-sync patches in place instead of
   // duplicating (the trap that produced duplicate WBS rows before — see _wbsEnsureSummaries).
   async function syncDesignDevelopment() {
-    if (!pid || !canWrite || _ddSyncing || window.__viewOnly || window.__archived) return;
+    // ⚠️ `_isMutating()` as well as `_ddSyncing`: this INSERTS branches sourced from the Engineering
+    // app, and running it into a schedule that is being cleared or re-imported re-creates work under
+    // a tree the caller is in the middle of replacing.
+    if (!pid || !canWrite || _ddSyncing || _isMutating() || window.__viewOnly || window.__archived) return;
     var ddNode = _skeletonRoot('design_development');
     if (ddNode) { await _healSkeletonNesting('design_development'); ddNode = _skeletonRoot('design_development') || ddNode; }
     if (!ddNode) return;                                   // skeleton not seeded (or migration not run)
@@ -6659,15 +6703,20 @@
     if (gen !== _loadGen) return;
     // Re-sync dotted codes to the node tree FIRST — a code that drifted after a push makes two
     // branches look like one, which the dedupe below would otherwise "fix" by deleting a live branch.
+    // ⚠️ EVERY PASS BELOW CREATES ROWS, so each one is gated. Not one gate at the top: the chain
+    // takes minutes and a clear can start at any point inside it.
+    if (_isMutating()) return;
     _repair('Checking WBS codes…');
     await _wbsResyncCodes();
     if (gen !== _loadGen) return;
     // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node-id dedupe
     // below cannot see). Runs after the resync: it must judge duplicates on correct codes.
+    if (_isMutating()) return;
     _repair('Checking for duplicate WBS rows…');
     await _wbsDedupeSummariesByCode();
     if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
+    if (_isMutating()) return;
     _repair('Restoring missing WBS rows…');
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
@@ -6677,6 +6726,7 @@
     // activities unattached, and the symptom is silent: the grid looks right while Vertical
     // Stacking, the WBS Manager's counts and the Contract Scope column all read empty. Gated on an
     // in-memory test, so a healthy project performs no query at all.
+    if (_isMutating()) return;
     if (_wbsUnlinkedActs()) {
       // The long one on a fresh import: every activity is unattached, so this is the pass the owner
       // sat through. Naming the count is the whole point — it is proportional to the wait.
@@ -6692,6 +6742,7 @@
     // Mirror the two registers into the Design Development branch. Runs AFTER the WBS is
     // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
     // leaves the branch as it was rather than blocking the schedule.
+    if (_isMutating()) return;
     _repair('Syncing the design + procurement branches…');
     await syncDesignDevelopment();
     await syncProcurement();
@@ -9512,7 +9563,16 @@
   }
   function impPackageRead(el) { var s2 = el.querySelector('#ps-imp-pkg'); return (s2 && s2.value) || null; }
 
-  async function doImport(recs, replace, fname, locMap, placement, discOnImport, pkgId, locScopeCodes) {
+  // ⚠️ WRAPPED IN A MUTATION REGION (see _beginMutation): an import clears and then re-inserts
+  // thousands of rows, and the previous load's self-heal chain — plus the Design Development and
+  // Procurement mirrors, which insert branches sourced from the Engineering and Procurement apps —
+  // would otherwise be writing into the same tree throughout. That is the corruption path the owner
+  // asked to be checked.
+  async function doImport() {
+    _beginMutation();
+    try { return await _doImportInner.apply(null, arguments); } finally { _endMutation(); }
+  }
+  async function _doImportInner(recs, replace, fname, locMap, placement, discOnImport, pkgId, locScopeCodes) {
     showLoading('Preparing import…');
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
@@ -10193,7 +10253,11 @@
       m.close(); doImportXER(parsed, rep, fname);
     };
   }
-  async function doImportXER(parsed, replace, fname) {
+  async function doImportXER() {
+    _beginMutation();
+    try { return await _doImportXERInner.apply(null, arguments); } finally { _endMutation(); }
+  }
+  async function _doImportXERInner(parsed, replace, fname) {
     showLoading('Preparing import…');
     // Same as the Excel path: replacing the activities must drop the tree, or the P6 WBS is adopted
     // on top of the previous import's nodes and every level duplicates.
@@ -19576,8 +19640,54 @@
   // ⚠️ The guard is not decoration. If a delete silently affects nothing (an RLS policy that permits
   // SELECT but not DELETE is the realistic case), the same page comes back for ever; the loop must
   // end with an error a human can read rather than hanging the tab.
+  // ⚠️⚠️ THE ROUND TRIP IS THE COST, NOT THE DATABASE. Chunking into `delete ... in.(<200 ids>)`
+  // requests fixed the timeout but measured at **100-200 activities per 2 seconds** — ~10ms a row —
+  // and that is not database time: `project_schedule` has no trigger, nothing references it, and it
+  // is indexed on (project_id, id), so deleting 16,485 rows server-side is one index scan. 200 ids
+  // is already near the practical URL length for a PostgREST `in.(...)` filter (36-char uuids +
+  // encoding ≈ 8KB), so the chunk CANNOT simply be made bigger. 20,000 rows is ~100 sequential
+  // requests however the client is written. The loop has to move into the database — hence the
+  // `clear_project_*` RPCs (migrations/2026-09-02-clear-project-rpc.sql), which do it in one call.
+  // ⚠️ The id-chunking path is KEPT as the fallback, because the client ships independently of the
+  // migration and must not break on a database that has not run it yet.
+  var RPC_FOR = { project_schedule: 'clear_project_schedule',
+                  wbs_nodes: 'clear_project_wbs_nodes',
+                  resource_assignments: 'clear_project_resource_assignments' };
+  // A missing function is a 404/PGRST202 from PostgREST; a timeout is 57014. They need opposite
+  // responses — give up on the RPC for good, versus retry it smaller — so they are told apart here
+  // rather than by a single catch-all.
+  function _rpcMissing(e) {
+    var m = String((e && (e.message || e.hint || e.details)) || '');
+    return /PGRST202/i.test(String((e && e.code) || '')) || /Could not find the function|does not exist|schema cache/i.test(m);
+  }
+  function _isTimeout(e) {
+    return String((e && e.code) || '') === '57014' || /statement timeout|canceling statement/i.test(String((e && e.message) || ''));
+  }
   async function _deleteAllRows(table, filter, onCount) {
     var total = 0;
+    // ---- fast path: one call per batch, the loop inside the database ---------------------------
+    var fn = RPC_FOR[table];
+    if (fn) {
+      var batch = 20000, rpcOk = true;
+      for (var call = 0; call < 200 && rpcOk; call++) {
+        var r = await sb().rpc(fn, { p_project_id: pid, p_limit: batch });
+        if (r.error) {
+          if (_rpcMissing(r.error)) { rpcOk = false; break; }   // fall through to the chunked path
+          // ⚠️ HALVE AND RETRY rather than fail. A deployment with a tight statement_timeout can
+          // still not manage 20,000 rows in one statement; the whole point of p_limit is that the
+          // caller can come back with a smaller bite instead of losing the operation.
+          if (_isTimeout(r.error) && batch > 250) { batch = Math.floor(batch / 2); continue; }
+          return { error: r.error, deleted: total };
+        }
+        var n = Number(r.data) || 0;
+        total += n;
+        if (onCount) onCount(total);
+        if (n === 0) return { error: null, deleted: total };
+      }
+      if (rpcOk) return { error: { message: 'Gave up after 200 batches with rows still present in ' + table + '.' }, deleted: total };
+      total = 0;   // the RPC deleted nothing — do not double-count it into the fallback's tally
+    }
+    // ---- fallback: page ids, delete them in url-sized chunks ------------------------------------
     for (var lap = 0; lap < 1000; lap++) {
       var q = sb().from(table).select('id').eq('project_id', pid);
       if (filter) q = filter(q);
@@ -19585,6 +19695,18 @@
       if (page.error) return { error: page.error, deleted: total };
       var ids = (page.data || []).map(function (r) { return r.id; });
       if (!ids.length) return { error: null, deleted: total };
+      // ⚠️ PROGRESS IS PROVED, NOT ASSUMED. `total` used to count the ids SENT, so a delete that
+      // affected no rows (an RLS policy allowing SELECT but not DELETE is the realistic case) kept
+      // re-reading the same page and the on-screen counter climbed past the project's own row count
+      // — the owner saw "29,605 removed" on a schedule that never held that many. The lap now fails
+      // if the same first id comes back, which is the only honest signal that nothing is going.
+      var head = String(ids[0]);
+      if (head === _delLastHead) {
+        return { error: { message: 'The delete is not taking effect on ' + table +
+                          ' — the same rows keep coming back. This is usually a row-level security ' +
+                          'policy that permits reading but not deleting.' }, deleted: total };
+      }
+      _delLastHead = head;
       for (var i = 0; i < ids.length; i += 200) {
         var slice = ids.slice(i, i + 200);
         var d = await sb().from(table).delete().in('id', slice);
@@ -19599,7 +19721,9 @@
   }
   // The whole-project activity clear, with the row count reported as it goes: on a 16,000-row
   // project this is now many round-trips instead of one, so a silent spinner would read as a hang.
+  var _delLastHead = null;
   async function _clearAllActivities(msg) {
+    _delLastHead = null;
     return await _deleteAllRows(TABLE, null, function (n) {
       setLoading((msg || 'Clearing existing activities') + '… ' + n.toLocaleString() + ' removed');
     });
@@ -29258,7 +29382,7 @@
     var analyzeMenu = document.getElementById('ps-analyze-menu');
     var oMenu = document.getElementById('ps-open-menu');
     var colorsMenu = document.getElementById('ps-colors-menu');
-    function closeMenus() { fMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _sm = document.getElementById('ps-scope-menu'); if (_sm) _sm.classList.remove('open'); var _zm = document.getElementById('ps-zoom-menu'); if (_zm) _zm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    function closeMenus() { fMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _sm = document.getElementById('ps-scope-menu'); if (_sm) _sm.classList.remove('open'); var _zm = document.getElementById('ps-zoom-menu'); if (_zm) _zm.classList.remove('open'); var _om = document.getElementById('ps-outline-menu'); if (_om) _om.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // ⚠️ CLIPPING FIX. `.ps-menu` is `position:absolute; left:0`, so a menu opened from a button
@@ -29432,10 +29556,8 @@
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         hd('Separate views') +
         opt('progress', 'Progress', 'physical vs planned') + opt('stacking', 'Stacking', 'building model') +
-        // ⚠️ Outline is omitted in the stacking view, exactly as the old
-        // `body.ps-vstack-on #ps-collapseto` rule hid the toolbar button: there is no grid outline
-        // to collapse while the building model is open.
-        (cur === 'stacking' ? '' : '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' + outlineSectionHTML()) +
+        // ⚠️ Outline moved OUT to its own toolbar button (owner 2026-09-02) — collapsing to a WBS
+        // level was two clicks deep in a menu that is mostly about something else.
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Row density</div>' +
         '<button data-den="comfortable">' + (_density !== 'compact' ? '● ' : '○ ') + 'Comfortable</button>' +
@@ -29455,7 +29577,6 @@
         '<button data-resetlayout title="Put the grid/Gantt split, the column widths and the column order back to their defaults. Nothing in the schedule itself changes.">' +
           '<span data-ico="refresh" data-ico-size="14"></span> Reset layout to defaults</button>';
       lMenu.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { lMenu.classList.remove('open'); _setView(b.dataset.view); }; });
-      bindOutlineSection(lMenu);
       bindLayoutsSection(lMenu, renderLayoutMenu);
       lMenu.querySelectorAll('[data-den]').forEach(function (b) { b.onclick = function () { applyDensity(b.dataset.den); renderLayoutMenu(); }; });
       lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
@@ -29512,8 +29633,42 @@
       window.addEventListener('resize', re);
       window.addEventListener('scroll', re, true);
     })();
-    // Progress and Stacking are entries in the View menu now (see renderLayoutMenu). The standalone
-    // buttons are gone; setProgressMode/setVStackMode still guard on the element, so nothing throws.
+    // ⚠️ These go through `_setView`, NOT straight to setProgressMode/setVStackMode. `_setView` is
+    // what guarantees only one of the six views is on at a time — the old standalone buttons were
+    // independent toggles and it was possible to be in Progress AND Stacking at once, with the
+    // toolbar unable to say which one you were looking at. A shortcut to a view must not be a
+    // shortcut around the rule that made the views coherent.
+    // ⚠️ Each button TOGGLES: pressing the active one returns to the saved layout rather than doing
+    // nothing, so the same button gets you in and out. `layoutMode` is the remembered arrangement.
+    (function () {
+      var pb = document.getElementById('ps-progressbtn');
+      if (pb) pb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'progress' ? layoutMode : 'progress'); };
+      var vb = document.getElementById('ps-vstackbtn');
+      if (vb) vb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'stacking' ? layoutMode : 'stacking'); };
+    })();
+    // Outline: the same section the View menu used to carry, in its own menu.
+    // ⚠️ Rebuilt on every open, because the level chips run 1..maxDepth() and that changes with the
+    // data — a menu built once at init would offer level 4 on a schedule that now goes 14 deep.
+    // ⚠️ HIDDEN IN STACKING, exactly as the old `body.ps-vstack-on #ps-collapseto` rule did: there is
+    // no grid outline to collapse while the building model is open.
+    (function () {
+      var ob = document.getElementById('ps-outlinebtn'), oMenu2 = document.getElementById('ps-outline-menu');
+      if (!ob || !oMenu2) return;
+      oMenu2.addEventListener('click', function (e) { e.stopPropagation(); });
+      ob.onclick = function (e) {
+        e.stopPropagation();
+        var was = oMenu2.classList.contains('open'); closeMenus();
+        if (was) return;
+        oMenu2.innerHTML = outlineSectionHTML();
+        bindOutlineSection(oMenu2);
+        if (window.Icons && Icons.hydrate) Icons.hydrate(oMenu2);
+        oMenu2.classList.add('open');
+        anchorMenu(ob, oMenu2);
+      };
+      var re2 = function () { if (oMenu2.classList.contains('open')) anchorMenu(ob, oMenu2); };
+      window.addEventListener('resize', re2);
+      window.addEventListener('scroll', re2, true);
+    })();
     _paintViewBtn();
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // `.ps-split` sets overflow:hidden, and the chooser is absolutely positioned inside
@@ -29934,6 +30089,13 @@
       go.onclick = async function () {
         if (inp.value.trim() !== String(pid)) return;
         m.close(); showLoading('Clearing schedule…');
+        // ⚠️ BEFORE the first delete, not after. This bumps the load generation, which aborts any
+        // self-heal chain still running from the previous load at its next checkpoint — otherwise
+        // that chain keeps re-creating summary rows into the project being cleared and the clear
+        // never finishes. It is also why a SECOND clear used to "bug": the first one's load() had
+        // started a chain that the second one was racing.
+        _beginMutation();
+        try {
         var del;
         if (target === '__all__') {
           // ⚠️ Chunked — see _deleteAllRows. As one statement this is the exact call that returned
@@ -29966,7 +30128,11 @@
         hideLoading();
         if (werr) { UI.toast('Activities cleared, but the WBS tree could not be: ' + werr.message, 'error'); }
         else { UI.toast('Cleared. The standard WBS skeleton stays in place.', 'success'); }
-        collapsed = {}; _wbsSel = null; resetUndo(); load();
+        collapsed = {}; _wbsSel = null; resetUndo();
+        } finally { _endMutation(); }
+        // ⚠️ OUTSIDE the guarded region: load() must be allowed to run its heal chain again, and it
+        // cannot while this counts as a mutation in flight.
+        load();
       };
     };
 

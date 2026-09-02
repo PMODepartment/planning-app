@@ -84,6 +84,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (i) — The delete loop belongs in the database; Progress / Stacking / Outline are buttons again
+
+Owner: the clear ran at *"100-200 activities per 2 seconds"*, stopped, and *"when I tried deleting
+schedule again it bugged"*; the Engineering/Procurement mirrors were suspected of corrupting imports;
+and the three folded-away view controls were wanted back on the toolbar. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠️⚠️ **That 10ms a row was never database time.** `project_schedule` has no trigger and nothing
+  references it, and it is indexed on `(project_id, id)` — the cost is the HTTP round trip. ⚠️ And the
+  chunk cannot just be made bigger: 200 uuids is already ~8KB of URL, near PostgREST's `in.(...)`
+  limit, so 20,000 rows is ~100 sequential requests however the client is written. **The loop moved
+  into the database** — `migrations/2026-09-02-clear-project-rpc.sql`. ⚠️ **Until that migration is
+  run the delete is exactly as slow as before**; the client keeps the old path as a fallback.
+- ⚠️ **"29,605 removed" on a schedule that never held that many.** The counter counted ids *sent*, so
+  a delete affecting nothing re-read the same page for ever and the number ran away. It now fails
+  when the same first id comes back — the only honest signal that nothing is moving.
+- ⚠️⚠️ **The clear was fighting the previous load.** `load()` runs four self-heal passes plus the
+  Design Development and Procurement mirrors — minutes of writes that all exist to **create** rows.
+  Nothing bumped the load generation when a destructive operation began, so the chain never learned
+  the schedule beneath it had been deleted: the clear deleted, the chain re-created, the project never
+  emptied. That is both "the delete stopped" and the suspected Engineering/Procurement corruption, and
+  it is now fenced with a nesting-safe mutation counter around both importers and the clear.
+- **Progress, Stacking and Outline are top-level again.** ⚠️ They route through `_setView`, so the old
+  bug where Progress and Stacking could both be on at once does not come back, and the two stay listed
+  in the View menu so it can still return you from the view it names. ⚠️ Costs ~280px: a 1440 laptop
+  is back to two toolbar lines, ~1920 stays on one.
+- **Verified:** parses, 5,116 → 5,132 functions, none lost. ⚠️ **Not verified signed in, and almost
+  nothing here can be** — the RPC, the retry, the guard and the race are server-and-timing facts.
+  ⚠️ **The importer was inspected, not exercised.** `MODULE_V` → `20260902i`.
+
 ### 2026-09-02 (h) — Clear timed out, the network ignored every filter, colouring is the Execution Phase's
 
 Owner, five reports on Project Schedule after re-importing Avesta and 4PH Strevi. Detail in
