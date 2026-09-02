@@ -11664,3 +11664,128 @@ fallback also fixed, which was rendering "128 categories values".
   already reverted to "this project already has N activities" and was offering to import again.
   Switching first puts them on the schedule under the importer's own progress overlay. The `finally`
   stays as a backstop.
+
+### 2026-09-02 (e) — The imported schedule reads back into the eleven steps
+
+Owner: *"The schedule setup doesn't show the existing schedule. It just prompts for import or build a
+new schedule. I want it when I successfully import a schedule, it should show all of the breakdown of
+the steps from the existing schedule with our 11-step logic schedule wizard."* And why: *"In this way
+we can easily edit and save new setups instead of building everything from scratch or just reimporting
+again and again."*
+
+So the Start step has a **third door**, offered first when there is execution work to read:
+**Read the schedule that is already here**. `sbDeriveFromSchedule()` walks the live rows and builds a
+cfg out of them — a 16,000-activity P6 import becomes an editable recipe instead of a wall of rows.
+
+What is read, and from where:
+- **Activities** — one line per activity NAME (that is what step 2 is: a name repeated across 96 zones
+  is ONE line with a duration). Trade from the modal `work_type`, duration from the median
+  `duration_days`, contract scope from the modal `scope_type`.
+- **Duration scope** — inferred from how often the name occurs: once in the programme → whole project;
+  once per floor → per floor; otherwise → per zone. A visible guess, in a column step 2 can change.
+- **Towers / floors / zones / units** — from `location` on each row, mapped through the project's own
+  Location Breakdown. ⚠️ **Four levels or more puts the first on TOWER**; three or fewer starts at
+  floor. That matches how these projects are broken down (4PH Strevi is Tower › Level › Zone ›
+  Cluster; a single-building job is Level › Zone), and the report says which reading it used.
+- **Floor order** — by the EARLIEST START of the work in each location, not alphabetically: "10th
+  Floor" sorts before "2nd Floor" as text, and the point of that step is that the list reads the way
+  the building was built. Basement / roof / podium are recognised by name so the tower drawing is the
+  right way up.
+- **The sequence between activities** — from the relationships the schedule already holds, reduced from
+  row-level to NAME-level (the setup sequences class codes) with the most common type/lag per pair
+  winning. ⚠️ Self-pairs are dropped (that is the floor-to-floor repetition, which step 5 expresses as
+  a lead/lag) and a pair that would close a loop is dropped rather than written — real schedules
+  contain name-level cycles the activity level does not, and `generate()` walks the graph.
+- **Lifecycle phases** — the one part that IS a faithful round trip: those phases are stored as a plain
+  list of activities with durations, which is exactly what step 9 edits.
+
+⚠️⚠️ **DERIVED, NOT ROUND-TRIPPED**, and the report says so rather than implying a copy. The schedule
+stores WHAT was planned; the setup stores the RULES that would generate it. Trade hand-offs (how many
+floors a trade waits, what runs in parallel) and the tower interfaces are **not recoverable from a
+finished programme** — those steps keep their defaults, and the report names them as the ones to check
+before generating. ⚠️ Nothing is written: the schedule is read, `cfg` is built in memory and marked
+dirty, and only Generate › Push ever changes anything.
+
+⚠️ **PHASE OR CODE, in both the execution scan and the phase scan.** An activity imported minutes ago
+has no `phase` of its own — it takes it from the WBS branch, and that link is attached by a load-time
+heal pass. Asking `phaseOf()` alone returned nothing on exactly the projects this was built for, so
+both scans fall back to the dotted code under the relevant branch, which is already correct at that
+point.
+
+**Two defects found while verifying it, both fixed:**
+- ⚠️ **The activity codes were unusable.** The first cut took the first six characters of the name, so
+  "Trade activity 1..196" all became `TRADEA`, `TRADEA-2`, `TRADEA-3` … and "Masonry Works Type A/B"
+  both became `MASONR`. The code is what step 6 sequences BY, so indistinguishable codes make that
+  step useless. Now initials-plus-digits: `TA1`, `ETSSD` for "Excavation to Suitable Soil Depth",
+  `REBAR` for a single word. Verified 128 codes, 0 collisions.
+- ⚠️ **The phases came back empty** for the reason above, before the code fallback was added.
+
+**Verified in a browser** on a 188-row schedule (2 towers × 8 levels × 2 zones, 3 trades, 128 activity
+names, 96 relationships, Initiation + Close-out work): read → 128 activity lines with codes, trades,
+median durations and scopes; 2 towers; 16 floor rows per trade; 96 zones; zone order per trade; 96
+sequence links; Initiation (2) and Close-out (1) with real durations; the rail expands from `[Start]`
+to all eleven steps and lands on step 2, and the Floors & Zones step shows the towers, the trade chips
+and the project's real breakdown names.
+
+### 2026-09-02 (f) — Row zoom: two zooms, one per pane
+
+Owner: *"I want a feature to zoom out in the grid itself so that I can expand how many activities I can
+see in one screen. Right now a user can only see about 11 rows. By zooming out the grid the gantt
+should also follow in the zoom out."* Then: *"Could this be easily done via ctrl + mouse scroll or two
+finger pan by the trackpad?"*
+
+The density toggle only ever offered 34px and 27px — on a 16,000-activity schedule that is the
+difference between 11 rows and 14, which is not an answer. Row height is now a **continuous zoom**
+(0.5×–1.4× of the density's own height, floored at 16px, persisted per browser).
+
+⚠️ **ONE NUMBER, BOTH PANES.** `ROWH` in JS and `--ps-rowh` in CSS are set together by
+`applyRowZoom()`, and that equality is the whole mechanism: the grid rows are laid out by CSS while
+every Gantt bar, baseline rail, dependency arrow, selection band and the virtual window are positioned
+by JS arithmetic off `ROWH` (the bar internals already scaled off `ROWH / 34`). A mismatch of one pixel
+per row walks the bars off their rows further down a long list, so the two are never assigned
+separately — the density toggle now goes through `applyRowZoom` too, instead of setting `ROWH` itself.
+
+⚠️ **`.ps-wbs-row` WAS WINNING, and this took measuring to see.** A WBS summary row in the grid carries
+both `.ps-grid-row` and `.ps-wbs-row`, and the latter — declared later in the sheet for the WBS TREE,
+where 34px is fixed and its virtualization depends on it — sets `height:34px` at the same (0,1,0)
+specificity. So `--ps-rowh` reached the row as 20px and the computed height was still 34px. The grid's
+rule is now scoped to `.ps-grid-pane` so it outspecifies that without touching the tree. The Gantt's
+`.ps-row-bg` stripes read the same variable, or the two panes drift.
+
+**The gesture, and why it needs no modifier:** the two zooms are on different axes over different
+panes, so the pane the pointer is over decides which one you get.
+- **Ctrl + scroll over the activity grid → row height** (how many activities fit)
+- **Ctrl + scroll over the chart → timeline scale** (how much time fits) — the existing behaviour,
+  unchanged
+- **Ctrl + Shift + scroll → row height on either pane**, for when the pointer is over the chart
+
+⚠️ **Trackpad pinch works for free**: browsers synthesise a `wheel` event with `ctrlKey: true` for a
+two-finger pinch, so pinching over the grid zooms the rows and pinching over the chart zooms the
+timeline, with no extra code. ⚠️ `{ passive: false }` + `preventDefault()` is what stops the browser
+zooming the whole PAGE instead — that is Ctrl+wheel's default action, and without it both would happen.
+The View ▾ menu also carries a −/value/+/Reset stepper that states the row height **and how many rows
+fit**, which is the number the question was actually about.
+
+**Verified in a browser** with real dispatched `WheelEvent`s: Ctrl+wheel down over the grid took ROWH
+34→31 with the timeline scale untouched; up restored it; plain Ctrl+wheel over the chart took the
+timeline 1→1.15 with the rows untouched; Ctrl+Shift+wheel over the chart moved the rows and left the
+timeline alone; a plain wheel zoomed nothing; both gestures reported `defaultPrevented`, so the page
+does not zoom. Row heights measured off the DOM followed exactly (34 → 20 → 34) and rows-on-screen
+went 7 → 14 at 0.6×.
+
+### 2026-09-02 (g) — The import funnel's two UI complaints
+
+- ⚠️ **The file's WBS rows were clashing** — *"needs UI rework since the fields are clashing."* They
+  were borrowing `.sbld-phrow`, whose grid is `14px 1fr 74px 168px 34px` for a phase ACTIVITY (grip,
+  name, duration, window, delete). An import row carries a different set, so they landed in the wrong
+  tracks: the chevron sat on top of the name and the phase `<select>` was squeezed into 74px showing
+  "Miles…", "Initia…". `.sbld-improw` is its own template, sized for what it holds.
+  ⚠️ And a nested branch now shows a **chip** naming the phase it inherits, not a dropdown — every
+  branch having its own select made a 12,000-branch tree read as 12,000 decisions when the honest
+  default is "this follows the branch above it". One click turns the chip into the select.
+- ⚠️ **"First 25 activities that will be imported"** — *"means what exactly? why are these particular
+  activities are shown here?"* The answer was "the first 25 in file order", which is not an answer: it
+  looked curated, it was arbitrary, and on a 16,000-row file it showed 25 Milestones and nothing else,
+  so it could not be used to check anything. It is now a **checker** — search the whole file, and every
+  row states the phase it will land in (through the same inheritance rule as the tally) and whether it
+  is excluded.

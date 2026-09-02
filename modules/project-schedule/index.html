@@ -447,12 +447,36 @@
     .ps-grid-pane .ps-grid-row.head > .ps-cell.c-name { position:sticky; left:calc(var(--c-num) + var(--c-id)); z-index:4; background:var(--pd-bg); }
     .ps-grid-scroll { overflow:auto; flex:1 1 auto; min-height:0; }
     .ps-grid-head { overflow:hidden; border-bottom:2px solid var(--pd-line); background:var(--pd-bg); flex:none; }
-    .ps-grid-row { display:flex; align-items:stretch; height:34px; border-bottom:1px solid var(--pd-line);
-      width:max-content; min-width:100%; font-size:12.5px; }
-    .ps-grid-row.head { min-height:38px; height:auto; font-weight:700; align-items:stretch; }
-    /* Compact row density (toggled from the Layout menu; ROWH is kept in sync in JS). Header +
-       filter rows keep their height so only the data rows tighten. */
-    .ps-split.ps-compact .ps-grid-row:not(.head):not(.ps-filter-row) { height:27px; font-size:11.5px; }
+    /* ⚠️⚠️ ROW HEIGHT IS A VARIABLE, and it has to be. Owner 2026-09-02: *"I want a feature to zoom
+       out in the grid itself so that I can expand how many activities I can see in one screen. Right
+       now a user can only see about 11 rows. By zooming out the grid the gantt should also follow."*
+       The density toggle only ever offered 34px and 27px, which on a 16,000-activity schedule is the
+       difference between 11 rows and 14 — not an answer.
+       `--ps-rowh` / `--ps-rowfs` are set on `.ps-split` by applyRowZoom(), and `ROWH` in JS is kept
+       equal to the same number. That equality is what makes the Gantt follow for free: every bar, the
+       dependency arrows, the selection band and the virtual window all position off `ROWH`, and the
+       bar internals already scale off `ROWH / 34`. One number, both panes. */
+    .ps-grid-row { display:flex; align-items:stretch; height:var(--ps-rowh,34px); border-bottom:1px solid var(--pd-line);
+      width:max-content; min-width:100%; font-size:var(--ps-rowfs,12.5px); }
+    .ps-grid-row.head { min-height:38px; height:auto; font-weight:700; align-items:stretch; font-size:12.5px; }
+    /* ⚠️ Header + filter rows are deliberately NOT scaled: they carry controls (the column chooser,
+       the filter inputs) with their own minimum sizes, and the Gantt head is matched to them in CSS.
+       Only the data rows tighten, which is the whole point. */
+    .ps-split.ps-compact .ps-grid-row:not(.head):not(.ps-filter-row) { height:var(--ps-rowh,27px); font-size:var(--ps-rowfs,11.5px); }
+    /* ⚠️⚠️ SPECIFICITY, AND IT IS LOAD-BEARING. A WBS summary row in the grid carries BOTH
+       `.ps-grid-row` and `.ps-wbs-row`, and `.ps-wbs-row` (declared later in this sheet, for the WBS
+       TREE, where 34px is fixed and its virtualization depends on it) sets `height:34px` at the same
+       (0,1,0) specificity — so it won on source order and every summary row stayed 34px tall while
+       the activity rows shrank. Measured: `--ps-rowh` reached the row as 20px and the computed height
+       was still 34px.
+       Scoped to `.ps-grid-pane` so it outspecifies that rule without touching the tree, which must
+       keep its fixed height. */
+    .ps-split .ps-grid-pane .ps-grid-row:not(.head):not(.ps-filter-row) { height:var(--ps-rowh,34px); font-size:var(--ps-rowfs,12.5px); }
+    .ps-split .ps-grid-pane .ps-grid-row.ps-wbs-row:not(.head) { padding:0; }
+    /* At the tighter end the cell padding is what stops the text touching the dividers. */
+    .ps-split.ps-rowzoom-tight .ps-cell { padding:0 5px; }
+    .ps-split.ps-rowzoom-tight .ps-status-pill { padding:1px 6px; font-size:9.5px; }
+    .ps-split.ps-rowzoom-tight select.ps-status-pill { padding:1px 15px 1px 6px; }
     .ps-cell { padding:0 8px; display:flex; align-items:center; border-right:1px solid var(--pd-line);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
     .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative;
@@ -463,6 +487,9 @@
     /* Per-column filter row (toggled via the column "+" chooser). Grows the grid head by 30px, so
        the Gantt head is grown to match (.ps-colf-on) to keep rows aligned with bars. The frozen
        columns' filter cells keep the header background so they don't read as card-white. */
+    .ps-rz-row { display:flex; align-items:center; gap:6px; padding:4px 12px 8px; }
+    .ps-rz-row .pd-btn { min-height:28px; padding:0 9px; font-size:12px; }
+    .ps-rz-val { flex:1 1 auto; text-align:center; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
     .ps-filter-row { height:30px; background:var(--pd-bg); }
     .ps-filter-row > .ps-cell { padding:0 4px; }
     .ps-filter-row > .ps-cell.c-num, .ps-filter-row > .ps-cell.c-id, .ps-filter-row > .ps-cell.c-name { background:var(--pd-bg); }
@@ -714,7 +741,9 @@
     .ps-ts-grip { position:absolute; right:0; top:0; bottom:0; width:7px; cursor:col-resize; z-index:4; }
     .ps-ts-grip:hover { background:var(--pd-red); opacity:.55; }
     .ps-grid-v { position:absolute; top:0; bottom:0; width:1px; background:var(--pd-line); opacity:.5; }
-    .ps-row-bg { position:absolute; left:0; right:0; height:34px; border-bottom:1px solid var(--pd-line); }
+    /* The Gantt's row stripes. Same variable as the grid rows, or the bars sit on stripes of a
+       different pitch and the two panes visibly drift apart down a long list. */
+    .ps-row-bg { position:absolute; left:0; right:0; height:var(--ps-rowh,34px); border-bottom:1px solid var(--pd-line); }
     .ps-row-bg.alt { background:rgba(0,0,0,.015); }
     .ps-datedate { position:absolute; top:0; bottom:0; width:2px; background:var(--ps-dd,var(--pd-red)); z-index:6; }
     /* Pinned to the top of the Gantt viewport (JS keeps `top` = scrollTop) so the data-date stays
@@ -2594,6 +2623,32 @@
     /* name · days · computed window · delete. The window column is read-only output: the dates come
        from the chain, so they are shown rather than entered. */
     .sbld-phrow { display:grid; grid-template-columns:14px minmax(0,1fr) 74px 168px 34px; gap:7px; align-items:center; }
+    /* ⚠️ THE IMPORT TREE HAS ITS OWN ROW, and it must: it was borrowing `.sbld-phrow`, whose grid is
+       `14px 1fr 74px 168px 34px` for a PHASE ACTIVITY (grip, name, duration, window, delete). An
+       import row carries a different set — expand chevron, branch name + code + count, a phase
+       <select>, an exclude tick — so they landed in the wrong tracks: the chevron sat on top of the
+       name and the select was squeezed into 74px showing "Miles…", "Initia…", "Plann…". Owner:
+       *"The file's WBS: needs UI rework since the fields are clashing."*
+       Its own template, sized for what it actually holds, with the name the only flexible track. */
+    .sbld-improw { display:grid; grid-template-columns:26px minmax(0,1fr) 232px auto; gap:9px; align-items:center;
+      padding:3px 0; border-bottom:1px solid var(--pd-line); }
+    .sbld-improw:last-child { border-bottom:none; }
+    .sbld-improw.is-off { opacity:.45; }
+    .sbld-improw .sbld-imptog { height:24px; width:24px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+    .sbld-improw-nm { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; }
+    .sbld-improw-nm b { font-weight:700; }
+    .sbld-improw-meta { color:var(--pd-muted); font-size:11.5px; }
+    .sbld-improw .pd-select { height:30px; font-size:12.5px; width:100%; }
+    .sbld-improw-x { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
+    /* A phase already inherited from the branch above reads as a quiet chip, not as a chosen value —
+       so "follow the parent" and "I picked this" are visibly different states. */
+    .sbld-improw-inh { font-size:11px; color:var(--pd-muted); border:1px dashed var(--pd-line); border-radius:5px;
+      padding:3px 7px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+    .sbld-improw-inh:hover { border-style:solid; color:var(--pd-ink); }
+    @media (max-width:900px) {
+      .sbld-improw { grid-template-columns:26px minmax(0,1fr); row-gap:4px; }
+      .sbld-improw .pd-select, .sbld-improw-x, .sbld-improw-inh { grid-column:2; }
+    }
     .sbld-phgrip { cursor:grab; color:var(--pd-muted); font-size:11px; line-height:1; letter-spacing:-2px;
       user-select:none; text-align:center; }
     .sbld-phgrip:active { cursor:grabbing; }
@@ -15929,6 +15984,44 @@
     try { localStorage.setItem('ps_legend_folded', _legendFolded ? '1' : '0'); } catch (e) {}
     applyLegendFold();
   }
+  /* Row zoom. A multiplier on the density's own row height, persisted per browser.
+     ⚠️ 16px is a real floor, not a round number: below it the status pill and the progress strip
+     inside a Gantt bar have nowhere to go, and the grid stops being readable rather than getting
+     denser. 1.4 at the top so a planner can also go the other way for a presentation. */
+  var ROW_ZOOM_MIN = 0.5, ROW_ZOOM_MAX = 1.4;
+  var _rowZoom = 1; try { var _rz = parseFloat(localStorage.getItem('ps_rowzoom')); if (_rz && isFinite(_rz)) _rowZoom = Math.min(ROW_ZOOM_MAX, Math.max(ROW_ZOOM_MIN, _rz)); } catch (e) {}
+  function _baseRowH() { return _density === 'compact' ? 27 : 34; }
+  function rowHFor(z) { return Math.max(16, Math.round(_baseRowH() * z)); }
+  /* ⚠️ THE ONE PLACE ROW HEIGHT IS SET, in both the CSS and the JS. `ROWH` and `--ps-rowh` must not
+     be able to disagree: the grid rows are laid out by CSS and the Gantt bars by JS arithmetic, so a
+     mismatch of even a pixel per row walks the bars off their rows further down a 16,000-row list. */
+  function applyRowZoom(repaint) {
+    ROWH = rowHFor(_rowZoom);
+    var sp = document.querySelector('.ps-split');
+    if (sp) {
+      sp.style.setProperty('--ps-rowh', ROWH + 'px');
+      // Font tracks the row but not linearly — text stops being legible before the row stops
+      // shrinking, so it flattens out at 10px.
+      sp.style.setProperty('--ps-rowfs', Math.max(10, Math.round((_density === 'compact' ? 11.5 : 12.5) * Math.min(1, _rowZoom * 1.06) * 10) / 10) + 'px');
+      sp.classList.toggle('ps-rowzoom-tight', ROWH < 24);
+    }
+    if (repaint !== false) { renderGrid(); renderGantt(); }
+  }
+  function setRowZoom(z) {
+    var next = Math.min(ROW_ZOOM_MAX, Math.max(ROW_ZOOM_MIN, Math.round(z * 100) / 100));
+    if (next === _rowZoom) return;
+    _rowZoom = next;
+    try { localStorage.setItem('ps_rowzoom', String(_rowZoom)); } catch (e) {}
+    applyRowZoom(true);
+    if (typeof renderLayoutMenu === 'function') { try { renderLayoutMenu(); } catch (e) {} }
+  }
+  function nudgeRowZoom(dir) { setRowZoom(_rowZoom + (dir < 0 ? -0.1 : 0.1)); }
+  // How many data rows the current viewport can show — the number the owner is actually asking about.
+  function rowsOnScreen() {
+    var gs = document.getElementById('ps-grid-scroll');
+    var h = gs ? gs.clientHeight : 0;
+    return h ? Math.max(1, Math.floor(h / ROWH)) : 0;
+  }
   var ROWH = _density === 'compact' ? 27 : 34, DL = [], _rMin = null, _rDayw = 0, _rafP = false, _tlW = 0;
   // `_editing` is true only while an inline cell editor is genuinely open (not mid-commit). While set,
   // the windowed repaint is deferred (it replaces #ps-grid-rows innerHTML, which would destroy a
@@ -25896,6 +25989,423 @@
       return true;
     }
 
+    /* ==========================================================================================
+       READING THE LIVE SCHEDULE BACK INTO THE ELEVEN STEPS
+       ------------------------------------------------------------------------------------------
+       Owner 2026-09-02: *"The schedule setup doesn't show the existing schedule. It just prompts for
+       import or build a new schedule. I want it when I successfully import a schedule, it should show
+       all of the breakdown of the steps from the existing schedule with our 11-step logic schedule
+       wizard."* And the reason: *"In this way we can easily edit and save new setups instead of
+       building everything from scratch or just reimporting again and again."*
+
+       So this is the third way in, beside importing and building from nothing: take the schedule that
+       is already in the project and REVERSE-ENGINEER a setup out of it, then let the planner edit and
+       save that. A 16,000-activity P6 import becomes an editable recipe instead of a wall of rows.
+
+       ⚠️⚠️ IT IS DERIVED, NOT ROUND-TRIPPED, and the difference matters enough that the report says so
+       out loud. The schedule stores WHAT was planned; the setup stores the RULES that would generate
+       it. Some rules are recoverable from the result (which trades exist, which floors and zones,
+       what each activity's duration is, what follows what) and some are not (why a trade waits four
+       floors, whether a lag was a cure time or a procurement gap). What comes back is a setup that
+       would regenerate something very close to the schedule it was read from — not a byte-identical
+       reproduction, and pressing Generate does not overwrite anything until the planner pushes.
+
+       ⚠️ NOTHING IS WRITTEN. This only builds `cfg` in memory and marks it dirty; the schedule is read
+       and left alone. Saving is the planner's own next step.
+       ========================================================================================== */
+
+    // The trade key (GROUPS) behind an activity's stored work_type. GWORK is the canonical label the
+    // push writes, GLABEL the builder's short one — an imported activity can carry either, or a P6
+    // spelling that matches neither, so an unrecognised trade lands in Others rather than being lost.
+    /* The sentinel standing in for "this project has no tower dimension", and the delimiter joining
+       the composite keys below (trade|tower|floor|zone|unit).
+       ⚠️ A location name containing a '|' would collide on those keys. The consequence is one
+       mis-ordered floor row, not corrupt data, and no breakdown in this office has ever used one —
+       stated rather than defended against, because a real escape here would obscure the code that
+       matters for no measurable gain. */
+    var SB_NO_TOWER = '\u0001one';
+    var _gworkRev = null;
+    function sbTradeKeyOf(r) {
+      if (!_gworkRev) {
+        _gworkRev = {};
+        GROUPS.forEach(function (g) {
+          _gworkRev[String(GWORK[g] || '').toLowerCase()] = g;
+          _gworkRev[String(GLABEL[g] || '').toLowerCase()] = g;
+          _gworkRev[g.toLowerCase()] = g;
+        });
+      }
+      var w = String((typeof workOf === 'function' ? workOf(r) : r.work_type) || '').trim().toLowerCase();
+      if (!w) return 'OT';
+      if (_gworkRev[w]) return _gworkRev[w];
+      // "Structural Works Tower 1" and the like: match on the longest known label the value contains.
+      var best = null;
+      Object.keys(_gworkRev).forEach(function (k) {
+        if (k && w.indexOf(k) >= 0 && (!best || k.length > best.length)) best = k;
+      });
+      return best ? _gworkRev[best] : 'OT';
+    }
+    // Duration in days, preferring the stored figure and falling back to the dates.
+    function sbDurOf(r) {
+      var d = Number(r.duration_days);
+      if (isFinite(d) && d > 0) return Math.round(d);
+      var s = pd(r.start_date), f = pd(r.end_date);
+      if (s && f) return Math.max(1, dayDiff(s, f) + 1);
+      return 1;
+    }
+    function sbMode(arr) {
+      var by = {}, best = null;
+      arr.forEach(function (v) { if (v == null || v === '') return; by[v] = (by[v] || 0) + 1; if (!best || by[v] > by[best]) best = v; });
+      return best;
+    }
+    function sbMedian(arr) {
+      var a = arr.filter(function (x) { return isFinite(x); }).sort(function (x, y) { return x - y; });
+      if (!a.length) return 1;
+      return Math.max(1, Math.round(a[Math.floor(a.length / 2)]));
+    }
+
+    /* Which activities are the EXECUTION programme.
+       ⚠️ Phase OR code, not phase alone. An activity imported minutes ago takes its phase from the
+       WBS branch above it, and that link is attached by a load-time heal pass — so immediately after
+       an import `phaseOf()` is still null for every row while the dotted code already says exactly
+       where it sits. Asking both means this works on a fresh import instead of only after the tree
+       has settled. */
+    function sbExecActs() {
+      var ec = (typeof execPhaseCode === 'function') ? execPhaseCode() : null;
+      return rows.filter(function (r) {
+        if (isWbs(r)) return false;
+        if (typeof isExecPhase === 'function' && isExecPhase(r)) return true;
+        if (ec && r.wbs && (String(r.wbs) === ec || locCodeUnder(r.wbs, ec))) return true;
+        return false;
+      });
+    }
+
+    /* How this project's Location Breakdown maps onto the builder's tower › floor › zone › unit.
+       ⚠️ FOUR LEVELS OR MORE puts the first one on TOWER; three or fewer has no tower dimension and
+       starts at floor. That is the reading that matches how these projects are actually broken down
+       (4PH Strevi is Tower › Level › Zone › Cluster; a single-building job is Level › Zone), and it
+       is stated in the report rather than guessed silently. */
+    function sbDimsFromLevels() {
+      var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS : [];
+      if (lv.length >= 4) return { tower: lv[0], floor: lv[1], zone: lv[2], unit: lv[3] };
+      if (lv.length === 3) return { tower: null, floor: lv[0], zone: lv[1], unit: lv[2] };
+      if (lv.length === 2) return { tower: null, floor: lv[0], zone: lv[1], unit: null };
+      if (lv.length === 1) return { tower: null, floor: lv[0], zone: null, unit: null };
+      return { tower: null, floor: null, zone: null, unit: null };
+    }
+    function sbLocVal(r, lvl) {
+      if (!lvl || !r || !r.location || typeof r.location !== 'object') return null;
+      var v = r.location[lvl.id];
+      v = (v == null ? '' : String(v)).trim();
+      return v || null;
+    }
+
+    function sbDeriveFromSchedule() {
+      var acts = sbExecActs();
+      var rep = { acts: acts.length, names: 0, trades: [], towers: 0, floors: 0, zones: 0, units: 0,
+                  links: 0, phases: [], notes: [] };
+      if (!acts.length) return { cfg: null, report: rep };
+
+      var dims = sbDimsFromLevels();
+      if (!dims.floor) rep.notes.push('This project has no Location Breakdown, so no floors or zones could be read — define the levels on the Floors & Zones step and the locations will come from there.');
+      else rep.notes.push('Read location as ' + [dims.tower, dims.floor, dims.zone, dims.unit].filter(Boolean).map(function (l) { return l.name; }).join(' › ') + '.');
+
+      var out = blank();
+
+      // ---- start date: the earliest thing the execution programme actually does -----------------
+      var minS = null;
+      acts.forEach(function (r) { var s = pd(r.start_date) || pd(r.bl_start); if (s && (!minS || s < minS)) minS = s; });
+      if (minS) out.startDate = iso2(minS);
+
+      // ---- towers ------------------------------------------------------------------------------
+      var towerIds = {}, towerOrder = [];
+      acts.forEach(function (r) {
+        var t = sbLocVal(r, dims.tower) || (dims.tower ? null : SB_NO_TOWER);
+        if (!t) return;
+        if (!(t in towerIds)) { towerIds[t] = null; towerOrder.push(t); }
+      });
+      if (!towerOrder.length) towerOrder = [SB_NO_TOWER];
+      out.towers = towerOrder.map(function (t, i) {
+        var id = uidv();
+        towerIds[t] = id;
+        if (t === SB_NO_TOWER) return { id: id, code: 'T1', name: 'Tower 1' };
+        // A name like "Tower B" gives a code of "TB"; anything else keeps its first characters.
+        var m = String(t).match(/([A-Za-z0-9]+)\s*$/);
+        return { id: id, code: (m ? ('T' + m[1]).slice(0, 6) : ('T' + (i + 1))), name: String(t) };
+      });
+      rep.towers = out.towers.length;
+
+      // ---- per-trade floors / zones / units ----------------------------------------------------
+      // ⚠️ Ordered by the EARLIEST START of the work in each location, not alphabetically: "10th
+      // Floor" sorts before "2nd Floor" as text, and the whole point of the Floors & Zones step is
+      // that the list reads bottom-to-top the way the building was built.
+      var firstSeen = {};   // "trade|tower|floor" -> ms, and the same shape for zones/units
+      function seen(key, r) {
+        var s = +(pd(r.start_date) || pd(r.bl_start) || 0);
+        if (!s) return;
+        if (!(key in firstSeen) || s < firstSeen[key]) firstSeen[key] = s;
+      }
+      var tree = {};   // trade -> tower -> floor -> zone -> unit -> 1
+      acts.forEach(function (r) {
+        var g = sbTradeKeyOf(r);
+        var tw = sbLocVal(r, dims.tower) || SB_NO_TOWER;
+        var fl = sbLocVal(r, dims.floor); if (!fl) return;
+        var zn = sbLocVal(r, dims.zone), un = sbLocVal(r, dims.unit);
+        tree[g] = tree[g] || {};
+        tree[g][tw] = tree[g][tw] || {};
+        tree[g][tw][fl] = tree[g][tw][fl] || {};
+        seen(g + '|' + tw + '|' + fl, r);
+        if (zn) {
+          tree[g][tw][fl][zn] = tree[g][tw][fl][zn] || {};
+          seen(g + '|' + tw + '|' + fl + '|' + zn, r);
+          if (un) { tree[g][tw][fl][zn][un] = 1; seen(g + '|' + tw + '|' + fl + '|' + zn + '|' + un, r); }
+        }
+      });
+      function byFirst(prefix) {
+        return function (a, b) {
+          var fa = firstSeen[prefix + a], fb = firstSeen[prefix + b];
+          if (fa && fb && fa !== fb) return fa - fb;
+          if (fa && !fb) return -1;
+          if (!fa && fb) return 1;
+          return String(a).localeCompare(String(b), undefined, { numeric: true });
+        };
+      }
+      // A floor whose name says basement / lower ground goes below the grade line, like step 2's own
+      // BSMT rows — the tower drawing is upside down without it.
+      function isSub(name) { return /basement|\bb\d|lower\s*ground|cellar/i.test(String(name)); }
+      function kindOf(name) {
+        if (isSub(name)) return 'basement';
+        if (/roof|penthouse|\bpH\b/i.test(String(name))) return 'roof';
+        if (/podium|ground|commercial|retail|mezz/i.test(String(name))) return 'podium';
+        return 'typical';
+      }
+      out.zoning = blankZoning();
+      var nFl = 0, nZn = 0, nUn = 0;
+      Object.keys(tree).forEach(function (g) {
+        if (!out.zoning[g]) out.zoning[g] = { floors: [] };
+        var floors = [];
+        Object.keys(tree[g]).sort(byFirst(g + '|')).forEach(function (tw) {
+          Object.keys(tree[g][tw]).sort(byFirst(g + '|' + tw + '|')).forEach(function (fl) {
+            var zones = Object.keys(tree[g][tw][fl]).sort(byFirst(g + '|' + tw + '|' + fl + '|')).map(function (zn) {
+              var units = Object.keys(tree[g][tw][fl][zn]).sort(byFirst(g + '|' + tw + '|' + fl + '|' + zn + '|'))
+                .map(function (un) { nUn++; return { id: uidv(), code: String(un) }; });
+              nZn++;
+              return { id: uidv(), code: String(zn), units: units };
+            });
+            nFl++;
+            floors.push({ id: uidv(), tower: towerIds[tw] || (out.towers[0] && out.towers[0].id),
+                          code: String(fl), name: String(fl), sub: isSub(fl), kind: kindOf(fl), zones: zones });
+          });
+        });
+        out.zoning[g].floors = floors;
+      });
+      rep.floors = nFl; rep.zones = nZn; rep.units = nUn;
+
+      // ---- activities --------------------------------------------------------------------------
+      // One entry per activity NAME, which is what the setup's step 2 is: a name repeated across
+      // locations is ONE line with a duration, not N lines.
+      var byName = {};
+      acts.forEach(function (r) {
+        var n = String(r.activity_name || '').trim(); if (!n) return;
+        var b = byName[n] || (byName[n] = { n: n, durs: [], trades: [], codes: [], contracts: [], floors: {}, zones: {}, count: 0 });
+        b.count++;
+        b.durs.push(sbDurOf(r));
+        b.trades.push(sbTradeKeyOf(r));
+        if (r.class_code) b.codes.push(String(r.class_code));
+        b.contracts.push((typeof scopeOf === 'function' ? scopeOf(r) : null) === 'change_order' ? 'change_order' : 'main');
+        var fl = sbLocVal(r, dims.floor); if (fl) b.floors[fl] = 1;
+        var zn = sbLocVal(r, dims.zone); if (zn) b.zones[fl + '|' + zn] = 1;
+      });
+      var usedCode = {}, seq = 0;
+      out.activities = Object.keys(byName).map(function (n) {
+        var b = byName[n];
+        var g = sbMode(b.trades) || 'OT';
+        var d = sbMedian(b.durs);
+        /* Duration SCOPE, inferred from how often the name occurs:
+             once in the whole programme        -> whole project
+             once per floor (no zone spread)    -> per floor
+             otherwise                          -> per zone
+           ⚠️ A guess, and a visible one: it lands in a column the planner can change on step 2, and
+           it only decides how the GENERATE step repeats the activity, never what is on the schedule
+           now. */
+        var nFloors = Object.keys(b.floors).length, nZones = Object.keys(b.zones).length;
+        var scope = 'zone';
+        if (b.count === 1) scope = 'project';
+        else if (nFloors && nZones <= nFloors) scope = 'floor';
+        /* The activity CODE. Prefer the finance class code the rows already carry — it is the real
+           identifier and the rest of the suite joins on it. Failing that, derive one from the name.
+           ⚠️ NOT THE FIRST SIX CHARACTERS. That is what this did first, and on real activity lists it
+           produces codes that cannot be told apart: "Trade activity 1..196" all became TRADEA,
+           TRADEA-2, TRADEA-3 …, and "Masonry Works Type A/B" both become MASONR. The code is what
+           step 6 sequences BY, so indistinguishable codes make that step unusable.
+           Initials of each word plus any digits in the name instead — "Excavation to Suitable Soil
+           Depth" -> ETSSD, "Trade activity 12" -> TA12, "Rebar" -> REBAR (a single word keeps its
+           letters, since initials of one word is one letter). */
+        var code = sbMode(b.codes) || '';
+        if (!code) {
+          var words = String(n).replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+          var letters = words.filter(function (w) { return /[A-Za-z]/.test(w); });
+          var digits = (String(n).match(/\d+/g) || []).join('').slice(0, 4);
+          if (letters.length > 1) code = letters.map(function (w) { return w.charAt(0); }).join('').toUpperCase().slice(0, 6);
+          else if (letters.length === 1) code = letters[0].toUpperCase().slice(0, 6);
+          code = (code + digits).slice(0, 10);
+          if (!code) code = 'A' + (++seq);
+        }
+        var base = code, k = 2;
+        while (usedCode[code]) code = (base + '-' + (k++));
+        usedCode[code] = 1;
+        return normActivity({ id: uidv(), code: code, name: n, group: g, durInt: d, durExt: d,
+                              scope: scope, contract: sbMode(b.contracts) || 'main' });
+      });
+      rep.names = out.activities.length;
+      var trSeen = {}; out.activities.forEach(function (a) { trSeen[a.group] = 1; });
+      rep.trades = Object.keys(trSeen).map(function (g) { return GLABEL[g] || g; });
+
+      // ---- the sequence between activity names (step 6's links) --------------------------------
+      /* Read from the relationships the schedule already holds. The setup sequences CLASS CODES, not
+         individual activities, so a relationship between two rows becomes a relationship between the
+         two NAMES behind them — and the same pair occurs hundreds of times over the towers and
+         floors, so the most common type/lag for each pair wins.
+         ⚠️ Self-pairs are dropped: "Concrete follows Concrete" is the floor-to-floor repetition of one
+         activity, which the setup expresses as the floor lead/lag on step 5, not as a link. */
+      var codeByName = {};
+      out.activities.forEach(function (a) { codeByName[a.name] = a.code; });
+      var nameById = {};
+      acts.forEach(function (r) { if (r.activity_id) nameById[String(r.activity_id)] = String(r.activity_name || '').trim(); });
+      var pairs = {};
+      acts.forEach(function (r) {
+        if (!r.predecessors) return;
+        var to = codeByName[String(r.activity_name || '').trim()]; if (!to) return;
+        predRels(r.predecessors).forEach(function (x) {
+          var pn = nameById[String(x.id)]; if (!pn) return;
+          var from = codeByName[pn]; if (!from || from === to) return;
+          var k = from + '|' + to;
+          var p = pairs[k] || (pairs[k] = { from: from, to: to, kinds: {}, n: 0 });
+          p.n++;
+          var kk = x.type + '|' + x.lag;
+          p.kinds[kk] = (p.kinds[kk] || 0) + 1;
+        });
+      });
+      // Sorted by how often the pair occurs, so the canvas draws the programme's real spine first.
+      var linkList = Object.keys(pairs).map(function (k) { return pairs[k]; })
+        .sort(function (a, b) { return b.n - a.n; });
+      out.actLinks = [];
+      var haveLink = {};
+      linkList.forEach(function (p) {
+        // ⚠️ A derived link that would close a loop is DROPPED, not written. Real schedules contain
+        // name-level cycles the activity level does not (Rebar->Concrete on floor 3 and
+        // Concrete->Rebar across the floor break), and the setup's own addActLink refuses loops
+        // because generate() walks the graph. Keeping the more frequent direction is the honest
+        // reduction; writing both would make step 6 unusable.
+        if (haveLink[p.to + '|' + p.from]) return;
+        var best = sbMode(Object.keys(p.kinds).map(function (kk) { return kk; }).reduce(function (acc, kk) {
+          for (var i = 0; i < p.kinds[kk]; i++) acc.push(kk);
+          return acc;
+        }, [])) || 'FS|0';
+        var bits = String(best).split('|');
+        haveLink[p.from + '|' + p.to] = 1;
+        out.actLinks.push({ from: p.from, to: p.to, type: bits[0] || 'FS', lag: parseInt(bits[1], 10) || 0 });
+      });
+      rep.links = out.actLinks.length;
+
+      // ---- zone order per trade ----------------------------------------------------------------
+      Object.keys(out.zoning).forEach(function (g) {
+        var codes = [], seenZ = {};
+        (out.zoning[g].floors || []).forEach(function (f) {
+          (f.zones || []).forEach(function (z) { if (!seenZ[z.code]) { seenZ[z.code] = 1; codes.push(z.code); } });
+        });
+        if (codes.length) out.zoneOrder[g] = codes;
+      });
+
+      // ---- the lifecycle phases either side of construction ------------------------------------
+      /* Read straight off the rows: anything whose phase is not the execution phase, grouped by
+         phase, in date order, with its duration. This is the one part of the setup that IS a faithful
+         round trip — those phases are stored as a plain list of activities with durations, which is
+         exactly what step 9 edits. */
+      out.phases = {};
+      /* ⚠️ THE SAME PHASE-OR-CODE FALLBACK AS sbExecActs, and for the same reason: an activity
+         imported minutes ago has no `phase` of its own and its WBS link has not been attached yet, so
+         `phaseOf()` is null across the board and this read would come back empty on exactly the
+         projects it was asked for. The branch codes are already correct at that point, so a row under
+         the Initiation branch is Initiation work whatever the phase column currently says. */
+      var phCodes = {};
+      rows.forEach(function (r) {
+        if (!isWbs(r) || !r.wbs) return;
+        var v = (typeof phaseFromName === 'function') ? phaseFromName(r.activity_name) : null;
+        if (!v || v === EXEC_PHASE) return;
+        (phCodes[v] = phCodes[v] || []).push(String(r.wbs));
+      });
+      SB_PHASE_DEFS.forEach(function (d) {
+        if (d.when === 'exec') return;
+        var codes = phCodes[d.v] || [];
+        var mine = rows.filter(function (r) {
+          if (isWbs(r)) return false;
+          var pv = (typeof phaseOf === 'function') ? phaseOf(r) : r.phase;
+          if (pv) return pv === d.v;
+          if (!r.wbs) return false;
+          for (var i = 0; i < codes.length; i++) {
+            if (String(r.wbs) === codes[i] || locCodeUnder(r.wbs, codes[i])) return true;
+          }
+          return false;
+        }).sort(function (a, b) { return +(pd(a.start_date) || 0) - +(pd(b.start_date) || 0); });
+        if (!mine.length) return;
+        out.phases[d.v] = { on: true, acts: mine.slice(0, 200).map(function (r) {
+          return { id: uidv(), n: String(r.activity_name || '').slice(0, 200), d: Math.max(1, Math.min(999, sbDurOf(r))) };
+        }) };
+        rep.phases.push(PHASE_LABELS[d.v] + ' (' + out.phases[d.v].acts.length + ')');
+        if (mine.length > 200) rep.notes.push(PHASE_LABELS[d.v] + ' had ' + mine.length + ' activities; the first 200 were read (the step is a hand-edited list, not a generator).');
+      });
+
+      // Everything that cannot be read from a result rather than a rule keeps its default, and the
+      // report says which those are so the planner knows what to look at before generating.
+      rep.notes.push('Trade hand-offs (how many floors a trade waits, what runs in parallel) and the tower interfaces are NOT recoverable from a finished schedule — those steps keep their defaults, so check steps 4–7 before generating.');
+      return { cfg: out, report: rep };
+    }
+
+    /* The Start step's third door. Confirms before replacing a setup that has work in it, runs the
+       derive behind the loading overlay (it walks every execution activity), and lands on step 2 with
+       a report of what it read. */
+    async function sbDoDerive() {
+      if (!curPid) { UI.toast('Select a project first.', 'error'); return; }
+      var had = (cfg && cfg.activities && cfg.activities.length) || 0;
+      if (had && !confirm('Replace this setup’s ' + had + ' activity line(s) with what is read from the live schedule?\n\n' +
+        'The schedule itself is only read, never changed. Save the setup under a new name first if you want to keep the current one.')) return;
+      if (typeof showLoading === 'function') showLoading('Reading the schedule into the steps…');
+      var res;
+      try { res = sbDeriveFromSchedule(); }
+      catch (e) {
+        if (typeof hideLoading === 'function') hideLoading();
+        try { console.error('[ps] sbDeriveFromSchedule', e); } catch (e2) {}
+        UI.toast('Could not read the schedule into the steps: ' + (e && e.message), 'error');
+        return;
+      }
+      if (typeof hideLoading === 'function') hideLoading();
+      if (!res.cfg) {
+        UI.toast('There is no execution-phase work to read yet — import a programme, or build one with the steps.', 'warn');
+        return;
+      }
+      cfg = normalize(res.cfg);
+      mode = 'new'; step = 1; markDirty(); render();
+      var r = res.report;
+      var _dv = UI.modal('<h2 style="margin-top:0;">Read into the steps</h2>' +
+        '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">From <strong>' + r.acts.toLocaleString() +
+        '</strong> execution-phase activities in the live schedule.</p>' +
+        '<ul style="margin:0 0 10px 18px;font-size:12.5px;line-height:1.75;">' +
+          '<li><b>' + r.names.toLocaleString() + '</b> activity lines (one per repeated name), with a median duration each</li>' +
+          '<li><b>' + r.trades.length + '</b> trades: ' + e2(r.trades.join(', ')) + '</li>' +
+          '<li><b>' + r.towers + '</b> tower(s), <b>' + r.floors.toLocaleString() + '</b> floor row(s), <b>' +
+            r.zones.toLocaleString() + '</b> zone(s), <b>' + r.units.toLocaleString() + '</b> unit(s)</li>' +
+          '<li><b>' + r.links.toLocaleString() + '</b> sequence link(s) between activity codes, from the schedule’s own relationships</li>' +
+          (r.phases.length ? '<li>Lifecycle phases: ' + e2(r.phases.join(', ')) + '</li>' : '') +
+        '</ul>' +
+        '<p style="font-size:12px;color:var(--pd-muted);margin:0 0 6px;"><b>This is a reading, not a copy.</b> The schedule stores what was planned; the setup stores the rules that would generate it. Some rules are recoverable and some are not:</p>' +
+        '<ul style="margin:0 0 12px 18px;font-size:12px;color:var(--pd-muted);line-height:1.7;">' +
+          r.notes.map(function (n) { return '<li>' + e2(n) + '</li>'; }).join('') +
+        '</ul>' +
+        '<p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Nothing has been written. Edit the steps, then <b>Save setup</b> to keep it — and only <b>Generate › Push</b> ever changes the schedule.</p>' +
+        '<div style="text-align:right;"><button class="pd-btn pd-btn-primary" id="sb-dv-ok">Start editing</button></div>');
+      _dv.el.querySelector('#sb-dv-ok').onclick = _dv.close;
+    }
+
     /* ---- STEP: Start -------------------------------------------------------------------------
        Two doors, and enough context to know which one this project needs. */
     function stStart(host) {
@@ -25939,9 +26449,26 @@
         '<button class="pd-btn pd-btn-primary" id="b-impfile"><span data-ico="download" data-ico-size="14"></span> Choose a file…</button>' +
         '</div></div>';
 
+      /* THE THIRD DOOR, and on a project that already has a schedule it is the one that matters.
+         Owner 2026-09-02: *"The schedule setup doesn't show the existing schedule… it should show all
+         of the breakdown of the steps from the existing schedule with our 11-step logic schedule
+         wizard… In this way we can easily edit and save new setups instead of building everything
+         from scratch or just reimporting again and again."*
+         Offered FIRST when there is execution work to read, because "start from what is already
+         there" beats both other doors then; hidden entirely when there is nothing to read, rather
+         than sitting on a fresh project as a button that can only say "nothing found". */
+      var _execN = sbExecActs().length;
+      var readCard = _execN ? '<div class="pd-card ps-ck-card">' +
+        '<div class="ps-ck-h"><span data-ico="refresh" data-ico-size="15"></span> Read the schedule that is already here</div>' +
+        '<div style="padding:12px 14px 14px;font-size:12.5px;line-height:1.6;">' +
+        '<p style="margin:0 0 8px;">Turn this project’s <b>' + _execN.toLocaleString() + '</b> execution-phase activities back into the eleven steps: the activity list with durations, the trades, the towers, floors and zones, the sequence between activities, and the lifecycle phases either side. Then edit and save it as a setup.</p>' +
+        '<p style="margin:0 0 10px;color:var(--pd-muted);">A <b>reading</b>, not a copy — the schedule stores what was planned, the steps store the rules that would generate it, and a few of those rules (trade hand-offs, tower interfaces) cannot be recovered from a finished programme. Nothing is written, and the schedule is only read.</p>' +
+        '<button class="pd-btn pd-btn-primary" id="b-modederive"><span data-ico="layers" data-ico-size="14"></span> Read it into the steps →</button>' +
+        '</div></div>' : '';
+
       host.innerHTML = '<h2>' + _stepNo('Start') + ' · Where does this schedule come from?</h2>' + state + staged +
-        '<div class="ps-ck-grid">' + impCard + newCard + '</div>' +
-        '<p class="sbld-hint" style="margin-top:12px;">Both paths end in the same place — activities under this project’s standard phases, with a WBS the rest of the module can read. Importing does not stop you generating more work later, and vice versa.</p>';
+        '<div class="ps-ck-grid">' + readCard + impCard + newCard + '</div>' +
+        '<p class="sbld-hint" style="margin-top:12px;">All three paths end in the same place — activities under this project’s standard phases, with a WBS the rest of the module can read. Importing does not stop you generating more work later, and reading the schedule in does not change it.</p>';
 
       var gb = host.querySelector('#b-impgo'); if (gb) gb.onclick = function () { mode = 'import'; step = 1; render(); };
       var db = host.querySelector('#b-impdrop');
@@ -25950,6 +26477,7 @@
         imp = null; _impCountMemo = null; mode = sbDefaultMode(); step = 0; render();
       };
       var nb = host.querySelector('#b-modenew'); if (nb) nb.onclick = function () { setMode('new'); };
+      var db2 = host.querySelector('#b-modederive'); if (db2) db2.onclick = sbDoDerive;
       // ⚠️ Re-uses the module's own <input type="file"> (#ps-import-file) and therefore its parsers
       // and its error handling. A second file input here would mean a second place where "which
       // extensions do we accept" and "P6 files are Windows-1252" have to stay true.
@@ -26013,12 +26541,22 @@
               return '<option value="' + e2(t.code) + '"' + (own && String(imp.plan[code]) === String(t.code) ? ' selected' : '') + '>' + e2(t.name) + '</option>';
             }).join('') +
             (depth > 0 ? '<option value="__top"' + (own && imp.plan[code] === '' ? ' selected' : '') + '>Its own top-level branch</option>' : '');
-          var row = '<div class="sbld-phrow" style="padding-left:' + (depth * 18) + 'px;' + (inheritedExcl || excl ? 'opacity:.5;' : '') + '">' +
-            (hasKids ? '<button class="pd-btn ps-icobtn sbld-imptog" data-tog="' + e2(code) + '" title="' + (open ? 'Collapse' : 'Expand') + '" style="height:26px;width:26px;"><span data-ico="' + (open ? 'chevronDown' : 'chevronRight') + '" data-ico-size="13"></span></button>'
-                     : '<span style="display:inline-block;width:26px;"></span>') +
-            '<span style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + e2(code + ' · ' + (b.name || '')) + '"><b>' + e2(b.name || code) + '</b> <span style="color:var(--pd-muted);">' + e2(code) + ' · ' + impLeafCount(code).toLocaleString() + ' act.</span></span>' +
-            '<select class="pd-select sbld-impph" data-ph="' + e2(code) + '" style="flex:0 0 240px;height:30px;"' + (inheritedExcl || excl ? ' disabled' : '') + '>' + opts + '</select>' +
-            '<label class="sbld-hint" style="flex:0 0 auto;display:inline-flex;gap:5px;align-items:center;" title="Leave this branch and everything under it out of the import entirely">' +
+          /* ⚠️ A NESTED BRANCH SHOWS A CHIP, NOT A SELECT, until it is given a phase of its own.
+             Every branch having its own dropdown made a 12,000-branch tree read as 12,000 decisions
+             to take, when the honest default is "this follows the branch above it". The chip states
+             the inherited phase and turns into the select on click, so the choice is one click away
+             and the tree stays readable. Top-level branches always show the select: there is nothing
+             above them to inherit from, so the value there is always a real choice. */
+          var isTop = depth === 0, opened = !!imp.phOpen[code];
+          var control = (isTop || own || opened)
+            ? '<select class="pd-select sbld-impph" data-ph="' + e2(code) + '"' + (inheritedExcl || excl ? ' disabled' : '') + '>' + opts + '</select>'
+            : '<button type="button" class="sbld-improw-inh" data-phopen="' + e2(code) + '" title="Follows ' + e2(b.name || code) + '\u2019s parent branch. Click to give this branch a phase of its own.">\u21b3 ' + e2(impTargetName(parentEff)) + '</button>';
+          var row = '<div class="sbld-improw' + (inheritedExcl || excl ? ' is-off' : '') + '">' +
+            (hasKids ? '<button class="pd-btn ps-icobtn sbld-imptog" data-tog="' + e2(code) + '" title="' + (open ? 'Collapse' : 'Expand') + '"><span data-ico="' + (open ? 'chevronDown' : 'chevronRight') + '" data-ico-size="13"></span></button>'
+                     : '<span></span>') +
+            '<span class="sbld-improw-nm" style="padding-left:' + (depth * 16) + 'px;" title="' + e2(code + ' \u00b7 ' + (b.name || '')) + '"><b>' + e2(b.name || code) + '</b> <span class="sbld-improw-meta">' + e2(code) + ' \u00b7 ' + impLeafCount(code).toLocaleString() + ' act.</span></span>' +
+            control +
+            '<label class="sbld-improw-x" title="Leave this branch and everything under it out of the import entirely">' +
               '<input type="checkbox" class="sbld-impx" data-x="' + e2(code) + '"' + (excl ? ' checked' : '') + (inheritedExcl ? ' disabled' : '') + '> exclude</label>' +
             '</div>';
           return row + (open ? branchRows(code, depth + 1) : '');
@@ -26040,11 +26578,30 @@
           '</select></label></div>';
       }
 
-      var sample = impKeptLeaves().slice(0, 25).map(function (r) {
-        return '<tr><td style="padding-left:' + (6 + (String(r.code).split('.').length - 1) * 12) + 'px;">' + e2(String(r.name || '').slice(0, 64)) + '</td>' +
+      /* ⚠️ WAS "First 25 activities that will be imported", AND THE OWNER WAS RIGHT TO ASK WHAT IT
+         MEANT: *"why are these particular activities are shown here?"* The answer was "the first 25
+         in file order", which is not an answer — it looked curated, it was arbitrary, and on a
+         16,000-row file it showed 25 Milestones and nothing else, so it could not be used to check
+         anything. A sample that cannot answer a question is decoration.
+         It is now a CHECKER: search it, and every row states the phase it will land in (resolved
+         through the same inheritance rule as the tally) and whether it is excluded. That makes the
+         two questions a planner actually has answerable — "did my file's activities come through
+         with their dates" and "where is THIS one going to end up". */
+      var _q = String(imp.actQ || '').trim().toLowerCase();
+      var _pool = impLeaves();
+      var _hits = _q ? _pool.filter(function (r) {
+        return ((r.name || '') + ' ' + (r.id || '') + ' ' + r.code).toLowerCase().indexOf(_q) >= 0;
+      }) : _pool;
+      var SAMPN = 100;
+      var sample = _hits.slice(0, SAMPN).map(function (r) {
+        var ex = impIsExcluded(r.code);
+        var tgt = ex ? '<span style="color:var(--pd-red);">excluded</span>'
+                     : e2(impTargetName(impEffectiveTarget(impParentCode(r.code) || r.code)));
+        return '<tr' + (ex ? ' style="opacity:.5;"' : '') + '><td>' + e2(String(r.name || '').slice(0, 70)) + '</td>' +
           '<td>' + e2(r.id || '') + '</td>' +
-          '<td>' + (r.start ? Fmt.date(r.start) : '—') + '</td><td>' + ((r.finish) ? Fmt.date(r.finish) : '—') + '</td>' +
-          '<td style="text-align:right;">' + (r.pct != null ? r.pct + '%' : '') + '</td></tr>';
+          '<td>' + (r.start ? Fmt.date(r.start) : '\u2014') + '</td><td>' + ((r.finish) ? Fmt.date(r.finish) : '\u2014') + '</td>' +
+          '<td style="text-align:right;">' + (r.pct != null ? r.pct + '%' : '') + '</td>' +
+          '<td>' + tgt + '</td></tr>';
       }).join('');
 
       host.innerHTML = '<h2>' + _stepNo('Activities & phases') + ' · What came in, and which phase it belongs to</h2>' +
@@ -26056,9 +26613,12 @@
         flatPick +
         '<div class="pd-card ps-ck-card" style="margin-bottom:12px;"><div class="ps-ck-h"><span data-ico="layers" data-ico-size="15"></span> The file’s WBS</div>' +
         '<div class="sbld-hold-list" style="max-height:420px;overflow:auto;padding:6px 10px;">' + treeHtml + '</div></div>' +
-        '<div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="listView" data-ico-size="15"></span> First 25 activities that will be imported</div>' +
-        '<div class="sbld-xlwrap" style="max-height:260px;overflow:auto;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>ID</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th></tr></thead><tbody>' +
-          (sample || '<tr><td colspan="5">Everything is excluded — nothing would be imported.</td></tr>') + '</tbody></table></div></div>';
+        '<div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="listView" data-ico-size="15"></span> Check any activity in the file' +
+          '<span class="ps-ck-trend-sub">' + _hits.length.toLocaleString() + (_q ? ' matching' : ' in the file') +
+          (_hits.length > SAMPN ? ' \u00b7 first ' + SAMPN + ' listed' : '') + '</span></div>' +
+        '<div style="padding:9px 12px 4px;"><input class="pd-input" id="b-impactq" placeholder="Search name, activity ID or WBS code\u2026" value="' + e2(imp.actQ || '') + '" style="height:32px;width:320px;max-width:100%;"></div>' +
+        '<div class="sbld-xlwrap" style="max-height:300px;overflow:auto;"><table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Name</th><th>ID</th><th>Start</th><th>Finish</th><th style="text-align:right;">%</th><th>Lands under</th></tr></thead><tbody>' +
+          (sample || '<tr><td colspan="6">' + (_q ? 'Nothing in the file matches that search.' : 'Everything is excluded \u2014 nothing would be imported.') + '</td></tr>') + '</tbody></table></div></div>';
 
       host.querySelectorAll('.sbld-imptog').forEach(function (b) {
         b.onclick = function () { var c = b.dataset.tog; if (imp.open[c]) delete imp.open[c]; else imp.open[c] = 1; render(); };
@@ -26077,8 +26637,17 @@
       host.querySelectorAll('.sbld-impx').forEach(function (cb) {
         cb.onchange = function () { var c = cb.dataset.x; if (cb.checked) imp.excl[c] = 1; else delete imp.excl[c]; render(); };
       });
+      // Turning the inherited chip into a real select. Tracked per branch (not a rule) so closing
+      // the step and coming back does not litter the plan with entries nobody chose.
+      host.querySelectorAll('[data-phopen]').forEach(function (b2) {
+        b2.onclick = function () { imp.phOpen[b2.dataset.phopen] = 1; render(); };
+      });
       var fp = host.querySelector('#b-impflat');
       if (fp) fp.onchange = function () { imp.plan['*'] = fp.value; render(); };
+      // ⚠️ 'change', not 'input': render() rebuilds the panel, so a repaint per keystroke would take
+      // the focus out of the box being typed into.
+      var aq = host.querySelector('#b-impactq');
+      if (aq) aq.onchange = function () { imp.actQ = aq.value; render(); };
     }
 
     /* ---- STEP: Floors & Zones (import) -------------------------------------------------------
@@ -27538,7 +28107,7 @@
           // Which field on a rec carries its predecessor text. The two parsers named it differently
           // and the relationships step has to read and rewrite exactly one of them.
           predField: (kind === 'xer') ? 'predText' : 'pred',
-          plan: {}, excl: {}, open: {}, locSel: null,
+          plan: {}, excl: {}, open: {}, phOpen: {}, locSel: null,
           relMode: 'keep', relDrop: {},
           replace: true, pkgId: null, disc: true
         };
@@ -27556,6 +28125,10 @@
         return true;
       },
       hasStagedImport: function () { return !!imp; },
+      /* Read the live schedule into the steps from outside the Setup (and the test surface). Returns
+         the report so a caller can assert on what was read without going through the dialog. */
+      deriveFromSchedule: function () { return sbDeriveFromSchedule(); },
+      readScheduleIntoSteps: function () { return sbDoDerive(); },
       // Open the setup ON a named step. Used by the WBS Manager's "edit it in Schedule Setup" button:
       // landing on step 1 and asking the planner to find the WBS step themselves is the kind of
       // hand-off that makes a migration feel like a removal.
@@ -32126,8 +32699,11 @@
     function applyDensity(d) {
       _density = (d === 'compact') ? 'compact' : 'comfortable';
       try { localStorage.setItem('ps_density', _density); } catch (e) {}
-      ROWH = _density === 'compact' ? 27 : 34;
       var sp = document.querySelector('.ps-split'); if (sp) sp.classList.toggle('ps-compact', _density === 'compact');
+      // ⚠️ Through applyRowZoom, never by assigning ROWH here: density is now the BASE the zoom
+      // multiplies, and setting ROWH directly would drop the planner's zoom on the floor whenever
+      // they touched the density.
+      applyRowZoom(false);
       renderGrid(); renderGantt();
     }
 
@@ -32194,6 +32770,16 @@
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Row density</div>' +
         '<button data-den="comfortable">' + (_density !== 'compact' ? '● ' : '○ ') + 'Comfortable</button>' +
         '<button data-den="compact">' + (_density === 'compact' ? '● ' : '○ ') + 'Compact</button>' +
+        // The zoom itself. Stated as the number the question is really about — how many rows fit —
+        // rather than as a percentage nobody can picture.
+        '<div class="ps-gm-sec">Row zoom</div>' +
+        '<div class="ps-rz-row">' +
+          '<button class="pd-btn" data-rz="out" title="Shorter rows — fit more activities on screen. Or Ctrl + scroll (trackpad: pinch) over the activity grid."' + (_rowZoom <= ROW_ZOOM_MIN ? ' disabled' : '') + '>&minus;</button>' +
+          '<span class="ps-rz-val">' + ROWH + 'px' + (rowsOnScreen() ? ' \u00b7 ~' + rowsOnScreen() + ' rows' : '') + '</span>' +
+          '<button class="pd-btn" data-rz="in" title="Taller rows"' + (_rowZoom >= ROW_ZOOM_MAX ? ' disabled' : '') + '>+</button>' +
+          '<button class="pd-btn" data-rz="reset" title="Back to the density\u2019s own row height"' + (_rowZoom === 1 ? ' disabled' : '') + '>Reset</button>' +
+        '</div>' +
+        '<div class="ps-gm-note"><b>Ctrl + scroll</b> over the activity grid does this too (trackpad: pinch). Over the <b>chart</b>, Ctrl + scroll zooms the <b>timeline</b> instead \u2014 two zooms, one per pane. The Gantt follows the grid: bars, baselines and dependency arrows all lay out from the same row height.</div>' +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>' +
         '<button data-ganttset><span data-ico="settings" data-ico-size="14"></span> Gantt settings…</button>' +
@@ -32211,6 +32797,15 @@
       lMenu.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { lMenu.classList.remove('open'); _setView(b.dataset.view); }; });
       bindLayoutsSection(lMenu, renderLayoutMenu);
       lMenu.querySelectorAll('[data-den]').forEach(function (b) { b.onclick = function () { applyDensity(b.dataset.den); renderLayoutMenu(); }; });
+      // ⚠️ stopPropagation: the stepper is used repeatedly (four presses to go from 34px to 20px), so
+      // it must not close the menu on the first one the way the one-shot items above do.
+      lMenu.querySelectorAll('[data-rz]').forEach(function (b) {
+        b.onclick = function (e) {
+          e.stopPropagation();
+          var a = b.dataset.rz;
+          if (a === 'reset') setRowZoom(1); else nudgeRowZoom(a === 'out' ? -1 : 1);
+        };
+      });
       lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
       lMenu.querySelector('[data-ganttset]').onclick = function () { lMenu.classList.remove('open'); openGanttSettings(); };
       lMenu.querySelector('[data-report]').onclick = function () { applyReporting(!_reporting); renderLayoutMenu(); };
@@ -32534,6 +33129,9 @@
     fMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     document.addEventListener('click', closeMenus);
     applyColors();
+    // ⚠️ Before the first paint: `--ps-rowh` has a CSS fallback, but ROWH in JS is the number the
+    // Gantt lays bars out with, and the two must agree from frame one.
+    applyRowZoom(false);
     document.getElementById('ps-refresh').onclick = function () { load(); };
     document.getElementById('ps-export').onclick = exportExcel;
     document.getElementById('ps-download').onclick = downloadSchedule;
@@ -32857,9 +33455,35 @@
     function onVScroll() { if (winRaf) return; winRaf = true; (window.requestAnimationFrame || function (f) { setTimeout(f, 16); })(function () { winRaf = false; renderWindow(); }); }
     gs.addEventListener('scroll', function () { if (gHead) gHead.scrollLeft = gs.scrollLeft; if (!lock) { lock = true; gz.scrollTop = gs.scrollTop; lock = false; } onVScroll(); });
     gz.addEventListener('scroll', function () { if (!lock) { lock = true; gs.scrollTop = gz.scrollTop; lock = false; } gh.scrollLeft = gz.scrollLeft; onVScroll(); });
+    /* ⚠️⚠️ TWO ZOOMS, SPLIT BY WHICH PANE THE POINTER IS OVER — no modifier to remember.
+       Owner 2026-09-02: *"How does the planner zoom in/out the grid? Could this be easily done via
+       ctrl + mouse scroll or two finger pan by the trackpad?"* Yes, and it needs no Shift, because
+       the two zooms are on different axes over different panes:
+         • Ctrl + wheel over the ACTIVITY GRID  -> ROW height    (how many activities fit)
+         • Ctrl + wheel over the GANTT          -> TIMELINE scale (how much time fits) — unchanged,
+           and it is the handler right below this one.
+       Nothing a planner already does changes meaning: there was no Ctrl+wheel behaviour over the
+       grid before. Ctrl+SHIFT+wheel is kept as the row zoom on BOTH panes, so the rows can still be
+       zoomed while the pointer happens to be over the chart.
+       ⚠️ TRACKPAD PINCH ARRIVES HERE FOR FREE. Browsers synthesise a `wheel` event with
+       `ctrlKey: true` for a two-finger pinch, so pinching over the grid zooms the rows and pinching
+       over the chart zooms the timeline, with no extra code.
+       ⚠️ `{ passive: false }` + preventDefault is what stops the browser zooming the whole PAGE
+       instead — that is the default action for Ctrl+wheel, and without this both would happen. */
+    function _rowWheel(e) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      nudgeRowZoom(e.deltaY < 0 ? 1 : -1);
+    }
+    // Grid pane: Ctrl+wheel (and trackpad pinch) is the row zoom.
+    gs.addEventListener('wheel', _rowWheel, { passive: false });
+    // Gantt pane: only WITH Shift, so plain Ctrl+wheel there stays the timeline zoom below.
+    gz.addEventListener('wheel', function (e) { if (e.ctrlKey && e.shiftKey) _rowWheel(e); }, { passive: false });
     // Ctrl + mouse-wheel over the Gantt zooms the timeline, keeping the date under the cursor fixed.
     gz.addEventListener('wheel', function (e) {
       if (!e.ctrlKey) return;
+      // ⚠️ Shift means the ROW zoom (handled above); without this both would run on one gesture.
+      if (e.shiftKey) return;
       e.preventDefault();
       var rect = gz.getBoundingClientRect(), offX = e.clientX - rect.left;
       var ratio = _tlW ? (gz.scrollLeft + offX) / _tlW : 0;
@@ -33061,6 +33685,8 @@
       _colSeen: { get: function () { return _colSeen; }, set: function (v) { _colSeen = v; }, enumerable: true },
       colOrder: { get: function () { return colOrder; }, set: function (v) { colOrder = v; }, enumerable: true },
       _density: { get: function () { return _density; }, set: function (v) { _density = v; }, enumerable: true },
+      _rowZoom: { get: function () { return _rowZoom; }, set: function (v) { _rowZoom = v; }, enumerable: true },
+      ROWH: { get: function () { return ROWH; }, set: function (v) { ROWH = v; }, enumerable: true },
       _editing: { get: function () { return _editing; }, set: function (v) { _editing = v; }, enumerable: true },
       _pendingWin: { get: function () { return _pendingWin; }, set: function (v) { _pendingWin = v; }, enumerable: true },
       _gset: { get: function () { return _gset; }, set: function (v) { _gset = v; }, enumerable: true },
@@ -33143,6 +33769,12 @@
       selectProject: selectProject,
       renderGrid: renderGrid,
       renderGantt: renderGantt,
+      // Row zoom — exposed for the same reason as the rest of PS.fn: it is the one number the grid
+      // and the Gantt share, so it is worth being able to assert on it outside the UI.
+      setRowZoom: setRowZoom,
+      nudgeRowZoom: nudgeRowZoom,
+      applyRowZoom: applyRowZoom,
+      rowsOnScreen: rowsOnScreen,
       renderDetails: renderDetails,
       displayList: displayList,
       buildNodes: buildNodes,
