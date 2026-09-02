@@ -84,6 +84,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (b) — Project Schedule: contract scope + timeline zoom folded from segments into menus
+
+Owner: *"Yes let's fold the scope and zoom into menus."* Both 3-button segments become labelled menu
+buttons in the `View: Split ▾` pattern. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️ **I over-stated the win when I offered it.** The two segments were ~400px of the row, but the
+  menu buttons that replace them cost 286px back: measured **1705px → 1590px, 115px saved**. One row now
+  needs a ~1720px viewport (was ~1815) — so the owner's ~1920 screen was one row before and after, and
+  1440 is still two. Reaching one row at 1440 needs ~280px more (Outline + Layouts into the View menu,
+  or a collapsing search box); flagged, not done.
+- The scope button lights only when a scope filter is actually ON — red for Main, CO amber for change
+  orders. The segment always showed a lit pill including on the default, which is how a control stops
+  being seen.
+- ⚠️ A latent bug caught while rewiring: `applyView` re-synced the old segment with
+  `querySelectorAll('#ps-zoom button')`, which under the new markup also matches the trigger button
+  (no `dataset.zoom`) and would have silently cleared the active mark on every saved-layout restore.
+
+**40/40** executing the shipped functions; 0 functions lost. ⚠️ Not verified signed in.
+`MODULE_V` → `20260902b`.
+
 ### 2026-09-02 — Project Schedule: toolbar finished, switcher un-stretched, foldable legend, Reporting view becomes a screen
 
 Four owner items. Detail in `modules/project-schedule/CLAUDE.md`; the two that matter beyond this module:

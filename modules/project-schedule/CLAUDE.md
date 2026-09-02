@@ -1,3 +1,73 @@
+## Contract scope and timeline zoom folded from segments into menus (2026-09-02b) — fmlozano
+
+Owner: *"Yes let's fold the scope and zoom into menus"* — taken up from my own offer at the end of the
+previous prompt, where the one-row toolbar was still two lines at laptop widths.
+
+Both 3-button `.ps-seg` segments become labelled `.ps-menu-wrap` buttons in the pattern established for
+`View: Split ▾`: the button NAMES the current value, the menu carries the options with ●/○ marks.
+
+- **Scope** stays a top-level, one-click control. ⚠️ That is a standing rule in this file, not a
+  preference: the segment's own comment records that it must not live only in the Filter menu, because
+  *"show me the change orders"* is a question a planner asks constantly and a filter three clicks deep is
+  one nobody discovers. A dedicated menu button keeps all of that.
+- ⚠️ **The button carries the state as COLOUR, and Blended is deliberately unlit.** The segment always
+  showed one red pill — including on the default — and a permanently-lit control stops being seen. Now
+  only an actual narrowing lights: red for Main, the CO amber `#E08A3C` for Change orders, matching the
+  `.ps-scopetag` chips so the colour language is unbroken. So "you are filtered" is still readable
+  without opening anything, and the resting state is quiet.
+- ⚠️ **Menu items are bound inside `syncScopeSwitch` / `renderZoomMenu`, NOT once at init.** Both
+  rebuild their menu's `innerHTML`, which destroys any handler bound earlier — the old init-time
+  `_scSeg.querySelectorAll('[data-scope]')` binding is removed for that reason.
+- ⚠️ **The wrappers keep the ids `ps-scope` / `ps-zoom`**, so two behaviours survive untouched:
+  `syncScopeSwitch`'s `seg.style.display` (the control hides itself on a project with no change orders —
+  *"a control with nothing to find"*) and the `body.ps-vstack-on #ps-zoom` rule that hides the timeline
+  scale while the stacking view is open.
+- ⚠️ `applyView` used to re-sync the segment with `querySelectorAll('#ps-zoom button')`. Under the new
+  markup that selector also matches the TRIGGER, whose `dataset.zoom` is undefined — so it would have
+  silently cleared the active mark on every saved-layout restore. Replaced with
+  `_paintZoomBtn(); renderZoomMenu();`.
+- The zoom menu still points at the two finer controls, which are unchanged and remain the fast path:
+  drag a column edge in the date header, or Ctrl+scroll over the chart.
+
+### ⚠️ THE HONEST ARITHMETIC — this bought less than I implied when I offered it
+Measured at 1280 in the harness, per control: **scope 227px → 151px, zoom 173px → 135px**, plus one
+divider. The row needs **1705px → 1590px — 115px saved, not the ~400px the segments occupied**, because
+a labelled menu button costs 286px back. I described the two segments as "~400px of the row" without
+netting off what replaces them.
+- **One row now needs a ~1720px viewport, down from ~1815.** Confirmed by bisection: 1680 → 2 lines,
+  1760 → 1 line.
+- On the owner's ~1920 screen it was one row before and is one row now; what changed there is density,
+  not line count.
+- **At 1680 it IS one line in two real cases**: in Reporting view (Actions / Add / Schedule / `?` are
+  hidden), and on a project with no change orders (the scope control hides itself).
+- **Getting to one row at 1440 needs ~280px more.** The candidates, unchanged by this pass: `Outline ▾`
+  (98px) and `Layouts ▾` (102px) are both view/layout controls that belong in the `View ▾` menu
+  alongside Row density and Gantt settings, and the 160px search could collapse to an icon. Not done —
+  it was not asked for, and folding Outline/Layouts is a real judgement call about how deep the View
+  menu should get.
+
+### Verification
+- **40/40 executing the SHIPPED `syncScopeSwitch` / `renderZoomMenu` / `_paintZoomBtn` / `_scopeLabel` /
+  `_scopeCount` / `_zoomLabel`**, sliced by brace matching, against a DOM shim whose `innerHTML` setter
+  materialises the `data-scope` / `data-zoom` items — so the shipped `querySelectorAll` and the shipped
+  `onclick` binding really run. Covers: the hide-with-no-COs rule both ways; the label for all three
+  scopes; only-a-narrowing-lights and both lit states clearing on return to Blended; the main-only
+  `_scopeSwitchTitle` appearing on Main and NOT on CO; the three counts including Blended = main + CO;
+  a click doing everything the segment did (`_clearMainOnlyShift`, `buildFilterMenu`, both repaints,
+  closing its own menu); handlers surviving a rebuild; and `renderZoomMenu` being a no-op with no menu
+  present (`applyView` calls it on every saved-layout restore).
+- Static: both segments gone, no leftover `#ps-zoom button` selector, `applyView` restores both,
+  `closeMenus` closes both, the vstack hide rule still resolves, both menus stop click propagation.
+- Parses (1 block); 0 NUL bytes; **0 functions lost**, 5 added.
+- ⚠️ A bug in my own test file first: `/...<\/span>/` — an unescaped `/` inside a regex literal
+  terminated it. Three occurrences; the file would not even parse.
+- ⚠️ A harness trap worth keeping: the Browser pane opened at **594px**, below the 700px phone
+  breakpoint where `.ps-toolbar` is `display:none` by design — so every item measured as invisible and
+  the widths came back as `-5`. Gate width measurements on `clientWidth >= 900`.
+- ⚠️ **Not verified signed in** — no live project, so the scope counts have never been read off real
+  `scopeOf()` data and the hide-with-no-COs path has never run against a real project.
+- `MODULE_V` → `20260902b`.
+
 ## Toolbar finished, the project switcher un-stretched, a foldable legend, and Reporting view becomes a screen (2026-09-02) — fmlozano
 
 Four owner items in one pass, all measured in a real browser against the shipped CSS rather than

@@ -589,7 +589,17 @@
     .ps-sum.ps-cosum { box-shadow:0 0 0 2px #E08A3C; }
     /* The toolbar scope switch. The CO segment is the loud one: finding the change orders is the
        thing a planner comes to this control for. */
-    .ps-toolbar #ps-scope button[data-scope="change_order"].active { background:#E08A3C; }
+    /* The scope button carries its own state, so "you are filtered to change orders" is readable
+       without opening the menu -- which is what the old segment's lit pill did.
+       ⚠️ Blended is deliberately UNSTYLED: it is the default, and a permanently-lit control teaches
+       people to stop seeing it. Only an actual narrowing lights up. The change-order amber is the same
+       #E08A3C the CO chips and the old segment used, so the colour language is unbroken.
+       ⚠️ (0,3,0) selectors: `.ps-toolbar .pd-btn:not(.pd-btn-primary)` is (0,3,0) and sets a
+       transparent background, so a shorter selector loses and the button would never light. */
+    .ps-toolbar #ps-scope > #ps-scopebtn.is-main { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .ps-toolbar #ps-scope > #ps-scopebtn.is-co { background:#E08A3C; border-color:#E08A3C; color:#fff; }
+    .ps-toolbar #ps-scope > #ps-scopebtn.is-main [data-ico],
+    .ps-toolbar #ps-scope > #ps-scopebtn.is-co [data-ico] { color:#fff; }
     .ps-scope-n { font-weight:700; opacity:.75; margin-left:5px; font-size:11px; }
     .c-x { width:var(--c-x); }
     .ps-cp-tag { background:var(--pd-red); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.03em; }
@@ -2589,19 +2599,24 @@
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-openbtn" title="Open schedule — Current, baselines &amp; what-if scenarios"><span data-ico="calendar" data-ico-size="15"></span> Open ▾</button><div class="ps-menu" id="ps-open-menu"></div></div>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-groupbtn" title="Group activities — pick the levels and their order"><span data-ico="layers" data-ico-size="15"></span> <span id="ps-groupbtn-txt">Group: WBS</span> ▾</button><div class="ps-menu ps-group-menu" id="ps-group-menu"></div></div>
           <span class="ps-tb-div"></span>
-          <!-- Contract scope switch. ⚠️ Deliberately in the toolbar and not only in the Filter
-               menu: "show me the change orders" is a top-level question a planner asks constantly,
-               and a filter three clicks deep is one nobody discovers. The two stay in sync. -->
-          <div class="ps-seg" id="ps-scope" title="Contract scope — main contract work, change orders, or both together in one sequence">
-            <button data-scope="" class="active">Blended</button>
-            <button data-scope="main">Main</button>
-            <button data-scope="change_order">Change orders</button>
+          <!-- Contract scope. ⚠️ STILL a top-level control, one click, and it NAMES the active scope
+               on its own face -- the standing rule here is that it must not be only in the Filter menu,
+               because "show me the change orders" is a question a planner asks constantly and a filter
+               three clicks deep is one nobody discovers. Folding it from a 3-button segment into a
+               labelled menu (owner 2026-09-02) keeps all of that and gives the row back 227px. The
+               button carries the state as colour, so a scope filter is still visible without opening
+               anything -- and unlike the segment, the DEFAULT (Blended) is now quiet rather than a
+               permanent red pill. The Filter menu's radios stay in sync in both directions. -->
+          <div class="ps-menu-wrap" id="ps-scope">
+            <button class="pd-btn" id="ps-scopebtn" title="Contract scope — main contract work, change orders, or both together in one sequence"><span data-ico="box" data-ico-size="15"></span> <span id="ps-scopebtn-txt">Scope: Blended</span> ▾</button>
+            <div class="ps-menu" id="ps-scope-menu"></div>
           </div>
-          <span class="ps-tb-div"></span>
-          <div class="ps-seg" id="ps-zoom" title="Timeline scale — drag a column edge in the date header, or Ctrl + scroll over the chart, to fine-tune column width">
-            <button data-zoom="month" class="active">Month</button>
-            <button data-zoom="quarter">Quarter</button>
-            <button data-zoom="year">Year</button>
+          <!-- Timeline scale. ⚠️ The segment was 173px for three values; a labelled menu names the
+               current scale in ~110px. The two finer controls are unchanged and still the fast path:
+               drag a column edge in the date header, or Ctrl+scroll over the chart. -->
+          <div class="ps-menu-wrap" id="ps-zoom">
+            <button class="pd-btn" id="ps-zoombtn" title="Timeline scale — or drag a column edge in the date header / Ctrl + scroll over the chart to fine-tune column width"><span data-ico="calendar" data-ico-size="15"></span> <span id="ps-zoombtn-txt">Zoom: Month</span> ▾</button>
+            <div class="ps-menu" id="ps-zoom-menu"></div>
           </div>
           <!-- ⚠️ ONE CONTROL THAT NAMES THE CURRENT VIEW, replacing four adjacent mystery icons
                (Layout / Progress / Stacking, plus Network buried inside Layout). Owner: *"a new user
@@ -6807,24 +6822,71 @@
       'not re-scheduled, so treat it as the main-contract picture rather than a full what-if. Nothing is ' +
       'written — Blended restores the real dates.';
   }
+  var SCOPE_OPTS = [['', 'Blended'], ['main', 'Main'], ['change_order', 'Change orders']];
+  function _scopeLabel(v) { var o = SCOPE_OPTS.filter(function (x) { return x[0] === (v || ''); })[0]; return o ? o[1] : 'Blended'; }
+  function _scopeCount(v) {
+    // ⚠️ Counts are of EXECUTION-PHASE activities (scopeOf returns null everywhere else), which is
+    // the only place contract scope means anything — so they will not match the footer's total.
+    return v === 'main' ? _scopeCounts.main
+         : v === 'change_order' ? _scopeCounts.change_order
+         : (_scopeCounts.main + _scopeCounts.change_order);
+  }
+  // Repaints the scope BUTTON and rebuilds its menu. Called from the Filter menu's radios, from
+  // applyView and after every rebuild, which is what keeps the two surfaces from disagreeing about
+  // what is currently filtered.
   function syncScopeSwitch() {
     var seg = document.getElementById('ps-scope'); if (!seg) return;
     var cur = filters.scope || '';
-    seg.querySelectorAll('[data-scope]').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.scope === cur);
-      var n = b.dataset.scope === 'main' ? _scopeCounts.main
-            : b.dataset.scope === 'change_order' ? _scopeCounts.change_order
-            : (_scopeCounts.main + _scopeCounts.change_order);
-      var lbl = b.dataset.scope === 'change_order' ? 'Change orders' : (b.dataset.scope === 'main' ? 'Main' : 'Blended');
-      // ⚠️ The count is of activities in the EXECUTION PHASE (scopeOf returns null elsewhere), which
-      // is the only place contract scope means anything — so it will not match the footer's total.
-      b.innerHTML = esc(lbl) + '<span class="ps-scope-n">' + n + '</span>';
+    var btn = document.getElementById('ps-scopebtn'), txt = document.getElementById('ps-scopebtn-txt');
+    var menu = document.getElementById('ps-scope-menu');
+    if (txt) txt.textContent = 'Scope: ' + _scopeLabel(cur);
+    if (btn) {
+      btn.classList.toggle('is-main', cur === 'main');
+      btn.classList.toggle('is-co', cur === 'change_order');
       // Explain what Main-contract-only does to a split activity, and what it does not do to the
       // work that follows it — see _scopeSwitchTitle.
-      if (b.dataset.scope === 'main') { var _t = _scopeSwitchTitle(); if (_t) b.title = _t; else b.removeAttribute('title'); }
-    });
+      var _t = cur === 'main' ? _scopeSwitchTitle() : '';
+      btn.title = _t || 'Contract scope — main contract work, change orders, or both together in one sequence';
+    }
+    if (menu) {
+      menu.innerHTML =
+        '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Contract scope</div>' +
+        SCOPE_OPTS.map(function (o) {
+          return '<button data-scope="' + esc(o[0]) + '">' + (o[0] === cur ? '\u25cf ' : '\u25cb ') +
+            esc(o[1]) + '<span class="ps-scope-n">' + _scopeCount(o[0]) + '</span></button>';
+        }).join('');
+      // ⚠️ Bound HERE, not once at init: the innerHTML above destroys any handler bound earlier.
+      menu.querySelectorAll('[data-scope]').forEach(function (b) {
+        b.onclick = function () {
+          menu.classList.remove('open');
+          filters.scope = b.dataset.scope; _clearMainOnlyShift();
+          syncScopeSwitch(); buildFilterMenu(); renderGrid(); renderGantt();
+        };
+      });
+    }
     // No change orders on this project yet: the switch would be a control with nothing to find.
     seg.style.display = _scopeCounts.change_order ? '' : 'none';
+  }
+  // Timeline scale, same shape. ⚠️ `zoom` stays the single source of truth and renderGantt reads it;
+  // this only changes how it is CHOSEN. The date-header column drag and Ctrl+scroll are untouched.
+  var ZOOM_OPTS = [['month', 'Month'], ['quarter', 'Quarter'], ['year', 'Year']];
+  function _zoomLabel(v) { var o = ZOOM_OPTS.filter(function (x) { return x[0] === v; })[0]; return o ? o[1] : 'Month'; }
+  function _paintZoomBtn() {
+    var t = document.getElementById('ps-zoombtn-txt');
+    if (t) t.textContent = 'Zoom: ' + _zoomLabel(zoom);
+  }
+  function renderZoomMenu() {
+    var menu = document.getElementById('ps-zoom-menu'); if (!menu) return;
+    menu.innerHTML =
+      '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Timeline scale</div>' +
+      ZOOM_OPTS.map(function (o) {
+        return '<button data-zoom="' + o[0] + '">' + (o[0] === zoom ? '\u25cf ' : '\u25cb ') + o[1] + '</button>';
+      }).join('') +
+      '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
+      '<div class="ps-gm-note">Finer control: drag a column edge in the date header, or Ctrl + scroll over the chart.</div>';
+    menu.querySelectorAll('[data-zoom]').forEach(function (b) {
+      b.onclick = function () { menu.classList.remove('open'); zoom = b.dataset.zoom; _paintZoomBtn(); renderZoomMenu(); renderGantt(); };
+    });
   }
   function recountScope() {
     var c = { main: 0, change_order: 0 };
@@ -25209,7 +25271,7 @@
     if (v.cols) { var pane = document.querySelector('.ps-grid-pane'); if (pane) { Object.keys(v.cols).forEach(function (c) { if (v.cols[c]) pane.style.setProperty('--c-' + c, v.cols[c]); }); try { localStorage.setItem('ps_cols', JSON.stringify(v.cols)); } catch (e) {} } }
     if (v.charts && typeof setCharts === 'function') { setCharts(v.charts); if (progressMode) renderProgressView(); }   // restore the saved chart template
     var si = document.getElementById('ps-search'); if (si) si.value = search;
-    document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.toggle('active', x.dataset.zoom === zoom); });
+    _paintZoomBtn(); renderZoomMenu();
     syncScopeSwitch();
     buildFilterMenu();
     applyColHidden();
@@ -28554,18 +28616,22 @@
       if (!wasOpen) { renderGroupMenu(); mn.classList.add('open'); }
     };
     document.getElementById('ps-group-menu').addEventListener('click', function (e) { e.stopPropagation(); });
-    var _scSeg = document.getElementById('ps-scope');
-    if (_scSeg) _scSeg.querySelectorAll('[data-scope]').forEach(function (b) {
-      b.onclick = function () {
-        filters.scope = b.dataset.scope; _clearMainOnlyShift();
-        // The Filter menu carries the same three radios; rebuilding it is what keeps the two from
-        // disagreeing about what is currently filtered.
-        syncScopeSwitch(); buildFilterMenu(); renderGrid(); renderGantt();
-      };
-    });
-    document.getElementById('ps-zoom').querySelectorAll('[data-zoom]').forEach(function (b) {
-      b.onclick = function () { zoom = b.dataset.zoom; document.querySelectorAll('#ps-zoom button').forEach(function (x) { x.classList.remove('active'); }); b.classList.add('active'); renderGantt(); };
-    });
+    // Scope + Zoom are labelled menus now (owner 2026-09-02, to get the row back to one line).
+    // ⚠️ Only the TRIGGER is bound here. The menu ITEMS are bound inside syncScopeSwitch /
+    // renderZoomMenu, because those rebuild the menu's innerHTML and would destroy a handler bound
+    // once at init.
+    var scMenu = document.getElementById('ps-scope-menu'), zmMenu = document.getElementById('ps-zoom-menu');
+    document.getElementById('ps-scopebtn').onclick = function (e) {
+      e.stopPropagation(); var o = scMenu.classList.contains('open'); closeMenus();
+      if (!o) { syncScopeSwitch(); scMenu.classList.add('open'); }
+    };
+    document.getElementById('ps-zoombtn').onclick = function (e) {
+      e.stopPropagation(); var o = zmMenu.classList.contains('open'); closeMenus();
+      if (!o) { renderZoomMenu(); zmMenu.classList.add('open'); }
+    };
+    scMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    zmMenu.addEventListener('click', function (e) { e.stopPropagation(); });
+    _paintZoomBtn(); renderZoomMenu();
     // (Expand-all moved into the Outline ▾ menu — see renderCollapseMenu.)
     var cMenu = document.getElementById('ps-collapse-menu'), fMenu = document.getElementById('ps-filter-menu');
     var vMenu = document.getElementById('ps-views-menu');
@@ -28577,7 +28643,7 @@
     var analyzeMenu = document.getElementById('ps-analyze-menu');
     var oMenu = document.getElementById('ps-open-menu');
     var colorsMenu = document.getElementById('ps-colors-menu');
-    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    function closeMenus() { cMenu.classList.remove('open'); fMenu.classList.remove('open'); vMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _sm = document.getElementById('ps-scope-menu'); if (_sm) _sm.classList.remove('open'); var _zm = document.getElementById('ps-zoom-menu'); if (_zm) _zm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // ⚠️ CLIPPING FIX. `.ps-menu` is `position:absolute; left:0`, so a menu opened from a button
