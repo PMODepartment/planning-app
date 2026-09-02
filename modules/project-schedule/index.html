@@ -2400,6 +2400,13 @@
     #sbld-wbs-host > .pd-card { margin:0; }
     /* step — lifecycle phases (Initiation / Planning / Close-out around the generated Execution
        Phase). Deliberately built on the builder's own .sbld-* look; only what this step needs is new. */
+    /* Step note — states a fact about the step rather than instructing, so it is quieter than
+       .sbld-lede and louder than .sbld-hint. The warn variant is for the one case that reads as a
+       defect: a generated programme sitting above a tree that reports 0 activities. */
+    .sbld-note { margin:8px 0 0; font-size:12.5px; line-height:1.5; color:var(--pd-muted);
+      border-left:3px solid var(--pd-line); padding:2px 0 2px 10px; }
+    .sbld-note b { color:var(--pd-ink); }
+    .sbld-note-warn { border-left-color:var(--pd-warn, #C77700); }
     .sbld-phgrid { display:grid; gap:12px; margin-top:10px; }
     .sbld-phcard { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); padding:11px 13px 12px; }
     .sbld-phcard.on { border-color:var(--pd-red-mid, var(--pd-red)); box-shadow:var(--pd-shadow); }
@@ -3569,6 +3576,32 @@
     if (t.indexOf('planning phase') >= 0) return 'planning';
     if (t.indexOf('close-out') >= 0 || t.indexOf('closeout') >= 0 || t.indexOf('close out') >= 0) return 'closeout';
     return null;
+  }
+  // ⚠️⚠️ A LIFECYCLE BRANCH IS FOUND BY ITS PHASE, NEVER BY ITS EXACT NAME — and this is the second
+  // half of the "only the Close-out activities landed" report. `PHASE_LABELS.closeout` reads
+  // "Close-out Phase" while WBS_SKELETON seeds the branch as "Closeout Phase", so the push's
+  // exact-name lookup missed it and created a SIXTH top-level branch beside the empty skeleton one —
+  // the same duplicate-top-level shape the import placement step already exists to prevent (see the
+  // _wbsNameKey note: an imported .xer calls it plain "Closeout"). A duplicate root branch also
+  // renumbers every sibling, and a dotted WBS code is derived from sibling position, so it re-coded
+  // the Execution Phase branch out from under the activities that had just been filed there.
+  // `phaseFromName` already tolerates every spelling; the stored `phase` wins over it, exactly as
+  // _nodePhase resolves.
+  function _phaseBranchAt(parentId, code) {
+    if (!code) return null;
+    var kids = (WBS_NODES || []).filter(function (n) { return (n.parent_id || null) === (parentId || null); })
+      .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); });
+    for (var i = 0; i < kids.length; i++) {
+      if ((kids[i].phase || phaseFromName(kids[i].name)) === code) return kids[i];
+    }
+    return null;
+  }
+  // ⚠️ A NEW branch takes the SKELETON's spelling, not PHASE_LABELS'. The label is display copy and
+  // may be re-worded; the skeleton is what every other project already carries, and the next push,
+  // the import placement picker and the dedupe healer all have to find the same branch.
+  function _phaseBranchName(code) {
+    var hit = (WBS_SKELETON || []).filter(function (n) { return phaseFromName(n.name) === code; })[0];
+    return (hit && hit.name) || PHASE_LABELS[code] || code;
   }
   function _nodePhase(nodeId) {
     if (!nodeId) return null;
@@ -18627,7 +18660,17 @@
     WBS_NODES.filter(function (n) { return String(n.name || '').trim() !== ''; })
       .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); })
       .forEach(function (n) {
-        var key = (n.parent_id || '') + '\u0000' + String(n.name || '').trim().toLowerCase();
+        // ⚠️ AT THE ROOT, ONE BRANCH PER LIFECYCLE PHASE. Two top-level branches resolving to the
+        // same phase ARE the same branch — an invariant this module already relies on everywhere
+        // (execPhaseCode() picks exactly one Execution Phase). Keying those by phase rather than by
+        // name is what heals a project that already carries both "Closeout Phase" and "Close-out
+        // Phase": the exact-name key below cannot see them as duplicates, and the hyphen survives
+        // _wbsNameKey too ('closeout' vs 'close out'). Merging is lossless — children, activities and
+        // summary rows are all re-pointed onto the OLDEST branch, which is the skeleton's.
+        // ⚠️ Root only, and only when a phase actually resolves: 'Milestones' and every trade branch
+        // resolve nothing, so they keep the name key and cannot be collapsed into each other.
+        var _rootPhase = n.parent_id ? null : (n.phase || phaseFromName(n.name));
+        var key = (n.parent_id || '') + '\u0000' + (_rootPhase ? 'phase:' + _rootPhase : String(n.name || '').trim().toLowerCase());
         if (byKey[key]) dupes.push({ keep: byKey[key], drop: n }); else byKey[key] = n;
       });
     if (!dupes.length) return 0;
@@ -24692,7 +24735,21 @@
     // rebuilt — and for why the panel must never be repainted while it is here.
     function stWbs(host) {
       var n = (typeof WBS_NODES !== 'undefined' && WBS_NODES) ? WBS_NODES.length : 0;
+      var _liveActs = 0, _gen = 0;
+      try { _liveActs = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
+      try { _gen = generate('int').rows.length; } catch (e) {}
       host.innerHTML = '<h2>' + _stepNo('WBS') + ' · The work breakdown structure</h2>' +
+        // ⚠️ Stated before the tree, not after it: the count on every row is what the LIVE schedule
+        // holds, which is 0 on a project that has never been pushed to — and that is not a report
+        // about the programme the Generate step previews.
+        '<p class="sbld-note' + (_gen && !_liveActs ? ' sbld-note-warn' : '') + '">' +
+        'The <b>N activities</b> on each branch below counts what is <b>already in the Project Schedule</b> — ' +
+        (_liveActs
+          ? '<b>' + _liveActs + '</b> activit' + (_liveActs === 1 ? 'y' : 'ies') + ' so far.'
+          : 'this project has <b>none</b> yet, so every branch correctly reads 0.') +
+        (_gen ? ' The <b>' + _gen + '</b> activities this setup generates are not there until you ' +
+          '<b>' + _stepNo('Generate') + ' · Push to Project Schedule</b>.' : '') +
+        '</p>' +
         '<p class="sbld-lede">This is the project\u2019s live WBS \u2014 the same branches the schedule files its activities under, edited here rather than on a screen of its own. A <b>' + _stepNo('Generate') + ' \u00b7 Push</b> creates the branches this setup needs (trade \u203a tower \u203a floor \u203a zone) and reuses any that already exist; what you type here is what it reuses.</p>' +
         '<p class="sbld-hint">Which location levels the push turns into WBS levels, and in what order, is set in the push dialog itself (<b>WBS structure</b>) \u2014 it belongs to the push, not to the tree. Re-arranging <b>activities</b> day to day is done in the <b>Project Schedule</b> grid.</p>' +
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
@@ -25350,13 +25407,68 @@
         // one insert per depth, idempotent reuse of a branch that already exists under the same
         // parent (a re-push does NOT create a second "Planning Phase"), the partial-tree rollback,
         // and the dotted-code fallback for a project whose database predates wbs_nodes.
+        // ⚠️⚠️ THE PUSH MAY RENUMBER ONLY THE BRANCHES IT OWNS — and this is the bug that made a
+        // pushed schedule read as "not migrated under the Execution Phase".
+        // `soByParent` counts a parent's children from 0, which is right under `__base__`: the
+        // builder creates every child of the Execution Phase branch, so a re-push legitimately
+        // corrects their sibling order. It is WRONG at the project (or package) root, where the push
+        // files only the lifecycle phases and sits beside Milestones, Execution Phase and anything a
+        // planner added by hand. There, reusing the skeleton's "Initiation Phase" handed it
+        // sort_order 0, "Planning Phase" 1, "Close-out Phase" 2 — numbers other top-level branches
+        // already held — and `reorder` WROTE THAT TO THE DATABASE.
+        // ⚠️ A dotted WBS code is derived purely from a node's POSITION among its siblings
+        // (computeWbsCodes), so that renumbering re-coded the whole root: the pushed activities were
+        // stamped with codes from the new order while every existing summary row still carried the
+        // old one, so the execution work appeared detached from the Execution Phase branch — and
+        // duplicate sort_orders at the root leave the order tie-broken by id, i.e. free to flip
+        // between loads. Exactly the "codes shared by two branches, the grid draws them twice"
+        // corruption this file has already had to heal once.
+        // A `keepOrder` branch therefore keeps the position it has, and a NEW one is appended AFTER
+        // the parent's existing children rather than claiming slot 0.
+        function _nextFreeSort(parentId, nodes) {
+          var mx = -1;
+          (nodes || []).forEach(function (n) {
+            if ((n.parent_id || null) !== (parentId || null)) return;
+            var so = +n.sort_order;
+            if (isFinite(so) && so > mx) mx = so;
+          });
+          return mx + 1;
+        }
+        // Returns { sort, fix } — `sort` for a node about to be inserted (null when reusing),
+        // `fix` the patch to write onto a reused node (empty when it must be left alone).
+        function _nodeOrderPlan(nd, parentId, ex, soByParent, nodes) {
+          var pk = nd.parentKey;
+          if (nd.keepOrder) {
+            // ⚠️ Reused: no reorder AND no code_custom clear. The skeleton's phase branches are
+            // locked and may carry a deliberate code; re-deriving it would renumber the project.
+            if (ex) return { sort: null, fix: {} };
+            // ⚠️ Seeded once per parent and then incremented, because WBS_NODES is not appended to
+            // until the batch inserts — two new phase branches in one push would otherwise both
+            // claim the same slot.
+            var ck = '+' + pk;
+            if (soByParent[ck] == null) soByParent[ck] = _nextFreeSort(parentId, nodes);
+            return { sort: soByParent[ck]++, fix: {} };
+          }
+          var want = soByParent[pk]++;
+          if (!ex) return { sort: want, fix: {} };
+          var fix = {};
+          if ((ex.sort_order || 0) !== want) fix.sort_order = want;
+          // ⚠️ Drop a name-derived code left by an older push. The builder owns these branches
+          // and their IDs are auto-numbered now; leaving one behind keeps the whole subtree on
+          // the old text-sorted, detachment-prone path.
+          if (ex.code_custom) { fix.code_custom = false; fix.code = null; }
+          return { sort: null, fix: fix };
+        }
         var phasePlan = sbPhasePlan(g), phaseTasks = [];
         if (phasePlan.length) {
           phasePlan.forEach(function (pp) {
             if (!pp.rows.length) return;
             var pkey = 'PH_' + pp.v;
-            ensureNode(pkey, '__phaseparent__', PHASE_LABELS[pp.v] || pp.v, null, null);
+            ensureNode(pkey, '__phaseparent__', _phaseBranchName(pp.v), null, null);
+            nodeByKey[pkey].findPhase = pp.v;
             nodeByKey[pkey].phase = pp.v;
+            // ⚠️ The push files these beside branches it does not own — see _nodeOrderPlan.
+            nodeByKey[pkey].keepOrder = true;
             pp.rows.forEach(function (r, i) { phaseTasks.push({ k: pkey, v: pp.v, r: r, i: i }); });
           });
         }
@@ -25458,16 +25570,15 @@
             var nd = level[li];
             soByParent[nd.parentKey] = (soByParent[nd.parentKey] || 0);
             var parentId = keyToNodeId[nd.parentKey] || null;
-            var ex = existingChild(parentId, nd.name) || (nd.alt ? existingChild(parentId, nd.alt) : null);
+            // ⚠️ Phase first: a lifecycle branch is identified by its phase, not by a spelling — see
+            // _phaseBranchAt. Falls back to the name so a project whose branch resolves no phase at
+            // all (an oddly-named import) is still reused rather than duplicated.
+            var ex = (nd.findPhase ? _phaseBranchAt(parentId, nd.findPhase) : null) ||
+              existingChild(parentId, nd.name) || (nd.alt ? existingChild(parentId, nd.alt) : null);
+            var _plan = _nodeOrderPlan(nd, parentId, ex, soByParent, WBS_NODES);
             if (ex) {
               keyToNodeId[nd.key] = ex.id; reused[nd.key] = 1; reusedN++;
-              var _want = soByParent[nd.parentKey]++, _fix = {};
-              if ((ex.sort_order || 0) !== _want) _fix.sort_order = _want;
-              // ⚠️ Drop a name-derived code left by an older push. The builder owns these branches
-              // and their IDs are auto-numbered now; leaving one behind keeps the whole subtree on
-              // the old text-sorted, detachment-prone path.
-              if (ex.code_custom) { _fix.code_custom = false; _fix.code = null; }
-              if (Object.keys(_fix).length) reorder.push({ id: ex.id, patch: _fix, node: ex });
+              if (Object.keys(_plan.fix).length) reorder.push({ id: ex.id, patch: _plan.fix, node: ex });
               doneN++; continue;
             }
             // ⚠️ Last-ditch coalesce: whatever happens upstream, this column is NOT NULL and one bad
@@ -25477,7 +25588,7 @@
             /* ⚠️ package_id on the BRANCH as well as the leaf. packageOf() resolves an
                activity through its nearest tagged ancestor, so tagging the branches is
                what keeps a re-parented or newly-added activity inside the right lot. */
-            var _row = { project_id: pid, parent_id: parentId, name: _nm, sort_order: soByParent[nd.parentKey]++, created_by: UID };
+            var _row = { project_id: pid, parent_id: parentId, name: _nm, sort_order: _plan.sort, created_by: UID };
             if (usePkg) _row.package_id = usePkg;
             batch.push(_row);
             batchDescs.push(nd);

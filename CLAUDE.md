@@ -84,6 +84,37 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (ac) — The Schedule Setup push renumbered the project root, so the execution work came out detached
+Owner: *"the activities generated under the execution phase was not migrated, as well as the WBS for the
+initiation and planning phase"* / *"when pushed, only activities under the close-out phase WBS was detected."*
+Two defects in my own lifecycle-phase push. Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **The push renumbered branches it does not own.** `soByParent` counts a parent's children from 0 —
+  right under the Execution Phase branch (the builder creates every child there), wrong at the project root,
+  where it files only the lifecycle phases beside Milestones and everything a planner added. So reusing the
+  skeleton's `Initiation Phase` gave it `sort_order` **0**, Planning **1**, Close-out **2**, and `reorder`
+  **wrote it to the database**. ⚠️ A dotted WBS code is derived purely from sibling POSITION, so that
+  re-coded the whole root: the pushed activities were stamped from the new order while every existing
+  summary row still carried the old one. Measured on the owner's tree, Execution Phase moves off code
+  **"4" to "5"**. **Their step-9 screenshot showed the damage** — Initiation ahead of Milestones, which the
+  skeleton seeds the other way round.
+- ⚠️⚠️ **`PHASE_LABELS.closeout` is "Close-out Phase"; the skeleton seeds "Closeout Phase".** The exact-name
+  lookup missed it and created a sixth top-level branch, which renumbers every sibling again — and explains
+  the symptom exactly: that branch and its activities were coded consistently with each other, so the
+  Close-out work was the only work that landed where it was filed. A lifecycle branch is now found by its
+  **phase** (stored first, then `phaseFromName`, which already tolerates every spelling), and a new one takes
+  the **skeleton's** spelling so the next push finds it again.
+- **The damage already done is healed:** the dedupe keyed on the exact name, so it could not see the two
+  spellings as duplicates — nor could `_wbsNameKey`, whose punctuation rule turns the hyphen into a space.
+  At the root the key is now the resolved phase, because two top-level branches resolving to one phase ARE
+  the same branch (`execPhaseCode()` already assumes exactly one). Root only, and only when a phase resolves.
+- **Step 9's "0 activities" is the LIVE schedule's count** and the step never said so, so a setup showing a
+  full programme in steps 8 and 10 read as having lost it. It now states both counts and that the generated
+  activities arrive on the push.
+- ⚠️ **Not repaired: the owner's project still has Initiation ahead of Milestones.** Rewriting `sort_order`
+  on load would be a silent data change on every project — fix it with Alt+↑/↓ in step 9.
+- **54 checks** executing the shipped functions against the owner's own tree shape; 0 functions lost.
+  MODULE_V → `20260902ac`.
+
 ### 2026-09-02 (aa) — Reset + rebuild ran, and proved the damage is in the DATA
 
 Owner: *"Reset WBS and rebuild, then check."* Detail in `modules/project-schedule/CLAUDE.md`.

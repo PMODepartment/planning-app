@@ -1,3 +1,89 @@
+## The push renumbered the project root, so the execution work came out detached (2026-09-02) — eprobles
+
+Owner: *"how come when a schedule was generated in the schedule setup, and pushed to project schedule,
+the activities generated under the execution phase was not migrated, as well as the WBS for the
+initiation and planning phase"* — then, with screenshots: *"in steps 8 and 10, there are activities
+detected, and then when it went to step 9, no activities were detected and then when pushed, only
+activities under the close-out phase WBS was detected."*
+
+**Two real defects in my own lifecycle-phase push, and the owner's step-9 screenshot contained the
+proof of the first one.** Its WBS read `1 Initiation Phase · 2 Milestones · 3 Planning Phase ·
+4 Execution Phase · 5 Closeout Phase` — but `WBS_SKELETON` seeds **Milestones first**. Initiation had
+been moved ahead of it, which is exactly what defect 1 does.
+
+### ⚠️⚠️ 1. The push renumbered branches it does not own
+`soByParent` counts a parent's children **from 0**. That is right under `__base__` — the builder
+creates every child of the Execution Phase branch, so a re-push may legitimately correct their sibling
+order. It is flatly wrong at the project (or package) **root**, where the push files only the lifecycle
+phases and sits beside Milestones, the Execution Phase branch and anything a planner added by hand.
+So reusing the skeleton's `Initiation Phase` handed it `sort_order` **0**, `Planning Phase` **1**,
+`Close-out Phase` **2** — numbers other top-level branches already held — and `reorder` **wrote that to
+the database**.
+
+⚠️ **A dotted WBS code is derived purely from a node's POSITION among its siblings**
+(`computeWbsCodes`), so that renumbering **re-coded the whole root**: the pushed activities were
+stamped from the new order while every existing summary row still carried the old one, which is why
+the execution work appeared detached from the Execution Phase branch. Measured on the owner's exact
+tree, the pre-fix logic moves Execution Phase off dotted code **"4" to "5"** and leaves a duplicate
+`sort_order` at the root — where the tie is broken by id, i.e. free to flip between loads. The same
+"codes shared by two branches, the grid draws them twice" corruption this file has already had to heal
+once.
+
+**Fix:** `_nodeOrderPlan` / `_nextFreeSort`. A `keepOrder` branch keeps the position it has — no
+reorder **and no `code_custom` clear**, since the skeleton's phase branches are locked and re-deriving
+their code would renumber the project. A **new** one is appended after the parent's existing children
+instead of claiming slot 0, seeded once per parent and then incremented (`WBS_NODES` is not appended to
+until the batch inserts, so two new phase branches in one push would otherwise both claim the same
+slot). ⚠️ Scoped to the lifecycle branches: the trade branches the builder **does** own are still
+renumbered and still have a stale name-derived code cleared, asserted as a regression.
+
+### ⚠️⚠️ 2. `Close-out Phase` never matched `Closeout Phase`
+`PHASE_LABELS.closeout` reads **"Close-out Phase"**; `WBS_SKELETON` seeds the branch as **"Closeout
+Phase"**. The push looked it up by exact name, missed it, and created a **sixth top-level branch** —
+the same duplicate-top-level shape the import placement step already exists to prevent (an imported
+`.xer` calls it plain "Closeout"). A duplicate root branch renumbers every sibling too, so this
+compounded defect 1. It also explains the reported symptom precisely: the new branch and its
+activities were coded consistently with each other, so **the Close-out work was the only work that
+landed where it was filed.**
+
+**Fix:** a lifecycle branch is found by its **phase**, never by a spelling — `_phaseBranchAt` uses the
+stored `phase` first and `phaseFromName` otherwise (which already tolerates *Closeout / Close-out /
+Close out*, any case), oldest first so a stray left by the buggy push never becomes the target. A
+branch it has to create takes the **skeleton's** spelling via `_phaseBranchName`, not the display
+label, so the next push, the import placement picker and the dedupe healer all find the same branch.
+⚠️ It falls back to the name so a project whose branch resolves no phase at all is still reused rather
+than duplicated.
+
+**And the damage already done is healed.** `_wbsDedupeSkeletonPass` keyed on the exact lowercased name,
+so it could not see `Closeout Phase` and `Close-out Phase` as duplicates — ⚠️ nor could `_wbsNameKey`,
+whose punctuation rule turns the hyphen into a space (`closeout` vs `close out`). At the **root** the
+key is now the resolved phase, because two top-level branches resolving to one phase **are** the same
+branch — an invariant this module already relies on (`execPhaseCode()` picks exactly one). Merging is
+lossless. ⚠️ Root only, and only when a phase actually resolves: `Milestones` and every trade branch
+resolve nothing and keep the name key.
+
+### 3. Step 9 read "0 activities" on every branch
+Not a data loss — the count is what the **live schedule** holds, and this project had never been pushed
+to. But a setup whose steps 8 and 10 both show a full programme, landing on a tree that reports 0
+everywhere, reads as *the activities were lost*, and the step never said otherwise. It now states the
+live count, names the generated count, and says the generated activities are not there until the push
+— amber in exactly the case that reads as a defect (something generated, nothing live).
+
+⚠️ **What is NOT repaired: the owner's project still has Initiation ahead of Milestones.** Rewriting
+`sort_order` on load would be a silent data change on every project in the app. Correct it in
+**Schedule Setup → 9 · WBS** with **Alt+↑/↓**; the push will no longer move it.
+
+**Verified: 54 checks executing the shipped functions** (`_nodeOrderPlan`, `_nextFreeSort`,
+`_phaseBranchAt`, `_phaseBranchName`, `phaseFromName`), sliced out of the file and run against the
+owner's own tree shape — including a reproduction of the pre-fix renumbering, five alternative
+`Closeout` spellings all reused, the stored-phase override, and six over-merge cases the new dedupe key
+must *not* collapse. **0 functions lost, 4 added**; 0 NUL bytes; parses. ⚠️ One assertion of mine was
+wrong first (I expected three duplicate `sort_order`s at the root; the real number is one, because two
+of the movers vacate the slots they leave) — corrected to what was measured. ⚠️ **Not verified signed
+in** — the next real push is the test.
+
+---
+
 ## Reset + rebuild ran, and proved the damage is in the DATA, not the tree (2026-09-02aa) — fmlozano
 
 Owner: *"Reset WBS and rebuild, then check."* Driven live on SLN101.
