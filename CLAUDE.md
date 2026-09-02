@@ -101,7 +101,12 @@ phase."* Detail in `modules/project-schedule/CLAUDE.md`.
 - ⚠️ **The lesson is about the test.** (k) was verified live and reported 40 → 0 — on a **cold** load,
   the one path where `WBS_NODES` are already in hand when the legend first renders, so the bug cannot
   appear. A returning browser takes the **cached** path. **A module that paints twice must be verified
-  on both paints.** `MODULE_V` → `20260902m`.
+  on both paints.**
+- **Verified on the cached paint**, sampled from first paint: **40 chips at 264ms → 0 at 3,590ms**, ending
+  Live with the empty-key message. ⚠️ **The cached paint is still wrong for ~3.3s** — before the tree
+  arrives the fallback cannot tell an unphased project from a not-yet-loaded one. It self-corrects.
+  ⚠️ Defaulting the other way would blank the colours for those seconds on every *normal* project; the
+  real fix is to persist the scope answer beside the cached rows, not done here. `MODULE_V` → `20260902m`.
 
 ### 2026-09-02 (k) — An emptied schedule showed a 92-entry colour key
 

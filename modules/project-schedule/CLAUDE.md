@@ -28,6 +28,30 @@ that path. The owner hit it immediately because a returning browser takes the **
 module that paints twice — once from cache, once live — has to be verified on BOTH paints**, and this
 repo has a documented family of exactly this defect. One green live check is not coverage.
 
+### Verified on the CACHED paint this time, sampled every 250ms from first paint
+
+| t | chips | freshness chip |
+|---|---|---|
+| 264ms | **40** | Cached · updating… ← the defect, reproduced |
+| 512ms | 40 | Loading resources… |
+| **3,590ms** | **0** | Syncing the design + procurement branches… ← the repaint fires |
+| 4,591ms | 0 | Live |
+
+Final state: **0 chips**, and the empty-key message reads *"No Execution Phase activities yet."* A
+cold load in the same build never leaves 0. ⚠️ **Both paints are now covered by the check**, which is
+the thing (k) got wrong.
+
+⚠️ **STATED, NOT GLOSSED: the cached paint is still wrong for ~3.3 seconds.** The tree has not arrived,
+so the fallback genuinely cannot tell an unphased project from a not-yet-loaded one, and it
+over-colours until `loadResourcesAssignments()` returns. It self-corrects, which is the difference
+between this and the reported bug — but it is visible.
+⚠️ **The alternative was considered and NOT taken:** defaulting to "scope to exec" while the tree is
+unknown would blank the colours for those 3.3s on every NORMAL project, since an execution project's
+rows also resolve their phase only through the tree. That trades a brief over-colouring on the rare
+cleared project for a brief under-colouring on every ordinary one. **The real fix is to persist the
+scope answer beside the cached rows** so the cached paint starts from the previous live answer; not
+done here, and worth doing if the flicker annoys.
+
 - `MODULE_V` → `20260902m`.
 
 ---
