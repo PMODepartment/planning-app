@@ -27738,7 +27738,14 @@
                 '<u>' + _hiddenNames.slice(0, 80).map(function (v) { return '<em>' + esc(v) + '</em>'; }).join('') +
                 (_hiddenNames.length > 80 ? '<em class="more">+' + (_hiddenNames.length - 80) + ' more…</em>' : '') +
                 '</u></span></span>' : '')
-          : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>')
+          // ⚠️ TWO REASONS FOR AN EMPTY KEY, AND THEY NEED DIFFERENT SENTENCES. Since colouring became
+          // the Execution Phase's, `catList()` legitimately returns nothing on a project with no
+          // execution work — a freshly cleared one, whose only rows are the Planning-phase Design
+          // Development / Procurement mirrors. Telling that reader to "open a WBS branch" sends them
+          // expanding branches that can never produce a chip.
+          : (catScopeIsExec() && !rows.some(function (r) { return !isWbs(r) && isExecPhase(r); })
+              ? '<span>No Execution Phase activities yet — the colour key covers execution work only.</span>'
+              : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>'))
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     // Folded, the head keeps ONE line that still says what the colours mean -- a bare chevron over
     // an empty strip would leave a reader with no way to know the legend was there at all.
@@ -27761,7 +27768,11 @@
       // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
       // same flex list as the category chips, not a sibling block above it — a separate <div>, even
       // inside the same container, still read as "two legend sections" to the owner.
-      '<div class="ps-actlegend-items">' + plainActChipHTML(cfg.on && _hasPlainBars) + MARKS_LEGEND_HTML +
+      // ⚠️ EMITTED, not merely re-labelled. With the colours off this is the only Activity chip and
+      // always belongs; with them on it describes the plain bars drawn for non-execution work, so it
+      // belongs only when one of those is actually on screen. Shipping it unconditionally put an
+      // unexplained second Activity chip in a legend that had no plain bar in it.
+      '<div class="ps-actlegend-items">' + ((!cfg.on || _hasPlainBars) ? plainActChipHTML(cfg.on) : '') + MARKS_LEGEND_HTML +
         (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>';
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
     // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.

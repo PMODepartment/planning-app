@@ -25,7 +25,18 @@ is the exact opposite of what scoping the key to the Execution Phase was asked f
 yet, and the honest answer is an empty colour key. A genuinely unphased project still falls back, so
 the case the fallback exists for is unchanged.
 
-- `MODULE_V` → `20260902k`.
+### Verified live, then two follow-ons the verification itself exposed
+Re-checked on the deployed build against the cleared SLN101: **category chips 40 → 0**, the marks
+row intact. Two things that only showed once the key was correctly empty:
+- ⚠️ **The empty-key message said the wrong thing.** It read *"Nothing expanded — open a WBS branch"*,
+  which since (h) is no longer the only reason: a project with **no execution work** legitimately has
+  no chips, and that sentence sends the reader expanding branches that can never produce one. The two
+  cases now say different things.
+- ⚠️ **The plain Activity chip was emitted unconditionally**, only its LABEL changing — which does not
+  match what (h) claimed it did, and put an unexplained second *Activity* chip in a legend containing
+  no plain bar. It is now genuinely gated on `_hasPlainBars`.
+
+- `MODULE_V` → `20260902l`.
 
 ---
 ## The clear, measured live: 28,863 rows in 16 seconds, and one thing it never deleted (2026-09-02j) — fmlozano

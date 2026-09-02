@@ -98,7 +98,11 @@ things. Detail in `modules/project-schedule/CLAUDE.md`.
   an **unphased** one. Measured live: all 92 resolve to `planning`, none to `construction`, so the
   fallback fired and keyed 92 drawing-register and procurement names on an empty schedule. The test
   now asks **"are phases in use at all"**; a genuinely unphased project still falls back.
-- `MODULE_V` → `20260902k`.
+- **Verified live on the deployed build: category chips 40 → 0** against the cleared SLN101. ⚠️ Two
+  follow-ons that only appeared once the key was correctly empty: the empty-state message still said
+  *"Nothing expanded"* (wrong reason — there is simply no execution work), and the plain Activity chip
+  was emitted unconditionally rather than gated on a plain bar being on screen, which is not what (h)
+  claimed. Both fixed. `MODULE_V` → `20260902l`.
 
 ### 2026-09-02 (j) — The clear measured live: 28,863 rows in 16 seconds, and one thing it never deleted
 
