@@ -31,8 +31,11 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
+        <!-- No static title here — it duplicated the page's own "Modules" heading
+             directly below it (found 2026-09-01 auditing a real render of the app;
+             dashboard.html already settled on this shape: switcher + user-bar only,
+             the page heading carries the title). -->
         <div id="ctx-switcher"></div>
-        <h1>Modules</h1>
         <div id="user-bar"></div>
       </div>
 

@@ -143,6 +143,11 @@
     .eq-mx th.eq-c2, .eq-mx td.eq-c2 { position:sticky; left:150px; z-index:1; text-align:left;
       background:var(--pd-card); font-weight:600; color:var(--pd-muted); width:84px; min-width:84px; max-width:84px; padding-left:9px; padding-right:9px; }
     .eq-mx thead th.eq-c1, .eq-mx thead th.eq-c2 { z-index:3; background:var(--pd-bg); }
+    /* "Planned / Actual" needs ~127px on one line but eq-c2 is fixed at 84px (that width is
+       load-bearing for the chart-bar/matrix-column alignment above — see MX_C1/MX_C2/MX_CELL).
+       Wrap the header label instead of widening the column; the body cells only ever say
+       "Planned" or "Actual" (one word) and already fit at 84px, so they stay nowrap. */
+    .eq-mx thead th.eq-c2 { white-space:normal; line-height:1.2; }
     .eq-mx tr.eq-r-actual td:not(.eq-c1):not(.eq-c2) { background:var(--pd-red-light); }
     .eq-mx tr.eq-r-total td { font-weight:800; border-top:2px solid var(--pd-line); }
     .eq-mx tr.eq-r-total td.eq-c1, .eq-mx tr.eq-r-total td.eq-c2 { background:var(--pd-card); }

@@ -43,6 +43,10 @@
     .ps-tb-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; row-gap:6px; overflow:visible; min-width:0; }
     .ps-tb-row > *:not(.ps-search):not(.ps-tb-spacer) { flex:none; }
     .ps-tb-row .ps-search { flex:0 1 auto; min-width:110px; }
+    /* The <input> inside .ps-search has no CSS width, so its default min-width:auto resolves to
+       its min-content (intrinsic) size — which can exceed the wrapper's declared min-width and
+       silently defeat the wrapper's own flex-shrink, overflowing the toolbar row. */
+    .ps-tb-row .ps-search input { min-width:0; }
     .ps-tb-spacer { margin-left:auto; }
     .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 2px; }
     /* one consistent control height across selects, inputs, buttons & segments */
