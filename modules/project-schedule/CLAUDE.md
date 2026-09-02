@@ -1,3 +1,71 @@
+## Schedule Builder → **Schedule Setup**, and the WBS tree moves into it (2026-09-02) — eprobles
+
+Owner: *"what are the current functions in the WBS manager that can be migrated instead to the
+Schedule Builder. also change the name of Schedule Builder to a more appropriate name. … to edit the
+WBS, it should be in the schedule builder instead, since the WBS manager is rendered useless given
+that the arrangement of the WBS can be modified in the project schedule instead."*
+
+### The name
+**Schedule Builder → Schedule Setup.** It no longer only builds a schedule: it owns the activity
+list, the location breakdown, the sequencing, the lifecycle phases and now the WBS, and the schedule
+itself is what it *pushes*. "Setup" is also the noun the screen already uses for its saved objects
+(`schedule_builder_setups` rows are called *setups* in its own dialogs).
+- ⚠️ **Only the display strings changed.** `ScheduleBuilder`, the `builder` tab key, the `sbld-*`
+  classes, the table name and the setup rows keep their names. Renaming those is churn with a
+  migration attached and no user-visible benefit — the tab key in particular is persisted in the URL
+  hash and in saved history rows.
+
+### What migrated, and what deliberately did not
+| WBS Manager function | Where it lives now | Why |
+|---|---|---|
+| The tree outliner (add / rename / indent / outdent / reorder / delete, keyboard) | **Schedule Setup → WBS step** | shaping the WBS *is* setup work |
+| Paste outline · Duplicate branch · From project | **Schedule Setup → WBS step** | bulk ways to author the same tree |
+| Expand / collapse / search + the "where will Add WBS land" hint | **Schedule Setup → WBS step** | they only make sense next to the tree |
+| **Adopt existing WBS** · **Reset WBS** | stays | repairs over a whole *imported* project, including phases the setup never generates — a setup-scoped screen is the wrong place to offer "drop every custom branch in this project" |
+| **Sync Engineering** · **Sync Procurement** · **Push need-by** | stays | other teams' apps, mirroring branches the setup does not own and must not write |
+| Node counts / activity counts | travels with the card | it is part of the tree's own header |
+
+So the WBS Manager is now the **repair-and-integrations** screen, and it says so where the editor
+used to be, with a button that opens the setup on the right step (`ScheduleBuilder.gotoStep('WBS')`
+— matched on the rail TITLE, because the step order has already changed twice today and an index
+would silently point at whatever now sits in that slot).
+
+### ⚠️⚠️ The tree is BORROWED, not copied
+`#ps-wbs-edittools` and `#ps-wbs-card` are the **same DOM nodes** declared in the WBS Manager's
+markup, relocated into the setup's panel by `sbWbsMount` and returned to a hidden `#ps-wbs-park` slot
+by `sbWbsPark`. A second editor in the builder was the obvious implementation and would have been
+wrong twice over:
+- the tree is a virtualized outliner whose selection, collapse map, search filter and flat row list
+  live in **module state** (`_wbsSel` / `_wbsCollapsed` / `_wbsSearch` / `_wbsFlat`) — two instances
+  would share that state and fight over it;
+- all ~30 of its handlers are bound **by id**, so a copy means either duplicate ids (first one wins,
+  silently) or a parallel handler set to keep in step forever.
+
+- ⚠️⚠️ **`sbWbsPark()` MUST run before any repaint of the host panel.** The builder rebuilds its panel
+  with `innerHTML` on every step change, which would take the borrowed nodes **out of the document
+  for the rest of the session** — the tree would be gone on both screens until a reload. It is
+  therefore called unconditionally at the top of the builder's `render()` (including on its
+  early-return path, which is itself one of those writes) and when switching away from the tab. This
+  is verified: a harness driving the real `sbWbsPark`/`sbWbsMount` shows the card back in the park
+  with its content and its click handler intact after a repaint — and **GONE** after a repaint with
+  the park call removed.
+- ⚠️ `renderWbsManager()` runs **after** the move, not before: the tree is virtualized off its own
+  `clientHeight`, and a walk measured while the node was parked (hidden, zero height) paints an
+  empty viewport.
+- ⚠️⚠️ **The keyboard gate had to follow the tree.** The type-to-build handler bailed unless
+  `#ps-view-wbs` was visible — which it is not on the screen that now owns the editing, so Enter,
+  Tab, Alt+arrows and Del would all have gone dead. It asks the **tree** where it is now
+  (`#ps-wbs-tree`.offsetParent), which is correct on either host.
+
+### Also
+- The help modal said *"The 6 steps"* and then listed **7** — stale before today, and there are ten
+  now. The heading and every step number are **derived** (`STEPS.length` / `_stepNo`) so the next
+  step added cannot make it lie again; Tower links was missing from the list entirely and is in it.
+- Step numbers baked into comments ("step 6") are replaced with the step's **name** for the same
+  reason.
+
+---
+
 ## The No-level band stops blaming Schedule Builder (2026-09-02x) — fmlozano
 
 Owner: *"Reword the band text to point at the match table."*

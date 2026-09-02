@@ -1105,10 +1105,10 @@
     #ps-progressbtn.active .pd-ico, #ps-vstackbtn.active .pd-ico { color:#fff; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
-       deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
+       deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
     .ps-vstack { padding:12px 14px 20px; }
     /* ---- Cost Loading (4-step wizard) ------------------------------------------------------
-       ⚠️ Deliberately built ON the Schedule Builder's own classes (.sbld-wrap / .sbld-rail /
+       ⚠️ Deliberately built ON the Schedule Setup's own classes (.sbld-wrap / .sbld-rail /
        .sbld-step / .sbld-panel / .sbld-kpi / .sbld-tablewrap / .sbld-foot) rather than beside them.
        Owner: "follow the format or appearance in the schedule builder". A parallel set of
        near-identical classes is how two wizards in one app slowly stop looking like one app — and it
@@ -1309,7 +1309,7 @@
     #ps-view-schedule.ps-vstack-mode .ps-grid-foot { display:none !important; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
-       deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
+       deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
     .ps-vstack { padding:12px 14px 20px; }
     /* ---- The TIME BAR under the stack ------------------------------------------------------
        Owner 2026-08-26: drag the line and the stacking re-reads at that date, so the building
@@ -2288,7 +2288,7 @@
       .ps-mg-today { position:absolute; top:0; width:2px; background:var(--pd-red); z-index:1; }
       .ps-mg-more { padding:12px; text-align:center; color:var(--pd-muted); font-size:12px; }
     }
-    /* ===== Schedule Builder view (bottom-up / location-based setup, steps 1-7) ===== */
+    /* ===== Schedule Setup view (bottom-up / location-based setup; the step list is STEPS) ===== */
     .sbld-wrap { display:grid; grid-template-columns:230px 1fr; gap:18px; align-items:start; }
     .sbld-rail { position:sticky; top:12px; display:flex; flex-direction:column; gap:4px; }
     .sbld-step { display:flex; align-items:flex-start; gap:10px; text-align:left; padding:9px 11px; border:1px solid transparent; border-radius:8px; background:none; cursor:pointer; font:inherit; color:var(--pd-ink); }
@@ -2390,6 +2390,14 @@
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; margin-bottom:8px; }
     .sbld-scope-col, .sbld-scope-row { cursor:pointer; user-select:none; }
     .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }
+    /* step — the borrowed WBS tree. The group keeps the toolbar's own look (it IS the WBS Manager's
+       toolbar), but it is laid out here as a wrapping row inside the step panel rather than as part
+       of a full-width bar. */
+    .ps-wbs-edittools { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .sbld-wbsmount-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 10px; }
+    /* ⚠️ The card arrives with the Cockpit's card classes on it (.pd-card.ps-ck-card) because that is
+       where it is declared. Inside the setup panel it must not carry a second card's margin. */
+    #sbld-wbs-host > .pd-card { margin:0; }
     /* step — lifecycle phases (Initiation / Planning / Close-out around the generated Execution
        Phase). Deliberately built on the builder's own .sbld-* look; only what this step needs is new. */
     .sbld-phgrid { display:grid; gap:12px; margin-top:10px; }
@@ -2665,7 +2673,7 @@
           <button data-tab="planner"><span data-ico="pulse" data-ico-size="14"></span> Planner Cockpit</button>
           <button data-tab="wbs"><span data-ico="layers" data-ico-size="14"></span> WBS Manager</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
-          <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Builder</button>
+          <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Setup</button>
           <button data-tab="costload"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
           <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
@@ -2890,10 +2898,28 @@
       <!-- WBS MANAGER: build the Work Breakdown Structure tree (unlimited depth) -->
       <div id="ps-view-wbs" style="display:none;">
         <div class="ps-ck-bar">
+          <!-- ⚠️⚠️ THE EDITING TOOLS AND THE TREE MOVE. Owner 2026-09-02: *"to edit the WBS, it should
+               be in the schedule builder instead, since the WBS manager is rendered useless given that
+               the arrangement of the WBS can be modified in the project schedule instead."* These two
+               groups (#ps-wbs-edittools and #ps-wbs-card) are RELOCATED into the Schedule Setup's WBS
+               step at runtime — see sbWbsMount/sbWbsPark. They are declared here, in their original
+               markup, and never duplicated: one tree, one set of handlers, one keyboard model, whichever
+               screen it is currently mounted on. A second copy in the builder's panel would be two
+               editors over one table, and they would drift.
+               ⚠️ Everything in this bar OUTSIDE the group stays with the WBS Manager, because none of it
+               is schedule-setup work: Adopt/Reset repair a whole imported project (including phases the
+               setup never generates), and the three Sync/Push buttons talk to other teams' apps about
+               branches the setup does not own. -->
+          <span id="ps-wbs-edittools" class="ps-wbs-edittools">
           <button class="pd-btn pd-btn-primary" id="ps-wbs-addroot" title="Add a WBS under the selected node (top level when nothing is selected), then keep typing — Enter adds the next one"><span data-ico="plus" data-ico-size="15"></span> Add WBS</button>
           <button class="pd-btn" id="ps-wbs-paste" title="Paste an indented or numbered outline (Excel / Word / notes) and build the whole tree in one go"><span data-ico="clipboard" data-ico-size="15"></span> Paste outline…</button>
           <button class="pd-btn" id="ps-wbs-dup" title="Duplicate the selected branch — e.g. repeat a typical floor 20 times"><span data-ico="layers" data-ico-size="15"></span> Duplicate branch…</button>
           <button class="pd-btn" id="ps-wbs-fromproj" title="Copy the WBS structure from another project"><span data-ico="download" data-ico-size="15"></span> From project…</button>
+          <button class="pd-btn ps-icobtn" id="ps-wbs-expand" title="Expand all"><span data-ico="chevronDown" data-ico-size="15"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
+          <input class="pd-input" id="ps-wbs-search" placeholder="Search code / name…" style="height:32px;width:200px;">
+          <span id="ps-wbs-hint" style="font-size:12px;color:var(--pd-muted);">Build the WBS first, then add activities under any node.</span>
+          </span>
           <span class="ps-tb-div"></span>
           <button class="pd-btn" id="ps-wbs-adopt" title="Build the tree from the project's existing WBS-Summary rows (imported / legacy)"><span data-ico="download" data-ico-size="15"></span> Adopt existing WBS</button>
           <button class="pd-btn" id="ps-wbs-reset" title="Drop every custom / imported branch and rebuild the tree from the schedule's own WBS codes — the standard skeleton is kept"><span data-ico="refresh" data-ico-size="15"></span> Reset WBS…</button>
@@ -2912,13 +2938,8 @@
                button from Sync Procurement: a read-only refresh must never also push data
                into another team's database as a side effect nobody asked for. -->
           <button class="pd-btn" id="ps-push-needby" title="Send each work package's need-by date (earliest linked activity start) to the Procurement app"><span data-ico="upload" data-ico-size="15"></span> Push need-by → Procurement</button>
-          <span class="ps-tb-div"></span>
-          <button class="pd-btn ps-icobtn" id="ps-wbs-expand" title="Expand all"><span data-ico="chevronDown" data-ico-size="15"></span></button>
-          <button class="pd-btn ps-icobtn" id="ps-wbs-collapse" title="Collapse all"><span data-ico="chevronRight" data-ico-size="15"></span></button>
-          <input class="pd-input" id="ps-wbs-search" placeholder="Search code / name…" style="height:32px;width:200px;">
-          <span id="ps-wbs-hint" style="font-size:12px;color:var(--pd-muted);margin-left:auto;">Build the WBS first, then add activities under any node.</span>
         </div>
-        <div class="pd-card ps-ck-card ps-ck-trend-card">
+        <div class="pd-card ps-ck-card ps-ck-trend-card" id="ps-wbs-card">
           <div class="ps-ck-h"><span data-ico="layers" data-ico-size="15"></span> Work Breakdown Structure<span class="ps-ck-trend-sub" id="ps-wbs-count"></span></div>
           <!-- Type-to-build keyboard legend: the tree is an outliner, not a form. Without this the
                shortcuts are invisible and every node costs a mouse round-trip. -->
@@ -2933,12 +2954,35 @@
           </div>
           <div id="ps-wbs-tree" class="ps-wbs-tree"></div>
         </div>
+        <!-- ⚠️ WHERE THE TREE PARKS. The card above is moved into the Schedule Setup's WBS step and
+             back again; a moved node must have somewhere to return to that is still in the document,
+             or the next repaint of the panel it was borrowed into would destroy it for the session.
+             This slot is hidden: the WBS Manager is the repair-and-integrations screen now, and the
+             editor it used to host lives one view over. -->
+        <div id="ps-wbs-park" hidden></div>
+        <!-- …and this is what the planner sees in its place. A screen that simply stops showing the
+             thing it used to show reads as broken; it has to say where the thing went. -->
+        <div class="pd-card ps-ck-card" id="ps-wbs-moved">
+          <div class="ps-ck-h"><span data-ico="layers" data-ico-size="15"></span> Editing the WBS moved</div>
+          <div style="padding:12px 14px 14px;font-size:12.5px;color:var(--pd-ink);line-height:1.55;">
+            <p style="margin:0 0 8px;">The tree editor — <b>Add WBS</b>, <b>Paste outline</b>, <b>Duplicate branch</b>,
+            <b>From project</b> and the whole type-to-build keyboard — is now a step in <b>Schedule Setup</b>,
+            where the rest of the execution programme is defined. It is the same editor over the same
+            branches, not a copy.</p>
+            <p style="margin:0 0 8px;color:var(--pd-muted);">This screen keeps what is not setup work:
+            <b>Adopt existing WBS</b> and <b>Reset WBS</b> (repairs over a whole imported project, including
+            the phases the setup never generates), and the <b>Engineering</b> / <b>Procurement</b> mirrors,
+            which are other teams' data. Day-to-day re-arranging of activities is done in the
+            <b>Project Schedule</b> grid.</p>
+            <button class="pd-btn pd-btn-primary" id="ps-wbs-goedit">Edit the WBS in Schedule Setup →</button>
+          </div>
+        </div>
       </div>
 
       <!-- SCHEDULE BUILDER (bottom-up / location-based setup, steps 1-7) -->
       <div id="ps-view-builder" style="display:none;">
         <div class="ps-ck-bar">
-          <span style="font-size:12px;color:var(--pd-muted);">Bottom-up / location-based schedule setup — the generated preview stays here; pushing it into the schedule above is a later step.</span>
+          <span style="font-size:12px;color:var(--pd-muted);">Set up the execution programme — activities, locations, sequencing, the lifecycle phases around it and the <b>WBS</b> — then push it into the Project Schedule. The generated preview stays here until you do.</span>
           <!-- Which package this setup builds, and the way into every other setup.
                Sits at the head of the builder because it is the first thing a planner
                on a multi-package project needs to be sure of. -->
@@ -5387,7 +5431,7 @@
   // so new data is unambiguous by construction. This resolver additionally heals EXISTING data: the
   // root is the marked node with no marked ANCESTOR, which is true whether the children carry the old
   // marker or the new one. Every other `source_kind` consumer only tests truthiness (the read-only
-  // gate, the WBS badge, the Schedule Builder's push-target filter), so the extra values are safe.
+  // gate, the WBS badge, the Schedule Setup's push-target filter), so the extra values are safe.
   function _skeletonRoot(kind) {
     var marked = WBS_NODES.filter(function (n) {
       return n.source_kind === kind || n.source_kind === kind + '_trade' || n.source_kind === kind + '_child';
@@ -6028,7 +6072,7 @@
         // dotted code is not decoration: `_anc` is derived by splitting it (see rebuild(),
         // `r._segs = segs(r.wbs)`), so it IS the hierarchy as far as sorting, ancestry, _spanMap and
         // every roll-up are concerned.
-        // Consequence, measured on One Portwood Residences: the Schedule Builder gives each floor
+        // Consequence, measured on One Portwood Residences: the Schedule Setup gives each floor
         // branch a readable custom code ("ST-F1", "AR-F4"), so those nodes came out as codes with NO
         // dot in them — i.e. as TOP-LEVEL branches — and their whole subtree went with them. 2560 of
         // 2561 activities were severed from Execution Phase and every trade branch under it rolled up
@@ -9057,7 +9101,7 @@
   // ⚠️ Owner-specified order (2026-08-18): Gen Req → Site Works → Structural → Architectural → MEPF
   // → Allied Services → Others. Each trade is listed under BOTH spellings it can reach the grid by:
   // the canonical WORK_CANON label written by imports and the discipline wizard ("Structural Works"),
-  // and the Schedule Builder's short GLABEL ("Structural"). They should merge into one bucket via
+  // and the Schedule Setup's short GLABEL ("Structural"). They should merge into one bucket via
   // GWORK, but a project pushed before that fix still holds the short label, and an unranked value
   // silently falls to the end of the list — which is the failure this ordering exists to prevent.
   var WORK_ORDER = [
@@ -11627,7 +11671,7 @@
   }
 
   // ===================== VERTICAL STACKING (toolbar) =====================
-  // The Schedule Builder's step 6 shows the building model per trade, one cell per zone carrying its
+  // The Schedule Setup's Stacking step shows the building model per trade, one cell per zone carrying its
   // completion date. This is that view over the LIVE schedule instead of the generated preview, plus
   // the two things step 6 does not have: a CONSOLIDATED tower (all trades in one model) and a
   // level-of-detail control (1 = per level, 2 = per zone, 3 = per unit) like step 3's Detail 1-2-3-4.
@@ -11851,7 +11895,7 @@
   // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
   // ⚠️⚠️ THERE ARE TWO WRITERS AND THEY USE DIFFERENT KEYS. `location` is a jsonb map keyed by
   // `location_levels.id` (a uuid) — that is what the WBS→location matcher (`locMapPlan`) and both
-  // importers write. The Schedule Builder push ALSO writes a reserved literal `tower` key
+  // importers write. The Schedule Setup push ALSO writes a reserved literal `tower` key
   // (`locMapOf`). Reading only the literal key, as this did, meant a project whose towers came from
   // the matcher reported ZERO towers: the stacking banded Tower 1 / Tower 2 correctly (it reads
   // LOC_LEVELS by id) while the tower picker sat greyed out saying "no tower breakdown" — the two
@@ -11910,7 +11954,7 @@
     list.forEach(function (r) { var t = _vsTowerOf(r); if (t && !seen[t]) { seen[t] = 1; out.push(t); } });
     return out;
   }
-  // Canonical trade order, straight from the Schedule Builder's GROUPS — see tradeLabels(). Anything
+  // Canonical trade order, straight from the Schedule Setup's GROUPS — see tradeLabels(). Anything
   // it does not know (a hand-typed trade) sorts after, by name, so nothing is hidden or reordered
   // arbitrarily.
   function _vsTradeRank(name) {
@@ -12998,7 +13042,7 @@
     var host = hostEl || document.getElementById('ps-vstack'); if (!host) return;
     if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
     if (!LOC_LEVELS.length) {
-      host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Builder push does that for you.</div>';
+      host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.</div>';
       return;
     }
     var _actsAll = _vsActs(), detail = _vsDetailNow();
@@ -13220,7 +13264,7 @@
         '<br>• <strong>the work genuinely has no ' + esc(lvl0Name) + '</strong> — substructure, footings and ' +
         'site works sit below or outside the storeys. Give them their own ' + esc(lvl0Name) + ' value if you ' +
         'want them banded, or leave them here;' +
-        '<br>• or, on a schedule pushed from <em>Schedule Builder</em>, the trade was given no floors in ' +
+        '<br>• or, on a schedule pushed from <em>Schedule Setup</em>, the trade was given no floors in ' +
         'step 2 and went in as whole-trade work — give it floors there and re-push.');
     }
     // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
@@ -18317,6 +18361,39 @@
       }
     });
   }
+  // ---- The WBS tree is BORROWED, never copied -------------------------------------------------
+  // Owner 2026-09-02: the WBS is edited where the schedule is set up, not on a screen of its own.
+  // The tree and its editing toolbar are the SAME DOM nodes declared in the WBS Manager's markup,
+  // physically relocated into the Schedule Setup's WBS step and returned to a hidden park slot
+  // afterwards. Why relocation rather than a second editor in the builder:
+  //   • the tree is a virtualized outliner with a keyboard model, a selection, a collapse map and a
+  //     search filter, all held in module state (_wbsSel / _wbsCollapsed / _wbsSearch / _wbsFlat).
+  //     A second instance would share that state and fight over it;
+  //   • every one of its ~30 handlers is bound by id, so a copy means either duplicate ids (the
+  //     first one wins, silently) or a parallel set of handlers to keep in step forever.
+  // ⚠️⚠️ PARK BEFORE ANY REPAINT OF THE HOST PANEL. The builder rebuilds its panel with innerHTML on
+  // every step change, which would DESTROY the borrowed nodes for the rest of the session — the tree
+  // would simply be gone until a reload, on both screens. sbWbsPark() is therefore called at the top
+  // of the builder's render() and when switching away from the builder tab, never "when convenient".
+  function sbWbsPark() {
+    var park = document.getElementById('ps-wbs-park'); if (!park) return;
+    ['ps-wbs-edittools', 'ps-wbs-card'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && el.parentNode !== park) park.appendChild(el);
+    });
+  }
+  // Mount into two hosts inside the step's panel. Returns false when the nodes are missing (a
+  // half-loaded page), so the step can say so instead of drawing an empty frame.
+  function sbWbsMount(toolsHost, treeHost) {
+    var tools = document.getElementById('ps-wbs-edittools'), card = document.getElementById('ps-wbs-card');
+    if (!tools || !card || !toolsHost || !treeHost) return false;
+    toolsHost.appendChild(tools);
+    treeHost.appendChild(card);
+    // ⚠️ Re-render AFTER the move: the tree is virtualized off its own clientHeight, and a walk
+    // measured while the node was parked (hidden, so zero height) paints an empty viewport.
+    renderWbsManager();
+    return true;
+  }
   function renderWbsManager() {
     var host = document.getElementById('ps-wbs-tree'), cnt = document.getElementById('ps-wbs-count');
     if (!host) return;
@@ -18526,7 +18603,7 @@
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     var byKey = {}, dupes = [];
     // ⚠️ Was restricted to `is_locked` (skeleton) nodes, which left the OTHER source of same-name
-    // siblings unhealed: a Schedule Builder push inserted a fresh branch per trade/floor/zone/unit
+    // siblings unhealed: a Schedule Setup push inserted a fresh branch per trade/floor/zone/unit
     // every time it ran, so a re-pushed project carried a full second copy of the tree - the reported
     // "General Requirements / Site Works / Allied Services each rendered twice with identical dates
     // and %". The push is idempotent now (see pushToSchedule), but projects already holding the
@@ -20566,7 +20643,7 @@
   var DIAG_FEATURES = [
     { label: 'Contract Scope (Main contract / Change order)', file: '2026-08-19-schedule-contract-scope.sql',
       probes: [['project_schedule', 'scope_type'], ['project_schedule', 'change_order_ref'], ['wbs_nodes', 'scope_type']] },
-    { label: 'Activity Codes (incl. Class Code from Schedule Builder)', file: '2026-07-07-activity-codes.sql',
+    { label: 'Activity Codes (incl. Class Code from Schedule Setup)', file: '2026-07-07-activity-codes.sql',
       probes: [['project_schedule', 'activity_codes'], ['activity_code_types', 'id'], ['activity_code_values', 'id']] },
     { label: 'WBS Manager tree', file: '2026-07-07-wbs-nodes.sql',
       probes: [['wbs_nodes', 'id'], ['project_schedule', 'wbs_node_id']] },
@@ -22210,7 +22287,7 @@
       if (!seen['']) groups.push({ id: null, label: '— No package —' });
 
       var html = '<div class="pd-modal" style="max-width:760px;"><div class="pd-modal-header">' +
-        '<h3 style="margin:0;font-size:16px;">Schedule Builder — setups</h3>' +
+        '<h3 style="margin:0;font-size:16px;">Schedule Setup — saved setups</h3>' +
         '<button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:14px 16px;max-height:72vh;overflow:auto;">' +
         '<p class="sbld-hint" style="margin-top:0;">A setup is one package\'s build recipe. Keep one per contract ' +
@@ -22295,25 +22372,28 @@
     // Instructions & shortcuts reference (the "?" button, top-right of the builder)
     function openHelp() {
       var ov = document.createElement('div'); ov.className = 'pd-modal-overlay'; ov.style.zIndex = 600;
-      ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Schedule Builder — instructions &amp; shortcuts</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
+      ov.innerHTML = '<div class="pd-modal" style="max-width:620px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Schedule Setup — instructions &amp; shortcuts</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div class="sbld-help-body" style="padding:16px;max-height:70vh;overflow:auto;">' +
-        '<h4>The 6 steps</h4><ul>' +
-        '<li><b>1 · Activities</b> — a spreadsheet of your class codes (code · name · trade · <b>scope</b> · interior/exterior durations) beside a holding list of all codes. Click/drag to select cells, type or double-click to edit, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd> copy &amp; paste (paste one cell into a selection to fill), <kbd>Ctrl+D</kbd> fill-down, <kbd>Delete</kbd> to clear; paste blocks from Excel. <b>&larr;/&rarr;</b> load/remove codes between the list and the build. Press <b>+ Library</b> to load the standard class-code library into the list, tick codes and press <b>&larr;</b> to add them, then <b>Save</b>. <b>Scope</b> (per zone / per floor / whole project) auto-splits a duration down to per-zone; refine it in step 4.</li>' +
-        '<li><b>2 · Floors &amp; Zones</b> — per trade, define floors (and basements) and split each into zones/units.</li>' +
-        '<li><b>3 · Zone sequence</b> — connect the zones (which location follows which). Just topology — blocks are equal size here. <b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> (what drives it) and <b style="color:#e08a1e">successors</b> (what it drives).</li>' +
-        '<li><b>4 · Trade sequence</b> — connect the class codes within each trade (how they run inside a zone). Edit the enlarged <b>Int/Ext</b> durations inline. <b>Click any bar</b> to highlight its predecessors/successors.</li>' +
-        '<li><b>5 · Scope per zone</b> — tick which activities apply to each location.</li>' +
-        '<li><b>6 · Stacking</b> — the vertical stacking per trade: each zone with its number and completion date.</li>' +
-        '<li><b>7 · Generate</b> — build the schedule and push it into the live Project Schedule.</li></ul>' +
-        '<h4>Linking (steps 3 &amp; 4) — pick, then confirm</h4><ol>' +
+        '<h4>The ' + STEPS.length + ' steps</h4><ul>' +
+        '<li><b>' + _stepNo('Activities') + ' · Activities</b> — a spreadsheet of your class codes (code · name · trade · <b>scope</b> · interior/exterior durations) beside a holding list of all codes. Click/drag to select cells, type or double-click to edit, <kbd>Ctrl+C</kbd>/<kbd>Ctrl+V</kbd> copy &amp; paste (paste one cell into a selection to fill), <kbd>Ctrl+D</kbd> fill-down, <kbd>Delete</kbd> to clear; paste blocks from Excel. <b>&larr;/&rarr;</b> load/remove codes between the list and the build. Press <b>+ Library</b> to load the standard class-code library into the list, tick codes and press <b>&larr;</b> to add them, then <b>Save</b>. <b>Scope</b> (per zone / per floor / whole project) auto-splits a duration down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
+        '<li><b>' + _stepNo('Floors & Zones') + ' · Floors &amp; Zones</b> — per trade, define floors (and basements) and split each into zones/units.</li>' +
+        '<li><b>' + _stepNo('Tower links') + ' · Tower links</b> — how the towers interface in time (a shared podium, one tower handing off to another).</li>' +
+        '<li><b>' + _stepNo('Zone sequence') + ' · Zone sequence</b> — connect the zones (which location follows which). Just topology — blocks are equal size here. <b>Click any bar</b> to highlight its <b style="color:#1f8f4e">predecessors</b> (what drives it) and <b style="color:#e08a1e">successors</b> (what it drives).</li>' +
+        '<li><b>' + _stepNo('Trade sequence') + ' · Trade sequence</b> — connect the class codes within each trade (how they run inside a zone). Edit the enlarged <b>Int/Ext</b> durations inline. <b>Click any bar</b> to highlight its predecessors/successors.</li>' +
+        '<li><b>' + _stepNo('Scope per zone') + ' · Scope per zone</b> — tick which activities apply to each location.</li>' +
+        '<li><b>' + _stepNo('Stacking') + ' · Stacking</b> — the vertical stacking per trade: each zone with its number and completion date.</li>' +
+        '<li><b>' + _stepNo('Project phases') + ' · Project phases</b> — the lifecycle either side of construction (Initiation / Planning / Close-out), as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.</li>' +
+        '<li><b>' + _stepNo('WBS') + ' · WBS</b> — the project\'s live branch tree, edited here (it used to live on the WBS Manager screen). The push creates the branches this setup needs and reuses the ones already there.</li>' +
+        '<li><b>' + _stepNo('Generate') + ' · Generate</b> — build the schedule and push it into the live Project Schedule.</li></ul>' +
+        '<h4>Linking (steps ' + _stepNo('Zone sequence') + ' &amp; ' + _stepNo('Trade sequence') + ') — pick, then confirm</h4><ol>' +
         '<li><b>Click</b> one or more <b>source</b> blocks/nodes (red outline). Click again to deselect.</li>' +
         '<li><b>Right-click</b> anywhere in the linking area to <b>confirm the sources</b>.</li>' +
         '<li><b>Click</b> one or more <b>destination</b> blocks/nodes (blue dashed outline).</li>' +
         '<li><b>Right-click</b> again to confirm.</li>' +
         '<li>A dialog asks the <b>relationship (FS / SS / FF / SF)</b> and <b>lag</b> — every source is linked to every destination.</li>' +
         '</ol><p><b>Reset selection</b> cancels; <b>click an arrow</b> to edit its type/lag or unlink. <b>SS</b> lines two bars up at the same start; <b>FS</b> steps the next bar over.</p>' +
-        '<h4>Auto-trace (step 3)</h4><p><b>Auto-trace logic</b> first asks a few takt questions per trade — how many <b>zones</b> run at once per floor, how many <b>units</b> at once per zone, and how many <b>floors</b> it finishes before the next trade follows — then builds the whole takt flow for you (sequencing whatever isn\'t simultaneous). It replaces the current links.</p>' +
-        '<h4>Auto-chain (step 4)</h4><p><b>Auto-chain</b> links a trade\'s class codes back-to-back using the relationship picked in the dropdown beside it (FS / SS / FF / SF).</p>' +
+        '<h4>Auto-trace (step ' + _stepNo('Zone sequence') + ')</h4><p><b>Auto-trace logic</b> first asks a few takt questions per trade — how many <b>zones</b> run at once per floor, how many <b>units</b> at once per zone, and how many <b>floors</b> it finishes before the next trade follows — then builds the whole takt flow for you (sequencing whatever isn\'t simultaneous). It replaces the current links.</p>' +
+        '<h4>Auto-chain (step ' + _stepNo('Trade sequence') + ')</h4><p><b>Auto-chain</b> links a trade\'s class codes back-to-back using the relationship picked in the dropdown beside it (FS / SS / FF / SF).</p>' +
         '</div><div class="pd-modal-footer"><button class="pd-btn pd-btn-primary" data-x>Got it</button></div></div>';
       document.body.appendChild(ov);
       function close() { ov.remove(); }
@@ -22332,7 +22412,7 @@
       }
       if (projectId !== curPid) {
         // Switching project discards the in-memory builder config — offer to save the old one first.
-        if (curPid && isDirty() && confirm('You have unsaved Schedule Builder changes for the previous project. Save them before switching?')) { try { await save(); } catch (e) {} }
+        if (curPid && isDirty() && confirm('You have unsaved Schedule Setup changes for the previous project. Save them before switching?')) { try { await save(); } catch (e) {} }
         curPid = projectId; step = 0; await loadCfg();
       } else render();
     }
@@ -23154,6 +23234,7 @@
       { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
       { t: 'Stacking', s: 'Vertical stacking by trade', fn: stStacking },
       { t: 'Project phases', s: 'Initiation → Close-out', fn: stPhases },
+      { t: 'WBS', s: 'The live branch tree', fn: stWbs },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
 
@@ -24545,6 +24626,26 @@
       });
     }
 
+    // ---- Step: the WBS itself, borrowed from the WBS Manager --------------------------------
+    // ⚠️ This step OWNS no markup of its own beyond the frame: the editor is the WBS Manager's real
+    // tree, relocated in (sbWbsMount). See the note on sbWbsPark for why it is borrowed and not
+    // rebuilt — and for why the panel must never be repainted while it is here.
+    function stWbs(host) {
+      var n = (typeof WBS_NODES !== 'undefined' && WBS_NODES) ? WBS_NODES.length : 0;
+      host.innerHTML = '<h2>' + _stepNo('WBS') + ' · The work breakdown structure</h2>' +
+        '<p class="sbld-lede">This is the project\u2019s live WBS \u2014 the same branches the schedule files its activities under, edited here rather than on a screen of its own. A <b>' + _stepNo('Generate') + ' \u00b7 Push</b> creates the branches this setup needs (trade \u203a tower \u203a floor \u203a zone) and reuses any that already exist; what you type here is what it reuses.</p>' +
+        '<p class="sbld-hint">Which location levels the push turns into WBS levels, and in what order, is set in the push dialog itself (<b>WBS structure</b>) \u2014 it belongs to the push, not to the tree. Re-arranging <b>activities</b> day to day is done in the <b>Project Schedule</b> grid.</p>' +
+        '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
+        '<div id="sbld-wbs-host"></div>';
+      var ok = sbWbsMount(host.querySelector('#sbld-wbs-tools'), host.querySelector('#sbld-wbs-host'));
+      if (!ok) {
+        host.querySelector('#sbld-wbs-host').innerHTML =
+          '<div class="sbld-empty">The WBS editor could not be loaded on this page. Reload, then reopen this step.</div>';
+        return;
+      }
+      if (!n) return;   // the tree paints its own "no WBS yet" state, with the three ways in
+    }
+
     function stGenerate(host) {
       if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
       var gInt = generate('int'), gExt = generate('ext');
@@ -24560,7 +24661,7 @@
       host.querySelector('#b-push').onclick = openPushModal;
     }
 
-    // ---- Step 6: vertical stacking — one building model per trade, each zone labelled with its zone
+    // ---- Step (Stacking): vertical stacking — one building model per trade, each zone labelled with its zone
     // number and its COMPLETION date (from the generated schedule). Superstructure above the grade line,
     // basements below — same tower layout as step 2, but filled with dates instead of empty cells.
     var stackBasis = 'int';
@@ -25465,7 +25566,7 @@
         showImportSummary({
           title: 'Pushed to the schedule',
           file: (usePkg ? ((packageLabel(usePkg) || 'Package') + ' — ') : '') +
-                (curSetupName || cfg.name || projName(curPid) || 'Schedule Builder'),
+                (curSetupName || cfg.name || projName(curPid) || 'Schedule Setup'),
           tiles: [
             { n: taskN, l: 'Activities added' },
             // ⚠️ Counted from the PAYLOAD, not from the config: what landed is what was inserted, and
@@ -25546,6 +25647,10 @@
     function render() {
       var rail = document.getElementById('ps-bld-rail'), panel = document.getElementById('ps-bld-panel');
       if (!rail || !panel) return;
+      // ⚠️⚠️ FIRST, ALWAYS: the WBS step borrows the WBS Manager's tree into this panel, and the two
+      // innerHTML writes below would destroy it for the rest of the session. Parking is unconditional
+      // — including on the early return, which is itself one of those writes.
+      sbWbsPark();
       if (!curPid || !cfg) { rail.innerHTML = ''; panel.innerHTML = '<div class="sbld-empty">Select a project to build its schedule.</div>'; return; }
       // capture scroll positions of any scrollable panes before the panel is rebuilt
       var _scroll = null;
@@ -25567,6 +25672,16 @@
     }
 
     return { open: open, save: save, isDirty: isDirty,
+      // Open the setup ON a named step. Used by the WBS Manager's "edit it in Schedule Setup" button:
+      // landing on step 1 and asking the planner to find the WBS step themselves is the kind of
+      // hand-off that makes a migration feel like a removal.
+      // ⚠️ Matched on the rail TITLE, not an index — the step order has changed twice already, and a
+      // number here would silently point at whatever now sits in that slot.
+      gotoStep: function (title) {
+        var i = STEPS.map(function (x) { return x.t; }).indexOf(title);
+        if (i < 0) return false;
+        step = i; render(); return true;
+      },
       // The canonical trade order (GROUPS), as the labels written to work_type. The single source
       // of truth for anything outside this closure that needs to order trades.
       tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
@@ -26348,13 +26463,16 @@
     document.getElementById('ps-view-planner').style.display = tab === 'planner' ? '' : 'none';
     document.getElementById('ps-view-wbs').style.display = tab === 'wbs' ? '' : 'none';
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
+    // ⚠️ Leaving the setup returns the borrowed WBS tree to its park slot. Without this it would sit
+    // inside a hidden view, and the next thing to repaint that panel would take it out of the document.
+    if (tab !== 'builder') sbWbsPark();
     var vc = document.getElementById('ps-view-calendars'); if (vc) vc.style.display = tab === 'calendars' ? '' : 'none';
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Cockpit or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Builder' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'))));
+    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'planner' ? 'Planner Cockpit' : (tab === 'wbs' ? 'WBS Manager' : (tab === 'builder' ? 'Schedule Setup' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'))));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
@@ -30332,8 +30450,12 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;   // the input handler owns these keys
       var _ovs = document.querySelectorAll('.pd-modal-overlay, .ps-back.open, .ps-rep-back.open');
       for (var _oi = 0; _oi < _ovs.length; _oi++) { if (_ovs[_oi].offsetParent !== null) return; }
-      var wv = document.getElementById('ps-view-wbs');
-      if (!wv || wv.offsetParent === null) return;
+      // ⚠️ GATED ON THE TREE'S OWN VISIBILITY, not on the WBS view's. The tree is relocated into the
+      // Schedule Setup's WBS step (see sbWbsMount), and this used to test `#ps-view-wbs` — which is
+      // hidden there, so the entire type-to-build keyboard (Enter, Tab, Alt+arrows, Del) would have
+      // gone dead on the screen that now owns the editing. Asking the tree where it is works on both.
+      var _wt = document.getElementById('ps-wbs-tree');
+      if (!_wt || _wt.offsetParent === null) return;
       if (!_wbsFlat.length) return;
       var k = e.key;
       // Nothing selected (or the selection was filtered out): the first Arrow lands on the top row,
@@ -30595,6 +30717,10 @@
     // finish, and the screen said nothing at all. Call it explicitly.
     document.getElementById('ps-wbs-adopt').onclick = function () { wbsAdopt(false); };
     document.getElementById('ps-wbs-reset').onclick = wbsResetTree;
+    // ⚠️ switchTab FIRST: it is what calls ScheduleBuilder.open(), and gotoStep re-renders the panel
+    // the open() call has just built. The other order paints the step and then has it replaced.
+    var _ge = document.getElementById('ps-wbs-goedit');
+    if (_ge) _ge.onclick = function () { switchTab('builder'); try { ScheduleBuilder.gotoStep('WBS'); } catch (e) {} };
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
     var _pb = document.getElementById('ps-sync-prc'); if (_pb) _pb.onclick = syncProcurementApp;
     var _nb = document.getElementById('ps-push-needby'); if (_nb) _nb.onclick = pushNeedByToWpm;

@@ -84,6 +84,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (w) — Schedule Builder → Schedule Setup, and the WBS tree moves into it
+Owner: *"what are the current functions in the WBS manager that can be migrated instead to the Schedule
+Builder. also change the name … to edit the WBS, it should be in the schedule builder instead, since the WBS
+manager is rendered useless given that the arrangement of the WBS can be modified in the project schedule."*
+- **Renamed to Schedule Setup.** It no longer only builds a schedule — it owns the activity list, the location
+  breakdown, the sequencing, the lifecycle phases and now the WBS, and the schedule is what it *pushes*.
+  ⚠️ Display strings only: `ScheduleBuilder`, the `builder` tab key (persisted in the URL hash and in saved
+  history rows) and the `sbld-*` classes keep their names.
+- **Migrated to a new WBS step:** the tree outliner and its whole keyboard model, Paste outline, Duplicate
+  branch, From project, expand/collapse/search and the "where will Add WBS land" hint.
+  **Deliberately left on the WBS Manager:** Adopt existing WBS and Reset WBS (repairs over a whole *imported*
+  project, including phases the setup never generates) and the Engineering / Procurement mirrors (other teams'
+  data). That screen is now repair-and-integrations, and says where the editor went.
+- ⚠️⚠️ **The tree is BORROWED, not copied** — the same DOM nodes, relocated in and returned to a hidden park
+  slot. A second editor would share the module-level selection/collapse/search state and fight over it, and
+  every one of its ~30 handlers is bound by id.
+- ⚠️⚠️ **`sbWbsPark()` must run before any repaint of the host panel**, or the borrowed nodes leave the
+  document for the rest of the session — verified by driving the real functions: content and handlers intact
+  after a repaint, GONE with the park call removed.
+- ⚠️ **The type-to-build keyboard gate had to follow the tree** — it tested `#ps-view-wbs`, which is hidden on
+  the screen that now owns the editing, so Enter/Tab/Alt+arrows/Del would all have gone dead.
+- The help modal said *"The 6 steps"* and listed **7** (stale before today, ten now); the heading and every
+  number are derived from `STEPS` so it cannot lie again.
+- MODULE_V → `20260902y`.
 ### 2026-09-02 (x) — The No-level band stops blaming Schedule Builder
 
 Owner: *"Reword the band text to point at the match table."* Detail in
