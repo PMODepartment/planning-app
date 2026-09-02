@@ -11568,3 +11568,99 @@ relationships incl. one dangling) walked the four steps and committed:
 (`insert().select().single()` has nothing to return), so `locEnsureLevels` was given pre-seeded levels
 and the post-import WBS heal chain throws on the stub's null nodes. The first real import of an OPC
 or P6 file is the test — in particular the phase tally on a forty-thousand-row export.
+
+### 2026-09-02 (b) — The import's WBS build was writing dead parent ids, and the repairs finished the job
+
+The first live import of the new funnel (4PH Strevi, 16,393 activities from a P6 `.xer`) inserted every
+activity correctly and then destroyed the view. Four defects in a row, each amplifying the last.
+
+**1. ⚠️⚠️⚠️ `wbs_nodes_parent_id_fkey` — the adopt wrote parent ids that no longer existed.**
+Reported as *"WBS adopt stopped after 102 of 12,432 branches"*. `wbsAdopt()` resolves a child's parent
+through `nodeByCode`, seeded from two places that can BOTH be stale: `computeWbsCodes()` over the
+in-memory `WBS_NODES` (a cached array), and `_adoptedCodes`, built from `project_schedule.wbs_node_id`
+on the surviving summary rows. A node deleted since either was written — a Reset WBS, a `_clearWbsTree`
+from an earlier Replace, another tab's repair, or a previous partly-failed adopt — leaves its id in
+both. The first child that resolved to one failed the foreign key and, because the insert is chunked,
+the adopt stopped there.
+- The adopt now reads **`wbs_nodes(id)` for the project first** and treats that as the only source of
+  truth for what may go into a `parent_id`. A code resolving to a non-live id **defers** (and forgets
+  the mapping, so a later pass re-resolves it) instead of inserting.
+- A summary row pointing at a **deleted** node is worse than one pointing at nothing — it makes the
+  branch look adopted AND hands its children a dead id. Those links are now cleared, in memory and in
+  the database, before anything reads them.
+- Stale entries are dropped from `WBS_NODES` too, since `computeWbsCodes()` is seeded from it.
+- Newly inserted ids are registered live, so the next depth can legally parent to them.
+
+**2. ⚠️⚠️ THE HEAL CHAIN REPAIRED OVER THE STUMP, and that is what emptied the grid.**
+`_wbsCanonicalRootOrder` + `_wbsResyncCodes` rewrite every summary row's dotted code to match the node
+tree, and `_wbsEnsureSummaries` manufactures a row for every node lacking one. All three are correct
+over a COMPLETE tree and destructive over a 102-node stump: they re-coded a 12,432-branch project to
+fit 102 branches, so every activity's code ("4.2.3.1.5") lost the branch above it, `rebuild()` — which
+derives ancestry by SPLITTING the code — could place none of them, and the grid went from a finished
+import to a single "Closeout Phase" row. A new `_wbsAdoptBroken` latch skips all three and names the
+button to press. ⚠️ The activities were never at risk; they are committed before any of this runs.
+
+**3. ⚠️⚠️ ONE `null` IN `WBS_NODES` EMPTIED THE ENTIRE SCHEDULE.** `computeWbsCodes()` read
+`nd.parent_id` unguarded, and it is called from `rebuild()` — so a single null aborted the rebuild,
+left `DL` empty, and rendered "no activities" over a footer still counting all 16,482. Nulls get in
+because **sixteen** call sites push `res.data` from an `insert().select().single()` straight into
+`WBS_NODES`, and PostgREST returns `data: null` for an insert that succeeded but returned no row (a
+select-side RLS policy, a 0-row return). Every one was a latent whole-grid outage. `computeWbsCodes`
+now filters falsy nodes (a missing node degrades to "that branch is not coded", not "nothing renders").
+⚠️ But guarding 54 read sites is not maintainable, so the array is kept CLEAN instead: the paged load
+that builds it `.filter(Boolean)`s, all ten bare push sites are guarded, and the three destructive
+load-time passes (`_wbsCanonicalRootOrder` / `_wbsResyncCodes` / `_wbsEnsureSummariesInner`) scrub in
+place before they judge anything — a falsy node there would either throw half-way through a write or
+be read as a node with no parent and re-rooted.
+
+**4. "No activities yet" WAS A LIE, and it sent the owner to the one button that could not help.**
+*"It logged 16482 activities in the total count but nothing is showing."* An empty display list over a
+non-empty row set has four causes and four different ways out, so the empty state now names the one
+that applies: the WBS build did not finish (press Adopt existing WBS) / **Execution Phase only** is on
+and nothing is phased yet (an imported activity takes its phase from its branch) / a filter is hiding
+everything / the tree could not place anything. Only a genuinely empty project still reads
+"No activities yet".
+
+### 2026-09-02 (c) — The legend's collapsed wall, fixed at the contradiction rather than the symptom
+
+*"I've collapsed all into level 1 but the legend is still bugging. Please fix this already we have
+logged and tried to fix this multiple times."* Four reports over three weeks. The reason it kept coming
+back is that **the two halves of `renderActLegend` disagreed with each other**:
+- `catVisibleValues()` was hardened (correctly) to mean STRICTLY the leaf task rows on screen — its own
+  note says five collapsed phase rows must not produce a 400-entry key;
+- a later pass, fixing a different symptom (the legend ignoring "Execution Phase only"), added a
+  fallback for when that strict set came back empty: fall back to `catScopedValues()`, i.e. every
+  category the view admits — the whole project.
+
+But "the strict set is empty" **is** the collapsed outline. The fallback won, and collapsing printed 40
+chips and "+156 more" — the exact wall collapsing was meant to remove. Each pass fixed its own symptom
+and re-armed the other.
+
+**The fallback is gone.** Collapsed means collapsed: no chips, and one line saying why, how many are
+waiting, and that the roll-up bars are still coloured — with the names in a hover popover and a pointer
+at **Key trades…**. The `+N more` for an over-cap on-screen list is no longer a bare number either.
+⚠️ The one honest cost is stated in the text rather than hidden: a collapsed roll-up bar paints its
+activities' colours and those segments are unkeyed until the branch is opened. That trade-off was
+already documented and accepted on `catVisibleValues`; this is the same decision applied consistently.
+
+**Verified in a browser** on a 188-row schedule shaped like the reported one (Execution Phase over
+2 towers × 8 levels × 2 zones, 128 distinct activity names), colours on and keyed by activity name:
+expanded → 40 chips + "+88 more on screen, not keyed" with the names in the popover; collapsed to
+level 1 → **0 chips** and "Nothing expanded — 128 activity names waiting". `_catNoun`'s unknown-field
+fallback also fixed, which was rendering "128 categories values".
+
+### 2026-09-02 (d) — Weekly Work Plan removed; the import lands on the schedule
+
+- **The Weekly Work Plan (Last Planner) view is gone** — *"Remove the Weekly Work Plan too."* It came
+  out of the Planner Cockpit earlier the same day on the reasoning that it was a separate feature; the
+  owner's answer is that it is not part of developing the schedule either. ⚠️ **The data is untouched**
+  and `openLastPlanner` / `renderLastPlanner` / `openCommitmentForm` are still declared and inert
+  (every writer is null-guarded), so restoring the view is markup plus one menu entry.
+- **The import switches to the Project Schedule BEFORE the write, not after.** *"After importing it
+  should redirect me to the project schedule page, not just leave me to the schedule setup page
+  thinking if the import really was successful."* Switching afterwards was technically true and
+  practically useless: a 16,000-activity import spends minutes inserting and rebuilding, and for all
+  of it the planner sat on the Setup's Start step — which, because the staging is cleared first, had
+  already reverted to "this project already has N activities" and was offering to import again.
+  Switching first puts them on the schedule under the importer's own progress overlay. The `finally`
+  stays as a backstop.

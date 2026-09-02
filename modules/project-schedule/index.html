@@ -2863,7 +2863,6 @@
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Setup</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="costload"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
-          <button data-tab="lastplanner"><span data-ico="check" data-ico-size="14"></span> Weekly Work Plan</button>
           <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
       </div>
@@ -3237,29 +3236,18 @@
            renderPlanner() survives untouched and is simply never called — it opens with
            `getElementById('ps-ck-kpis'); if (!kp) return;`, so it is inert with this markup gone. -->
 
-      <!-- LAST PLANNER: weekly work plan + Percent Plan Complete (PPC) — its own view now. -->
-      <div id="ps-view-lastplanner" style="display:none;">
-        <button type="button" class="ps-ck-secdiv" id="ps-lp-toggle" aria-expanded="true" aria-controls="ps-lp-section"><span class="ps-ck-secdiv-chev" data-ico="chevronDown" data-ico-size="16"></span><span data-ico="check" data-ico-size="16"></span> Weekly Work Plan · Last Planner</button>
-        <div id="ps-lp-section">
-          <div class="ps-ck-bar">
-            <button class="pd-btn ps-icobtn" id="ps-lp-prev" title="Previous week"><span data-ico="arrowLeft" data-ico-size="15"></span></button>
-            <strong id="ps-lp-weeklbl" style="min-width:180px;text-align:center;"></strong>
-            <button class="pd-btn ps-icobtn" id="ps-lp-next" title="Next week"><span data-ico="arrowRight" data-ico-size="15"></span></button>
-            <button class="pd-btn" id="ps-lp-thisweek">This week</button>
-            <span class="ps-tb-div"></span>
-            <button class="pd-btn pd-btn-primary" id="ps-lp-add"><span data-ico="plus" data-ico-size="15"></span> Add commitment</button>
-          </div>
-          <div class="ps-ck-kpis" id="ps-lp-kpis"></div>
-          <div class="pd-card ps-ck-card ps-ck-trend-card">
-            <div class="ps-ck-h"><span data-ico="check" data-ico-size="15"></span> Weekly commitments</div>
-            <div id="ps-lp-table"></div>
-          </div>
-          <div class="ps-ck-grid">
-            <div class="pd-card ps-ck-card ps-ck-trend-card"><div class="ps-ck-h"><span data-ico="trendingUp" data-ico-size="15"></span> PPC trend</div><div id="ps-lp-ppc-trend" class="ps-ck-trend-body"></div></div>
-            <div class="pd-card ps-ck-card"><div class="ps-ck-h"><span data-ico="triangleUp" data-ico-size="15"></span> Reasons for variance</div><div id="ps-lp-reasons" class="ps-ck-body"></div></div>
-          </div>
-        </div>
-      </div>
+      <!-- ⚠️⚠️ THE WEEKLY WORK PLAN (Last Planner) VIEW IS GONE (owner 2026-09-02, second pass:
+           *"Remove the Weekly Work Plan too."*). It came out of the Planner Cockpit in the first
+           pass of the same clean-up, on the reasoning that it was a separate feature that merely
+           happened to live there — the owner's answer is that it is not part of developing the
+           project schedule either, so this module no longer carries it at all.
+           ⚠️ THE DATA IS UNTOUCHED. `last_planner_commitments` rows are not deleted and nothing
+           migrates; only the screen is gone. `openLastPlanner` / `renderLastPlanner` /
+           `openCommitmentForm` and their loaders are still declared and are simply never called —
+           renderLastPlanner opens with `getElementById('ps-lp-weeklbl')` and every writer is
+           null-guarded, so they are inert with this markup gone rather than a hazard. That is
+           deliberate: bringing the view back is re-adding markup and one menu entry, not rewriting
+           the feature. -->
     </div>
   </div>
 </div>
@@ -5137,7 +5125,14 @@
       // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
       // dropped out of the walk and vanished from the Manager. Paginate by id; the render/index
       // re-sorts by sort_order, so load order is irrelevant.
-      WBS_NODES = await selectAllPaged('wbs_nodes', '*');
+      /* ⚠️ `.filter(Boolean)` AT THE ONE PLACE THE ARRAY IS BUILT. `WBS_NODES` is iterated at ~54
+         sites, several of which read `n.parent_id` / `n.id` bare, and three of those sites are the
+         load-time tree REPAIRS — so one falsy entry does not fail locally, it throws inside
+         `rebuild()` or `_wbsResyncCodes()` and takes the whole grid or the whole repair with it.
+         Guarding 54 readers is not maintainable; keeping the array clean is. The push sites are
+         guarded individually (an insert that returns no row hands back `null`), and this covers a
+         paged read that comes back with a hole. */
+      WBS_NODES = (await selectAllPaged('wbs_nodes', '*')).filter(Boolean);
     } catch (e) { WBS_NODES = []; }
     _clearPhaseMemo();   // the inherited-phase cache is keyed by node id — stale after a reload
     try { await ensureWbsSkeleton(); } catch (e) { /* best-effort auto-seed; never blocks load */ }
@@ -5248,14 +5243,14 @@
     var chk = await sb().from('wbs_nodes').select('*').eq('project_id', pid).eq('parent_id', parentId).eq('name', name).limit(1);
     if (!chk.error && chk.data && chk.data.length) {
       var existing = chk.data[0];
-      if (!WBS_NODES.some(function (n) { return n.id === existing.id; })) WBS_NODES.push(existing);
+      if (existing && !WBS_NODES.some(function (n) { return n && n.id === existing.id; })) WBS_NODES.push(existing);
       await _ensureNodeSummary(existing);
       return existing;
     }
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
       sort_order: order, created_by: UID, is_locked: true, source_kind: 'design_development_child' }).select().single();
     if (res.error) return null;
-    WBS_NODES.push(res.data);
+    if (res.data) WBS_NODES.push(res.data);
     await _ensureNodeSummary(res.data);
     return res.data;
   }
@@ -5765,14 +5760,14 @@
     var chk = await sb().from('wbs_nodes').select('*').eq('project_id', pid).eq('parent_id', parentId).eq('name', name).limit(1);
     if (!chk.error && chk.data && chk.data.length) {
       var existing = chk.data[0];
-      if (!WBS_NODES.some(function (n) { return n.id === existing.id; })) WBS_NODES.push(existing);
+      if (existing && !WBS_NODES.some(function (n) { return n && n.id === existing.id; })) WBS_NODES.push(existing);
       await _ensureNodeSummary(existing);
       return existing;
     }
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId, name: name,
       sort_order: order, created_by: UID, is_locked: true, source_kind: 'procurement_trade' }).select().single();
     if (res.error) return null;
-    WBS_NODES.push(res.data);
+    if (res.data) WBS_NODES.push(res.data);
     await _ensureNodeSummary(res.data);
     return res.data;
   }
@@ -6286,7 +6281,19 @@
   // undefined and the row was written with a NULL `wbs` — the fingerprint of the 83 corrupt rows
   // found on 2026-08-24. See _wbsEnsureSummariesInner.
   function computeWbsCodes(nodeList) {
-    var NODES = nodeList || WBS_NODES;
+    /* ⚠️⚠️ ONE null IN `WBS_NODES` USED TO EMPTY THE WHOLE SCHEDULE. This function is called from
+       `rebuild()`, so a `TypeError: Cannot read properties of null (reading 'parent_id')` here does
+       not fail locally — it aborts rebuild(), leaves `DL` empty, and the grid renders "no activities"
+       over a footer that still counts every row. That is the shape of the reported *"It logged 16482
+       activities in the total count but nothing is showing"*.
+       And nulls DO get in: sixteen places push `res.data` from an `insert().select().single()`
+       straight into `WBS_NODES`, and PostgREST returns `data: null` for an insert that succeeded but
+       returned no row (a select-side RLS policy, a 0-row return). Every one of those is a latent
+       whole-grid outage. Filtering here fixes all of them at the one point that matters, and cheaply
+       — the array is walked immediately afterwards anyway.
+       ⚠️ Filtered, not thrown on: a missing node is a node whose branch simply will not be coded,
+       which degrades to "that branch is not shown" instead of "nothing is shown". */
+    var NODES = (nodeList || WBS_NODES).filter(Boolean);
     // Build a parent -> sorted-children index once (O(N log N)) instead of re-scanning the node list
     // per tree level via wbsChildren (which made this O(N²·log N) on big P6 trees). Same ordering.
     var childrenOf = new Map();
@@ -7080,6 +7087,28 @@
     // ⚠️ EVERY PASS BELOW CREATES ROWS, so each one is gated. Not one gate at the top: the chain
     // takes minutes and a clear can start at any point inside it.
     if (_isMutating()) return;
+    /* ⚠️⚠️⚠️ THE THREE TREE REPAIRS ARE SKIPPED WHILE THE TREE IS KNOWN-PARTIAL.
+       `_wbsCanonicalRootOrder` + `_wbsResyncCodes` rewrite every summary row's dotted code to match
+       the node tree, and `_wbsEnsureSummaries` manufactures a summary row for every node lacking
+       one. All three are right over a COMPLETE tree and destructive over a stump — and a stump is
+       exactly what a failed adopt leaves. Measured live on 4PH Strevi (2026-09-02): the adopt hit
+       `wbs_nodes_parent_id_fkey` after 102 of 12,432 branches, and this chain then re-coded the
+       project to fit those 102 — which detached all 16,393 imported activities, because rebuild()
+       derives ancestry by SPLITTING the dotted code and their parents' codes had just been rewritten
+       out from under them. The grid went from a finished import to a single "Closeout Phase" row
+       above a footer still reading "Total: 16,482 activities".
+       ⚠️ The activities themselves were never at risk — they are inserted and committed before any
+       of this. It is only the tree, and the codes that address it, that these passes touch. So the
+       safe answer is to leave them exactly as the import wrote them and say what to press. */
+    if (_wbsAdoptBroken) {
+      _setFresh('live');
+      loadGroupBys(); populateGroupSelect(); renderAll();
+      UI.toast('The WBS tree did not finish building, so the schedule’s branch repairs were skipped ' +
+               'on purpose — running them over a half-built tree is what re-codes the project and empties ' +
+               'the grid. Nothing is lost: open Schedule Setup › WBS and press "Adopt existing WBS" to ' +
+               'finish the tree, and the activities will fall back into place.', 'warn');
+      return;
+    }
     // ⚠️ BEFORE the resync, never after: reordering re-codes the root, and the resync is what pushes
     // those codes onto the rows. Reversed, the tree and the codes disagree until the next load.
     _repair('Checking the WBS order…');
@@ -11288,7 +11317,7 @@
     // Paint only the list. The desktop pipeline is (re)built by renderAll when a
     // resize crosses back above 700px (see the resize handler above).
     if (psIsPhone()) { renderMobile(); return; }
-    renderHeader(); renderGrid(); renderGantt(); renderActLegend(); renderDetails(); if (activeTab === 'lastplanner') openLastPlanner(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); if (activeTab === 'costload' && typeof CostLoading !== 'undefined') CostLoading.repaint(); }
+    renderHeader(); renderGrid(); renderGantt(); renderActLegend(); renderDetails(); if (layoutMode === 'network') renderNetwork(); if (progressMode) renderProgressView(); if (activeTab === 'builder' && typeof ScheduleBuilder !== 'undefined') ScheduleBuilder.open(pid, UID); if (activeTab === 'costload' && typeof CostLoading !== 'undefined') CostLoading.repaint(); }
 
   // ---- Activity Network View (PERT diagram) ----
   var netShowAll = false;  // default: only linked activities (auto-filtered so it's useful at once)
@@ -16430,11 +16459,28 @@
     if (!DL.length) {
       host.style.height = '';
       var hasWbs = WBS_NODES.length > 0;
-      var msg = pid
-        ? (hasWbs
-          ? 'No activities yet. Use <strong>“Add activity”</strong> and pick a Parent WBS to place each one.'
-          : 'No activities yet. Tip: build your <strong>WBS</strong> first (open the <strong>WBS</strong> tab from the title menu or sidebar), then add activities under any node. You can also just use <strong>“Add activity”</strong>.')
-        : 'Select a project.';
+      /* ⚠️⚠️ "NO ACTIVITIES YET" IS A LIE WHENEVER `rows` IS NOT EMPTY, and it is the worst kind:
+         the footer one line below says "Total: 16,482 activities" while this says there are none.
+         Reported live after an import whose WBS build failed — *"It logged 16482 activities in the
+         total count but nothing is showing"* — and the message sent the owner to "Add activity",
+         which was the one thing that could not help. An empty display list over a non-empty row set
+         has exactly four causes and each has a different way out, so name the one that applies. */
+      var _nAct = rows.filter(function (r) { return !isWbs(r); }).length;
+      var msg;
+      if (!pid) msg = 'Select a project.';
+      else if (!rows.length) msg = hasWbs
+        ? 'No activities yet. Use <strong>“Add activity”</strong> and pick a Parent WBS to place each one.'
+        : 'No activities yet. Tip: build the <strong>WBS</strong> first in <strong>Schedule Setup › WBS</strong>, then add activities under any node. You can also just use <strong>“Add activity”</strong>.';
+      else if (_wbsAdoptBroken) msg = '<strong>' + _nAct.toLocaleString() + ' activities are imported and safe</strong>, but the WBS tree did not ' +
+        'finish building, so they have no branch to hang under and nothing can be placed on screen.<br>' +
+        'Open <strong>Schedule Setup › WBS</strong> and press <strong>“Adopt existing WBS”</strong> to finish the tree — the schedule fills back in when it completes.';
+      else if (_execOnly) msg = '<strong>' + _nAct.toLocaleString() + ' activities</strong> are loaded, but <strong>Execution Phase only</strong> is on and none of them ' +
+        'resolves to the Execution Phase yet — an imported activity takes its phase from the WBS branch above it, so this is what you see while the tree is still being attached.<br>' +
+        'Turn it off in <strong>Group ▾ → Execution Phase only</strong> to see everything.';
+      else if (anyFilter()) msg = '<strong>' + _nAct.toLocaleString() + ' activities</strong> are loaded, but every one of them is hidden by the active <strong>filter</strong>.<br>' +
+        'Clear it from the filter button in the toolbar.';
+      else msg = '<strong>' + _nAct.toLocaleString() + ' activities</strong> are loaded but none could be placed under a WBS branch — usually a tree that is ' +
+        'still building or was left half-built.<br>Open <strong>Schedule Setup › WBS</strong>, press <strong>“Adopt existing WBS”</strong>, and if that reports nothing to do, use <strong>“Reset WBS”</strong> to rebuild the tree from the schedule’s own codes.';
       host.innerHTML = '<div class="ps-empty">' + msg + '</div>';
       return;
     }
@@ -19293,7 +19339,7 @@
         created_by: UID, is_locked: true, source_kind: spec.source_kind || null
       }).select().single();
       if (res.error) continue;   // tolerant — a DB without the skeleton migration simply gets no backfill
-      WBS_NODES.push(res.data); have[key] = res.data; used[so] = 1; if (so > maxSo) maxSo = so;
+      if (res.data) WBS_NODES.push(res.data); have[key] = res.data; used[so] = 1; if (so > maxSo) maxSo = so;
       await _ensureNodeSummary(res.data);
       added++;
       var kids = spec.children || [];
@@ -19400,13 +19446,13 @@
       var f = flat[i];
       var res = await sb().from('wbs_nodes').insert(f.row).select().single();
       if (res.error) return;   // tolerant — run the migration and reload to retry
-      WBS_NODES.push(res.data);
+      if (res.data) WBS_NODES.push(res.data);
       byRef.set(f, res.data.id);
       if (f.kids.length) {
         for (var j = 0; j < f.kids.length; j++) {
           var kid = f.kids[j];
           var kres = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: res.data.id, name: kid.name, sort_order: j, created_by: UID, is_locked: true, source_kind: kid.source_kind || null }).select().single();
-          if (!kres.error) WBS_NODES.push(kres.data);
+          if (!kres.error && kres.data) WBS_NODES.push(kres.data);
         }
       }
     }
@@ -19481,6 +19527,9 @@
   }
   // Returns the number of nodes it moved. Writes ONLY what actually changed.
   async function _wbsCanonicalRootOrder() {
+    // ⚠️ Scrub first: this pass WRITES, and a falsy node would either throw part-way through
+    // (leaving the tree half-repaired) or be judged as a node with no parent and re-rooted.
+    WBS_NODES = WBS_NODES.filter(Boolean);
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     // ⚠️⚠️ SAME GUARD AS _wbsResyncCodes, and for a sharper reason here. A dotted WBS code is derived
     // from a node's POSITION among its siblings, so reordering the root RE-CODES every branch under
@@ -19520,6 +19569,9 @@
     return moved;
   }
   async function _wbsResyncCodes() {
+    // ⚠️ Scrub first: this pass WRITES, and a falsy node would either throw part-way through
+    // (leaving the tree half-repaired) or be judged as a node with no parent and re-rooted.
+    WBS_NODES = WBS_NODES.filter(Boolean);
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     if (_resyncingCodes) return 0;
     // ⚠⚠ REFUSES TO RUN AGAINST A TREE THAT LOOKS FLATTENED, and this is the guard that would have
@@ -19705,6 +19757,9 @@
     try { return await _wbsEnsureSummariesInner(); } finally { _ensuringSummaries = false; }
   }
   async function _wbsEnsureSummariesInner() {
+    // ⚠️ Scrub first: this pass WRITES, and a falsy node would either throw part-way through
+    // (leaving the tree half-repaired) or be judged as a node with no parent and re-rooted.
+    WBS_NODES = WBS_NODES.filter(Boolean);
     // ⚠️⚠️ PIN THE PROJECT. `pid` and `WBS_NODES` are module-level and BOTH move when the planner
     // switches project — but this function awaits dozens of round-trips, so a switch lands mid-run.
     // The insert below read `project_id: pid` fresh on every iteration while `n` came from the
@@ -19953,7 +20008,7 @@
       if (code) { payload.code = code; payload.code_custom = true; }
       var res = await sb().from('wbs_nodes').insert(payload).select().single();
       if (res.error) { UI.toast(res.error.message + ' — run the wbs-nodes migration.', 'error'); return; }
-      WBS_NODES.push(res.data);
+      if (res.data) WBS_NODES.push(res.data);
       var codeOf2 = computeWbsCodes();
       // project a WBS-Summary row so the grid shows the node with its name + rolled-up dates
       var sres = await _insertWbsSummary({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf2[res.data.id], activity_name: name, created_by: UID });
@@ -20007,7 +20062,7 @@
     var so = after ? await _wbsMakeRoom(parentId, after, 1) : wbsChildren(parentId || null).length;
     var res = await sb().from('wbs_nodes').insert({ project_id: pid, parent_id: parentId || null, name: '', sort_order: so, created_by: UID }).select().single();
     if (res.error) { UI.toast(res.error.message + ' — run the wbs-nodes migration.', 'error'); return; }
-    WBS_NODES.push(res.data);
+    if (res.data) WBS_NODES.push(res.data);
     if (after) await _wbsNormalizeAndPersist([res.data.id]);   // renumber the fractional slot back to integers
     var codeOf2 = computeWbsCodes();
     var sres = await _insertWbsSummary({ project_id: pid, wbs_node_id: res.data.id, activity_type: 'WBS Summary', wbs: codeOf2[res.data.id], activity_name: '', created_by: UID });
@@ -20621,7 +20676,7 @@
     if (q.error && /is_package_root/.test(q.error.message || '')) {
       throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
     }
-    if (!q.error && q.data && q.data.length) { WBS_NODES.push(q.data[0]); return q.data[0].id; }
+    if (!q.error && q.data && q.data.length && q.data[0]) { WBS_NODES.push(q.data[0]); return q.data[0].id; }
     var k = packageById(pkgId);
     // Named from the contract, not from the builder: this row is what the whole
     // project team reads at the top of the grid.
@@ -20636,7 +20691,7 @@
         throw new Error('Run migrations/2026-08-26-package-scoped-schedule.sql — the package root column is missing.');
       throw ins.error;
     }
-    WBS_NODES.push(ins.data);
+    if (ins.data) WBS_NODES.push(ins.data);
     return ins.data.id;
   }
 
@@ -20662,7 +20717,7 @@
       package_id: pkgId, created_by: UID
     }).select().single();
     if (ins.error) return rootId;   // fall back to the root itself rather than losing the push
-    WBS_NODES.push(ins.data);
+    if (ins.data) WBS_NODES.push(ins.data);
     _clearPkgMemo();
     return ins.data.id;
   }
@@ -20813,6 +20868,16 @@
   // Branches skipped this pass because their parent was not in the tree yet. Read by
   // autoAdoptAfterImport(), which loops while progress is made and reports what is left.
   var _adoptDeferred = 0;
+  /* ⚠️⚠️ SET WHEN AN ADOPT FAILS PART-WAY, AND IT GATES THE TWO DESTRUCTIVE REPAIRS.
+     `_wbsResyncCodes()` rewrites every summary row's dotted code to match the tree, and
+     `_wbsEnsureSummaries()` manufactures a summary row for every node that lacks one. Both are
+     correct over a COMPLETE tree and catastrophic over a stump: run against the 102 nodes a failed
+     adopt left behind, they rewrote the codes of a 12,432-branch project to fit 102 branches, which
+     detached all 16,393 activities (their codes no longer had a parent branch) and left the grid
+     showing one row. The repairs are not the bug, but they are what turned a stopped insert into a
+     destroyed view — so while this is set they are skipped and the planner is told to finish the
+     adopt first. Cleared by an adopt that completes. */
+  var _wbsAdoptBroken = false;
   async function wbsAdopt(silent) {
     // ⚠️⚠️ WHAT IS ALREADY ADOPTED IS READ FROM THE SERVER, NEVER FROM `rows`. This function DECIDES
     // WHAT TO INSERT, and `rows` is a cached, possibly minutes-old copy: a tab that painted before an
@@ -20826,15 +20891,57 @@
     // 5,850 new WBS rows, which the next adopt would then adopt. That is the duplicate-WBS-row
     // runaway this file already carries scar tissue for.
     // One cheap paged read of (wbs, wbs_node_id) is the price of never doing that again.
-    var _adoptedCodes = Object.create(null), _refreshOk = false;
+    /* ⚠️⚠️⚠️ THE LIVE NODE IDS COME FIRST, AND EVERY parent_id IS CHECKED AGAINST THEM.
+       Reported live on 4PH Strevi, mid-import: *"WBS adopt stopped after 102 of 12,432 branches:
+       insert or update on table wbs_nodes violates foreign key constraint
+       wbs_nodes_parent_id_fkey"*, and the schedule came out with one visible branch out of five and
+       16,482 activities that rendered nothing.
+
+       How a parent_id can point at nothing: this function resolves parents through `nodeByCode`,
+       which is seeded from TWO places that can both be stale —
+         * `computeWbsCodes()` over the in-memory `WBS_NODES`, and
+         * `_adoptedCodes`, built from `project_schedule.wbs_node_id` on the summary rows.
+       A node deleted since either was written (a Reset WBS, a `_clearWbsTree` from an earlier
+       Replace, another tab's repair, or — as here — a previous partially-failed adopt) leaves its id
+       behind in both: `WBS_NODES` is a cached array, and a surviving summary row keeps pointing at
+       the dead node. The first child that resolved to one of those ids failed the foreign key, and
+       because the insert is chunked the adopt stopped there with the tree 102 nodes deep.
+
+       ⚠️ AND THE FAILURE AMPLIFIED. `load()`'s heal chain then ran against that stump:
+       `_wbsResyncCodes()` rewrote the surviving summary rows' dotted codes to match a 102-node tree
+       and `_wbsEnsureSummaries()` started manufacturing rows for it — so every imported activity's
+       code ("4.2.3.1.5") no longer had a branch above it, `rebuild()` could not place any of them,
+       and the grid showed a single "Closeout Phase". A failed adopt must never be repaired over;
+       see `_wbsAdoptBroken` below and its gate in load().
+
+       One extra paged read of `wbs_nodes(id)` is what makes a dead parent_id impossible to write. */
+    var _adoptedCodes = Object.create(null), _refreshOk = false, _liveIds = Object.create(null);
     try {
-      for (var _f = 0; _f < 40000; _f += 1000) {
+      for (var _nf = 0; _nf < 200000; _nf += 1000) {
+        var _np = await sb().from('wbs_nodes').select('id')
+          .eq('project_id', pid).order('id', { ascending: true }).range(_nf, _nf + 999);
+        if (_np.error) throw _np.error;
+        var _nd = _np.data || [];
+        _nd.forEach(function (n) { _liveIds[n.id] = 1; });
+        if (_nd.length < 1000) break;
+      }
+      var _deadLinks = [];
+      for (var _f = 0; _f < 200000; _f += 1000) {
         var _pg = await sb().from(TABLE).select('id,wbs,wbs_node_id')
           .eq('project_id', pid).eq('activity_type', 'WBS Summary')
           .order('id', { ascending: true }).range(_f, _f + 999);
         if (_pg.error) throw _pg.error;
         var _d = _pg.data || [];
         _d.forEach(function (r) {
+          // ⚠️ A LINK TO A NODE THAT IS GONE IS WORSE THAN NO LINK. It makes the branch look adopted
+          // (so it is skipped) AND hands its children a dead parent_id. Cleared, here, before it can
+          // be used — and cleared in the database too, or the next load reads it back.
+          if (r.wbs_node_id && !_liveIds[r.wbs_node_id]) {
+            _deadLinks.push({ id: r.id, patch: { wbs_node_id: null } });
+            var _m0 = rows.find(function (x) { return x.id === r.id; });
+            if (_m0) _m0.wbs_node_id = null;
+            return;
+          }
           if (r.wbs_node_id && r.wbs) _adoptedCodes[String(r.wbs)] = r.wbs_node_id;
           // Fold the server's truth back into the in-memory row, so the filter below and every later
           // render agree with what the database actually holds.
@@ -20842,6 +20949,18 @@
           if (_m && r.wbs_node_id && !_m.wbs_node_id) _m.wbs_node_id = r.wbs_node_id;
         });
         if (_d.length < 1000) break;
+      }
+      if (_deadLinks.length) {
+        try { console.warn('[ps] wbsAdopt cleared ' + _deadLinks.length + ' summary row link(s) pointing at deleted WBS nodes'); } catch (e2) {}
+        setLoading('Clearing ' + _deadLinks.length.toLocaleString() + ' stale WBS link(s)…');
+        await _batchUpdate(TABLE, _deadLinks);
+      }
+      // Drop stale in-memory nodes too: `computeWbsCodes()` is seeded from this array below, and a
+      // node that no longer exists would put its dead id straight back into nodeByCode.
+      var _wasN = WBS_NODES.length;
+      WBS_NODES = WBS_NODES.filter(function (n) { return n && _liveIds[n.id]; });
+      if (WBS_NODES.length !== _wasN) {
+        try { console.warn('[ps] wbsAdopt dropped ' + (_wasN - WBS_NODES.length) + ' stale in-memory WBS node(s)'); } catch (e2) {}
       }
       _refreshOk = true;
     } catch (e) {
@@ -20857,7 +20976,7 @@
     var legacy = rows.filter(function (r) {
       return isWbs(r) && !r.wbs_node_id && r.wbs && !_adoptedCodes[String(r.wbs)];
     });
-    if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
+    if (!legacy.length) { _wbsAdoptBroken = false; if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
     var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
     _adoptDeferred = 0;
@@ -20867,14 +20986,17 @@
     var actsByCode = {};
     rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && a.wbs) (actsByCode[String(a.wbs)] = actsByCode[String(a.wbs)] || []).push(a); });
     var codeOf0 = computeWbsCodes();
-    WBS_NODES.forEach(function (n) { var c = codeOf0[n.id]; if (c) nodeByCode[c] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
+    // ⚠️ `_liveIds[n.id]` — WBS_NODES was already filtered above, but this is the map that decides
+    // what goes into a parent_id, so it states the invariant where it is relied on rather than
+    // trusting an earlier pass to have held.
+    WBS_NODES.forEach(function (n) { if (!_liveIds[n.id]) return; var c = codeOf0[n.id]; if (c) nodeByCode[c] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
     // ⚠️ The SERVER's (code -> node) map wins over the computed one. `computeWbsCodes()` derives a
     // code from a node's position in the tree, which disagrees with the stored dotted code whenever
     // the tree is mid-repair — and this map is what decides whether a branch is re-inserted. Seeding
     // it with what the database actually links is what makes a second adopt a no-op instead of a
     // duplicate. Parent lookups below resolve through it too, so children of an already-adopted
     // branch attach to the real parent rather than starting a parallel tree.
-    Object.keys(_adoptedCodes).forEach(function (c) { nodeByCode[c] = _adoptedCodes[c]; });
+    Object.keys(_adoptedCodes).forEach(function (c) { if (_liveIds[_adoptedCodes[c]]) nodeByCode[c] = _adoptedCodes[c]; });
     var byDepth = {};
     legacy.forEach(function (r) { var d = String(r.wbs).split('.').length; (byDepth[d] = byDepth[d] || []).push(r); });
     var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return a - b; });
@@ -20901,7 +21023,17 @@
       var payloads = group.filter(function (r) {
         if (nodeByCode[String(r.wbs)]) return false;
         var pc = String(r.wbs).split('.').slice(0, -1).join('.');
-        if (pc && !nodeByCode[pc]) { deferred++; return false; }   // parent not in yet - wait for it
+        if (!pc) return true;                                     // a one-segment code is a real root
+        var pid0 = nodeByCode[pc];
+        if (!pid0) { deferred++; return false; }                   // parent not in yet - wait for it
+        // ⚠️ THE LAST GATE BEFORE THE INSERT. If the resolved parent is not a row that exists right
+        // now, defer instead of writing it — this is the check whose absence produced
+        // `wbs_nodes_parent_id_fkey` and stopped the adopt 102 branches in. Forgetting the mapping
+        // too, so a later pass re-resolves the code instead of re-offering the same dead id.
+        if (!_liveIds[pid0]) {
+          try { console.warn('[ps] wbsAdopt: parent code ' + pc + ' resolved to a node that no longer exists - deferring ' + r.wbs); } catch (e2) {}
+          delete nodeByCode[pc]; deferred++; return false;
+        }
         return true;
       }).map(function (r) {
         var code = String(r.wbs), parentCode = code.split('.').slice(0, -1).join('.');
@@ -20959,14 +21091,20 @@
         // that should ever be silent.
         if (ins.error) {
           try { console.error('[ps] wbsAdopt insert failed at level ' + depths[di] + ', ' + adopted + ' node(s) in: ' + ins.error.message, ins.error); } catch (e2) {}
-          UI.toast('WBS adopt stopped after ' + adopted.toLocaleString() + ' of ' + legacy.length.toLocaleString() +
-                   ' branches: ' + ins.error.message + ' — reopen the WBS Manager and use "Adopt existing WBS" to resume.', 'error');
+          // ⚠️ Latched BEFORE returning: what happens next in load() is the difference between a
+          // resumable partial tree and a project whose codes have been rewritten to fit a stump.
+          _wbsAdoptBroken = true;
+          UI.toast('WBS tree build stopped after ' + adopted.toLocaleString() + ' of ' + legacy.length.toLocaleString() +
+                   ' branches: ' + ins.error.message + ' — the activities are all safely imported. ' +
+                   'Open Schedule Setup \u203a WBS and press "Adopt existing WBS" to finish the tree; the schedule ' +
+                   'grid stays incomplete until it does.', 'error');
           return adopted;
         }
         adopted += (ins.data || []).length;
         (ins.data || []).forEach(function (n) {
           var dotted = codeByKey[(n.parent_id || '') + '|' + n.sort_order];
           if (dotted) nodeByCode[dotted] = n.id;
+          _liveIds[n.id] = 1;   // it exists now, so it is a legal parent for the next depth
           WBS_NODES.push(n);
         });
       }
@@ -26186,11 +26324,20 @@
       // planner on the Project Schedule, and leaving a "staged import" card behind on a file that
       // has already been imported is how the same file gets imported twice.
       imp = null; _impCountMemo = null; mode = sbDefaultMode(); step = 0; render();
-      /* ⚠️ `finally`, not a plain trailing call. doImport / doImportXER own their own error
-         reporting and normally return quietly on failure, but an unexpected throw anywhere in the
-         reload chain they end with would otherwise skip the view switch and strand the planner on a
-         Setup whose staged file has already been cleared — looking at the Start step with no way to
-         tell whether the import happened. Either way the schedule is the screen that answers that. */
+      /* ⚠️⚠️ THE VIEW SWITCHES **BEFORE** THE WRITE, not after it. Owner 2026-09-02: *"After
+         importing it should redirect me to the project schedule page, not just leave me to the
+         schedule setup page thinking if the import really was successful."* Switching afterwards was
+         technically true and practically useless: a 16,000-activity import spends minutes inserting
+         and then rebuilding the WBS, and for all of that time the planner sat on the Setup's Start
+         step — which, because the staging is cleared first, had already gone back to reading "this
+         project already has N activities" and offering to import again. Nothing said the import was
+         running.
+         Switching first puts them on the schedule with the importer's own progress overlay over it
+         ("Importing 5,000 of 16,396 activities…"), so the wait is legible and the result appears
+         underneath it. The `finally` stays as a backstop: something inside the chain may switch
+         views (the WBS heal chain repaints), and an unexpected throw must still not end on the
+         Setup. */
+      switchTab('schedule');
       try {
         if (kind === 'xer') {
           var px = {}; for (var k2 in parsed) if (Object.prototype.hasOwnProperty.call(parsed, k2)) px[k2] = parsed[k2];
@@ -26201,7 +26348,7 @@
           await doImport(recs2, replace, fname, locMap, placement, disc, pkgId, locScopeCodes);
         }
       } finally {
-        // The schedule is the thing to look at now that it exists.
+        // Re-assert it: the schedule is the thing to look at, whatever happened above.
         switchTab('schedule');
       }
     }
@@ -28211,7 +28358,6 @@
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
     document.getElementById('ps-view-schedule').style.display = tab === 'schedule' ? '' : 'none';
     var vcl = document.getElementById('ps-view-costload'); if (vcl) vcl.style.display = tab === 'costload' ? '' : 'none';
-    var vlp = document.getElementById('ps-view-lastplanner'); if (vlp) vlp.style.display = tab === 'lastplanner' ? '' : 'none';
     // ⚠️ #ps-view-wbs is DELIBERATELY not switched: it is the hidden park slot for the WBS tree now,
     // not a view. Showing it would put a second copy of the tree's toolbar on screen.
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
@@ -28224,7 +28370,7 @@
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'lastplanner' ? 'Weekly Work Plan' : (tab === 'builder' ? 'Schedule Setup' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule')));
+    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'builder' ? 'Schedule Setup' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
@@ -28236,7 +28382,6 @@
     else if (tab === 'costload') CostLoading.open(pid, UID);
     else if (tab === 'builder') ScheduleBuilder.open(pid, UID);
     else if (tab === 'calendars') renderCalendarsView();
-    else if (tab === 'lastplanner') openLastPlanner();
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
@@ -30123,8 +30268,10 @@
     if (f === 'work') return 'disciplines / trades';
     if (f === 'type') return 'activity types';
     if (f === 'name') return 'activity names';
-    var lbl = (catFieldOptions().filter(function (o) { return o[0] === f; })[0] || ['', 'categories'])[1];
-    return String(lbl).toLowerCase() + ' values';
+    // ⚠️ The fallback returns the bare noun, not "<label> values" — an unrecognised field id used to
+    // read "categories values" in the sentence this feeds ("128 categories values waiting").
+    var hit = catFieldOptions().filter(function (o) { return o[0] === f; })[0];
+    return hit ? (String(hit[1]).toLowerCase() + ' values') : 'categories';
   }
   function renderActLegend() {
     var host = document.getElementById('ps-actlegend'); if (!host) return;
@@ -30150,21 +30297,24 @@
       var _all = list;
       list = _all.filter(function (c) { return _vis[c.value]; });
       _hidden = _all.length - list.length;
-      // ⚠️ This fallback used to be `list = _all` on the stated assumption that it was "only
-      // reachable when the schedule renders no rows at all". That assumption was WRONG: it fires
-      // whenever no LEAF task row is on screen, which is the ordinary collapsed outline — and it
-      // then printed EVERY category in the project, ignoring "Execution Phase only" and every
-      // active filter. That is exactly the reported bug (Execution Phase ticked, legend still full
-      // of Bidding-phase activities and "+398 more").
-      // A collapsed outline does stand for its subtree, so falling back is right — but it must fall
-      // back to what the VIEW admits, never to the raw project.
-      if (!list.length) {
-        var _sc = catScopedValues();
-        list = _all.filter(function (c) { return _sc[c.value]; });
-        _hidden = _all.length - list.length;
-        // Genuinely nothing in scope (filtered to nothing) — show the full key rather than a blank.
-        if (!list.length) { list = _all; _hidden = 0; }
-      }
+      /* ⚠️⚠️⚠️ THERE IS NO FALLBACK HERE ANY MORE, AND THAT IS THE WHOLE FIX. Reported four times
+         over three weeks, most recently: *"I've collapsed all into level 1 but the legend is still
+         bugging. Please fix this already we have logged and tried to fix this multiple times."*
+
+         What kept it alive: `catVisibleValues()` was hardened (correctly) to mean STRICTLY the leaf
+         task rows on screen — read its note, it says five collapsed phase rows must not produce a
+         400-entry key. Then a later pass, fixing a DIFFERENT symptom (the legend ignoring "Execution
+         Phase only"), added a fallback right here: when the strict set came back empty, fall back to
+         `catScopedValues()` — every category the view admits, i.e. the whole project. But "the strict
+         set is empty" IS the collapsed outline. So the two halves of this function disagreed, the
+         fallback won, and collapsing to level 1 printed 40 chips and "+156 more" — the exact wall
+         collapsing was meant to get rid of. Each pass fixed its own symptom and re-armed the other.
+
+         So: collapsed means collapsed. No leaf rows on screen -> no chips, and a sentence saying why
+         and what to do. The one honest cost is stated in the empty text below, not hidden: a
+         collapsed roll-up bar still paints its activities' colours, and those segments are now
+         unkeyed until the branch is opened. That trade-off is already documented and accepted on
+         catVisibleValues; this is the same decision, applied consistently. */
       // A curated key set wins over everything above: the legend keys the chosen trades and nothing
       // else. The muted remainder is still drawn on the Gantt (in grey), it just isn't keyed —
       // which is the entire point of the LSM layout.
@@ -30187,21 +30337,40 @@
                 '<span class="ps-alg-wrap"><button type="button" class="ps-alg-sw" data-v="' + esc(c.value) + '" style="' + c.style + '"></button>' +
                 '<input type="color" class="ps-alg-clr ps-catclr" data-v="' + esc(c.value) + '" value="' + c.color + '"></span>' +
                 '<span>' + esc(c.value) + '</span></span>';
-            }).join('') + (list.length > MAXL ? '<span>+' + (list.length - MAXL) + ' more</span>' : '') +
+            // ⚠️ Not a bare count. MAXL is hit when the rows ON SCREEN genuinely carry more
+            // categories than a legend can key, and the answer to that is curation — so the chip
+            // says so instead of leaving the reader to wonder what the other 150 were.
+            }).join('') + (list.length > MAXL ? '<span class="ps-alg-more">+' + (list.length - MAXL) + ' more on screen, not keyed' +
+                '<span class="ps-alg-morepop"><b>' + (list.length - MAXL) + ' more ' + esc(_catNoun(cfg)) + ' on screen</b>' +
+                '<i>The legend keys the first ' + MAXL + '. Use <b>Key trades\u2026</b> to choose the handful worth colouring — everything else still draws, in grey.</i>' +
+                '<u>' + list.slice(MAXL, MAXL + 80).map(function (c) { return '<em>' + esc(c.value) + '</em>'; }).join('') +
+                (list.length > MAXL + 80 ? '<em class="more">+' + (list.length - MAXL - 80) + ' more\u2026</em>' : '') +
+                '</u></span></span>' : '') +
             (_hidden > 0 ? '<span class="ps-alg-more">· ' + _hidden + ' more, not on screen' +
                 '<span class="ps-alg-morepop"><b>' + _hidden + ' ' + esc(_catNoun(cfg)) + ' with nothing on screen</b>' +
                 '<i>They exist on this project, but none of their activities are among the rows currently shown — usually the branch holding them is still collapsed. Expand it and they appear here.</i>' +
                 '<u>' + _hiddenNames.slice(0, 80).map(function (v) { return '<em>' + esc(v) + '</em>'; }).join('') +
                 (_hiddenNames.length > 80 ? '<em class="more">+' + (_hiddenNames.length - 80) + ' more…</em>' : '') +
                 '</u></span></span>' : '')
-          // ⚠️ TWO REASONS FOR AN EMPTY KEY, AND THEY NEED DIFFERENT SENTENCES. Since colouring became
-          // the Execution Phase's, `catList()` legitimately returns nothing on a project with no
-          // execution work — a freshly cleared one, whose only rows are the Planning-phase Design
-          // Development / Procurement mirrors. Telling that reader to "open a WBS branch" sends them
-          // expanding branches that can never produce a chip.
+          // ⚠️ THREE REASONS FOR AN EMPTY KEY, AND THEY NEED DIFFERENT SENTENCES.
+          //  (a) no execution work at all — since colouring became the Execution Phase's, catList()
+          //      legitimately returns nothing on a freshly cleared project whose only rows are the
+          //      Planning-phase Design Development / Procurement mirrors. Telling THAT reader to
+          //      open a branch sends them expanding branches that can never produce a chip.
+          //  (b) nothing expanded, and the project HAS categories — the ordinary collapsed outline.
+          //      Name the number so the reader knows the key is waiting rather than broken, and say
+          //      out loud that the roll-up bars are still coloured (see the note on the fallback).
+          //  (c) expanded, but every visible row is filtered out.
           : (catScopeIsExec() && !rows.some(function (r) { return !isWbs(r) && isExecPhase(r); })
               ? '<span>No Execution Phase activities yet — the colour key covers execution work only.</span>'
-              : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>'))
+              : (_all && _all.length
+                  ? '<span class="ps-alg-more">Nothing expanded — <b>' + _all.length + '</b> ' + esc(_catNoun(cfg)) + ' waiting' +
+                    '<span class="ps-alg-morepop"><b>The key follows what is on screen</b>' +
+                    '<i>Only leaf activity rows are keyed, so a fully collapsed outline keys nothing — that is deliberate, and it is why this strip is not ' + _all.length + ' chips long. Open a WBS branch and its activities appear here. The collapsed roll-up bars above are still painted in their activities\u2019 colours; expand a branch to read them. On a field with this many values, <b>Key trades\u2026</b> is the way to keep a usable key while everything else still draws in grey.</i>' +
+                    '<u>' + _all.slice(0, 60).map(function (c) { return '<em>' + esc(c.value) + '</em>'; }).join('') +
+                    (_all.length > 60 ? '<em class="more">+' + (_all.length - 60) + ' more\u2026</em>' : '') +
+                    '</u></span></span>'
+                  : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>')))
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     // Folded, the head keeps ONE line that still says what the colours mean -- a bare chevron over
     // an empty strip would leave a reader with no way to know the legend was there at all.
@@ -31911,23 +32080,7 @@
     (function () { var rx = document.getElementById('ps-rv-exit'); if (rx) rx.onclick = function () { applyReporting(false); renderLayoutMenu(); }; })();
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     tMenu.querySelectorAll('[data-tab]').forEach(function (b) { b.onclick = function () { tMenu.classList.remove('open'); switchTab(b.dataset.tab); }; });
-    // ---- Collapsible Last Planner section (persisted) ----
-    (function () {
-      var tgl = document.getElementById('ps-lp-toggle'), sec = document.getElementById('ps-lp-section');
-      if (!tgl || !sec) return;
-      var collapsed = false; try { collapsed = localStorage.getItem('ps_lp_collapsed') === '1'; } catch (e) {}
-      function apply() {
-        tgl.classList.toggle('collapsed', collapsed);
-        sec.classList.toggle('collapsed', collapsed);
-        tgl.setAttribute('aria-expanded', String(!collapsed));
-      }
-      apply();
-      tgl.onclick = function () {
-        collapsed = !collapsed;
-        try { localStorage.setItem('ps_lp_collapsed', collapsed ? '1' : '0'); } catch (e) {}
-        apply();
-      };
-    })();
+    // (The collapsible Last Planner section's toggle wiring was here; the view it folded is gone.)
     // ---- Layout menu (view arrangement, like OPC's Layout / grid settings) ----
     try { layoutMode = localStorage.getItem('ps_layout') || 'split'; } catch (e) {}
     var detailsHidden = false; try { detailsHidden = localStorage.getItem('ps_details_hidden') === '1'; } catch (e) {}
@@ -32456,10 +32609,8 @@
     document.getElementById('ps-gc-back').onclick = function (e) { if (e.target === this) closeGlobalChange(); };
     document.getElementById('ps-gc-preview').onclick = gcPreview;
     document.getElementById('ps-gc-apply').onclick = gcApply;
-    document.getElementById('ps-lp-prev').onclick = function () { lpMoveWeek(-1); };
-    document.getElementById('ps-lp-next').onclick = function () { lpMoveWeek(1); };
-    document.getElementById('ps-lp-thisweek').onclick = function () { _lpWeek = mondayOf(wallToday()); try { localStorage.setItem(_lpWeekKey(), dstr(_lpWeek)); } catch (e) {} renderLastPlanner(); };
-    document.getElementById('ps-lp-add').onclick = function () { openCommitmentForm(null); };
+    // (#ps-lp-prev / -next / -thisweek / -add went with the Weekly Work Plan view — see the note
+    //  where its markup used to be. Their functions survive, uncalled.)
     // "Add WBS" = a sibling AFTER the selected node (same as Enter in the tree), or top level when
     // nothing is selected — so clicking it repeatedly builds a list instead of burrowing deeper.
     document.getElementById('ps-wbs-addroot').onclick = function () {
