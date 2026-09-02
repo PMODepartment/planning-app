@@ -1965,7 +1965,7 @@ window.PPR = (function () {
     }).join('');
     return '<header><h1>' + esc(projName || pid) + ' — Progress Photos</h1>' +
       '<p>' + esc(p.description || '') + ' · Presentation Date: ' + esc(longDate(p.ppr_date)) +
-      ' · ' + s.length + ' slide' + (s.length === 1 ? '' : 's') + '</p></header>' +
+      '</p></header>' +
       '<div class="wrap">' + slidesHTML + '</div>' +
       '<footer>Generated ' + esc(longDate(new Date().toISOString().slice(0, 10))) +
       ' from the Planners Dashboard · Megawide Construction Corporation</footer>';
