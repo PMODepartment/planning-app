@@ -1432,6 +1432,45 @@ minimized as well."* It now also hides the sidebar, the topbar and the module ba
   `projName()`/group head, and the legend fold has never run against a real category list.
 - `MODULE_V` → `20260902a`.
 
+## `computeWbsCodes` could crash the whole module on a corrupted tree — RangeError, unguarded recursion (2026-09-02)
+
+Found via a headless audit pass (mocked-Supabase Playwright harness rendering the real, unmodified
+module), not a live report: opening this module's page threw an uncaught
+`RangeError: Maximum call stack size exceeded` and the page never rendered.
+
+⚠️ **The stack trace was useless.** This file's inline `<script>` is ~1.2 MB on essentially one
+logical line, so V8 reports the identical `index.html:3110:9` for every frame regardless of which
+function is actually recursing. Localizing it needed a different technique: monkey-patching
+`Array.prototype.forEach` globally to track recursion depth and, past a threshold, capture
+`String(cb)` (the recursing callback's own source text) rather than trust the line number. That
+pointed straight at `computeWbsCodes(nodeList)`'s inner `walk(parentId, parentCode)`.
+
+⚠️ **`walk` had no cycle guard.** It builds a `parent_id → children[]` map and recurses child-by-child
+to assign dotted WBS codes. If any row in `wbs_nodes` ends up transitively its own ancestor — this
+file's own changelog is a long record of exactly that happening in production (duplicate ids across
+projects, cross-project parent/child links, race-condition duplicate rows from concurrent pushes,
+partial/failed writes) — `walk` recurses forever and takes the entire module down with it, since this
+function runs on every load/edit/push.
+
+**Fix:** a `seen` Set inside `computeWbsCodes`, checked and populated at the top of the per-child
+callback; a node already visited is skipped rather than re-walked. In a well-formed tree every id is
+visited exactly once regardless, so this changes nothing for normal data — it only stops a corrupted
+row from hanging the module. Same shape as this file's existing `_traceWalk` cycle guard and its
+"must not hang on a cyclic tree" tests elsewhere in this module.
+
+**Verified two ways, both clean:**
+1. Re-ran the exact diagnostic that found the bug (the `forEach` recursion-depth monkey-patch) against
+   the fixed file — no `DEEP_RECURSION_DETECTED`, no page error; only the expected benign
+   `ERR_PROXY_CONNECTION_FAILED` noise from the sandboxed environment's Realtime websocket attempts.
+2. Re-ran the full 7-page batch audit (dashboard, modules, projects, my-work, manpower-loading,
+   minutes-of-meeting, project-schedule) — every page including this one reports `errors: []` and
+   `overflow: 0`.
+
+⚠️ **Not verified against real live data or a live login** — reproduced under a mocked Supabase
+backend whose insert stub happens to assign duplicate ids across separate inserts, which is what
+actually triggered the cycle in this environment. The guard is correct regardless of trigger: it only
+activates on an already-corrupted tree and is a no-op otherwise.
+
 ## ⚠️ REGRESSION, same day: adoption built 1,584 TOP-LEVEL nodes — and my own harness said it was fine (2026-09-01) — fmlozano
 
 Owner, after running the migration and re-importing: *"See WBS Manager there are stray WBS... I think

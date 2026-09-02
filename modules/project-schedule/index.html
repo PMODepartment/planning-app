@@ -6077,8 +6077,17 @@
       arr.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
     });
     var codeOf = {};
+    // ⚠️ `seen` guards against a CORRUPTED tree where a node ends up transitively its own ancestor
+    // (this repo's changelog documents repeated wbs_nodes corruption incidents — duplicate ids,
+    // cross-project links, race-condition writes). Without it, one such row recurses forever here
+    // and crashes the whole module with an unrecoverable RangeError, since this runs on every load/
+    // edit/push. In a well-formed tree every id is visited exactly once anyway, so this changes
+    // nothing for normal data.
+    var seen = new Set();
     (function walk(parentId, parentCode) {
       (childrenOf.get(parentId) || []).forEach(function (n, i) {
+        if (seen.has(n.id)) return;
+        seen.add(n.id);
         var auto = (parentCode ? parentCode + '.' : '') + (i + 1);
         // ⚠️⚠️ A CUSTOM CODE IS A SEGMENT OF THE PATH, NOT A REPLACEMENT FOR IT.
         // This line used to read `codeOf[n.id] = n.code` — the parent's path was DISCARDED. The
