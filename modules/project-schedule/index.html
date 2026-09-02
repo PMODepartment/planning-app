@@ -180,6 +180,12 @@
     .ps-net-head { display:flex; align-items:center; gap:14px; padding:8px 12px; border-bottom:1px solid var(--pd-line);
       background:var(--pd-bg); font-size:12px; color:var(--pd-muted); position:sticky; top:0; z-index:2; }
     .ps-net-head label { display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--pd-ink); }
+    /* ⚠️ WRAPS. The head is a sticky flex row and a project with four location levels adds four
+       selects to it; `nowrap` would push the count — the one thing that says whether the view will
+       draw — off the right edge on a laptop. Same lesson as the toolbar row. */
+    .ps-net-head { flex-wrap:wrap; row-gap:8px; }
+    .ps-net-loc { font-size:12px; color:var(--pd-muted); gap:5px; }
+    .ps-net-loc .pd-select { min-height:30px; height:30px; padding:0 24px 0 8px; font-size:12px; max-width:180px; }
     /* Column chooser menu */
     .ps-cols-menu { min-width:220px; max-height:340px; overflow:auto; padding:6px 4px; }
     .ps-cols-menu label { display:flex; align-items:center; gap:8px; padding:5px 12px; font-size:13px; cursor:pointer; color:var(--pd-ink); }
@@ -3414,7 +3420,9 @@
   // re-parenting a branch re-phases its work immediately, with no data fix-up.
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; }
+  // ⚠️ `_catExecCache` too: catScopeIsExec() is keyed on the row COUNT, and re-parenting a branch
+  // re-phases its activities without changing that count.
+  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _catExecCache = null; }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -6408,11 +6416,24 @@
   var _editSeq = 0;   // bumped on every inline edit; guards the background refresh from clobbering an edit made mid-fetch
   var _freshHideT = null;
   // Freshness badge: 'cached' = showing last-known set, refreshing; 'live' = reconciled with the DB.
+  var _repairMsg = '';
+  // Names the pass rather than showing a bare spinner: "Attaching 16,485 activities" is a fact a
+  // planner can weigh against the wait; "Loading…" is not.
+  function _repair(msg) { _repairMsg = msg; _setFresh('repair'); }
   function _setFresh(state) {
     var el = document.getElementById('ps-fresh'); if (!el) return;
     clearTimeout(_freshHideT);
     if (state === 'cached') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = 'Cached · updating…'; el.title = 'Showing the last-loaded schedule instantly; refreshing from the database…'; }
     else if (state === 'live') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-live'; el.textContent = 'Live'; el.title = 'Up to date with the database.'; _freshHideT = setTimeout(function () { var e2 = document.getElementById('ps-fresh'); if (e2) e2.style.display = 'none'; }, 2500); }
+    // ⚠️⚠️ THE STATE THAT WAS MISSING, AND ITS ABSENCE IS A REPORTED BUG. load() paints from `rows`
+    // the moment they arrive and then runs four self-heal passes — resync dotted codes, dedupe
+    // summaries, restore orphan nodes, attach imported activities to the tree — each of which is
+    // many server round-trips over every row. On a freshly imported project that is MINUTES, and
+    // for all of it the WBS is genuinely incomplete on screen. The chip said "Live" throughout.
+    // Owner: *"WBS isn't showing properly initially and I had to wait a few minutes until it
+    // returned to normal."* Nothing was wrong except that the app claimed to be finished when it
+    // was not. It now says which pass is running, and only claims Live when it is.
+    else if (state === 'repair') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = _repairMsg || 'Rebuilding the WBS…'; el.title = 'The schedule below is live, but the WBS tree is still being rebuilt — counts, Trade, Phase and Vertical Stacking are not final until this clears.'; }
     else { el.style.display = 'none'; }
   }
   function _applyBigCollapse() {
@@ -6630,18 +6651,24 @@
       renderAll();
       _cachePut(pid, all);
     }
-    _setFresh('live');
+    // ⚠️ NOT 'live' yet — see the 'repair' state. Everything from here to the end of load() can
+    // change what the WBS shows, so claiming to be up to date here is a lie on exactly the projects
+    // where it matters (a fresh import, where every pass below has work to do).
+    _repair('Loading resources…');
     await loadResourcesAssignments();   // loads WBS_NODES
     if (gen !== _loadGen) return;
     // Re-sync dotted codes to the node tree FIRST — a code that drifted after a push makes two
     // branches look like one, which the dedupe below would otherwise "fix" by deleting a live branch.
+    _repair('Checking WBS codes…');
     await _wbsResyncCodes();
     if (gen !== _loadGen) return;
     // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node-id dedupe
     // below cannot see). Runs after the resync: it must judge duplicates on correct codes.
+    _repair('Checking for duplicate WBS rows…');
     await _wbsDedupeSummariesByCode();
     if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
+    _repair('Restoring missing WBS rows…');
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
@@ -6651,6 +6678,9 @@
     // Stacking, the WBS Manager's counts and the Contract Scope column all read empty. Gated on an
     // in-memory test, so a healthy project performs no query at all.
     if (_wbsUnlinkedActs()) {
+      // The long one on a fresh import: every activity is unattached, so this is the pass the owner
+      // sat through. Naming the count is the whole point — it is proportional to the wait.
+      _repair('Attaching activities to the WBS tree…');
       var linkedN = await _wbsLinkActivityParents(true);
       if (gen !== _loadGen) return;
       if (linkedN) {
@@ -6662,9 +6692,12 @@
     // Mirror the two registers into the Design Development branch. Runs AFTER the WBS is
     // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
     // leaves the branch as it was rather than blocking the schedule.
+    _repair('Syncing the design + procurement branches…');
     await syncDesignDevelopment();
     await syncProcurement();
     _renderSyncPrcAt();
+    // ⚠️ HERE, and not before: this is the first point at which nothing further can change the tree.
+    if (gen === _loadGen) _setFresh('live');
     if (gen !== _loadGen) return;
     loadGroupBys();       // per-project grouping order (needs LOC_LEVELS loaded to validate against)
     populateGroupSelect();
@@ -9501,9 +9534,9 @@
         var _pids = rows.filter(function (r) { return !isWbs(r) && String(packageOf(r) || '') === String(pkgId); }).map(function (r) { return r.id; });
         del = { error: null };
         for (var _pi = 0; _pi < _pids.length && !del.error; _pi += 200) del = await sb().from(TABLE).delete().in('id', _pids.slice(_pi, _pi + 200));
-      } else del = await sb().from(TABLE).delete().eq('project_id', pid);
+      } else del = await _clearAllActivities('Clearing existing activities');
       if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; }
-      var werr = await _clearWbsTree(pkgId || null); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await sb().from('resource_assignments').delete().eq('project_id', pid); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
+      var werr = await _clearWbsTree(pkgId || null); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await _deleteAllRows('resource_assignments'); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
     var uid = UID;
     // Location breakdown — create any levels the mapping asked for, then stamp each leaf rec's
     // `location` so it rides along in the same insert rather than needing a second pass. Runs
@@ -10166,7 +10199,7 @@
     // on top of the previous import's nodes and every level duplicates.
     // ⚠️ Also drops resource_assignments — see the Excel import path for why (keyed by TEXT
     // activity_id; a re-import recreates the same P6 ids, so a stale set otherwise doubles).
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await sb().from('resource_assignments').delete().eq('project_id', pid); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
+    if (replace) { setLoading('Clearing existing activities…'); var del = await _clearAllActivities('Clearing existing activities'); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await _deleteAllRows('resource_assignments'); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
     var uid = UID, CH = 500;
     // 1) Calendars first — activities/resources reference their real (DB-generated) ids.
     // ⚠️ REUSE BEFORE INSERT. This used to insert every calendar in the file
@@ -12461,15 +12494,53 @@
   }
   // Click a cell to see which activities are behind it — step 6's drill-down idea, but over live rows,
   // so the dates and percentages are the real ones rather than a generated preview's.
+  // The branch names above an activity, from its dotted code — built off the WBS-summary rows
+  // already in `rows` rather than walking WBS_NODES, so it works on a project whose tree has not
+  // been adopted yet (which is exactly the state a fresh import is in).
+  var _vsPathCache = null, _vsPathKey = null;
+  function _vsWbsPath(r) {
+    var code = String((r && r.wbs) || '').trim(); if (!code) return '';
+    var key = pid + '|' + rows.length;
+    if (_vsPathKey !== key) {
+      _vsPathCache = {};
+      rows.forEach(function (x) { if (isWbs(x) && x.wbs) _vsPathCache[String(x.wbs)] = x.activity_name || ''; });
+      _vsPathKey = key;
+    }
+    var segs = code.split('.'), out = [];
+    for (var i = 1; i <= segs.length; i++) {
+      var nm = _vsPathCache[segs.slice(0, i).join('.')];
+      if (nm) out.push(nm);
+    }
+    return out.join(' \u203a ');
+  }
   function openVsCell(key) {
     var d = _vsCells[key]; if (!d) return;
     var title = String(d.level) + (d.cell ? ' · ' + d.cell : '');
-    var body = '<div class="ps-vs-tblwrap"><table class="ps-table"><thead><tr>' +
-      ['Activity ID', 'Activity', 'Trade', 'BL Start', 'BL Finish', 'Start', 'Finish', 'Var', 'Planned %', 'Actual %'].map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
+    // ⚠️⚠️ THE WBS PATH IS SHOWN IN THE "NO LEVEL" BAND AND NOWHERE ELSE, because that band is the
+    // only place it answers a question. A location value is DERIVED FROM THE BRANCH NAMES (see
+    // locSrcsWbsWords / the saved match table): an activity lands here precisely when no ancestor's
+    // name matched a term for the floor level. So the path either shows a floor the matcher missed
+    // — a real matching gap, fixable by "Match WBS to locations…" — or it shows there is genuinely
+    // no floor above the row, which is the ordinary truth for General Requirements (mobilisation,
+    // bonds, temporary facilities) and for Site Development (roads, drainage, gabions) that belong
+    // to the site rather than to a storey. Without the path on screen those two cases are
+    // indistinguishable, and they need opposite responses.
+    var showPath = String(d.level) === VS_NOLEV;
+    var cols = ['Activity ID', 'Activity', 'Trade'];
+    if (showPath) cols.push('WBS branch');
+    cols = cols.concat(['BL Start', 'BL Finish', 'Start', 'Finish', 'Var', 'Planned %', 'Actual %']);
+    var body = (showPath ? '<div class="ps-vs-note" style="margin:0 0 8px;">These carry no value on the ' +
+        esc(((_vsAxis()[0] || {}).name) || 'level') + ' level. The <strong>WBS branch</strong> column is why: ' +
+        'if you can see a floor in it, the branch name is not being matched — fix it with ' +
+        '<em>Group ▾ → Match WBS to locations…</em>. If there is no floor in it, the work genuinely ' +
+        'belongs to the site rather than to a storey.</div>' : '') +
+      '<div class="ps-vs-tblwrap"><table class="ps-table"><thead><tr>' +
+      cols.map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>' +
       d.list.slice().sort(function (a, b) { var x = pd(dispFin(a)), y = pd(dispFin(b)); return (x ? +x : 0) - (y ? +y : 0); }).map(function (r) {
         var _v = finVar(r), _pp = plannedPOC(r);
         return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' + esc(_vsTradeOf(r)) +
+          (showPath ? '</td><td style="color:var(--pd-muted);">' + (esc(_vsWbsPath(r)) || '<em>no WBS branch</em>') : '') +
           '</td><td>' + esc(r.bl_start ? Fmt.date(r.bl_start) : '—') + '</td><td>' + esc(r.bl_finish ? Fmt.date(r.bl_finish) : '—') +
           '</td><td>' + esc(dispStart(r) ? Fmt.date(dispStart(r)) : '—') + '</td><td>' + esc(dispFin(r) ? Fmt.date(dispFin(r)) : '—') +
           '</td><td' + (_v != null && _v !== 0 ? ' style="color:' + (_v > 0 ? VS_SLIP_LATE : VS_SLIP_EARLY) + ';font-weight:700;"' : '') + '>' +
@@ -13104,10 +13175,57 @@
     else { _animIn(document.querySelector('.ps-split')); }
   }
 
+  // ⚠️⚠️ THE NETWORK IGNORED EVERY FILTER IN THE APP, while its own over-300 message told the
+  // reader to "use Filter or Search to narrow the set". It read straight off `rows`, so neither the
+  // Filter menu, the search box nor "Execution Phase only" changed the count by one - the advice
+  // could not be followed, and on a real project (Avesta 4,321 activities, 4PH Strevi 16,485) the
+  // view therefore never rendered at all. Owner: "the PERT Diagram will always be not working since
+  // our activities exceed the 300 activity threshold." It was not the threshold.
+  // ⚠️ Now scoped exactly like the grid - `_execOnly` + `rowMatches` - so the advice is true, and
+  // with its own LOCATION pickers on top, because "show me Tower 3, 8th floor" is the question a
+  // planner actually has and no generic filter expresses it in one gesture.
+  var netLoc = {};
+  // The activities the network is ALLOWED to draw, before the location pickers narrow it further.
+  function netScoped() {
+    var ec = _execOnly ? execPhaseCode() : null;
+    return rows.filter(function (r) {
+      if (isWbs(r) || !r.activity_id) return false;
+      if (ec && !(r.wbs === ec || locCodeUnder(r.wbs, ec))) return false;
+      return rowMatches(r);
+    });
+  }
+  // Distinct values on one location level within a set.
+  function netLocValues(list, levelId) {
+    var out = [], seen = {};
+    list.forEach(function (r) {
+      var v = String(locValOf(r, levelId) || '').trim();
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort(cmpGroupName);
+  }
+  // ⚠️ Each picker's OPTIONS come from the set already narrowed by the levels ABOVE it, and a
+  // selection is dropped when it no longer appears there. A location breakdown nests (Tower > Level
+  // > Zone > Unit), so offering every zone in the project under one tower would list zones that draw
+  // nothing, and a stale selection would silently empty the view with no visible cause.
+  function netApplyLoc(list) {
+    var levels = LOC_LEVELS || [];
+    for (var i = 0; i < levels.length; i++) {
+      var id = levels[i].id, want = netLoc[id];
+      if (!want) continue;
+      if (netLocValues(list, id).indexOf(want) < 0) { delete netLoc[id]; continue; }
+      list = list.filter(function (r) { return String(locValOf(r, id) || '').trim() === want; });
+    }
+    return list;
+  }
+  // The cap is a RENDERING limit, not a policy: every node is an SVG <g> with a rect and two <text>
+  // runs, and every relationship a bezier. 300 was set when the view was new; it sits below every
+  // useful whole-tower slice, which is what made the view unreachable rather than merely slow.
+  var NET_MAX = 1200;
   function renderNetwork() {
     var host = document.getElementById('ps-network'); if (!host) return;
     computeCPM();   // populates _relObjs / _succObjs so we can detect linked activities
-    var all = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var scoped = netScoped();
+    var all = netApplyLoc(scoped);
     var linked = all.filter(function (t) { return (t._relObjs && t._relObjs.length) || (t._succObjs && t._succObjs.length); });
     // If NO activity has a relationship yet, don't leave the view blank with just a hint —
     // show every activity as a node (a network with no edges) so the view always renders
@@ -13115,15 +13233,61 @@
     // default is to show only the linked set (unticked) with the toggle to include the rest.
     var noLinks = linked.length === 0;
     var showAll = netShowAll || noLinks;
+    // One picker per location level the project defines - Tower, Level, Zone, Unit, whatever it
+    // called them. Nothing is invented: a project with no location breakdown gets no pickers.
+    var locPick = '', _narrowing = scoped;
+    (LOC_LEVELS || []).forEach(function (l) {
+      var vals = netLocValues(_narrowing, l.id);
+      if (!vals.length) return;
+      var cur = netLoc[l.id] || '';
+      locPick += '<label class="ps-net-loc">' + esc(l.name) + ' ' +
+        '<select class="pd-select" data-netloc="' + esc(l.id) + '">' +
+        '<option value="">All</option>' +
+        vals.map(function (v) {
+          return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>';
+        }).join('') + '</select></label>';
+      if (cur) _narrowing = _narrowing.filter(function (r) { return String(locValOf(r, l.id) || '').trim() === cur; });
+    });
+    var anyLoc = Object.keys(netLoc).some(function (k) { return netLoc[k]; });
     var head = '<div class="ps-net-head">' +
       '<label><input type="checkbox" id="ps-net-all"' + (showAll ? ' checked' : '') + (noLinks ? ' disabled' : '') + '> Show unlinked activities too</label>' +
+      locPick +
+      (anyLoc ? '<button class="pd-btn" id="ps-net-locclr" style="min-height:30px;font-size:12px;">Clear location</button>' : '') +
       '<span>Showing <strong>' + (showAll ? all.length : linked.length) + '</strong> of ' + all.length + ' activities' +
+      (all.length !== scoped.length ? ' · ' + (scoped.length - all.length) + ' outside the chosen location' : '') +
       (noLinks ? ' · no relationships defined yet — add Predecessors or use the Link tool to draw the network'
                : (showAll ? '' : ' · ' + (all.length - linked.length) + ' unlinked hidden')) + '</span></div>';
-    function wireHead() { var cb = document.getElementById('ps-net-all'); if (cb && !cb.disabled) cb.onchange = function () { netShowAll = cb.checked; renderNetwork(); }; }
+    function wireHead() {
+      var cb = document.getElementById('ps-net-all'); if (cb && !cb.disabled) cb.onchange = function () { netShowAll = cb.checked; renderNetwork(); };
+      host.querySelectorAll('[data-netloc]').forEach(function (s) {
+        s.onchange = function () {
+          var id = s.getAttribute('data-netloc');
+          if (s.value) netLoc[id] = s.value; else delete netLoc[id];
+          // ⚠️ Choosing a tower must drop the zone chosen under the PREVIOUS tower. netApplyLoc clears
+          // a selection that no longer exists, but a level BELOW this one can hold a value that
+          // happens to exist under both (every tower has a "Zone 1"), which would carry across
+          // silently and show a slice the planner did not ask for.
+          var seen = false;
+          (LOC_LEVELS || []).forEach(function (l) { if (seen) delete netLoc[l.id]; if (l.id === id) seen = true; });
+          renderNetwork();
+        };
+      });
+      var clr = document.getElementById('ps-net-locclr');
+      if (clr) clr.onclick = function () { netLoc = {}; renderNetwork(); };
+    }
     if (!all.length) { host.innerHTML = head + '<div class="ps-empty">No activities to show. Add activities and link them (Predecessors / Link).</div>'; wireHead(); return; }
     var leaves = showAll ? all : linked;
-    if (leaves.length > 300) { host.innerHTML = head + '<div class="ps-empty">Activity Network view is best with &le; 300 activities (currently ' + leaves.length + '). Use Filter or Search to narrow the set.</div>'; wireHead(); return; }
+    if (leaves.length > NET_MAX) {
+      host.innerHTML = head + '<div class="ps-empty"><strong>' + leaves.length.toLocaleString() +
+        ' activities in scope</strong> — the network draws up to ' + NET_MAX.toLocaleString() + ' at once.<br>' +
+        (LOC_LEVELS && LOC_LEVELS.length
+          ? 'Pick a ' + esc((LOC_LEVELS[0] || {}).name || 'location') + ' above' +
+            (LOC_LEVELS.length > 1 ? ', then ' + esc((LOC_LEVELS[1] || {}).name || '') + ', then narrower' : '') + '; '
+          : '') +
+        'Filter, Search and "Execution Phase only" all narrow this view too.' +
+        (showAll && !noLinks ? '<br>Unticking "Show unlinked activities too" leaves the ' + linked.length.toLocaleString() + ' linked ones.' : '') +
+        '</div>'; wireHead(); return;
+    }
     var rank = {};
     function getRank(t, seen) {
       var id = String(t.activity_id);
@@ -19397,6 +19561,50 @@
     return ins.data.id;
   }
 
+  // ⚠️⚠️ EVERY WHOLE-PROJECT DELETE GOES THROUGH HERE, and it exists because of a live failure:
+  // clearing SLN101 returned **"canceling statement due to statement timeout"** and nothing was
+  // deleted. `.delete().eq('project_id', pid)` is ONE statement covering every row in the project,
+  // and Postgres kills it at `statement_timeout` — the bigger the project, the more certain the
+  // failure, so it fails exactly on the projects that most need clearing. 4PH Strevi carries
+  // 16,485 activities and 12,465 WBS nodes; Avesta 4,321.
+  // ⚠️ The package-scoped paths have ALWAYS chunked at 200. Only the "everything" paths were
+  // unbounded — which is why "clear one package" worked while "clear the schedule" did not, and
+  // why a REPLACE import (which clears everything first) failed the same way. Same bug, four sites.
+  // ⚠️ Pages ids from the START each time rather than walking an offset: the rows it just read are
+  // the rows it just deleted, so page 2 is always at offset 0. An OFFSET here would skip a page's
+  // worth on every lap. PostgREST caps a read at 1000 rows server-side whatever the client asks.
+  // ⚠️ The guard is not decoration. If a delete silently affects nothing (an RLS policy that permits
+  // SELECT but not DELETE is the realistic case), the same page comes back for ever; the loop must
+  // end with an error a human can read rather than hanging the tab.
+  async function _deleteAllRows(table, filter, onCount) {
+    var total = 0;
+    for (var lap = 0; lap < 1000; lap++) {
+      var q = sb().from(table).select('id').eq('project_id', pid);
+      if (filter) q = filter(q);
+      var page = await q.order('id', { ascending: true }).limit(1000);
+      if (page.error) return { error: page.error, deleted: total };
+      var ids = (page.data || []).map(function (r) { return r.id; });
+      if (!ids.length) return { error: null, deleted: total };
+      for (var i = 0; i < ids.length; i += 200) {
+        var slice = ids.slice(i, i + 200);
+        var d = await sb().from(table).delete().in('id', slice);
+        if (d.error) return { error: d.error, deleted: total };
+        total += slice.length;
+        if (onCount) onCount(total);
+      }
+    }
+    return { error: { message: 'Stopped after 1,000 passes with rows still present in ' + table +
+                               ' — the delete is not taking effect (check the RLS policy).' },
+             deleted: total };
+  }
+  // The whole-project activity clear, with the row count reported as it goes: on a 16,000-row
+  // project this is now many round-trips instead of one, so a silent spinner would read as a hang.
+  async function _clearAllActivities(msg) {
+    return await _deleteAllRows(TABLE, null, function (n) {
+      setLoading((msg || 'Clearing existing activities') + '… ' + n.toLocaleString() + ' removed');
+    });
+  }
+
   async function _clearWbsTree(pkgId) {
     var scoped = pkgId != null && pkgId !== '__none__';
     try {
@@ -19416,7 +19624,13 @@
         _clearPkgMemo();
         return null;
       }
-      var res = await sb().from('wbs_nodes').delete().eq('project_id', pid).eq('is_locked', false);
+      // ⚠️ Chunked for the same reason the activities are (see _deleteAllRows): 4PH Strevi carries
+      // 12,465 WBS nodes and one unbounded statement over them times out. ⚠️ And a timeout here is
+      // WORSE than one on the activities, because the caller has usually already cleared those — a
+      // failed tree clear leaves a project with no activities and a full tree, which then re-projects
+      // summary rows on the next load and reads as "clear did nothing".
+      var res = await _deleteAllRows('wbs_nodes', function (q) { return q.eq('is_locked', false); },
+        function (n) { setLoading('Clearing the WBS tree… ' + n.toLocaleString() + ' removed'); });
       if (res.error && !/wbs_nodes|does not exist|schema cache|PGRST/i.test(res.error.message || '')) return res.error;
     } catch (e) {}
     WBS_NODES = WBS_NODES.filter(function (n) { return n.is_locked; });
@@ -27033,6 +27247,7 @@
     var by = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
+      if (!catInScope(r)) return;   // the key is the Execution Phase's — see catEntry
       var v = catValOf(r, cfg.field); if (!v) return;
       var s = pd(dispStart(r)) || pd(r.bl_start);
       var b = by[v] || (by[v] = { value: v, n: 0, first: null });
@@ -27079,8 +27294,32 @@
     Object.keys(m).forEach(function (k) { out[k] = m[k].color; });
     return out;
   }
+  // ⚠️ COLOURING IS THE EXECUTION PHASE'S, and every other consumer of the category colours reads
+  // this rather than testing the phase itself. Owner 2026-09-02: *"only make the bars different
+  // exclusively [for] activities under Execution Phase. Other activities … should follow the simple
+  // bar legend for Activity (red = % complete), so that the legend … will only show activities
+  // relevant to the execution phase."* Bidding, permits and close-out rows were contributing
+  // categories to a key meant to read as a trade sequence, and colouring them said they were part
+  // of one.
+  // ⚠️ FALLS BACK TO COLOURING EVERYTHING when the project has no execution-phase activity at all.
+  // `phaseOf` resolves through the WBS branch, so a project that has never been phased answers
+  // `null` for every row — and scoping to a phase nothing is in would silently turn the whole
+  // feature off and read as "colour activities by is broken". Same shape as _vsAxis's fallback.
+  // ⚠️ Cached on the row count AND cleared by _clearPhaseMemo: re-parenting a branch re-phases its
+  // work with no change in row count, and a stale `false` here would leave the bars uncoloured.
+  var _catExecCache = null, _catExecKey = null;
+  function catScopeIsExec() {
+    var key = pid + '|' + rows.length;
+    if (_catExecKey === key && _catExecCache !== null) return _catExecCache;
+    var any = false;
+    for (var i = 0; i < rows.length; i++) { if (!isWbs(rows[i]) && isExecPhase(rows[i])) { any = true; break; } }
+    _catExecKey = key; _catExecCache = any;
+    return any;
+  }
+  function catInScope(r) { return !catScopeIsExec() || isExecPhase(r); }
   function catEntry(r) {
     var cfg = catCfg(); if (!cfg.on || !pid) return null;
+    if (!catInScope(r)) return null;
     var v = catValOf(r, cfg.field); if (!v) return null;
     return catMapNow()[v] || null;
   }
@@ -27118,6 +27357,7 @@
     for (var i = 0; i < list.length; i++) {
       var nd = list[i];
       if (!nd || nd._dkind !== 'task') continue;
+      if (!catInScope(nd)) continue;   // see catEntry
       var v = catValOf(nd, cfg.field); if (v) out[v] = true;
     }
     return out;
@@ -27132,6 +27372,7 @@
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (isWbs(r)) continue;
+      if (!catInScope(r)) continue;   // see catEntry
       if (ec && !(r.wbs === ec || locCodeUnder(r.wbs, ec))) continue;
       if (filt && !rowMatches(r)) continue;
       var v = catValOf(r, cfg.field); if (v) out[v] = true;
@@ -27213,8 +27454,24 @@
   // nor the BL0 bar is drawn — so leaving those three on screen would describe marks that no longer
   // exist. Hidden via the existing `#ps-view-schedule.ps-lsm .lg-lsmoff` rule, which still applies
   // now that the row lives inside #ps-actlegend (same subtree, same classes).
+  // ⚠⚠ THE PLAIN ACTIVITY CHIP IS NO LONGER `lg-lsmoff`, AND THAT IS THE WHOLE POINT OF THE
+  // 2026-09-02 COLOUR-SCOPE CHANGE. `lg-lsmoff` means "only when the colours are off", which was
+  // true while turning the colours on recoloured EVERY bar. It no longer does: colouring is the
+  // Execution Phase's (see catEntry), so with the legend on a schedule can carry BOTH treatments at
+  // once — coloured bars for execution work and the dark-bar + red-fill for everything else. Hiding
+  // this chip then left the plain bars on screen unexplained.
+  // ⚠️ It is emitted by renderActLegend rather than gated in CSS, because "is there a plain bar on
+  // screen right now" is a question about DL, which no selector can ask. And in the mixed state it
+  // NAMES the work it covers — two chips both reading "Activity" with different marks is exactly the
+  // defect fixed earlier the same day.
+  function plainActChipHTML(mixed) {
+    return '<span class="lg"' +
+      (mixed ? ' title="Activities outside the Execution Phase keep the plain bar: the colour key covers execution work only."' : '') +
+      '><span class="lg-swatch lg-task"></span> Activity' +
+      (mixed ? ' <em style="font-style:normal;color:var(--pd-muted);">outside the Execution Phase</em>' : '') +
+      ' <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>';
+  }
   var MARKS_LEGEND_HTML =
-      '<span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
       // ⚠️ .lg-lsmoff AGAIN, deliberately — and this is a fold, not a removal. It used to show in
       // both views, but in the coloured view the bar sample below ALREADY draws the rail and names
@@ -27285,6 +27542,17 @@
     var host = document.getElementById('ps-actlegend'); if (!host) return;
     if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
     var cfg = catCfg(), list = catList(), MAXL = 40;
+    // ⚠️ Measured off DL, not assumed from the phase data: with the colours on, a plain bar is drawn
+    // for any task the colour scope excludes, and the chip explaining that bar must appear only when
+    // one is actually in front of the reader. With "Execution Phase only" ticked there are none, and
+    // the legend stays a pure colour key.
+    var _hasPlainBars = false;
+    if (cfg.on) {
+      var _dl = (DL && DL.length) ? DL : [];
+      for (var _i = 0; _i < _dl.length; _i++) {
+        if (_dl[_i] && _dl[_i]._dkind === 'task' && !catInScope(_dl[_i])) { _hasPlainBars = true; break; }
+      }
+    }
     host.style.display = '';
     var vw = document.getElementById('ps-view-schedule');
     if (vw) vw.classList.toggle('ps-lsm', !!cfg.on);
@@ -27361,7 +27629,7 @@
       // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
       // same flex list as the category chips, not a sibling block above it — a separate <div>, even
       // inside the same container, still read as "two legend sections" to the owner.
-      '<div class="ps-actlegend-items">' + MARKS_LEGEND_HTML +
+      '<div class="ps-actlegend-items">' + plainActChipHTML(cfg.on && _hasPlainBars) + MARKS_LEGEND_HTML +
         (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>';
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
     // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.
@@ -29668,7 +29936,9 @@
         m.close(); showLoading('Clearing schedule…');
         var del;
         if (target === '__all__') {
-          del = await sb().from(TABLE).delete().eq('project_id', pid);
+          // ⚠️ Chunked — see _deleteAllRows. As one statement this is the exact call that returned
+          // "canceling statement due to statement timeout" on SLN101 and cleared nothing.
+          del = await _clearAllActivities('Clearing schedule');
         } else {
           /* ⚠️ DELETED BY ID, FROM THE EFFECTIVE PACKAGE — not by a package_id filter
              on the server. packageOf() resolves an activity through its nearest tagged

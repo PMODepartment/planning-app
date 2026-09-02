@@ -84,7 +84,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-02 (f) — You could not type a space in the project search; Equipment Loading's backdrop and workspace
+### 2026-09-02 (h) — Clear timed out, the network ignored every filter, colouring is the Execution Phase's
+
+Owner, five reports on Project Schedule after re-importing Avesta and 4PH Strevi. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠⚠ **"Canceling statement due to statement timeout" on Clear schedule.** `.delete().eq('project_id',
+  pid)` is ONE statement over every row and Postgres kills it — so it fails hardest on the projects
+  that most need clearing (4PH Strevi: 16,485 activities, 12,465 WBS nodes). ⚠️ **The package-scoped
+  paths always chunked at 200; only the "everything" paths were unbounded** — which is why *clear one
+  package* worked, *clear the schedule* did not, and a **REPLACE import** (which clears everything
+  first) failed the same way. Six sites, one bug, all now chunked. ⚠️ A timeout inside the WBS-tree
+  clear leaves no activities and a full tree, which re-projects on the next load and reads as "clear
+  did nothing" — **the most likely cause of the bugged re-imports.**
+- ⚠️ **"WBS isn't showing properly initially."** `load()` paints immediately, then runs four self-heal
+  passes over every row — minutes on a fresh import, during which the tree really is incomplete. The
+  freshness chip said **"Live" the whole time**. It now names the running pass and only says Live at
+  the end of the chain.
+- ⚠⚠ **The Activity Network ignored every filter — including the ones its own error message named.**
+  It read off `rows`, so Filter, Search and "Execution Phase only" changed the count by zero while
+  the over-300 message said to use them. Now scoped like the grid, with **per-level location pickers**
+  (Tower / Level / Zone), and the cap raised 300 → 1,200. It was never the threshold.
+- **Colouring is the Execution Phase's** — one switch in `catEntry()`, with a fallback that keeps
+  un-phased projects working. ⚠️ A schedule can now show BOTH bar treatments, so the plain Activity
+  chip is emitted (and named) when a plain bar is actually on screen.
+- **The "No level" band shows the WBS branch it came from.** ⚠️ Diagnostic, not a guess: no importer
+  rule changed, because whether a gabion belongs on a storey is the owner's modelling decision.
+- **Verified:** parses, 5,091 → 5,116 functions, none lost. ⚠️ **Not verified signed in, and the three
+  server-side fixes are precisely the ones that need it.** `MODULE_V` → `20260902h`.
+
+### 2026-09-02 (g) — You could not type a space in the project search; Equipment Loading's backdrop and workspace
 Owner: *"i cannot add / type space in the search bar of the projects."* and, on Equipment Loading,
 *"add an option where you can resize the image uploaded, and also adjust the transparency of the image.
 Furthermore, enlargen the workspace."*
@@ -104,6 +133,7 @@ Furthermore, enlargen the workspace."*
   on the page underneath.
 - ⚠️ `ui.js` is a SHARED asset: its `?v=` is bumped in all 20 HTML files, or the search fix reaches nobody.
 - MODULE_V → `20260902f`.
+
 ### 2026-09-02 (f) — A legend regression from yesterday's legend fix, and EPC → MCC finished
 
 Owner: *"Separate the Progress and Stacking buttons, extract them within the View button"*,

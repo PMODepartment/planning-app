@@ -1,3 +1,83 @@
+## Clear timed out; the network ignored every filter; colouring is the Execution Phase's (2026-09-02h) — fmlozano
+
+Owner, five reports in one pass. Three were the same class of defect — **a whole-project operation
+written as one statement, one unfiltered scan, or one silent wait** — and none of them fails on a
+small project, which is why they survived.
+
+### 1 ⚠⚠ "Canceling statement due to statement timeout" on Clear schedule
+`.delete().eq('project_id', pid)` is ONE statement covering every row, and Postgres kills it at
+`statement_timeout`. It fails hardest on the projects that most need clearing — 4PH Strevi carries
+**16,485 activities and 12,465 WBS nodes**.
+⚠️ **The package-scoped paths have always chunked at 200. Only the "everything" paths were
+unbounded**, which is why *clear one package* worked while *clear the schedule* did not — and why a
+**REPLACE import**, which clears everything first, failed the same way. **Six sites, one bug:** clear
+schedule, the Schedule Builder push, the import's replace, both `resource_assignments` clears, and
+`_clearWbsTree`'s unscoped path. All now go through `_deleteAllRows`.
+- ⚠️ It pages ids from the **start** each lap, never an offset: the rows it just read are the rows
+  it just deleted, so page 2 is always at offset 0. An OFFSET would skip a page every lap.
+- ⚠️ The 1,000-lap guard is not decoration. An RLS policy that permits SELECT but not DELETE returns
+  the same page for ever; the loop has to end with a sentence a human can read, not hang the tab.
+- ⚠️ A timeout inside `_clearWbsTree` is **worse** than one on the activities, because the caller has
+  usually already cleared those — a failed tree clear leaves no activities and a full tree, which
+  re-projects summary rows on the next load and reads as *"clear did nothing"*. **This is the most
+  likely cause of the bugged re-imports** and is the first thing to re-test.
+
+### 2 ⚠️ "WBS isn't showing properly initially" — the app said Live while it was still rebuilding
+`load()` paints from `rows` as soon as they arrive, then runs **four self-heal passes** — resync
+dotted codes, dedupe summaries, restore orphan nodes, attach imported activities — each many server
+round-trips over every row. On a fresh import that is minutes, and the WBS is genuinely incomplete
+for all of it. **The freshness chip said "Live" the whole time.** Nothing was broken except the
+claim. A third chip state now names the running pass, and **`Live` moved to the end of the chain**,
+after the last thing that can change the tree.
+
+### 3 ⚠⚠ The Activity Network ignored every filter in the app — including the ones it told you to use
+It read straight off `rows`, so the Filter menu, the search box and *Execution Phase only* changed
+its count by **zero** — while its own over-300 message said *"use Filter or Search to narrow the
+set."* The advice could not be followed, so on any real project the view never rendered. Owner:
+*"the PERT Diagram will always be not working since our activities exceed the 300 activity
+threshold."* **It was not the threshold.**
+- Now scoped exactly like the grid (`_execOnly` + `rowMatches`), so the advice is true.
+- **Location pickers**, one per level the project defines — Tower, Level, Zone, Unit. ⚠️ Each picker's
+  options come from the set already narrowed by the levels **above** it, and choosing a tower clears
+  the levels below: every tower has a "Zone 1", so a stale selection would carry across and show a
+  slice nobody asked for.
+- Cap 300 → **1,200**. It is a rendering limit (an SVG `<g>` + rect + two text runs per node), not a
+  policy, and 300 sat below every useful whole-tower slice.
+
+### 4 Colouring is the Execution Phase's
+Owner: *"only make the bars different exclusively [for] activities under Execution Phase … so the
+legend will only show activities relevant to the execution phase."* One switch — `catEntry()` returns
+null out of scope — and the bar renderer already falls back to the plain dark-bar + red-fill, so the
+legend list, the key-trades picker and the collapsed summary segments all follow from that one line.
+- ⚠️ **Falls back to colouring everything when the project has no execution-phase activity at all.**
+  `phaseOf` resolves through the WBS branch, so an un-phased project answers null for every row, and
+  scoping to a phase nothing is in would silently turn the feature off and read as a new bug.
+- ⚠️ **The plain Activity chip stops being `lg-lsmoff`.** That class means "only when colours are
+  off", which was true while colouring recoloured every bar. It no longer does — a schedule can now
+  carry **both** treatments at once — and hiding the chip left the plain bars unexplained. It is
+  emitted from `renderActLegend` because *"is a plain bar on screen right now"* is a question about
+  `DL` that no selector can ask, and in the mixed state it **names** the work it covers. Two chips
+  both reading "Activity" is the defect fixed earlier today; it is not being re-introduced.
+
+### 5 The "No level" band now shows the WBS branch — the diagnostic, not a guess
+A location value is **derived from the branch names**. An activity lands in "No level" precisely when
+no ancestor's name matched a term for the floor level, and that has two opposite causes: a floor the
+matcher missed (fixable in *Group ▾ → Match WBS to locations…*) or work that genuinely belongs to the
+site rather than a storey — the ordinary truth for General Requirements and most Site Development.
+**Without the path on screen the two are indistinguishable, and they need opposite responses.** The
+column is shown in that band only, where it answers something.
+⚠️ **No importer rule was changed.** Deciding that a gabion belongs on "Ground Floor" is a modelling
+decision about the owner's project, not a defect to patch, and inventing one would put a wrong level
+on 56 rows across two projects.
+
+### Verification
+- Parses; **5,091 → 5,116 function definitions**, none lost.
+- ⚠️ **Nothing here is verified signed in, and items 1-3 are exactly the ones that need it** — the
+  timeout, the heal chain's duration and the network's counts are all server-side facts a harness
+  cannot produce. The clear fix is the one to exercise first, on SLN101.
+- `MODULE_V` → `20260902h`.
+
+---
 ## The Activity chip was 3.5x every other chip AND drawn in the wrong view (2026-09-02f) — fmlozano
 
 Owner: *"Shorten the Activity legend chip"* and *"Separate the Progress and Stacking buttons, extract
