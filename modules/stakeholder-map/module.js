@@ -53,6 +53,7 @@ window.StakeholderMap = (function () {
   var histView = null;
   var collapsed = {};
   var bands = { id: true, as: true, en: true, rs: false, res: false, au: false };
+  var filterToggle = null;   // UI.wireFilterToggle() handle for #sm-filters
 
   // ---- BD-map vocabulary, kept because live rows carry it -----------------
   // The corporate BD/TCD map this module was first built from classifies a
@@ -189,7 +190,12 @@ window.StakeholderMap = (function () {
       ['sm-f-activity', 'sm-f-category', 'sm-f-sub', 'sm-f-priority', 'sm-f-approach', 'sm-f-flag', 'sm-f-search']
         .forEach(function (id) { $(id).value = ''; });
       fillSubFilter(); render();
+      if (filterToggle) filterToggle.sync(); // fields reset programmatically — no native change event
     };
+    // The whole filter bar hides behind one funnel toggle instead of sitting
+    // permanently open (see the "Filter bar" comment in module.css) — the dot
+    // stays in sync with the panel's own controls automatically.
+    filterToggle = UI.wireFilterToggle($('sm-filttoggle'), $('sm-filters'));
     document.querySelectorAll('.sm-tabs [data-view]').forEach(function (a) {
       a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); histView.push(); };
     });
@@ -827,6 +833,7 @@ window.StakeholderMap = (function () {
     // the band toggles are columns, so they belong to the register alone.
     $('sm-filters').style.display = (view === 'list' || view === 'cards') ? '' : 'none';
     $('sm-bands').style.display = view === 'list' ? '' : 'none';
+    if ($('sm-filttoggle')) $('sm-filttoggle').style.display = (view === 'list' || view === 'cards') ? '' : 'none';
     if (link) {
       document.querySelectorAll('.sm-tabs [data-view]').forEach(function (a) { a.classList.remove('active'); });
       link.classList.add('active');

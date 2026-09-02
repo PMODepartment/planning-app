@@ -45,8 +45,12 @@
 .cc-clearbtn { color:var(--pd-bad,#dc2626); }
 .cc-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
 
-/* ---- Filter bar --------------------------------------------------------- */
-.cc-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px;
+/* ---- Filter bar — collapsed by default, revealed via the topbar funnel
+   toggle (#cc-filttoggle, UI.wireFilterToggle in module.js) instead of
+   sitting permanently open. render() in module.js still force-hides it
+   entirely on the Contract tab (keyed by package instead). ---- */
+.cc-filters { display:none; }
+.cc-filters.open { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px;
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
 .cc-filt-ico { color:var(--pd-muted); flex:none; }
 .cc-filters .cc-search { flex:1 1 260px; min-width:170px; }

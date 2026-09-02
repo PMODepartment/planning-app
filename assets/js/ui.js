@@ -782,9 +782,67 @@
     };
   }
 
+  // ---- Shared collapsible filter group (search box + selects behind a
+  // funnel toggle) --------------------------------------------------------
+  // Generalises the pattern Issues & Concerns / Progress Photos shipped by
+  // hand (their own `.il-filters`/`.pp-filters`) so every module's top
+  // filter/search row — whether it's literally inside `.pd-topbar` or the
+  // always-visible bar most modules render directly under it — can hide
+  // behind one toggle instead of sitting permanently open. Pure
+  // show/hide + a "something is filtered" dot; it never touches a module's
+  // own filter-application logic (its `oninput`/`onchange` handlers on the
+  // individual controls keep working exactly as before — this only adds a
+  // capture-phase listener alongside them to keep the dot in sync).
+  //
+  // Usage:
+  //   var fg = UI.wireFilterToggle(document.getElementById('xx-filttoggle'),
+  //                                 document.getElementById('xx-filters'));
+  //   // after a Clear-filters button resets fields programmatically
+  //   // (native input/change events don't fire on `el.value = ''`):
+  //   fg.sync();
+  function filterGroupActive(panel) {
+    if (!panel) return false;
+    var els = panel.querySelectorAll('select, input');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.type === 'checkbox' || el.type === 'radio') { if (el.checked) return true; continue; }
+      if (el.disabled || el.hidden) continue;
+      var v = el.value == null ? '' : String(el.value).trim();
+      if (v) return true;
+    }
+    return false;
+  }
+  function wireFilterToggle(toggle, panel, opts) {
+    if (!toggle || !panel) return { open: function () {}, close: function () {}, sync: function () {} };
+    opts = opts || {};
+    panel.classList.add('pd-filtergroup');
+    toggle.classList.add('pd-filttoggle');
+    function sync() { toggle.classList.toggle('has-active', filterGroupActive(panel)); }
+    function setOpen(open) {
+      panel.classList.toggle('open', open);
+      toggle.classList.toggle('is-active', open);
+      if (open && opts.autoFocus !== false) {
+        var first = panel.querySelector('input[type="text"], input[type="search"], input:not([type])');
+        if (first) { try { first.focus(); } catch (e) {} }
+      }
+      if (opts.onToggle) opts.onToggle(open);
+    }
+    toggle.onclick = function () { setOpen(!panel.classList.contains('open')); };
+    if (opts.closeOnEscape !== false) {
+      panel.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { setOpen(false); toggle.focus(); }
+      });
+    }
+    panel.addEventListener('input', sync, true);
+    panel.addEventListener('change', sync, true);
+    sync();
+    return { open: function () { setOpen(true); }, close: function () { setOpen(false); }, sync: sync };
+  }
+
   window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell,
                 enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar,
                 acceptSuggestOnTab: acceptSuggestOnTab, bindHistoryState: bindHistoryState,
                 renderNav: renderNav, renderSwitcher: renderSwitcher,
-                renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown };
+                renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
+                wireFilterToggle: wireFilterToggle };
 })();
