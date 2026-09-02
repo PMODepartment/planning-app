@@ -12138,3 +12138,58 @@ seeded Mon–Fri / 8h and its own name; 4 types + Skip offered with their provin
 restated all of it; and Save issued exactly two writes — `update {is_default:false}` then an `insert`
 carrying the full payload with both seasons, their month sets, their per-season weeks,
 `climate_type: "I"` and `observe_special_days: true`.
+
+### 2026-09-03 (d) — Drag and connect: the import’s relationships use the build path’s own model
+
+Owner: *"I want this to be as easy as dragging and connecting not a per step field input and add a
+predecessor similar to the logic and wizard of the schedule setup for new projects."*
+
+The table it replaces was correct and tedious: to say *"concrete follows rebar"* you typed an activity
+ID, chose a type and typed a lag, one row at a time. On the build path the same statement is a gesture
+on a bar. So this step now carries the **same model, the same CSS classes and the same relationship
+dialog** as `stSequence` / `stTradeSeq`:
+
+- **Drag one bar onto another** → the FS/SS/FF/SF + lag dialog. The bar you start on is the
+  PREDECESSOR, the one you drop on is the successor — stated in the confirmation toast so it cannot
+  be guessed wrong.
+- **Edit mode 2-phase pick** — click source bars → right-click → click destination bars → right-click
+  → one dialog links every source to every destination. Byte-for-byte the wizard’s own flow, down to
+  the `pend` / `pend-dst` bar styling and the running hint line.
+- **Click an arrow** → edit its type/lag, or unlink.
+- **View mode** → click a bar and its predecessors go **green**, its successors **orange**, the rest
+  dim — `prednode` / `succnode` / `dimnode` / `hotpred` / `hotsucc` / `dimlink`, the build path’s own
+  classes, so the meaning carries over instead of being learned twice.
+- **Links (N)** still opens the familiar table, for the relationships the canvas deliberately does not
+  draw.
+
+**⚠⚠ WHY IT IS SCOPED AND THE WIZARD’S IS NOT.** The Trade-sequence step sequences ~20 class codes and
+can draw all of them. This step holds **21,338 relationships over 16,393 activities**; a canvas of that
+is a black rectangle, and no amount of panning makes it one. So the canvas is scoped to **one WBS
+branch of the file at a time** — which is also how the work is organised, and the exact analogue of
+"pick a trade". A branch over the 60-bar cap is drawn to the cap and says so.
+⚠️ Links that LEAVE the scope are counted on the bar as an off-canvas stub, never silently dropped: a
+bar that looks unconnected while it has nine predecessors elsewhere is worse than a crowded canvas.
+
+**Three real bugs found by driving it, two of which would have broken every drag:**
+- ⚠⚠ **The drop target was resolved with `elementFromPoint`, and the canvas scrolls.** A bar dropped
+  on while it sits below the fold has a perfectly valid bounding rect but `elementFromPoint` returns
+  `null` for it — so the drop silently did nothing. Measured: bars at viewport y=868 and y=898 in a
+  734px-tall window. It is a bounding-box scan over the bars now, which also survives any future
+  overlay becoming a hole in the drop area.
+- ⚠⚠ **The scan then measured a DETACHED node.** Every mousemove re-renders the step (that is how the
+  rubber band is drawn), which replaces the panel’s innerHTML — so the canvas element captured when
+  the drag started is detached by the time the drop lands and its children’s rects are all zeros. The
+  live canvas is looked up again at mouse-up.
+- **The reciprocal link is refused.** "A drives B" plus "B drives A" is a two-activity loop, and it is
+  the mistake a drag makes easily — drag the wrong way, then drag back to fix it. ⚠️ Only the
+  IMMEDIATE reciprocal is checked, deliberately: a reachability walk over 21,338 relationships per
+  link is not something to run on a mouse-up, and a longer cycle is already reported by the
+  schedule’s own Health check once the import lands.
+
+**Verified in a browser** on a staged file, end to end: View-mode click on `Z1-CONC` put `Z1-FORMS` in
+`prednode` and dimmed the rest; **dragging** `Z1-CONC` onto `Z1-CURE` drew the band, opened the dialog,
+and `SS` + lag `3` / `2` produced a real arrow labelled `SS+2`; the **2-phase pick** reported
+"1 source(s) selected — right-click to confirm" then "Now click one or more destination bars" and
+created its link; the **Links table** listed all five; the **reciprocal** attempt was refused with the
+link count unchanged; and the commit wrote `Z1-CURE :: Z1-CONC SS+2` alongside the file’s own
+relationships.
