@@ -2630,6 +2630,46 @@
        name and the select was squeezed into 74px showing "Miles…", "Initia…", "Plann…". Owner:
        *"The file's WBS: needs UI rework since the fields are clashing."*
        Its own template, sized for what it actually holds, with the name the only flexible track. */
+    /* ---- The import's Relationships step (see stImpRels) ---------------------------------- */
+    .sbld-relmodes { display:grid; gap:7px; margin:10px 0 14px; }
+    .sbld-relmode { display:flex; gap:9px; align-items:flex-start; border:1px solid var(--pd-line);
+      border-radius:9px; padding:9px 11px; background:var(--pd-card); cursor:pointer; }
+    .sbld-relmode.on { border-color:var(--pd-red); box-shadow:var(--pd-shadow); }
+    .sbld-relmode input { margin-top:3px; flex:none; }
+    .sbld-relmode span { min-width:0; }
+    .sbld-relmode b { display:block; font-size:12.5px; }
+    .sbld-relmode i { display:block; font-style:normal; font-size:11.5px; color:var(--pd-muted); margin-top:2px; line-height:1.5; }
+    /* Two panes: pick an activity on the left, sequence it on the right. The list is the only thing
+       that scrolls independently — the right pane grows with its content so the chain is never
+       clipped by a box the planner cannot see the bottom of. */
+    .sbld-relsplit { display:grid; grid-template-columns:300px minmax(0,1fr); gap:14px; align-items:start; }
+    .sbld-relleft { border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-card); padding:9px; }
+    .sbld-relleft .pd-input { width:100%; height:32px; }
+    .sbld-relcount { font-size:11px; color:var(--pd-muted); padding:6px 2px 4px; }
+    .sbld-relactlist { max-height:52vh; overflow:auto; display:flex; flex-direction:column; gap:3px; }
+    .sbld-relact { display:grid; grid-template-columns:minmax(0,auto) minmax(0,1fr) auto; gap:7px; align-items:center;
+      text-align:left; background:none; border:1px solid transparent; border-radius:6px; padding:5px 7px;
+      cursor:pointer; font:inherit; font-size:12px; color:var(--pd-ink); }
+    .sbld-relact:hover { background:var(--pd-bg); }
+    .sbld-relact.on { border-color:var(--pd-red); background:var(--pd-red-light); }
+    .sbld-relact b { font-weight:700; white-space:nowrap; }
+    .sbld-relact span { color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sbld-relact i { font-style:normal; font-size:10.5px; color:var(--pd-muted); white-space:nowrap; }
+    .sbld-relright { min-width:0; }
+    .sbld-relhead { font-size:12.5px; font-weight:700; margin:0 0 7px; }
+    .sbld-relgrid-h, .sbld-relrow { display:grid; grid-template-columns:150px minmax(0,1fr) 84px 78px 34px; gap:7px; align-items:center; }
+    .sbld-relgrid-h { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); padding:0 2px 4px; }
+    .sbld-relgrid { display:flex; flex-direction:column; gap:5px; max-height:40vh; overflow:auto; }
+    .sbld-relrow .pd-input, .sbld-relrow .pd-select { height:30px; font-size:12px; width:100%; }
+    .sbld-relnm { font-size:11.5px; color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* A predecessor that is not in the import is not an error — it is a fact about importing one
+       package out of a programme — but it must be visible, because it is what the middle bulk mode
+       drops. */
+    .sbld-relrow.is-dang .sbld-relnm { color:var(--pd-red); }
+    .sbld-relrow.is-dang .sbld-relpid { border-color:var(--pd-red); }
+    .ps-trace-more { font-size:11.5px; color:var(--pd-muted); padding:2px 0; }
+    @media (max-width:1100px) { .sbld-relsplit { grid-template-columns:minmax(0,1fr); }
+      .sbld-relactlist { max-height:28vh; } }
     .sbld-improw { display:grid; grid-template-columns:26px minmax(0,1fr) 232px auto; gap:9px; align-items:center;
       padding:3px 0; border-bottom:1px solid var(--pd-line); }
     .sbld-improw:last-child { border-bottom:none; }
@@ -25968,26 +26008,13 @@
     // cannot contain one — without a delimiter, ("A","1") and ("A1","") would key to the same
     // relationship, and striking one out would silently strike out the other.
     function impRelKey(sucId, x) { return String(sucId || '') + '|' + x.id + '|' + x.type + '|' + x.lag; }
-    function impRelList() {
-      var f = imp.predField, known = {};
-      impKeptLeaves().forEach(function (r) { if (r.id) known[String(r.id)] = r; });
-      var out = [];
-      impKeptLeaves().forEach(function (r) {
-        if (!r[f]) return;
-        predRels(r[f]).forEach(function (x) {
-          out.push({ key: impRelKey(r.id, x), sucId: r.id || '', sucName: r.name || '',
-                     predId: x.id, predName: known[String(x.id)] ? (known[String(x.id)].name || '') : '',
-                     type: x.type, lag: x.lag, dangling: !known[String(x.id)] });
-        });
-      });
-      return out;
-    }
-    function impRelKept(rel) {
-      if (imp.relMode === 'none') return false;
-      if (imp.relDrop[rel.key]) return false;
-      if (imp.relMode === 'internal' && rel.dangling) return false;
-      return true;
-    }
+    /* (impRelList / impRelKept were HERE. They were a SECOND answer to "which relationships
+       survive", written before the step could edit anything — so they knew about drops and the bulk
+       mode but not about type/lag overrides or added links, and the review step and the commit each
+       re-derived the count their own way. `impRelBase` -> `impRelsFor` -> `impRelAll` in stImpRels is
+       the single definition now, and the table, the chain visual, the tiles and the commit all read
+       it. Two implementations of one rule is how a screen ends up promising a number the write does
+       not deliver.) */
 
     /* ==========================================================================================
        READING THE LIVE SCHEDULE BACK INTO THE ELEVEN STEPS
@@ -26708,63 +26735,338 @@
     }
 
     /* ---- STEP: Relationships -----------------------------------------------------------------
-       Owner 2026-09-02: *"let's also have the option for the schedule setup to utilize the existing
-       relationships in the import or the planner can adjust as per their preference."* */
-    function stImpRels(host) {
-      var list = impRelList();
-      var kept = list.filter(impRelKept).length, dangling = list.filter(function (x) { return x.dangling; }).length;
-      var byType = {}; list.forEach(function (x) { byType[x.type] = (byType[x.type] || 0) + 1; });
-      var q = String(imp._relQ || '').trim().toLowerCase();
-      var shown = q ? list.filter(function (x) {
-        return (x.sucId + ' ' + x.sucName + ' ' + x.predId + ' ' + x.predName).toLowerCase().indexOf(q) >= 0;
-      }) : list;
-      var CAP = 300, over = Math.max(0, shown.length - CAP);
+       Owner 2026-09-02, twice. First: *"let's also have the option for the schedule setup to utilize
+       the existing relationships in the import or the planner can adjust as per their preference."*
+       Then, after using it: *"Relationships: need rework as well, it should almost be the same with
+       the sequencing when creating a new schedule. I cannot edit the predecessors nor type/lag unlike
+       the schedule setup for new projects. I want to have a visual representation as well that is
+       what is already available in the schedule setup."*
 
+       The first cut was a read-only ledger: three radio buttons and a 21,338-row table whose only
+       verb was a ✕. You could throw a link away and nothing else — not repoint it, not change FS to
+       SS, not fix a lag, not add the one that was missing. That is not "adjust as per their
+       preference", it is "accept or delete".
+
+       ⚠️⚠️ WHY IT IS NOT THE NEW-SCHEDULE CANVAS, even though the owner asked for that. Step 6
+       sequences ~20 CLASS CODES and can draw all of them as boxes on one canvas. This step holds
+       21,338 relationships over 16,393 activities; a canvas of that is a black rectangle, and no
+       amount of panning makes it one. So it is the same MODEL and the same verbs — pick a thing, see
+       what feeds it and what it feeds, edit the link on the arrow — scoped to ONE activity at a time,
+       which is the unit a planner actually reasons about here. The chain visual reuses the
+       `.ps-trace` layout the Trace Logic tab already uses for exactly this question, so it is a shape
+       they have already seen rather than a fourth idiom.
+
+       The edit model, and why it is three maps and not a mutation of the parsed text:
+         relDrop[key]           — links struck out
+         relEdit[key]           — { type, lag } overrides
+         relAdd[successorId]    — links that were not in the file
+       ⚠️ The file's own parse is NEVER written to. Everything here is a decision layered over it, so
+       Back/Next cannot half-apply anything and "use the file's relationships" always means the file.
+       ------------------------------------------------------------------------------------------ */
+
+    /* The file's own relationships, parsed once. ⚠️ Memoised on the EXCLUSION signature only: it is
+       the parse of 21,338 predecessor strings, and re-doing it on every keystroke in the search box
+       made the step unusable. Mode, drops and edits are applied on top (cheaply) and so are not part
+       of the key. */
+    function impRelBase() {
+      var sig = Object.keys(imp.excl).sort().join(',');
+      if (imp._relBase && imp._relBaseSig === sig) return imp._relBase;
+      var kept = impKeptLeaves(), known = {}, byAct = {};
+      kept.forEach(function (r) { if (r.id) known[String(r.id)] = r; });
+      kept.forEach(function (r) {
+        if (!r[imp.predField] || !r.id) return;
+        var list = predRels(r[imp.predField]).map(function (x) {
+          return { sucId: String(r.id), predId: String(x.id), type: x.type, lag: x.lag,
+                   key: impRelKey(r.id, x) };
+        });
+        if (list.length) byAct[String(r.id)] = list;
+      });
+      imp._relBase = { byAct: byAct, known: known, acts: kept };
+      imp._relBaseSig = sig;
+      return imp._relBase;
+    }
+    function impActName(id) {
+      var b = impRelBase(), r = b.known[String(id)];
+      return r ? String(r.name || '') : '';
+    }
+    // The FINAL predecessor list for one activity: the file's, minus drops, with edits applied, plus
+    // anything added. This is the single definition the table, the visual, the counts and the commit
+    // all read — so what is on screen cannot disagree with what gets written.
+    function impRelsFor(actId) {
+      var id = String(actId || ''); if (!id) return [];
+      if (imp.relMode === 'none') return [];
+      var b = impRelBase(), out = [];
+      (b.byAct[id] || []).forEach(function (x) {
+        if (imp.relDrop[x.key]) return;
+        var ed = imp.relEdit[x.key];
+        var type = ed ? ed.type : x.type, lag = ed ? ed.lag : x.lag;
+        var dangling = !b.known[x.predId];
+        if (imp.relMode === 'internal' && dangling) return;
+        out.push({ sucId: id, predId: x.predId, type: type, lag: lag, key: x.key,
+                   dangling: dangling, edited: !!ed, added: false });
+      });
+      (imp.relAdd[id] || []).forEach(function (a, i) {
+        var dangling = !b.known[String(a.predId)];
+        if (imp.relMode === 'internal' && dangling) return;
+        out.push({ sucId: id, predId: String(a.predId), type: a.type, lag: a.lag,
+                   key: 'add:' + id + '|' + i, dangling: dangling, edited: false, added: true });
+      });
+      return out;
+    }
+    // Successors of one activity — needed for the right-hand side of the chain. Built from the same
+    // composed definition so a struck-out link disappears from BOTH ends.
+    function impSuccsOf(actId) {
+      var id = String(actId || ''), b = impRelBase(), out = [];
+      Object.keys(b.byAct).forEach(function (sid) {
+        impRelsFor(sid).forEach(function (x) { if (x.predId === id) out.push(x); });
+      });
+      (Object.keys(imp.relAdd) || []).forEach(function (sid) {
+        if (b.byAct[sid]) return;   // already walked above
+        impRelsFor(sid).forEach(function (x) { if (x.predId === id) out.push(x); });
+      });
+      return out;
+    }
+    // Every relationship that will be imported — the count in the lede, and the bulk table.
+    function impRelAll() {
+      var b = impRelBase(), out = [], seen = {};
+      Object.keys(b.byAct).forEach(function (id) { seen[id] = 1; out = out.concat(impRelsFor(id)); });
+      Object.keys(imp.relAdd).forEach(function (id) { if (!seen[id]) out = out.concat(impRelsFor(id)); });
+      return out;
+    }
+    function impRelDirty() {
+      return Object.keys(imp.relDrop).length + Object.keys(imp.relEdit).length +
+             Object.keys(imp.relAdd).reduce(function (t, k) { return t + imp.relAdd[k].length; }, 0);
+    }
+
+    var IMP_REL_TYPES = ['FS', 'SS', 'FF', 'SF'];
+
+    function stImpRels(host) {
+      var base = impRelBase();
+      var all = impRelAll();
+      var fileTotal = Object.keys(base.byAct).reduce(function (t, k) { return t + base.byAct[k].length; }, 0);
+      var dangCount = 0;
+      Object.keys(base.byAct).forEach(function (id) {
+        base.byAct[id].forEach(function (x) { if (!base.known[x.predId]) dangCount++; });
+      });
+      var byType = {}; all.forEach(function (x) { byType[x.type] = (byType[x.type] || 0) + 1; });
+
+      // ---- the three bulk modes ---------------------------------------------------------------
       var modes = [
-        ['keep', 'Use the file’s relationships', 'Every link the file carries, exactly as it is — including links to activities that are not in this file (they stay as text and resolve if a matching activity ID turns up later).'],
-        ['internal', 'Keep only links inside this import', 'Drops the ' + dangling.toLocaleString() + ' link' + (dangling === 1 ? '' : 's') + ' whose predecessor is not among the activities being imported — the usual result of importing one package out of a larger programme, or of excluding a branch on step ' + _stepNo('Activities & phases') + '.'],
-        ['none', 'Import without relationships', 'Dates only. Use this when the sequence is going to be built here, or when the file’s logic is not trusted.']
+        ['keep', 'Use the file’s relationships', 'Every link the file carries — including ' + dangCount.toLocaleString() + ' whose predecessor is not in this import (they stay as text and resolve if a matching activity ID turns up later).'],
+        ['internal', 'Keep only links inside this import', 'Drops those ' + dangCount.toLocaleString() + ' — the usual result of importing one package out of a larger programme, or of excluding a branch on step ' + _stepNo('Activities & phases') + '.'],
+        ['none', 'Import without relationships', 'Dates only. Use this when the sequence will be built here, or when the file’s logic is not trusted.']
       ].map(function (o) {
-        return '<label class="sbld-phcard' + (imp.relMode === o[0] ? ' on' : '') + '" style="display:block;padding:10px 12px;cursor:pointer;">' +
-          '<div class="sbld-phhead" style="margin:0;"><span class="sbld-phname"><input type="radio" name="imp-relmode" value="' + o[0] + '"' + (imp.relMode === o[0] ? ' checked' : '') + '> ' + e2(o[1]) + '</span></div>' +
-          '<p class="sbld-phmeta" style="margin:4px 0 0;">' + o[2] + '</p></label>';
+        return '<label class="sbld-relmode' + (imp.relMode === o[0] ? ' on' : '') + '">' +
+          '<input type="radio" name="imp-relmode" value="' + o[0] + '"' + (imp.relMode === o[0] ? ' checked' : '') + '>' +
+          '<span><b>' + e2(o[1]) + '</b><i>' + o[2] + '</i></span></label>';
       }).join('');
 
-      var tableRows = shown.slice(0, CAP).map(function (x) {
-        var on = impRelKept(x);
-        return '<tr' + (on ? '' : ' style="opacity:.45;"') + '>' +
-          '<td>' + e2(x.sucId) + ' <span style="color:var(--pd-muted);">' + e2(String(x.sucName).slice(0, 44)) + '</span></td>' +
-          '<td>' + e2(x.predId) + ' <span style="color:var(--pd-muted);">' + e2(String(x.predName || (x.dangling ? 'not in this import' : '')).slice(0, 44)) + '</span></td>' +
-          '<td>' + e2(x.type) + (x.lag ? (x.lag > 0 ? '+' : '') + x.lag + 'd' : '') + '</td>' +
-          '<td style="text-align:right;"><button class="pd-btn sbld-del sbld-reltog" data-rel="' + e2(x.key) + '" title="' + (imp.relDrop[x.key] ? 'Put this relationship back' : 'Leave this relationship out') + '">' +
-            (imp.relDrop[x.key] ? '↺' : '✕') + '</button></td></tr>';
+      // ---- left pane: which activity are we sequencing -----------------------------------------
+      var q = String(imp.relQ || '').trim().toLowerCase();
+      var pool = base.acts.filter(function (r) { return !!r.id; });
+      if (q) pool = pool.filter(function (r) {
+        return ((r.name || '') + ' ' + (r.id || '')).toLowerCase().indexOf(q) >= 0;
+      });
+      var LISTN = 250;
+      var sel = imp.relSel && base.known[String(imp.relSel)] ? String(imp.relSel) : null;
+      if (!sel && pool.length) { sel = String(pool[0].id); imp.relSel = sel; }
+      var listHtml = pool.slice(0, LISTN).map(function (r) {
+        var id = String(r.id);
+        var np = impRelsFor(id).length, ns = 0;
+        // ⚠️ Successor counts are NOT computed per row here. impSuccsOf walks every relationship in
+        // the import, so calling it 250 times per render is 250 x 21,338 — it is shown for the
+        // SELECTED activity only, where it costs one walk.
+        return '<button class="sbld-relact' + (id === sel ? ' on' : '') + '" data-relsel="' + e2(id) + '">' +
+          '<b>' + e2(id) + '</b><span>' + e2(String(r.name || '').slice(0, 52)) + '</span>' +
+          '<i>' + np + ' pred</i></button>';
+      }).join('');
+
+      // ---- right pane: the chain, then the editable table --------------------------------------
+      var right;
+      if (!sel) {
+        right = '<div class="sbld-empty">No activity matches that search.</div>';
+      } else {
+        var preds = impRelsFor(sel), succs = impSuccsOf(sel);
+        var me = base.known[sel];
+        function node(id, sub, cur) {
+          return '<div class="ps-trace-node' + (cur ? ' cur' : '') + '"><strong>' + e2(id) + '</strong>' +
+            '<div style="color:var(--pd-muted);font-size:11px;">' + e2(String(impActName(id) || '').slice(0, 34)) + '</div>' +
+            (sub ? '<div style="color:var(--pd-muted);font-size:11px;">' + e2(sub) + '</div>' : '') + '</div>';
+        }
+        var CH = 8;
+        var chain = '<div class="ps-trace">' +
+          '<div class="ps-trace-col"><div class="ps-dt-group">Predecessors (' + preds.length + ')</div>' +
+            (preds.length ? preds.slice(0, CH).map(function (x) {
+                return node(x.predId, x.type + (x.lag ? (x.lag > 0 ? '+' : '') + x.lag + 'd' : '') + (x.dangling ? ' · not in import' : ''), false);
+              }).join('') + (preds.length > CH ? '<div class="ps-trace-more">+' + (preds.length - CH) + ' more below</div>' : '')
+              : '<div class="ps-trace-more">none — this activity starts the chain</div>') +
+          '</div>' +
+          '<div class="ps-trace-arrow">→</div>' +
+          '<div class="ps-trace-col"><div class="ps-dt-group">This activity</div>' +
+            node(sel, me && me.start ? Fmt.date(me.start) : '', true) + '</div>' +
+          '<div class="ps-trace-arrow">→</div>' +
+          '<div class="ps-trace-col"><div class="ps-dt-group">Successors (' + succs.length + ')</div>' +
+            (succs.length ? succs.slice(0, CH).map(function (x) {
+                return node(x.sucId, x.type + (x.lag ? (x.lag > 0 ? '+' : '') + x.lag + 'd' : ''), false);
+              }).join('') + (succs.length > CH ? '<div class="ps-trace-more">+' + (succs.length - CH) + ' more</div>' : '')
+              : '<div class="ps-trace-more">none — nothing waits on it</div>') +
+          '</div></div>';
+
+        // The editable predecessor rows. This is the part the owner could not do before.
+        var rowsH = preds.map(function (x) {
+          return '<div class="sbld-relrow' + (x.dangling ? ' is-dang' : '') + '" data-relkey="' + e2(x.key) + '">' +
+            '<input class="pd-input sbld-relpid" data-relkey="' + e2(x.key) + '" value="' + e2(x.predId) + '" list="imp-relids" placeholder="Activity ID">' +
+            '<span class="sbld-relnm" title="' + e2(impActName(x.predId)) + '">' + e2(String(impActName(x.predId) || (x.dangling ? 'not in this import' : '')).slice(0, 40)) + '</span>' +
+            '<select class="pd-select sbld-reltype" data-relkey="' + e2(x.key) + '">' +
+              IMP_REL_TYPES.map(function (t) { return '<option value="' + t + '"' + (t === x.type ? ' selected' : '') + '>' + t + '</option>'; }).join('') +
+            '</select>' +
+            '<input class="pd-input sbld-rellag" type="number" data-relkey="' + e2(x.key) + '" value="' + (x.lag || 0) + '" title="Lag in days (negative = lead)">' +
+            '<button class="pd-btn sbld-del sbld-reldel" data-relkey="' + e2(x.key) + '" title="Remove this relationship">✕</button>' +
+            '</div>';
+        }).join('');
+
+        right = '<div class="sbld-relhead">Sequencing <b>' + e2(sel) + '</b> · ' + e2(String(me && me.name || '').slice(0, 60)) +
+            (imp.relMode === 'none' ? ' <span style="color:var(--pd-red);">— relationships are switched off below</span>' : '') + '</div>' +
+          '<div class="sbld-canvaswrap" style="max-height:none;padding:10px;">' + chain + '</div>' +
+          '<div class="sbld-relhead" style="margin-top:12px;">Its predecessors — edit the ID, the type or the lag</div>' +
+          '<div class="sbld-relgrid-h"><span>Predecessor</span><span></span><span>Type</span><span>Lag</span><span></span></div>' +
+          '<div class="sbld-relgrid">' + (rowsH || '<div class="sbld-empty" style="grid-column:1/-1;">No predecessors. Add one below — or leave it as a start of the chain.</div>') + '</div>' +
+          '<div class="sbld-sec-actions"><button class="pd-btn" id="b-reladd">+ Add a predecessor</button>' +
+            '<span class="sbld-hint">Type or paste any activity ID from the file. One that is not in the import is kept as text and shown in red — it resolves later if a matching ID appears.</span></div>';
+      }
+
+      // ⚠️ A <datalist> over the WHOLE import would be 16,393 <option>s in the DOM on every render.
+      // Capped at the first 400 that match the current search, which is what makes typing an ID a
+      // completion rather than a lookup, without paying for the other 16,000.
+      var dlIds = (q ? pool : base.acts).slice(0, 400).map(function (r) {
+        return '<option value="' + e2(String(r.id)) + '">' + e2(String(r.name || '').slice(0, 48)) + '</option>';
       }).join('');
 
       host.innerHTML = '<h2>' + _stepNo('Relationships') + ' · The file’s logic</h2>' +
-        '<p class="sbld-lede"><b>' + list.length.toLocaleString() + '</b> relationship' + (list.length === 1 ? '' : 's') + ' came in with the activities' +
+        // ⚠️ The type breakdown belongs to the set being IMPORTED, not to the file — it is computed
+        // over `all`, which already has the edits in it, so putting it beside the file's own total
+        // read as a description of the file and disagreed with it the moment anything was changed.
+        '<p class="sbld-lede">The file carries <b>' + fileTotal.toLocaleString() + '</b> relationship' + (fileTotal === 1 ? '' : 's') +
+          '. <b>' + all.length.toLocaleString() + '</b> will be imported' +
           (Object.keys(byType).length ? ' (' + Object.keys(byType).sort().map(function (t) { return byType[t] + ' × ' + t; }).join(', ') + ')' : '') +
-          '. <b>' + kept.toLocaleString() + '</b> will be imported. Keep the file’s sequence as it stands, narrow it, or drop it and build the logic here instead — and strike out individual links below.</p>' +
-        (list.length
-          ? '<div class="sbld-phgrid" style="grid-template-columns:1fr;gap:8px;margin-bottom:12px;">' + modes + '</div>' +
-            '<div class="sbld-sec-actions"><input class="pd-input" id="b-relq" placeholder="Search activity ID or name…" value="' + e2(imp._relQ || '') + '" style="height:32px;width:260px;">' +
-              (Object.keys(imp.relDrop).length ? '<button class="pd-btn" id="b-relreset">Restore the ' + Object.keys(imp.relDrop).length + ' struck-out link(s)</button>' : '') +
-              '<span class="sbld-hint">' + shown.length.toLocaleString() + ' shown' + (over ? ' (first ' + CAP + ' listed)' : '') + '</span></div>' +
-            '<div class="pd-card ps-ck-card"><div class="sbld-xlwrap" style="max-height:420px;overflow:auto;">' +
-            '<table class="ps-table" style="min-width:0;font-size:12px;"><thead><tr><th>Activity</th><th>Predecessor</th><th>Type / lag</th><th></th></tr></thead><tbody>' +
-            (tableRows || '<tr><td colspan="4">No relationship matches that search.</td></tr>') + '</tbody></table></div></div>' +
-            '<p class="sbld-hint">Relationships are stored as the predecessor text on each activity, the same field the schedule’s own link editor writes — so anything kept here is editable afterwards in the Project Schedule, and anything dropped can be added back there.</p>'
-          : '<div class="sbld-empty">This file carries no relationships — only dates. The sequence can be built in the Project Schedule’s link mode, or generated from a new setup.</div>');
+          (impRelDirty() ? ', with <b>' + impRelDirty() + '</b> of your own change' + (impRelDirty() === 1 ? '' : 's') : '') +
+          '. Pick an activity on the left to see what feeds it and what it feeds, and edit the links directly.</p>' +
+        '<datalist id="imp-relids">' + dlIds + '</datalist>' +
+        '<div class="sbld-relmodes">' + modes + '</div>' +
+        '<div class="sbld-relsplit">' +
+          '<div class="sbld-relleft">' +
+            '<input class="pd-input" id="b-relq" placeholder="Search activity ID or name…" value="' + e2(imp.relQ || '') + '">' +
+            '<div class="sbld-relcount">' + pool.length.toLocaleString() + (q ? ' matching' : ' activities') + (pool.length > LISTN ? ' · first ' + LISTN : '') + '</div>' +
+            '<div class="sbld-relactlist">' + (listHtml || '<div class="sbld-empty">Nothing matches.</div>') + '</div>' +
+          '</div>' +
+          '<div class="sbld-relright">' + right + '</div>' +
+        '</div>' +
+        (impRelDirty() ? '<div class="sbld-sec-actions"><button class="pd-btn" id="b-relreset">Undo all ' + impRelDirty() + ' relationship change(s)</button></div>' : '') +
+        '<p class="sbld-hint">Relationships are stored as the predecessor text on each activity — the same field the Project Schedule’s own link editor writes — so anything kept here stays editable there afterwards.</p>';
 
+      // ---- wiring ------------------------------------------------------------------------------
       host.querySelectorAll('input[name="imp-relmode"]').forEach(function (r) {
         r.onchange = function () { imp.relMode = r.value; render(); };
       });
-      host.querySelectorAll('.sbld-reltog').forEach(function (b) {
-        b.onclick = function () { var k = b.dataset.rel; if (imp.relDrop[k]) delete imp.relDrop[k]; else imp.relDrop[k] = 1; render(); };
+      host.querySelectorAll('[data-relsel]').forEach(function (b) {
+        b.onclick = function () { imp.relSel = b.dataset.relsel; render(); };
       });
-      var rr = host.querySelector('#b-relreset'); if (rr) rr.onclick = function () { imp.relDrop = {}; render(); };
-      // ⚠️ Committed on 'change', not 'input': render() rebuilds the panel, so a repaint per
-      // keystroke would take the focus out of the box being typed into.
-      var rq = host.querySelector('#b-relq'); if (rq) rq.onchange = function () { imp._relQ = rq.value; render(); };
+      // ⚠️ 'change', never 'input': render() rebuilds the panel, so a repaint per keystroke would
+      // take the focus out of the field being typed into. Same rule as every other grid in here.
+      var rq = host.querySelector('#b-relq'); if (rq) rq.onchange = function () { imp.relQ = rq.value; imp.relSel = null; render(); };
+      /* An EDIT to a link that came from the file is recorded as an override on its key; an edit to
+         one the planner ADDED is written straight back into relAdd. Two stores, because only the
+         first has an original to fall back to when they press Undo all. */
+      /* Is (successor, predecessor, type, lag) already there? ⚠️ The setup's own `addActLink`
+         refuses a duplicate and this must too: P6 does allow two relationships between the same pair
+         with DIFFERENT types (FS and SS between the same two activities is a real pattern), so the
+         test is on the whole tuple rather than on the pair — but an exact repeat is always a mistake,
+         and the schedule's predecessor text has no way to represent it twice anyway. */
+      function relExists(sucId, predId, type, lag, exceptKey) {
+        return impRelsFor(sucId).some(function (x) {
+          return x.key !== exceptKey && String(x.predId) === String(predId) &&
+                 x.type === type && (x.lag || 0) === (lag || 0);
+        });
+      }
+      function editRel(key, patch) {
+        if (String(key).indexOf('add:') === 0) {
+          var bits = String(key).slice(4).split('|');
+          var lst = imp.relAdd[bits[0]] || [];
+          var it = lst[+bits[1]]; if (!it) return;
+          var nP = patch.predId != null ? String(patch.predId) : it.predId;
+          var nT = patch.type != null ? patch.type : it.type;
+          var nL = patch.lag != null ? patch.lag : it.lag;
+          if (nP && relExists(bits[0], nP, nT, nL, key)) {
+            UI.toast('That relationship is already there — ' + nP + ' ' + nT + (nL ? (nL > 0 ? '+' : '') + nL : '') + '.', 'warn');
+            render(); return;
+          }
+          it.predId = nP; it.type = nT; it.lag = nL;
+          render(); return;
+        }
+        var b2 = impRelBase(), orig = null;
+        Object.keys(b2.byAct).some(function (id) {
+          return b2.byAct[id].some(function (x) { if (x.key === key) { orig = x; return true; } return false; });
+        });
+        if (!orig) return;
+        var cur = imp.relEdit[key] || { type: orig.type, lag: orig.lag, predId: orig.predId };
+        if (patch.predId != null) cur.predId = patch.predId;
+        if (patch.type != null) cur.type = patch.type;
+        if (patch.lag != null) cur.lag = patch.lag;
+        /* ⚠️ REPOINTING A PREDECESSOR IS A DROP PLUS AN ADD, not an in-place edit of the key. The key
+           encodes (successor, predecessor, type, lag) so that striking one out survives a re-render;
+           editing the predecessor inside it would make the key describe a relationship that is not
+           the one it identifies, and the next render would look it up and miss. */
+        if (relExists(orig.sucId, cur.predId, cur.type, cur.lag, key)) {
+          UI.toast('That relationship is already there — ' + cur.predId + ' ' + cur.type + (cur.lag ? (cur.lag > 0 ? '+' : '') + cur.lag : '') + '.', 'warn');
+          render(); return;
+        }
+        if (patch.predId != null && String(patch.predId) !== String(orig.predId)) {
+          imp.relDrop[key] = 1;
+          delete imp.relEdit[key];
+          (imp.relAdd[orig.sucId] = imp.relAdd[orig.sucId] || []).push({ predId: String(patch.predId), type: cur.type, lag: cur.lag });
+        } else if (cur.type === orig.type && cur.lag === orig.lag) {
+          delete imp.relEdit[key];   // back to what the file said — stop recording an override
+        } else {
+          imp.relEdit[key] = { type: cur.type, lag: cur.lag };
+        }
+        render();
+      }
+      host.querySelectorAll('.sbld-reltype').forEach(function (el) {
+        el.onchange = function () { editRel(el.dataset.relkey, { type: el.value }); };
+      });
+      host.querySelectorAll('.sbld-rellag').forEach(function (el) {
+        el.onchange = function () { editRel(el.dataset.relkey, { lag: Math.round(Number(el.value) || 0) }); };
+      });
+      host.querySelectorAll('.sbld-relpid').forEach(function (el) {
+        el.onchange = function () {
+          var v = String(el.value || '').trim();
+          if (!v) { UI.toast('A relationship needs a predecessor activity ID. Remove it with ✕ instead.', 'warn'); render(); return; }
+          if (v === String(imp.relSel)) { UI.toast('An activity cannot be its own predecessor.', 'error'); render(); return; }
+          editRel(el.dataset.relkey, { predId: v });
+        };
+      });
+      host.querySelectorAll('.sbld-reldel').forEach(function (b) {
+        b.onclick = function () {
+          var key = b.dataset.relkey;
+          if (String(key).indexOf('add:') === 0) {
+            var bits = String(key).slice(4).split('|');
+            var lst = imp.relAdd[bits[0]] || []; lst.splice(+bits[1], 1);
+            if (!lst.length) delete imp.relAdd[bits[0]];
+          } else imp.relDrop[key] = 1;
+          render();
+        };
+      });
+      var ab = host.querySelector('#b-reladd');
+      if (ab) ab.onclick = function () {
+        if (!imp.relSel) return;
+        (imp.relAdd[imp.relSel] = imp.relAdd[imp.relSel] || []).push({ predId: '', type: 'FS', lag: 0 });
+        render();
+      };
+      var rr = host.querySelector('#b-relreset');
+      if (rr) rr.onclick = function () {
+        if (!confirm('Undo all ' + impRelDirty() + ' relationship change(s) and go back to exactly what the file says?')) return;
+        imp.relDrop = {}; imp.relEdit = {}; imp.relAdd = {}; render();
+      };
     }
 
     /* ---- STEP: Review & import ---------------------------------------------------------------
@@ -26772,7 +27074,7 @@
        DO, because this is the last chance to notice that "Replace" is on. */
     function stImpCommit(host) {
       var tot = impPhaseTotals(), kept = impKeptLeaves();
-      var rels = impRelList().filter(impRelKept).length;
+      var rels = impRelAll().length;
       var withLoc = 0;
       if (imp.locSel && imp.locSel.length) {
         var sc = locScopeFromPlan(kept, impPlanArray());
@@ -26861,17 +27163,19 @@
       // The recs that survive the exclusions: kept activities, plus every branch not excluded.
       var recs2 = imp.recs.filter(function (r) { return r.isLeaf ? keptCodes[String(r.code)] : !impIsExcluded(r.code); })
         .map(function (r) { var c = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) c[k] = r[k]; return c; });
-      // Relationships, rewritten onto the copies.
-      var f = imp.predField, known = {};
-      recs2.forEach(function (r) { if (r.isLeaf && r.id) known[String(r.id)] = 1; });
+      /* Relationships, rewritten onto the copies from `impRelsFor` — the SAME composed definition
+         the step's table, its chain visual and its counts read. ⚠️ That shared definition is the
+         point: the previous version re-derived the result here by re-filtering the raw predecessor
+         text, which meant the screen and the write had two implementations of "which links survive"
+         and neither knew about type/lag edits or added links at all. One function, four readers. */
+      var f = imp.predField;
       recs2.forEach(function (r) {
-        if (!r.isLeaf || !r[f]) return;
+        if (!r.isLeaf) return;
         if (imp.relMode === 'none') { r[f] = null; return; }
-        var out = predRels(r[f]).filter(function (x) {
-          if (imp.relDrop[impRelKey(r.id, x)]) return false;
-          if (imp.relMode === 'internal' && !known[String(x.id)]) return false;
-          return true;
-        }).map(function (x) { return x.id + ' ' + x.type + (x.lag ? (x.lag > 0 ? '+' : '') + x.lag : ''); });
+        if (!r.id) { r[f] = null; return; }
+        var out = impRelsFor(r.id).map(function (x) {
+          return x.predId + ' ' + x.type + (x.lag ? (x.lag > 0 ? '+' : '') + x.lag : '');
+        });
         r[f] = out.length ? out.join(', ') : null;
       });
       // The phase mapping, plus the file's own project-root wrapper.
@@ -28108,7 +28412,9 @@
           // and the relationships step has to read and rewrite exactly one of them.
           predField: (kind === 'xer') ? 'predText' : 'pred',
           plan: {}, excl: {}, open: {}, phOpen: {}, locSel: null,
-          relMode: 'keep', relDrop: {},
+          // relDrop = struck out · relEdit = type/lag overrides · relAdd = links the planner added.
+          // ⚠️ Three maps LAYERED over the file's parse, which is never written to — see stImpRels.
+          relMode: 'keep', relDrop: {}, relEdit: {}, relAdd: {}, relSel: null, relQ: '',
           replace: true, pkgId: null, disc: true
         };
         // Seed the phase mapping the way the old dialog pre-filled it: exact name, then keyword,

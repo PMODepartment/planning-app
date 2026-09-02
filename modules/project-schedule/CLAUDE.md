@@ -11789,3 +11789,64 @@ went 7 → 14 at 0.6×.
   so it could not be used to check anything. It is now a **checker** — search the whole file, and every
   row states the phase it will land in (through the same inheritance rule as the tally) and whether it
   is excluded.
+
+### 2026-09-02 (h) — The Relationships step becomes an editor, with the sequencing visual
+
+Owner, after using the first cut: *"Relationships: need rework as well, it should almost be the same
+with the sequencing when creating a new schedule. I cannot edit the predecessors nor type/lag unlike
+the schedule setup for new projects. I want to have a visual representation as well that is what is
+already available in the schedule setup."*
+
+They were right, and the first cut deserved it: three radio buttons and a 21,338-row table whose only
+verb was a ✕. You could throw a link away and nothing else — not repoint it, not change FS to SS, not
+fix a lag, not add the one that was missing. That is "accept or delete", not *"adjust as per their
+preference"*.
+
+**⚠⚠ WHY IT IS NOT THE NEW-SCHEDULE CANVAS, even though that is what was asked for.** Step 6 sequences
+~20 CLASS CODES and can draw all of them as boxes on one canvas. This step holds **21,338
+relationships over 16,393 activities**; a canvas of that is a black rectangle, and no amount of panning
+makes it one. So it is the same MODEL and the same verbs — pick a thing, see what feeds it and what it
+feeds, edit the link — scoped to ONE activity at a time, which is the unit a planner reasons about
+here. The chain visual reuses the `.ps-trace` layout the **Trace Logic** detail tab already uses for
+exactly this question, so it is a shape they have seen rather than a fourth idiom.
+
+**What it does now.** Two panes: a searchable activity list on the left (with each one’s predecessor
+count), and on the right the selected activity’s chain — **Predecessors → This activity → Successors**,
+each box naming the relationship type and lag — over an editable table where the **predecessor ID, the
+type and the lag** are all fields, with ✕ to remove and **+ Add a predecessor**. The three bulk modes
+(use the file’s logic / only links inside this import / dates only) stay above them.
+
+**The edit model is three maps LAYERED over the file’s parse, which is never written to:**
+`relDrop` (struck out) · `relEdit` (type/lag overrides) · `relAdd` (links the planner added). So Back
+and Next cannot half-apply anything, and "use the file’s relationships" always still means the file.
+- ⚠️ **Repointing a predecessor is a DROP PLUS AN ADD, not an in-place edit.** The key encodes
+  (successor, predecessor, type, lag) so that a strike survives a re-render; editing the predecessor
+  inside the key would make it describe a relationship that is not the one it identifies, and the next
+  render would look it up and miss.
+- ⚠️ An edit back to what the file said **deletes the override** rather than recording a no-op, so the
+  "N of your own changes" count means what it says.
+- ⚠️ A duplicate (successor, predecessor, type, lag) is refused, the way the setup’s own `addActLink`
+  refuses one. The test is the whole tuple, not the pair: FS **and** SS between the same two
+  activities is a real P6 pattern, but an exact repeat is always a mistake and the predecessor text
+  cannot represent it twice anyway.
+
+**⚠⚠ AND THE OLD HELPERS ARE GONE, WHICH MATTERS MORE THAN THE UI.** `impRelList` / `impRelKept` were a
+SECOND answer to "which relationships survive" — written before the step could edit anything, so they
+knew about drops and the bulk mode but nothing about type/lag overrides or added links. The review
+step’s tile and the commit each re-derived their own count from the raw predecessor text. Now
+`impRelBase` → `impRelsFor` → `impRelAll` is the single definition and the table, the chain, the tiles
+and **the commit** all read it. Two implementations of one rule is how a screen ends up promising a
+number the write does not deliver.
+
+Performance: the file’s parse is memoised on the **exclusion signature only** — it is the parse of
+21,338 predecessor strings, and re-doing it per keystroke in the search box made the step unusable.
+Mode, drops and edits compose cheaply on top, so they are not part of the key. The activity list caps
+at 250 and the `<datalist>` of IDs at 400, because 16,393 `<option>`s in the DOM per render is not a
+completion aid.
+
+**Verified in a browser** through the full funnel on the synthetic programme: selected EX-1012 and read
+its chain (`Predecessors (1) EX-1011 … FS → This activity EX-1012 → Successors (1) EX-1021 … FS`);
+changed FS to **SS with lag 3**; **added** a second predecessor; then repointed EX-2011’s **dangling**
+`EXTERNAL-99` to `EX-1012` — the row stopped being flagged red and the lag survived the repoint. The
+committed payload carried every one of those edits (`EX-1012 → "EX-1011 SS+3, EX-1011 FS"`,
+`EX-2011 → "EX-1012 FS+3"`), and the lede, the review tile and the written rows all agreed on 10.
