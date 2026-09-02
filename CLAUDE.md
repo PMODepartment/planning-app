@@ -84,6 +84,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (aa) — Reset + rebuild ran, and proved the damage is in the DATA
+
+Owner: *"Reset WBS and rebuild, then check."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ✅ **The batched unlink earned its migration:** 12,408 branches cleared and **28,667 dangling links**
+  updated in 4,000-row batches (~29s). As one statement that is 3.5× the 8s `statement_timeout` — Reset
+  WBS would have failed outright on this project.
+- ❌ **It did not fix the hierarchy.** Roots 19 → 16, unlocked roots 14 → 11 — and **all 11 remaining
+  carry single-segment stored codes** (`Cluster 4` = "3", `Dry Works` = "10", `Wet Works` = "11").
+  ⚠️ A single segment IS a root, so the rebuild reproduced the flattening faithfully. **The tree is no
+  longer what is broken; the codes are**, and the codes are what a rebuild builds from.
+- **The flaw:** `wbsAdopt()` builds the tree from the codes, `_wbsResyncCodes()` rewrites the codes
+  from the tree. Fine while the tree is right, catastrophic when it is not — adopt rooted 14 branches,
+  resync wrote those positions back as codes, and the original P6 codes were destroyed.
+- **Guarded:** the resync now refuses to run when any **unlocked node sits at the top level** — the
+  phases are locked and every real branch hangs under one, so that state means adoption failed to
+  place something. It would have made this recoverable.
+- ⚠️ **Recovery is a fresh re-import, not another rebuild** — the deep codes exist only in the .xer
+  now. `MODULE_V` → `20260902aa`.
+
 ### 2026-09-02 (z) — The tree flattened: adopt rooted any node whose parent it could not find
 
 Owner: *"Stevi's schedule also bugged out"*, plus two toolbar asks. Detail in

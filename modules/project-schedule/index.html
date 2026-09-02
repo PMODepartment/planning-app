@@ -18715,6 +18715,26 @@
   async function _wbsResyncCodes() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     if (_resyncingCodes) return 0;
+    // ⚠⚠ REFUSES TO RUN AGAINST A TREE THAT LOOKS FLATTENED, and this is the guard that would have
+    // made the SLN101 damage recoverable instead of permanent.
+    // Two functions disagree about who owns the truth: `wbsAdopt()` builds the TREE from the dotted
+    // CODES, and this rewrites the CODES from the TREE. That is fine while the tree is right — and
+    // catastrophic when it is not, because the error stops being a tree problem and becomes a DATA
+    // problem. Measured on 4PH Strevi: adopt rooted 14 branches it could not find parents for, this
+    // then rewrote their codes to match — `Cluster 4` → "3", `Dry Works` → "10", `Wet Works` → "11" —
+    // and the original deep P6 codes were gone. Reset WBS → rebuild then faithfully rebuilt 11 roots
+    // from those single-segment codes, because a single segment IS a root. The dialog's promise that
+    // rebuilding is "reversible" holds only while the codes still describe the real hierarchy.
+    // ⚠️ The signal is cheap and specific: an UNLOCKED node at the top level. The five phases are
+    // locked, every real branch hangs under one of them, so an unlocked root means adoption failed to
+    // place something — exactly the state whose codes must not be written back.
+    var _looseRoots = (WBS_NODES || []).filter(function (n) { return !n.parent_id && !n.is_locked; });
+    if (_looseRoots.length) {
+      try { console.warn('[ps] _wbsResyncCodes SKIPPED: ' + _looseRoots.length + ' unlocked root node(s) — ' +
+                         'the tree looks flattened and rewriting codes from it would make that permanent.',
+                         _looseRoots.slice(0, 8).map(function (n) { return n.name; })); } catch (e) {}
+      return 0;
+    }
     _resyncingCodes = true;
     try {
       var ownPid = pid, codeOf = computeWbsCodes(), all = [], bad = false;

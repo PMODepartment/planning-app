@@ -1,3 +1,52 @@
+## Reset + rebuild ran, and proved the damage is in the DATA, not the tree (2026-09-02aa) — fmlozano
+
+Owner: *"Reset WBS and rebuild, then check."* Driven live on SLN101.
+
+### The run
+| | |
+|---|---|
+| tree cleared | **12,408 branches** |
+| dangling links cleared | **28,667**, in 4,000-row batches, ~29s |
+| rebuilt | 12,426 nodes against 12,442 summary rows |
+
+✅ **`wbs_unlink_dangling` earned its migration.** 28,667 rows updated in batches; as the single
+statement it replaced, that is 3.5× the 8-second `statement_timeout` — Reset WBS would simply have
+failed on this project.
+
+### ❌ But it did not fix the hierarchy, and the reason matters
+**Roots went 19 → 16, unlocked roots 14 → 11.** Better, not fixed. Then the decisive measurement:
+**all 11 remaining promoted roots carry SINGLE-SEGMENT stored codes** — `Cluster 4` = **"3"**,
+`Cluster 3` = "5", `Dry Works` = "10", `Wet Works` = "11", `Masonry Works` = "13", `Hardwares` = "17".
+
+⚠️⚠️ **A single-segment code IS a root**, so the rebuild reproduced the flattening *faithfully*. The
+tree is not what is broken any more — **the codes are**, and they are what the rebuild builds from.
+The reset dialog's promise that rebuilding is *"reversible, because every row keeps its own WBS
+code"* holds only while those codes still describe the real hierarchy.
+
+### The design flaw this exposes
+Two functions disagree about who owns the truth:
+- `wbsAdopt()` builds the **tree** from the dotted **codes**;
+- `_wbsResyncCodes()` rewrites the **codes** from the **tree**.
+
+Fine while the tree is right; **catastrophic when it is not**, because the error stops being a tree
+problem and becomes a *data* problem. Adopt rooted 14 branches it could not place, resync wrote their
+new positions back as codes, and the original deep P6 codes were **destroyed**.
+
+**Guarded:** `_wbsResyncCodes()` now refuses to run when any **unlocked node sits at the top level**.
+The five phases are locked and every real branch hangs under one, so an unlocked root means adoption
+failed to place something — precisely the state whose codes must not be written back. Cheap, specific,
+and it would have made this recoverable.
+
+### ⚠️ Recovery for SLN101: a fresh re-import, not another rebuild
+The deep codes only exist in the .xer now. Re-importing restores them, and with the deferral fix
+(2026-09-02z) adopt no longer roots what it cannot place, so the flattening should not recur.
+⚠️ Also still true right now: **16,202 of 16,396 activities are unlinked** — the link matches an
+activity's parent code against a summary row's code, and with the codes corrupted most resolve to
+nothing. That resolves itself on a clean import; it is a symptom, not a separate fault.
+
+- `MODULE_V` → `20260902aa`.
+
+---
 ## ⚠⚠ The tree flattened: adopt was rooting any node whose parent it could not find (2026-09-02z) — fmlozano
 
 Owner: *"Stevi's schedule also bugged out let's check."* The grid's root showed **Milestones,
