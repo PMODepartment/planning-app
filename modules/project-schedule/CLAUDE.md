@@ -1,3 +1,30 @@
+## The colour scope now rides in the row cache, so the cached paint starts right (2026-09-02n) — fmlozano
+
+Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint
+self-correct after **3.3 seconds**; this removes the 3.3 seconds.
+
+⚠️ **The cache entry gains `catScope`.** Whether the colour key is scoped to the Execution Phase is
+answered by `phaseOf()`, which resolves through `WBS_NODES` — fetched long after the cached paint. So
+the first paint could not tell an unphased project from a not-yet-loaded one and took the
+colour-everything fallback. It now starts from **the answer the previous live load reached**, seeded
+into `_catExecCache` before `rebuild()` and `renderAll()`, both of which read it.
+
+Three rules that make this safe rather than merely faster:
+- ⚠️ **Only ever written from a load that HAD the tree.** `_cachePut` stores `null` when `WBS_NODES` is
+  empty. Caching an answer computed before the tree arrived would persist the exact wrong answer this
+  exists to avoid — and it would then be wrong *instantly* rather than for three seconds, which is
+  worse than the bug.
+- ⚠️ **A hint, never a source of truth.** The live pass still recomputes and repaints on disagreement,
+  so a stale hint costs one repaint and can never leave a wrong final state. `null` (old build, or
+  cached too early) simply means "no hint" and behaves exactly like (m).
+- ⚠️ **Written only when it is missing or has changed.** The `_cachePut` in the paint path runs before
+  the tree exists, so it can only ever store `null`; the write that matters is the new one after
+  `loadResourcesAssignments()`. Re-caching structured-clones every row, and on a 16k-row project that
+  is not worth spending on a load that learned nothing.
+
+- `MODULE_V` → `20260902n`.
+
+---
 ## The 92-entry key came back — (k) was verified on the one load that could not show it (2026-09-02m) — fmlozano
 
 Owner, on the cleared SLN101 after (l) shipped: *"Legend still shows activities that are not within

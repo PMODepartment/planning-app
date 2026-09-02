@@ -6454,11 +6454,24 @@
       catch (e) { res(null); } }); });
   }
   function _cachePut(key, rowset) {
+    // ⚠️⚠️ `catScope` RIDES WITH THE ROWS, and it is the fix for a flicker the owner reported twice.
+    // Whether the colour key is scoped to the Execution Phase is answered by `phaseOf()`, which
+    // resolves through `WBS_NODES` — and those are fetched LONG after this cache is painted. So the
+    // cached paint could not tell an unphased project from a not-yet-loaded one, took the
+    // colour-everything fallback, and showed a 92-entry key on a cleared project for ~3.3s until the
+    // tree landed and the repaint corrected it.
+    // ⚠️ The value is only ever written from a load that HAD the tree (see the guard at the call
+    // sites): caching an answer computed before `WBS_NODES` arrived would persist the very wrong
+    // answer this exists to avoid, and it would then be wrong instantly instead of for 3 seconds.
+    // ⚠️ It is a HINT, not a source of truth. The live pass recomputes and repaints if it disagrees,
+    // so a stale hint costs one repaint — never a wrong final state.
+    var scope = null;
+    try { scope = WBS_NODES && WBS_NODES.length ? catScopeIsExec() : null; } catch (e) { scope = null; }
     _cacheDb().then(function (db) { if (!db) return; try {
       // Store only real DB columns — strip the `_`-prefixed fields rebuild()/CPM attach (some reference
       // other rows, which would bloat or fail structured-clone). rebuild() recomputes them on load.
       var clean = rowset.map(function (r) { var o = {}; for (var k in r) { if (Object.prototype.hasOwnProperty.call(r, k) && k.charAt(0) !== '_') o[k] = r[k]; } return o; });
-      db.transaction('rows', 'readwrite').objectStore('rows').put({ rows: clean, savedAt: new Date().toISOString(), uid: UID }, key);
+      db.transaction('rows', 'readwrite').objectStore('rows').put({ rows: clean, savedAt: new Date().toISOString(), uid: UID, catScope: scope }, key);
     } catch (e) {} });
   }
   var _cacheSaveT = null;
@@ -6642,7 +6655,16 @@
       var cached = await _cacheGet(pid);
       if (gen !== _loadGen) return;
       if (cached && cached.uid === UID && cached.rows && cached.rows.length) {
-        rows = cached.rows; rebuild(); _applyBigCollapse(); renderAll();
+        rows = cached.rows;
+        // ⚠️ SEEDED BEFORE rebuild()/renderAll(), because both read it. `catScopeIsExec()` caches on
+        // `pid|rows.length`, so writing the key with the remembered answer makes the very first paint
+        // use the previous live one instead of guessing from a tree that has not loaded. Only a
+        // stored boolean counts — `null` means the answer was cached before the tree arrived, or by
+        // an older build, and is not to be trusted.
+        if (typeof cached.catScope === 'boolean') {
+          _catExecKey = pid + '|' + rows.length; _catExecCache = cached.catScope; _catCache = null;
+        }
+        rebuild(); _applyBigCollapse(); renderAll();
         _setFresh('cached'); painted = true;
       }
     } catch (e) {}
@@ -6720,6 +6742,16 @@
     await loadResourcesAssignments();   // loads WBS_NODES
     if (gen !== _loadGen) return;
     if (catScopeIsExec() !== _scopeBefore) { renderActLegend(); scheduleRender(); }
+    // ⚠️ AND PERSIST IT, or the hint is never written. The `_cachePut` in the paint path above runs
+    // BEFORE the tree exists, so it stores `null` every time — this is the first moment in load()
+    // at which the answer is actually known. Written only when the stored hint is missing or has
+    // changed: re-caching costs a structured clone of every row, and on a 16k-row project that is
+    // not something to spend on a load that learned nothing new.
+    try {
+      if (rows.length && (typeof (cached && cached.catScope) !== 'boolean' || cached.catScope !== catScopeIsExec())) {
+        _cachePut(pid, rows);
+      }
+    } catch (e) {}
     // Re-sync dotted codes to the node tree FIRST — a code that drifted after a push makes two
     // branches look like one, which the dedupe below would otherwise "fix" by deleting a live branch.
     // ⚠️ EVERY PASS BELOW CREATES ROWS, so each one is gated. Not one gate at the top: the chain

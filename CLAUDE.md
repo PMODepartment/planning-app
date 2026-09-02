@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (n) — The colour scope rides in the row cache, so the cached paint starts right
+
+Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint
+self-correct after 3.3s; this removes the 3.3s. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- The cache entry gains **`catScope`** — the answer the previous live load reached — seeded into
+  `_catExecCache` **before** `rebuild()`/`renderAll()`, both of which read it.
+- ⚠️ **Only written from a load that had the tree** (`WBS_NODES` non-empty), else `null`. Caching an
+  answer computed before the tree arrived would persist the very wrong answer this exists to avoid,
+  and it would be wrong *instantly* instead of for three seconds.
+- ⚠️ **A hint, not a source of truth**: the live pass still recomputes and repaints on disagreement, so
+  a stale hint costs one repaint and never a wrong final state. `null` behaves exactly like (m).
+- `MODULE_V` → `20260902n`.
+
 ### 2026-09-02 (m) — The 92-entry key came back: (k) was verified on the one load that could not show it
 
 Owner on the cleared SLN101: *"Legend still shows activities that are not within the execution
