@@ -1,3 +1,43 @@
+## Vertical stacking: a DONE status on finished zones, carrying the day variance (2026-09-02) — eprobles
+
+Owner: *"show a status of done for zones or areas or units that have been declared as completed. and
+then show the variance in terms of days to determine if it was completed in time or not."*
+
+A finished zone now prints a **`✓ DONE` pill** where an unfinished one prints its percentage, and the
+pill **is** the variance: it is coloured by it (green early / blue on time / red late / grey no
+baseline) and carries the figure (`✓ DONE +62d`). One mark, three facts — done, which way, how far.
+
+⚠️ **"Done" is NOT `pct >= 100`, and this is the whole point of `_vsDone`.** Two ways that number
+lies here:
+- `_vsPct` is duration-weighted and **rounded**, so a zone at 99.6 % already prints "100%". A zone
+  that says 100 % while one activity is still open is exactly what a completion badge must never
+  claim. Done means **no activity in the cell is left short** (≥ 99.5 absorbs schedules that store
+  99.99 rather than 100 — a rounding artefact, not open work).
+- `_vsProgress` **follows the basis**. On *Planned* it is where the baseline says the work should be,
+  so `pct >= 100` there would badge a zone as complete because it was *due* — the opposite of the
+  truth. `_vsDone` reads the activities' own `percent_complete`, so the badge means the same thing on
+  all three bases.
+- ⚠️ Under the **time scrub** it falls back to the modelled progress reaching 100. There is no
+  recorded history to ask (see the `_vsAsOf` note), so "declared complete" has no meaning at a past
+  date; "scheduled to be finished by then" is what every other number on a scrubbed cell already
+  means, and the bar says so on screen.
+
+⚠️ **The variance is `_vsFinSlip`, not `_vsSlip`.** `_vsSlip` follows the Start/Finish toggle, so on
+*Start* it answers "did it START on time" — a different question, and it would have put a start
+variance inside a completion badge. `_vsFinSlip` is finish vs baseline finish whichever way the
+toggle is set. `null` when there is no baseline finish, and that reads as **unknown**, never as on
+time.
+
+- ⚠️ The pill takes the **percentage's slot**, not a corner: the zone name is centred and up to 14
+  characters wide, so a corner badge collides with it. In Compare it **replaces** the variance line
+  rather than joining it — the two would otherwise say the same thing twice.
+- ⚠️ **The font shrinks before the words do.** A plain cell is ~75 px and `✓ DONE +62d` only fits
+  there at 8 px; at the badge's normal 8.6 every ordinary zone would fall through to the tick-only
+  form, which is precisely the status the owner asked to see.
+- The tooltip spells the whole thing out in words, the magnifier's readout leads with it, and both
+  the on-screen legend and the **PDF key** now explain the pill.
+
+---
 ## Two toolbar defects with one cause each: the group head hung left, and `.lg` had lost its rule (2026-09-02d) — fmlozano
 
 Owner, from a live screenshot: *"The Ronquillo Group seem to be out of place from the project

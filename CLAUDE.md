@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (e) — Vertical stacking: a DONE status on finished zones, with the day variance
+Owner: *"show a status of done for zones or areas or units that have been declared as completed. and then
+show the variance in terms of days to determine if it was completed in time or not."*
+- A finished zone prints a **`✓ DONE` pill** where an unfinished one prints its percentage. The pill *is*
+  the variance: coloured by it (early / on time / late / no baseline) and carrying the figure (`✓ DONE +62d`).
+- ⚠️ **"Done" is not `pct >= 100`.** That number is rounded (99.6 % already prints 100 %) and it follows the
+  basis — on *Planned* it would badge a zone complete because it was **due**. `_vsDone` reads the activities'
+  own `percent_complete`: done means no activity in the cell is left short.
+- ⚠️ **The variance is `_vsFinSlip`, not `_vsSlip`.** `_vsSlip` follows the Start/Finish toggle, so on *Start*
+  it would have put a start variance inside a completion badge. `null` (no baseline) reads as unknown, never
+  as on time.
+- Explained in the tooltip, the magnifier readout, the on-screen legend and the PDF key.
+- MODULE_V → `20260902e`.
+
 ### 2026-09-02 (d) — Vertical stacking: readable in day mode, and the cards read as a set
 Owner: *"improve the visuals in this vertical stacking … if it is on day mode, please make it more visually
 appealing … choose better colors or colors of text … and also in terms of orientation of the windows."*

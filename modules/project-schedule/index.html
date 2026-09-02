@@ -12068,6 +12068,63 @@
     if (sl < 0) return VS_SLIP_EARLY;
     return VS_SLIP_ONTIME;
   }
+  // ---- COMPLETED ZONES, AND WHETHER THEY WERE COMPLETED ON TIME -------------------------------
+  // Owner 2026-09-02: *"show a status of done for zones or areas or units that have been declared as
+  // completed. and then show the variance in terms of days to determine if it was completed in time
+  // or not."*
+  //
+  // ⚠️ DONE IS "EVERY ACTIVITY IN THE CELL IS DECLARED COMPLETE", NOT "the rounded roll-up says 100".
+  // `_vsPct` is duration-weighted and ROUNDED, so a zone at 99.6% prints 100% today — and a zone that
+  // prints 100% while one activity is still open is the one thing a completion badge must never say.
+  // A cell is done only when no activity in it is left short. (99.5 is the tolerance for schedules
+  // that store 99.99 rather than 100 — a rounding artefact, not open work.)
+  // ⚠️ While the TIME SCRUB is active the whole view is modelled from the dates, not recorded (see
+  // _vsAsOf), so "declared complete" has no meaning at a past date. There, done falls back to the
+  // modelled progress reaching 100 — i.e. "scheduled to be finished by this date", which is what
+  // every other number on a scrubbed cell already means.
+  function _vsDone(list) {
+    if (!list || !list.length) return false;
+    if (_vsAsOf != null) return _vsProgress(list) >= 100;
+    return list.every(function (r) { return (r.percent_complete || 0) >= 99.5; });
+  }
+  // ⚠️ THE COMPLETION VARIANCE IS ALWAYS ABOUT THE FINISH, and `_vsSlip` is not — it follows the
+  // Start/Finish toggle, so on Start it answers "did it START on time", which is a different
+  // question and would put the wrong number in a DONE badge. This one is finish-vs-baseline-finish
+  // whatever the toggle says. + = finished later than the baseline, - = earlier, null = no baseline
+  // to judge against (which must read as unknown, never as on time).
+  function _vsFinSlip(list) {
+    var pl = _vsPlanFin(list), ac = _vsFin(list);
+    if (!pl || !ac) return null;
+    return dayDiff(pl, ac);
+  }
+  function _vsSlipWord(sl) {
+    return sl == null ? 'no baseline' : (sl > 0 ? sl + 'd late' : (sl < 0 ? (-sl) + 'd early' : 'on time'));
+  }
+  // The badge itself: one pill carrying the status AND the variance, coloured by the variance, drawn
+  // in place of the cell's plain "100%" line. One mark, three facts — done / which way / how far.
+  // ⚠️ It takes the pct line's slot rather than sitting in a corner: a corner badge collides with the
+  // zone name, which is centred and can be 14 characters wide.
+  // ⚠️ It falls back to a shorter form, and then to the tick alone, when the cell is too narrow —
+  // truncating a variance figure would be worse than dropping the word "DONE".
+  function _vsDoneChip(midX, cw2, top, sl) {
+    var vr = sl == null ? '' : (sl > 0 ? '+' + sl + 'd' : (sl < 0 ? sl + 'd' : 'on time'));
+    // ⚠️ THE FONT SHRINKS BEFORE THE WORDS DO. A plain cell is ~75px wide, and "✓ DONE +62d" only
+    // fits there at 8px — at the badge's normal 8.6 it would fall straight through to the tick-only
+    // form on every ordinary zone, which is exactly the status the owner asked to see. So the long
+    // form gets the smaller size, and the shorter forms (which have room) keep the larger one.
+    var forms = [['✓ DONE' + (vr ? ' ' + vr : ''), 8], ['✓' + (vr ? ' ' + vr : ' DONE'), 8.6], ['✓', 9]];
+    var txt = forms[forms.length - 1][0], fs2 = forms[forms.length - 1][1], w = 0;
+    for (var i = 0; i < forms.length; i++) {
+      var tw = forms[i][0].length * forms[i][1] * 0.58 + 9;
+      if (tw <= cw2 - 4 || i === forms.length - 1) { txt = forms[i][0]; fs2 = forms[i][1]; w = Math.min(tw, cw2 - 4); break; }
+    }
+    var col = _vsSlipColor(sl);
+    return '<rect x="' + (midX - w / 2).toFixed(1) + '" y="' + top + '" width="' + w.toFixed(1) + '" height="12" rx="6" fill="' + col +
+      '" stroke="rgba(255,255,255,.62)" stroke-width="0.9" pointer-events="none"></rect>' +
+      '<text x="' + midX + '" y="' + (top + 8.9) + '" text-anchor="middle" font-size="' + fs2 +
+      '" font-weight="800" fill="#ffffff" pointer-events="none">' + esc(txt) + '</text>';
+  }
+
   // A trade's colour from the SAME category palette the Gantt bars use, so the stacking reads as a key
   // to the same picture. Falls back to a neutral hue when colouring is off or the trade is new.
   // A hatch pattern per colour in use — bounded by the number of trades plus the four slip colours,
@@ -12272,7 +12329,11 @@
         _vsHatchSeen[fill] = 1;
         var key = keyPrefix + '|' + v + '|' + (c.label || '*');
         var isNo = (v === VS_NOLEV);   // project-wide band — drawn dashed, never as a storey
-        _vsCells[key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: fin };
+        // Completion is its own fact, on its own channel — see _vsDone / _vsFinSlip. It is NOT
+        // `pct >= 100`: that number is rounded, and it follows the basis (on Planned it would call a
+        // zone done because the BASELINE says it should be, which is the opposite of the truth).
+        var isDone = _vsDone(c.list), fslip = isDone ? _vsFinSlip(c.list) : null;
+        _vsCells[key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: fin, done: isDone, fslip: fslip };
         // At detail 1 the row label already names the level, so the cell prints only its dates —
         // showing the level name twice on one row reads like two different things. With no label the
         // two remaining lines are re-centred rather than left sitting under an empty first line.
@@ -12307,6 +12368,14 @@
           (cmp ? (' · planned ' + (_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') +
                   ' · ' + (slip == null ? 'no baseline' : (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time')))) : '') +
           ' · ' + _vsProgressWord() + ' ' + (pct >= 100 ? 'complete' : (pct <= 0 ? (_vsBasis === 'planned' ? 'not due to start yet' : 'not started') : pct + '%' + (_vsBasis === 'planned' ? ' due' : ' done, ' + (100 - pct) + '% remaining'))) +
+          // The completion sentence is spelled out, because the badge only has room for a figure.
+          (isDone
+            ? (' · DONE — every activity in this zone is complete, finished ' +
+               (_vsFin(c.list) ? Fmt.date(dstr(_vsFin(c.list))) : '—') +
+               (fslip == null
+                 ? ' (no baseline finish, so there is nothing to judge it against)'
+                 : ' vs baseline ' + (_vsPlanFin(c.list) ? Fmt.date(dstr(_vsPlanFin(c.list))) : '—') + ' — ' + _vsSlipWord(fslip)))
+            : '') +
           (cmp ? (planPct == null
                   ? ' · no baseline, so there is no planned % to compare against'
                   : (' · planned ' + planPct + '% by today (the marker line), actual ' + pct + '% — ' +
@@ -12336,10 +12405,21 @@
                   (gap2 == null ? '' : ' · ' + Math.abs(Math.round(gap2)) + '% ' + (gap2 > 0 ? 'ahead' : gap2 < 0 ? 'behind' : 'on plan'));
                 return row(yP, 'P', _vsDateShort(_vsPlanDate(c.list)), _vsPctTxt(planPct), false) +
                   row(yA, 'A', _vsDateShort(fin), _vsPctTxt(pct), true) +
-                  '<text ' + vtx + ' x="' + mid + '" y="' + yV + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(vtxt) + '</text>';
+                  // ⚠️ The badge REPLACES the variance line here rather than being added to it — the
+                  // two would say the same thing twice, and the badge's figure is the finish variance
+                  // (`_vsFinSlip`) which is the right one for a finished zone whichever way the
+                  // Start/Finish toggle is set. An unfinished cell keeps the line exactly as it was.
+                  (isDone
+                    ? _vsDoneChip(mid, cw2, yV - 9, fslip)
+                    : '<text ' + vtx + ' x="' + mid + '" y="' + yV + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(vtxt) + '</text>');
               })()
             : '<text ' + vtx + ' x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '500' : '700') + '" fill="' + ink + '" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
-              '<text ' + vtx + ' x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + pct + '%</text>');
+              (isDone
+                // A completed zone prints its STATUS where an in-progress one prints its percentage —
+                // "100%" and "done" are not the same claim, and the badge is the one that carries the
+                // variance. Nothing is lost: the exact figure is in the tooltip and the drill-down.
+                ? _vsDoneChip(mid, cw2, y + (lbl ? 30 : 25), fslip)
+                : '<text ' + vtx + ' x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + pct + '%</text>'));
       });
     });
     var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
@@ -12506,6 +12586,11 @@
     }
     var slip = _vsSlip(d.list), pp = _vsPlanPct(d.list);
     el.innerHTML = '<div class="h">' + esc(String(d.level) + (d.cell ? ' \u00b7 ' + d.cell : '')) + '</div>' +
+      // The status line only appears on a finished zone, and it carries the finish variance — the
+      // same number the badge on the cell shows, held still so it can be read.
+      (d.done
+        ? '<div class="r" style="font-weight:800;color:' + _vsSlipColor(d.fslip) + ';">✓ DONE · ' + esc(_vsSlipWord(d.fslip)) + '</div>'
+        : '') +
       '<div class="r">' + d.list.length + ' activit' + (d.list.length === 1 ? 'y' : 'ies') + ' \u00b7 ' + d.pct + '% ' + _vsProgressWord() +
         (pp == null ? '' : ' (planned ' + pp + '%)') + '<br>' +
         _vsDateWord() + ' ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '\u2014') + ' \u00b7 ' + esc(_vsBasisWord()) +
@@ -12608,6 +12693,7 @@
       '.lg i{width:11px;height:11px;border-radius:2.5px;background:var(--pd-muted);display:inline-block;}' +
       '.lg i.sol{background:#6E7378;}' +
       '.lg i.hat{background:repeating-linear-gradient(45deg,#6E7378 0 2px,#fff 2px 5px);border:1px solid var(--pd-line);}' +
+      '.lg i.dn{width:20px;border-radius:6px;background:' + VS_SLIP_ONTIME + ';}' +
       // ⚠️ break-inside on the section, not on the svg: a building is only readable whole.
       '.b{border:1px solid var(--pd-line);border-top:3px solid var(--tc,var(--pd-red));border-radius:10px;padding:0 0 12px;margin:0 0 16px;break-inside:avoid;page-break-inside:avoid;}' +
       '.bh{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 13px 8px;border-bottom:1px solid var(--pd-line);}' +
@@ -12622,7 +12708,9 @@
       '<div class="mt">' + meta.map(function (m) {
         return '<div><b>' + esc(m[0]) + '</b><span>' + esc(m[1] || '—') + '</span></div>';
       }).join('') + '</div></header>' +
-      '<div class="lgs">' + legend + '<span style="margin-left:auto;">Each cell is a zone: solid = progress, hatched = remaining.</span></div>' +
+      '<div class="lgs">' + legend +
+      '<span class="lg"><i class="dn"></i>✓ DONE · complete, with its finish variance vs baseline</span>' +
+      '<span style="margin-left:auto;">Each cell is a zone: solid = progress, hatched = remaining.</span></div>' +
       (defs ? defs.outerHTML : '') + body +
       '<footer><span>Data date ' + esc(Fmt.date(dstr(today()))) + '</span><span>Planners Dashboard · Project Schedule</span></footer>' +
       '<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},300);};</scr' + 'ipt>' +
@@ -12775,6 +12863,11 @@
         '<span class="ps-vs-legendtxt">' +
           (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
           (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads <strong>P</strong> = planned date &amp; %, <strong>A</strong> = actual date &amp; %, then the slip in days and how far ahead or behind plan the progress is' : '') +
+          // The completion badge needs saying: a coloured pill is only self-explanatory once.
+          ' · a <strong>✓ DONE</strong> pill means every activity in that zone is complete, and it carries the finish variance against the baseline — ' +
+          '<span style="color:' + VS_SLIP_EARLY + ';font-weight:700;">early</span>, ' +
+          '<span style="color:' + VS_SLIP_ONTIME + ';font-weight:700;">on time</span>, ' +
+          '<span style="color:' + VS_SLIP_LATE + ';font-weight:700;">late</span>' +
         '</span></span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
