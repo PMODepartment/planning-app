@@ -101,26 +101,15 @@
        and set off the user avatar from the tools with a divider. */
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
-    /* Project context: project name over group-head subline, both left-aligned. `.ps-project`
-       is styled exactly like every other module's project select (cash-flow's `.cf-project` /
-       s-curve's `.sc-project`) — a borderless-until-hover trigger — so this module lines up
-       with the app-wide shared searchable picker (UI.enhanceProjectSelect) it now uses instead
-       of a bespoke Workspace/Program/Group browser. `enhanceProjectSelect` copies the select's
-       classes onto its trigger button, so this rule also styles that button. */
+    /* Project context: project name, left-aligned. `.ps-project` is styled exactly like every
+       other module's project select (cash-flow's `.cf-project` / s-curve's `.sc-project`) — a
+       borderless-until-hover trigger — so this module lines up with the app-wide shared
+       searchable picker (UI.enhanceProjectSelect) it now uses instead of a bespoke
+       Workspace/Program/Group browser. `enhanceProjectSelect` copies the select's classes onto
+       its trigger button, so this rule also styles that button. */
     .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; flex:0 1 auto; }
     .ps-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
     .ps-project:hover, .ps-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
-    /* ⚠️ THE SUB-LINE MUST START WHERE THE PROJECT NAME STARTS, and 2px did not.
-       The project name is not a bare text node — `enhanceProjectSelect` replaces the <select> with a
-       `.pd-psel-btn` that inherits `.pd-select`'s own padding + border, so its LABEL is inset from
-       the control's left edge while the sub-line was inset by 2px. Measured against the shipped CSS:
-       name text at x=83.7, group-head text at x=72.2 — the group head hung **11.5px to the LEFT of
-       the project it belongs to**, which is what read as "out of place" (owner, 2026-09-02).
-       ⚠️ The value is the TRIGGER'S text inset (its computed padding-left + border-width), NOT a
-       guess: change `.pd-select`'s padding in the shared stylesheet and this must move with it.
-       There is no CSS way to read a sibling's padding, so the harness asserts the two text origins
-       land within 1px of each other instead. */
-    .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
     /* ⚠️ THE SWITCHER WAS "EXTENDED UNNECESSARILY", and the cause was NOT this module's own CSS.
        UI.initModuleTopbar() restructures every module topbar into .pd-tb-split > .pd-tb-main, and
        dashboard.css then gives the project context `flex:1 1 220px; max-width:420px` and its trigger
@@ -301,9 +290,9 @@
        and NOT by toggling the shell's own `.pd-collapsed` -- UI.initShell persists that class in
        `pd_sidebar_collapsed`, so driving it from here would silently overwrite the planner's own
        sidebar preference and leave it changed after they exit reporting.
-       ⚠️ WHAT A READER LOSES WITH THOSE BANDS is the project name, the group head and the data
-       date -- the three facts that make a screenshot trustworthy. They are not dropped: `.ps-rv-id`
-       in the toolbar carries them, painted by _repIdPaint(). Do not remove one without the other.
+       ⚠️ WHAT A READER LOSES WITH THOSE BANDS is the project name and the data date -- the two
+       facts that make a screenshot trustworthy. They are not dropped: `.ps-rv-id` in the toolbar
+       carries them, painted by _repIdPaint(). Do not remove one without the other.
        ⚠️ The way OUT is never in a hidden band: the Layout menu and the exit chip both live in
        the toolbar, and _applyReportingClass() refuses to set this class on any view whose toolbar
        switchTab hides -- otherwise the Planner Cockpit would have no chrome at all and no way back. */
@@ -2681,14 +2670,13 @@
           <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
       </div>
-      <!-- Project context sits next to the title, name over group-head subline, left-aligned.
-           Uses the app-wide shared searchable project selector (UI.enhanceProjectSelect) — the
-           same picker every other module uses — so this module's dropdown is aligned with the
-           rest of the suite. The <select> stays the source of truth; enhanceProjectSelect wraps
-           it in a borderless-until-hover trigger + searchable popup, in place. -->
+      <!-- Project context sits next to the title, left-aligned. Uses the app-wide shared
+           searchable project selector (UI.enhanceProjectSelect) — the same picker every other
+           module uses — so this module's dropdown is aligned with the rest of the suite. The
+           <select> stays the source of truth; enhanceProjectSelect wraps it in a
+           borderless-until-hover trigger + searchable popup, in place. -->
       <div class="ps-projctx">
         <select class="pd-select ps-project" id="ps-project" title="Project"></select>
-        <div class="ps-ws" id="ps-workspace"></div>
       </div>
       <span class="ps-fresh" id="ps-fresh" style="display:none;"></span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
@@ -6449,16 +6437,7 @@
     // module uses. It builds/copies its trigger button's label from the select on its own, so
     // no separate label-sync call is needed here the way the old bespoke browser required.
     if (window.UI && UI.enhanceProjectSelect) UI.enhanceProjectSelect(sel);
-    updateGroupHeadCaption();
     if (pid) load();
-  }
-  // Show the project's group head under the project name/select.
-  function updateGroupHeadCaption() {
-    var el = document.getElementById('ps-workspace'); if (!el) return;
-    var p = PROJECTS.find(function (x) { return x.id === pid; });
-    var g = p && p.group_head_id ? GROUPHEADS.find(function (x) { return x.id === p.group_head_id; }) : null;
-    el.textContent = g ? g.name : (p && p.group_head_id ? p.group_head_id : '');
-    el.title = el.textContent;
   }
   // Central project switch — invoked by #ps-project's own `change` event (fired either by a
   // real user pick or by the shared picker's `choose()`, which sets the select's value and
@@ -6467,7 +6446,6 @@
     pid = id || null;
     var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
     if (pid) sessionStorage.setItem('pd_project', pid);
-    updateGroupHeadCaption();
     // ⚠️ Kill any pending collapse save BEFORE pid changes — otherwise a toggle made <500ms ago
     // fires after the switch and writes the OUTGOING project's map under the INCOMING project's key.
     _cancelCollapseSave();
@@ -15095,16 +15073,13 @@
     _repIdPaint();
   }
   // The identity the hidden bands used to carry. A reported figure is only trustworthy if the
-  // screen says WHICH project and AS OF WHEN, so those two facts (plus the group head, which is how
-  // this org talks about a project) move into the toolbar for the duration.
+  // screen says WHICH project and AS OF WHEN, so those two facts move into the toolbar for the
+  // duration.
   function _repIdPaint() {
     var el = document.getElementById('ps-rv-id'); if (!el) return;
-    var ws = document.getElementById('ps-workspace');
-    var gh = ws ? String(ws.textContent || '').trim() : '';
     // ⚠️ Real separator characters, not just flex `gap`. Read aloud or copied out of the page,
-    // gap-only spacing renders as "Avesta ResidencesRonquillo GroupData date 15-Aug-26".
+    // gap-only spacing renders as "Avesta ResidencesData date 15-Aug-26".
     el.innerHTML = '<b>' + esc(projName()) + '</b>' +
-      (gh ? '<s>\u00b7</s><i>' + esc(gh) + '</i>' : '') +
       '<s>\u00b7</s><i>Data date ' + esc(fmtOPCDate(dstr(today()))) + '</i>';
   }
   // Fold the activity legend to one line (owner: "similar to the activity details panel").
