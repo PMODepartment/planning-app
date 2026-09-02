@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (w) — The No level band, answered: `RD` is not in the Level match table
+
+Owner: *"Reopen the No level band and check the branch column."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **692 of 15,834 execution activities (4.4%) carry no Level**, and with the column now walking the
+  node tree **not one row fell back to `by code:`**.
+- **Cause A — a floor the matcher missed.** The MEPF cell is **76 of 76** rows reading
+  `… Tower D › MEPF Works › RD › 1st Fix`; the Structural cell is full of `… Superstructure › RD ›
+  Zone 1 …`. The saved Level match table has 17 entries — `Roofdeck`, `Ground Floor`, `2nd`…`16th
+  Floor` — and `Roofdeck` is stamped on 51 activities, but **the .xer names that branch `RD` in most
+  places** and the table matches on the exact name.
+- **Cause B — genuinely floorless:** `… Substructure › Tower D › Slab-on-grade › Zone 1` and
+  `Footing Tie Girder`. Below-grade work with no storey.
+- ⚠️ **The importer is not at fault**, which is worth saying plainly after three passes spent looking
+  there. **Fix: Group ▾ → Match WBS to locations…, map `RD` → Roofdeck** — the owner's call, not a
+  rule to hard-code, since `RD` could mean *Road* elsewhere. (B) wants either a `Substructure` Level
+  value or to stay in the band.
+- ⚠️ The band's own text still blames *Schedule Builder step 2*, which had no part in an imported
+  project. Not changed yet.
+
 ### 2026-09-02 (v) — The No level band, read at last; the diagnostic column was lying
 
 Owner: *"Let's check the No level band now."* Detail in `modules/project-schedule/CLAUDE.md`.

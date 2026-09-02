@@ -1,3 +1,38 @@
+## The No level band, answered: `RD` is not in the Level match table (2026-09-02w) — fmlozano
+
+Owner: *"Reopen the No level band and check the branch column."* With the column now walking the node
+tree, it answers the question that has been open since the first screenshot.
+
+### The reading
+**692 of 15,834 execution activities (4.4%) carry no Level.** The branch column shows real tree paths,
+and **not one row fell back to `by code:`** — every one resolved through `wbs_node_id`.
+
+| cause | evidence |
+|---|---|
+| **A — a floor the matcher missed** | The MEPF cell is **76 of 76** rows reading `… Tower D › MEPF Works › **RD** › 1st Fix`. The Structural cell is full of `… Superstructure › **RD** › Zone 1 › Horizontal › Structural Frame › Flat Slab`. |
+| **B — genuinely floorless** | `Execution Phase › Construction Phase › **Substructure** › Tower D › Slab-on-grade › Zone 1`, and the same for `Footing Tie Girder`. Below-grade work with no storey. |
+
+### ⚠️ The cause of (A), and it is one missing row in a table
+The project's saved Level match table has **17 entries**: `Roofdeck`, `Ground Floor`, `2nd Floor` …
+`16th Floor`. The stamped values agree — `Roofdeck` is on 51 activities. **But the .xer names that
+branch `RD` in most places and `Roofdeck` in a few**, and the table matches on the branch NAME
+exactly. So `RD` maps to nothing and every activity under it lands in the No-level band.
+
+⚠️ **THE IMPORTER IS NOT AT FAULT** — which is worth stating plainly, because the original ask was
+*"fix the importer"* and three passes were spent looking there. Location is DERIVED from branch names
+against the planner's own match table; the table is simply missing an alias the source file uses.
+**Fix: Group ▾ → Match WBS to locations…, map `RD` → Roofdeck.** That is the owner's decision to make,
+not a rule to hard-code — `RD` could as easily mean *Road* on a different project.
+
+⚠️ **(B) is not a defect at all.** Substructure, slab-on-grade and footing work has no storey. It
+either wants its own Level value (`Substructure` / `Foundation`, which the stacking would then band
+like any floor) or it belongs in the No-level band permanently. Also the owner's call.
+
+⚠️ **The band's own explanation is wrong for this project**: it reads *"a trade with no floors in
+Schedule Builder step 2 is pushed as whole-trade work"*, but nothing here came from the Builder. It
+should name the match table on an imported project. Not changed yet.
+
+---
 ## The No level band, read at last — and the diagnostic column was lying (2026-09-02v) — fmlozano
 
 Owner: *"Let's check the No level band now."* The tree is healthy enough to answer, and the answer
