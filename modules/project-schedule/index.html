@@ -27425,18 +27425,26 @@
   // relevant to the execution phase."* Bidding, permits and close-out rows were contributing
   // categories to a key meant to read as a trade sequence, and colouring them said they were part
   // of one.
-  // ⚠️ FALLS BACK TO COLOURING EVERYTHING when the project has no execution-phase activity at all.
-  // `phaseOf` resolves through the WBS branch, so a project that has never been phased answers
-  // `null` for every row — and scoping to a phase nothing is in would silently turn the whole
-  // feature off and read as "colour activities by is broken". Same shape as _vsAxis's fallback.
+  // ⚠️ FALLS BACK TO COLOURING EVERYTHING only when the project resolves NO PHASE AT ALL. `phaseOf`
+  // reads through the WBS branch, so a project that has never been phased answers `null` for every
+  // row, and scoping to a phase nothing is in would silently turn the whole feature off and read as
+  // "colour activities by is broken". Same shape as _vsAxis's fallback.
+  // ⚠️⚠️ THE TEST IS "ARE PHASES IN USE", NOT "IS THERE EXECUTION WORK", and the difference is a
+  // defect the owner caught immediately after clearing SLN101. A cleared project keeps its
+  // Design Development and Procurement mirror rows, which sit under **Planning Phase** — measured
+  // live: 92 activities, every one resolving `planning`, none `construction`. Testing for execution
+  // work therefore found none, took the fallback, and coloured all 92 — so an EMPTIED schedule
+  // showed a 92-entry legend of drawing-register and procurement item names, which is the opposite
+  // of what scoping the key to the Execution Phase was asked for. Phases are plainly in use on that
+  // project; there is simply no execution work yet, and the honest answer is an empty colour key.
   // ⚠️ Cached on the row count AND cleared by _clearPhaseMemo: re-parenting a branch re-phases its
-  // work with no change in row count, and a stale `false` here would leave the bars uncoloured.
+  // work with no change in row count, and a stale answer here would mis-colour every bar.
   var _catExecCache = null, _catExecKey = null;
   function catScopeIsExec() {
     var key = pid + '|' + rows.length;
     if (_catExecKey === key && _catExecCache !== null) return _catExecCache;
     var any = false;
-    for (var i = 0; i < rows.length; i++) { if (!isWbs(rows[i]) && isExecPhase(rows[i])) { any = true; break; } }
+    for (var i = 0; i < rows.length; i++) { if (!isWbs(rows[i]) && phaseOf(rows[i])) { any = true; break; } }
     _catExecKey = key; _catExecCache = any;
     return any;
   }
@@ -30078,7 +30086,9 @@
         what.innerHTML = 'This permanently deletes ' + label() + ' — <strong>' + n + ' activity/activities</strong> — ' +
           'together with their <strong>resource assignments</strong>, and cannot be undone. ' +
           'The standard Milestones / Initiation / Planning / Execution Phase skeleton is ' +
-          'auto-seeded and stays in place.' +
+          'auto-seeded and stays in place. ⚠️ So do the <strong>Design Development</strong> and ' +
+          '<strong>Procurement</strong> branches — those are mirrors of the Engineering and ' +
+          'Procurement apps, not schedule data, and they re-project on the next load.' +
           (target === '__all__' ? '' : ' Other packages are <strong>not</strong> touched.');
         go.textContent = target === '__all__' ? 'Delete everything' : 'Delete ' + n + ' activity/activities';
       }
@@ -30157,7 +30167,12 @@
         hideLoading();
         if (werr) { UI.toast('Activities cleared, but the WBS tree could not be: ' + werr.message, 'error'); }
         else if (aerr) { UI.toast('Schedule cleared, but the resource assignments could not be: ' + aerr.message, 'error'); }
-        else { UI.toast('Cleared. The standard WBS skeleton stays in place.', 'success'); }
+        // ⚠️ NAMES THE ROWS THAT COME BACK. The owner cleared SLN101, saw 92 activities a moment
+        // later and reasonably asked why. They are the Design Development / Procurement mirrors,
+        // re-projected by the very next load() from the Engineering and Procurement apps — derived
+        // data, so deleting them only makes them return. Saying so is the fix; deleting them is not.
+        else { UI.toast('Cleared. The WBS skeleton stays, and the Design Development / Procurement ' +
+                        'branches re-project from the Engineering and Procurement apps on reload.', 'success'); }
         collapsed = {}; _wbsSel = null; resetUndo();
         } finally { _endMutation(); }
         // ⚠️ OUTSIDE the guarded region: load() must be allowed to run its heal chain again, and it

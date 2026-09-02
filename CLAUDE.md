@@ -84,6 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (k) — An emptied schedule showed a 92-entry colour key
+
+Owner, on the just-cleared SLN101: *"Why are there still activities and shown in the legend"*. Two
+things. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **The 92 activities are the Design Development and Procurement mirrors**, all under Planning Phase,
+  re-projected by the next `load()` from the Engineering and Procurement apps. ⚠️ Derived data —
+  deleting them only makes them return — so they are now **named in the clear's dialog and toast**
+  instead of appearing unexplained.
+- ⚠️⚠️ **The legend was (h)'s fallback misfiring.** `catScopeIsExec()` asked *"does this project have
+  execution work?"* and coloured everything when the answer was no — but a **cleared** project is not
+  an **unphased** one. Measured live: all 92 resolve to `planning`, none to `construction`, so the
+  fallback fired and keyed 92 drawing-register and procurement names on an empty schedule. The test
+  now asks **"are phases in use at all"**; a genuinely unphased project still falls back.
+- `MODULE_V` → `20260902k`.
+
 ### 2026-09-02 (j) — The clear measured live: 28,863 rows in 16 seconds, and one thing it never deleted
 
 Owner ran the RPC migration and authorised a destructive test on **SLN101 (4PH Strevi Bacoor)**,

@@ -1,3 +1,33 @@
+## An emptied schedule showed a 92-entry colour key (2026-09-02k) — fmlozano
+
+Owner, on the just-cleared SLN101: *"Why are there still activities and shown in the legend"* — two
+separate things, and the second was a defect in yesterday's own colour-scope change.
+
+### The activities are real, and they are not schedule data
+Measured live: **111 rows = 19 locked WBS summary rows + 92 activities, every one under WBS `3`
+(Planning Phase)** — `3.2.1 Drawing Register` (*"Schematic Design — 590 of 600 drawings approved"*)
+and `3.3.x` Procurement (*"Clearing & Grubbing"*, *"Rebar Supply (G75)"*, *"Admin Workers"*). They are
+the **Design Development and Procurement mirrors**, re-projected by the very next `load()` from the
+Engineering and Procurement apps. ⚠️ **Derived data: deleting them only makes them come back**, so the
+fix is to SAY so — now named in the clear's confirmation dialog and in its success toast.
+
+### ⚠️⚠️ The legend was my own fallback misfiring
+`catScopeIsExec()` asked **"does this project have execution work?"** and fell back to colouring
+everything when the answer was no. That premise was *"a project that has never been phased would
+otherwise have the feature silently switched off"* — but a **cleared** project is not an unphased one.
+Measured on SLN101 after the clear: **all 92 activities carry `wbs_node_id`, none carries its own
+`phase`, and all 92 resolve to `planning`** through the Planning Phase node. Zero resolve to
+`construction`. So the test found no execution work, took the fallback, and coloured all 92 — an
+**emptied** schedule displaying a 92-entry key of drawing-register and procurement item names, which
+is the exact opposite of what scoping the key to the Execution Phase was asked for.
+⚠️ **The test is now "are phases in use at all" (`phaseOf(r)`), not "is there execution work"
+(`isExecPhase(r)`).** Phases are plainly in use on that project; there is simply no execution work
+yet, and the honest answer is an empty colour key. A genuinely unphased project still falls back, so
+the case the fallback exists for is unchanged.
+
+- `MODULE_V` → `20260902k`.
+
+---
 ## The clear, measured live: 28,863 rows in 16 seconds, and one thing it never deleted (2026-09-02j) — fmlozano
 
 Owner ran `migrations/2026-09-02-clear-project-rpc.sql`, then Clear schedule on **SLN101 — which is
