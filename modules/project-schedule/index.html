@@ -30076,7 +30076,8 @@
           return String(pk || '') === String(target);
         }).length;
         what.innerHTML = 'This permanently deletes ' + label() + ' — <strong>' + n + ' activity/activities</strong> — ' +
-          'and cannot be undone. The standard Milestones / Initiation / Planning / Execution Phase skeleton is ' +
+          'together with their <strong>resource assignments</strong>, and cannot be undone. ' +
+          'The standard Milestones / Initiation / Planning / Execution Phase skeleton is ' +
           'auto-seeded and stays in place.' +
           (target === '__all__' ? '' : ' Other packages are <strong>not</strong> touched.');
         go.textContent = target === '__all__' ? 'Delete everything' : 'Delete ' + n + ' activity/activities';
@@ -30096,7 +30097,7 @@
         // started a chain that the second one was racing.
         _beginMutation();
         try {
-        var del;
+        var del, _clearedCodes = [];
         if (target === '__all__') {
           // ⚠️ Chunked — see _deleteAllRows. As one statement this is the exact call that returned
           // "canceling statement due to statement timeout" on SLN101 and cleared nothing.
@@ -30107,11 +30108,15 @@
              WBS ancestor, so a row inside Package 2's tree that never got its own tag
              IS Package 2's work. A server-side `.eq('package_id', …)` would leave every
              one of those behind, and the planner would re-push on top of them. */
-          var ids = rows.filter(function (r) {
+          var _victims = rows.filter(function (r) {
             if (isWbs(r)) return false;
             var pk = packageOf(r);
             return target === '__none__' ? !pk : String(pk || '') === String(target);
-          }).map(function (r) { return r.id; });
+          });
+          var ids = _victims.map(function (r) { return r.id; });
+          // Codes, for the resource assignments below — those join by activity_id, not by row id.
+          _clearedCodes = _victims.map(function (r) { return r.activity_id; })
+                                  .filter(function (c) { return c != null && c !== ''; });
           if (!ids.length) { hideLoading(); UI.toast('Nothing to clear for that scope.', 'warn'); return; }
           del = { error: null };
           for (var i = 0; i < ids.length && !del.error; i += 200) {
@@ -30125,8 +30130,33 @@
         // ⚠️ Scoped the same way: clearing ONE package must not delete another package's
         //    branches, so the tree cleaner is told which subtree it owns.
         var werr = await _clearWbsTree(target === '__all__' ? null : target);
+        // ⚠⚠ RESOURCE ASSIGNMENTS GO TOO, AND FOUND ONLY BY MEASURING THE LIVE CLEAR: SLN101 went
+        // 28,863 -> 111 activities and 8,664 -> 19 WBS nodes while `resource_assignments` sat at
+        // **167 -> 167**. Both import-REPLACE paths have always cleared them; Clear schedule never
+        // did, so it was the odd one out.
+        // ⚠️ This is not tidiness. `resource_assignments.activity_id` matches
+        // `project_schedule.activity_id` BY CODE, not by row id — so 167 assignments pointing at
+        // deleted activities are not inert debris: re-import the same P6 file, which re-uses the same
+        // activity codes, and every one of them SILENTLY RE-ATTACHES to a different project's worth of
+        // work. Clearing to re-import cleanly is the whole reason the button is pressed.
+        // ⚠️ Scoped like everything else here: clearing ONE package must only drop the assignments of
+        // the activities that package actually lost, which are known by their codes.
+        var aerr = null;
+        if (target === '__all__') {
+          var ares = await _deleteAllRows('resource_assignments', null, function (n) {
+            setLoading('Clearing resource assignments… ' + n.toLocaleString() + ' removed');
+          });
+          aerr = ares.error;
+        } else if (_clearedCodes.length) {
+          for (var ci = 0; ci < _clearedCodes.length && !aerr; ci += 200) {
+            var ar = await sb().from('resource_assignments').delete()
+              .eq('project_id', pid).in('activity_id', _clearedCodes.slice(ci, ci + 200));
+            aerr = ar.error;
+          }
+        }
         hideLoading();
         if (werr) { UI.toast('Activities cleared, but the WBS tree could not be: ' + werr.message, 'error'); }
+        else if (aerr) { UI.toast('Schedule cleared, but the resource assignments could not be: ' + aerr.message, 'error'); }
         else { UI.toast('Cleared. The standard WBS skeleton stays in place.', 'success'); }
         collapsed = {}; _wbsSel = null; resetUndo();
         } finally { _endMutation(); }

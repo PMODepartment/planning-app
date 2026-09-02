@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (j) — The clear measured live: 28,863 rows in 16 seconds, and one thing it never deleted
+
+Owner ran the RPC migration and authorised a destructive test on **SLN101 (4PH Strevi Bacoor)**,
+driven through the deployed site in their own signed-in Chrome. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **28,863 activities + 8,645 WBS nodes cleared in ~16 seconds**, in **2 RPC calls** where the old
+  path needed 174 requests and 5-10 minutes. Measured round trips: RPC ~110ms vs a 200-id chunk
+  ~210ms. ⚠️ The counter reported **exactly** the 28,863 measured beforehand, and the batch boundary
+  landed at 20,000 — `p_limit` behaving as designed. All 19 locked skeleton nodes survived.
+- ⚠️ The clear was deliberately started **while the heal chain was mid-"Attaching activities to the
+  WBS tree…"** — the precise race that used to leave a project un-clearable. It cleared cleanly, and
+  the new repair-chip states were confirmed live.
+- ⚠️⚠️ **`resource_assignments` went 167 → 167 — Clear schedule has never deleted them**, though both
+  import-REPLACE paths always have. Not debris: assignments join activities **by activity code**, so
+  re-importing the same P6 file would have silently re-attached all 167 to different work — defeating
+  the exact purpose the button is pressed for. Now cleared with the schedule, by code for a package
+  scope, and named in the confirmation dialog. ⚠️ That fix shipped after the run, so it is not itself
+  live-verified.
+- ⚠️ Correction carried from (i): SLN101 *is* 4PH Strevi Bacoor and held 28,863 rows, so the owner's
+  "29,605 removed" screenshot was never evidence of a runaway counter. `MODULE_V` → `20260902j`.
+
 ### 2026-09-02 (i) — The delete loop belongs in the database; Progress / Stacking / Outline are buttons again
 
 Owner: the clear ran at *"100-200 activities per 2 seconds"*, stopped, and *"when I tried deleting

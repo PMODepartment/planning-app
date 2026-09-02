@@ -1,3 +1,56 @@
+## The clear, measured live: 28,863 rows in 16 seconds, and one thing it never deleted (2026-09-02j) — fmlozano
+
+Owner ran `migrations/2026-09-02-clear-project-rpc.sql`, then Clear schedule on **SLN101 — which is
+4PH Strevi Bacoor**. Driven through the deployed site in the owner's own signed-in Chrome, with the
+owner's explicit go-ahead for a destructive run on a live project.
+
+### Verified live, and it is the first time any of this pass could be
+- **All three `clear_project_*` functions are registered** — probed with a project id no project has,
+  so each matched zero rows and deleted nothing, and each answered `0` rather than PGRST202.
+- ⚠️ The **anon key still has no grants**: PostgREST's OpenAPI root answers 401 on both the anon key
+  and the user's own token, so the function list had to be established by probing, not by reading.
+- **SLN101 has no contract packages**, so Clear takes the `__all__` branch — the RPC path.
+- **Round trips, deleting nothing:** RPC **~110ms**, a 200-id chunk **~210ms**. For 28,863 rows that
+  is **2 calls against 174 requests**.
+
+**The run itself, sampled every 250ms:**
+
+| t | caption |
+|---|---|
+| 0.25s | Clearing schedule… |
+| 7.0s | Clearing schedule… **20,000 removed** (first RPC batch) |
+| 10.5s | Clearing schedule… **28,863 removed** |
+| 14.5s | Clearing the WBS tree… **8,645 removed** |
+| ~16.6s | done |
+
+⚠️ **28,863 is exactly the row count measured before the run**, so the counter is honest — and the
+batch boundary at 20,000 is the `p_limit` doing what it was written to do. **`project_schedule`
+28,863 → 111, `wbs_nodes` 8,664 → 19 (all 19 locked, all 8,645 unlocked gone).** The 111 are the
+re-seeded skeleton summaries and the two mirror branches. Against ~5-10 minutes on the old path.
+
+⚠️ **The clear was started WHILE the heal chain was mid-`_wbsLinkActivityParents`** — the chip read
+*"Attaching activities to the WBS tree…"* when the dialog opened. That is the exact race that used to
+leave a project un-clearable, and it cleared cleanly. **The `repair` chip states were also confirmed
+live** (*"Restoring missing WBS rows…"*, *"Attaching activities to the WBS tree…"*, then `Live`).
+
+### ⚠️⚠️ AND THE THING ONLY A LIVE RUN COULD HAVE FOUND: `resource_assignments` 167 → 167
+Clear schedule has **never** deleted them. Both import-REPLACE paths always have, so Clear was the
+odd one out, and nothing on screen said so.
+⚠️ **This is not debris.** `resource_assignments.activity_id` matches `project_schedule.activity_id`
+**by CODE, not by row id**. 167 assignments left pointing at deleted activities do not stay
+harmless: re-import the same P6 file — which re-uses the same activity codes — and **every one of
+them silently re-attaches to different work**. Clearing in order to re-import cleanly is the entire
+reason the button gets pressed, so this defeated the purpose in the quietest possible way.
+Now cleared with the schedule (chunked for `__all__`, **by activity code** for a package scope, since
+that is the join), reported separately on failure, and **named in the confirmation dialog** — which is
+what a planner reads before typing the project code.
+
+⚠️ **Not re-verified live**: the fix shipped after the sandbox was already cleared, so the
+167 → 0 has not been watched happening. Next clear on any project will show it.
+
+- `MODULE_V` → `20260902j`.
+
+---
 ## The delete loop belongs in the database; Progress / Stacking / Outline are toolbar buttons again (2026-09-02i) — fmlozano
 
 ### 1 ⚠️⚠ "100-200 activities per 2 seconds" — and that 10ms a row was never database time
