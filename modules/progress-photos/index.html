@@ -315,10 +315,17 @@
   <div class="pp-lightbox" id="pp-lightbox" hidden>
     <div class="pp-lb-tools" id="pp-lb-tools">
       <button class="pp-lb-tool" id="pp-lb-download" title="Download"><span data-ico="download" data-ico-size="16"></span></button>
+      <!-- Item 10 (2026-09-02): zoom, placed to the LEFT of show/hide markup. -->
+      <button class="pp-lb-tool" id="pp-lb-zoomout" title="Zoom out"><span data-ico="zoomOut" data-ico-size="16"></span></button>
+      <button class="pp-lb-tool" id="pp-lb-zoomin" title="Zoom in"><span data-ico="zoomIn" data-ico-size="16"></span></button>
       <!-- Owner feedback (item 5): markup/adjust are icon-only now, matching
            every other lightbox tool — the text labels these carried (added
            when Markup was one bare icon among five and easy to miss) are
-           gone; the title attribute still names each tool on hover. -->
+           gone; the title attribute still names each tool on hover.
+           ⚠️ The markup SHOW/HIDE toggle itself is NOT duplicated here — it
+           already lives in the right-hand tools cluster below
+           (#pp-lb-markuptoggle, owner feedback item 6); a second element
+           with the same id would be an invisible duplicate-DOM-id bug. -->
       <button class="pp-lb-tool" id="pp-lb-markupedit" title="Add or edit markup on this photo — pencil, shapes, icons, text">
         <span data-ico="palette" data-ico-size="16"></span></button>
       <button class="pp-lb-tool" id="pp-lb-adjustedit" title="Adjust exposure, brightness, contrast and sharpness">
@@ -379,15 +386,15 @@
   <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
   <script src="../../assets/js/ui.js?v=20260902a"></script>
-  <script src="../../assets/js/icons.js?v=20260902e"></script>
+  <script src="../../assets/js/icons.js?v=20260902f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <script src="module.js?v=20260902a"></script>
-  <script src="ppr.js?v=20260901a"></script>
+  <script src="ppr.js?v=20260902f"></script>
   <script src="pano.js?v=20260901d"></script>
   <script src="recon.js?v=20260830b"></script>
-  <script src="bim.js?v=20260901c"></script>
+  <script src="bim.js?v=20260902b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

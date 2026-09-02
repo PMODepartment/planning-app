@@ -252,6 +252,14 @@
    photo-markup / key-plan toggles) — solid brand-red fill, same family as
    .ppr-mktool.is-active just below it in the file. */
 .pp-iconbtn.is-active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
+/* Item 5: the icon itself is targeted explicitly too (not just the button's
+   own `color`), so the SVG's `stroke="currentColor"` can never be left
+   reading a stale/inherited value on hover — the glyph must read white
+   against the dark-red `--pd-bad` fill, not grey. */
+.pp-iconbtn.pp-del:hover .pd-ico,
+.pp-iconbtn.pp-del:hover [data-ico] {
+  color: #fff;
+}
 
 /* ---- Gallery view -------------------------------------------------------- */
 /* --pp-tile-min/--pp-tile-h are set from JS (applyTileScale(), module.js) on
@@ -418,15 +426,20 @@
    overlay either media type) so the canvas has something to position
    absolutely against — a bare .pp-lb-img with no wrapper had nothing for an
    overlay to be relative TO. */
-.pp-lb-imgwrap { position: relative; display: flex; max-width: 88vw; max-height: 78vh; }
+/* Item 10 (2026-09-02): overflow:hidden so a zoomed-in image/video is
+   contained rather than spilling past the wrapper's own box. */
+.pp-lb-imgwrap { position: relative; display: flex; max-width: 88vw; max-height: 78vh; overflow: hidden; }
 .pp-lb-img {
   max-width: 88vw; max-height: 78vh; object-fit: contain;
   border: 3px solid #fff; background: #fff;
+  transform-origin: center center; transition: transform .12s ease;
 }
 /* Sized/positioned in JS (paintMarkupOverlay) to match the visible media
    element's exact rendered box in pixels — the CSS only needs to keep it
-   pinned to the wrapper's top-left and out of the way of clicks/drag. */
-.pp-lb-markup { position: absolute; top: 0; left: 0; pointer-events: none; display: none; }
+   pinned to the wrapper's top-left and out of the way of clicks/drag. Item
+   10: the SAME transform as .pp-lb-img (applyLightboxZoom) keeps the two
+   pixel-aligned at any zoom level. */
+.pp-lb-markup { position: absolute; top: 0; left: 0; pointer-events: none; display: none; transform-origin: center center; transition: transform .12s ease; }
 /* Item 4 (11-item round) — the lightbox's key-plan overlay: "overlays on top
    of the photo at the top right corner with the size 1/8 of the photo".
    Same corner-pinned-fraction shape as .ppr-kppopup (item 11) below, just
@@ -486,7 +499,7 @@
   align-items: center; justify-content: center;
   background: rgba(255, 255, 255, .12); border: 0; color: #fff; border-radius: 3px;
 }
-.pp-lb-tool:hover { background: rgba(255, 255, 255, .28); }
+.pp-lb-tool:hover:not(:disabled) { background: rgba(255, 255, 255, .28); }
 .pp-lb-tool-danger:hover { background: var(--pd-red); }
 .pp-lb-tool.is-active { background: var(--pd-red); }
 /* Owner feedback (item 6): a second tool cluster, pinned to the right side,
@@ -496,6 +509,11 @@
    happens to clear its 44px/right:10px mobile size too, so one rule serves
    both — see the phone media query below for the matching `top`. */
 .pp-lb-tools-right { position: absolute; top: 14px; right: 62px; display: flex; gap: 6px; z-index: 2; }
+/* Needed by Item 10 (2026-09-02)'s zoom in/out buttons, which disable at
+   each zoom boundary (LB_ZOOM_MIN/MAX) — .pp-lb-tool-labeled is NOT carried
+   forward: the "Eight-item owner feedback round" (item 5) already reverted
+   Markup/Adjust back to icon-only and removed this rule as dead weight. */
+.pp-lb-tool:disabled { opacity: .35; cursor: not-allowed; }
 
 /* ---- Markup editor (18-item list item 13/14) ------------------------------
    A vector annotation layer over an <img>: toolbar (shape/pen/eraser/icon
@@ -771,20 +789,29 @@
 /* Presentation-only markup overlay (18-item list item 14) — a SEPARATE store
    from the photo's own permanent markup (ppr_slide_markups, keyed by
    ppr_slide_id+pane), toggled/edited per pane, never shown on Gallery tiles. */
+/* Item 7/8/10 (2026-09-02): moved from top-LEFT to top-RIGHT, and now holds
+   the whole zoom/markup/key-plan cluster in one row, left to right:
+   zoom out, zoom in, show/hide markup, show/hide key plan — per the ask
+   ("zoom... to the left of the markup toggle", "key plan... to the right of
+   the markup toggle"). */
 .ppr-panetools {
-  position: absolute; top: 8px; left: 8px; display: flex; gap: 5px; z-index: 2;
+  position: absolute; top: 8px; right: 8px; display: flex; gap: 5px; z-index: 4;
 }
 .ppr-mktool {
   width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
   cursor: pointer; background: rgba(35, 31, 32, .55); border: 0; border-radius: 3px;
   color: #fff;
 }
-.ppr-mktool:hover { background: var(--pd-red); }
+.ppr-mktool:hover:not(:disabled) { background: var(--pd-red); }
 .ppr-mktool.is-active { background: var(--pd-red); }
+.ppr-mktool:disabled { opacity: .35; cursor: not-allowed; }
 /* Sized in JS to match the image's own rendered box; pointer-events:none so
    the toolbar buttons above it (and the image below the toolbar's own area)
    stay clickable — the canvas is purely a paint surface. */
-.ppr-mkcanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.ppr-mkcanvas {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
+  transform-origin: center center; transition: transform .12s ease;
+}
 
 /* Slide-sorter (18-item list item 12) — drag-to-reorder thumbnail grid */
 .ppr-sortgrid {
@@ -829,11 +856,17 @@
 /* The old per-photo "upload your own key plan" wizard (.pp-kp*) is retired
    (2026-08-29 item 11) — superseded by .bim-pinfield/.bim-pinstage-* above,
    which picks from the real floor_plans database instead. */
-.ppr-imgwrap { position: relative; }
+/* Item 10: overflow:hidden contains the zoomed <img>/<canvas> pair inside
+   the card rather than letting them bleed over the card's own border/the
+   rest of the page. */
+.ppr-imgwrap { position: relative; overflow: hidden; }
 .ppr-img {
   width: 100%; display: block; background: var(--pd-bg);
   border: 1px solid var(--pd-line); border-radius: 3px;
+  transform-origin: center center; transition: transform .12s ease;
 }
+/* Item 9: clicking a photo opens it in the lightbox. */
+.ppr-img[data-openphoto] { cursor: zoom-in; }
 .ppr-img.pp-noimg { height: 260px; }
 /* Key plan overlays the top-right of each photo, as in the app */
 .ppr-keyplan {
@@ -1028,6 +1061,17 @@
 .bim-pin-panorama { background: var(--pd-red); }
 .bim-pin-reconstruction { background: var(--pd-dark); }
 .bim-pin-photo { background: var(--pd-ok); }
+/* Item 3: a drone-sourced pin gets its own colour (distinct from either
+   panorama-red or reconstruction-dark, so "this one was flown" reads at a
+   glance) and a soft radial halo sized 3x the icon (set inline from JS,
+   since the icon size itself is dynamic), centred on the pin exactly like
+   .bim-pincone above already anchors to the same left/top point. */
+.bim-pin-drone { background: var(--pd-warn); }
+.bim-pin-dronehalo {
+  position: absolute; transform: translate(-50%, -100%); pointer-events: none; z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--pd-warn) 45%, transparent) 0%, transparent 75%);
+}
 #bim-place.is-active { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
 
 /* Direction cone (Batch E) — a CSS conic-gradient wedge, rotated per pin via
@@ -1247,20 +1291,38 @@
    ⚠️ Supersedes item 21's per-pane .ppr-kpicon button (deleted — the show/
    hide decision is one header button now, #ppr-kp-toggle, styled via the
    shared .pp-iconbtn/.is-active rules every other header icon uses).
-   .ppr-kppopup used to be a fixed-220px floating dropdown BELOW the icon;
-   "key plan should show up in the top right corner of the photo overlayed
-   with size 1/10 of photo size" — it's now a direct overlay pinned to the
-   photo's own top-right corner, sized as a FRACTION of the photo (10%
-   width, min 60px so it stays legible on a narrow pane) rather than a fixed
-   pixel width unrelated to the photo's own size. */
-.ppr-kppopup {
-  position: absolute; top: 8px; right: 8px; z-index: 4;
-  width: 10%; min-width: 60px; max-width: 140px;
-  border: 2px solid var(--pd-card); border-radius: 3px;
+   ⚠️ Item 8 (2026-09-02) supersedes this AGAIN: the old flat popup
+   (.ppr-kppopup, itself already dead — never referenced anywhere by this
+   point, deleted rather than left as dead weight) was a fixed-220px
+   floating dropdown showing a bare reference image; it's now .ppr-kpoverlay,
+   a resizable, always-anchored-top-right miniature of the plan showing the
+   REAL pin + camera-direction cone (BIM.keyPlanMarkerHTML), sized as a
+   FRACTION of the photo (starts at 1/10 its width) rather than a fixed
+   pixel width unrelated to the photo's own size. The bottom-left corner is
+   the drag handle — the box is pinned `top/right`, so only its WIDTH needs
+   to change (its `aspect-ratio`, set inline per-pin to match the plan's own
+   true dimensions, keeps height in lock-step with no JS needed for that
+   half). */
+.ppr-kpoverlay {
+  position: absolute; top: 8px; right: 8px; z-index: 3;
+  min-width: 60px; max-width: 90%;
+  border: 2px solid var(--pd-card); border-radius: 3px; overflow: hidden;
   box-shadow: 0 4px 18px rgba(0, 0, 0, .4); background: var(--pd-card);
   pointer-events: none;
 }
-.ppr-kppopup img { width: 100%; display: block; border-radius: 1px; }
+.ppr-kpoverlay-inner { position: relative; width: 100%; height: 100%; }
+/* `contain`, never `fill` — when the plan's true pixel size is unknown the
+   box falls back to a plain 4:3 aspect (see keyPlanInfoForPane in ppr.js),
+   and stretching a differently-proportioned image to fill that box would
+   distort it. A pin that's letterboxed inside its own image is still a
+   plain, honest approximation; a visibly warped plan image is not. */
+.ppr-kpoverlay-img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.ppr-kpoverlay-resize {
+  position: absolute; left: 0; bottom: 0; width: 14px; height: 14px;
+  cursor: nesw-resize; z-index: 5;
+  background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, .8) 50%);
+}
+.ppr-kpoverlay-resize:hover { background: linear-gradient(135deg, transparent 50%, var(--pd-red) 50%); }
 
 /* ---- Item 17: stacked photo card in the presentation preview grid --------
    When a slide has BOTH a previous and a current photo, the preview thumb is
@@ -1365,8 +1427,17 @@
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px;
   padding-bottom: 10px; border-bottom: 1px solid var(--pd-line);
 }
-.pp-mk-toolgroup { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
-.pp-mk-actiongroup { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; }
+/* Item 11: the Tools row and the Line/Fill/Text groups row are now two
+   EXPLICIT stacked rows, not one flex-wrap row that only broke onto a
+   second line once it ran out of horizontal room — "move line colours
+   group below the tools group" has to hold at any width. */
+.pp-mk-toolgroup { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; flex: 1 1 auto; min-width: 0; }
+.pp-mk-toolrow, .pp-mk-groupsrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; width: 100%; }
+.pp-mk-actiongroup { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; align-self: flex-start; }
+/* Same box height on the tool row's own pill AND every option group below it
+   (Line/Fill/Text) — box-sizing:border-box so the shared min-height reads
+   as one true visual height regardless of each box's own padding. */
+.pp-mk-tools, .pp-mk-group { min-height: 40px; box-sizing: border-box; }
 .pp-mk-tools { display: flex; flex-wrap: wrap; gap: 3px; background: var(--pd-bg); border-radius: 999px; padding: 3px; }
 /* Fourth round, item 3: "use icons instead" of text labels — the button is
    now a plain square (was inline-flex + gap, sized for an icon+label pair

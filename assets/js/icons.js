@@ -104,7 +104,11 @@
     drone:       '<rect x="10" y="10" width="4" height="4" rx="1"/><line x1="10" y1="10" x2="5" y2="5"/><line x1="14" y1="10" x2="19" y2="5"/><line x1="10" y1="14" x2="5" y2="19"/><line x1="14" y1="14" x2="19" y2="19"/><circle cx="5" cy="5" r="2.3"/><circle cx="19" cy="5" r="2.3"/><circle cx="5" cy="19" r="2.3"/><circle cx="19" cy="19" r="2.3"/>',
     // "Archive" — a storage box with a lid, used by Progress Photos' batch
     // Archive action (icon-only toolbar buttons).
-    archive:     '<rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><line x1="10" y1="13" x2="14" y2="13"/>'
+    archive:     '<rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><line x1="10" y1="13" x2="14" y2="13"/>',
+    // Zoom in/out — the standard magnifying-glass-with-a-sign glyph, both
+    // sharing the same lens+handle so the two read as a pair.
+    zoomIn:      '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/>',
+    zoomOut:     '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><line x1="8" y1="11" x2="14" y2="11"/>'
   };
 
   function svg(name, size) {
