@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (q) — The activity link times out at 8s, and three layers of silence hid it
+
+Owner clicked **Adopt existing WBS**; the tree finished, the activities did not, nothing said so.
+Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **Measured live:** `wbs_link_activity_parents` answers **57014 "canceling statement due to statement
+  timeout" after 8,173ms**. The deployment's `statement_timeout` is ~8s and that is ONE update over
+  16,485 activities joined to a GROUP BY over 12,473 summary rows, on a key computed per row that no
+  index can serve. Same class as the original clear timeout.
+- **State left behind:** tree complete (12,473 nodes, all summary rows linked), **16,393 of 16,485
+  activities with a null `wbs_node_id`** — no phase, no trade, empty Vertical Stacking, every node
+  count 0, while the grid looks perfect.
+- ⚠️⚠️ **Three layers of silence:** the catch toasted only `if (!silent)`; every real caller passes
+  silent; and **`onclick = wbsAdopt` passed the click EVENT as `silent`** — truthy — so the button I
+  documented last pass as the *non-silent* recovery path skipped its confirm, its success toast and
+  its error toast. My own recommended diagnostic could not produce a diagnosis.
+- Fixed: **`migrations/2026-09-02-wbs-link-batched.sql`** adds `p_limit` (⚠️ `drop function` first, or
+  PostgREST answers PGRST203 for the one-arg call); the client loops, halves the batch on 57014 and
+  reports regardless of `silent`; the button calls `wbsAdopt(false)`.
+- ⚠️ **Not verified end to end — the migration has not been run.** `MODULE_V` → `20260902q`.
+
 ### 2026-09-02 (p) — The import's tree build stops half way and says nothing
 
 Owner re-imported 4PH Strevi and asked for the output to be checked. Detail in

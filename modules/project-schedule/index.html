@@ -19988,16 +19988,40 @@
   // send one {code,node_id} pair per branch. That matters at this scale: the per-row PATCH fallback
   // would be 16,393 requests, the very runaway `_wbsLinkRows` exists to avoid. So there is NO row-by-row
   // fallback here: without the function we say so and leave the data alone rather than hanging the app.
+  // ⚠️⚠️ BATCHED, AND IT REPORTS. Measured live against 4PH Strevi: the single-statement form
+  // answered **57014 "canceling statement due to statement timeout" after 8,173ms** — the
+  // deployment's statement_timeout is ~8s and one UPDATE over 16,485 activities joined to a GROUP BY
+  // over 12,473 summary rows needs more. ⚠️ The old code caught that and toasted only `if (!silent)`,
+  // and every caller that matters passes silent — so the import ended with a COMPLETE WBS tree
+  // (12,473 nodes, every summary row linked) and **16,393 of 16,485 activities still unattached**,
+  // with nothing said anywhere. That is the state where Vertical Stacking draws nothing, no activity
+  // has a phase or a trade, and every node count reads 0, while the grid looks perfect.
+  // ⚠️ A plpgsql loop inside the function would not have helped: the timeout is armed once, when the
+  // top-level statement starts. The bound has to be visible HERE, which is why the migration takes a
+  // `p_limit` and this loops until it gets 0 — the same shape as the clear.
   async function _wbsLinkActivityParents(silent) {
     if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
-    var n = 0;
-    try {
-      var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid });
-      if (rp.error) throw rp.error;
-      n = rp.data || 0;
-    } catch (e) {
-      if (!silent) UI.toast('Activities could not be attached to the WBS tree — run migrations/2026-09-01-wbs-link-rpc.sql.', 'warn');
-      return 0;
+    var n = 0, batch = 4000, lastErr = null;
+    for (var call = 0; call < 200; call++) {
+      var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid, p_limit: batch });
+      if (rp.error) {
+        // ⚠️ HALVE AND RETRY on a timeout rather than lose the whole operation — the batch that fits
+        // depends on the deployment's statement_timeout, which the client cannot read.
+        if (_isTimeout(rp.error) && batch > 125) { batch = Math.floor(batch / 2); continue; }
+        lastErr = rp.error; break;
+      }
+      var got = Number(rp.data) || 0;
+      n += got;
+      if (n) setLoading('Attaching activities to the WBS tree… ' + n.toLocaleString() + ' linked');
+      if (!got) break;
+    }
+    if (lastErr) {
+      // ⚠️ REPORTED WHETHER OR NOT `silent`. A half-attached tree is not a quiet condition, and the
+      // old silence is precisely why this survived two imports unnoticed.
+      try { console.error('[ps] wbs_link_activity_parents failed after ' + n + ' linked', lastErr); } catch (e2) {}
+      UI.toast('Activities could not all be attached to the WBS tree (' + n.toLocaleString() + ' linked): ' +
+               (lastErr.message || lastErr.code || 'unknown') +
+               ' — Vertical Stacking, Trade and phase read from the tree and will be incomplete.', 'error');
     }
     if (!n) return 0;
     // Mirror into memory so the next render is right without a refetch — same contract as _wbsResyncCodes.
@@ -30124,7 +30148,11 @@
       wbsDuplicate(_wbsSel);
     };
     document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
-    document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
+    // ⚠⚠ `onclick = wbsAdopt` PASSED THE CLICK EVENT AS `silent`, which is truthy. So the button
+    // documented (by me, last pass) as "the non-silent recovery path" skipped its own confirm, its
+    // success toast AND its error toast — the owner clicked Adopt existing WBS, the tree really did
+    // finish, and the screen said nothing at all. Call it explicitly.
+    document.getElementById('ps-wbs-adopt').onclick = function () { wbsAdopt(false); };
     document.getElementById('ps-wbs-reset').onclick = wbsResetTree;
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
     var _pb = document.getElementById('ps-sync-prc'); if (_pb) _pb.onclick = syncProcurementApp;

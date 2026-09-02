@@ -1,3 +1,51 @@
+## The activity link times out at 8s, and three layers of silence hid it (2026-09-02q) — fmlozano
+
+Owner clicked **Adopt existing WBS** and asked what happened. The tree finished; the activities did
+not, and nothing said so.
+
+### The root cause, measured rather than inferred
+Calling the RPC directly in the owner's signed-in browser:
+
+```
+rpc('wbs_link_activity_parents', { p_project_id: 'SLN101' })
+  -> 57014  "canceling statement due to statement timeout"   after 8,173 ms
+```
+
+⚠️ **The deployment's `statement_timeout` is ~8 seconds**, and that function is ONE update over
+**16,485 activities** joined against a `GROUP BY` over **12,473 summary rows**, with the join key
+computed per row (`regexp_replace(wbs, '\.[^.]+$', '')`) — which no index can serve. It is the same
+class of defect as the original clear timeout: an unbounded server-side statement.
+
+**State it left behind:** WBS tree **complete** (12,473 nodes, all 12,473 summary rows linked) and
+**16,393 of 16,485 activities with `wbs_node_id = NULL`.** The 92 that were linked are the Design
+Development / Procurement mirrors, which never needed the RPC.
+
+### ⚠️⚠️ THREE LAYERS OF SILENCE, AND THAT IS THE REAL STORY
+1. `_wbsLinkActivityParents` caught the timeout and toasted only `if (!silent)`.
+2. Every caller that matters passes `silent`.
+3. ⚠️ **`document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;` passes the CLICK EVENT as the
+   `silent` argument** — truthy. So the button I documented last pass as *"the non-silent recovery
+   path"* skipped its confirm, its success toast **and** its error toast. The owner clicked it, the
+   tree really did finish, and the screen said nothing at all. That is why my own recommended
+   diagnostic produced no diagnosis.
+
+### Fixed
+- **`migrations/2026-09-02-wbs-link-batched.sql`** — `wbs_link_activity_parents(text, integer)` with a
+  `p_limit`, defaulting to 4,000. ⚠️ `drop function` first, deliberately: adding a defaulted second
+  parameter would leave both signatures in the catalog and PostgREST answers **PGRST203 (ambiguous)**
+  for a one-argument call. ⚠️ A plpgsql loop inside the function would not help — the timeout is armed
+  once, when the top-level statement starts — so the bound has to be visible to the client.
+- **The client loops** until a call returns 0 and **halves the batch on 57014**, because the batch that
+  fits depends on a `statement_timeout` the client cannot read. It reports progress as it goes.
+- **It reports failure regardless of `silent`**, with the count that did land.
+- **The Adopt button calls `wbsAdopt(false)` explicitly.**
+
+⚠️ **Not yet verified end to end:** the migration has not been run, so the batched link has never
+executed. Run it, then Adopt existing WBS — `activitiesLinked` should go 92 → ~16,485.
+
+- `MODULE_V` → `20260902q`.
+
+---
 ## The import's tree build stops half way and says nothing (2026-09-02p) — fmlozano
 
 Owner re-imported 4PH Strevi on the (o) build and asked for the output to be checked. The insert is
