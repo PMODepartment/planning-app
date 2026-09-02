@@ -487,6 +487,24 @@
     /* Per-column filter row (toggled via the column "+" chooser). Grows the grid head by 30px, so
        the Gantt head is grown to match (.ps-colf-on) to keep rows aligned with bars. The frozen
        columns' filter cells keep the header background so they don't read as card-white. */
+    /* The import lock's banner. Deliberately loud and un-dismissable: its whole job is to be the
+       thing you notice before you start typing. */
+    .ps-lockbar { display:flex; align-items:center; gap:10px; margin:0 0 10px; padding:9px 14px; border-radius:9px;
+      background:var(--pd-red-light); border:1px solid var(--pd-red); color:var(--pd-ink); font-size:12.5px; line-height:1.5; }
+    .ps-lockbar-txt { min-width:0; }
+    .ps-lockbar-sub { display:block; color:var(--pd-muted); font-size:11.5px; }
+    .ps-lockbar-spin { flex:none; width:15px; height:15px; border-radius:50%; border:2px solid var(--pd-red);
+      border-top-color:transparent; animation:ps-lockspin .8s linear infinite; }
+    @keyframes ps-lockspin { to { transform:rotate(360deg); } }
+    /* ⚠️ The primary verbs are dimmed AND pointer-events:none while locked. Disabling them one by one
+       would mean finding every one of them again next time a button is added; the class is on <body>
+       so anything that appears later is covered too. `pointer-events` rather than `disabled` because
+       these are a mix of buttons, selects and menu items. */
+    body.ps-locked #ps-add, body.ps-locked #ps-import, body.ps-locked #ps-clear,
+    body.ps-locked #ps-act-update, body.ps-locked #ps-schedbtn,
+    body.ps-locked .ps-status-pill, body.ps-locked #b-impcommit {
+      opacity:.45; pointer-events:none;
+    }
     .ps-rz-row { display:flex; align-items:center; gap:6px; padding:4px 12px 8px; }
     .ps-rz-row .pd-btn { min-height:28px; padding:0 9px; font-size:12px; }
     .ps-rz-val { flex:1 1 auto; text-align:center; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
@@ -3747,8 +3765,12 @@
      all run inside one, and each can leave work for the repairs — so the next load must do them
      rather than trust a fingerprint taken before the write. Cheap insurance at the one choke point
      they all pass through. */
-  function _beginMutation() { _mutating++; _loadGen++; try { _healInvalidate(); } catch (e) {} return { done: false }; }
+  function _beginMutation() { _mutating++; _loadGen++; try { _healInvalidate(); } catch (e) {} try { _syncLock(); } catch (e) {} return { done: false }; }
   function _endMutation(tok) {
+    // ⚠️ The banner is NOT cleared here. `_endMutation` fires when the WRITES are done, and the tree
+    // passes that follow are the slow half — clearing it here is exactly the "looks finished but
+    // isn't" state the lock exists to remove. `_setFresh('live')` clears it.
+    try { setTimeout(_syncLock, 0); } catch (e) {}
     if (tok) { if (tok.done) return; tok.done = true; }
     _mutating = Math.max(0, _mutating - 1);
   }
@@ -5897,7 +5919,7 @@
   }
 
   async function _healSkeletonNesting(kind) {
-    if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
+    if (!pid || !canWrite || _editLocked()) return 0;
     await _dedupeSkeletonRoots(kind);
     var root = _skeletonRoot(kind);
     if (!root) return 0;
@@ -5947,7 +5969,7 @@
     // ⚠️ `_isMutating()` for the same reason as syncDesignDevelopment: this INSERTS branches
     // sourced from the Procurement (WPM) app, and a clear or a re-import must not have work
     // re-created underneath it mid-operation.
-    if (!pid || !canWrite || _prcSyncing || _isMutating() || window.__viewOnly || window.__archived) return;
+    if (!pid || !canWrite || _prcSyncing || _isMutating() || _editLocked()) return;
     var prcNode = _skeletonRoot('procurement');
     // Lift back anything the old ambiguous resolver mis-nested, THEN re-resolve: the heal can
     // merge nodes (including, in principle, the one we just picked), so the root must be read
@@ -6234,7 +6256,7 @@
   // schedule; this one is visible to another department the moment it lands, so it is not
   // something to trigger by mis-clicking next to "Sync Procurement".
   async function pushNeedByToWpm() {
-    if (!canWrite || window.__viewOnly || window.__archived) {
+    if (!canWrite || _editLocked()) {
       UI.toast('Only admins/planners can push need-by dates to the Procurement app.', 'error'); return;
     }
     var nb = wpNeedByIndex(), keys = Object.keys(nb);
@@ -6283,7 +6305,7 @@
     // ⚠️ `_isMutating()` as well as `_ddSyncing`: this INSERTS branches sourced from the Engineering
     // app, and running it into a schedule that is being cleared or re-imported re-creates work under
     // a tree the caller is in the middle of replacing.
-    if (!pid || !canWrite || _ddSyncing || _isMutating() || window.__viewOnly || window.__archived) return;
+    if (!pid || !canWrite || _ddSyncing || _isMutating() || _editLocked()) return;
     var ddNode = _skeletonRoot('design_development');
     if (ddNode) { await _healSkeletonNesting('design_development'); ddNode = _skeletonRoot('design_development') || ddNode; }
     if (!ddNode) return;                                   // skeleton not seeded (or migration not run)
@@ -6973,12 +6995,75 @@
   var _repairMsg = '';
   // Names the pass rather than showing a bare spinner: "Attaching 16,485 activities" is a fact a
   // planner can weigh against the wait; "Loading…" is not.
-  function _repair(msg) { _repairMsg = msg; _setFresh('repair'); }
+  /* ==========================================================================================
+     THE IMPORT LOCK
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-02: *"when the import is still ongoing let's prevent the user from disrupting the
+     import by adding activities or changing the details of the existing activities until the import
+     is complete. Right now there is no guard for that. By allowing users to freely do this they can
+     mistakenly think that the import is already done and yet it is still ongoing."*
+
+     Both halves of that are real. The DANGER is concrete: an import runs inside a mutation region
+     that clears and re-inserts thousands of rows and then rebuilds the WBS tree, and an edit landing
+     in the middle of it is written against a row set that is about to be replaced — or worse, adds a
+     row the tree-building passes then have to guess a home for. The CONFUSION is the reason it
+     happens: the progress overlay closes when the INSERTS finish, and the schedule underneath is
+     already painted and looks finished, while the tree is still being built for another minute.
+
+     ⚠️ SO THE LOCK SPANS THE WHOLE JOB, not just the write. `_isMutating()` covers the insert region;
+     `_repairBusy` covers the load-time tree passes that follow it. The banner is visible for both,
+     because from the planner's side it is one operation — "the import" — and the moment it stops
+     saying anything is the moment they start editing.
+     ⚠️ It does NOT lock an ordinary load. A cached-then-revalidate open is not a job anybody has to
+     wait for, and locking it would make the schedule feel broken every time it opened.
+     ========================================================================================== */
+  var _repairBusy = false;
+  /* What the banner calls the job. ⚠️ The default has to be true of everything that opens a mutation
+     region — an import AND a Schedule Setup push — so it is deliberately generic, and the callers
+     set something specific. */
+  var _lockLabel = '';
+  function _setLockLabel(t) { _lockLabel = t || ''; try { _syncLock(); } catch (e) {} }
+  function _editLocked() { return window.__viewOnly || window.__archived || _isMutating() || _repairBusy; }
+  function _editLockMsg() {
+    if (_isMutating() || _repairBusy) {
+      return 'The schedule is locked while ' + (_lockLabel || 'a schedule update') + ' finishes — editing now could be ' +
+             'written over. The banner at the top clears when it is safe.';
+    }
+    return 'This project is read-only.';
+  }
+  /* The banner. ⚠️ Inserted rather than declared in the markup, because it must sit above the
+     toolbar on EVERY view (the Setup and Cost Loading hide `.ps-toolbar`, and an import started from
+     the Setup finishes while the planner is still on it). One element, moved nowhere, toggled here. */
+  function _lockBanner(text) {
+    var host = document.querySelector('.pd-main'); if (!host) return;
+    var el = document.getElementById('ps-lockbar');
+    if (!text) { if (el) el.remove(); document.body.classList.remove('ps-locked'); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'ps-lockbar'; el.className = 'ps-lockbar';
+      el.innerHTML = '<span class="ps-lockbar-spin"></span><span class="ps-lockbar-txt"></span>';
+      host.insertBefore(el, host.firstChild);
+    }
+    el.querySelector('.ps-lockbar-txt').innerHTML = text;
+    document.body.classList.add('ps-locked');
+  }
+  // The one place the banner's text is decided, so it cannot disagree with the lock.
+  function _syncLock() {
+    if (_isMutating() || _repairBusy) {
+      _lockBanner('<b>' + esc(_lockLabel || 'A schedule update') + ' in progress \u2014 do not edit yet.</b> ' +
+        (_repairMsg ? esc(_repairMsg) : 'Writing the activities into the schedule\u2026') +
+        ' <span class="ps-lockbar-sub">Adding or changing activities is blocked until this finishes, because the rows are still being written.</span>');
+    } else _lockBanner('');
+  }
+  function _repair(msg) { _repairMsg = msg; _repairBusy = true; _setFresh('repair'); _syncLock(); }
+  // ⚠️ Cleared by the ONE state that means "nothing further can change the tree" — see the
+  // `_setFresh('live')` call at the end of load(). Anything else would clear it mid-chain.
+  function _repairDone() { _repairBusy = false; _repairMsg = ''; _syncLock(); }
   function _setFresh(state) {
     var el = document.getElementById('ps-fresh'); if (!el) return;
     clearTimeout(_freshHideT);
     if (state === 'cached') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = 'Cached · updating…'; el.title = 'Showing the last-loaded schedule instantly; refreshing from the database…'; }
-    else if (state === 'live') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-live'; el.textContent = 'Live'; el.title = 'Up to date with the database.'; _freshHideT = setTimeout(function () { var e2 = document.getElementById('ps-fresh'); if (e2) e2.style.display = 'none'; }, 2500); }
+    else if (state === 'live') { _repairBusy = false; _repairMsg = ''; _syncLock(); el.style.display = ''; el.className = 'ps-fresh ps-fresh-live'; el.textContent = 'Live'; el.title = 'Up to date with the database.'; _freshHideT = setTimeout(function () { var e2 = document.getElementById('ps-fresh'); if (e2) e2.style.display = 'none'; }, 2500); }
     // ⚠️⚠️ THE STATE THAT WAS MISSING, AND ITS ABSENCE IS A REPORTED BUG. load() paints from `rows`
     // the moment they arrive and then runs four self-heal passes — resync dotted codes, dedupe
     // summaries, restore orphan nodes, attach imported activities to the tree — each of which is
@@ -12511,7 +12596,7 @@
   // ⚠️ Never runs by itself — no load-time repair, no silent mass UPDATE. The planner types the value
   // and confirms the count, because this is their data and the right name is theirs to choose.
   async function _vsStampTopLevel(value) {
-    if (!canWrite || window.__viewOnly || window.__archived) { UI.toast('You do not have permission to edit this schedule.', 'error'); return; }
+    if (!canWrite || _editLocked()) { UI.toast('You do not have permission to edit this schedule.', 'error'); return; }
     // ⚠️ The TOWER level, resolved the same way `_vsTowerOf` resolves it — not `LOC_LEVELS[0]`.
     // This repair exists to fill an unstamped tower; on a project whose levels are ordered
     // differently, index 0 is not it, and writing the wrong level would file every activity on a
@@ -14599,7 +14684,7 @@
   function _gfWp(r) {
     var unl = wpIsUnlinked(r);
     var note = !WPM_WPS.length
-      ? '<div style="font-size:11px;color:var(--pd-muted);">Nothing mirrored yet — Sync Procurement in the WBS Manager.</div>'
+      ? '<div style="font-size:11px;color:var(--pd-muted);">Nothing mirrored yet — Sync Procurement in Schedule Setup › WBS.</div>'
       : (unl ? '<div style="font-size:11px;color:var(--pd-red);">Not in the Procurement app — re-pick or clear.</div>' : '');
     return '<div style="display:flex;flex-direction:column;gap:3px;">' +
       '<label style="font-size:11px;color:var(--pd-muted);">Work Package <span style="opacity:.8;">(Procurement app)</span></label>' +
@@ -15780,7 +15865,7 @@
   function gridExtraHtml(r) {
     var ex = extraColDefs(); if (!ex.length) return '';
     var leaf = r._dkind !== 'group' && !isWbsNode(r);
-    var ro = window.__viewOnly || window.__archived;
+    var ro = _editLocked();
     return ex.map(function (c) {
       if (!leaf) {
         var meta = c[3] || {}, uv = '';
@@ -16302,7 +16387,7 @@
     var cls = s === 'Completed' ? 'ps-status-completed' : (s === 'In Progress' ? 'ps-status-inprogress' : 'ps-status-notstarted');
     // Read-only users (viewer / archived project) see the static pill; writers get a one-click
     // dropdown right in the cell so status changes without the right-click → Edit activity round-trip.
-    if (!canWrite || window.__viewOnly || window.__archived) {
+    if (!canWrite || _editLocked()) {
       return '<div class="ps-cell c-status" data-field="status"><span class="ps-status-pill ' + cls + '">' + esc(s) + '</span></div>';
     }
     var opts = STATUS_OPTS.map(function (o) { return '<option value="' + esc(o) + '"' + (o === s ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
@@ -20188,19 +20273,103 @@
     if (!missing.length) return 0;
     // ⚠️ Codes come from the PINNED tree, not the live one: `WBS_NODES` may have been swapped during
     // the awaits above, and asking the new tree for an old node's code yields undefined -> NULL `wbs`.
-    var codeOf = computeWbsCodes(ownNodes), made = 0;
-    for (var i = 0; i < missing.length; i++) {
-      var n = missing[i];
-      // ⚠️ Re-checked EVERY iteration, not just once before the loop: the switch we are guarding
-      // against happens mid-loop, and each iteration is its own round-trip.
-      if (switched()) break;
-      var res = await _insertWbsSummary({ project_id: ownPid, wbs_node_id: n.id, activity_type: 'WBS Summary',
-        wbs: codeOf[n.id], activity_name: n.name, created_by: UID });
-      if (res.error) { UI.toast('Could not restore the schedule row for WBS “' + esc(n.name || '') + '”: ' + res.error.message, 'error'); break; }
-      if (res.data && !rows.some(function (r) { return r.id === res.data.id; })) rows.push(res.data);
-      if (res.data) made++;
+    var codeOf = computeWbsCodes(ownNodes), made = 0, relinked = 0;
+
+    /* ==========================================================================================
+       ⚠️⚠️⚠️ "MISSING" MOSTLY MEANS "UNLINKED", AND INSERTING WAS THE BUG
+       ------------------------------------------------------------------------------------------
+       Owner 2026-09-02: *"Import is already done but the status is showing that its still
+       'restoring missing WBS rows' — why are there missing WBS rows in the first place when the
+       activities and sub-WBS are already mapped out to begin with? Let's fix this at the source and
+       make the dedupe/heal a backstop not the main solution."*
+
+       They are right that nothing is missing. This pass decided "missing" purely by whether any
+       summary row carries the node's `wbs_node_id` — and on an import the rows are written FIRST
+       (12,465 of them, straight from the file) and linked to their nodes AFTERWARDS by
+       `_wbsLinkRows`. That link step is the fragile one: `wbs_link_codes` is a single statement over
+       12,465 rows against a deployment whose `statement_timeout` is ~8s (measured — see
+       migrations/2026-09-02-wbs-link-batched.sql, where the sibling RPC was clocked at 8,173ms
+       before being cancelled), and its fallback is a per-row PATCH. When it times out or completes
+       partially, the rows are all still there — they have simply lost their `wbs_node_id`.
+
+       This pass then read that as "the node has no row" and INSERTED A SECOND ONE. That is the
+       source of both reported symptoms at once:
+         • "Restoring missing WBS rows…" grinding for minutes — it was one sequential INSERT per
+           node, up to 12,465 round-trips;
+         • the duplicate `Slab-on-grade` / `Zone 2` / `Zone 1` branches — every one of those inserts
+           was a twin of a row that already existed at the same dotted code.
+
+       So it now LOOKS FOR THE ROW BEFORE CREATING ONE. A summary row at the node's own computed code
+       with `wbs_node_id IS NULL` is that node's row; it is re-linked with an UPDATE. Only a node with
+       genuinely nothing at its code gets an insert. The dedupe stays as the backstop it should be.
+       ⚠️ And both paths are BATCHED. The old loop was one round-trip per node either way, which is
+       what made this the slowest thing in the app on a big import.
+       ========================================================================================== */
+    var wantCodes = [], byCode = {};
+    missing.forEach(function (n) {
+      var c = codeOf[n.id];
+      if (c == null || c === '') return;          // see _insertWbsSummary — an unresolved code is never written
+      if (!byCode[c]) { byCode[c] = []; wantCodes.push(c); }
+      byCode[c].push(n);
+    });
+    var orphanByCode = {};
+    for (var oc = 0; oc < wantCodes.length; oc += 150) {
+      if (switched()) return 0;
+      var oq = await sb().from(TABLE).select('id,wbs').eq('project_id', ownPid)
+        .eq('activity_type', 'WBS Summary').is('wbs_node_id', null).in('wbs', wantCodes.slice(oc, oc + 150));
+      if (oq.error) break;                        // fall back to inserting, as before
+      (oq.data || []).forEach(function (r) { var k = String(r.wbs); if (!orphanByCode[k]) orphanByCode[k] = r.id; });
     }
-    return made;
+    var relink = [], toInsert = [];
+    missing.forEach(function (n) {
+      var c = codeOf[n.id];
+      var oid = (c != null && c !== '') ? orphanByCode[String(c)] : null;
+      // ⚠️ Claimed, so two nodes computing the same code cannot both adopt one row — the second
+      // falls through to an insert and the code dedupe sorts the collision out.
+      if (oid) { delete orphanByCode[String(c)]; relink.push({ id: oid, node: n.id, code: c, name: n.name }); }
+      else toInsert.push(n);
+    });
+    /* Re-link in bulk. ⚠️ `upsert` keyed on the primary key is how PostgREST expresses a batched
+       UPDATE: with `id` present it resolves to ON CONFLICT DO UPDATE and sets only the columns in
+       the payload. Every id here came from the read above, so none of them can turn into an insert. */
+    for (var ri = 0; ri < relink.length; ri += 200) {
+      if (switched()) return made;
+      var slice = relink.slice(ri, ri + 200);
+      var ures = await sb().from(TABLE).upsert(slice.map(function (x) { return { id: x.id, wbs_node_id: x.node }; }));
+      if (ures.error) {
+        try { console.error('[ps] _wbsEnsureSummaries: bulk re-link failed', ures.error); } catch (e) {}
+        break;
+      }
+      slice.forEach(function (x) {
+        var m = rows.find(function (r) { return r.id === x.id; });
+        if (m) m.wbs_node_id = x.node;
+        relinked++;
+      });
+    }
+    if (relinked) {
+      try { console.log('[ps] _wbsEnsureSummaries re-linked ' + relinked + ' existing WBS row(s) instead of duplicating them'); } catch (e) {}
+    }
+    // Only what genuinely has no row at its code is inserted — and in bulk.
+    for (var ii = 0; ii < toInsert.length; ii += 200) {
+      if (switched()) break;
+      var chunk = toInsert.slice(ii, ii + 200).map(function (n) {
+        return { project_id: ownPid, wbs_node_id: n.id, activity_type: 'WBS Summary',
+                 wbs: codeOf[n.id], activity_name: n.name, created_by: UID };
+      }).filter(function (pl) { return pl.wbs != null; });
+      if (!chunk.length) continue;
+      setLoading('Restoring ' + Math.min(ii + chunk.length, toInsert.length) + ' of ' + toInsert.length + ' WBS row(s)…');
+      var ins = await sb().from(TABLE).insert(chunk).select();
+      if (ins.error) {
+        UI.toast('Could not restore ' + chunk.length + ' WBS row(s): ' + ins.error.message, 'error');
+        break;
+      }
+      (ins.data || []).forEach(function (r) { if (!rows.some(function (x) { return x.id === r.id; })) rows.push(r); });
+      made += (ins.data || []).length;
+    }
+    // ⚠️ A re-link is a repair too, so the caller's "did anything change?" test has to see it — the
+    // grid needs a rebuild either way, and returning 0 after re-linking 12,000 rows would leave the
+    // tree-keyed features reading the pre-repair state until something else happened to repaint.
+    return made + relinked;
   }
   async function _wbsCommit() {
     await _wbsEnsureSummaries();   // heal orphans before syncing codes/names onto their rows
@@ -20325,22 +20494,58 @@
   // carrying the same code, exactly like the client loop. SECURITY INVOKER → the caller's RLS still
   // applies. Falls back to `_batchUpdate` when the function isn't deployed, so the app works before
   // AND after migrations/2026-09-01-wbs-link-rpc.sql — same contract as `schedule_rows`.
+  /* ⚠️⚠️⚠️ THE LINK STEP IS THE SOURCE OF THE "MISSING WBS ROWS", so it is not allowed to be either
+     slow or silent any more.
+     What it does: after the adopt creates the nodes, every summary row has to be pointed at its node.
+     What went wrong: the fast path is `wbs_link_codes`, ONE statement over 12,465 rows against a
+     deployment whose `statement_timeout` is ~8s (measured at 8,173ms on the sibling RPC — see
+     migrations/2026-09-02-wbs-link-batched.sql). When it is cancelled the rows keep
+     `wbs_node_id = NULL`, and the projection pass then read that as "these nodes have no rows" and
+     inserted 12,465 duplicates over as many round-trips. The fallback made it worse rather than
+     better: `_batchUpdate` is one PATCH per row, i.e. the same 12,465 requests.
+     What it does now: the RPC first, then a CHUNKED BULK UPSERT (a batched UPDATE — `id` is present,
+     so PostgREST resolves it to ON CONFLICT DO UPDATE and touches only `wbs_node_id`). ~25 requests
+     instead of 12,465. And it REPORTS a failure, because a silent one is what produced the
+     duplicates: the caller can then leave the rows for the projection pass to re-link rather than
+     believing the tree is finished. */
   async function _wbsLinkRows(pairs, schedUp) {
-    if (!schedUp || !schedUp.length) return;
+    if (!schedUp || !schedUp.length) return true;
     if (pairs && pairs.length) {
       try {
-        setLoading('Linking ' + schedUp.length + ' rows to the WBS tree…');
+        setLoading('Linking ' + schedUp.length.toLocaleString() + ' rows to the WBS tree…');
         var rp = await sb().rpc('wbs_link_codes', { p_project_id: pid, p_map: pairs });
-        if (!rp.error) return;
+        if (!rp.error) return true;
+        try { console.warn('[ps] wbs_link_codes failed, falling back to a bulk upsert: ' + (rp.error.message || rp.error)); } catch (e) {}
       } catch (e) { /* RPC unavailable — fall through */ }
     }
-    await _batchUpdate(TABLE, schedUp);
+    var ok = true;
+    for (var i = 0; i < schedUp.length; i += 200) {
+      var slice = schedUp.slice(i, i + 200);
+      setLoading('Linking ' + Math.min(i + slice.length, schedUp.length).toLocaleString() + ' of ' +
+                 schedUp.length.toLocaleString() + ' rows to the WBS tree…');
+      var payload = slice.map(function (u) {
+        var o = { id: u.id };
+        Object.keys(u.patch || {}).forEach(function (k) { o[k] = u.patch[k]; });
+        return o;
+      });
+      var res = await sb().from(TABLE).upsert(payload);
+      if (res.error) {
+        ok = false;
+        try { console.error('[ps] _wbsLinkRows bulk upsert failed at ' + i + ': ' + res.error.message); } catch (e) {}
+        // ⚠️ SAID OUT LOUD. This is the failure whose silence produced the duplicate branches; the
+        // projection pass will re-link what is left on the next load, and it should be told to.
+        UI.toast('Could not link ' + (schedUp.length - i).toLocaleString() + ' WBS row(s) to the tree: ' +
+                 res.error.message + ' — reload and the schedule will re-link them.', 'error');
+        break;
+      }
+    }
+    return ok;
   }
   // Select a WBS node (highlight); its selection preselects the parent when adding an activity.
   function wbsSelect(id) { _wbsSel = (_wbsSel === id) ? null : id; renderWbsManager(); }
   // Jump to the Schedule and open the Add-activity form with this WBS preselected as the parent.
   function wbsAddActivity(id) {
-    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (_editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
     var sk = wbsSourceKind(id);
     if (sk) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[sk] + ' — activities can\'t be added here.', 'warn'); return; }
     _wbsSel = id; switchTab('schedule'); openForm(null);
@@ -20415,7 +20620,7 @@
   // `afterId` places it right after that sibling (Enter continues a list); otherwise it goes last.
   async function wbsQuickAdd(parentId, afterId) {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
-    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (_editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
     if (parentId && wbsSourceKind(parentId)) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[wbsSourceKind(parentId)] + ' — sub-items can\'t be added here.', 'warn'); return; }
     var after = afterId && wbsById(afterId);
     var so = after ? await _wbsMakeRoom(parentId, after, 1) : wbsChildren(parentId || null).length;
@@ -20543,7 +20748,7 @@
   }
   function openWbsOutline(parentId) {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
-    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (_editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
     if (parentId && wbsSourceKind(parentId)) { UI.toast('This WBS is ' + SOURCE_KIND_LABEL[wbsSourceKind(parentId)] + ' — sub-items can\'t be added here.', 'warn'); return; }
     var codeOf = computeWbsCodes(), parent = parentId && wbsById(parentId);
     var where = parent ? ('under <strong>' + esc(codeOf[parent.id]) + ' ' + esc(parent.name || '') + '</strong>') : 'at the <strong>top level</strong>';
@@ -20620,7 +20825,7 @@
   // same sub-tree by hand N times. Structure only; activities under the original stay where they are.
   async function wbsDuplicate(id) {
     var n = wbsById(id); if (!n || !pid) return;
-    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (_editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
     if (n.is_locked) { UI.toast('This is a fixed WBS heading and can\'t be duplicated.', 'warn'); return; }
     var sub = [], q = [n], depth = {}; depth[n.id] = 0;
     while (q.length) {   // breadth-first, so a node always follows its parent
@@ -20790,7 +20995,7 @@
   // Copy another project's WBS tree into this project (structure only, no activities) — under the
   // given parent node, or at the top level when parentId is null. Codes are re-derived by _wbsCommit.
   async function wbsFromProject(parentId) {
-    if (!pid || window.__viewOnly || window.__archived) return;
+    if (!pid || _editLocked()) return;
     var others = PROJECTS.filter(function (p) { return p.id !== pid; });
     if (!others.length) { UI.toast('No other projects to copy a WBS from.', 'warn'); return; }
     var opts = others.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('');
@@ -20917,7 +21122,7 @@
   }
   function openFileUnderPackage() {
     if (!pid) { UI.toast('Select a project first.', 'error'); return; }
-    if (window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (_editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
     if (!(PACKAGES || []).length) {
       UI.toast('This project has no contract packages yet — add them on the Dashboard, from the contract documents.', 'warn');
       return;
@@ -21233,6 +21438,9 @@
   /* Rows that were attached to an EXISTING branch of the same name instead of getting a new node.
      Every one of these is a duplicate that did not happen — see the nameByParent note in wbsAdopt. */
   var _adoptRelinked = 0;
+  /* Set to an empty object by autoAdoptAfterImport for the duration of its loop, so the passes share
+     one scan of the server state (see the note in wbsAdopt). Null means "scan fresh". */
+  var _adoptScan = null;
   /* ⚠️⚠️ SET WHEN AN ADOPT FAILS PART-WAY, AND IT GATES THE TWO DESTRUCTIVE REPAIRS.
      `_wbsResyncCodes()` rewrites every summary row's dotted code to match the tree, and
      `_wbsEnsureSummaries()` manufactures a summary row for every node that lacks one. Both are
@@ -21288,7 +21496,18 @@
 
        One extra paged read of `wbs_nodes(id)` is what makes a dead parent_id impossible to write. */
     var _adoptedCodes = Object.create(null), _refreshOk = false, _liveIds = Object.create(null);
-    try {
+    /* ⚠️⚠️ THE SCAN IS SHARED ACROSS THE PASSES OF ONE RUN. `autoAdoptAfterImport` calls this up to
+       twelve times, and each call was re-paging BOTH `wbs_nodes(id)` and every summary row — on a
+       12,465-node project that is 26 round-trips per pass, spent re-learning exactly what the
+       previous pass already knew and then updated in memory. The cache is set up by
+       autoAdoptAfterImport (which owns the loop) and carries the live-id set and the adopted-code map
+       forward; the insert loop below keeps both current as it writes. A manual adopt, or a new run,
+       starts from a fresh scan. */
+    if (_adoptScan && _adoptScan.pid === pid) {
+      _adoptedCodes = _adoptScan.adoptedCodes; _liveIds = _adoptScan.liveIds; _refreshOk = true;
+      try { console.log('[ps] wbsAdopt reusing the scan from the previous pass'); } catch (e) {}
+    }
+    if (!_refreshOk) try {
       for (var _nf = 0; _nf < 200000; _nf += 1000) {
         var _np = await sb().from('wbs_nodes').select('id')
           .eq('project_id', pid).order('id', { ascending: true }).range(_nf, _nf + 999);
@@ -21335,6 +21554,7 @@
         try { console.warn('[ps] wbsAdopt dropped ' + (_wasN - WBS_NODES.length) + ' stale in-memory WBS node(s)'); } catch (e2) {}
       }
       _refreshOk = true;
+      if (_adoptScan) { _adoptScan.pid = pid; _adoptScan.adoptedCodes = _adoptedCodes; _adoptScan.liveIds = _liveIds; }
     } catch (e) {
       try { console.error('[ps] wbsAdopt could not refresh adopted state', e); } catch (e2) {}
     }
@@ -21622,7 +21842,7 @@
   // top-level statement starts. The bound has to be visible HERE, which is why the migration takes a
   // `p_limit` and this loops until it gets 0 — the same shape as the clear.
   async function _wbsLinkActivityParents(silent) {
-    if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
+    if (!pid || !canWrite || _editLocked()) return 0;
     var n = 0, batch = 4000, lastErr = null;
     for (var call = 0; call < 200; call++) {
       var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid, p_limit: batch });
@@ -21673,7 +21893,7 @@
   // below clears.
   async function wbsResetTree() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
-    if (!canWrite || window.__viewOnly || window.__archived) { UI.toast('This project is read-only.', 'warn'); return; }
+    if (!canWrite || _editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
     var custom = (WBS_NODES || []).filter(function (n) { return !n.is_locked; }).length;
     var legacyN = rows.filter(function (r) { return isWbs(r) && r.wbs; }).length;
     var m = UI.modal('<h2 style="margin-top:0;">Reset WBS tree</h2>' +
@@ -21787,6 +22007,7 @@
   async function autoAdoptAfterImport() {
     try {
       showLoading('Building WBS tree…');
+      _adoptScan = { pid: pid, adoptedCodes: null, liveIds: null };   // one scan, shared by the passes
       var total = 0, pass = 0;
       for (; pass < 12; pass++) {
         var remaining = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
@@ -21824,9 +22045,10 @@
                  (_adoptOrphaned.length > 3 ? ', …' : '') + ') and were attached to their nearest existing ' +
                  'ancestor — check them in Schedule Setup › WBS.', 'warn');
       } else if (total) {
-        UI.toast('WBS tree built (' + total.toLocaleString() + ' nodes) — open the WBS Manager to edit it.', 'success');
+        UI.toast('WBS tree built (' + total.toLocaleString() + ' nodes) — open Schedule Setup › WBS to edit it.', 'success');
       }
     } catch (e) { hideLoading(); try { console.error('[ps] autoAdoptAfterImport', e); } catch (e2) {} }
+    finally { _adoptScan = null; }   // the next run, or a manual adopt, scans fresh
   }
   // WBS parent picker for the Add/Edit activity modal — flat, indented options of every node.
   function wbsPickerOptions(selectedNodeId) {
@@ -21963,7 +22185,7 @@
     wnSel.innerHTML = wbsPickerOptions(preNode);
     function _syncWbsFromNode() {
       var nid = wnSel.value, n = nid ? wbsById(nid) : null;
-      if (n) { var codeOf = computeWbsCodes(); wCode.value = codeOf[nid] || ''; wCode.readOnly = true; wCode.title = 'Set by the parent WBS — change it in the WBS Manager or pick a different parent.'; }
+      if (n) { var codeOf = computeWbsCodes(); wCode.value = codeOf[nid] || ''; wCode.readOnly = true; wCode.title = 'Set by the parent WBS — change it in Schedule Setup › WBS, or pick a different parent.'; }
       else { wCode.readOnly = false; wCode.title = ''; if (!WBS_NODES.length) { /* no tree yet → free text as before */ } }
     }
     wnSel.onchange = _syncWbsFromNode;
@@ -22013,7 +22235,7 @@
       var _wpHint = document.getElementById('ps-f-wp-hint');
       if (_wpHint) {
         _wpHint.textContent = !WPM_WPS.length
-          ? 'No work packages mirrored yet — run Sync Procurement in the WBS Manager.'
+          ? 'No work packages mirrored yet — run Sync Procurement in Schedule Setup › WBS.'
           : (row && wpIsUnlinked(row) ? 'This activity points at a work package that is not in the Procurement app.' : '');
         _wpHint.style.color = (row && wpIsUnlinked(row)) ? 'var(--pd-red)' : 'var(--pd-muted)';
       }
@@ -27583,6 +27805,8 @@
         ? locScopeFromPlan(recs2.filter(function (r) { return r.isLeaf; }), plan).codes
         : null;
       var fname = imp.fname, kind = imp.kind, replace = !!imp.replace, disc = !!imp.disc, pkgId = imp.pkgId || null;
+      // Name the job in the lock banner — "Import of <file>" is what the planner is waiting for.
+      try { _setLockLabel('Import of ' + fname); } catch (e) {}
       var parsed = imp.parsed;
       // ⚠️ CLEARED BEFORE THE WRITE, and mode returned to the generation default. The importers end
       // by reloading the schedule and (on the Excel path) switching nothing — but load() lands the
@@ -30589,7 +30813,7 @@
       linked + ' with linked activities · ' + late + ' installing AFTER the schedule needs them' +
       (staleActs ? ' · ⚠️ ' + staleActs + ' activit' + (staleActs === 1 ? 'y points' : 'ies point') +
         ' at a work package that is not in the Procurement app' : '') +
-      (WPM_WPS.length ? '' : ' — nothing is mirrored yet; run Sync Procurement in the WBS Manager.') +
+      (WPM_WPS.length ? '' : ' — nothing is mirrored yet; run Sync Procurement in Schedule Setup › WBS.') +
       ' Need-by = earliest start of the linked activities; slip = Target Installation − need-by.';
     return { headers: ['WP', 'Description', 'Trade', 'Linked', 'Need-by (schedule)', 'Driver activity',
         'Target Install (PRC)', 'Slip (d)', 'Verdict', 'Award', 'Procurement'],
@@ -32593,7 +32817,7 @@
   // Delete a row from the right-click menu. WBS rows defer to wbsDelete (which guards against
   // deleting a WBS that still has sub-nodes or activities); activities delete directly.
   async function deleteRow(r) {
-    if (!r || !r.id || window.__viewOnly || window.__archived) return;
+    if (!r || !r.id || _editLocked()) return;
     if (isWbsNode(r)) { if (r.wbs_node_id) wbsDelete(r.wbs_node_id); return; }
     if (!confirm('Delete activity “' + (r.activity_name || r.activity_id || r.id) + '”? This cannot be undone.')) return;
     var res = await sb().from(TABLE).delete().eq('id', r.id);
@@ -32643,14 +32867,14 @@
   function _dbPayload(r) { var p = {}; Object.keys(r || {}).forEach(function (k) { if (k[0] !== '_') p[k] = r[k]; }); return p; }
   function _uniqueActId(base, taken) { base = (base == null || base === '') ? 'A' : String(base); if (!taken.has(base)) return base; var i = 2; while (taken.has(base + ' (' + i + ')')) i++; return base + ' (' + i + ')'; }
   function copyRows(mode) {
-    if (window.__viewOnly || window.__archived) return;
+    if (_editLocked()) return;
     var rs = _selectedTaskRows(); if (!rs.length) { UI.toast('Select one or more activities first.', 'warn'); return; }
     _clip = { mode: mode, ids: rs.map(function (r) { return r.id; }), acts: rs.map(function (r) { return r.activity_id; }), data: rs.map(_rowClipPayload) };
     _cellClip = null;   // a row copy supersedes any pending cell copy (Ctrl+V is then unambiguous)
     UI.toast((mode === 'cut' ? 'Cut ' : 'Copied ') + rs.length + ' activit' + (rs.length === 1 ? 'y' : 'ies') + ' — select a target row and paste.', 'success');
   }
   async function pasteRows() {
-    if (window.__viewOnly || window.__archived) return;
+    if (_editLocked()) return;
     if (!_clip || !_clip.data.length) { UI.toast('Nothing to paste — copy activities first.', 'warn'); return; }
     // Target WBS = the active row's WBS (task → its parent WBS; WBS row → itself).
     var target = selId ? rows.find(function (x) { return x.id === selId; }) : null;
@@ -32685,7 +32909,7 @@
     hideLoading(); _selSet = new Set(); UI.toast('Pasted ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '.', 'success'); load();
   }
   async function deleteSelected() {
-    if (window.__viewOnly || window.__archived) return;
+    if (_editLocked()) return;
     var rs = _selectedTaskRows(); if (!rs.length) return;
     if (!confirm('Delete ' + rs.length + ' selected activit' + (rs.length === 1 ? 'y' : 'ies') + '? This cannot be undone.')) return;
     showLoading('Deleting ' + rs.length + '…');
@@ -32702,7 +32926,7 @@
     primary_constraint: 'Constraint', primary_constraint_date: 'Constraint Date',
     scope_type: 'Scope', change_order_ref: 'Change Order Ref' };
   async function fillDown(field, srcRow) {
-    if (window.__viewOnly || window.__archived || !field || !srcRow) return;
+    if (_editLocked() || !field || !srcRow) return;
     var rs = _selectedTaskRows().filter(function (r) { return r.id !== srcRow.id; });
     if (!rs.length) { UI.toast('Select the rows to fill (Ctrl/Shift-click), then Fill down.', 'warn'); return; }
     var val = (srcRow[field] === undefined ? null : srcRow[field]);
@@ -32723,7 +32947,7 @@
   // seq_order. Only leaf activities sharing the drop target's WBS parent are affected; the WBS tree,
   // roll-ups and Gantt stay in sync (they render from the same rebuilt _sorted/DL).
   async function reorderWithinWbs(draggedId, targetId, before) {
-    if (window.__viewOnly || window.__archived) return;
+    if (_editLocked()) return;
     var dr = rows.find(function (x) { return x.id === draggedId; });
     var tr = rows.find(function (x) { return x.id === targetId; });
     if (!dr || !tr || isWbs(dr) || dr.wbs !== tr.wbs) return;   // reorder only within the same WBS parent
@@ -32768,7 +32992,7 @@
   // representative row (its summary row, or its lone leaf activity). No code renumbering — the dotted
   // codes stay put; only the display order changes (the sort reads _seqByCode). Update-only.
   async function reorderWbsSiblings(draggedWbs, targetWbs, before) {
-    if (window.__viewOnly || window.__archived) return;
+    if (_editLocked()) return;
     var parent = parentCodeOf(draggedWbs);
     // one representative row per direct-child node code (summary preferred), in current display order
     var rep = {}, order = {}, oi = 0;
@@ -32903,7 +33127,7 @@
     return s;
   }
   function copyCells(mode) {
-    if (window.__viewOnly || window.__archived) return;
+    if (_editLocked()) return;
     var rc = _cellRect(); if (!rc) { UI.toast('Click a cell first, then copy.', 'warn'); return; }
     var cells = [], refs = [], tsvRows = [];
     for (var ri = rc.r0; ri <= rc.r1; ri++) {
@@ -32923,7 +33147,7 @@
     highlightCells();
   }
   async function pasteCells() {
-    if (window.__viewOnly || window.__archived) return;
+    if (_editLocked()) return;
     var rc = _cellRect(); if (!rc) { UI.toast('Click a target cell first, then paste.', 'warn'); return; }
     var clip = _cellClip;
     // Fall back to the system clipboard (e.g. cells copied from Excel) when nothing was copied here.
@@ -33032,7 +33256,7 @@
   }
   function openRowMenu(e, r, cellField) {
     e.preventDefault(); e.stopPropagation(); closeRowMenu(); closeBarColorMenu(); closeColMenu();
-    if (window.__viewOnly || window.__archived) return;   // read-only projects: no insert menu
+    if (_editLocked()) return;   // read-only projects: no insert menu
     var isW = r && isWbsNode(r);
     var node = (r && r.wbs_node_id) ? r.wbs_node_id : null;
     var label = r ? (isW ? ((r.wbs ? r.wbs + ' — ' : '') + (r.activity_name || '')) : ((r.activity_id ? r.activity_id + ' — ' : '') + (r.activity_name || ''))) : '';
@@ -33671,7 +33895,7 @@
         return;
       }
       var id = _wbsSel, n = wbsById(id); if (!n) return;
-      var ro = window.__viewOnly || window.__archived;
+      var ro = _editLocked();
       var nKids = wbsChildren(id).length, open = !_wbsCollapsed[id];
       if (k === 'ArrowDown' || k === 'ArrowUp') {
         e.preventDefault();
@@ -33723,7 +33947,7 @@
       for (var _oi = 0; _oi < _ovs.length; _oi++) { if (_ovs[_oi].offsetParent !== null) return; }
       var sv = document.getElementById('ps-view-schedule');
       if (!sv || sv.offsetParent === null) return;           // Schedule view not visible
-      if (window.__viewOnly || window.__archived) return;
+      if (_editLocked()) return;
       var k = e.key, ctrl = e.ctrlKey || e.metaKey;
       // Which subject the clipboard acts on — see the note above this handler. `_clipRows()` is the
       // single place that decides, so copy, cut and paste can never disagree about it.

@@ -11986,3 +11986,95 @@ disappear from the count, which is the feedback loop the exclude tick is for.
 **Verified in a browser** on a file with one planted instance of each defect: all six chips read
 exactly 1 (duplicate ID reads 2, correctly — both rows are implicated), and clicking the duplicate
 chip narrowed the table to precisely those two rows with the flag shown.
+
+### 2026-09-03 — What the XER actually says, the import lock, and why rows went "missing"
+
+**First, the two factual questions, answered from the file itself** (`4PH Strevi Residences Schedule -
+BL02.xer`, 8.4 MB, parsed the way the module’s own `parseXER` reads it):
+
+| | |
+|---|---|
+| PROJWBS rows | **12,465** |
+| TASK rows | **16,393** |
+| TASKPRED rows | **21,338** |
+| task types | 16,284 `TT_Task` · 101 `TT_FinMile` · 8 `TT_Mile` |
+| tree depth | 10 levels; **6,675 branches at depth 9** |
+| branches holding no task anywhere beneath them | **9 of 12,465** |
+
+- ⚠️ **"Are those rows milestones?" — two of the four are, and the module drew them correctly.**
+  `Securing of Permits` (A4730) and `Signing of Contract` (A4720) are `TT_Task`; only
+  `Release of Down payment (1st/2nd Tranche)` (A4735 / A6860) are `TT_Mile`. The screenshot shows the
+  red diamond on exactly those two. No defect.
+- **All four sit directly under `wbs_id=993632` = "Initiation Phase"**, which holds 4 direct tasks and
+  no child branches — which is precisely what appeared once the heal finished. So the content was
+  right; what was wrong was that it took a hard refresh to show up.
+
+**⚠⚠⚠ AND THAT IS THE ROOT CAUSE THE OWNER ASKED FOR.** *"Import is already done but the status is
+showing that its still ‘restoring missing WBS rows’ — why are there missing WBS rows in the first
+place when the activities and sub-WBS are already mapped out to begin with? Let’s fix this at the
+source and make the dedupe/heal a backstop not the main solution."*
+
+Nothing was missing. `_wbsEnsureSummariesInner` decided "missing" purely by whether any summary row
+carried the node’s `wbs_node_id` — and on an import the rows are written FIRST (12,465 of them,
+straight from the file) and linked to their nodes AFTERWARDS by `_wbsLinkRows`. That link step is the
+fragile one: `wbs_link_codes` is a single statement over 12,465 rows against a deployment whose
+`statement_timeout` is ~8s (measured at 8,173ms on the sibling RPC — see
+`migrations/2026-09-02-wbs-link-batched.sql`), and its fallback was one PATCH **per row**. When it is
+cancelled or partial the rows are all still there; they have simply lost their `wbs_node_id`.
+
+The projection pass then read that as "these nodes have no rows" and **inserted a second one for each**
+— which is both reported symptoms at once:
+- **"Restoring missing WBS rows…" grinding for minutes** — one sequential INSERT per node, up to
+  12,465 round-trips;
+- **the duplicate `Slab-on-grade` / `Zone 2` / `Zone 1` branches** — every insert was a twin of a row
+  that already existed at the same dotted code.
+
+Fixed at both ends:
+1. **The projection pass looks for the row before creating one.** A summary row at the node’s own
+   computed code with `wbs_node_id IS NULL` **is** that node’s row; it is re-linked with an UPDATE.
+   Only a node with genuinely nothing at its code gets an insert. ⚠️ A code is claimed as it is
+   adopted, so two nodes computing the same code cannot both take one row.
+2. **Both paths are batched, and so is the link step.** The re-link and the insert go 200 at a time,
+   and `_wbsLinkRows`’ fallback is now a chunked bulk upsert (`id` present → PostgREST resolves to
+   ON CONFLICT DO UPDATE and touches only `wbs_node_id`): **~25 requests instead of 12,465**. And it
+   **reports** a failure now, because the silence is what produced the duplicates.
+3. **The adopt’s scan is shared across the passes of one run.** `autoAdoptAfterImport` calls it up to
+   twelve times and each call was re-paging both `wbs_nodes(id)` and every summary row — 26
+   round-trips per pass, spent re-learning what the previous pass had just written. One scan now,
+   carried forward and kept current in memory as nodes are inserted.
+
+### 2026-09-03 (b) — The import lock
+
+Owner: *"when the import is still ongoing let’s prevent the user from disrupting the import by adding
+activities or changing the details of the existing activities until the import is complete. Right now
+there is no guard for that. By allowing users to freely do this they can mistakenly think that the
+import is already done and yet it is still ongoing."*
+
+Both halves of that are real. The DANGER is concrete: an import runs inside a mutation region that
+clears and re-inserts thousands of rows and then rebuilds the tree, and an edit landing mid-way is
+written against a row set that is about to be replaced. The CONFUSION is why it happens: the progress
+overlay closes when the INSERTS finish, and the schedule underneath is already painted and looks
+done, while the tree is still being built for another minute.
+
+- ⚠️ **The lock spans the whole job, not just the write.** `_isMutating()` covers the insert region;
+  `_repairBusy` covers the load-time tree passes after it. From the planner’s side it is one
+  operation, and the moment it stops saying anything is the moment they start editing.
+- **One banner**, inserted above the toolbar on every view (an import started from the Setup finishes
+  while they are still on it), naming the file and the current phase.
+- **One guard.** All **28** sites that read `window.__viewOnly || window.__archived` now call
+  `_editLocked()`, and the six `"This project is read-only."` toasts call `_editLockMsg()`, which says
+  the accurate thing during an import instead of implying the project is read-only.
+- ⚠️ **`body.ps-locked` dims and disables the primary verbs by CSS** rather than one handler at a
+  time, so a button added later is covered without anyone remembering to.
+- ⚠️ It does NOT lock an ordinary load — a cached-then-revalidate open is not a job anyone waits
+  for, and locking it would make the schedule feel broken every time it opened.
+
+**Verified in a browser** with a MutationObserver over a full staged import: the banner appeared for
+every phase in order — *Import of harness-programme.xlsx in progress — do not edit yet.* + "Writing
+the activities into the schedule…", "Loading resources…", "Checking the WBS order…", "Checking WBS
+codes…", "Checking for duplicate WBS branches…", "Checking for duplicate WBS rows…", "Restoring
+missing WBS rows…" — and both the banner and `body.ps-locked` cleared on completion. `#ps-add` was
+`pointer-events:none` at 45% opacity throughout.
+
+Also: the post-import toast said **"open the WBS Manager"** for a screen that no longer exists. It and
+the other user-facing mentions now say **Schedule Setup › WBS**.
