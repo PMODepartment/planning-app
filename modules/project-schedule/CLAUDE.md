@@ -1,3 +1,154 @@
+## Every activity is linked — and adopting twice duplicated 5,850 nodes (2026-09-02r) — fmlozano
+
+Owner ran `2026-09-02-wbs-link-batched.sql` and clicked **Adopt existing WBS** again.
+
+### ✅ The batched linker works
+**`activitiesUnlinked: 0` of 16,485.** Every activity is attached to its branch, which is the thing
+Vertical Stacking, Trade and phase all read from. The 8-second `statement_timeout` that produced
+57014 on the single-statement form is no longer reachable: the client loops in batches of 4,000 and
+halves on timeout.
+
+### ⚠️⚠️ But the second adopt created 5,850 duplicate nodes
+`wbs_nodes` **12,473 → 18,323**, against 12,473 summary rows. **5,850 duplicates — exactly the number
+the first adopt had left outstanding.**
+
+`wbsAdopt` decided what to insert from `rows`, the cached in-memory copy. The owner's tab had painted
+before the first adopt finished, so every one of those branches still showed `wbs_node_id = null`,
+looked un-adopted, and got a **second** node. ⚠️ The pre-existing guard
+(`group.filter(r => !nodeByCode[r.wbs])`) could not save it, because `nodeByCode` was seeded from
+`computeWbsCodes()` — a code derived from a node's POSITION, which disagrees with the stored dotted
+code whenever the tree is mid-repair.
+
+⚠️ **And duplicates do not sit still.** `_wbsEnsureSummaries()` projects a summary row for any node
+without one, so the next load would have manufactured 5,850 new WBS rows, which the next adopt would
+then adopt — the duplicate-WBS-row runaway this file already carries scar tissue for.
+
+### Fixed
+- **`wbsAdopt` reads what is already adopted from the SERVER**, never from `rows`: one cheap paged
+  read of `(id, wbs, wbs_node_id)` over the summary rows, folded back into memory, used both to
+  filter `legacy` and to seed `nodeByCode`. A second adopt is now a no-op.
+- ⚠️ **It refuses to run when that read fails.** Without it the function cannot tell *"not adopted"*
+  from *"not loaded"*, and guessing wrong duplicates the entire tree. Stopping is the safe answer.
+- ⚠️ **`Reset WBS tree` would itself have timed out.** It cleared the dangling `wbs_node_id`s with ONE
+  update over ~28,958 rows — the documented recovery from a broken tree, failing on exactly the
+  projects that need it. **`migrations/2026-09-02-wbs-unlink-batched.sql`** adds
+  `wbs_unlink_dangling(project, limit)`, which also asks the better question (*null the rows whose
+  node no longer EXISTS*) and so needs no keep-list, plus a pre-migration fallback to the old
+  statement.
+- The same migration adds **`wbs_delete_orphan_leaves`** for a targeted cleanup. ⚠️ **Leaves only** —
+  `parent_id` is `on delete cascade`, so deleting an orphan that is the PARENT of a referenced node
+  would take the good node with it. Peeling childless orphans repeatedly can never do that, and a
+  duplicated subtree still goes completely, one layer at a time. ⚠️ **Deliberately NOT wired into any
+  automatic heal**: `_wbsEnsureSummaries()` exists to PROJECT a summary row for a node that lacks
+  one, so an auto-deleter would be a second healer with the opposite opinion, and the two would
+  fight.
+
+### ⚠️ Recovery for SLN101 as it stands
+**WBS Manager → Reset WBS… → rebuild.** That drops every unlocked node (duplicates included) and
+rebuilds from the intact 12,473 summary rows, which is a tested path — and with the adopt fix the
+rebuild cannot duplicate. Needs the new migration first, or the unlink times out.
+
+⚠️ **Not verified end to end:** neither migration function has been exercised, and the duplicates are
+still in place.
+
+- `MODULE_V` → `20260902r`.
+
+---
+## The activity link times out at 8s, and three layers of silence hid it (2026-09-02q) — fmlozano
+
+Owner clicked **Adopt existing WBS** and asked what happened. The tree finished; the activities did
+not, and nothing said so.
+
+### The root cause, measured rather than inferred
+Calling the RPC directly in the owner's signed-in browser:
+
+```
+rpc('wbs_link_activity_parents', { p_project_id: 'SLN101' })
+  -> 57014  "canceling statement due to statement timeout"   after 8,173 ms
+```
+
+⚠️ **The deployment's `statement_timeout` is ~8 seconds**, and that function is ONE update over
+**16,485 activities** joined against a `GROUP BY` over **12,473 summary rows**, with the join key
+computed per row (`regexp_replace(wbs, '\.[^.]+$', '')`) — which no index can serve. It is the same
+class of defect as the original clear timeout: an unbounded server-side statement.
+
+**State it left behind:** WBS tree **complete** (12,473 nodes, all 12,473 summary rows linked) and
+**16,393 of 16,485 activities with `wbs_node_id = NULL`.** The 92 that were linked are the Design
+Development / Procurement mirrors, which never needed the RPC.
+
+### ⚠️⚠️ THREE LAYERS OF SILENCE, AND THAT IS THE REAL STORY
+1. `_wbsLinkActivityParents` caught the timeout and toasted only `if (!silent)`.
+2. Every caller that matters passes `silent`.
+3. ⚠️ **`document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;` passes the CLICK EVENT as the
+   `silent` argument** — truthy. So the button I documented last pass as *"the non-silent recovery
+   path"* skipped its confirm, its success toast **and** its error toast. The owner clicked it, the
+   tree really did finish, and the screen said nothing at all. That is why my own recommended
+   diagnostic produced no diagnosis.
+
+### Fixed
+- **`migrations/2026-09-02-wbs-link-batched.sql`** — `wbs_link_activity_parents(text, integer)` with a
+  `p_limit`, defaulting to 4,000. ⚠️ `drop function` first, deliberately: adding a defaulted second
+  parameter would leave both signatures in the catalog and PostgREST answers **PGRST203 (ambiguous)**
+  for a one-argument call. ⚠️ A plpgsql loop inside the function would not help — the timeout is armed
+  once, when the top-level statement starts — so the bound has to be visible to the client.
+- **The client loops** until a call returns 0 and **halves the batch on 57014**, because the batch that
+  fits depends on a `statement_timeout` the client cannot read. It reports progress as it goes.
+- **It reports failure regardless of `silent`**, with the count that did land.
+- **The Adopt button calls `wbsAdopt(false)` explicitly.**
+
+⚠️ **Not yet verified end to end:** the migration has not been run, so the batched link has never
+executed. Run it, then Adopt existing WBS — `activitiesLinked` should go 92 → ~16,485.
+
+- `MODULE_V` → `20260902q`.
+
+---
+## The import's tree build stops half way and says nothing (2026-09-02p) — fmlozano
+
+Owner re-imported 4PH Strevi on the (o) build and asked for the output to be checked. The insert is
+**complete and correct** — 28,958 rows (16,485 activities + 12,473 WBS summary rows), matching the
+file. The **tree build is not**, and (o) is not the cause.
+
+### Measured, from the database rather than the grid
+| | |
+|---|---|
+| `wbs_nodes` | **6,623** — against 12,473 summary rows |
+| rows with a null `wbs_node_id` | 22,243 of 28,958 |
+| summary rows linked to a node | 6,623 — **exactly** the node count, so no orphan nodes |
+
+⚠️ **It is NOT a depth cut-off, which is what the first sampled look suggested.** Read in full rather
+than sampled, adopted and un-adopted rows exist at **every depth 2-10 in similar proportions**, and
+**5,833 of the 5,850 un-adopted rows have a parent that is also un-adopted**. Whole subtrees are
+missing, not a level. ⚠️ The earlier "parent also missing: 400/400" figure came from a 1,000-row
+sample of 6,623 adopted codes and was not trustworthy; this is the complete set.
+
+### ⚠️⚠️ THE REAL DEFECT IS THE SILENCE
+`wbsAdopt`'s insert error path was `if (!silent) UI.toast(...); return 0;` — and
+`autoAdoptAfterImport()` calls it with **`silent = true`** and only toasts on a truthy return. So a
+build that stopped half way produced **no toast, no console entry, and a half-built tree that looks
+finished**. That is the worst possible thing to be quiet about: a partial tree is exactly the state
+where `phaseOf()` returns null, `isExecPhase()` is false everywhere, Vertical Stacking draws nothing
+and every WBS Manager count reads 0 — while the grid looks perfect, because `rebuild()` derives
+ancestry by splitting the dotted code and never reads the node id.
+
+**Fixed two ways:**
+- **It reports.** The error path now logs to the console and raises a toast **regardless of `silent`**,
+  naming how many of how many branches landed, and returns the count actually adopted rather than 0.
+- **It verifies and resumes.** `wbsAdopt` was already documented as resuming from a partial tree (it
+  seeds `nodeByCode` from existing nodes), so `autoAdoptAfterImport()` now loops while passes keep
+  making progress, then **re-counts** and says plainly if branches remain. ⚠️ Gated on progress, not a
+  fixed retry count: a pass that adopts nothing new never will, and looping on it would hang the
+  import instead of telling the truth.
+
+⚠️ **The underlying reason a pass stops is still unidentified** — the failure was silent, so there is
+no error text to work from. This change is what makes the next occurrence diagnosable; it is not a
+fix for the cause.
+
+⚠️ **Recovery for the schedule as it stands:** WBS Manager → **"Adopt existing WBS"**. That path is
+non-silent, so it both resumes the tree and shows the error if one is waiting.
+
+- `MODULE_V` → `20260902p`.
+
+---
 ## ⚠⚠ I BROKE THE IMPORT IN (i): the mutation fence swallowed its own finishing pass (2026-09-02o) — fmlozano
 
 Found while checking the owner's re-import of 4PH Strevi, which is exactly what that check was for.
