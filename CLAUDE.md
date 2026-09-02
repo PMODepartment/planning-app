@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (u) — "Nothing resolved" and "nothing loaded" are different answers
+
+Owner, third report: *"Closeout phase activities in the legend are still showing the colour
+activities."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **The scoping was never broken.** Walked the node chains in the database: *Commercial Closeout →
+  Tower 2 → Partial Closeout* resolves to **`closeout`**, never `construction`, and once the tree is
+  loaded the legend is correct (40 execution chips + *"Activity outside the Execution Phase"*).
+- ⚠️⚠️ **`catScopeIsExec()` read "no row resolves a phase" as "this project has no phases".** But
+  `phaseOf()` resolves through `WBS_NODES`, which `load()` fetches **after** the cached paint — so on
+  that paint the honest answer is *"not loaded yet"*, and the fallback coloured everything. ⚠️ The
+  window lasts as long as the live fetch of 28,958 rows — tens of seconds, not (m)'s 3.3s, which is
+  why it read as permanent. ⚠️ The (n) hint did not help: the stored `false` was legitimate, written
+  while the activities were unlinked.
+- Fixed: the fallback now fires **only when the tree is loaded and still nothing resolves** — the
+  genuinely unphased project. Unknown now means **scoped**.
+- ⚠️ **The trade, taken deliberately:** on a cached paint nothing can resolve, so nothing is coloured
+  for those seconds and the key says *"No Execution Phase activities yet."* Under-colouring is
+  explained on screen; over-colouring looks like the feature is broken. ⚠️ (n)'s hint now only does
+  real work for the unphased case. `MODULE_V` → `20260902u`.
+
 ### 2026-09-02 (s) — Schedule Builder: a step for the phases either side of construction
 Owner: *"make it that the schedule builder has another step, being able to add phases like the initiation
 phase planning phase etc. and the established as of now, that is only applicable for the execution phase."*
