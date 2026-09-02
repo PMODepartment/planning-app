@@ -36,6 +36,26 @@ MISSING NODES — `wbsAdopt()` runs only from `autoAdoptAfterImport()` or the WB
 existing WBS"** button. It resumes cleanly from a partial tree, so that button finishes the job
 without a re-import.
 
+### The resource-assignment clear, now live-verified
+Owner: *"Let's clear them and reimport strevi again."* Full clear of SLN101 on the (o) build, sampled
+every 250ms:
+
+| t | caption |
+|---|---|
+| 1.0s | Clearing schedule… |
+| 8.0s | 20,000 removed |
+| 11.0s | **28,958 removed** — exactly the row count |
+| 17.2s | **Clearing resource assignments… 167 removed** |
+
+**After: `project_schedule` 111, `wbs_nodes` 19 (all locked), `resource_assignments` 0.** So the
+167 → 0 that shipped unverified in (j) is now watched happening, and the 42 codes that had silently
+re-attached to the re-imported activities are gone with them.
+
+⚠️ **One cosmetic loose end:** the WBS-tree clear ran between 11.0s and 17.2s without its
+*"Clearing the WBS tree… N removed"* caption appearing in the sampling — the previous caption stayed
+up for those six seconds. 7,278 unlocked nodes really were deleted, so the work happened; only the
+progress line did not update. Worth a look if a stall is ever reported there.
+
 - `MODULE_V` → `20260902o`.
 
 ---
