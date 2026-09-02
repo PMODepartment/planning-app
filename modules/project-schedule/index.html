@@ -6870,6 +6870,11 @@
     // ⚠️ EVERY PASS BELOW CREATES ROWS, so each one is gated. Not one gate at the top: the chain
     // takes minutes and a clear can start at any point inside it.
     if (_isMutating()) return;
+    // ⚠️ BEFORE the resync, never after: reordering re-codes the root, and the resync is what pushes
+    // those codes onto the rows. Reversed, the tree and the codes disagree until the next load.
+    _repair('Checking the WBS order…');
+    await _wbsCanonicalRootOrder();
+    if (gen !== _loadGen) return;
     _repair('Checking WBS codes…');
     await _wbsResyncCodes();
     if (gen !== _loadGen) return;
@@ -18755,6 +18760,76 @@
   // no node ids is untouched, and a healthy project performs zero writes.
   // ⚠️ Runs BEFORE the same-code dedupe, so that pass judges duplicates on correct codes.
   var _resyncingCodes = false;
+  // ---- THE TOP-LEVEL WBS ORDER IS FIXED ---------------------------------------------------------
+  // Owner 2026-09-02: *"the arrangement of the WBS that is fixed should be milestones / initiation
+  // phase / planning phase / execution phase / close-out phase"* — the order WBS_SKELETON already
+  // seeds, now ENFORCED rather than merely seeded, because two things had been disturbing it: the
+  // push's sibling renumbering (fixed earlier today, but the damage it wrote is still in the data)
+  // and any hand reorder.
+  // ⚠️ SLOT BY SLOT, and the five slots are not matched the same way. The four phases are matched by
+  // their resolved PHASE (stored first, else phaseFromName) so every spelling lands in the right
+  // slot — "Closeout Phase", "Close-out", a P6 file's plain "Closeout". Milestones resolves NO phase,
+  // so it is matched by name, and only when nothing else claims it.
+  var WBS_ROOT_ORDER = [
+    { name: 'Milestones' },
+    { phase: 'initiation' },
+    { phase: 'planning' },
+    { phase: 'construction' },
+    { phase: 'closeout' }
+  ];
+  function _rootSlot(n) {
+    if (!n || n.parent_id) return -1;
+    var ph = n.phase || phaseFromName(n.name);
+    var nm = String(n.name == null ? '' : n.name).trim().toLowerCase();
+    for (var i = 0; i < WBS_ROOT_ORDER.length; i++) {
+      var s = WBS_ROOT_ORDER[i];
+      if (s.phase) { if (ph === s.phase) return i; }
+      // ⚠️ `!ph` guards the name slot: a branch that resolves a phase belongs in that phase's slot,
+      // whatever it is called, so it can never be pulled into the Milestones slot by its name.
+      else if (!ph && nm === s.name.toLowerCase()) return i;
+    }
+    return -1;
+  }
+  // Returns the number of nodes it moved. Writes ONLY what actually changed.
+  async function _wbsCanonicalRootOrder() {
+    if (!pid || !canWrite || !WBS_NODES.length) return 0;
+    // ⚠️⚠️ SAME GUARD AS _wbsResyncCodes, and for a sharper reason here. A dotted WBS code is derived
+    // from a node's POSITION among its siblings, so reordering the root RE-CODES every branch under
+    // it — and the resync is what rewrites those codes onto the rows. An unlocked root node means
+    // adoption failed to place something, the resync refuses to run, and a reorder would then leave
+    // every code describing an order the tree no longer has. Not reordering is the safe answer.
+    if ((WBS_NODES || []).some(function (n) { return !n.parent_id && !n.is_locked; })) return 0;
+    var ownPid = pid;
+    var roots = (WBS_NODES || []).filter(function (n) { return !n.parent_id; })
+      .sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0) || String(a.id).localeCompare(String(b.id)); });
+    var known = [], others = [];
+    roots.forEach(function (n) { var sl = _rootSlot(n); if (sl >= 0) known.push({ n: n, slot: sl }); else others.push(n); });
+    if (known.length < 2) return 0;   // nothing to arrange
+    // ⚠️ Ties inside one slot keep their existing order (two branches resolving one phase are merged
+    // by _wbsDedupeSkeleton later; until then their relative order must not be shuffled arbitrarily).
+    known.sort(function (a, b) { return a.slot - b.slot || (a.n.sort_order || 0) - (b.n.sort_order || 0); });
+    // ⚠️ Anything that is not one of the five keeps its relative order and follows them — it is not
+    // dropped and it is not interleaved, because this rule has nothing to say about where a branch
+    // the skeleton does not define belongs.
+    var want = known.map(function (k) { return k.n; }).concat(others);
+    var writes = [];
+    want.forEach(function (n, i) { if ((n.sort_order || 0) !== i) writes.push({ id: n.id, so: i, node: n }); });
+    // ⚠️ A project already in the canonical order writes NOTHING — this runs on every load, and
+    // touching five rows each time would bump updated_at forever and make the audit trail useless.
+    if (!writes.length) return 0;
+    var moved = 0;
+    for (var w = 0; w < writes.length; w++) {
+      if (pid !== ownPid) return moved;   // project switched under us — see _wbsEnsureSummariesInner
+      var ures = await sb().from('wbs_nodes').update({ sort_order: writes[w].so }).eq('id', writes[w].id);
+      if (ures.error) { try { console.warn('[ps] canonical root order: ' + ures.error.message); } catch (e) {} break; }
+      writes[w].node.sort_order = writes[w].so;   // mirror so computeWbsCodes below sees the new order
+      var live = (WBS_NODES || []).filter(function (n) { return n.id === writes[w].id; })[0];
+      if (live) live.sort_order = writes[w].so;
+      moved++;
+    }
+    if (moved) UI.toast('Restored the standard WBS order (' + want.slice(0, known.length).map(function (n) { return n.name; }).join(' → ') + ').', 'success');
+    return moved;
+  }
   async function _wbsResyncCodes() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     if (_resyncingCodes) return 0;
@@ -24752,6 +24827,7 @@
         '</p>' +
         '<p class="sbld-lede">This is the project\u2019s live WBS \u2014 the same branches the schedule files its activities under, edited here rather than on a screen of its own. A <b>' + _stepNo('Generate') + ' \u00b7 Push</b> creates the branches this setup needs (trade \u203a tower \u203a floor \u203a zone) and reuses any that already exist; what you type here is what it reuses.</p>' +
         '<p class="sbld-hint">Which location levels the push turns into WBS levels, and in what order, is set in the push dialog itself (<b>WBS structure</b>) \u2014 it belongs to the push, not to the tree. Re-arranging <b>activities</b> day to day is done in the <b>Project Schedule</b> grid.</p>' +
+        '<p class="sbld-hint">The five top-level branches are held in a fixed order \u2014 <b>Milestones \u2192 Initiation \u2192 Planning \u2192 Execution \u2192 Close-out</b> \u2014 and restored on load if anything moves them. Everything you add sits inside them, where you can order it freely.</p>' +
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
         '<div id="sbld-wbs-host"></div>';
       var ok = sbWbsMount(host.querySelector('#sbld-wbs-tools'), host.querySelector('#sbld-wbs-host'));

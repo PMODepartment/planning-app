@@ -1,3 +1,59 @@
+## The top-level WBS order is now ENFORCED, not merely seeded (2026-09-02) — eprobles
+
+Owner: *"also the arrangement of the WBS that is fixed should be milestones / initiation phase /
+planning phase / execution phase / close-out phase"* — which is exactly the order `WBS_SKELETON`
+already seeds. It was being **disturbed**, so seeding it once was not enough.
+
+New `_wbsCanonicalRootOrder()`, run on load immediately **before** `_wbsResyncCodes()`. It authorises
+the repair I declined to make unasked earlier today: the owner's project still had Initiation dragged
+ahead of Milestones by the push's sibling renumbering, and rewriting `sort_order` is a data change
+that needed to be asked for.
+
+- ⚠️ **SLOT BY SLOT, and the five slots are not matched the same way.** The four phases are matched by
+  their **resolved phase** (stored first, else `phaseFromName`), so every spelling lands in the right
+  slot — `Closeout Phase`, `Close-out Phase`, a P6 file's plain `Closeout`, or `Construction Phase`
+  for execution. **Milestones resolves no phase**, so it is matched by name — and only when nothing
+  else claims it, so a branch that *does* resolve a phase can never be pulled into the Milestones slot
+  by its name.
+- ⚠️⚠️ **BEFORE the code resync, never after.** A dotted WBS code is derived purely from a node's
+  POSITION among its siblings, so reordering the root **re-codes every branch under it**, and the
+  resync is what pushes those codes onto the rows (summary rows *and* activities, via its own depth
+  discriminator). Reversed, the tree and the codes disagree until the next load.
+- ⚠️⚠️ **It refuses on the same signal the resync refuses on — an UNLOCKED root node.** That means
+  adoption failed to place something, the resync will skip, and a reorder would then leave every code
+  describing an order the tree no longer has. **Not reordering is the safe answer**; this is the guard
+  that keeps a reorder from turning a tree problem into a data problem, the way the SLN101 damage did.
+- ⚠️ **A project already in canonical order writes NOTHING.** This runs on every load; touching five
+  rows each time would bump `updated_at` forever and make the audit trail useless. Only nodes whose
+  position actually changes are written, one at a time, mirrored into memory so `computeWbsCodes()`
+  immediately below sees the new order.
+- ⚠️ **A branch the skeleton does not define is never dropped and never interleaved** — the five come
+  first in canonical order, everything else follows in its existing relative order, because this rule
+  has nothing to say about where such a branch belongs. Children are untouched: order inside a phase
+  is the planner's.
+- ⚠️ Ties inside one slot keep their existing order — two branches resolving one phase are merged by
+  `_wbsDedupeSkeleton` later, and shuffling them arbitrarily in the meantime would be noise.
+- A move is **reported**, not silent: a planner who sees the tree renumber needs to know why.
+- The push's `_nextFreeSort` still *appends* a brand-new phase branch rather than placing it at its
+  slot. Deliberate: the push is followed by `load()`, so this healer normalises it, and **one owner of
+  the ordering rule** beats two that can disagree.
+- The WBS step says the order is fixed, so it does not read as the editor ignoring a drag.
+
+**Verified: 38 checks executing the shipped `_rootSlot` and `_wbsCanonicalRootOrder`** (only Supabase,
+UI and the module globals stubbed) — the owner's exact tree corrected with **only the two changed
+nodes written**, a canonical project writing nothing at all, hand-added roots preserved in order, the
+unlocked-root refusal, a child's `sort_order` untouched, a read-only project, and a failed write
+stopping the pass instead of half-applying. ⚠️ Plus an assertion that **the order enforced IS
+`WBS_SKELETON`'s own order**, so the two can never drift. The three suites from the earlier fixes
+still pass (25 + 29 + 25). **0 functions lost, 2 added**; 0 NUL bytes; parses.
+⚠️ **My harness re-declared a `var` the slice already declares — the same mistake as the previous
+harness, noted there and repeated here.** Fixed, and called out so the note is worth something.
+⚠️ **Not verified signed in.** On the next load of Test Project the order should correct itself and
+say so; if the project has an unlocked root branch it will (correctly) decline, and the console says
+which node.
+
+---
+
 ## `reused` meant "the node exists", not "it is in the schedule" — so the lifecycle work landed invisibly (2026-09-02) — eprobles
 
 Owner, after the previous fix: *"good, the execution phase is migrated, however the WBS for the

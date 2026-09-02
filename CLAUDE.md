@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (ae) — The top-level WBS order is enforced, not merely seeded
+Owner: *"the arrangement of the WBS that is fixed should be milestones / initiation phase / planning phase /
+execution phase / close-out phase"* — the order `WBS_SKELETON` already seeds, which was being disturbed.
+Detail in `modules/project-schedule/CLAUDE.md`.
+- New `_wbsCanonicalRootOrder()` on load. It also authorises the repair I declined to make unasked earlier
+  today: the owner's project still had Initiation dragged ahead of Milestones by the push's renumbering.
+- ⚠️ **Slot by slot, matched two different ways.** The four phases by their **resolved phase** (stored first,
+  else `phaseFromName`), so `Closeout Phase` / `Close-out Phase` / a P6 file's plain `Closeout` /
+  `Construction Phase` all land in the right slot. **Milestones resolves no phase**, so by name — and only
+  when nothing else claims it, so a branch that does resolve a phase can never be pulled into that slot.
+- ⚠️⚠️ **Runs BEFORE the code resync, never after.** A dotted code derives purely from sibling POSITION, so
+  reordering the root re-codes every branch under it and the resync is what pushes those codes onto the rows.
+- ⚠️⚠️ **Refuses on an unlocked root node** — the same signal `_wbsResyncCodes` refuses on. That means
+  adoption failed to place something and the resync will skip, so a reorder would leave every code
+  describing an order the tree no longer has: a tree problem turned into a data problem.
+- ⚠️ **A project already in order writes nothing** (this runs on every load, and touching five rows each
+  time would make `updated_at` useless). Branches the skeleton does not define keep their relative order
+  after the five, are never dropped and never interleaved; children are untouched.
+- **38 checks** executing the shipped functions, including an assertion that the order enforced IS
+  `WBS_SKELETON`'s own so the two cannot drift; the three earlier suites still green; 0 functions lost.
+  MODULE_V → `20260902ae`.
+
 ### 2026-09-02 (ad) — The lifecycle activities were pushed correctly and had no branch row to hang under
 Owner: *"good, the execution phase is migrated, however the WBS for the initiation, planning and close-out is
 not migrated now."* Detail in `modules/project-schedule/CLAUDE.md`.
