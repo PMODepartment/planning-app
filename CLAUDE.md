@@ -97,9 +97,11 @@ and the three folded-away view controls were wanted back on the toolbar. Detail 
   limit, so 20,000 rows is ~100 sequential requests however the client is written. **The loop moved
   into the database** — `migrations/2026-09-02-clear-project-rpc.sql`. ⚠️ **Until that migration is
   run the delete is exactly as slow as before**; the client keeps the old path as a fallback.
-- ⚠️ **"29,605 removed" on a schedule that never held that many.** The counter counted ids *sent*, so
-  a delete affecting nothing re-read the same page for ever and the number ran away. It now fails
-  when the same first id comes back — the only honest signal that nothing is moving.
+- ⚠️ **The counter counted ids *sent*, not rows gone**, so a delete affecting nothing would re-read
+  the same page for ever. It now fails when the same first id comes back. ⚠️ **I first justified this
+  with the owner's "29,605 removed" screenshot and that was wrong** — checked live afterwards, SLN101
+  *is* 4PH Strevi Bacoor and holds **28,863 activities**, so 29,605 is a plausible real figure, not a
+  runaway. The live check does show the clear **never completed**: every row is still there.
 - ⚠️⚠️ **The clear was fighting the previous load.** `load()` runs four self-heal passes plus the
   Design Development and Procurement mirrors — minutes of writes that all exist to **create** rows.
   Nothing bumped the load generation when a destructive operation began, so the chain never learned

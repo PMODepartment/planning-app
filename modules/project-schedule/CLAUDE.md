@@ -21,12 +21,19 @@ the client is written. **The loop has to move into the database**, so it did:
 - ⚠️ **The id-chunking path is kept as the fallback**, because the client ships independently of the
   migration. **Until the migration is run, the delete is exactly as slow as before.**
 
-### 2 ⚠️ "29,605 removed" on a schedule that never held that many — the counter was counting the wrong thing
-`total` counted the ids **sent**, not rows gone. A delete that affects nothing (an RLS policy
-permitting SELECT but not DELETE is the realistic case) re-reads the same page for ever and the
-counter climbs past the project's own row count — which is what the owner photographed. The fallback
-now fails when **the same first id comes back**, which is the only honest signal that nothing is
-moving, and says what it means.
+### 2 ⚠️ The counter counted ids SENT, not rows gone
+`total` counted the ids **sent**. A delete that affects nothing (an RLS policy permitting SELECT but
+not DELETE is the realistic case) re-reads the same page for ever and the counter climbs without
+bound. The fallback now fails when **the same first id comes back**, which is the only honest signal
+that nothing is moving, and says what it means.
+
+⚠️ **I FIRST WROTE THAT THE OWNER'S "29,605 removed" PROVED THIS, AND THAT WAS WRONG.** Checked live
+afterwards: **SLN101 *is* 4PH Strevi Bacoor**, and it holds **28,863 activities**. 29,605 is therefore
+well within what a real clear of that project could legitimately report — it is not evidence of a
+runaway at all. What the live check DOES establish is that the clear **did not complete**: all 28,863
+rows are still there. Whether the counter over-reported or the heal chain was re-creating rows as fast
+as they went (see 3) is not decidable from a screenshot, and both are now closed. **Do not cite that
+number as proof of the counter bug.**
 
 ### 3 ⚠️⚠ "The delete stopped, and deleting again bugged" — the heal chain was fighting the clear
 This is the one that also answers *"items obtained from the Engineering App and Procurement App …
