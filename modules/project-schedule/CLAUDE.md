@@ -1,3 +1,75 @@
+## Two toolbar defects with one cause each: the group head hung left, and `.lg` had lost its rule (2026-09-02d) — fmlozano
+
+Owner, from a live screenshot: *"The Ronquillo Group seem to be out of place from the project
+selector. I still think we can improve how the legend looks like for the Activity(solid = done, pale
+= remaining bar = forecast dates rail = planned)."* Both turned out to be measurable layout faults,
+not taste — and the second explains why the owner typed `Activity(solid` with no space.
+
+### 1 ⚠️ The group head hung 11.5px LEFT of the project it belongs to
+The project name is not a text node: `enhanceProjectSelect` replaces the `<select>` with a
+`.pd-psel-btn` that inherits `.pd-select`'s own padding + border, so its LABEL is inset from the
+control's left edge — while `.ps-ws` was inset by a flat `2px`. **Measured against the shipped CSS:
+name text at x=83.7, group-head text at x=72.2.** The two are stacked in the same column and are
+meant to read as one block, so 11.5px of disagreement is exactly what "out of place" looks like.
+`.ps-ws` now carries the trigger's own text inset (padding-left + border-width). **Verified: both
+text origins at x=83.7 — 0px.**
+⚠️ There is no CSS way to read a sibling's padding, so the value is a stated constant with a comment
+naming what it must equal, and the harness asserts the two origins land within 1px instead.
+
+### 2 ⚠️⚠️ `.ps-legend .lg` had been DEAD CSS since the marks were folded in
+This is the whole of the legend complaint, and it was one stale selector.
+
+When the marks became the leading entries of `#ps-actlegend` (2026-08-17) the `.ps-legend` wrapper
+was **deleted**, so `.ps-legend .lg { display:inline-flex; align-items:center; gap:6px }` stopped
+matching anything. Every chip in the activity legend has been unstyled ever since. Measured:
+
+- `align-items` computed **`normal`** on all five chips, so each swatch **baseline**-aligned instead
+  of centring — **`swCentreOff` −2 / −2 / −2 / −3**, the swatch riding above its own label.
+- ⚠️ **And that is where the owner's missing space came from.** `#ps-view-schedule.ps-lsm .lg-lsmon`
+  sets `display:inline-flex`, so the Activity chip — **alone among the five** — was a flex container
+  with `gap: normal` (0). Its ` Activity ` text node and its `<em>` are separate flex items, and
+  **flex strips the literal whitespace between items**. The other four chips were plain blocks, kept
+  their spaces, and looked fine. So one chip rendered `Activity(solid`, which is precisely the string
+  the owner quoted back. It was never a typo in the text.
+
+Retargeted to `.ps-actlegend .lg`. **Verified: all five chips `display:flex`, `align-items:center`,
+`gap:6px`, and `swCentreOff: 0` on every one** — plus the text now reads `Activity (solid = …)`.
+⚠️ Kept at (0,2,0) so the two `#ps-view-schedule.ps-lsm .lg-lsm*` display rules (1,2,0) still decide
+which chips are SHOWN; this only decides how a shown chip is laid out.
+
+### ⚠️ Still open, and it is a design call, not a defect
+The Activity chip measures **482px against 77 / 113 / 128 / 136** for the other four — 3.5× the
+widest trade chip, and it visually swamps the colour key a reader actually came for. Fixing the
+alignment makes it legible; it does not make it short. Put to the owner rather than chosen for them,
+because the honest options trade against a rule this file already fought over: the three facts a
+coloured bar encodes (rail = planned dates, extent = forecast dates, fill = done vs remaining) were
+worded deliberately after "still to do" was misread as a forecast, so dropping one from screen is not
+free. Not changed.
+
+### ⚠️ The toolbar-width thread is closed by the owner's own screenshot
+The previous entry left "1440 is still two lines — by 46px" open with the search box as the remaining
+lever. Re-measured in a harness carrying the **real shell** (`.pd-app` flex row + a 64px collapsed
+`.pd-sidebar` + `.pd-main`'s 22px padding — a bare toolbar over-reports available width by 108px and
+my first harness did exactly that): the row needs **1377px**. At the owner's ~1920 screen it is one
+line, which their screenshot confirms. No change made — the search box stays a real input.
+
+### Verification
+- Harness built from the shipped `<style>` block + `dashboard.css` + the real `ui.js` and `icons.js`,
+  with `MARKS_LEGEND_HTML` **sliced verbatim** out of `index.html` and the project selector driven
+  through the real `UI.enhanceProjectSelect`. Behind the standard gate (`visibilityState: visible`,
+  `--pd-red` resolving).
+- Parses (1 inline block); 0 NUL bytes; 1,447 function definitions, none lost; the dead
+  `.ps-legend .lg` rule is gone (the one remaining match is the comment naming it).
+- ⚠️ **Two harness faults of my own, both mine and not the code's:** `.replace(/\s+/g,' ')` written
+  inside a JS **template literal** degrades to `/s+/g`, which silently ate every letter `s` and made
+  the first text readout say `Mile tone` / `foreca t date`; and counting legend lines by distinct
+  child `top` values always reports one extra, because the 0-height `.ps-tb-spacer` is vertically
+  **centred** by `align-items:center` so its top is the line's midpoint. Count lines from the row's
+  height.
+- ⚠️ **Not verified signed in** — measured in the harness, not on a live project.
+- `MODULE_V` → `20260902e` (origin had already shipped `d` for a different module change, so `d` was
+  already in browsers and this fix would have sat behind a cached page).
+
 ## Vertical stacking: the cell body is never pale again — day mode was unreadable (2026-09-02) — eprobles
 
 Owner: *"is there a way you can improve the visuals in this vertical stacking? … if it is on day
@@ -42,6 +114,7 @@ two-stop shadow, a 1 px hover lift, and a header washed with the card's own `--t
 what stops eight cards looking like one grey table.
 
 ---
+
 ## Outline and Layouts folded into the View menu (2026-09-02c) — fmlozano
 
 Owner: *"Yes fold Outline and Layouts into View too"* — accepting the two candidates I named at the

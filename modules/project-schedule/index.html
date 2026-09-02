@@ -110,7 +110,17 @@
     .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; flex:0 1 auto; }
     .ps-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
     .ps-project:hover, .ps-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
-    .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
+    /* ⚠️ THE SUB-LINE MUST START WHERE THE PROJECT NAME STARTS, and 2px did not.
+       The project name is not a bare text node — `enhanceProjectSelect` replaces the <select> with a
+       `.pd-psel-btn` that inherits `.pd-select`'s own padding + border, so its LABEL is inset from
+       the control's left edge while the sub-line was inset by 2px. Measured against the shipped CSS:
+       name text at x=83.7, group-head text at x=72.2 — the group head hung **11.5px to the LEFT of
+       the project it belongs to**, which is what read as "out of place" (owner, 2026-09-02).
+       ⚠️ The value is the TRIGGER'S text inset (its computed padding-left + border-width), NOT a
+       guess: change `.pd-select`'s padding in the shared stylesheet and this must move with it.
+       There is no CSS way to read a sibling's padding, so the harness asserts the two text origins
+       land within 1px of each other instead. */
+    .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
     /* ⚠️ THE SWITCHER WAS "EXTENDED UNNECESSARILY", and the cause was NOT this module's own CSS.
        UI.initModuleTopbar() restructures every module topbar into .pd-tb-split > .pd-tb-main, and
        dashboard.css then gives the project context `flex:1 1 220px; max-width:420px` and its trigger
@@ -286,7 +296,7 @@
        `pd_sidebar_collapsed`, so driving it from here would silently overwrite the planner's own
        sidebar preference and leave it changed after they exit reporting.
        ⚠️ WHAT A READER LOSES WITH THOSE BANDS is the project name, the group head and the data
-       date -- the three facts that make a screenshot trustworthy. They are not dropped: `.ps-rep-id`
+       date -- the three facts that make a screenshot trustworthy. They are not dropped: `.ps-rv-id`
        in the toolbar carries them, painted by _repIdPaint(). Do not remove one without the other.
        ⚠️ The way OUT is never in a hidden band: the Layout menu and the exit chip both live in
        the toolbar, and _applyReportingClass() refuses to set this class on any view whose toolbar
@@ -299,18 +309,18 @@
     /* A quiet marker so it is obvious the view is trimmed -- and, unlike the ::before pseudo-element
        it replaces, one that can actually be CLICKED to leave. A presenter must never have to hunt
        through a menu to undo a mode that just removed most of the app chrome. */
-    body.ps-reporting .ps-toolbar .ps-rep-bar { display:flex; }
+    body.ps-reporting .ps-toolbar .ps-rv-bar { display:flex; }
     /* ⚠️ TEXT is --pd-danger-text, NOT --pd-red. Measured: brand red at 10.5px/700 on the page
        ground is 3.74:1, under AA -- the same defect the ::before chip this replaces already had, and
        the fifth time this repo has hit "brand red is not a text colour at this size" (the claim mark,
        the stacking chip, the picked-icon button, Sign out). --pd-danger-text is the paired token added
        for it (#C42127 light / #FF8A80 dark). The BORDER stays brand red: it is a component boundary,
        held to 3:1, which 3.74 clears -- so the brand cue survives without the contrast failure. */
-    body.ps-reporting .ps-toolbar .ps-rep-exit { display:inline-flex; align-items:center; gap:6px;
+    body.ps-reporting .ps-toolbar .ps-rv-exit { display:inline-flex; align-items:center; gap:6px;
       height:26px; padding:0 8px; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
       color:var(--pd-danger-text); font-weight:700; background:transparent;
       border:1px solid var(--pd-red); border-radius:4px; white-space:nowrap; }
-    body.ps-reporting .ps-toolbar .ps-rep-exit:hover { background:var(--pd-red-light); border-color:var(--pd-red); color:var(--pd-danger-text); }
+    body.ps-reporting .ps-toolbar .ps-rv-exit:hover { background:var(--pd-red-light); border-color:var(--pd-red); color:var(--pd-danger-text); }
     .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; font-size:13px; }
     .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-topbar-tools .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
@@ -752,7 +762,15 @@
     html.pd-dark .ps-bar-lbl { color:var(--pd-muted); }
     /* legend */
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
-    .ps-legend .lg { display:inline-flex; align-items:center; gap:6px; }
+    /* ⚠️ RETARGETED FROM `.ps-legend .lg`, WHICH HAD BECOME DEAD CSS. The marks were folded into the
+       activity legend (2026-08-17) and the `.ps-legend` wrapper was deleted with that change — so
+       this rule stopped matching anything and every chip in `#ps-actlegend` has been an UNSTYLED
+       block ever since. Measured: `align-items` computed `normal`, so each swatch baseline-aligned
+       instead of centring — the swatch sat 2-3px above its own label on all five chips — and the
+       6px swatch-to-label gap was gone, so "Activity" butted straight against its parenthetical.
+       ⚠️ Kept at (0,2,0) so the two `#ps-view-schedule.ps-lsm .lg-lsm*` display rules (1,2,0) still
+       decide which chips are SHOWN; this only decides how a shown chip is laid out. */
+    .ps-actlegend .lg { display:inline-flex; align-items:center; gap:6px; }
     .ps-bar.ps-cat-hl, .ps-mile.ps-cat-hl { outline:2px solid var(--pd-ink); outline-offset:1px; z-index:4; }
     .ps-bar.ps-cat-dim, .ps-mile.ps-cat-dim { opacity:.18; }
     .ps-alg-hl { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:4px;
@@ -809,12 +827,18 @@
        row that already needed 1660 of 1256 available, pushing the search box off screen -- and
        .ps-toolbar is a flex COLUMN, so a sibling div is a free second line that competes with
        nothing. The whole bar is display:none outside reporting, so the normal toolbar is unchanged. */
-    .ps-rep-bar { display:none; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
-    .ps-rep-id { display:inline-flex; align-items:baseline; gap:7px; min-width:0; }
-    .ps-rep-id b { font-size:14px; font-weight:800; color:var(--pd-ink); white-space:nowrap;
+    /* ⚠️ ps-RV-bar, not ps-rep-bar. The Reports DIALOG owns the whole `ps-rep-*`
+       namespace, and this rule sat on the SAME bare class as its control bar (line ~185) at the same
+       specificity -- so source order alone decided, `display:none` won, and the dialog silently lost
+       its view filter, its report search and its Create New Report button. Measured in a browser:
+       all three rendered 0x0 and failed elementFromPoint. Never add a `ps-rep-*` name for the
+       reporting VIEW; that prefix is the Reports dialog's. */
+    .ps-rv-bar { display:none; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
+    .ps-rv-id { display:inline-flex; align-items:baseline; gap:7px; min-width:0; }
+    .ps-rv-id b { font-size:14px; font-weight:800; color:var(--pd-ink); white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; max-width:420px; }
-    .ps-rep-id i { font-style:normal; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
-    .ps-rep-id s { text-decoration:none; color:var(--pd-line); font-size:11.5px; }
+    .ps-rv-id i { font-style:normal; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
+    .ps-rv-id s { text-decoration:none; color:var(--pd-line); font-size:11.5px; }
     /* ⚠️ 28px was too short for the 12px option text — the select clipped its own descenders and
        read as a smudge. Height is a MINIMUM here, never a fixed box. */
     .ps-actlegend .ps-alg-field { min-height:32px; height:auto; font-size:12.5px; line-height:1.35;
@@ -2627,9 +2651,9 @@
              then the identity a reader still needs once the topbar and module bar are hidden --
              which project, whose group head, and the data date every figure on screen is as-of.
              The bar is display:none otherwise, so the normal toolbar is unchanged. -->
-        <div class="ps-rep-bar">
-          <button class="pd-btn ps-rep-exit" id="ps-rep-exit" title="Leave Reporting view - brings back the sidebar, the project bar and the authoring controls">Reporting view ✕</button>
-          <span class="ps-rep-id" id="ps-rep-id"></span>
+        <div class="ps-rv-bar">
+          <button class="pd-btn ps-rv-exit" id="ps-rv-exit" title="Leave Reporting view - brings back the sidebar, the project bar and the authoring controls">Reporting view ✕</button>
+          <span class="ps-rv-id" id="ps-rv-id"></span>
         </div>
         <div class="ps-tb-row">
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-actionsbtn"><span data-ico="box" data-ico-size="15"></span> Actions ▾</button>
@@ -14616,7 +14640,7 @@
   // screen says WHICH project and AS OF WHEN, so those two facts (plus the group head, which is how
   // this org talks about a project) move into the toolbar for the duration.
   function _repIdPaint() {
-    var el = document.getElementById('ps-rep-id'); if (!el) return;
+    var el = document.getElementById('ps-rv-id'); if (!el) return;
     var ws = document.getElementById('ps-workspace');
     var gh = ws ? String(ws.textContent || '').trim() : '';
     // ⚠️ Real separator characters, not just flex `gap`. Read aloud or copied out of the page,
@@ -28877,7 +28901,7 @@
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
     // The exit chip. Reporting removes the sidebar, the topbar and the module bar, so leaving it
     // must be one visible click and never a hunt through a menu.
-    (function () { var rx = document.getElementById('ps-rep-exit'); if (rx) rx.onclick = function () { applyReporting(false); renderLayoutMenu(); }; })();
+    (function () { var rx = document.getElementById('ps-rv-exit'); if (rx) rx.onclick = function () { applyReporting(false); renderLayoutMenu(); }; })();
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     tMenu.querySelectorAll('[data-tab]').forEach(function (b) { b.onclick = function () { tMenu.classList.remove('open'); switchTab(b.dataset.tab); }; });
     // ---- Collapsible Last Planner section (persisted) ----
