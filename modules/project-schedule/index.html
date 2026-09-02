@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901d" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -101,16 +101,15 @@
        and set off the user avatar from the tools with a divider. */
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
-    /* Project context: project name over group-head subline, both left-aligned. `.ps-project`
-       is styled exactly like every other module's project select (cash-flow's `.cf-project` /
-       s-curve's `.sc-project`) — a borderless-until-hover trigger — so this module lines up
-       with the app-wide shared searchable picker (UI.enhanceProjectSelect) it now uses instead
-       of a bespoke Workspace/Program/Group browser. `enhanceProjectSelect` copies the select's
-       classes onto its trigger button, so this rule also styles that button. */
+    /* Project context: project name, left-aligned. `.ps-project` is styled exactly like every
+       other module's project select (cash-flow's `.cf-project` / s-curve's `.sc-project`) — a
+       borderless-until-hover trigger — so this module lines up with the app-wide shared
+       searchable picker (UI.enhanceProjectSelect) it now uses instead of a bespoke
+       Workspace/Program/Group browser. `enhanceProjectSelect` copies the select's classes onto
+       its trigger button, so this rule also styles that button. */
     .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; flex:0 1 auto; }
     .ps-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
     .ps-project:hover, .ps-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
-    .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
     /* ⚠️ THE SWITCHER WAS "EXTENDED UNNECESSARILY", and the cause was NOT this module's own CSS.
        UI.initModuleTopbar() restructures every module topbar into .pd-tb-split > .pd-tb-main, and
        dashboard.css then gives the project context `flex:1 1 220px; max-width:420px` and its trigger
@@ -170,6 +169,12 @@
     .ps-net-head { display:flex; align-items:center; gap:14px; padding:8px 12px; border-bottom:1px solid var(--pd-line);
       background:var(--pd-bg); font-size:12px; color:var(--pd-muted); position:sticky; top:0; z-index:2; }
     .ps-net-head label { display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--pd-ink); }
+    /* ⚠️ WRAPS. The head is a sticky flex row and a project with four location levels adds four
+       selects to it; `nowrap` would push the count — the one thing that says whether the view will
+       draw — off the right edge on a laptop. Same lesson as the toolbar row. */
+    .ps-net-head { flex-wrap:wrap; row-gap:8px; }
+    .ps-net-loc { font-size:12px; color:var(--pd-muted); gap:5px; }
+    .ps-net-loc .pd-select { min-height:30px; height:30px; padding:0 24px 0 8px; font-size:12px; max-width:180px; }
     /* Column chooser menu */
     .ps-cols-menu { min-width:220px; max-height:340px; overflow:auto; padding:6px 4px; }
     .ps-cols-menu label { display:flex; align-items:center; gap:8px; padding:5px 12px; font-size:13px; cursor:pointer; color:var(--pd-ink); }
@@ -285,9 +290,9 @@
        and NOT by toggling the shell's own `.pd-collapsed` -- UI.initShell persists that class in
        `pd_sidebar_collapsed`, so driving it from here would silently overwrite the planner's own
        sidebar preference and leave it changed after they exit reporting.
-       ⚠️ WHAT A READER LOSES WITH THOSE BANDS is the project name, the group head and the data
-       date -- the three facts that make a screenshot trustworthy. They are not dropped: `.ps-rep-id`
-       in the toolbar carries them, painted by _repIdPaint(). Do not remove one without the other.
+       ⚠️ WHAT A READER LOSES WITH THOSE BANDS is the project name and the data date -- the two
+       facts that make a screenshot trustworthy. They are not dropped: `.ps-rv-id` in the toolbar
+       carries them, painted by _repIdPaint(). Do not remove one without the other.
        ⚠️ The way OUT is never in a hidden band: the Layout menu and the exit chip both live in
        the toolbar, and _applyReportingClass() refuses to set this class on any view whose toolbar
        switchTab hides -- otherwise the Planner Cockpit would have no chrome at all and no way back. */
@@ -299,18 +304,18 @@
     /* A quiet marker so it is obvious the view is trimmed -- and, unlike the ::before pseudo-element
        it replaces, one that can actually be CLICKED to leave. A presenter must never have to hunt
        through a menu to undo a mode that just removed most of the app chrome. */
-    body.ps-reporting .ps-toolbar .ps-rep-bar { display:flex; }
+    body.ps-reporting .ps-toolbar .ps-rv-bar { display:flex; }
     /* ⚠️ TEXT is --pd-danger-text, NOT --pd-red. Measured: brand red at 10.5px/700 on the page
        ground is 3.74:1, under AA -- the same defect the ::before chip this replaces already had, and
        the fifth time this repo has hit "brand red is not a text colour at this size" (the claim mark,
        the stacking chip, the picked-icon button, Sign out). --pd-danger-text is the paired token added
        for it (#C42127 light / #FF8A80 dark). The BORDER stays brand red: it is a component boundary,
        held to 3:1, which 3.74 clears -- so the brand cue survives without the contrast failure. */
-    body.ps-reporting .ps-toolbar .ps-rep-exit { display:inline-flex; align-items:center; gap:6px;
+    body.ps-reporting .ps-toolbar .ps-rv-exit { display:inline-flex; align-items:center; gap:6px;
       height:26px; padding:0 8px; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
       color:var(--pd-danger-text); font-weight:700; background:transparent;
       border:1px solid var(--pd-red); border-radius:4px; white-space:nowrap; }
-    body.ps-reporting .ps-toolbar .ps-rep-exit:hover { background:var(--pd-red-light); border-color:var(--pd-red); color:var(--pd-danger-text); }
+    body.ps-reporting .ps-toolbar .ps-rv-exit:hover { background:var(--pd-red-light); border-color:var(--pd-red); color:var(--pd-danger-text); }
     .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; font-size:13px; }
     .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-topbar-tools .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
@@ -752,7 +757,15 @@
     html.pd-dark .ps-bar-lbl { color:var(--pd-muted); }
     /* legend */
     .ps-legend { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:8px 2px; font-size:12px; color:var(--pd-muted); }
-    .ps-legend .lg { display:inline-flex; align-items:center; gap:6px; }
+    /* ⚠️ RETARGETED FROM `.ps-legend .lg`, WHICH HAD BECOME DEAD CSS. The marks were folded into the
+       activity legend (2026-08-17) and the `.ps-legend` wrapper was deleted with that change — so
+       this rule stopped matching anything and every chip in `#ps-actlegend` has been an UNSTYLED
+       block ever since. Measured: `align-items` computed `normal`, so each swatch baseline-aligned
+       instead of centring — the swatch sat 2-3px above its own label on all five chips — and the
+       6px swatch-to-label gap was gone, so "Activity" butted straight against its parenthetical.
+       ⚠️ Kept at (0,2,0) so the two `#ps-view-schedule.ps-lsm .lg-lsm*` display rules (1,2,0) still
+       decide which chips are SHOWN; this only decides how a shown chip is laid out. */
+    .ps-actlegend .lg { display:inline-flex; align-items:center; gap:6px; }
     .ps-bar.ps-cat-hl, .ps-mile.ps-cat-hl { outline:2px solid var(--pd-ink); outline-offset:1px; z-index:4; }
     .ps-bar.ps-cat-dim, .ps-mile.ps-cat-dim { opacity:.18; }
     .ps-alg-hl { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:4px;
@@ -762,8 +775,18 @@
        into the single legend row that wrapper stopped existing — so Activity / WBS summary /
        Baseline (BL0) started showing in LSM mode again, describing marks that are not drawn. */
     #ps-view-schedule.ps-lsm .lg-lsmoff { display:none; }
-    /* …and the mirror: the planned/complete key only means anything WITH colours on. */
-    .lg-lsmon { display:none; }
+    /* …and the mirror: the planned/complete key only means anything WITH colours on.
+       ⚠️⚠️ SCOPED TO `.ps-actlegend`, AND IT HAS TO STAY THAT WAY. As a bare `.lg-lsmon` this rule
+       was (0,1,0) and LOST to `.ps-actlegend .lg { display:inline-flex }` (0,2,0) eleven lines
+       above — so from the moment that rule was retargeted (2026-09-02d, itself a fix for dead CSS)
+       the coloured-bar chip was also drawn in the PLAIN view, immediately beside the
+       "Activity (red = % complete)" chip that says something different about the same mark. Two
+       chips both called Activity, contradicting each other. Measured in a harness carrying the
+       shipped CSS: 8 chips displayed where 7 exist, and the row wrapped to TWO lines (88px vs 41px)
+       because the 482px chip could not fit beside the rest. That is what "the legend looks wrong"
+       was. Now (0,2,0) and later in source order, so it beats `.ps-actlegend .lg`; the `.ps-lsm`
+       rule below is (1,2,0) and still beats both, so it alone decides when the chip is shown. */
+    .ps-actlegend .lg-lsmon { display:none; }
     #ps-view-schedule.ps-lsm .lg-lsmon { display:inline-flex; }
     /* Sample swatches drawn the way a real bar is: same hue, pale remainder vs solid+texture done. */
     .lg-plan { background:rgba(0,112,192,.30); border:1px solid rgba(0,112,192,.55); }
@@ -786,6 +809,28 @@
     .ps-actlegend-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:6px; }
     .ps-actlegend-head label { display:inline-flex; align-items:center; gap:6px; }
     .ps-actlegend-items { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+    /* ⚠️ The three facts a coloured bar encodes (fill = progress, extent = forecast dates, rail =
+       planned dates) used to be a 71-character parenthetical INSIDE the Activity chip, which made
+       that one chip 482px against 77 / 113 / 128 / 136 for the others — 3.5x the widest trade chip,
+       swamping the colour key a reader came for. None of the three may be dropped: the wording was
+       settled after "still to do" was read as a forecast date. So it moves to its own line instead
+       of being shortened. `flex-basis:100%` in the SAME wrapping flex row — deliberately not a
+       second container, because a sibling <div> is exactly what the owner once read as "two legend
+       sections". Subordinate by size and weight, so it reads as a caption under the key rather than
+       a sixth entry in it. */
+    .ps-actlegend .lg-note { flex:0 0 100%; font-size:11.5px; line-height:1.5;
+      color:var(--pd-muted); margin-top:2px; }
+    /* ⚠️ THE SENTENCE LIVES IN ONE CHILD, and that is not tidiness. `.lg-note` carries `lg`, so
+       `.ps-actlegend .lg` makes it a FLEX CONTAINER — and flex strips the literal whitespace between
+       items. Written as `<b>solid</b> = done` directly inside it, each tag is its own flex item and
+       the rendered text reads `Reading a bar:solid= done`. That is the exact defect that shipped as
+       `Activity(solid` and was fixed on 2026-09-02d; the `.lg-lsmon` gating rules set an explicit
+       `display:inline-flex` with an ID in the selector, so it cannot be undone from here without a
+       specificity fight. One child = one flex item, and inside it the text is ordinary inline flow
+       with its spaces intact. */
+    .ps-actlegend .lg-note > span { flex:1 1 auto; min-width:0; }
+    .ps-actlegend .lg-note b { font-weight:700; color:var(--pd-ink); }
+    .ps-actlegend .lg-note i { font-style:normal; opacity:.75; }
     /* Fold the legend to a single line -- the same chevron affordance the details panel carries.
        Owner: *"the panel below ... is always shown. If we can have the option to minimize this
        similar to the activity details panel."* It is a permanent band under the Gantt, so it folds
@@ -809,12 +854,18 @@
        row that already needed 1660 of 1256 available, pushing the search box off screen -- and
        .ps-toolbar is a flex COLUMN, so a sibling div is a free second line that competes with
        nothing. The whole bar is display:none outside reporting, so the normal toolbar is unchanged. */
-    .ps-rep-bar { display:none; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
-    .ps-rep-id { display:inline-flex; align-items:baseline; gap:7px; min-width:0; }
-    .ps-rep-id b { font-size:14px; font-weight:800; color:var(--pd-ink); white-space:nowrap;
+    /* ⚠️ ps-RV-bar, not ps-rep-bar. The Reports DIALOG owns the whole `ps-rep-*`
+       namespace, and this rule sat on the SAME bare class as its control bar (line ~185) at the same
+       specificity -- so source order alone decided, `display:none` won, and the dialog silently lost
+       its view filter, its report search and its Create New Report button. Measured in a browser:
+       all three rendered 0x0 and failed elementFromPoint. Never add a `ps-rep-*` name for the
+       reporting VIEW; that prefix is the Reports dialog's. */
+    .ps-rv-bar { display:none; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
+    .ps-rv-id { display:inline-flex; align-items:baseline; gap:7px; min-width:0; }
+    .ps-rv-id b { font-size:14px; font-weight:800; color:var(--pd-ink); white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; max-width:420px; }
-    .ps-rep-id i { font-style:normal; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
-    .ps-rep-id s { text-decoration:none; color:var(--pd-line); font-size:11.5px; }
+    .ps-rv-id i { font-style:normal; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
+    .ps-rv-id s { text-decoration:none; color:var(--pd-line); font-size:11.5px; }
     /* ⚠️ 28px was too short for the 12px option text — the select clipped its own descenders and
        read as a smudge. Height is a MINIMUM here, never a fixed box. */
     .ps-actlegend .ps-alg-field { min-height:32px; height:auto; font-size:12.5px; line-height:1.35;
@@ -1045,8 +1096,13 @@
     #ps-analyzebtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-analyzebtn.active .pd-ico { color:#fff; }
     /* ---- Activity Progress View ---- */
-    #ps-progressbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
-    #ps-progressbtn.active .pd-ico { color:#fff; }
+    /* ⚠️ BOTH buttons, together. The Progress rule survived the 2026-08 fold that removed the
+       buttons (dead CSS for a fortnight); the Stacking one did not exist, because that view was only
+       ever a silent toggle with no lit state — which is precisely why the toolbar could not say
+       where you were. Now they are top-level again (owner 2026-09-02) the lit state is the whole
+       point: it is what stops a standalone shortcut re-becoming a control you cannot read. */
+    #ps-progressbtn.active, #ps-vstackbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    #ps-progressbtn.active .pd-ico, #ps-vstackbtn.active .pd-ico { color:#fff; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Builder's step 6 so the two read as one idea. */
@@ -2334,6 +2390,35 @@
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; margin-bottom:8px; }
     .sbld-scope-col, .sbld-scope-row { cursor:pointer; user-select:none; }
     .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }
+    /* step — lifecycle phases (Initiation / Planning / Close-out around the generated Execution
+       Phase). Deliberately built on the builder's own .sbld-* look; only what this step needs is new. */
+    .sbld-phgrid { display:grid; gap:12px; margin-top:10px; }
+    .sbld-phcard { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); padding:11px 13px 12px; }
+    .sbld-phcard.on { border-color:var(--pd-red-mid, var(--pd-red)); box-shadow:var(--pd-shadow); }
+    /* The Execution Phase card is a STATEMENT, not a control — it is what the other steps built, so
+       it carries no tick and cannot be edited here. The tint is what says so at a glance. */
+    .sbld-phcard.is-exec { background:var(--pd-bg); border-style:dashed; }
+    .sbld-phhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .sbld-phname { font-size:13.5px; font-weight:800; display:inline-flex; align-items:center; gap:7px; cursor:pointer; }
+    .sbld-phcard.is-exec .sbld-phname { cursor:default; }
+    .sbld-phlock { margin-left:auto; font-size:11px; color:var(--pd-muted); }
+    .sbld-phmeta { margin:5px 0 0; font-size:12px; color:var(--pd-muted); }
+    .sbld-phmeta b { color:var(--pd-ink); }
+    .sbld-phlist { margin-top:9px; display:grid; gap:5px; }
+    /* name · days · computed window · delete. The window column is read-only output: the dates come
+       from the chain, so they are shown rather than entered. */
+    .sbld-phrow { display:grid; grid-template-columns:14px minmax(0,1fr) 74px 168px 34px; gap:7px; align-items:center; }
+    .sbld-phgrip { cursor:grab; color:var(--pd-muted); font-size:11px; line-height:1; letter-spacing:-2px;
+      user-select:none; text-align:center; }
+    .sbld-phgrip:active { cursor:grabbing; }
+    .sbld-phrow .pd-input { height:31px; font-size:12.5px; }
+    .sbld-phd { text-align:right; font-variant-numeric:tabular-nums; }
+    .sbld-phwin { font-size:11.5px; color:var(--pd-muted); font-variant-numeric:tabular-nums; white-space:nowrap;
+      overflow:hidden; text-overflow:ellipsis; }
+    .sbld-phtotal { margin:12px 0 0; font-size:12.5px; color:var(--pd-muted); }
+    .sbld-phtotal b { color:var(--pd-ink); font-variant-numeric:tabular-nums; }
+    @media (max-width:720px) { .sbld-phrow { grid-template-columns:14px minmax(0,1fr) 64px 34px; }
+      .sbld-phwin { display:none; } }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
     .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px; background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
@@ -2585,14 +2670,13 @@
           <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
       </div>
-      <!-- Project context sits next to the title, name over group-head subline, left-aligned.
-           Uses the app-wide shared searchable project selector (UI.enhanceProjectSelect) — the
-           same picker every other module uses — so this module's dropdown is aligned with the
-           rest of the suite. The <select> stays the source of truth; enhanceProjectSelect wraps
-           it in a borderless-until-hover trigger + searchable popup, in place. -->
+      <!-- Project context sits next to the title, left-aligned. Uses the app-wide shared
+           searchable project selector (UI.enhanceProjectSelect) — the same picker every other
+           module uses — so this module's dropdown is aligned with the rest of the suite. The
+           <select> stays the source of truth; enhanceProjectSelect wraps it in a
+           borderless-until-hover trigger + searchable popup, in place. -->
       <div class="ps-projctx">
         <select class="pd-select ps-project" id="ps-project" title="Project"></select>
-        <div class="ps-ws" id="ps-workspace"></div>
       </div>
       <span class="ps-fresh" id="ps-fresh" style="display:none;"></span>
       <!-- OPC-style global tools; theme.js inserts the dark-mode toggle right after this,
@@ -2627,9 +2711,9 @@
              then the identity a reader still needs once the topbar and module bar are hidden --
              which project, whose group head, and the data date every figure on screen is as-of.
              The bar is display:none otherwise, so the normal toolbar is unchanged. -->
-        <div class="ps-rep-bar">
-          <button class="pd-btn ps-rep-exit" id="ps-rep-exit" title="Leave Reporting view - brings back the sidebar, the project bar and the authoring controls">Reporting view ✕</button>
-          <span class="ps-rep-id" id="ps-rep-id"></span>
+        <div class="ps-rv-bar">
+          <button class="pd-btn ps-rv-exit" id="ps-rv-exit" title="Leave Reporting view - brings back the sidebar, the project bar and the authoring controls">Reporting view ✕</button>
+          <span class="ps-rv-id" id="ps-rv-id"></span>
         </div>
         <div class="ps-tb-row">
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-actionsbtn"><span data-ico="box" data-ico-size="15"></span> Actions ▾</button>
@@ -2687,6 +2771,20 @@
                whether you were in it or not. The button now reads "View: Stacking", which answers
                where-am-I and what-else-is-there in one glance. See renderLayoutMenu. -->
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="View — Gantt, Grid, Split, Activity Network, Activity Progress, Vertical Stacking"><span data-ico="layout" data-ico-size="15"></span> <span id="ps-viewbtn-txt">View: Split</span> ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <!-- ⚠️ PROGRESS, STACKING AND OUTLINE ARE TOP-LEVEL AGAIN (owner 2026-09-02): *"it should
+               have their own button each at the toolbar itself"* and *"I also need the outline view to
+               be out of the view button as well, so users would not need to click on multiple buttons
+               just to collapse into a WBS level."* Folding them in bought toolbar width and cost a
+               click on the three controls a planner uses most often, which is the wrong trade.
+               ⚠️ Progress and Stacking are STILL LISTED in the View menu, deliberately. They are not
+               duplicates competing to own the state — `setProgressMode` / `setVStackMode` paint BOTH
+               the `.active` class on these buttons and the "View: …" label, from the one `_viewKey()`.
+               Removing them from the menu would leave the View button naming a view its own menu
+               could not return you from, which is the 2026-08 defect that caused the fold. Outline
+               DOES leave the menu: it is not a view, so nothing there has to name it. -->
+          <button class="pd-btn" id="ps-progressbtn" title="Activity Progress — physical vs planned, as a table"><span data-ico="trendingUp" data-ico-size="15"></span> Progress</button>
+          <button class="pd-btn" id="ps-vstackbtn" title="Vertical Stacking — the building model, one cell per zone"><span data-ico="box" data-ico-size="15"></span> Stacking</button>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-outlinebtn" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="layers" data-ico-size="15"></span> Outline ▾</button><div class="ps-menu" id="ps-outline-menu"></div></div>
           <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
                the View ▾ menu now: both answer "how am I looking at this schedule", the same question
                View already owns, and the row was two lines deep at laptop widths. See renderLayoutMenu. -->
@@ -3267,11 +3365,11 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260901c"></script>
+<script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260901d"></script>
+<script src="../../assets/js/ui.js?v=20260902a"></script>
 <script src="../../assets/js/icons.js?v=20260902e"></script>
 <script src="../../assets/js/calendar.js?v=20260824a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -3292,6 +3390,41 @@
   // project is selected. Every await in load() re-checks this against its own gen and
   // bails if a newer load has started.
   var _loadGen = 0;
+  // ⚠️⚠️ REBUILD-IN-PROGRESS. `load()` paints, then runs FOUR self-heal passes plus the Design
+  // Development and Procurement mirrors — minutes of writes on a big project. Those passes exist to
+  // CREATE rows: `_wbsEnsureSummaries` inserts a summary row for any node without one, and the two
+  // syncs insert branches sourced from the Engineering and Procurement apps. Clear the schedule
+  // while a previous load's chain is still running and the two fight: the clear deletes, the chain
+  // re-creates, and the project never empties. Owner: *"the delete process also stopped and when I
+  // tried deleting schedule again it bugged"*, and *"items obtained from the Engineering App and
+  // Procurement App … may corrupt the import process and destroy the schedule completely."*
+  // ⚠️ The `gen !== _loadGen` checks already in load() are NOT enough on their own, because nothing
+  // bumped the generation when a destructive operation began — the chain had no way to learn that
+  // the schedule underneath it had been deleted. `_beginMutation()` bumps it, which makes every one
+  // of those existing checkpoints an abort; the counter then keeps the NEXT load's chain out until
+  // the write is finished.
+  // ⚠️ A COUNTER, not a boolean: an import calls the clear helpers inside itself, so the regions
+  // nest and a boolean would be cleared by the inner one while the outer was still writing.
+  var _mutating = 0;
+  // ⚠️⚠️ THE REGION HAS TO BE CLOSEABLE EARLY, AND THAT IS A BUG FIX, NOT A CONVENIENCE. Both
+  // importers finish with `await load(); await autoAdoptAfterImport();` — the steps that BUILD the
+  // tree and attach every imported activity to it. Wrapping the whole import in one region put that
+  // finishing sequence INSIDE the fence, so `load()`'s heal chain hit `if (_isMutating()) return;`
+  // and skipped every pass, `_wbsLinkActivityParents` included. Measured on the owner's re-import of
+  // 4PH Strevi: **21,569 of 28,958 rows left with a null `wbs_node_id`, and 7,297 wbs_nodes for
+  // 12,473 summary rows** — the tree half-built and the activities unattached, which is the exact
+  // symptom class (no phase, no trade, empty Vertical Stacking) the link pass exists to prevent.
+  // The token makes `_endMutation` idempotent, so the import can close its own region before the
+  // finishing load while the wrapper's `finally` stays as the guaranteed backstop.
+  function _beginMutation() { _mutating++; _loadGen++; return { done: false }; }
+  function _endMutation(tok) {
+    if (tok) { if (tok.done) return; tok.done = true; }
+    _mutating = Math.max(0, _mutating - 1);
+  }
+  function _isMutating() { return _mutating > 0; }
+  // The region the CURRENT import owns, so its own tail can close it. Module-scope because the
+  // finishing sequence lives deep inside the import body, far from the wrapper that opened it.
+  var _importTok = null;
   var PROJECTS = [], GROUPHEADS = [], layoutMode = 'split', activeTab = 'schedule';
   // ---- Which view am I in? -----------------------------------------------------------------
   // ⚠️ The six view modes live in THREE pieces of state — `layoutMode` (split/grid/gantt/network),
@@ -3358,7 +3491,16 @@
   // re-parenting a branch re-phases its work immediately, with no data fix-up.
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; }
+  // ⚠⚠ `_catExecCache` AND `_catCache`. Both are keyed on the row COUNT, and neither the count nor
+  // the theme changes when the WBS TREE arrives — but `phaseOf()` reads through that tree, so the
+  // answer to "is this row in the colour scope" flips underneath both caches.
+  // ⚠️ Missing `_catCache` here is what put the 92-entry key back on a cleared SLN101 after (k)
+  // supposedly fixed it. `load()` paints from the localStorage cache FIRST, before
+  // `loadResourcesAssignments()` has fetched `wbs_nodes`; at that moment no row resolves a phase, so
+  // catScopeIsExec() answers false, catList() memoises the everything-coloured list, and clearing
+  // only the phase memo left that list in place for the rest of the session. It reproduced on a
+  // cache-painted load and NOT on a cold one, which is exactly why a single live check missed it.
+  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _catExecCache = null; _catCache = null; }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -5359,7 +5501,10 @@
   // Rebuild the Procurement branch from the mirror. Idempotent: a work package's
   // Activity ID is its WP number, so a re-sync patches in place.
   async function syncProcurement() {
-    if (!pid || !canWrite || _prcSyncing || window.__viewOnly || window.__archived) return;
+    // ⚠️ `_isMutating()` for the same reason as syncDesignDevelopment: this INSERTS branches
+    // sourced from the Procurement (WPM) app, and a clear or a re-import must not have work
+    // re-created underneath it mid-operation.
+    if (!pid || !canWrite || _prcSyncing || _isMutating() || window.__viewOnly || window.__archived) return;
     var prcNode = _skeletonRoot('procurement');
     // Lift back anything the old ambiguous resolver mis-nested, THEN re-resolve: the heal can
     // merge nodes (including, in principle, the one we just picked), so the root must be read
@@ -5690,7 +5835,10 @@
   // activity has a deterministic `activity_id`, so a re-sync patches in place instead of
   // duplicating (the trap that produced duplicate WBS rows before — see _wbsEnsureSummaries).
   async function syncDesignDevelopment() {
-    if (!pid || !canWrite || _ddSyncing || window.__viewOnly || window.__archived) return;
+    // ⚠️ `_isMutating()` as well as `_ddSyncing`: this INSERTS branches sourced from the Engineering
+    // app, and running it into a schedule that is being cleared or re-imported re-creates work under
+    // a tree the caller is in the middle of replacing.
+    if (!pid || !canWrite || _ddSyncing || _isMutating() || window.__viewOnly || window.__archived) return;
     var ddNode = _skeletonRoot('design_development');
     if (ddNode) { await _healSkeletonNesting('design_development'); ddNode = _skeletonRoot('design_development') || ddNode; }
     if (!ddNode) return;                                   // skeleton not seeded (or migration not run)
@@ -6289,16 +6437,7 @@
     // module uses. It builds/copies its trigger button's label from the select on its own, so
     // no separate label-sync call is needed here the way the old bespoke browser required.
     if (window.UI && UI.enhanceProjectSelect) UI.enhanceProjectSelect(sel);
-    updateGroupHeadCaption();
     if (pid) load();
-  }
-  // Show the project's group head under the project name/select.
-  function updateGroupHeadCaption() {
-    var el = document.getElementById('ps-workspace'); if (!el) return;
-    var p = PROJECTS.find(function (x) { return x.id === pid; });
-    var g = p && p.group_head_id ? GROUPHEADS.find(function (x) { return x.id === p.group_head_id; }) : null;
-    el.textContent = g ? g.name : (p && p.group_head_id ? p.group_head_id : '');
-    el.title = el.textContent;
   }
   // Central project switch — invoked by #ps-project's own `change` event (fired either by a
   // real user pick or by the shared picker's `choose()`, which sets the select's value and
@@ -6307,7 +6446,6 @@
     pid = id || null;
     var sel = document.getElementById('ps-project'); if (sel) sel.value = pid || '';
     if (pid) sessionStorage.setItem('pd_project', pid);
-    updateGroupHeadCaption();
     // ⚠️ Kill any pending collapse save BEFORE pid changes — otherwise a toggle made <500ms ago
     // fires after the switch and writes the OUTGOING project's map under the INCOMING project's key.
     _cancelCollapseSave();
@@ -6339,11 +6477,24 @@
       catch (e) { res(null); } }); });
   }
   function _cachePut(key, rowset) {
+    // ⚠️⚠️ `catScope` RIDES WITH THE ROWS, and it is the fix for a flicker the owner reported twice.
+    // Whether the colour key is scoped to the Execution Phase is answered by `phaseOf()`, which
+    // resolves through `WBS_NODES` — and those are fetched LONG after this cache is painted. So the
+    // cached paint could not tell an unphased project from a not-yet-loaded one, took the
+    // colour-everything fallback, and showed a 92-entry key on a cleared project for ~3.3s until the
+    // tree landed and the repaint corrected it.
+    // ⚠️ The value is only ever written from a load that HAD the tree (see the guard at the call
+    // sites): caching an answer computed before `WBS_NODES` arrived would persist the very wrong
+    // answer this exists to avoid, and it would then be wrong instantly instead of for 3 seconds.
+    // ⚠️ It is a HINT, not a source of truth. The live pass recomputes and repaints if it disagrees,
+    // so a stale hint costs one repaint — never a wrong final state.
+    var scope = null;
+    try { scope = WBS_NODES && WBS_NODES.length ? catScopeIsExec() : null; } catch (e) { scope = null; }
     _cacheDb().then(function (db) { if (!db) return; try {
       // Store only real DB columns — strip the `_`-prefixed fields rebuild()/CPM attach (some reference
       // other rows, which would bloat or fail structured-clone). rebuild() recomputes them on load.
       var clean = rowset.map(function (r) { var o = {}; for (var k in r) { if (Object.prototype.hasOwnProperty.call(r, k) && k.charAt(0) !== '_') o[k] = r[k]; } return o; });
-      db.transaction('rows', 'readwrite').objectStore('rows').put({ rows: clean, savedAt: new Date().toISOString(), uid: UID }, key);
+      db.transaction('rows', 'readwrite').objectStore('rows').put({ rows: clean, savedAt: new Date().toISOString(), uid: UID, catScope: scope }, key);
     } catch (e) {} });
   }
   var _cacheSaveT = null;
@@ -6352,11 +6503,24 @@
   var _editSeq = 0;   // bumped on every inline edit; guards the background refresh from clobbering an edit made mid-fetch
   var _freshHideT = null;
   // Freshness badge: 'cached' = showing last-known set, refreshing; 'live' = reconciled with the DB.
+  var _repairMsg = '';
+  // Names the pass rather than showing a bare spinner: "Attaching 16,485 activities" is a fact a
+  // planner can weigh against the wait; "Loading…" is not.
+  function _repair(msg) { _repairMsg = msg; _setFresh('repair'); }
   function _setFresh(state) {
     var el = document.getElementById('ps-fresh'); if (!el) return;
     clearTimeout(_freshHideT);
     if (state === 'cached') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = 'Cached · updating…'; el.title = 'Showing the last-loaded schedule instantly; refreshing from the database…'; }
     else if (state === 'live') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-live'; el.textContent = 'Live'; el.title = 'Up to date with the database.'; _freshHideT = setTimeout(function () { var e2 = document.getElementById('ps-fresh'); if (e2) e2.style.display = 'none'; }, 2500); }
+    // ⚠️⚠️ THE STATE THAT WAS MISSING, AND ITS ABSENCE IS A REPORTED BUG. load() paints from `rows`
+    // the moment they arrive and then runs four self-heal passes — resync dotted codes, dedupe
+    // summaries, restore orphan nodes, attach imported activities to the tree — each of which is
+    // many server round-trips over every row. On a freshly imported project that is MINUTES, and
+    // for all of it the WBS is genuinely incomplete on screen. The chip said "Live" throughout.
+    // Owner: *"WBS isn't showing properly initially and I had to wait a few minutes until it
+    // returned to normal."* Nothing was wrong except that the app claimed to be finished when it
+    // was not. It now says which pass is running, and only claims Live when it is.
+    else if (state === 'repair') { el.style.display = ''; el.className = 'ps-fresh ps-fresh-stale'; el.textContent = _repairMsg || 'Rebuilding the WBS…'; el.title = 'The schedule below is live, but the WBS tree is still being rebuilt — counts, Trade, Phase and Vertical Stacking are not final until this clears.'; }
     else { el.style.display = 'none'; }
   }
   function _applyBigCollapse() {
@@ -6514,7 +6678,16 @@
       var cached = await _cacheGet(pid);
       if (gen !== _loadGen) return;
       if (cached && cached.uid === UID && cached.rows && cached.rows.length) {
-        rows = cached.rows; rebuild(); _applyBigCollapse(); renderAll();
+        rows = cached.rows;
+        // ⚠️ SEEDED BEFORE rebuild()/renderAll(), because both read it. `catScopeIsExec()` caches on
+        // `pid|rows.length`, so writing the key with the remembered answer makes the very first paint
+        // use the previous live one instead of guessing from a tree that has not loaded. Only a
+        // stored boolean counts — `null` means the answer was cached before the tree arrived, or by
+        // an older build, and is not to be trusted.
+        if (typeof cached.catScope === 'boolean') {
+          _catExecKey = pid + '|' + rows.length; _catExecCache = cached.catScope; _catCache = null;
+        }
+        rebuild(); _applyBigCollapse(); renderAll();
         _setFresh('cached'); painted = true;
       }
     } catch (e) {}
@@ -6574,18 +6747,51 @@
       renderAll();
       _cachePut(pid, all);
     }
-    _setFresh('live');
+    // ⚠️ NOT 'live' yet — see the 'repair' state. Everything from here to the end of load() can
+    // change what the WBS shows, so claiming to be up to date here is a lie on exactly the projects
+    // where it matters (a fresh import, where every pass below has work to do).
+    _repair('Loading resources…');
+    // ⚠⚠ THE COLOUR SCOPE IS ANSWERED BEFORE AND AFTER, because the tree it depends on arrives in
+    // between. Bars and legend chips are both drawn from `catEntry()` -> `catInScope()` ->
+    // `phaseOf()`, which resolves through `WBS_NODES` — and on a cache-painted load the first paint
+    // happens while that array is still EMPTY, so every row looks unphased and the whole schedule is
+    // coloured by the fallback. Invalidating the caches (see _clearPhaseMemo) only stops the wrong
+    // answer being re-served; it repaints nothing, and the legend is not otherwise re-rendered later
+    // in load(). Owner, after (k) had been verified on a cold load: *"Legend still shows activities
+    // that are not within the execution phase."*
+    // ⚠️ Gated on the answer actually CHANGING: a full re-render costs a second on a 16k-row
+    // project, and on a cold load (or an unphased project) nothing has changed and none is needed.
+    var _scopeBefore = catScopeIsExec();
     await loadResourcesAssignments();   // loads WBS_NODES
     if (gen !== _loadGen) return;
+    if (catScopeIsExec() !== _scopeBefore) { renderActLegend(); scheduleRender(); }
+    // ⚠️ AND PERSIST IT, or the hint is never written. The `_cachePut` in the paint path above runs
+    // BEFORE the tree exists, so it stores `null` every time — this is the first moment in load()
+    // at which the answer is actually known. Written only when the stored hint is missing or has
+    // changed: re-caching costs a structured clone of every row, and on a 16k-row project that is
+    // not something to spend on a load that learned nothing new.
+    try {
+      if (rows.length && (typeof (cached && cached.catScope) !== 'boolean' || cached.catScope !== catScopeIsExec())) {
+        _cachePut(pid, rows);
+      }
+    } catch (e) {}
     // Re-sync dotted codes to the node tree FIRST — a code that drifted after a push makes two
     // branches look like one, which the dedupe below would otherwise "fix" by deleting a live branch.
+    // ⚠️ EVERY PASS BELOW CREATES ROWS, so each one is gated. Not one gate at the top: the chain
+    // takes minutes and a clear can start at any point inside it.
+    if (_isMutating()) return;
+    _repair('Checking WBS codes…');
     await _wbsResyncCodes();
     if (gen !== _loadGen) return;
     // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node-id dedupe
     // below cannot see). Runs after the resync: it must judge duplicates on correct codes.
+    if (_isMutating()) return;
+    _repair('Checking for duplicate WBS rows…');
     await _wbsDedupeSummariesByCode();
     if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
+    if (_isMutating()) return;
+    _repair('Restoring missing WBS rows…');
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
@@ -6594,7 +6800,11 @@
     // activities unattached, and the symptom is silent: the grid looks right while Vertical
     // Stacking, the WBS Manager's counts and the Contract Scope column all read empty. Gated on an
     // in-memory test, so a healthy project performs no query at all.
+    if (_isMutating()) return;
     if (_wbsUnlinkedActs()) {
+      // The long one on a fresh import: every activity is unattached, so this is the pass the owner
+      // sat through. Naming the count is the whole point — it is proportional to the wait.
+      _repair('Attaching activities to the WBS tree…');
       var linkedN = await _wbsLinkActivityParents(true);
       if (gen !== _loadGen) return;
       if (linkedN) {
@@ -6606,9 +6816,13 @@
     // Mirror the two registers into the Design Development branch. Runs AFTER the WBS is
     // healed (it needs the DD node and real dotted codes) and is fully tolerant — a failure
     // leaves the branch as it was rather than blocking the schedule.
+    if (_isMutating()) return;
+    _repair('Syncing the design + procurement branches…');
     await syncDesignDevelopment();
     await syncProcurement();
     _renderSyncPrcAt();
+    // ⚠️ HERE, and not before: this is the first point at which nothing further can change the tree.
+    if (gen === _loadGen) _setFresh('live');
     if (gen !== _loadGen) return;
     loadGroupBys();       // per-project grouping order (needs LOC_LEVELS loaded to validate against)
     populateGroupSelect();
@@ -9423,7 +9637,17 @@
   }
   function impPackageRead(el) { var s2 = el.querySelector('#ps-imp-pkg'); return (s2 && s2.value) || null; }
 
-  async function doImport(recs, replace, fname, locMap, placement, discOnImport, pkgId, locScopeCodes) {
+  // ⚠️ WRAPPED IN A MUTATION REGION (see _beginMutation): an import clears and then re-inserts
+  // thousands of rows, and the previous load's self-heal chain — plus the Design Development and
+  // Procurement mirrors, which insert branches sourced from the Engineering and Procurement apps —
+  // would otherwise be writing into the same tree throughout. That is the corruption path the owner
+  // asked to be checked.
+  async function doImport() {
+    var tok = _importTok = _beginMutation();
+    try { return await _doImportInner.apply(null, arguments); }
+    finally { _endMutation(tok); _importTok = null; }
+  }
+  async function _doImportInner(recs, replace, fname, locMap, placement, discOnImport, pkgId, locScopeCodes) {
     showLoading('Preparing import…');
     // "Replace" must also drop the WBS tree: the import re-creates every WBS-Summary row from scratch,
     // so surviving nodes would be adopted a second time (duplicate levels) and re-projected by
@@ -9445,9 +9669,9 @@
         var _pids = rows.filter(function (r) { return !isWbs(r) && String(packageOf(r) || '') === String(pkgId); }).map(function (r) { return r.id; });
         del = { error: null };
         for (var _pi = 0; _pi < _pids.length && !del.error; _pi += 200) del = await sb().from(TABLE).delete().in('id', _pids.slice(_pi, _pi + 200));
-      } else del = await sb().from(TABLE).delete().eq('project_id', pid);
+      } else del = await _clearAllActivities('Clearing existing activities');
       if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; }
-      var werr = await _clearWbsTree(pkgId || null); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await sb().from('resource_assignments').delete().eq('project_id', pid); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
+      var werr = await _clearWbsTree(pkgId || null); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await _deleteAllRows('resource_assignments'); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
     var uid = UID;
     // Location breakdown — create any levels the mapping asked for, then stamp each leaf rec's
     // `location` so it rides along in the same insert rather than needing a second pass. Runs
@@ -9492,6 +9716,10 @@
       ok += Math.min(CH, payloads.length-i);
     }
     hideLoading();
+    // ⚠️ THE WRITES ARE DONE; everything below REBUILDS. Closing the region here is what lets
+    // load()'s heal chain run — without it the import ends with the tree half-built and every
+    // activity unattached (see _beginMutation). Idempotent, so the wrapper's finally is unaffected.
+    _endMutation(_importTok);
     if (err) { UI.toast('Insert error after '+ok+': '+err, 'error'); collapsed={}; resetUndo(); await load(); return; }
     collapsed={}; resetUndo(); await load();
     await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
@@ -10104,13 +10332,18 @@
       m.close(); doImportXER(parsed, rep, fname);
     };
   }
-  async function doImportXER(parsed, replace, fname) {
+  async function doImportXER() {
+    var tok = _importTok = _beginMutation();
+    try { return await _doImportXERInner.apply(null, arguments); }
+    finally { _endMutation(tok); _importTok = null; }
+  }
+  async function _doImportXERInner(parsed, replace, fname) {
     showLoading('Preparing import…');
     // Same as the Excel path: replacing the activities must drop the tree, or the P6 WBS is adopted
     // on top of the previous import's nodes and every level duplicates.
     // ⚠️ Also drops resource_assignments — see the Excel import path for why (keyed by TEXT
     // activity_id; a re-import recreates the same P6 ids, so a stale set otherwise doubles).
-    if (replace) { setLoading('Clearing existing activities…'); var del = await sb().from(TABLE).delete().eq('project_id', pid); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await sb().from('resource_assignments').delete().eq('project_id', pid); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
+    if (replace) { setLoading('Clearing existing activities…'); var del = await _clearAllActivities('Clearing existing activities'); if (del.error) { hideLoading(); UI.toast('Could not clear existing: ' + del.error.message, 'error'); return; } var werr = await _clearWbsTree(); if (werr) { hideLoading(); UI.toast('Could not clear the existing WBS tree: ' + werr.message, 'error'); return; } var aerr = await _deleteAllRows('resource_assignments'); if (aerr.error) { hideLoading(); UI.toast('Could not clear existing resource assignments: ' + aerr.error.message, 'error'); return; } }
     var uid = UID, CH = 500;
     // 1) Calendars first — activities/resources reference their real (DB-generated) ids.
     // ⚠️ REUSE BEFORE INSERT. This used to insert every calendar in the file
@@ -10281,6 +10514,9 @@
     colOrder = []; _colSeen = {};
     Object.keys(colHidden).forEach(function (k) { if (k.indexOf('udf:') === 0 || k.indexOf('code:') === 0) delete colHidden[k]; });
     try { localStorage.setItem('ps_colhidden', JSON.stringify(colHidden)); } catch (e) {}
+    // ⚠️ Same as the workbook importer: the writes are done and everything below rebuilds, so the
+    // fence has to come down before load() or its heal chain skips every pass.
+    _endMutation(_importTok);
     collapsed = {}; resetUndo(); await load();
     if (err) return;
     await autoAdoptAfterImport();   // build the WBS tree so the WBS Manager is usable immediately
@@ -12044,6 +12280,63 @@
     if (sl < 0) return VS_SLIP_EARLY;
     return VS_SLIP_ONTIME;
   }
+  // ---- COMPLETED ZONES, AND WHETHER THEY WERE COMPLETED ON TIME -------------------------------
+  // Owner 2026-09-02: *"show a status of done for zones or areas or units that have been declared as
+  // completed. and then show the variance in terms of days to determine if it was completed in time
+  // or not."*
+  //
+  // ⚠️ DONE IS "EVERY ACTIVITY IN THE CELL IS DECLARED COMPLETE", NOT "the rounded roll-up says 100".
+  // `_vsPct` is duration-weighted and ROUNDED, so a zone at 99.6% prints 100% today — and a zone that
+  // prints 100% while one activity is still open is the one thing a completion badge must never say.
+  // A cell is done only when no activity in it is left short. (99.5 is the tolerance for schedules
+  // that store 99.99 rather than 100 — a rounding artefact, not open work.)
+  // ⚠️ While the TIME SCRUB is active the whole view is modelled from the dates, not recorded (see
+  // _vsAsOf), so "declared complete" has no meaning at a past date. There, done falls back to the
+  // modelled progress reaching 100 — i.e. "scheduled to be finished by this date", which is what
+  // every other number on a scrubbed cell already means.
+  function _vsDone(list) {
+    if (!list || !list.length) return false;
+    if (_vsAsOf != null) return _vsProgress(list) >= 100;
+    return list.every(function (r) { return (r.percent_complete || 0) >= 99.5; });
+  }
+  // ⚠️ THE COMPLETION VARIANCE IS ALWAYS ABOUT THE FINISH, and `_vsSlip` is not — it follows the
+  // Start/Finish toggle, so on Start it answers "did it START on time", which is a different
+  // question and would put the wrong number in a DONE badge. This one is finish-vs-baseline-finish
+  // whatever the toggle says. + = finished later than the baseline, - = earlier, null = no baseline
+  // to judge against (which must read as unknown, never as on time).
+  function _vsFinSlip(list) {
+    var pl = _vsPlanFin(list), ac = _vsFin(list);
+    if (!pl || !ac) return null;
+    return dayDiff(pl, ac);
+  }
+  function _vsSlipWord(sl) {
+    return sl == null ? 'no baseline' : (sl > 0 ? sl + 'd late' : (sl < 0 ? (-sl) + 'd early' : 'on time'));
+  }
+  // The badge itself: one pill carrying the status AND the variance, coloured by the variance, drawn
+  // in place of the cell's plain "100%" line. One mark, three facts — done / which way / how far.
+  // ⚠️ It takes the pct line's slot rather than sitting in a corner: a corner badge collides with the
+  // zone name, which is centred and can be 14 characters wide.
+  // ⚠️ It falls back to a shorter form, and then to the tick alone, when the cell is too narrow —
+  // truncating a variance figure would be worse than dropping the word "DONE".
+  function _vsDoneChip(midX, cw2, top, sl) {
+    var vr = sl == null ? '' : (sl > 0 ? '+' + sl + 'd' : (sl < 0 ? sl + 'd' : 'on time'));
+    // ⚠️ THE FONT SHRINKS BEFORE THE WORDS DO. A plain cell is ~75px wide, and "✓ DONE +62d" only
+    // fits there at 8px — at the badge's normal 8.6 it would fall straight through to the tick-only
+    // form on every ordinary zone, which is exactly the status the owner asked to see. So the long
+    // form gets the smaller size, and the shorter forms (which have room) keep the larger one.
+    var forms = [['✓ DONE' + (vr ? ' ' + vr : ''), 8], ['✓' + (vr ? ' ' + vr : ' DONE'), 8.6], ['✓', 9]];
+    var txt = forms[forms.length - 1][0], fs2 = forms[forms.length - 1][1], w = 0;
+    for (var i = 0; i < forms.length; i++) {
+      var tw = forms[i][0].length * forms[i][1] * 0.58 + 9;
+      if (tw <= cw2 - 4 || i === forms.length - 1) { txt = forms[i][0]; fs2 = forms[i][1]; w = Math.min(tw, cw2 - 4); break; }
+    }
+    var col = _vsSlipColor(sl);
+    return '<rect x="' + (midX - w / 2).toFixed(1) + '" y="' + top + '" width="' + w.toFixed(1) + '" height="12" rx="6" fill="' + col +
+      '" stroke="rgba(255,255,255,.62)" stroke-width="0.9" pointer-events="none"></rect>' +
+      '<text x="' + midX + '" y="' + (top + 8.9) + '" text-anchor="middle" font-size="' + fs2 +
+      '" font-weight="800" fill="#ffffff" pointer-events="none">' + esc(txt) + '</text>';
+  }
+
   // A trade's colour from the SAME category palette the Gantt bars use, so the stacking reads as a key
   // to the same picture. Falls back to a neutral hue when colouring is off or the trade is new.
   // A hatch pattern per colour in use — bounded by the number of trades plus the four slip colours,
@@ -12248,7 +12541,11 @@
         _vsHatchSeen[fill] = 1;
         var key = keyPrefix + '|' + v + '|' + (c.label || '*');
         var isNo = (v === VS_NOLEV);   // project-wide band — drawn dashed, never as a storey
-        _vsCells[key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: fin };
+        // Completion is its own fact, on its own channel — see _vsDone / _vsFinSlip. It is NOT
+        // `pct >= 100`: that number is rounded, and it follows the basis (on Planned it would call a
+        // zone done because the BASELINE says it should be, which is the opposite of the truth).
+        var isDone = _vsDone(c.list), fslip = isDone ? _vsFinSlip(c.list) : null;
+        _vsCells[key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: fin, done: isDone, fslip: fslip };
         // At detail 1 the row label already names the level, so the cell prints only its dates —
         // showing the level name twice on one row reads like two different things. With no label the
         // two remaining lines are re-centred rather than left sitting under an empty first line.
@@ -12283,6 +12580,14 @@
           (cmp ? (' · planned ' + (_vsPlanDate(c.list) ? Fmt.date(dstr(_vsPlanDate(c.list))) : '—') +
                   ' · ' + (slip == null ? 'no baseline' : (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time')))) : '') +
           ' · ' + _vsProgressWord() + ' ' + (pct >= 100 ? 'complete' : (pct <= 0 ? (_vsBasis === 'planned' ? 'not due to start yet' : 'not started') : pct + '%' + (_vsBasis === 'planned' ? ' due' : ' done, ' + (100 - pct) + '% remaining'))) +
+          // The completion sentence is spelled out, because the badge only has room for a figure.
+          (isDone
+            ? (' · DONE — every activity in this zone is complete, finished ' +
+               (_vsFin(c.list) ? Fmt.date(dstr(_vsFin(c.list))) : '—') +
+               (fslip == null
+                 ? ' (no baseline finish, so there is nothing to judge it against)'
+                 : ' vs baseline ' + (_vsPlanFin(c.list) ? Fmt.date(dstr(_vsPlanFin(c.list))) : '—') + ' — ' + _vsSlipWord(fslip)))
+            : '') +
           (cmp ? (planPct == null
                   ? ' · no baseline, so there is no planned % to compare against'
                   : (' · planned ' + planPct + '% by today (the marker line), actual ' + pct + '% — ' +
@@ -12312,10 +12617,21 @@
                   (gap2 == null ? '' : ' · ' + Math.abs(Math.round(gap2)) + '% ' + (gap2 > 0 ? 'ahead' : gap2 < 0 ? 'behind' : 'on plan'));
                 return row(yP, 'P', _vsDateShort(_vsPlanDate(c.list)), _vsPctTxt(planPct), false) +
                   row(yA, 'A', _vsDateShort(fin), _vsPctTxt(pct), true) +
-                  '<text ' + vtx + ' x="' + mid + '" y="' + yV + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(vtxt) + '</text>';
+                  // ⚠️ The badge REPLACES the variance line here rather than being added to it — the
+                  // two would say the same thing twice, and the badge's figure is the finish variance
+                  // (`_vsFinSlip`) which is the right one for a finished zone whichever way the
+                  // Start/Finish toggle is set. An unfinished cell keeps the line exactly as it was.
+                  (isDone
+                    ? _vsDoneChip(mid, cw2, yV - 9, fslip)
+                    : '<text ' + vtx + ' x="' + mid + '" y="' + yV + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(vtxt) + '</text>');
               })()
             : '<text ' + vtx + ' x="' + mid + '" y="' + (y + (lbl ? 28 : 21)) + '" text-anchor="middle" font-size="' + (lbl ? '9.5' : '11') + '" font-weight="' + (lbl ? '500' : '700') + '" fill="' + ink + '" pointer-events="none">' + esc(fin ? Fmt.date(dstr(fin)) : '—') + '</text>' +
-              '<text ' + vtx + ' x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + pct + '%</text>');
+              (isDone
+                // A completed zone prints its STATUS where an in-progress one prints its percentage —
+                // "100%" and "done" are not the same claim, and the badge is the one that carries the
+                // variance. Nothing is lost: the exact figure is in the tooltip and the drill-down.
+                ? _vsDoneChip(mid, cw2, y + (lbl ? 30 : 25), fslip)
+                : '<text ' + vtx + ' x="' + mid + '" y="' + (y + (lbl ? 39 : 34)) + '" text-anchor="middle" font-size="9" font-weight="800" fill="' + ink + '" pointer-events="none">' + pct + '%</text>'));
       });
     });
     var gy = pad + groundAt * (fh + gap) - gap / 2 + (groundAt === disp.length ? 3 : 0);
@@ -12325,15 +12641,53 @@
   }
   // Click a cell to see which activities are behind it — step 6's drill-down idea, but over live rows,
   // so the dates and percentages are the real ones rather than a generated preview's.
+  // The branch names above an activity, from its dotted code — built off the WBS-summary rows
+  // already in `rows` rather than walking WBS_NODES, so it works on a project whose tree has not
+  // been adopted yet (which is exactly the state a fresh import is in).
+  var _vsPathCache = null, _vsPathKey = null;
+  function _vsWbsPath(r) {
+    var code = String((r && r.wbs) || '').trim(); if (!code) return '';
+    var key = pid + '|' + rows.length;
+    if (_vsPathKey !== key) {
+      _vsPathCache = {};
+      rows.forEach(function (x) { if (isWbs(x) && x.wbs) _vsPathCache[String(x.wbs)] = x.activity_name || ''; });
+      _vsPathKey = key;
+    }
+    var segs = code.split('.'), out = [];
+    for (var i = 1; i <= segs.length; i++) {
+      var nm = _vsPathCache[segs.slice(0, i).join('.')];
+      if (nm) out.push(nm);
+    }
+    return out.join(' \u203a ');
+  }
   function openVsCell(key) {
     var d = _vsCells[key]; if (!d) return;
     var title = String(d.level) + (d.cell ? ' · ' + d.cell : '');
-    var body = '<div class="ps-vs-tblwrap"><table class="ps-table"><thead><tr>' +
-      ['Activity ID', 'Activity', 'Trade', 'BL Start', 'BL Finish', 'Start', 'Finish', 'Var', 'Planned %', 'Actual %'].map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
+    // ⚠️⚠️ THE WBS PATH IS SHOWN IN THE "NO LEVEL" BAND AND NOWHERE ELSE, because that band is the
+    // only place it answers a question. A location value is DERIVED FROM THE BRANCH NAMES (see
+    // locSrcsWbsWords / the saved match table): an activity lands here precisely when no ancestor's
+    // name matched a term for the floor level. So the path either shows a floor the matcher missed
+    // — a real matching gap, fixable by "Match WBS to locations…" — or it shows there is genuinely
+    // no floor above the row, which is the ordinary truth for General Requirements (mobilisation,
+    // bonds, temporary facilities) and for Site Development (roads, drainage, gabions) that belong
+    // to the site rather than to a storey. Without the path on screen those two cases are
+    // indistinguishable, and they need opposite responses.
+    var showPath = String(d.level) === VS_NOLEV;
+    var cols = ['Activity ID', 'Activity', 'Trade'];
+    if (showPath) cols.push('WBS branch');
+    cols = cols.concat(['BL Start', 'BL Finish', 'Start', 'Finish', 'Var', 'Planned %', 'Actual %']);
+    var body = (showPath ? '<div class="ps-vs-note" style="margin:0 0 8px;">These carry no value on the ' +
+        esc(((_vsAxis()[0] || {}).name) || 'level') + ' level. The <strong>WBS branch</strong> column is why: ' +
+        'if you can see a floor in it, the branch name is not being matched — fix it with ' +
+        '<em>Group ▾ → Match WBS to locations…</em>. If there is no floor in it, the work genuinely ' +
+        'belongs to the site rather than to a storey.</div>' : '') +
+      '<div class="ps-vs-tblwrap"><table class="ps-table"><thead><tr>' +
+      cols.map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>' +
       d.list.slice().sort(function (a, b) { var x = pd(dispFin(a)), y = pd(dispFin(b)); return (x ? +x : 0) - (y ? +y : 0); }).map(function (r) {
         var _v = finVar(r), _pp = plannedPOC(r);
         return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' + esc(_vsTradeOf(r)) +
+          (showPath ? '</td><td style="color:var(--pd-muted);">' + (esc(_vsWbsPath(r)) || '<em>no WBS branch</em>') : '') +
           '</td><td>' + esc(r.bl_start ? Fmt.date(r.bl_start) : '—') + '</td><td>' + esc(r.bl_finish ? Fmt.date(r.bl_finish) : '—') +
           '</td><td>' + esc(dispStart(r) ? Fmt.date(dispStart(r)) : '—') + '</td><td>' + esc(dispFin(r) ? Fmt.date(dispFin(r)) : '—') +
           '</td><td' + (_v != null && _v !== 0 ? ' style="color:' + (_v > 0 ? VS_SLIP_LATE : VS_SLIP_EARLY) + ';font-weight:700;"' : '') + '>' +
@@ -12482,6 +12836,11 @@
     }
     var slip = _vsSlip(d.list), pp = _vsPlanPct(d.list);
     el.innerHTML = '<div class="h">' + esc(String(d.level) + (d.cell ? ' \u00b7 ' + d.cell : '')) + '</div>' +
+      // The status line only appears on a finished zone, and it carries the finish variance — the
+      // same number the badge on the cell shows, held still so it can be read.
+      (d.done
+        ? '<div class="r" style="font-weight:800;color:' + _vsSlipColor(d.fslip) + ';">✓ DONE · ' + esc(_vsSlipWord(d.fslip)) + '</div>'
+        : '') +
       '<div class="r">' + d.list.length + ' activit' + (d.list.length === 1 ? 'y' : 'ies') + ' \u00b7 ' + d.pct + '% ' + _vsProgressWord() +
         (pp == null ? '' : ' (planned ' + pp + '%)') + '<br>' +
         _vsDateWord() + ' ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '\u2014') + ' \u00b7 ' + esc(_vsBasisWord()) +
@@ -12584,6 +12943,7 @@
       '.lg i{width:11px;height:11px;border-radius:2.5px;background:var(--pd-muted);display:inline-block;}' +
       '.lg i.sol{background:#6E7378;}' +
       '.lg i.hat{background:repeating-linear-gradient(45deg,#6E7378 0 2px,#fff 2px 5px);border:1px solid var(--pd-line);}' +
+      '.lg i.dn{width:20px;border-radius:6px;background:' + VS_SLIP_ONTIME + ';}' +
       // ⚠️ break-inside on the section, not on the svg: a building is only readable whole.
       '.b{border:1px solid var(--pd-line);border-top:3px solid var(--tc,var(--pd-red));border-radius:10px;padding:0 0 12px;margin:0 0 16px;break-inside:avoid;page-break-inside:avoid;}' +
       '.bh{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 13px 8px;border-bottom:1px solid var(--pd-line);}' +
@@ -12598,7 +12958,9 @@
       '<div class="mt">' + meta.map(function (m) {
         return '<div><b>' + esc(m[0]) + '</b><span>' + esc(m[1] || '—') + '</span></div>';
       }).join('') + '</div></header>' +
-      '<div class="lgs">' + legend + '<span style="margin-left:auto;">Each cell is a zone: solid = progress, hatched = remaining.</span></div>' +
+      '<div class="lgs">' + legend +
+      '<span class="lg"><i class="dn"></i>✓ DONE · complete, with its finish variance vs baseline</span>' +
+      '<span style="margin-left:auto;">Each cell is a zone: solid = progress, hatched = remaining.</span></div>' +
       (defs ? defs.outerHTML : '') + body +
       '<footer><span>Data date ' + esc(Fmt.date(dstr(today()))) + '</span><span>Planners Dashboard · Project Schedule</span></footer>' +
       '<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},300);};</scr' + 'ipt>' +
@@ -12751,6 +13113,11 @@
         '<span class="ps-vs-legendtxt">' +
           (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
           (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads <strong>P</strong> = planned date &amp; %, <strong>A</strong> = actual date &amp; %, then the slip in days and how far ahead or behind plan the progress is' : '') +
+          // The completion badge needs saying: a coloured pill is only self-explanatory once.
+          ' · a <strong>✓ DONE</strong> pill means every activity in that zone is complete, and it carries the finish variance against the baseline — ' +
+          '<span style="color:' + VS_SLIP_EARLY + ';font-weight:700;">early</span>, ' +
+          '<span style="color:' + VS_SLIP_ONTIME + ';font-weight:700;">on time</span>, ' +
+          '<span style="color:' + VS_SLIP_LATE + ';font-weight:700;">late</span>' +
         '</span></span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
@@ -12955,10 +13322,57 @@
     else { _animIn(document.querySelector('.ps-split')); }
   }
 
+  // ⚠️⚠️ THE NETWORK IGNORED EVERY FILTER IN THE APP, while its own over-300 message told the
+  // reader to "use Filter or Search to narrow the set". It read straight off `rows`, so neither the
+  // Filter menu, the search box nor "Execution Phase only" changed the count by one - the advice
+  // could not be followed, and on a real project (Avesta 4,321 activities, 4PH Strevi 16,485) the
+  // view therefore never rendered at all. Owner: "the PERT Diagram will always be not working since
+  // our activities exceed the 300 activity threshold." It was not the threshold.
+  // ⚠️ Now scoped exactly like the grid - `_execOnly` + `rowMatches` - so the advice is true, and
+  // with its own LOCATION pickers on top, because "show me Tower 3, 8th floor" is the question a
+  // planner actually has and no generic filter expresses it in one gesture.
+  var netLoc = {};
+  // The activities the network is ALLOWED to draw, before the location pickers narrow it further.
+  function netScoped() {
+    var ec = _execOnly ? execPhaseCode() : null;
+    return rows.filter(function (r) {
+      if (isWbs(r) || !r.activity_id) return false;
+      if (ec && !(r.wbs === ec || locCodeUnder(r.wbs, ec))) return false;
+      return rowMatches(r);
+    });
+  }
+  // Distinct values on one location level within a set.
+  function netLocValues(list, levelId) {
+    var out = [], seen = {};
+    list.forEach(function (r) {
+      var v = String(locValOf(r, levelId) || '').trim();
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort(cmpGroupName);
+  }
+  // ⚠️ Each picker's OPTIONS come from the set already narrowed by the levels ABOVE it, and a
+  // selection is dropped when it no longer appears there. A location breakdown nests (Tower > Level
+  // > Zone > Unit), so offering every zone in the project under one tower would list zones that draw
+  // nothing, and a stale selection would silently empty the view with no visible cause.
+  function netApplyLoc(list) {
+    var levels = LOC_LEVELS || [];
+    for (var i = 0; i < levels.length; i++) {
+      var id = levels[i].id, want = netLoc[id];
+      if (!want) continue;
+      if (netLocValues(list, id).indexOf(want) < 0) { delete netLoc[id]; continue; }
+      list = list.filter(function (r) { return String(locValOf(r, id) || '').trim() === want; });
+    }
+    return list;
+  }
+  // The cap is a RENDERING limit, not a policy: every node is an SVG <g> with a rect and two <text>
+  // runs, and every relationship a bezier. 300 was set when the view was new; it sits below every
+  // useful whole-tower slice, which is what made the view unreachable rather than merely slow.
+  var NET_MAX = 1200;
   function renderNetwork() {
     var host = document.getElementById('ps-network'); if (!host) return;
     computeCPM();   // populates _relObjs / _succObjs so we can detect linked activities
-    var all = rows.filter(function (r) { return !isWbs(r) && r.activity_id; });
+    var scoped = netScoped();
+    var all = netApplyLoc(scoped);
     var linked = all.filter(function (t) { return (t._relObjs && t._relObjs.length) || (t._succObjs && t._succObjs.length); });
     // If NO activity has a relationship yet, don't leave the view blank with just a hint —
     // show every activity as a node (a network with no edges) so the view always renders
@@ -12966,15 +13380,61 @@
     // default is to show only the linked set (unticked) with the toggle to include the rest.
     var noLinks = linked.length === 0;
     var showAll = netShowAll || noLinks;
+    // One picker per location level the project defines - Tower, Level, Zone, Unit, whatever it
+    // called them. Nothing is invented: a project with no location breakdown gets no pickers.
+    var locPick = '', _narrowing = scoped;
+    (LOC_LEVELS || []).forEach(function (l) {
+      var vals = netLocValues(_narrowing, l.id);
+      if (!vals.length) return;
+      var cur = netLoc[l.id] || '';
+      locPick += '<label class="ps-net-loc">' + esc(l.name) + ' ' +
+        '<select class="pd-select" data-netloc="' + esc(l.id) + '">' +
+        '<option value="">All</option>' +
+        vals.map(function (v) {
+          return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>';
+        }).join('') + '</select></label>';
+      if (cur) _narrowing = _narrowing.filter(function (r) { return String(locValOf(r, l.id) || '').trim() === cur; });
+    });
+    var anyLoc = Object.keys(netLoc).some(function (k) { return netLoc[k]; });
     var head = '<div class="ps-net-head">' +
       '<label><input type="checkbox" id="ps-net-all"' + (showAll ? ' checked' : '') + (noLinks ? ' disabled' : '') + '> Show unlinked activities too</label>' +
+      locPick +
+      (anyLoc ? '<button class="pd-btn" id="ps-net-locclr" style="min-height:30px;font-size:12px;">Clear location</button>' : '') +
       '<span>Showing <strong>' + (showAll ? all.length : linked.length) + '</strong> of ' + all.length + ' activities' +
+      (all.length !== scoped.length ? ' · ' + (scoped.length - all.length) + ' outside the chosen location' : '') +
       (noLinks ? ' · no relationships defined yet — add Predecessors or use the Link tool to draw the network'
                : (showAll ? '' : ' · ' + (all.length - linked.length) + ' unlinked hidden')) + '</span></div>';
-    function wireHead() { var cb = document.getElementById('ps-net-all'); if (cb && !cb.disabled) cb.onchange = function () { netShowAll = cb.checked; renderNetwork(); }; }
+    function wireHead() {
+      var cb = document.getElementById('ps-net-all'); if (cb && !cb.disabled) cb.onchange = function () { netShowAll = cb.checked; renderNetwork(); };
+      host.querySelectorAll('[data-netloc]').forEach(function (s) {
+        s.onchange = function () {
+          var id = s.getAttribute('data-netloc');
+          if (s.value) netLoc[id] = s.value; else delete netLoc[id];
+          // ⚠️ Choosing a tower must drop the zone chosen under the PREVIOUS tower. netApplyLoc clears
+          // a selection that no longer exists, but a level BELOW this one can hold a value that
+          // happens to exist under both (every tower has a "Zone 1"), which would carry across
+          // silently and show a slice the planner did not ask for.
+          var seen = false;
+          (LOC_LEVELS || []).forEach(function (l) { if (seen) delete netLoc[l.id]; if (l.id === id) seen = true; });
+          renderNetwork();
+        };
+      });
+      var clr = document.getElementById('ps-net-locclr');
+      if (clr) clr.onclick = function () { netLoc = {}; renderNetwork(); };
+    }
     if (!all.length) { host.innerHTML = head + '<div class="ps-empty">No activities to show. Add activities and link them (Predecessors / Link).</div>'; wireHead(); return; }
     var leaves = showAll ? all : linked;
-    if (leaves.length > 300) { host.innerHTML = head + '<div class="ps-empty">Activity Network view is best with &le; 300 activities (currently ' + leaves.length + '). Use Filter or Search to narrow the set.</div>'; wireHead(); return; }
+    if (leaves.length > NET_MAX) {
+      host.innerHTML = head + '<div class="ps-empty"><strong>' + leaves.length.toLocaleString() +
+        ' activities in scope</strong> — the network draws up to ' + NET_MAX.toLocaleString() + ' at once.<br>' +
+        (LOC_LEVELS && LOC_LEVELS.length
+          ? 'Pick a ' + esc((LOC_LEVELS[0] || {}).name || 'location') + ' above' +
+            (LOC_LEVELS.length > 1 ? ', then ' + esc((LOC_LEVELS[1] || {}).name || '') + ', then narrower' : '') + '; '
+          : '') +
+        'Filter, Search and "Execution Phase only" all narrow this view too.' +
+        (showAll && !noLinks ? '<br>Unticking "Show unlinked activities too" leaves the ' + linked.length.toLocaleString() + ' linked ones.' : '') +
+        '</div>'; wireHead(); return;
+    }
     var rank = {};
     function getRank(t, seen) {
       var id = String(t.activity_id);
@@ -14613,16 +15073,13 @@
     _repIdPaint();
   }
   // The identity the hidden bands used to carry. A reported figure is only trustworthy if the
-  // screen says WHICH project and AS OF WHEN, so those two facts (plus the group head, which is how
-  // this org talks about a project) move into the toolbar for the duration.
+  // screen says WHICH project and AS OF WHEN, so those two facts move into the toolbar for the
+  // duration.
   function _repIdPaint() {
-    var el = document.getElementById('ps-rep-id'); if (!el) return;
-    var ws = document.getElementById('ps-workspace');
-    var gh = ws ? String(ws.textContent || '').trim() : '';
+    var el = document.getElementById('ps-rv-id'); if (!el) return;
     // ⚠️ Real separator characters, not just flex `gap`. Read aloud or copied out of the page,
-    // gap-only spacing renders as "Avesta ResidencesRonquillo GroupData date 15-Aug-26".
+    // gap-only spacing renders as "Avesta ResidencesData date 15-Aug-26".
     el.innerHTML = '<b>' + esc(projName()) + '</b>' +
-      (gh ? '<s>\u00b7</s><i>' + esc(gh) + '</i>' : '') +
       '<s>\u00b7</s><i>Data date ' + esc(fmtOPCDate(dstr(today()))) + '</i>';
   }
   // Fold the activity legend to one line (owner: "similar to the activity details panel").
@@ -19248,6 +19705,110 @@
     return ins.data.id;
   }
 
+  // ⚠️⚠️ EVERY WHOLE-PROJECT DELETE GOES THROUGH HERE, and it exists because of a live failure:
+  // clearing SLN101 returned **"canceling statement due to statement timeout"** and nothing was
+  // deleted. `.delete().eq('project_id', pid)` is ONE statement covering every row in the project,
+  // and Postgres kills it at `statement_timeout` — the bigger the project, the more certain the
+  // failure, so it fails exactly on the projects that most need clearing. 4PH Strevi carries
+  // 16,485 activities and 12,465 WBS nodes; Avesta 4,321.
+  // ⚠️ The package-scoped paths have ALWAYS chunked at 200. Only the "everything" paths were
+  // unbounded — which is why "clear one package" worked while "clear the schedule" did not, and
+  // why a REPLACE import (which clears everything first) failed the same way. Same bug, four sites.
+  // ⚠️ Pages ids from the START each time rather than walking an offset: the rows it just read are
+  // the rows it just deleted, so page 2 is always at offset 0. An OFFSET here would skip a page's
+  // worth on every lap. PostgREST caps a read at 1000 rows server-side whatever the client asks.
+  // ⚠️ The guard is not decoration. If a delete silently affects nothing (an RLS policy that permits
+  // SELECT but not DELETE is the realistic case), the same page comes back for ever; the loop must
+  // end with an error a human can read rather than hanging the tab.
+  // ⚠️⚠️ THE ROUND TRIP IS THE COST, NOT THE DATABASE. Chunking into `delete ... in.(<200 ids>)`
+  // requests fixed the timeout but measured at **100-200 activities per 2 seconds** — ~10ms a row —
+  // and that is not database time: `project_schedule` has no trigger, nothing references it, and it
+  // is indexed on (project_id, id), so deleting 16,485 rows server-side is one index scan. 200 ids
+  // is already near the practical URL length for a PostgREST `in.(...)` filter (36-char uuids +
+  // encoding ≈ 8KB), so the chunk CANNOT simply be made bigger. 20,000 rows is ~100 sequential
+  // requests however the client is written. The loop has to move into the database — hence the
+  // `clear_project_*` RPCs (migrations/2026-09-02-clear-project-rpc.sql), which do it in one call.
+  // ⚠️ The id-chunking path is KEPT as the fallback, because the client ships independently of the
+  // migration and must not break on a database that has not run it yet.
+  var RPC_FOR = { project_schedule: 'clear_project_schedule',
+                  wbs_nodes: 'clear_project_wbs_nodes',
+                  resource_assignments: 'clear_project_resource_assignments' };
+  // A missing function is a 404/PGRST202 from PostgREST; a timeout is 57014. They need opposite
+  // responses — give up on the RPC for good, versus retry it smaller — so they are told apart here
+  // rather than by a single catch-all.
+  function _rpcMissing(e) {
+    var m = String((e && (e.message || e.hint || e.details)) || '');
+    return /PGRST202/i.test(String((e && e.code) || '')) || /Could not find the function|does not exist|schema cache/i.test(m);
+  }
+  function _isTimeout(e) {
+    return String((e && e.code) || '') === '57014' || /statement timeout|canceling statement/i.test(String((e && e.message) || ''));
+  }
+  async function _deleteAllRows(table, filter, onCount) {
+    var total = 0;
+    // ---- fast path: one call per batch, the loop inside the database ---------------------------
+    var fn = RPC_FOR[table];
+    if (fn) {
+      var batch = 20000, rpcOk = true;
+      for (var call = 0; call < 200 && rpcOk; call++) {
+        var r = await sb().rpc(fn, { p_project_id: pid, p_limit: batch });
+        if (r.error) {
+          if (_rpcMissing(r.error)) { rpcOk = false; break; }   // fall through to the chunked path
+          // ⚠️ HALVE AND RETRY rather than fail. A deployment with a tight statement_timeout can
+          // still not manage 20,000 rows in one statement; the whole point of p_limit is that the
+          // caller can come back with a smaller bite instead of losing the operation.
+          if (_isTimeout(r.error) && batch > 250) { batch = Math.floor(batch / 2); continue; }
+          return { error: r.error, deleted: total };
+        }
+        var n = Number(r.data) || 0;
+        total += n;
+        if (onCount) onCount(total);
+        if (n === 0) return { error: null, deleted: total };
+      }
+      if (rpcOk) return { error: { message: 'Gave up after 200 batches with rows still present in ' + table + '.' }, deleted: total };
+      total = 0;   // the RPC deleted nothing — do not double-count it into the fallback's tally
+    }
+    // ---- fallback: page ids, delete them in url-sized chunks ------------------------------------
+    for (var lap = 0; lap < 1000; lap++) {
+      var q = sb().from(table).select('id').eq('project_id', pid);
+      if (filter) q = filter(q);
+      var page = await q.order('id', { ascending: true }).limit(1000);
+      if (page.error) return { error: page.error, deleted: total };
+      var ids = (page.data || []).map(function (r) { return r.id; });
+      if (!ids.length) return { error: null, deleted: total };
+      // ⚠️ PROGRESS IS PROVED, NOT ASSUMED. `total` used to count the ids SENT, so a delete that
+      // affected no rows (an RLS policy allowing SELECT but not DELETE is the realistic case) kept
+      // re-reading the same page and the on-screen counter climbed past the project's own row count
+      // — the owner saw "29,605 removed" on a schedule that never held that many. The lap now fails
+      // if the same first id comes back, which is the only honest signal that nothing is going.
+      var head = String(ids[0]);
+      if (head === _delLastHead) {
+        return { error: { message: 'The delete is not taking effect on ' + table +
+                          ' — the same rows keep coming back. This is usually a row-level security ' +
+                          'policy that permits reading but not deleting.' }, deleted: total };
+      }
+      _delLastHead = head;
+      for (var i = 0; i < ids.length; i += 200) {
+        var slice = ids.slice(i, i + 200);
+        var d = await sb().from(table).delete().in('id', slice);
+        if (d.error) return { error: d.error, deleted: total };
+        total += slice.length;
+        if (onCount) onCount(total);
+      }
+    }
+    return { error: { message: 'Stopped after 1,000 passes with rows still present in ' + table +
+                               ' — the delete is not taking effect (check the RLS policy).' },
+             deleted: total };
+  }
+  // The whole-project activity clear, with the row count reported as it goes: on a 16,000-row
+  // project this is now many round-trips instead of one, so a silent spinner would read as a hang.
+  var _delLastHead = null;
+  async function _clearAllActivities(msg) {
+    _delLastHead = null;
+    return await _deleteAllRows(TABLE, null, function (n) {
+      setLoading((msg || 'Clearing existing activities') + '… ' + n.toLocaleString() + ' removed');
+    });
+  }
+
   async function _clearWbsTree(pkgId) {
     var scoped = pkgId != null && pkgId !== '__none__';
     try {
@@ -19267,7 +19828,13 @@
         _clearPkgMemo();
         return null;
       }
-      var res = await sb().from('wbs_nodes').delete().eq('project_id', pid).eq('is_locked', false);
+      // ⚠️ Chunked for the same reason the activities are (see _deleteAllRows): 4PH Strevi carries
+      // 12,465 WBS nodes and one unbounded statement over them times out. ⚠️ And a timeout here is
+      // WORSE than one on the activities, because the caller has usually already cleared those — a
+      // failed tree clear leaves a project with no activities and a full tree, which then re-projects
+      // summary rows on the next load and reads as "clear did nothing".
+      var res = await _deleteAllRows('wbs_nodes', function (q) { return q.eq('is_locked', false); },
+        function (n) { setLoading('Clearing the WBS tree… ' + n.toLocaleString() + ' removed'); });
       if (res.error && !/wbs_nodes|does not exist|schema cache|PGRST/i.test(res.error.message || '')) return res.error;
     } catch (e) {}
     WBS_NODES = WBS_NODES.filter(function (n) { return n.is_locked; });
@@ -19282,9 +19849,52 @@
   // P6 imports). Resumes cleanly from a partial adoption (seeds from existing WBS_NODES). silent=true
   // skips the confirm + toasts (used by auto-adopt on import). Returns the count adopted.
   async function wbsAdopt(silent) {
-    var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; });
+    // ⚠️⚠️ WHAT IS ALREADY ADOPTED IS READ FROM THE SERVER, NEVER FROM `rows`. This function DECIDES
+    // WHAT TO INSERT, and `rows` is a cached, possibly minutes-old copy: a tab that painted before an
+    // adopt (its own, another tab's, or the one an import just ran) still shows every summary row
+    // with `wbs_node_id = null`, so every branch looks un-adopted and gets a SECOND node.
+    // ⚠️ That is not hypothetical. The owner clicked "Adopt existing WBS" twice on 4PH Strevi: the
+    // first run completed the tree (12,473 nodes, all summary rows linked), the second ran against
+    // that tab's stale rows and took `wbs_nodes` to **18,323 — 5,850 duplicates, exactly the count
+    // the first run had left outstanding**. And duplicates do not sit still: `_wbsEnsureSummaries()`
+    // projects a summary row for any node without one, so the next load would have manufactured
+    // 5,850 new WBS rows, which the next adopt would then adopt. That is the duplicate-WBS-row
+    // runaway this file already carries scar tissue for.
+    // One cheap paged read of (wbs, wbs_node_id) is the price of never doing that again.
+    var _adoptedCodes = Object.create(null), _refreshOk = false;
+    try {
+      for (var _f = 0; _f < 40000; _f += 1000) {
+        var _pg = await sb().from(TABLE).select('id,wbs,wbs_node_id')
+          .eq('project_id', pid).eq('activity_type', 'WBS Summary')
+          .order('id', { ascending: true }).range(_f, _f + 999);
+        if (_pg.error) throw _pg.error;
+        var _d = _pg.data || [];
+        _d.forEach(function (r) {
+          if (r.wbs_node_id && r.wbs) _adoptedCodes[String(r.wbs)] = r.wbs_node_id;
+          // Fold the server's truth back into the in-memory row, so the filter below and every later
+          // render agree with what the database actually holds.
+          var _m = rows.find(function (x) { return x.id === r.id; });
+          if (_m && r.wbs_node_id && !_m.wbs_node_id) _m.wbs_node_id = r.wbs_node_id;
+        });
+        if (_d.length < 1000) break;
+      }
+      _refreshOk = true;
+    } catch (e) {
+      try { console.error('[ps] wbsAdopt could not refresh adopted state', e); } catch (e2) {}
+    }
+    // ⚠️ REFUSES TO RUN BLIND. Without the refresh this cannot tell "not adopted" from "not loaded",
+    // and guessing wrong duplicates the whole tree. Stopping is the safe answer; the caller retries.
+    if (!_refreshOk) {
+      UI.toast('Could not check which WBS branches already exist, so the tree was not touched — ' +
+               'reload and try again.', 'error');
+      return 0;
+    }
+    var legacy = rows.filter(function (r) {
+      return isWbs(r) && !r.wbs_node_id && r.wbs && !_adoptedCodes[String(r.wbs)];
+    });
     if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
+    var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
     legacy.sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     var nodeByCode = {}, sibCount = {}, schedUp = [], linkByCode = [], codeByKey = {};
     // Activities indexed by their dotted code, once — see the note at the link step below.
@@ -19292,6 +19902,13 @@
     rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && a.wbs) (actsByCode[String(a.wbs)] = actsByCode[String(a.wbs)] || []).push(a); });
     var codeOf0 = computeWbsCodes();
     WBS_NODES.forEach(function (n) { var c = codeOf0[n.id]; if (c) nodeByCode[c] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
+    // ⚠️ The SERVER's (code -> node) map wins over the computed one. `computeWbsCodes()` derives a
+    // code from a node's position in the tree, which disagrees with the stored dotted code whenever
+    // the tree is mid-repair — and this map is what decides whether a branch is re-inserted. Seeding
+    // it with what the database actually links is what makes a second adopt a no-op instead of a
+    // duplicate. Parent lookups below resolve through it too, so children of an already-adopted
+    // branch attach to the real parent rather than starting a parallel tree.
+    Object.keys(_adoptedCodes).forEach(function (c) { nodeByCode[c] = _adoptedCodes[c]; });
     var byDepth = {};
     legacy.forEach(function (r) { var d = String(r.wbs).split('.').length; (byDepth[d] = byDepth[d] || []).push(r); });
     var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return a - b; });
@@ -19348,7 +19965,21 @@
       for (var c = 0; c < payloads.length; c += 500) {
         setLoading('Adopting WBS tree… level ' + depths[di] + ' (' + Math.min(c + 500, payloads.length) + '/' + payloads.length + ')');
         var ins = await sb().from('wbs_nodes').insert(payloads.slice(c, c + 500)).select();
-        if (ins.error) { if (!silent) UI.toast('Adopt failed: ' + ins.error.message, 'error'); return 0; }
+        // ⚠️⚠️ `silent` USED TO SWALLOW THIS ENTIRELY — `if (!silent) UI.toast(...)` and then a bare
+        // `return 0`. autoAdoptAfterImport() calls this with silent=true and only toasts on a truthy
+        // return, so an insert that failed half way through produced NO message, NO console entry and
+        // a half-built tree that looks like a finished one. Measured on the owner's 4PH Strevi
+        // re-import: **6,623 nodes adopted of 12,473 summary rows**, the remainder whole subtrees
+        // spread across every depth, with nothing said. A partial tree is exactly the state that
+        // makes Vertical Stacking read empty and every node count read 0, so it is the last thing
+        // that should ever be silent.
+        if (ins.error) {
+          try { console.error('[ps] wbsAdopt insert failed at level ' + depths[di] + ', ' + adopted + ' node(s) in: ' + ins.error.message, ins.error); } catch (e2) {}
+          UI.toast('WBS adopt stopped after ' + adopted.toLocaleString() + ' of ' + legacy.length.toLocaleString() +
+                   ' branches: ' + ins.error.message + ' — reopen the WBS Manager and use "Adopt existing WBS" to resume.', 'error');
+          return adopted;
+        }
+        adopted += (ins.data || []).length;
         (ins.data || []).forEach(function (n) {
           var dotted = codeByKey[(n.parent_id || '') + '|' + n.sort_order];
           if (dotted) nodeByCode[dotted] = n.id;
@@ -19410,16 +20041,40 @@
   // send one {code,node_id} pair per branch. That matters at this scale: the per-row PATCH fallback
   // would be 16,393 requests, the very runaway `_wbsLinkRows` exists to avoid. So there is NO row-by-row
   // fallback here: without the function we say so and leave the data alone rather than hanging the app.
+  // ⚠️⚠️ BATCHED, AND IT REPORTS. Measured live against 4PH Strevi: the single-statement form
+  // answered **57014 "canceling statement due to statement timeout" after 8,173ms** — the
+  // deployment's statement_timeout is ~8s and one UPDATE over 16,485 activities joined to a GROUP BY
+  // over 12,473 summary rows needs more. ⚠️ The old code caught that and toasted only `if (!silent)`,
+  // and every caller that matters passes silent — so the import ended with a COMPLETE WBS tree
+  // (12,473 nodes, every summary row linked) and **16,393 of 16,485 activities still unattached**,
+  // with nothing said anywhere. That is the state where Vertical Stacking draws nothing, no activity
+  // has a phase or a trade, and every node count reads 0, while the grid looks perfect.
+  // ⚠️ A plpgsql loop inside the function would not have helped: the timeout is armed once, when the
+  // top-level statement starts. The bound has to be visible HERE, which is why the migration takes a
+  // `p_limit` and this loops until it gets 0 — the same shape as the clear.
   async function _wbsLinkActivityParents(silent) {
     if (!pid || !canWrite || window.__viewOnly || window.__archived) return 0;
-    var n = 0;
-    try {
-      var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid });
-      if (rp.error) throw rp.error;
-      n = rp.data || 0;
-    } catch (e) {
-      if (!silent) UI.toast('Activities could not be attached to the WBS tree — run migrations/2026-09-01-wbs-link-rpc.sql.', 'warn');
-      return 0;
+    var n = 0, batch = 4000, lastErr = null;
+    for (var call = 0; call < 200; call++) {
+      var rp = await sb().rpc('wbs_link_activity_parents', { p_project_id: pid, p_limit: batch });
+      if (rp.error) {
+        // ⚠️ HALVE AND RETRY on a timeout rather than lose the whole operation — the batch that fits
+        // depends on the deployment's statement_timeout, which the client cannot read.
+        if (_isTimeout(rp.error) && batch > 125) { batch = Math.floor(batch / 2); continue; }
+        lastErr = rp.error; break;
+      }
+      var got = Number(rp.data) || 0;
+      n += got;
+      if (n) setLoading('Attaching activities to the WBS tree… ' + n.toLocaleString() + ' linked');
+      if (!got) break;
+    }
+    if (lastErr) {
+      // ⚠️ REPORTED WHETHER OR NOT `silent`. A half-attached tree is not a quiet condition, and the
+      // old silence is precisely why this survived two imports unnoticed.
+      try { console.error('[ps] wbs_link_activity_parents failed after ' + n + ' linked', lastErr); } catch (e2) {}
+      UI.toast('Activities could not all be attached to the WBS tree (' + n.toLocaleString() + ' linked): ' +
+               (lastErr.message || lastErr.code || 'unknown') +
+               ' — Vertical Stacking, Trade and phase read from the tree and will be incomplete.', 'error');
     }
     if (!n) return 0;
     // Mirror into memory so the next render is right without a refetch — same contract as _wbsResyncCodes.
@@ -19483,9 +20138,32 @@
     // storm this module keeps re-learning to avoid.
     var keep = (WBS_NODES || []).map(function (n) { return n.id; });
     try {
-      var q = sb().from(TABLE).update({ wbs_node_id: null }).eq('project_id', pid).not('wbs_node_id', 'is', null);
-      if (keep.length) q = q.not('wbs_node_id', 'in', '(' + keep.join(',') + ')');
-      var ures = await q;
+      // ⚠⚠ BATCHED THROUGH AN RPC. As one statement this is ~28,958 rows on 4PH Strevi, and this
+      // deployment's statement_timeout is ~8s — measured, not assumed (wbs_link_activity_parents
+      // returned 57014 after 8,173ms on 16,485 rows the same afternoon). So Reset WBS tree, the
+      // documented recovery from a broken tree, would itself time out on exactly the projects that
+      // need it, leaving the nodes deleted and every row still pointing at them.
+      // ⚠️ The RPC asks the better question too — "null the rows whose node no longer EXISTS" — so it
+      // needs no keep-list and cannot be wrong about which nodes survived.
+      var ures = { error: null }, _unl = 0, _ub = 4000, _rpcGone = false;
+      for (var _uc = 0; _uc < 200; _uc++) {
+        var _ur = await sb().rpc('wbs_unlink_dangling', { p_project_id: pid, p_limit: _ub });
+        if (_ur.error) {
+          if (_rpcMissing(_ur.error)) { _rpcGone = true; break; }
+          if (_isTimeout(_ur.error) && _ub > 125) { _ub = Math.floor(_ub / 2); continue; }
+          ures = { error: _ur.error }; break;
+        }
+        var _un = Number(_ur.data) || 0; _unl += _un;
+        if (_unl) setLoading('Clearing the WBS tree… ' + _unl.toLocaleString() + ' link(s) cleared');
+        if (!_un) break;
+      }
+      if (_rpcGone) {
+        // Pre-migration fallback: the original single statement. Fine on a small project, and the
+        // only thing available on a database that has not run 2026-09-02-wbs-unlink-batched.sql.
+        var q = sb().from(TABLE).update({ wbs_node_id: null }).eq('project_id', pid).not('wbs_node_id', 'is', null);
+        if (keep.length) q = q.not('wbs_node_id', 'in', '(' + keep.join(',') + ')');
+        ures = await q;
+      }
       if (ures.error) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it: ' + ures.error.message, 'error'); return; }
     } catch (e) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it.', 'error'); return; }
     var live = {}; keep.forEach(function (id) { live[id] = 1; });
@@ -19529,9 +20207,36 @@
     } catch (e) { /* best effort: a failure costs the nesting, never the import */ }
   }
 
+  // ⚠️⚠️ VERIFIES AND RESUMES. One call to wbsAdopt() was assumed to finish the tree; on the owner's
+  // 4PH Strevi re-import it built **6,623 of 12,473** branches and said nothing (see the insert error
+  // path above). wbsAdopt is documented as resuming cleanly from a partial tree — it seeds
+  // `nodeByCode` from the nodes that already exist — so the fix is to keep calling it while it is
+  // still making progress, and to REPORT what is left if it stops early.
+  // ⚠️ Gated on PROGRESS, not on a fixed number of tries: a pass that adopts nothing new will never
+  // adopt anything on the next one either, and looping on it would hang the import instead of
+  // telling the planner the truth.
   async function autoAdoptAfterImport() {
-    try { showLoading('Building WBS tree…'); var n = await wbsAdopt(true); hideLoading(); if (n) UI.toast('WBS tree built (' + n + ' nodes) — open the WBS Manager to edit it.', 'success'); }
-    catch (e) { hideLoading(); }
+    try {
+      showLoading('Building WBS tree…');
+      var total = 0, pass = 0;
+      for (; pass < 12; pass++) {
+        var remaining = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
+        if (!remaining) break;
+        setLoading('Building WBS tree… ' + remaining.toLocaleString() + ' branch(es) to go');
+        var n = await wbsAdopt(true);
+        total += n || 0;
+        if (!n) break;   // no progress — another identical pass cannot help
+      }
+      var left = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; }).length;
+      hideLoading();
+      if (left) {
+        UI.toast('WBS tree is INCOMPLETE — ' + left.toLocaleString() + ' branch(es) still unadopted after ' +
+                 (pass + 1) + ' pass(es). Vertical Stacking, Trade and phase read from the tree, so they ' +
+                 'will be wrong until this finishes. Open the WBS Manager and use "Adopt existing WBS".', 'error');
+      } else if (total) {
+        UI.toast('WBS tree built (' + total.toLocaleString() + ' nodes) — open the WBS Manager to edit it.', 'success');
+      }
+    } catch (e) { hideLoading(); try { console.error('[ps] autoAdoptAfterImport', e); } catch (e2) {} }
   }
   // WBS parent picker for the Add/Edit activity modal — flat, indented options of every node.
   function wbsPickerOptions(selectedNodeId) {
@@ -21128,7 +21833,7 @@
       }
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'tower', 'floor', 'zone', 'unit'] }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'tower', 'floor', 'zone', 'unit'], phases: {} }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -21217,6 +21922,30 @@
       d.floorLag = (c.floorLag && typeof c.floorLag === 'object') ? c.floorLag : {};      // per-trade: cure/lag days between a floor and the floor above
       d.zoneOrder = (c.zoneOrder && typeof c.zoneOrder === 'object') ? c.zoneOrder : {};  // per-trade: ordered list of zone codes (the sequence zones are worked in)
       d.locLevel = (['auto', 'floor', 'zone', 'unit'].indexOf(c.locLevel) >= 0) ? c.locLevel : 'auto';  // global activity/takt leaf level
+      // ---- Lifecycle phases (the step beside the Execution Phase) ---------------------------
+      // ⚠️⚠️ THIS CLAUSE IS LOAD-BEARING. normalize() builds `d` from blank() and copies only the keys
+      // it knows about, so an un-normalised key does not survive a save/load round trip: without this
+      // the phases a planner ticked would work for the rest of the session and be gone tomorrow.
+      // ⚠️ Only the three NON-execution codes are accepted, and only ones the database's phase CHECK
+      // allows (see SB_PHASE_DEFS) — a stale or hand-edited key cannot introduce a phase the insert
+      // would reject. 'construction' is never stored here: the Execution Phase is generated, not
+      // listed, and a config carrying it would offer a second, hand-typed construction phase.
+      d.phases = {};
+      var _srcPh = (c.phases && typeof c.phases === 'object') ? c.phases : {};
+      SB_PHASE_DEFS.forEach(function (pd2) {
+        if (pd2.when === 'exec') return;
+        var src = _srcPh[pd2.v];
+        if (!src || typeof src !== 'object') return;            // absent = off, filled in by sbPhases()
+        d.phases[pd2.v] = {
+          on: !!src.on,
+          acts: (Array.isArray(src.acts) ? src.acts : []).map(function (a) {
+            return { id: (a && a.id) || uidv(), n: String((a && a.n) || '').slice(0, 200),
+                     // ⚠️ Clamped to 1, never 0: a zero-day phase activity would push a row whose
+                     // finish precedes its start and break the chain for everything after it.
+                     d: Math.max(1, Math.min(999, Math.round(Number(a && a.d) || 1))) };
+          })
+        };
+      });
       return d;
     }
     function setState(t) {
@@ -21986,6 +22715,94 @@
     }
     function multiTower() { return towerList().length > 1; }
     function towerLinks() { return (cfg && Array.isArray(cfg.towerLinks)) ? cfg.towerLinks : []; }
+    // ---- LIFECYCLE PHASES ------------------------------------------------------------------
+    // Owner 2026-09-02: *"make it that the schedule builder has another step, being able to add
+    // phases like the initiation phase planning phase etc. and the established as of now, that is
+    // only applicable for the execution phase."*
+    //
+    // Everything the other steps build — trades, floors, zones, links, stacking — IS the Execution
+    // Phase, and it is the only phase that is generated. The phases added here are flat, hand-listed
+    // work (charter, permits, IFC drawings, commissioning, turnover): there is nothing to zone and
+    // nothing to repeat per floor, so they are a NAME and a DURATION, never a generator.
+    //
+    // ⚠️⚠️ THE FOUR CODES ARE ALL THERE ARE. `project_schedule.phase` carries a 4-value CHECK
+    // constraint in the database (initiation / planning / construction / closeout — see the note on
+    // PHASES). So this step OFFERS exactly those and cannot offer "Monitoring & Control" or any
+    // other lifecycle name, however reasonable: a fifth code would be rejected by the insert, and
+    // the push drops the phase column wholesale on a phase error (_dropScope), so one invented
+    // value would silently strip the phase off every row in the push. Adding one is a migration,
+    // not a list edit.
+    // ⚠️ 'construction' IS the execution phase — the stored code never changed, only the label.
+    var SB_PH_DEF = {
+      initiation: ['Project charter & scope sign-off:5', 'Contract award & notice to proceed:10', 'Permits & regulatory clearances:20'],
+      planning:   ['Design development & IFC drawings:30', 'Baseline schedule & method statements:15', 'Procurement & subcontractor packages:25'],
+      closeout:   ['Testing & commissioning:20', 'Punchlisting & rectification:20', 'As-built drawings & O&M manuals:15', 'Turnover & handover:10']
+    };
+    // ⚠️ ORDER IS THE LIFECYCLE, and the two 'before' phases are back-scheduled as a block onto the
+    // execution start while 'after' runs off the execution finish — see sbPhasePlan.
+    var SB_PHASE_DEFS = [
+      { v: 'initiation', when: 'before' },
+      { v: 'planning', when: 'before' },
+      { v: 'construction', when: 'exec' },
+      { v: 'closeout', when: 'after' }
+    ];
+    function sbPhAct(spec) { var i = spec.lastIndexOf(':'); return { id: uidv(), n: spec.slice(0, i), d: +spec.slice(i + 1) }; }
+    // The stored shape, with defaults filled in. ⚠️ A setup saved before today has no `phases` key at
+    // all, and must open with every extra phase OFF — turning three phases on inside somebody's saved
+    // recipe, which they would then push without noticing, is not a default anyone asked for.
+    function sbPhases() {
+      if (!cfg.phases || typeof cfg.phases !== 'object') cfg.phases = {};
+      SB_PHASE_DEFS.forEach(function (d) {
+        if (d.when === 'exec') return;
+        var cur = cfg.phases[d.v];
+        if (!cur || typeof cur !== 'object') cur = cfg.phases[d.v] = { on: false, acts: null };
+        if (!Array.isArray(cur.acts)) cur.acts = (SB_PH_DEF[d.v] || []).map(sbPhAct);
+        cur.on = !!cur.on;
+      });
+      return cfg.phases;
+    }
+    function sbPhOn(v) { var ph = sbPhases()[v]; return !!(ph && ph.on && ph.acts.length); }
+    function sbPhActs(v) { var ph = sbPhases()[v]; return (ph && ph.acts) || []; }
+    function sbPhDays(v) { return sbPhActs(v).reduce(function (t, a) { return t + Math.max(0, +a.d || 0); }, 0); }
+    // The dated plan for every enabled phase, around the generated execution window.
+    // ⚠️ CALENDAR DAYS, chained finish-to-start — the same arithmetic generate() uses for the
+    // execution rows (addD over a day count, no working-day calendar). Two different day models in
+    // one pushed schedule would show up as phases that do not meet the execution window they were
+    // measured against.
+    // ⚠️ The 'before' block is back-scheduled: the LAST before-phase ends the day before execution
+    // starts, and each earlier one ends the day before the next begins. That is what makes the
+    // lifecycle read as one continuous programme instead of three blocks with gaps nobody chose.
+    function sbPhasePlan(g) {
+      if (!g || !g.start) return [];
+      var out = [], before = [], after = [];
+      SB_PHASE_DEFS.forEach(function (d) {
+        if (d.when === 'exec' || !sbPhOn(d.v)) return;
+        (d.when === 'before' ? before : after).push(d);
+      });
+      // Walk the before-block BACKWARDS from the execution start.
+      var cursor = addD(g.start, -1);
+      before.slice().reverse().forEach(function (d) {
+        var acts = sbPhActs(d.v).slice().reverse(), rows = [];
+        acts.forEach(function (a) {
+          var dur = Math.max(1, +a.d || 1), fin = cursor, st = addD(cursor, -(dur - 1));
+          rows.unshift({ act: a, start: st, finish: fin, dur: dur });
+          cursor = addD(st, -1);
+        });
+        out.unshift({ v: d.v, when: d.when, rows: rows, start: rows.length ? rows[0].start : null, finish: rows.length ? rows[rows.length - 1].finish : null });
+      });
+      // …and the after-block forwards from the execution finish.
+      cursor = addD(g.finish, 1);
+      after.forEach(function (d) {
+        var rows = [];
+        sbPhActs(d.v).forEach(function (a) {
+          var dur = Math.max(1, +a.d || 1), st = cursor, fin = addD(cursor, dur - 1);
+          rows.push({ act: a, start: st, finish: fin, dur: dur });
+          cursor = addD(fin, 1);
+        });
+        out.push({ v: d.v, when: d.when, rows: rows, start: rows.length ? rows[0].start : null, finish: rows.length ? rows[rows.length - 1].finish : null });
+      });
+      return out;
+    }
     // Every floor across all trades in one tower, de-duplicated by code so the anchor picker offers
     // "Podium L4" once rather than once per trade that happens to define it.
     function towerFloorChoices(towerId) {
@@ -22291,6 +23108,7 @@
       { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
       { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
       { t: 'Stacking', s: 'Vertical stacking by trade', fn: stStacking },
+      { t: 'Project phases', s: 'Initiation → Close-out', fn: stPhases },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
 
@@ -23589,6 +24407,99 @@
       return '<div class="sbld-genpanel"><div class="sbld-genh" style="border-color:' + accent + ';color:' + accent + ';">' + e2(label) + ' schedule</div>' +
         kpis + miss + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
     }
+    // ---- Step: the phases either side of the Execution Phase --------------------------------
+    // ⚠️ This step does NOT generate anything. Every other step feeds the generator; this one edits
+    // a flat list per phase and prints the window it will occupy, because there is nothing about a
+    // charter or a turnover that repeats per floor or per zone.
+    function stPhases(host) {
+      var g = generate('int');
+      var plan = sbPhasePlan(g), planBy = {};
+      plan.forEach(function (pp) { planBy[pp.v] = pp; });
+      function win(st, fi) { return (st && fi) ? (fmtD(st) + ' → ' + fmtD(fi)) : '—'; }
+      var execRow = '<div class="sbld-phcard is-exec">' +
+        '<div class="sbld-phhead"><span class="sbld-phname">' + e2(PHASE_LABELS.construction) + '</span>' +
+        '<span class="sbld-phlock">built by steps ' + _stepNo('Activities') + '–' + _stepNo('Stacking') + '</span></div>' +
+        '<p class="sbld-phmeta">' + (g.rows.length ? '<b>' + g.rows.length + '</b> generated activities · ' + win(g.start, g.finish) +
+          ' · ' + g.totalDays + ' days' : 'Nothing generated yet — complete the earlier steps.') + '</p></div>';
+      var cards = SB_PHASE_DEFS.map(function (d) {
+        if (d.when === 'exec') return execRow;
+        var ph = sbPhases()[d.v], pl = planBy[d.v], on = !!ph.on;
+        var body = ph.acts.map(function (a, i) {
+          return '<div class="sbld-phrow" data-i="' + i + '">' +
+            '<span class="sbld-phgrip" draggable="true" title="Drag to reorder — the order is the chain, so it decides the dates">\u22ee\u22ee</span>' +
+            '<input class="pd-input sbld-phn" data-ph="' + d.v + '" data-i="' + i + '" value="' + e2(a.n) + '" placeholder="Activity name">' +
+            '<input class="pd-input sbld-phd" type="number" min="1" max="999" data-ph="' + d.v + '" data-i="' + i + '" value="' + (+a.d || 1) + '" title="Duration in calendar days">' +
+            '<span class="sbld-phwin">' + (on && pl && pl.rows[i] ? e2(win(pl.rows[i].start, pl.rows[i].finish)) : '&mdash;') + '</span>' +
+            '<button class="pd-btn sbld-del" data-phdel="' + d.v + '" data-i="' + i + '" title="Remove this activity"><span data-ico="trash" data-ico-size="14"></span></button>' +
+            '</div>';
+        }).join('');
+        return '<div class="sbld-phcard' + (on ? ' on' : '') + '">' +
+          '<div class="sbld-phhead">' +
+            '<label class="sbld-phname"><input type="checkbox" data-phon="' + d.v + '"' + (on ? ' checked' : '') + '> ' + e2(PHASE_LABELS[d.v]) + '</label>' +
+            '<span class="sbld-phlock">' + (d.when === 'before' ? 'ends before the Execution Phase starts' : 'starts after the Execution Phase finishes') + '</span>' +
+          '</div>' +
+          '<p class="sbld-phmeta">' + (on
+            ? '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · ' + sbPhDays(d.v) + ' days · ' +
+              (pl ? e2(win(pl.start, pl.finish)) : '—')
+            : 'Off — nothing is pushed for this phase.') + '</p>' +
+          (on ? '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' +
+                '<div class="sbld-sec-actions"><button class="pd-btn" data-phadd="' + d.v + '">+ Add activity</button>' +
+                '<button class="pd-btn" data-phreset="' + d.v + '">Reset to the typical set</button></div>' : '') +
+          '</div>';
+      }).join('');
+      var span = (function () {
+        if (!g.start) return '';
+        var a = (plan.length && plan[0].when === 'before' && plan[0].start) ? plan[0].start : g.start;
+        var last = plan.filter(function (x) { return x.when === 'after' && x.finish; }).pop();
+        var b = last ? last.finish : g.finish;
+        return '<p class="sbld-phtotal">Whole programme: <b>' + fmtD(a) + ' → ' + fmtD(b) + '</b> · ' +
+          (Math.round((+b - +a) / 86400000) + 1) + ' calendar days</p>';
+      })();
+      host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · The phases either side of construction</h2>' +
+        '<p class="sbld-lede">Everything the other steps build <b>is</b> the Execution Phase — trades, floors, zones and links only describe construction. Add the rest of the project lifecycle here as a plain list of activities with durations: they carry no location, and nothing repeats per zone. ' +
+        'The <b>before</b> phases are back-scheduled so they finish the day the Execution Phase starts, and <b>Close-out</b> picks up the day after it finishes, so the programme reads continuously.</p>' +
+        '<p class="sbld-hint">Only these phases exist: the schedule’s <code>phase</code> column is fixed to Initiation, Planning, Execution and Close-out in the database, so no other lifecycle name can be stored on an activity.</p>' +
+        '<div class="sbld-phgrid">' + cards + '</div>' + span;
+
+      host.querySelectorAll('[data-phon]').forEach(function (c) {
+        c.onchange = function () { sbPhases()[c.dataset.phon].on = c.checked; markDirty(); render(); };
+      });
+      host.querySelectorAll('[data-phadd]').forEach(function (b) {
+        b.onclick = function () { sbPhActs(b.dataset.phadd).push({ id: uidv(), n: '', d: 5 }); markDirty(); render(); };
+      });
+      host.querySelectorAll('[data-phreset]').forEach(function (b) {
+        b.onclick = function () {
+          var v = b.dataset.phreset;
+          if (!confirm('Replace this phase’s activities with the typical set?')) return;
+          sbPhases()[v].acts = (SB_PH_DEF[v] || []).map(sbPhAct); markDirty(); render();
+        };
+      });
+      host.querySelectorAll('[data-phdel]').forEach(function (b) {
+        b.onclick = function () { sbPhActs(b.dataset.phdel).splice(+b.dataset.i, 1); markDirty(); render(); };
+      });
+      // ⚠️ Names and durations commit on 'change', never on 'input': render() rebuilds the whole
+      // step, so a repaint per keystroke would take the focus out of the field being typed into.
+      host.querySelectorAll('.sbld-phn').forEach(function (el) {
+        el.onchange = function () { var a = sbPhActs(el.dataset.ph)[+el.dataset.i]; if (a) { a.n = el.value; markDirty(); render(); } };
+      });
+      host.querySelectorAll('.sbld-phd').forEach(function (el) {
+        el.onchange = function () {
+          var a = sbPhActs(el.dataset.ph)[+el.dataset.i];
+          if (a) { a.d = Math.max(1, Math.min(999, Math.round(+el.value || 1))); markDirty(); render(); }
+        };
+      });
+      // Drag to reorder — the order IS the chain, so it decides the dates.
+      // ⚠️ Only the GRIP is draggable, never the row: with a draggable row, dragging across the name
+      // field to select part of it starts a drag instead of selecting the text. dragstart on the grip
+      // still bubbles to the row's own listener, so wireDrag sees the row as the dragged element and
+      // nothing else about it changes.
+      host.querySelectorAll('.sbld-phrow').forEach(function (row) {
+        var f = row.querySelector('[data-ph]');
+        var v = f ? f.dataset.ph : null;
+        if (v) wireDrag(row, null, function () { return sbPhActs(v); });
+      });
+    }
+
     function stGenerate(host) {
       if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
       var gInt = generate('int'), gExt = generate('ext');
@@ -23782,6 +24693,17 @@
       ov.innerHTML = '<div class="pd-modal" style="max-width:480px;"><div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">Add to Project Schedule</h3><button class="pd-modal-close" data-x>&times;</button></div>' +
         '<div style="padding:16px;">' +
         '<p class="sbld-hint" style="margin:0 0 12px;"><b>' + gI.rows.length + '</b> generated activities will be <b>added</b> to the existing schedule with their <b>relationships</b> (FS/SS/FF/SF + lag) as predecessors. Nothing is replaced.</p>' +
+        // ⚠️ Stated before the push, not only in the summary after it. A push that quietly created
+        // three extra top-level branches would be exactly the "where did these come from" surprise
+        // the package block above exists to prevent.
+        (function () {
+          var pl = sbPhasePlan(gI);
+          if (!pl.length) return '';
+          var n = pl.reduce(function (t, x) { return t + x.rows.length; }, 0);
+          return '<p class="sbld-hint" style="margin:-6px 0 12px;">Plus <b>' + n + '</b> activit' + (n === 1 ? 'y' : 'ies') +
+            ' in <b>' + pl.length + '</b> lifecycle phase branch' + (pl.length === 1 ? '' : 'es') + ' beside the Execution Phase (' +
+            pl.map(function (x) { return e2(PHASE_LABELS[x.v] || x.v); }).join(', ') + ') — from step ' + _stepNo('Project phases') + '.</p>';
+        })() +
         '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Schedule to push</label>' +
         '<select class="pd-select" id="sbpush-basis" style="width:100%;"><option value="int">Internal (target)</option><option value="ext">External (contract)</option></select>' +
         pkgBlock +
@@ -24027,6 +24949,36 @@
            ⚠️ Orthogonal to scope_type on purpose: the row above may be a change order AND
            this package. Neither column is derived from the other. */
         package_id: usePkg || null }; }
+      // A lifecycle-phase activity's row. Deliberately NOT taskPayload: that one reads a generated
+      // row (trade, location, class code, zone predecessors, contract scope), and none of those are
+      // facts about a project charter or a turnover.
+      // ⚠️ NO `location`. Location describes construction — see the Execution Phase scoping note. An
+      // Initiation activity with a floor value would appear as a storey in the vertical stacking.
+      // ⚠️ NO `scope_type`. Contract scope is execution-only by design; 'main' here would invite
+      // "is the design review a variation?", the question that column refuses to ask.
+      // ⚠️ Predecessors chain each phase INTERNALLY only (activity i follows i-1). The link to the
+      // execution work is expressed by the DATES, not by a relationship: the execution rows'
+      // predecessors are generated from zone links and there is no single execution start activity
+      // to hang a phase off, so inventing one relationship would be a guess with a critical path
+      // attached to it.
+      // ⚠️ `_phPrevId` is what chains the phase: the id of the row emitted before this one WITHIN the
+      // same phase. It is a per-phase map, not one variable, because the payloads are emitted phase
+      // by phase and a single cursor would chain Close-out's first activity onto Planning's last.
+      var _phPrevId = {};
+      function phaseTaskPayload(t) {
+        var id = uniqId('PH' + String(t.v || '').slice(0, 3).toUpperCase() + '-' + (t.i + 1));
+        var row = {
+          project_id: pid, created_by: UID,
+          activity_id: id, activity_name: String(t.r.act.n || '').trim() || ((PHASE_LABELS[t.v] || 'Phase') + ' activity ' + (t.i + 1)),
+          activity_type: 'Task', status: 'Not Started',
+          start_date: iso2(t.r.start), end_date: iso2(t.r.finish), duration_days: t.r.dur,
+          percent_complete: 0, phase: t.v, seq_order: t.i,
+          predecessors: (t.i > 0 && _phPrevId[t.v]) ? _phPrevId[t.v] : null,
+          package_id: usePkg || null
+        };
+        _phPrevId[t.v] = id;
+        return row;
+      }
       // ---- Class codes -> activity codes ------------------------------------------------------
       // ⚠️ Ensured BEFORE the payloads are built, because taskPayload needs the value ids. Reuses an
       // existing "Class Code" type and any values already present, so a re-push adds nothing.
@@ -24082,6 +25034,18 @@
         // ("Structural F5 · Z1 — Formworks") because it had nowhere else to live; it is now real
         // data on the row (work_type + location) with its own columns and grouping levels.
         g.rows.forEach(function (r) { var p = taskPayload(r, r.act.name); p.project_id = pid; p.created_by = UID; p.wbs = code(base, ci++); payloads.push(p); });
+        // ⚠️ A flat push has no branches to put a phase under, but the phases the planner ticked must
+        // still land — dropping them silently because of a WBS setting would lose real data. They go
+        // in as flat rows beside the execution work, each still carrying its own `phase` code, so the
+        // grid's phase grouping and the "Execution Phase only" toggle both read them correctly even
+        // with no branch to inherit from.
+        sbPhasePlan(g).forEach(function (pp) {
+          pp.rows.forEach(function (r, i) {
+            var p2 = phaseTaskPayload({ k: null, v: pp.v, r: r, i: i });
+            p2.wbs = code(base, ci++);
+            payloads.push(p2);
+          });
+        });
       } else {
         // Grouped push — build a real Trade → Floor → Zone → Unit WBS tree and register it in the WBS
         // Manager (wbs_nodes), linking every summary + task by wbs_node_id. Falls back to plain dotted
@@ -24169,6 +25133,27 @@
         }
         buildTree(g.rows, (order && order.length ? order : cfg.wbsOrder).slice(), '__base__');
         wbsUnnamed = _unnamedDims;
+        // ---- The lifecycle phases, as SIBLINGS of the Execution Phase branch -----------------
+        // ⚠️⚠️ SIBLINGS, NOT CHILDREN. `parentCode` is always execPhaseCode(), so `base`/baseNodeId is
+        // the Execution Phase branch itself — filing Initiation under it would make the charter
+        // construction work by inheritance (phaseOf reads the nearest tagged ancestor), which is the
+        // precise mistake this step exists to avoid. Their parent is therefore the Execution Phase
+        // branch's OWN parent, resolved below: the project root on a normal push, and the package
+        // root when the build was redirected under a package (so each lot keeps its own lifecycle).
+        // ⚠️ Each branch is a nodeDesc like any other, so it inherits the whole machinery for free:
+        // one insert per depth, idempotent reuse of a branch that already exists under the same
+        // parent (a re-push does NOT create a second "Planning Phase"), the partial-tree rollback,
+        // and the dotted-code fallback for a project whose database predates wbs_nodes.
+        var phasePlan = sbPhasePlan(g), phaseTasks = [];
+        if (phasePlan.length) {
+          phasePlan.forEach(function (pp) {
+            if (!pp.rows.length) return;
+            var pkey = 'PH_' + pp.v;
+            ensureNode(pkey, '__phaseparent__', PHASE_LABELS[pp.v] || pp.v, null, null);
+            nodeByKey[pkey].phase = pp.v;
+            pp.rows.forEach(function (r, i) { phaseTasks.push({ k: pkey, v: pp.v, r: r, i: i }); });
+          });
+        }
         // base parent = the wbs_node behind the chosen WBS row (if any)
         var baseRow = rows.filter(function (r) { return isWbs(r) && String(r.wbs) === String(base); })[0];
         var baseNodeId = baseRow ? (baseRow.wbs_node_id || null) : null;
@@ -24197,7 +25182,14 @@
         // each duplicate node has its own), so they render as a full second copy of the branch.
         // `reused` also suppresses the WBS-Summary payload below: the surviving node already has one,
         // and writing another is exactly the "two rows for one wbs_node_id" duplication.
-        var keyToNodeId = { '__base__': baseNodeId }, soByParent = {}, wbsOk = true, reused = {}, reusedN = 0, createdNodeIds = [];
+        // ⚠️ '__phaseparent__' MUST be resolved before the depth loop runs — the loop reads
+        // `keyToNodeId[nd.parentKey] || null`, and an unresolved key would silently put every
+        // lifecycle branch at the project root even on a package push.
+        // ⚠️ null is a legitimate answer (the Execution Phase branch sits at the top level), and it
+        // means "top level" to both the insert and existingChild(), which is exactly right.
+        var _execNode = baseNodeId ? WBS_NODES.find(function (n) { return n.id === baseNodeId; }) : null;
+        var keyToNodeId = { '__base__': baseNodeId, '__phaseparent__': (_execNode && _execNode.parent_id) || null },
+            soByParent = {}, wbsOk = true, reused = {}, reusedN = 0, createdNodeIds = [];
         // Reused branches needing a write: a wrong sibling position, and/or a stale name-derived
         // custom code from before the auto-numbering rule (clearing it lets computeWbsCodes
         // re-derive a correct dotted path, which _wbsResyncCodes then pushes onto every row).
@@ -24358,14 +25350,30 @@
           var codeOf = computeWbsCodes();
           // scope_type on the summary rows as well — the builder only ever produces main-contract
           // scope, so every row it writes says so rather than leaving the column blank.
-          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: 'construction', scope_type: 'main', created_by: UID }); });
+          // ⚠️ `nd.phase || 'construction'`, not a literal. Every branch this push creates used to be
+          // stamped as construction, which was true while the builder only ever built the Execution
+          // Phase. The lifecycle branches are siblings of it and carry their own phase code — and the
+          // phase on the BRANCH is what phaseOf() inherits down to every activity under it, so a
+          // hard-coded 'construction' here would file the Close-out Phase branch as construction and
+          // silently pull its work into every execution-only view (Contract scope, "Execution Phase
+          // only", the vertical stacking).
+          // ⚠️ scope_type likewise: contract scope is execution-only by design, so a lifecycle branch
+          // gets null rather than 'main' — see the note on SCOPES.
+          nodeDescs.forEach(function (nd) { if (reused[nd.key]) return; var nidn = keyToNodeId[nd.key]; payloads.push({ project_id: pid, wbs_node_id: nidn, wbs: codeOf[nidn] || null, activity_type: 'WBS Summary', activity_name: nd.name, phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; var nidt = keyToNodeId[t.k] || baseNodeId || null; p.wbs_node_id = nidt; p.wbs = nidt ? (codeOf[nidt] || null) : null; payloads.push(p); });
+          phaseTasks.forEach(function (t) {
+            var nidt = keyToNodeId[t.k] || null;
+            var p2 = phaseTaskPayload(t);
+            p2.wbs_node_id = nidt; p2.wbs = nidt ? (codeOf[nidt] || null) : null;
+            payloads.push(p2);
+          });
         } else {
           // fallback: dotted WBS-Summary + task rows (old behavior), so the push still works pre-migration
           var codeByKey = {}, so2 = {};
           function childCode(pk) { var pc = pk === '__base__' ? base : codeByKey[pk]; if (so2[pk] == null) so2[pk] = nextChildIndex(pc); return code(pc, so2[pk]++); }
-          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: 'construction', scope_type: 'main', created_by: UID }); });
+          nodeDescs.forEach(function (nd) { var c = nd.code || childCode(nd.parentKey); codeByKey[nd.key] = c; payloads.push({ project_id: pid, wbs: c, activity_id: uniqId('WBS-' + c), activity_name: nd.name, activity_type: 'WBS Summary', phase: nd.phase || 'construction', scope_type: nd.phase && nd.phase !== 'construction' ? null : 'main', created_by: UID }); });
           taskAssign.forEach(function (t) { var p = taskPayload(t.r, t.name); p.project_id = pid; p.created_by = UID; p.wbs = childCode(t.k); payloads.push(p); });
+          phaseTasks.forEach(function (t) { var p2 = phaseTaskPayload(t); p2.wbs = childCode(t.k); payloads.push(p2); });
         }
       }
 
@@ -24415,6 +25423,9 @@
                 (curSetupName || cfg.name || projName(curPid) || 'Schedule Builder'),
           tiles: [
             { n: taskN, l: 'Activities added' },
+            // ⚠️ Counted from the PAYLOAD, not from the config: what landed is what was inserted, and
+            // a phase whose activities were all blank contributes nothing.
+            { n: payloads.filter(function (pl2) { return pl2.phase && pl2.phase !== 'construction' && pl2.activity_type === 'Task'; }).length, l: 'Lifecycle-phase activities' },
             { n: cfg.links ? cfg.links.length : 0, l: 'Relationships' },
             { n: wbsCount, l: 'WBS branches' },
             { n: reorder.length, l: 'Branches corrected' },
@@ -26884,6 +27895,7 @@
     var by = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
+      if (!catInScope(r)) return;   // the key is the Execution Phase's — see catEntry
       var v = catValOf(r, cfg.field); if (!v) return;
       var s = pd(dispStart(r)) || pd(r.bl_start);
       var b = by[v] || (by[v] = { value: v, n: 0, first: null });
@@ -26930,8 +27942,40 @@
     Object.keys(m).forEach(function (k) { out[k] = m[k].color; });
     return out;
   }
+  // ⚠️ COLOURING IS THE EXECUTION PHASE'S, and every other consumer of the category colours reads
+  // this rather than testing the phase itself. Owner 2026-09-02: *"only make the bars different
+  // exclusively [for] activities under Execution Phase. Other activities … should follow the simple
+  // bar legend for Activity (red = % complete), so that the legend … will only show activities
+  // relevant to the execution phase."* Bidding, permits and close-out rows were contributing
+  // categories to a key meant to read as a trade sequence, and colouring them said they were part
+  // of one.
+  // ⚠️ FALLS BACK TO COLOURING EVERYTHING only when the project resolves NO PHASE AT ALL. `phaseOf`
+  // reads through the WBS branch, so a project that has never been phased answers `null` for every
+  // row, and scoping to a phase nothing is in would silently turn the whole feature off and read as
+  // "colour activities by is broken". Same shape as _vsAxis's fallback.
+  // ⚠️⚠️ THE TEST IS "ARE PHASES IN USE", NOT "IS THERE EXECUTION WORK", and the difference is a
+  // defect the owner caught immediately after clearing SLN101. A cleared project keeps its
+  // Design Development and Procurement mirror rows, which sit under **Planning Phase** — measured
+  // live: 92 activities, every one resolving `planning`, none `construction`. Testing for execution
+  // work therefore found none, took the fallback, and coloured all 92 — so an EMPTIED schedule
+  // showed a 92-entry legend of drawing-register and procurement item names, which is the opposite
+  // of what scoping the key to the Execution Phase was asked for. Phases are plainly in use on that
+  // project; there is simply no execution work yet, and the honest answer is an empty colour key.
+  // ⚠️ Cached on the row count AND cleared by _clearPhaseMemo: re-parenting a branch re-phases its
+  // work with no change in row count, and a stale answer here would mis-colour every bar.
+  var _catExecCache = null, _catExecKey = null;
+  function catScopeIsExec() {
+    var key = pid + '|' + rows.length;
+    if (_catExecKey === key && _catExecCache !== null) return _catExecCache;
+    var any = false;
+    for (var i = 0; i < rows.length; i++) { if (!isWbs(rows[i]) && phaseOf(rows[i])) { any = true; break; } }
+    _catExecKey = key; _catExecCache = any;
+    return any;
+  }
+  function catInScope(r) { return !catScopeIsExec() || isExecPhase(r); }
   function catEntry(r) {
     var cfg = catCfg(); if (!cfg.on || !pid) return null;
+    if (!catInScope(r)) return null;
     var v = catValOf(r, cfg.field); if (!v) return null;
     return catMapNow()[v] || null;
   }
@@ -26969,6 +28013,7 @@
     for (var i = 0; i < list.length; i++) {
       var nd = list[i];
       if (!nd || nd._dkind !== 'task') continue;
+      if (!catInScope(nd)) continue;   // see catEntry
       var v = catValOf(nd, cfg.field); if (v) out[v] = true;
     }
     return out;
@@ -26983,6 +28028,7 @@
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (isWbs(r)) continue;
+      if (!catInScope(r)) continue;   // see catEntry
       if (ec && !(r.wbs === ec || locCodeUnder(r.wbs, ec))) continue;
       if (filt && !rowMatches(r)) continue;
       var v = catValOf(r, cfg.field); if (v) out[v] = true;
@@ -27064,8 +28110,24 @@
   // nor the BL0 bar is drawn — so leaving those three on screen would describe marks that no longer
   // exist. Hidden via the existing `#ps-view-schedule.ps-lsm .lg-lsmoff` rule, which still applies
   // now that the row lives inside #ps-actlegend (same subtree, same classes).
+  // ⚠⚠ THE PLAIN ACTIVITY CHIP IS NO LONGER `lg-lsmoff`, AND THAT IS THE WHOLE POINT OF THE
+  // 2026-09-02 COLOUR-SCOPE CHANGE. `lg-lsmoff` means "only when the colours are off", which was
+  // true while turning the colours on recoloured EVERY bar. It no longer does: colouring is the
+  // Execution Phase's (see catEntry), so with the legend on a schedule can carry BOTH treatments at
+  // once — coloured bars for execution work and the dark-bar + red-fill for everything else. Hiding
+  // this chip then left the plain bars on screen unexplained.
+  // ⚠️ It is emitted by renderActLegend rather than gated in CSS, because "is there a plain bar on
+  // screen right now" is a question about DL, which no selector can ask. And in the mixed state it
+  // NAMES the work it covers — two chips both reading "Activity" with different marks is exactly the
+  // defect fixed earlier the same day.
+  function plainActChipHTML(mixed) {
+    return '<span class="lg"' +
+      (mixed ? ' title="Activities outside the Execution Phase keep the plain bar: the colour key covers execution work only."' : '') +
+      '><span class="lg-swatch lg-task"></span> Activity' +
+      (mixed ? ' <em style="font-style:normal;color:var(--pd-muted);">outside the Execution Phase</em>' : '') +
+      ' <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>';
+  }
   var MARKS_LEGEND_HTML =
-      '<span class="lg lg-lsmoff"><span class="lg-swatch lg-task"></span> Activity <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>' +
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
       // ⚠️ .lg-lsmoff AGAIN, deliberately — and this is a fold, not a removal. It used to show in
       // both views, but in the coloured view the bar sample below ALREADY draws the rail and names
@@ -27092,10 +28154,25 @@
       // So the pale part is remaining WORK inside the current dates, never a forecast date — the
       // forecast is already expressed by where the bar ENDS. Say "remaining", never "still to do".
       '<span class="lg lg-lsmon" title="A coloured bar carries three separate things. WHERE THE BAR SITS = the current dates; for a started activity its right edge is the forecast finish. INSIDE THE BAR = progress: solid + textured is done, pale is the remaining work. THE RAIL UNDERNEATH = the BL0 planned dates; the offset between the rail and the bar is the slip.">' +
-        '<span class="lg-swatch lg-lsmbar"></span> Activity ' +
-        '<em style="font-style:normal;color:var(--pd-muted);">(solid = done, pale = remaining · bar = forecast dates · rail = planned)</em></span>' +
+        '<span class="lg-swatch lg-lsmbar"></span> Activity</span>' +
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
       '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
+  // ⚠️ The three facts a coloured bar encodes, moved OUT of the Activity chip and onto their own
+  // line (see the `.lg-note` rule). The chip carried them as a parenthetical and measured 482px
+  // against 77 / 113 / 128 / 136 for every other chip, so the colour key read as an afterthought
+  // beside one paragraph. Nothing is dropped — this is a move, not a trim, and the extra room means
+  // each fact can be named in full ("where the bar ENDS" rather than "bar =") instead of in the
+  // compressed shorthand the chip forced. `lg-lsmon` like the chip it belongs to: it describes a
+  // coloured bar and means nothing in the plain view.
+  // ⚠️ SEPARATE FROM MARKS_LEGEND_HTML, and appended LAST — not merely tidier. `flex-basis:100%`
+  // takes a whole line wherever it sits, so inside the marks block it broke the row between the
+  // marks and the trade chips and the one key ran over THREE lines (measured 66px). After the
+  // trades it costs exactly one line (42px).
+  var BAR_NOTE_HTML =
+      '<span class="lg lg-lsmon lg-note"><span>Reading a bar: <b>solid</b> = done, <b>pale</b> = ' +
+        'remaining <i>(progress inside the bar)</i> · <b>where the bar ends</b> = forecast finish ' +
+        '<i>(the current dates)</i> · <b>the rail underneath</b> = planned dates <i>(BL0 baseline; ' +
+        'the offset between rail and bar is the slip)</i></span></span>';
   // Top-level WBS branches that contain NO activity anywhere beneath them, and so are dropped by
   // "Hide empty groups". Reads `rows` (not DL) on purpose — DL is the post-filter list these are
   // already missing from, so it could never tell us what went.
@@ -27121,6 +28198,17 @@
     var host = document.getElementById('ps-actlegend'); if (!host) return;
     if (!pid || !rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
     var cfg = catCfg(), list = catList(), MAXL = 40;
+    // ⚠️ Measured off DL, not assumed from the phase data: with the colours on, a plain bar is drawn
+    // for any task the colour scope excludes, and the chip explaining that bar must appear only when
+    // one is actually in front of the reader. With "Execution Phase only" ticked there are none, and
+    // the legend stays a pure colour key.
+    var _hasPlainBars = false;
+    if (cfg.on) {
+      var _dl = (DL && DL.length) ? DL : [];
+      for (var _i = 0; _i < _dl.length; _i++) {
+        if (_dl[_i] && _dl[_i]._dkind === 'task' && !catInScope(_dl[_i])) { _hasPlainBars = true; break; }
+      }
+    }
     host.style.display = '';
     var vw = document.getElementById('ps-view-schedule');
     if (vw) vw.classList.toggle('ps-lsm', !!cfg.on);
@@ -27174,7 +28262,14 @@
                 '<u>' + _hiddenNames.slice(0, 80).map(function (v) { return '<em>' + esc(v) + '</em>'; }).join('') +
                 (_hiddenNames.length > 80 ? '<em class="more">+' + (_hiddenNames.length - 80) + ' more…</em>' : '') +
                 '</u></span></span>' : '')
-          : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>')
+          // ⚠️ TWO REASONS FOR AN EMPTY KEY, AND THEY NEED DIFFERENT SENTENCES. Since colouring became
+          // the Execution Phase's, `catList()` legitimately returns nothing on a project with no
+          // execution work — a freshly cleared one, whose only rows are the Planning-phase Design
+          // Development / Procurement mirrors. Telling that reader to "open a WBS branch" sends them
+          // expanding branches that can never produce a chip.
+          : (catScopeIsExec() && !rows.some(function (r) { return !isWbs(r) && isExecPhase(r); })
+              ? '<span>No Execution Phase activities yet — the colour key covers execution work only.</span>'
+              : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>'))
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
     // Folded, the head keeps ONE line that still says what the colours mean -- a bare chevron over
     // an empty strip would leave a reader with no way to know the legend was there at all.
@@ -27197,8 +28292,12 @@
       // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
       // same flex list as the category chips, not a sibling block above it — a separate <div>, even
       // inside the same container, still read as "two legend sections" to the owner.
-      '<div class="ps-actlegend-items">' + MARKS_LEGEND_HTML +
-        (items ? '<span class="ps-alg-sep"></span>' + items : '') + '</div>';
+      // ⚠️ EMITTED, not merely re-labelled. With the colours off this is the only Activity chip and
+      // always belongs; with them on it describes the plain bars drawn for non-execution work, so it
+      // belongs only when one of those is actually on screen. Shipping it unconditionally put an
+      // unexplained second Activity chip in a legend that had no plain bar in it.
+      '<div class="ps-actlegend-items">' + ((!cfg.on || _hasPlainBars) ? plainActChipHTML(cfg.on) : '') + MARKS_LEGEND_HTML +
+        (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>';
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
     // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.
     if (window.Icons) Icons.hydrate(host);
@@ -28826,7 +29925,7 @@
     var analyzeMenu = document.getElementById('ps-analyze-menu');
     var oMenu = document.getElementById('ps-open-menu');
     var colorsMenu = document.getElementById('ps-colors-menu');
-    function closeMenus() { fMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _sm = document.getElementById('ps-scope-menu'); if (_sm) _sm.classList.remove('open'); var _zm = document.getElementById('ps-zoom-menu'); if (_zm) _zm.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
+    function closeMenus() { fMenu.classList.remove('open'); aMenu.classList.remove('open'); lMenu.classList.remove('open'); colsMenu.classList.remove('open'); tMenu.classList.remove('open'); fileMenu.classList.remove('open'); analyzeMenu.classList.remove('open'); if (oMenu) oMenu.classList.remove('open'); if (colorsMenu) colorsMenu.classList.remove('open'); var _gm = document.getElementById('ps-group-menu'); if (_gm) _gm.classList.remove('open'); var _sm = document.getElementById('ps-scope-menu'); if (_sm) _sm.classList.remove('open'); var _zm = document.getElementById('ps-zoom-menu'); if (_zm) _zm.classList.remove('open'); var _om = document.getElementById('ps-outline-menu'); if (_om) _om.classList.remove('open'); var _cc = document.querySelector('.ps-cols-corner'); if (_cc) _cc.classList.remove('menu-open'); }
     oMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     if (colorsMenu) colorsMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // ⚠️ CLIPPING FIX. `.ps-menu` is `position:absolute; left:0`, so a menu opened from a button
@@ -28877,7 +29976,7 @@
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
     // The exit chip. Reporting removes the sidebar, the topbar and the module bar, so leaving it
     // must be one visible click and never a hunt through a menu.
-    (function () { var rx = document.getElementById('ps-rep-exit'); if (rx) rx.onclick = function () { applyReporting(false); renderLayoutMenu(); }; })();
+    (function () { var rx = document.getElementById('ps-rv-exit'); if (rx) rx.onclick = function () { applyReporting(false); renderLayoutMenu(); }; })();
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     tMenu.querySelectorAll('[data-tab]').forEach(function (b) { b.onclick = function () { tMenu.classList.remove('open'); switchTab(b.dataset.tab); }; });
     // ---- Collapsible Last Planner section (persisted) ----
@@ -28982,15 +30081,26 @@
         return '<button data-view="' + v + '">' + (cur === v ? '● ' : '○ ') + label +
           (hint ? '<span style="opacity:.6;font-size:11.5px;margin-left:6px;">' + hint + '</span>' : '') + '</button>';
       }
+      // ⚠️ TWO SECTIONS, and the split is the one the STATE already makes rather than a cosmetic
+      // grouping. The first four are `layoutMode` — arrangements of the same activity grid + timeline,
+      // where "which one" only changes how much of each you see. Progress and Stacking are
+      // `progressMode` / `vstackMode`: separate screens that REPLACE `.ps-split` outright (see
+      // setProgressMode toggling `.ps-progress-mode` and showing `#ps-progress`). Listing all six as
+      // one flat block said they were six of a kind, so picking Stacking looked like picking Gantt
+      // and a reader could not tell which choices swap the arrangement from which choices leave the
+      // schedule behind. Owner 2026-09-02: separate Progress and Stacking within the View button.
+      var hd = function (t) {
+        return '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + t + '</div>';
+      };
       lMenu.innerHTML =
-        '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">View</div>' +
+        hd('Schedule layout') +
         opt('split', 'Split', 'grid + timeline') + opt('grid', 'Grid', 'spreadsheet only') +
         opt('gantt', 'Gantt', 'timeline only') + opt('network', 'Network', 'PERT diagram') +
+        '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
+        hd('Separate views') +
         opt('progress', 'Progress', 'physical vs planned') + opt('stacking', 'Stacking', 'building model') +
-        // ⚠️ Outline is omitted in the stacking view, exactly as the old
-        // `body.ps-vstack-on #ps-collapseto` rule hid the toolbar button: there is no grid outline
-        // to collapse while the building model is open.
-        (cur === 'stacking' ? '' : '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' + outlineSectionHTML()) +
+        // ⚠️ Outline moved OUT to its own toolbar button (owner 2026-09-02) — collapsing to a WBS
+        // level was two clicks deep in a menu that is mostly about something else.
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Row density</div>' +
         '<button data-den="comfortable">' + (_density !== 'compact' ? '● ' : '○ ') + 'Comfortable</button>' +
@@ -29010,7 +30120,6 @@
         '<button data-resetlayout title="Put the grid/Gantt split, the column widths and the column order back to their defaults. Nothing in the schedule itself changes.">' +
           '<span data-ico="refresh" data-ico-size="14"></span> Reset layout to defaults</button>';
       lMenu.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { lMenu.classList.remove('open'); _setView(b.dataset.view); }; });
-      bindOutlineSection(lMenu);
       bindLayoutsSection(lMenu, renderLayoutMenu);
       lMenu.querySelectorAll('[data-den]').forEach(function (b) { b.onclick = function () { applyDensity(b.dataset.den); renderLayoutMenu(); }; });
       lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
@@ -29067,8 +30176,42 @@
       window.addEventListener('resize', re);
       window.addEventListener('scroll', re, true);
     })();
-    // Progress and Stacking are entries in the View menu now (see renderLayoutMenu). The standalone
-    // buttons are gone; setProgressMode/setVStackMode still guard on the element, so nothing throws.
+    // ⚠️ These go through `_setView`, NOT straight to setProgressMode/setVStackMode. `_setView` is
+    // what guarantees only one of the six views is on at a time — the old standalone buttons were
+    // independent toggles and it was possible to be in Progress AND Stacking at once, with the
+    // toolbar unable to say which one you were looking at. A shortcut to a view must not be a
+    // shortcut around the rule that made the views coherent.
+    // ⚠️ Each button TOGGLES: pressing the active one returns to the saved layout rather than doing
+    // nothing, so the same button gets you in and out. `layoutMode` is the remembered arrangement.
+    (function () {
+      var pb = document.getElementById('ps-progressbtn');
+      if (pb) pb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'progress' ? layoutMode : 'progress'); };
+      var vb = document.getElementById('ps-vstackbtn');
+      if (vb) vb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'stacking' ? layoutMode : 'stacking'); };
+    })();
+    // Outline: the same section the View menu used to carry, in its own menu.
+    // ⚠️ Rebuilt on every open, because the level chips run 1..maxDepth() and that changes with the
+    // data — a menu built once at init would offer level 4 on a schedule that now goes 14 deep.
+    // ⚠️ HIDDEN IN STACKING, exactly as the old `body.ps-vstack-on #ps-collapseto` rule did: there is
+    // no grid outline to collapse while the building model is open.
+    (function () {
+      var ob = document.getElementById('ps-outlinebtn'), oMenu2 = document.getElementById('ps-outline-menu');
+      if (!ob || !oMenu2) return;
+      oMenu2.addEventListener('click', function (e) { e.stopPropagation(); });
+      ob.onclick = function (e) {
+        e.stopPropagation();
+        var was = oMenu2.classList.contains('open'); closeMenus();
+        if (was) return;
+        oMenu2.innerHTML = outlineSectionHTML();
+        bindOutlineSection(oMenu2);
+        if (window.Icons && Icons.hydrate) Icons.hydrate(oMenu2);
+        oMenu2.classList.add('open');
+        anchorMenu(ob, oMenu2);
+      };
+      var re2 = function () { if (oMenu2.classList.contains('open')) anchorMenu(ob, oMenu2); };
+      window.addEventListener('resize', re2);
+      window.addEventListener('scroll', re2, true);
+    })();
     _paintViewBtn();
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // `.ps-split` sets overflow:hidden, and the chooser is absolutely positioned inside
@@ -29387,7 +30530,11 @@
       wbsDuplicate(_wbsSel);
     };
     document.getElementById('ps-wbs-fromproj').onclick = function () { wbsFromProject(_wbsSel || null); };
-    document.getElementById('ps-wbs-adopt').onclick = wbsAdopt;
+    // ⚠⚠ `onclick = wbsAdopt` PASSED THE CLICK EVENT AS `silent`, which is truthy. So the button
+    // documented (by me, last pass) as "the non-silent recovery path" skipped its own confirm, its
+    // success toast AND its error toast — the owner clicked Adopt existing WBS, the tree really did
+    // finish, and the screen said nothing at all. Call it explicitly.
+    document.getElementById('ps-wbs-adopt').onclick = function () { wbsAdopt(false); };
     document.getElementById('ps-wbs-reset').onclick = wbsResetTree;
     document.getElementById('ps-sync-eng').onclick = syncEngineering;
     var _pb = document.getElementById('ps-sync-prc'); if (_pb) _pb.onclick = syncProcurementApp;
@@ -29476,8 +30623,11 @@
           return String(pk || '') === String(target);
         }).length;
         what.innerHTML = 'This permanently deletes ' + label() + ' — <strong>' + n + ' activity/activities</strong> — ' +
-          'and cannot be undone. The standard Milestones / Initiation / Planning / Execution Phase skeleton is ' +
-          'auto-seeded and stays in place.' +
+          'together with their <strong>resource assignments</strong>, and cannot be undone. ' +
+          'The standard Milestones / Initiation / Planning / Execution Phase skeleton is ' +
+          'auto-seeded and stays in place. ⚠️ So do the <strong>Design Development</strong> and ' +
+          '<strong>Procurement</strong> branches — those are mirrors of the Engineering and ' +
+          'Procurement apps, not schedule data, and they re-project on the next load.' +
           (target === '__all__' ? '' : ' Other packages are <strong>not</strong> touched.');
         go.textContent = target === '__all__' ? 'Delete everything' : 'Delete ' + n + ' activity/activities';
       }
@@ -29489,20 +30639,33 @@
       go.onclick = async function () {
         if (inp.value.trim() !== String(pid)) return;
         m.close(); showLoading('Clearing schedule…');
-        var del;
+        // ⚠️ BEFORE the first delete, not after. This bumps the load generation, which aborts any
+        // self-heal chain still running from the previous load at its next checkpoint — otherwise
+        // that chain keeps re-creating summary rows into the project being cleared and the clear
+        // never finishes. It is also why a SECOND clear used to "bug": the first one's load() had
+        // started a chain that the second one was racing.
+        _beginMutation();
+        try {
+        var del, _clearedCodes = [];
         if (target === '__all__') {
-          del = await sb().from(TABLE).delete().eq('project_id', pid);
+          // ⚠️ Chunked — see _deleteAllRows. As one statement this is the exact call that returned
+          // "canceling statement due to statement timeout" on SLN101 and cleared nothing.
+          del = await _clearAllActivities('Clearing schedule');
         } else {
           /* ⚠️ DELETED BY ID, FROM THE EFFECTIVE PACKAGE — not by a package_id filter
              on the server. packageOf() resolves an activity through its nearest tagged
              WBS ancestor, so a row inside Package 2's tree that never got its own tag
              IS Package 2's work. A server-side `.eq('package_id', …)` would leave every
              one of those behind, and the planner would re-push on top of them. */
-          var ids = rows.filter(function (r) {
+          var _victims = rows.filter(function (r) {
             if (isWbs(r)) return false;
             var pk = packageOf(r);
             return target === '__none__' ? !pk : String(pk || '') === String(target);
-          }).map(function (r) { return r.id; });
+          });
+          var ids = _victims.map(function (r) { return r.id; });
+          // Codes, for the resource assignments below — those join by activity_id, not by row id.
+          _clearedCodes = _victims.map(function (r) { return r.activity_id; })
+                                  .filter(function (c) { return c != null && c !== ''; });
           if (!ids.length) { hideLoading(); UI.toast('Nothing to clear for that scope.', 'warn'); return; }
           del = { error: null };
           for (var i = 0; i < ids.length && !del.error; i += 200) {
@@ -29516,10 +30679,44 @@
         // ⚠️ Scoped the same way: clearing ONE package must not delete another package's
         //    branches, so the tree cleaner is told which subtree it owns.
         var werr = await _clearWbsTree(target === '__all__' ? null : target);
+        // ⚠⚠ RESOURCE ASSIGNMENTS GO TOO, AND FOUND ONLY BY MEASURING THE LIVE CLEAR: SLN101 went
+        // 28,863 -> 111 activities and 8,664 -> 19 WBS nodes while `resource_assignments` sat at
+        // **167 -> 167**. Both import-REPLACE paths have always cleared them; Clear schedule never
+        // did, so it was the odd one out.
+        // ⚠️ This is not tidiness. `resource_assignments.activity_id` matches
+        // `project_schedule.activity_id` BY CODE, not by row id — so 167 assignments pointing at
+        // deleted activities are not inert debris: re-import the same P6 file, which re-uses the same
+        // activity codes, and every one of them SILENTLY RE-ATTACHES to a different project's worth of
+        // work. Clearing to re-import cleanly is the whole reason the button is pressed.
+        // ⚠️ Scoped like everything else here: clearing ONE package must only drop the assignments of
+        // the activities that package actually lost, which are known by their codes.
+        var aerr = null;
+        if (target === '__all__') {
+          var ares = await _deleteAllRows('resource_assignments', null, function (n) {
+            setLoading('Clearing resource assignments… ' + n.toLocaleString() + ' removed');
+          });
+          aerr = ares.error;
+        } else if (_clearedCodes.length) {
+          for (var ci = 0; ci < _clearedCodes.length && !aerr; ci += 200) {
+            var ar = await sb().from('resource_assignments').delete()
+              .eq('project_id', pid).in('activity_id', _clearedCodes.slice(ci, ci + 200));
+            aerr = ar.error;
+          }
+        }
         hideLoading();
         if (werr) { UI.toast('Activities cleared, but the WBS tree could not be: ' + werr.message, 'error'); }
-        else { UI.toast('Cleared. The standard WBS skeleton stays in place.', 'success'); }
-        collapsed = {}; _wbsSel = null; resetUndo(); load();
+        else if (aerr) { UI.toast('Schedule cleared, but the resource assignments could not be: ' + aerr.message, 'error'); }
+        // ⚠️ NAMES THE ROWS THAT COME BACK. The owner cleared SLN101, saw 92 activities a moment
+        // later and reasonably asked why. They are the Design Development / Procurement mirrors,
+        // re-projected by the very next load() from the Engineering and Procurement apps — derived
+        // data, so deleting them only makes them return. Saying so is the fix; deleting them is not.
+        else { UI.toast('Cleared. The WBS skeleton stays, and the Design Development / Procurement ' +
+                        'branches re-project from the Engineering and Procurement apps on reload.', 'success'); }
+        collapsed = {}; _wbsSel = null; resetUndo();
+        } finally { _endMutation(); }
+        // ⚠️ OUTSIDE the guarded region: load() must be allowed to run its heal chain again, and it
+        // cannot while this counts as a mutation in flight.
+        load();
       };
     };
 

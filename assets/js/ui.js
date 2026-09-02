@@ -154,19 +154,29 @@
   function renderNavListInto(container, projects, groupHeads, opts) {
     opts = opts || {};
     var search = '';
-    function paint() {
-      var q = search.trim();
-      container.innerHTML = '<div class="pd-nt-search"><input type="text" class="pd-nt-q" placeholder="Search all projects…" value="' + esc(q) + '"></div>' +
-        navListBody(projects, groupHeads, { search: q, portfolioActive: opts.portfolioActive, isSelected: opts.isSelected });
-      var qi = container.querySelector('.pd-nt-q');
-      if (qi) qi.oninput = function () {
-        var pos = qi.selectionStart; search = qi.value; paint();
-        var q2 = container.querySelector('.pd-nt-q');
-        if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} }
-      };
-      var pf = container.querySelector('[data-nt-portfolio]');
+    // ⚠️⚠️ YOU COULD NOT TYPE A SPACE IN THIS BOX, and the cause was one .trim().
+    // Reported 2026-09-02: *"i cannot add / type space in the search bar of the projects."*
+    // Every keystroke used to rebuild the WHOLE container — search input included — and it
+    // re-rendered that input with the TRIMMED query as its value. A space is only ever typed at the
+    // END of what you have typed so far, so it was trailing whitespace at the instant it was
+    // written, and the repaint deleted it before the next character arrived. "Test Project" could
+    // never be typed; "TestProject" was all the box would hold. It looked like a blocked keystroke
+    // and it was actually a value being rewritten underneath the caret.
+    // TWO fixes, and the second is what makes the first stay fixed:
+    //   1) the input keeps the RAW value — trimming is for the FILTER, never for the field;
+    //   2) typing no longer re-renders the input at all. The search box is painted once and only
+    //      the list body below it repaints, so there is no value to restore, no caret to put back,
+    //      and no way for a repaint to edit what someone is typing. (The old code had to save and
+    //      restore selectionStart precisely because it was destroying the live field.)
+    function paintBody() {
+      var host = container.querySelector('.pd-nt-body');
+      if (!host) return;
+      host.innerHTML = navListBody(projects, groupHeads, {
+        search: search, portfolioActive: opts.portfolioActive, isSelected: opts.isSelected
+      });
+      var pf = host.querySelector('[data-nt-portfolio]');
       if (pf) pf.onclick = function (e) { e.stopPropagation(); if (opts.onPortfolio) opts.onPortfolio(); };
-      container.querySelectorAll('[data-nt-proj]').forEach(function (r) {
+      host.querySelectorAll('[data-nt-proj]').forEach(function (r) {
         r.onclick = function (e) {
           e.stopPropagation();
           var id = r.dataset.ntProj;
@@ -174,7 +184,20 @@
           if (opts.onProject) opts.onProject(p);
         };
       });
-      if (window.Icons) Icons.hydrate(container);
+      if (window.Icons) Icons.hydrate(host);
+    }
+    function paint() {
+      container.innerHTML = '<div class="pd-nt-search"><input type="text" class="pd-nt-q" placeholder="Search all projects…"></div>' +
+        '<div class="pd-nt-body"></div>';
+      var qi = container.querySelector('.pd-nt-q');
+      if (qi) {
+        // ⚠️ Set as a PROPERTY, not as a value= attribute in the markup above: a query holding a
+        // quote would otherwise have to be escaped into the HTML, and that escaping is the other
+        // half of how a search box ends up editing what the user typed.
+        qi.value = search;
+        qi.oninput = function () { search = qi.value; paintBody(); };
+      }
+      paintBody();
     }
     paint();
     return {
@@ -286,6 +309,25 @@
   // two page families you are on, so it can never desync from what the page
   // actually shows. 'portfolio' = projects.html / admin.html / my-work.html /
   // portfolio-overview. 'project' = dashboard.html / modules.html.
+  // Which portfolio-overview TAB a given module's cross-project data lives on, keyed by
+  // config.js MODULES `key`. A module absent here has no cross-project consolidation of its
+  // own inside portfolio-overview — either it hosts its OWN "Portfolio" view (manpower-loading
+  // does; its sidebar link goes straight to the module) or it genuinely has none yet, in which
+  // case the link falls back to the plain module page, same as it does in Project mode.
+  var PORTFOLIO_TAB = {
+    'minutes-of-meeting': 'meetings',
+    'risk-register': 'risk',
+    'stakeholder-map': 'stakeholders',
+    'project-schedule': 'scurve',    // no dedicated cross-project Schedule tab — S-Curve is the
+    's-curve': 'scurve',             // closest thing to one, and both modules feed it below
+    'resource-loading': 'resources',
+    'equipment-loading': 'equipment',
+    'productivity-rates': 'productivity',
+    'issues-lessons': 'issues',
+    'progress-photos': 'photos',
+    'contracts-claims': 'contracts',
+    'cash-flow': 'cashflow'
+  };
   function renderNav(navEl, mode, ctx) {
     if (!navEl) return;
     ctx = ctx || {};
@@ -294,17 +336,34 @@
     function cls(key) { return active === key ? ' class="active"' : ''; }
     var html;
     if (mode === 'portfolio') {
-      // Portfolio Dashboard > Personal Dashboard > Projects — the default
-      // landing is the dashboard, not the plain project list, so it leads.
-      // (No "Home" link here — home.html is the landing/picker screen itself,
-      // not a destination to navigate back to from inside the app.)
+      // Three scopes, per the owner's own structure: PORTFOLIO (every project's data,
+      // consolidated — Projects, the Portfolio Dashboard, then every module a project can
+      // carry, each opening its cross-project view where one exists), PERSONAL (this
+      // signed-in user's own work, not scoped to any one project), SYSTEM (Admin, gated).
+      // (No "Home" link here — home.html is the landing/picker screen itself, not a
+      // destination to navigate back to from inside the app.)
+      var poBase = base + 'modules/portfolio-overview/index.html';
+      function poHref(tab) { return poBase + '#po_view=' + encodeURIComponent(JSON.stringify({ v: tab })); }
+      // ctx.modules is optional — every project-mode page already passes it (it built the
+      // module grid), but the five portfolio-mode pages never needed to before now. Default
+      // to the shared registry rather than requiring five call sites to be updated.
+      var pmods = (ctx.modules || (window.APP_CONFIG && APP_CONFIG.MODULES) || []).filter(function (m) { return m.enabled; });
       html = '<div class="pd-navsec">Portfolio</div>' +
-        '<a href="' + base + 'modules/portfolio-overview/index.html"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
-          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
-        '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
-          '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Personal Dashboard</span></a>' +
         '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
+        '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
+          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Dashboard</span></a>' +
+        pmods.map(function (m) {
+          var tab = PORTFOLIO_TAB[m.key];
+          var href = tab ? poHref(tab) : (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path);
+          return '<a href="' + href + '" title="' + esc(m.name) + (tab ? ' — portfolio-wide' : '') + '">' +
+            '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
+        }).join('') +
+        '<div class="pd-navsec">Personal</div>' +
+        '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
+          '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Dashboard</span></a>' +
+        '<a href="' + base + 'my-tasks.html"' + cls('my-tasks') + ' title="Tasks">' +
+          '<span class="pd-navico" data-ico="check"></span><span class="pd-navtxt">Tasks</span></a>' +
         (ctx.isAdmin
           ? '<div class="pd-navsec">System</div>' +
             '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Admin">' +

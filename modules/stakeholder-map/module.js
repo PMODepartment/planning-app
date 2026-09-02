@@ -23,7 +23,7 @@
 // client-side at upload so the Cards view does not depend on Supabase's
 // image-transform add-on being enabled on the plan.
 //
-// SHARED REFERENCE DATA is in assets/js/epc-rcm.js (EPCRCM) — the activity list,
+// SHARED REFERENCE DATA is in assets/js/mcc-rcm.js (MCCRCM) — the activity list,
 // the EPC taxonomy, the criteria tables and every grid are identical to the Risk
 // Register's, and duplicating them is how the two would drift apart.
 //
@@ -88,7 +88,7 @@ window.StakeholderMap = (function () {
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
-  function E() { return window.EPCRCM; }
+  function E() { return window.MCCRCM; }
 
   // ===== live collaboration (presence + who's-editing row cursor) + offline =====
   var _collab = null, _remoteSel = {}, _collabSelf = {}, PKEY = 'stakeholder_map', PID_PFX = 'sm';
@@ -805,7 +805,7 @@ window.StakeholderMap = (function () {
         '⚠️ The BD workbook contradicts itself: its Guide sheet says Maintain = semi-annually and Enhance = quarterly, while the live cell formula — which the data actually follows — says the above. The live formula governs.') +
       '</div>' +
 
-      '<div class="pd-card"><h2 style="margin-top:0;">EPC Stakeholder Universe</h2>' +
+      '<div class="pd-card"><h2 style="margin-top:0;">MCC Stakeholder Universe</h2>' +
       '<p class="sm-help">The same 10-term taxonomy the Risk Register uses, so a stakeholder and the risks they create can be read against each other.</p>' +
       e.universeTableHTML() + '</div>';
   }
@@ -1207,7 +1207,7 @@ window.StakeholderMap = (function () {
         gift_tier: q('#f-gift').value.trim(),
         activity_no:         no,
         // Denormalised deliberately: the row still says which process it belongs
-        // to when exported, or read by something that has not loaded EPCRCM.
+        // to when exported, or read by something that has not loaded MCCRCM.
         activity:            act ? act.name : (no ? r.activity : null),
         sub_process:         q('#f-sub').value.trim(),
         process_objectives:  act ? act.objective : null,
