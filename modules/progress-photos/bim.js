@@ -1548,6 +1548,11 @@ window.BIM = (function () {
     // network failure signing the plan images must not leave the screen
     // stuck on "Loading floor plans…" forever).
     _load: function (testPid) { if (testPid) pid = testPid; return load(); },
+    // Presentation-view item 8: the SAME pin+cone marker markup the Plans
+    // tab's own full view uses, exported so ppr.js's small key-plan overlay
+    // never has to duplicate the pin/cone drawing rules (position, cone
+    // gradient, NA-hiding) a second time.
+    keyPlanMarkerHTML: function (pin) { return pinMarkerHTML(pin); },
     // Item-8 lookup: does this photo have a pin, and if so where/on what plan
     // — used to render the Gallery tile's expandable key-plan-style icon.
     pinInfoFor: function (itemType, itemId) {
