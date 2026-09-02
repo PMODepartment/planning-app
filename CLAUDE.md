@@ -84,6 +84,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (x) — The No-level band stops blaming Schedule Builder
+
+Owner: *"Reword the band text to point at the match table."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- The banner told every reader to give the trade floors in *Schedule Builder step 2* and re-push —
+  wrong for all **692** rows on an imported schedule, which never went through the Builder.
+- It now names the three real causes with the action for each: **a branch name not matched** (read the
+  *WBS branch* column; `RD` for Roofdeck is the usual culprit; fix in *Group ▾ → Match WBS to
+  locations…*), **work that genuinely has no storey** (substructure, footings, site works — not a
+  defect), and the Builder route kept last for schedules where it applies.
+- ⚠️ **It does not guess the project's provenance** — that is not recorded, and a confidently wrong
+  instruction is what this replaces. `MODULE_V` → `20260902x`.
+
 ### 2026-09-02 (w) — The No level band, answered: `RD` is not in the Level match table
 
 Owner: *"Reopen the No level band and check the branch column."* Detail in

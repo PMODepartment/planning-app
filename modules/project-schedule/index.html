@@ -13197,10 +13197,31 @@
           : ''));
     }
     if (noLevList.length) {
+      // ⚠⚠ THIS USED TO BLAME SCHEDULE BUILDER STEP 2 AND NOTHING ELSE, which is wrong on any
+      // IMPORTED schedule — nothing there was pushed from the Builder, so it sent the planner to a
+      // step that had no part in it. Diagnosed on 4PH Strevi, where 692 of 15,834 rows landed here:
+      //   • 76 of 76 in the MEPF cell read '… Tower D › MEPF Works › RD › 1st Fix'. The project's
+      //     Level match table holds 'Roofdeck' (stamped on 51 activities) but the .xer names that
+      //     branch 'RD' in most places, and the table matches the branch NAME exactly. One missing
+      //     alias, 76 unplaced rows.
+      //   • the rest read '… Substructure › Tower D › Slab-on-grade › Zone 1' — below-grade work with
+      //     no storey, which is not a defect at all.
+      // ⚠️ So the message names the MATCH TABLE first (it is what actually derives a location, on
+      // every project), then the honest possibility that the work has no storey, and keeps the
+      // Builder route last for a schedule that really was pushed. ⚠️ It does NOT guess which kind of
+      // project this is: provenance is not recorded, and a confident wrong instruction is what this
+      // is replacing.
       warn += _vsWarnWrap(_vsWarnKey('nolevel', noLevList.length), '<strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
-        ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(lvl0Name) + '</strong> — shown in the dashed <em>No level</em> band. ' +
-        'These come from ' + esc(noLevTrades.join(', ')) + ': a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work, ' +
-        'so there is no ' + esc(lvl0Name) + ' to place it on. Give the trade floors in step 2 and re-push to stack it.');
+        ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(lvl0Name) + '</strong> — shown in the dashed <em>No level</em> band, ' +
+        'from ' + esc(noLevTrades.join(', ')) + '. A ' + esc(lvl0Name) + ' is read from the WBS branch names, so either:' +
+        '<br>• <strong>a branch name is not matched</strong> — open the band and read the ' +
+        '<em>WBS branch</em> column: if you can see a ' + esc(lvl0Name) + ' in it (an abbreviation such ' +
+        'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Group ▾ → Match WBS to locations…</em>;' +
+        '<br>• <strong>the work genuinely has no ' + esc(lvl0Name) + '</strong> — substructure, footings and ' +
+        'site works sit below or outside the storeys. Give them their own ' + esc(lvl0Name) + ' value if you ' +
+        'want them banded, or leave them here;' +
+        '<br>• or, on a schedule pushed from <em>Schedule Builder</em>, the trade was given no floors in ' +
+        'step 2 and went in as whole-trade work — give it floors there and re-push.');
     }
     // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
     // the row has no WBS node at all — a different problem, and worth naming rather than bucketing.

@@ -1,3 +1,28 @@
+## The No-level band stops blaming Schedule Builder (2026-09-02x) — fmlozano
+
+Owner: *"Reword the band text to point at the match table."*
+
+The banner read *"a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work —
+give the trade floors in step 2 and re-push"*. On an **imported** schedule nothing was pushed from the
+Builder, so it sent the planner to a step that had no part in it — and on 4PH Strevi it was the wrong
+instruction for **all 692** rows in the band.
+
+It now names the three real causes, in the order they actually occur, each with what to do:
+1. **A branch name is not matched** — read the *WBS branch* column; an abbreviation such as **RD** for
+   Roofdeck is the usual culprit; fix in *Group ▾ → Match WBS to locations…*. This is what 76 of 76
+   rows in the MEPF cell were.
+2. **The work genuinely has no storey** — substructure, footings, site works. Give them their own
+   Level value to have them banded, or leave them in the band. Not a defect.
+3. **A Builder push with no floors in step 2** — kept last, for the schedules where it is true.
+
+⚠️ **It does not guess which kind of project this is.** Provenance is not recorded anywhere, and a
+confidently wrong instruction is exactly what is being replaced — so all three are offered and the
+reader picks. The first one now leads, because the match table is what derives a location on *every*
+project, imported or pushed.
+
+- `MODULE_V` → `20260902x`.
+
+---
 ## The No level band, answered: `RD` is not in the Level match table (2026-09-02w) — fmlozano
 
 Owner: *"Reopen the No level band and check the branch column."* With the column now walking the node
