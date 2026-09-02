@@ -6,7 +6,7 @@
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
-  <title>Personal Dashboard &mdash; Planners Dashboard</title>
+  <title>Tasks &mdash; Planners Dashboard</title>
   <link rel="stylesheet" href="assets/css/dashboard.css?v=20260902a" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260902a" />
 </head>
@@ -29,22 +29,19 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
-        <!-- No static title here — it duplicated "Personal Dashboard" right below it
-             (found 2026-09-01 auditing a real render of the app; dashboard.html already
-             settled on this shape: switcher + user-bar only, the page heading carries
-             the title). -->
         <div id="ctx-switcher"></div>
-        <button class="pd-btn" id="mw-refresh" style="margin-left:auto;" title="Reload">
+        <h1>Tasks</h1>
+        <button class="pd-btn" id="mt-refresh" style="margin-left:auto;" title="Reload">
           <span data-ico="refresh" data-ico-size="16"></span></button>
         <div id="user-bar"></div>
       </div>
 
       <div class="pd-main">
         <div class="pd-home-head">
-          <h2 id="mw-hello">Personal Dashboard</h2>
-          <p class="mw-note" id="mw-sub">Everything assigned to your account, across every project you can access.</p>
+          <h2 id="mt-hello">Tasks</h2>
+          <p class="mw-note" id="mt-sub">Issues you champion and meeting action items you're responsible for, across every project you can access &mdash; the work you owe, not the work you've put in.</p>
         </div>
-        <div id="mw-body"><p class="mw-empty">Loading&hellip;</p></div>
+        <div id="mt-body"><p class="mw-empty">Loading&hellip;</p></div>
       </div>
     </div>
   </div>
@@ -62,13 +59,13 @@
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       var isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
-      UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'personal-dashboard', base: '', isAdmin: isAdmin });
+      UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'my-tasks', base: '', isAdmin: isAdmin });
       UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'portfolio', base: '' });
       var first = (profile.name || '').trim().split(/\s+/)[0] || 'there';
-      document.getElementById('mw-hello').textContent = 'Personal Dashboard \u2014 ' + first;
-      MyWork.render(document.getElementById('mw-body'), user, profile);
-      document.getElementById('mw-refresh').onclick = function () {
-        MyWork.render(document.getElementById('mw-body'), user, profile);
+      document.getElementById('mt-hello').textContent = 'Tasks — ' + first;
+      MyWork.renderTasks(document.getElementById('mt-body'), user);
+      document.getElementById('mt-refresh').onclick = function () {
+        MyWork.renderTasks(document.getElementById('mt-body'), user);
       };
     });
   })();

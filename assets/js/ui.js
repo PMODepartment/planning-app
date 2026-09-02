@@ -309,6 +309,25 @@
   // two page families you are on, so it can never desync from what the page
   // actually shows. 'portfolio' = projects.html / admin.html / my-work.html /
   // portfolio-overview. 'project' = dashboard.html / modules.html.
+  // Which portfolio-overview TAB a given module's cross-project data lives on, keyed by
+  // config.js MODULES `key`. A module absent here has no cross-project consolidation of its
+  // own inside portfolio-overview — either it hosts its OWN "Portfolio" view (manpower-loading
+  // does; its sidebar link goes straight to the module) or it genuinely has none yet, in which
+  // case the link falls back to the plain module page, same as it does in Project mode.
+  var PORTFOLIO_TAB = {
+    'minutes-of-meeting': 'meetings',
+    'risk-register': 'risk',
+    'stakeholder-map': 'stakeholders',
+    'project-schedule': 'scurve',    // no dedicated cross-project Schedule tab — S-Curve is the
+    's-curve': 'scurve',             // closest thing to one, and both modules feed it below
+    'resource-loading': 'resources',
+    'equipment-loading': 'equipment',
+    'productivity-rates': 'productivity',
+    'issues-lessons': 'issues',
+    'progress-photos': 'photos',
+    'contracts-claims': 'contracts',
+    'cash-flow': 'cashflow'
+  };
   function renderNav(navEl, mode, ctx) {
     if (!navEl) return;
     ctx = ctx || {};
@@ -317,17 +336,34 @@
     function cls(key) { return active === key ? ' class="active"' : ''; }
     var html;
     if (mode === 'portfolio') {
-      // Portfolio Dashboard > Personal Dashboard > Projects — the default
-      // landing is the dashboard, not the plain project list, so it leads.
-      // (No "Home" link here — home.html is the landing/picker screen itself,
-      // not a destination to navigate back to from inside the app.)
+      // Three scopes, per the owner's own structure: PORTFOLIO (every project's data,
+      // consolidated — Projects, the Portfolio Dashboard, then every module a project can
+      // carry, each opening its cross-project view where one exists), PERSONAL (this
+      // signed-in user's own work, not scoped to any one project), SYSTEM (Admin, gated).
+      // (No "Home" link here — home.html is the landing/picker screen itself, not a
+      // destination to navigate back to from inside the app.)
+      var poBase = base + 'modules/portfolio-overview/index.html';
+      function poHref(tab) { return poBase + '#po_view=' + encodeURIComponent(JSON.stringify({ v: tab })); }
+      // ctx.modules is optional — every project-mode page already passes it (it built the
+      // module grid), but the five portfolio-mode pages never needed to before now. Default
+      // to the shared registry rather than requiring five call sites to be updated.
+      var pmods = (ctx.modules || (window.APP_CONFIG && APP_CONFIG.MODULES) || []).filter(function (m) { return m.enabled; });
       html = '<div class="pd-navsec">Portfolio</div>' +
-        '<a href="' + base + 'modules/portfolio-overview/index.html"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
-          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Portfolio Dashboard</span></a>' +
-        '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
-          '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Personal Dashboard</span></a>' +
         '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
+        '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
+          '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Dashboard</span></a>' +
+        pmods.map(function (m) {
+          var tab = PORTFOLIO_TAB[m.key];
+          var href = tab ? poHref(tab) : (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path);
+          return '<a href="' + href + '" title="' + esc(m.name) + (tab ? ' — portfolio-wide' : '') + '">' +
+            '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
+        }).join('') +
+        '<div class="pd-navsec">Personal</div>' +
+        '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
+          '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Dashboard</span></a>' +
+        '<a href="' + base + 'my-tasks.html"' + cls('my-tasks') + ' title="Tasks">' +
+          '<span class="pd-navico" data-ico="check"></span><span class="pd-navtxt">Tasks</span></a>' +
         (ctx.isAdmin
           ? '<div class="pd-navsec">System</div>' +
             '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Admin">' +

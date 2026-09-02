@@ -169,6 +169,118 @@ Owner re-imported 4PH Strevi and asked for the output to be checked. Detail in
   there is no error text yet. This makes the next occurrence diagnosable, it does not fix the cause.
 - ⚠️ **Recovery:** WBS Manager → **"Adopt existing WBS"** (non-silent). `MODULE_V` → `20260902p`.
 
+### 2026-09-02 (e) — "Contracts & Claims" rename, centered/padded sidebar logo, and Portfolio mode gets every module
+
+Three owner asks in one prompt. The third — *"when selecting portfolio, all modules from projects
+must also be inherited… contents shall be a consolidation of all project data"* — the owner
+confirmed (via `AskUserQuestion`) means **full cross-project consolidation for every module**, not
+just nav links, plus a genuinely separate Tasks page under Personal. Recorded here as one entry.
+
+**1. Sidebar module label.** `config.js` — "Contracts & Claims Register" → **"Contracts & Claims"**
+(module tile, sidebar, launcher — all read this one string).
+
+**2. Sidebar logo.** `.pd-sidebar .pd-brand` padding widened `18px 20px 16px` → `28px 20px 24px` +
+`text-align:center`; `.pd-brand-logo` margin `0 0 10px` → `0 auto 10px` (it is a block narrower than
+its container, so centering needs `margin:auto`, not `text-align` alone) and
+`object-position:center center`. Mirrored in the ≤820px drawer's duplicate padding rule.
+
+**3. Portfolio-mode sidebar restructured into the owner's three sections**, and Portfolio Overview
+gained the **7 remaining consolidated tabs** it was missing (Risk Register, Stakeholders, Issues,
+Meetings, Contracts, Photos, Productivity) so "inherited" is real, not aspirational — it already had
+Overview/S-Curve/Cash Flow/Resources/Equipment/Milestones from earlier prompts (see those modules'
+own dated entries above).
+
+- **`UI.renderNav`'s `'portfolio'` branch rebuilt**: Portfolio (Projects, Dashboard, then every
+  **enabled** module from the shared registry) → Personal (Dashboard = `my-work.html`, **Tasks** =
+  new `my-tasks.html`) → System (Admin, gated). ⚠️ **`ctx.modules` now defaults to
+  `window.APP_CONFIG.MODULES`** inside `renderNav` itself — the five portfolio-mode pages
+  (`projects.html`/`admin.html`/`my-work.html`/`portfolio-overview`/`my-tasks.html`) never had to
+  pass it before, and none of their call sites needed touching because of this default.
+- **A `PORTFOLIO_TAB` map (`ui.js`)** resolves each module key to the matching portfolio-overview
+  tab (`risk-register → risk`, `issues-lessons → issues`, …), and the link becomes
+  `modules/portfolio-overview/index.html#po_view={"v":"<tab>"}` — the **exact** hash shape
+  `UI.bindHistoryState` already reads on load (`{key:'po_view', get:()=>({v:view})}`), so this is not
+  a new mechanism, it is driving an existing one from outside the page for the first time.
+  ⚠️ `project-schedule` and `s-curve` both resolve to the `scurve` tab — there is no dedicated
+  cross-project Schedule view, and S-Curve (duration-weighted progress off `project_schedule`) is
+  the closest real equivalent; said in the code rather than inventing an eighth tab for one module.
+  ⚠️ **`manpower-loading` is deliberately absent from the map** — it already hosts its own
+  cross-project **Portfolio** tab *inside* the module (2026-08-28 (d) entry), so its sidebar link
+  goes straight to the module page rather than being forced through portfolio-overview a second time.
+  A module with neither falls back to its plain page, same as Project mode.
+
+⚠️ **A REAL, PREVIOUSLY-LATENT BUG THIS EXPOSED AND HAD TO BE FIXED: landing directly on a
+non-overview tab via the hash rendered blank.** `bindHistoryState`'s `apply(initial)` fires
+**synchronously** inside `requireLogin`'s callback, before the `PDb.getProjects()`/`getGroupHeads()`
+`Promise.all` resolves — so `switchView('risk')` ran while `PROJ` was still `[]`,
+`scopedProjectIds()` returned `[]`, every `loadX()` bailed on "no projects match" and — because that
+early-return path never sets `xLoadedIds` — nothing ever asked again. This was always true of the
+pre-existing S-Curve/Cash Flow/Equipment/Milestones tabs too, but nothing before this prompt
+navigated to the page with the hash **already set on load** — every prior hash change happened by
+clicking a tab on an already-loaded page, where `PROJ` was long since populated. The sidebar's new
+deep links are the first thing that actually lands cold on `#po_view=…`, so it would have made every
+one of them open to an empty tab. Fixed with one line: `switchView(view)` re-invoked right after
+`PROJ`/`GH` load, harmless when still on `'overview'` (`renderAll()` already painted it) and now
+correct for any other view.
+
+**The 7 new tabs, at a consistent depth (KPI band + one grouped/filterable `.po-table`,
+no bespoke chart) — deliberately narrower than S-Curve/Cash Flow's SVG-chart treatment, to keep 7
+new consolidations shippable in one pass rather than gold-plating one and leaving the rest thin:**
+- **Risk** — `risk_register`, priority via the **shared `EPCRCM.riskPriority` 5×5 lookup** (new
+  `epc-rcm.js?v=20260901a` script tag), never a re-derived threshold — the grid answers a product of
+  4 three different ways, so guessing at it here would disagree with the Risk Register module itself.
+- **Stakeholders** — `stakeholder_map`. ⚠️ **Reproduces the module's own column-reuse exactly**:
+  `influence` stores impact, `interest` stores influence (a historical naming mismatch documented in
+  `stakeholder-map/module.js`) — reading it any other way here would silently disagree with the
+  module. Approach via `EPCRCM.stkApproach`, overridden by a planner's own `mgmt_approach` where set.
+- **Issues** — `issues_lessons`, aging = `today − date_presented` only while open (the register's
+  own rule, reproduced not reinvented).
+- **Meetings** — `meeting_minutes` + `mom_items`, both carry their own `project_id` so no join is
+  needed. ⚠️ **Deliberately simplified**, said in the code: reads `mom_items.status` directly rather
+  than resolving a raised item through its linked `issues_lessons` row the way the module itself
+  does — this is a cross-project worklist (open action items only, oldest-due first), not the
+  register of record.
+- **Contracts** — `contracts_claims`, `record_type` in {Contract, Claim, Change Order, EOT},
+  Pending/Approved/Disapproved/Cancelled status vocabulary reproduced from the module.
+- **Photos** — `progress_photos`. ⚠️ Narrow on purpose: one shared bucket (`progress-photos`) across
+  every project, so a batched `createSignedUrls` call (the same primitive the module itself uses) is
+  enough for an 18-photo "most recently captured" strip; no cross-project PPR/presentation
+  consolidation, which stays a per-project screen.
+- **Productivity** — `productivity_activities` + `productivity_entries`, rate = `qty ÷ (crew × work
+  days)` reproduced verbatim from `productivity-rates/index.html`'s own `rateOf`.
+- Every one of the 7 reads via **`PDb.selectAll`, never a bare select** — this repo's own
+  most-repeated defect class is a table read silently truncated at PostgREST's 1000-row cap, and a
+  portfolio-wide read is exactly where that risk is highest.
+- Shared helpers added once (`clip(s,n)`, `statePill(label,tone)`) rather than seven near-identical
+  copies; two new pill tones (`.pd-pill-bad`/`.pd-pill-warn`) added to the **shared** `dashboard.css`
+  (only `-ok`/`-muted` existed), following the existing `-ok` pattern's own light-tint-not-remapped
+  convention rather than inventing a new one.
+- **`.po-tabs` now wraps at every width, not just ≤900px** (13 tabs, not 6) — `#po-projfilter-wrap`'s
+  dropdown is `position:absolute`, so an `overflow-x` scroller here would clip it, the exact trap
+  this file's own 2026-08-26 milestone-calendar entry already recorded once.
+
+**Tasks page (`my-tasks.html`, new)** — the "what I owe" half of My Work as its own screen, not a
+fourth definition of "mine": `assets/js/my-work.js` gained **`MyWork.renderTasks(host, user)`**, a
+**third host** on the same `fetchAll`/`counts` the Dashboard and the per-project block already share
+(champion issues + responsible action items only — raised issues / captured lessons are what the
+account has put in, not what it owes, and stay off this page). Unified into one sortable list
+(overdue/soon-due first, blanks last), filterable by search/status/project.
+⚠️ **The filter bar is a static shell built once; only the results body re-renders on a filter
+change** — rebuilding the search `<input>` itself on every keystroke would lose focus after one
+character, the standard trap of full-host `innerHTML` rebuilds on `oninput`.
+
+**Verified:** every inline script + both touched JS files (`ui.js`, `my-work.js`) pass `node --check`;
+0 duplicate DOM ids and 0 dangling `getElementById` targets across `portfolio-overview/index.html`
+and `my-tasks.html`; 0 duplicate top-level function names introduced; CSS braces balanced
+(168/168) in the portfolio-overview `<style>` block. ⚠️ **Not verified signed in** — no live session
+in this environment, the standing constraint for every UI pass in this repo; in particular the seven
+new `PDb.selectAll` reads have never hit PostgREST, and the `#po_view=` deep-link fix is verified by
+reading the timing, not by driving a real reload.
+
+Shared assets changed → **`ui.js`, `my-work.js`, `my-work.css`, `dashboard.css`, `config.js` all
+bumped to `?v=20260902a` across every referencing page**; `epc-rcm.js` referenced at its existing
+`?v=20260901a` (unchanged, no version bump needed since the file itself wasn't touched).
+
 ### 2026-09-02 (o) — ⚠⚠ The (i) mutation fence swallowed the import's own finishing pass
 
 Found while checking the owner's re-import of 4PH Strevi. Detail in
