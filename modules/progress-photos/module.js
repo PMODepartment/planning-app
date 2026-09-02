@@ -2647,7 +2647,16 @@ window.ProgressPhotos = (function () {
     var show = lightboxMarkupVisible && r.markup && r.markup.length;
     canvas.style.display = show ? '' : 'none';
     var mkBtn = $('pp-lb-markuptoggle');
-    if (mkBtn) mkBtn.classList.toggle('is-active', lightboxMarkupVisible);
+    if (mkBtn) {
+      mkBtn.classList.toggle('is-active', lightboxMarkupVisible);
+      // Swap the glyph itself (eye / eyeOff), not just the active-class tint —
+      // matching syncMkVisBtn's own fix for the identical listbar toggle. A
+      // static "eye" icon that never changes shape is what read as unclear;
+      // re-render the SVG directly rather than Icons.hydrate() (its one-time
+      // dataset.icoDone guard would silently no-op from the second toggle on).
+      var mkIc = mkBtn.querySelector('[data-ico]');
+      if (mkIc && window.Icons) mkIc.innerHTML = Icons.svg(lightboxMarkupVisible ? 'eye' : 'eyeOff', 16);
+    }
     if (!show || !imgEl) return;
     // Sized to match whichever media element is currently visible — a photo
     // and a video report their box differently but both are the SAME element
