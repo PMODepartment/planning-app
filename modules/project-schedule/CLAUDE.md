@@ -1431,6 +1431,38 @@ minimized as well."* It now also hides the sidebar, the topbar and the module ba
 - ⚠️ **Not verified signed in** — no live project was opened, so `_repIdPaint` has never read a real
   `projName()`/group head, and the legend fold has never run against a real category list.
 - `MODULE_V` → `20260902a`.
+## The toolbar's page-level overflow fix went stale — recurred at ordinary 1280px desktop, not just tablet (2026-09-02)
+
+Found independently via a headless audit pass (mocked-Supabase Playwright harness rendering the
+real, unmodified module, tested under `role:'viewer'`), not a live report: at a plain 1280px
+desktop window (collapsed 64px sidebar) the page reported 136px of `document.documentElement
+.scrollWidth − innerWidth` — genuine page-level horizontal overflow, letting the whole document
+(sidebar, topbar, avatar, everything) scroll sideways.
+
+⚠️ **This looked like the tablet-band `@media (min-width:701px) and (max-width:1140px)` rule's
+1140px upper bound going stale**, and it was, on the version this was diagnosed against — that
+rule's own comment showed its math (the toolbar's fit-without-wrapping width was hand-calibrated
+once, "900px … it is now 900+240=1140px"), and 1280px sits comfortably above it;
+`.ps-tb-row`'s own `scrollWidth` measured **1340px** needed against only **~1192px** available at
+1280px. The fix drafted here dropped the upper bound entirely (`@media (min-width:701px) and
+(max-width:1140px)` → `@media (min-width:701px)`), reasoning that a capped magic number will just
+go stale again the next time a toolbar button is added.
+
+⚠️ **Superseded by a concurrent, broader fix on `main`, found while rebasing this branch.**
+`main`'s own commit `712436d` ("Reporting view becomes a screen; project switcher un-stretched;
+foldable legend; toolbar stops clipping") changed `.ps-toolbar .ps-tb-row`'s own BASE rule from
+`flex-wrap:nowrap` to **unconditionally `flex-wrap:wrap`** — so the tablet-band media query this
+entry widened (whether capped at 1140px or not) no longer does anything at any width; the row
+always wraps as soon as it doesn't fit, with no band-specific carve-out left to keep in sync at
+all. The widened, uncapped version of that media query rebased in cleanly (it's a strict subset of
+what the base rule now always does) and was left in place as harmless dead code rather than risk
+excising a comment block from this file mid-rebase — the real fix, and the one actually live, is
+`main`'s unconditional base rule.
+
+⚠️ **Not verified against real live data or a live login** — pure CSS layout, independent of any
+data, so both fixes (the superseded one drafted here and the broader one that shipped) apply
+identically to a real session regardless. Reproduced and diagnosed under `role:'viewer'` but the
+cause is role-independent.
 
 ## `computeWbsCodes` could crash the whole module on a corrupted tree — RangeError, unguarded recursion (2026-09-02)
 

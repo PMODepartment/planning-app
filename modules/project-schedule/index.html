@@ -2200,22 +2200,32 @@
        #ps-mobile — a condensed READ-ONLY activity list (renderMobile()).
        Above 700px #ps-mobile is display:none and never rendered. */
     .ps-mobile { display:none; }
-    /* ⚠️ Tablet: the toolbar row is `flex-wrap:nowrap` (deliberate on desktop —
-       it keeps the single-row OPC-style toolbar and lets its popovers escape via
-       `overflow:visible`). At 768px that pushed the row ~126px past the viewport
-       and gave the whole PAGE a horizontal scroll, so the trailing tools drifted
-       off-screen. Phones drop the toolbar entirely (below), so this only needs to
-       cover the tablet band.
-       ⚠️ The persistent module sidebar (2026-08-30) claims --pd-sidebar-w (240px,
-       or 64px collapsed) out of the viewport for every width ≥821px, so the
-       content column the toolbar actually has to fit in is narrower than the
-       viewport by that much. The upper bound here was 900px from before the
-       sidebar existed; it is now 900+240=1140px so the row still wraps for every
-       viewport width where a 240px-narrower content column would otherwise
-       overflow — collapsed (64px) is a strictly safer case and wraps sooner than
-       it needs to, which is harmless. Below 821px the sidebar is an off-canvas
-       drawer (zero layout width), so this band is unaffected there. */
-    @media (min-width:701px) and (max-width:1140px) {
+    /* ⚠️ Tablet/desktop: the toolbar row is `flex-wrap:nowrap` by default
+       (deliberate — it keeps the single-row OPC-style toolbar and lets its
+       popovers escape via `overflow:visible`). At 768px that pushed the row
+       ~126px past the viewport and gave the whole PAGE a horizontal scroll, so
+       the trailing tools drifted off-screen. Phones drop the toolbar entirely
+       (below), so the fix only needs to cover 701px and up.
+       ⚠️ REAL DEFECT, found by measuring, not reading: this rule used to stop at
+       `max-width:1140px` (a fixed number hand-calibrated for the toolbar's
+       content width AT THE TIME — see the removed comment's own math, "900px
+       …it is now 900+240=1140px"). The toolbar has grown since — measured
+       `.ps-tb-row`'s own `scrollWidth` at a plain 1280px desktop window
+       (collapsed 64px sidebar): 1340px needed vs ~1192px available, a genuine
+       136px of PAGE-LEVEL horizontal overflow (`document.documentElement
+       .scrollWidth − innerWidth`), reproduced independent of role. 1280px is a
+       common laptop resolution, well above the old 1140px cutoff, so this was
+       live at ordinary desktop widths, not just in a narrow tablet band.
+       ⚠️ Fix: DROP THE UPPER BOUND rather than recalibrate another magic number
+       that will just go stale again the next time a toolbar button is added.
+       `flex-wrap:wrap` is a no-op whenever the row already fits on one line —
+       it only ever activates when the content genuinely doesn't fit — so
+       applying it unconditionally above 701px cannot change anything at a
+       width where today's toolbar already fits (e.g. a wide desktop, or a
+       narrower one with an expanded 240px sidebar), and it automatically
+       covers whatever width threshold the toolbar's actual content needs,
+       today or after a future addition, with nothing to keep in sync. */
+    @media (min-width:701px) {
       .ps-toolbar .ps-tb-row { flex-wrap:wrap; row-gap:6px; }
     }
 
