@@ -84,6 +84,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (ak) — Issues & Concerns: Kanban view, wider columns, squeezed KPI bands — and a real bug the verification caught
+Owner's 10-item follow-up on Issues & Concerns / Lessons Learned, off a screenshot of the lesson
+detail view (the "more feedback still pending" the (aj) entry below flagged as not-yet-supplied):
+drop the lesson tag from the Issues list; widen Issue/Caused By/Corrective Action; a **List | Kanban
+toggle** for both the Issues and Lessons logs, grouped by Department or Champion; both KPI bands
+squeeze to one row except on a phone, with their aging tiles dropped; the Lessons list splits its
+combined Lesson/source cell into separate Lesson Learned and Issue columns; the lesson detail's
+embedded issue is renamed "Background", loses its own toolbar and its "open issue" button, gains one
+in the Background header instead, and is made **fully read-only** (Related lessons stays live and
+excludes the lesson being viewed); the dashboard's status donut drops its separate legend in favour
+of colour+count+percent baked into each slice's own label; and the Department/Champion bar charts
+wrap long labels to two lines, centre them (falling back to left-align only when centring would run
+the label past the chart's own left edge), and reword the in-bar text to "X/Y (Z%) open".
+- ⚠️⚠️ **A real bug, found only because the new `opts.readOnly`/`opts.hideToolbarState` flags were
+  EXECUTED rather than read.** `issDetailHTML(r, opts)` declared an internal helper — for building a
+  handful of `<select>` option lists — also named `opts`. A function DECLARATION hoists and takes
+  over its scope's binding for that name before any statement runs, so by the time `mayEdit`/
+  `excludeId` were computed, `opts` was already the helper function, never the caller's object.
+  `opts && opts.readOnly` was testing a function object (no `.readOnly` property) and was **always
+  falsy** — the read-only lock and the toolbar suppression would have shipped as complete no-ops, and
+  `excludeLessonId` (added in an earlier round, hit by the identical collision) had likely been
+  broken the same way since it was first built. Fixed by renaming the inner helper
+  (`selOptsHTML`); confirmed with a Node `vm`+`Proxy` harness executing the real, unmodified function
+  straight out of the shipped file — all three flags now measurably work, and a plain call with no
+  `opts` (the real Issues screen's own usage) is provably unaffected.
+- Detail, the full owner request verbatim, and everything verified: `modules/issues-lessons/CLAUDE.md`.
+- `module.css/js?v=` (issues-lessons) → `20260902b`; `MODULE_V` (`modules-grid.js?v=` on
+  `dashboard.html`/`modules.html`) → `20260902ak`. Not verified signed-in.
+
 ### 2026-09-02 (aj) — Every top-bar search box now hides behind a filter group
 Owner: *"for all search bars in top bars, include the search in filter groups which can be hidden and
 shown."* Confirmed via `AskUserQuestion` this meant **every module's top filter/search row** — not just

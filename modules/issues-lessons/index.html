@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902c" />
-  <link rel="stylesheet" href="module.css?v=20260902a" />
+  <link rel="stylesheet" href="module.css?v=20260902b" />
 </head>
 <body>
   <div class="pd-app">
@@ -120,11 +120,19 @@
           <!-- LOG: the register as a table — the default now (Dashboard moved to its
                own tab; there is nothing left to toggle to from here). Scanning ten
                issues for the one you want is a different job from reading one of them,
-               which is what the DETAIL drill-down (below) is for. -->
+               which is what the DETAIL drill-down (below) is for.
+               ITEM 3 (2026-09-02): a List | Kanban toggle (#il-issues-viewbar) plus a
+               second, board presentation of the same data (#il-issues-kanban) — both
+               built by renderIssuesLog() in module.js, which shows exactly one of
+               #il-issues-listwrap / #il-issues-kanban at a time. -->
           <div id="il-issues-log">
-            <div class="pd-card" style="padding:0;overflow:auto;">
-              <table class="pd-table il-table" id="il-table"></table>
+            <div id="il-issues-viewbar"></div>
+            <div id="il-issues-listwrap">
+              <div class="pd-card" style="padding:0;overflow:auto;">
+                <table class="pd-table il-table" id="il-table"></table>
+              </div>
             </div>
+            <div id="il-issues-kanban" hidden></div>
           </div>
 
           <!-- DETAIL: one issue at a time, laid out the way the Power Apps "View Open
@@ -192,7 +200,7 @@
        failed to load rather than throwing. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="module.js?v=20260902a"></script>
+  <script src="module.js?v=20260902b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
