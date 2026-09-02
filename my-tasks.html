@@ -6,17 +6,16 @@
   <link rel="icon" type="image/png" href="assets/img/favicon.png" />
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
-  <title>Modules — Planners Dashboard</title>
+  <title>Tasks &mdash; Planners Dashboard</title>
   <link rel="stylesheet" href="assets/css/dashboard.css?v=20260902a" />
+  <link rel="stylesheet" href="assets/css/my-work.css?v=20260902a" />
 </head>
 <body>
   <div class="pd-app">
     <aside class="pd-sidebar">
       <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
-      <!-- Contents depend on the current mode (Project here) — rendered by UI.renderNav. -->
+      <!-- Contents depend on the current mode (Portfolio here) — rendered by UI.renderNav. -->
       <nav id="side-nav"></nav>
-      <!-- Cross-app links to sibling apps. Separate Supabase projects /
-           separate logins — open in a new tab rather than navigating away. -->
       <div class="pd-nav-foot">
         <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
           <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
@@ -25,28 +24,24 @@
           <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
         </a>
       </div>
-      <!-- PRC's .sidebar-footer, pinned to the bottom of the panel. -->
       <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
     </aside>
 
     <div class="pd-content">
       <div class="pd-topbar">
-        <!-- No static title here — it duplicated the page's own "Modules" heading
-             directly below it (found 2026-09-01 auditing a real render of the app;
-             dashboard.html already settled on this shape: switcher + user-bar only,
-             the page heading carries the title). -->
         <div id="ctx-switcher"></div>
+        <h1>Tasks</h1>
+        <button class="pd-btn" id="mt-refresh" style="margin-left:auto;" title="Reload">
+          <span data-ico="refresh" data-ico-size="16"></span></button>
         <div id="user-bar"></div>
       </div>
 
       <div class="pd-main">
-        <section class="pd-tabpanel">
-          <div class="pd-home-head">
-            <h2 id="welcome">Modules</h2>
-            <p id="mod-sub">Select a module to begin working on this project.</p>
-          </div>
-          <div class="pd-module-grid" id="module-grid"></div>
-        </section>
+        <div class="pd-home-head">
+          <h2 id="mt-hello">Tasks</h2>
+          <p class="mw-note" id="mt-sub">Issues you champion and meeting action items you're responsible for, across every project you can access &mdash; the work you owe, not the work you've put in.</p>
+        </div>
+        <div id="mt-body"><p class="mw-empty">Loading&hellip;</p></div>
       </div>
     </div>
   </div>
@@ -58,24 +53,20 @@
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260902a"></script>
   <script src="assets/js/icons.js?v=20260901b"></script>
-  <script src="assets/js/modules-grid.js?v=20260902s"></script>
+  <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
-    var pid = sessionStorage.getItem('pd_project');
-    // No project chosen yet → go pick one first (Primavera-style entry).
-    if (!pid) { location.replace('projects.html'); return; }
-
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       var isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
-      var pname = sessionStorage.getItem('pd_project_name') || pid;
-      UI.renderNav(document.getElementById('side-nav'), 'project', {
-        active: 'modules', base: '', isAdmin: isAdmin, pname: pname, modules: APP_CONFIG.MODULES,
-      });
-      UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'project', base: '', pid: pid, pname: pname });
-      document.getElementById('mod-sub').textContent =
-        'Select a module to begin working on ' + pname + ' (' + pid + ').';
-      ModulesGrid.render(document.getElementById('module-grid'));
+      UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'my-tasks', base: '', isAdmin: isAdmin });
+      UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'portfolio', base: '' });
+      var first = (profile.name || '').trim().split(/\s+/)[0] || 'there';
+      document.getElementById('mt-hello').textContent = 'Tasks — ' + first;
+      MyWork.renderTasks(document.getElementById('mt-body'), user);
+      document.getElementById('mt-refresh').onclick = function () {
+        MyWork.renderTasks(document.getElementById('mt-body'), user);
+      };
     });
   })();
   </script>
