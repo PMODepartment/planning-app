@@ -1,3 +1,100 @@
+## Toolbar finished, the project switcher un-stretched, a foldable legend, and Reporting view becomes a screen (2026-09-02) — fmlozano
+
+Four owner items in one pass, all measured in a real browser against the shipped CSS rather than
+reasoned about.
+
+### 1 · Toolbar redesign finished (the previous prompt's work, completed)
+The three dangling `ps-tb-labeltoggle` references are gone — the CSS rule, the `body.ps-reporting`
+selector, and the wiring block. Every toolbar control carries its own word now, so labelled mode has
+nothing left to reveal. `.ps-topbar-tools .pd-btn.ps-tb-labeled` is a DIFFERENT rule (File / Reports /
+Health in the module bar) and stays.
+
+### 2 · ⚠️ The project switcher was stretched by dashboard.css, NOT by this module
+Owner: *"the project switcher is extended unnecessarily."* Root-caused by measurement, not by reading:
+`UI.initModuleTopbar()` restructures every module topbar into `.pd-tb-split > .pd-tb-main`, and
+dashboard.css then gives `-projctx` `flex:1 1 220px; max-width:420px` and its trigger
+`width:100%; **max-width:none**` — explicitly cancelling the 260px cap this module sets. Add
+`.pd-psel-btn { justify-content:space-between }` and a 124px project name renders in a 420px box with
+the caret stranded at the far edge.
+- **Measured before/after at 1280 by re-asserting dashboard.css's own rule last: 420px wide with a
+  259px gap between the name and the caret → 167px with a 6px gap.** Restoring the override reproduces
+  the 420px exactly, so the test bites.
+- ⚠️ The long selectors are load-bearing: dashboard.css's rule is (0,4,0), so a plain
+  `.ps-projctx .pd-psel-btn` (0,2,0) loses and the fix would have silently done nothing.
+- Consistency: the data-date badge was ~26px next to 34px everywhere else; it is 34px now.
+
+### 3 · ⚠️ A REAL DEFECT MY OWN TOOLBAR REDESIGN INTRODUCED, found while measuring the above
+`.ps-tb-row` was `flex-wrap:nowrap` with `overflow:visible`. **Measured at a 1280px viewport: the row
+needed 1660px against 1256px available, and because dashboard.css sets `body { overflow-x:clip }` the
+last ~400px — Analyze, Colors, the shortcuts button and the whole search box — were not merely
+off-screen but UNREACHABLE, with no scrollbar to say so.** Six controls clipped, 518px of dead scroll.
+- ⚠️ It was already overflowing by ~215px BEFORE this session; giving each view control its word made
+  it worse. The owner's own screen is ~1920px, where it does fit on one line — which is why it was
+  never reported and why I nearly shipped it.
+- **Fix: the row wraps.** `overflow:visible` is unchanged, so the `.ps-menu` popovers still escape —
+  the nowrap was never what protected them (the 701–1140px band already wrapped for this reason).
+- **Measured after: 1920 → one row, 0 clipped, 0 page scroll. 1440 → 2 lines, 0 clipped. 1280 → 2
+  lines, 0 clipped.** Re-asserting `nowrap` at 1280 reproduces the 6 clipped controls, so the check bites.
+- ⚠️ A measurement trap of my own: `.ps-tb-spacer` is a 0×0 auto-margin element whose baseline sits
+  elsewhere, and counting distinct `top` values reported ONE row as three. Exclude zero-width items.
+
+### 4 · The activity legend folds
+Owner: *"the panel below is always shown. If we can have the option to minimize this similar to the
+activity details panel."* A chevron in the legend head folds it to a single line that still names the
+field the colours mean — a bare chevron over an empty strip would leave a reader unable to tell the
+legend was ever there. **Measured: 74px → 39px, reversible, chevron rotates 180°.**
+- ⚠️ The class sits on the HOST, which `renderActLegend` only ever replaces the innerHTML of, so a
+  re-render cannot silently unfold it.
+- ⚠️ The chevron is INJECTED markup, so `Icons.hydrate(host)` is required — the DOMContentLoaded pass
+  only covers static markup, and without it the button renders empty.
+
+### 5 · Reporting view is a SCREEN now, not a trimmed toolbar
+Owner: *"the sidepanel is completely minimized and the whole bar where the project switcher is
+minimized as well."* It now also hides the sidebar, the topbar and the module bar.
+**Measured: 163px of vertical chrome → 0, and the content's left edge 64px → 0.**
+- ⚠️ STILL PURE CSS ON THE BODY CLASS. The sidebar is hidden with `display:none`, deliberately NOT by
+  toggling the shell's `.pd-collapsed` — `UI.initShell` persists that in `pd_sidebar_collapsed`, so
+  driving it here would silently overwrite the planner's own sidebar preference and leave it changed
+  after they exit.
+- ⚠️ **Those bands carry the project name, the group head and the data date** — the three facts that
+  make a screenshot trustworthy. They are not dropped: a `.ps-rep-bar` in the toolbar carries them,
+  painted by `_repIdPaint()`. Do not remove one without the other.
+- ⚠️ **The exit chip is now a real `<button>`, not a `::before` pseudo-element.** A mode that removes
+  most of the app chrome must be leavable in one visible click, and a pseudo-element cannot be clicked.
+- ⚠️ **`_applyReportingClass()` GATES ON THE SCHEDULE TAB, and this is safety-critical.** `switchTab`
+  hides `.ps-toolbar` on every other view — which is where BOTH ways out live (the Layout menu and the
+  exit chip). Without the gate, switching to the Planner Cockpit while reporting is on would leave a
+  planner with no chrome at all and nothing to click. Asserted for all five other tabs.
+- ⚠️ The identity bar is its OWN line, not an item in `.ps-tb-row`: measured inside that row it cost
+  498px on a row that already needed 1660 of 1256, pushing the search box off screen. `.ps-toolbar` is
+  a flex COLUMN, so a sibling div is a free line that competes with nothing.
+- ⚠️ **A WCAG defect found by measuring, and it is the fifth time in this repo:** the exit chip was
+  brand red at 10.5px/700 = **3.74:1**, under AA — the same defect the `::before` chip it replaces
+  already had. Text is `--pd-danger-text` now (the paired token added for exactly this); the BORDER
+  stays brand red, since a component boundary is held to 3:1, which 3.74 clears.
+  **All text passes in both themes: worst 5.31 light / 7.47 dark.**
+
+### Verification
+- **33/33 executing the SHIPPED `_applyReportingClass` / `_repIdPaint` / `applyLegendFold` /
+  `setLegendFold`**, sliced out of index.html by brace matching, never reimplemented — the tab gate for
+  all six tabs, escaping, the omitted separator when there is no group head, persistence, idempotence
+  across re-renders, and null-safety on every path (`_repIdPaint` runs from `renderDataDateBadge` on
+  every load).
+- **In a real browser against the shipped CSS + the REAL `ui.js`** (`initModuleTopbar` and
+  `enhanceProjectSelect` both actually run, so the cascade under test is the one that ships), at
+  1280/1440/1920, light and dark: every number above, plus reporting toggling **byte-identically
+  reversible**.
+- ⚠️ **The harness produced one confidently wrong result first**, worth recording: my topbar slice
+  left `.pd-topbar` unclosed, the parser nested `.pd-main` inside it, and `initModuleTopbar` then
+  bucketed the whole toolbar into `.pd-modulebar` — so hiding the module bar took the toolbar with it
+  and it read exactly like "reporting view hides its own way out". A pure harness fault. The sanity
+  gate now asserts the toolbar is NOT inside the module bar.
+- Parses (1 block, 0 fail); 0 NUL bytes; **function-set diff vs HEAD: 0 lost** (the one `radio` → `opt`
+  swap is the intended `renderLayoutMenu` rewrite).
+- ⚠️ **Not verified signed in** — no live project was opened, so `_repIdPaint` has never read a real
+  `projName()`/group head, and the legend fold has never run against a real category list.
+- `MODULE_V` → `20260902a`.
+
 ## ⚠️ REGRESSION, same day: adoption built 1,584 TOP-LEVEL nodes — and my own harness said it was fine (2026-09-01) — fmlozano
 
 Owner, after running the migration and re-importing: *"See WBS Manager there are stray WBS... I think

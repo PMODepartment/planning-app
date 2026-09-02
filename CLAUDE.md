@@ -84,6 +84,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 — Project Schedule: toolbar finished, switcher un-stretched, foldable legend, Reporting view becomes a screen
+
+Four owner items. Detail in `modules/project-schedule/CLAUDE.md`; the two that matter beyond this module:
+
+- ⚠️ **A shared-CSS rule, not a module one, was stretching the project switcher.**
+  `UI.initModuleTopbar()` splits every module topbar, and `dashboard.css` then gives `-projctx`
+  `flex:1 1 220px; max-width:420px` and its trigger `width:100%; **max-width:none**` — cancelling the
+  module's own 260px cap. Measured 420px with a 259px gap to the caret → 167px with a 6px gap. Any
+  module whose `-projctx` looks over-wide has the same cause; the override needs (0,5,0) specificity
+  to beat dashboard.css's (0,4,0).
+- ⚠️ **A toolbar that silently clipped its own controls.** `.ps-tb-row` was `nowrap` +
+  `overflow:visible`, and `body { overflow-x:clip }` (from the mobile pass) means overflow is not
+  scrollable — it is simply gone. Measured at 1280: the row needed 1660px of 1256px, so six controls
+  including the search box were unreachable with nothing to say so. Now wraps. **Worth checking any
+  other module that pairs a nowrap row with `overflow:visible`.**
+- Reporting view now hides the sidebar, topbar and module bar (163px of vertical chrome and 64px of
+  sidebar reclaimed), carries the project/group/data-date identity into the toolbar so a screenshot
+  stays trustworthy, and gates itself on the Schedule tab so it can never strand a planner on a view
+  whose toolbar — and therefore whose only way out — is hidden.
+- ⚠️ Fifth instance of "brand red is not a text colour at this size": the reporting chip measured
+  **3.74:1** and now uses `--pd-danger-text` (5.31 light / 7.47 dark).
+
+`MODULE_V` → `20260902a`. ⚠️ Not verified signed in.
+
 ### 2026-09-01 (p) — Issues Dashboard mobile pass: the title-hide fix widened for phone width, plus nine module-local items
 
 Owner sent a phone screenshot — the same duplicate module `<h1>` / tabs-dropdown title entry (o)'s
@@ -142,6 +166,7 @@ bytes. ⚠️ **Not verified signed in.**
 
 `ui.js`/`dashboard.css?v=` → `20260901c` (app-wide — 20/28 referencing files respectively);
 `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260901q`.
+
 
 ### 2026-09-01 (m) — Live audit of both rebuilt registers: 8 real defects, and 4 of my own measurements were wrong first
 

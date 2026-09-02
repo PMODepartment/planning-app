@@ -28,9 +28,19 @@
 
     /* ---- Toolbar (grouped, consistent) ---- */
     .ps-toolbar { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
-    /* Single row: never wrap. Menus (.ps-menu) escape via overflow:visible. Items shrink-proof
-       (flex:none) except the search, which absorbs slack; tightened gap/padding keeps it on one line. */
-    .ps-tb-row { display:flex; flex-wrap:nowrap; align-items:center; gap:5px; overflow:visible; min-width:0; }
+    /* One row WHERE IT FITS, wrapping where it does not.
+       ⚠️ It used to be `nowrap` with `overflow:visible`, and MEASURED at a 1280px viewport that
+       silently CLIPPED the end of the toolbar: the row needed 1660px against 1256px available, and
+       because dashboard.css sets `body { overflow-x:clip }` the last ~400px -- Colors, the shortcuts
+       button and the whole search box -- were not merely off-screen but UNREACHABLE, with no
+       scrollbar to say so. It was already overflowing by ~215px before the labelled-button redesign;
+       giving each view control its word made it worse. The owner's own screen is ~1920px wide, where
+       it does fit on one line, which is why it was never reported.
+       Wrapping keeps the owner's "one row" everywhere it can be honoured and costs a second line
+       instead of hiding a control everywhere it cannot. `overflow:visible` is unchanged, so the
+       .ps-menu popovers still escape exactly as before -- the nowrap was never what protected them.
+       (The 701-1140px band already wrapped for this reason; this generalises it.) */
+    .ps-tb-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; row-gap:6px; overflow:visible; min-width:0; }
     .ps-tb-row > *:not(.ps-search):not(.ps-tb-spacer) { flex:none; }
     .ps-tb-row .ps-search { flex:0 1 auto; min-width:110px; }
     .ps-tb-spacer { margin-left:auto; }
@@ -55,8 +65,12 @@
     /* Topbar tools (OPC puts undo/redo/health/share up in the page header) — same flat style,
        sized to sit beside the theme toggle; the filter dropdown right-aligns so it can't
        overflow the viewport edge. */
+    /* One control height across the module chrome. The project trigger, the tool buttons and the
+       theme toggle are all 34px; the data-date badge alone was ~26px, which is what made the band
+       read as a row of differently-sized pills rather than one strip. */
     .ps-datadate-badge { font:inherit; font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
-      border:1px solid var(--pd-line); border-radius:999px; padding:4px 12px; white-space:nowrap; margin-left:6px; flex:none; cursor:pointer; }
+      border:1px solid var(--pd-line); border-radius:999px; padding:0 12px; height:34px; display:inline-flex;
+      align-items:center; white-space:nowrap; margin-left:6px; flex:none; cursor:pointer; }
     .ps-datadate-badge:hover { border-color:var(--pd-red); color:var(--pd-ink); }
     /* Freshness badge for the cache-first (stale-while-revalidate) load */
     .ps-fresh { font-size:11px; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap; margin-left:6px; display:inline-flex; align-items:center; gap:5px; }
@@ -93,13 +107,25 @@
     .ps-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
     .ps-project:hover, .ps-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .ps-ws { font-size:11px; color:var(--pd-muted); line-height:1.15; padding-left:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
+    /* ⚠️ THE SWITCHER WAS "EXTENDED UNNECESSARILY", and the cause was NOT this module's own CSS.
+       UI.initModuleTopbar() restructures every module topbar into .pd-tb-split > .pd-tb-main, and
+       dashboard.css then gives the project context `flex:1 1 220px; max-width:420px` and its trigger
+       `width:100%; max-width:none` -- explicitly cancelling the 260px cap set just above. With
+       .pd-psel-btn's `justify-content:space-between` on top of that, a 90px project name rendered in
+       a 420px box with the caret stranded at the far right, which is exactly what the owner saw.
+       Sizing the trigger to its CONTENT (still capped, so a long name ellipsises rather than pushing
+       the account cluster off the row) fixes it here without touching the shared picker every other
+       module uses. ⚠️ The long selectors are REQUIRED, not decoration: dashboard.css's rule is
+       (0,4,0), so a plain `.ps-projctx .pd-psel-btn` (0,2,0) loses and the fix would silently do
+       nothing. */
+    .pd-topbar.pd-tb-split .pd-tb-main .ps-projctx { flex:0 1 auto; max-width:260px; }
+    .ps-projctx .pd-psel, .ps-projctx .pd-psel-btn,
+    .pd-topbar.pd-tb-split .pd-tb-main .ps-projctx .pd-psel,
+    .pd-topbar.pd-tb-split .pd-tb-main .ps-projctx .pd-psel-btn { width:auto; max-width:260px; }
+    .ps-projctx .pd-psel-btn { justify-content:flex-start; gap:6px; }
+    .ps-projctx .pd-psel-btn .pd-psel-txt { flex:0 1 auto; }
     /* icon-only toolbar buttons (square, centered glyph; tooltip via title) */
     .ps-toolbar .ps-icobtn { width:36px; padding:0; justify-content:center; }
-    /* Labeled mode: reveal each icon button's word (from data-label) so first-time users aren't
-       facing mystery icons. Toggled by the "Labels" button (persisted in ps_tb_labels). */
-    .ps-toolbar.ps-tb-labeled .ps-icobtn[data-label] { width:auto; padding:0 10px; gap:6px; }
-    .ps-toolbar.ps-tb-labeled .ps-icobtn[data-label]::after { content:attr(data-label); font-size:13px; font-weight:500; white-space:nowrap; }
-    #ps-tb-labeltoggle.active { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red); }
     /* Gantt-local colors control (bar colors are a Gantt-only feature) */
     .ps-gantt-pane { position:relative; }
     .ps-gantt-tools { position:absolute; top:5px; right:10px; z-index:6; }
@@ -111,11 +137,10 @@
        activity grid (+ divider) entirely, so the Gantt bars fill the pane. */
     .ps-split.ps-grid-only .ps-gantt-pane, .ps-split.ps-grid-only .ps-divider { display:none; }
     .ps-split.ps-gantt-only .ps-grid-pane, .ps-split.ps-gantt-only .ps-divider { display:none; }
-    /* Single row, never wraps. Items are flex:none (see .ps-tb-row rule above) so they don't
-       squish; the search is the only flexible item and shrinks first. If the row still can't fit
-       an extremely narrow viewport it scrolls horizontally inside itself (only then does overflow
-       clip — the dropdown popovers stay visible at all normal widths). */
-    .ps-toolbar .ps-tb-row { flex-wrap:nowrap; overflow:visible; min-width:0; }
+    /* Items are flex:none (see the .ps-tb-row rule above) so they don't squish; the search is the
+       only flexible item and shrinks first. Past that the row wraps rather than clipping — see the
+       measurement recorded on that rule. */
+    .ps-toolbar .ps-tb-row { flex-wrap:wrap; row-gap:6px; overflow:visible; min-width:0; }
     /* Belt-and-suspenders: let the flex column shrink so nothing forces a page-wide scrollbar. */
     .pd-content, .pd-main { min-width:0; max-width:100%; }
     /* Denser, OPC-like layout — trim dead space, square edges */
@@ -242,17 +267,47 @@
     body.ps-vstack-on #ps-groupbtn + .ps-menu, body.ps-vstack-on #ps-colorsbtn + .ps-menu { display:none !important; }
     /* Reporting view trims the last of it: the two remaining conveniences and the stacking bar's
        own field labels, which name controls a reader is not going to touch. */
-    body.ps-reporting #ps-tb-labeltoggle,
     body.ps-reporting #ps-help-btn,
     body.ps-reporting .ps-vs-bar > .ps-vs-note { display:none !important; }
     /* No edit affordances — nothing should invite a click that would change data. */
     body.ps-reporting .ps-editable { cursor:default; }
     body.ps-reporting .ps-grid-pane .ps-cell.ps-editable:hover { background:transparent; }
-    /* A quiet marker so it is obvious the view is trimmed, and how to undo it. */
-    body.ps-reporting .ps-toolbar .ps-tb-row::before { content:'Reporting view'; align-self:center;
-      font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-red);
-      font-weight:700; border:1px solid var(--pd-red); border-radius:4px; padding:2px 7px;
-      white-space:nowrap; }
+    /* ---- Reporting view: the SCREEN, not just the toolbar --------------------------------------
+       Owner 2026-09-02: *"let's make the reporting view a proper reporting view screen. Like the
+       sidepanel is completely minimized and the whole bar where the project switcher is minimized as
+       well. Any unnecessary items that are not needed during reporting let's make it."* So reporting
+       now also reclaims the three bands of app chrome that surround the schedule and say nothing
+       about it: the sidebar, the account/project topbar, and the module bar.
+       ⚠️ STILL PURE CSS ON THE BODY CLASS. In particular the sidebar is hidden with `display:none`
+       and NOT by toggling the shell's own `.pd-collapsed` -- UI.initShell persists that class in
+       `pd_sidebar_collapsed`, so driving it from here would silently overwrite the planner's own
+       sidebar preference and leave it changed after they exit reporting.
+       ⚠️ WHAT A READER LOSES WITH THOSE BANDS is the project name, the group head and the data
+       date -- the three facts that make a screenshot trustworthy. They are not dropped: `.ps-rep-id`
+       in the toolbar carries them, painted by _repIdPaint(). Do not remove one without the other.
+       ⚠️ The way OUT is never in a hidden band: the Layout menu and the exit chip both live in
+       the toolbar, and _applyReportingClass() refuses to set this class on any view whose toolbar
+       switchTab hides -- otherwise the Planner Cockpit would have no chrome at all and no way back. */
+    body.ps-reporting .pd-sidebar,
+    body.ps-reporting .pd-topbar,
+    body.ps-reporting .pd-modulebar { display:none !important; }
+    /* The "+" column chooser is an authoring control floating over the grid header. */
+    body.ps-reporting .ps-cols-corner { display:none !important; }
+    /* A quiet marker so it is obvious the view is trimmed -- and, unlike the ::before pseudo-element
+       it replaces, one that can actually be CLICKED to leave. A presenter must never have to hunt
+       through a menu to undo a mode that just removed most of the app chrome. */
+    body.ps-reporting .ps-toolbar .ps-rep-bar { display:flex; }
+    /* ⚠️ TEXT is --pd-danger-text, NOT --pd-red. Measured: brand red at 10.5px/700 on the page
+       ground is 3.74:1, under AA -- the same defect the ::before chip this replaces already had, and
+       the fifth time this repo has hit "brand red is not a text colour at this size" (the claim mark,
+       the stacking chip, the picked-icon button, Sign out). --pd-danger-text is the paired token added
+       for it (#C42127 light / #FF8A80 dark). The BORDER stays brand red: it is a component boundary,
+       held to 3:1, which 3.74 clears -- so the brand cue survives without the contrast failure. */
+    body.ps-reporting .ps-toolbar .ps-rep-exit { display:inline-flex; align-items:center; gap:6px;
+      height:26px; padding:0 8px; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+      color:var(--pd-danger-text); font-weight:700; background:transparent;
+      border:1px solid var(--pd-red); border-radius:4px; white-space:nowrap; }
+    body.ps-reporting .ps-toolbar .ps-rep-exit:hover { background:var(--pd-red-light); border-color:var(--pd-red); color:var(--pd-danger-text); }
     .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; font-size:13px; }
     .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-topbar-tools .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
@@ -718,6 +773,35 @@
     .ps-actlegend-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:6px; }
     .ps-actlegend-head label { display:inline-flex; align-items:center; gap:6px; }
     .ps-actlegend-items { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+    /* Fold the legend to a single line -- the same chevron affordance the details panel carries.
+       Owner: *"the panel below ... is always shown. If we can have the option to minimize this
+       similar to the activity details panel."* It is a permanent band under the Gantt, so it folds
+       rather than being all-or-nothing, and the head keeps a one-line summary so a folded legend
+       still says which field the colours mean.
+       ⚠️ The class sits on the HOST, which renderActLegend only ever replaces the innerHTML of,
+       so a re-render cannot silently unfold it. Persisted per browser: one person's reading
+       preference, never project data. */
+    .ps-alg-fold { margin-left:auto; border:none; background:none; cursor:pointer; color:var(--pd-muted);
+      padding:2px 8px; border-radius:6px; display:inline-flex; align-items:center; flex:none; }
+    .ps-alg-fold:hover { background:rgba(0,0,0,.05); color:var(--pd-ink); }
+    html.pd-dark .ps-alg-fold:hover { background:rgba(255,255,255,.06); }
+    .ps-alg-fold.up { transform:rotate(180deg); }
+    .ps-alg-sum { display:none; font-size:12px; color:var(--pd-muted); align-items:center; gap:6px; }
+    .ps-actlegend.is-folded { padding-bottom:4px; }
+    .ps-actlegend.is-folded .ps-actlegend-items { display:none; }
+    .ps-actlegend.is-folded .ps-actlegend-head > *:not(.ps-alg-fold):not(.ps-alg-sum) { display:none; }
+    .ps-actlegend.is-folded .ps-alg-sum { display:inline-flex; }
+    /* Reporting-view header line: the exit chip + the identity the hidden bands used to carry.
+       ⚠️ Its OWN line, not an item in .ps-tb-row. Measured inside that row it cost 498px on a
+       row that already needed 1660 of 1256 available, pushing the search box off screen -- and
+       .ps-toolbar is a flex COLUMN, so a sibling div is a free second line that competes with
+       nothing. The whole bar is display:none outside reporting, so the normal toolbar is unchanged. */
+    .ps-rep-bar { display:none; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
+    .ps-rep-id { display:inline-flex; align-items:baseline; gap:7px; min-width:0; }
+    .ps-rep-id b { font-size:14px; font-weight:800; color:var(--pd-ink); white-space:nowrap;
+      overflow:hidden; text-overflow:ellipsis; max-width:420px; }
+    .ps-rep-id i { font-style:normal; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
+    .ps-rep-id s { text-decoration:none; color:var(--pd-line); font-size:11.5px; }
     /* ⚠️ 28px was too short for the 12px option text — the select clipped its own descenders and
        read as a smudge. Height is a MINIMUM here, never a fixed box. */
     .ps-actlegend .ps-alg-field { min-height:32px; height:auto; font-size:12.5px; line-height:1.35;
@@ -2469,6 +2553,14 @@
     <div class="pd-main">
       <div class="ps-toolbar">
         <!-- Single OPC-style row: Actions/Add, view controls, toggles, search -->
+        <!-- Reporting view only (see the body.ps-reporting block in the stylesheet): the exit chip,
+             then the identity a reader still needs once the topbar and module bar are hidden --
+             which project, whose group head, and the data date every figure on screen is as-of.
+             The bar is display:none otherwise, so the normal toolbar is unchanged. -->
+        <div class="ps-rep-bar">
+          <button class="pd-btn ps-rep-exit" id="ps-rep-exit" title="Leave Reporting view - brings back the sidebar, the project bar and the authoring controls">Reporting view ✕</button>
+          <span class="ps-rep-id" id="ps-rep-id"></span>
+        </div>
         <div class="ps-tb-row">
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-actionsbtn"><span data-ico="box" data-ico-size="15"></span> Actions ▾</button>
             <div class="ps-menu" id="ps-actions-menu">
@@ -2489,9 +2581,12 @@
           </div>
           <input type="file" id="ps-import-file" accept=".xlsx,.xls,.xer" style="display:none" />
           <button class="pd-btn pd-btn-primary" id="ps-add"><span data-ico="plus" data-ico-size="15"></span> Add activity</button>
+          <!-- ⚠️ VERBS TOGETHER, AND ONLY ONE PRIMARY. "Schedule" (recompute the CPM) used to be a
+               second red primary sitting in the MIDDLE of the view icons, where it read as a view.
+               It is an action, so it lives beside Actions, and Add activity is the only red button. -->
+          <button class="pd-btn" id="ps-schedbtn" title="Schedule — set the data date, calculation options &amp; recompute the CPM (P6's F9)"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-openbtn" title="Open schedule — Current, baselines &amp; what-if scenarios"><span data-ico="calendar" data-ico-size="15"></span> Open ▾</button><div class="ps-menu" id="ps-open-menu"></div></div>
-          <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-groupbtn" title="Group activities — pick the levels and their order"><span data-ico="layers" data-ico-size="15"></span> <span id="ps-groupbtn-txt">Group: WBS</span> ▾</button><div class="ps-menu ps-group-menu" id="ps-group-menu"></div></div>
           <span class="ps-tb-div"></span>
           <!-- Contract scope switch. ⚠️ Deliberately in the toolbar and not only in the Filter
@@ -2508,16 +2603,20 @@
             <button data-zoom="quarter">Quarter</button>
             <button data-zoom="year">Year</button>
           </div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-collapseto" data-label="Outline" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="16"></span></button><div class="ps-menu" id="ps-collapse-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-views" data-label="Layouts" title="Saved layouts (per project) — columns, filters, grouping &amp; Activity-Progress charts"><span data-ico="listView" data-ico-size="16"></span></button><div class="ps-menu" id="ps-views-menu"></div></div>
-          <button class="pd-btn pd-btn-primary" id="ps-schedbtn" title="Schedule — set data date, calc options &amp; recompute"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
-          <span class="ps-tb-div"></span>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-layoutbtn" data-label="Layout" title="Layout — Grid / Gantt / Split / Activity Network + details panel"><span data-ico="layout" data-ico-size="16"></span></button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
-          <button class="pd-btn ps-icobtn" id="ps-progressbtn" data-label="Progress" title="Activity Progress — per-activity Physical vs Planned progress bars (no dates)"><span data-ico="trendingUp" data-ico-size="16"></span></button>
-          <button class="pd-btn ps-icobtn" id="ps-vstackbtn" data-label="Stacking" title="Vertical Stacking — the building model per trade or consolidated, one cell per level / zone / unit with its completion date. Honours the current filters and search."><span data-ico="layers" data-ico-size="16"></span></button>
+          <!-- ⚠️ ONE CONTROL THAT NAMES THE CURRENT VIEW, replacing four adjacent mystery icons
+               (Layout / Progress / Stacking, plus Network buried inside Layout). Owner: *"a new user
+               won't be able to know how to use them even with the labels button"* — and they were
+               right, because an icon can only say "there is a view here", never "you are IN it".
+               Six modes lived across three buttons with three different affordances (a menu, and two
+               that silently toggled a mode ON with no visible name), so "Stacking" looked identical
+               whether you were in it or not. The button now reads "View: Stacking", which answers
+               where-am-I and what-else-is-there in one glance. See renderLayoutMenu. -->
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="View — Gantt, Grid, Split, Activity Network, Activity Progress, Vertical Stacking"><span data-ico="layout" data-ico-size="15"></span> <span id="ps-viewbtn-txt">View: Split</span> ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-collapseto" title="Outline — expand all or collapse to a WBS level"><span data-ico="chevronDown" data-ico-size="15"></span> Outline ▾</button><div class="ps-menu" id="ps-collapse-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-views" title="Saved layouts (per project) — columns, filters, grouping &amp; Activity-Progress charts"><span data-ico="listView" data-ico-size="15"></span> Layouts ▾</button><div class="ps-menu" id="ps-views-menu"></div></div>
           <span class="ps-tb-div"></span>
           <!-- Analyze: critical path, dependencies, link mode, progress spotlight -->
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-analyzebtn" data-label="Analyze" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="16"></span></button>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-analyzebtn" title="Analyze — critical path, dependencies, link mode, progress spotlight"><span data-ico="risk" data-ico-size="15"></span> Analyze ▾</button>
             <div class="ps-menu" id="ps-analyze-menu">
               <button id="ps-crit"><span data-ico="risk" data-ico-size="14"></span> Critical path (highlight)</button>
               <button id="ps-deps"><span data-ico="arrowRight" data-ico-size="14"></span> Show dependencies</button>
@@ -2534,7 +2633,6 @@
           </div>
           <span class="ps-tb-spacer"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span> Colors</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
-          <button class="pd-btn" id="ps-tb-labeltoggle" title="Show text labels on the view buttons (Outline, Layouts, Schedule, Layout, Analyze)"><span data-ico="eye" data-ico-size="15"></span> Labels</button>
           <button class="pd-btn ps-icobtn" id="ps-help-btn" title="Keyboard shortcuts (press ?)" style="font-weight:700;">?</button>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:160px;" /></div>
         </div>
@@ -3119,6 +3217,25 @@
   // bails if a newer load has started.
   var _loadGen = 0;
   var PROJECTS = [], GROUPHEADS = [], layoutMode = 'split', activeTab = 'schedule';
+  // ---- Which view am I in? -----------------------------------------------------------------
+  // ⚠️ The six view modes live in THREE pieces of state — `layoutMode` (split/grid/gantt/network),
+  // `progressMode` and `vstackMode` — because they were added one at a time, each with its own
+  // toolbar button. That is why the toolbar could not say where you were: an icon can announce that
+  // a view exists, never that you are inside it, and Progress/Stacking were silent toggles layered
+  // OVER the layout, so two could be on at once. These reduce the three to the one answer the
+  // "View: …" button shows. Module scope on purpose — setProgressMode() and setVStackMode() live far
+  // from the toolbar wiring and both have to repaint the button.
+  var _VIEW_LABEL = { split: 'Split', grid: 'Grid', gantt: 'Gantt', network: 'Network', progress: 'Progress', stacking: 'Stacking' };
+  function _viewKey() {
+    if (typeof vstackMode !== 'undefined' && vstackMode) return 'stacking';
+    if (typeof progressMode !== 'undefined' && progressMode) return 'progress';
+    return _VIEW_LABEL[layoutMode] ? layoutMode : 'split';
+  }
+  function _viewName() { return _VIEW_LABEL[_viewKey()]; }
+  function _paintViewBtn() {
+    var t = document.getElementById('ps-viewbtn-txt');
+    if (t) t.textContent = 'View: ' + _viewName();
+  }
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
   var PACKAGES = [];     // Contract packages for this project (2026-08-19-packages.sql)
@@ -6079,7 +6196,7 @@
   // OPC date format: DD-Mon-YY (e.g. 26-Jun-26), with a trailing " A" flag for actual dates.
   var MON3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function fmtOPCDate(v, actual) { var d = pd(v); if (!d) return ''; return String(d.getDate()).padStart(2,'0') + '-' + MON3[d.getMonth()] + '-' + String(d.getFullYear()).slice(2) + (actual ? ' A' : ''); }
-  function renderDataDateBadge() { var b = document.getElementById('ps-datadate-badge'); if (b) b.textContent = 'Data Date: ' + fmtOPCDate(dstr(today())); }
+  function renderDataDateBadge() { var b = document.getElementById('ps-datadate-badge'); if (b) b.textContent = 'Data Date: ' + fmtOPCDate(dstr(today())); _repIdPaint(); }
   function esc(s) { return Fmt.esc(s); }
 
   // ---- data ----
@@ -11136,6 +11253,7 @@
     progressMode = on;
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-progress-mode', on);
     var btn = document.getElementById('ps-progressbtn'); if (btn) btn.classList.toggle('active', on);
+    _paintViewBtn();
     var host = document.getElementById('ps-progress'); if (host) host.style.display = on ? 'block' : 'none';
     if (on) { renderProgressView(); _animIn(host); }
     else { _animIn(document.querySelector('.ps-split')); }
@@ -12593,6 +12711,7 @@
     if (on && progressMode) setProgressMode(false);   // one full-width panel at a time
     var v = document.getElementById('ps-view-schedule'); if (v) v.classList.toggle('ps-vstack-mode', on);
     var btn = document.getElementById('ps-vstackbtn'); if (btn) btn.classList.toggle('active', on);
+    _paintViewBtn();
     document.body.classList.toggle('ps-vstack-on', !!on);
     var host = document.getElementById('ps-vstack'); if (host) host.style.display = on ? 'block' : 'none';
     if (on) { _vsAnim = 'in'; renderVStack(); _animIn(host); }
@@ -14245,8 +14364,45 @@
   // Row density (comfortable 34px / compact 27px). ROWH is the single source the grid + Gantt
   // geometry read live, so reassigning it and re-rendering keeps both panes aligned.
   var _density = 'comfortable'; try { if (localStorage.getItem('ps_density') === 'compact') _density = 'compact'; } catch (e) {}
-  // Reporting view — hides the authoring controls only. Session-only by design (see applyReporting).
+  // Reporting view -- hides the authoring controls only. Session-only by design (see applyReporting).
   var _reporting = false;
+  // ⚠️ GATED ON THE SCHEDULE TAB, and this is load-bearing rather than tidiness. Reporting now
+  // hides the sidebar, the topbar AND the module bar; on every other view (Planner Cockpit, WBS
+  // Manager, Cost Loading, Builder, Calendars) switchTab hides `.ps-toolbar` too -- which is where
+  // BOTH ways out live (the Layout menu and the exit chip). Setting the class there would leave a
+  // planner with no chrome at all and nothing to click.
+  function _applyReportingClass() {
+    document.body.classList.toggle('ps-reporting', _reporting && activeTab === 'schedule');
+    _repIdPaint();
+  }
+  // The identity the hidden bands used to carry. A reported figure is only trustworthy if the
+  // screen says WHICH project and AS OF WHEN, so those two facts (plus the group head, which is how
+  // this org talks about a project) move into the toolbar for the duration.
+  function _repIdPaint() {
+    var el = document.getElementById('ps-rep-id'); if (!el) return;
+    var ws = document.getElementById('ps-workspace');
+    var gh = ws ? String(ws.textContent || '').trim() : '';
+    // ⚠️ Real separator characters, not just flex `gap`. Read aloud or copied out of the page,
+    // gap-only spacing renders as "Avesta ResidencesRonquillo GroupData date 15-Aug-26".
+    el.innerHTML = '<b>' + esc(projName()) + '</b>' +
+      (gh ? '<s>\u00b7</s><i>' + esc(gh) + '</i>' : '') +
+      '<s>\u00b7</s><i>Data date ' + esc(fmtOPCDate(dstr(today()))) + '</i>';
+  }
+  // Fold the activity legend to one line (owner: "similar to the activity details panel").
+  // ⚠️ The class goes on the HOST, which renderActLegend never rewrites — it only replaces
+  // innerHTML — so a re-render can never silently unfold it.
+  var _legendFolded = false; try { _legendFolded = localStorage.getItem('ps_legend_folded') === '1'; } catch (e) {}
+  function applyLegendFold() {
+    var host = document.getElementById('ps-actlegend'); if (!host) return;
+    host.classList.toggle('is-folded', _legendFolded);
+    var b = host.querySelector('.ps-alg-fold');
+    if (b) { b.classList.toggle('up', _legendFolded); b.title = _legendFolded ? 'Expand the legend' : 'Collapse the legend'; }
+  }
+  function setLegendFold(v) {
+    _legendFolded = !!v;
+    try { localStorage.setItem('ps_legend_folded', _legendFolded ? '1' : '0'); } catch (e) {}
+    applyLegendFold();
+  }
   var ROWH = _density === 'compact' ? 27 : 34, DL = [], _rMin = null, _rDayw = 0, _rafP = false, _tlW = 0;
   // `_editing` is true only while an inline cell editor is genuinely open (not mid-commit). While set,
   // the windowed repaint is deferred (it replaces #ps-grid-rows innerHTML, which would destroy a
@@ -24910,6 +25066,9 @@
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
     // Planner Cockpit now hosts the Last Planner weekly section too — render both.
+    // Reporting hides the topbar/module bar and switchTab hides the toolbar off-Schedule, so the
+    // class has to be re-evaluated on every view change or a planner lands on a bare page.
+    _applyReportingClass();
     if (tab === 'schedule') renderGantt(); else if (tab === 'costload') CostLoading.open(pid, UID); else if (tab === 'wbs') renderWbsManager(); else if (tab === 'builder') ScheduleBuilder.open(pid, UID); else if (tab === 'calendars') renderCalendarsView();
     else { renderPlanner(); openLastPlanner(); }
   }
@@ -26770,8 +26929,12 @@
                 '</u></span></span>' : '')
           : '<span>Nothing expanded — open a WBS branch and its activities appear here.</span>')
       : '<span>Turn on to colour the Gantt bars by category and show a legend (LSM-style).</span>';
+    // Folded, the head keeps ONE line that still says what the colours mean -- a bare chevron over
+    // an empty strip would leave a reader with no way to know the legend was there at all.
+    var _fieldLabel = (catFieldOptions().filter(function (o) { return o[0] === cfg.field; })[0] || ['', ''])[1];
     host.innerHTML =
       '<div class="ps-actlegend-head">' +
+        '<span class="ps-alg-sum"><strong>Legend</strong>' + (cfg.on ? ' \u00b7 ' + esc(_fieldLabel) : ' \u00b7 off') + '</span>' +
         '<label><input type="checkbox" id="ps-alg-on"' + (cfg.on ? ' checked' : '') + '> <strong>Colour activities by</strong></label>' +
         '<select class="pd-select ps-alg-field" id="ps-alg-field">' + opts + '</select>' +
         (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
@@ -26781,13 +26944,20 @@
         // Tip line removed — it was a permanent paragraph of instructions competing with the legend
         // it sat next to. Both behaviours it described are already discoverable (a bar and a month
         // header both carry a cursor + title), so the words bought nothing but clutter.
-        ''  +
+        '' +
+        '<button type="button" class="ps-alg-fold" title="Collapse the legend"><span data-ico="chevronDown" data-ico-size="16"></span></button>' +
       '</div>' +
       // ⚠️ ONE row. The marks (Milestone / Data date / …) are now the LEADING entries of the very
       // same flex list as the category chips, not a sibling block above it — a separate <div>, even
       // inside the same container, still read as "two legend sections" to the owner.
       '<div class="ps-actlegend-items">' + MARKS_LEGEND_HTML +
         (items ? '<span class="ps-alg-sep"></span>' + items : '') + '</div>';
+    // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
+    // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.
+    if (window.Icons) Icons.hydrate(host);
+    var fld = host.querySelector('.ps-alg-fold');
+    if (fld) fld.onclick = function () { setLegendFold(!_legendFolded); };
+    applyLegendFold();
     host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
     host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var tex = host.querySelector('#ps-alg-tex');
@@ -28456,6 +28626,9 @@
     analyzeMenu.querySelectorAll('[data-spot]').forEach(function (b) { b.onclick = function () { analyzeMenu.classList.remove('open'); if (b.dataset.spot === 'clear') clearSpotlight(); else advanceSpotlight(b.dataset.spot); }; });
     // Title dropdown → switch Project Schedule / Cost Loading
     document.getElementById('ps-title-btn').onclick = function (e) { e.stopPropagation(); var o = tMenu.classList.contains('open'); closeMenus(); if (!o) tMenu.classList.add('open'); };
+    // The exit chip. Reporting removes the sidebar, the topbar and the module bar, so leaving it
+    // must be one visible click and never a hunt through a menu.
+    (function () { var rx = document.getElementById('ps-rep-exit'); if (rx) rx.onclick = function () { applyReporting(false); renderLayoutMenu(); }; })();
     tMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     tMenu.querySelectorAll('[data-tab]').forEach(function (b) { b.onclick = function () { tMenu.classList.remove('open'); switchTab(b.dataset.tab); }; });
     // ---- Collapsible Last Planner section (persisted) ----
@@ -28534,13 +28707,37 @@
     // a trimmed view with no obvious way out. The Layout menu (its toggle) always stays visible.
     function applyReporting(on) {
       _reporting = !!on;
-      document.body.classList.toggle('ps-reporting', _reporting);
+      _applyReportingClass();
+    }
+    // The six view modes live in three different pieces of state — `layoutMode` (split/grid/gantt/
+    // network), `progressMode` and `vstackMode` — because they grew one at a time. `_viewName()` is
+    // the single place that reduces them to the ONE answer the toolbar has to show, so the button can
+    // never disagree with the screen.
+    // Switching to any view TURNS THE OTHER TWO OFF. Progress and Stacking used to be independent
+    // toggles layered over the layout, so it was possible to be in two at once and the toolbar had no
+    // way to say which one you were looking at.
+    function _setView(v) {
+      var wantProg = v === 'progress', wantStack = v === 'stacking';
+      if (typeof vstackMode !== 'undefined' && vstackMode !== wantStack) setVStackMode(wantStack);
+      if (typeof progressMode !== 'undefined' && progressMode !== wantProg) setProgressMode(wantProg);
+      if (!wantProg && !wantStack) {
+        layoutMode = v;
+        try { localStorage.setItem('ps_layout', layoutMode); } catch (e) {}
+        applyLayout();
+      }
+      _paintViewBtn(); renderLayoutMenu();
     }
     function renderLayoutMenu() {
-      function radio(v, label) { return '<button data-lay="' + v + '">' + (layoutMode === v ? '● ' : '○ ') + label + '</button>'; }
+      var cur = _viewKey();
+      function opt(v, label, hint) {
+        return '<button data-view="' + v + '">' + (cur === v ? '● ' : '○ ') + label +
+          (hint ? '<span style="opacity:.6;font-size:11.5px;margin-left:6px;">' + hint + '</span>' : '') + '</button>';
+      }
       lMenu.innerHTML =
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">View</div>' +
-        radio('split', 'Split (Grid + Gantt)') + radio('grid', 'Grid only') + radio('gantt', 'Gantt only') + radio('network', 'Activity Network') +
+        opt('split', 'Split', 'grid + timeline') + opt('grid', 'Grid', 'spreadsheet only') +
+        opt('gantt', 'Gantt', 'timeline only') + opt('network', 'Network', 'PERT diagram') +
+        opt('progress', 'Progress', 'physical vs planned') + opt('stacking', 'Stacking', 'building model') +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Row density</div>' +
         '<button data-den="comfortable">' + (_density !== 'compact' ? '● ' : '○ ') + 'Comfortable</button>' +
@@ -28557,7 +28754,7 @@
         // localStorage by hand, which is not something a planner should ever be asked to do.
         '<button data-resetlayout title="Put the grid/Gantt split, the column widths and the column order back to their defaults. Nothing in the schedule itself changes.">' +
           '<span data-ico="refresh" data-ico-size="14"></span> Reset layout to defaults</button>';
-      lMenu.querySelectorAll('[data-lay]').forEach(function (b) { b.onclick = function () { layoutMode = b.dataset.lay; try { localStorage.setItem('ps_layout', layoutMode); } catch (e) {} applyLayout(); renderLayoutMenu(); }; });
+      lMenu.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { lMenu.classList.remove('open'); _setView(b.dataset.view); }; });
       lMenu.querySelectorAll('[data-den]').forEach(function (b) { b.onclick = function () { applyDensity(b.dataset.den); renderLayoutMenu(); }; });
       lMenu.querySelector('[data-dettoggle]').onclick = function () { detailsHidden = !detailsHidden; try { localStorage.setItem('ps_details_hidden', detailsHidden ? '1' : '0'); } catch (e) {} applyLayout(); renderLayoutMenu(); };
       lMenu.querySelector('[data-ganttset]').onclick = function () { lMenu.classList.remove('open'); openGanttSettings(); };
@@ -28599,8 +28796,9 @@
     document.getElementById('ps-undo').onclick = function (e) { e.stopPropagation(); undo(); };
     document.getElementById('ps-redo').onclick = function (e) { e.stopPropagation(); redo(); };
     document.getElementById('ps-layoutbtn').onclick = function (e) { e.stopPropagation(); var o = lMenu.classList.contains('open'); closeMenus(); if (!o) { renderLayoutMenu(); lMenu.classList.add('open'); } };
-    var pgBtn = document.getElementById('ps-progressbtn'); if (pgBtn) pgBtn.onclick = function (e) { e.stopPropagation(); closeMenus(); if (!progressMode && vstackMode) setVStackMode(false); setProgressMode(!progressMode); };
-    var vsBtn = document.getElementById('ps-vstackbtn'); if (vsBtn) vsBtn.onclick = function (e) { e.stopPropagation(); closeMenus(); setVStackMode(!vstackMode); };
+    // Progress and Stacking are entries in the View menu now (see renderLayoutMenu). The standalone
+    // buttons are gone; setProgressMode/setVStackMode still guard on the element, so nothing throws.
+    _paintViewBtn();
     lMenu.addEventListener('click', function (e) { e.stopPropagation(); });
     // `.ps-split` sets overflow:hidden, and the chooser is absolutely positioned inside
     // `.ps-grid-pane` within it — so the menu was CLIPPED at the split's bottom edge, which is
@@ -29056,15 +29254,6 @@
       };
     };
 
-    // Labeled-mode toggle: reveals text labels on the view icon buttons (persisted).
-    (function () {
-      var btn = document.getElementById('ps-tb-labeltoggle'), tb = document.querySelector('.ps-toolbar');
-      if (!btn || !tb) return;
-      var on = false; try { on = localStorage.getItem('ps_tb_labels') === '1'; } catch (e) {}
-      function apply() { tb.classList.toggle('ps-tb-labeled', on); btn.classList.toggle('active', on); }
-      apply();
-      btn.onclick = function () { on = !on; try { localStorage.setItem('ps_tb_labels', on ? '1' : '0'); } catch (e) {} apply(); };
-    })();
     (function () { var hb = document.getElementById('ps-help-btn'); if (hb) hb.onclick = function (e) { e.stopPropagation(); openShortcuts(); }; })();
     document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } var sel = selRow(); if (sel) quickAddActivity(sel); else { UI.toast('Select a WBS or activity first to place the new activity — opening the full form.', 'warn'); openForm(null); } };
     document.getElementById('ps-import').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } document.getElementById('ps-import-file').click(); };
