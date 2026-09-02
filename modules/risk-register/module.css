@@ -1,6 +1,6 @@
 /* Risk Register module styles — all classes prefixed .rr- to avoid collisions.
    The RCM furniture shared with the Stakeholder Register (priority pills,
-   criteria tables, heat-map grid) lives in ../../assets/css/epc-rcm.css. */
+   criteria tables, heat-map grid) lives in ../../assets/css/mcc-rcm.css. */
 
 /* ---- Uniform module chrome (matches every other enabled module). Keep in
    sync with those. 2026-08-30: modules gained a persistent sidebar (see

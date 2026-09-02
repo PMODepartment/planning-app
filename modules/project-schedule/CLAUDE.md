@@ -1,3 +1,72 @@
+## The Activity chip was 3.5x every other chip AND drawn in the wrong view (2026-09-02f) — fmlozano
+
+Owner: *"Shorten the Activity legend chip"* and *"Separate the Progress and Stacking buttons, extract
+them within the View button."* The first turned out to be two faults, and the larger one was a
+regression from yesterday's own legend fix rather than the design call the previous pass recorded.
+
+### 1 ⚠️⚠️ REGRESSION: the coloured-bar chip was showing in the PLAIN view, next to the chip it contradicts
+`.lg-lsmon { display:none }` is (0,1,0). Retargeting the layout rule to `.ps-actlegend .lg` (0,2,0) on
+2026-09-02d — itself a correct fix for dead CSS — put a **higher-specificity `display:inline-flex`
+eleven lines above it**, so from that deploy the hide rule lost and the LSM-only chip was drawn in
+**both** views. The plain view therefore carried two chips both labelled *Activity*:
+`Activity (red = % complete)` and `Activity (solid = done, pale = remaining · …)`, which describe the
+same mark differently. Measured in a harness built from the shipped CSS: **8 chips displayed where 7
+exist**, and the row wrapped to **two lines (88px vs 41px)** because the 482px chip could not fit
+beside the rest.
+⚠️ The fix is `.ps-actlegend .lg-lsmon { display:none }` — (0,2,0), and **later in source order** than
+`.ps-actlegend .lg`, which is what makes it win. The `#ps-view-schedule.ps-lsm` show rule is (1,2,0)
+and still beats both, so it alone decides when the chip appears. **Verified: 7 chips in the plain view,
+6 in the coloured one, both one line for the key.**
+⚠️ The previous pass measured 482px in a harness that never set `.ps-lsm` — i.e. in the plain view,
+where the chip should not have been at all. The number was right and the conclusion was not.
+
+### 2 The width: the three facts moved to their own line rather than being cut
+482px against 77 / 113 / 128 / 136. None of the three facts a bar encodes may be dropped — the wording
+was settled after *"still to do"* was read as a forecast date — so the parenthetical **moves** instead
+of shrinking. The chip is now `[bar sample] Activity` and a `.lg-note` caption under the key spells the
+three out with room to name them properly (*"where the bar ENDS"* rather than *"bar ="*).
+**Measured: Activity 72px** — now the narrowest chip in the row — **and the whole legend costs 2px more
+height (41 → 43px)**, because the note occupies one line that the wrapped chip was taking anyway.
+- ⚠️ **`BAR_NOTE_HTML` is separate from `MARKS_LEGEND_HTML` and appended LAST**, not tidiness:
+  `flex-basis:100%` takes a whole line wherever it sits, and inside the marks block it split the row
+  between the marks and the trade chips — one key over **three lines, 66px**.
+- ⚠️ **The sentence lives in ONE child span.** `.lg-note` carries `lg`, so it is a flex container, and
+  **flex strips the literal whitespace between items** — written as `<b>solid</b> = done` directly
+  inside it, it renders `Reading a bar:solid= done`. That is the identical defect that shipped as
+  `Activity(solid`. The gating rules set `display` from a selector carrying an ID, so it cannot be
+  turned off from here without a specificity fight; one child = one flex item, and the text inside it
+  is ordinary inline flow. **Verified against `innerText`, not `textContent`** — only the rendered text
+  shows a stripped space.
+
+### 3 Progress and Stacking are their own section of the View menu
+The six views were one flat list, which said they were six of a kind. They are not, and the **state
+already knew**: Split / Grid / Gantt / Network are `layoutMode`, arrangements of the same grid +
+timeline; Progress and Stacking are `progressMode` / `vstackMode`, separate screens that replace
+`.ps-split` outright. Now **Schedule layout** and **Separate views** under their own headings, split by
+a divider — so picking Stacking no longer looks like picking Gantt.
+⚠️ Costs one heading + one divider (~30px) on a menu already measured at 804px. Safe only because
+`anchorMenu` re-clamps `max-height` and `overflow-y` **on every render**, not just on open.
+
+### Verification
+- Harness regenerated from the shipped files: `dashboard.css` + the module's own `<style>` block +
+  `MARKS_LEGEND_HTML` and `BAR_NOTE_HTML` **sliced verbatim**, rendered twice — once plain, once with
+  `.ps-lsm` — because the display gating is the whole point and one state cannot show it.
+  Behind the standard gate (`visibilityState`, non-zero `clientWidth`).
+- Parses; **5,090 → 5,091 function definitions** (the `hd` heading helper), none lost.
+- All chips `swCentreOff: 0` in both modes; the note renders on one line at 1377px.
+- ⚠️ **Three harness faults of my own, all one trap wearing different clothes.** A backslash that has
+  to survive python → .js source → a JS string literal → a regex lost a layer on every inline attempt,
+  emitting `/s+/g`, which silently ate every letter **s** from the readout (*"Mile tone"*, *"WBS
+  ummary"*) — the same family as the template-literal version recorded in 2026-09-02d. It is now built
+  with `String.fromCharCode(92)`, which has nothing left to misread. Separately, writing the file with
+  python's default newline translation **converted 30,065 LF line endings to CRLF**; `.gitattributes`
+  normalises on commit so the diff never showed it, but the working file was rewritten wholesale.
+  Put back, and every edit since passes `newline=''`.
+- ⚠️ **Not verified signed in** — measured in the harness, not on a live project. The three changes are
+  CSS specificity, one moved string and one menu section, none of which touch data or the server.
+- `MODULE_V` → `20260902f`.
+
+---
 ## Vertical stacking: a DONE status on finished zones, carrying the day variance (2026-09-02) — eprobles
 
 Owner: *"show a status of done for zones or areas or units that have been declared as completed. and

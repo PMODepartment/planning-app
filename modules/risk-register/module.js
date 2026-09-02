@@ -15,12 +15,12 @@
 // this project's counts against it), and Criteria (the controlled document's
 // rating tables, so nobody has to open the file to score a risk).
 //
-// SHARED REFERENCE DATA lives in assets/js/epc-rcm.js (EPCRCM) because the
+// SHARED REFERENCE DATA lives in assets/js/mcc-rcm.js (MCCRCM) because the
 // Stakeholder Register runs on the identical activity list, taxonomy, criteria
 // and grids — see that file's header for why it is not duplicated here.
 //
 // ⚠️ DERIVED, NEVER STORED: IMPORTANCE (impact × probability), PRIORITY / LEVEL
-// (a 5×5 lookup, NOT a band on the product — see EPCRCM.RISK_GRID), the residual
+// (a 5×5 lookup, NOT a band on the product — see MCCRCM.RISK_GRID), the residual
 // score and its band. Persisting any of them would only let it drift away from
 // the numbers it is made of.
 //
@@ -62,7 +62,7 @@ window.RiskRegister = (function () {
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
-  function E() { return window.EPCRCM; }
+  function E() { return window.MCCRCM; }
 
   // ===== live collaboration (presence + who's-editing row cursor) + offline =====
   var _collab = null, _remoteSel = {}, _collabSelf = {}, PKEY = 'risk_register', PID_PFX = 'rr';
@@ -826,7 +826,7 @@ window.RiskRegister = (function () {
         activity_no:         no,
         // Denormalised on purpose: the activity NAME is stored so a row still
         // says what process it belongs to when it is exported, or read by a
-        // dashboard that does not load EPCRCM.
+        // dashboard that does not load MCCRCM.
         activity:            act ? act.name : (q('#f-act').value ? r.activity : null),
         sub_process:         q('#f-sub').value.trim(),
         process_objectives:  act ? act.objective : null,

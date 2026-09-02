@@ -1,6 +1,6 @@
 /* Stakeholder Register module styles — all classes prefixed .sm- to avoid
    collisions. The RCM furniture shared with the Risk Register (priority pills,
-   criteria tables, heat-map grid) lives in ../../assets/css/epc-rcm.css. */
+   criteria tables, heat-map grid) lives in ../../assets/css/mcc-rcm.css. */
 
 /* ---- Uniform module chrome (matches every other enabled module). Keep in
    sync with those. .pd-content is NOT given width:100% here — the shared
@@ -148,7 +148,7 @@ html.pd-dark .sm-ovr { color:#fbbf24; }
 /* ---- Engagement approach + relationship strategy chips ----------------- */
 /* Semantic and fixed in both themes: these are the controlled document's own
    four quadrants, and a pale amber in dark mode stops meaning "Keep Satisfied". */
-/* ⚠️ Same fill/text split as epc-rcm.css's priority palette, for the same measured
+/* ⚠️ Same fill/text split as mcc-rcm.css's priority palette, for the same measured
    reason. --sm-c is the FILL: white sits on it (.sm-appr passes 5.0-7.6 for all four).
    --sm-t is the same meaning as TEXT, and it needs a different value per theme —
    .sm-gm-lab (the Mendelow map's 10px/800 cell label on a 15% wash of its own fill)

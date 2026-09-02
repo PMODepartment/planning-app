@@ -780,8 +780,18 @@
        into the single legend row that wrapper stopped existing — so Activity / WBS summary /
        Baseline (BL0) started showing in LSM mode again, describing marks that are not drawn. */
     #ps-view-schedule.ps-lsm .lg-lsmoff { display:none; }
-    /* …and the mirror: the planned/complete key only means anything WITH colours on. */
-    .lg-lsmon { display:none; }
+    /* …and the mirror: the planned/complete key only means anything WITH colours on.
+       ⚠️⚠️ SCOPED TO `.ps-actlegend`, AND IT HAS TO STAY THAT WAY. As a bare `.lg-lsmon` this rule
+       was (0,1,0) and LOST to `.ps-actlegend .lg { display:inline-flex }` (0,2,0) eleven lines
+       above — so from the moment that rule was retargeted (2026-09-02d, itself a fix for dead CSS)
+       the coloured-bar chip was also drawn in the PLAIN view, immediately beside the
+       "Activity (red = % complete)" chip that says something different about the same mark. Two
+       chips both called Activity, contradicting each other. Measured in a harness carrying the
+       shipped CSS: 8 chips displayed where 7 exist, and the row wrapped to TWO lines (88px vs 41px)
+       because the 482px chip could not fit beside the rest. That is what "the legend looks wrong"
+       was. Now (0,2,0) and later in source order, so it beats `.ps-actlegend .lg`; the `.ps-lsm`
+       rule below is (1,2,0) and still beats both, so it alone decides when the chip is shown. */
+    .ps-actlegend .lg-lsmon { display:none; }
     #ps-view-schedule.ps-lsm .lg-lsmon { display:inline-flex; }
     /* Sample swatches drawn the way a real bar is: same hue, pale remainder vs solid+texture done. */
     .lg-plan { background:rgba(0,112,192,.30); border:1px solid rgba(0,112,192,.55); }
@@ -804,6 +814,28 @@
     .ps-actlegend-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:6px; }
     .ps-actlegend-head label { display:inline-flex; align-items:center; gap:6px; }
     .ps-actlegend-items { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+    /* ⚠️ The three facts a coloured bar encodes (fill = progress, extent = forecast dates, rail =
+       planned dates) used to be a 71-character parenthetical INSIDE the Activity chip, which made
+       that one chip 482px against 77 / 113 / 128 / 136 for the others — 3.5x the widest trade chip,
+       swamping the colour key a reader came for. None of the three may be dropped: the wording was
+       settled after "still to do" was read as a forecast date. So it moves to its own line instead
+       of being shortened. `flex-basis:100%` in the SAME wrapping flex row — deliberately not a
+       second container, because a sibling <div> is exactly what the owner once read as "two legend
+       sections". Subordinate by size and weight, so it reads as a caption under the key rather than
+       a sixth entry in it. */
+    .ps-actlegend .lg-note { flex:0 0 100%; font-size:11.5px; line-height:1.5;
+      color:var(--pd-muted); margin-top:2px; }
+    /* ⚠️ THE SENTENCE LIVES IN ONE CHILD, and that is not tidiness. `.lg-note` carries `lg`, so
+       `.ps-actlegend .lg` makes it a FLEX CONTAINER — and flex strips the literal whitespace between
+       items. Written as `<b>solid</b> = done` directly inside it, each tag is its own flex item and
+       the rendered text reads `Reading a bar:solid= done`. That is the exact defect that shipped as
+       `Activity(solid` and was fixed on 2026-09-02d; the `.lg-lsmon` gating rules set an explicit
+       `display:inline-flex` with an ID in the selector, so it cannot be undone from here without a
+       specificity fight. One child = one flex item, and inside it the text is ordinary inline flow
+       with its spaces intact. */
+    .ps-actlegend .lg-note > span { flex:1 1 auto; min-width:0; }
+    .ps-actlegend .lg-note b { font-weight:700; color:var(--pd-ink); }
+    .ps-actlegend .lg-note i { font-style:normal; opacity:.75; }
     /* Fold the legend to a single line -- the same chevron affordance the details panel carries.
        Owner: *"the panel below ... is always shown. If we can have the option to minimize this
        similar to the activity details panel."* It is a permanent band under the Gantt, so it folds
@@ -27209,10 +27241,25 @@
       // So the pale part is remaining WORK inside the current dates, never a forecast date — the
       // forecast is already expressed by where the bar ENDS. Say "remaining", never "still to do".
       '<span class="lg lg-lsmon" title="A coloured bar carries three separate things. WHERE THE BAR SITS = the current dates; for a started activity its right edge is the forecast finish. INSIDE THE BAR = progress: solid + textured is done, pale is the remaining work. THE RAIL UNDERNEATH = the BL0 planned dates; the offset between the rail and the bar is the slip.">' +
-        '<span class="lg-swatch lg-lsmbar"></span> Activity ' +
-        '<em style="font-style:normal;color:var(--pd-muted);">(solid = done, pale = remaining · bar = forecast dates · rail = planned)</em></span>' +
+        '<span class="lg-swatch lg-lsmbar"></span> Activity</span>' +
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
       '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
+  // ⚠️ The three facts a coloured bar encodes, moved OUT of the Activity chip and onto their own
+  // line (see the `.lg-note` rule). The chip carried them as a parenthetical and measured 482px
+  // against 77 / 113 / 128 / 136 for every other chip, so the colour key read as an afterthought
+  // beside one paragraph. Nothing is dropped — this is a move, not a trim, and the extra room means
+  // each fact can be named in full ("where the bar ENDS" rather than "bar =") instead of in the
+  // compressed shorthand the chip forced. `lg-lsmon` like the chip it belongs to: it describes a
+  // coloured bar and means nothing in the plain view.
+  // ⚠️ SEPARATE FROM MARKS_LEGEND_HTML, and appended LAST — not merely tidier. `flex-basis:100%`
+  // takes a whole line wherever it sits, so inside the marks block it broke the row between the
+  // marks and the trade chips and the one key ran over THREE lines (measured 66px). After the
+  // trades it costs exactly one line (42px).
+  var BAR_NOTE_HTML =
+      '<span class="lg lg-lsmon lg-note"><span>Reading a bar: <b>solid</b> = done, <b>pale</b> = ' +
+        'remaining <i>(progress inside the bar)</i> · <b>where the bar ends</b> = forecast finish ' +
+        '<i>(the current dates)</i> · <b>the rail underneath</b> = planned dates <i>(BL0 baseline; ' +
+        'the offset between rail and bar is the slip)</i></span></span>';
   // Top-level WBS branches that contain NO activity anywhere beneath them, and so are dropped by
   // "Hide empty groups". Reads `rows` (not DL) on purpose — DL is the post-filter list these are
   // already missing from, so it could never tell us what went.
@@ -27315,7 +27362,7 @@
       // same flex list as the category chips, not a sibling block above it — a separate <div>, even
       // inside the same container, still read as "two legend sections" to the owner.
       '<div class="ps-actlegend-items">' + MARKS_LEGEND_HTML +
-        (items ? '<span class="ps-alg-sep"></span>' + items : '') + '</div>';
+        (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>';
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
     // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.
     if (window.Icons) Icons.hydrate(host);
@@ -29099,10 +29146,23 @@
         return '<button data-view="' + v + '">' + (cur === v ? '● ' : '○ ') + label +
           (hint ? '<span style="opacity:.6;font-size:11.5px;margin-left:6px;">' + hint + '</span>' : '') + '</button>';
       }
+      // ⚠️ TWO SECTIONS, and the split is the one the STATE already makes rather than a cosmetic
+      // grouping. The first four are `layoutMode` — arrangements of the same activity grid + timeline,
+      // where "which one" only changes how much of each you see. Progress and Stacking are
+      // `progressMode` / `vstackMode`: separate screens that REPLACE `.ps-split` outright (see
+      // setProgressMode toggling `.ps-progress-mode` and showing `#ps-progress`). Listing all six as
+      // one flat block said they were six of a kind, so picking Stacking looked like picking Gantt
+      // and a reader could not tell which choices swap the arrangement from which choices leave the
+      // schedule behind. Owner 2026-09-02: separate Progress and Stacking within the View button.
+      var hd = function (t) {
+        return '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + t + '</div>';
+      };
       lMenu.innerHTML =
-        '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">View</div>' +
+        hd('Schedule layout') +
         opt('split', 'Split', 'grid + timeline') + opt('grid', 'Grid', 'spreadsheet only') +
         opt('gantt', 'Gantt', 'timeline only') + opt('network', 'Network', 'PERT diagram') +
+        '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
+        hd('Separate views') +
         opt('progress', 'Progress', 'physical vs planned') + opt('stacking', 'Stacking', 'building model') +
         // ⚠️ Outline is omitted in the stacking view, exactly as the old
         // `body.ps-vstack-on #ps-collapseto` rule hid the toolbar button: there is no grid outline

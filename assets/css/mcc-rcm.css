@@ -1,7 +1,7 @@
 /* ============================================================================
-   epc-rcm.css — shared look for the EPC Risk and Control Matrix furniture
+   mcc-rcm.css — shared look for the MCC Risk and Control Matrix furniture
    ----------------------------------------------------------------------------
-   Paired with assets/js/epc-rcm.js. Loaded by modules/risk-register and
+   Paired with assets/js/mcc-rcm.js. Loaded by modules/risk-register and
    modules/stakeholder-map, which render the SAME criteria tables, the same
    priority pills and the same heat-map grid; keeping the styles here is what
    stops one register's matrix from slowly looking unlike the other's.

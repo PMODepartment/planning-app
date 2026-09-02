@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------------------
 // Run from the repo root:  node modules/risk-register/test-rcm.js
 //
-// Covers the shared engine (assets/js/epc-rcm.js) plus the derived helpers of
+// Covers the shared engine (assets/js/mcc-rcm.js) plus the derived helpers of
 // BOTH registers, because the whole point of the shared file is that the two
 // modules cannot drift — a suite that tested one of them would not see that.
 //
@@ -45,7 +45,7 @@ function eq(name, a, b) {
 }
 
 // ---------------------------------------------------------------------------
-// Load the SHIPPED epc-rcm.js. Only `window` and `Fmt` are stubbed, and Fmt.esc
+// Load the SHIPPED mcc-rcm.js. Only `window` and `Fmt` are stubbed, and Fmt.esc
 // is the real escaping contract rather than an identity function — a stub
 // kinder than the real thing tests the stub, which this repo has already been
 // bitten by (2026-09-01 (l), Fmt.date).
@@ -59,12 +59,12 @@ const sandbox = {
 };
 sandbox.window.Fmt = sandbox.Fmt;
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(root('assets', 'js', 'epc-rcm.js'), 'utf8'), sandbox,
-                { filename: 'epc-rcm.js' });
-const E = sandbox.window.EPCRCM;
+vm.runInContext(fs.readFileSync(root('assets', 'js', 'mcc-rcm.js'), 'utf8'), sandbox,
+                { filename: 'mcc-rcm.js' });
+const E = sandbox.window.MCCRCM;
 
 console.log('\n--- 1. the shared engine loads and exports what both modules call ---');
-ok('epc-rcm.js defines window.EPCRCM', !!E);
+ok('mcc-rcm.js defines window.MCCRCM', !!E);
 
 // Every member the two modules reach for, so a rename here fails loudly rather
 // than at runtime in a browser (the ReferenceError class that blanked the Gantt
@@ -358,14 +358,14 @@ ok('both modules derive residual through the one shared function',
 console.log('\n--- 12. structural: nothing ships half-wired ---');
 const rrHtml = fs.readFileSync(root('modules', 'risk-register', 'index.html'), 'utf8');
 const smHtml = fs.readFileSync(root('modules', 'stakeholder-map', 'index.html'), 'utf8');
-ok('risk-register/index.html loads epc-rcm.js', /epc-rcm\.js\?v=/.test(rrHtml));
-ok('stakeholder-map/index.html loads epc-rcm.js', /epc-rcm\.js\?v=/.test(smHtml));
-ok('both load epc-rcm.css', /epc-rcm\.css\?v=/.test(rrHtml) && /epc-rcm\.css\?v=/.test(smHtml));
+ok('risk-register/index.html loads mcc-rcm.js', /mcc-rcm\.js\?v=/.test(rrHtml));
+ok('stakeholder-map/index.html loads mcc-rcm.js', /mcc-rcm\.js\?v=/.test(smHtml));
+ok('both load mcc-rcm.css', /mcc-rcm\.css\?v=/.test(rrHtml) && /mcc-rcm\.css\?v=/.test(smHtml));
 
 // ⚠️ MODULE_V is what makes a changed index.html reach a returning browser. Both
 // index.html files changed structurally this round (new <script>/<link> tags and
 // a renamed tab), so a stale MODULE_V serves the OLD page, which never loads
-// epc-rcm.js and throws on first use. This repo has mis-diagnosed that as a code
+// mcc-rcm.js and throws on first use. This repo has mis-diagnosed that as a code
 // bug more than once (2026-08-25 (m)).
 const dashV = (fs.readFileSync(root('dashboard.html'), 'utf8').match(/modules-grid\.js\?v=([^"']+)/) || [])[1];
 const modsV = (fs.readFileSync(root('modules.html'), 'utf8').match(/modules-grid\.js\?v=([^"']+)/) || [])[1];

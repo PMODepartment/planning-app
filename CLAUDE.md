@@ -84,6 +84,39 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (f) — A legend regression from yesterday's legend fix, and EPC → MCC finished
+
+Owner: *"Separate the Progress and Stacking buttons, extract them within the View button"*,
+*"Shorten the Activity legend chip"*, *"Finish the EPC → MCC rename."* Detail in
+`modules/project-schedule/CLAUDE.md` and both register `CLAUDE.md`s.
+
+- ⚠️⚠️ **THE LEGEND COMPLAINT WAS A REGRESSION, NOT A DESIGN CALL.** `.lg-lsmon { display:none }` is
+  (0,1,0); retargeting the layout rule to `.ps-actlegend .lg` (0,2,0) yesterday — itself a correct fix
+  for dead CSS — put a **higher-specificity `display:inline-flex` above it**, so the LSM-only
+  coloured-bar chip has been drawn in the **plain view too** ever since. Two chips both labelled
+  *Activity*, saying different things about the same mark. Measured: **8 chips shown where 7 exist**,
+  and the row wrapped to **two lines (88px vs 41px)**. Now scoped to `.ps-actlegend .lg-lsmon`, which
+  wins on source order while the `.ps-lsm` rule (1,2,0) still decides when the chip appears.
+- ⚠️ **The 482px measurement that opened this thread was taken in the wrong view.** The previous
+  harness never set `.ps-lsm`, so it measured a chip that should not have been on screen. Right number,
+  wrong conclusion — a harness that can only render one state cannot check a rule about two.
+- **The three facts a bar encodes moved to their own caption line rather than being cut.** The chip is
+  **72px** now (was 482, against 77 / 113 / 128 / 136), and the whole legend is **2px taller**, not
+  shorter-by-losing-something. ⚠️ The caption's sentence sits in ONE child span because `.lg-note` is a
+  flex container and **flex strips the whitespace between items** — the identical defect that shipped
+  as `Activity(solid`.
+- **Progress and Stacking are their own section of the View menu** (*Schedule layout* / *Separate
+  views*). The split is the one the state already makes: the first four are `layoutMode` arrangements
+  of the same grid + timeline, the other two replace the screen outright.
+- **EPC → MCC finished** — `epc-rcm.js`/`.css` → `mcc-rcm.js`/`.css`, `window.EPCRCM` → `window.MCCRCM`,
+  and the `EPC Control Masterlist` caption that was missed last pass. ⚠️ **Smaller than it was flagged
+  as:** the "40-odd CSS classes" are `.rcm-*` and never said EPC. ⚠️ **Every remaining "EPC" is
+  transcribed workbook content** — activity 16 really is named "EPC FUNCTIONAL MEETINGS" — and renaming
+  data would make the file disagree with the register it came from. Written into the engine's header.
+- **Verified:** register suite **163 pass / 0 fail**; the module parses with **5,090 → 5,091** functions
+  and none lost; the legend measured in both view states in a browser. ⚠️ **Not verified signed in.**
+- `MODULE_V` → `20260902f`; shared RCM files and both registers' `module.js`/`module.css` → `?v=20260902a`.
+
 ### 2026-09-02 (e) — Vertical stacking: a DONE status on finished zones, with the day variance
 Owner: *"show a status of done for zones or areas or units that have been declared as completed. and then
 show the variance in terms of days to determine if it was completed in time or not."*

@@ -1,5 +1,5 @@
 // ============================================================================
-// EPCRCM — the shared EPC Risk and Control Matrix reference data
+// MCCRCM — the shared MCC Risk and Control Matrix reference data
 // ----------------------------------------------------------------------------
 // ONE copy of the vocabulary and the scoring rules that the Risk Register and
 // the Stakeholder Register both run on. The two workbooks these come from are
@@ -23,9 +23,20 @@
 // with the numbers it was made from the first time someone edits one of them.
 //
 // Loaded by: modules/risk-register, modules/stakeholder-map.
+//
+// ⚠️ RENAMED FROM epc-rcm.js / window.EPCRCM (2026-09-02), owner's ask, finishing the
+// "EPC Universe" → "MCC Universe" heading change. What moved is this app's own naming: the
+// file, the global, the CSS file beside it and the two rendered captions.
+// ⚠️ WHAT DID NOT MOVE, AND MUST NOT: every "EPC" below that is TRANSCRIBED WORKBOOK
+// CONTENT. Activity 16 really is named "EPC FUNCTIONAL MEETINGS" in the source, the sheet
+// really is called "EPC Project Risk Categorization", and two activity descriptions quote the
+// workbook's own wording. Those strings are DATA, not labels — the test suite asserts the
+// activity names, and rewriting them would make this file disagree with the register it was
+// transcribed from. The `.rcm-*` CSS classes are untouched for a different reason: they never
+// said EPC in the first place.
 // ============================================================================
 
-window.EPCRCM = (function () {
+window.MCCRCM = (function () {
 
   // =========================================================================
   // 1) THE 5-PMLC ACTIVITIES — the register's spine (cols A–E of both sheets)
@@ -552,7 +563,7 @@ window.EPCRCM = (function () {
       if (!t.controls.length) rows.push(['', '<span class="rcm-muted">— no key controls listed —</span>']);
       t.controls.forEach(function (k) { rows.push(['', esc(k)]); });
     });
-    return tbl('EPC Control Masterlist — key controls per category', ['Control category', 'Key control'], rows,
+    return tbl('MCC Control Masterlist — key controls per category', ['Control category', 'Key control'], rows,
       'Sample control measures for the risks identified. Pick a control category on a risk and these become suggestions for its control description.');
   }
 
