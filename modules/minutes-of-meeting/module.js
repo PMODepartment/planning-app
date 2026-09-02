@@ -2197,24 +2197,15 @@ window.MinutesOfMeeting = (function () {
     });
   }
 
-  async function momPullIssues(momId, opts) {
-    opts = opts || {};
-    var target = MOMS.find(function (x) { return x.id === (momId || _momSel); });
-    if (!target || !canEditMinute(target) || momLocked(target)) return 0;
-    var take = momOpenIssuesFor(target.id);
-    if (!take.length) {
-      // ⚠️ Silent when this ran by itself on a new minute — a toast saying nothing
-      // happened, for something nobody asked for, is noise. Loud when the planner
-      // pressed the button, because then "nothing happened" is the answer.
-      if (!opts.quiet) UI.toast('Every open issue is already on this agenda.', 'info');
-      return 0;
-    }
-    if (!opts.quiet) await momSaveHeader();
-
-    var seq = momItemsOf(target.id).length;
   // Shared by momPullIssues (bulk) and momPullOneIssue (a single pick from the
   // "Get from issue" panel) — one payload shape, so the two routes can never
   // disagree about what a pulled action looks like.
+  // ⚠️ MODULE SCOPE, not nested inside momPullIssues — momPullOneIssue is a
+  // sibling function, not a closure inside momPullIssues, so a declaration
+  // nested in there is invisible to it (function declarations only hoist to
+  // the top of their OWN enclosing function). Nesting it there was a real bug:
+  // every click on a single issue in the "Get from issue" panel threw
+  // "momIssuePayload is not defined" before ever reaching mom_items.insert.
   function momIssuePayload(r, momId, seq) {
     return {
       mom_id: momId, project_id: pid, seq: seq,
@@ -2241,6 +2232,21 @@ window.MinutesOfMeeting = (function () {
     };
   }
 
+  async function momPullIssues(momId, opts) {
+    opts = opts || {};
+    var target = MOMS.find(function (x) { return x.id === (momId || _momSel); });
+    if (!target || !canEditMinute(target) || momLocked(target)) return 0;
+    var take = momOpenIssuesFor(target.id);
+    if (!take.length) {
+      // ⚠️ Silent when this ran by itself on a new minute — a toast saying nothing
+      // happened, for something nobody asked for, is noise. Loud when the planner
+      // pressed the button, because then "nothing happened" is the answer.
+      if (!opts.quiet) UI.toast('Every open issue is already on this agenda.', 'info');
+      return 0;
+    }
+    if (!opts.quiet) await momSaveHeader();
+
+    var seq = momItemsOf(target.id).length;
     var payload = take.map(function (r, i) {
       return momIssuePayload(r, target.id, seq + i);
     });
@@ -3136,7 +3142,15 @@ window.MinutesOfMeeting = (function () {
     if (clr) clr.onclick = function () {
       $('il-mom-act').value = '';
       $('il-mom-actsel').innerHTML = momActChipHTML('', false);
-      wireMom();
+      // ⚠️ Re-wires the whole detail view, not just this chip: `#il-mom-actsel`'s
+      // innerHTML was just replaced, and the ONLY way a freshly-created button
+      // inside it (e.g. the "✕ Unlink" chip rendered below) gets a click handler
+      // is by re-running the same query-and-bind pass that wired it the first
+      // time. This used to call a `wireMom()` that was never defined anywhere in
+      // this file — a leftover from before the module split — so both this and
+      // the pick-an-activity handler below silently threw and left the new chip
+      // dead until the next full renderDetail().
+      wireDetail();
     };
     var q = host.querySelector('#il-mom-actq'), res = host.querySelector('#il-mom-acres');
     if (q && res) {
@@ -3163,7 +3177,7 @@ window.MinutesOfMeeting = (function () {
                 $('il-mom-act').value = id;
                 $('il-mom-actsel').innerHTML = momActChipHTML(id, false);
                 var nm = $('il-mom-actname'); if (nm && MOM_ACT_NAME[id]) nm.textContent = '· ' + MOM_ACT_NAME[id];
-                q.value = ''; close(); wireMom();
+                q.value = ''; close(); wireDetail();
               };
             });
           } catch (e) {
@@ -3173,9 +3187,10 @@ window.MinutesOfMeeting = (function () {
         }, 250);
       };
       q.onkeydown = function (e) { if (e.key === 'Escape') { close(); e.stopPropagation(); } };
-      // ⚠️ Bound ONCE for the life of the page, not per wireMom() call — wireMom runs on
-      // every render and on every picker interaction, so a listener added here would
-      // accumulate. It looks the picker up by id each time instead of closing over it.
+      // ⚠️ Bound ONCE for the life of the page, not per wireDetail() call — wireDetail
+      // runs on every render and on every picker interaction (see the two calls
+      // above), so a listener added here would accumulate. It looks the picker up
+      // by id each time instead of closing over it.
       if (!_momDocClick) {
         _momDocClick = function (e) {
           var r = $('il-mom-acres'), i = $('il-mom-actq');
