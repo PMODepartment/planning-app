@@ -56,7 +56,9 @@ window.PPR = (function () {
   // it's session-only like showMarkup, never persisted.
   var showPhotoMarkup = true;
   var selId = null;              // selected PPR (drives the preview pane)
-  var filters = { from: '', to: '', archived: false };  // archived: false = hide archived (default)
+  // reportType: '' = All, 'internal' = Internal, 'client' = External (Client) —
+  // same vocabulary as ppr_report_templates.meeting_type, see the migration.
+  var filters = { from: '', to: '', archived: false, reportType: '' };  // archived: false = hide archived (default)
   var screen = 'list';           // list | slides | templates
   var viewPprId = null, slideAt = 0;
   // ⚠️ RETIRED (item 11, current round): item 21's per-pane keyPlanOpenPane
@@ -141,9 +143,14 @@ window.PPR = (function () {
     // default list — this checkbox is the ONLY way back to see one, same rule
     // as the Gallery's own archived items.
     if ($('ppr-f-archived')) $('ppr-f-archived').onchange = function () { filters.archived = this.checked; renderList(); };
+    // Report Type filter (Internal / External(Client)) — a real narrowing
+    // filter like the date range, not a view-mode toggle like Archived, so
+    // it IS reset by Clear filters below (unlike filters.archived).
+    if ($('ppr-f-reporttype')) $('ppr-f-reporttype').onchange = function () { filters.reportType = this.value; renderList(); };
     $('ppr-clearfilters').onclick = function () {
-      filters = { from: '', to: '', archived: filters.archived };  // the archived toggle is not a "filter" to clear
+      filters = { from: '', to: '', archived: filters.archived, reportType: '' };  // the archived toggle is not a "filter" to clear
       ['from', 'to'].forEach(function (k) { var el = $('ppr-f-' + k); if (el) el.value = ''; });
+      if ($('ppr-f-reporttype')) $('ppr-f-reporttype').value = '';
       renderList();
     };
     // Item 2 parity — the topbar funnel toggles the same collapsed-by-default
@@ -393,6 +400,22 @@ window.PPR = (function () {
     if (mg) mg.style.display = (hasSel && canWrite && selIds.length >= 2) ? '' : 'none';
   }
 
+  // Report Type — shared by the row pill and the Add/Edit form. Reuses
+  // ppr_report_templates.meeting_type's own vocabulary ('internal'/'client')
+  // rather than a second spelling of the same two values.
+  function reportTypeLabel(rt) {
+    return rt === 'client' ? 'External (Client)' : rt === 'internal' ? 'Internal' : 'Not set';
+  }
+  // Row pill text is shortened ("External", not the full "External (Client)")
+  // to fit the list's narrow Type column; the fuller wording is reserved for
+  // the filter dropdown and the Add/Edit form, where there's room for it.
+  function reportTypePillHTML(rt) {
+    var title = ' title="' + esc(reportTypeLabel(rt)) + '"';
+    if (rt === 'client') return '<span class="pd-pill pd-pill-warn"' + title + '>External</span>';
+    if (rt === 'internal') return '<span class="pd-pill pd-pill-muted"' + title + '>Internal</span>';
+    return '<span class="pd-pill pd-pill-muted"' + title + '>—</span>';
+  }
+
   function visiblePprs() {
     return pprs.filter(function (p) {
       // Archived is hidden unless the toggle is explicitly on — never both at
@@ -401,6 +424,9 @@ window.PPR = (function () {
       if (!!p.archived !== !!filters.archived) return false;
       if (filters.from && (!p.ppr_date || p.ppr_date < filters.from)) return false;
       if (filters.to && (!p.ppr_date || p.ppr_date > filters.to)) return false;
+      // A legacy (NULL) presentation matches neither specific option — it
+      // shows under "All" only, until someone opens it and sets a type.
+      if (filters.reportType && p.report_type !== filters.reportType) return false;
       return true;
     });
   }
@@ -423,7 +449,7 @@ window.PPR = (function () {
     $('ppr-countbar').style.visibility = pprs.length ? '' : 'hidden';
 
     var clr = $('ppr-clearfilters');
-    if (clr) clr.hidden = !(filters.from || filters.to);
+    if (clr) clr.hidden = !(filters.from || filters.to || filters.reportType);
 
     if (!pprs.length) {
       host.innerHTML = '<div class="pp-empty">' +
@@ -452,6 +478,7 @@ window.PPR = (function () {
           (selectedPprs[p.id] ? ' checked' : '') + ' /></div>' +
         '<div class="ppr-cell ppr-date">' + esc(longDate(p.ppr_date)) + '</div>' +
         '<div class="ppr-cell">' + esc(p.description || '—') + '</div>' +
+        '<div class="ppr-cell">' + reportTypePillHTML(p.report_type) + '</div>' +
         '<div class="ppr-cell ppr-num">' + n + '</div>' +
         '</div>';
     }).join('');
@@ -463,7 +490,7 @@ window.PPR = (function () {
     var table = '<div class="ppr-table">' +
       '<div class="ppr-head"><div class="pp-selcell"><input type="checkbox" id="ppr-selall"' +
         (allChecked ? ' checked' : '') + ' title="Select/unselect all shown" /></div>' +
-        '<div>Presentation Date</div><div>Description</div>' +
+        '<div>Presentation Date</div><div>Description</div><div>Type</div>' +
       '<div class="ppr-num">No. of Slides</div></div>' +
       (list.length ? rows : '<div class="pp-empty" style="border:0;">' +
         (filters.archived ? 'No archived presentations.' : 'No presentations in this date range.') + '</div>') +
@@ -1289,12 +1316,49 @@ window.PPR = (function () {
   // both a PPR presentation and a client presentation, distinguished in the description.
   // The DB table/columns keep their `ppr_*` names — renaming them would break
   // every existing row and the migration isn't worth it for a label change.
+
+  // Shared by every ppr_presentations write that can carry report_type
+  // (openPprForm's insert/update, createPresentationPlain, the copy wizard's
+  // finish()) — tolerant of migrations/2026-09-02-ppr-presentation-report-
+  // type.sql not having run yet. Strips just that one column and retries so
+  // the presentation itself is never blocked from being created/renamed by
+  // one not-yet-migrated field; callers report typeDropped in their own toast
+  // rather than this helper toasting on their behalf.
+  function isMissingColumnErr(e) { return /column .* does not exist|schema cache/i.test((e && e.message) || ''); }
+  async function insertPresentation(data) {
+    var res = await sb().from(T_PPR).insert(Object.assign({}, data, { project_id: pid, created_by: uid })).select();
+    var typeDropped = false;
+    if (res.error && isMissingColumnErr(res.error) && 'report_type' in data) {
+      var retry = Object.assign({}, data); delete retry.report_type;
+      res = await sb().from(T_PPR).insert(Object.assign(retry, { project_id: pid, created_by: uid })).select();
+      typeDropped = !res.error;
+    }
+    return { res: res, typeDropped: typeDropped };
+  }
+  async function updatePresentation(id, data) {
+    var res = await sb().from(T_PPR)
+      .update(Object.assign({}, data, { updated_at: new Date().toISOString() })).eq('id', id);
+    var typeDropped = false;
+    if (res.error && isMissingColumnErr(res.error) && 'report_type' in data) {
+      var retry = Object.assign({}, data); delete retry.report_type;
+      res = await sb().from(T_PPR).update(Object.assign(retry, { updated_at: new Date().toISOString() })).eq('id', id);
+      typeDropped = !res.error;
+    }
+    return { res: res, typeDropped: typeDropped };
+  }
+
   function openPprForm(p) {
     var isNew = !p; p = p || {};
     // Copy-previous: pre-selects the most recent EARLIER presentation so a new one
     // starts from last period's slides, with its "after" photos promoted to
     // "before" (see copySlidesFrom below).
     var prior = pprs.filter(function (x) { return x.id !== p.id; });
+    // Report Type — reuses ppr_report_templates.meeting_type's own vocabulary.
+    // Defaults the PICKER to Internal for a brand-new presentation, and for a
+    // legacy (NULL) one being edited — visible/changeable before Save, never
+    // a silent backend backfill. An already-classified 'client' row keeps
+    // showing External (Client) as expected.
+    var curType = p.report_type || 'internal';
     var html =
       '<div class="pd-modal-header"><h3>' + (isNew ? 'New Presentation' : 'Edit Presentation') + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
@@ -1304,6 +1368,11 @@ window.PPR = (function () {
         '<div class="pd-field"><label>Description</label>' +
           '<input class="pd-input" id="ppr-f-desc" placeholder="e.g. PPR ftm of June 2026 / Client Presentation" value="' +
           esc(p.description || '') + '" /></div>' +
+        '<div class="pd-field"><label>Report Type</label>' +
+          '<select class="pd-select" id="ppr-f-reporttype">' +
+            '<option value="internal"' + (curType === 'internal' ? ' selected' : '') + '>Internal</option>' +
+            '<option value="client"' + (curType === 'client' ? ' selected' : '') + '>External (Client)</option>' +
+          '</select></div>' +
         (isNew && prior.length
           ? '<div class="pd-field pp-span2"><label>Copy from a previous presentation ' +
               '<span class="pp-optnote">(optional)</span></label>' +
@@ -1325,6 +1394,7 @@ window.PPR = (function () {
       var date = $('ppr-f-date').value;
       if (!date) { UI.toast('A presentation date is required', 'warn'); return; }
       var desc = $('ppr-f-desc').value.trim();
+      var reportType = $('ppr-f-reporttype') ? $('ppr-f-reporttype').value : '';
       var copyFrom = $('ppr-f-copy') ? $('ppr-f-copy').value : '';
 
       // Copying from a previous presentation now goes through a wizard
@@ -1337,26 +1407,29 @@ window.PPR = (function () {
       // slides.
       if (isNew && copyFrom) {
         m.close();
-        openCopyWizard({ ppr_date: date, description: desc }, copyFrom);
+        openCopyWizard({ ppr_date: date, description: desc, report_type: reportType }, copyFrom);
         return;
       }
 
       this.disabled = true;
-      var data = { ppr_date: date, description: desc };
-      var res, newId = null;
+      var data = { ppr_date: date, description: desc, report_type: reportType };
+      var r, newId = null;
       if (isNew) {
-        // .select() so the new id comes back — needed to jump straight to its editor.
-        res = await sb().from(T_PPR)
-          .insert(Object.assign(data, { project_id: pid, created_by: uid })).select();
-        if (!res.error) newId = res.data && res.data[0] && res.data[0].id;
+        r = await insertPresentation(data);
+        newId = r.res.data && r.res.data[0] && r.res.data[0].id;
       } else {
-        res = await sb().from(T_PPR)
-          .update(Object.assign(data, { updated_at: new Date().toISOString() })).eq('id', p.id);
+        r = await updatePresentation(p.id, data);
       }
-      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      if (r.res.error) { UI.toast(r.res.error.message, 'error'); this.disabled = false; return; }
 
       m.close();
-      UI.toast(isNew ? 'Presentation created' : 'Presentation updated', 'ok');
+      UI.toast(
+        r.typeDropped
+          ? (isNew ? 'Presentation created' : 'Presentation updated') +
+            ', but Report Type was not stored — run migrations/2026-09-02-ppr-presentation-report-type.sql'
+          : (isNew ? 'Presentation created' : 'Presentation updated'),
+        r.typeDropped ? 'warn' : 'ok'
+      );
       await load();
       // After creating, go straight into the slides editor (owner feedback:
       // "after adding PPR, it should go to PPR edit") rather than dropping the
@@ -1757,10 +1830,9 @@ window.PPR = (function () {
         UI.toast('Every slide needs a current photo before this can be saved', 'warn'); return;
       }
       $('ppr-wiz-finish').disabled = true;
-      var res = await sb().from(T_PPR)
-        .insert(Object.assign({}, newData, { project_id: pid, created_by: uid })).select();
-      if (res.error) { UI.toast(res.error.message, 'error'); $('ppr-wiz-finish').disabled = false; return; }
-      var newId = res.data && res.data[0] && res.data[0].id;
+      var ir = await insertPresentation(newData);
+      if (ir.res.error) { UI.toast(ir.res.error.message, 'error'); $('ppr-wiz-finish').disabled = false; return; }
+      var newId = ir.res.data && ir.res.data[0] && ir.res.data[0].id;
       var payload = drafts.map(function (d) {
         return Object.assign({}, d, { ppr_id: newId, project_id: pid, created_by: uid,
           before_caption: d.before_caption || null, after_caption: d.after_caption || null });
@@ -1774,7 +1846,9 @@ window.PPR = (function () {
         m.close(); await load(); openPpr(newId); return;
       }
       m.close();
-      UI.toast('Presentation created with ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's') + ' copied', 'ok');
+      UI.toast('Presentation created with ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's') + ' copied' +
+        (ir.typeDropped ? ' (Report Type not stored — run migrations/2026-09-02-ppr-presentation-report-type.sql)' : ''),
+        ir.typeDropped ? 'warn' : 'ok');
       await load(); openPpr(newId);
     }
     var m = null;
@@ -1782,11 +1856,13 @@ window.PPR = (function () {
   }
 
   async function createPresentationPlain(data) {
-    var res = await sb().from(T_PPR).insert(Object.assign({}, data, { project_id: pid, created_by: uid })).select();
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    UI.toast('Presentation created', 'ok');
+    var r = await insertPresentation(data);
+    if (r.res.error) { UI.toast(r.res.error.message, 'error'); return; }
+    UI.toast(r.typeDropped
+      ? 'Presentation created, but Report Type was not stored — run migrations/2026-09-02-ppr-presentation-report-type.sql'
+      : 'Presentation created', r.typeDropped ? 'warn' : 'ok');
     await load();
-    var newId = res.data && res.data[0] && res.data[0].id;
+    var newId = r.res.data && r.res.data[0] && r.res.data[0].id;
     if (newId) openPpr(newId);
   }
 
@@ -2274,10 +2350,13 @@ window.PPR = (function () {
 
     var today = new Date().toISOString().slice(0, 10);
     var desc = tmpl.name + ' — ' + longDate(today);
-    var ires = await sb().from(T_PPR)
-      .insert(Object.assign({ ppr_date: today, description: desc }, { project_id: pid, created_by: uid })).select();
-    if (ires.error) { UI.toast(ires.error.message, 'error'); return; }
-    var newId = ires.data && ires.data[0] && ires.data[0].id;
+    // Carries the template's OWN classification onto the presentation it
+    // generates ('internal'/'client', the same vocabulary as report_type) —
+    // a template already tagged Internal/Client shouldn't need re-tagging by
+    // hand after every Generate.
+    var ir = await insertPresentation({ ppr_date: today, description: desc, report_type: tmpl.meeting_type });
+    if (ir.res.error) { UI.toast(ir.res.error.message, 'error'); return; }
+    var newId = ir.res.data && ir.res.data[0] && ir.res.data[0].id;
     if (!newId) { UI.toast('Presentation created, but its id could not be read back', 'error'); await load(); return; }
 
     var payload = picks.map(function (x, i) {
@@ -2306,6 +2385,7 @@ window.PPR = (function () {
     var note = [];
     if (noPhoto) note.push(noPhoto + ' location' + (noPhoto === 1 ? '' : 's') + ' still ha' + (noPhoto === 1 ? 's' : 've') + ' no photo');
     if (noBaseline) note.push(noBaseline + ' baseline photo' + (noBaseline === 1 ? '' : 's') + ' no longer exist' + (noBaseline === 1 ? 's' : ''));
+    if (ir.typeDropped) note.push('Report Type not stored — run migrations/2026-09-02-ppr-presentation-report-type.sql');
     UI.toast('Generated ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's') +
       ' for "' + tmpl.name + '"' + (note.length ? ' — ' + note.join('; ') : ''), note.length ? 'warn' : 'ok');
     await load();
@@ -2562,6 +2642,19 @@ window.PPR = (function () {
     // Item 17 — the stacked-photo-card thumbnail is worth genuinely
     // executing (a mismatched previous/current guard here would silently
     // fall back to a flat single image for every dual-photo slide).
-    _slideThumbHTML: function (sl, i, clickable) { return slideThumbHTML(sl, i, clickable); }
+    _slideThumbHTML: function (sl, i, clickable) { return slideThumbHTML(sl, i, clickable); },
+    // Report Type (Internal/External filter) — worth genuinely executing:
+    // a flipped comparison in visiblePprs() would silently show the wrong
+    // presentations under a chosen filter with nothing in the UI to catch
+    // it, the same class of risk this file already documents for
+    // archiveDirectionFor. Save/restore convention matches
+    // _renderPreviewWithState above.
+    _reportTypeLabel: function (rt) { return reportTypeLabel(rt); },
+    _reportTypePillHTML: function (rt) { return reportTypePillHTML(rt); },
+    _visiblePprsWithState: function (pprsArr, filtersPatch) {
+      var savedPprs = pprs, savedFilters = filters;
+      pprs = pprsArr; filters = Object.assign({}, filters, filtersPatch);
+      try { return visiblePprs(); } finally { pprs = savedPprs; filters = savedFilters; }
+    }
   };
 })();

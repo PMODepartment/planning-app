@@ -612,9 +612,12 @@
 }
 .ppr-head, .ppr-row {
   /* Leading 34px track is the item-14 select checkbox. The trailing Actions
-     track is GONE (item 15 — no per-row icons); 3 data tracks remain
-     (Date/Description/Slides). */
-  display: grid; grid-template-columns: 34px 150px minmax(120px, 1fr) 110px;
+     track is GONE (item 15 — no per-row icons); 4 data tracks remain
+     (Date/Description/Type/Slides) — Type added for the Report Type
+     filter/pill (Internal/External); never let this silently drift out of
+     sync with the header/row cell count in ppr.js's renderList(), the exact
+     class of defect this app's own history has been bitten by more than once. */
+  display: grid; grid-template-columns: 34px 150px minmax(120px, 1fr) 90px 110px;
   align-items: center;
 }
 .ppr-head {
