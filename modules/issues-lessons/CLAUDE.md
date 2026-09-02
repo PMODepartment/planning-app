@@ -1,5 +1,134 @@
 # Module: issues-lessons
 
+## 2026-09-02 — Title dedup extended to all 3 screens, Related lessons as a numbered list, denser table, Reopen from Closed, and export to Excel/PDF/HTML
+
+Owner's 9-item list: (1) the module title is still showing "to the left" on Issues & Concerns and
+Issues Dashboard — only Lessons Learned had it removed; (2) a lesson's own detail view should be
+the same layout as an issue's, with the lesson above the issue, not two differently-shaped blocks;
+(3) that embedded issue's own lesson list should exclude the current lesson and read "Related
+lessons"; (4) a button to open the referenced issue, and every lesson added straight from the
+Lessons Learned screen must log a real issue behind it; (5) that lesson list should be a numbered
+list of lesson text only, not tiles; (6) smaller, denser table fonts, text allowed to overflow, and
+the Issue/Caused By/Corrective Action columns widened; (7) no reporting view; (8) export Issues and
+Lessons Learned as Excel/PDF/HTML; (9) a Reopen button on a Closed issue, not just On Hold.
+
+**Items 2 and half of item 4 were already built** (entries (f)/(g)/(h)): `lessonDetailHTML` already
+reuses `issDetailHTML`'s `.il-iss-split`/`.il-iss-panel`/`.il-iss-body` layout with the lesson above
+the embedded issue, and `newLessonAsClosedIssue()` already routes every "+ New lesson" click from
+the Lessons screen through the full issue-to-closure form — so a lesson created there has always
+logged a real (Closed) issue behind it. This entry closes the remaining gaps.
+
+### Item 1 — the title was hidden on Lessons only
+
+⚠️ Entry (h)'s fix scoped the always-hide to `s === 'lessons'` — deliberate at the time, but the
+owner's report names Issues & Concerns and Issues Dashboard too. `switchScreen()` now hides the
+whole `<h1>` on **every** screen: `.il-tabs`' dropdown trigger already names whichever of the three
+is active, so the module title duplicates it everywhere, not just on Lessons. ⚠️ Still a full
+element hide (never text-only) — hiding only `.il-title-txt` is the exact defect entry (h) traced
+("icon alone on a line, dropdown label on the next"); hiding the whole `<h1>` leaves nothing
+standing for that to happen to.
+
+### Item 3 — "Related lessons", not "Lessons learned from this issue"
+
+Heading renamed in `issDetailHTML`. The exclusion (`opts.excludeLessonId`, so the lesson you're
+already looking at never lists itself as "related" to itself) was already correct and untouched.
+
+### Item 4 — an explicit "Open issue" button
+
+`lessonDetailHTML`'s toolbar gains **"Open issue in Issues & Concerns →"** (only when the lesson
+has a real `issue_id`) — reusing `openIssue()`, the same entry point the log/dashboard/step-through
+already use, so it switches to the real Issues & Concerns screen rather than merely scrolling to
+the read-embedded copy already sitting below on the same page. It replaces the toolbar slot the
+removed Reporting-view toggle (item 7) used to occupy.
+
+### Item 5 — a numbered list, lesson text only
+
+The "Related lessons" section's tile/card grid (`lessonCardHTML`, `.il-lessons.il-lessons-inline`)
+is replaced with a plain `<ol>` of lesson text — no department chip, date, or action buttons, just
+the line, clickable to open. ⚠️ `lessonCardHTML` is **removed outright** — its only caller was this
+section, and nothing else in the module ever called it (checked before deleting, not assumed).
+Reuses `wireIssues()`'s existing generic `[data-open-lesson]` wiring, so no new event handler was
+needed. The now-dead `.il-lessons`/`.il-lcard*`/`.il-chip` CSS (that tile grid's own styling) is
+removed with it; `.il-lcard-src`/`.il-src-issue` are **kept** — `renderLessonsLogView` still uses
+them for the source line under a lesson's own row in the Lessons Learned table.
+
+### Item 6 — a denser, more minimalist table
+
+`.il-table` drops to 12.5px body / 11px header font (was inherited ~14px); `.il-cell-wrap` (the
+Issue / Caused By / Corrective Action / Lesson Learned cells) widens 320px → 420px; `min-width`
+raised 980px → 1080px to fit. ⚠️ **`-webkit-line-clamp` removed from the desktop `.il-clip` rule** —
+a clamped cell hid text with nothing on screen saying more had been cut off, exactly what "allow
+text overflows as needed" asks to stop. ⚠️ The **mobile card view's own 4-line clamp had to keep its
+own complete definition** (`display:-webkit-box`/`-webkit-box-orient`/`overflow`, not just
+`-webkit-line-clamp`) — it previously borrowed those three properties from the desktop rule I just
+stripped them from, and `-webkit-line-clamp` alone does nothing without them.
+
+### Item 7 — no reporting view (lessons)
+
+`_lessReport` and its toolbar toggle (`#il-less-report`) are removed from `lessonDetailHTML` —
+issues already lost theirs in an earlier round (entry note: "the separate 'Reporting view'
+read-only toggle this used to also fold in is gone"), lessons hadn't caught up. `ro` in
+`lessonDetailHTML` now means exactly what it means on an issue's page: edit permission, full stop.
+
+⚠️ **Found while removing it: an entire CSS block for a Minutes-of-Meeting-style reporting view
+(`.il-mom-report`) was already 100% dead in this file** — it targeted ids (`#il-mom-additem`,
+`#il-mom-carry`, `#il-mom-save`, …) belonging to the *other* module this file split out of in
+2026-08-31, and nothing in `module.js` had set that class on an Issues/Lessons host since the
+issues-side toggle was removed in an earlier round. Confirmed dead (grepped for every `.add`/
+`.toggle` of the class — none), then removed along with the three vestigial
+`host.classList.remove('il-mom-report')` calls that were its only remaining trace.
+
+### Item 8 — export to Excel / PDF / HTML
+
+New **Export ▾** control in the topbar tool cluster (beside Refresh), offering the currently
+**filtered and sorted** Issues or Lessons list (whichever screen is active) — the same list
+`issuesFiltered()`/`lessonsFiltered()` + the active `_issSort`/`_lessSort` already render on screen,
+so an export can never disagree with what's on it. Hidden while a single record's detail is open or
+on the Dashboard tab (nothing there is "the list").
+
+- **Excel** — the same SheetJS convention this suite already uses elsewhere (`aoa_to_sheet` →
+  `book_new` → `writeFile`), loaded from the same pinned CDN build (`xlsx@0.18.5`) every other
+  exporting module already loads.
+- **HTML** — a self-contained file (inline `<style>`, no external references) built as a string and
+  downloaded via `Blob` + a throwaway `<a download>`, so it opens correctly offline.
+- **PDF** — `html2pdf.js@0.10.1`, the same pinned CDN build minutes-of-meeting and progress-photos
+  already load, landscape (these are wide tables). ⚠️⚠️ **Follows the "normal flow" rule this repo
+  already learned the hard way** (minutes-of-meeting's `momDownloadPDF`): the captured node must
+  stay in normal flow — html2pdf clones it into its own container and measures it there, so an
+  out-of-flow node contributes zero height and produces a silently blank PDF. The off-screen parking
+  goes on a separate holder (`position:fixed;left:-10000px`); the rendered `wrap` sits in normal
+  flow inside it. Cleanup runs in `finally`, so a thrown export can't leave a stray node behind for
+  the next one to stack on top of.
+
+### Item 9 — Reopen offered from Closed too
+
+`canReopen` widened from `status === 'On Hold'` to `status === 'On Hold' || status === 'Closed'`.
+No change needed to `confirmReopenIssue()` — it already just sets status back to `Open` with a
+required Action Plan, which is exactly as sound a transition from Closed as it always was from On
+Hold. `date_resolved`/`closure_report` are deliberately left as historical record of the last
+closure; a later re-close overwrites both with fresh values, same as before.
+
+### Verified
+
+- `node --check` clean on `module.js`.
+- 0 NUL bytes across `module.js`/`module.css`/`index.html`.
+- CSS braces balanced: 272/272 (was 281/281 before the dead-code removals below).
+- 0 duplicate DOM `id=` attributes in `index.html`; `<div>` tags balanced (28/28).
+- Function-name-set diff against `origin/main`: **1 function removed (`lessonCardHTML`, its only
+  caller replaced), 6 added** (`closeExportMenu`, `exportRows`, `exportRegister`,
+  `exportExcelFile`, `exportHTMLFile`, `exportPDFFile`) — all deliberate.
+- Repo-wide grep confirms no other file references any of the removed classes (`il-lcard`,
+  `il-chip`, `il-lessons`) or the removed `_lessReport`/`il-mom-report` mechanism.
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing constraint
+for every UI pass in this module. No live click-through of the export menu against real filtered
+rows (in particular, no PDF has actually been opened, no `.xlsx` has actually been read back, and
+no HTML export has actually been opened offline), the Reopen-from-Closed workflow against a real
+row, or the numbered "Related lessons" list's click-to-open against real linked lessons.
+
+`module.css/js?v=` → `20260902a`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260902u`.
+
 ## 2026-09-01 (h) — Mobile pass off a phone screenshot: the duplicate title, KPI/chart tile layout, touch reorder, and the lesson detail's field arrangement
 
 Owner sent a phone screenshot of the live Issues & Concerns screen — the module `<h1>` ("Issues &

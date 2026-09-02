@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Issues, Concerns &amp; Lessons Learned · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260901j" />
+  <link rel="stylesheet" href="module.css?v=20260902a" />
 </head>
 <body>
   <div class="pd-app">
@@ -67,6 +67,18 @@
           <span class="il-tb-sep" id="il-sep"></span>
           <button class="pd-btn" id="il-refresh" title="Reload">
             <span data-ico="refresh" data-ico-size="16"></span></button>
+          <!-- Item 8: export the currently-shown Issues or Lessons list (whichever
+               screen is active) as Excel / PDF / HTML. Hidden on the Dashboard tab
+               (nothing there is "the list" to export) — see syncChrome() in module.js. -->
+          <div class="il-exportwrap" id="il-exportwrap">
+            <button class="pd-btn" id="il-export-btn" title="Export this list">
+              <span data-ico="download" data-ico-size="16"></span></button>
+            <div class="il-export-menu" id="il-export-menu">
+              <button data-export="excel">Export as Excel (.xlsx)</button>
+              <button data-export="pdf">Export as PDF</button>
+              <button data-export="html">Export as HTML</button>
+            </div>
+          </div>
         </div>
         <div id="il-presence" title="People viewing this project"></div>
         <div id="user-bar"></div>
@@ -173,7 +185,14 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260901j"></script>
+  <!-- Item 8: export libraries — same pinned versions the rest of the suite already
+       loads (drawing-register/project-schedule/etc for SheetJS; minutes-of-meeting/
+       progress-photos for html2pdf.js). Loaded before module.js so both are ready by
+       the time an export is clicked; the module degrades with a toast if either
+       failed to load rather than throwing. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="module.js?v=20260902a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
