@@ -1,5 +1,45 @@
 # Manpower Loading — module change log
 
+## Fix: the phone tab strip overlapped itself — `display:inline-flex` defeated the shared wrap rule (2026-09-02)
+
+Found via a headless audit pass (mocked-Supabase Playwright harness rendering the real, unmodified
+module at 375px) — screenshot showed "LoadingPositions", "RosterMobilizationActivities" running
+together with no visible gap, unreadable.
+
+⚠️ **Root cause: `.mp-tab` sets `display:inline-flex; gap:6px` — vestigial, these tabs carry no icon,
+just bare text.** That turns each tab's own text into an anonymous flex item whose default
+`min-width:auto` refuses to shrink below the width of its longest unbroken WORD — which defeats the
+shared `dashboard.css` rule at ≤700px (`.pd-modulebar > [class$="-tabs"] > button { flex:1 1 0;
+min-width:0; white-space:normal; ... }`), whose entire documented purpose is to wrap a long tab label
+onto two lines instead of letting it overflow. That is the exact bug class already fixed once for
+Contracts & Claims (2026-07-24 part 6) — reintroduced here by this module's own local CSS.
+
+With 7 tabs at ~44px each, single unbreakable words ("Mobilization", "Positions", "Activities",
+"Portfolio") don't wrap; they overflow past their own tab box and visibly overlap the neighbour on
+both sides. Measured: "Mobilization"'s text ran **14px past its own tab's right edge**, into
+"Activities"; every tab except "Org Chart" and "Roster" overflowed measurably.
+
+⚠️ **Checked whether this is systemic** — Resource Loading (`.rl-tab`) and Portfolio Overview
+(`.po-tab`) share the identical `display:inline-flex; gap:6px` boilerplate, but their tabs carry a
+real icon *and* their words happen to be short enough (4–6 tabs vs. 7, no 12-character unbreakable
+words) that the same latent defect never manifests in practice — confirmed by measuring both at
+375px: all negative overflow, safely inside their own tab. Left untouched; nothing to fix there today.
+
+**Fix, phone-scoped, in this module's own `<style>`:** `.mp-tab { display:block; text-align:center;
+overflow-wrap:break-word; word-break:break-word; }` at ≤700px. `display:block` removes the competing
+flex-item `min-width:auto` (this button has no icon child, so nothing else depends on the inline-flex
+layout), and `overflow-wrap`/`word-break` let a single long word actually break mid-word so it can
+wrap within a ~44px column — the shared rule's `white-space:normal` alone cannot do that for text
+with no spaces to break on.
+
+**Verified:** every tab's text now measures comfortably inside its own button box (all overflow
+values negative, was up to +14px). Screenshot confirms clean multi-line wrapping with no overlap.
+Full regression sweep at both 375px and 1440px: 0 console errors, 0 page overflow, both unchanged
+from before the fix except the tab strip itself.
+
+⚠️ **Not verified signed in** — pure CSS specificity/layout fix, independent of any data, found and
+fixed under a mocked backend; applies identically to a real session.
+
 The HRD "Manpower Report" as a live module: what positions a project needs, how many heads of each
 are planned / approved / forecast / actually deployed each month, who is filling them, and — across
 every project the user can open — which job is most short.

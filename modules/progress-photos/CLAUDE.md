@@ -729,6 +729,34 @@ speeds, or the person/drone icon rendering in an actual browser DOM.
 `assets/js/icons.js` → `?v=20260901b` (bumped across all 20 referencing HTML files —
 shared asset). `bim.js` → `?v=20260901c` (module-local; `module.css/js`/`ppr.js` stay at
 their existing `?v=20260901a` from this same day's earlier turns, unchanged by this entry).
+## "+ Add media" dropdown reopened permanently on every page load — the SAME `[hidden]`-vs-CSS-`display` trap as `.pp-selbar` (2026-09-02)
+
+Found independently via a headless audit pass (mocked-Supabase Playwright harness rendering the
+real, unmodified module — no live report). Screenshot at 1440×900 showed the Photo/Video/360°/3D
+dropdown sitting open on top of the empty-state card the instant the page loaded, with no click.
+
+⚠️ **Exactly the bug class this file's own 2026-08-29 entry already fixed once, for a different
+element.** `#pp-addmenu` carries `hidden` in the static markup and the JS toggle (`menu.hidden =
+!menu.hidden`) correctly flips the DOM attribute — confirmed by reading `wireAdd`'s click handler
+before touching anything. But `.pp-addmenu { ...; display: flex; ... }` in `module.css` sat at the
+**same specificity** as the browser's own `[hidden] { display: none }` user-agent rule, and an
+author stylesheet rule always wins over a UA rule at equal specificity — so the attribute was being
+silently overridden and the menu rendered permanently visible regardless of its `hidden` state.
+Measured directly: `el.hidden === true` and `el.hasAttribute('hidden') === true`, yet
+`getComputedStyle(el).display === 'flex'` with a real, non-zero on-screen rect. Fix drafted:
+`.pp-addmenu[hidden] { display: none; }`, the identical shape `.pp-selbar`'s own fix used.
+
+⚠️ **Superseded by a concurrent session, discovered while rebasing this branch onto `main`.**
+`main` had already landed the identical rule (`.pp-addmenu[hidden] { display: none; }`) in commit
+`97c7435` ("Progress Photos: 11-item feedback round complete"), independently of this branch — the
+2026-09-02 "Owner-reported round 2 item 1" comment above this rule in `module.css` is that other
+session's own writeup of the same specificity trap. So this entry records that the bug was real and
+was found and diagnosed here too, not that this branch's own patch is what shipped it — the code
+change itself carried no diff once rebased onto `main`, since `main` already had the fix.
+
+⚠️ **Not verified signed in** — found and diagnosed under a mocked Supabase backend; the underlying
+cause is pure CSS specificity, independent of any data, so the same fix applies identically to a
+real session (and, per the above, was already live via the other session's own commit).
 
 ## Six-item owner feedback round: old-photo thumbnail backfill, tile size, tab
 ## labels, "Add Text" fixed + formatting, Add-media dropdown leak, back-button
