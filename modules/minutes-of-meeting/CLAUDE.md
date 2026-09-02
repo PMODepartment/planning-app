@@ -1,5 +1,187 @@
 # Module: minutes-of-meeting
 
+## 2026-09-02 — Full rehaul: dropdown tab, list/calendar icon toggle, a real "+ Add
+## meeting" modal, favorites, series pages, a per-hour Week view, and exports
+
+Owner's 10-item rehaul spec, verbatim in the commit history. **Run
+`migrations/2026-09-02-meetings-rehaul.sql`** (after the 2026-09-01 schedules/attendees
+migration — this one adds to the same two tables).
+
+**1 — "no need for the meeting label, have a dropdown with 2 choices."** The `.il-tabs`
+strip (Meetings Dashboard / Meetings) is converted into one dropdown trigger via the
+shared `UI.tabsToDropdown('.il-tabs')` — the same mechanism Issues & Concerns and
+Progress Photos already use, which is also what makes the static module title
+disappear where there's room for it (via `.pd-title-hasdrop`, never an unconditional
+JS hide — this app's own history has twice recorded that reintroducing the
+"icon-alone-then-label-on-the-next-line" defect on narrow screens).
+
+**2 — icon-only List/Calendar toggle, top right.** `#il-viewtoggle` in the topbar tool
+cluster (two square `.il-vt-btn` icon buttons — `listView`/`calendar` from `icons.js`),
+wired once in `wire()` since it lives outside `#il-mom-view`. `syncTopTabs()` hides it
+whenever it wouldn't mean anything on screen (the Dashboard tab, or a single meeting/
+series already open) and syncs its `.on` state to `_momView` on every render.
+
+**3 — "+ Add meeting" is now a real modal**, not a one-click blank-row insert.
+`openAddMeetingModal()`/`saveAddMeeting()`: title, date, start/end time, venue, meeting
+link, Required/Optional attendee People Pickers, an addable agenda list, and Recurring
++ Favorite checkboxes. ⚠️ **The agenda list is DOM-driven, not a JS array kept in
+state** (`agendaRowsHTML`/`wireAgendaList`/`agendaValuesOf`) — each row is a real input;
+adding/removing just adds/removes nodes, and values are read straight off the inputs at
+save time, so there is nothing to keep in sync with the DOM.
+- **Not recurring** → inserts one `meeting_minutes` row, and each agenda item becomes a
+  real `mom_items` row (`type:'Report'`) — the same table every other action item lives
+  in, so it has the full owner/due-date/hold-close/history apparatus from the moment the
+  meeting exists, rather than being a second, throwaway text list. The register's
+  still-open issues are quietly seeded onto the new agenda too, the same rule every
+  other "new minute" path in this module already follows.
+- **Recurring** → inserts one `mom_schedules` row (frequency + rule fields via the
+  existing `scheduleRuleFieldsHTML()`, series start/end dates, and the same venue/link/
+  attendee/agenda fields stored as the series' own defaults — `mom_schedules` gained
+  `venue`/`meeting_link`/`start_time`/`end_time`/`attendees_required`/
+  `attendees_optional`/`default_agenda`/`end_date`/`is_favorite` in the 2026-09-01
+  migration for exactly this). No occurrence is created automatically — the series row
+  itself IS the list entry (item 4), and its first meeting is created from its own
+  series page (item 6) the same way every later one is.
+- ⚠️ **Genuinely missing column found while wiring this up:** `mom_schedules` has read
+  and written `interval_n` (the "every N weeks" step) since the table was created, but
+  the original CREATE TABLE never declared it — so "every 2 weeks" has silently been
+  writing to nothing and always recurring weekly. Added in this migration, defaulted to
+  1 (the behaviour every existing row already had).
+
+**4 — the unified list, favorites pinned to the top.** `momUnifiedRows()` builds ONE
+descriptor set from `MOMS` (standalone meetings, `schedule_id` null) and
+`SCHEDULES` (active recurring series) — Title / Date-or-frequency / attendee count /
+Location, with a Recurring or Draft pill beside the title. `momSortedRows()` partitions
+into favorite/non-favorite, sorts each half with whatever column comparator is active,
+then concatenates favorites first — so a column click still reorders *within* the pin,
+it never fights it. ⚠️ **An occurrence of a series (`schedule_id` set) is never a row
+here** — it's reached only from its series' own page (item 6); a planner does not need
+to tell a one-off from a recurring meeting apart until they click into it, and listing
+both the series AND every one of its past occurrences as separate top-level rows would
+double-count the same recurring commitment.
+- The favorite star (★/☆ — plain Unicode, not an `icons.js` glyph; no "star" icon exists
+  in that shared set and this rehaul is not the place to add one) is wired with
+  `e.stopPropagation()` so clicking it never also opens the row it sits in, and
+  `momToggleFavorite(kind, id)` optimistically flips the row, re-renders whichever
+  view is active (`reRenderMomHost()`), and reverts + toasts the migration name if the
+  round-trip fails on a missing column.
+
+**5 — Detail view gained the actual-vs-planned pairing.** Planned **Start time / End
+time** now sit beside the existing Date field; **Actual start / Actual finish** sit next
+to the (already-existing, from 2026-09-01) Required/Optional/**Actual** attendee
+pickers. ⚠️ **Both pairs are always shown, never conditionally revealed once "the
+meeting is done"** — a meeting recorded ahead of time can still have its actual times
+filled in the moment it wraps, and guessing "done" from the date would just make the
+fields harder to find on the one day they matter most. "Minutes of the Meeting" is the
+existing Notes / discussion textarea — already free text, already exported — relabelled
+in the HTML/PPTX exports so the term matches the ask; the on-screen label is left as
+"Notes / discussion" since it already says what the field is for.
+- The favorite toggle also lives here, in the Detail toolbar, so ANY meeting — not just
+  a series — can be favorited and pinned to the top of the list (item 4).
+
+**6 — series page.** `momOpenSeries(id)` switches `_momView` to `'series'` and renders
+`renderSeriesPage()`: the schedule's own title/frequency/group/end-date/next-occurrence,
+Favorite/Edit/Delete/"+ Add a meeting" actions, and a table of every meeting actually
+held under it (`schedMeetingsOf`) — clicking one opens it in Detail exactly like any
+other meeting. Every schedule-CRUD control that used to sit in an always-visible panel
+in the browse view (dead code from an earlier draft — see below) now lives here
+instead, reached the same way any other row is opened.
+- ⚠️ **"Back to meetings" from a meeting created off this page returns to the series
+  page it came from, not wherever List/Calendar was sitting before.** `momOpenMeeting()`
+  captures the CURRENT `_momView` as `_momBrowsePrev` before switching to Detail — so as
+  long as `_seriesSel` stays set when `scheduleCreateOccurrence()` calls it (it used to
+  be nulled right before the call, which is now fixed), `_momBrowsePrev` comes out as
+  `'series'` and the round trip lands back where it started.
+- ⚠️ **Found and removed while wiring the series page in: `wireBrowse()` still carried
+  the ENTIRE old schedule-panel wiring block** — `#il-sched-new`/`#il-sched-close`/
+  `.il-mom-schedrow[data-sched]`/etc — none of which `renderBrowse()` had emitted for
+  several edits already (the browse view's own markup had already moved on to the
+  unified list). Harmless (the `querySelector`s just returned null), but dead and
+  confusing; deleted along with the row-click handler's stale `tr.dataset.mom`
+  reference (the unified list rows carry `data-kind`/`data-id`, not `data-mom` — that
+  handler had never actually opened anything since the unified list shipped).
+
+**7 — "retrieve minutes from issues."** Already existed pre-rehaul as the "Get from
+issue" panel (`momGetPanelHTML`/`momOpenIssuesFor`/`momPullIssues`/`momPullOneIssue`) —
+confirmed still present and unchanged. Nothing in the 10-item spec asked for anything
+this didn't already do.
+
+**8 — export & email.** The Detail toolbar's single "⬇ PDF" button became one
+`<select id="il-mom-exportsel">` (HTML/PDF/PowerPoint/Excel) plus a separate "✉ Email"
+button; the browse view's toolbar gained a matching `<select id="il-mom-listexport">`
+(HTML/PDF/Excel) for the meeting list. PDF (`momDownloadPDF`) is untouched — it is
+already verified end-to-end (a real produced PDF opened and checked, not just its
+source measured) — the other formats are new, independent functions rather than a
+refactor sharing markup with it, to avoid reintroducing exactly the "measuring the
+source of a render is not verifying the render" trap that function's own history
+already paid for once.
+- **HTML** (`momExportHTML`/`momExportListHTML`) — a standalone document via
+  `Blob` + a synthetic `<a download>` click; no library needed.
+- **Excel** (`momExportXLSX`/`momExportListXLSX`) — SheetJS, the same
+  `xlsx@0.18.5` build already loaded by cash-flow / contracts-claims / equipment-
+  loading / manpower-loading / portfolio-overview / productivity-rates / project-
+  schedule in this suite.
+- **PowerPoint** (`momExportPPTX`) — `pptxgenjs@3.12.0`, the same build progress-
+  photos already loads for its PPR export. A title slide, a notes slide when the
+  minute has any, and a table slide of the action items. ⚠️ **Single-meeting only** —
+  the spec's second sentence ("meeting list can also be exported in html, pdf, xlsx")
+  deliberately does not list PPT for the list, so no list→PPTX export was built.
+- **Email** (`momEmailMinutes`) — a `mailto:` link, pre-filled subject + a plain-text
+  action-item summary. ⚠️ **This app has no SMTP/API backend to actually send mail**,
+  so a `mailto:` link — which pre-fills the person's own mail client and stops there —
+  is the honest version of "email these minutes," not a silent no-op dressed up as one.
+  The body says plainly that a file has to be attached by hand, since `mailto:` can
+  carry text only, never an attachment.
+- A PDF export of the meeting LIST (`momExportListPDF`) reuses `momDownloadPDF`'s
+  own detached-node-in-normal-flow pattern (see that function's own header comment for
+  why an out-of-flow node produces a completely blank PDF) rather than risking the same
+  mistake again in a second place.
+
+**9 — Week view (the per-hour half of "throughout month per day or throughout week per
+hour").** New `renderMomWeekHTML()` + `momWeekInit`/`momWeekShift`/`momWeekDates`/
+`momWeekLabel`/`timeToMinutes`/`fmtHour`: an hour axis (`WEEK_HOUR_START..END`, 6am–8pm
+by default) down the left, 7 day columns, timed meetings as absolutely-positioned
+blocks sized/placed from `start_time`/`end_time` in minutes-since-grid-start, and an
+**all-day row above the grid for meetings with no time set** — a meeting nobody has
+timed yet is still real and must still be seen, not silently dropped or forced onto a
+fake slot. `renderMomCalendarHTML()` is a thin Month/Week dispatcher above both (the
+old function of that name is now `renderMomMonthHTML`, unchanged internally).
+⚠️ **"This week" is seeded off the person's LOCAL wall-clock date exactly once, then
+immediately re-expressed as a UTC date string** — from that point on every date this
+view computes is pure `Date.UTC()` arithmetic, matching the Month view's own stated
+convention and this app's own repeatedly-learned local-vs-UTC lesson. Only the single
+"what week am I in right now" question ever touches local time.
+
+**10 — Dashboard.** Already existed pre-rehaul (`renderMomDashboard`/
+`renderMomActionDashboard`, 2026-09-01): meeting-frequency list, an attendance battery,
+an open-minutes meter, a conducted-as-scheduled donut, then an action-items summary
+mirroring Issues & Concerns' own tile/donut/bar/full-list shape. Confirmed still present
+and unchanged by this pass — nothing in the 10-item spec asked for anything beyond what
+it already did.
+
+**Verified.** `node --check` clean; CSS braces balanced (274/274); 0 NUL bytes across
+`module.js`/`module.css`/`index.html`; 0 duplicate DOM ids in `index.html`
+(`<div>`/`</div>` 14/14). Function-set diff against the last commit: **5 lost, all
+deliberate** (`schedulesPanelHTML`/`scheduleRowHTML`/`scheduleRightPaneHTML` — the old
+always-visible schedule panel, superseded by the series page; `momSortedList` —
+superseded by `momSortedRows`'s favorites-aware version; `momCreateNew` — superseded by
+`openAddMeetingModal`/`saveAddMeeting`), **35 added**. Every newly-referenced function
+name checked present via a static scan before wiring its caller.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the
+standing constraint for every UI pass in this repo. No live click-through of the Add
+Meeting modal, the series page's occurrence-creation flow, the Week grid against real
+timed meetings, or any of the four export formats against real data; the migration has
+not been run. The exports in particular deserve a real signed-in pass — HTML/XLSX are
+low-risk (plain data-to-file, no rendering library), but PDF-of-the-list and PPTX both
+depend on a library actually loading over the network, which this environment cannot
+observe.
+
+`module.css/js?v=20260902a`; `modules-grid.js?v=` (hence `MODULE_V`) → `20260902a`
+across `dashboard.html`/`modules.html` — this module's `index.html` changed
+structurally (new toolbar markup, two new CDN script tags), so a returning browser
+needs the bump to stop serving the cached pre-rehaul page.
+
 ## 2026-09-01 — Dashboard + Meetings tabs, recurring schedules, structured attendees,
 ## Internal/External grouping, and per-action-item hold/close history
 

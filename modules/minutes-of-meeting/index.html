@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Minutes of Meeting · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901c" />
-  <link rel="stylesheet" href="module.css?v=20260901a" />
+  <link rel="stylesheet" href="module.css?v=20260902a" />
 </head>
 <body>
   <div class="pd-app">
@@ -37,17 +37,31 @@
           <select class="pd-select il-project" id="il-project" title="Project"></select>
         </div>
 
-        <!-- Item #17: Dashboard | Meetings. Wired once in module.js's wire();
-             .active is synced on every render() via syncTopTabs(). -->
+        <!-- Item 1: "no need for the meeting label — have a dropdown with 2
+             choices: Meetings and Meetings Dashboard." UI.tabsToDropdown()
+             converts these two (now-hidden) buttons into that one trigger,
+             which is also what makes the static "Minutes of Meeting" title
+             text beside it disappear where there's room (see wire() in
+             module.js for why that has to be conditional, not a bare hide).
+             Wired once in module.js's wire(); .active synced on every
+             render() via syncTopTabs(). -->
         <div class="il-tabs" role="tablist">
-          <button class="il-tab active" data-tab="dashboard">Dashboard</button>
+          <button class="il-tab active" data-tab="dashboard">Meetings Dashboard</button>
           <button class="il-tab" data-tab="meetings">Meetings</button>
         </div>
 
-        <!-- Tool cluster beside the profile: this module has no "+ New" here — creating
-             a meeting is a List/Calendar action (see module.js renderBrowse), the same
-             way every other browse-then-open screen in this suite works. -->
+        <!-- Tool cluster beside the profile. Item 2: an icon-only List/Calendar
+             toggle, top-right — only meaningful once inside Meetings and while
+             actually browsing (not with a single meeting/series open), so it
+             starts hidden and syncTopTabs() in module.js shows/hides + syncs
+             its `.on` state on every render(). -->
         <div class="il-topbar-tools">
+          <div class="il-viewtoggle" id="il-viewtoggle" hidden>
+            <button type="button" class="il-vt-btn" data-mv="list" title="List view">
+              <span data-ico="listView" data-ico-size="16"></span></button>
+            <button type="button" class="il-vt-btn" data-mv="calendar" title="Calendar view">
+              <span data-ico="calendar" data-ico-size="16"></span></button>
+          </div>
           <button class="pd-btn" id="il-refresh" title="Reload">
             <span data-ico="refresh" data-ico-size="16"></span></button>
         </div>
@@ -68,6 +82,13 @@
   <!-- Minutes of Meeting PDF export. Same library and version the standalone mom-app
        uses, so the exported sheet is byte-for-byte the same layout engine. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- Item 8: Excel export for a single meeting and for the meeting list
+       (SheetJS — the same library/version this suite's other Excel
+       importers/exporters already use, e.g. progress-photos). -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Item 8: PowerPoint export for a single meeting (pptxgenjs — the same
+       library/version already loaded by progress-photos' PPR export). -->
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
   <script src="../../assets/js/config.js?v=20260901c"></script>
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260901d"></script>
@@ -77,7 +98,7 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260901b"></script>
+  <script src="module.js?v=20260902a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

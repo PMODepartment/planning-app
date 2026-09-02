@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 — Minutes of Meeting rehaul; MODULE_V bump for the structurally-changed page
+
+Owner's 10-item Minutes of Meeting rehaul (dropdown tab, icon-only list/calendar toggle, a
+real "+ Add meeting" modal, favorites, series pages, a per-hour Week view, and HTML/PDF/
+PPTX/Excel export + email). Full detail in `modules/minutes-of-meeting/CLAUDE.md`
+(2026-09-02) — this entry covers the shared files a module dev isn't meant to edit.
+
+**`assets/js/modules-grid.js` — only the `MODULE_V` fallback literal changed** (the value
+matters, not the mechanism — see that file's own header comment for why it's derived from
+its OWN `<script>` tag's `?v=` rather than read from this constant). **`dashboard.html` /
+`modules.html` — the `modules-grid.js?v=` query bumped to `20260902a`**, because
+`modules/minutes-of-meeting/index.html` changed structurally (new toolbar markup for the
+list/calendar icon toggle, two new CDN `<script>` tags for XLSX/PPTX export) — without the
+bump, a returning browser keeps serving the cached pre-rehaul page and none of the new
+controls would appear, the exact stale-cache failure mode this file's own history has
+recorded (and mis-diagnosed as a code bug) more than once.
+
+Nothing else shared was touched — no `dashboard.css`, `ui.js`, `db.js`, or `config.js`
+change. `migrations/2026-09-02-meetings-rehaul.sql` added (module-scoped columns only, no
+shared table).
+
 ### 2026-09-01 (o) — Issues Dashboard cleanup off a screenshot; the shared tabs-dropdown fix that almost reintroduced a fixed bug
 
 Owner sent a screenshot of the live Issues & Concerns Dashboard with the duplicate "Dashboard" /

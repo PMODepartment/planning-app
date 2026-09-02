@@ -79,18 +79,38 @@ window.MinutesOfMeeting = (function () {
   var _momReport = false;
   var _momF = { q: '', cat: '', type: '', status: '' };   // action-item filters (Detail)
   var _momQ = '';                                          // meeting search (Browse)
-  // ⚠️ 'list' | 'calendar' | 'detail'. Meetings are BROWSED (list or calendar) or a
-  // single one is OPEN (detail); selecting or creating one switches into detail,
-  // and "Back to meetings" returns to whichever browse mode was last active —
-  // `_momBrowsePrev` is only ever set from list/calendar, never from detail, so
-  // it can't collapse to "detail" itself.
+  // ⚠️ 'list' | 'calendar' | 'detail' | 'series'. Meetings are BROWSED (list or
+  // calendar); a single one is OPEN (detail); a recurring SERIES is open on its
+  // own page (series — its definition + the meetings actually held under it).
+  // "Back to meetings" returns to whichever browse mode was last active —
+  // `_momBrowsePrev` is only ever set from list/calendar, never from detail or
+  // series, so it can't collapse to either of those itself.
   var _momView = 'list', _momBrowsePrev = 'list';
   var _momSel = null;
+  // Which series a currently-open MEETING was reached from, if any — set only
+  // when a meeting is opened by clicking a row inside that series' own page
+  // (momOpenSeries → the "Previously held" list), so "← Back" from the meeting
+  // returns to the series page rather than to the flat list/calendar it would
+  // otherwise fall back to.
+  var _momCameFromSeries = null;
   var _momCalMonth = null;      // 'YYYY-MM' — the month the calendar view shows
+  // 'month' | 'week' — which grid the Calendar sub-view renders.
+  var _momCalMode = 'month';
+  var _momWeekStart = null;     // 'YYYY-MM-DD' (a Monday) — the week the Week grid shows
   var _momSort = { col: 'date', dir: 'desc' };   // List view column sort
 
   // "Get from issue" panel state (Detail view) — see momGetPanelHTML.
   var _momPickerOpen = false, _momPickerQ = '';
+
+  // ⚠️ THE "ADD MEETING" MODAL — replaces the old one-click "+ New minutes"
+  // (which inserted an almost-blank row and let you fill it in afterwards).
+  // The rehaul asks the planner for the whole shape of the meeting up front —
+  // title / date / start+end time / required+optional attendees / venue / link
+  // / an addable AGENDA list / a recurring tag (which swaps the date for a
+  // frequency + start/end date) / a favorite tag — so `_addDraft` holds all of
+  // that in memory before anything is written. See addMeetingModalHTML/
+  // saveAddMeeting below.
+  var _addOpen = false, _addDraft = null;
 
   // ⚠️ ITEM #17 — top-level tabs. 'dashboard' | 'meetings'. Dashboard is the
   // landing tab (matches the Issues & Concerns convention this module split
@@ -104,10 +124,17 @@ window.MinutesOfMeeting = (function () {
   // for the occurrence math (schedDatesInRange / schedNextOccurrence / …).
   // ==========================================================================
   var SCHEDULES = [];
-  // Which schedule's right-pane is open in the Meetings tab's "Recurring
-  // meetings" list (item #22), and the state of the two small forms it hosts.
-  var _schedSel = null;
-  var _schedFormOpen = false, _schedFormDraft = null;      // add/edit a SCHEDULE
+  // ⚠️ REHAUL (2026-09-02): a recurring series is no longer browsed from a
+  // side panel above the meetings list — it is a ROW in the unified Meetings
+  // list (see momUnifiedRows below), and clicking it opens a full SERIES PAGE
+  // (`_momView === 'series'`, `_seriesSel` = the schedule id): the series'
+  // own definition, above a list of every meeting actually held under it —
+  // clicking one of THOSE opens the normal single-meeting Detail view. A
+  // series is created from the Add Meeting modal's "Recurring" tag now, so
+  // `_schedFormOpen`/`_schedFormDraft` below serve EDITING an existing series
+  // from its own page only, never creation.
+  var _seriesSel = null;
+  var _schedFormOpen = false, _schedFormDraft = null;      // edit a SCHEDULE, from its page
   var _schedOccOpen = false, _schedOccDraft = null;        // "+ Add a meeting" for it
 
   // ⚠️ ITEM #23 — per-action-item hold/close, mirroring the Issues workflow
@@ -574,8 +601,10 @@ window.MinutesOfMeeting = (function () {
     _momSel = null; _momErr = ''; _momLoaded = false;
     _momQ = ''; _momF = { q: '', cat: '', type: '', status: '' };
     _momView = 'list'; _momBrowsePrev = 'list'; _momTab = 'dashboard';
+    _momCameFromSeries = null; _momCalMode = 'month'; _momWeekStart = null;
     _momPickerOpen = false; _momPickerQ = '';
-    _schedSel = null; _schedFormOpen = false; _schedFormDraft = null;
+    _addOpen = false; _addDraft = null;
+    _seriesSel = null; _schedFormOpen = false; _schedFormDraft = null;
     _schedOccOpen = false; _schedOccDraft = null;
     _momItemWF = {}; ITEM_HISTORY = {}; _momItemHistOpen = {};
     MOM_ACT_NAME = {};   // activity ids are project-scoped — this cache is too
@@ -818,11 +847,13 @@ window.MinutesOfMeeting = (function () {
     // jumping straight past every view to the module launcher.
     histView = UI.bindHistoryState({
       key: 'mom_view',
-      get: function () { return { t: _momTab, v: _momView, m: _momSel }; },
+      get: function () { return { t: _momTab, v: _momView, m: _momSel, s: _seriesSel, f: _momCameFromSeries }; },
       apply: function (state) {
         _momTab = state.t || 'dashboard';
-        _momView = state.v || 'list'; _momSel = state.m || null;
+        _momView = state.v || 'list'; _momSel = state.m || null; _seriesSel = state.s || null;
+        _momCameFromSeries = state.f || null;
         if (_momView === 'detail' && !_momSel) _momView = _momBrowsePrev || 'list';
+        if (_momView === 'series' && !_seriesSel) _momView = _momBrowsePrev || 'list';
         render();
       }
     });
@@ -858,12 +889,30 @@ window.MinutesOfMeeting = (function () {
     };
     var rb = $('il-refresh');
     if (rb) rb.onclick = function () { momReset(); load(); };
-    // ⚠️ ITEM #17 — the Dashboard/Meetings tab strip lives in the topbar
+    // ⚠️ REHAUL ITEM 1 — the Dashboard/Meetings tab strip lives in the topbar
     // (index.html), outside #il-mom-view, so it is wired ONCE here rather
     // than in wireBrowse()/wireDetail(), which re-run on every repaint of
     // the content below it.
     document.querySelectorAll('.il-tabs [data-tab]').forEach(function (b) {
       b.onclick = function () { _momTab = b.dataset.tab; render(); if (histView) histView.push(); };
+    });
+    // ⚠️ "meetings is pressed, no need for the meeting label — have a dropdown
+    // with 2 choices." UI.tabsToDropdown() is the shared component every other
+    // module with this exact shape already uses (Progress Photos, Issues &
+    // Concerns) — it converts the two real (now-hidden) buttons above into one
+    // trigger that names the active choice, and it is what makes the static
+    // module title text disappear (via its own `.pd-title-hasdrop` class, only
+    // where dashboard.css says there is room for it to matter) — never an
+    // unconditional JS hide, which this app's own history has twice recorded
+    // as reintroducing an "icon alone / label on the next line" defect on
+    // narrow screens.
+    if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.il-tabs');
+    // Icon-only List/Calendar view toggle, top-right in the topbar tools —
+    // lives in index.html's markup (outside #il-mom-view like the tabs above)
+    // so it is wired once here too; only meaningful once inside Meetings, so
+    // it hides itself on the Dashboard tab via syncTopTabs().
+    document.querySelectorAll('#il-viewtoggle [data-mv]').forEach(function (b) {
+      b.onclick = function () { _momView = b.dataset.mv; _momTab = 'meetings'; render(); if (histView) histView.push(); };
     });
   }
 
@@ -875,6 +924,17 @@ window.MinutesOfMeeting = (function () {
     document.querySelectorAll('.il-tabs [data-tab]').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === _momTab);
     });
+    // The List/Calendar icon toggle only means anything inside Meetings, and
+    // only while actually browsing (not while a single meeting/series is
+    // open, where "which browse view" isn't a live choice on screen).
+    var vt = $('il-viewtoggle');
+    if (vt) {
+      var showing = _momTab === 'meetings' && (_momView === 'list' || _momView === 'calendar');
+      vt.hidden = !showing;
+      vt.querySelectorAll('[data-mv]').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.mv === _momView);
+      });
+    }
   }
   function render() {
     if (!pid) { _paintEmpty('Select a project to see its minutes.'); return; }
@@ -882,6 +942,7 @@ window.MinutesOfMeeting = (function () {
     syncTopTabs();
     if (_momTab === 'dashboard') renderMomDashboard();
     else if (_momView === 'detail' && _momSel) renderDetail();
+    else if (_momView === 'series' && _seriesSel) renderSeriesPage();
     else renderBrowse();
     if (window.Icons && Icons.hydrate) Icons.hydrate($('il-mom-view'));
     paintRemote();
@@ -1070,95 +1131,99 @@ window.MinutesOfMeeting = (function () {
     });
   }
 
+  // ==========================================================================
+  // REHAUL (2026-09-02) — UNIFIED MEETINGS LIST
+  // ⚠️ Item 4's list is "meetings" — a planner does not care whether a row is
+  // a one-off or a recurring series until they click into it, so List/Calendar
+  // now browse ONE set of descriptors built from BOTH `MOMS` (standalone —
+  // `schedule_id` null) and `SCHEDULES` (active recurring series). An
+  // OCCURRENCE of a series (`schedule_id` set) is never a row here — it is
+  // reached only from that series' own page (momOpenSeries), which is what
+  // item 6 asks for: click the recurring "meeting" → its definition + the
+  // meetings actually held under it, THEN click one of those for its minutes.
+  // ==========================================================================
+  function plannedAttendeeCount(row) {
+    return (attendeeCount(row.attendees_required) || 0) + (attendeeCount(row.attendees_optional) || 0);
+  }
+  function momUnifiedRows() {
+    var out = [];
+    MOMS.forEach(function (m) {
+      if (m.schedule_id) return;   // an occurrence — browsed from its series page, not here
+      out.push({
+        kind: 'meeting', id: m.id, favorite: !!m.is_favorite,
+        title: m.title || '(untitled)',
+        dateSort: m.meeting_date || '',
+        dateLabel: m.meeting_date
+          ? (Fmt.date(m.meeting_date) + (m.start_time ? ' · ' + m.start_time : ''))
+          : '—',
+        attendees: plannedAttendeeCount(m),
+        location: m.venue || m.location || '—',
+        draft: !m.is_distributed,
+      });
+    });
+    schedActiveList().forEach(function (s) {
+      var next = schedNextOccurrence(s, momToday());
+      out.push({
+        kind: 'series', id: s.id, favorite: !!s.is_favorite,
+        title: s.title || '(untitled)',
+        // ⚠️ dateSort is a real ISO date (next occurrence, else its own start)
+        // even though the DISPLAYED label is the frequency, so date-sorting a
+        // list mixing meetings and series still orders sensibly.
+        dateSort: next || s.start_date || '',
+        dateLabel: schedFrequencyLabel(s),
+        attendees: plannedAttendeeCount(s),
+        location: s.venue || '—',
+        draft: false,
+      });
+    });
+    return out;
+  }
+  function momUnifiedSearch(rows) {
+    var q = _momQ.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(function (r) { return r.title.toLowerCase().indexOf(q) >= 0 || r.location.toLowerCase().indexOf(q) >= 0; });
+  }
+  // ⚠️ Favorites pinned to the top is layered OVER whatever column sort is
+  // active, not an alternative to it — partition into favorite/non-favorite,
+  // sort each half with the same comparator, concatenate. A column click still
+  // reorders within each half rather than fighting the favorite pin.
+  function momSortedRows(rows) {
+    var col = _momSort.col, dir = _momSort.dir === 'asc' ? 1 : -1;
+    function cmp(a, b) {
+      var av, bv;
+      if (col === 'title') { av = a.title.toLowerCase(); bv = b.title.toLowerCase(); }
+      else if (col === 'attendees') { av = a.attendees; bv = b.attendees; }
+      else if (col === 'location') { av = a.location.toLowerCase(); bv = b.location.toLowerCase(); }
+      else { av = a.dateSort; bv = b.dateSort; }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    }
+    var fav = rows.filter(function (r) { return r.favorite; }).sort(cmp);
+    var rest = rows.filter(function (r) { return !r.favorite; }).sort(cmp);
+    return fav.concat(rest);
+  }
+
   function renderBrowse() {
     var host = $('il-mom-view'); if (!host) return;
     host.classList.remove('il-mom-report');
-    var list = momSearchList();
+    var rows = momUnifiedSearch(momUnifiedRows());
     host.innerHTML =
-      schedulesPanelHTML() +
       '<div class="il-mom-browsebar">' +
         '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
         '<input class="pd-input pd-input-sm il-mom-search" id="il-mom-q" placeholder="Search meetings…" value="' + Fmt.esc(_momQ) + '">' +
-        '<div class="il-viewtoggle il-mom-vtoggle" id="il-mom-vtoggle">' +
-          '<button type="button" data-mv="list" class="' + (_momView === 'list' ? 'on' : '') + '">List</button>' +
-          '<button type="button" data-mv="calendar" class="' + (_momView === 'calendar' ? 'on' : '') + '">Calendar</button>' +
-        '</div>' +
-        (canAdd ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-new">+ New minutes</button>' : '') +
+        '<div style="flex:1;"></div>' +
+        '<select class="pd-select pd-input-sm" id="il-mom-listexport" title="Export the meeting list" style="width:auto;">' +
+          '<option value="">Export list as…</option><option value="html">HTML</option>' +
+          '<option value="pdf">PDF</option><option value="xlsx">Excel</option></select>' +
+        (canAdd ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-new">+ Add meeting</button>' : '') +
       '</div>' +
       (_momErr
         ? '<div class="il-empty" style="padding:24px;">Could not load minutes: ' + Fmt.esc(_momErr) +
           '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-duration-scenarios-and-mom.sql</code>.</small></div>'
-        : (_momView === 'calendar' ? renderMomCalendarHTML(list) : renderMomListHTML(list)));
+        : (_momView === 'calendar' ? renderMomCalendarHTML(momSearchList()) : renderMomListHTML(rows)));
     wireBrowse();
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
-  }
-
-  // ==========================================================================
-  // ITEM #19/#22 — recurring meeting schedules: where they are DEFINED (this
-  // panel, at the top of the Meetings tab) and the right pane a click on one
-  // opens, showing its next planned date, every actual meeting recorded
-  // against it, and the "+ Add a meeting" form that copies its defaults from
-  // the last occurrence. Sits ABOVE the List/Calendar browse of individual
-  // meeting_minutes rows below it, which is unaffected — a schedule is a
-  // commitment, not a replacement for the meetings themselves.
-  // ==========================================================================
-  function schedulesPanelHTML() {
-    var scheds = schedActiveList();
-    var sel = _schedSel ? SCHEDULES.find(function (s) { return s.id === _schedSel; }) : null;
-    return '<div class="il-mom-schedpanel">' +
-      '<div class="il-mom-schedhead">' +
-        '<h4>Recurring meeting schedules</h4>' +
-        (canAdd && !_schedFormOpen ? '<button class="pd-btn pd-btn-sm" id="il-sched-new">+ New schedule</button>' : '') +
-      '</div>' +
-      (_schedFormOpen ? scheduleFormHTML(_schedFormDraft) : '') +
-      (scheds.length
-        ? '<div class="il-mom-schedbody' + (sel ? ' has-sel' : '') + '">' +
-            '<div class="il-mom-schedlist">' + scheds.map(scheduleRowHTML).join('') + '</div>' +
-            (sel ? '<div class="il-mom-schedright">' + scheduleRightPaneHTML(sel) + '</div>' : '') +
-          '</div>'
-        : (_schedFormOpen ? '' : '<p class="il-mom-note">No recurring meeting is defined yet — add one so the ' +
-            'calendar can show its planned dates and the dashboard can report how often it is actually held.</p>')) +
-    '</div>';
-  }
-
-  function scheduleRowHTML(s) {
-    var next = schedNextOccurrence(s, momToday());
-    var n = schedMeetingsOf(s.id).length;
-    return '<button type="button" class="il-mom-schedrow' + (s.id === _schedSel ? ' active' : '') +
-      '" data-sched="' + Fmt.esc(s.id) + '">' +
-      '<span class="il-mom-schedrow-title">' + Fmt.esc(s.title) + '</span>' +
-      '<span class="il-mom-schedrow-meta">' + Fmt.esc(schedFrequencyLabel(s)) + ' · ' + Fmt.esc(s.meeting_group || 'Internal') + '</span>' +
-      '<span class="il-mom-schedrow-next">' + (next ? 'Next: ' + Fmt.esc(Fmt.date(next)) : 'No upcoming date') + ' · ' + n + ' held</span>' +
-    '</button>';
-  }
-
-  function scheduleRightPaneHTML(s) {
-    var next = schedNextOccurrence(s, momToday());
-    var past = schedMeetingsOf(s.id);
-    return '<div class="il-mom-schedright-head">' +
-      '<div><b>' + Fmt.esc(s.title) + '</b><div class="il-mom-schedrow-meta">' + Fmt.esc(schedFrequencyLabel(s)) + '</div></div>' +
-      '<div class="il-mom-schedright-acts">' +
-        (canAdd ? '<button class="pd-btn pd-btn-sm" id="il-sched-edit">Edit</button>' : '') +
-        (canAdd ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-sched-del">Delete…</button>' : '') +
-        '<button class="pd-btn pd-btn-sm" id="il-sched-close" title="Close">' +
-          '<span data-ico="x" data-ico-size="14"></span></button>' +
-      '</div>' +
-    '</div>' +
-    (canAdd && !_schedOccOpen
-      ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-sched-addocc">+ Add a meeting' +
-          (next ? ' for ' + Fmt.esc(Fmt.date(next)) : '') + '</button>'
-      : '') +
-    (_schedOccOpen ? scheduleOccFormHTML(s) : '') +
-    '<h5 class="il-mom-schedright-sub">Previously held</h5>' +
-    (past.length
-      ? '<div class="il-mom-schedpast">' + past.map(function (m) {
-          return '<button type="button" class="il-mom-schedpasti" data-mom="' + Fmt.esc(m.id) + '">' +
-            '<span>' + Fmt.esc(m.title || '(untitled)') + '</span>' +
-            '<span class="il-mom-schedrow-meta">' + (m.meeting_date ? Fmt.esc(Fmt.date(m.meeting_date)) : '—') +
-              (m.is_distributed ? '' : ' · Draft') + '</span>' +
-          '</button>';
-        }).join('') + '</div>'
-      : '<p class="il-mom-note">No meeting has been recorded against this schedule yet.</p>');
   }
 
   // ⚠️ Re-rendered in place (into #il-sf-rulewrap) whenever the frequency
@@ -1265,60 +1330,58 @@ window.MinutesOfMeeting = (function () {
   }
 
   // ---- List view --------------------------------------------------------
-  function momSortedList(list) {
-    var col = _momSort.col, dir = _momSort.dir === 'asc' ? 1 : -1;
-    var arr = list.slice();
-    arr.sort(function (a, b) {
-      var av, bv;
-      if (col === 'title') { av = (a.title || '').toLowerCase(); bv = (b.title || '').toLowerCase(); }
-      else if (col === 'type') { av = (a.meeting_type || '').toLowerCase(); bv = (b.meeting_type || '').toLowerCase(); }
-      else if (col === 'state') { av = a.is_distributed ? 1 : 0; bv = b.is_distributed ? 1 : 0; }
-      else { av = a.meeting_date || ''; bv = b.meeting_date || ''; }
-      if (av < bv) return -1 * dir;
-      if (av > bv) return 1 * dir;
-      return 0;
-    });
-    return arr;
-  }
+  // Item 4: Title / Date-or-frequency / # Attendees / Location, favorites
+  // pinned to the top (momSortedRows). A recurring "meeting" is tagged
+  // Recurring, a not-yet-distributed standalone one Draft — both plain text
+  // pills next to the title, the same visual language as the Detail view's
+  // own draft/distributed state, so the list previews what opening the row
+  // will show.
   function momListSortTh(label, col) {
     var on = _momSort.col === col;
     return '<th class="il-mom-th' + (on ? ' on' : '') + '" data-sort="' + col + '">' + Fmt.esc(label) +
       (on ? (_momSort.dir === 'asc' ? ' ▲' : ' ▼') : '') + '</th>';
   }
-  function renderMomListHTML(list) {
-    if (!list.length) {
+  function renderMomListHTML(rows) {
+    if (!rows.length) {
       return '<div class="il-empty" style="padding:28px;">' +
-        (MOMS.length ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
+        ((MOMS.length || SCHEDULES.length) ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
       '</div>';
     }
-    var sorted = momSortedList(list);
+    var sorted = momSortedRows(rows);
     return '<div class="pd-card" style="padding:0;overflow:auto;">' +
       '<table class="pd-table il-mom-listtable"><thead><tr>' +
-        momListSortTh('Title', 'title') + momListSortTh('Type', 'type') +
-        momListSortTh('Date', 'date') + momListSortTh('State', 'state') +
-        '<th>Action items</th><th>Recorded by</th>' +
+        '<th class="il-mom-favtd"></th>' +
+        momListSortTh('Title', 'title') + momListSortTh('Date', 'date') +
+        momListSortTh('Attendees', 'attendees') + momListSortTh('Location', 'location') +
       '</tr></thead><tbody>' +
-      sorted.map(function (x) {
-        var items = momItemsOf(x.id);
-        var open = items.filter(function (i) { return momItemStatus(i) !== 'Closed'; }).length;
-        return '<tr class="il-mom-lrow" data-mom="' + Fmt.esc(x.id) + '">' +
-          '<td>' + Fmt.esc(x.title || '(untitled)') + '</td>' +
-          '<td>' + Fmt.esc(x.meeting_type || '—') + '</td>' +
-          '<td>' + (x.meeting_date ? Fmt.date(x.meeting_date) : '—') + '</td>' +
-          '<td>' + (x.is_distributed ? '<span class="il-pill is-open">Distributed</span>' : '<span class="il-mom-draft">Draft</span>') + '</td>' +
-          '<td>' + items.length + (open ? ' (' + open + ' open)' : '') + '</td>' +
-          '<td>' + Fmt.esc(minuteRecordedByShort(x)) + '</td>' +
+      sorted.map(function (r) {
+        return '<tr class="il-mom-lrow" data-kind="' + r.kind + '" data-id="' + Fmt.esc(r.id) + '">' +
+          '<td class="il-mom-favtd"><button type="button" class="il-mom-favbtn' + (r.favorite ? ' on' : '') +
+            '" data-fav="' + r.kind + ':' + Fmt.esc(r.id) + '" title="' +
+            (r.favorite ? 'Remove from favorites' : 'Add to favorites') + '">' + (r.favorite ? '★' : '☆') + '</button></td>' +
+          '<td>' + Fmt.esc(r.title) +
+            (r.kind === 'series' ? ' <span class="il-mom-recur">Recurring</span>' : '') +
+            (r.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
+          '<td>' + Fmt.esc(r.dateLabel) + '</td>' +
+          '<td>' + (r.attendees || '—') + '</td>' +
+          '<td>' + Fmt.esc(r.location) + '</td>' +
         '</tr>';
       }).join('') +
       '</tbody></table></div>';
   }
 
-  // ---- Calendar view ------------------------------------------------------
-  // ⚠️ UTC throughout — the grid is built from Date.UTC() and every meeting is
-  // matched against its plain YYYY-MM-DD text, never parsed into a local Date.
-  // That local-vs-UTC off-by-one has bitten this app repeatedly (minusDays in
-  // both registers, the drawing importer) and a calendar is exactly the screen
-  // where it would silently move a meeting onto the wrong day.
+  // ---- Calendar view — Month / Week (item 9) -------------------------------
+  // ⚠️ UTC throughout — every grid is built from Date.UTC() and every meeting
+  // is matched against its plain YYYY-MM-DD/'HH:MM' text, never parsed into a
+  // local Date. That local-vs-UTC off-by-one has bitten this app repeatedly
+  // (minusDays in both registers, the drawing importer) and a calendar is
+  // exactly the screen where it would silently move a meeting onto the wrong
+  // day or hour.
+  // ⚠️ The calendar plots ACTUAL meetings from `MOMS` directly — including
+  // occurrences of a recurring series (`schedule_id` set) — unlike the List
+  // view, which deliberately excludes them (they're browsed from their
+  // series' own page there). A calendar's whole job is showing WHEN things
+  // happen, and an occurrence has a real date the same as any other meeting.
   function momCalInit() {
     if (_momCalMonth) return;
     var d = new Date();
@@ -1336,7 +1399,130 @@ window.MinutesOfMeeting = (function () {
       'August', 'September', 'October', 'November', 'December'];
     return names[+parts[1] - 1] + ' ' + parts[0];
   }
+
+  // ---- Week grid (item 9's "throughout week per hour") -------------------
+  var WEEK_HOUR_START = 6, WEEK_HOUR_END = 20, WEEK_HOUR_PX = 48;
+  function timeToMinutes(hhmm) {
+    if (!hhmm) return null;
+    var parts = String(hhmm).split(':');
+    var h = +parts[0], mi = +(parts[1] || 0);
+    if (isNaN(h) || isNaN(mi)) return null;
+    return h * 60 + mi;
+  }
+  function fmtHour(h) {
+    var h12 = h % 12; if (h12 === 0) h12 = 12;
+    return h12 + (h < 12 ? 'am' : 'pm');
+  }
+  // ⚠️ "This week" is seeded off the person's LOCAL wall-clock date (what
+  // "today" means to whoever opened the calendar) exactly once, then
+  // immediately re-expressed as a UTC date string — from that point on every
+  // date this view computes (momWeekShift/momWeekDates) is pure Date.UTC()
+  // arithmetic, matching Month view's own stated convention. Only the ONE-TIME
+  // "what week am I in right now" question touches local time at all.
+  function momWeekInit() {
+    if (_momWeekStart) return;
+    var d = new Date();
+    var localDow = (d.getDay() + 6) % 7;   // Monday=0..Sunday=6
+    var monday = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - localDow));
+    _momWeekStart = isoOf(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
+  }
+  function momWeekShift(deltaWeeks) {
+    momWeekInit();
+    var p = _momWeekStart.split('-');
+    var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + deltaWeeks * 7));
+    _momWeekStart = isoOf(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  function momWeekDates() {
+    momWeekInit();
+    var p = _momWeekStart.split('-'), out = [];
+    for (var i = 0; i < 7; i++) {
+      var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + i));
+      out.push(isoOf(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    }
+    return out;
+  }
+  function momWeekLabel() {
+    var dates = momWeekDates();
+    return Fmt.date(dates[0]) + ' – ' + Fmt.date(dates[6]);
+  }
+  function renderMomWeekHTML(list) {
+    var dates = momWeekDates();
+    var todayISO = momToday();
+    var dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    var byDay = {}, allDay = {};
+    dates.forEach(function (iso) { byDay[iso] = []; allDay[iso] = []; });
+    list.forEach(function (x) {
+      if (!x.meeting_date) return;
+      var iso = x.meeting_date.slice(0, 10);
+      if (dates.indexOf(iso) < 0) return;
+      // ⚠️ No start_time at all is plotted as an ALL-DAY chip above the hour
+      // grid, not silently dropped or forced onto a fake 12:00 slot — a
+      // meeting nobody has timed yet is still real and still needs to be seen.
+      if (timeToMinutes(x.start_time) == null) allDay[iso].push(x); else byDay[iso].push(x);
+    });
+    var totalPx = (WEEK_HOUR_END - WEEK_HOUR_START) * WEEK_HOUR_PX;
+
+    var head = '<div class="il-mom-wk-head"><div class="il-mom-wk-gutter"></div>' +
+      dates.map(function (iso, i) {
+        return '<div class="il-mom-wk-daycol' + (iso === todayISO ? ' is-today' : '') + '">' +
+          '<div class="il-mom-wk-dayname">' + dayNames[i] + '</div>' +
+          '<div class="il-mom-wk-daydate">' + (+iso.slice(8, 10)) + '</div></div>';
+      }).join('') + '</div>';
+
+    var allDayRow = '<div class="il-mom-wk-allday"><div class="il-mom-wk-gutter">All day</div>' +
+      dates.map(function (iso) {
+        return '<div class="il-mom-wk-daycol">' +
+          allDay[iso].map(function (x) {
+            return '<button type="button" class="il-mom-calchip' + (x.is_distributed ? '' : ' is-draft') +
+              '" data-mom="' + Fmt.esc(x.id) + '" title="' + Fmt.esc(x.title || '(untitled)') + '">' +
+              Fmt.esc(clip(x.title || '(untitled)', 18)) + '</button>';
+          }).join('') + '</div>';
+      }).join('') + '</div>';
+
+    var hourLabels = '', hourLines = '';
+    for (var h = WEEK_HOUR_START; h < WEEK_HOUR_END; h++) {
+      hourLabels += '<div class="il-mom-wk-hourlabel" style="height:' + WEEK_HOUR_PX + 'px;">' + fmtHour(h) + '</div>';
+    }
+    for (var h2 = 0; h2 <= (WEEK_HOUR_END - WEEK_HOUR_START); h2++) {
+      hourLines += '<div class="il-mom-wk-hourline" style="top:' + (h2 * WEEK_HOUR_PX) + 'px;"></div>';
+    }
+    var dayGridCols = dates.map(function (iso) {
+      var evs = byDay[iso].map(function (x) {
+        var s = timeToMinutes(x.start_time), e = timeToMinutes(x.end_time);
+        if (e == null || e <= s) e = s + 60;   // no/invalid end time defaults to a 1-hour block
+        var top = Math.max(0, (s - WEEK_HOUR_START * 60) / 60 * WEEK_HOUR_PX);
+        var bottom = Math.min(totalPx, (e - WEEK_HOUR_START * 60) / 60 * WEEK_HOUR_PX);
+        var hpx = Math.max(18, bottom - top);
+        return '<button type="button" class="il-mom-wk-event' + (x.is_distributed ? '' : ' is-draft') +
+          '" data-mom="' + Fmt.esc(x.id) + '" style="top:' + top + 'px;height:' + hpx + 'px;" title="' +
+          Fmt.esc((x.title || '(untitled)') + ' · ' + x.start_time + (x.end_time ? '–' + x.end_time : '')) + '">' +
+          '<span class="il-mom-wk-eventtime">' + Fmt.esc(x.start_time) + '</span> ' + Fmt.esc(clip(x.title || '(untitled)', 22)) +
+        '</button>';
+      }).join('');
+      return '<div class="il-mom-wk-daycol il-mom-wk-daybody">' + hourLines + evs + '</div>';
+    }).join('');
+    var body = '<div class="il-mom-wk-body" style="height:' + totalPx + 'px;">' +
+      '<div class="il-mom-wk-gutter il-mom-wk-hourgutter">' + hourLabels + '</div>' + dayGridCols + '</div>';
+
+    return '<div class="il-mom-cal">' +
+      '<div class="il-mom-calnav">' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wkprev" title="Previous week">‹</button>' +
+        '<span class="il-mom-calmonth">' + Fmt.esc(momWeekLabel()) + '</span>' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wknext" title="Next week">›</button>' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wktoday">Today</button>' +
+      '</div>' +
+      '<div class="il-mom-wk">' + head + allDayRow + '<div class="il-mom-wk-scroll">' + body + '</div></div>' +
+    '</div>';
+  }
+
   function renderMomCalendarHTML(list) {
+    return '<div class="il-mom-calmode"><div class="il-viewtoggle">' +
+        '<button type="button" data-cm="month" class="' + (_momCalMode === 'month' ? 'on' : '') + '">Month</button>' +
+        '<button type="button" data-cm="week" class="' + (_momCalMode === 'week' ? 'on' : '') + '">Week</button>' +
+      '</div></div>' +
+      (_momCalMode === 'week' ? renderMomWeekHTML(list) : renderMomMonthHTML(list));
+  }
+  function renderMomMonthHTML(list) {
     momCalInit();
     var parts = _momCalMonth.split('-'), y = +parts[0], m = +parts[1];
     var first = new Date(Date.UTC(y, m - 1, 1));
@@ -1406,11 +1592,15 @@ window.MinutesOfMeeting = (function () {
       var again = $('il-mom-q');
       if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (e) {} }
     };
-    host.querySelectorAll('#il-mom-vtoggle [data-mv]').forEach(function (b) {
-      b.onclick = function () { _momView = b.dataset.mv; render(); if (histView) histView.push(); };
-    });
     var nb = host.querySelector('#il-mom-new');
-    if (nb) nb.onclick = momCreateNew;
+    if (nb) nb.onclick = openAddMeetingModal;
+    var lex = host.querySelector('#il-mom-listexport');
+    if (lex) lex.onchange = async function () {
+      var v = lex.value; lex.value = '';
+      if (v === 'html') momExportListHTML();
+      else if (v === 'pdf') await momExportListPDF();
+      else if (v === 'xlsx') momExportListXLSX();
+    };
     host.querySelectorAll('.il-mom-th[data-sort]').forEach(function (th) {
       th.onclick = function () {
         var col = th.dataset.sort;
@@ -1419,23 +1609,35 @@ window.MinutesOfMeeting = (function () {
         renderBrowse();
       };
     });
+    // ⚠️ Dispatches by KIND — a series row (`kind === 'series'`) opens the
+    // series page (item 6), a plain meeting opens Detail (item 5). A favorite
+    // click inside the row stops propagation below, so it never also opens
+    // the row it sits in.
     host.querySelectorAll('.il-mom-lrow').forEach(function (tr) {
-      tr.onclick = function () { momOpenMeeting(tr.dataset.mom); };
+      tr.onclick = function () {
+        if (tr.dataset.kind === 'series') momOpenSeries(tr.dataset.id);
+        else momOpenMeeting(tr.dataset.id);
+      };
+    });
+    host.querySelectorAll('[data-fav]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var i = b.dataset.fav.indexOf(':');
+        momToggleFavorite(b.dataset.fav.slice(0, i), b.dataset.fav.slice(i + 1));
+      };
     });
     host.querySelectorAll('.il-mom-calchip[data-mom]').forEach(function (b) {
       b.onclick = function () { momOpenMeeting(b.dataset.mom); };
     });
-    // A PLANNED chip has no meeting to open yet — it opens the schedule's
-    // right pane with the "+ Add a meeting" form already showing, pre-dated
-    // to the day that was clicked (overriding the form's own default of the
-    // schedule's NEXT expected date, which may not be this exact day if
-    // several occurrences are visible on one screen).
+    // A PLANNED chip has no meeting to open yet — it opens the series page
+    // with the "+ Add a meeting" form already showing, pre-dated to the day
+    // that was clicked (overriding the form's own default of the schedule's
+    // NEXT expected date, which may not be this exact day if several
+    // occurrences are visible on one screen).
     host.querySelectorAll('.il-mom-calchip[data-plansched]').forEach(function (b) {
       b.onclick = function () {
-        _schedSel = b.dataset.plansched; _schedOccOpen = true; _schedOccDraft = { date: b.dataset.planiso };
-        renderBrowse();
-        var panel = host.querySelector('.il-mom-schedpanel');
-        if (panel) panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        _schedOccOpen = true; _schedOccDraft = { date: b.dataset.planiso };
+        momOpenSeries(b.dataset.plansched);
       };
     });
     var prev = host.querySelector('#il-mom-calprev');
@@ -1445,11 +1647,137 @@ window.MinutesOfMeeting = (function () {
     var today = host.querySelector('#il-mom-caltoday');
     if (today) today.onclick = function () { _momCalMonth = null; momCalInit(); renderBrowse(); };
 
-    // ---- recurring schedules panel (items #19, #22) ------------------------
-    var sn = host.querySelector('#il-sched-new');
-    if (sn) sn.onclick = function () { _schedFormDraft = null; _schedFormOpen = true; renderBrowse(); };
+    var wprev = host.querySelector('#il-mom-wkprev');
+    if (wprev) wprev.onclick = function () { momWeekShift(-1); renderBrowse(); };
+    var wnext = host.querySelector('#il-mom-wknext');
+    if (wnext) wnext.onclick = function () { momWeekShift(1); renderBrowse(); };
+    var wtoday = host.querySelector('#il-mom-wktoday');
+    if (wtoday) wtoday.onclick = function () { _momWeekStart = null; momWeekInit(); renderBrowse(); };
+    host.querySelectorAll('.il-mom-wk-event[data-mom]').forEach(function (b) {
+      b.onclick = function () { momOpenMeeting(b.dataset.mom); };
+    });
+
+    host.querySelectorAll('[data-cm]').forEach(function (b) {
+      b.onclick = function () { _momCalMode = b.dataset.cm; renderBrowse(); };
+    });
+  }
+
+  // ⚠️ Every schedule-CRUD/occurrence-creation control below (item #19/#22's
+  // "+ New schedule"/"+ Add a meeting"/rename/delete) now lives on the series
+  // page (renderSeriesPage/wireSeriesPage below), not in the browse view —
+  // a series is opened from the unified list like anything else (item 6),
+  // so it no longer needs its own always-visible panel in wireBrowse().
+  function reRenderMomHost() {
+    if (_momView === 'series') renderSeriesPage();
+    else if (_momView === 'detail') renderDetail();
+    else renderBrowse();
+  }
+
+  async function momToggleFavorite(kind, id) {
+    var table = kind === 'series' ? 'mom_schedules' : 'meeting_minutes';
+    var arr = kind === 'series' ? SCHEDULES : MOMS;
+    var row = arr.find(function (x) { return x.id === id; });
+    if (!row) return;
+    var next = !row.is_favorite;
+    row.is_favorite = next;   // optimistic — the star flips before the round-trip lands
+    reRenderMomHost();
+    try {
+      var u = await sb().from(table).update({ is_favorite: next }).eq('id', id);
+      if (u.error) throw u.error;
+    } catch (e) {
+      row.is_favorite = !next;
+      UI.toast(/column|schema cache/i.test(e.message || '')
+        ? 'Run migrations/2026-09-02-meetings-rehaul.sql in Supabase first.' : (e.message || e), 'error');
+      reRenderMomHost();
+    }
+  }
+
+  function momOpenSeries(id) {
+    _momTab = 'meetings';
+    if (_momView !== 'series') _momBrowsePrev = _momView;
+    _seriesSel = id; _momView = 'series';
+    render();
+    if (histView) histView.push();
+  }
+
+  // ---- Series page (item 6): a recurring schedule's own details plus every
+  // meeting actually held under it. -------------------------------------
+  function renderSeriesPage() {
+    var host = $('il-mom-view'); if (!host) return;
+    var s = SCHEDULES.find(function (x) { return x.id === _seriesSel; });
+    if (!s) { _momView = _momBrowsePrev || 'list'; renderBrowse(); return; }
+    host.classList.remove('il-mom-report');
+    var past = schedMeetingsOf(s.id);
+    var next = schedNextOccurrence(s, momToday());
+    var mine = s.created_by === UID;
+    host.innerHTML =
+      '<button type="button" class="pd-btn pd-btn-sm il-mom-back" id="il-mom-back">← Back to meetings</button>' +
+      '<div class="pd-card il-mom-seriescard">' +
+        '<div class="il-mom-seriesheadrow">' +
+          '<div>' +
+            '<h2 class="il-mom-seriestitle">' + Fmt.esc(s.title || '(untitled)') +
+              ' <span class="il-mom-recur">Recurring</span></h2>' +
+            '<div class="il-mom-seriesmeta">' + Fmt.esc(schedFrequencyLabel(s)) +
+              ' · ' + Fmt.esc(s.meeting_group || 'Internal') +
+              (s.end_date ? ' · ends ' + Fmt.esc(Fmt.date(s.end_date)) : '') +
+              (next ? ' · next: ' + Fmt.esc(Fmt.date(next)) : ' · no further occurrences') +
+            '</div>' +
+          '</div>' +
+          '<div class="il-mom-seriesacts">' +
+            '<button type="button" class="pd-btn pd-btn-sm il-mom-favbtn' + (s.is_favorite ? ' on' : '') +
+              '" id="il-mom-favtoggle" data-fav="series:' + Fmt.esc(s.id) + '">' +
+              (s.is_favorite ? '★ Favorited' : '☆ Favorite') + '</button>' +
+            ((isSteward || mine) ? '<button type="button" class="pd-btn pd-btn-sm" id="il-sched-edit">Edit</button>' : '') +
+            ((isSteward || mine) ? '<button type="button" class="pd-btn pd-btn-sm pd-btn-danger" id="il-sched-del">Delete</button>' : '') +
+            (canAdd ? '<button type="button" class="pd-btn pd-btn-primary pd-btn-sm" id="il-sched-addocc">+ Add a meeting</button>' : '') +
+          '</div>' +
+        '</div>' +
+        (_schedFormOpen ? scheduleFormHTML(_schedFormDraft) : '') +
+        (_schedOccOpen ? scheduleOccFormHTML(s) : '') +
+      '</div>' +
+      '<div class="pd-card il-mom-seriespast">' +
+        '<h3>Meetings held (' + past.length + ')</h3>' +
+        (past.length
+          ? '<table class="pd-table"><thead><tr><th>Date</th><th>Status</th><th>Attendees</th></tr></thead><tbody>' +
+            past.map(function (m) {
+              return '<tr class="il-mom-schedpasti" data-mom="' + Fmt.esc(m.id) + '">' +
+                '<td>' + Fmt.esc(m.meeting_date ? Fmt.date(m.meeting_date) : '—') + '</td>' +
+                '<td>' + (m.is_distributed ? 'Distributed' : '<span class="il-mom-draft">Draft</span>') + '</td>' +
+                '<td>' + (plannedAttendeeCount(m) || '—') + '</td>' +
+              '</tr>';
+            }).join('') + '</tbody></table>'
+          : '<div class="il-empty" style="padding:18px;">No meetings recorded on this schedule yet — ' +
+            '"+ Add a meeting" opens the first one, its details copied from nothing since none exist yet.</div>') +
+      '</div>';
+    wireSeriesPage();
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+  }
+
+  function wireSeriesPage() {
+    var host = $('il-mom-view'); if (!host) return;
+    var back = host.querySelector('#il-mom-back');
+    if (back) back.onclick = function () {
+      _momView = _momBrowsePrev || 'list'; _seriesSel = null;
+      _schedFormOpen = false; _schedFormDraft = null; _schedOccOpen = false; _schedOccDraft = null;
+      render();
+      if (histView) histView.push();
+    };
+    host.querySelectorAll('[data-fav]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var i = b.dataset.fav.indexOf(':');
+        momToggleFavorite(b.dataset.fav.slice(0, i), b.dataset.fav.slice(i + 1));
+      };
+    });
+    var sedit = host.querySelector('#il-sched-edit');
+    if (sedit) sedit.onclick = function () {
+      _schedFormDraft = SCHEDULES.find(function (x) { return x.id === _seriesSel; });
+      _schedFormOpen = true; renderSeriesPage();
+    };
+    var sdel = host.querySelector('#il-sched-del');
+    if (sdel) sdel.onclick = function () { scheduleDelete(_seriesSel); };
     var sc = host.querySelector('#il-sf-cancel');
-    if (sc) sc.onclick = function () { _schedFormOpen = false; _schedFormDraft = null; renderBrowse(); };
+    if (sc) sc.onclick = function () { _schedFormOpen = false; _schedFormDraft = null; renderSeriesPage(); };
     var freqSel = host.querySelector('#il-sf-freq');
     if (freqSel) freqSel.onchange = function () {
       var wrap = host.querySelector('#il-sf-rulewrap');
@@ -1457,32 +1785,15 @@ window.MinutesOfMeeting = (function () {
     };
     var sv = host.querySelector('#il-sf-save');
     if (sv) sv.onclick = scheduleFormSave;
-
-    host.querySelectorAll('.il-mom-schedrow[data-sched]').forEach(function (b) {
-      b.onclick = function () {
-        _schedSel = (_schedSel === b.dataset.sched) ? null : b.dataset.sched;
-        _schedOccOpen = false; _schedOccDraft = null;
-        renderBrowse();
-      };
-    });
-    var sclose = host.querySelector('#il-sched-close');
-    if (sclose) sclose.onclick = function () { _schedSel = null; _schedOccOpen = false; renderBrowse(); };
-    var sedit = host.querySelector('#il-sched-edit');
-    if (sedit) sedit.onclick = function () {
-      _schedFormDraft = SCHEDULES.find(function (x) { return x.id === _schedSel; });
-      _schedFormOpen = true; renderBrowse();
-    };
-    var sdel = host.querySelector('#il-sched-del');
-    if (sdel) sdel.onclick = function () { scheduleDelete(_schedSel); };
     var saddocc = host.querySelector('#il-sched-addocc');
-    if (saddocc) saddocc.onclick = function () { _schedOccOpen = true; _schedOccDraft = null; renderBrowse(); };
+    if (saddocc) saddocc.onclick = function () { _schedOccOpen = true; _schedOccDraft = null; renderSeriesPage(); };
     var socancel = host.querySelector('#il-of-cancel');
-    if (socancel) socancel.onclick = function () { _schedOccOpen = false; _schedOccDraft = null; renderBrowse(); };
+    if (socancel) socancel.onclick = function () { _schedOccOpen = false; _schedOccDraft = null; renderSeriesPage(); };
     var socreate = host.querySelector('#il-of-create');
-    if (socreate) socreate.onclick = function () { scheduleCreateOccurrence(_schedSel); };
+    if (socreate) socreate.onclick = function () { scheduleCreateOccurrence(_seriesSel); };
     wirePeople(host, null);   // the occurrence form's Required/Optional pickers
-    host.querySelectorAll('.il-mom-schedpasti').forEach(function (b) {
-      b.onclick = function () { momOpenMeeting(b.dataset.mom); };
+    host.querySelectorAll('.il-mom-schedpasti').forEach(function (tr) {
+      tr.onclick = function () { momOpenMeeting(tr.dataset.mom); };
     });
   }
 
@@ -1520,11 +1831,11 @@ window.MinutesOfMeeting = (function () {
         if (ins.error) throw ins.error;
         SCHEDULES.push(ins.data);
         SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
-        _schedSel = ins.data.id;
+        _seriesSel = ins.data.id;
         UI.toast('Schedule created', 'ok');
       }
       _schedFormOpen = false; _schedFormDraft = null;
-      renderBrowse();
+      reRenderMomHost();
     } catch (e) {
       UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
         ? 'Run migrations/2026-09-01-mom-schedules-attendees-item-history.sql in Supabase first.' : e.message, 'error');
@@ -1541,9 +1852,9 @@ window.MinutesOfMeeting = (function () {
       var dl = await sb().from('mom_schedules').delete().eq('id', id);
       if (dl.error) throw dl.error;
       SCHEDULES = SCHEDULES.filter(function (x) { return x.id !== id; });
-      if (_schedSel === id) _schedSel = null;
+      if (_seriesSel === id) { _seriesSel = null; _momView = _momBrowsePrev || 'list'; }
       UI.toast('Schedule deleted', 'ok');
-      renderBrowse();
+      reRenderMomHost();
     } catch (e) { UI.toast(e.message, 'error'); }
   }
 
@@ -1577,7 +1888,12 @@ window.MinutesOfMeeting = (function () {
       }).select().single();
       if (ins.error) throw ins.error;
       MOMS.unshift(ins.data);
-      _schedOccOpen = false; _schedOccDraft = null; _schedSel = null;
+      // ⚠️ `_seriesSel` stays SET (not nulled) — momOpenMeeting captures the
+      // current `_momView` ('series', since we're calling this from the
+      // series page) as `_momBrowsePrev`, so "← Back to meetings" from the
+      // occurrence just created returns to ITS series page, not wherever
+      // List/Calendar happened to be sitting before the series was opened.
+      _schedOccOpen = false; _schedOccDraft = null;
       momOpenMeeting(ins.data.id);   // renders Detail NOW — see the note above
       // ⚠️ ITEM #19 — "starts always from previous meeting minutes." Seeded
       // quietly with the register's own still-open issues (the same rule
@@ -1610,23 +1926,200 @@ window.MinutesOfMeeting = (function () {
     if (histView) histView.push();
   }
 
-  async function momCreateNew() {
+  // ---- + Add meeting modal (item 3) --------------------------------------
+  // ⚠️ Agenda is a small DOM-driven list, not a JS array kept in state — each
+  // row is a real input in the modal; adding/removing rows just adds/removes
+  // DOM nodes, and the values are read straight off the inputs at save time
+  // (agendaValuesOf). No separate model to keep in sync with the DOM.
+  function agendaRowsHTML(items) {
+    var list = (items && items.length) ? items : [''];
+    return list.map(function (t) {
+      return '<div class="il-mom-agrow"><input class="pd-input pd-input-sm il-mom-agitem" value="' +
+        Fmt.esc(t) + '" placeholder="Agenda item"><button type="button" class="il-mom-agdel" title="Remove">✕</button></div>';
+    }).join('');
+  }
+  function wireAgendaList(root) {
+    var wrap = root.querySelector('#il-am-agenda'); if (!wrap) return;
+    function bindRow(row) {
+      var del = row.querySelector('.il-mom-agdel');
+      if (del) del.onclick = function () {
+        // Always leaves at least one row — clearing the last one's text is how
+        // you empty the agenda, rather than a form with no agenda row at all.
+        if (wrap.querySelectorAll('.il-mom-agrow').length > 1) row.remove();
+        else { var i = row.querySelector('.il-mom-agitem'); if (i) i.value = ''; }
+      };
+    }
+    wrap.querySelectorAll('.il-mom-agrow').forEach(bindRow);
+    var add = root.querySelector('#il-am-agenda-add');
+    if (add) add.onclick = function () {
+      var tmp = document.createElement('div');
+      tmp.innerHTML = agendaRowsHTML(['']);
+      var row = tmp.firstElementChild;
+      wrap.appendChild(row);
+      bindRow(row);
+      var i = row.querySelector('.il-mom-agitem'); if (i) i.focus();
+    };
+  }
+  function agendaValuesOf(root) {
+    var wrap = root.querySelector('#il-am-agenda'); if (!wrap) return [];
+    return Array.prototype.map.call(wrap.querySelectorAll('.il-mom-agitem'), function (i) { return i.value.trim(); })
+      .filter(function (v) { return v; });
+  }
+
+  function openAddMeetingModal() {
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h3 style="margin:0;">+ Add meeting</h3>' +
+        '<button class="pd-modal-close" id="il-am-x">&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting title *</label>' +
+            '<input class="pd-input" id="il-am-title" placeholder="e.g. Weekly PSC Meeting"></div>' +
+          '<div class="pd-field" style="flex:1 1 130px;"><label style="display:flex;align-items:center;gap:6px;font-weight:400;">' +
+            '<input type="checkbox" id="il-am-fav" style="width:auto;"> Favorite this meeting</label></div>' +
+        '</div>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 150px;"><label>Date *</label>' +
+            '<input class="pd-input" type="date" id="il-am-date" value="' + dateVal(momToday()) + '"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label><input class="pd-input" type="time" id="il-am-start"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label><input class="pd-input" type="time" id="il-am-end"></div>' +
+        '</div>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Venue</label><input class="pd-input" id="il-am-venue"></div>' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-am-link" placeholder="https://…"></div>' +
+        '</div>' +
+        '<div class="pd-field"><label>Required attendees</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
+        '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('am-opt', [], '', false) + '</div>' +
+        '<div class="pd-field"><label>Agenda</label><div id="il-am-agenda">' + agendaRowsHTML([]) + '</div>' +
+          '<button type="button" class="pd-btn pd-btn-sm" id="il-am-agenda-add" style="margin-top:6px;">+ Add agenda item</button></div>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 260px;"><label style="display:flex;align-items:center;gap:6px;font-weight:400;">' +
+            '<input type="checkbox" id="il-am-recur" style="width:auto;"> This is a recurring meeting</label></div>' +
+        '</div>' +
+        '<div id="il-am-recurwrap" hidden>' +
+          '<div class="il-form-row">' +
+            '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency</label><select class="pd-select" id="il-am-freq">' +
+              FREQUENCIES.map(function (f) { return '<option value="' + f.key + '">' + f.label + '</option>'; }).join('') +
+            '</select></div>' +
+          '</div>' +
+          '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: 'monthly_date' }) + '</div>' +
+          '<div class="il-form-row">' +
+            '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date</label>' +
+              '<input class="pd-input" type="date" id="il-am-sstart" value="' + dateVal(momToday()) + '"></div>' +
+            '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
+              '<input class="pd-input" type="date" id="il-am-send"></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="il-am-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="il-am-save">Save meeting</button>' +
+      '</div>',
+      { title: 'Add meeting' }
+    );
+    var root = m.el;
+    wirePeople(root, null);
+    wireAgendaList(root);
+    var recur = root.querySelector('#il-am-recur');
+    if (recur) recur.onchange = function () {
+      var wrap = root.querySelector('#il-am-recurwrap');
+      if (wrap) wrap.hidden = !recur.checked;
+    };
+    var freqSel = root.querySelector('#il-am-freq');
+    if (freqSel) freqSel.onchange = function () {
+      var wrap = root.querySelector('#il-sf-rulewrap');
+      if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: freqSel.value });
+    };
+    var x = root.querySelector('#il-am-x'); if (x) x.onclick = m.close;
+    var cancel = root.querySelector('#il-am-cancel'); if (cancel) cancel.onclick = m.close;
+    var save = root.querySelector('#il-am-save');
+    if (save) save.onclick = function () { saveAddMeeting(root, m.close, save); };
+    if (window.Icons && Icons.hydrate) Icons.hydrate(root);
+  }
+
+  async function saveAddMeeting(root, close, saveBtn) {
+    var g = function (id) { var e = root.querySelector('#' + id); return e ? e.value : ''; };
+    var title = g('il-am-title').trim();
+    var date = g('il-am-date');
+    if (!title) { UI.toast('Meeting title is required.', 'warn'); return; }
+    if (!date) { UI.toast('Date is required.', 'warn'); return; }
+    var reqRoot = root.querySelector('[data-people="am-req"]'), optRoot = root.querySelector('[data-people="am-opt"]');
+    var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? ((reqRoot.querySelector('.il-pp-free') || {}).value || '') : '';
+    var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? ((optRoot.querySelector('.il-pp-free') || {}).value || '') : '';
+    var agenda = agendaValuesOf(root);
+    var isRecur = !!(root.querySelector('#il-am-recur') || {}).checked;
+    var isFav = !!(root.querySelector('#il-am-fav') || {}).checked;
+    var venue = g('il-am-venue').trim(), link = g('il-am-link').trim();
+    var startT = g('il-am-start'), endT = g('il-am-end');
+    if (saveBtn) saveBtn.disabled = true;
     try {
-      var ins = await sb().from('meeting_minutes').insert({
-        project_id: pid, title: 'Meeting ' + Fmt.date(momToday()),
-        meeting_date: momToday(), created_by: UID }).select().single();
-      if (ins.error) throw ins.error;
-      MOMS.unshift(ins.data); _momErr = '';
-      // ⚠️ The new minute's agenda is SEEDED with the register's still-open
-      // issues, exactly as before the split — a problem raised three meetings
-      // ago keeps appearing until somebody closes it rather than falling off
-      // because nobody retyped it. `quiet` skips the header save (nothing typed
-      // yet) and the redundant render (momOpenMeeting below does that).
-      try { await momPullIssues(ins.data.id, { quiet: true }); } catch (e) {}
-      momOpenMeeting(ins.data.id);
+      if (isRecur) {
+        var freq = g('il-am-freq') || 'monthly_date';
+        var payload = {
+          project_id: pid, title: title, meeting_group: 'Internal', frequency: freq,
+          start_date: g('il-am-sstart') || date, end_date: g('il-am-send') || null,
+          is_favorite: isFav, venue: venue || null, meeting_link: link || null,
+          start_time: startT || null, end_time: endT || null,
+          attendees_required: { ids: reqIds, text: reqText },
+          attendees_optional: { ids: optIds, text: optText },
+          default_agenda: agenda.length ? agenda : null,
+          weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
+          created_by: UID,
+        };
+        // The rule fields are the shared scheduleRuleFieldsHTML() markup, so
+        // they carry the `il-sf-*` ids that helper always emits (the same ones
+        // the series-page edit form reads), not `il-am-*`.
+        if (freq === 'weekly') {
+          payload.weekday = +g('il-sf-weekday') || 0;
+          payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
+        } else if (freq === 'monthly_weekday') {
+          payload.weekday = +g('il-sf-weekday') || 0;
+          payload.week_ordinal = +g('il-sf-ordinal') || 1;
+        } else {
+          payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
+        }
+        var ins = await sb().from('mom_schedules').insert(payload).select().single();
+        if (ins.error) throw ins.error;
+        SCHEDULES.push(ins.data);
+        SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
+        close();
+        UI.toast('Recurring meeting series created', 'ok');
+        _momErr = ''; renderBrowse();
+      } else {
+        var mpayload = {
+          project_id: pid, title: title, meeting_date: date, meeting_group: 'Internal',
+          is_favorite: isFav, venue: venue || null, meeting_link: link || null,
+          start_time: startT || null, end_time: endT || null,
+          attendees_required: { ids: reqIds, text: reqText },
+          attendees_optional: { ids: optIds, text: optText },
+          created_by: UID,
+        };
+        var minsRes = await sb().from('meeting_minutes').insert(mpayload).select().single();
+        if (minsRes.error) throw minsRes.error;
+        MOMS.unshift(minsRes.data); _momErr = '';
+        // Each agenda item becomes a real action item on the new meeting — the
+        // same mom_items table every action lives in, so it gets the full
+        // workflow (owner, due date, hold/close, history) the moment the
+        // meeting exists, rather than being a second, throwaway list of text.
+        for (var i = 0; i < agenda.length; i++) {
+          try {
+            var itemIns = await sb().from('mom_items').insert({
+              mom_id: minsRes.data.id, project_id: pid, seq: i,
+              description: agenda[i], action_item: '', type: 'Report', status: 'Open', created_by: UID,
+            }).select().single();
+            if (!itemIns.error && itemIns.data) { MOM_ITEMS.push(itemIns.data); logItemHistory(itemIns.data.id, pid, 'create', null, null); }
+          } catch (e) {}
+        }
+        // Still-open register issues are quietly seeded onto the new agenda,
+        // the same rule every other "new minute" path in this module follows.
+        try { await momPullIssues(minsRes.data.id, { quiet: true }); } catch (e) {}
+        close();
+        momOpenMeeting(minsRes.data.id);
+      }
     } catch (e) {
-      UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
-        ? 'Run migrations/2026-08-19-duration-scenarios-and-mom.sql in Supabase first.' : e.message, 'error');
+      if (saveBtn) saveBtn.disabled = false;
+      UI.toast(/relation|does not exist|schema cache|column/i.test(e.message || '')
+        ? 'Run migrations/2026-08-19-duration-scenarios-and-mom.sql, migrations/2026-09-01-mom-schedules-attendees-item-history.sql ' +
+          'and migrations/2026-09-02-meetings-rehaul.sql in Supabase first.' : (e.message || e), 'error');
     }
   }
 
@@ -1674,6 +2167,12 @@ window.MinutesOfMeeting = (function () {
         '<span class="il-mom-state' + (locked ? ' on' : '') + '">' +
           (locked ? 'Distributed' : 'Draft — only you and planners can see this') + '</span>' +
         '<div style="flex:1;"></div>' +
+        // Item 3/4: any meeting — not just a series — can be favorited; pinned
+        // to the top of the list either way (momSortedRows). A view control,
+        // offered to whoever can already see the minute, not gated on mayEdit.
+        '<button class="pd-btn pd-btn-sm il-mom-favbtn' + (mom.is_favorite ? ' on' : '') + '" id="il-mom-favtoggle" ' +
+          'title="' + (mom.is_favorite ? 'Remove from favorites' : 'Add to favorites') + '">' +
+          (mom.is_favorite ? '★ Favorited' : '☆ Favorite') + '</button>' +
         // Export is a READ, so it is offered to everyone who can see the minute —
         // unlike every other control on this card, which is gated on canEditMinute().
         // A VIEW control, so — like PDF — it is offered to everyone who can see the
@@ -1681,7 +2180,13 @@ window.MinutesOfMeeting = (function () {
         '<button class="pd-btn pd-btn-sm' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
           'title="Present these minutes as a clean read-only record — hides the editing controls">' +
           (_momReport ? '\u2713 Reporting view' : 'Reporting view') + '</button>' +
-        '<button class="pd-btn pd-btn-sm" id="il-mom-pdf" title="Download these minutes as a PDF">⬇ PDF</button>' +
+        // Item 8: one control surface for HTML/PDF/PowerPoint/Excel, plus a
+        // separate Email action — both reads, offered the same way PDF was.
+        '<select class="pd-select pd-input-sm" id="il-mom-exportsel" title="Export these minutes" style="width:auto;">' +
+          '<option value="">Export as…</option><option value="html">HTML</option>' +
+          '<option value="pdf">PDF</option><option value="pptx">PowerPoint</option>' +
+          '<option value="xlsx">Excel</option></select>' +
+        '<button class="pd-btn pd-btn-sm" id="il-mom-email" title="Email these minutes">✉ Email</button>' +
         (mayEdit ? '<button class="pd-btn pd-btn-sm' + (locked ? '' : ' pd-btn-primary') + '" id="il-mom-dist">' +
           (locked ? '↩ Revert to draft' : '📤 Distribute') + '</button>' : '') +
       '</div>' +
@@ -1693,6 +2198,22 @@ window.MinutesOfMeeting = (function () {
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Location</label><input class="pd-input" id="il-mom-loc" value="' + Fmt.esc(mom.location || '') + '"' + d + '></div>' +
+      '</div>' +
+      // ⚠️ ITEM 3/5 — planned start/end alongside the ACTUAL start/end.
+      // Both are always shown, never conditionally revealed once "the meeting
+      // is done" — a meeting recorded ahead of time can still have its actual
+      // times filled in the moment it wraps, and hiding the fields until some
+      // date-based guess of "done" would just make them harder to find on the
+      // day they are most useful.
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
+          '<input class="pd-input" type="time" id="il-mom-stime" value="' + Fmt.esc(mom.start_time || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>End time</label>' +
+          '<input class="pd-input" type="time" id="il-mom-etime" value="' + Fmt.esc(mom.end_time || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Actual start</label>' +
+          '<input class="pd-input" type="time" id="il-mom-astime" value="' + Fmt.esc(mom.actual_start_time || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Actual finish</label>' +
+          '<input class="pd-input" type="time" id="il-mom-aetime" value="' + Fmt.esc(mom.actual_end_time || '') + '"' + d + '></div>' +
       '</div>' +
       // ⚠️ ITEM #21 — the "Meeting type" DROPDOWN is now grouped Internal /
       // External ONLY (writes `meeting_group`). Which specific standing
@@ -2487,6 +3008,10 @@ window.MinutesOfMeeting = (function () {
       recording_url: g('il-mom-rec').trim() || null,
       notes: g('il-mom-notes').trim() || null,
       schedule_activity_id: g('il-mom-act').trim() || null,
+      start_time: g('il-mom-stime') || null,
+      end_time: g('il-mom-etime') || null,
+      actual_start_time: g('il-mom-astime') || null,
+      actual_end_time: g('il-mom-aetime') || null,
     };
     // ⚠️ `undefined` (the field was not rendered — a read-only view) leaves
     // the column untouched rather than blanking a value nobody had a chance
@@ -2508,13 +3033,14 @@ window.MinutesOfMeeting = (function () {
       if (/column|schema cache/i.test(e.message || '')) {
         var stripped = Object.assign({}, payload);
         ['meeting_group', 'venue', 'meeting_link', 'recording_url',
-         'attendees_required', 'attendees_optional', 'attendees_actual'].forEach(function (k) { delete stripped[k]; });
+         'attendees_required', 'attendees_optional', 'attendees_actual',
+         'start_time', 'end_time', 'actual_start_time', 'actual_end_time'].forEach(function (k) { delete stripped[k]; });
         try {
           var u2 = await sb().from('meeting_minutes').update(stripped).eq('id', mom.id);
           if (u2.error) throw u2.error;
           Object.assign(mom, stripped);
-          UI.toast('Saved — Group/Venue/Link/Recording/Attendees need ' +
-            'migrations/2026-09-01-mom-schedules-attendees-item-history.sql', 'warn');
+          UI.toast('Saved — some fields need migrations/2026-09-01-mom-schedules-attendees-item-history.sql ' +
+            'and migrations/2026-09-02-meetings-rehaul.sql', 'warn');
           return true;
         } catch (e2) { UI.toast(e2.message || e2, 'error'); return false; }
       }
@@ -2730,6 +3256,242 @@ window.MinutesOfMeeting = (function () {
       '<div style="font-size:10px;color:#1c1c1e;word-break:break-word;">' + safe + '</div></div>';
   }
 
+  // ---- Export & Email (item 8) -------------------------------------------
+  // ⚠️ Deliberately NOT sharing markup-building code with momDownloadPDF
+  // below — that function is already verified end-to-end (a real produced
+  // PDF was opened and checked, not just its source measured; see this
+  // module's own CLAUDE.md for the "measuring the source of a render is not
+  // verifying the render" lesson that cost a round of debugging once).
+  // Touching it to extract a shared helper risks reintroducing exactly that
+  // class of bug in an already-working export. A little duplication of the
+  // field list across four formats is the safer trade.
+  function momExportFilenameBase(mom) {
+    return (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') + (momLocked(mom) ? '' : '_DRAFT');
+  }
+  function momExportItemText(it) { return it.action_item || it.description || ''; }
+  function momDownloadBlob(filename, mime, content) {
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); URL.revokeObjectURL(url); }, 0);
+  }
+
+  function momExportHTML(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    var items = momItemsOf(mom.id);
+    var rowsHTML = items.length
+      ? items.map(function (it, i) {
+          var iss = momIssueOf(it);
+          return '<tr><td>' + Fmt.esc(it.item_no || String((it.seq == null ? i : it.seq) + 1)) + '</td>' +
+            '<td>' + Fmt.esc(momExportItemText(it)) + '</td>' +
+            '<td>' + Fmt.esc(it.category || '') + '</td>' +
+            '<td>' + Fmt.esc(it.type || (it.issue_id ? 'Issue' : 'FYI')) + '</td>' +
+            '<td>' + Fmt.esc(iss ? (iss.status || 'Open') : (it.status || 'Open')) + '</td>' +
+            '<td>' + Fmt.esc(championText(it.owner_ids, it.owner) || '') + '</td>' +
+            '<td>' + Fmt.esc(it.due_date ? Fmt.date(it.due_date) : '') + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="7">No action items were recorded on these minutes.</td></tr>';
+    var doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + Fmt.esc(mom.title || 'Meeting') + '</title>' +
+      '<style>body{font-family:Arial,Helvetica,sans-serif;color:#1c1c1e;padding:24px;}' +
+        'h1{color:#b40000;font-size:20px;margin:0 0 6px;} table{border-collapse:collapse;width:100%;margin-top:16px;}' +
+        'th,td{border:1px solid #ddd;padding:6px 8px;font-size:12px;text-align:left;vertical-align:top;}' +
+        'th{background:#f4f4f4;} .meta{margin:4px 0;font-size:13px;} .draft{background:#b40000;color:#fff;' +
+        'padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;}</style></head><body>' +
+      '<h1>' + Fmt.esc(projName) + ' — ' + Fmt.esc(mom.title || 'Meeting') +
+        (momLocked(mom) ? '' : ' <span class="draft">DRAFT</span>') + '</h1>' +
+      '<p class="meta"><b>Date:</b> ' + Fmt.esc(mom.meeting_date ? Fmt.date(mom.meeting_date) : '—') +
+        (mom.start_time ? ' · ' + Fmt.esc(mom.start_time) + (mom.end_time ? '–' + Fmt.esc(mom.end_time) : '') : '') + '</p>' +
+      (mom.venue ? '<p class="meta"><b>Venue:</b> ' + Fmt.esc(mom.venue) + '</p>' : '') +
+      (mom.meeting_link ? '<p class="meta"><b>Meeting link:</b> ' + Fmt.esc(mom.meeting_link) + '</p>' : '') +
+      (mom.attendees_required ? '<p class="meta"><b>Required attendees:</b> ' +
+        Fmt.esc(championText(mom.attendees_required.ids, mom.attendees_required.text)) + '</p>' : '') +
+      (mom.attendees_optional ? '<p class="meta"><b>Optional attendees:</b> ' +
+        Fmt.esc(championText(mom.attendees_optional.ids, mom.attendees_optional.text)) + '</p>' : '') +
+      (mom.attendees_actual ? '<p class="meta"><b>Actual attendees:</b> ' +
+        Fmt.esc(championText(mom.attendees_actual.ids, mom.attendees_actual.text)) + '</p>' : '') +
+      (mom.notes ? '<p class="meta"><b>Notes / discussion (Minutes of the Meeting):</b><br>' +
+        Fmt.esc(mom.notes).replace(/\n/g, '<br>') + '</p>' : '') +
+      '<h3>Action items</h3><table><thead><tr><th>No.</th><th>Action item</th><th>Category</th><th>Type</th>' +
+      '<th>Status</th><th>Responsible</th><th>Target date</th></tr></thead><tbody>' + rowsHTML + '</tbody></table>' +
+    '</body></html>';
+    momDownloadBlob(momExportFilenameBase(mom) + '_MOM.html', 'text/html', doc);
+    UI.toast('HTML downloaded', 'ok');
+  }
+
+  function momExportXLSX(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    if (!window.XLSX) { UI.toast('The Excel library did not load — check the connection and reload.', 'error'); return; }
+    var items = momItemsOf(mom.id);
+    var headRows = [
+      ['Project', projName], ['Meeting', mom.title || ''],
+      ['Date', mom.meeting_date ? Fmt.date(mom.meeting_date) : ''],
+      ['Start / End', (mom.start_time || '') + (mom.end_time ? '–' + mom.end_time : '')],
+      ['Venue', mom.venue || ''], ['Meeting link', mom.meeting_link || ''],
+      ['Status', momLocked(mom) ? 'Distributed' : 'Draft'], [],
+    ];
+    var itemHead = ['No.', 'Action item', 'Category', 'Type', 'Status', 'Responsible', 'Target date'];
+    var itemRows = items.map(function (it, i) {
+      var iss = momIssueOf(it);
+      return [
+        it.item_no || String((it.seq == null ? i : it.seq) + 1), momExportItemText(it), it.category || '',
+        it.type || (it.issue_id ? 'Issue' : 'FYI'), iss ? (iss.status || 'Open') : (it.status || 'Open'),
+        championText(it.owner_ids, it.owner) || '', it.due_date ? Fmt.date(it.due_date) : '',
+      ];
+    });
+    var ws = XLSX.utils.aoa_to_sheet(headRows.concat([itemHead]).concat(itemRows));
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Minutes');
+    XLSX.writeFile(wb, momExportFilenameBase(mom) + '_MOM.xlsx');
+    UI.toast('Excel file downloaded', 'ok');
+  }
+
+  async function momExportPPTX(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    if (!window.PptxGenJS) { UI.toast('The PowerPoint library did not load — check the connection and reload.', 'error'); return; }
+    var items = momItemsOf(mom.id);
+    var pptx = new PptxGenJS();
+    var title = pptx.addSlide();
+    title.addText(mom.title || 'Meeting', { x: 0.5, y: 0.6, w: 9, h: 1, fontSize: 28, bold: true, color: 'B40000' });
+    title.addText(projName + (momLocked(mom) ? '' : '  ·  DRAFT'), { x: 0.5, y: 1.5, w: 9, h: 0.5, fontSize: 14, color: '444444' });
+    title.addText(
+      (mom.meeting_date ? 'Date: ' + Fmt.date(mom.meeting_date) : '') +
+      (mom.start_time ? '   ·   ' + mom.start_time + (mom.end_time ? '–' + mom.end_time : '') : '') +
+      (mom.venue ? '\nVenue: ' + mom.venue : ''),
+      { x: 0.5, y: 2.3, w: 9, h: 1, fontSize: 12, color: '444444' }
+    );
+    if (mom.notes) {
+      var notesSlide = pptx.addSlide();
+      notesSlide.addText('Notes / discussion (Minutes of the Meeting)', { x: 0.5, y: 0.4, w: 9, h: 0.6, fontSize: 20, bold: true, color: 'B40000' });
+      notesSlide.addText(mom.notes, { x: 0.5, y: 1.2, w: 9, h: 4.5, fontSize: 12, color: '1c1c1e' });
+    }
+    if (items.length) {
+      var rows = [['No.', 'Action item', 'Category', 'Status', 'Responsible']];
+      items.forEach(function (it, i) {
+        var iss = momIssueOf(it);
+        rows.push([
+          String(it.item_no || (i + 1)), clip(momExportItemText(it), 60), it.category || '',
+          iss ? (iss.status || 'Open') : (it.status || 'Open'), championText(it.owner_ids, it.owner) || '',
+        ]);
+      });
+      var actSlide = pptx.addSlide();
+      actSlide.addText('Action items', { x: 0.3, y: 0.3, w: 9, h: 0.5, fontSize: 20, bold: true, color: 'B40000' });
+      actSlide.addTable(rows, { x: 0.3, y: 0.9, w: 9.4, fontSize: 9, border: { type: 'solid', color: 'DDDDDD', pt: 0.5 } });
+    }
+    await pptx.writeFile({ fileName: momExportFilenameBase(mom) + '_MOM.pptx' });
+    UI.toast('PowerPoint downloaded', 'ok');
+  }
+
+  // ⚠️ mailto: can only carry text, never an attachment — this app has no
+  // SMTP/API backend to actually send mail, so pre-filling the person's own
+  // mail client (with a note to attach the downloaded file by hand) is the
+  // honest version of "email these minutes," not a silent no-op that claims
+  // to have sent something.
+  function momEmailMinutes(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    var items = momItemsOf(mom.id);
+    var subject = 'Minutes of Meeting — ' + (mom.title || 'Meeting') +
+      (mom.meeting_date ? ' (' + Fmt.date(mom.meeting_date) + ')' : '');
+    var lines = [
+      mom.title || 'Meeting',
+      mom.meeting_date ? 'Date: ' + Fmt.date(mom.meeting_date) : '',
+      mom.venue ? 'Venue: ' + mom.venue : '',
+      '', 'Action items:',
+    ];
+    if (items.length) {
+      items.forEach(function (it, i) {
+        lines.push((i + 1) + '. ' + momExportItemText(it) + (it.owner ? ' — ' + it.owner : ''));
+      });
+    } else {
+      lines.push('(none recorded)');
+    }
+    lines.push('', '(Download the full minutes as HTML/PDF/Excel/PowerPoint from this meeting\'s ' +
+      'Export menu and attach it by hand — a browser link cannot attach a file automatically.)');
+    window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(lines.join('\n'));
+  }
+
+  // ---- Meeting LIST export (item 8's second sentence) --------------------
+  function momExportListRows() { return momSortedRows(momUnifiedRows()); }
+  function momExportListHTML() {
+    var rows = momExportListRows();
+    var body = rows.length
+      ? rows.map(function (r) {
+          return '<tr><td>' + (r.favorite ? '★' : '') + '</td><td>' + Fmt.esc(r.title) +
+            (r.kind === 'series' ? ' (Recurring)' : '') + '</td><td>' + Fmt.esc(r.dateLabel) + '</td>' +
+            '<td>' + (r.attendees || '') + '</td><td>' + Fmt.esc(r.location) + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="5">No meetings recorded.</td></tr>';
+    var doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Meetings — ' + Fmt.esc(projName) + '</title>' +
+      '<style>body{font-family:Arial,Helvetica,sans-serif;color:#1c1c1e;padding:24px;}h1{color:#b40000;font-size:20px;}' +
+      'table{border-collapse:collapse;width:100%;margin-top:16px;}th,td{border:1px solid #ddd;padding:6px 8px;font-size:12px;text-align:left;}' +
+      'th{background:#f4f4f4;}</style></head><body><h1>Meetings — ' + Fmt.esc(projName) + '</h1>' +
+      '<table><thead><tr><th></th><th>Title</th><th>Date / Frequency</th><th>Attendees</th><th>Location</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table></body></html>';
+    momDownloadBlob('Meetings_' + (projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '.html', 'text/html', doc);
+    UI.toast('HTML downloaded', 'ok');
+  }
+  function momExportListXLSX() {
+    if (!window.XLSX) { UI.toast('The Excel library did not load — check the connection and reload.', 'error'); return; }
+    var rows = momExportListRows();
+    var head = ['Favorite', 'Title', 'Date / Frequency', 'Attendees', 'Location'];
+    var body = rows.map(function (r) {
+      return [r.favorite ? 'Yes' : '', r.title + (r.kind === 'series' ? ' (Recurring)' : ''), r.dateLabel, r.attendees || '', r.location];
+    });
+    var ws = XLSX.utils.aoa_to_sheet([head].concat(body));
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Meetings');
+    XLSX.writeFile(wb, 'Meetings_' + (projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '.xlsx');
+    UI.toast('Excel file downloaded', 'ok');
+  }
+  async function momExportListPDF() {
+    if (typeof html2pdf !== 'function') { UI.toast('The PDF library did not load — check the connection and reload.', 'error'); return; }
+    var rows = momExportListRows();
+    var td = 'padding:5px 8px;border:1px solid #e5e5ea;';
+    var rowsHTML = rows.length
+      ? rows.map(function (r) {
+          return '<tr><td style="' + td + '">' + (r.favorite ? '★' : '') + '</td>' +
+            '<td style="' + td + '">' + Fmt.esc(r.title) + (r.kind === 'series' ? ' (Recurring)' : '') + '</td>' +
+            '<td style="' + td + '">' + Fmt.esc(r.dateLabel) + '</td>' +
+            '<td style="' + td + '">' + (r.attendees || '') + '</td>' +
+            '<td style="' + td + '">' + Fmt.esc(r.location) + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="5" style="' + td + '">No meetings recorded.</td></tr>';
+    var holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:190mm;';
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'font-family:Arial,sans-serif;font-size:10px;color:#1c1c1e;width:190mm;padding:15mm 10mm;box-sizing:border-box;background:#fff;';
+    wrap.innerHTML =
+      '<div style="background:#b40000;padding:14px 20px;margin:-20px -20px 18px -20px;">' +
+        '<div style="font-size:14px;font-weight:700;color:#fff;">Meetings — ' + Fmt.esc(projName) + '</div></div>' +
+      '<table style="border-collapse:collapse;width:100%;"><thead><tr>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;"></th>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Title</th>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Date / Frequency</th>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Attendees</th>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Location</th>' +
+      '</tr></thead><tbody>' + rowsHTML + '</tbody></table>';
+    holder.appendChild(wrap);
+    document.body.appendChild(holder);
+    try {
+      await html2pdf().set({
+        margin: [10, 10, 10, 10], filename: 'Meetings_' + (projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(wrap).save();
+      UI.toast('PDF downloaded', 'ok');
+    } catch (e) {
+      UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
+    } finally {
+      if (holder.parentNode) holder.parentNode.removeChild(holder);
+    }
+  }
+
   async function momDownloadPDF(momId) {
     var mom = MOMS.find(function (x) { return x.id === momId; });
     if (!mom) return;
@@ -2919,6 +3681,9 @@ window.MinutesOfMeeting = (function () {
     var rep = host.querySelector('#il-mom-report');
     if (rep) rep.onclick = function () { _momReport = !_momReport; renderDetail(); };
 
+    var favt = host.querySelector('#il-mom-favtoggle');
+    if (favt) favt.onclick = function () { momToggleFavorite('meeting', _momSel); };
+
     var dist = host.querySelector('#il-mom-dist');
     if (dist) dist.onclick = function () {
       var cur = MOMS.find(function (x) { return x.id === _momSel; });
@@ -2934,16 +3699,24 @@ window.MinutesOfMeeting = (function () {
       momCarryOver(sel.value);
     };
 
-    var pb = host.querySelector('#il-mom-pdf');
-    // ⚠ Saves the header first when the user may edit: the export reads MOMS, not
-    // the form, so a title typed and not saved would be missing from the sheet.
-    if (pb) pb.onclick = async function () {
+    // ⚠ Saves the header first when the user may edit: every export reads
+    // MOMS, not the live form, so a title typed and not saved would be
+    // missing from the file. Not when locked — the form is already disabled,
+    // so this would be a pointless write to a distributed minute.
+    var exportSel = host.querySelector('#il-mom-exportsel');
+    if (exportSel) exportSel.onchange = async function () {
+      var v = exportSel.value; exportSel.value = '';
+      if (!v) return;
       var cur = MOMS.find(function (x) { return x.id === _momSel; });
-      // ⚠️ Not when locked: the form is disabled, so this would be a pointless write
-      // to a distributed minute — and one that bumps its updated_at for nothing.
       if (cur && canEditMinute(cur) && !momLocked(cur)) await momSaveHeader();
-      await momDownloadPDF(_momSel);
+      if (v === 'html') momExportHTML(_momSel);
+      else if (v === 'pdf') await momDownloadPDF(_momSel);
+      else if (v === 'pptx') await momExportPPTX(_momSel);
+      else if (v === 'xlsx') momExportXLSX(_momSel);
     };
+    var emailBtn = host.querySelector('#il-mom-email');
+    if (emailBtn) emailBtn.onclick = function () { momEmailMinutes(_momSel); };
+
     var sv = host.querySelector('#il-mom-save');
     if (sv) sv.onclick = async function () { if (await momSaveHeader()) { UI.toast('Minutes saved', 'ok'); renderDetail(); } };
 
