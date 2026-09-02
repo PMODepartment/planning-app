@@ -31,8 +31,11 @@
 
     <div class="pd-content">
       <div class="pd-topbar">
+        <!-- No static title here — it duplicated the page's own "Modules" heading
+             directly below it (found 2026-09-01 auditing a real render of the app;
+             dashboard.html already settled on this shape: switcher + user-bar only,
+             the page heading carries the title). -->
         <div id="ctx-switcher"></div>
-        <h1>Modules</h1>
         <div id="user-bar"></div>
       </div>
 
@@ -55,7 +58,7 @@
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/ui.js?v=20260902a"></script>
   <script src="assets/js/icons.js?v=20260901b"></script>
-  <script src="assets/js/modules-grid.js?v=20260901s"></script>
+  <script src="assets/js/modules-grid.js?v=20260902d"></script>
   <script>
   (function () {
     var pid = sessionStorage.getItem('pd_project');

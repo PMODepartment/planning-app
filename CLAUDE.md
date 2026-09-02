@@ -84,7 +84,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-02 — "Contracts & Claims" rename, centered/padded sidebar logo, and Portfolio mode gets every module
+### 2026-09-02 (e) — "Contracts & Claims" rename, centered/padded sidebar logo, and Portfolio mode gets every module
 
 Three owner asks in one prompt. The third — *"when selecting portfolio, all modules from projects
 must also be inherited… contents shall be a consolidation of all project data"* — the owner
@@ -196,6 +196,88 @@ Shared assets changed → **`ui.js`, `my-work.js`, `my-work.css`, `dashboard.css
 bumped to `?v=20260902a` across every referencing page**; `epc-rcm.js` referenced at its existing
 `?v=20260901a` (unchanged, no version bump needed since the file itself wasn't touched).
 
+### 2026-09-02 (d) — Vertical stacking: readable in day mode, and the cards read as a set
+Owner: *"improve the visuals in this vertical stacking … if it is on day mode, please make it more visually
+appealing … choose better colors or colors of text … and also in terms of orientation of the windows."*
+- ⚠️ **Every stacking label was hard-coded `fill="#fff"` over a cell body drawn as a 16 % wash of the trade
+  colour** — white text on a near-white box on the light theme. The body is now always the saturated colour
+  and done-vs-remaining is a **brightness step on that one colour** (scrim + light veil hatch for remaining,
+  the clean colour out to the POC for done), so it carries a label at full contrast in either theme.
+- ⚠️ The three paint tokens are **CSS vars** (`--ps-vs-scrim/-veil/-edge`) so the themes can differ — and they
+  are **re-declared in the PDF export's fixed light palette**; change one without the other and the print goes flat.
+- ⚠️ **Ink is chosen per cell from the colour's luminance**, halo included: white is wrong on the palette's yellow.
+- Cards keep their content width (deliberate) but a row now shares a height and a top line, with a softer
+  radius, a two-stop shadow, a hover lift and a header washed in the card's own colour.
+- MODULE_V → `20260902d`.
+### 2026-09-02 (c) — Project Schedule: Outline + Saved layouts folded into the View menu
+
+Owner: *"Yes fold Outline and Layouts into View too."* Two more toolbar buttons become sections of
+`View ▾`. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️ **A folded-in menu can outgrow the viewport, and `.ps-menu` will not tell you.** It is
+  `position:absolute; overflow:hidden; max-height:none`. Measured with the real menu HTML: 804px of
+  content 209px down a 900px viewport, and `Reporting view` + `Reset layout` were **rendered, inside
+  the menu box, and un-hittable by `elementFromPoint`**. Third instance of this defect class in this
+  repo (column chooser, group menu). Fixed with the existing `anchorMenu()` pin-and-clamp — **any
+  `.ps-menu` that grows past ~20 rows needs it.**
+- ⚠️ **Sixth "brand red is not a text colour":** the Save-current-layout item came over as
+  `--pd-red` at 13px/600 — **4.12:1 light, 3.40:1 dark, dark fails AA.** Now `--pd-danger-text`
+  (5.84 / 6.14).
+- ⚠️ An attribute collision that would have been silent: saved layouts used `data-view`, which the
+  View menu already binds to the six view modes. Renamed `data-lyt`.
+- Row needs **1590px → 1381px**; one row now at a ~1486px viewport (was ~1720). **1440 is still two
+  lines, by 46px** — the last lever is a collapsing search box, not done.
+- `.gitignore` now has `**/_*_test.html`. The harness patterns were filename-specific despite their
+  own comment saying otherwise, and a new harness file slipped through — the same gap that put four
+  harness files into production on 2026-09-01.
+
+**42/42** executing the shipped section builders + binders, 33/33 and 40/40 regressions.
+⚠️ Not verified signed in. `MODULE_V` → `20260902c`.
+
+### 2026-09-02 (b) — Project Schedule: contract scope + timeline zoom folded from segments into menus
+
+Owner: *"Yes let's fold the scope and zoom into menus."* Both 3-button segments become labelled menu
+buttons in the `View: Split ▾` pattern. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️ **I over-stated the win when I offered it.** The two segments were ~400px of the row, but the
+  menu buttons that replace them cost 286px back: measured **1705px → 1590px, 115px saved**. One row now
+  needs a ~1720px viewport (was ~1815) — so the owner's ~1920 screen was one row before and after, and
+  1440 is still two. Reaching one row at 1440 needs ~280px more (Outline + Layouts into the View menu,
+  or a collapsing search box); flagged, not done.
+- The scope button lights only when a scope filter is actually ON — red for Main, CO amber for change
+  orders. The segment always showed a lit pill including on the default, which is how a control stops
+  being seen.
+- ⚠️ A latent bug caught while rewiring: `applyView` re-synced the old segment with
+  `querySelectorAll('#ps-zoom button')`, which under the new markup also matches the trigger button
+  (no `dataset.zoom`) and would have silently cleared the active mark on every saved-layout restore.
+
+**40/40** executing the shipped functions; 0 functions lost. ⚠️ Not verified signed in.
+`MODULE_V` → `20260902b`.
+
+### 2026-09-02 — Project Schedule: toolbar finished, switcher un-stretched, foldable legend, Reporting view becomes a screen
+
+Four owner items. Detail in `modules/project-schedule/CLAUDE.md`; the two that matter beyond this module:
+
+- ⚠️ **A shared-CSS rule, not a module one, was stretching the project switcher.**
+  `UI.initModuleTopbar()` splits every module topbar, and `dashboard.css` then gives `-projctx`
+  `flex:1 1 220px; max-width:420px` and its trigger `width:100%; **max-width:none**` — cancelling the
+  module's own 260px cap. Measured 420px with a 259px gap to the caret → 167px with a 6px gap. Any
+  module whose `-projctx` looks over-wide has the same cause; the override needs (0,5,0) specificity
+  to beat dashboard.css's (0,4,0).
+- ⚠️ **A toolbar that silently clipped its own controls.** `.ps-tb-row` was `nowrap` +
+  `overflow:visible`, and `body { overflow-x:clip }` (from the mobile pass) means overflow is not
+  scrollable — it is simply gone. Measured at 1280: the row needed 1660px of 1256px, so six controls
+  including the search box were unreachable with nothing to say so. Now wraps. **Worth checking any
+  other module that pairs a nowrap row with `overflow:visible`.**
+- Reporting view now hides the sidebar, topbar and module bar (163px of vertical chrome and 64px of
+  sidebar reclaimed), carries the project/group/data-date identity into the toolbar so a screenshot
+  stays trustworthy, and gates itself on the Schedule tab so it can never strand a planner on a view
+  whose toolbar — and therefore whose only way out — is hidden.
+- ⚠️ Fifth instance of "brand red is not a text colour at this size": the reporting chip measured
+  **3.74:1** and now uses `--pd-danger-text` (5.31 light / 7.47 dark).
+
+`MODULE_V` → `20260902a`. ⚠️ Not verified signed in.
+
 ### 2026-09-01 (p) — Issues Dashboard mobile pass: the title-hide fix widened for phone width, plus nine module-local items
 
 Owner sent a phone screenshot — the same duplicate module `<h1>` / tabs-dropdown title entry (o)'s
@@ -254,6 +336,7 @@ bytes. ⚠️ **Not verified signed in.**
 
 `ui.js`/`dashboard.css?v=` → `20260901c` (app-wide — 20/28 referencing files respectively);
 `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260901q`.
+
 
 ### 2026-09-01 (m) — Live audit of both rebuilt registers: 8 real defects, and 4 of my own measurements were wrong first
 

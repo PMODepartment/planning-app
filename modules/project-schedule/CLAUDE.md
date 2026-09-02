@@ -1,3 +1,301 @@
+## Vertical stacking: the cell body is never pale again — day mode was unreadable (2026-09-02) — eprobles
+
+Owner: *"is there a way you can improve the visuals in this vertical stacking? … if it is on day
+mode, please make it more visually appealing. Also for the color coding and visuals … choose better
+colors or colors of text. and also in terms of orientation of the windows."*
+
+⚠️ **ROOT CAUSE OF THE DAY-MODE COMPLAINT: every label was hard-coded `fill="#fff"`, and the light
+theme drew the cell body as a 16 %-opacity wash of the trade colour on a white card.** White text on
+a near-white box. Dark mode got away with it only because the card behind the wash is dark. The fix
+is not a heavier font — it is that **the cell body is now always a saturated colour in both
+themes**, and done vs remaining is a *brightness step on that one colour*:
+
+| layer | what it is |
+|---|---|
+| 1 | the category colour, solid, across the whole cell |
+| 2 | `--ps-vs-scrim` over it → the **remaining** tone (dimmer, same hue) |
+| 3 | `--ps-vs-veil` 45° hatch → the texture that says "remaining" at a glance |
+| 4 | the colour again, clean and undimmed, out to the POC → the **done** stretch |
+
+Layer 4 is drawn **last**, so the done stretch *erases* 2 and 3 rather than sitting over them and the
+boundary is a hard edge. Nothing about the meaning moved: fill = which trade, solid = how much is
+done, border = early/on time/late. Three facts, still three channels.
+
+- ⚠️ **The three tokens are CSS VARS (`--ps-vs-scrim` / `--ps-vs-veil` / `--ps-vs-edge`), not
+  literals in the JS** — precisely so the two themes can differ; the SVG resolves them from the
+  document. **They are re-declared in the PDF export's fixed light palette.** Change one and you
+  must change the other or the print comes out as flat colour blocks with no done/remaining split.
+- ⚠️ **The hatch pattern is a light veil now, not the trade colour.** It used to be the colour drawn
+  over a wash of the same colour, which is exactly what made the light theme pale-on-pale.
+- ⚠️ **Ink is chosen per cell from the colour's luminance** (`_vsLum` / `_vsInkFill` / `_vsTxtAttr`),
+  and the halo flips with it. White is right for most of the palette but not for its yellow/amber —
+  white on yellow is the same defect in a different hue. A non-hex colour (`var(--pd-muted)`, the
+  un-towered band) falls back to white.
+- ⚠️ The cell outline is `--ps-vs-edge`, not a fixed `rgba(0,0,0,.28)`: a black hairline is invisible
+  on a dark card and heavy on a light one.
+
+**The cards ("windows").** They still take their **content** width — that is deliberate and stays
+(a one-zone tower must not sit in 660 px of dead space). What changed is that a *row* of them now
+shares a height and hangs from a common top line instead of each card ending wherever its own drawing
+does, which is what made a row read as debris rather than as a set. Plus a softer 14 px radius, a
+two-stop shadow, a 1 px hover lift, and a header washed with the card's own `--tc` — on white that is
+what stops eight cards looking like one grey table.
+
+---
+## Outline and Layouts folded into the View menu (2026-09-02c) — fmlozano
+
+Owner: *"Yes fold Outline and Layouts into View too"* — accepting the two candidates I named at the
+end of the scope/zoom pass. Both are view/layout questions, which is what `View ▾` already owns.
+
+`Outline ▾` and `Layouts ▾` are gone from `.ps-tb-row`; `renderLayoutMenu` grows an **Outline**
+section (after View) and a **Saved layouts** section (after Gantt settings).
+
+- `renderCollapseMenu` / `renderViewsMenu` become `outlineSectionHTML` + `bindOutlineSection` and
+  `layoutsSectionHTML` + `bindLayoutsSection`. Every handler moved verbatim — the >4000-row confirm
+  on Expand all, `expandToLevel(parseInt(...))`, the per-project `ps_views` bundle (zoom, search,
+  filters, grouping, column hidden/sort/renames/widths, Activity-Progress charts).
+- The three `renderCollapseMenu()` call sites (`setGroupBys`, the full repaint, `applyView`) are gone:
+  the menu is rebuilt on every open, so there is nothing left to keep in sync from outside.
+- ⚠️ **`data-lyt`, NOT `data-view`.** The old Layouts menu marked saved layouts with `data-view`, and
+  `renderLayoutMenu` already binds `[data-view]` to the six VIEW MODES. Pasting the section in as-is
+  would have made clicking a saved layout call `_setView('Weekly client report')` and drop the planner
+  on the fallback view. Asserted: exactly one `data-view=` producer is left in the file.
+- ⚠️ **WBS levels are chips on one wrapping line, not a row each.** `maxDepth()` reaches 14 on a P6
+  import; as stacked buttons that is taller than the rest of the menu combined. Measured: 6 levels on
+  one 24px-chip row, **152px saved against stacked rows.** The chips use `border:1px var(--pd-line)`,
+  the same token `.pd-btn` uses, so the affordance matches every other button in the app.
+- ⚠️ Outline is omitted when `cur === 'stacking'`, exactly as the deleted
+  `body.ps-vstack-on #ps-collapseto` rule hid the button — there is no grid outline to collapse while
+  the building model is open. Saved layouts stays: it is meaningful in every view.
+- Deleting a saved layout still keeps the menu open (`e.stopPropagation()` + in-place re-render), so
+  clearing out several stale layouts does not need a reopen each time.
+
+### ⚠️ THE FOLD WOULD HAVE SHIPPED A MENU YOU COULD NOT REACH THE BOTTOM OF
+This is the whole reason the change is more than two string concatenations. `.ps-menu` is
+`position:absolute; overflow:hidden` with **`max-height:none`**. With both sections folded in the menu
+is **804px of content in a 900px viewport starting 209px down the page** — measured in the browser
+against the shipped CSS with the real menu HTML generated by the shipped section builders:
+
+- **Before the fix: `Reporting view` and `Reset layout to defaults` both measured `inViewport:false`
+  and failed `elementFromPoint` — rendered, inside the menu box, and literally unclickable.** That is
+  the same defect class the column chooser and the group menu each hit before; third instance.
+- **After: clamped to 673px, scrolls, the box sits fully inside the viewport, and `Reset layout`
+  hit-tests to itself once scrolled to.** Verified at 900 / 800 / 768 / 720 viewport heights.
+- The fix is `anchorMenu(btn, menu)` — the existing pin-and-clamp the Colors menu already uses, not a
+  new mechanism. ⚠️ `classList.add('open')` now runs BEFORE `renderLayoutMenu()`, or the anchor call
+  inside it never fires on the first open. ⚠️ It re-anchors on EVERY render, not just on open:
+  deleting a saved layout or toggling density rebuilds the menu at a different height.
+- ⚠️ Fixed a pre-existing bug while there: `renderLayoutMenu` never hydrated its injected `data-ico`
+  spans, so **Gantt settings and Reset layout have been rendering iconless**. `Icons.hydrate(lMenu)`.
+
+### ⚠️ A sixth "brand red is not a text colour"
+`＋ Save current layout…` came over from the old menu as `var(--pd-red)` at 13px/600. Measured on
+`--pd-card`: **4.12:1 light and 3.40:1 dark — dark fails AA outright.** Now `--pd-danger-text`:
+**5.84 light / 6.14 dark.** Everything else in the new sections passes too (muted heads and the chip
+label 7.07 / 7.02; chip digits 16.3 / 12.22).
+
+### The width, measured
+- **Row needs 1590px → 1381px. 209px saved** (the two buttons were 98 + 102 + a divider, and nothing
+  replaces them this time — unlike the scope/zoom fold, which bought back only 115px net).
+- **One row now needs a ~1486px viewport, down from ~1720.** Bisected: 1398px of row width, + 88px of
+  shell chrome.
+- ⚠️ **1440 is still two lines — by 46px.** Close, but I am not going to claim it. The remaining
+  lever is the 160px search box collapsing to an icon; not done, not asked for.
+- On the owner's ~1920 screen it was one row before and after.
+
+### Verification
+- **42/42 executing the SHIPPED `outlineSectionHTML` / `bindOutlineSection` / `layoutsSectionHTML` /
+  `bindLayoutsSection` / `esc`**, sliced by brace matching, against a selector-aware DOM shim (one menu
+  now answers three different `[data-*]` queries). Covers chip counts at maxDepth 0 / 4 / 14, the
+  integer arg to `expandToLevel`, the >4000-row confirm both ways, a hostile layout name escaped in
+  both the attribute and the text, delete-keeps-the-menu-open, the full save bundle, and a cancelled
+  prompt writing nothing. `esc` delegates to the shared `Fmt.esc`, so that is sliced out of
+  `assets/js/db.js` rather than retyped.
+- **33/33 and 40/40** — the reporting-view and scope/zoom suites still pass unchanged.
+- Browser measurements above are against the shipped `<style>` block + `dashboard.css` + the real
+  `ui.js`, behind the standard gate (`visibilityState`, `clientWidth >= 900`, toolbar not swallowed
+  by `.pd-modulebar`).
+- Parses (1 block); 0 NUL bytes; function-set diff vs HEAD: 2 removed, 4 added, all intended.
+- ⚠️ Two harness faults of my own worth recording: a `[^)]*` regex could not cross `var(--pd-line)`,
+  and `data-lvl="\d+"` does not match `data-lvl="all"` — both were wrong TESTS, not wrong code.
+- ⚠️ A near-miss caught only by the leftover sweep: `cMenu` / `vMenu` were also used by two
+  `addEventListener` calls ~500 lines away from `closeMenus`. Deleting the elements without those
+  would have been a **ReferenceError at init that kills the entire module.** Grep for every use of a
+  handle, not just the obvious one.
+- ⚠️ **Not verified signed in** — no live project, so the Outline chips have never run against a
+  real `maxDepth()` and the layouts list has never been read off real `ps_views` data.
+- `.gitignore`: `**/_*_test.html` added. The existing patterns are filename-specific despite the
+  comment above them saying "match the WORD" — my new `_menu_test.html` harness slipped straight
+  through, which is exactly how four harness files reached production on 2026-09-01.
+- `MODULE_V` → `20260902c`.
+
+## Contract scope and timeline zoom folded from segments into menus (2026-09-02b) — fmlozano
+
+Owner: *"Yes let's fold the scope and zoom into menus"* — taken up from my own offer at the end of the
+previous prompt, where the one-row toolbar was still two lines at laptop widths.
+
+Both 3-button `.ps-seg` segments become labelled `.ps-menu-wrap` buttons in the pattern established for
+`View: Split ▾`: the button NAMES the current value, the menu carries the options with ●/○ marks.
+
+- **Scope** stays a top-level, one-click control. ⚠️ That is a standing rule in this file, not a
+  preference: the segment's own comment records that it must not live only in the Filter menu, because
+  *"show me the change orders"* is a question a planner asks constantly and a filter three clicks deep is
+  one nobody discovers. A dedicated menu button keeps all of that.
+- ⚠️ **The button carries the state as COLOUR, and Blended is deliberately unlit.** The segment always
+  showed one red pill — including on the default — and a permanently-lit control stops being seen. Now
+  only an actual narrowing lights: red for Main, the CO amber `#E08A3C` for Change orders, matching the
+  `.ps-scopetag` chips so the colour language is unbroken. So "you are filtered" is still readable
+  without opening anything, and the resting state is quiet.
+- ⚠️ **Menu items are bound inside `syncScopeSwitch` / `renderZoomMenu`, NOT once at init.** Both
+  rebuild their menu's `innerHTML`, which destroys any handler bound earlier — the old init-time
+  `_scSeg.querySelectorAll('[data-scope]')` binding is removed for that reason.
+- ⚠️ **The wrappers keep the ids `ps-scope` / `ps-zoom`**, so two behaviours survive untouched:
+  `syncScopeSwitch`'s `seg.style.display` (the control hides itself on a project with no change orders —
+  *"a control with nothing to find"*) and the `body.ps-vstack-on #ps-zoom` rule that hides the timeline
+  scale while the stacking view is open.
+- ⚠️ `applyView` used to re-sync the segment with `querySelectorAll('#ps-zoom button')`. Under the new
+  markup that selector also matches the TRIGGER, whose `dataset.zoom` is undefined — so it would have
+  silently cleared the active mark on every saved-layout restore. Replaced with
+  `_paintZoomBtn(); renderZoomMenu();`.
+- The zoom menu still points at the two finer controls, which are unchanged and remain the fast path:
+  drag a column edge in the date header, or Ctrl+scroll over the chart.
+
+### ⚠️ THE HONEST ARITHMETIC — this bought less than I implied when I offered it
+Measured at 1280 in the harness, per control: **scope 227px → 151px, zoom 173px → 135px**, plus one
+divider. The row needs **1705px → 1590px — 115px saved, not the ~400px the segments occupied**, because
+a labelled menu button costs 286px back. I described the two segments as "~400px of the row" without
+netting off what replaces them.
+- **One row now needs a ~1720px viewport, down from ~1815.** Confirmed by bisection: 1680 → 2 lines,
+  1760 → 1 line.
+- On the owner's ~1920 screen it was one row before and is one row now; what changed there is density,
+  not line count.
+- **At 1680 it IS one line in two real cases**: in Reporting view (Actions / Add / Schedule / `?` are
+  hidden), and on a project with no change orders (the scope control hides itself).
+- **Getting to one row at 1440 needs ~280px more.** The candidates, unchanged by this pass: `Outline ▾`
+  (98px) and `Layouts ▾` (102px) are both view/layout controls that belong in the `View ▾` menu
+  alongside Row density and Gantt settings, and the 160px search could collapse to an icon. Not done —
+  it was not asked for, and folding Outline/Layouts is a real judgement call about how deep the View
+  menu should get.
+
+### Verification
+- **40/40 executing the SHIPPED `syncScopeSwitch` / `renderZoomMenu` / `_paintZoomBtn` / `_scopeLabel` /
+  `_scopeCount` / `_zoomLabel`**, sliced by brace matching, against a DOM shim whose `innerHTML` setter
+  materialises the `data-scope` / `data-zoom` items — so the shipped `querySelectorAll` and the shipped
+  `onclick` binding really run. Covers: the hide-with-no-COs rule both ways; the label for all three
+  scopes; only-a-narrowing-lights and both lit states clearing on return to Blended; the main-only
+  `_scopeSwitchTitle` appearing on Main and NOT on CO; the three counts including Blended = main + CO;
+  a click doing everything the segment did (`_clearMainOnlyShift`, `buildFilterMenu`, both repaints,
+  closing its own menu); handlers surviving a rebuild; and `renderZoomMenu` being a no-op with no menu
+  present (`applyView` calls it on every saved-layout restore).
+- Static: both segments gone, no leftover `#ps-zoom button` selector, `applyView` restores both,
+  `closeMenus` closes both, the vstack hide rule still resolves, both menus stop click propagation.
+- Parses (1 block); 0 NUL bytes; **0 functions lost**, 5 added.
+- ⚠️ A bug in my own test file first: `/...<\/span>/` — an unescaped `/` inside a regex literal
+  terminated it. Three occurrences; the file would not even parse.
+- ⚠️ A harness trap worth keeping: the Browser pane opened at **594px**, below the 700px phone
+  breakpoint where `.ps-toolbar` is `display:none` by design — so every item measured as invisible and
+  the widths came back as `-5`. Gate width measurements on `clientWidth >= 900`.
+- ⚠️ **Not verified signed in** — no live project, so the scope counts have never been read off real
+  `scopeOf()` data and the hide-with-no-COs path has never run against a real project.
+- `MODULE_V` → `20260902b`.
+
+## Toolbar finished, the project switcher un-stretched, a foldable legend, and Reporting view becomes a screen (2026-09-02) — fmlozano
+
+Four owner items in one pass, all measured in a real browser against the shipped CSS rather than
+reasoned about.
+
+### 1 · Toolbar redesign finished (the previous prompt's work, completed)
+The three dangling `ps-tb-labeltoggle` references are gone — the CSS rule, the `body.ps-reporting`
+selector, and the wiring block. Every toolbar control carries its own word now, so labelled mode has
+nothing left to reveal. `.ps-topbar-tools .pd-btn.ps-tb-labeled` is a DIFFERENT rule (File / Reports /
+Health in the module bar) and stays.
+
+### 2 · ⚠️ The project switcher was stretched by dashboard.css, NOT by this module
+Owner: *"the project switcher is extended unnecessarily."* Root-caused by measurement, not by reading:
+`UI.initModuleTopbar()` restructures every module topbar into `.pd-tb-split > .pd-tb-main`, and
+dashboard.css then gives `-projctx` `flex:1 1 220px; max-width:420px` and its trigger
+`width:100%; **max-width:none**` — explicitly cancelling the 260px cap this module sets. Add
+`.pd-psel-btn { justify-content:space-between }` and a 124px project name renders in a 420px box with
+the caret stranded at the far edge.
+- **Measured before/after at 1280 by re-asserting dashboard.css's own rule last: 420px wide with a
+  259px gap between the name and the caret → 167px with a 6px gap.** Restoring the override reproduces
+  the 420px exactly, so the test bites.
+- ⚠️ The long selectors are load-bearing: dashboard.css's rule is (0,4,0), so a plain
+  `.ps-projctx .pd-psel-btn` (0,2,0) loses and the fix would have silently done nothing.
+- Consistency: the data-date badge was ~26px next to 34px everywhere else; it is 34px now.
+
+### 3 · ⚠️ A REAL DEFECT MY OWN TOOLBAR REDESIGN INTRODUCED, found while measuring the above
+`.ps-tb-row` was `flex-wrap:nowrap` with `overflow:visible`. **Measured at a 1280px viewport: the row
+needed 1660px against 1256px available, and because dashboard.css sets `body { overflow-x:clip }` the
+last ~400px — Analyze, Colors, the shortcuts button and the whole search box — were not merely
+off-screen but UNREACHABLE, with no scrollbar to say so.** Six controls clipped, 518px of dead scroll.
+- ⚠️ It was already overflowing by ~215px BEFORE this session; giving each view control its word made
+  it worse. The owner's own screen is ~1920px, where it does fit on one line — which is why it was
+  never reported and why I nearly shipped it.
+- **Fix: the row wraps.** `overflow:visible` is unchanged, so the `.ps-menu` popovers still escape —
+  the nowrap was never what protected them (the 701–1140px band already wrapped for this reason).
+- **Measured after: 1920 → one row, 0 clipped, 0 page scroll. 1440 → 2 lines, 0 clipped. 1280 → 2
+  lines, 0 clipped.** Re-asserting `nowrap` at 1280 reproduces the 6 clipped controls, so the check bites.
+- ⚠️ A measurement trap of my own: `.ps-tb-spacer` is a 0×0 auto-margin element whose baseline sits
+  elsewhere, and counting distinct `top` values reported ONE row as three. Exclude zero-width items.
+
+### 4 · The activity legend folds
+Owner: *"the panel below is always shown. If we can have the option to minimize this similar to the
+activity details panel."* A chevron in the legend head folds it to a single line that still names the
+field the colours mean — a bare chevron over an empty strip would leave a reader unable to tell the
+legend was ever there. **Measured: 74px → 39px, reversible, chevron rotates 180°.**
+- ⚠️ The class sits on the HOST, which `renderActLegend` only ever replaces the innerHTML of, so a
+  re-render cannot silently unfold it.
+- ⚠️ The chevron is INJECTED markup, so `Icons.hydrate(host)` is required — the DOMContentLoaded pass
+  only covers static markup, and without it the button renders empty.
+
+### 5 · Reporting view is a SCREEN now, not a trimmed toolbar
+Owner: *"the sidepanel is completely minimized and the whole bar where the project switcher is
+minimized as well."* It now also hides the sidebar, the topbar and the module bar.
+**Measured: 163px of vertical chrome → 0, and the content's left edge 64px → 0.**
+- ⚠️ STILL PURE CSS ON THE BODY CLASS. The sidebar is hidden with `display:none`, deliberately NOT by
+  toggling the shell's `.pd-collapsed` — `UI.initShell` persists that in `pd_sidebar_collapsed`, so
+  driving it here would silently overwrite the planner's own sidebar preference and leave it changed
+  after they exit.
+- ⚠️ **Those bands carry the project name, the group head and the data date** — the three facts that
+  make a screenshot trustworthy. They are not dropped: a `.ps-rep-bar` in the toolbar carries them,
+  painted by `_repIdPaint()`. Do not remove one without the other.
+- ⚠️ **The exit chip is now a real `<button>`, not a `::before` pseudo-element.** A mode that removes
+  most of the app chrome must be leavable in one visible click, and a pseudo-element cannot be clicked.
+- ⚠️ **`_applyReportingClass()` GATES ON THE SCHEDULE TAB, and this is safety-critical.** `switchTab`
+  hides `.ps-toolbar` on every other view — which is where BOTH ways out live (the Layout menu and the
+  exit chip). Without the gate, switching to the Planner Cockpit while reporting is on would leave a
+  planner with no chrome at all and nothing to click. Asserted for all five other tabs.
+- ⚠️ The identity bar is its OWN line, not an item in `.ps-tb-row`: measured inside that row it cost
+  498px on a row that already needed 1660 of 1256, pushing the search box off screen. `.ps-toolbar` is
+  a flex COLUMN, so a sibling div is a free line that competes with nothing.
+- ⚠️ **A WCAG defect found by measuring, and it is the fifth time in this repo:** the exit chip was
+  brand red at 10.5px/700 = **3.74:1**, under AA — the same defect the `::before` chip it replaces
+  already had. Text is `--pd-danger-text` now (the paired token added for exactly this); the BORDER
+  stays brand red, since a component boundary is held to 3:1, which 3.74 clears.
+  **All text passes in both themes: worst 5.31 light / 7.47 dark.**
+
+### Verification
+- **33/33 executing the SHIPPED `_applyReportingClass` / `_repIdPaint` / `applyLegendFold` /
+  `setLegendFold`**, sliced out of index.html by brace matching, never reimplemented — the tab gate for
+  all six tabs, escaping, the omitted separator when there is no group head, persistence, idempotence
+  across re-renders, and null-safety on every path (`_repIdPaint` runs from `renderDataDateBadge` on
+  every load).
+- **In a real browser against the shipped CSS + the REAL `ui.js`** (`initModuleTopbar` and
+  `enhanceProjectSelect` both actually run, so the cascade under test is the one that ships), at
+  1280/1440/1920, light and dark: every number above, plus reporting toggling **byte-identically
+  reversible**.
+- ⚠️ **The harness produced one confidently wrong result first**, worth recording: my topbar slice
+  left `.pd-topbar` unclosed, the parser nested `.pd-main` inside it, and `initModuleTopbar` then
+  bucketed the whole toolbar into `.pd-modulebar` — so hiding the module bar took the toolbar with it
+  and it read exactly like "reporting view hides its own way out". A pure harness fault. The sanity
+  gate now asserts the toolbar is NOT inside the module bar.
+- Parses (1 block, 0 fail); 0 NUL bytes; **function-set diff vs HEAD: 0 lost** (the one `radio` → `opt`
+  swap is the intended `renderLayoutMenu` rewrite).
+- ⚠️ **Not verified signed in** — no live project was opened, so `_repIdPaint` has never read a real
+  `projName()`/group head, and the legend fold has never run against a real category list.
+- `MODULE_V` → `20260902a`.
+
 ## ⚠️ REGRESSION, same day: adoption built 1,584 TOP-LEVEL nodes — and my own harness said it was fine (2026-09-01) — fmlozano
 
 Owner, after running the migration and re-importing: *"See WBS Manager there are stray WBS... I think
