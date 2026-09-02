@@ -195,7 +195,7 @@ window.APP_CONFIG = {
       // is told about and knows nothing about where progress photos live.
       recent: { orderBy: 'taken_at', limit: 6, columns: ['title', 'works', 'taken_at', 'location'],
                 bucket: 'progress-photos', pathCol: 'photo_url', ttl: 3600 } } },
-    { key: 'contracts-claims',  name: 'Contracts & Claims Register',           path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
+    { key: 'contracts-claims',  name: 'Contracts & Claims',                    path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
       metrics: [
         { key: 'records', agg: 'countWhere', column: 'id' },
         // The flow the dashboard draws: original contract value, then change orders by state, then

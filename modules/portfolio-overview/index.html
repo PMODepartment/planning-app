@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260901d" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -132,8 +132,10 @@
     .po-eq-flag { color:var(--pd-bad); font-weight:700; }
     @media (max-width: 700px) { .po-eq th.po-eq-c1, .po-eq td.po-eq-c1 { width:150px; min-width:150px; max-width:150px; } }
 
-    /* module tabs (Overview / S-Curve / Cash Flow) */
-    .po-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:16px; }
+    /* module tabs (Overview / S-Curve / Cash Flow / …) — wraps rather than scrolling, at every
+       width, now that there are 13 of them: #po-projfilter-wrap's dropdown is position:absolute,
+       so an overflow-x scroller here would clip it (the exact trap the module topbar hit). */
+    .po-tabs { display:flex; flex-wrap:wrap; row-gap:2px; border-bottom:2px solid var(--pd-line); margin-bottom:16px; }
     .po-tab { padding:9px 18px; cursor:pointer; font-weight:600; font-size:13.5px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
     .po-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
     /* cross-project S-Curve / Cash Flow views */
@@ -280,6 +282,12 @@
       .po-cal { overflow-x:auto; }
       .po-cal-head, .po-cal-grid { min-width:700px; }
     }
+
+    /* ---- Recent-photos strip (Photos tab) — a plain wrapping thumbnail grid ---- */
+    .po-photo-grid { display:flex; flex-wrap:wrap; gap:10px; }
+    .po-photo-item { width:150px; }
+    .po-photo-item img { width:150px; height:104px; object-fit:cover; border-radius:8px; border:1px solid var(--pd-line); background:var(--pd-bg); display:block; }
+    .po-photo-cap { font-size:11px; color:var(--pd-muted); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   </style>
 </head>
 <body>
@@ -318,6 +326,13 @@
         <button class="po-tab" data-view="resources"><span data-ico="users" data-ico-size="15"></span> Resources</button>
         <button class="po-tab" data-view="equipment"><span data-ico="box" data-ico-size="15"></span> Equipment</button>
         <button class="po-tab" data-view="milestones"><span data-ico="calendar" data-ico-size="15"></span> Milestones</button>
+        <button class="po-tab" data-view="risk"><span data-ico="risk" data-ico-size="15"></span> Risk Register</button>
+        <button class="po-tab" data-view="stakeholders"><span data-ico="compass" data-ico-size="15"></span> Stakeholders</button>
+        <button class="po-tab" data-view="issues"><span data-ico="clipboard" data-ico-size="15"></span> Issues</button>
+        <button class="po-tab" data-view="meetings"><span data-ico="calendar" data-ico-size="15"></span> Meetings</button>
+        <button class="po-tab" data-view="contracts"><span data-ico="contract" data-ico-size="15"></span> Contracts</button>
+        <button class="po-tab" data-view="photos"><span data-ico="camera" data-ico-size="15"></span> Photos</button>
+        <button class="po-tab" data-view="productivity"><span data-ico="barChart" data-ico-size="15"></span> Productivity</button>
         <!-- Project filter lives here (not in the Overview toolbar) so it's reachable from every tab
              — it scopes the Overview table AND the S-Curve / Cash Flow views. -->
         <div class="po-projfilter" id="po-projfilter-wrap" style="margin-left:auto;align-self:center;">
@@ -451,16 +466,98 @@
           <div style="overflow-x:auto;"><table class="po-table" id="po-rs-table"></table></div>
         </div>
       </div>
+
+      <div id="po-view-risk" style="display:none;">
+        <div class="po-toolbar">
+          <select class="pd-select" id="po-rk-status" style="max-width:160px;">
+            <option value="">All statuses</option><option>Open</option><option>In Progress</option><option>Closed</option>
+          </select>
+          <span class="po-spacer"></span>
+          <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-rk-q" placeholder="Search risk, category…" /></div>
+          <button class="pd-btn" id="po-rk-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
+        </div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-rk-scope">all projects</span>). Priority is the same 5×5 lookup the Risk Register itself uses.</p>
+        <div class="po-kpis2" id="po-rk-kpis"></div>
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-rk-table"></table></div>
+        </div>
+      </div>
+
+      <div id="po-view-stakeholders" style="display:none;">
+        <div class="po-toolbar">
+          <span class="po-spacer"></span>
+          <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-sh-q" placeholder="Search name, organization…" /></div>
+          <button class="pd-btn" id="po-sh-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
+        </div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sh-scope">all projects</span>).</p>
+        <div class="po-kpis2" id="po-sh-kpis"></div>
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-sh-table"></table></div>
+        </div>
+      </div>
+
+      <div id="po-view-issues" style="display:none;">
+        <div class="po-toolbar">
+          <select class="pd-select" id="po-is-status" style="max-width:160px;">
+            <option value="">All statuses</option><option>Open</option><option>On Hold</option><option>Closed</option>
+          </select>
+          <span class="po-spacer"></span>
+          <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-is-q" placeholder="Search issue, department…" /></div>
+          <button class="pd-btn" id="po-is-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
+        </div>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-is-scope">all projects</span>).</p>
+        <div class="po-kpis2" id="po-is-kpis"></div>
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-is-table"></table></div>
+        </div>
+      </div>
+
+      <div id="po-view-meetings" style="display:none;">
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Open action items across the <strong>project filter</strong> above (<span id="po-mm-scope">all projects</span>) — Closed items are left out, this is a worklist. <button class="pd-btn" id="po-mm-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <div class="po-kpis2" id="po-mm-kpis"></div>
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-mm-table"></table></div>
+        </div>
+      </div>
+
+      <div id="po-view-contracts" style="display:none;">
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-ct-scope">all projects</span>). <button class="pd-btn" id="po-ct-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <div class="po-kpis2" id="po-ct-kpis"></div>
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-ct-table"></table></div>
+        </div>
+      </div>
+
+      <div id="po-view-photos" style="display:none;">
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-ph-scope">all projects</span>). <button class="pd-btn" id="po-ph-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <div class="po-kpis2" id="po-ph-kpis"></div>
+        <div class="po-card">
+          <h3 style="text-transform:none;font-size:15px;">Most recently captured</h3>
+          <div class="po-photo-grid" id="po-ph-grid"></div>
+        </div>
+        <div class="po-card" style="margin-top:16px;padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-ph-table"></table></div>
+        </div>
+      </div>
+
+      <div id="po-view-productivity" style="display:none;">
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-pr-scope">all projects</span>). Rate = output ÷ (crew or equipment × working days). <button class="pd-btn" id="po-pr-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <div class="po-kpis2" id="po-pr-kpis"></div>
+        <div class="po-card" style="padding:0;overflow:hidden;">
+          <div style="overflow-x:auto;"><table class="po-table" id="po-pr-table"></table></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260901c"></script>
+<script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260901d"></script>
+<script src="../../assets/js/epc-rcm.js?v=20260901a"></script>
+<script src="../../assets/js/ui.js?v=20260902a"></script>
 <script src="../../assets/js/icons.js?v=20260901b"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -933,6 +1030,11 @@
     return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: a.nAct || 0 };
   }
   function kpi2(l, v, cls) { return '<div class="po-kpi2"><div class="po-kpi2-l">' + l + '</div><div class="po-kpi2-v"' + (cls ? ' style="color:var(' + cls + ');"' : '') + '>' + v + '</div></div>'; }
+  // Shared by the seven register-style tabs below (Risk / Stakeholders / Issues / Meetings /
+  // Contracts / Photos / Productivity) — one clipped-text and one status-pill helper instead of
+  // seven near-identical copies.
+  function clip(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+  function statePill(label, tone) { return '<span class="pd-pill pd-pill-' + (tone || 'muted') + '">' + esc(label) + '</span>'; }
   function scRenderKpis(d) {
     var host = document.getElementById('po-sc-kpis');
     if (d.empty) { host.innerHTML = ''; return; }
@@ -1744,11 +1846,25 @@
     document.getElementById('po-view-resources').style.display = v === 'resources' ? '' : 'none';
     document.getElementById('po-view-equipment').style.display = v === 'equipment' ? '' : 'none';
     document.getElementById('po-view-milestones').style.display = v === 'milestones' ? '' : 'none';
+    document.getElementById('po-view-risk').style.display = v === 'risk' ? '' : 'none';
+    document.getElementById('po-view-stakeholders').style.display = v === 'stakeholders' ? '' : 'none';
+    document.getElementById('po-view-issues').style.display = v === 'issues' ? '' : 'none';
+    document.getElementById('po-view-meetings').style.display = v === 'meetings' ? '' : 'none';
+    document.getElementById('po-view-contracts').style.display = v === 'contracts' ? '' : 'none';
+    document.getElementById('po-view-photos').style.display = v === 'photos' ? '' : 'none';
+    document.getElementById('po-view-productivity').style.display = v === 'productivity' ? '' : 'none';
     if (v === 'scurve') loadScurve(false);
     if (v === 'cashflow') loadCashflow(false);
     if (v === 'resources') loadResources(false);
     if (v === 'equipment') loadEquipment(false);
     if (v === 'milestones') loadMilestones(false);
+    if (v === 'risk') loadRisks(false);
+    if (v === 'stakeholders') loadStakeholders(false);
+    if (v === 'issues') loadIssues(false);
+    if (v === 'meetings') loadMeetings(false);
+    if (v === 'contracts') loadContracts(false);
+    if (v === 'photos') loadPhotos(false);
+    if (v === 'productivity') loadProductivity(false);
   }
 
   function exportExcel() {
@@ -1774,6 +1890,415 @@
     var ws = XLSX.utils.json_to_sheet(data);
     var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Portfolio');
     XLSX.writeFile(wb, 'Portfolio Dashboard.xlsx');
+  }
+
+  // ================= Portfolio Risk Register (cross-project) =================
+  // Priority uses the SAME 5×5 lookup the Risk Register module derives from (EPCRCM.riskPriority)
+  // rather than a re-guessed threshold on impact × probability — see epc-rcm.js for why a
+  // threshold on the product would be wrong (a product of 4 answers three different ways).
+  var rkRows = null, rkLoadedIds = null, rkQuery = '', rkStatus = '';
+  function rkPriority(r) {
+    if (r.impact == null || r.likelihood == null) return '';
+    return (window.EPCRCM && EPCRCM.riskPriority) ? (EPCRCM.riskPriority(r.impact, r.likelihood) || '') : '';
+  }
+  async function loadRisks(force) {
+    var ids = scopedProjectIds();
+    if (!force && rkLoadedIds && rkLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-rk-scope').textContent = scopeLabel(ids);
+    var tbl = document.getElementById('po-rk-table'), kpis = document.getElementById('po-rk-kpis');
+    if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
+    tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the risk registers of ' + ids.length + ' project(s)…</td></tr></tbody>';
+    kpis.innerHTML = '';
+    try {
+      // ⚠️ PDb.selectAll, not a bare select — risks across a whole portfolio can pass
+      // PostgREST's 1000-row cap, and a truncated read here would silently under-report
+      // the very number (1st Priority count) this tab exists to surface.
+      rkRows = await PDb.selectAll('risk_register', function (q) { return q.in('project_id', ids); });
+    } catch (e) {
+      var msg = (e && e.message) || String(e);
+      tbl.innerHTML = '<tbody><tr><td class="po-empty">' + esc(msg) + '</td></tr></tbody>';
+      return;
+    }
+    rkLoadedIds = ids;
+    rkRender();
+  }
+  function rkVisible() {
+    var q = rkQuery.trim().toLowerCase();
+    return (rkRows || []).filter(function (r) {
+      if (rkStatus && (r.status || 'Open') !== rkStatus) return false;
+      if (q && ((r.title || '') + ' ' + (r.description || '') + ' ' + (r.category || '') + ' ' + (r.risk_code || '')).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+  var RK_PRI_RANK = { '1st Priority': 0, '2nd Priority': 1, '3rd Priority': 2, '4th Priority': 3, '': 4 };
+  function rkRender() {
+    var list = rkVisible();
+    var open = list.filter(function (r) { return (r.status || 'Open') !== 'Closed'; }).length;
+    var top = list.filter(function (r) { return rkPriority(r) === '1st Priority'; }).length;
+    var projSet = {}; list.forEach(function (r) { projSet[r.project_id] = 1; });
+    document.getElementById('po-rk-kpis').innerHTML =
+      kpi2('Risks tracked', String(list.length)) + kpi2('Open', String(open)) +
+      kpi2('1st Priority', String(top), top ? '--pd-bad' : null) + kpi2('Projects', String(Object.keys(projSet).length));
+    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var sorted = list.slice().sort(function (a, b) {
+      var d = (RK_PRI_RANK[rkPriority(a)] == null ? 4 : RK_PRI_RANK[rkPriority(a)]) - (RK_PRI_RANK[rkPriority(b)] == null ? 4 : RK_PRI_RANK[rkPriority(b)]);
+      return d || (a.title || '').localeCompare(b.title || '');
+    });
+    var head = '<thead><tr><th>Project</th><th>Risk</th><th>Category</th><th class="num">Impact × Prob.</th><th>Priority</th><th>Status</th><th>Owner</th></tr></thead>';
+    var body = sorted.length ? sorted.map(function (r) {
+      var pri = rkPriority(r);
+      return '<tr><td>' + esc(nameById[r.project_id] || r.project_id) + '</td>' +
+        '<td>' + esc(r.title || r.risk_code || '(untitled)') + '</td>' +
+        '<td>' + esc(r.category || '—') + '</td>' +
+        '<td class="num">' + (r.impact && r.likelihood ? (r.impact + ' × ' + r.likelihood) : '—') + '</td>' +
+        '<td>' + (pri ? statePill(pri, pri === '1st Priority' ? 'bad' : pri === '2nd Priority' ? 'warn' : 'muted') : '—') + '</td>' +
+        '<td>' + statePill(r.status || 'Open', (r.status || 'Open') === 'Closed' ? 'muted' : 'warn') + '</td>' +
+        '<td>' + esc(r.owner || '—') + '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="po-empty">No risks match the current filter.</td></tr>';
+    document.getElementById('po-rk-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+
+  // ================= Portfolio Stakeholder Map (cross-project) =================
+  // ⚠️ Column reuse mirrors stakeholder-map/module.js exactly: `influence` actually stores
+  // IMPACT and `interest` actually stores INFLUENCE (a historical naming mismatch documented
+  // there). Reading them any other way here would silently disagree with the module.
+  var shRows = null, shLoadedIds = null, shQuery = '';
+  function shImpact(r) { return (r.influence != null && r.influence !== '') ? +r.influence : null; }
+  function shInfluence(r) { return (r.interest != null && r.interest !== '') ? +r.interest : null; }
+  function shApproach(r) {
+    if (r.mgmt_approach) return r.mgmt_approach;   // a planner's own judgement overrides the grid
+    var i = shImpact(r), f = shInfluence(r);
+    return (i && f && window.EPCRCM && EPCRCM.stkApproach) ? (EPCRCM.stkApproach(i, f) || '') : '';
+  }
+  async function loadStakeholders(force) {
+    var ids = scopedProjectIds();
+    if (!force && shLoadedIds && shLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-sh-scope').textContent = scopeLabel(ids);
+    var tbl = document.getElementById('po-sh-table'), kpis = document.getElementById('po-sh-kpis');
+    if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
+    tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the stakeholder maps of ' + ids.length + ' project(s)…</td></tr></tbody>';
+    kpis.innerHTML = '';
+    try {
+      shRows = await PDb.selectAll('stakeholder_map', function (q) { return q.in('project_id', ids); });
+    } catch (e) {
+      var msg = (e && e.message) || String(e);
+      tbl.innerHTML = '<tbody><tr><td class="po-empty">' + esc(msg) + '</td></tr></tbody>';
+      return;
+    }
+    shLoadedIds = ids;
+    shRender();
+  }
+  function shVisible() {
+    var q = shQuery.trim().toLowerCase();
+    return (shRows || []).filter(function (r) {
+      if (q && ((r.name || '') + ' ' + (r.organization || '') + ' ' + (r.category || '')).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+  function shRender() {
+    var list = shVisible();
+    var mc = list.filter(function (r) { return shApproach(r) === 'Manage Closely'; }).length;
+    var ks = list.filter(function (r) { return shApproach(r) === 'Keep Satisfied'; }).length;
+    var projSet = {}; list.forEach(function (r) { projSet[r.project_id] = 1; });
+    document.getElementById('po-sh-kpis').innerHTML =
+      kpi2('Stakeholders', String(list.length)) + kpi2('Manage Closely', String(mc), mc ? '--pd-bad' : null) +
+      kpi2('Keep Satisfied', String(ks)) + kpi2('Projects', String(Object.keys(projSet).length));
+    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var sorted = list.slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    var head = '<thead><tr><th>Project</th><th>Name</th><th>Organization</th><th>Sector</th><th>Approach</th><th>Primary responsible</th></tr></thead>';
+    var body = sorted.length ? sorted.map(function (r) {
+      var ap = shApproach(r);
+      return '<tr><td>' + esc(nameById[r.project_id] || r.project_id) + '</td>' +
+        '<td>' + esc(r.name || '(unnamed)') + '</td>' +
+        '<td>' + esc(r.organization || '—') + '</td>' +
+        '<td>' + esc(r.category || '—') + '</td>' +
+        '<td>' + (ap ? statePill(ap, ap === 'Manage Closely' ? 'bad' : ap === 'Keep Satisfied' ? 'warn' : 'muted') : '—') + '</td>' +
+        '<td>' + esc(r.primary_responsible || '—') + '</td></tr>';
+    }).join('') : '<tr><td colspan="6" class="po-empty">No stakeholders match the current filter.</td></tr>';
+    document.getElementById('po-sh-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+
+  // ================= Portfolio Issues & Concerns (cross-project) =================
+  var isRows = null, isLoadedIds = null, isQuery = '', isStatus = '';
+  // Aging matches the module's own rule: only meaningful while the issue is still open.
+  function isAgingDays(r) {
+    if (!r.date_presented || (r.status || 'Open') === 'Closed') return null;
+    var d = pd(r.date_presented); if (!d) return null;
+    return Math.max(0, Math.round((today() - d) / 86400000));
+  }
+  async function loadIssues(force) {
+    var ids = scopedProjectIds();
+    if (!force && isLoadedIds && isLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-is-scope').textContent = scopeLabel(ids);
+    var tbl = document.getElementById('po-is-table'), kpis = document.getElementById('po-is-kpis');
+    if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
+    tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading the issues registers of ' + ids.length + ' project(s)…</td></tr></tbody>';
+    kpis.innerHTML = '';
+    try {
+      isRows = await PDb.selectAll('issues_lessons', function (q) { return q.in('project_id', ids); });
+    } catch (e) {
+      var msg = (e && e.message) || String(e);
+      tbl.innerHTML = '<tbody><tr><td class="po-empty">' + esc(msg) + '</td></tr></tbody>';
+      return;
+    }
+    isLoadedIds = ids;
+    isRender();
+  }
+  function isVisible() {
+    var q = isQuery.trim().toLowerCase();
+    return (isRows || []).filter(function (r) {
+      if (isStatus && (r.status || 'Open') !== isStatus) return false;
+      if (q && ((r.description || '') + ' ' + (r.department || '') + ' ' + (r.champion || '')).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+  function isRender() {
+    var list = isVisible();
+    var open = list.filter(function (r) { return (r.status || 'Open') === 'Open'; }).length;
+    var hold = list.filter(function (r) { return r.status === 'On Hold'; }).length;
+    var over30 = list.filter(function (r) { var a = isAgingDays(r); return a != null && a > 30; }).length;
+    var projSet = {}; list.forEach(function (r) { projSet[r.project_id] = 1; });
+    document.getElementById('po-is-kpis').innerHTML =
+      kpi2('Open', String(open), open ? '--pd-bad' : null) + kpi2('On Hold', String(hold)) +
+      kpi2('Aging > 30 days', String(over30), over30 ? '--pd-bad' : null) + kpi2('Projects', String(Object.keys(projSet).length));
+    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var sorted = list.slice().sort(function (a, b) { var x = isAgingDays(a), y = isAgingDays(b); return (y == null ? -1 : y) - (x == null ? -1 : x); });
+    var head = '<thead><tr><th>Project</th><th>Issue</th><th>Department</th><th>Champion</th><th>Status</th><th class="num">Aging</th></tr></thead>';
+    var body = sorted.length ? sorted.map(function (r) {
+      var age = isAgingDays(r), st = r.status || 'Open';
+      return '<tr><td>' + esc(nameById[r.project_id] || r.project_id) + '</td>' +
+        '<td>' + esc(clip(r.description, 90) || '(no issue text)') + '</td>' +
+        '<td>' + esc(r.department || '—') + '</td>' +
+        '<td>' + esc(r.champion || '—') + '</td>' +
+        '<td>' + statePill(st, st === 'Open' ? 'bad' : st === 'On Hold' ? 'warn' : 'muted') + '</td>' +
+        '<td class="num">' + (age == null ? '—' : age + 'd') + '</td></tr>';
+    }).join('') : '<tr><td colspan="6" class="po-empty">No issues match the current filter.</td></tr>';
+    document.getElementById('po-is-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+
+  // ================= Portfolio Minutes of Meeting — open action items (cross-project) ======
+  // ⚠️ Deliberately simplified: reads `mom_items.status` directly rather than resolving a
+  // raised item's live status through its linked issues_lessons row, the way the Minutes of
+  // Meeting module itself does. This is a cross-project WORKLIST, not the register of record —
+  // the module stays authoritative for a raised action's true status.
+  var mmItems = null, mmMoms = null, mmLoadedIds = null;
+  async function loadMeetings(force) {
+    var ids = scopedProjectIds();
+    if (!force && mmLoadedIds && mmLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-mm-scope').textContent = scopeLabel(ids);
+    var tbl = document.getElementById('po-mm-table'), kpis = document.getElementById('po-mm-kpis');
+    if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
+    tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading minutes across ' + ids.length + ' project(s)…</td></tr></tbody>';
+    kpis.innerHTML = '';
+    try {
+      var res = await Promise.all([
+        PDb.selectAll('meeting_minutes', function (q) { return q.in('project_id', ids); }),
+        PDb.selectAll('mom_items', function (q) { return q.in('project_id', ids); })
+      ]);
+      mmMoms = res[0]; mmItems = res[1];
+    } catch (e) {
+      var msg = (e && e.message) || String(e);
+      tbl.innerHTML = '<tbody><tr><td class="po-empty">' + esc(msg) + '</td></tr></tbody>';
+      return;
+    }
+    mmLoadedIds = ids;
+    mmRender();
+  }
+  function mmRender() {
+    var momById = {}; (mmMoms || []).forEach(function (m) { momById[m.id] = m; });
+    var open = (mmItems || []).filter(function (it) { return (it.status || 'Open') !== 'Closed'; });
+    var overdue = open.filter(function (it) { return it.due_date && pd(it.due_date) < today(); });
+    var draftMoms = (mmMoms || []).filter(function (m) { return !m.is_distributed; }).length;
+    document.getElementById('po-mm-kpis').innerHTML =
+      kpi2('Meetings recorded', String((mmMoms || []).length)) + kpi2('Draft minutes', String(draftMoms)) +
+      kpi2('Open action items', String(open.length)) + kpi2('Overdue', String(overdue.length), overdue.length ? '--pd-bad' : null);
+    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var sorted = open.slice().sort(function (a, b) { var x = a.due_date || '9999', y = b.due_date || '9999'; return x.localeCompare(y); });
+    var head = '<thead><tr><th>Project</th><th>Meeting</th><th>Action item</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>';
+    var body = sorted.length ? sorted.map(function (it) {
+      var m = momById[it.mom_id];
+      var late = !!(it.due_date && pd(it.due_date) < today());
+      return '<tr><td>' + esc(nameById[it.project_id] || it.project_id) + '</td>' +
+        '<td>' + esc((m && m.title) || '—') + (m && m.meeting_date ? ' <span style="color:var(--pd-muted);">· ' + esc(Fmt.date(m.meeting_date)) + '</span>' : '') + '</td>' +
+        '<td>' + esc(clip(it.action_item || it.description, 90) || '(no action text)') + '</td>' +
+        '<td>' + esc(it.owner || '—') + '</td>' +
+        '<td>' + (it.due_date ? Fmt.date(it.due_date) : '—') + '</td>' +
+        '<td>' + statePill(late ? 'Overdue' : (it.status || 'Open'), late ? 'bad' : 'warn') + '</td></tr>';
+    }).join('') : '<tr><td colspan="6" class="po-empty">No open action items across the selected projects.</td></tr>';
+    document.getElementById('po-mm-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+
+  // ================= Portfolio Contracts & Claims (cross-project) =================
+  var ctRows = null, ctLoadedIds = null;
+  function ctDesc(r) {
+    var ref = (r.reference_no || '').trim(), d = (r.description || '').trim() || (r.title || '').trim();
+    if (ref && d) return ref + ' — ' + d;
+    return d || ref || '(untitled)';
+  }
+  async function loadContracts(force) {
+    var ids = scopedProjectIds();
+    if (!force && ctLoadedIds && ctLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-ct-scope').textContent = scopeLabel(ids);
+    var tbl = document.getElementById('po-ct-table'), kpis = document.getElementById('po-ct-kpis');
+    if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
+    tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading contracts &amp; claims across ' + ids.length + ' project(s)…</td></tr></tbody>';
+    kpis.innerHTML = '';
+    try {
+      ctRows = await PDb.selectAll('contracts_claims', function (q) { return q.in('project_id', ids); });
+    } catch (e) {
+      var msg = (e && e.message) || String(e);
+      tbl.innerHTML = '<tbody><tr><td class="po-empty">' + esc(msg) + '</td></tr></tbody>';
+      return;
+    }
+    ctLoadedIds = ids;
+    ctRender();
+  }
+  function ctRender() {
+    var list = ctRows || [];
+    var contracts = list.filter(function (r) { return r.record_type === 'Contract'; });
+    var contractVal = contracts.reduce(function (a, r) { return a + num(r.amount); }, 0);
+    var pending = list.filter(function (r) { return r.record_type !== 'Contract' && (r.status || '') === 'Pending'; });
+    var pendVal = pending.reduce(function (a, r) { return a + num(r.approved_amount != null ? r.approved_amount : (r.eval_amount != null ? r.eval_amount : r.sub_amount)); }, 0);
+    var projSet = {}; list.forEach(function (r) { projSet[r.project_id] = 1; });
+    document.getElementById('po-ct-kpis').innerHTML =
+      kpi2('Total contract value', Fmt.moneyShort(contractVal)) + kpi2('Pending claims / CO / EOT', String(pending.length)) +
+      kpi2('Pending value', Fmt.moneyShort(pendVal)) + kpi2('Projects', String(Object.keys(projSet).length));
+    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var sorted = list.slice().sort(function (a, b) {
+      return (nameById[a.project_id] || '').localeCompare(nameById[b.project_id] || '') || (a.record_type || '').localeCompare(b.record_type || '');
+    });
+    var head = '<thead><tr><th>Project</th><th>Type</th><th>Reference</th><th>Counterparty</th><th class="num">Amount</th><th>Status</th></tr></thead>';
+    var body = sorted.length ? sorted.map(function (r) {
+      var amt = r.record_type === 'Contract' ? r.amount : (r.approved_amount != null ? r.approved_amount : (r.eval_amount != null ? r.eval_amount : r.sub_amount));
+      var st = r.record_type === 'Contract' ? null : (r.status || 'Pending');
+      return '<tr><td>' + esc(nameById[r.project_id] || r.project_id) + '</td>' +
+        '<td>' + esc(r.record_type || '—') + '</td>' +
+        '<td>' + esc(ctDesc(r)) + '</td>' +
+        '<td>' + esc(r.counterparty || '—') + '</td>' +
+        '<td class="num">' + (amt != null ? Fmt.moneyShort(amt) : '—') + '</td>' +
+        '<td>' + (st ? statePill(st, st === 'Approved' ? 'ok' : st === 'Pending' ? 'warn' : st === 'Disapproved' ? 'bad' : 'muted') : '—') + '</td></tr>';
+    }).join('') : '<tr><td colspan="6" class="po-empty">No contract or claim records match the current filter.</td></tr>';
+    document.getElementById('po-ct-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+
+  // ================= Portfolio Progress Photos (cross-project) =================
+  // ⚠️ Deliberately narrow: one bucket ('progress-photos') shared by every project (not a
+  // per-project bucket), so a batched createSignedUrls call — the same primitive the module
+  // itself uses — is enough for a recent-photos strip. No presentation/PPR consolidation here;
+  // that stays a per-project screen.
+  var phRows = null, phLoadedIds = null;
+  var PH_BUCKET = 'progress-photos';
+  async function loadPhotos(force) {
+    var ids = scopedProjectIds();
+    if (!force && phLoadedIds && phLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-ph-scope').textContent = scopeLabel(ids);
+    var kpis = document.getElementById('po-ph-kpis'), grid = document.getElementById('po-ph-grid'), tbl = document.getElementById('po-ph-table');
+    if (!ids.length) { kpis.innerHTML = ''; grid.innerHTML = ''; tbl.innerHTML = ''; return; }
+    grid.innerHTML = '<div class="po-empty">Reading the photo libraries of ' + ids.length + ' project(s)…</div>';
+    kpis.innerHTML = ''; tbl.innerHTML = '';
+    try {
+      phRows = await PDb.selectAll('progress_photos', function (q) { return q.in('project_id', ids); });
+    } catch (e) {
+      var msg = (e && e.message) || String(e);
+      grid.innerHTML = '<div class="po-empty">' + esc(msg) + '</div>';
+      return;
+    }
+    phLoadedIds = ids;
+    await phRender();
+  }
+  async function phRender() {
+    var list = phRows || [];
+    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var trades = {}; list.forEach(function (r) { if (r.trade) trades[r.trade] = 1; });
+    var withProj = {}; list.forEach(function (r) { withProj[r.project_id] = 1; });
+    var latest = list.reduce(function (mx, r) { return (r.taken_at && r.taken_at > mx) ? r.taken_at : mx; }, '');
+    document.getElementById('po-ph-kpis').innerHTML =
+      kpi2('Photos', String(list.length)) + kpi2('Trades covered', String(Object.keys(trades).length)) +
+      kpi2('Projects', String(Object.keys(withProj).length)) + kpi2('Latest capture', latest ? Fmt.date(latest) : '—');
+
+    var recent = list.slice().sort(function (a, b) { return (b.taken_at || '').localeCompare(a.taken_at || ''); }).slice(0, 18);
+    var grid = document.getElementById('po-ph-grid');
+    if (!recent.length) { grid.innerHTML = '<div class="po-empty">No photos on the selected projects yet.</div>'; }
+    else {
+      var paths = recent.map(function (r) { return r.thumb_url || r.photo_url; }).filter(Boolean);
+      var urlByPath = {};
+      if (paths.length) {
+        try {
+          var sres = await sb().storage.from(PH_BUCKET).createSignedUrls(paths, 3600);
+          (sres.data || []).forEach(function (d) { if (d && d.signedUrl && !d.error) urlByPath[d.path] = d.signedUrl; });
+        } catch (e) { /* previews degrade to placeholder boxes below — the table still loads */ }
+      }
+      grid.innerHTML = recent.map(function (r) {
+        var path = r.thumb_url || r.photo_url, url = path ? urlByPath[path] : '';
+        return '<div class="po-photo-item">' +
+          (url ? '<img src="' + esc(url) + '" alt="" loading="lazy">' : '<div style="width:150px;height:104px;border-radius:8px;background:var(--pd-bg);border:1px solid var(--pd-line);"></div>') +
+          '<div class="po-photo-cap" title="' + esc((nameById[r.project_id] || r.project_id) + ' — ' + (r.description || '')) + '">' +
+          esc(nameById[r.project_id] || r.project_id) + '</div></div>';
+      }).join('');
+    }
+
+    var byProj = {};
+    list.forEach(function (r) {
+      var g = byProj[r.project_id] || (byProj[r.project_id] = { n: 0, latest: '', trades: {} });
+      g.n++; if (r.taken_at && r.taken_at > g.latest) g.latest = r.taken_at; if (r.trade) g.trades[r.trade] = 1;
+    });
+    var rows = Object.keys(byProj).map(function (id) { return { id: id, name: nameById[id] || id, n: byProj[id].n, latest: byProj[id].latest, trades: Object.keys(byProj[id].trades).length }; })
+      .sort(function (a, b) { return b.n - a.n; });
+    var head = '<thead><tr><th>Project</th><th class="num">Photos</th><th class="num">Trades</th><th>Latest capture</th></tr></thead>';
+    var body = rows.length ? rows.map(function (r) {
+      return '<tr><td>' + esc(r.name) + '</td><td class="num">' + r.n + '</td><td class="num">' + r.trades + '</td><td>' + (r.latest ? Fmt.date(r.latest) : '—') + '</td></tr>';
+    }).join('') : '<tr><td colspan="4" class="po-empty">No photos on the selected projects yet.</td></tr>';
+    document.getElementById('po-ph-table').innerHTML = head + '<tbody>' + body + '</tbody>';
+  }
+
+  // ================= Portfolio Productivity Rates (cross-project) =================
+  var prActs = null, prEntries = null, prLoadedIds = null;
+  function prRateOf(qty, res, wd) { return (qty != null && res > 0 && wd > 0) ? qty / (res * wd) : null; }
+  async function loadProductivity(force) {
+    var ids = scopedProjectIds();
+    if (!force && prLoadedIds && prLoadedIds.join(',') === ids.join(',')) return;
+    document.getElementById('po-pr-scope').textContent = scopeLabel(ids);
+    var tbl = document.getElementById('po-pr-table'), kpis = document.getElementById('po-pr-kpis');
+    if (!ids.length) { kpis.innerHTML = ''; tbl.innerHTML = ''; return; }
+    tbl.innerHTML = '<tbody><tr><td class="po-empty">Reading productivity monitoring across ' + ids.length + ' project(s)…</td></tr></tbody>';
+    kpis.innerHTML = '';
+    try {
+      var res = await Promise.all([
+        PDb.selectAll('productivity_activities', function (q) { return q.in('project_id', ids); }),
+        PDb.selectAll('productivity_entries', function (q) { return q.in('project_id', ids); })
+      ]);
+      prActs = res[0]; prEntries = res[1];
+    } catch (e) {
+      var msg = (e && e.message) || String(e);
+      tbl.innerHTML = '<tbody><tr><td class="po-empty">' + esc(msg) + '</td></tr></tbody>';
+      return;
+    }
+    prLoadedIds = ids;
+    prRender();
+  }
+  function prRender() {
+    var nameById = {}; PROJ.forEach(function (p) { nameById[p.id] = p.name || p.id; });
+    var byAct = {}; (prEntries || []).forEach(function (e) { (byAct[e.activity_id] = byAct[e.activity_id] || []).push(e); });
+    var projSet = {}; (prActs || []).forEach(function (a) { projSet[a.project_id] = 1; });
+    document.getElementById('po-pr-kpis').innerHTML =
+      kpi2('Activities tracked', String((prActs || []).length)) + kpi2('Monthly entries', String((prEntries || []).length)) +
+      kpi2('Projects reporting', String(Object.keys(projSet).length));
+    var rows = (prActs || []).map(function (a) {
+      var es = (byAct[a.id] || []).slice().sort(function (x, y) { return (x.period || '').localeCompare(y.period || ''); });
+      var latest = null;
+      for (var i = es.length - 1; i >= 0; i--) { var r = prRateOf(es[i].qty_actual, es[i].mp_actual, es[i].work_days); if (r != null) { latest = r; break; } }
+      return { a: a, months: es.length, latest: latest };
+    }).sort(function (x, y) { return (nameById[x.a.project_id] || '').localeCompare(nameById[y.a.project_id] || '') || (x.a.name || '').localeCompare(y.a.name || ''); });
+    var head = '<thead><tr><th>Project</th><th>Activity</th><th>Type</th><th class="num">Months reported</th><th class="num">Latest rate</th></tr></thead>';
+    var body = rows.length ? rows.map(function (r) {
+      var unit = (r.a.unit || 'unit') + '/' + (r.a.resource_type === 'Equipment' ? (r.a.resource_unit || 'unit') + '-day' : 'man-day');
+      return '<tr><td>' + esc(nameById[r.a.project_id] || r.a.project_id) + '</td>' +
+        '<td>' + esc(r.a.name || '(unnamed)') + '</td>' +
+        '<td>' + esc(r.a.resource_type || 'Manpower') + '</td>' +
+        '<td class="num">' + r.months + '</td>' +
+        '<td class="num">' + (r.latest == null ? '—' : (Math.round(r.latest * 100) / 100) + ' ' + esc(unit)) + '</td></tr>';
+    }).join('') : '<tr><td colspan="5" class="po-empty">No productivity activities on the selected projects yet.</td></tr>';
+    document.getElementById('po-pr-table').innerHTML = head + '<tbody>' + body + '</tbody>';
   }
 
   AppAuth.requireLogin(async function (user, profile) {
@@ -1812,6 +2337,18 @@
       };
     });
     document.getElementById('po-cf-refresh').onclick = function () { loadCashflow(true); };
+    document.getElementById('po-rk-refresh').onclick = function () { loadRisks(true); };
+    document.getElementById('po-rk-status').onchange = function (e) { rkStatus = e.target.value; rkRender(); };
+    document.getElementById('po-rk-q').oninput = function (e) { rkQuery = e.target.value; rkRender(); };
+    document.getElementById('po-sh-refresh').onclick = function () { loadStakeholders(true); };
+    document.getElementById('po-sh-q').oninput = function (e) { shQuery = e.target.value; shRender(); };
+    document.getElementById('po-is-refresh').onclick = function () { loadIssues(true); };
+    document.getElementById('po-is-status').onchange = function (e) { isStatus = e.target.value; isRender(); };
+    document.getElementById('po-is-q').oninput = function (e) { isQuery = e.target.value; isRender(); };
+    document.getElementById('po-mm-refresh').onclick = function () { loadMeetings(true); };
+    document.getElementById('po-ct-refresh').onclick = function () { loadContracts(true); };
+    document.getElementById('po-ph-refresh').onclick = function () { loadPhotos(true); };
+    document.getElementById('po-pr-refresh').onclick = function () { loadProductivity(true); };
     try {
       var res = await Promise.all([PDb.getProjects(), PDb.getGroupHeads()]);
       PROJ = res[0]; GH = res[1];
@@ -1827,6 +2364,14 @@
     }
     GH.forEach(function (g) { ghById[g.id] = g; });
     renderAll();
+    // ⚠️ Re-apply the current view now that PROJ/GH are actually populated. A page
+    // landing DIRECTLY on a non-overview tab via #po_view=… (bindHistoryState's
+    // `initial` branch, e.g. the sidebar's deep links into this page) calls
+    // switchView() synchronously, BEFORE this fetch resolves — so scopedProjectIds()
+    // sees an empty PROJ, every loadX() bails out on "no projects match" and never
+    // gets asked again. Harmless when view is still 'overview' (just re-toggles
+    // display, which renderAll() already painted).
+    switchView(view);
 
     // Presence only: the portfolio spans ALL projects, so there's no single-project
     // channel and no editing cursor (it's a read-only rollup). This shows who else is

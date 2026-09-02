@@ -38,6 +38,15 @@
 .mw-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid var(--pd-line); background:var(--pd-bg); color:var(--pd-ink); white-space:nowrap; }
 .mw-pill.open { border-color:var(--pd-red); color:var(--pd-red); }
 .mw-age { font-weight:700; white-space:nowrap; }
+.mw-age.is-hot { color:var(--pd-bad); }
+
+/* ---- Tasks page (my-tasks.html) — the "what I owe" half of My Work, as one
+   unified, filterable worklist. Filter bar sits OUTSIDE the rebuilt results
+   body (see renderTasks in my-work.js) so typing in the search box never loses
+   focus mid-keystroke — the trap a full-host rebuild on every oninput would hit. */
+.mw-taskfilters { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.mw-taskfilters .pd-input { flex:1 1 220px; }
+.mw-taskfilters .pd-select { flex:0 1 180px; }
 .mw-age.is-hot { color:var(--pd-red); }
 .mw-empty { padding:16px; color:var(--pd-muted); font-size:13px; }
 .mw-note { font-size:12px; color:var(--pd-muted); margin:0 0 16px; }

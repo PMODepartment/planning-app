@@ -320,6 +320,121 @@ window.MyWork = (function () {
     wireRows(host);
   }
 
+  // ---- Public: the Tasks page — the two "what I OWE" sources (champion issues +
+  // responsible action items), as ONE unified, filterable, sortable worklist.
+  // ⚠️ A THIRD host on the same fetchAll/counts, not a fourth definition of "mine" —
+  // this file's whole reason to exist is that two screens computing "my items"
+  // their own way is how one page comes to disagree with another.
+  // ⚠️ Deliberately excludes "issues I raised" / "lessons I captured": those are
+  // what the account has PUT IN, not what it owes, and a worklist mixing the two
+  // would answer a question this page was not asked.
+  async function renderTasks(host, user) {
+    host.innerHTML = '<p class="mw-empty">Loading…</p>';
+    host.dataset.base = host.dataset.base || '';
+
+    var map = {};
+    try { (await PDb.getProjects()).forEach(function (p) { map[p.id] = p.name || p.id; }); }
+    catch (e) { /* names are a nicety — ids still identify the project */ }
+    window.__mwProjNames = map;
+
+    var d;
+    try { d = await fetchAll(user.id, null); }
+    catch (e) { host.innerHTML = '<p class="mw-empty">Could not load your tasks: ' + esc(e.message || e) + '</p>'; return; }
+
+    if (isErr(d.champion) || isErr(d.responsible)) {
+      host.innerHTML = errBody(isErr(d.champion) ? d.champion : d.responsible);
+      return;
+    }
+
+    var today = todayISO();
+    // ⚠️ An issue has no due date of its own (only aging, from date_presented); an
+    // action item has due_date but no aging. Unified as one shape so they can share
+    // a sort/filter, without pretending one has a field it does not.
+    function taskOf(r, kind) {
+      var st = r.status || 'Open';
+      var due = kind === 'action' ? (r.due_date || null) : null;
+      var overdue = !!(due && st !== 'Closed' && due < today);
+      var open = kind === 'issue' ? !!OPEN_ISSUE[st] : st !== 'Closed';
+      return {
+        kind: kind, project_id: r.project_id,
+        text: kind === 'issue' ? (r.description || '(no description)') : (r.action_item || r.description || '(no action)'),
+        sub: kind === 'issue' ? (r.department || '') : (r.category || ''),
+        status: st, due: due, aging: kind === 'issue' ? agingOf(r) : null, overdue: overdue, open: open
+      };
+    }
+    var ALL = rowsOf(d.champion).map(function (r) { return taskOf(r, 'issue'); })
+      .concat(rowsOf(d.responsible).map(function (r) { return taskOf(r, 'action'); }));
+
+    // ⚠️ Filter bar is a STATIC shell, built once, outside the part that re-renders
+    // on every filter change — see the CSS comment in my-work.css for why: rebuilding
+    // the search input on every keystroke would lose focus after one character.
+    host.innerHTML =
+      '<div class="mw-kpis" id="mw-t-kpis"></div>' +
+      '<div class="mw-taskfilters">' +
+        '<input class="pd-input" id="mw-t-q" placeholder="Search your tasks…">' +
+        '<select class="pd-select" id="mw-t-status">' +
+          '<option value="open">Open</option><option value="overdue">Overdue</option><option value="">All</option>' +
+        '</select>' +
+        '<select class="pd-select" id="mw-t-proj"><option value="">All projects</option>' +
+          Object.keys(map).sort(function (a, b) { return (map[a] || '').localeCompare(map[b] || ''); }).map(function (pid) {
+            return '<option value="' + esc(pid) + '">' + esc(map[pid]) + '</option>';
+          }).join('') +
+        '</select>' +
+      '</div>' +
+      '<div id="mw-t-body"></div>';
+    var kpisEl = document.getElementById('mw-t-kpis'), bodyEl = document.getElementById('mw-t-body');
+    var fStatus = 'open', fProj = '', fQ = '';
+
+    function visible() {
+      return ALL.filter(function (t) {
+        if (fStatus === 'open' && !t.open) return false;
+        if (fStatus === 'overdue' && !t.overdue) return false;
+        if (fProj && t.project_id !== fProj) return false;
+        if (fQ && (t.text + ' ' + t.sub).toLowerCase().indexOf(fQ) < 0) return false;
+        return true;
+      }).sort(function (a, b) {
+        // Overdue / soon-due first; a blank due date (every issue, and an undated
+        // action) sorts after every dated one, then by aging (oldest first).
+        var ax = a.due || '9999-99-99', bx = b.due || '9999-99-99';
+        return ax.localeCompare(bx) || (b.aging || 0) - (a.aging || 0);
+      });
+    }
+
+    function renderResults() {
+      var list = visible();
+      var openN = ALL.filter(function (t) { return t.open; }).length;
+      var overdueN = ALL.filter(function (t) { return t.overdue; }).length;
+      kpisEl.innerHTML = kpi(openN, 'Open tasks', true) + kpi(overdueN, 'Overdue', overdueN > 0) + kpi(ALL.length, 'Total assigned');
+
+      if (!list.length) {
+        bodyEl.innerHTML = '<p class="mw-empty">' + (ALL.length ? 'Nothing matches these filters.' :
+          'Nothing is assigned to your account yet. An item whose champion or responsible was ' +
+          'typed as free text cannot be matched to a login — reopen it and pick the person.') + '</p>';
+        return;
+      }
+      bodyEl.innerHTML = '<div class="mw-tablewrap"><table class="mw-table"><thead><tr>' +
+        '<th>Project</th><th>Task</th><th>Type</th><th>Status</th><th>Due / Aging</th></tr></thead><tbody>' +
+        list.map(function (t) {
+          return '<tr data-pid="' + esc(t.project_id) + '" data-screen="' + (t.kind === 'issue' ? 'issues' : 'mom') + '">' +
+            '<td class="mw-proj">' + projLabel(map, t.project_id) + '</td>' +
+            '<td><div class="mw-main">' + esc(t.text) + '</div>' + (t.sub ? '<div class="mw-sub">' + esc(t.sub) + '</div>' : '') + '</td>' +
+            '<td>' + (t.kind === 'issue' ? 'Issue' : 'Action item') + '</td>' +
+            '<td><span class="mw-pill' + (t.open ? ' open' : '') + '">' + esc(t.status) + '</span></td>' +
+            '<td class="mw-age' + ((t.overdue || (t.aging != null && t.aging > 90)) ? ' is-hot' : '') + '">' +
+              (t.due ? esc(Fmt.date(t.due)) + (t.overdue ? ' · overdue' : '') : (t.aging == null ? '—' : t.aging + 'd')) +
+            '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      // wireRows queries descendants of `host` and reads `host.dataset.base` — safe
+      // to call with the outer host even though only bodyEl's markup changed.
+      wireRows(host);
+    }
+
+    document.getElementById('mw-t-q').oninput = function (e) { fQ = e.target.value.toLowerCase(); renderResults(); };
+    document.getElementById('mw-t-status').onchange = function (e) { fStatus = e.target.value; renderResults(); };
+    document.getElementById('mw-t-proj').onchange = function (e) { fProj = e.target.value; renderResults(); };
+    renderResults();
+  }
+
   // ⚠️ Counts through the SAME fetchAll + counts() the panel renders from, so the dashboard's
   // drawer badge and the panel it opens can never disagree. A badge computed its own way is a
   // second definition of "mine", and the first time the two differ the badge is the one believed.
@@ -336,6 +451,7 @@ window.MyWork = (function () {
   return {
     render: render,
     renderBlock: renderBlock,
+    renderTasks: renderTasks,
     countOpen: countOpen,
     // Exposed for the test harness — never called by the app.
     _internals: {
