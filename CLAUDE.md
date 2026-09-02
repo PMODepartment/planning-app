@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (r) — Every activity is linked; adopting twice duplicated 5,850 nodes
+
+Owner ran the batched-link migration and clicked Adopt existing WBS again. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ✅ **The batched linker works: `activitiesUnlinked: 0` of 16,485.** The 8s `statement_timeout` is no
+  longer reachable — the client loops in batches of 4,000 and halves on 57014.
+- ⚠️⚠️ **The second adopt created 5,850 duplicate nodes** (`wbs_nodes` 12,473 → 18,323 against 12,473
+  summary rows) — exactly the count the first adopt had left outstanding. `wbsAdopt` decided what to
+  insert from the cached `rows`, which still showed those branches unlinked. ⚠️ And duplicates spread:
+  `_wbsEnsureSummaries()` would project a summary row for each on the next load, which the next adopt
+  would adopt — the duplicate-WBS-row runaway.
+- Fixed: **`wbsAdopt` now reads the adopted state from the server**, not from `rows`, and ⚠️ **refuses
+  to run if that read fails** — it cannot otherwise tell "not adopted" from "not loaded".
+- ⚠️ **`Reset WBS tree` would itself have timed out** (one update over ~28,958 rows), so the recovery
+  failed on the projects needing it. **`migrations/2026-09-02-wbs-unlink-batched.sql`** batches it, and
+  adds `wbs_delete_orphan_leaves` for targeted cleanup — ⚠️ leaves only, because `parent_id` cascades,
+  and deliberately not auto-wired, since `_wbsEnsureSummaries` is a healer with the opposite opinion.
+- ⚠️ **Recovery for SLN101: WBS Manager → Reset WBS… → rebuild** (after running the migration).
+  ⚠️ Not verified end to end. `MODULE_V` → `20260902r`.
+
 ### 2026-09-02 (q) — The activity link times out at 8s, and three layers of silence hid it
 
 Owner clicked **Adopt existing WBS**; the tree finished, the activities did not, nothing said so.

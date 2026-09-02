@@ -19845,7 +19845,49 @@
   // P6 imports). Resumes cleanly from a partial adoption (seeds from existing WBS_NODES). silent=true
   // skips the confirm + toasts (used by auto-adopt on import). Returns the count adopted.
   async function wbsAdopt(silent) {
-    var legacy = rows.filter(function (r) { return isWbs(r) && !r.wbs_node_id && r.wbs; });
+    // ⚠️⚠️ WHAT IS ALREADY ADOPTED IS READ FROM THE SERVER, NEVER FROM `rows`. This function DECIDES
+    // WHAT TO INSERT, and `rows` is a cached, possibly minutes-old copy: a tab that painted before an
+    // adopt (its own, another tab's, or the one an import just ran) still shows every summary row
+    // with `wbs_node_id = null`, so every branch looks un-adopted and gets a SECOND node.
+    // ⚠️ That is not hypothetical. The owner clicked "Adopt existing WBS" twice on 4PH Strevi: the
+    // first run completed the tree (12,473 nodes, all summary rows linked), the second ran against
+    // that tab's stale rows and took `wbs_nodes` to **18,323 — 5,850 duplicates, exactly the count
+    // the first run had left outstanding**. And duplicates do not sit still: `_wbsEnsureSummaries()`
+    // projects a summary row for any node without one, so the next load would have manufactured
+    // 5,850 new WBS rows, which the next adopt would then adopt. That is the duplicate-WBS-row
+    // runaway this file already carries scar tissue for.
+    // One cheap paged read of (wbs, wbs_node_id) is the price of never doing that again.
+    var _adoptedCodes = Object.create(null), _refreshOk = false;
+    try {
+      for (var _f = 0; _f < 40000; _f += 1000) {
+        var _pg = await sb().from(TABLE).select('id,wbs,wbs_node_id')
+          .eq('project_id', pid).eq('activity_type', 'WBS Summary')
+          .order('id', { ascending: true }).range(_f, _f + 999);
+        if (_pg.error) throw _pg.error;
+        var _d = _pg.data || [];
+        _d.forEach(function (r) {
+          if (r.wbs_node_id && r.wbs) _adoptedCodes[String(r.wbs)] = r.wbs_node_id;
+          // Fold the server's truth back into the in-memory row, so the filter below and every later
+          // render agree with what the database actually holds.
+          var _m = rows.find(function (x) { return x.id === r.id; });
+          if (_m && r.wbs_node_id && !_m.wbs_node_id) _m.wbs_node_id = r.wbs_node_id;
+        });
+        if (_d.length < 1000) break;
+      }
+      _refreshOk = true;
+    } catch (e) {
+      try { console.error('[ps] wbsAdopt could not refresh adopted state', e); } catch (e2) {}
+    }
+    // ⚠️ REFUSES TO RUN BLIND. Without the refresh this cannot tell "not adopted" from "not loaded",
+    // and guessing wrong duplicates the whole tree. Stopping is the safe answer; the caller retries.
+    if (!_refreshOk) {
+      UI.toast('Could not check which WBS branches already exist, so the tree was not touched — ' +
+               'reload and try again.', 'error');
+      return 0;
+    }
+    var legacy = rows.filter(function (r) {
+      return isWbs(r) && !r.wbs_node_id && r.wbs && !_adoptedCodes[String(r.wbs)];
+    });
     if (!legacy.length) { if (!silent) UI.toast('No un-adopted WBS summary rows found.', 'info'); return 0; }
     if (!silent && !confirm('Build the WBS tree from ' + legacy.length + ' existing WBS summary rows? Their codes are preserved as custom codes.')) return 0;
     var adopted = 0;   // nodes that actually came back from an insert, for honest reporting
@@ -19856,6 +19898,13 @@
     rows.forEach(function (a) { if (!isWbs(a) && !a.wbs_node_id && a.wbs) (actsByCode[String(a.wbs)] = actsByCode[String(a.wbs)] || []).push(a); });
     var codeOf0 = computeWbsCodes();
     WBS_NODES.forEach(function (n) { var c = codeOf0[n.id]; if (c) nodeByCode[c] = n.id; var k = n.parent_id || ''; sibCount[k] = (sibCount[k] || 0) + 1; });   // resume from partial
+    // ⚠️ The SERVER's (code -> node) map wins over the computed one. `computeWbsCodes()` derives a
+    // code from a node's position in the tree, which disagrees with the stored dotted code whenever
+    // the tree is mid-repair — and this map is what decides whether a branch is re-inserted. Seeding
+    // it with what the database actually links is what makes a second adopt a no-op instead of a
+    // duplicate. Parent lookups below resolve through it too, so children of an already-adopted
+    // branch attach to the real parent rather than starting a parallel tree.
+    Object.keys(_adoptedCodes).forEach(function (c) { nodeByCode[c] = _adoptedCodes[c]; });
     var byDepth = {};
     legacy.forEach(function (r) { var d = String(r.wbs).split('.').length; (byDepth[d] = byDepth[d] || []).push(r); });
     var depths = Object.keys(byDepth).map(Number).sort(function (a, b) { return a - b; });
@@ -20085,9 +20134,32 @@
     // storm this module keeps re-learning to avoid.
     var keep = (WBS_NODES || []).map(function (n) { return n.id; });
     try {
-      var q = sb().from(TABLE).update({ wbs_node_id: null }).eq('project_id', pid).not('wbs_node_id', 'is', null);
-      if (keep.length) q = q.not('wbs_node_id', 'in', '(' + keep.join(',') + ')');
-      var ures = await q;
+      // ⚠⚠ BATCHED THROUGH AN RPC. As one statement this is ~28,958 rows on 4PH Strevi, and this
+      // deployment's statement_timeout is ~8s — measured, not assumed (wbs_link_activity_parents
+      // returned 57014 after 8,173ms on 16,485 rows the same afternoon). So Reset WBS tree, the
+      // documented recovery from a broken tree, would itself time out on exactly the projects that
+      // need it, leaving the nodes deleted and every row still pointing at them.
+      // ⚠️ The RPC asks the better question too — "null the rows whose node no longer EXISTS" — so it
+      // needs no keep-list and cannot be wrong about which nodes survived.
+      var ures = { error: null }, _unl = 0, _ub = 4000, _rpcGone = false;
+      for (var _uc = 0; _uc < 200; _uc++) {
+        var _ur = await sb().rpc('wbs_unlink_dangling', { p_project_id: pid, p_limit: _ub });
+        if (_ur.error) {
+          if (_rpcMissing(_ur.error)) { _rpcGone = true; break; }
+          if (_isTimeout(_ur.error) && _ub > 125) { _ub = Math.floor(_ub / 2); continue; }
+          ures = { error: _ur.error }; break;
+        }
+        var _un = Number(_ur.data) || 0; _unl += _un;
+        if (_unl) setLoading('Clearing the WBS tree… ' + _unl.toLocaleString() + ' link(s) cleared');
+        if (!_un) break;
+      }
+      if (_rpcGone) {
+        // Pre-migration fallback: the original single statement. Fine on a small project, and the
+        // only thing available on a database that has not run 2026-09-02-wbs-unlink-batched.sql.
+        var q = sb().from(TABLE).update({ wbs_node_id: null }).eq('project_id', pid).not('wbs_node_id', 'is', null);
+        if (keep.length) q = q.not('wbs_node_id', 'in', '(' + keep.join(',') + ')');
+        ures = await q;
+      }
       if (ures.error) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it: ' + ures.error.message, 'error'); return; }
     } catch (e) { hideLoading(); UI.toast('Cleared the tree, but the schedule still points at it.', 'error'); return; }
     var live = {}; keep.forEach(function (id) { live[id] = 1; });

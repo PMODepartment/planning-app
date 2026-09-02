@@ -1,3 +1,59 @@
+## Every activity is linked — and adopting twice duplicated 5,850 nodes (2026-09-02r) — fmlozano
+
+Owner ran `2026-09-02-wbs-link-batched.sql` and clicked **Adopt existing WBS** again.
+
+### ✅ The batched linker works
+**`activitiesUnlinked: 0` of 16,485.** Every activity is attached to its branch, which is the thing
+Vertical Stacking, Trade and phase all read from. The 8-second `statement_timeout` that produced
+57014 on the single-statement form is no longer reachable: the client loops in batches of 4,000 and
+halves on timeout.
+
+### ⚠️⚠️ But the second adopt created 5,850 duplicate nodes
+`wbs_nodes` **12,473 → 18,323**, against 12,473 summary rows. **5,850 duplicates — exactly the number
+the first adopt had left outstanding.**
+
+`wbsAdopt` decided what to insert from `rows`, the cached in-memory copy. The owner's tab had painted
+before the first adopt finished, so every one of those branches still showed `wbs_node_id = null`,
+looked un-adopted, and got a **second** node. ⚠️ The pre-existing guard
+(`group.filter(r => !nodeByCode[r.wbs])`) could not save it, because `nodeByCode` was seeded from
+`computeWbsCodes()` — a code derived from a node's POSITION, which disagrees with the stored dotted
+code whenever the tree is mid-repair.
+
+⚠️ **And duplicates do not sit still.** `_wbsEnsureSummaries()` projects a summary row for any node
+without one, so the next load would have manufactured 5,850 new WBS rows, which the next adopt would
+then adopt — the duplicate-WBS-row runaway this file already carries scar tissue for.
+
+### Fixed
+- **`wbsAdopt` reads what is already adopted from the SERVER**, never from `rows`: one cheap paged
+  read of `(id, wbs, wbs_node_id)` over the summary rows, folded back into memory, used both to
+  filter `legacy` and to seed `nodeByCode`. A second adopt is now a no-op.
+- ⚠️ **It refuses to run when that read fails.** Without it the function cannot tell *"not adopted"*
+  from *"not loaded"*, and guessing wrong duplicates the entire tree. Stopping is the safe answer.
+- ⚠️ **`Reset WBS tree` would itself have timed out.** It cleared the dangling `wbs_node_id`s with ONE
+  update over ~28,958 rows — the documented recovery from a broken tree, failing on exactly the
+  projects that need it. **`migrations/2026-09-02-wbs-unlink-batched.sql`** adds
+  `wbs_unlink_dangling(project, limit)`, which also asks the better question (*null the rows whose
+  node no longer EXISTS*) and so needs no keep-list, plus a pre-migration fallback to the old
+  statement.
+- The same migration adds **`wbs_delete_orphan_leaves`** for a targeted cleanup. ⚠️ **Leaves only** —
+  `parent_id` is `on delete cascade`, so deleting an orphan that is the PARENT of a referenced node
+  would take the good node with it. Peeling childless orphans repeatedly can never do that, and a
+  duplicated subtree still goes completely, one layer at a time. ⚠️ **Deliberately NOT wired into any
+  automatic heal**: `_wbsEnsureSummaries()` exists to PROJECT a summary row for a node that lacks
+  one, so an auto-deleter would be a second healer with the opposite opinion, and the two would
+  fight.
+
+### ⚠️ Recovery for SLN101 as it stands
+**WBS Manager → Reset WBS… → rebuild.** That drops every unlocked node (duplicates included) and
+rebuilds from the intact 12,473 summary rows, which is a tested path — and with the adopt fix the
+rebuild cannot duplicate. Needs the new migration first, or the unlink times out.
+
+⚠️ **Not verified end to end:** neither migration function has been exercised, and the duplicates are
+still in place.
+
+- `MODULE_V` → `20260902r`.
+
+---
 ## The activity link times out at 8s, and three layers of silence hid it (2026-09-02q) — fmlozano
 
 Owner clicked **Adopt existing WBS** and asked what happened. The tree finished; the activities did
