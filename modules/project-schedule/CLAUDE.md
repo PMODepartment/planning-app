@@ -12078,3 +12078,63 @@ missing WBS rows…" — and both the banner and `body.ps-locked` cleared on com
 
 Also: the post-import toast said **"open the WBS Manager"** for a screen that no longer exists. It and
 the other user-facing mentions now say **Schedule Setup › WBS**.
+
+### 2026-09-03 (c) — Working calendars become step 2, with a guided route
+
+Owner: *"I am also thinking working calendars should also be folded into the steps in the schedule
+setup. Its one of the things that would define the duration of cycles. In this case its a crucial
+input and its ideal to set this up at the start already rather than creating the schedule setup first
+then do the working calendar."* And: *"Let’s make it easier as well to create new calendars / use
+existing calendars by developing a wizard. The working calendar now has a feature for consideration of
+seasonal weathers in the Philippines. Let’s consider that in the wizard."*
+
+**⚠⚠ IT IS THE SECOND STEP, AND THE ORDERING IS THE POINT.** Every duration typed into the Activities
+step is a count of WORKING days, and the calendar is what turns that count into a date — so the zone
+cycle, the floor-to-floor rhythm, the trade hand-offs and the generated preview are all measured in a
+unit the calendar defines. Setting it afterwards means every number already typed silently meant
+something else while it was being typed. The rail is now twelve steps:
+**Start · Working calendars · Activities · Floors & Zones · Tower links · Zone sequence · Trade
+sequence · Scope per zone · Stacking · Project phases · WBS · Generate**, and **Working Calendars has
+left the view menu** — one door, at the point in the process where the answer is needed.
+
+⚠️ **The editor is not rebuilt.** `renderCalendarsInto(host)` draws into whatever host it is given, so
+the step gives it one. A second calendar editor would be two places to keep a season, a climate type
+and a holiday list correct — and this module already carries the scar of exactly that (the save’s own
+note: *"Omitting them would let a save from the schedule silently blank what was set in the roster
+module"*). `#ps-view-calendars` survives as a hidden host only; a stale deep link to `'calendars'` is
+routed to the step instead of showing a blank view.
+
+**The wizard, and why a wizard.** The editor is a good EDITOR and a poor blank page. Creating a
+calendar from nothing means knowing in advance that the working week and the seasonal week are
+different things, that a season is a month set with its own week, that PAGASA climate type decides
+which months are wet, and that exposure scales how many days are lost — four pieces of domain
+knowledge before the first useful keystroke. And getting the climate type wrong is, in `calendar.js`’
+own words, *"the single most expensive mistake this preset set exists to prevent"*: a Luzon wet season
+applied to a Mindanao project says to expect nothing in exactly the months that drown it.
+
+Five questions, in the order a planner can answer them, deriving the rest:
+1. **Start from** — one of the five named templates, or a copy of a calendar already on the project
+   (seasons and holidays included).
+2. **Working week** — days, hours, and the special-non-working-days choice, pre-filled from the
+   template, with the year’s working-day count shown as it changes.
+3. **Where is the site** — the four PAGASA types listed **by province**, because nobody knows their
+   type number. Plus site exposure (sheltered / typical / fully exposed).
+4. **Seasons** — the wet/dry blocks derived from the type via `PDCal.phSeasonPreset`, each a real
+   month set with its own week; editable, rebuildable, removable. ⚠️ A month may belong to one season
+   only, rejected here the way the editor rejects it on save.
+5. **Review** — the year’s actual working days, the indicative rain allowance for (type × exposure),
+   and the project-default choice.
+
+⚠️ **It writes the SAME payload shape the editor writes** — seasons normalised identically, and
+`observe_special_days` / `climate_type` always included, because a partial payload from the smaller
+door is how this module previously blanked the other door’s work. ⚠️ One default per project, cleared
+BEFORE the insert so a part-way failure leaves zero defaults (recoverable) rather than two
+(ambiguous). ⚠️ And it refuses to open or save while the import lock is on.
+
+**Verified in a browser**, driven through all five steps: 5 templates + copy; the `ph5` template
+seeded Mon–Fri / 8h and its own name; 4 types + Skip offered with their province lists; choosing
+**Type I** derived **wet Jun–Sep** and **dry Dec–Apr** and built two season blocks (wet = Mon–Fri, dry
+= Mon–Sat); **severe** exposure reported **~71 working days a year** of rain allowance; the review
+restated all of it; and Save issued exactly two writes — `update {is_default:false}` then an `insert`
+carrying the full payload with both seasons, their month sets, their per-season weeks,
+`climate_type: "I"` and `observe_special_days: true`.

@@ -505,6 +505,32 @@
     body.ps-locked .ps-status-pill, body.ps-locked #b-impcommit {
       opacity:.45; pointer-events:none;
     }
+    /* ---- The guided calendar wizard (openCalendarWizard) ---------------------------------- */
+    .calwiz-rail { display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 0; }
+    .calwiz-railstep { font-size:11px; color:var(--pd-muted); border:1px solid var(--pd-line); border-radius:999px; padding:3px 10px; }
+    .calwiz-railstep.on { border-color:var(--pd-red); color:var(--pd-ink); font-weight:700; }
+    .calwiz-railstep.done { color:var(--pd-ok); border-color:var(--pd-ok); }
+    .calwiz-lede { font-size:12.5px; color:var(--pd-ink); line-height:1.6; margin:0 0 12px; }
+    .calwiz-opts { display:grid; gap:7px; }
+    .calwiz-opts-tight { gap:5px; margin-top:6px; }
+    .calwiz-opt { display:flex; gap:9px; align-items:flex-start; border:1px solid var(--pd-line);
+      border-radius:9px; padding:9px 11px; background:var(--pd-card); cursor:pointer; }
+    .calwiz-opt.on { border-color:var(--pd-red); box-shadow:var(--pd-shadow); }
+    .calwiz-opt input { margin-top:3px; flex:none; }
+    .calwiz-opt span { min-width:0; }
+    .calwiz-opt b { display:block; font-size:12.5px; }
+    .calwiz-opt i { display:block; font-style:normal; font-size:11.5px; color:var(--pd-muted); margin-top:2px; line-height:1.5; }
+    .calwiz-days, .calwiz-months { display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
+    .calwiz-day, .calwiz-mo { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--pd-line);
+      border-radius:6px; padding:4px 9px; font-size:11.5px; cursor:pointer; background:var(--pd-card); }
+    .calwiz-day.on, .calwiz-mo.on { border-color:var(--pd-red); background:var(--pd-red-light); font-weight:700; }
+    .calwiz-check { display:flex; gap:8px; align-items:flex-start; font-size:12.5px; }
+    .calwiz-check i { display:block; font-style:normal; font-size:11.5px; color:var(--pd-muted); margin-top:2px; line-height:1.5; }
+    .calwiz-stat { font-size:12px; color:var(--pd-muted); margin:10px 0 0; }
+    .calwiz-season { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; margin-top:8px; background:var(--pd-bg); }
+    .calwiz-season-h { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .calwiz-season-h .pd-input { height:30px; font-size:12px; }
+    .calwiz-review { margin:0 0 12px 18px; font-size:12.5px; line-height:1.8; }
     .ps-rz-row { display:flex; align-items:center; gap:6px; padding:4px 12px 8px; }
     .ps-rz-row .pd-btn { min-height:28px; padding:0 9px; font-size:12px; }
     .ps-rz-val { flex:1 1 auto; text-align:center; font-size:11.5px; color:var(--pd-muted); white-space:nowrap; }
@@ -2988,7 +3014,6 @@
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Setup</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
           <button data-tab="costload"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
-          <button data-tab="calendars"><span data-ico="calendar" data-ico-size="14"></span> Working Calendars</button>
         </div>
       </div>
       <!-- Project context sits next to the title, left-aligned. Uses the app-wide shared
@@ -3345,7 +3370,14 @@
       <!-- Working Calendars — a first-class view, not a dialog. The calendar decides
            which days a duration is counted in, so it is edited where the schedule is
            read, and it is what duration scenarios resolve their dates through. -->
-      <div id="ps-view-calendars" style="display:none;padding:16px 0;"></div>
+      <!-- ⚠️⚠️ NOT A VIEW ANY MORE. Working Calendars is the SECOND STEP of the Schedule Setup
+           (owner 2026-09-02: *"working calendars should also be folded into the steps in the schedule
+           setup … its a crucial input and its ideal to set this up at the start already"*), and the
+           entry has left the view menu. The container stays as a HOST ONLY, because
+           `renderCalendarsInto(host)` draws into whatever host it is given and the calendar library's
+           own dialog path still uses one — the step passes its own panel instead. Nothing switches
+           this element on any more. -->
+      <div id="ps-view-calendars" hidden></div>
       <!-- ⚠️⚠️ THE PLANNER COCKPIT IS GONE (owner 2026-09-02, first item of "let's sanitize the
            process in developing the project schedule"). It was a monitoring surface — KPIs, the
            S-curve forecast, the milestone outlook, risk and critical-path drivers, the lookahead —
@@ -4873,6 +4905,328 @@
   }
   // Modal host — used from inside the duration-scenario dialog, where sending the
   // planner to another VIEW would abandon the rules they are part-way through.
+  /* ==========================================================================================
+     THE GUIDED CALENDAR WIZARD
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-02: *"Let's make it easier as well to create new calendars / use existing
+     calendars by developing a wizard. The working calendar now has a feature for consideration of
+     seasonal weathers in the Philippines. Let's consider that in the wizard of the calendar."*
+
+     Why a wizard rather than more of the editor: the editor is a good EDITOR and a poor blank page.
+     Creating a calendar from scratch means knowing, in advance, that the working week and the
+     seasonal week are different things, that a season is a month set with its own week, that PAGASA
+     climate type decides which months are wet, and that exposure scales how many days are lost. That
+     is four pieces of domain knowledge before the first useful keystroke — and getting the climate
+     type wrong is, as `calendar.js` puts it, *"the single most expensive mistake this preset set
+     exists to prevent"*: a Luzon wet season applied to a Mindanao project says to expect nothing in
+     exactly the months that drown it.
+
+     So the wizard asks four questions in the order a planner can answer them, and derives the rest:
+       1. Start from   — a named template, or a copy of a calendar that already exists here
+       2. Working week — the days and hours, pre-filled from the template
+       3. Where is it  — PAGASA climate type (listed BY PROVINCE, because nobody knows their type
+                         number) and site exposure. This is what makes the seasons meaningful.
+       4. Seasons      — the wet/dry blocks derived from (type), each a real month set with its own
+                         week, shown as the working-day count they produce. Editable, and skippable.
+       5. Review       — the year's actual working-day total, then Save.
+
+     ⚠️ IT WRITES THROUGH THE SAME SHAPE THE EDITOR SAVES. One payload contract for `calendars`, so a
+     calendar created here and one edited there are the same object — including `seasons`,
+     `observe_special_days` and `climate_type`, which this module has already lost once by writing a
+     partial payload from the smaller of the two doors.
+     ⚠️ ONE DEFAULT PER PROJECT, cleared BEFORE the insert: a failure part-way then leaves zero
+     defaults (recoverable) rather than two (silently ambiguous).
+     ========================================================================================== */
+  var _CALWIZ_MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function openCalendarWizard(onDone) {
+    if (!pid) { UI.toast('Select a project first.', 'error'); return; }
+    if (_editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
+    if (!window.PDCal) { UI.toast('The calendar library did not load — reload the page.', 'error'); return; }
+    var step = 0, d = null, srcKey = 'ph6', copyId = '';
+    var TPL = PDCal.CALENDAR_TEMPLATES || [], TYPES = PDCal.PH_CLIMATE_TYPES || [], INT = PDCal.PH_RAIN_INTENSITY || [];
+    var intensity = 'moderate';
+
+    function seed() {
+      var base;
+      if (srcKey === 'copy' && copyId) {
+        var c = (CALS || []).filter(function (x) { return x.id === copyId; })[0];
+        base = c ? JSON.parse(JSON.stringify(c)) : PDCal.templateCalendar('ph6');
+        delete base.id; delete base.created_by;
+        base.name = (base.name || 'Calendar') + ' (copy)';
+        base.is_default = false;
+      } else {
+        base = PDCal.templateCalendar(srcKey);
+        var t = TPL.filter(function (x) { return x.key === srcKey; })[0];
+        base.name = (t && t.name) || 'New calendar';
+      }
+      base.extra_holidays = base.extra_holidays || [];
+      base.seasons = base.seasons || [];
+      if (base.climate_type == null) base.climate_type = null;
+      return base;
+    }
+
+    var ov = document.createElement('div');
+    ov.className = 'pd-modal-overlay'; ov.style.zIndex = 620;
+    document.body.appendChild(ov);
+    function close() { ov.remove(); }
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+
+    var STEPS = ['Start from', 'Working week', 'Where is the site', 'Seasons', 'Review'];
+
+    function weekRow(obj, prefix) {
+      return '<div class="calwiz-days">' + _CAL_DAYS.map(function (dd) {
+        return '<label class="calwiz-day' + (obj[dd[0]] ? ' on' : '') + '"><input type="checkbox" data-' + prefix + '="' + dd[0] + '"' +
+          (obj[dd[0]] ? ' checked' : '') + '> ' + dd[1] + '</label>';
+      }).join('') + '</div>';
+    }
+    function workingDaysOf(cal) {
+      try {
+        var y = new Date().getFullYear();
+        var st = PDCal.yearStats(cal, y);
+        return st && st.working != null ? st.working : null;
+      } catch (e) { return null; }
+    }
+
+    function body() {
+      if (step === 0) {
+        return '<p class="calwiz-lede">Start from a standard week, or copy one this project already has. Everything is editable in the next steps.</p>' +
+          '<div class="calwiz-opts">' + TPL.map(function (t) {
+            return '<label class="calwiz-opt' + (srcKey === t.key ? ' on' : '') + '"><input type="radio" name="cw-src" value="' + t.key + '"' + (srcKey === t.key ? ' checked' : '') + '>' +
+              '<span><b>' + esc(t.name) + '</b><i>' + esc(t.note) + '</i></span></label>';
+          }).join('') +
+          ((CALS || []).length ? '<label class="calwiz-opt' + (srcKey === 'copy' ? ' on' : '') + '"><input type="radio" name="cw-src" value="copy"' + (srcKey === 'copy' ? ' checked' : '') + '>' +
+            '<span><b>Copy an existing calendar</b><i>Start from one already on this project — including its seasons and holidays.</i>' +
+            '<select class="pd-select" id="cw-copy" style="margin-top:6px;max-width:340px;">' +
+            (CALS || []).map(function (c) { return '<option value="' + esc(c.id) + '"' + (copyId === c.id ? ' selected' : '') + '>' + esc(c.name) + (c.is_default ? ' (project default)' : '') + '</option>'; }).join('') +
+            '</select></span></label>' : '') +
+          '</div>';
+      }
+      if (step === 1) {
+        var wd = workingDaysOf(d);
+        return '<p class="calwiz-lede">The base week. Philippine regular holidays are always non-working and are not listed here.</p>' +
+          '<label class="pd-label">Calendar name</label>' +
+          '<input class="pd-input" id="cw-name" value="' + esc(d.name || '') + '" style="max-width:420px;">' +
+          '<label class="pd-label" style="margin-top:12px;">Working days</label>' + weekRow(d, 'wd') +
+          '<label class="pd-label" style="margin-top:12px;">Hours per day</label>' +
+          '<input class="pd-input" id="cw-hours" type="number" min="1" max="24" step="0.5" value="' + (d.hours_per_day || 8) + '" style="width:110px;">' +
+          '<label class="calwiz-check" style="margin-top:12px;"><input type="checkbox" id="cw-special"' + (d.observe_special_days ? ' checked' : '') + '> ' +
+            'Also take the <b>special non-working days</b> off' +
+            '<i>Black Saturday, Ninoy Aquino Day, All Saints’, Immaculate Conception, Dec 31. Common for office and design work; site works often work them.</i></label>' +
+          (wd != null ? '<p class="calwiz-stat">That is <b>' + wd + '</b> working days this year, before seasons.</p>' : '');
+      }
+      if (step === 2) {
+        var t = d.climate_type ? PDCal.climateType(d.climate_type) : null;
+        return '<p class="calwiz-lede">Rain is not national. PAGASA classifies the country into four types, and they disagree about which months are wet — Type I (Manila) is dry Nov–Apr, Type II (the eastern seaboard) is at its worst Nov–Jan. <b>Find the province, not the type number.</b></p>' +
+          '<div class="calwiz-opts">' +
+            '<label class="calwiz-opt' + (!d.climate_type ? ' on' : '') + '"><input type="radio" name="cw-clim" value=""' + (!d.climate_type ? ' checked' : '') + '>' +
+              '<span><b>Skip this</b><i>No seasonal week and no rain allowance — the base week applies all year.</i></span></label>' +
+            TYPES.map(function (x) {
+              return '<label class="calwiz-opt' + (d.climate_type === x.key ? ' on' : '') + '"><input type="radio" name="cw-clim" value="' + x.key + '"' + (d.climate_type === x.key ? ' checked' : '') + '>' +
+                '<span><b>' + esc(x.name) + '</b><i>' + esc(x.areas) + '</i></span></label>';
+            }).join('') +
+          '</div>' +
+          (t ? '<label class="pd-label" style="margin-top:14px;">How exposed is the work?</label>' +
+            '<div class="calwiz-opts calwiz-opts-tight">' + INT.map(function (x) {
+              return '<label class="calwiz-opt' + (intensity === x.key ? ' on' : '') + '"><input type="radio" name="cw-int" value="' + x.key + '"' + (intensity === x.key ? ' checked' : '') + '>' +
+                '<span><b>' + esc(x.label) + '</b><i>' + esc(x.note) + '</i></span></label>';
+            }).join('') + '</div>' +
+            '<p class="calwiz-stat">Wet months for this type: <b>' + (t.wet.length ? t.wet.map(function (m) { return _CALWIZ_MO[m - 1]; }).join(', ') : 'none pronounced') + '</b>' +
+            (t.dry.length ? ' · dry: <b>' + t.dry.map(function (m) { return _CALWIZ_MO[m - 1]; }).join(', ') + '</b>' : '') + '</p>' : '');
+      }
+      if (step === 3) {
+        if (!d.climate_type) {
+          return '<p class="calwiz-lede">No climate type was chosen, so there is no seasonal week to set. The base week applies all year.</p>' +
+            '<p class="sbld-hint">Go back a step if the site does have a wet season worth planning around.</p>';
+        }
+        var t = PDCal.climateType(d.climate_type);
+        var seasons = d.seasons || [];
+        return '<p class="calwiz-lede">A <b>season</b> is a set of months with its own working week. The wet-season block below drops Saturday by default, because that is the usual way a programme absorbs rain — change the months, the days or the hours, or remove a block entirely.</p>' +
+          '<div class="sbld-sec-actions"><button class="pd-btn" id="cw-seed">Rebuild from PAGASA ' + esc(t.key) + '</button>' +
+            '<button class="pd-btn" id="cw-clearseasons"' + (seasons.length ? '' : ' disabled') + '>Remove all seasons</button></div>' +
+          (seasons.length ? seasons.map(function (sn, i) {
+            return '<div class="calwiz-season"><div class="calwiz-season-h">' +
+              '<input class="pd-input" data-sl="' + i + '" value="' + esc(sn.label || '') + '" placeholder="Season name" style="max-width:260px;">' +
+              '<label class="sbld-hint">Hours <input class="pd-input" type="number" min="1" max="24" step="0.5" data-sh="' + i + '" value="' + (sn.hours_per_day != null ? sn.hours_per_day : (d.hours_per_day || 8)) + '" style="width:78px;"></label>' +
+              '<button class="pd-btn sbld-del" data-sx="' + i + '" title="Remove this season">✕</button></div>' +
+              '<div class="calwiz-months">' + _CALWIZ_MO.map(function (mo, mi) {
+                var on = (sn.months || []).indexOf(mi + 1) >= 0;
+                return '<label class="calwiz-mo' + (on ? ' on' : '') + '"><input type="checkbox" data-sm="' + i + '" data-mo="' + (mi + 1) + '"' + (on ? ' checked' : '') + '> ' + mo + '</label>';
+              }).join('') + '</div>' +
+              weekRow(sn, 'sd" data-si="' + i + '" data-x="') +
+              '</div>';
+          }).join('') : '<div class="sbld-empty">No seasons — the base week applies all year.</div>');
+      }
+      // Review
+      var wd2 = workingDaysOf(d);
+      var seas = (d.seasons || []).filter(function (x) { return x.months && x.months.length; });
+      var rain = null;
+      if (d.climate_type) { try { rain = PDCal.phRainProfile(d.climate_type, intensity); } catch (e) {} }
+      var rainTotal = rain ? Object.keys(rain).reduce(function (t2, k) { return t2 + (+rain[k] || 0); }, 0) : 0;
+      return '<p class="calwiz-lede">What will be saved.</p>' +
+        '<ul class="calwiz-review">' +
+          '<li><b>' + esc(d.name || 'Untitled') + '</b> · ' + (d.hours_per_day || 8) + ' h/day</li>' +
+          '<li>Working week: <b>' + _CAL_DAYS.filter(function (dd) { return d[dd[0]]; }).map(function (dd) { return dd[1]; }).join(' ') + '</b></li>' +
+          '<li>Special non-working days: <b>' + (d.observe_special_days ? 'observed' : 'worked') + '</b></li>' +
+          '<li>PAGASA climate type: <b>' + (d.climate_type ? esc(d.climate_type) + ' · ' + esc((PDCal.climateType(d.climate_type) || {}).short || '') : 'not set') + '</b></li>' +
+          '<li>Seasons: <b>' + (seas.length ? seas.map(function (x) { return (x.label || 'Season') + ' (' + x.months.length + ' mo)'; }).join(', ') : 'none') + '</b></li>' +
+          (wd2 != null ? '<li>Working days this year: <b>' + wd2 + '</b></li>' : '') +
+          (rainTotal ? '<li>Indicative rain allowance for this type and exposure: <b>~' + rainTotal + ' working days a year</b> <span style="color:var(--pd-muted);">— a planning allowance, not a forecast; it feeds duration scenarios, not this calendar.</span></li>' : '') +
+        '</ul>' +
+        '<label class="calwiz-check"><input type="checkbox" id="cw-default"' + (d.is_default ? ' checked' : '') + '> ' +
+          'Make this the <b>project default</b><i>Every activity with no calendar of its own uses it. Only one calendar can be the default.</i></label>';
+    }
+
+    function draw() {
+      if (step > 0 && !d) d = seed();
+      ov.innerHTML = '<div class="pd-modal" style="max-width:720px;">' +
+        '<div class="pd-modal-header"><h3 style="margin:0;font-size:16px;">New working calendar</h3>' +
+        '<button class="pd-modal-close" id="cw-x">&times;</button></div>' +
+        '<div class="calwiz-rail">' + STEPS.map(function (t, i) {
+          return '<span class="calwiz-railstep' + (i === step ? ' on' : (i < step ? ' done' : '')) + '">' + (i + 1) + '. ' + esc(t) + '</span>';
+        }).join('') + '</div>' +
+        '<div style="padding:14px 16px;max-height:60vh;overflow:auto;" id="cw-body">' + body() + '</div>' +
+        '<div class="pd-modal-footer">' +
+          (step > 0 ? '<button class="pd-btn" id="cw-back">← Back</button>' : '<span></span>') +
+          '<span><button class="pd-btn" id="cw-cancel">Cancel</button> ' +
+          (step < STEPS.length - 1 ? '<button class="pd-btn pd-btn-primary" id="cw-next">Next →</button>'
+                                   : '<button class="pd-btn pd-btn-primary" id="cw-save">Save calendar</button>') +
+          '</span>' +
+        '</div></div>';
+      wire();
+      if (window.Icons) Icons.hydrate(ov);
+    }
+
+    function readStep() {
+      var root = ov;
+      if (step === 0) {
+        var r = root.querySelector('input[name="cw-src"]:checked'); if (r) srcKey = r.value;
+        var cp = root.querySelector('#cw-copy'); if (cp) copyId = cp.value;
+        d = seed();   // re-seed whenever the source changes
+        return true;
+      }
+      if (step === 1) {
+        var nm = root.querySelector('#cw-name'); d.name = String((nm && nm.value) || '').trim();
+        if (!d.name) { UI.toast('Give the calendar a name — it is how activities pick it.', 'warn'); return false; }
+        root.querySelectorAll('[data-wd]').forEach(function (el) { d[el.dataset.wd] = el.checked; });
+        if (!_CAL_DAYS.some(function (dd) { return d[dd[0]]; })) {
+          UI.toast('A calendar needs at least one working day.', 'error'); return false;
+        }
+        var hh = root.querySelector('#cw-hours'); d.hours_per_day = Math.max(1, Math.min(24, Number((hh && hh.value) || 8) || 8));
+        var sp = root.querySelector('#cw-special'); d.observe_special_days = !!(sp && sp.checked);
+        return true;
+      }
+      if (step === 2) {
+        var c = root.querySelector('input[name="cw-clim"]:checked');
+        var next = c ? (c.value || null) : null;
+        var it = root.querySelector('input[name="cw-int"]:checked'); if (it) intensity = it.value;
+        // ⚠️ Changing the type rebuilds the seasons: the month sets ARE the type, so keeping the old
+        // ones would leave a Luzon wet season labelled with a Mindanao type.
+        if (next !== d.climate_type) {
+          d.climate_type = next;
+          d.seasons = next ? PDCal.phSeasonPreset(next, { wetHours: d.hours_per_day, dryHours: d.hours_per_day }) : [];
+        }
+        return true;
+      }
+      if (step === 3) {
+        (d.seasons || []).forEach(function (sn, i) {
+          var lb = ov.querySelector('[data-sl="' + i + '"]'); if (lb) sn.label = lb.value;
+          var hh2 = ov.querySelector('[data-sh="' + i + '"]');
+          if (hh2) sn.hours_per_day = hh2.value === '' ? null : Math.max(1, Math.min(24, Number(hh2.value) || 8));
+        });
+        // ⚠️ A month may belong to ONE season only — two seasons claiming August cannot both decide
+        // its week, and the editor rejects the same thing on save.
+        var seen = {}, dup = [];
+        (d.seasons || []).forEach(function (sn) {
+          (sn.months || []).forEach(function (mo) { if (seen[mo]) { if (dup.indexOf(mo) < 0) dup.push(mo); } else seen[mo] = 1; });
+        });
+        if (dup.length) {
+          UI.toast('Two seasons claim ' + dup.map(function (mo) { return _CALWIZ_MO[mo - 1]; }).join(', ') +
+                   ' — each month can belong to one season only.', 'warn');
+          return false;
+        }
+        return true;
+      }
+      var df = ov.querySelector('#cw-default'); d.is_default = !!(df && df.checked);
+      return true;
+    }
+
+    function wire() {
+      ov.querySelector('#cw-x').onclick = close;
+      ov.querySelector('#cw-cancel').onclick = close;
+      var bk = ov.querySelector('#cw-back'); if (bk) bk.onclick = function () { if (readStep() !== false || true) { step--; draw(); } };
+      var nx = ov.querySelector('#cw-next'); if (nx) nx.onclick = function () { if (readStep() === false) return; step++; draw(); };
+      // Re-draw on a source / climate change so the next step is seeded from the new answer.
+      ov.querySelectorAll('input[name="cw-src"]').forEach(function (r) { r.onchange = function () { readStep(); draw(); }; });
+      ov.querySelectorAll('input[name="cw-clim"]').forEach(function (r) { r.onchange = function () { readStep(); draw(); }; });
+      ov.querySelectorAll('input[name="cw-int"]').forEach(function (r) { r.onchange = function () { readStep(); draw(); }; });
+      ov.querySelectorAll('[data-wd]').forEach(function (el) { el.onchange = function () { readStep(); draw(); }; });
+      ov.querySelectorAll('[data-sm]').forEach(function (el) {
+        el.onchange = function () {
+          var sn = (d.seasons || [])[+el.dataset.sm]; if (!sn) return;
+          var mo = +el.dataset.mo;
+          sn.months = sn.months || [];
+          if (el.checked) { if (sn.months.indexOf(mo) < 0) sn.months.push(mo); }
+          else sn.months = sn.months.filter(function (x) { return x !== mo; });
+          sn.months.sort(function (a, b) { return a - b; });
+          draw();
+        };
+      });
+      ov.querySelectorAll('[data-sd]').forEach(function (el) {
+        el.onchange = function () {
+          var sn = (d.seasons || [])[+el.dataset.si]; if (!sn) return;
+          sn[el.dataset.sd] = el.checked; draw();
+        };
+      });
+      ov.querySelectorAll('[data-sx]').forEach(function (b) {
+        b.onclick = function () { d.seasons = (d.seasons || []).filter(function (_, k) { return k !== +b.dataset.sx; }); draw(); };
+      });
+      var sd = ov.querySelector('#cw-seed');
+      if (sd) sd.onclick = function () { d.seasons = PDCal.phSeasonPreset(d.climate_type, { wetHours: d.hours_per_day, dryHours: d.hours_per_day }); draw(); };
+      var cs = ov.querySelector('#cw-clearseasons');
+      if (cs) cs.onclick = function () { d.seasons = []; draw(); };
+      var sv = ov.querySelector('#cw-save'); if (sv) sv.onclick = save;
+    }
+
+    async function save() {
+      if (readStep() === false) return;
+      if (!canWrite || _editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
+      /* ⚠️ THE SAME PAYLOAD SHAPE THE EDITOR WRITES — seasons normalised the same way (a season
+         covering no month is dropped; it changes nothing but reads as if it does), and
+         observe_special_days / climate_type always included. A partial payload from the smaller door
+         is exactly how this module previously blanked what the other door had set. */
+      var seasons = (d.seasons || []).filter(function (x) { return x.months && x.months.length; }).map(function (x) {
+        var o = { id: x.id || ('s' + Math.random().toString(36).slice(2, 8)),
+                  label: (x.label || '').trim() || 'Season', months: x.months.slice() };
+        if (x.hours_per_day != null && x.hours_per_day !== '') o.hours_per_day = Number(x.hours_per_day);
+        _CAL_DAYS.forEach(function (dd) { if (x[dd[0]] === true || x[dd[0]] === false) o[dd[0]] = x[dd[0]]; });
+        return o;
+      });
+      var payload = { project_id: pid, name: d.name, hours_per_day: d.hours_per_day,
+        extra_holidays: d.extra_holidays || [], is_default: !!d.is_default,
+        seasons: seasons, observe_special_days: !!d.observe_special_days,
+        climate_type: d.climate_type || null, created_by: UID };
+      _CAL_DAYS.forEach(function (dd) { payload[dd[0]] = !!d[dd[0]]; });
+      try {
+        // ⚠️ Cleared BEFORE the insert — see the editor's note: a failure part-way then leaves zero
+        // defaults (recoverable) rather than two (silently ambiguous).
+        if (payload.is_default) {
+          await sb().from('calendars').update({ is_default: false }).eq('project_id', pid);
+          (CALS || []).forEach(function (c) { c.is_default = false; });
+        }
+        var ins = await sb().from('calendars').insert(payload).select().single();
+        if (ins.error) throw ins.error;
+        CALS.push(ins.data);
+        CALS.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+        _wdCache = {};   // capacity maths caches working days per calendar+month
+        UI.toast('Calendar “' + (d.name || '') + '” created' + (payload.is_default ? ' and set as the project default' : '') + '.', 'success');
+        close();
+        if (onDone) onDone();
+      } catch (e) { UI.toast('Could not save the calendar: ' + (e && e.message || e), 'error'); }
+    }
+
+    draw();
+  }
+
   function openCalendars(onDone) {
     var m = UI.modal('<div id="ps-cal-body"></div>');
     var panel = m.el.querySelector('.pd-modal');
@@ -24976,6 +25330,11 @@
     var STEP_START = { t: 'Start', s: 'Import, or build new', fn: stStart };
     // The generation path — the original ten steps, in the original order.
     var STEPS_NEW = [
+      /* ⚠️ SECOND, BEFORE THE ACTIVITIES, and that ordering is the point (see stCalendars): every
+         duration typed in the next step is a count of WORKING days, so the calendar is the unit
+         those numbers are expressed in. Set afterwards, everything already typed silently meant
+         something else while it was being typed. */
+      { t: 'Working calendars', s: 'Which days are workable', fn: stCalendars },
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
       { t: 'Floors & Zones', s: 'Location breakdown', fn: stLevels },
       { t: 'Tower links', s: 'How towers interface', fn: stTowerLinks },
@@ -26983,6 +27342,55 @@
         '<p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Nothing has been written. Edit the steps, then <b>Save setup</b> to keep it — and only <b>Generate › Push</b> ever changes the schedule.</p>' +
         '<div style="text-align:right;"><button class="pd-btn pd-btn-primary" id="sb-dv-ok">Start editing</button></div>');
       _dv.el.querySelector('#sb-dv-ok').onclick = _dv.close;
+    }
+
+    /* ==========================================================================================
+       STEP: WORKING CALENDARS — and why it is the SECOND step, not a screen of its own
+       ------------------------------------------------------------------------------------------
+       Owner 2026-09-02: *"I am also thinking working calendars should also be folded into the steps
+       in the schedule setup. Its one of the things that would define the duration of cycles. In this
+       case its a crucial input and its ideal to set this up at the start already rather than creating
+       the schedule setup first then do the working calendar."*
+
+       They are right about the ordering, and it is not a matter of taste. Every duration typed into
+       step 3 is a count of WORKING days, and the calendar is what turns that count into a date — so
+       the whole programme downstream (the zone cycle, the floor-to-floor rhythm, the trade hand-offs,
+       the generated preview) is measured in a unit the calendar defines. Setting it afterwards means
+       every number already typed silently meant something else while it was being typed.
+
+       So it sits immediately after Start, and the Working Calendars entry is gone from the view menu:
+       one door, at the point in the process where the answer is actually needed.
+
+       ⚠️ THE EDITOR IS NOT REBUILT. `renderCalendarsInto(host)` is the same editor the standalone
+       view used — it draws into whatever host it is given, so the step just gives it one. A second
+       calendar editor would be two places to keep a season, a climate type and a holiday list
+       correct, and the module already carries the scar of exactly that (see the note on the save:
+       *"Omitting them would let a save from the schedule silently blank what was set in the roster
+       module"*).
+       ========================================================================================== */
+    function stCalendars(host) {
+      var n = (typeof CALS !== 'undefined' && CALS) ? CALS.length : 0;
+      var def = null;
+      try { def = (CALS || []).filter(function (c) { return c.is_default; })[0] || null; } catch (e) {}
+      host.innerHTML = '<h2>' + _stepNo('Working calendars') + ' · Which days the work can happen on</h2>' +
+        '<p class="sbld-lede">Every duration in this setup is a count of <b>working days</b>, and this is what turns that count into a date — for the generated preview, for the live schedule and for every duration scenario. That is why it comes before the activities: set it now and the numbers you type next mean what you think they mean.</p>' +
+        '<div class="sbld-locbar"><span class="sbld-locbar-l">Project default</span>' +
+          (def ? '<span class="sbld-hint">Unassigned activities use <b>' + e2(def.name) + '</b> — ' +
+                 (def.hours_per_day || 8) + 'h/day' +
+                 (PDCal && PDCal.seasonsOf && PDCal.seasonsOf(def).length ? ', ' + PDCal.seasonsOf(def).length + ' season(s)' : '') +
+                 (def.climate_type ? ', PAGASA ' + e2(def.climate_type) : '') + '.</span>'
+                : '<span class="sbld-hint">No calendar is marked as the project default yet, so an unassigned activity falls back to the <b>Philippine 6-day, 8-hour</b> week.</span>') +
+          '<button class="pd-btn pd-btn-primary" id="b-calwiz"><span data-ico="plus" data-ico-size="14"></span> New calendar — guided</button>' +
+        '</div>' +
+        '<p class="sbld-hint">' + n + ' calendar' + (n === 1 ? '' : 's') + ' on this project. The guided route asks where the site is and builds the wet/dry working week for you; the editor below is the same one the rest of the module uses, for fine-tuning and for assigning a calendar to activities.</p>' +
+        '<div id="sbld-cal-host"></div>';
+      var wb = host.querySelector('#b-calwiz');
+      if (wb) wb.onclick = function () { openCalendarWizard(function () { render(); }); };
+      var ch = host.querySelector('#sbld-cal-host');
+      if (typeof renderCalendarsInto === 'function') {
+        try { renderCalendarsInto(ch); }
+        catch (e) { ch.innerHTML = '<div class="sbld-empty">The calendar editor could not be drawn: ' + e2(e && e.message) + '</div>'; }
+      } else ch.innerHTML = '<div class="sbld-empty">The calendar editor is unavailable on this page — reload and reopen this step.</div>';
     }
 
     /* ---- STEP: Start -------------------------------------------------------------------------
@@ -29859,13 +30267,13 @@
     // ⚠️ Leaving the setup returns the borrowed WBS tree to its park slot. Without this it would sit
     // inside a hidden view, and the next thing to repaint that panel would take it out of the document.
     if (tab !== 'builder') sbWbsPark();
-    var vc = document.getElementById('ps-view-calendars'); if (vc) vc.style.display = tab === 'calendars' ? '' : 'none';
+    // (#ps-view-calendars is a hidden host now, not a view — Working Calendars is a Setup step.)
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Setup or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'builder' ? 'Schedule Setup' : (tab === 'calendars' ? 'Working Calendars' : 'Project Schedule'));
+    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'builder' ? 'Schedule Setup' : 'Project Schedule');
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
@@ -29876,7 +30284,9 @@
     if (tab === 'schedule') renderGantt();
     else if (tab === 'costload') CostLoading.open(pid, UID);
     else if (tab === 'builder') ScheduleBuilder.open(pid, UID);
-    else if (tab === 'calendars') renderCalendarsView();
+    // ⚠️ A stale deep link or a remembered tab can still say 'calendars'. Send it to the step that
+    // owns the calendars now rather than showing a blank view.
+    else if (tab === 'calendars') { switchTab('builder'); try { ScheduleBuilder.gotoStep('Working calendars'); } catch (e) {} }
   }
 
   // ----- EXPORT to Excel (matches OPC's Activities "Download": same columns, order,
