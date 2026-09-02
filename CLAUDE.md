@@ -12563,3 +12563,29 @@ months-outside-the-axis path, the import and the seed — all suite-covered, non
 a DOM or database read rather than a picture.
 
 `MODULE_V` → `20260828d`.
+
+### 2026-09-02 — Project Schedule: five views to four, and import stops writing on the first click
+
+Owner: *"let's sanitize the process in developing the project schedule either from import project
+schedule and starting a new project."* All of it inside
+[`modules/project-schedule/index.html`](modules/project-schedule/index.html) — no shared file
+touched, so no `?v=` bump is due. Full detail (and the browser verification) is in that module's own
+[`CLAUDE.md`](modules/project-schedule/CLAUDE.md); the shell-level shape of it:
+
+- **Planner Cockpit and WBS Manager are gone from the view menu.** The order is now **Schedule Setup
+  › Project Schedule › Cost Loading › Weekly Work Plan › Working Calendars** — the Setup first,
+  because that is where a schedule comes from.
+- ⚠️ **Neither removal took a feature with it.** The cockpit's only-way-in verbs (Update progress,
+  snapshots, change history) moved to the Schedule grid's **Actions** menu and the lookahead export to
+  **File**; the WBS Manager's Adopt/Reset and the Engineering + Procurement mirrors moved into
+  **Schedule Setup › WBS**; and the Last Planner weekly loop — a separate feature that merely lived
+  inside the cockpit — became its own **Weekly Work Plan** view.
+- **A project opens on the view its state calls for:** no activities → Schedule Setup; a schedule
+  already there → Project Schedule. Decided once per project, never re-decided on a refresh.
+- **Importing a programme is now four checking steps inside the Setup**, not a modal that commits on
+  the first click: check the activities and file each WBS branch under a phase (or exclude it), map
+  the location breakdown, settle the file's relationships, then review and write. The single
+  all-at-once import modal was deleted rather than left unreachable, so there is exactly one path
+  into the importers.
+- **The Location Breakdown lives only in Schedule Setup › Floors & Zones now** — levels and both WBS
+  matchers. The Project Schedule's Group menu keeps a signpost and a deep link.

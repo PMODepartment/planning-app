@@ -11445,3 +11445,126 @@ project's WP "1", the ambiguous case returning null, archived lots still contrib
 invalidating on reassignment. **0 functions lost** against HEAD; 0 NUL bytes; inline script parses.
 ⚠️ **Not clicked through signed in and no live sync has been run** — the first real Sync Procurement on a
 mapped project is the test.
+
+### 2026-09-02 — One way in: the Setup owns how a schedule comes into existence
+
+Owner: *"let's sanitize the process in developing the project schedule either from import project
+schedule and starting a new project."* Five views collapsed to four, and **import stopped being a
+modal that writes on the first click**.
+
+**Two views removed.**
+- **Planner Cockpit.** A monitoring surface, not schedule development. Its four verbs had no second
+  home, so they moved rather than died: **Update progress**, **Take snapshot**, **Snapshots** and
+  **Change history** → the Schedule grid's **Actions** menu; **Export lookahead** → **File** (it
+  writes a workbook), now asking for its window in a dialog since the cockpit bar's `<select>` went
+  with it. ⚠️ Removing a view must not silently remove the verbs parked on it.
+- **WBS Manager.** Everything it hosted is in **Schedule Setup › WBS**: the tree and its edit tools
+  (already borrowed there since 2026-09-02's first pass), and now **Adopt existing WBS**, **Reset
+  WBS**, **Sync Engineering**, **Sync Procurement** and **Push need-by** as a second row
+  (`#ps-wbs-integrations`). Its markup survives ONLY as the hidden park slot those borrowed nodes
+  return to — `#ps-view-wbs` is `hidden` and switchTab no longer touches it.
+- ⚠️ **The Last Planner weekly loop was NOT part of the cockpit** — it was merged into it for
+  company. It is its own view now, **Weekly Work Plan**. Deleting it with the screen it was sitting
+  on would have removed a separate feature nobody asked about.
+- `renderPlanner()` is left in place and simply never called; it opens with
+  `getElementById('ps-ck-kpis'); if (!kp) return;`, so it is inert with that markup gone.
+
+**Which view a project opens on is a fact about the project, not a preference** (`_landOnOpen`):
+no activities → **Schedule Setup** (nothing to look at, everything to decide); activities exist →
+**Project Schedule** (that is the work). Counts ACTIVITIES, not rows — a project seeded with only the
+locked WBS skeleton has rows and no schedule. Fires **once per project**: `load()` runs again on every
+refresh, on the cache-then-revalidate second pass and after an import, and re-deciding there would
+yank a planner out of a view they had deliberately switched to. ⚠️ The cached-path call sits OUTSIDE
+that block's `catch (e) {}` — a screen decision inside a swallowing catch arms itself and then never
+retries.
+
+**The Setup now has a source step, and two paths.** `STEPS` is a live array rebuilt per mode by
+`sbSyncSteps()`, so every existing reader (`STEPS[step].fn`, `_stepNo`, the rail, `gotoStep`) is
+unchanged and only its contents depend on the mode. `mode`/`imp` are session state, deliberately: cfg
+describes a *generated* programme, and a saved setup claiming "mid-import" would lie the moment the
+browser closed. `gotoStep` is mode-aware — the Group menu's deep link to Floors & Zones has to be
+able to CHOOSE the generation path, or it would do nothing on exactly the fresh projects that need it.
+
+**Via new schedule:** the ten steps, in the original order, unchanged.
+
+**Via import — four checking steps, and the database is not touched until the last one.**
+`File › Import` parses and hands off to `ScheduleBuilder.stageImport()`; `previewImport` /
+`previewImportXER` are **deleted**, not left unreachable, so there is exactly one way into
+`doImport` / `doImportXER`. The old modal asked for replace-or-append, WBS placement, trade stamping,
+the package and the whole location mapping at once, over a twelve-row preview of a file that might
+hold forty thousand rows, and wrote the lot on the first click.
+1. **Activities & phases.** The file's WBS as a tree, with a **per-phase activity count** above it.
+   ⚠️ Filing a branch under a phase **is** setting the phase — an imported activity has no `phase`
+   column of its own; `phaseOf()` resolves it from the branch. Any branch at **any depth** can be
+   re-filed (a sub-branch that is really Close-out lifts out without unpicking its parent) or
+   **excluded** outright. The counts resolve through the same inheritance rule the import uses.
+2. **Floors & Zones.** The same Location Breakdown the generation path defines — one per project.
+3. **Relationships.** *"utilize the existing relationships in the import or the planner can adjust as
+   per their preference"*: keep the file's logic / keep only links inside the import (drops dangling
+   predecessors) / import dates only — plus a searchable table where individual links are struck out.
+4. **Review & import.** Every decision restated as what it will DO, then one button.
+
+⚠️ **The commit works on COPIES.** `applyWbsPlacement` rewrites `r.code` in place and the location
+pass stamps `r.loc`, so passing the staged recs would leave the staging holding half-applied codes and
+a planner walking back a step would see a file that no longer matched the one they read.
+
+**Location Breakdown moved completely.** *"Remove this in the project schedule tab. Move completely to
+the Schedule Setup."* The Group menu keeps a signpost and a deep link; the levels editor **and** both
+matchers (**Match WBS to locations**, **Fill location from the WBS tree**) are on Floors & Zones —
+leaving the wizards behind would have been the worst of both, mapping onto levels you cannot see.
+⚠️ The bar renders in the step's **empty state** too: this is now the only route to the editor, and a
+brand-new project has no trades yet.
+
+**Three shared pieces earned a small extension rather than a fork.**
+- `locMapUI(..., preset)` — the Setup rebuilds its panel with `innerHTML` on every step change, so
+  without a way to render previous choices the selections reset to the guesses each time the planner
+  walked back a step. `read()` now returns `srcKey`/`arg` so its own result feeds straight back in.
+- `locScopeFromPlan()` — locImportScope's decision taken from a plan object instead of a live dialog.
+  One rule for both the preview and the commit, or their numbers disagree.
+- `applyWbsPlacement`'s `ownRule` — a same-name parent MERGE emits a move per direct child, and a
+  child may now have a rule of its own; both would land in `moves` with the same `from` and the winner
+  would look random. The child wins, always.
+
+**Two defects caught by the new step, in code that predates it.**
+- ⚠️ **`_IMP_PHASE_HINT` pre-filled "Pre-Construction" as Execution Phase.** The Execution pattern
+  matches the bare word `construct`, and `pre-?construct` was listed inside the *Planning* pattern
+  below it where it could never win. Every OPC/P6 export in this office uses that branch name for
+  design, permits and procurement. It is its own rule now, ahead of Execution. Invisible for two
+  years because the old dropdown never showed the guess as a per-phase COUNT.
+- ⚠️ **The commit's view switch is in a `finally`.** The importers own their error reporting and
+  normally return quietly, but an unexpected throw in the reload chain they end with would strand the
+  planner on a Setup whose staged file had already been cleared, with no way to tell whether the
+  import had happened.
+
+**Guards.** `beforeunload` now fires for a staged import as well as a dirty cfg — the parse is in
+memory and a reload throws away every decision made over it. **Save setup** refuses while an import is
+staged over a never-built cfg, rather than writing an empty "Setup" row that describes nothing.
+
+**Verified in a browser**, driven through a throwaway harness that stubs `AppAuth`/`PDb` so the module
+boots with no session and every query returns empty (a brand-new project — the state the landing rule
+and the funnel have to work in). A synthetic 24-row programme (project-root wrapper, Milestones,
+Initiation, Pre-Construction, Execution with two towers, a consultant-admin branch, Close-out; 9
+relationships incl. one dangling) walked the four steps and committed:
+- landing: empty project → **Schedule Setup**; `?rows=1` → **Project Schedule**; switching to a
+  project with a schedule while on the Setup → **Project Schedule**;
+- phases: `1.1→Milestones`, `1.2→Initiation`, `1.3→Planning` (after the hint fix), `1.4→Execution`,
+  `1.6→Closeout`; tally 2/1/2/4/1 + 2 excluded = 12; a nested re-file moved Tower B's activity from
+  Execution to Close-out and back;
+- locations: **only the 4 Execution-Phase activities** got a Tower/Level/Zone — Milestones, Planning
+  and Close-out came through with `location: null`, which is the leak the scoping exists to prevent;
+  selections survived navigating away and back;
+- relationships: 9 → 8 (dangling dropped) → 7 (one struck out) → 0 (`none`) → 8 (back to `keep`, the
+  strike still in force); the committed payload carries `IN-100 pred=-` and `EX-2011 pred=-` and every
+  other link with its type and lag;
+- the written rows: 16 inserts, dotted codes `1.1 2.1 3.4.1 4.1.1.1 5.1` — the file's own
+  Milestones/Initiation/Closeout branches **merged** with the skeleton instead of double-layering, and
+  the excluded branch absent;
+- the generation path: Build a new schedule → Activities (step 2), `generate('int')` → 4 rows over 2
+  zones, Generate is step 11 with its Push button; the WBS step mounts the tools, the mirror row and
+  the tree; the Group menu's deep link lands on Floors & Zones; Weekly Work Plan renders its week and
+  commitments table; the four re-homed Actions verbs open their panels; the lookahead dialog exports.
+
+⚠️ **Not exercised signed in against a real project.** The harness cannot create rows
+(`insert().select().single()` has nothing to return), so `locEnsureLevels` was given pre-seeded levels
+and the post-import WBS heal chain throws on the stub's null nodes. The first real import of an OPC
+or P6 file is the test — in particular the phase tally on a forty-thousand-row export.
