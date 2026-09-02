@@ -963,12 +963,21 @@ body { overflow-x: clip; }
   .pd-modulebar { padding-left: 16px; padding-right: 16px; }
 }
 
-/* ---- Drawer breakpoint: the dropdown moves to its OWN row, BELOW the
+/* ---- Phone breakpoint ONLY: the dropdown moves to its OWN row, BELOW the
    toggle/theme/avatar cluster — the opposite order from the wide layout,
    where it leads. `order` (not DOM order) is what makes the same three
    chrome controls stay together on row 1 while the dropdown, now ordered
-   last, wraps onto row 2 by itself via its 100% basis. ---- */
-@media (max-width: 820px) {
+   last, wraps onto row 2 by itself via its 100% basis.
+   ⚠️ Deliberately gated at the PHONE boundary (700px), not the wider 820px
+   "drawer" one. A real desktop/Windows browser window is routinely narrower
+   than 820px (a snapped half-screen window, a smaller laptop panel) without
+   being "mobile view" in any meaningful sense, and this control should stay
+   on the toggle/theme/avatar row there. Above 700px the dropdown shrinks in
+   place instead (flex-shrink via `min-width:0` on the wrapper) and its own
+   label already truncates with an ellipsis (`.pd-psel-txt`), which is the
+   "wrap the text, not the row" behaviour — only true phone widths drop it
+   to its own line. ---- */
+@media (max-width: 700px) {
   .pd-topbar.pd-tb-split .pd-tb-main { row-gap: 8px; }
   .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"],
   .pd-topbar.pd-tb-split .pd-tb-main #ctx-switcher { flex-basis: 100%; order: 5; max-width: none; }
@@ -1016,8 +1025,8 @@ body { overflow-x: clip; }
     min-width: 0; white-space: normal; line-height: 1.15;
     font-size: 12.5px; padding-left: 6px; padding-right: 6px; text-align: center;
   }
-  /* Dropdown, moved to row 2 of .pd-tb-main at 820px, gets the same
-     touch-target rule row 1's own controls already carry. */
+  /* Dropdown, moved to row 2 of .pd-tb-main at this phone breakpoint, gets
+     the same touch-target rule row 1's own controls already carry. */
   .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-select,
   .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { min-height: var(--pd-tap); height: auto; }
   /* Actions share their row proportionally, so a labelled button keeps its words

@@ -84,6 +84,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (ai) — Favicon stopped bleeding to the edges; the project dropdown stops wrapping on desktop
+Owner: *"reduce favicon size"* and *"in windows, have the project dropdown at the top bar be in the same
+line. if needed wrap text. only in mobile view should dropdown be moved down."*
+- ⚠️ **The favicon really was bleeding edge-to-edge — the mark filled the full 1020×850 canvas with zero
+  margin**, the same defect the apple-touch-icon (`icon.png`) was redesigned away from on 2026-08-30
+  ("more breathing room around the mark"); the plain `<link rel="icon">` favicon never got that pass.
+  New **`assets/img/favicon-icon.png`** (256×256, ~16% padding, transparent, 1,993 bytes vs the source's
+  7,919) is a dedicated file for the browser-tab icon only — every `<link rel="icon">` across all 29
+  pages now points at it. ⚠️ **`favicon.png` itself is left untouched on purpose**: it's also the
+  `<img class="pd-auth-mark">`/`pd-home-mark` logo on the login/register/forgot-password/home pages,
+  sized by `height:56px` in CSS — padding *that* file would have shrunk the visible mark on every one of
+  those screens as an unasked side effect.
+- **The project/portfolio dropdown no longer drops to its own row on a normal desktop window.** Root
+  cause: `.pd-tb-main [class$="-projctx"]` was forced to `flex-basis:100%; order:5` at the **820px
+  "drawer"** breakpoint — this file's own boundary for "sidebar becomes an off-canvas drawer," not a true
+  phone width — so a perfectly ordinary Windows browser window (a snapped half-screen, a smaller laptop
+  panel, anything under 820px) triggered the mobile stacking. Moved to the **700px "phone"** boundary,
+  the narrower threshold this same file already uses everywhere else for genuine phone-only layout
+  (`.pd-modulebar > h1`, the tab-strip segmenting, the filter-bar rules a few lines down). ⚠️ Above 700px
+  the dropdown now **shrinks in place instead** (`min-width:0` on the wrapper) and its label already
+  truncates with an ellipsis (`.pd-psel-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }`,
+  pre-existing) — "wrap the text, not the row," which is the literal ask. Verified nothing else in the
+  file depends on the dropdown breaking at 820px specifically (the two other `820px` blocks are the
+  sidebar-drawer transform and its tablet chrome padding, unrelated); no module CSS duplicates this rule.
+- Shared asset changed → **`dashboard.css?v=` bumped `20260902a` → `20260902b` across all 29 HTML files.**
+- Not verified in a live browser (this environment has no way to render the app signed in) — verified by
+  computed rule inspection (brace balance, the shifted breakpoint, the pre-existing ellipsis rule) instead.
+
 ### 2026-09-02 (ah) — The scrub goes smooth, and the trade colours were painting BLACK
 Owner: *"can you make the progress bar smoother, it has fps drop whenever i drag"* and *"how come the
 colors of the trades vanish when put into the full screen. it just turns into black."* Detail in
