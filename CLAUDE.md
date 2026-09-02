@@ -84,6 +84,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (m) — The 92-entry key came back: (k) was verified on the one load that could not show it
+
+Owner on the cleared SLN101: *"Legend still shows activities that are not within the execution
+phase."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️⚠️ **`load()` paints from the localStorage cache before `wbs_nodes` are fetched.** `phaseOf()`
+  resolves through `WBS_NODES`, so at first paint on a cached load **no row resolves any phase**, the
+  fallback colours everything, and `catList()` memoises the 92-entry list.
+- ⚠️ `_clearPhaseMemo()` dropped `_catExecCache` but **not `_catCache`**, whose key
+  (`pid|field|rows.length|theme|keySet`) does not change when the tree arrives — so the stale list was
+  re-served for the whole session. ⚠️ And invalidating a cache **repaints nothing**; `load()` never
+  re-rendered the legend afterwards.
+- Fixed both: the memo drops `_catCache`, and `load()` compares the scope answer either side of
+  `loadResourcesAssignments()`, repainting only when it flips.
+- ⚠️ **The lesson is about the test.** (k) was verified live and reported 40 → 0 — on a **cold** load,
+  the one path where `WBS_NODES` are already in hand when the legend first renders, so the bug cannot
+  appear. A returning browser takes the **cached** path. **A module that paints twice must be verified
+  on both paints.** `MODULE_V` → `20260902m`.
+
 ### 2026-09-02 (k) — An emptied schedule showed a 92-entry colour key
 
 Owner, on the just-cleared SLN101: *"Why are there still activities and shown in the legend"*. Two

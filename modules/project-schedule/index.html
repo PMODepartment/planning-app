@@ -3458,9 +3458,16 @@
   // re-parenting a branch re-phases its work immediately, with no data fix-up.
   // Memoized per node id and cleared whenever the tree or a phase changes.
   var _phaseMemo = {};
-  // ⚠️ `_catExecCache` too: catScopeIsExec() is keyed on the row COUNT, and re-parenting a branch
-  // re-phases its activities without changing that count.
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _catExecCache = null; }
+  // ⚠⚠ `_catExecCache` AND `_catCache`. Both are keyed on the row COUNT, and neither the count nor
+  // the theme changes when the WBS TREE arrives — but `phaseOf()` reads through that tree, so the
+  // answer to "is this row in the colour scope" flips underneath both caches.
+  // ⚠️ Missing `_catCache` here is what put the 92-entry key back on a cleared SLN101 after (k)
+  // supposedly fixed it. `load()` paints from the localStorage cache FIRST, before
+  // `loadResourcesAssignments()` has fetched `wbs_nodes`; at that moment no row resolves a phase, so
+  // catScopeIsExec() answers false, catList() memoises the everything-coloured list, and clearing
+  // only the phase memo left that list in place for the rest of the session. It reproduced on a
+  // cache-painted load and NOT on a cold one, which is exactly why a single live check missed it.
+  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _catExecCache = null; _catCache = null; }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -6699,8 +6706,20 @@
     // change what the WBS shows, so claiming to be up to date here is a lie on exactly the projects
     // where it matters (a fresh import, where every pass below has work to do).
     _repair('Loading resources…');
+    // ⚠⚠ THE COLOUR SCOPE IS ANSWERED BEFORE AND AFTER, because the tree it depends on arrives in
+    // between. Bars and legend chips are both drawn from `catEntry()` -> `catInScope()` ->
+    // `phaseOf()`, which resolves through `WBS_NODES` — and on a cache-painted load the first paint
+    // happens while that array is still EMPTY, so every row looks unphased and the whole schedule is
+    // coloured by the fallback. Invalidating the caches (see _clearPhaseMemo) only stops the wrong
+    // answer being re-served; it repaints nothing, and the legend is not otherwise re-rendered later
+    // in load(). Owner, after (k) had been verified on a cold load: *"Legend still shows activities
+    // that are not within the execution phase."*
+    // ⚠️ Gated on the answer actually CHANGING: a full re-render costs a second on a 16k-row
+    // project, and on a cold load (or an unphased project) nothing has changed and none is needed.
+    var _scopeBefore = catScopeIsExec();
     await loadResourcesAssignments();   // loads WBS_NODES
     if (gen !== _loadGen) return;
+    if (catScopeIsExec() !== _scopeBefore) { renderActLegend(); scheduleRender(); }
     // Re-sync dotted codes to the node tree FIRST — a code that drifted after a push makes two
     // branches look like one, which the dedupe below would otherwise "fix" by deleting a live branch.
     // ⚠️ EVERY PASS BELOW CREATES ROWS, so each one is gated. Not one gate at the top: the chain

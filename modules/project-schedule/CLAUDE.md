@@ -1,3 +1,36 @@
+## The 92-entry key came back — (k) was verified on the one load that could not show it (2026-09-02m) — fmlozano
+
+Owner, on the cleared SLN101 after (l) shipped: *"Legend still shows activities that are not within
+the execution phase."* Correct, and the (k) fix was sound — what was wrong was the verification.
+
+⚠️⚠️ **`load()` PAINTS FROM THE localStorage CACHE BEFORE `wbs_nodes` HAVE BEEN FETCHED.** Bars and
+legend chips are both drawn from `catEntry()` → `catInScope()` → `phaseOf()`, and `phaseOf` resolves
+through `WBS_NODES`. On a cache-painted load that array is still **empty** at first paint, so **no row
+resolves any phase**, `catScopeIsExec()` answers false, the fallback colours everything, and
+`catList()` **memoises** the 92-entry list.
+
+Two things then kept it wrong for the rest of the session:
+- ⚠️ **`_clearPhaseMemo()` dropped `_catExecCache` but not `_catCache`.** `catList()`'s key is
+  `pid | field | rows.length | theme | keySet` — not one of which changes when the tree arrives. So
+  the stale everything-coloured list was re-served for ever.
+- ⚠️ **Invalidating caches repaints nothing**, and `load()` does not re-render the legend later. Even
+  with the cache dropped, what was already on screen stayed on screen.
+
+Fixed: `_clearPhaseMemo()` drops `_catCache` too, and `load()` answers `catScopeIsExec()` **before and
+after** `loadResourcesAssignments()`, re-rendering the legend and the bars when it flips. ⚠️ Gated on
+the answer actually changing — a full re-render costs about a second on a 16k-row project, and on a
+cold load nothing has changed.
+
+### ⚠️ THE LESSON, AND IT IS ABOUT THE TEST, NOT THE CODE
+(k) was checked live and reported **40 → 0 chips**. That check drove a **cold** load — no cached copy,
+so `WBS_NODES` were already in hand by the time the legend first rendered, and the bug is invisible on
+that path. The owner hit it immediately because a returning browser takes the **cached** path. **A
+module that paints twice — once from cache, once live — has to be verified on BOTH paints**, and this
+repo has a documented family of exactly this defect. One green live check is not coverage.
+
+- `MODULE_V` → `20260902m`.
+
+---
 ## An emptied schedule showed a 92-entry colour key (2026-09-02k) — fmlozano
 
 Owner, on the just-cleared SLN101: *"Why are there still activities and shown in the legend"* — two
