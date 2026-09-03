@@ -1,3 +1,48 @@
+## WBS→location matcher: a level lens, a live location tree, and "grouping only" (2026-09-03) — jasantos2
+
+Owner, on *Match the WBS to your location breakdown*: filter the WBS (level 1 / 2 / 3…), enlarge the
+window, add a location tree on the right — and two questions: *"Category A and Category B may be the
+same in hierarchy — will that logic be conflicting?"* and *"there are WBS that are not locations,
+they are just a grouping of activities. how do we resolve that?"*
+
+**Both questions already had answers in the data model; neither had one on screen.**
+
+- ⚠️ **The Category A case is not a conflict, and it must not be drawn as one.** Two WBS names that
+  resolve to the same value are ONE value **at that level** — the level above keeps them apart,
+  because `locSrcsAssigned` resolves deepest-first and stamps *every* level an activity sits under, so
+  `Tower A › Category A` and `Tower B › Category A` are distinguishable by their tower. The tree
+  merges them into one row with a `×2` badge and both source names in the tooltip. Flagging a clash
+  would push a planner to rename real WBS branches to work around a problem that does not exist.
+- ⚠️ **A branch that is only a grouping of activities is a first-class answer, not a rejection.** It
+  was always `— not a location —` (stored `''`, remembered per project in `ps_locexcl_<pid>`), and the
+  wording read as *this one failed to match*. It is `— grouping only (not a location) —` now, with its
+  own filter, its own bucket in the tree, and one line stating that nothing is written and the
+  decision is remembered. ⚠️ **Consequence, and it is the point:** the *Not matched* lens used to be
+  `!s.lvl`, so it counted every deliberate exclusion — a fully-decided project still read as having
+  dozens of loose ends. It is now `!s.lvl && !s.excluded`, i.e. genuinely undecided, with `grp` as its
+  own lens.
+- **The WBS-level filter needed no new data** — `locScanNames` has recorded `depth` since it was
+  written and nothing surfaced it. ⚠️ It is a **second dropdown beside the match-state one, not merged
+  into it**: the real question is *"the un-matched level-3 branches"*, a pair of conditions that one
+  list cannot express. An `L n` column was added so the filter's effect is visible in the rows.
+- **The tree is the "what will my breakdown look like" view** the table cannot be: the table says what
+  each WBS name IS, the tree says what each LEVEL will HOLD. Clicking a node is a **third, transient
+  lens** (`treeSel`) that narrows the table without touching either dropdown, so clearing it restores
+  exactly the previous view; clicking the selected node clears it. ⚠️ Its click handler is **delegated
+  on the panel**, because the tree is re-rendered on every repaint and per-node handlers would be
+  rebound on every keystroke.
+- ⚠️ **Widening needed `maxHeight` as well as `maxWidth`.** The shared `.pd-modal` caps the box at
+  85vh; the inner column asks for 86vh, so without the override the footer — Cancel and **Apply to
+  activities** — would have been clipped out of reach. Now `min(96vw,1480px)` × 92vh.
+
+**Verified: 14 checks executing the shipped `visible` / `depths` / `depthOptions` / `treeHtml` /
+`lvlOptions` / `counts` / `rowsHtml`**, sliced out of `index.html` by index and run against a fixture
+carrying the owner's own Category-A-twice shape: all four match lenses, the level filter, both tree
+lenses (level and grouping bucket), the ×2 merge, the empty-level message and the 5-cell row
+alignment. Inline script parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — no matching has been applied against a real project from this build.
+`MODULE_V` → `20260903b`.
+
 ## The Setup instructions took more space than the steps they described — and every "step N" in them was wrong (2026-09-03) — eprobles
 
 Owner: *"on the schedule setup, please make the instructions more direct and concise. the text takes

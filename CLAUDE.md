@@ -84,6 +84,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (b) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
+
+Owner, off a screenshot of *Match the WBS to your location breakdown*: filter by WBS level, use the
+space, put a location tree on the right — plus two questions worth answering in the UI rather than in
+chat. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **A WBS-level lens, separate from the match-state lens.** `locScanNames` already recorded each
+  name's depth and nothing surfaced it; there is now a `WBS level N (count)` dropdown and an `L n`
+  column. ⚠️ **Two controls, not one merged list** — *"show me the un-matched level-3 branches"* is
+  the question a planner asks, and a single dropdown cannot express a pair.
+- **The window uses the room it has** — `min(96vw,1480px)` × 92vh. ⚠️ `maxHeight` had to be overridden
+  too: the shared `.pd-modal` caps at 85vh, so an 86vh inner column would have been clipped by it and
+  the footer buttons pushed out of reach.
+- **A live location tree on the right**, level by level, showing what each level will HOLD once
+  applied — the table says what each WBS name *is*, the tree says what the breakdown *becomes*.
+  Clicking a level (or the Grouping-only bucket) narrows the table as a third, transient lens that
+  leaves the two dropdowns alone, so clearing it restores exactly what was on screen.
+- ⚠️ **"Category A under Tower A and Category A under Tower B" is NOT a conflict — answered in the
+  UI.** Two WBS names resolving to the same value render merged with a `×2` badge and both names in
+  the tooltip. They are one value *at that level*; the level ABOVE keeps them apart, because
+  deepest-wins resolution stamps every level an activity sits under. Showing them as a clash would
+  invent a problem and invite a planner to rename real data to dodge it.
+- ⚠️ **"Some WBS are not locations, just a grouping of activities" — that answer already existed and
+  was named as a rejection.** `— not a location —` is now **`— grouping only (not a location) —`**,
+  with its own filter, its own bucket in the tree and a line saying nothing is written for it and the
+  decision is remembered. Same stored value (`''`) and the same per-project memory as before —
+  ⚠️ so the *"Not matched"* lens now means genuinely undecided (it used to include every deliberate
+  exclusion, which is what made a finished project still read as unfinished).
+
+**Verified: 14 checks executing the shipped `visible` / `depths` / `treeHtml` / `lvlOptions` /
+`counts` / `rowsHtml`** (sliced out of the file, never reimplemented) against a fixture carrying the
+owner's own Category-A-twice case — each lens, the level filter, both tree lenses, the merge badge and
+the header/row cell alignment. Inline script parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — no live matching has been applied against a real project.
+`MODULE_V` → `20260903b`.
+
 ### 2026-09-02 (b) — Minutes of Meeting, corrected spec: the shared files, and a tabs-dropdown rollout
 
 The owner's follow-up ("some of my prompts were not captured") replaced the 10-item list
