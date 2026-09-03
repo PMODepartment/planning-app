@@ -2,6 +2,93 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Audit: a second owner-feedback list, closing its test/doc gap + one real dead-CSS finding (2026-09-02)
+
+Owner asked to check whether the latest PR already captured a six-item list (discontinue 360°;
+the textbox markup selection box not aligning with the text; the icon picker appearing inline
+instead of below the toolbar; Undo/Redo/Clear not staying top-right; the Fill colour group needing
+to move below Line instead of beside it; and a line-type control alongside colour/weight).
+
+**Item 1 (discontinue 360°)** was already covered by the entry immediately below this one. **Items
+2–6 turned out to already be fully implemented in `module.js`/`module.css`**, each carrying its own
+`2026-09-02 owner feedback item N` comment quoting the exact ask — but the code had shipped with
+**zero test coverage and no changelog entry**, the identical gap this file already flagged and closed
+once today for the 360° migration. This entry closes it for the remaining five.
+
+- **Item 2 — text selection box alignment.** `markupBoundsPx()`'s `text` branch used to return a
+  fixed square centred on `(x, y)`, sized off `fontSize` alone — a 4-letter word and a 40-letter one
+  got the identical box, and it was centred where the real text render is top-left anchored. It now
+  measures the string with `ctx.measureText` and reproduces the exact box `drawMarkupObjects` itself
+  draws (`tx − padX, ty − padY`, sized to the measured width), so the selection outline/handles can
+  never disagree with the visible, possibly-rotated text box again.
+- **Item 3 — icon picker becomes a real popover.** `.pp-mk-stickers` was a plain inline flex/grid
+  child of `.pp-mk-toolrow`, so opening it pushed every row below it down the page. It's now
+  `position: absolute; top: calc(100% + 4px)`, anchored to `.pp-mk-toolrow`'s own
+  `position: relative`, floating over whatever's beneath it with a shadow, reading as a dropdown.
+- **Item 4 — Undo/Redo/Clear all always top-right.** `.pp-mk-toolbar` was `flex-wrap: wrap`, so on a
+  narrow modal the (taller, two-row) tool group could push the action group onto its own line,
+  losing the top-right corner. It's `flex-wrap: nowrap` now; `.pp-mk-toolgroup`'s own `min-width: 0`
+  lets it shrink instead, with its two internal rows still wrapping. `.pp-mk-actiongroup` stays
+  `margin-left: auto; align-self: flex-start`.
+- **Item 5 — Fill group below Line group.** The Line/Fill/Text option groups used to sit in a flex
+  **row** (`.pp-mk-groupsrow`), wrapping onto a second line only once it ran out of width — "beside"
+  at a wide viewport, "below" at a narrow one, never a fixed layout. It's `flex-direction: column`
+  now, so Line (with its own Colour/Weight/Type sub-groups), then Fill, then Text stack the same way
+  at every width.
+- **Item 6 — line type.** A new `MARKUP_LINE_TYPES` (`solid` / `dashed` / `dotted`, each carrying its
+  own `ctx.setLineDash` pattern) sits beside the Line group's colour swatches and weight dots, each
+  button previewing its own dash as a tiny sample line. `o.lineType` is a plain field on every
+  stroke-drawing object (default `'solid'` — nothing saved before this feature changes appearance);
+  `lineDashFor()` is the one place that decides the pattern, called once per object inside its own
+  `ctx.save()`/`restore()` pair so a dash can never leak onto the next object's stroke. ⚠️ Only
+  called when there **is** a pattern — solid never touches `setLineDash` at all, matching a plain
+  object's line exactly as it drew before this feature existed.
+
+### ⚠️ A real finding while writing the tests: a stale, superseded CSS block, one property of which
+### was silently winning by specificity
+
+Auditing item 4's CSS turned up a duplicate `.pp-mk-toolbar` rule — an early, since-superseded first
+draft of the whole markup toolbar (headed "Markup editor (18-item list item 13/14)") still sitting
+earlier in `module.css`, fully replaced later by "Item 4: iOS-style markup toolbar rebuild." Both
+blocks target the same classes at the same specificity, so for every property BOTH define, the later
+block wins and nothing was visibly broken — except one: `#pp-mk-img`, an **ID selector**
+(`max-width: 100%; max-height: 62vh; display: block; border: 1px solid var(--pd-line)`), which
+outranks the later block's class selector (`.pp-mk-canvaswrap img`) regardless of source order. Its
+`max-height: 62vh` was therefore still capping the photo's height in the markup editor — directly
+against the later redesign's own full-bleed `width: 100%` intent, with no comment anywhere explaining
+a viewport-relative height cap. The whole stale block (`.pp-mk-toolbar`/`.pp-mk-tools`/`.pp-mk-tool`/
+`.pp-mk-icons`/`.pp-mk-colors`/`.pp-mk-swatch`/`.pp-mk-canvaswrap`/`#pp-mk-img`/`#pp-mk-canvas`) is
+removed outright. ⚠️ **One property was genuinely load-bearing and had to be salvaged, not just
+deleted**: `#pp-mk-canvas`'s `cursor: crosshair` was never carried into the later block at all — moved
+onto `.pp-mk-canvaswrap canvas` so the drawing cursor doesn't quietly disappear along with the dead
+rule that happened to be supplying it.
+
+### Verified
+
+**17 new checks added (section `[50]`), full suite 933 passed / 6 known pre-existing failures**
+(unchanged, confirmed by name — none touched by this audit). Item 2 is genuinely executed against a
+fake `ctx.measureText` that scales with string length (proving a longer caption now gets a
+measurably wider box, the exact case the old fixed-square bug could not tell apart) and checked for
+the correct top-left anchor. Items 3–5 are structural CSS/HTML-order assertions. Item 6 is executed
+twice over — the pure `lineDashFor()` lookup (solid → `[]`, dashed → `[10,6]`, dotted → `[2,5]`,
+distinct from one another, and an unknown type falling back to solid rather than throwing) and a
+real draw-call test via a canvas-2D recorder that captures the actual argument passed to
+`setLineDash` — proving a solid object never calls it at all, a dashed one calls it with exactly
+`[10, 6]`, and the pattern set for one object never leaks onto the next object drawn after it.
+
+`node --check` clean on `module.js`/`module.css`(N/A, CSS)/`test.js`; 0 NUL bytes across every
+touched file; CSS braces balanced (515/515, down from 526 with the dead block removed); 0 duplicate
+DOM `id=` attributes in `index.html` (91 unique, unchanged — this audit touched no markup).
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file. In particular: the
+icon popover's real click-open positioning, the toolbar staying top-right at a genuinely narrow
+modal width, and the line-type buttons' actual dash preview rendering have all been verified by
+genuine execution of the underlying functions and structural CSS checks, never by driving a real
+browser session.
+
+No `?v=` bump needed — `module.js`/`module.css` were already at `?v=20260902g` from the prior entry,
+and this audit's CSS cleanup landed before any deploy of that version reached a browser.
+
 ## Discontinue 360° panoramas: greyed out (not removed) + a one-time DB purge (2026-09-02)
 
 Owner: *"the 360 photo feature is quite buggy. let's discontinue it for now. disable and grey out

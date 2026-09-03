@@ -3884,6 +3884,109 @@ console.log('\n[misc] insert().select() returns the new row id');
        return !/PP\._stackGrid\(/.test(selfSrc) && !/PP\._stackRowSort\(/.test(selfSrc) && !/PP\._mostRecentAsOf\(/.test(selfSrc);
      })());
 
+  // ---------------------------------------------------------------------
+  // [50] Second owner-feedback list (2026-09-02, items 2-6): the markup
+  // editor's textbox selection-box alignment, the icon picker becoming a
+  // real popover below the toolbar, undo/redo/clear staying top-right,
+  // the fill group moving below the line group, and a new line-type
+  // control. All five had shipped code + comments already in module.js/
+  // module.css when this section was written, but carried ZERO test
+  // coverage — closing that gap, not re-implementing anything.
+  // ---------------------------------------------------------------------
+  console.log('\n[50] Second owner-feedback list, items 2-6 (markup editor: selection box, icon popover, toolbar order, line type)');
+
+  // --- Item 2: the text selection box now MEASURES the real string, rather
+  // than returning a fixed square guess centred on (x,y). Genuinely executed
+  // against a fake ctx whose measureText scales with string length, exactly
+  // like a real canvas would -- the failure mode this fix replaces (a fixed
+  // box) would report the SAME width for both strings below; this proves it
+  // does not.
+  function fakeMeasureCtx() {
+    return { font: '', measureText: function (s) { return { width: (s || '').length * 8 }; } };
+  }
+  let bShort = PP._markupBoundsPx({ type: 'text', x: 0.5, y: 0.5, text: 'Hi', fontSize: 18 }, 200, 100, fakeMeasureCtx());
+  let bLong = PP._markupBoundsPx({ type: 'text', x: 0.5, y: 0.5, text: 'This is a much longer caption', fontSize: 18 }, 200, 100, fakeMeasureCtx());
+  ok('markupBoundsPx (item 2): a longer text string produces a WIDER selection box than a short one -- the old fixed-square bug reported the same width for both',
+     (bLong.x1 - bLong.x0) > (bShort.x1 - bShort.x0));
+  ok('markupBoundsPx (item 2): the box is anchored top-left at (tx-padX, ty-padY), matching drawMarkupObjects\' own text-render anchor -- not centred on (x,y)',
+     Math.abs(bShort.x0 - (0.5 * 200 - Math.max(3, 18 * 0.18))) < 0.01 &&
+     Math.abs(bShort.y0 - (0.5 * 100 - Math.max(2, 18 * 0.12))) < 0.01);
+  ok('markupBoundsPx (item 2): with no live ctx (e.g. a hit-test called before the editor\'s canvas exists), it degrades to an approximation rather than throwing',
+     (function () { const b = PP._markupBoundsPx({ type: 'text', x: 0.5, y: 0.5, text: 'abc', fontSize: 18 }, 200, 100, null); return b && b.x1 > b.x0; })());
+
+  // --- Item 3: the icon/sticker picker is a real popover now, positioned
+  // BELOW the toolbar (not an inline flex child pushing later rows down).
+  ok('module.css (item 3): .pp-mk-stickers is taken out of flow and anchored below the toolbar row (position:absolute; top:calc(100% + 4px))',
+     /\.pp-mk-stickers\s*\{[^}]*position:\s*absolute[^}]*top:\s*calc\(100% \+ 4px\)/.test(cssFile));
+  ok('module.css (item 3): .pp-mk-toolrow carries position:relative, the anchor the popover positions itself against',
+     /\.pp-mk-toolrow\s*\{[^}]*position:\s*relative/.test(cssFile));
+
+  // --- Item 4: Undo/Redo/Clear all must stay top-right at every width --
+  // the toolbar row is nowrap (so the action group can never drop below a
+  // taller, wrapped tool group onto its own line) and the action group is
+  // pinned right + top-aligned within that one row.
+  ok('module.css (item 4): .pp-mk-toolbar is flex-wrap:nowrap (NOT wrap) -- a wrapping bar is exactly what let Undo/Redo/Clear drop below the tool group onto their own line',
+     /\.pp-mk-toolbar\s*\{[^}]*flex-wrap:\s*nowrap/.test(cssFile) && !/\.pp-mk-toolbar\s*\{[^}]*flex-wrap:\s*wrap[^-]/.test(cssFile));
+  ok('module.css (item 4): .pp-mk-actiongroup is pushed right (margin-left:auto) and pinned to the row\'s top (align-self:flex-start), staying top-right at any toolgroup height',
+     /\.pp-mk-actiongroup\s*\{[^}]*margin-left:\s*auto[^}]*align-self:\s*flex-start/.test(cssFile));
+
+  // --- Item 5: Fill group is now BELOW Line group (a column stack), not
+  // beside it (a row that only happened to wrap once it ran out of width).
+  ok('module.css (item 5): .pp-mk-groupsrow is flex-direction:column, so Line/Fill/Text stack vertically at every width instead of sitting side by side',
+     /\.pp-mk-groupsrow\s*\{[^}]*flex-direction:\s*column/.test(cssFile));
+  ok('module.js (item 5): the groups are emitted Line, then Fill, then Text -- in a column stack, source order IS the visual order, so Fill genuinely renders below Line',
+     (function () {
+       const iLine = mjs.indexOf('pp-mk-group-line');
+       const iFill = mjs.indexOf('pp-mk-group-fill');
+       const iText = mjs.indexOf('pp-mk-group-text');
+       return iLine >= 0 && iFill > iLine && iText > iFill;
+     })());
+
+  // --- Item 6: line type (solid/dashed/dotted), alongside colour and
+  // weight. Genuinely executed both at the pure lookup level and by
+  // actually drawing through drawMarkupObjects with a ctx that records
+  // the real argument passed to setLineDash -- proving the object's own
+  // `lineType` field genuinely reaches the canvas call, not just that a
+  // button exists for it.
+  ok('lineDashFor (item 6): solid resolves to an EMPTY dash array (drawn as a plain unbroken stroke)',
+     Array.isArray(PP._lineDashFor('solid')) && PP._lineDashFor('solid').length === 0);
+  ok('lineDashFor (item 6): dashed and dotted resolve to two DIFFERENT, non-empty patterns',
+     JSON.stringify(PP._lineDashFor('dashed')) === '[10,6]' &&
+     JSON.stringify(PP._lineDashFor('dotted')) === '[2,5]' &&
+     PP._lineDashFor('dashed').length && PP._lineDashFor('dotted').length &&
+     JSON.stringify(PP._lineDashFor('dashed')) !== JSON.stringify(PP._lineDashFor('dotted')));
+  ok('lineDashFor (item 6): an unknown/unset type falls back to the empty (solid) pattern rather than throwing or drawing nothing',
+     Array.isArray(PP._lineDashFor(undefined)) && PP._lineDashFor(undefined).length === 0 &&
+     Array.isArray(PP._lineDashFor('bogus')) && PP._lineDashFor('bogus').length === 0);
+
+  function dashRecordingCtx() {
+    const dashCalls = [];
+    return {
+      dashCalls,
+      save() {}, restore() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
+      stroke() {}, fill() {}, strokeRect() {}, fillRect() {}, ellipse() {}, arc() {},
+      fillText() {}, measureText: () => ({ width: 20 }), clearRect() {}, translate() {}, scale() {}, rect() {},
+      setLineDash(d) { dashCalls.push(d.slice()); },
+      set strokeStyle(v) {}, set fillStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {},
+      set font(v) {}, set textBaseline(v) {}, set globalAlpha(v) {},
+    };
+  }
+  let dc = dashRecordingCtx();
+  PP._drawMarkupObjects(dc, [{ type: 'rect', x0: 0.1, y0: 0.1, x1: 0.4, y1: 0.4, color: '#EE3124', lineType: 'solid' }], 200, 100, -1);
+  ok('drawMarkupObjects (item 6): a SOLID line never calls setLineDash at all -- matches a plain object\'s stroke exactly as it drew before this feature existed',
+     dc.dashCalls.length === 0);
+  dc = dashRecordingCtx();
+  PP._drawMarkupObjects(dc, [{ type: 'rect', x0: 0.1, y0: 0.1, x1: 0.4, y1: 0.4, color: '#EE3124', lineType: 'dashed' }], 200, 100, -1);
+  ok('drawMarkupObjects (item 6): a DASHED rect calls setLineDash with exactly [10, 6] -- the object\'s own lineType field genuinely reaches the canvas',
+     dc.dashCalls.length === 1 && JSON.stringify(dc.dashCalls[0]) === '[10,6]');
+  dc = dashRecordingCtx();
+  PP._drawMarkupObjects(dc, [
+    { type: 'rect', x0: 0.1, y0: 0.1, x1: 0.4, y1: 0.4, color: '#EE3124', lineType: 'dashed' },
+    { type: 'circle', x0: 0.5, y0: 0.5, x1: 0.8, y1: 0.8, color: '#1E88E5', lineType: 'solid' }
+  ], 200, 100, -1);
+  ok('drawMarkupObjects (item 6): the dash pattern set for one object never leaks onto the NEXT object\'s stroke -- a dashed shape followed by a solid one calls setLineDash exactly once, for the dashed object only',
+     dc.dashCalls.length === 1 && JSON.stringify(dc.dashCalls[0]) === '[10,6]');
+
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
 })();

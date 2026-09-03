@@ -552,24 +552,23 @@
 
 /* ---- Markup editor (18-item list item 13/14) ------------------------------
    A vector annotation layer over an <img>: toolbar (shape/pen/eraser/icon
-   tools + colour swatches) above a canvas overlaying the photo 1:1. */
-.pp-mk-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
-.pp-mk-tools { display: flex; gap: 4px; flex-wrap: wrap; }
-.pp-mk-tool {
-  padding: 6px 10px; font-size: 12.5px; cursor: pointer;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 3px; color: var(--pd-ink);
-}
-.pp-mk-tool.active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
-.pp-mk-icons { display: flex; gap: 4px; flex-wrap: wrap; }
-.pp-mk-colors { display: flex; gap: 5px; }
-.pp-mk-swatch {
-  width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
-  border: 2px solid transparent; padding: 0;
-}
-.pp-mk-swatch.active { border-color: var(--pd-ink); box-shadow: 0 0 0 1px var(--pd-card); }
-.pp-mk-canvaswrap { position: relative; max-width: 100%; line-height: 0; }
-#pp-mk-img { max-width: 100%; max-height: 62vh; display: block; border: 1px solid var(--pd-line); }
-#pp-mk-canvas { position: absolute; top: 0; left: 0; cursor: crosshair; touch-action: none; }
+   tools + colour swatches) above a canvas overlaying the photo 1:1.
+   ⚠️ Found while adding test coverage for the 2026-09-02 owner-feedback list
+   (item 4, "undo/redo/clear always top-right"): this whole block was a STALE
+   FIRST DRAFT, fully superseded by "Item 4: iOS-style markup toolbar rebuild"
+   further down this file (.pp-mk-toolbar/.pp-mk-tools/.pp-mk-tool/.pp-mk-icons/
+   .pp-mk-colors/.pp-mk-swatch/.pp-mk-canvaswrap are all redefined there) — but
+   because both blocks target the SAME classes at the SAME specificity, the two
+   could only ever disagree by which one happens to load last, and one genuine
+   behavioural leftover slipped through that way: `#pp-mk-img`'s ID selector
+   (higher specificity than the later block's `.pp-mk-canvaswrap img`) was
+   still capping the photo at `max-height: 62vh` — directly against the later
+   redesign's own full-bleed `width: 100%` intent, with no comment anywhere
+   explaining why an image would want a viewport-relative height cap. Removed
+   outright rather than left to keep silently overriding a design nobody
+   documented choosing. Its one genuinely load-bearing declaration —
+   `cursor: crosshair` on the canvas, which the later block never carried
+   forward — is preserved on `.pp-mk-canvaswrap canvas` below instead. */
 
 /* ---- Modals -------------------------------------------------------------- */
 .pp-form { padding: 4px 0; }
@@ -1550,7 +1549,7 @@
 }
 .pp-mk-canvaswrap { position: relative; max-width: 100%; touch-action: none; }
 .pp-mk-canvaswrap img { width: 100%; display: block; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
-.pp-mk-canvaswrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.pp-mk-canvaswrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 /* Fifth round item 5: real on-canvas typing, replacing the browser prompt().
    Positioned/sized by openTextEditAt() in module.js; a plain outline (no
    solid fill of its own — the object's OWN fill, if any, is set as this
