@@ -76,6 +76,24 @@
 .il-form-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .il-form-row > .pd-field { flex: 1 1 160px; }
 
+/* ---- Add Meeting form (round 2): named sections + guaranteed row
+   alignment ------------------------------------------------------------- */
+/* Item 6: Details / Schedule / Venue / Attendees / Agenda, the same weight
+   as the Detail view's own section headings (item 2 there). */
+.il-am-form .il-mom-sechead:not(:first-child) { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--pd-line); }
+/* Items 2+3: every label in this form reserves the SAME vertical space —
+   two lines' worth at this font-size — whether its own text needs one line
+   or wraps to two, and whether a field has real label text at all (the
+   star/recurring fields use an empty "ghost" label — amGhostLabel() above —
+   to reserve the identical space). That is what makes every input/control
+   in a row start on the same Y, rather than depending on no label ever
+   wrapping at whatever width the modal happens to be. */
+.il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 26px; line-height: 13px; }
+.il-am-checklabel {
+  display: flex; align-items: center; gap: 6px; font-weight: 400;
+  height: 34px; font-size: 13px; color: var(--pd-ink);
+}
+
 /* ============================================================================
    BROWSE — the List / Calendar top-level views (new: "the minutes module
    should include a list of all meetings … in list view and calendar view").
@@ -114,11 +132,36 @@
    Monday-first month grid, matching the Portfolio Overview milestones calendar
    convention already established in this suite. */
 .il-mom-cal { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius); padding: 12px; }
-.il-mom-calnav { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.il-mom-calmonth { font-weight: 600; font-size: 14px; min-width: 140px; }
-.il-mom-caltoday { margin-left: auto; }
+/* ROUND 2, CALENDAR ITEMS 1-4 — one shared header for Month and Week
+   (momCalHeaderHTML), three equal zones so the middle (prev/label/next) is
+   genuinely centred: Today (left) · ‹ label › (middle) · Month/Week switcher
+   (right). Item 4: a background fill gives the whole bar contrast against
+   the plain card behind it. */
+.il-mom-calnav {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  padding: 8px 10px; border-radius: 8px; background: var(--pd-bg);
+}
+.il-mom-calnav-l, .il-mom-calnav-r { flex: 1 1 0; min-width: 0; }
+.il-mom-calnav-r { display: flex; justify-content: flex-end; }
+.il-mom-calnavmid { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.il-mom-calmonth { font-weight: 600; font-size: 14px; min-width: 140px; text-align: center; }
+/* Today, styled as the same kind of pill button as the Month/Week switcher's
+   own segments — "use the same label/button format for both." */
+.il-mom-todaybtn {
+  border: 1px solid var(--pd-line); border-radius: 8px; background: var(--pd-card); color: var(--pd-muted);
+  font: 600 12px/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
+}
+.il-mom-todaybtn:hover { background: var(--pd-card); border-color: var(--pd-red-mid); color: var(--pd-red); }
 .il-mom-calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.il-mom-calhead { margin-bottom: 4px; font-size: 11px; font-weight: 600; color: var(--pd-muted); text-align: center; text-transform: uppercase; letter-spacing: .04em; }
+/* Item 4 — background colour on the day-of-week columns too, not just the
+   nav bar, so the header reads as one deliberately coloured band rather
+   than plain text sitting over the grid. */
+.il-mom-calhead { margin-bottom: 4px; }
+.il-mom-calhead > div {
+  font-size: 11px; font-weight: 600; color: var(--pd-red); text-align: center;
+  text-transform: uppercase; letter-spacing: .04em;
+  background: var(--pd-red-light); border-radius: 6px; padding: 5px 0;
+}
 .il-mom-calcell {
   min-height: 84px; border: 1px solid var(--pd-line); border-radius: 6px;
   padding: 4px; background: var(--pd-bg); display: flex; flex-direction: column; gap: 2px;
@@ -140,7 +183,13 @@
   .il-mom-calgrid { grid-template-columns: repeat(7, minmax(38px, 1fr)); gap: 2px; }
   .il-mom-calcell { min-height: 50px; padding: 2px; }
   .il-mom-calchip { font-size: 9px; }
-  .il-viewtoggle button, .il-mom-lrow { min-height: 44px; }
+  .il-viewtoggle button, .il-mom-lrow, .il-mom-todaybtn { min-height: 44px; }
+  /* The three-zone nav bar wraps to two rows rather than clipping — Today +
+     the switcher share the first row, prev/label/next take the full second
+     row, since the label needs the room a phone's width can't spare beside
+     the other two. */
+  .il-mom-calnav { flex-wrap: wrap; }
+  .il-mom-calnavmid { order: 3; flex: 1 1 100%; justify-content: center; }
 }
 
 /* ---- Favorite star (items 3/4) + Recurring pill ---------------------------
@@ -154,21 +203,93 @@
 }
 .il-mom-favbtn:hover { color: var(--pd-warn, #C77700); }
 .il-mom-favbtn.on { color: #D4A017; }
-/* The same star, but as a labelled pd-btn (Detail toolbar / series page —
-   "★ Favorited" / "☆ Favorite" text, not the bare glyph the list row uses). */
+/* The series page's own labelled pd-btn copy ("★ Favorited" / "☆ Favorite"
+   text) — the Detail toolbar's own star is icon-only now, see .il-mom-favbig
+   below. */
 button.il-mom-favbtn { font-size: 12px; }
 button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
+/* Individual View item 5 (round 2, owner: "remove the favorite label
+   entirely, just make the star icon larger") — the Detail toolbar's star,
+   icon-only, no text, no button chrome, bigger than the list row's bare
+   glyph. Reused verbatim for the sticky header's own copy on a recurring
+   occurrence, below. */
+.il-mom-favbig {
+  border: 0; background: transparent; padding: 0 4px; font-size: 22px;
+  line-height: 1; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+}
+.il-mom-favbig:hover { color: var(--pd-warn, #C77700); }
+.il-mom-favbig.on { color: #D4A017; }
+/* Item 5 — "if the meeting is recurring, the meeting title and favorite
+   button should be fixed/sticky." Sticks to the top of whatever scrolls the
+   detail card (the page itself, since the card carries no overflow of its
+   own) so both stay visible while scrolling through a long occurrence's
+   minutes. Only rendered for a meeting that is an occurrence of a recurring
+   series (schedule_id set) — see isRecurOcc in momDetailHTML. */
+.il-mom-stickyhead {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px;
+  margin: -14px -16px 12px; padding: 10px 16px;
+  background: var(--pd-card); border-bottom: 1px solid var(--pd-line);
+}
+.il-mom-stickytitle { font-size: 15px; font-weight: 600; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .il-mom-recur {
   display: inline-block; font-size: 9px; font-weight: 600; letter-spacing: .06em;
   padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
   border: 1px solid var(--pd-line);
 }
+/* Add-meeting modal's star (round 2, owner: "remove the Favorite label AND
+   the rectangular button — just show a plain star"). ⚠️ NO border, NO
+   background, NO radius here — the earlier pass had drawn a bordered 34px
+   box around the glyph, which is exactly the button chrome being removed.
+   Sized to the same 34px row height as the inputs beside it (via the ghost
+   label above it reserving the same space a real label would) so the star
+   still lines up with the title input, just as a bare icon. */
+.il-am-favfield { display: flex; flex-direction: column; }
+.il-am-favfield .il-mom-favbtn {
+  height: 34px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 22px; border: 0; background: transparent; padding: 0 4px;
+}
+.il-am-favfield .il-mom-favbtn.on { color: #D4A017; }
 
-/* ---- Icon-only List/Calendar toggle (item 2, topbar) ----------------------
+/* ---- Icon-only toolbar buttons + icon dropdown (individual-view item 3,
+   list item 2, 2026-09-03) — a `<select>`/text `<button>` reduced to just its
+   icon, with a small popover menu standing in for the select's options. */
+.il-mom-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+}
+.il-icondd { position: relative; display: inline-flex; }
+.il-icondd-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+}
+/* ⚠️⚠️ Meetings List item 1 (owner report, screenshot): the export dropdown
+   rendered OPEN by default. Root cause: `menu.hidden = was` (wireIconMenu)
+   toggles the DOM `hidden` ATTRIBUTE, but this rule set `display:flex`
+   unconditionally on the plain `.il-icondd-menu` CLASS selector — same
+   (0,1,0) specificity as the browser's own built-in `[hidden]{display:none}`
+   rule, and an author rule of equal specificity always beats the user-agent
+   default. So the menu was flex-visible regardless of `hidden`, and only
+   ever *looked* closed if nothing had rendered a menu instance yet. Scoped
+   with `:not([hidden])` so the attribute — the only thing JS actually
+   flips — is what decides visibility again. */
+.il-icondd-menu:not([hidden]) {
+  position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; min-width: 150px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: 0 6px 18px rgba(0,0,0,.14);
+}
+.il-icondd-item {
+  border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 6px;
+  font-size: 13px; color: var(--pd-ink); cursor: pointer;
+}
+.il-icondd-item:hover { background: var(--pd-bg); color: var(--pd-red); }
+
+/* ---- Icon-only List/Calendar toggle --------------------------------------
    Reuses .il-viewtoggle's chrome (border/radius) but square icon buttons
-   instead of labelled text, since this lives in the tool cluster beside the
-   theme toggle/avatar, not inside the content area. */
-.il-topbar-tools .il-viewtoggle { height: 34px; }
+   instead of labelled text. Item 6 (2026-09-03) moved the toggle itself out
+   of the topbar tool cluster into the meetings list's own filter bar
+   (#il-mom-viewtoggle in momBrowseFilterBarHTML) — this styling is unchanged,
+   only where the markup lives moved. */
 .il-vt-btn {
   border: 0; background: var(--pd-card); color: var(--pd-muted);
   width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
@@ -243,6 +364,14 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 }
 .il-mom-agdel:hover { color: var(--pd-red); border-color: var(--pd-red); }
 
+/* ---- Email modal (Individual View item 1, round 2) ------------------------
+   Recipients / title / message + which files to attach, before anything
+   downloads or the mail client opens. */
+.il-em-chk { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 400; margin-bottom: 6px; color: var(--pd-ink); }
+.il-em-chk input { width: auto; }
+#il-em-datewrap { margin-top: -4px; padding: 8px 10px; border: 1px dashed var(--pd-line); border-radius: 8px; }
+#il-em-datewrap .il-em-chk { margin-bottom: 4px; }
+
 /* ---- Back-to-meetings (Detail view) --------------------------------------- */
 .il-mom-back {
   background: transparent; border-color: transparent; padding: 0 0 10px; height: auto;
@@ -268,7 +397,20 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
    mirrors mom-app's own layout — the same structure momDownloadPDF() renders —
    so the screen and the export stay one document. */
 .il-mi-cards { display: flex; flex-direction: column; gap: 10px; }
-.il-mi-card { border: 1px solid var(--pd-line); border-radius: 10px; padding: 12px; background: var(--pd-card); }
+.il-mi-card { position: relative; border: 1px solid var(--pd-line); border-radius: 10px; padding: 12px; background: var(--pd-card); }
+/* Individual View item 3 (round 2) — manual drag-to-reorder, replacing the
+   removed "sort by" control. A card wireMinuteDrag() can actually pick up
+   makes room for a small grip glyph at its top-left; the drag itself is
+   plain HTML5 drag events (module.js), this is only the affordance + the
+   two feedback states while one is in flight. */
+.il-mi-card[draggable="true"] { padding-left: 26px; cursor: grab; }
+.il-mi-draghandle {
+  position: absolute; left: 6px; top: 12px; width: 16px; text-align: center;
+  font-size: 13px; line-height: 1; color: var(--pd-muted); cursor: grab; user-select: none;
+}
+.il-mi-card.is-dragging { opacity: .45; }
+.il-mi-card.drop-before { box-shadow: inset 0 3px 0 0 var(--pd-red); }
+.il-mi-card.drop-after { box-shadow: inset 0 -3px 0 0 var(--pd-red); }
 
 .il-mi-meta { display: grid; gap: 8px; margin-bottom: 8px; grid-template-columns: repeat(2, 1fr); }
 @media (min-width: 700px)  { .il-mi-meta { grid-template-columns: repeat(3, 1fr); } }
@@ -335,7 +477,10 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 .il-mom-by { margin: 2px 0 12px; }
 .il-mom-detail-card :disabled { background: var(--pd-bg); opacity: 1; cursor: default; }
 
-@media (max-width: 820px) { .il-mom-detail-card { padding: 12px; } }
+@media (max-width: 820px) {
+  .il-mom-detail-card { padding: 12px; }
+  .il-mom-stickyhead { margin: -12px -12px 12px; padding: 10px 12px; }
+}
 
 .il-mom-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 
@@ -388,6 +533,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
    gates are still canEditMinute() + RLS, exactly as before. */
 .il-mom-report .il-mi-card { padding: 16px 18px; }
 .il-mom-report .il-mom-detail-card { padding: 18px 20px; }
+.il-mom-report .il-mom-stickyhead { margin: -18px -20px 12px; padding: 10px 20px; }
 .il-mom-report .il-mi-foot { border-top-style: solid; }
 /* One slide fills the card, so the list chrome around the minutes would repeat
    above every single one of them. */
@@ -396,27 +542,54 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 .il-mom-slides .il-mom-filters,
 .il-mom-slides .il-mom-addrow { display: none !important; }
 .il-mom-slides .il-mi-cards { gap: 0; }
+/* ROUND 2, ITEM 9 — "a gray box rendering at the bottom of the presentation
+   view." That is `.il-mi-hist`'s own boxed background (`.il-history-i`) —
+   the per-minute update log, always on in the ordinary editor (item 7 of the
+   2026-09-02 rehaul: "the history is always on screen") but pure internal
+   audit trail nobody presenting minutes to a room wants to show. Hidden only
+   while actually presenting; the editor keeps it. */
+.il-mom-slides .il-mi-hist { display: none !important; }
 
+/* ROUND 2, ITEMS 7-8 — the switcher (M / A / 1 / 2 / 3…) sits on the left,
+   Prev/Next are grouped TOGETHER on the right (were flanking the switcher,
+   one arrow each end). The slide's full name + "Slide N of M" caption line
+   is GONE — the labelled switcher already names which slide is current, so
+   a second line repeating it was redundant. */
 .il-mom-slidenav {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 8px 10px; margin-bottom: 12px;
+  padding: 10px 12px; margin-bottom: 12px;
   border: 1px solid var(--pd-line); border-radius: 10px; background: var(--pd-bg);
 }
-.il-mom-slidename { flex: 1 1 160px; min-width: 0; font-size: 13.5px; font-weight: 600;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.il-mom-slidename span { display: block; font-size: 11px; font-weight: 400; color: var(--pd-muted); }
-.il-mom-slidedots { display: flex; gap: 5px; flex-wrap: wrap; }
-.il-mom-slidedot {
-  width: 9px; height: 9px; padding: 0; border-radius: 50%; cursor: pointer;
-  border: 1px solid var(--pd-line); background: var(--pd-card);
+.il-mom-slidebar { display: flex; align-items: center; gap: 8px; }
+.il-mom-slidearrows { flex: 0 0 auto; display: flex; gap: 4px; margin-left: auto; }
+.il-mom-slidearrow {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
 }
-.il-mom-slidedot.on { background: var(--pd-red); border-color: var(--pd-red); }
-.il-mom-slidedot:hover { border-color: var(--pd-red-mid); }
-/* A slide gets the whole card's width and a little breathing room, so a deck
-   reads as a deck rather than as the form with most of it hidden. */
-.il-mom-slides .il-slide { padding: 4px 0 2px; }
+.il-mom-slidedots { display: flex; gap: 5px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
+.il-mom-slidedot {
+  min-width: 26px; height: 26px; padding: 0 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--pd-line); background: var(--pd-card);
+  font-size: 12px; font-weight: 700; color: var(--pd-ink);
+}
+.il-mom-slidedot.on { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
+.il-mom-slidedot:hover:not(.on) { border-color: var(--pd-red-mid); }
+/* Reporting View item 1 (2026-09-03) — real padding per slide. ⚠️ The old
+   blanket `.il-mom-slides .il-slide { padding: 4px 0 2px }` had the same
+   (0,2,0) specificity as, and came LATER in the file than, the
+   `.il-mom-report .il-mi-card` padding above — so it silently won and undid
+   that card's own 16px/18px the whole time reporting view has existed. A
+   minute-card slide now keeps that padding untouched; the Meeting-details /
+   Agenda slides (plain divs with none of their own) get it set here instead. */
+.il-mom-slides #il-mom-slide-details.il-slide,
+.il-mom-slides #il-mom-slide-agenda.il-slide { padding: 18px 20px; }
 
 /* --- The meeting's own agenda (module item 4) ------------------------------ */
+/* Individual View item 2 — three named sections (Meeting details / Agenda /
+   Minutes). Same weight as the Agenda/Minutes headings below it, so the card
+   reads as one system rather than a first section styled differently from
+   the two that follow it. */
+.il-mom-sechead { margin: 0 0 8px; font-size: 13.5px; }
+
 .il-mom-agenda { margin: 14px 0; padding-top: 12px; border-top: 1px dashed var(--pd-line); }
 .il-mom-agenda h4 { margin: 0 0 4px; font-size: 13.5px; }
 .il-mom-agview { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
@@ -424,7 +597,12 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 .il-mom-slides .il-mom-agenda { border-top: 0; padding-top: 0; margin-top: 0; }
 
 /* ---- People picker (Responsible) ------------------------------------------
-   Chips for accounts + one free-text line for people with no login. */
+   Chips for accounts, built from the dropdown alone (2026-09-03, owner: "the
+   dropdown already has add a person, so remove the redundant free-text
+   input"). Legacy rows saved before this change may still carry a hand-typed
+   name with no linked account — .il-pp-freenote surfaces that text as a
+   read-only note (with its own remove) rather than silently discarding it;
+   nothing NEW can be typed here any more. */
 .il-people { display:flex; flex-direction:column; gap:6px; }
 .il-pp-chips { display:flex; flex-wrap:wrap; gap:5px; }
 .il-pp-chip {
@@ -439,7 +617,19 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 }
 .il-pp-rm:hover { color:var(--pd-red); background:var(--pd-red-light); }
 .il-people .il-pp-add { width:auto; min-width:170px; max-width:100%; }
-.il-people .il-pp-free { width:100%; }
+.il-pp-freenote {
+  display:flex; align-items:center; gap:6px;
+  padding:4px 8px; border-radius:6px;
+  background:var(--pd-bg); border:1px dashed var(--pd-line);
+  font-size:11px; color:var(--pd-muted);
+}
+.il-pp-freenote strong { font-weight:600; color:var(--pd-ink); }
+.il-pp-rmtext {
+  border:0; background:transparent; cursor:pointer; padding:0 2px;
+  font-size:11px; line-height:1; color:var(--pd-muted); border-radius:50%;
+  flex:0 0 auto; margin-left:auto;
+}
+.il-pp-rmtext:hover { color:var(--pd-red); background:var(--pd-red-light); }
 .il-pp-chip.is-contact { border-style:dashed; }
 .il-pp-noacct {
   font-size:9.5px; font-weight:700; letter-spacing:.3px; text-transform:uppercase;
@@ -495,15 +685,34 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 .il-history-when { font-size: 11.5px; color: var(--pd-muted); }
 .il-history-note { margin-top: 4px; font-size: 12.5px; color: var(--pd-ink); white-space: pre-wrap; }
 
-/* ---- Dashboard (items #2/#18) ---------------------------------------------- */
+/* ---- Dashboard (items #2/#18; rebuilt 2026-09-03 on the Issues & Concerns
+   dashboard's own card shape — "align dashboard to look of issues dashboard")
+   --------------------------------------------------------------------------- */
 .il-mom-dashsec { margin: 18px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
-.il-dash-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; align-items: start; }
-.il-dash-card { padding: 14px 16px; }
-.il-dash-card h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
-.il-dash-wide { grid-column: 1 / 2; }
-.il-dash-chartwrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.il-dash-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; min-width: 0; }
-.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); }
+.il-dash-grid { display: grid; grid-template-columns: 0.8fr 1.6fr 1.6fr; gap: 14px; align-items: stretch; }
+.il-dash-card { padding: 14px 16px; display: flex; flex-direction: column; }
+/* h4 is the chart's TITLE and the one place bold survives on this dashboard
+   (2026-09-03 owner ask: "no bold font except chart titles"). Not set here —
+   it inherits the browser's default bold <h4> weight, which is exactly the
+   one exemption the ask carves out. */
+.il-dash-card h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+/* Every chart on this dashboard now shares one shape: title on TOP
+   (`.il-dash-cardhead`), chart body, then ONE legend centered at the
+   middle-bottom (`.il-dash-legend-bottom`) — 2026-09-03: "bar-chart titles on
+   top of chart; legend only at middle-bottom, not scattered per-item labels
+   elsewhere." Applies to the donut (status) and every bar chart (department/
+   responsible/meeting) alike, so nothing here differs between the two. */
+.il-dash-cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+.il-dash-legend-bottom { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 10px; }
+.il-dash-cardbody { height: 260px; }
+.il-dash-cardbody-center { display: flex; align-items: center; justify-content: center; }
+.il-dash-cardbody-scroll { overflow-y: auto; padding-right: 2px; }
+.il-dash-wide { grid-column: 1 / -1; }
+.il-donut-svg { max-width: 320px; }
+/* One legend text size for every chart's legend, pie or bar (2026-09-03:
+   "consistent legend text sizes between both"). Not bold — see the h4 note
+   above; a legend is a caption, not a title. */
+.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); font-size: 11px; font-weight: 400; white-space: nowrap; }
 .il-dash-legend-i i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
 .il-dash-list { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 480px; }
 .il-dash-list th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
@@ -515,20 +724,19 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 .il-mom-freqlist { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--pd-ink); }
 .il-mom-freqlist li { margin-bottom: 4px; }
 
-@media (max-width: 1000px) {
-  .il-dash-grid { grid-template-columns: 1fr 1fr; }
-  .il-dash-wide { grid-column: 1 / -1; }
-}
+@media (max-width: 1000px) { .il-dash-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 700px) {
   .il-dash-grid { grid-template-columns: 1fr; }
-  .il-dash-wide { grid-column: auto; }
+  .il-dash-cardbody { height: auto; }
+  .il-dash-cardbody-scroll { overflow-y: visible; max-height: none; }
 }
 
 /* ⚠️ The attendance / open-minutes METER rules were removed with the tiles they
    styled (item 13, 2026-09-02: "remove all"). `meterHTML` went with them; the
-   donut / bar helpers stayed, because the rebuilt dashboard's four charts use
-   them. `.il-mom-freqlist` above is likewise unused by the dashboard now — the
-   series page still renders that shape. */
+   donut / hbar helpers stayed and were extended (2026-09-03) to match the
+   Issues & Concerns dashboard's own chart shapes. `.il-mom-freqlist` above is
+   likewise unused by the dashboard now — the series page still renders that
+   shape. */
 
 /* ---- The rebuilt dashboard's filter row (item 13) ------------------------- */
 .il-mom-dashfilt {

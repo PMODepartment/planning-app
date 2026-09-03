@@ -131,13 +131,38 @@
   <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
   <script src="../../assets/js/ui.js?v=20260902c"></script>
-  <script src="../../assets/js/icons.js?v=20260902f"></script>
+  <script src="../../assets/js/icons.js?v=20260903a"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
   <script src="module.js?v=20260902b"></script>
   <script>
+    // Item 1 (2026-09-02) — see the note in minutes-of-meeting/index.html:
+    // the topbar tabs become one dropdown and the static module label beside
+    // them goes, since the trigger already names the active screen.
+    // ⚠️ Bound to DOMContentLoaded HERE, not called from inside
+    // AppAuth.requireLogin's callback (2026-09-03, bug fix: "the module name
+    // appears for a few seconds before being hidden"). requireLogin awaits two
+    // real network round-trips (auth.getSession + a profile fetch) before its
+    // callback fires, and until then the flat tab row sat fully visible with
+    // nothing to convert it. This needs neither auth nor project data, only
+    // the tab markup already on the page — but it DOES need
+    // UI.initModuleTopbar() to have already moved this tab strip (and the
+    // <h1> beside it) into .pd-modulebar, or tabsToDropdown() can't find the
+    // title text to hide. ⚠️ Calling initModuleTopbar() explicitly/early here
+    // was tried and reverted — it broke theme.js's own topbar injection,
+    // which assumes it runs BEFORE initModuleTopbar() restructures the DOM
+    // (both are normally DOMContentLoaded listeners, and listener order is
+    // registration order — theme.js's script tag comes first in <head>, so
+    // its listener fires first). A THIRD DOMContentLoaded listener, registered
+    // last, fires after both of theirs have already run in their required
+    // order — same guarantee, no reordering.
+    (function () {
+      function go() { if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.rr-tabs'); }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+    })();
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       UI.initShell();
@@ -145,10 +170,6 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'risk-register', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
-      // Item 1 (2026-09-02) — see the note in minutes-of-meeting/index.html:
-      // the topbar tabs become one dropdown and the static module label beside
-      // them goes, since the trigger already names the active screen.
-      if (UI.tabsToDropdown) UI.tabsToDropdown('.rr-tabs');
       RiskRegister.init(user, profile);
     });
   </script>

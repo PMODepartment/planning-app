@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Minutes of Meeting · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260903b" />
-  <link rel="stylesheet" href="module.css?v=20260903b" />
+  <link rel="stylesheet" href="module.css?v=20260903d" />
 </head>
 <body>
   <div class="pd-app">
@@ -53,18 +53,26 @@
           <button class="il-tab" data-tab="dashboard">Meetings Dashboard</button>
         </div>
 
-        <!-- Tool cluster beside the profile. Item 2: an icon-only List/Calendar
-             toggle, top-right — only meaningful once inside Meetings and while
-             actually browsing (not with a single meeting/series open), so it
-             starts hidden and syncTopTabs() in module.js shows/hides + syncs
-             its `.on` state on every render(). -->
+        <!-- Tool cluster beside the profile. Filter / download / "+ Add meeting"
+             used to live in the in-page toolbar row above the meetings list
+             (momBrowseFilterBarHTML); they are static here now, one instance
+             each, and module.js's syncTopbarTools() shows/hides + wires them
+             per whatever is currently on screen (List/Calendar browse, the
+             Meetings Dashboard, or a single meeting/series — which has none of
+             this and hides all three). See module.js `wire()`/`syncTopbarTools`. -->
         <div class="il-topbar-tools">
-          <div class="il-viewtoggle" id="il-viewtoggle" hidden>
-            <button type="button" class="il-vt-btn" data-mv="list" title="List view">
-              <span data-ico="listView" data-ico-size="16"></span></button>
-            <button type="button" class="il-vt-btn" data-mv="calendar" title="Calendar view">
-              <span data-ico="calendar" data-ico-size="16"></span></button>
+          <button class="pd-btn pd-filttoggle" id="il-mom-tb-filter" title="Search and filter" aria-label="Search and filter" hidden>
+            <span data-ico="filter" data-ico-size="16"></span></button>
+          <div class="il-icondd" id="il-mom-tb-export" hidden>
+            <button type="button" class="pd-btn il-icondd-btn" title="Export the meeting list" aria-label="Export the meeting list">
+              <span data-ico="download" data-ico-size="16"></span></button>
+            <div class="il-icondd-menu" hidden>
+              <button type="button" class="il-icondd-item" data-val="html">HTML</button>
+              <button type="button" class="il-icondd-item" data-val="pdf">PDF</button>
+              <button type="button" class="il-icondd-item" data-val="xlsx">Excel</button>
+            </div>
           </div>
+          <button class="pd-btn pd-btn-primary" id="il-mom-tb-add" hidden>+ Add meeting</button>
           <button class="pd-btn" id="il-refresh" title="Reload">
             <span data-ico="refresh" data-ico-size="16"></span></button>
         </div>
@@ -97,12 +105,31 @@
   <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
   <script src="../../assets/js/ui.js?v=20260902c"></script>
-  <script src="../../assets/js/icons.js?v=20260902f"></script>
+  <script src="../../assets/js/icons.js?v=20260903a"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260903b"></script>
+  <script src="module.js?v=20260903d"></script>
   <script>
+    // "Meetings" ▾ / "Meetings Dashboard" ▾ as a Project-Schedule-style
+    // dropdown instead of two plain tab buttons — module.js's wire() calls
+    // this too (harmless: the second call is a no-op, guarded by
+    // tabsToDropdown's own tabs.__pdTabsDrop check), but wire() only runs
+    // once AppAuth.requireLogin's callback fires below, and by then the flat
+    // Meetings/Meetings Dashboard button row had already been sitting fully
+    // visible for however long the two network round-trips inside
+    // requireLogin (auth.getSession + a profile fetch) took — "the module
+    // name appears for a few seconds before being hidden" (2026-09-03 bug
+    // report). Bound to DOMContentLoaded HERE instead — see the full note in
+    // risk-register/index.html for why NOT to call UI.initModuleTopbar()
+    // explicitly/early (it breaks theme.js's own topbar injection, which
+    // relies on running before it via DOMContentLoaded listener registration
+    // order — a THIRD listener, registered after theirs, preserves that).
+    (function () {
+      function go() { if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.il-tabs'); }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+    })();
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       UI.initShell();

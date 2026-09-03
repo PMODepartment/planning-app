@@ -582,7 +582,7 @@
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
 <script src="../../assets/js/ui.js?v=20260902c"></script>
-<script src="../../assets/js/icons.js?v=20260902f"></script>
+<script src="../../assets/js/icons.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -2335,6 +2335,21 @@
     var isAdmin = !!profile && (profile.role === 'admin' || profile.role === 'super_admin');
     UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'portfolio-dashboard', base: '../../', isAdmin: isAdmin });
     UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'portfolio', base: '../../' });
+    // ⚠️ The sidebar hides these five modules for everyone but super_admin (config.js
+    // `superAdminOnly`, 2026-09-03) — but their cross-project data is ALSO reachable from
+    // right here, as this page's own tabs, which are static markup rather than built off
+    // APP_CONFIG.MODULES. Hiding the sidebar link and leaving the tab open would just move
+    // the leak one click over, so the matching tabs are hidden the same way, off the same
+    // role. `contracts` was in this list until 2026-09-03 (b) — Contracts & Claims is
+    // unhidden app-wide now, so its tab stays too. `resources`/`s-curve`/`milestones`/
+    // `issues`/`meetings`/`photos`/`overview` stay — none of those seven modules are
+    // superAdminOnly.
+    if (profile.role !== 'super_admin') {
+      ['risk', 'stakeholders', 'equipment', 'cashflow', 'productivity'].forEach(function (v) {
+        var b = document.querySelector('.po-tab[data-view="' + v + '"]');
+        if (b) b.hidden = true;
+      });
+    }
     document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
     wireProjFilter();
     document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };

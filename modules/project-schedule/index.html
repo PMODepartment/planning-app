@@ -3091,7 +3091,7 @@
   <div class="pd-content">
     <div class="pd-topbar">
       <div class="ps-title-switch ps-menu-wrap">
-        <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span class="ps-title-ico" data-ico="calendar" data-ico-size="20"></span><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
+        <button class="ps-title-btn" id="ps-title-btn" title="Switch view"><span class="ps-title-ico" data-ico="ganttChart" data-ico-size="20"></span><span id="ps-title-txt">Project Schedule</span><span data-ico="chevronDown" data-ico-size="16"></span></button>
         <div class="ps-menu" id="ps-title-menu">
           <!-- ⚠️⚠️ THE ORDER IS THE PROCESS, and Schedule Setup is first because that is where a
                schedule comes from — by import or by generation (owner 2026-09-02: *"let's sanitize the
@@ -3862,7 +3862,7 @@
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260902c"></script>
-<script src="../../assets/js/icons.js?v=20260902f"></script>
+<script src="../../assets/js/icons.js?v=20260903a"></script>
 <script src="../../assets/js/calendar.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -4056,6 +4056,19 @@
   // DERIVED from the schedule (group activities by code × location) rather than hand-linked.
   var CLASS_CODES = [];
   var LOC_LEVELS = [];   // Location Breakdown levels (ordered: Building > Level > Zone > …) for this project
+  /* ⚠️⚠️ WHETHER LOC_LEVELS IS EMPTY *BECAUSE THE PROJECT HAS NONE* OR *BECAUSE IT HAS NOT LOADED
+     YET* — and until this existed the app could not tell the two apart, so it asserted the first.
+     Owner 2026-09-03, two tabs of the SAME project (SLN101) side by side: Schedule Setup shows
+     "This project breaks location down as Tower › Level › Orientation › Zone › Cluster" and the LBS
+     editor lists all five, while Vertical Stacking says "This project has no Location Breakdown
+     Structure". *"how come that is the error even though there is a defined location levels"*
+     Both were reading the same LOC_LEVELS global. The difference is WHEN.
+     'pending' — load() paints from cache and renders BEFORE loadResourcesAssignments() has fetched
+                 location_levels, which on a 16k-activity project is seconds to minutes away.
+     'error'   — the select failed (no grant, un-run migration). The old code folded this into the
+                 same [] and blamed the planner for a database problem.
+     'ok'      — actually fetched. Only here may the app say the project has no breakdown. */
+  var LOC_LOAD = 'pending', LOC_LOAD_ERR = '', LOC_LEVELS_AT = '';
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
 
@@ -4090,7 +4103,13 @@
   // catScopeIsExec() answers false, catList() memoises the everything-coloured list, and clearing
   // only the phase memo left that list in place for the rest of the session. It reproduced on a
   // cache-painted load and NOT on a cold one, which is exactly why a single live check missed it.
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _catExecCache = null; _catCache = null; }
+  function _clearPhaseMemo() {
+    _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _catExecCache = null; _catCache = null;
+    // ⚠️ The code fallback caches a NAME MAP built from `rows`, so it goes stale on a rename, an
+    // import or a WBS repair exactly like the node memo — clearing one without the other is how a
+    // half-updated phase answer survives a reload.
+    _phaseCodeMemo = {}; _phaseCodeNames = null;
+  }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -4139,7 +4158,53 @@
     _phaseMemo[nodeId] = out || null;
     return _phaseMemo[nodeId];
   }
-  function phaseOf(r) { return (r && r.phase) || _nodePhase(r && r.wbs_node_id) || null; }
+  // ⚠️⚠️ THE THIRD SOURCE, AND ON AN IMPORTED SCHEDULE IT IS THE ONLY ONE THAT ANSWERS.
+  // Reported live on SLN101 (4PH Strevi Bacoor): the grid renders a perfect tree — Execution Phase
+  // with 16,396 activities under it — while Vertical Stacking says "0 execution-phase activities".
+  // Both are telling the truth about different things:
+  //   • `rebuild()` derives a row's ancestry from its DOTTED WBS CODE and never reads the node id,
+  //     which is why the grid looks right;
+  //   • `phaseOf()` resolved ONLY through `wbs_node_id` → WBS_NODES, and on this project those ids
+  //     are null (the 2026-09-02 (q)/(r) batched-link timeout, and every plain importer, file
+  //     activities by dotted code without ever linking them to a node).
+  // So every activity answered "no phase", `isExecPhase()` was false for all 16,396, and every
+  // execution-phase-scoped feature — Vertical Stacking, Contract Scope, the activity colour key —
+  // silently reported an empty project. The recovery on record was "re-import" or "Reset WBS →
+  // rebuild", i.e. a destructive repair for a schedule that is not actually damaged.
+  // The fallback reads the SAME source the grid trusts: walk the dotted code's ancestors,
+  // nearest-first, and take the first branch NAME that resolves a phase — the identical rule
+  // `_nodePhase` applies to the tree, applied to the projection of that tree the rows carry.
+  // ⚠️ STRICTLY LAST. The row's own `phase` and the node chain both win, so a healthy linked project
+  // computes exactly what it computed before and nothing moves underneath it.
+  // ⚠️ Read-time only — no row is written, so this repairs the SYMPTOM without pretending the link
+  // exists. Re-linking the activities (WBS Manager → Adopt existing WBS) is still the real fix.
+  var _phaseCodeMemo = {}, _phaseCodeNames = null;
+  function _phaseCodeNameMap() {
+    if (_phaseCodeNames) return _phaseCodeNames;
+    var m = Object.create(null);
+    rows.forEach(function (r) { if (isWbs(r) && r.wbs) m[String(r.wbs)] = r.activity_name || ''; });
+    return (_phaseCodeNames = m);
+  }
+  function _phaseByCode(code) {
+    var c = String(code == null ? '' : code).trim();
+    if (!c) return null;
+    if (_phaseCodeMemo[c] !== undefined) return _phaseCodeMemo[c];
+    var names = _phaseCodeNameMap(), segs = c.split('.'), out = null;
+    // Nearest ancestor first — same precedence as _nodePhase's parent walk. A branch literally named
+    // "Construction Phase" sitting under "Execution Phase" therefore answers from itself, which is
+    // the same answer either way.
+    for (var i = segs.length; i >= 1; i--) {
+      var nm = names[segs.slice(0, i).join('.')];
+      if (!nm) continue;
+      var p = phaseFromName(nm);
+      if (p) { out = p; break; }
+    }
+    return (_phaseCodeMemo[c] = out);
+  }
+  function phaseOf(r) {
+    if (!r) return null;
+    return r.phase || _nodePhase(r.wbs_node_id) || _phaseByCode(r.wbs) || null;
+  }
   // ---- Trade -------------------------------------------------------------------------------
   // The branch that names the TRADE for a node: the top-most branch under the root (so
   // "Execution Phase › Structural Works › …" gives Structural Works), or the root itself when the
@@ -5811,7 +5876,11 @@
      appear) is the whole reason this module works against a partially-migrated database. Losing it
      to a parallel rewrite would be a silent regression in exactly the case it was written for. */
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; WPM_WPS = []; DSCN = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; WPM_WPS = []; DSCN = []; LOC_LOAD = 'ok'; LOC_LOAD_ERR = ''; return; }
+    // ⚠️ Back to 'pending' for the project we are about to load — NOT left on the previous project's
+    // answer. Otherwise switching from a project WITH levels to one still loading would let the
+    // stacking assert "no breakdown" using the old project's resolved state.
+    LOC_LOAD = 'pending'; LOC_LOAD_ERR = '';
     // Each entry is a self-contained fetch that assigns its own globals and swallows its own error.
     function T(fn) { return (async function () { try { await fn(); } catch (e) {} })(); }
 
@@ -5851,10 +5920,8 @@
     });
     // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
     // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
-    var tLoc = T(async function () {
-      var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
-      LOC_LEVELS = (r8 && !r8.error && r8.data) || [];
-    });
+    var tLoc = T(async function () { await refreshLocLevels(); });
+
     // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
     // location_levels above: no table -> no packages -> the Package column offers nothing to
     // assign and everything else is unaffected. Bounded by definition (a project has packages,
@@ -8002,6 +8069,35 @@
     if (!_healNeeded) {
       try { console.log('[ps] tree repairs skipped - fingerprint unchanged (' + _sigBefore + ')'); } catch (e) {}
     } else {
+    /* ⚠⚠ THE NODE MERGE RUNS FIRST, AND HAVING IT LAST WAS A DEADLOCK — this is the reported
+       "duplicate phases" (owner 2026-09-03, One Portwood Residences: Initiation / Planning /
+       Execution each appearing twice at the root, beside an empty Closeout).
+       An imported phase branch lands as an UNLOCKED root beside the skeleton's locked one of the
+       same name. `_wbsCanonicalRootOrder` and `_wbsResyncCodes` both REFUSE to run while any
+       unlocked root exists (deliberately — see their guards), and the only pass that removes such a
+       root ran AFTER both of them. So load 1 ordered nothing and re-coded nothing, merged the roots
+       at the end, and left the dotted codes describing the pre-merge tree until load 2 finally did
+       the ordering and the resync. Two loads to converge, with wrong codes on screen in between.
+       Merging first breaks it: the duplicate root is gone BEFORE those two guards are consulted, so
+       the whole repair completes in ONE load — merge → place → order → codes → row dedupe.
+       ⚠️ Safe to run before the resync specifically because `_wbsDedupeSiblingNodes` keys on
+       (parent_id, normalised name) and NEVER reads a dotted code. The "re-sync the codes first"
+       rule at the top of this chain guards `_wbsDedupeSummariesByCode`, which does read them and
+       still runs after the resync, untouched.
+       ⚠️ The later call is KEPT, not moved: `_wbsHealSkeletonPlacement` re-parents branches and can
+       itself create a same-name sibling, which only a dedupe running after it can see. The second
+       run is gated on an in-memory grouping, so a tree with nothing duplicated costs zero queries. */
+    if (_isMutating()) return;
+    _repairLock('Merging duplicate WBS branches…');
+    var mergedRoots = await _wbsDedupeSiblingNodes();
+    if (gen !== _loadGen) return;
+    if (mergedRoots) {
+      rebuild(); _cachePut(pid, rows); renderAll();
+      UI.toast('Merged ' + mergedRoots.toLocaleString() + ' duplicate WBS branch' + (mergedRoots === 1 ? '' : 'es') +
+               (_wbsDedupeNames.length ? ' (' + _wbsDedupeNames.join(', ') + (mergedRoots > _wbsDedupeNames.length ? ', …' : '') + ')' : '') +
+               ' — their activities and sub-branches were moved onto the surviving branch, nothing was lost.', 'success');
+    }
+    if (_isMutating()) return;
     // ⚠️ BEFORE the resync, never after: reordering re-codes the root, and the resync is what pushes
     // those codes onto the rows. Reversed, the tree and the codes disagree until the next load.
     // ⚠️ BEFORE the reorder and the resync: re-parenting changes a branch's position, and a dotted
@@ -8752,14 +8848,51 @@
   }
   function setGroupBys(list) {
     saveCollapsedState();                 // remember the OUTGOING grouping's tree before switching
+    // ⚠️ From here the grouping is the PLANNER'S, not a default — see loadGroupBys. Recording that is
+    // what stops _adoptSetupGrouping from later overwriting a deliberate pick.
+    _gbChosen = true;
     groupBys = list.slice(); normalizeGroupBys();
     try { localStorage.setItem(_gbKey(), JSON.stringify(groupBys)); } catch (e) {}
     restoreCollapsedFor(_gbSig(), false); // was: collapsed = {} — now restores this grouping's tree
     populateGroupSelect(); renderGrid(); renderGantt();
   }
+  /* ⚠️⚠️ THE DEFAULT GROUPING FOLLOWS THE SCHEDULE SETUP — but only while it is still a DEFAULT.
+     Owner 2026-09-03: *"i think the WBS tree default should be matched with what was defined in the
+     schedule setup."* The setup is where the planner says how the project is organised; the grid was
+     grouping by a list hard-coded on the other side of the file, so the same decision lived twice.
+     ⚠️ A SAVED CHOICE ALWAYS WINS, and that is what makes this safe to change. `_gbChosen` records
+     whether localStorage held a grouping for this project: if it did, the planner picked it and
+     nothing here touches it. The setup only fills the slot nobody has filled yet.
+     ⚠️ Nothing is WRITTEN when the setup is adopted. It stays a default, so a planner who later
+     reorders the setup sees the grid follow — until they pick a grouping of their own, at which point
+     their choice is saved and sticks.
+     ⚠️ IT NEEDS THE SETUP IN MEMORY. `ScheduleBuilder` only holds a cfg once the Schedule Setup tab
+     has loaded one, which on a cold open of the Project Schedule has not happened yet — so this is
+     re-checked from _adoptSetupGrouping() when the builder loads a setup. Until then the plain WBS
+     tree stands, which is the same behaviour as before. */
+  var _gbChosen = false;
+  function _setupGroupDims() {
+    try { return (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.setupGroupDims) ? ScheduleBuilder.setupGroupDims() : []; }
+    catch (e) { return []; }
+  }
+  // Called when the builder loads a setup, for the cold-open case described above. A no-op once the
+  // planner has chosen a grouping, and a no-op when the grouping is not still the untouched default.
+  function _adoptSetupGrouping() {
+    if (_gbChosen) return;
+    var dims = _setupGroupDims();
+    if (!dims.length) return;
+    if (JSON.stringify(groupBys) === JSON.stringify(dims)) return;
+    // Only replace the plain WBS tree — never something already showing a structure.
+    if (!(groupBys.length === 1 && groupBys[0] === 'wbs')) return;
+    groupBys = dims.slice(); normalizeGroupBys();
+    try { populateGroupSelect(); renderHeader(); renderGrid(); renderGantt(); } catch (e) {}
+  }
   function loadGroupBys() {
     groupBys = ['wbs'];
-    try { var v = JSON.parse(localStorage.getItem(_gbKey()) || 'null'); if (Array.isArray(v) && v.length) groupBys = v; } catch (e) {}
+    _gbChosen = false;
+    try { var v = JSON.parse(localStorage.getItem(_gbKey()) || 'null'); if (Array.isArray(v) && v.length) { groupBys = v; _gbChosen = true; } } catch (e) {}
+    // No saved choice → follow the setup's structure when it is known.
+    if (!_gbChosen) { var _sd = _setupGroupDims(); if (_sd.length) groupBys = _sd.slice(); }
     normalizeGroupBys();
     // Runs late in load(), AFTER _applyBigCollapse() has seeded the large-schedule default — so
     // keepIfMissing=true: only a genuinely saved tree may replace it. The store itself is read at
@@ -8771,7 +8904,14 @@
   function renderGroupMenu() {
     var m = document.getElementById('ps-group-menu'); if (!m) return;
     var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
+    /* ⚠️ THE SETUP'S OWN STRUCTURE, OFFERED FIRST. See ScheduleBuilder.setupGroupDims: the planner
+       already said how this project is organised, and a grouping menu that ignores it is a second
+       opinion about the same decision. Hidden when there is no setup loaded or nothing resolves —
+       never an empty or half-resolved preset. */
+    var _setupDims = [];
+    try { _setupDims = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.setupGroupDims) ? ScheduleBuilder.setupGroupDims() : []; } catch (e) { _setupDims = []; }
     var presets = [
+      { name: 'Schedule Setup structure', dims: _setupDims },
       { name: 'WBS tree (default)', dims: ['wbs'] },
       // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
       // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
@@ -8812,7 +8952,7 @@
     // which one — and that job now lives in one place: Schedule Setup › Floors & Zones. Leaving the
     // two wizards here while the editor moved would be the worst of both, because a planner would
     // map onto levels they cannot see. `phases` and `discwizard` stay: neither is location.
-    h += '<div class="ps-gm-sec">Location Breakdown</div>' +
+    h += '<div class="ps-gm-sec">Location Breakdown Structure</div>' +
       '<div class="ps-gm-note">Levels, <strong>Match WBS to locations</strong> and <strong>Fill location from the WBS tree</strong> are in <strong>Schedule Setup › Floors &amp; Zones</strong> — one place for the whole breakdown.</div>' +
       '<button data-gact="gotoloc"><span data-ico="layers" data-ico-size="14"></span> Open Floors &amp; Zones setup…</button>' +
       '<div class="ps-gm-sec">Tagging</div>' +
@@ -9090,9 +9230,58 @@
     };
     paintPrev();
   }
+  /* ⚠️⚠️ THE LOCATION BREAKDOWN IS FETCHED ONCE PER PAGE LOAD, AND THAT IS THE BUG BEHIND
+     "no Location Breakdown Structure" ON A PROJECT THAT HAS FIVE.
+     Owner 2026-09-03, first report: Schedule Setup listed Tower › Level › Orientation › Zone ›
+     Cluster while Vertical Stacking said the project had none. Second report, after the load-state
+     fix: *"still says no location breakdown after full load."* So it is NOT only the load race the
+     first fix addressed — the fetch itself is genuinely coming back empty in that tab, and nothing
+     ever asks again. LOC_LEVELS is assigned in exactly four places (this refetch, the !pid reset,
+     and two local .filter() removals), so once a tab has answered "zero" it answers "zero" until it
+     is reloaded — even though levels exist and another tab is displaying them.
+     ⚠️ Cheap enough to re-ask: a project has a handful of location levels, not thousands. This is a
+     single bounded, unpaginated select — the same one load() runs — so calling it when the stacking
+     opens costs one round trip and removes the entire class of "stale in this tab".
+     ⚠️ It records the OUTCOME, not just the rows. T() in the loader swallows a throw, so without the
+     catch a network failure would leave LOC_LOAD on 'pending' forever and the stacking would show a
+     spinner that never resolves. Every path here ends on 'ok' or 'error'.
+     ⚠️ It does NOT clobber a good list with a failure: on error the levels are left as they were and
+     only the state changes, so a transient network blip cannot empty a breakdown that is on screen.
+     Returns true when what the stacking reads actually changed. */
+  async function refreshLocLevels() {
+    if (!pid) { LOC_LEVELS = []; LOC_LOAD = 'ok'; LOC_LOAD_ERR = ''; return false; }
+    var before = LOC_LEVELS.map(function (l) { return l && l.id; }).join(',');
+    var beforeState = LOC_LOAD;
+    try {
+      var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
+      if (r8 && r8.error) { LOC_LOAD = 'error'; LOC_LOAD_ERR = String(r8.error.message || r8.error); }
+      else { LOC_LEVELS = (r8 && r8.data) || []; LOC_LOAD = 'ok'; LOC_LOAD_ERR = ''; }
+    } catch (e) {
+      LOC_LOAD = 'error'; LOC_LOAD_ERR = (e && e.message) ? e.message : String(e);
+    }
+    LOC_LEVELS_AT = pid;
+    var changed = (LOC_LEVELS.map(function (l) { return l && l.id; }).join(',') !== before) || LOC_LOAD !== beforeState;
+    if (changed) {
+      // ⚠️ The AXIS CACHE is keyed on the level-id signature, so it re-resolves on its own — but it
+      // is cleared explicitly because a refetch that returns the SAME ids with a different ORDER
+      // (someone reordered Tower/Level in the other tab) produces an identical key and a stale axis.
+      try { _vsAxisCache = null; _vsAxisKey = null; } catch (e) {}
+      /* ⚠️ THE LEVELS ARE NOT ONLY THE STACKING'S. Each one is also a grid COLUMN and a group-by
+         dimension, so a refetch that discovers five levels must tell those three too — otherwise the
+         stacking draws a building while the grid still has no location columns and the group-by menu
+         still lists none, which is the same "two halves of one screen disagreeing" this whole report
+         is about. Each is guarded: this runs during load(), when the grid may not be built yet. */
+      try { populateGroupSelect(); } catch (e) {}
+      try { seedExtraHidden(); } catch (e) {}
+      try { renderHeader(); } catch (e) {}
+    }
+    // The stacking may be on screen showing "no location breakdown" from before this resolved.
+    try { _vsRepaintIfLevelsArrived(); } catch (e) {}
+    return changed;
+  }
   function openLocLevels() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
-    var m = UI.modal('<h2 style="margin-top:0;">Location Breakdown</h2>' +
+    var m = UI.modal('<h2 style="margin-top:0;">Location Breakdown Structure (LBS)</h2>' +
       '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">The location levels this project uses, outermost first — e.g. <em>Building › Level › Zone</em>. ' +
       'Each becomes a column on every activity and a level you can group by.</p>' +
       '<div id="lvl-list"></div>' +
@@ -9412,7 +9601,141 @@
     UI.toast('No "Execution Phase" WBS branch found — matching against the whole schedule instead.', 'warn');
     return acts;
   }
+  // ---- TOWER IDENTITY — one building, however its WBS spells it ------------------------------
+  /* ⚠️⚠️ A TOWER IS ONE PLACE, AND A WBS ROUTINELY SPELLS IT AS TWO STRUCTURAL STAGES.
+     Owner, 2026-09-03: *"there are scenarios wherein the substructure is separated from the
+     superstructure, so we need to combine them to create a tower. And there are direct instances
+     wherein Tower 1 is defined including substructure and superstructure combined."*
+
+     Both shapes are real and both must land on ONE tower:
+       Tower 1                          →  Tower 1     (already combined in the WBS)
+       Tower 1 - Substructure           →  Tower 1  ┐  split by stage; ONE building
+       Tower 1 - Superstructure         →  Tower 1  ┘
+       SUBSTRUCTURE - TOWER 1           →  Tower 1     stage-first: the case that was LOST
+       Superstructure (Tower 2)         →  Tower 2     parenthesised
+       TOWER-D SUBSTRUCTURE             →  Tower D     no spaced separator at all
+       Bldg 2 / BUILDING 2              →  Building 2  spelling variants of one building
+
+     ⚠️ WHY THIS IS NOT locTrimSeg. That helper splits on a SPACED separator and returns the part
+     that still matches the level's terms — so it handles "Tower D - Substructure" and nothing else.
+     "TOWER-D SUBSTRUCTURE" has no spaced separator (one part, returned whole), and
+     "Substructure - Tower D" is never even offered to it, because locGroupingReason vetoes the name
+     as a trade first: 'substructure' sits at position 0 and beats 'tower' at 18, and that
+     earliest-term rule is right for every other name it judges. The result was one building split
+     across two tower values, or dropped from the Location Breakdown entirely.
+
+     ⚠️ WHAT MAKES A TOWER TOKEN, and why it is deliberately strict — this REVERSES a grouping veto,
+     so a false positive invents a place that does not exist:
+       • a family word (tower / building / bldg / block), whole-word, case-insensitive; and
+       • a DESIGNATOR next to it — 1-3 alphanumerics ("1", "D", "A1", "II"), optionally through a
+         hyphen, a dot or an opening bracket.
+     "Building Permit" and "Blockwork" therefore do not match: 'permit' is too long to be a
+     designator and 'blockwork' fails the word boundary. A bare "Tower" with no designator DOES
+     match (a single-tower project names it exactly that) and canonicalises to "Tower".
+     ⚠️ It does NOT invent an identity. A stage branch carrying no family word at all — a bare
+     "Substructure" / "Superstructure" pair in a one-tower project — returns '' and is left alone;
+     the tower value stays blank, which reads as the project's single implicit tower. Naming it
+     "Tower 1" from nothing would be a guess printed onto the planner's breakdown as fact.
+     ⚠️ Canonical, not verbatim: the family word is normalised (bldg → Building) and the designator
+     upper-cased, so "TOWER-D SUBSTRUCTURE" and "Tower D - Superstructure" reduce to the SAME string
+     and merge instead of standing as two towers. Nothing is written by this — see _vsTowerOf. */
+  var TOWER_FAMILY = { tower: 'Tower', twr: 'Tower', building: 'Building', bldg: 'Building', bldng: 'Building', block: 'Block' };
+  var _TOWER_RE = /(^|\W)(tower|twr|building|bldng|bldg|block)\s*[-–—.:#(\[]?\s*([A-Za-z0-9]{1,3})?(\W|$)/i;
+  var _towerTokMemo = Object.create(null);
+  function locTowerToken(name) {
+    var t = String(name == null ? '' : name).trim();
+    if (!t) return '';
+    var hit = _towerTokMemo[t];
+    if (hit !== undefined) return hit;
+    var m = _TOWER_RE.exec(t);
+    if (!m) return (_towerTokMemo[t] = '');
+    var fam = TOWER_FAMILY[m[2].toLowerCase()] || '';
+    var des = (m[3] || '').toUpperCase();
+    // ⚠️ A designator that is itself a location or stage word is NOT a designator — "Tower Level",
+    // "Block Zone", "Building Sub" name a thing about a tower, not tower number "LEVEL". Dropping it
+    // leaves the bare family word, which is the honest reading.
+    if (des && /^(SUB|SUP|L|F|Z|LEV|FLR|ZN|OF|AND|THE|FOR|ALL)$/.test(des)) des = '';
+    /* ⚠️ NO DESIGNATOR ⇒ THE NAME MUST BE ABOUT THE BUILDING AND NOTHING ELSE. "Building Permit"
+       carries the family word and no designator, and calling it a tower named "Building" would put a
+       Planning-phase deliverable in the Location Breakdown as a place. So the bare-family reading is
+       accepted only when every OTHER word in the name is a structural stage or pure noise — which is
+       exactly the single-tower shapes this is for ("Tower", "TOWER SUBSTRUCTURE", "Tower - Super
+       Structure"). Anything else ("Building Permit", "Block Testing") returns '' and falls through to
+       the ordinary rules, unchanged. A name WITH a designator is not subjected to this: "Tower 2
+       Fit-out Works" is still Tower 2. */
+    if (!des) {
+      var rest = t.replace(_TOWER_RE, ' ')
+        .replace(/\b(sub|super)[\s-]*structure\b|\bsubstructure\b|\bsuperstructure\b|\bworks?\b|\bstructures?\b/gi, ' ')
+        .replace(/[^A-Za-z0-9]+/g, ' ').trim();
+      if (rest) return (_towerTokMemo[t] = '');
+    }
+    return (_towerTokMemo[t] = (fam + (des ? ' ' + des : '')));
+  }
+  // ---- Location branch vs grouping branch -------------------------------------------------------
+  // ⚠️⚠️ THE DISTINCTION THIS WHOLE FEATURE TURNS ON, and it had no name in the code until now.
+  // A WBS branch is one of two things and never both:
+  //   • a LOCATION branch — a PLACE work happens: tower / building, level / floor, zone, cluster,
+  //     unit, area. These form the project's Location Breakdown Structure (LBS) and are the ONLY
+  //     thing the Vertical Stacking may read: a stacking band is a physical part of the building.
+  //   • a GROUPING branch — a way of ORGANISING activities: a project phase (Execution,
+  //     Close-out), a trade (Structural Works, Wet Works, MEPF), a work type (Punchlisting).
+  //     These are real, useful WBS, but they are not places, so they must never become a band.
+  // The predicate below is the shared answer, used by the guesser (so a trade is never PROPOSED as
+  // a location), by the wizard (so the planner sees WHY a row is grouping) and by the stacking
+  // (so a value that slipped through earlier cannot draw a floor that does not exist).
+  function _discTermHit(name) {
+    var best = -1;
+    for (var i = 0; i < WORK_CANON.length; i++) {
+      var at = locTermHit(name, WORK_CANON[i].terms);
+      if (at !== -1 && (best === -1 || at < best)) best = at;
+    }
+    return best;
+  }
+  // Why a name reads as a grouping — '' when it does not. Position-aware on purpose: several terms
+  // are in BOTH vocabularies ('substructure' / 'superstructure' are a Level synonym and a Structural
+  // Works term), so a flat "is it a trade word" test would have thrown away "Tower D - Substructure",
+  // a real tower. The term that appears EARLIEST in the name is the one the name is ABOUT:
+  //   "Tower D - Substructure" → 'tower' at 0 beats 'substructure' at 9  → location.
+  //   "Superstructure"         → both at 0, tie → grouping.
+  // ⚠️ A tie resolves to GROUPING deliberately. Superstructure/Substructure/Earthworks are stages of
+  // structural work, not storeys — banding by them puts a fake floor in every tower.
+  function locGroupingReason(name, levels) {
+    var t = String(name == null ? '' : name).trim();
+    if (!t) return '';
+    if (phaseFromName(t)) return 'phase';
+    var trade = _discTermHit(t);
+    if (trade === -1) return '';
+    var locAt = -1;
+    (levels || LOC_LEVELS).forEach(function (l) {
+      var at = locTermHit(t, locLevelTerms(l));
+      if (at !== -1 && (locAt === -1 || at < locAt)) locAt = at;
+    });
+    if (locAt !== -1 && locAt < trade) return '';   // the place word leads — it is a location
+    return 'trade';
+  }
   function locGuessLevel(name, levels) {
+    /* ⚠️⚠️ THE TOWER TOKEN IS CONSULTED BEFORE THE VETO, and ONLY for the tower level.
+       "Substructure - Tower D" is a tower. locGroupingReason reads it as a trade — correctly, by its
+       own earliest-term rule ('substructure' at 0 beats 'tower' at 18) — and the branch then never
+       reached the tower level at all, so half of Tower D's work went unlocated while the other half
+       ("Tower D - Superstructure", where the place word happens to lead) mapped fine. One building,
+       one value: see locTowerToken for the shapes and for why the token test is strict.
+       ⚠️ This overrides the veto for the TOWER LEVEL ONLY. locGroupingReason is untouched, so it
+       goes on protecting the FLOOR axis exactly as before — a bare "Superstructure" still cannot
+       become a storey, which is the band the Vertical Stacking actually draws. Widening the veto
+       itself would have re-admitted every stage word as a floor and put a fake storey in every
+       tower, which is the bug that rule was written for.
+       ⚠️ Only when the project HAS a tower-family level. A breakdown with no tower level has nowhere
+       to put this, and forcing it onto LOC_LEVELS[0] would write a tower name into a Zone. */
+    var _tw = locTowerToken(name);
+    if (_tw) {
+      var _twLev = (levels || []).filter(function (l) { return locTermHit(String(l.name || ''), LOC_SYN.tower) !== -1 || LOC_SYN.tower.indexOf(String(l.name || '').toLowerCase().trim()) !== -1; })[0];
+      if (_twLev) return _twLev.id;
+    }
+    // ⚠️ The veto runs FIRST and only affects the GUESS. A saved match always wins over it, so a
+    // project that has already decided "Superstructure IS our Level" keeps that decision and no
+    // stored data changes underneath anyone.
+    if (locGroupingReason(name, levels)) return '';
     var best = '', bestAt = -1;
     levels.forEach(function (l) {
       var at = locTermHit(name, locLevelTerms(l));
@@ -9427,6 +9750,15 @@
   function locGuessValue(name, levelId, levels) {
     var l = levels.filter(function (x) { return x.id === levelId; })[0];
     if (!l) return name;
+    /* ⚠️ THE CANONICAL TOWER TOKEN WINS FOR A TOWER LEVEL — this is what actually COMBINES the
+       substructure and the superstructure into one building. locTrimSeg below only splits on a
+       SPACED separator, so it reduces "Tower D - Substructure" and leaves "TOWER-D SUBSTRUCTURE"
+       whole; two spellings of one tower then stand as two values in the breakdown and as two cards
+       in the Vertical Stacking. The token normalises both ("Tower D") and merges them. */
+    if (locTermHit(String(l.name || ''), LOC_SYN.tower) !== -1 || LOC_SYN.tower.indexOf(String(l.name || '').toLowerCase().trim()) !== -1) {
+      var tok = locTowerToken(name);
+      if (tok) return tok;
+    }
     var m = locWordMatcher(locLevelTerms(l).join(','));
     return m ? locTrimSeg(name, m) : name;
   }
@@ -9935,33 +10267,71 @@
         val: s ? s.val : (g ? locGuessValue(f.name, g, LOC_LEVELS) : f.name),
         valEdited: !!s, excluded: excluded };
     });
-    var filter = 'sug', q = '';
+    // `filter` is the match-state lens (proposed / not matched / grouping-only / all); `depth` is a
+    // separate WBS-LEVEL lens (1 = top-level branch). They are deliberately two controls rather than
+    // one merged list: "show me the un-matched level-3 branches" is the question a planner actually
+    // asks, and a single dropdown cannot express a pair.
+    var filter = 'sug', q = '', depthF = '', treeSel = '';
 
     function lvlOptions(sel) {
-      return '<option value="">— not a location —</option>' + LOC_LEVELS.map(function (l) {
-        return '<option value="' + esc(l.id) + '"' + (l.id === sel ? ' selected' : '') + '>' + esc(l.name) + '</option>';
+      // ⚠️ "Grouping only" is the same value the empty option always carried ('' = no level), just
+      // named for what it MEANS. A WBS branch is very often a pure grouping of activities —
+      // "Construction Phase", "Wet Works", "Punchlisting" — and the old wording ("not a location")
+      // read as a rejection rather than a legitimate, remembered answer. It is remembered per
+      // project, so a branch marked here is never re-guessed as a location on the next open.
+      return '<option value="">— grouping only (not a location) —</option>' + LOC_LEVELS.map(function (l, li) {
+        return '<option value="' + esc(l.id) + '"' + (l.id === sel ? ' selected' : '') + '>' + esc(l.name) + ' (L' + (li + 1) + ')</option>';
+      }).join('');
+    }
+    function depths() {
+      var seen = {}; state.forEach(function (s) { seen[s.depth] = (seen[s.depth] || 0) + 1; });
+      return Object.keys(seen).map(Number).sort(function (a, b) { return a - b; })
+        .map(function (d) { return { d: d, n: seen[d] }; });
+    }
+    function depthOptions() {
+      return '<option value="">All WBS levels</option>' + depths().map(function (x) {
+        return '<option value="' + x.d + '"' + (String(x.d) === depthF ? ' selected' : '') + '>WBS level ' + x.d + ' (' + x.n + ')</option>';
       }).join('');
     }
     function visible() {
       var ql = q.toLowerCase();
       return state.filter(function (s) {
         if (ql && s.name.toLowerCase().indexOf(ql) === -1 && (s.trail || '').toLowerCase().indexOf(ql) === -1) return false;
+        if (depthF && String(s.depth) !== depthF) return false;
+        // A tree-panel click is a THIRD, transient lens: it narrows to one location level (or to the
+        // grouping-only bucket) without disturbing the two dropdowns, so clearing it restores exactly
+        // what was on screen before.
+        if (treeSel === '__none__') { if (s.lvl) return false; }
+        else if (treeSel) { if (s.lvl !== treeSel) return false; }
         if (filter === 'sug') return !!s.lvl;          // what the wizard proposes — the review list
-        if (filter === 'un') return !s.lvl;
+        if (filter === 'un') return !s.lvl && !s.excluded;
+        if (filter === 'grp') return !s.lvl && s.excluded;
         return true;
       });
     }
+    // Says WHY a branch reads as a grouping rather than a place, so "grouping only" is a decision the
+    // planner can check rather than a verdict they have to trust. ⚠️ Shown even on a row already
+    // matched to a level — a saved match always wins over the guess, and this badge is the one thing
+    // that makes an old, wrong match visible instead of permanent.
+    function grpBadge(s) {
+      var why = locGroupingReason(s.name, LOC_LEVELS);
+      if (!why) return '';
+      var label = why === 'phase' ? 'project phase' : 'trade / work type';
+      return ' <span title="' + esc(label + ' — a way of organising activities, not a place. Not part of the Location Breakdown Structure.') +
+        '" style="font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border:1px solid var(--pd-line);border-radius:99px;padding:0 5px;color:var(--pd-muted);white-space:nowrap;">' + esc(label) + '</span>';
+    }
     function rowsHtml() {
       var vis = visible();
-      if (!vis.length) return '<tr><td colspan="4" style="padding:10px;color:var(--pd-muted);">Nothing matches.</td></tr>';
+      if (!vis.length) return '<tr><td colspan="5" style="padding:10px;color:var(--pd-muted);">Nothing matches.</td></tr>';
       return vis.map(function (s) {
         var i = state.indexOf(s);
         return '<tr data-i="' + i + '">' +
-          '<td style="padding:3px 6px;"><div>' + esc(s.name) + '</div>' +
-            (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;" title="' + esc(s.trail) + '">' + esc(s.trail.length > 70 ? '…' + s.trail.slice(-70) : s.trail) + '</div>' : '') + '</td>' +
+          '<td style="padding:3px 6px;"><div>' + esc(s.name) + grpBadge(s) + '</div>' +
+            (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;" title="' + esc(s.trail) + '">' + esc(s.trail.length > 90 ? '…' + s.trail.slice(-90) : s.trail) + '</div>' : '') + '</td>' +
+          '<td style="padding:3px 6px;text-align:center;color:var(--pd-muted);white-space:nowrap;">L' + s.depth + '</td>' +
           '<td style="padding:3px 6px;text-align:right;color:var(--pd-muted);white-space:nowrap;">' + s.n.toLocaleString() + '</td>' +
-          '<td style="padding:3px 6px;"><select class="pd-input lw-lvl" style="min-width:120px;">' + lvlOptions(s.lvl) + '</select></td>' +
-          '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') + ' style="min-width:130px;"></td>' +
+          '<td style="padding:3px 6px;"><select class="pd-input lw-lvl" style="min-width:150px;">' + lvlOptions(s.lvl) + '</select></td>' +
+          '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') + ' style="min-width:150px;"></td>' +
         '</tr>';
       }).join('');
     }
@@ -9969,28 +10339,76 @@
       var per = {}; LOC_LEVELS.forEach(function (l) { per[l.id] = 0; });
       state.forEach(function (s) { if (s.lvl && per[s.lvl] != null) per[s.lvl]++; });
       return LOC_LEVELS.map(function (l) { return esc(l.name) + ': <strong>' + per[l.id] + '</strong>'; }).join(' · ') +
-        ' · not a location: <strong>' + state.filter(function (s) { return !s.lvl; }).length + '</strong>';
+        ' · grouping only: <strong>' + state.filter(function (s) { return !s.lvl; }).length + '</strong>';
     }
-    var m = UI.modal('<div style="width:100%;max-height:82vh;display:flex;flex-direction:column;">' +
+    // The tree is the answer to "what will my location breakdown actually look like when this is
+    // applied" — the table says what each WBS name IS, and this says what each LEVEL will HOLD.
+    // ⚠️ Two WBS names that resolve to the SAME value are shown merged, with a ×N badge and both
+    // names in the tooltip — that is not a conflict and must not read as one: "Category A" under one
+    // tower and "Category A" under another are one location value at that level, and the level ABOVE
+    // is what keeps them apart (deepest-wins resolution stamps every level an activity sits under).
+    function treeHtml() {
+      var out = '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--pd-muted);padding:0 2px 2px;">Location Breakdown Structure</div>' +
+        '<div style="font-size:11px;color:var(--pd-muted);padding:0 2px 8px;">What the Vertical Stacking will read.</div>';
+      LOC_LEVELS.forEach(function (l, li) {
+        var mine = state.filter(function (s) { return s.lvl === l.id; });
+        var byVal = {};
+        mine.forEach(function (s) {
+          var v = String(s.val || '').trim() || '(blank)';
+          (byVal[v] || (byVal[v] = [])).push(s);
+        });
+        var vals = Object.keys(byVal).sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
+        var on = treeSel === l.id;
+        out += '<div class="lw-tnode" data-tree="' + esc(l.id) + '" style="cursor:pointer;padding:4px 6px;border-radius:5px;margin-bottom:2px;' +
+          (on ? 'background:var(--pd-red-light);' : '') + '">' +
+          '<span style="font-weight:600;font-size:12.5px;">' + esc(l.name) + '</span>' +
+          '<span style="color:var(--pd-muted);font-size:11px;"> · L' + (li + 1) + ' · ' + vals.length + ' value' + (vals.length === 1 ? '' : 's') + '</span></div>';
+        if (!vals.length) {
+          out += '<div style="padding:1px 6px 6px ' + (12 + li * 10) + 'px;color:var(--pd-muted);font-size:11px;">nothing matched to this level yet</div>';
+          return;
+        }
+        out += '<div style="padding:0 4px 8px ' + (12 + li * 10) + 'px;">' + vals.map(function (v) {
+          var g = byVal[v], dup = g.length > 1;
+          return '<div title="' + esc(g.map(function (s) { return s.name; }).join(' · ')) + '" style="font-size:11.5px;padding:1px 0;color:var(--pd-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+            '<span style="color:var(--pd-muted);">└ </span>' + esc(v) +
+            (dup ? '<span style="color:var(--pd-muted);"> ×' + g.length + '</span>' : '') + '</div>';
+        }).join('') + '</div>';
+      });
+      var grp = state.filter(function (s) { return !s.lvl; });
+      var gon = treeSel === '__none__';
+      out += '<div class="lw-tnode" data-tree="__none__" style="cursor:pointer;padding:4px 6px;border-radius:5px;margin-top:8px;border-top:1px solid var(--pd-line);' +
+        (gon ? 'background:var(--pd-red-light);' : '') + '">' +
+        '<span style="font-weight:600;font-size:12.5px;">Grouping only</span>' +
+        '<span style="color:var(--pd-muted);font-size:11px;"> · ' + grp.length + ' branch' + (grp.length === 1 ? '' : 'es') + '</span></div>' +
+        '<div style="padding:2px 6px 4px 12px;color:var(--pd-muted);font-size:11px;">Not a place — a grouping of activities (a phase, a trade, a work type). Nothing is written for these and they never draw a stacking band. Moving a branch here also <strong>clears</strong> any location value it wrote before.</div>';
+      return out;
+    }
+    var m = UI.modal('<div style="width:100%;height:86vh;display:flex;flex-direction:column;">' +
       '<div style="flex:0 0 auto;">' +
-      '<h2 style="margin:0 0 4px;">Match the WBS to your location breakdown</h2>' +
-      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">These are the WBS names sitting above real activities <strong>under Execution Phase</strong> only, most-used first — location/zone is a construction concept, so Initiation and Planning-phase work is never touched. Say which location level each one <em>is</em>; leave the rest as “not a location”. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
+      '<h2 style="margin:0 0 4px;">Match the WBS to your Location Breakdown Structure (LBS)</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">Every WBS branch below is one of two things. A <strong>location</strong> is a <em>place</em> — tower / building, level / floor, zone, cluster, unit — and those build your <strong>LBS</strong>, which is what the Vertical Stacking draws. A <strong>grouping</strong> organises activities — a phase, a trade, a work type — writes nothing, and never becomes a floor. Say which level each place <em>is</em> and leave the rest as <strong>grouping only</strong>. The value on the right is what gets written. A tower split across its structural stages is <strong>combined for you</strong> — <em>Tower D - Substructure</em>, <em>SUBSTRUCTURE - TOWER D</em> and <em>TOWER-D SUPERSTRUCTURE</em> all propose the same <em>Tower D</em>, so one building stays one building. Edit any value to tidy it further.</p>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
-        '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 200px;">' +
+        '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 180px;min-width:0;">' +
         '<select class="pd-input" id="lw-filter" style="flex:0 0 190px;">' +
-          '<option value="sug">Proposed matches</option><option value="un">Not matched</option><option value="all">All names</option>' +
+          '<option value="sug">Proposed matches</option><option value="un">Not matched yet</option>' +
+          '<option value="grp">Grouping only</option><option value="all">All names</option>' +
         '</select>' +
+        '<select class="pd-input" id="lw-depth" style="flex:0 0 170px;">' + depthOptions() + '</select>' +
         '<button class="pd-btn" id="lw-bulk">Assign all shown to…</button>' +
-        '<select class="pd-input" id="lw-bulk-lvl" style="flex:0 0 130px;">' + lvlOptions('') + '</select>' +
+        '<select class="pd-input" id="lw-bulk-lvl" style="flex:0 0 200px;">' + lvlOptions('') + '</select>' +
       '</div>' +
       '<div id="lw-shown" style="font-size:11.5px;color:var(--pd-muted);margin-bottom:2px;"></div>' +
       '<div id="lw-counts" style="font-size:12px;color:var(--pd-muted);margin-bottom:6px;"></div>' +
       '</div>' +
-      '<div style="flex:1 1 auto;min-height:120px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;">' +
+      '<div style="flex:1 1 auto;min-height:120px;display:flex;gap:10px;align-items:stretch;">' +
+        '<div style="flex:1 1 auto;min-width:0;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;">' +
         '<table class="ps-table" style="min-width:0;font-size:12px;width:100%;"><thead style="position:sticky;top:0;z-index:1;background:var(--pd-card);"><tr>' +
         '<th style="text-align:left;">WBS name <span style="font-weight:400;color:var(--pd-muted);">(where it sits)</span></th>' +
+        '<th style="text-align:center;">WBS level</th>' +
         '<th style="text-align:right;">Activities</th><th style="text-align:left;">Location level</th><th style="text-align:left;">Value to write</th>' +
         '</tr></thead><tbody id="lw-rows">' + rowsHtml() + '</tbody></table></div>' +
+        '<div id="lw-tree" style="flex:0 0 clamp(220px,24%,330px);overflow:auto;border:1px solid var(--pd-line);border-radius:6px;padding:8px;background:var(--pd-bg);"></div>' +
+      '</div>' +
       '<details id="lw-prev-wrap" style="flex:0 0 auto;font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);margin-top:10px;padding-top:8px;">' +
         '<summary style="cursor:pointer;color:var(--pd-ink);font-weight:600;">Preview what will change</summary>' +
         '<div id="lw-prev" style="max-height:18vh;overflow:auto;margin-top:6px;"></div>' +
@@ -10001,8 +10419,15 @@
     // its overflow-y:auto forces overflow-x to auto too) — a width set on OUR inner div is a child
     // of that box, so it just overflowed it, and the whole dialog (not just the table) scrolled
     // sideways. Overriding the real `.pd-modal` element's own width is what actually widens it.
+    // ⚠️ maxHeight is overridden too: the shared rule caps the box at 85vh, so our own 86vh inner
+    // column would have been clipped by it and the footer buttons pushed out of reach.
     var _pm = m.el.querySelector('.pd-modal');
-    if (_pm) { _pm.style.maxWidth = 'min(94vw,980px)'; _pm.style.overflowX = 'hidden'; }
+    if (_pm) {
+      _pm.style.maxWidth = 'min(96vw,1480px)';
+      _pm.style.width = 'min(96vw,1480px)';
+      _pm.style.maxHeight = '92vh';
+      _pm.style.overflowX = 'hidden';
+    }
 
     function mapping() {
       return LOC_LEVELS.map(function (l) {
@@ -10026,8 +10451,12 @@
     }
     function repaint() {
       m.el.querySelector('#lw-rows').innerHTML = rowsHtml();
+      m.el.querySelector('#lw-tree').innerHTML = treeHtml();
       var n = visible().length;
-      m.el.querySelector('#lw-shown').textContent = n + ' name' + (n === 1 ? '' : 's') + ' shown — "Assign all shown to…" affects exactly these.';
+      var lens = treeSel ? (treeSel === '__none__' ? ' · narrowed to Grouping only' :
+        (' · narrowed to ' + ((LOC_LEVELS.filter(function (l) { return l.id === treeSel; })[0] || {}).name || ''))) : '';
+      m.el.querySelector('#lw-shown').innerHTML = esc(n + ' name' + (n === 1 ? '' : 's') + ' shown — "Assign all shown to…" affects exactly these.' + lens) +
+        (treeSel ? ' <a href="#" id="lw-tclear" style="color:var(--pd-red-dark);">clear</a>' : '');
       preview();
     }
 
@@ -10036,7 +10465,7 @@
       var s = state[+tr.dataset.i]; if (!s) return;
       if (e.target.classList.contains('lw-lvl')) {
         s.lvl = e.target.value;
-        s.excluded = !s.lvl; // explicit "— not a location —" pick — remembered on Apply
+        s.excluded = !s.lvl; // explicit "grouping only" pick — remembered on Apply
         // Re-clean the value for the newly chosen level, unless the planner typed their own.
         if (!s.valEdited) s.val = s.lvl ? locGuessValue(s.name, s.lvl, LOC_LEVELS) : s.name;
         var vi = tr.querySelector('.lw-val'); vi.disabled = !s.lvl; vi.value = s.val;
@@ -10045,6 +10474,19 @@
     });
     m.el.querySelector('#lw-q').oninput = function (e) { q = e.target.value; repaint(); };
     m.el.querySelector('#lw-filter').onchange = function (e) { filter = e.target.value; repaint(); };
+    m.el.querySelector('#lw-depth').onchange = function (e) { depthF = e.target.value; repaint(); };
+    // Delegated on the panel, not bound per node: the tree is re-rendered on every repaint, so
+    // per-node handlers would be rebound dozens of times a keystroke and lost on each rebuild.
+    m.el.querySelector('#lw-tree').addEventListener('click', function (e) {
+      var n = e.target.closest('.lw-tnode'); if (!n) return;
+      var k = n.dataset.tree;
+      treeSel = (treeSel === k) ? '' : k;   // clicking the selected node clears the lens
+      repaint();
+    });
+    m.el.querySelector('#lw-shown').addEventListener('click', function (e) {
+      if (e.target.id !== 'lw-tclear') return;
+      e.preventDefault(); treeSel = ''; repaint();
+    });
     m.el.querySelector('#lw-bulk').onclick = function () {
       var lvl = m.el.querySelector('#lw-bulk-lvl').value;
       // Same re-clean rule as the per-row dropdown: a value the planner hasn't hand-edited is
@@ -10058,10 +10500,51 @@
       repaint();
     };
     m.el.querySelector('#lw-x').onclick = m.close;
+    // ⚠️⚠️ UN-MATCHING USED TO DO NOTHING TO THE DATA, and that is why a grouping branch went on
+    // drawing a floor forever. `locMapPlan` only ever SETS values; a branch that was previously
+    // matched (say "Superstructure" → Level) and is now marked grouping-only left its value stamped
+    // on every activity beneath it, so the stacking, the grouping dimensions and the Location
+    // columns all kept reporting a place that the planner had just said is not one.
+    // The clear pass is deliberately NARROW: it removes a value ONLY where
+    //   (a) the branch was in this level's SAVED match table and is not in the new one, AND
+    //   (b) that branch is the activity's deepest match for the level (same resolution the write
+    //       uses, so it cannot reach an activity the branch never wrote), AND
+    //   (c) the stored value still equals what that branch would have written, AND
+    //   (d) the new matching does not set a value for that level on that activity.
+    // Anything typed by hand, by an importer, or by the backfill is therefore left alone — this
+    // undoes THIS TOOL's own writes and nothing else.
+    function clearPlan(setUps) {
+      var setBy = {}; setUps.forEach(function (u) { setBy[u.rec.id] = u.loc; });
+      var byId = {};
+      LOC_LEVELS.forEach(function (l) {
+        var now = {}; state.forEach(function (x) { if (x.lvl === l.id && String(x.val || '').trim()) now[x.name] = String(x.val).trim(); });
+        var saved = l.match || {}, removed = {}, any = false;
+        Object.keys(saved).forEach(function (nm) { if (!(nm in now)) { removed[nm] = saved[nm]; any = true; } });
+        if (!any) return;
+        var src = locSrcsAssigned(function (r) { return r.wbs; }, nameByCode, removed);
+        acts.forEach(function (r) {
+          var was = src.get(r); if (!was) return;
+          var cur = (setBy[r.id] || r.location || {});
+          if (String(cur[l.id] || '') !== String(was)) return;   // already changed, or set by the new matching
+          (byId[r.id] || (byId[r.id] = { rec: r, lvls: [] })).lvls.push(l.id);
+        });
+      });
+      return Object.keys(byId).map(function (id) {
+        var e = byId[id], loc = Object.assign({}, setBy[id] || e.rec.location || {});
+        e.lvls.forEach(function (lid) { delete loc[lid]; });
+        return { rec: e.rec, loc: loc, cleared: e.lvls.length };
+      });
+    }
     m.el.querySelector('#lw-go').onclick = async function () {
       var map = mapping();
-      if (!map.length) { UI.toast('Match at least one WBS name to a level first.', 'warn'); return; }
       var p = locMapPlan(acts, map, function (r) { return r.location; }, true);
+      var clears = clearPlan(p.ups);
+      // A record that is both set and cleared is ONE upsert: clearPlan already started from the set
+      // patch, so its `loc` supersedes.
+      var clearedIds = {}; clears.forEach(function (c) { clearedIds[c.rec.id] = 1; });
+      p.ups = p.ups.filter(function (u) { return !clearedIds[u.rec.id]; }).concat(clears);
+      var nCleared = clears.reduce(function (a, c) { return a + c.cleared; }, 0);
+      if (!map.length && !clears.length) { UI.toast('Match at least one WBS name to a level first.', 'warn'); return; }
       if (!p.ups.length) { UI.toast('Nothing to update — the matching produces the values already stored.', 'info'); m.close(); return; }
       m.close(); showLoading('Applying the location matching…');
       var prev = {}; p.ups.forEach(function (u) { prev[u.rec.id] = u.rec.location; });
@@ -10090,9 +10573,14 @@
       var carried = loadLocExcluded().filter(function (n) { return !stateNames[n]; });
       var stillExcluded = state.filter(function (s) { return s.excluded && !s.lvl; }).map(function (s) { return s.name; });
       saveLocExcluded(carried.concat(stillExcluded));
+      _vsGrpCache = null;   // the stacking's grouping veto reads this list — stale = wrong bands
+      _vsAxisCache = null;
       rebuild(false); renderGrid(); renderGantt();
       var wokCount = p.ups.length - wres.failedIds.length;
-      var wpartial = wres.failedIds.length ? (' Located ' + wokCount + ' of ' + p.ups.length + ' — run this again to retry the rest.') : ('Located ' + p.ups.length + ' activities.');
+      var wpartial = wres.failedIds.length ? (' Updated ' + wokCount + ' of ' + p.ups.length + ' — run this again to retry the rest.') : ('Updated ' + p.ups.length + ' activities.');
+      // Stated separately: clearing is the half nobody expects, and a silent removal of stored
+      // location values is exactly the kind of change that has to be visible when it happens.
+      if (nCleared) wpartial += ' Cleared ' + nCleared + ' location value' + (nCleared === 1 ? '' : 's') + ' written by branches now marked grouping-only.';
       UI.toast(wpartial + (savedOk ? '' : ' (The matching itself could not be saved — run the 2026-08-05 location-level-match migration.)'), (wres.ok && savedOk) ? 'success' : 'warn');
     };
     preview();
@@ -12141,7 +12629,7 @@
       // The stacking is a picture, so it survives a phone as itself — rendered into the mobile
       // host rather than the hidden desktop one (see renderVStack's host argument).
       host.innerHTML = bar + '<div class="ps-vstack" id="ps-m-stack"></div>';
-      try { renderVStack(document.getElementById('ps-m-stack')); }
+      try { _vsRenderSafe(document.getElementById('ps-m-stack')); }
       catch (e) { try { console.error('[ps] stacking failed on phone', e); } catch (e2) {} }
       host.querySelectorAll('.ps-m-seg [data-mv]').forEach(function (b) {
         b.onclick = function () { _psMView = b.dataset.mv; try { localStorage.setItem('ps_mview', _psMView); } catch (e) {} renderMobile(); };
@@ -13014,11 +13502,25 @@
     _vsAxisKey = key; _vsAxisCache = ax;
     return ax;
   }
+  /* ⚠️⚠️ CANONICALISED AT READ TIME, so a building already stored under two spellings draws ONE
+     card. Owner, 2026-09-03: the substructure and the superstructure of one tower arrive as separate
+     WBS branches, and every project matched before locTowerToken existed has them stamped verbatim —
+     "Tower 1 - Substructure" and "Tower 1 - Superstructure" sitting in `location` as two
+     distinct tower values. The stacking then drew Tower 1 twice, each card holding half the work and
+     each reporting a % complete against half a building, and the tower picker listed both.
+     ⚠️ READ-TIME ONLY — no row is written and no stored value is changed. Same precedent as the
+     grouping veto a few lines above: the permanent fix is to re-run "Match WBS to locations…", which
+     now proposes the canonical token itself, and a project that does so sees no change here.
+     ⚠️ FALLS BACK TO THE RAW VALUE whenever no token can be read. A project whose towers are named
+     "T1"/"T2", or "North Wing", carries no family word, so locTowerToken returns '' and the value is
+     passed through untouched — those projects are byte-identical to before. */
   function _vsTowerOf(r) {
     if (!r || !r.location) return '';
     var id = _vsTowerLevelId();
     var v = id ? r.location[id] : '';
-    return String(v || r.location[VS_LOC_TOWER] || '').trim();
+    var raw = String(v || r.location[VS_LOC_TOWER] || '').trim();
+    if (!raw) return '';
+    return locTowerToken(raw) || raw;
   }
   // Distinct towers present in a set, in first-seen order — which is the builder's tower order,
   // since the push walks the towers in sequence. Untagged rows are NOT counted here; they get
@@ -13055,7 +13557,37 @@
   // "Has a level" means a value on the STACK'S axis level (the floor), not on the tower — see
   // _vsAxis. Reading the tower here is what made a fully-floored multi-tower project look fine
   // while every floor sat in one band.
-  function _vsHasLevel(r) { var ax = _vsAxis(); return !!(ax.length && locValOf(r, ax[0].id)); }
+  // ⚠️⚠️ THE STACKING READS THE LBS, NOT THE WBS — this is what enforces it.
+  // A stored location value is only honoured as a PLACE. A value that names a grouping (a phase, a
+  // trade, or a branch the planner has explicitly marked "grouping only" in Match WBS to locations)
+  // is treated as ABSENT, so it can never draw a band. Two ways such a value gets there:
+  //   • an older match that classified "Superstructure" as a Level (the guesser used to propose it);
+  //   • an importer or backfill that stamped a branch name wholesale.
+  // ⚠️ NOTHING IS DROPPED. An activity whose axis value is vetoed here simply has no level, so it
+  // lands in the existing dashed "No level" band — which already explains itself and points at the
+  // matcher. Silently deleting the work would be far worse than banding it honestly.
+  // ⚠️ Read-time only: no row is modified and no value is deleted. The permanent fix is to mark the
+  // branch grouping-only in the matcher, which now clears what it previously wrote.
+  var _vsGrpCache = null, _vsGrpKey = null;
+  function _vsGroupingSet() {
+    var key = pid + '|' + LOC_LEVELS.length;
+    if (_vsGrpCache && _vsGrpKey === key) return _vsGrpCache;
+    var set = Object.create(null);
+    try { loadLocExcluded().forEach(function (n) { set[String(n).trim().toLowerCase()] = 1; }); } catch (e) {}
+    _vsGrpKey = key; _vsGrpCache = set;
+    return set;
+  }
+  function locIsGroupingValue(v) {
+    var t = String(v == null ? '' : v).trim();
+    if (!t) return false;
+    if (_vsGroupingSet()[t.toLowerCase()]) return true;
+    return !!locGroupingReason(t, LOC_LEVELS);
+  }
+  function _vsLevVal(r, levelId) {
+    var v = locValOf(r, levelId);
+    return locIsGroupingValue(v) ? '' : v;
+  }
+  function _vsHasLevel(r) { var ax = _vsAxis(); return !!(ax.length && _vsLevVal(r, ax[0].id)); }
   var VS_NOLEV = '— No level —';
   // Duration-weighted % complete — the same weighting the WBS roll-ups use, so a stacking cell and a
   // summary row covering the same activities can never disagree.
@@ -13581,7 +14113,7 @@
     var _ax = _vsAxis(), lvl0 = _ax[0].id, detail = _vsDetailNow();
     var byLevel = {}, levels = [], noLev = [];
     list.forEach(function (r) {
-      var v = locValOf(r, lvl0);
+      var v = _vsLevVal(r, lvl0);                        // LBS values only — see _vsLevVal
       if (!v) { noLev.push(r); return; }                 // project-wide work — banded at the bottom
       if (!(v in byLevel)) { byLevel[v] = []; levels.push(v); }
       byLevel[v].push(r);
@@ -14534,8 +15066,48 @@
   function renderVStack(hostEl) {
     var host = hostEl || document.getElementById('ps-vstack'); if (!host) return;
     if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
+    /* ⚠️⚠️ THREE DIFFERENT ANSWERS, WHERE THERE USED TO BE ONE ACCUSATION. An empty LOC_LEVELS was
+       reported as "this project has no Location Breakdown Structure" no matter WHY it was empty, and
+       on the load path it is empty for seconds to minutes on every single project: load() paints
+       from cache and renders long before loadResourcesAssignments() fetches location_levels. A
+       planner who opened the stacking in that window was told their breakdown did not exist, in the
+       same session in which Schedule Setup was listing all five of its levels — see LOC_LOAD.
+       ⚠️ The 'pending' pane is not a dead end: the fetch calls _vsRepaintIfLevelsArrived() when it
+       resolves, so this replaces itself with the real building. */
     if (!LOC_LEVELS.length) {
-      host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.</div>';
+      if (LOC_LOAD === 'pending') {
+        host.innerHTML = '<div class="ps-vs-empty">Loading this project&rsquo;s location breakdown…<br><span style="opacity:.7;font-size:12px;">The stacking draws itself as soon as the levels arrive.</span></div>';
+      } else if (LOC_LOAD === 'error') {
+        // ⚠️ Name the database failure instead of blaming the planner for it. The 2026-08-04
+        // migration is the usual cause, and "you have no levels" sends them to build what they
+        // already have.
+        host.innerHTML = '<div class="ps-vs-empty">The location breakdown could not be read, so there is nothing to stack yet.<br><span style="opacity:.7;font-size:12px;">' + esc(LOC_LOAD_ERR || 'the location_levels query failed') + ' — if this project has never had location levels, the 2026-08-04 location migration may not have been run.</span>' +
+          '<div style="margin-top:12px;"><button class="pd-btn" id="ps-vs-recheck">Check again</button></div></div>';
+      } else {
+        /* ⚠️ THE DIAGNOSTIC LINE IS THE POINT. This message has now been shown twice on a project
+           that demonstrably HAS five levels, and neither report could be resolved because the app
+           never said what it had actually asked or what came back. It now names the project id it
+           queried and the row count it got, so "the query returned 0 for this id" and "the query was
+           never re-run" stop looking identical from a screenshot.
+           ⚠️ It reports LOC_LEVELS_AT — the project the answer BELONGS to — not `pid`. Those differ
+           exactly when the answer is stale, which is the case worth catching. */
+        host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown Structure, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.' +
+          '<div style="margin-top:12px;"><button class="pd-btn" id="ps-vs-recheck">Check again</button></div>' +
+          '<div style="opacity:.55;font-size:11px;margin-top:10px;">Queried location_levels for project ' + esc(String(LOC_LEVELS_AT || pid || '—')) +
+          ' &middot; 0 rows' + (LOC_LEVELS_AT && pid && LOC_LEVELS_AT !== pid ? ' &middot; \u26a0 this answer is from a different project — press Check again' : '') + '</div></div>';
+      }
+      // ⚠️ Wired for every empty state, not just the last one: "loading" can resolve to an error the
+      // planner wants to retry, and a failed fetch is exactly the case where a retry is the fix.
+      var _rc = host.querySelector('#ps-vs-recheck');
+      if (_rc) _rc.onclick = async function () {
+        _rc.disabled = true; _rc.textContent = 'Checking…';
+        var changed = false;
+        try { changed = await refreshLocLevels(); } catch (e) {}
+        // ⚠️ Repaint UNCONDITIONALLY here, unlike the passive hook: the planner pressed a button and
+        // must be told the answer even when the answer has not changed.
+        _vsAnim = 'fade'; _vsRenderSafe();
+        if (!changed) UI.toast('Re-read the location breakdown for this project — still ' + LOC_LEVELS.length + ' level' + (LOC_LEVELS.length === 1 ? '' : 's') + '.', 'warn');
+      };
       return;
     }
     var _actsAll = _vsActs(), detail = _vsDetailNow();
@@ -14686,6 +15258,31 @@
     var noLevList = acts.filter(function (r) { return !_vsHasLevel(r); });
     var noLevTrades = [];
     noLevList.forEach(function (r) { var t = _vsTradeOf(r); if (noLevTrades.indexOf(t) < 0) noLevTrades.push(t); });
+    // ⚠️ A THIRD cause of "no level", new and worth naming separately: the activity DOES carry a
+    // value at the axis level, but that value is a GROUPING branch (a phase or a trade), so the
+    // stacking refuses it as a place — see _vsLevVal. Without saying so, a planner reads the band as
+    // missing data and goes looking in the WBS branch column, where the value is plainly there.
+    /* ⚠️⚠️ RESOLVED HERE, ABOVE ITS FIRST READER — MOVING THIS DOWN IS THE CRASH.
+       Owner 2026-09-03: *"the vertical stacking is not shown"*, and once the render stopped failing
+       silently the pane named it: **Cannot read properties of undefined (reading '0')**.
+       `var _axLvls = _vsAxis()` sat ~20 lines BELOW the `noLevGrpVals` loop that reads
+       `_axLvls[0]`. A `var` is hoisted but its ASSIGNMENT is not, so at that loop _axLvls was
+       still `undefined` and `undefined[0]` threw — the exact message on screen.
+       ⚠️ IT ONLY THREW ON SOME PROJECTS, which is why it shipped. The loop body runs only for
+       activities with no level, so a project where every activity is located never entered it. OPW101
+       has 2,665 activities and no location breakdown yet, so EVERY row is in that list and it threw on
+       the first one — taking the whole pane with it.
+       ⚠️ Introduced by f8fc2e2 (2026-09-03), which added the grouping-value report; the declaration was
+       already further down serving lvl0Name and it was not moved up with the new reader. Every commit
+       before that one is clean — this is why the stacking worked in earlier versions.
+       ⚠️ Declaring it here changes NOTHING about what it computes: _vsAxis() is pure, memoised on the
+       level-id signature, and has no dependency on anything between the two positions. */
+    var _axLvls = _vsAxis();
+    var noLevGrpVals = [];
+    noLevList.forEach(function (r) {
+      var raw = String(locValOf(r, _axLvls[0] ? _axLvls[0].id : '') || '').trim();
+      if (raw && locIsGroupingValue(raw) && noLevGrpVals.indexOf(raw) < 0) noLevGrpVals.push(raw);
+    });
     // ⚠️ TWO DIFFERENT FAULTS, AND THEY ARE ABOUT TWO DIFFERENT LEVELS — do not merge them again.
     //   (a) An activity carries no value on the STACK'S AXIS level (the floor). It lands in the
     //       dashed "No level" band. Whole-trade work from a trade with no floors — re-push.
@@ -14705,11 +15302,15 @@
       }
       return false;
     };
-    var _axLvls = _vsAxis();
     var lvl0Name = _axLvls[0] ? _axLvls[0].name : 'level';
     // Only when the tower is a level of its own — on a one-level project the tower IS the axis, and
     // "assign every activity to one floor" would be nonsense.
-    var noTwList = (_twLvl && _twLvl.id !== _axLvls[0].id)
+    // ⚠️ GUARDED like every other read of this array. _vsAxis() falls back to the full level list
+    // rather than returning empty, but a project with NO location levels at all still yields [], and
+    // an unguarded _axLvls[0].id here would throw the moment a tower level existed alongside none —
+    // the same class of failure as the crash above, two lines apart, and the only one of the four
+    // reads that was missing its check.
+    var noTwList = (_twLvl && _axLvls[0] && _twLvl.id !== _axLvls[0].id)
       ? acts.filter(function (r) { return !locValOf(r, _twLvlId); }) : [];
     var allMissing = acts.length && noTwList.length === acts.length && noTwList.some(deeperLoc);
     var warn = '';
@@ -14750,6 +15351,11 @@
       warn += _vsWarnWrap(_vsWarnKey('nolevel', noLevList.length), '<strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
         ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(lvl0Name) + '</strong> — shown in the dashed <em>No level</em> band, ' +
         'from ' + esc(noLevTrades.join(', ')) + '. A ' + esc(lvl0Name) + ' is read from the WBS branch names, so either:' +
+        (noLevGrpVals.length ? ('<br>• <strong>the branch is a grouping, not a place</strong> — ' +
+          esc(noLevGrpVals.slice(0, 6).join(', ')) + (noLevGrpVals.length > 6 ? ' and ' + (noLevGrpVals.length - 6) + ' more' : '') +
+          ' ' + (noLevGrpVals.length === 1 ? 'is a phase / trade' : 'are phases / trades') + ', not ' + esc(lvl0Name) + 's, so the stacking will not band by ' +
+          (noLevGrpVals.length === 1 ? 'it' : 'them') + '. That is deliberate: a stacking band is a physical part of the building. ' +
+          'Give this work its real ' + esc(lvl0Name) + ' in <em>Group ▾ → Match WBS to locations…</em>, or leave it here;') : '') +
         '<br>• <strong>a branch name is not matched</strong> — open the band and read the ' +
         '<em>WBS branch</em> column: if you can see a ' + esc(lvl0Name) + ' in it (an abbreviation such ' +
         'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Group ▾ → Match WBS to locations…</em>;' +
@@ -14768,7 +15374,18 @@
     _vsCells = {}; _vsHatchSeen = {}; _vsFocusCards = [];
     var towers;
     if (!acts.length) {
-      towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.</div>';
+      // ⚠️ "Nothing matches your filters" and "nothing in this project resolves a phase at all" are
+      // different facts, and the old message only stated the first — which is how a 16,396-activity
+      // schedule with a visibly correct Execution Phase branch read as an empty project, with the
+      // only recorded recovery being a re-import. Say which one it is, measured rather than guessed.
+      var _unph = rows.filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; });
+      var _anyPhase = _unph.some(function (r) { return phaseOf(r); });
+      towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.' +
+        ((_unph.length && !_anyPhase)
+          ? '<br><br>⚠️ <strong>Not one of this project’s ' + _unph.length.toLocaleString() + ' activities resolves ANY phase</strong>, so this is not a filter problem. ' +
+            'A phase is read from the activity’s own Phase field, then its WBS node, then its dotted WBS code — if the grid shows a correct tree but nothing resolves, the activities are not linked to the WBS nodes ' +
+            'and their branch names carry no phase word. Re-run <em>Schedule Setup → WBS → Adopt existing WBS</em> to link them, or tag the top-level branches in the WBS step.'
+          : '') + '</div>';
     } else if (_vsScope === 'tower') {
       // One model per tower, every trade combined inside it — the side-by-side comparison the
       // owner asked for. Untagged rows get their own card rather than vanishing.
@@ -14877,6 +15494,57 @@
     host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
     if (window.Icons) Icons.hydrate(host);
   }
+  /* ⚠️ THE STACKING IS NOT REPAINTED BY renderAll() — it never was, and that is what made the empty
+     message permanent. renderAll() draws the header, grid, Gantt, legend and details; the stacking
+     pane is painted only by setVStackMode() and by its own controls. So a pane that rendered during
+     the load, before location_levels came back, kept saying "no Location Breakdown Structure" for
+     the rest of the session no matter what arrived afterwards. Called from the location_levels
+     fetch, and cheap: it does nothing unless the pane is actually open AND showing one of the empty
+     states, so a stacking already drawn from cached levels is never re-rendered under the planner. */
+  var _vsLastLevelSig = '';
+  function _vsRepaintIfLevelsArrived() {
+    var sig = LOC_LOAD + '|' + LOC_LEVELS.map(function (l) { return l && l.id; }).join(',');
+    if (sig === _vsLastLevelSig) return;
+    _vsLastLevelSig = sig;
+    // ⚠️ Nothing has ARRIVED yet — still pending with no levels means the pane is already showing
+    // the right message, so re-rendering it would paint the identical string over itself. Only a
+    // resolved load, or levels actually appearing, is news.
+    if (LOC_LOAD === 'pending' && !LOC_LEVELS.length) return;
+    if (!vstackMode) return;
+    var host = document.getElementById('ps-vstack');
+    // Only when the pane is showing an empty state — repainting a drawn building would throw away
+    // the planner's scroll position and any focus window they had opened.
+    if (!host || !host.querySelector('.ps-vs-empty')) return;
+    _vsAnim = 'fade';
+    _vsRenderSafe();
+  }
+  /* ⚠️⚠️ A THROW INSIDE renderVStack USED TO LEAVE THE PANE COMPLETELY BLANK — no building, no
+     message, no error, nothing. Owner 2026-09-03 (OPW101, One Portwood Residences): *"the vertical
+     stacking is not shown even if it is already under execution phase"*, with a screenshot of an
+     empty panel — not the "no Location Breakdown Structure" text, which would at least have said
+     something. Every branch of renderVStack assigns host.innerHTML, so a pane showing NOTHING means
+     the function exited between the display toggle and its first write: it threw.
+     ⚠️ And it threw INVISIBLY. setVStackMode called renderVStack bare, so the exception escaped into
+     the click handler, _animIn(host) never ran, and the planner got a blank rectangle with no way to
+     report anything more useful than "it is not shown" — which is why this took three rounds to get
+     to. A silent failure in a view is worse than a broken view.
+     ⚠️ This does NOT paper over the bug: it turns a blank pane into a NAMED one and logs the stack.
+     ⚠️ It is a wrapper, not a rewrite. renderVStack itself is unchanged, and the try/catch has no
+     effect on any path that works. */
+  function _vsRenderSafe(hostEl) {
+    try { renderVStack(hostEl); }
+    catch (e) {
+      try { console.error('[ps] Vertical Stacking failed to render', e); } catch (e2) {}
+      var host = hostEl || document.getElementById('ps-vstack');
+      if (!host) return;
+      host.innerHTML = '<div class="ps-vs-empty">The Vertical Stacking could not be drawn for this project.' +
+        '<br><span style="opacity:.7;font-size:12px;">' + esc((e && e.message) ? e.message : String(e)) +
+        ' — the schedule itself is unaffected; this is the stacking view only. The full details are in the browser console.</span>' +
+        '<div style="margin-top:12px;"><button class="pd-btn" id="ps-vs-recheck">Try again</button></div></div>';
+      var b = host.querySelector('#ps-vs-recheck');
+      if (b) b.onclick = function () { b.disabled = true; b.textContent = 'Retrying…'; _vsAnim = 'fade'; _vsRenderSafe(hostEl); };
+    }
+  }
   function setVStackMode(on) {
     vstackMode = on;
     if (on && progressMode) setProgressMode(false);   // one full-width panel at a time
@@ -14885,7 +15553,19 @@
     _paintViewBtn();
     document.body.classList.toggle('ps-vstack-on', !!on);
     var host = document.getElementById('ps-vstack'); if (host) host.style.display = on ? 'block' : 'none';
-    if (on) { _vsAnim = 'in'; renderVStack(); _animIn(host); }
+    if (on) {
+      _vsAnim = 'in'; _vsRenderSafe(); _animIn(host);
+      /* ⚠️ AND RE-ASK THE DATABASE. Painting first keeps the pane instant; the refetch then corrects
+         it if this tab's copy of the breakdown is stale — which is the owner's second report
+         ("still says no location breakdown after full load"), where the levels exist and are visible
+         in another tab but this tab fetched once, got nothing, and had no way to learn otherwise.
+         ⚠️ Deliberately NOT awaited: the pane must not wait on a round trip to appear. The refetch
+         repaints through _vsRepaintIfLevelsArrived, and only if the pane is still showing an empty
+         state — so a building already drawn is never pulled out from under the planner.
+         ⚠️ One bounded select on a handful of rows, and only when the pane is OPENED, so this is not
+         in any render or scroll path. */
+      try { refreshLocLevels(); } catch (e) {}
+    }
     else { _animIn(document.querySelector('.ps-split')); }
   }
 
@@ -20461,8 +21141,35 @@
       // project that genuinely has no Planning Phase has nowhere to put these, and inventing one
       // from a heal would impose a skeleton on a tree that opted out of it.
       if (!parent) continue;
+      /* ⚠️⚠️ AN UNLOCKED BRANCH COUNTS TOO, AND REQUIRING is_locked IS WHY THIS KEPT NOT WORKING.
+         Owner 2026-09-03, third report, on OPW101 (One Portwood Residences): *"there are WBS again
+         found under the execution phase that do not belong there (e.g. project execution plan,
+         design development, procurement)"* — and the grid screenshot shows `Project Execution Plan`
+         sitting as row 2 directly under Execution Phase, while WBS_SKELETON declares all three
+         under PLANNING.
+         This pass was written for the branches the SKELETON created (locked), and every one of
+         those it places correctly. But a branch that arrived in an IMPORT is UNLOCKED, and the
+         filter rejected it before any other rule was consulted — so precisely the branches that end
+         up misfiled, because the .xml/.xer had them somewhere else, were the ones it could not see.
+         ⚠️ NOTHING ELSE IS LOOSENED, and each remaining guard is load-bearing:
+           • Only branches WBS_SKELETON actually declares (`specs`). `General Requirements`,
+             `Site Works`, `Structural Works`, `MEPF Works` and every other real trade branch are
+             invisible to this and stay exactly where the planner put them. Guessing a phase from a
+             branch name is the version that quietly re-files someone else's tree.
+           • Only INTO a LOCKED skeleton root of the declared phase (`phaseByKey` filters on
+             is_locked). Moving a branch into an imported, unlocked root would be picking a winner
+             between two candidate homes on no evidence.
+           • Only OUT of the root or another LOCKED top-level phase (the `cur` test below), so a
+             `Procurement` under `MEPF Works` is MEPF's procurement and is left alone. That
+             depth-2 rule is what makes admitting unlocked nodes safe.
+           • source_kind still owns its own branches: a node mirrored from another app is matched
+             only by its marker, never by name.
+         ⚠️ A move can CREATE a same-name sibling under the destination phase. That is the
+         (parent_id, name) pair _wbsDedupeSiblingNodes keys on, and it runs after this pass in the
+         same load. ⚠️ Lossless: only parent_id and a sort slot are written, and children, activities
+         and the summary row all reference the node by id, so the whole subtree travels with it. */
       var cands = WBS_NODES.filter(function (n) {
-        if (n.id === parent.id || !n.is_locked) return false;
+        if (n.id === parent.id) return false;
         if (sp.source_kind && n.source_kind === sp.source_kind) return true;   // the marker IS the identity
         return _wbsNameKey(n.name) === sp.key && !n.source_kind;
       });
@@ -20480,9 +21187,17 @@
         moved.push(String(nd.name || sp.name) + ' \u2192 ' + parent.name);
       }
     }
+    /* ⚠️ THE PHASE MEMO MUST BE DROPPED WHEN ANYTHING MOVED. An activity's phase resolves THROUGH
+       this tree (phaseOf -> _nodePhase -> the ancestor chain) and is memoised per node id, so a
+       `Design Development` branch that just moved from Execution to Planning would go on
+       reporting Execution — and Vertical Stacking, Contract Scope and the colour legend are all
+       gated on isExecPhase. The move would be correct in the database and invisible on screen until
+       a reload, which is the same "two halves of one screen disagreeing" shape as the rest of
+       today's reports. */
+    if (moved.length) { try { _clearPhaseMemo(); } catch (e) {} try { _clearScopeMemo(); } catch (e) {} }
     // ⚠️ Never silent. It re-parents branches that carry live activities, and a planner who sees
     // Procurement move needs to know what moved it. ⚠️ Any same-name sibling this creates is merged
-    // losslessly by _wbsDedupeSkeleton, which runs later in the same load.
+    // losslessly by _wbsDedupeSiblingNodes, which runs after this pass in the same load.
     if (moved.length) {
       UI.toast('Moved ' + moved.length + ' WBS branch' + (moved.length === 1 ? '' : 'es') +
         ' back under the phase they belong to (' + moved.slice(0, 3).join(', ') +
@@ -24547,7 +25262,18 @@
     // One implicit tower becomes one EXPLICIT tower, so every existing config keeps behaving
     // identically and nothing needs migrating.
     function blankTowers() { return [{ id: uidv(), code: 'T1', name: 'Tower 1' }]; }
-    var WBS_DIMS = ['trade', 'tower', 'floor', 'zone', 'unit'];
+    /* THE DEFAULT WBS STRUCTURE IS TOWER FIRST, THEN TRADE.
+       Owner 2026-09-03: *"it should be tower and then trades bc that's the way it should be as a
+       default."* A tower is a PLACE and a trade is a kind of work done in it, so the place leads:
+       Tower > Trade > Level > Zone > Unit. The old default led with Trade, which put every tower
+       underneath every discipline and split one building across the whole tree.
+       This list is also the order MISSING dims are appended in (see the push dialog and normalize),
+       so keeping the two in step is what stops a saved setup that omits a dim from getting it back
+       in the wrong place.
+       WARNING A SAVED SETUP KEEPS ITS OWN ORDER. This is the default for setups that have never
+       chosen one -- overwriting a planner's saved structure on load would be a silent edit of their
+       work. Reorder an existing setup with the up/down arrows in Push to Project Schedule. */
+    var WBS_DIMS = ['tower', 'trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', tower: 'Tower', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
     // ⚠️ The builder's three location levels ARE the project's Location Breakdown levels — the push
     // even creates them when a project has none. Owner 2026-08-18: "the location breakdown should be
@@ -24555,17 +25281,97 @@
     // project's own levels wherever they exist (a project that calls them Tower / Level / Zone reads
     // that way in step 2 and in the push dialog), and only fall back to Floor / Zone / Unit for a
     // project that has not defined any yet.
+    /* ⚠️⚠️ WHICH LOCATION LEVEL IS THE FLOOR? IT IS NOT ALWAYS LOC_LEVELS[0].
+       Owner 2026-09-03, pushing One Portwood: *"how come when pushing for One Portwood it displays
+       Tower > Tower > Trade > Level > Zone > Unit"* — the same word twice.
+       Both the label lookup and the VALUE WRITER mapped floor→LOC_LEVELS[0], zone→[1], unit→[2].
+       That is only true for a breakdown the PUSH created, because ensureLocLevels seeds exactly
+       Floor › Zone (› Unit) with no tower. OPW101 got its levels elsewhere — the WBS matcher, the
+       LBS editor — and reads **Tower › Level › Zone › Unit**, so every dim was off by one:
+         floor → LOC_LEVELS[0] = "Tower"   (hence Tower printed twice)
+         zone  → LOC_LEVELS[1] = "Level"
+         unit  → LOC_LEVELS[2] = "Zone"
+       ⚠️⚠️ AND THIS WAS NEVER ONLY A LABEL. locMapOf writes the activity's location jsonb by the
+       SAME index, so the push stamped each floor NAME into the Tower level, each zone into Level
+       and each unit into Zone. The Vertical Stacking bands by a level id, so it was reading floor
+       names as towers and zone names as floors — a whole building shifted one level down.
+       ⚠️ Resolved by MEANING, not position: each dim claims the first level whose name belongs to
+       its synonym family, and a level already claimed cannot be claimed twice. The old positional
+       map is kept as the fallback for a breakdown whose names say nothing (a level called "L1"),
+       but it now skips a leading TOWER level rather than handing it to the floor.
+       ⚠️ Returns null rather than guessing when the project has fewer levels than the setup uses —
+       the caller then writes nothing for that dim instead of writing it into the wrong column. */
+    var DIM_SYN = {
+      tower: ["tower", "building", "bldg", "block"],
+      floor: ["level", "floor", "storey", "story", "deck"],
+      zone: ["zone", "area", "sector", "cluster"],
+      unit: ["unit", "room", "apartment"]
+    };
+    function _levelsNow() { try { return (typeof LOC_LEVELS !== "undefined" && LOC_LEVELS) ? LOC_LEVELS : []; } catch (e) { return []; } }
+    function _synHit(name, terms) {
+      var n = String(name == null ? "" : name).trim().toLowerCase();
+      if (!n) return false;
+      for (var i = 0; i < terms.length; i++) { if (n.indexOf(terms[i]) !== -1) return true; }
+      return false;
+    }
+    // dim -> the LOC_LEVELS entry it maps to (or null). Memoised on the level-id signature, since
+    // this is asked once per activity per dim during a push.
+    var _dimLvlCache = null, _dimLvlKey = null;
+    function _dimLevelMap() {
+      var lv = _levelsNow();
+      var key = lv.map(function (l) { return l && l.id; }).join("|");
+      if (_dimLvlCache && _dimLvlKey === key) return _dimLvlCache;
+      var out = {}, taken = {}, DIMS = ["tower", "floor", "zone", "unit"];
+      // Pass 1 — claim by NAME. A level already claimed can never be claimed again.
+      DIMS.forEach(function (d) {
+        for (var i = 0; i < lv.length; i++) {
+          if (taken[i]) continue;
+          if (_synHit(lv[i].name, DIM_SYN[d])) { out[d] = lv[i]; taken[i] = 1; return; }
+        }
+      });
+      /* Pass 2 — the dims no name resolved take the next UNCLAIMED level, in ONE ORDERED SWEEP.
+         `minIdx` only ever moves deeper, so a dim can never be handed a level ABOVE its parent
+         dim — that mis-ordering is the whole reason this resolver exists.
+         Indexing by the dim OWN position (the first attempt) left SLN101 unit with nothing: its
+         breakdown is Tower > Level > Orientation > Zone > Cluster, so once Tower/Level/Zone are
+         claimed by name only two levels remain and unit was asked for the third of them. Sweeping
+         forward hands it Cluster, which is what a planner means by the deepest location.
+         A level the builder does not model (Orientation) is simply left unclaimed, never absorbed. */
+      var minIdx = 0;
+      DIMS.forEach(function (d) {
+        if (out[d]) { minIdx = Math.max(minIdx, _idxOf(lv, out[d]) + 1); return; }
+        /* THE TOWER IS CLAIMED BY NAME ONLY, NEVER BY POSITION.
+           Owner 2026-09-03: "for cases like projects with no defined number of towers, it would mean
+           as a singular tower." A breakdown with no tower-family level IS that case: the project is
+           one implicit tower, and there is nothing to write a tower value into. Letting the tower dim
+           take the first unnamed level positionally is the same off-by-one in a new coat -- on a
+           two-level breakdown (L1, Q) it would swallow L1 as the "tower" and shift the floor onto Q,
+           which is precisely the "levels detected as towers, zones as levels" the owner reported.
+           So: no tower level, no tower key, single tower. The builder still supports as many towers
+           as the planner defines (cfg.towers / "+ Tower"), and multiTower() drives whether the tower
+           becomes a WBS level at all. */
+        if (d === 'tower') return;
+        for (var i = minIdx; i < lv.length; i++) {
+          if (taken[i]) continue;
+          out[d] = lv[i]; taken[i] = 1; minIdx = i + 1; return;
+        }
+      });
+      _dimLvlKey = key; _dimLvlCache = out;
+      return out;
+    }
+    function _idxOf(lv, l) { for (var i = 0; i < lv.length; i++) if (lv[i] === l) return i; return -1; }
+    function locLevelFor(dim) { return _dimLevelMap()[dim] || null; }
     function dimLabelOf(d) {
-      var idx = { floor: 0, zone: 1, unit: 2 }[d];
-      if (idx != null) {
-        try {
-          var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS[idx] : null;
-          if (lv && String(lv.name || '').trim()) return String(lv.name).trim();
-        } catch (e) {}
-      }
+      // ⚠️ The TOWER is included now. It used to fall straight through to DIM_LABEL.tower while the
+      // floor was being labelled with LOC_LEVELS[0] — which on a Tower-first breakdown IS the tower,
+      // so the WBS-order editor printed "Tower › Tower".
+      try {
+        var lv = locLevelFor(d);
+        if (lv && String(lv.name || '').trim()) return String(lv.name).trim();
+      } catch (e) {}
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'tower', 'floor', 'zone', 'unit'], phases: {} }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'floor', 'zone', 'unit'], phases: {} }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -25048,6 +25854,10 @@
         // checking steps, not back on Start. stageImport sets step before switching the tab, and
         // this branch is what would otherwise reset it as the setup list loads.
         curPid = projectId; step = imp ? 1 : 0; await loadCfg();
+        // ⚠️ The schedule grid's DEFAULT grouping follows this setup — see _adoptSetupGrouping. The
+        // Project Schedule may already be open behind this tab with the plain WBS tree, because the
+        // cfg did not exist when it loaded.
+        try { if (typeof _adoptSetupGrouping === 'function') _adoptSetupGrouping(); } catch (e) {}
       } else render();
     }
 
@@ -25844,7 +26654,30 @@
       // discipline). Trades that DO have floors keep their full per-location breakdown, unchanged.
       var haveLoc = {}; locs.forEach(function (l) { haveLoc[l.trade] = 1; });
       usedGroups().forEach(function (tr) {
-        if (!haveLoc[tr] && tradeActs(tr).length) locs.push({ uid: tr + '/__all__', trade: tr, floor: { id: '__all__', code: '', name: '', zones: [], _all: true }, zone: null, unit: null });
+      /* ⚠️⚠️ AN UN-FLOORED TRADE IS STILL IN THE BUILDING, SO IT CARRIES THE TOWER.
+         Owner 2026-09-03: *"i dont think if there is no floors or zones under a trade, it should have
+         an all location. if it is still under tower 1, then it is under tower 1."* Correct — "no
+         floors" says nothing about WHICH BUILDING the work is in. General Requirements and Site Works
+         are project-wide, not location-less.
+         The fallback used to leave `towerId` unset entirely, so `locMapOf` wrote no tower value at
+         all: those activities were the only ones in the project with a blank Tower, which put them in
+         the stacking's no-tower bucket and, when a tower level existed, beside the tower branches
+         instead of inside them.
+         ⚠️ It uses `towerIdOf` — the SAME resolver every real floor goes through in locList, which
+         falls back to the first tower for a floor that names none. Consistency with that convention
+         matters more than a special case here: a single-tower project (the reported one) resolves
+         unambiguously to its only tower, and a multi-tower project lands on the first, exactly as an
+         un-towered floor already does. A trade that genuinely belongs to one specific tower should be
+         given floors in step 5 — that is the place where the planner says so.
+         ⚠️ The FLOOR stays `_all`. This adds the tower it is in; it does not invent a storey. The
+         floor/zone/unit levels are still skipped for this row (dimKey reads `floor._all`), so it
+         attaches at the tower and no fake location is written beneath it. */
+        if (!haveLoc[tr] && tradeActs(tr).length) {
+          var _allFloor = { id: '__all__', code: '', name: '', zones: [], _all: true };
+          var _allTw = towerIdOf(_allFloor);
+          locs.push({ uid: tr + '/__all__', trade: tr, floor: _allFloor, zone: null, unit: null,
+                      towerId: _allTw, tower: towerLabel(_allTw) });
+        }
       });
       var days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l, basis); });
       var starts = computeStarts(locs, days), start = pdd(startOverride) || pdd(cfg.startDate) || new Date();
@@ -25952,7 +26785,7 @@
          something else while it was being typed. */
       { t: 'Working calendars', s: 'Which days are workable', fn: stCalendars },
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
-      { t: 'Floors & Zones', s: 'Location breakdown', fn: stLevels },
+      { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stLevels },
       { t: 'Tower links', s: 'How towers interface', fn: stTowerLinks },
       { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
       { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
@@ -25971,7 +26804,7 @@
          4 review      — and only here does anything get written. */
     var STEPS_IMP = [
       { t: 'Activities & phases', s: 'Check the file, file each branch', fn: stImpPhases },
-      { t: 'Floors & Zones', s: 'Location breakdown', fn: stImpLoc },
+      { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stImpLoc },
       { t: 'Relationships', s: 'Keep the file\u2019s logic, or not', fn: stImpRels },
       { t: 'Review & import', s: 'Write it into the schedule', fn: stImpCommit },
     ];
@@ -29962,16 +30795,34 @@
       var incl = {}; WBS_DIMS.forEach(function (d) { incl[d] = cfg.wbsOrder.indexOf(d) >= 0; });
       function renderStruct() {
         var host = ov.querySelector('#sbpush-struct'); if (!host) return;
+        /* ⚠️ A DIM THAT WILL BE SKIPPED IS NOT COUNTED AND NOT PROMISED. This is the honest half of
+           the single-tower rule (see dimKey): the Tower level is only built when there is more than
+           one tower, so on a one-tower project it must not appear as "L1" and must not be included in
+           the "N-level WBS" line. Ticking it is still allowed and still remembered — add a second
+           tower and it starts building — it simply does not claim a level it will not occupy.
+           ⚠️ Driven by the same predicate the push uses, not a copy of it. Two functions disagreeing
+           about which levels get built is the bug this whole exchange has been about. */
+        function willBuild(d) { return incl[d] && !(d === 'tower' && !multiTower()); }
         var lvl = 0;
         host.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">WBS structure <span style="font-weight:400;color:var(--pd-muted);">(drag order with ↑/↓; tick to include)</span></div>' +
           '<div class="sbld-wbsrows">' + work.map(function (d, i) {
-            var on = incl[d]; if (on) lvl++;
-            return '<div class="sbld-wbsrow"><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
-              '<span class="sbld-wbslvl">' + (on ? 'L' + lvl : '—') + '</span> ' + e2(dimLabelOf(d)) + '</label>' +
+            var on = incl[d], build = willBuild(d); if (build) lvl++;
+            var skipped = on && !build;
+            return '<div class="sbld-wbsrow"' + (skipped ? ' style="opacity:.6;"' : '') + '><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
+              '<span class="sbld-wbslvl">' + (build ? 'L' + lvl : '—') + '</span> ' + e2(dimLabelOf(d)) +
+              (skipped ? '<span class="sbld-hint" style="margin:0;">skipped — this project has one tower, so it would be a level with a single branch</span>' : '') + '</label>' +
               '<button class="pd-btn sbld-wbsmv" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
               '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === work.length - 1 ? ' disabled' : '') + '>↓</button></div>';
           }).join('') + '</div>' +
-          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + e2(work.filter(function (d) { return incl[d]; }).map(dimLabelOf).join(' → ')) : 'No levels selected — tick at least one level.') + '</p>';
+          /* ⚠️ NAME THE TOP OF THE TREE, not just the chain. The order line alone reads as a list of
+             things that will be present, and a planner who wants trade branches under the Execution
+             Phase can tick Trade, see it in the list, and still get floors at the top because Trade is
+             third. That is exactly the reported "the trades vanished" — they were built, one level
+             under every floor. Saying which level is the FIRST branch makes the consequence of the
+             order visible before the push instead of after it. */
+          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + e2(work.filter(willBuild).map(dimLabelOf).join(' → ')) : 'No levels selected — tick at least one level.') + '</p>' +
+          (lvl ? '<p class="sbld-hint" style="margin:2px 0 0;opacity:.8;">Directly under the Execution Phase you will see <b>' +
+            e2(dimLabelOf(work.filter(willBuild)[0])) + '</b> branches; everything below it nests inside them. Drag with ↑/↓ to change what leads.</p>' : '');
         host.querySelectorAll('[data-dim]').forEach(function (c) { c.onchange = function () { incl[c.dataset.dim] = c.checked; renderStruct(); }; });
         host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; var t = work[i - 1]; work[i - 1] = work[i]; work[i] = t; renderStruct(); }; });
         host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; var t = work[i + 1]; work[i + 1] = work[i]; work[i] = t; renderStruct(); }; });
@@ -30055,14 +30906,30 @@
         // silently has no values is not. The stacking's tower CHIPS still only appear when there is
         // more than one tower to choose between (see renderVStack), so the noise this guard was
         // avoiding is still avoided — at the display layer, where it belongs.
-        if (loc.towerId) out.tower = towerLabel(loc.towerId);
-        for (var i = 0; i < parts.length && i < locIds.length; i++) {
+        if (loc.towerId) {
+          out.tower = towerLabel(loc.towerId);
+          // ⚠️ AND under the tower LEVEL's own id when the project has one. The reserved literal
+          // 'tower' key is a fallback the stacking still reads, but a level id is what every other
+          // reader keys on — see the tower-level note in the vertical stacking.
+          var _tl = locLevelFor('tower');
+          if (_tl) out[_tl.id] = String(towerLabel(loc.towerId));
+        }
+        /* ⚠️⚠️ EACH PART GOES INTO ITS OWN LEVEL, RESOLVED BY MEANING — see locLevelFor. This loop
+           used to write parts[i] into locIds[i], i.e. floor→level 0, zone→1, unit→2. On a project
+           whose breakdown is Tower › Level › Zone › Unit that put every FLOOR NAME into the TOWER
+           column, every zone into Level and every unit into Zone: the whole building shifted one
+           level down, silently, on every push.
+           ⚠️ A dim with no level resolved writes NOTHING. Falling back to "the next free column"
+           is how the values got into the wrong one in the first place. */
+        var _dims = ['floor', 'zone', 'unit'];
+        for (var i = 0; i < parts.length; i++) {
           var p = parts[i]; if (!p) continue;
-          // ⚠️ Level 0 is the FLOOR, and dimName() names its WBS branch by NAME first. Storing the
-          // code here instead is what made an activity read "F11" under a branch called "12TH
-          // Floor". Match dimName exactly: floor = name||code, zone/unit = code||name.
+          var lvl = locLevelFor(_dims[i]); if (!lvl) continue;
+          // ⚠️ dimName() names the floor's WBS branch by NAME first; storing the code here instead is
+          // what made an activity read "F11" under a branch called "12TH Floor". Match it exactly:
+          // floor = name||code, zone/unit = code||name.
           var v = (i === 0) ? (p.name || p.code) : (p.code || p.name);
-          if (v) out[locIds[i]] = String(v);
+          if (v) out[lvl.id] = String(v);
         }
         return out;
       }
@@ -30265,6 +31132,41 @@
         // ⚠️ '\u0000' is buildTree's "no value at this level" sentinel — a row returning it skips the
         // level entirely. That is how a single-tower project keeps exactly the tree it has today:
         // with one tower there is nothing to distinguish, so the level is not worth a node.
+        /* ⚠️⚠️ A TICKED LEVEL IS BUILT. THE TOWER USED TO BE DROPPED SILENTLY.
+           Owner 2026-09-03, on OPW101: *"from schedule setup it is okay, the trades have been defined
+           well ... yet in project schedule, the trades vanished?"* The push dialog had just promised
+           **"5-level WBS: Tower -> Level -> Trade -> Zone -> Unit"**, and the tree it produced starts at
+           the FLOORS (F1, B3, B2, B1, Ground Floor ...) with no Tower branch at all.
+           The tower dim returned the "no value at this level" sentinel whenever multiTower() was
+           false, so a single-tower project silently lost the level the planner had ticked -- the
+           dialog said five levels and four were built. Combined with a Trade sitting at L3 (this
+           project reordered it there), the top of the tree became floors and the trades looked gone,
+           when they were one level down under each floor.
+           ⚠️ Owner, same thread: *"for cases like projects with no defined number of towers, it would
+           mean as a singular tower."* That is this: ONE tower is still a tower, and it gets its
+           branch. The tick box is the planner deciding whether the tower is a WBS level at all --
+           this function must not overrule it with a count.
+           ⚠️ The sentinel is still returned when the row genuinely has NO tower id, which is the
+           case it was written for. A project with no towers defined writes no tower branch.
+           ⚠️ Untick Tower in the push dialog to get the old shape -- it is one click, and it is now the
+           planner saying so rather than a count deciding it for them. */
+        /* ⚠️⚠️ A SINGLE TOWER IS NOT A WBS LEVEL, AND THIS RULE HAS NOW GONE ROUND ONCE.
+           Owner 2026-09-03: *"why is there tower 1? if it is just a singular tower, the tower 1
+           should not be a WBS anymore. isn't that logical?"* Yes. A level with exactly ONE branch
+           carries no information: every activity is under it, so it says nothing and pushes the whole
+           tree down a level. The project IS that tower.
+           ⚠️ EARLIER TODAY I REMOVED THIS GATE, and that was the wrong fix for a real problem. The
+           complaint then was that the dialog promised *"5-level WBS: Tower -> Level -> Trade -> Zone
+           -> Unit"* and built four. The fault was the DIALOG LYING, not the tree being right — so the
+           gate is back and the dialog now says the tower will be skipped and does not count it. Fix
+           the message, not the structure it describes.
+           ⚠️ This also answers *"how come the allied services is not under tower 1?"* — a trade with no
+           floors gets the `__all__` location, which carries no towerId, so it could never be filed
+           under a tower branch and sat beside it. With no tower branch on a single-tower project,
+           Allied Services now sits with the other trades, which is where it belongs.
+           ⚠️ MULTIPLE TOWERS STILL GET A BRANCH EACH. And a project-wide trade (no floors, so no
+           tower) still sits beside them rather than being assigned to one arbitrarily — it genuinely
+           spans them, and picking Tower 1 would be inventing a fact. */
         function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'tower') return multiTower() ? (l.towerId || '\u0000') : '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
@@ -30313,15 +31215,63 @@
         // (dimName) and nothing else. Kept as a function returning null rather than deleted, so the
         // buildTree call sites keep their shape and the rule stays visible where it is enforced.
         function dimCode(/* dim, r */) { return null; }
+        /* ⚠️⚠️ EVERY LEVEL IS ORDERED BY THE SETUP, NOT BY WHICHEVER ACTIVITY STARTED FIRST.
+           Owner 2026-09-03: *"fix the migration from schedule setup to project schedule, the trades
+           are not properly arranged, the floors are not properly arranged also."*
+           buildTree groups rows into `ord` in FIRST-SEEN order. Trades were then sorted by GROUPS,
+           and nothing else was sorted at all — so floors, zones and units came out in the order their
+           work happens to START. `generate()` sequences by DATE, so that is a construction
+           sequence, not a building: on a bottom-up push the tower reads B3, B2, B1, GF, 2ND… only by
+           coincidence, and the moment a trade starts on the 5th floor (a fit-out, a re-push after a
+           partial sequence, any floor with a lead or a lag) the WBS lists 5TH Floor above Ground.
+           ⚠️ The setup already holds the true order at every level and the builder itself reads it:
+             • floors — `cfg.zoning[trade].floors`, the list the planner drags to reorder in step 5,
+               index 0 = lowest (see floorsOf/floorIndexOf, and the tower drawing that stacks ground
+               at the bottom);
+             • zones  — `floor.zones`, in the order leavesOfFloor walks them;
+             • units  — `zone.units`, likewise;
+             • towers — `cfg.towers` (towerList), the order of the tower chips;
+             • trades — GROUPS, which is what the existing sort already used and is kept.
+           So this is not a new opinion about ordering: it is the ONE order the setup already draws,
+           finally carried across the push.
+           ⚠️ A group takes the MINIMUM index of its rows. Every row in a floor group shares that
+           floor, so the minimum IS the floor index — the reduction only matters for a dim whose rows
+           legitimately disagree, where sorting by the earliest is the stable answer.
+           ⚠️ UNKNOWN SORTS LAST, STABLY (99999), never first: a value the setup does not know about
+           (a hand-edited row, a floor deleted after the activities were made) must not silently
+           displace the floors the planner did define. Ties keep their existing relative order,
+           because Array#sort is stable in every engine this runs on. */
+        function dimOrderIndex(dim, r) {
+          var l = (r && r.loc) || {}, i = -1;
+          try {
+            if (dim === "trade") i = GROUPS.indexOf(l.trade);
+            else if (dim === "tower") i = towerList().findIndex(function (t) { return t.id === l.towerId; });
+            else if (dim === "floor") i = (l.floor && !l.floor._all && cfg.zoning[l.trade]) ? cfg.zoning[l.trade].floors.indexOf(l.floor) : -1;
+            else if (dim === "zone") i = (l.floor && l.zone && l.floor.zones) ? l.floor.zones.indexOf(l.zone) : -1;
+            else if (dim === "unit") i = (l.zone && l.unit && l.zone.units) ? l.zone.units.indexOf(l.unit) : -1;
+          } catch (e) { i = -1; }
+          return (i == null || i < 0) ? 99999 : i;
+        }
         function buildTree(rowsIn, dims, parentKey) {
           if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
           var dim = dims[0], rest = dims.slice(1), m = {}, ord = [];
-          rowsIn.forEach(function (r) { var k = dimKey(dim, r); if (!m[k]) { m[k] = []; ord.push(k); } m[k].push(r); });
-          // Trade branches follow the canonical GROUPS order — see the note above. Without this the
-          // branch order is whichever trade started earliest, which is not an order at all.
-          if (dim === 'trade') ord.sort(function (a, b) {
-            var ia = GROUPS.indexOf(a), ib = GROUPS.indexOf(b);
-            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);   // anything unrecognised sorts last, stably
+          var _oi = {};
+          rowsIn.forEach(function (r) {
+            var k = dimKey(dim, r);
+            if (!m[k]) { m[k] = []; ord.push(k); }
+            m[k].push(r);
+            // The group's rank is the smallest rank any of its rows claims — see dimOrderIndex.
+            var i = dimOrderIndex(dim, r);
+            if (_oi[k] === undefined || i < _oi[k]) _oi[k] = i;
+          });
+          /* ⚠️ EVERY dim is sorted now, not just the trade. This replaces the trade-only sort that
+             used to live here: it kept the same GROUPS rule (dimOrderIndex returns exactly that for
+             'trade'), and adds the floor / zone / unit / tower orders the setup already defines.
+             ⚠️ The sentinel group is NEVER reordered into the middle of real branches — it is handled
+             immediately below, and its rows attach to the parent rather than becoming a level. */
+          ord.sort(function (a, b) {
+            if (a === '\u0000' || b === '\u0000') return 0;
+            return (_oi[a] === undefined ? 99999 : _oi[a]) - (_oi[b] === undefined ? 99999 : _oi[b]);
           });
           // whole group has no value for this dim → skip the level entirely
           if (ord.length === 1 && ord[0] === '\u0000') { buildTree(rowsIn, rest, parentKey); return; }
@@ -30899,6 +31849,44 @@
       // The canonical trade order (GROUPS), as the labels written to work_type. The single source
       // of truth for anything outside this closure that needs to order trades.
       tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
+      /* THE STRUCTURE THIS SETUP DEFINES, AS THE GRID GROUP-BY DIMS.
+         Owner 2026-09-03: *"i think the WBS tree default should be matched with what was defined in
+         the schedule setup."* Right — the setup is where the planner says how this project is
+         organised (step 5 defines the levels, the push dialog orders them), and the schedule grid was
+         grouping by a list hard-coded on the other side of the file. Two places holding one decision
+         is the same fault as the location breakdown living in two screens.
+         The two vocabularies differ, so this is the ONE place that translates them:
+           trade -> "work"  (Discipline / Trade)
+           tower / floor / zone / unit -> "loc:<the level id that dim resolves to>"
+         resolved through locLevelFor, so it follows the project real breakdown rather than a
+         position (see the note there).
+         A dim that resolves to no level is DROPPED, not guessed at — a project with no Unit level
+         gets a four-level grouping, not a broken fifth.
+         Returns [] when there is no setup loaded or nothing resolves, and the caller then keeps the
+         plain WBS tree. */
+      setupGroupDims: function () {
+        try {
+          if (!cfg || !Array.isArray(cfg.wbsOrder) || !cfg.wbsOrder.length) return [];
+          var out = [];
+          cfg.wbsOrder.forEach(function (d) {
+            if (d === "trade") { if (out.indexOf("work") < 0) out.push("work"); return; }
+            // A single tower is not a grouping level either -- it would be one group holding
+            // everything. Same rule and same predicate as the WBS tree (see dimKey), so the grid and
+            // the pushed structure cannot disagree about whether the tower is a level.
+            if (d === "tower" && !multiTower()) return;
+            var lv = locLevelFor(d);
+            if (lv && out.indexOf("loc:" + lv.id) < 0) out.push("loc:" + lv.id);
+          });
+          return out;
+        } catch (e) { return []; }
+      },
+      // The raw order, for anything that wants to SHOW it rather than group by it.
+      setupOrderLabels: function () {
+        try {
+          if (!cfg || !Array.isArray(cfg.wbsOrder)) return [];
+          return cfg.wbsOrder.map(dimLabelOf);
+        } catch (e) { return []; }
+      },
       // Test surface — pure cfg-level decisions, no DOM. See PS.fn for the same idea module-side.
       _t: {
         normalize: normalize,
@@ -33935,7 +34923,7 @@
         var want = _stkScope[outer[i].id];
         if (want && locValOf(r, outer[i].id) !== want) return;
       }
-      var v = locValOf(r, levelId); if (v) seen[v] = (seen[v] || 0) + 1;
+      var v = _vsLevVal(r, levelId); if (v) seen[v] = (seen[v] || 0) + 1;   // LBS values only
     });
     return (_svMap[levelId] = Object.keys(seen).sort(cmpLevelValue).map(function (v) { return { value: v, n: seen[v] }; }));
   }
@@ -34111,7 +35099,7 @@
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       if (!stkPhaseInScope(r, levelId)) return;    // whole-building: no tower value, in scope everywhere
-      if (locValOf(r, levelId)) return;            // has a per-floor tag → part of the floor stack, not here
+      if (_vsLevVal(r, levelId)) return;           // has a per-floor tag → part of the floor stack, not here
       var p = stkPhaseLabel(r); if (!p) return;
       var g = groups[p.label] || (groups[p.label] = { p: p, acts: [], first: null });
       g.acts.push(r);
@@ -34137,7 +35125,7 @@
     var by = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
-      var loc = locValOf(r, levelId); if (!loc) return;
+      var loc = _vsLevVal(r, levelId); if (!loc) return;   // a grouping branch never becomes a band
       // ⚠️ A phase the "Tag phases…" wizard WROTE carries the phase label AS its Level value, so it
       // arrives here rather than via stkPhaseRows — and it still has no tower value. Scope it by the
       // whole-building rule or it is filtered out of every tower exactly like the untagged case.

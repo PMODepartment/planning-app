@@ -108,7 +108,9 @@ a:hover { text-decoration: underline; }
 }
 .pd-sidebar nav a:hover { background: rgba(255,255,255,.06); color: rgba(255,255,255,.9); text-decoration: none; }
 .pd-sidebar nav a:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
-.pd-sidebar nav a.active { background: var(--pd-red); color: #fff; font-weight: 600; }
+/* Owner (2026-09-03): the red box alone is enough to highlight the active item — the
+   label stays at the same 500 weight every other nav row uses, not bumped to 600. */
+.pd-sidebar nav a.active { background: var(--pd-red); color: #fff; }
 .pd-content { flex: 1; min-width: 0; }
 /* Section labels grouping the nav by scope (Portfolio / Project / System) */
 .pd-sidebar .pd-navsec {
@@ -340,7 +342,11 @@ a:hover { text-decoration: underline; }
    to fit the subtitle without editing ~15 module.css files individually. */
 button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-bottom: 4px; line-height: 1.15; }
 .pd-psel-btn .pd-psel-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
-.pd-psel-btn .pd-psel-txt strong { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Owner (2026-09-03): the code+name label reads too close to the address/group-head
+   subtitle below it at 500 (the "minimalist" pass's weight for most labels) — bumped to
+   a genuinely bold 700 so the two lines are visually distinct; the subtitle (`small`,
+   below) and the placeholder state (`.pd-psel-ph strong`, further down) are untouched. */
+.pd-psel-btn .pd-psel-txt strong { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-psel-btn .pd-psel-txt small { display: block; font-size: 10.5px; font-weight: 400; color: var(--pd-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-psel-txt.pd-psel-ph strong { color: var(--pd-muted); font-weight: 400; }
@@ -364,18 +370,27 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-nt-portfolio { display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer;
   font-size: 13.5px; font-weight: 600; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
 .pd-nt-portfolio:hover { background: var(--pd-red-light); }
-.pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; }
+.pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; font-weight: 700; }
 .pd-nt-portfolio [data-ico], .pd-nt-portfolio svg { color: var(--pd-red); flex: none; }
 .pd-nt-portfolio.sel [data-ico], .pd-nt-portfolio.sel svg { color: #fff; }
 .pd-nt-list { padding: 4px 0; }
 .pd-nt-ghlabel { padding: 9px 10px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
 .pd-nt-ghlabel-none { font-style: italic; text-transform: none; }
 .pd-nt-ghkids { padding-bottom: 2px; }
-.pd-nt-proj { display: flex; align-items: center; gap: 7px; padding: 7px 10px 7px 22px; cursor: pointer; font-size: 13px; color: var(--pd-ink); }
-.pd-nt-proj svg { color: var(--pd-muted); flex: none; }
+/* Owner (2026-09-03): each row now carries "CODE — Name" (bold) plus an address/
+   group-head subtitle (regular), matching the closed trigger's own two-line label —
+   flex-start (not center) so the icon aligns with the first line rather than the
+   midpoint of both. */
+.pd-nt-proj { display: flex; align-items: flex-start; gap: 7px; padding: 6px 10px 6px 22px; cursor: pointer; font-size: 13px; color: var(--pd-ink); }
+.pd-nt-proj svg { color: var(--pd-muted); flex: none; margin-top: 2px; }
+.pd-nt-proj-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
+.pd-nt-proj-txt strong { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-nt-proj-txt small { display: block; font-size: 10.5px; font-weight: 400; color: var(--pd-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-nt-proj:hover { background: var(--pd-red-light); }
 .pd-nt-proj.sel { background: var(--pd-red); color: #fff; }
 .pd-nt-proj.sel svg { color: #fff; }
+.pd-nt-proj.sel .pd-nt-proj-txt small { color: rgba(255,255,255,.82); }
 .pd-nt-empty { padding: 20px 12px; text-align: center; color: var(--pd-muted); font-size: 12.5px; }
 
 /* ---- Tables ---- */
@@ -642,7 +657,9 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
   border: 1px solid var(--pd-line); border-radius: 9px; padding: 5px 12px; cursor: pointer; color: var(--pd-ink); max-width: 520px; }
 .pd-projsw-ic { font-size: 16px; }
 .pd-projsw-txt { display: flex; flex-direction: column; line-height: 1.1; text-align: left; min-width: 0; gap: 1px; }
-.pd-projsw-txt strong { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+/* Owner (2026-09-03): same fix as .pd-psel-btn's own trigger — 500 read too close to
+   the address/group-head subtitle below it; the subtitle stays regular. */
+.pd-projsw-txt strong { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
 .pd-projsw-txt small { display: block; color: var(--pd-muted); font-size: 10.5px; font-weight: 400;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
 .pd-projsw-txt small:empty { display: none; }
@@ -1163,6 +1180,9 @@ body { overflow-x: clip; }
   color: var(--pd-ink);
 }
 .pd-tabsdrop-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
+/* opts.icon (2026-09-03) — the module identity mark baked into the trigger itself,
+   matching Project Schedule's own `.ps-title-btn span.ps-title-ico`. */
+.pd-tabsdrop-ico { color: var(--pd-red); flex: none; display: inline-flex; }
 .pd-tabsdrop-caret { color: var(--pd-muted); flex: none; }
 .pd-tabsdrop-menu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; display: none;

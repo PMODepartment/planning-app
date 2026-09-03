@@ -150,12 +150,16 @@
 .pp-clear:hover { background: var(--pd-bg); color: var(--pd-ink); }
 .pp-clear[hidden] { display: none; }
 
-/* ---- List bar (count + display toggle) ----------------------------------- */
+/* ---- List bar (display toggle + count) ------------------------------------
+   Item 6 (2026-09-03, owner: "move all change view tab groups… to the left
+   above the tables"): the toggle used to trail this row with `margin-left:
+   auto` pushing it to the far right; it now leads the row instead (markup
+   moved in index.html), so no auto margin is needed — flex's own start
+   alignment puts it exactly where it belongs. */
 .pp-listbar {
   display: flex; align-items: center; gap: 12px; margin-bottom: 10px; min-height: 30px;
 }
 .pp-countbar { color: var(--pd-muted); font-size: 13px; }
-.pp-listbar .pd-viewtoggle { margin-left: auto; }
 
 /* ---- List view ----------------------------------------------------------- */
 .pp-grid {

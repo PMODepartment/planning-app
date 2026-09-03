@@ -47,6 +47,9 @@
     trendingUp:  '<polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/>',
     users:       '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 11a3 3 0 0 0 0-6"/><path d="M21 20c0-2.5-1.5-4.7-3.7-5.6"/>',
     barChart:    '<line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="5"/><line x1="18" y1="20" x2="18" y2="9"/><line x1="3" y1="20" x2="21" y2="20"/>',
+    // Gantt chart — three staggered task bars, the Project Schedule module's own icon
+    // (2026-09-03, owner: distinguish it from the calendar glyph Minutes of Meeting uses).
+    ganttChart:  '<line x1="4" y1="6" x2="12" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="6" y1="18" x2="16" y2="18"/>',
     cash:        '<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><line x1="6" y1="9" x2="6" y2="9.01"/><line x1="18" y1="15" x2="18" y2="15.01"/>',
 
     // --- KPI / misc ---
@@ -63,6 +66,9 @@
     refresh:     '<path d="M4 12a8 8 0 0 1 13.7-5.7L20 8"/><polyline points="20 3 20 8 15 8"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 16"/><polyline points="4 21 4 16 9 16"/>',
     filter:      '<polygon points="3 4 21 4 14 12.5 14 19 10 21 10 12.5"/>',
     chevronRight:'<polyline points="9 6 15 12 9 18"/>',
+    chevronLeft: '<polyline points="15 6 9 12 15 18"/>',
+    // Envelope — Minutes of Meeting's Email action (icon-only toolbar button).
+    mail:        '<rect x="2.5" y="5" width="19" height="14" rx="2"/><polyline points="3 6.5 12 13 21 6.5"/>',
     download:    '<path d="M12 3v12"/><polyline points="7 11 12 16 17 11"/><line x1="4" y1="20" x2="20" y2="20"/>',
     upload:      '<path d="M12 21V9"/><polyline points="7 13 12 8 17 13"/><line x1="4" y1="4" x2="20" y2="4"/>',
     trash:       '<polyline points="3 6 5 6 21 6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',

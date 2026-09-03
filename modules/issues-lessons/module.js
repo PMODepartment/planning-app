@@ -1140,67 +1140,17 @@ window.IssuesLessons = (function () {
         return piece;
       }).join('');
     }
-    // ITEM 5 (2026-09-01, mobile round): a label beside each SECTION of the
-    // donut — was only ever named in the card's top-right legend. Placed just
-    // outside the ring at that slice's own midpoint angle, text-anchored
-    // toward whichever side of the circle it falls on (right of the ring
-    // reads left-to-right FROM the ring; left of the ring reads INTO it; top
-    // and bottom sit centred), so a label always reads away from the arc it
-    // names rather than through it. ⚠️ A zero-value slice gets no label — a
-    // "Closed (0)" tag floating beside an otherwise-empty arc position would
-    // read as a data point that exists when it doesn't.
-    // ITEM 9 (2026-09-02): the top-right legend this card used to carry
-    // alongside these is GONE (renderDashboardScreen no longer builds one for
-    // the status donut) — these per-slice labels are now the ONLY place the
-    // status names appear, so each one carries everything the legend used to:
-    // a colour marker (a filled "●" tspan in the slice's own colour, so it
-    // works under any text-anchor without separate marker-positioning math),
-    // the count, AND the percent of the total this slice represents.
-    // ITEM 1 (this round): the ring is bigger now (the caller passes a larger
-    // `size`, see the dashboard's own Status tile call), so a label sitting
-    // right against the stroke would crowd it — each label now trails a short
-    // LEADER LINE from the ring's outer edge out to where the text starts.
-    // `labelPadX`/`labelPadY` grow to give both the longer leader and the
-    // (now farther-out) label room inside the viewBox.
-    var labelPadX = 100, labelPadY = 16;
-    var labels = '';
-    if (total) {
-      var off2 = 0;
-      labels = slices.map(function (s) {
-        var frac = s.value / total, len = frac * circ, mid = off2 + len / 2;
-        off2 += len;
-        if (!s.value) return '';
-        var angleRad = ((mid / circ) * 360 - 90) * Math.PI / 180;
-        var cosv = Math.cos(angleRad), sinv = Math.sin(angleRad);
-        // Three radii on the SAME angle: the leader starts just outside the
-        // ring's stroke, ends a short distance out, and the label sits just
-        // past where the leader ends — so the line visibly connects arc to text
-        // instead of the text merely floating near the ring as it did before.
-        var lineR1 = r + sw / 2 + 2, lineR2 = r + sw / 2 + 16, labelR = r + sw / 2 + 20;
-        var lx1 = c + lineR1 * cosv, ly1 = c + lineR1 * sinv;
-        var lx2 = c + lineR2 * cosv, ly2 = c + lineR2 * sinv;
-        var lx = c + labelR * cosv, ly = c + labelR * sinv + 4;
-        var anchor = cosv > 0.2 ? 'start' : (cosv < -0.2 ? 'end' : 'middle');
-        var pct = Math.round((s.value / total) * 100);
-        return '<line x1="' + lx1.toFixed(1) + '" y1="' + ly1.toFixed(1) + '" x2="' + lx2.toFixed(1) +
-            '" y2="' + ly2.toFixed(1) + '" stroke="var(--pd-muted)" stroke-width="1"></line>' +
-          '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor +
-          '" font-size="10.5" font-weight="600" fill="var(--pd-ink)">' +
-          '<tspan fill="' + s.color + '">●</tspan> ' +
-          Fmt.esc(s.label) + ': ' + s.value + ' (' + pct + '%)</text>';
-      }).join('');
-    }
-    // ⚠️ The ring is drawn inside a translated <g>, so its own coordinate math
-    // (built for an un-padded `size x size` box, `c = size/2`) needs no
-    // changes — only the outer viewBox grows to give the labels room, and
-    // `width="100%"` (matching hbarSVG's own scaling convention) lets the
-    // whole graphic shrink to fit a narrow tile instead of a fixed pixel
-    // width overflowing it; `.il-donut-svg`'s max-width (module.css) stops it
-    // growing oversized on a wide single-column mobile layout instead.
-    var vw = size + labelPadX * 2, vh = size + labelPadY * 2;
+    // ⚠️ NO per-slice on-chart labels (2026-09-03, owner: "the legend should be
+    // placed only at the middle-bottom of the chart, not as separate per-item
+    // labels elsewhere" — same ask this round for both dashboards). The chart
+    // is the ring alone; count/percent per slice live in the ONE bottom legend
+    // (statusLegendBottomHTML, in renderDashboardScreen) instead, so there is
+    // exactly one place this information can be read and it can't disagree
+    // with itself.
+    var vw = size, vh = size;
     return '<svg class="il-donut-svg" viewBox="0 0 ' + vw + ' ' + vh + '" width="100%" height="' + vh +
-      '" role="img" aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet" overflow="visible">' +
-      '<g transform="translate(' + labelPadX + ',' + labelPadY + ')">' + arcs + labels + '</g></svg>';
+      '" role="img" aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet">' +
+      arcs + '</svg>';
   }
   // ---- ITEM 10 (2026-09-02): a crude, DETERMINISTIC per-character width
   // estimate — no canvas/DOM measurement is available to a function that also
@@ -1259,7 +1209,7 @@ window.IssuesLessons = (function () {
   function hbarSVG(items, opts) {
     opts = opts || {};
     items = items || [];
-    var w = opts.width || 380, barH = 22, gap = 10, padTop = 4, lineH = 13, fs = 11.5;
+    var w = opts.width || 380, barH = 22, gap = 10, padTop = 4, lineH = 13, fs = 11;
     // padLeft is the fixed label column — bars start at x=padLeft. ITEM 3
     // (this round): the label column is a plain LEFT-aligned strip again, not
     // the centre-with-fallback zone the prior round built (`ilWrapLines` still
@@ -1294,7 +1244,7 @@ window.IssuesLessons = (function () {
       // little breathing room), it falls back to LEFT-aligned, anchored just
       // inside the bar's own left edge, instead of centred over it.
       var valueText = it.open + '/' + it.total + ' (' + (it.total ? Math.round((it.open / it.total) * 100) : 0) + '%) open';
-      var valFits = ilTextW(valueText, 10.5) <= totalW - 8;
+      var valFits = ilTextW(valueText, fs) <= totalW - 8;
       var valAnchor = valFits ? 'middle' : 'start';
       var valX = valFits ? midX : padLeft + 4;
       // First tspan sits vertically centred as a block within the ROW (not
@@ -1315,7 +1265,7 @@ window.IssuesLessons = (function () {
         // halo (the tile's own card colour) keeps it legible over either
         // segment it may land on.
         '<text x="' + valX.toFixed(1) + '" y="' + barMidY.toFixed(1) +
-          '" text-anchor="' + valAnchor + '" font-size="10.5" font-weight="700" fill="var(--pd-ink)" ' +
+          '" text-anchor="' + valAnchor + '" font-size="' + fs + '" fill="var(--pd-ink)" ' +
           'paint-order="stroke" stroke="var(--pd-card)" stroke-width="3" stroke-linejoin="round">' +
           Fmt.esc(valueText) + '</text>';
       y += rowH + gap;
@@ -1610,26 +1560,22 @@ window.IssuesLessons = (function () {
     var champList = Object.keys(byChamp).map(function (k) { return byChamp[k]; })
       .sort(function (a, b) { return a.label.localeCompare(b.label); });
 
-    // ITEM 2 (2026-09-01): every tile's legend moves into its OWN HEADER, top
-    // right, as a compact swatch+label row — replacing the donut's side column
-    // and the two bar tiles' below-chart legend row. One shared bar-legend
-    // string (Open/Total) for both bar tiles, so they can't disagree.
-    // ITEM 9 (2026-09-02): the STATUS card's own legend is gone — its donut's
-    // per-slice labels (donutChartSVG) now carry the colour, the count AND the
-    // percent, so a separate legend repeating the same three facts is dropped
-    // rather than kept as decoration.
-    var barLegendTop = '<span class="il-dash-legend-i"><i style="background:#EE3124"></i>Open</span>' +
-      '<span class="il-dash-legend-i"><i style="background:var(--pd-line)"></i>Total</span>';
-    // ITEM 1 (this round): a legend UNDER the Status donut, in addition to (not
-    // instead of) its per-slice labels — the owner asked for both this time,
-    // where the prior round had dropped this in favour of the labels alone.
-    // Always all three statuses, unlike the per-slice labels which skip a
-    // zero-value slice — a legend is naming the vocabulary, not describing
-    // what's currently on the ring, so it stays complete even when a status
-    // has nothing in it right now.
+    // ⚠️ ONE legend shape for every chart on this dashboard, always centered
+    // BELOW the chart it belongs to (2026-09-03, both dashboards: "bar-chart
+    // titles on top of chart; legend only at middle-bottom, not scattered
+    // per-item labels elsewhere"). The donut's own legend carries count+percent
+    // per slice (statusLegendBottomHTML); a bar chart's per-row value is
+    // already printed ON each bar, so its bottom legend only names what the
+    // two bar colours mean.
+    var barLegendBottom = '<div class="il-dash-legend-bottom">' +
+      '<span class="il-dash-legend-i"><i style="background:#EE3124"></i>Open</span>' +
+      '<span class="il-dash-legend-i"><i style="background:var(--pd-line)"></i>Total</span></div>';
     function statusLegendBottomHTML(slices) {
+      var tot = slices.reduce(function (s, x) { return s + x.value; }, 0);
       return '<div class="il-dash-legend-bottom">' + slices.map(function (s) {
-        return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' + Fmt.esc(s.label) + '</span>';
+        var pct = tot ? Math.round((s.value / tot) * 100) : 0;
+        return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
+          Fmt.esc(s.label) + ': ' + s.value + ' (' + pct + '%)</span>';
       }).join('') + '</div>';
     }
 
@@ -1641,14 +1587,10 @@ window.IssuesLessons = (function () {
     // ITEM 1 (2026-09-01): the three now share ONE fixed content height
     // (.il-dash-cardbody), so they read as a real row instead of each one
     // drifting to whatever its own chart happens to need.
-    // ITEM 1 (this round): the Status donut is drawn LARGER (`size:170`, up
-    // from the 130 default) — "maximise to tile" — with a legend row added
-    // below the fixed-height body rather than inside it, so the shared
-    // `.il-dash-cardbody` height (item 6) stays the one number all three
-    // tiles agree on. ITEM 2 (this round): the Department/Champion tiles'
-    // own title+legend row moves to the SAME position — below the body — via
-    // `.il-dash-cardhead-bottom`, so all three tiles keep a comparable
-    // chart-then-footer shape and stay visually equal in height.
+    // 2026-09-03 (both dashboards): every tile's title is now on TOP
+    // (`.il-dash-cardhead`, before the body) and its legend is the ONE bottom
+    // legend, after the body — the donut and both bar tiles share the exact
+    // same shape now, which is what keeps them comparable in height.
     host.innerHTML = migrateNoteHTML() +
       '<div class="il-dash-grid">' +
         '<div class="pd-card il-dash-card">' +
@@ -1660,22 +1602,20 @@ window.IssuesLessons = (function () {
           (total ? statusLegendBottomHTML(statusSlices) : '') +
         '</div>' +
         '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardhead"><h4>Issues by Department</h4></div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
             (deptList.length ? hbarSVG(deptList, { aria: 'Open vs total issues by department' })
               : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
           '</div>' +
-          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Issues by Department</h4>' +
-            (deptList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
-          '</div>' +
+          (deptList.length ? barLegendBottom : '') +
         '</div>' +
         '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardhead"><h4>Issues by Champion</h4></div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
             (champList.length ? hbarSVG(champList, { aria: 'Open vs total issues by champion' })
               : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
           '</div>' +
-          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Issues by Champion</h4>' +
-            (champList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
-          '</div>' +
+          (champList.length ? barLegendBottom : '') +
         '</div>' +
       '</div>' +
       // ITEM 3 (2026-09-01): Open Issues renders ABOVE Lessons Learned now —
@@ -2453,8 +2393,7 @@ window.IssuesLessons = (function () {
       var r = _issNew || rows.find(function (x) { return x.id === _issSel; }) || {};
       return { ids: r.champion_ids || [], text: championExtra(r.champion_ids, r.champion) };
     }
-    var free = root.querySelector('.il-pp-free');
-    return { ids: idsOf(root), text: free ? free.value.trim() : '' };
+    return { ids: idsOf(root), text: textOf(root).trim() };
   }
 
   // ⚠️ ITEM #8: every field of the issue is required — shared by the initial save AND every
@@ -2776,6 +2715,10 @@ window.IssuesLessons = (function () {
     var v = (root && root.dataset.ids) || '';
     return v ? v.split(',').filter(Boolean) : [];
   }
+  // The free-text half of the picker, held on the root's own dataset now that
+  // there is no `<input>` to read it off — see peoplePickerHTML's own comment
+  // on why (2026-09-03: "rely solely on the dropdown").
+  function textOf(root) { return (root && root.dataset.text) || ''; }
   // ⚠️ ITEM 5: log/summary VIEWS show only the MOST RECENTLY assigned champion, not the
   // full joined history every prior champion — that full history is still what the
   // detail view's editable picker shows (it's what's needed to edit it), but a list
@@ -2851,7 +2794,9 @@ window.IssuesLessons = (function () {
       return '<div class="il-mi-val' + (shown ? '' : ' is-empty') + '">' +
         (shown ? Fmt.esc(shown) : '—') + '</div>';
     }
+    var freeText = (text || '').trim();
     return '<div class="il-people" data-people="' + Fmt.esc(key) + '" data-ids="' + Fmt.esc(ids.join(',')) + '"' +
+      ' data-text="' + Fmt.esc(freeText) + '"' +
       (newOpen ? ' data-new="1"' : '') + '>' +
       (ids.length
         ? '<div class="il-pp-chips">' + (function () {
@@ -2873,11 +2818,18 @@ window.IssuesLessons = (function () {
         : '') +
       peopleOptionsHTML(ids) +
       (newOpen ? newPersonHTML() : '') +
-      // ⚠️ The free-text box is NOT a fallback for a missing roster — it is how
-      // someone without an account gets named. Its own label says so, or a
-      // planner reasonably assumes the dropdown is the only valid route.
-      '<input class="pd-input pd-input-sm il-pp-free" value="' + Fmt.esc(text || '') + '" ' +
-        'placeholder="Others not on the system (typed)">' +
+      // ⚠️ 2026-09-03 (owner): no free-text INPUT any more — the dropdown above
+      // is now the only way to add someone, its own "+ Someone without an
+      // account…" option covering exactly the case the box existed for (it
+      // writes a real people_directory row via createContact, so that person
+      // can be picked, shown and removed like anyone else). A value TYPED
+      // before this change still has to be shown and stay removable, so it
+      // survives as a read-only note with its own ✕ — never as a box that
+      // invites typing more into it.
+      (freeText
+        ? '<div class="il-pp-freenote"><span>Also (typed): ' + Fmt.esc(freeText) + '</span>' +
+          '<button type="button" class="il-pp-rmtext" title="Remove">✕</button></div>'
+        : '') +
     '</div>';
   }
 
@@ -2887,8 +2839,7 @@ window.IssuesLessons = (function () {
   function repaintPicker(root, onChange, newOpen) {
     var key = root.dataset.people;
     var ids = idsOf(root);
-    var free = root.querySelector('.il-pp-free');
-    var text = free ? free.value : '';
+    var text = textOf(root);
     // ⚠️ A half-typed new person survives the repaint that removing a chip causes.
     // Losing it would make the two controls fight each other.
     var nn = root.querySelector('.il-pp-nname'), nc = root.querySelector('.il-pp-nco');
@@ -2912,10 +2863,6 @@ window.IssuesLessons = (function () {
     scope.querySelectorAll('.il-people').forEach(function (root) {
       if (root._wired) return;
       root._wired = true;
-      var fire = function () {
-        if (onChange) onChange(root.dataset.people, idsOf(root),
-          (root.querySelector('.il-pp-free') || {}).value || '');
-      };
       var add = root.querySelector('.il-pp-add');
       if (add) add.onchange = function () {
         if (!add.value) return;
@@ -2931,8 +2878,7 @@ window.IssuesLessons = (function () {
         if (ids.indexOf(add.value) < 0) ids.push(add.value);
         root.dataset.ids = ids.join(',');
         var fresh = repaintPicker(root, onChange);
-        if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
-          (fresh.querySelector('.il-pp-free') || {}).value || '');
+        if (onChange) onChange(fresh.dataset.people, idsOf(fresh), textOf(fresh));
       };
 
       // ---- The new-person form -------------------------------------------
@@ -2960,8 +2906,7 @@ window.IssuesLessons = (function () {
         if (ids.indexOf(made.id) < 0) ids.push(made.id);
         root.dataset.ids = ids.join(',');
         var fresh = repaintPicker(root, onChange, false);
-        if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
-          (fresh.querySelector('.il-pp-free') || {}).value || '');
+        if (onChange) onChange(fresh.dataset.people, idsOf(fresh), textOf(fresh));
         UI.toast(made.name + ' added — everyone can pick them now.', 'ok');
       };
       var ncan = root.querySelector('.il-pp-ncancel');
@@ -2970,12 +2915,18 @@ window.IssuesLessons = (function () {
         b.onclick = function () {
           root.dataset.ids = idsOf(root).filter(function (i) { return i !== b.dataset.rm; }).join(',');
           var fresh = repaintPicker(root, onChange);
-          if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
-            (fresh.querySelector('.il-pp-free') || {}).value || '');
+          if (onChange) onChange(fresh.dataset.people, idsOf(fresh), textOf(fresh));
         };
       });
-      var free = root.querySelector('.il-pp-free');
-      if (free) free.onchange = fire;
+      // A legacy typed value's own remove — clears the text half only, the
+      // ids are untouched. See peoplePickerHTML's comment on why there's no
+      // longer an input to type a NEW one into.
+      var rmt = root.querySelector('.il-pp-rmtext');
+      if (rmt) rmt.onclick = function () {
+        root.dataset.text = '';
+        var fresh = repaintPicker(root, onChange);
+        if (onChange) onChange(fresh.dataset.people, idsOf(fresh), textOf(fresh));
+      };
     });
   }
 

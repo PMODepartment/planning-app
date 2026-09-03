@@ -54,7 +54,13 @@
     function mIco(n) { return window.Icons ? Icons.svg(n, 16) : ''; }
     var links =
       '<a class="pd-usermenu-link" href="' + base + 'projects.html">' + mIco('grid') + 'Projects</a>' +
-      '<a class="pd-usermenu-link" href="' + base + 'my-work.html">' + mIco('clipboard') + 'My Work</a>' +
+      // ⚠️ Super-admin-only "for now" (2026-09-03), same as the sidebar's Personal section
+      // (renderNav) — this menu is the OTHER path to my-work.html (it renders on every page,
+      // sidebar or not), so gating one without the other would still leave the page one click
+      // away for everyone via the avatar.
+      (profile.role === 'super_admin'
+        ? '<a class="pd-usermenu-link" href="' + base + 'my-work.html">' + mIco('clipboard') + 'My Work</a>'
+        : '') +
       (isAdmin
         ? '<a class="pd-usermenu-link" href="' + base + 'admin.html">' + mIco('settings') + 'Admin</a>'
         : '');
@@ -124,9 +130,19 @@
   function navListBody(projects, groupHeads, opts) {
     opts = opts || {};
     var P = projects || [];
+    // Owner (2026-09-03): "add project code before project name" — the project id IS
+    // its code (the PK), so this needs no lookup, matching the same "CODE — Name"
+    // convention the closed trigger button already uses (enhanceProjectSelect's
+    // syncBtn / renderSwitcher's mainLabel) — a row here and the trigger it opens from
+    // should read the same way. Wrapped in its own <strong> (bold, per the owner's
+    // second ask) so it reads distinctly from the address/group-head subtitle below it,
+    // which stays regular weight.
     function projRow(p) {
+      var gh = p.group_head_id && (groupHeads || []).filter(function (g) { return g.id === p.group_head_id; })[0];
+      var sub = [p.location, gh ? 'Group Head: ' + gh.name : ''].filter(Boolean).join(' · ');
       return '<div class="pd-nt-proj' + (opts.isSelected && opts.isSelected(p) ? ' sel' : '') + '" data-nt-proj="' + esc(p.id) + '">' +
-        _ntIco('project', 14) + '<span>' + esc(p.name || p.id) + '</span></div>';
+        _ntIco('project', 14) + '<span class="pd-nt-proj-txt"><strong>' + esc(p.id + ' — ' + (p.name || p.id)) + '</strong>' +
+        (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></div>';
     }
     var portfolioRow = '<div class="pd-nt-portfolio' + (opts.portfolioActive ? ' sel' : '') + '" data-nt-portfolio="1">' +
       _ntIco('barChart', 15) + '<span>Portfolio</span></div>';
@@ -353,6 +369,12 @@
     var base = ctx.base || '';
     var active = ctx.active || '';
     function cls(key) { return active === key ? ' class="active"' : ''; }
+    // ⚠️ Read straight off the global `requireLogin` already set, rather than a ctx flag every
+    // one of the 15+ call sites would otherwise have to be taught to pass — see config.js's
+    // `superAdminOnly` comment. `!!` guards a page that renders nav before auth resolves (none do
+    // today, but a false positive here would show every super-admin-only link to a stranger).
+    var superAdmin = !!window.__role && window.__role === 'super_admin';
+    function visible(m) { return !m.superAdminOnly || superAdmin; }
     var html;
     if (mode === 'portfolio') {
       // Three scopes, per the owner's own structure: PORTFOLIO (every project's data,
@@ -366,7 +388,7 @@
       // ctx.modules is optional — every project-mode page already passes it (it built the
       // module grid), but the five portfolio-mode pages never needed to before now. Default
       // to the shared registry rather than requiring five call sites to be updated.
-      var pmods = (ctx.modules || (window.APP_CONFIG && APP_CONFIG.MODULES) || []).filter(function (m) { return m.enabled; });
+      var pmods = (ctx.modules || (window.APP_CONFIG && APP_CONFIG.MODULES) || []).filter(function (m) { return m.enabled && visible(m); });
       html = '<div class="pd-navsec">Portfolio</div>' +
         '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
@@ -378,18 +400,23 @@
           return '<a href="' + href + '" title="' + esc(m.name) + (tab ? ' — portfolio-wide' : '') + '">' +
             '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
         }).join('') +
-        '<div class="pd-navsec">Personal</div>' +
-        '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
-          '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Dashboard</span></a>' +
-        '<a href="' + base + 'my-tasks.html"' + cls('my-tasks') + ' title="Tasks">' +
-          '<span class="pd-navico" data-ico="check"></span><span class="pd-navtxt">Tasks</span></a>' +
+        // ⚠️ Personal (My Work / Tasks) is super-admin-only "for now" too (2026-09-03,
+        // same owner ask as the module hiding above) — gated the same way, off the global
+        // role rather than a new ctx flag.
+        (superAdmin
+          ? '<div class="pd-navsec">Personal</div>' +
+            '<a href="' + base + 'my-work.html"' + cls('personal-dashboard') + ' title="Personal Dashboard">' +
+              '<span class="pd-navico" data-ico="clipboard"></span><span class="pd-navtxt">Dashboard</span></a>' +
+            '<a href="' + base + 'my-tasks.html"' + cls('my-tasks') + ' title="Tasks">' +
+              '<span class="pd-navico" data-ico="check"></span><span class="pd-navtxt">Tasks</span></a>'
+          : '') +
         (ctx.isAdmin
           ? '<div class="pd-navsec">System</div>' +
             '<a href="' + base + 'admin.html"' + cls('admin') + ' title="Admin">' +
               '<span class="pd-navico" data-ico="settings"></span><span class="pd-navtxt">Admin</span></a>'
           : '');
     } else {
-      var mods = (ctx.modules || []).filter(function (m) { return m.enabled; });
+      var mods = (ctx.modules || []).filter(function (m) { return m.enabled && visible(m); });
       // No "Portfolio" section here (owner's call, 2026-08-31) — the shared
       // project dropdown (UI.enhanceProjectSelect) already offers a Portfolio
       // row, so a project's own sidebar stays scoped to that project.
@@ -630,7 +657,16 @@
   // are wired to — just hidden (`.pd-tabsdrop-src`); picking a menu item
   // simply clicks the corresponding real button, so no module JS needs to
   // change to adopt this. Call once per tab strip, after it is populated.
-  function tabsToDropdown(selOrEl) {
+  // opts.icon (2026-09-03): a module identity icon prepended INSIDE the
+  // trigger — Project Schedule's own `.ps-title-btn` bakes its icon into the
+  // button the same way. Deliberately not a separate <h1> sitting beside the
+  // trigger: issues-lessons tried exactly that and then had to hide the whole
+  // element outright once the tabs strip got a dropdown, because a lone icon
+  // left standing next to it stole a full row on its own on mobile (see
+  // module.js's switchScreen — "not just a text-only display:none... no
+  // orphaned icon row"). Baking the icon into the trigger removes the row it
+  // would have needed in the first place, so there is nothing left to hide.
+  function tabsToDropdown(selOrEl, opts) {
     var tabs = typeof selOrEl === 'string' ? document.querySelector(selOrEl) : selOrEl;
     if (!tabs || tabs.__pdTabsDrop) return;
     var btns = Array.prototype.slice.call(tabs.querySelectorAll('button'));
@@ -683,10 +719,12 @@
     wrap.appendChild(trig); wrap.appendChild(menu);
     tabs.parentNode.insertBefore(wrap, tabs);
 
+    var icoHtml = (opts && opts.icon)
+      ? '<span class="pd-tabsdrop-ico" data-ico="' + esc(opts.icon) + '" data-ico-size="16"></span>' : '';
     function activeBtn() { return btns.filter(function (b) { return b.classList.contains('active'); })[0] || btns[0]; }
     function sync() {
       var a = activeBtn();
-      trig.innerHTML = '<span>' + esc(a.textContent) + '</span><span class="pd-tabsdrop-caret" data-ico="chevronDown" data-ico-size="14"></span>';
+      trig.innerHTML = icoHtml + '<span>' + esc(a.textContent) + '</span><span class="pd-tabsdrop-caret" data-ico="chevronDown" data-ico-size="14"></span>';
       menu.innerHTML = btns.map(function (b, i) {
         return '<button type="button" data-i="' + i + '" class="' + (b === a ? 'cur' : '') + '">' + esc(b.textContent) + '</button>';
       }).join('');

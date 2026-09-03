@@ -84,7 +84,7 @@ developer, plug into one shared shell.
 
 ## Changelog
 
-### 2026-09-03 (b) — The chunky shell converged on the PRC app's own values
+### 2026-09-03 (r) — The chunky shell converged on the PRC app's own values
 
 Owner: *"Can you copy the formatting and css from prc-app to the planning-app. The prc-app looks more
 minimalist compared to the chunky planning-app."* One file changed — `assets/css/dashboard.css` — and
@@ -144,7 +144,562 @@ every value below was **read out of `prc-app/assets/css/dashboard.css` and match
 
 Shared asset changed → **`dashboard.css?v=` bumped `20260903a` → `20260903b` across all 29 referencing
 pages**, 0 stragglers and 0 unversioned references. **No `MODULE_V` bump** — no module `index.html`
-changed, so forcing every returning browser to re-fetch all 13 module pages would buy nothing.
+changed structurally.
+
+⚠️ **Merged onto `origin/main` (26 commits ahead) before this landed.** Three conflicts,
+all of the shape this file has recorded before: **two were cache-bust version collisions**
+(`issues-lessons`, `minutes-of-meeting` — main bumped their `module.css?v=` to `20260903d` while
+this side bumped `dashboard.css?v=` in the same two lines), resolved as the **union**, hunk by hunk.
+⚠️ `git checkout --theirs` is the wrong tool for a version collision — it takes main's WHOLE file
+and drops your own non-conflicting edits in it. The third was `CLAUDE.md`, where both sides prepend
+→ **both kept whole, seam marked, and this entry re-lettered `(b)` → `(r)`** because main had
+already used `(b)` twice on 2026-09-03 and had run as far as `(q)`.
+
+⚠️ **`MODULE_V` → `20260903r` after all** (main had it at `20260903q`), which reverses the call
+above: every module `index.html` DID change — its `dashboard.css?v=` line — and a module page is
+cached under `index.html?v=MODULE_V`, so without the bump a returning browser keeps serving a page
+that still requests `?v=20260903a` and the new stylesheet reaches nobody. That is this repo's own
+most-repeated deploy failure, one level up.
+
+<!-- seam: the entry above landed from `claude/planning-app-prc-styling-0zvvo4`; everything
+     below came from `origin/main` in the same merge. Both sides prepend, so both are whole. -->
+
+### 2026-09-03 (q) — An un-floored trade is still in the building, so it carries the tower
+
+*"if there is no floors or zones under a trade ... if it is still under tower 1, then it is under tower
+1."* Right — "no floors" says nothing about which building the work is in.
+
+The `__all__` fallback (which stops a whole discipline being dropped from a push) left `towerId`
+unset, so those activities were the only ones in the project with a blank Tower: the stacking's
+no-tower bucket, and beside the tower branches rather than inside them. It now resolves its tower
+through `towerIdOf` — the same resolver every real floor uses, which falls back to the first tower
+for a floor naming none. ⚠️ A single-tower project resolves unambiguously; a multi-tower one lands on
+the first, exactly as an un-towered floor already does (give the trade floors in step 5 to say
+otherwise). ⚠️ The floor stays `_all` — this adds the tower, it does not invent a storey, zone or
+unit, and no tower name is hard-coded. 291 checks, 0 functions lost. `MODULE_V` → `20260903q`.
+
+---
+### 2026-09-03 (p) — A single tower is not a WBS level, and that is why Allied Services sat beside it
+
+*"why is there tower 1? if it is just a singular tower, the tower 1 should not be a WBS anymore."* Right
+— a level with one branch carries no information and pushes the whole tree down a level.
+
+⚠️ **The gate is back after I removed it this morning, and that removal was the wrong fix.** The
+complaint then was that the dialog promised five levels and built four; the fault was the DIALOG lying,
+not the tree. So `multiTower()` gates the tower dim again, and the dialog now dims a
+ticked-but-skipped Tower row with *"skipped — this project has one tower"*, excludes it from the
+*"N-level WBS"* line, and uses the **same predicate the push uses** rather than a copy. Ticking it is
+still remembered: add a second tower and it builds.
+
+That also answers *"how come the allied services is not under tower 1?"* — a trade with no floors gets
+the `__all__` location, which carries no `towerId`, so it could never be filed under a tower and
+sat beside it. With no tower branch it now sits with the other trades. ⚠️ On a genuinely multi-tower
+project it still sits beside the towers, deliberately: it spans them, and filing it under Tower 1 would
+invent a fact. The grid's grouping follows the same rule. 276 checks, 0 functions lost.
+`MODULE_V` → `20260903p`.
+
+---
+### 2026-09-03 (n) — The WBS default comes from the Schedule Setup, and it leads with the Tower
+
+*"the WBS tree default should be matched with what was defined in the schedule setup"* and *"it should
+be tower and then trades bc that's the way it should be as a default."*
+
+**(1)** The default structure is now **Tower → Trade → Level → Zone → Unit**. A tower is a place and a
+trade is work done in it, so the place leads; the old default led with Trade and filed every tower under
+every discipline. Changed in `blank().wbsOrder` **and** `WBS_DIMS` (the order a missing dim is
+appended in), so the two stay in step. ⚠️ A **saved** setup keeps its own order — OPW101 included;
+reorder it with the ↑/↓ arrows in the push dialog.
+
+**(2)** The grid's default grouping now follows the setup. New `ScheduleBuilder.setupGroupDims()`
+translates the setup structure into grid dims (`trade→work`, locations through `locLevelFor`),
+offered as a **"Schedule Setup structure"** preset and used as the default. ⚠️ A saved choice always
+wins and nothing is written when the setup is adopted, so it stays a default; a dim with no level is
+dropped rather than guessed. 270 checks, 0 functions lost. `MODULE_V` → `20260903n`.
+
+---
+### 2026-09-03 (m) — The trades did not vanish: they were at L3, and a ticked Tower level was dropped
+
+*"from schedule setup it is okay ... yet in project schedule, the trades vanished?"* Two things, and
+neither is the trades being lost.
+
+**(1)** `dimKey` returned the skip sentinel for the tower whenever `multiTower()` was false, so a
+single-tower project silently got **four** levels after the dialog promised **five** — the ticked Tower
+never appeared and the tree started at the floors. A ticked level is now built; the tick box is the
+planner deciding, and a count must not overrule it. (Same rule as *"no defined number of towers means a
+singular tower"*.) A row with genuinely no tower id still skips the level.
+
+**(2)** The trades were built — one level under every floor, because this project ticked
+**Tower → Level → Trade → Zone → Unit** and Trade is third. Drag Trade to the top and the trade branches
+sit directly under the Execution Phase. ⚠️ That order was likely chosen while the labels were still
+wrong (fixed in `k`), so the list was being reordered against fiction. The dialog now also names
+what will sit at the top of the tree. 244 checks, 0 functions lost. `MODULE_V` → `20260903m`.
+
+---
+### 2026-09-03 (k) — The push wrote every location one level too high
+
+*"it detected the levels as the towers, and the zones as levels"*, and *"Tower > Tower > Trade > Level
+> Zone > Unit"*. One hard-coded assumption in two places: the label lookup AND the value writer mapped
+`floor→LOC_LEVELS[0], zone→[1], unit→[2]`, which is only true for the *Floor › Zone › Unit*
+breakdown the push itself seeds. OPW101 reads **Tower › Level › Zone › Unit**, so floor resolved to
+Tower, zone to Level, unit to Zone — the doubled word in the editor, and, far worse, every push
+stamping floor names into the **Tower** column. The stacking then faithfully drew zones as storeys.
+
+New `locLevelFor(dim)` resolves each dim by NAME family, then one forward sweep that can only move
+deeper; a dim with no level writes nothing. ⚠️ **The tower is claimed by name only, never by position**
+— a breakdown with no tower level IS the single-tower case (my first attempt let it swallow a nameless
+level and the harness caught it). Multiple towers were already supported and are untouched
+(`cfg.towers`, **+ Tower**, and `multiTower()` gating the WBS level). ⚠️ General Requirements and
+Site Works verify as present — nothing changed there. ⚠️ This fixes what the push WRITES; rows already
+stamped wrong need a re-push. 231 checks, 0 functions lost. `MODULE_V` → `20260903k`.
+
+---
+### 2026-09-03 (j) — The Schedule Setup push carried a construction sequence where the building order belonged
+
+*"fix the migration from schedule setup to project schedule, the trades are not properly arranged, the
+floors are not properly arranged also."*
+
+`buildTree` created one WBS branch per group in **first-seen** order, and only the trade dim was ever
+sorted. Floors, zones, units and towers therefore came out in the order their work STARTS —
+`generate()` sequences by date, so that is a construction sequence, not a building. Executing the
+shipped code over a five-floor tower whose fit-out starts high: **before**
+`5TH, 2ND, Ground, B1, B2` — **after** `B2, B1, Ground, 2ND, 5TH`. On a straight bottom-up push
+the old order looked right only by coincidence.
+
+New `dimOrderIndex` sorts every dim by the order the setup already defines and the builder already
+reads: floors from `cfg.zoning[trade].floors`, zones from `floor.zones`, units from
+`zone.units`, towers from `cfg.towers`, trades from `GROUPS` (unchanged). ⚠️ Unknown values
+sort last, never first; ties are stable; the "no value at this level" sentinel is never reordered, so a
+single-tower push still skips the tower level. ⚠️ The trade dim was ALREADY GROUPS-sorted — if trades
+still read wrong, the intended rule is the step-8 Trade sequence, and I have not switched to it on a
+guess. ⚠️ Not verified signed-in. 179 checks, 0 functions lost. `MODULE_V` → `20260903j`.
+
+---
+### 2026-09-03 (i) — Contracts & Claims unhidden, sidebar active state un-bolded, Schedule gets a Gantt icon, the module-name flash fixed, project selector goes bold+coded
+
+Five owner items across two messages.
+
+**1. Contracts & Claims unhidden.** Owner: *"please unhide contracts and claims register for all."*
+`superAdminOnly: true` removed from its `config.js` entry (the other six from the 2026-09-03 (b)
+pass — Risk Register, Stakeholder Map, Manpower/Equipment Loading, Productivity Rates, Cash Flow —
+stay hidden). Portfolio Overview's matching tab-hiding list (that page's own static `.po-tabs`, not
+built off `APP_CONFIG.MODULES`, so it needed its own list) drops `'contracts'` from the five it
+still hides for everyone but `super_admin`.
+
+**2. Sidebar active row: red box only, no extra bold.** Owner: *"once clicked, no need to make the
+module text bold. keep at regular, red box is enough to highlight."* `.pd-sidebar nav a.active`
+dropped its `font-weight: 600` — the active row now inherits the same 500 every other nav row uses;
+only the red background changes.
+
+**3. Project Schedule gets its own icon.** Owner: *"change icon to a gantt chart icon."* It shared
+`calendar` with Minutes of Meeting. New `ganttChart` glyph in `icons.js` (three staggered bars, the
+generic "Gantt chart" shape) — `config.js`'s `project-schedule` entry and the module's own
+`.ps-title-btn` icon (`#ps-title-btn`, index.html) both switched to it. The module's *other*
+`calendar` icons (Open schedule, the Month/Quarter/Year zoom button, duration-scenario menu items)
+are genuinely date-pickers, not the module's identity mark, and were left alone.
+
+**4. The module-name flash, root-caused and fixed — and a near-miss found while fixing it.** Owner:
+*"when clicking a module, the module name sometimes appears for a few seconds before being
+hidden."* Six modules (issues-lessons, minutes-of-meeting, progress-photos, risk-register,
+stakeholder-map, contracts-claims) call `UI.tabsToDropdown(...)` to turn a flat tab row into a
+Project-Schedule-style dropdown — but every one of them called it from *inside*
+`AppAuth.requireLogin`'s callback, which only fires after **two real network round-trips**
+(`auth.getSession()` + a profile fetch). Until that resolved, the raw `<h1>` title text AND the flat
+tab-button row both sat fully visible with nothing to convert them — exactly the reported flash,
+confirmed by simulating a 3s-delayed `requireLogin` in a real browser and sampling the DOM mid-delay.
+- ⚠️ **The obvious fix — call it immediately, at the top of each module's script — was tried first
+  and it CRASHED.** `tabsToDropdown()` needs `UI.initModuleTopbar()` to have already moved the tab
+  strip into `.pd-modulebar`, so an early call defensively re-invoked `initModuleTopbar()` too
+  (it's idempotent, guarded by its own `.pd-tb-main` existence check) — but that broke
+  **`theme.js`'s own topbar injection**, which does `topbar.insertBefore(btn,
+  topbar.querySelector('#user-bar'))` and silently assumes `#user-bar` is still a **direct child**
+  of `.pd-topbar` when it runs. `initModuleTopbar()` moves `#user-bar` into the nested
+  `.pd-tb-main`, so calling it before theme.js's own (DOMContentLoaded-bound) injection throws
+  `NotFoundError: the node before which the new node is to be inserted is not a child of this node`
+  — silently, since nothing in these pages listens for `pageerror`. Confirmed the crash was mine,
+  not pre-existing, by running the same slow-auth simulation against the untouched `origin/main`
+  copy first (no crash there).
+- ⚠️ **The real fix: don't reorder anything — add a THIRD `DOMContentLoaded` listener.** theme.js's
+  script tag loads first (in `<head>`), so its listener registers first and its injection runs
+  before ui.js's own `initModuleTopbar()` listener (registered when ui.js loads, later) — an
+  existing, working, implicit ordering guarantee neither file states out loud. Each fix is now
+  `if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else
+  go();` — the exact pattern theme.js/ui.js already use — with NO explicit
+  `initModuleTopbar()` call. Registered last, it fires after both of theirs, preserving the order
+  they need, while landing well before `requireLogin`'s network-bound callback (which is the whole
+  point). minutes-of-meeting's `module.js` still calls `tabsToDropdown` a second time from its own
+  `wire()` — harmless, guarded by the function's own `tabs.__pdTabsDrop` idempotency check.
+- **Verified**: driven in a real browser with `requireLogin` stubbed to resolve after 3s — at
+  500ms (well inside the old flash window) all six modules show **0 page errors**, the raw tab row
+  already hidden, and the dropdown trigger already built and showing the right label. The theme
+  toggle still renders correctly at the settled state.
+
+**5. Project selector: bold code+name, code added to the dropdown rows.** Two asks: *"make project
+code and project name in project selector bold. leave address and group head regular text"* and
+*"in project selector dropdown, add project code before project name."*
+- ⚠️ **The trigger button already wrapped "CODE — Name" in `<strong>`, but a same-day earlier
+  "minimalist" pass (`d85311f`, unrelated to this session) had neutralized it to `font-weight: 500`**
+  — barely distinguishable from the address/group-head subtitle below it (400). Both trigger
+  components — `enhanceProjectSelect`'s `.pd-psel-btn .pd-psel-txt strong` and `renderSwitcher`'s
+  `.pd-projsw-txt strong` — bumped to `700`; the subtitle (`small`, 400) and the placeholder state
+  (`.pd-psel-ph strong`, still 400) are untouched.
+  - The **open dropdown's own project rows** (`navListBody`'s `projRow`, in `assets/js/ui.js`) had
+  neither the code nor any bold at all — just the bare name. They now read "CODE — Name" in the same
+  bold (700), with an address/group-head subtitle in regular (400) beneath — mirroring the trigger's
+  own two-line shape rather than inventing a third. ⚠️ The code needs no lookup (`p.id` **is** the
+  code, the PK); the subtitle reuses the exact `[location, gh && 'Group Head: '+gh.name].join(' · ')`
+  construction `enhanceProjectSelect`'s own `subFor()` already used, just inlined since `projRow`
+  already has the project object and group-heads array in scope. A project with neither field
+  correctly renders no `<small>` at all (no empty dangling element). `.pd-nt-proj` went from a
+  single-line `align-items:center` row to `flex-start` with a stacked `.pd-nt-proj-txt` block (icon
+  nudged 2px down to sit level with the first line, not the two-line midpoint); the selected row's
+  subtitle gets the same `rgba(255,255,255,.82)` treatment the sidebar's own active-row subtitle
+  already uses, so it stays legible on the red background.
+- **Verified**: both trigger components and the dropdown-row markup rendered in a real browser
+  against the shipped CSS — `strong` computes to `700` in all three places, `small` to `400`, a
+  project missing location/group-head shows no subtitle, and the selected row's subtitle is legible
+  against the red fill.
+
+Files: `assets/js/config.js`, `assets/js/icons.js`, `assets/js/ui.js`, `assets/css/dashboard.css`,
+`modules/portfolio-overview/index.html`, `modules/project-schedule/index.html`, and the six modules'
+own `index.html` from item 4. Verified: `node --check` on every touched `.js` file; every touched
+`index.html`'s inline `<script>` parses (progress-photos' own extraction reports the same
+pre-existing false positive documented in the 2026-09-03 (b) entry — a CDN `src` URL containing the
+literal substring `build/three.min.js`, confirmed byte-identical against `origin/main`); CSS
+brace-balance holds (454/454); 0 duplicate DOM ids in any touched page (project-schedule's own
+`grep` hits are all pre-existing dynamically-templated ids from its list renderers, unrelated to
+this change). ⚠️ **Not verified signed in** — this environment has no live Supabase login; every
+claim above is a real Playwright render against the shipped files with auth/DB stubbed.
+
+### 2026-09-03 (h) — The stacking crash, named: a `var` read twenty lines before it was assigned
+
+*"still blank after hard refresh, there is an error message shown"* — **Cannot read properties of
+undefined (reading '0')**. And: *"the previous versions are okay, how come this changed now."*
+
+In `renderVStack`, `var _axLvls = _vsAxis();` sat ~20 lines BELOW the loop that reads
+`_axLvls[0]`. A `var` is hoisted but its assignment is not, so `undefined[0]` threw. It
+only fires on projects where activities have no level — OPW101 has no location breakdown, so all 2,665
+qualify and it threw on the first. **Not from this week's work:** bisected to **f8fc2e2** (today,
+*"a WBS branch is a place (LBS) or a grouping"*), which added the reader without moving the
+declaration up. Every commit before it is clean, which is exactly why older versions worked.
+
+Declaration moved above its first reader; the one unguarded `_axLvls[0].id` of four is now guarded.
+⚠️ The crash is **reproduced** in verification: HEAD throws the owner's exact message, the fix does not,
+and moving the declaration back re-introduces it. ⚠️ The previous round's `_vsRenderSafe` repaired
+nothing — it made the pane name its failure instead of going blank, and that is what made this
+diagnosable at all. ⚠️ Still open: OPW101 shows duplicate phase roots (Initiation / Execution / Planning
+twice each); the lifecycle-branch filing is fixed, the duplicates are not. 167 checks, 0 functions lost.
+`MODULE_V` → `20260903h`.
+
+---
+### 2026-09-03 (g) — A blank stacking pane, a breakdown fetched once, and the `is_locked` that hid the mis-phased branches
+
+Three reports on OPW101 / SLN101:
+
+1. *"the vertical stacking is not shown even if it is already under execution phase"* — a completely
+   blank panel, not even an empty-state message. Every branch of `renderVStack` writes
+   `innerHTML`, so nothing on screen means it **threw**, and it threw invisibly because the
+   toggle called it bare. New `_vsRenderSafe()` turns a blank pane into a named failure with the
+   stack in the console and a retry. ⚠️ The underlying throw is not yet identified — the fix makes it
+   impossible to hide, not gone.
+2. *"still says no location breakdown after full load"* — the breakdown was fetched **once per page
+   load** and never re-asked, so a tab that got zero stayed at zero while another tab displayed all
+   five levels. Now a named `refreshLocLevels()`, re-run when the stacking opens, with a Check
+   again button and a line saying which project id was queried and how many rows came back.
+3. *"there are WBS again found under the execution phase that do not belong there"* — **again**,
+   because `_wbsHealSkeletonPlacement` only considered `is_locked` candidates, and an
+   imported branch is unlocked. Exactly the branches that end up misfiled were the ones it could not
+   see. That requirement is gone; every other guard stands.
+
+⚠️ Nothing else was loosened: only skeleton-declared branches move, only into a locked phase root,
+only out of the root or another top-level phase (MEPF's own Procurement stays put). ⚠️ The phase memo
+is now cleared on a move, or the change would be right in the database and wrong on screen. ⚠️ Not
+verified signed-in. 145 slice-and-execute checks. `MODULE_V` → `20260903g`.
+
+---
+### 2026-09-03 — Minutes of Meeting UI/UX pass: icon-only chrome, draft-attendee editing, a labelled reporting switcher
+
+Owner's 18-item list across Meetings List / Meetings Dashboard / Individual View /
+Reporting View. Full detail (every item, the RLS reasoning for item 4, and the two real
+pre-existing bugs found and fixed — a specificity collision that had been undoing the
+reporting view's own padding since it shipped, and a rule-fields default that didn't match
+the frequency `<select>` it sat under) is in `modules/minutes-of-meeting/CLAUDE.md` —
+module-local, since the module contract reserves shared-file edits for the app owner.
+
+**`assets/js/icons.js` — two new icons**, `mail` (the module's new icon-only Email
+button) and `chevronLeft` (paired with the existing `chevronRight` for the reporting
+view's Back/Next arrow buttons). Shared asset changed → **`icons.js?v=` bumped
+`20260902f` → `20260903a` across all 21 referencing HTML files.**
+
+**`migrations/2026-09-03-mom-draft-attendee-edit.sql` (module dev must run this)** — the
+one item that touches the database: a meeting's minutes are still editable by any of the
+meeting's recorded attendees while the record is a draft, not only by whoever wrote it or
+a planner. Distributing (and reverting) a minute stays owner/planner-only regardless —
+that RLS narrowing is unchanged, only the field-edit rule widened. Reading has always been
+project-wide for every minute, draft or distributed.
+
+<!-- both sides prepended a 2026-09-03 entry; both kept whole, seam here -->
+
+### 2026-09-03 (f) — "No Location Breakdown Structure", on a project that has five
+
+Owner, two tabs of SLN101 side by side: Schedule Setup lists **Tower › Level › Orientation › Zone ›
+Cluster**, Vertical Stacking says the project has no breakdown. *"how come that is the error even
+though there is a defined location levels"*
+
+Both panes read the same `LOC_LEVELS` global — the difference was **when**. `load()` paints from
+cache and renders before `loadResourcesAssignments()` fetches `location_levels`, which on a
+16k-activity project is minutes; for all of it the stacking reported an empty array as *"this project
+has no Location Breakdown Structure"*, a claim it had no basis for. It also folded a **query error**
+into the same message, blaming the planner for a missing migration. New `LOC_LOAD` state gives three
+honest answers (loading / could not be read / genuinely none), and — the reason the wrong one stuck —
+`renderAll()` **never repaints the stacking**, so the pane was a dead end for the session; the
+`location_levels` fetch now repaints it, but only when it is showing an empty state and only on
+actual news. Detail in `modules/project-schedule/CLAUDE.md`.
+
+⚠️ The "genuinely none" message is unchanged — it was always right, just said in two cases where it
+was false. ⚠️ Known limit, not fixed: a second tab still does not learn about levels created in the
+first until it reloads. ⚠️ Not verified signed-in; the cause is inferred from the code path and the
+screenshots, not measured on SLN101. 90 slice-and-execute checks. `MODULE_V` → `20260903f`.
+
+---
+
+### 2026-09-03 (e) — A tower is one building, however the WBS spells it
+
+Owner: *"there are scenarios wherein the substructure is separated from the superstructure, so we
+need to combine them to create a tower. And there are direct instances wherein tower 1 is defined
+including substructure and superstructure combined."*
+
+New `locTowerToken()` gives a building ONE canonical identity, so `Tower 1 - Substructure`,
+`SUBSTRUCTURE - TOWER 1`, `TOWER-1 SUPERSTRUCTURE` and a plain `Tower 1` all resolve to **Tower 1**.
+Wired into the level guesser (a stage-first name now reaches the Tower level instead of being vetoed
+as a trade), the value guesser (the stages combine), and Vertical Stacking's tower read — where it is
+**read-time only**, so a project already stamped with two spellings draws one card without a single
+row being written. Also: the WBS heal chain merged duplicate branches *after* the two passes that
+refuse to run while a duplicate exists, so it took two page loads to converge; the merge now runs
+first. Detail in `modules/project-schedule/CLAUDE.md`.
+
+⚠️ `locGroupingReason` is deliberately untouched — a bare `Superstructure` still cannot become a
+storey. ⚠️ Nothing is invented: a stage branch with no tower word at all leaves the tower blank rather
+than guessing a name. ⚠️ Not verified signed-in (the anon key has no grants); verification is 66
+slice-and-execute checks against the shipped functions. `MODULE_V` → `20260903e`.
+
+---
+
+### 2026-09-03 (d) — 16,396 activities under a visibly correct Execution Phase, and the stacking said zero
+
+Owner, with two screenshots of SLN101 (4PH Strevi Bacoor): the grid renders a perfect tree —
+**Execution Phase → Construction Phase → Substructure → Tower D → Excavation**, *Total: 16,396
+activities* — while Vertical Stacking reads **“0 execution-phase activities stacked.”** *"How come?
+even though the schedule is under the execution phase?"* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+⚠️⚠️ **Both screens were telling the truth about different things, and the app had no third source.**
+`rebuild()` derives a row's ancestry from its **dotted WBS code** and never reads the node id — that
+is why the grid is right. `phaseOf()` resolved **only** through `wbs_node_id → WBS_NODES`, and on this
+project those ids are null (the 2026-09-02 (q)/(r) batched-link timeout, and every plain importer,
+file activities by dotted code without ever linking them to a node). So all 16,396 answered *"no
+phase"*, `isExecPhase()` was false for every one, and **every execution-scoped feature — Vertical
+Stacking, Contract Scope, the activity colour key — silently reported an empty project.**
+
+- **`phaseOf` gained the code fallback**, reading the same source the grid trusts: walk the dotted
+  code's ancestors nearest-first and take the first branch name that resolves a phase — the identical
+  rule `_nodePhase` applies to the tree, applied to the projection of that tree the rows carry.
+- ⚠️ **Strictly last.** The row's own `phase` and the node chain both still win, so a healthy linked
+  project computes exactly what it computed before — asserted, along with the pre-fix expression
+  returning null for all of them, so the suite bites.
+- ⚠️ **Read-time only, and it repairs the symptom, not the link.** Nothing is written; the activities
+  are still unlinked, and *Schedule Setup → WBS → Adopt existing WBS* is still the real fix. But the
+  previously recorded recovery for this state was **a re-import**, i.e. a destructive repair of a
+  schedule that is not actually damaged.
+- ⚠️ **It cannot sweep other phases into Execution:** a Planning-phase activity's own ancestry names
+  Planning Phase, so it resolves to `planning`. Asserted for all four phases plus an orphan code,
+  which correctly still has no phase.
+- **The empty state now distinguishes the two cases** — *"nothing matches your filters"* vs *"not one
+  of this project's N activities resolves ANY phase, so this is not a filter problem"*, measured
+  rather than guessed, naming Adopt existing WBS. The old wording is exactly what made a full
+  schedule read as an empty one.
+
+**Verified: 10 checks executing the shipped `phaseOf` / `_phaseByCode` / `_nodePhase` / `isExecPhase`**
+(sliced from the file) against the tree in the owner's own screenshot; the day's other suites still
+green (26 + 14); **0 functions lost / 2 added**; parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — the fix is measured against the reported shape, not against the live
+project. ⚠️ The owner's tab was on `?v=20260902ab`; **hard-refresh**, since a module page is cached by
+its full URL. `MODULE_V` → `20260903d`.
+
+### 2026-09-03 (c) — A WBS branch is a PLACE or a GROUPING, and the stacking now reads only places
+
+Owner: *"for the vertical stacking, it should only read the locations WBS — tower, level, zones,
+clusters, units, those are locations WBS. improve the distinction from 'groupings' WBS and 'locations'
+WBS. idk what the correct term for 'Location Breakdown' is now."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+**The term is Location Breakdown Structure (LBS)** — the standard counterpart to the WBS, and exactly
+the distinction being asked for: the WBS says *what work*, the LBS says *where*. Relabelled in the
+matcher, the Group menu, the Floors & Zones step and the stacking's own empty state.
+
+- **The distinction had no name in the code.** New `locGroupingReason(name)` answers it once and is
+  read by the guesser, the wizard and the stacking: a **location** is a place (tower/building, level/
+  floor, zone, cluster, unit); a **grouping** is a project phase, a trade or a work type.
+- ⚠️ **It is POSITION-AWARE, and it has to be.** Several terms sit in both vocabularies —
+  `substructure`/`superstructure` are a Level synonym *and* a Structural Works term — so a flat
+  "is it a trade word" test would have thrown away **Tower D - Substructure**, a real tower. The term
+  appearing **earliest** wins: `Tower D - Substructure` → location; `Superstructure` (tie) → grouping.
+  ⚠️ A tie resolves to grouping deliberately: those are stages of structural work, not storeys.
+- **The guesser no longer proposes a trade or a phase as a location** — ⚠️ guess only. A saved match
+  still wins, so a project that already decided *"Superstructure IS our Level"* keeps it and no stored
+  data moves underneath anyone.
+- ⚠️⚠️ **UN-MATCHING A BRANCH USED TO DO NOTHING TO THE DATA — that is why a grouping went on drawing
+  a floor forever.** `locMapPlan` only ever SETS. A branch matched once and later marked grouping-only
+  left its value stamped on every activity beneath it. Apply now **clears** it, and narrowly: only
+  where the branch was in that level's *saved* table, is no longer in the new one, is the activity's
+  deepest match, the stored value still equals what it wrote, and the new matching sets nothing there.
+  Hand-typed, imported and backfilled values are untouched — it undoes this tool's own writes and
+  nothing else. The toast says how many were cleared, because a silent removal is not acceptable.
+- **The stacking refuses a grouping value at read time** as a backstop for values already stored.
+  ⚠️ **Nothing is dropped**: a refused value simply means "no level", so the work lands in the
+  existing dashed *No level* band — which now names the grouping branches as a cause, since a planner
+  reading that band would otherwise go hunting for a value that is plainly there.
+- The wizard badges each row with **why** it reads as a grouping (`project phase` / `trade / work
+  type`), shown even on rows already matched — that badge is the one thing that makes an old, wrong
+  match visible instead of permanent.
+
+**Verified: 26 checks executing the shipped `locGroupingReason` / `locGuessLevel` / `locIsGroupingValue`
+/ `_vsLevVal` / `clearPlan`** (sliced out of the file, never reimplemented), covering the both-vocabulary
+tie cases, the Tower-D-Substructure rescue, and all four narrowing conditions of the clear; the
+previous pass's 14 wizard checks still green; **0 functions lost / 7 added**; parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — no clear has run against real activities, which is the one thing most
+worth watching on the first real use. `MODULE_V` → `20260903c`.
+
+### 2026-09-03 (b) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
+<!-- both sides prepended a 2026-09-03 entry; both kept whole, seam here -->
+
+### 2026-09-03 (b) — Super-admin-only modules, module-logo dropdowns, bold Portfolio, view toggles repositioned
+
+Six items in one owner turn, two of them mid-turn follow-ups on the earlier five.
+
+**1. Seven modules + Personal hidden from everyone but `super_admin`, "for now."** New
+`superAdminOnly: true` on the risk-register, stakeholder-map, manpower-loading,
+equipment-loading, productivity-rates, contracts-claims and cash-flow entries in
+`config.js`. Read off `window.__role` — the global `AppAuth.requireLogin()` already sets
+before its callback runs — by a shared `visible(m)` predicate now duplicated (deliberately,
+one line each) in `ModulesGrid.render()` (the launcher grid), `UI.renderNav()` (both the
+project- and portfolio-mode sidebars), and `dashboard.html`'s own tile grid, so a hidden
+module can't surface from any of the three places a module can appear. **This is UI
+visibility only** — no RLS or table-grant change, so it's reversible in one line and a
+super_admin sees every module unchanged.
+- ⚠️ Personal (My Work / Tasks) gated the same way, off the same role, in **two** places —
+  `renderNav`'s Personal section AND `renderUserBar`'s avatar-menu "My Work" link (a second,
+  independent path to `my-work.html` that renders on every page, sidebar or not; gating only
+  the sidebar would have left the page one click away via the avatar on every module page).
+- ⚠️ **Portfolio Overview's own tabs are a fourth surface, and a static one** — its six
+  cross-project tabs (Risk / Stakeholders / Equipment / Contracts / Cash Flow / Productivity)
+  are hardcoded markup, not built off `APP_CONFIG.MODULES`, so hiding the sidebar link alone
+  would have moved the same data one click sideways instead of closing it. Hidden the same
+  role-gated way, straight in that page's own `requireLogin` callback; the other seven tabs
+  (Overview/S-Curve/Cash-Flow-rollup/Resources/Milestones/Issues/Meetings/Photos) are untouched
+  since none of those seven modules are `superAdminOnly`.
+
+**2–4. A module identity icon before the screen-switcher dropdown**, for Minutes of Meeting
+and Progress Photos — both modules whose `<h1>` text is hidden once `UI.tabsToDropdown()`
+builds a trigger that already names the current screen, so the icon was the only piece of
+module identity left, and until now it wasn't carried into the trigger at all. Extended
+`UI.tabsToDropdown(selOrEl, opts)` with `opts.icon`, baked straight into the trigger button
+(`.pd-tabsdrop-ico`, brand-red, matching Project Schedule's own `.ps-title-btn` pattern) rather
+than left as a separate element beside it — issues-lessons already tried a standalone icon
+element next to a dropdown and had to hide the WHOLE thing on narrow screens because a lone
+icon on its own row is exactly the "icon alone / label on the next line" defect this app's
+history has fixed twice already (see `tabsToDropdown`'s own comment). `UI.tabsToDropdown('.il-tabs',
+{icon:'clipboard'})` and `UI.tabsToDropdown('.pp-tabs', {icon:'camera'})` — matching each
+module's own `config.js` icon. ⚠️ Found by actually rendering the pages and inspecting the
+DOM, not by reading the CSS: issues-lessons' `<h1>` carries an inline `style="display:none"`
+set by `switchScreen()` from an earlier, deliberate round — a different mechanism from
+`tabsToDropdown`'s own class-based hide, and the reason its icon had disappeared entirely
+rather than merely being un-styled.
+
+**5. "Portfolio" now renders bold when it's the selected row in the project-selector dropdown.**
+The trigger button (closed state) already wrapped its label in `<strong>` unconditionally
+(`renderSwitcher`'s `mainLabel`) — this was specifically about the Portfolio row **inside the
+dropdown's own list** (`navListBody()`'s `.pd-nt-portfolio`, the one list body shared by
+`enhanceProjectSelect`'s popover, `renderSwitcher`'s menu, and `home.html`), whose `.sel`
+(current/active) state changed only background/color, with no weight change from the row's
+base 600. `.pd-nt-portfolio.sel` now adds `font-weight: 700` — measured via a real render:
+600 unselected, 700 selected.
+
+**6. The List/Calendar and Tile/List/Plan "change view" toggles moved out of the chrome and
+into the content, on the left** — Minutes of Meeting and Progress Photos, the two modules
+where they weren't already there. ⚠️ **Issues & Concerns needed no change** — its own
+List/Kanban toggle (`.il-viewbar`, built by `viewKanbanBarHTML()`) was already the leading,
+left-most element directly above `#il-table`; confirmed by rendering all three modules and
+comparing, not by re-reading the CSS a second time.
+- **Minutes of Meeting**: the icon-only List/Calendar toggle used to live in the topbar's
+  tool cluster (top-right, beside the profile — chrome, nowhere near the meetings it
+  switches), wired once in `wire()` since it sat outside `#il-mom-view`'s own re-rendered
+  content, with a separate `syncTopTabs()` pass to keep its hidden/`.on` state in sync. It now
+  opens `momBrowseFilterBarHTML()` — the "Filters / N meetings / Export / +Add meeting" bar
+  that already sits directly above the list/calendar and is rebuilt fresh on every
+  `renderBrowse()` — so its `.on` state needs no separate sync pass at all; wired in
+  `wireBrowse()` like every other control in that bar. The old topbar markup, its `wire()`
+  wiring and the `syncTopTabs()` block managing it are all removed rather than left dead; the
+  now-pointless `.il-topbar-tools .il-viewtoggle { height: 34px }` CSS override (the button's
+  own 34px rule already covered it) went with them.
+- **Progress Photos**: the Tile/List/Plan toggle (`.pd-viewtoggle`) already lived in the right
+  place — `.pp-listbar`, directly above the gallery/list — just pushed to the far right via
+  `.pp-listbar .pd-viewtoggle { margin-left: auto; }` while count/group-by/tile-size/markup sat
+  on the left. Moved to lead the row instead (markup relocated, the `margin-left:auto` rule
+  removed — flex's own start alignment does the rest). Checked first that nothing in
+  `module.js` depends on `.pp-listbar`'s child order (only one order-agnostic
+  `document.querySelector('.pp-listbar')` read, for a whole-bar visibility toggle) or queries
+  `.pd-vt[data-view]` by anything but the attribute (it does, everywhere).
+- Both re-rendered at 400px afterward: the toggles wrap onto their own compact row (not
+  stretched full-width — `.il-viewtoggle`/`.pd-viewtoggle` both carry `flex: none`), nothing
+  clipped or broken.
+
+Verified: `node --check` on every touched `.js` file; every touched `index.html`'s inline
+`<script>` parses (progress-photos' own extraction reports a failure that reproduces
+byte-for-byte against the untouched `origin/main` copy — the documented "`<script>` substring
+inside a CDN `src` URL fools a naive regex extractor" trap, not a defect in this change); CSS
+brace-balance holds on `dashboard.css` (450/450), minutes-of-meeting's `module.css` (301/301)
+and progress-photos' `module.css` (525/525); 0 duplicate DOM ids in any of the three touched
+module pages; 0 stray references to the removed `#il-viewtoggle` id anywhere in code (the one
+surviving hit is an unrelated Month/Week sub-toggle inside calendar mode that only ever shared
+the CSS *class*, never the id). All six items visually confirmed via Playwright renders at
+1400px and 400px against the shipped CSS with the real app markup (auth/DB stubbed — this
+environment has no live Supabase login). ⚠️ **Not verified signed in.**
+
+### 2026-09-03 (c) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
+
+Owner, off a screenshot of *Match the WBS to your location breakdown*: filter by WBS level, use the
+space, put a location tree on the right — plus two questions worth answering in the UI rather than in
+chat. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **A WBS-level lens, separate from the match-state lens.** `locScanNames` already recorded each
+  name's depth and nothing surfaced it; there is now a `WBS level N (count)` dropdown and an `L n`
+  column. ⚠️ **Two controls, not one merged list** — *"show me the un-matched level-3 branches"* is
+  the question a planner asks, and a single dropdown cannot express a pair.
+- **The window uses the room it has** — `min(96vw,1480px)` × 92vh. ⚠️ `maxHeight` had to be overridden
+  too: the shared `.pd-modal` caps at 85vh, so an 86vh inner column would have been clipped by it and
+  the footer buttons pushed out of reach.
+- **A live location tree on the right**, level by level, showing what each level will HOLD once
+  applied — the table says what each WBS name *is*, the tree says what the breakdown *becomes*.
+  Clicking a level (or the Grouping-only bucket) narrows the table as a third, transient lens that
+  leaves the two dropdowns alone, so clearing it restores exactly what was on screen.
+- ⚠️ **"Category A under Tower A and Category A under Tower B" is NOT a conflict — answered in the
+  UI.** Two WBS names resolving to the same value render merged with a `×2` badge and both names in
+  the tooltip. They are one value *at that level*; the level ABOVE keeps them apart, because
+  deepest-wins resolution stamps every level an activity sits under. Showing them as a clash would
+  invent a problem and invite a planner to rename real data to dodge it.
+- ⚠️ **"Some WBS are not locations, just a grouping of activities" — that answer already existed and
+  was named as a rejection.** `— not a location —` is now **`— grouping only (not a location) —`**,
+  with its own filter, its own bucket in the tree and a line saying nothing is written for it and the
+  decision is remembered. Same stored value (`''`) and the same per-project memory as before —
+  ⚠️ so the *"Not matched"* lens now means genuinely undecided (it used to include every deliberate
+  exclusion, which is what made a finished project still read as unfinished).
+
+**Verified: 14 checks executing the shipped `visible` / `depths` / `treeHtml` / `lvlOptions` /
+`counts` / `rowsHtml`** (sliced out of the file, never reimplemented) against a fixture carrying the
+owner's own Category-A-twice case — each lens, the level filter, both tree lenses, the merge badge and
+the header/row cell alignment. Inline script parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — no live matching has been applied against a real project.
+`MODULE_V` → `20260903b`.
 
 ### 2026-09-02 (b) — Minutes of Meeting, corrected spec: the shared files, and a tabs-dropdown rollout
 

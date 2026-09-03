@@ -358,8 +358,8 @@
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260901a"></script>
   <script src="assets/js/ui.js?v=20260902c"></script>
-  <script src="assets/js/icons.js?v=20260902f"></script>
-  <script src="assets/js/modules-grid.js?v=20260903a"></script>
+  <script src="assets/js/icons.js?v=20260903a"></script>
+  <script src="assets/js/modules-grid.js?v=20260903r"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -1253,7 +1253,10 @@
 
     function renderTiles() {
       var grid = document.getElementById('tile-grid');
-      var mods = APP_CONFIG.MODULES || [];
+      // superAdminOnly modules (config.js) drop out here too — same rule ModulesGrid.render()
+      // and UI.renderNav() apply, so a hidden module can't surface as a live-figures tile here
+      // while being absent from the launcher and the sidebar.
+      var mods = (APP_CONFIG.MODULES || []).filter(function (m) { return !window.ModulesGrid || ModulesGrid.visible(m); });
       grid.innerHTML = mods.map(function (m) {
         // ⚠️ Delegated to the LAUNCHER's own card builder (2026-09-01, owner). This branch used
         // to render its own dead grey box, so Drawing Register and Material Submittal Log were

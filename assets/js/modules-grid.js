@@ -33,7 +33,7 @@
       var m = s && s.match(/[?&]v=([^&]+)/);
       if (m) return decodeURIComponent(m[1]);
     } catch (e) {}
-    return '20260903a';
+    return '20260903r';
   })();
 
   function href(m) {
@@ -72,9 +72,15 @@
       '<div class="pd-module-sub">' + sub + '</div></div></div>';
   }
 
+  // ⚠️ `superAdminOnly` modules (config.js, 2026-09-03) are hidden from everyone but
+  // super_admin, read off the global `AppAuth.requireLogin` already sets — see the
+  // matching note in ui.js's `renderNav`, which gates the sidebar the same way.
+  function visible(m) { return !m.superAdminOnly || window.__role === 'super_admin'; }
+
   window.ModulesGrid = {
     MODULE_V: MODULE_V,
     href: href,
+    visible: visible,
     // ⚠️ Exported so the DASHBOARD's tile grid can reuse the retired-module card verbatim
     // rather than keeping a second, dumber copy that rendered Drawing Register and Material
     // Submittal as dead grey boxes while the launcher made the same two modules clickable.
@@ -82,7 +88,7 @@
     card: card,
     render: function (host) {
       if (!host) return;
-      host.innerHTML = (APP_CONFIG.MODULES || []).map(card).join('');
+      host.innerHTML = (APP_CONFIG.MODULES || []).filter(visible).map(card).join('');
     },
   };
 })();
