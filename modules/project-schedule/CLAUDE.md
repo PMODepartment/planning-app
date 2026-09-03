@@ -1,3 +1,88 @@
+## The push wrote every location one level too high — floors stored as towers, zones as floors (2026-09-03) — jasantos2
+
+Owner, two reports, one root cause:
+- *"how come when pushing for One Portwood it displays Tower > Tower > Trade > Level > Zone > Unit"*
+- *"there is an error, it detected the levels as the towers, and the zones as levels."*
+
+The second screenshot is the proof: the Vertical Stacking bands OPW101 by **Z6…Z1** — zone codes
+drawn as storeys — with a *No level* row under each trade.
+
+### ⚠️⚠️ One hard-coded assumption, in two places
+Both the label lookup and the **value writer** mapped the builder dims positionally:
+
+    floor -> LOC_LEVELS[0]    zone -> LOC_LEVELS[1]    unit -> LOC_LEVELS[2]
+
+That is only true for a breakdown the **push itself created** — `ensureLocLevels` seeds exactly
+*Floor › Zone (› Unit)*, with no tower. OPW101 got its levels from somewhere else (the WBS matcher, the
+LBS editor) and reads **Tower › Level › Zone › Unit**, so every dim was off by one:
+
+| dim | resolved to | should be |
+|---|---|---|
+| floor | **Tower** | Level |
+| zone | **Level** | Zone |
+| unit | **Zone** | Unit |
+
+That is the doubled word in the WBS-order editor — the tower dim printed *Tower*, and so did the floor
+dim, because `LOC_LEVELS[0]` **is** the tower.
+
+⚠️⚠️ **And it was never only a label.** `locMapOf` writes the activity `location` jsonb by the same
+index, so every push stamped **floor names into the Tower column, zones into Level, units into Zone**.
+The stacking bands by a level id, so it faithfully drew what the push had written: zones as storeys.
+The display and the data were both wrong, in the same direction, from the same line.
+
+### The fix — resolve by MEANING, in one ordered sweep
+New `locLevelFor(dim)`, used by both the labels and the writer.
+1. **By name.** Each dim claims the first level whose name belongs to its family (tower/building/
+   bldg/block · level/floor/storey/deck · zone/area/sector/cluster · unit/room/apartment). A level
+   already claimed can never be claimed twice.
+2. **Then one forward sweep** for whatever is left. `minIdx` only ever moves deeper, so a dim can
+   never be handed a level *above* its parent dim — the exact mis-ordering this exists to stop. A
+   level the builder does not model (SLN101's *Orientation*) is left unclaimed, never absorbed.
+⚠️ **A dim with no level resolved writes NOTHING.** Falling back to "the next free column" is how the
+values got into the wrong one to begin with.
+
+### ⚠️ "No defined number of towers" means ONE tower
+Owner: *"make it that the project schedule and schedule setup feature allows users to input multiple
+towers and for cases like projects with no defined number of towers, it would mean as a singular
+tower."*
+
+**The tower is claimed by NAME ONLY, never by position.** A breakdown with no tower-family level *is*
+the single-tower case: the project is one implicit tower and there is nothing to write a tower value
+into. This matters — my first attempt let the tower dim take the first unnamed level positionally, and
+on a two-level breakdown (`L1`, `Q`) it swallowed `L1` as the "tower" and shifted the floor onto
+`Q`. That is the reported bug in a new coat, and the harness caught it before it shipped.
+
+Multiple towers were already fully supported and are untouched: `cfg.towers` with **+ Tower** /
+Rename / Delete in Schedule Setup, and `multiTower()` decides whether the tower becomes a WBS level
+at all — one tower, no tower branch; many towers, a branch each.
+
+### On the missing trades
+*"where is the general requirements, site works trade?"* — they are **there**, and the latest screenshot
+shows all six cards: General Requirements, Site Works, Structural Works, Architectural Works, MEPF
+Works, Allied Services. `GROUPS` has carried `GR` and `SW` all along, and a trade with activities
+but **no floors defined** already gets a single un-located occurrence (the `__all__` fallback) so its
+work still reaches the schedule — which is why those two cards read *1 activity · No level*. If they
+are ever missing entirely it means no step-1 activity carries that trade, and `missingTrades` in the
+push report names it. **Nothing was changed here** — I am not going to invent a fix for something that
+verifies as working.
+
+---
+
+**Verified: 231 checks.** The shipped resolver sliced out and executed against four real breakdown
+shapes: OPW101 (*Tower › Level › Zone › Unit* — now resolves 1:1, and the order reads
+*Tower › Trade › Level › Zone › Unit* with the word once), the push-created *Floor › Zone › Unit*
+(unchanged), SLN101 (*Tower › Level › Orientation › Zone › Cluster* — Orientation left unclaimed,
+unit reaches Cluster), and nameless levels. Plus: no level claimed by two dims, fewer levels than dims
+resolves to null rather than a wrong column, and the tower claims nothing by position. Controls on
+every scan. 0 functions lost, 5 added; the inline script parses.
+
+⚠️ **NOT verified signed-in.** ⚠️ **This fixes what the push WRITES from now on — it does not rewrite
+rows already stamped wrong.** OPW101 has 2,561 activities carrying floor names in the Tower column;
+they need a re-push (or "Fill from the WBS tree") to be corrected. Say the word if a one-off repair
+pass is wanted instead.
+
+⚠️ Still open: OPW101's duplicate phase roots.
+
 ## The push carried a construction SEQUENCE where the building order belonged (2026-09-03) — jasantos2
 
 Owner: *"fix the migration from schedule setup to project schedule, the trades are not properly

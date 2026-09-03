@@ -25226,14 +25226,94 @@
     // project's own levels wherever they exist (a project that calls them Tower / Level / Zone reads
     // that way in step 2 and in the push dialog), and only fall back to Floor / Zone / Unit for a
     // project that has not defined any yet.
+    /* ⚠️⚠️ WHICH LOCATION LEVEL IS THE FLOOR? IT IS NOT ALWAYS LOC_LEVELS[0].
+       Owner 2026-09-03, pushing One Portwood: *"how come when pushing for One Portwood it displays
+       Tower > Tower > Trade > Level > Zone > Unit"* — the same word twice.
+       Both the label lookup and the VALUE WRITER mapped floor→LOC_LEVELS[0], zone→[1], unit→[2].
+       That is only true for a breakdown the PUSH created, because ensureLocLevels seeds exactly
+       Floor › Zone (› Unit) with no tower. OPW101 got its levels elsewhere — the WBS matcher, the
+       LBS editor — and reads **Tower › Level › Zone › Unit**, so every dim was off by one:
+         floor → LOC_LEVELS[0] = "Tower"   (hence Tower printed twice)
+         zone  → LOC_LEVELS[1] = "Level"
+         unit  → LOC_LEVELS[2] = "Zone"
+       ⚠️⚠️ AND THIS WAS NEVER ONLY A LABEL. locMapOf writes the activity's location jsonb by the
+       SAME index, so the push stamped each floor NAME into the Tower level, each zone into Level
+       and each unit into Zone. The Vertical Stacking bands by a level id, so it was reading floor
+       names as towers and zone names as floors — a whole building shifted one level down.
+       ⚠️ Resolved by MEANING, not position: each dim claims the first level whose name belongs to
+       its synonym family, and a level already claimed cannot be claimed twice. The old positional
+       map is kept as the fallback for a breakdown whose names say nothing (a level called "L1"),
+       but it now skips a leading TOWER level rather than handing it to the floor.
+       ⚠️ Returns null rather than guessing when the project has fewer levels than the setup uses —
+       the caller then writes nothing for that dim instead of writing it into the wrong column. */
+    var DIM_SYN = {
+      tower: ["tower", "building", "bldg", "block"],
+      floor: ["level", "floor", "storey", "story", "deck"],
+      zone: ["zone", "area", "sector", "cluster"],
+      unit: ["unit", "room", "apartment"]
+    };
+    function _levelsNow() { try { return (typeof LOC_LEVELS !== "undefined" && LOC_LEVELS) ? LOC_LEVELS : []; } catch (e) { return []; } }
+    function _synHit(name, terms) {
+      var n = String(name == null ? "" : name).trim().toLowerCase();
+      if (!n) return false;
+      for (var i = 0; i < terms.length; i++) { if (n.indexOf(terms[i]) !== -1) return true; }
+      return false;
+    }
+    // dim -> the LOC_LEVELS entry it maps to (or null). Memoised on the level-id signature, since
+    // this is asked once per activity per dim during a push.
+    var _dimLvlCache = null, _dimLvlKey = null;
+    function _dimLevelMap() {
+      var lv = _levelsNow();
+      var key = lv.map(function (l) { return l && l.id; }).join("|");
+      if (_dimLvlCache && _dimLvlKey === key) return _dimLvlCache;
+      var out = {}, taken = {}, DIMS = ["tower", "floor", "zone", "unit"];
+      // Pass 1 — claim by NAME. A level already claimed can never be claimed again.
+      DIMS.forEach(function (d) {
+        for (var i = 0; i < lv.length; i++) {
+          if (taken[i]) continue;
+          if (_synHit(lv[i].name, DIM_SYN[d])) { out[d] = lv[i]; taken[i] = 1; return; }
+        }
+      });
+      /* Pass 2 — the dims no name resolved take the next UNCLAIMED level, in ONE ORDERED SWEEP.
+         `minIdx` only ever moves deeper, so a dim can never be handed a level ABOVE its parent
+         dim — that mis-ordering is the whole reason this resolver exists.
+         Indexing by the dim OWN position (the first attempt) left SLN101 unit with nothing: its
+         breakdown is Tower > Level > Orientation > Zone > Cluster, so once Tower/Level/Zone are
+         claimed by name only two levels remain and unit was asked for the third of them. Sweeping
+         forward hands it Cluster, which is what a planner means by the deepest location.
+         A level the builder does not model (Orientation) is simply left unclaimed, never absorbed. */
+      var minIdx = 0;
+      DIMS.forEach(function (d) {
+        if (out[d]) { minIdx = Math.max(minIdx, _idxOf(lv, out[d]) + 1); return; }
+        /* THE TOWER IS CLAIMED BY NAME ONLY, NEVER BY POSITION.
+           Owner 2026-09-03: "for cases like projects with no defined number of towers, it would mean
+           as a singular tower." A breakdown with no tower-family level IS that case: the project is
+           one implicit tower, and there is nothing to write a tower value into. Letting the tower dim
+           take the first unnamed level positionally is the same off-by-one in a new coat -- on a
+           two-level breakdown (L1, Q) it would swallow L1 as the "tower" and shift the floor onto Q,
+           which is precisely the "levels detected as towers, zones as levels" the owner reported.
+           So: no tower level, no tower key, single tower. The builder still supports as many towers
+           as the planner defines (cfg.towers / "+ Tower"), and multiTower() drives whether the tower
+           becomes a WBS level at all. */
+        if (d === 'tower') return;
+        for (var i = minIdx; i < lv.length; i++) {
+          if (taken[i]) continue;
+          out[d] = lv[i]; taken[i] = 1; minIdx = i + 1; return;
+        }
+      });
+      _dimLvlKey = key; _dimLvlCache = out;
+      return out;
+    }
+    function _idxOf(lv, l) { for (var i = 0; i < lv.length; i++) if (lv[i] === l) return i; return -1; }
+    function locLevelFor(dim) { return _dimLevelMap()[dim] || null; }
     function dimLabelOf(d) {
-      var idx = { floor: 0, zone: 1, unit: 2 }[d];
-      if (idx != null) {
-        try {
-          var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS[idx] : null;
-          if (lv && String(lv.name || '').trim()) return String(lv.name).trim();
-        } catch (e) {}
-      }
+      // ⚠️ The TOWER is included now. It used to fall straight through to DIM_LABEL.tower while the
+      // floor was being labelled with LOC_LEVELS[0] — which on a Tower-first breakdown IS the tower,
+      // so the WBS-order editor printed "Tower › Tower".
+      try {
+        var lv = locLevelFor(d);
+        if (lv && String(lv.name || '').trim()) return String(lv.name).trim();
+      } catch (e) {}
       return DIM_LABEL[d] || d;
     }
     function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'tower', 'floor', 'zone', 'unit'], phases: {} }; }
@@ -30726,14 +30806,30 @@
         // silently has no values is not. The stacking's tower CHIPS still only appear when there is
         // more than one tower to choose between (see renderVStack), so the noise this guard was
         // avoiding is still avoided — at the display layer, where it belongs.
-        if (loc.towerId) out.tower = towerLabel(loc.towerId);
-        for (var i = 0; i < parts.length && i < locIds.length; i++) {
+        if (loc.towerId) {
+          out.tower = towerLabel(loc.towerId);
+          // ⚠️ AND under the tower LEVEL's own id when the project has one. The reserved literal
+          // 'tower' key is a fallback the stacking still reads, but a level id is what every other
+          // reader keys on — see the tower-level note in the vertical stacking.
+          var _tl = locLevelFor('tower');
+          if (_tl) out[_tl.id] = String(towerLabel(loc.towerId));
+        }
+        /* ⚠️⚠️ EACH PART GOES INTO ITS OWN LEVEL, RESOLVED BY MEANING — see locLevelFor. This loop
+           used to write parts[i] into locIds[i], i.e. floor→level 0, zone→1, unit→2. On a project
+           whose breakdown is Tower › Level › Zone › Unit that put every FLOOR NAME into the TOWER
+           column, every zone into Level and every unit into Zone: the whole building shifted one
+           level down, silently, on every push.
+           ⚠️ A dim with no level resolved writes NOTHING. Falling back to "the next free column"
+           is how the values got into the wrong one in the first place. */
+        var _dims = ['floor', 'zone', 'unit'];
+        for (var i = 0; i < parts.length; i++) {
           var p = parts[i]; if (!p) continue;
-          // ⚠️ Level 0 is the FLOOR, and dimName() names its WBS branch by NAME first. Storing the
-          // code here instead is what made an activity read "F11" under a branch called "12TH
-          // Floor". Match dimName exactly: floor = name||code, zone/unit = code||name.
+          var lvl = locLevelFor(_dims[i]); if (!lvl) continue;
+          // ⚠️ dimName() names the floor's WBS branch by NAME first; storing the code here instead is
+          // what made an activity read "F11" under a branch called "12TH Floor". Match it exactly:
+          // floor = name||code, zone/unit = code||name.
           var v = (i === 0) ? (p.name || p.code) : (p.code || p.name);
-          if (v) out[locIds[i]] = String(v);
+          if (v) out[lvl.id] = String(v);
         }
         return out;
       }

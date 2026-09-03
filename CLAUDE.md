@@ -84,6 +84,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (k) — The push wrote every location one level too high
+
+*"it detected the levels as the towers, and the zones as levels"*, and *"Tower > Tower > Trade > Level
+> Zone > Unit"*. One hard-coded assumption in two places: the label lookup AND the value writer mapped
+`floor→LOC_LEVELS[0], zone→[1], unit→[2]`, which is only true for the *Floor › Zone › Unit*
+breakdown the push itself seeds. OPW101 reads **Tower › Level › Zone › Unit**, so floor resolved to
+Tower, zone to Level, unit to Zone — the doubled word in the editor, and, far worse, every push
+stamping floor names into the **Tower** column. The stacking then faithfully drew zones as storeys.
+
+New `locLevelFor(dim)` resolves each dim by NAME family, then one forward sweep that can only move
+deeper; a dim with no level writes nothing. ⚠️ **The tower is claimed by name only, never by position**
+— a breakdown with no tower level IS the single-tower case (my first attempt let it swallow a nameless
+level and the harness caught it). Multiple towers were already supported and are untouched
+(`cfg.towers`, **+ Tower**, and `multiTower()` gating the WBS level). ⚠️ General Requirements and
+Site Works verify as present — nothing changed there. ⚠️ This fixes what the push WRITES; rows already
+stamped wrong need a re-push. 231 checks, 0 functions lost. `MODULE_V` → `20260903k`.
+
+---
 ### 2026-09-03 (j) — The Schedule Setup push carried a construction sequence where the building order belonged
 
 *"fix the migration from schedule setup to project schedule, the trades are not properly arranged, the
