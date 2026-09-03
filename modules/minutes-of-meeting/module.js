@@ -53,8 +53,6 @@ window.MinutesOfMeeting = (function () {
   var LESSONS = [];
 
   var MOM_ACT_NAME = {};        // activity_id -> activity_name, resolved on demand
-  var _momActTimer = null;      // debounce for the activity search
-  var _momDocClick = null;      // the one outside-click handler for the picker
 
   // One status vocabulary, shared with the register by the 2026-08-22 migration —
   // do not reintroduce a MoM-only list; the CHECK on mom_items refuses anything else.
@@ -63,13 +61,26 @@ window.MinutesOfMeeting = (function () {
   // carryover-distribute.sql). A value outside this list is refused by the
   // database, so the control is a <select>, never free text.
   var MOM_TYPES = ['Issue', 'FYI', 'Report'];
-  // mom-app's own category list, taken as the union of its two disagreeing lists —
-  // see the original module's note (now history) on why that matters.
-  var MOM_CATEGORIES = [
-    'Commercial / Contracts', 'Organizational Hr', 'Engineering', 'Procurement',
-    'Operations', 'Risk', 'Stakeholder Management', 'Quality',
-    'Project Execution Plan', 'Finance', 'Other Matters'
-  ];
+  // ⚠️ DEPARTMENT REPLACES CATEGORY ON A MINUTE (2026-09-02, owner: "instead of
+  // category, use department and get department dropdown from issues"). This is
+  // the SAME 11-value list `modules/issues-lessons/module.js` offers — copied
+  // verbatim rather than read across, for the same reason the People Picker and
+  // the chart helpers are duplicated here: two small IIFEs in two files, no
+  // shared runtime between them.
+  // ⚠️ KEEP THIS LIST IDENTICAL TO the register's `DEPARTMENTS` (and to
+  // admin.html's own copy, which drives the per-user Department column). A
+  // minute pulled in from an issue copies that issue's department straight
+  // across, so a value this list lacks would read as off-list on arrival — the
+  // exact drift that made mom-app's own two category dropdowns disagree.
+  var DEPARTMENTS = ['Commercial and Contracts', 'Engineering', 'Procurement', 'Finance',
+                     'Human Resources', 'Quality', 'Health and Safety', 'Operations',
+                     'PMO', 'COO', 'CEO'];
+  // ⚠️ mom-app's own `category` list is GONE from this file (item 5,
+  // 2026-09-02): a minute is filed by DEPARTMENT now. The COLUMN is deliberately
+  // NOT dropped and is never blanked — momItemDept() falls back to it and
+  // momUsedDepartments() offers whatever a project already stored, so a minute
+  // recorded before this change keeps reading correctly and can round-trip
+  // through the select instead of silently reporting the first option.
   // A starting vocabulary, NOT a closed list — meeting_type carries no CHECK, so
   // whatever a project actually uses joins it through momOptions().
   var MOM_MEETING_TYPES = ['PPR Meeting', 'PSC Meeting', 'Client Meeting'];
@@ -77,37 +88,81 @@ window.MinutesOfMeeting = (function () {
   // ⚠️ SESSION-ONLY, never persisted. Reporting view is how the record is being
   // LOOKED AT right now, not a property of the minute.
   var _momReport = false;
-  var _momF = { q: '', cat: '', type: '', status: '' };   // action-item filters (Detail)
+  // ⚠️ ITEM 12 — which slide the reporting deck is on. Session-only, like
+  // _momReport itself: it is where the presenter has got to right now, not a
+  // property of the minute, and it resets whenever the deck changes shape.
+  var _momSlide = 0;
+  var _momF = { q: '', cat: '', type: '', status: '' };   // per-minute filters (Detail)
   var _momQ = '';                                          // meeting search (Browse)
-  // ⚠️ 'list' | 'calendar' | 'detail'. Meetings are BROWSED (list or calendar) or a
-  // single one is OPEN (detail); selecting or creating one switches into detail,
-  // and "Back to meetings" returns to whichever browse mode was last active —
-  // `_momBrowsePrev` is only ever set from list/calendar, never from detail, so
-  // it can't collapse to "detail" itself.
+  // Item 10 (2026-09-02): "add filter options and combine search bar to filter
+  // grouping. filter group should be hidden/shown by a button." So the search
+  // box is no longer a permanent control in the browse bar — it lives INSIDE
+  // the filter group with the rest, and the group is behind one toggle.
+  // ⚠️ Collapsed ≠ inactive: `momBrowseFilterOn()` puts a dot on the toggle
+  // and the count line stays on screen, so a filter narrowing the list can
+  // never be invisible — the same rule the Issues & Concerns filter toggle
+  // already follows (its own history records why: a hidden active filter is
+  // how a planner concludes their meetings have gone missing).
+  var _momFiltOpen = false;
+  var _momBrowseF = { kind: '', state: '', fav: false, group: '' };
+  // ⚠️ 'list' | 'calendar' | 'detail' | 'series'. Meetings are BROWSED (list or
+  // calendar); a single one is OPEN (detail); a recurring SERIES is open on its
+  // own page (series — its definition + the meetings actually held under it).
+  // "Back to meetings" returns to whichever browse mode was last active —
+  // `_momBrowsePrev` is only ever set from list/calendar, never from detail or
+  // series, so it can't collapse to either of those itself.
   var _momView = 'list', _momBrowsePrev = 'list';
   var _momSel = null;
+  // Which series a currently-open MEETING was reached from, if any — set only
+  // when a meeting is opened by clicking a row inside that series' own page
+  // (momOpenSeries → the "Previously held" list), so "← Back" from the meeting
+  // returns to the series page rather than to the flat list/calendar it would
+  // otherwise fall back to.
+  var _momCameFromSeries = null;
   var _momCalMonth = null;      // 'YYYY-MM' — the month the calendar view shows
+  // 'month' | 'week' — which grid the Calendar sub-view renders.
+  var _momCalMode = 'month';
+  var _momWeekStart = null;     // 'YYYY-MM-DD' (a Monday) — the week the Week grid shows
   var _momSort = { col: 'date', dir: 'desc' };   // List view column sort
 
-  // "Get from issue" panel state (Detail view) — see momGetPanelHTML.
-  var _momPickerOpen = false, _momPickerQ = '';
 
-  // ⚠️ ITEM #17 — top-level tabs. 'dashboard' | 'meetings'. Dashboard is the
-  // landing tab (matches the Issues & Concerns convention this module split
-  // from — item #16 renamed that module's own "Report" screen to "Dashboard"
-  // as the default view). Meetings hosts everything this module already had
-  // (List / Calendar / Detail) PLUS the recurring-schedule list (item #19).
-  var _momTab = 'dashboard';
+  // ⚠️ THE "ADD MEETING" MODAL — replaces the old one-click "+ New minutes"
+  // (which inserted an almost-blank row and let you fill it in afterwards).
+  // The rehaul asks the planner for the whole shape of the meeting up front —
+  // title / date / start+end time / required+optional attendees / venue / link
+  // / an addable AGENDA list / a recurring tag (which swaps the date for a
+  // frequency + start/end date) / a favorite tag — so `_addDraft` holds all of
+  // that in memory before anything is written. See addMeetingModalHTML/
+  // saveAddMeeting below.
+  var _addOpen = false, _addDraft = null;
+
+  // Top-level tabs: 'meetings' | 'dashboard'.
+  // ⚠️ MEETINGS IS FIRST AND IS THE LANDING TAB (2026-09-02, owner: "for
+  // meetings module, meetings should be first over dashboard"). This
+  // deliberately breaks step with Issues & Concerns, which lands on its
+  // dashboard — the difference is that this module's primary act is
+  // RECORDING a meeting, not reading a roll-up of them, so a planner opening
+  // it is far more often here to write than to review. The tab strip's own
+  // order in index.html matches, since a strip whose first entry is not where
+  // the module opens reads as a bug.
+  var _momTab = 'meetings';
 
   // ==========================================================================
   // RECURRING MEETING SCHEDULES (items #19, #22) — see the block above init()
   // for the occurrence math (schedDatesInRange / schedNextOccurrence / …).
   // ==========================================================================
   var SCHEDULES = [];
-  // Which schedule's right-pane is open in the Meetings tab's "Recurring
-  // meetings" list (item #22), and the state of the two small forms it hosts.
-  var _schedSel = null;
-  var _schedFormOpen = false, _schedFormDraft = null;      // add/edit a SCHEDULE
+  // ⚠️ REHAUL (2026-09-02): a recurring series is no longer browsed from a
+  // side panel above the meetings list — it is a ROW in the unified Meetings
+  // list (see momUnifiedRows below), and clicking it opens a full SERIES PAGE
+  // (`_momView === 'series'`, `_seriesSel` = the schedule id): the series'
+  // own definition, above a list of every meeting actually held under it —
+  // clicking one of THOSE opens the normal single-meeting Detail view. A
+  // series is created from the Add Meeting modal's "Recurring" tag now, so
+  // `_schedFormOpen`/`_schedFormDraft` below serve EDITING an existing series
+  // from its own page only, never creation.
+  var _seriesSel = null;
+  var _schedFormOpen = false, _schedFormDraft = null;      // edit a SCHEDULE, from its page
   var _schedOccOpen = false, _schedOccDraft = null;        // "+ Add a meeting" for it
 
   // ⚠️ ITEM #23 — per-action-item hold/close, mirroring the Issues workflow
@@ -116,7 +171,6 @@ window.MinutesOfMeeting = (function () {
   // here — one flag each would collide across rows.
   var _momItemWF = {};          // itemId -> {mode:'hold'|'close', note, report, lesson}
   var ITEM_HISTORY = {};        // itemId -> [] once loaded, for the "History" reveal
-  var _momItemHistOpen = {};    // itemId -> true while its history panel is open
 
   var histView = null;          // UI.bindHistoryState() handle — see init()
 
@@ -221,13 +275,9 @@ window.MinutesOfMeeting = (function () {
   // attendance "battery" and the open-minutes stat, both single numbers
   // rather than a category breakdown (which is what the donut/bar above are
   // for). `tone` = 'is-battery' adds the small nub CSS treats as a battery cap.
-  function meterHTML(pct, label, tone) {
-    pct = Math.max(0, Math.min(100, Math.round(pct || 0)));
-    return '<div class="il-mom-meter' + (tone ? ' ' + tone : '') + '">' +
-      '<div class="il-mom-meter-track"><div class="il-mom-meter-fill" style="width:' + pct + '%"></div></div>' +
-      '<div class="il-mom-meter-label">' + Fmt.esc(label) + '</div>' +
-    '</div>';
-  }
+  // ⚠️ `meterHTML` was removed with the dashboard tiles that used it (item 13).
+  // `donutChartSVG` / `barChartSVG` / `CHART_COLORS` stay — the rebuilt
+  // dashboard's four charts read all three.
 
   // ==========================================================================
   // PEOPLE PICKER — Champion (issues) and Responsible (meeting action items)
@@ -521,10 +571,6 @@ window.MinutesOfMeeting = (function () {
         return '<option' + (cur === v ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>';
       }).join('');
   }
-  // What this project actually uses, so one planner's spelling is offered to the next.
-  function momUsedCategories() {
-    return MOM_ITEMS.map(function (x) { return x.category; }).filter(Boolean);
-  }
   function momUsedMeetingTypes() {
     return MOMS.map(function (x) { return x.meeting_type; }).filter(Boolean);
   }
@@ -559,11 +605,11 @@ window.MinutesOfMeeting = (function () {
     if (!momFilterOn()) return all;
     var q = _momF.q.toLowerCase();
     return all.filter(function (it) {
-      if (_momF.cat && (it.category || '') !== _momF.cat) return false;
+      if (_momF.cat && momItemDept(it) !== _momF.cat) return false;
       if (_momF.type && (it.type || '') !== _momF.type) return false;
       if (_momF.status && momItemStatus(it) !== _momF.status) return false;
       if (!q) return true;
-      return [it.item_no, it.category, it.issue, it.description, it.action_item, it.owner]
+      return [it.item_no, momItemDept(it), it.issue, it.description, it.action_item, it.owner]
         .join(' ').toLowerCase().indexOf(q) >= 0;
     });
   }
@@ -573,11 +619,12 @@ window.MinutesOfMeeting = (function () {
     MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = []; SCHEDULES = [];
     _momSel = null; _momErr = ''; _momLoaded = false;
     _momQ = ''; _momF = { q: '', cat: '', type: '', status: '' };
-    _momView = 'list'; _momBrowsePrev = 'list'; _momTab = 'dashboard';
-    _momPickerOpen = false; _momPickerQ = '';
-    _schedSel = null; _schedFormOpen = false; _schedFormDraft = null;
+    _momView = 'list'; _momBrowsePrev = 'list'; _momTab = 'meetings';
+    _momCameFromSeries = null; _momCalMode = 'month'; _momWeekStart = null;
+    _addOpen = false; _addDraft = null;
+    _seriesSel = null; _schedFormOpen = false; _schedFormDraft = null;
     _schedOccOpen = false; _schedOccDraft = null;
-    _momItemWF = {}; ITEM_HISTORY = {}; _momItemHistOpen = {};
+    _momItemWF = {}; ITEM_HISTORY = {};
     MOM_ACT_NAME = {};   // activity ids are project-scoped — this cache is too
   }
 
@@ -818,11 +865,13 @@ window.MinutesOfMeeting = (function () {
     // jumping straight past every view to the module launcher.
     histView = UI.bindHistoryState({
       key: 'mom_view',
-      get: function () { return { t: _momTab, v: _momView, m: _momSel }; },
+      get: function () { return { t: _momTab, v: _momView, m: _momSel, s: _seriesSel, f: _momCameFromSeries }; },
       apply: function (state) {
-        _momTab = state.t || 'dashboard';
-        _momView = state.v || 'list'; _momSel = state.m || null;
+        _momTab = state.t || 'meetings';
+        _momView = state.v || 'list'; _momSel = state.m || null; _seriesSel = state.s || null;
+        _momCameFromSeries = state.f || null;
         if (_momView === 'detail' && !_momSel) _momView = _momBrowsePrev || 'list';
+        if (_momView === 'series' && !_seriesSel) _momView = _momBrowsePrev || 'list';
         render();
       }
     });
@@ -858,12 +907,30 @@ window.MinutesOfMeeting = (function () {
     };
     var rb = $('il-refresh');
     if (rb) rb.onclick = function () { momReset(); load(); };
-    // ⚠️ ITEM #17 — the Dashboard/Meetings tab strip lives in the topbar
+    // ⚠️ REHAUL ITEM 1 — the Dashboard/Meetings tab strip lives in the topbar
     // (index.html), outside #il-mom-view, so it is wired ONCE here rather
     // than in wireBrowse()/wireDetail(), which re-run on every repaint of
     // the content below it.
     document.querySelectorAll('.il-tabs [data-tab]').forEach(function (b) {
       b.onclick = function () { _momTab = b.dataset.tab; render(); if (histView) histView.push(); };
+    });
+    // ⚠️ "meetings is pressed, no need for the meeting label — have a dropdown
+    // with 2 choices." UI.tabsToDropdown() is the shared component every other
+    // module with this exact shape already uses (Progress Photos, Issues &
+    // Concerns) — it converts the two real (now-hidden) buttons above into one
+    // trigger that names the active choice, and it is what makes the static
+    // module title text disappear (via its own `.pd-title-hasdrop` class, only
+    // where dashboard.css says there is room for it to matter) — never an
+    // unconditional JS hide, which this app's own history has twice recorded
+    // as reintroducing an "icon alone / label on the next line" defect on
+    // narrow screens.
+    if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.il-tabs');
+    // Icon-only List/Calendar view toggle, top-right in the topbar tools —
+    // lives in index.html's markup (outside #il-mom-view like the tabs above)
+    // so it is wired once here too; only meaningful once inside Meetings, so
+    // it hides itself on the Dashboard tab via syncTopTabs().
+    document.querySelectorAll('#il-viewtoggle [data-mv]').forEach(function (b) {
+      b.onclick = function () { _momView = b.dataset.mv; _momTab = 'meetings'; render(); if (histView) histView.push(); };
     });
   }
 
@@ -875,6 +942,17 @@ window.MinutesOfMeeting = (function () {
     document.querySelectorAll('.il-tabs [data-tab]').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === _momTab);
     });
+    // The List/Calendar icon toggle only means anything inside Meetings, and
+    // only while actually browsing (not while a single meeting/series is
+    // open, where "which browse view" isn't a live choice on screen).
+    var vt = $('il-viewtoggle');
+    if (vt) {
+      var showing = _momTab === 'meetings' && (_momView === 'list' || _momView === 'calendar');
+      vt.hidden = !showing;
+      vt.querySelectorAll('[data-mv]').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.mv === _momView);
+      });
+    }
   }
   function render() {
     if (!pid) { _paintEmpty('Select a project to see its minutes.'); return; }
@@ -882,6 +960,7 @@ window.MinutesOfMeeting = (function () {
     syncTopTabs();
     if (_momTab === 'dashboard') renderMomDashboard();
     else if (_momView === 'detail' && _momSel) renderDetail();
+    else if (_momView === 'series' && _seriesSel) renderSeriesPage();
     else renderBrowse();
     if (window.Icons && Icons.hydrate) Icons.hydrate($('il-mom-view'));
     paintRemote();
@@ -904,115 +983,165 @@ window.MinutesOfMeeting = (function () {
   // List and Calendar are the two ways to browse EVERY meeting on this project —
   // the ask this module split out to satisfy. Selecting one (or creating a new
   // one) switches into Detail, the single-meeting editor.
-  // ==========================================================================
-  // DASHBOARD (items #2, #18) — the "similar concept to the dashboard for
-  // issues" ask. Two sections: a meetings summary (frequency, last held,
-  // attendance, open-minutes, on-schedule %) and an action-items summary
-  // mirroring the Issues & Concerns dashboard's own tile/list/pie/bar shape,
-  // scoped to MOM_ITEMS instead of issues_lessons rows.
-  // ==========================================================================
-  function momLastHeldDate() {
-    var today = momToday();
-    var held = MOMS.filter(function (m) { return m.meeting_date && m.meeting_date <= today; });
-    if (!held.length) return null;
-    return held.reduce(function (mx, m) { return m.meeting_date > mx ? m.meeting_date : mx; }, held[0].meeting_date);
-  }
+  // ⚠️ `attendeeCount` is all that survives the pre-item-13 dashboard: the
+  // unified meetings list reads it for its attendee column. The tiles it used
+  // to sit beside — momLastHeldDate / momAttendanceBattery / momOpenMinutesStat
+  // / momOnScheduleStats / momAllOpenItems / momItemsDashListHTML — are all
+  // deleted, per item 13's "remove all".
   function attendeeCount(obj) {
     if (!obj) return null;
     var ids = (obj.ids || []).length;
     var extra = (obj.text || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean).length;
     return ids + extra;
   }
-  // ⚠️ Computed off the most recent HELD meeting that actually recorded
-  // structured Required/Actual attendees (item #20) — a legacy meeting with
-  // only the old free-text `attendees` field has nothing this can count, and
-  // reporting 0 there would read as "nobody attended" rather than "not asked".
-  function momAttendanceBattery() {
-    var today = momToday();
-    var held = MOMS.filter(function (m) { return m.meeting_date && m.meeting_date <= today; })
-      .slice().sort(function (a, b) { return (b.meeting_date || '').localeCompare(a.meeting_date || ''); });
-    var m = held.find(function (x) { return x.attendees_required || x.attendees_actual; });
-    if (!m) return null;
-    var req = attendeeCount(m.attendees_required) || 0;
-    var act = attendeeCount(m.attendees_actual) || 0;
-    return { title: m.title, date: m.meeting_date, required: req, actual: act,
-      pct: req ? Math.round(act / req * 100) : (act ? 100 : 0) };
-  }
-  // "Open minutes" = still in Draft (not yet distributed) — a minute is "open"
-  // in the same sense an issue is, until it is issued/closed off.
-  function momOpenMinutesStat() {
-    var total = MOMS.length;
-    var open = MOMS.filter(function (m) { return !m.is_distributed; }).length;
-    return { total: total, open: open, pct: total ? Math.round(open / total * 100) : 0 };
-  }
-  // ⚠️ Credit for a schedule is CAPPED at what was actually expected of it —
-  // summing raw actual counts would let one over-met schedule (extra ad-hoc
-  // sessions under the same recurring slot) mask another schedule's real
-  // shortfall in the combined percentage.
-  function momOnScheduleStats() {
-    var today = momToday();
-    var expected = 0, actual = 0;
-    schedActiveList().forEach(function (s) {
-      var exp = schedDatesInRange(s, s.start_date || today, today).length;
-      var act = schedMeetingsOf(s.id).filter(function (m) { return m.meeting_date && m.meeting_date <= today; }).length;
-      expected += exp;
-      actual += Math.min(act, exp || act);
+  // ==========================================================================
+  // ITEM 13 (2026-09-02) — THE MEETINGS DASHBOARD, REBUILT.
+  // "remove all and simply copy similar to Issues dashboard. minutes by status,
+  //  minutes by department, minutes by responsible. then have a summary of the
+  //  minutes list, group by meeting. then add one more chart, minutes per
+  //  meeting. no other tiles needed. also have options to filter starred
+  //  meetings only, and to filter meetings one by one via a multi select
+  //  dropdown."
+  // ⚠️ EVERYTHING the old dashboard carried is gone on purpose — the frequency
+  // list, the attendance battery, the open-minutes meter and the
+  // conducted-as-scheduled donut. They answered "how well is the cadence
+  // holding", a different question from "what is on the minutes", and the
+  // instruction was explicit. `momAttendanceBattery`/`momOpenMinutesStat`/
+  // `momOnScheduleStats` go with them; `schedFrequencyLabel` stays because the
+  // series page still reads it.
+  // ⚠️ These charts count EVERY minute, not only the open ones — "Minutes by
+  // Status" is meaningless if Closed is filtered out before it is charted.
+  // ==========================================================================
+  var _momDashF = { starred: false, meetings: [], pickOpen: false };
+
+  // Every meeting a minute could belong to, newest first — the multi-select's
+  // own option set, and the grouping order of the summary below it.
+  function momDashMeetings() {
+    return MOMS.slice().sort(function (a, b) {
+      return String(b.meeting_date || '').localeCompare(String(a.meeting_date || ''));
     });
-    return { expected: expected, actual: actual };
   }
-  function momAllOpenItems() {
-    return MOM_ITEMS.filter(function (it) { return momItemStatus(it) !== 'Closed'; });
+  // ⚠️ A series is starred on `mom_schedules`, an occurrence on its own row, so
+  // "starred meetings only" has to accept EITHER — otherwise starring a
+  // recurring meeting would filter its own occurrences out of the dashboard.
+  function momDashStarred(m) {
+    if (m.is_favorite) return true;
+    if (!m.schedule_id) return false;
+    var sc = SCHEDULES.find(function (x) { return x.id === m.schedule_id; });
+    return !!(sc && sc.is_favorite);
   }
-  function momItemsDashListHTML(data) {
-    if (!data.length) return '<div class="il-empty" style="padding:16px;">No open action items.</div>';
-    var top = data.slice().sort(function (a, b) {
-      var ma = MOMS.find(function (m) { return m.id === a.mom_id; });
-      var mb = MOMS.find(function (m) { return m.id === b.mom_id; });
-      return ((mb && mb.meeting_date) || '').localeCompare((ma && ma.meeting_date) || '');
-    }).slice(0, 12);
-    return '<div class="pd-tablewrap"><table class="il-dash-list"><thead><tr>' +
-      '<th>Action</th><th>Meeting</th><th>Category</th><th>Status</th><th>Responsible</th></tr></thead><tbody>' +
-      top.map(function (it) {
-        var m = MOMS.find(function (x) { return x.id === it.mom_id; });
-        var actText = it.action_item || it.description || '';
-        return '<tr data-openmom="' + Fmt.esc(it.mom_id) + '">' +
-          '<td>' + Fmt.esc(clip(actText, 70) || '(no text)') + '</td>' +
-          '<td>' + Fmt.esc((m && m.title) || '—') + (m && m.meeting_date ? ' · ' + Fmt.esc(Fmt.date(m.meeting_date)) : '') + '</td>' +
-          '<td>' + Fmt.esc(it.category || '—') + '</td>' +
-          '<td><span class="il-pill ' + statusClass(momItemStatus(it)) + '">' + Fmt.esc(momItemStatus(it)) + '</span></td>' +
-          '<td>' + Fmt.esc(championText(it.owner_ids, it.owner) || '—') + '</td>' +
-        '</tr>';
-      }).join('') + '</tbody></table></div>' +
-      (data.length > top.length
-        ? '<p class="il-mom-note">Showing the 12 most recent of ' + data.length +
-          ' — open a meeting from the Meetings tab for the rest.</p>' : '');
+  function momDashMeetingIds() {
+    var sel = _momDashF.meetings;
+    return momDashMeetings().filter(function (m) {
+      if (_momDashF.starred && !momDashStarred(m)) return false;
+      // ⚠️ An EMPTY selection means every meeting, never none. A dashboard that
+      // reads as empty until you tick something looks broken, and "I have not
+      // narrowed this yet" is the state people land on.
+      if (sel.length && sel.indexOf(m.id) < 0) return false;
+      return true;
+    }).map(function (m) { return m.id; });
   }
-  function renderMomActionDashboard() {
-    var data = momAllOpenItems();
-    var byCat = {};
-    data.forEach(function (it) { var k = it.category || '(no category)'; byCat[k] = (byCat[k] || 0) + 1; });
-    var catSlices = Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; })
-      .map(function (k, i) { return { label: k, value: byCat[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
-    var byType = {};
-    data.forEach(function (it) { var k = it.type || '(untyped)'; byType[k] = (byType[k] || 0) + 1; });
-    var typeBars = Object.keys(byType).sort(function (a, b) { return byType[b] - byType[a]; })
-      .map(function (k, i) { return { label: k, value: byType[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
-    return '<div class="pd-card il-dash-card il-dash-wide"><h4>Open action items</h4>' +
-        momItemsDashListHTML(data) + '</div>' +
-      '<div class="pd-card il-dash-card"><h4>By category</h4>' +
-        (catSlices.length
-          ? '<div class="il-dash-chartwrap">' + donutChartSVG(catSlices, { aria: 'Open action items by category' }) +
-            '<div class="il-dash-legend">' + catSlices.map(function (s) {
-              return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
-                Fmt.esc(s.label) + ' (' + s.value + ')</span>';
-            }).join('') + '</div></div>'
-          : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+  function momDashItems() {
+    var ids = {}; momDashMeetingIds().forEach(function (id) { ids[id] = 1; });
+    return MOM_ITEMS.filter(function (it) { return ids[it.mom_id]; });
+  }
+  function momDashFilterOn() { return _momDashF.starred || _momDashF.meetings.length > 0; }
+
+  function momDashBarsFrom(items, keyFn, blank) {
+    var by = {};
+    items.forEach(function (it) { var k = keyFn(it) || blank; by[k] = (by[k] || 0) + 1; });
+    return Object.keys(by).sort(function (a, b) { return by[b] - by[a]; })
+      .map(function (k, i) { return { label: k, value: by[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
+  }
+  function momDashDonutCard(title, slices, aria) {
+    return '<div class="pd-card il-dash-card"><h4>' + Fmt.esc(title) + '</h4>' +
+      (slices.length
+        ? '<div class="il-dash-chartwrap">' + donutChartSVG(slices, { aria: aria }) +
+          '<div class="il-dash-legend">' + slices.map(function (s) {
+            return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
+              Fmt.esc(s.label) + ' (' + s.value + ')</span>';
+          }).join('') + '</div></div>'
+        : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+    '</div>';
+  }
+
+  function momDashFilterHTML() {
+    var all = momDashMeetings();
+    var sel = _momDashF.meetings;
+    var label = sel.length
+      ? (sel.length === 1
+          ? (function () { var m = MOMS.find(function (x) { return x.id === sel[0]; });
+             return m ? clip(m.title || '(untitled)', 32) : '1 meeting'; })()
+          : sel.length + ' meetings')
+      : 'All meetings';
+    return '<div class="il-mom-dashfilt">' +
+      '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
+      '<label class="il-mom-favfilt"><input type="checkbox" id="il-momd-star"' +
+        (_momDashF.starred ? ' checked' : '') + '> Starred meetings only</label>' +
+      '<div class="il-mom-msel">' +
+        '<button type="button" class="pd-btn pd-btn-sm' + (_momDashF.pickOpen ? ' is-active' : '') +
+          '" id="il-momd-pick">' + Fmt.esc(label) + ' &#9662;</button>' +
+        (_momDashF.pickOpen
+          ? '<div class="il-mom-mselpanel">' +
+              (all.length
+                ? all.map(function (m) {
+                    return '<label class="il-gi-row"><input type="checkbox" data-mid="' + Fmt.esc(m.id) + '"' +
+                      (sel.indexOf(m.id) >= 0 ? ' checked' : '') + '>' +
+                      '<span class="il-mom-geti-txt">' + Fmt.esc(clip(m.title || '(untitled)', 60)) + '</span>' +
+                      '<span class="il-mom-geti-meta">' +
+                        (m.meeting_date ? Fmt.esc(Fmt.date(m.meeting_date)) : 'undated') +
+                        (momDashStarred(m) ? ' · starred' : '') + '</span></label>';
+                  }).join('')
+                : '<div class="il-empty" style="padding:10px;">No meeting recorded yet.</div>') +
+            '</div>'
+          : '') +
       '</div>' +
-      '<div class="pd-card il-dash-card"><h4>By type</h4>' +
-        (typeBars.length ? barChartSVG(typeBars, { aria: 'Open action items by type' })
-                         : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
-      '</div>';
+      (momDashFilterOn()
+        ? '<button class="il-clear" id="il-momd-clear"><span data-ico="x" data-ico-size="14"></span>Clear</button>'
+        : '') +
+    '</div>';
   }
+
+  // The summary the owner asked for: every minute, grouped by the meeting it
+  // was recorded at. ⚠️ Meetings with NO minutes are listed too, with a note —
+  // a meeting nobody minuted is a real state and dropping it silently is how a
+  // gap goes unnoticed.
+  function momDashByMeetingHTML() {
+    var ids = momDashMeetingIds();
+    var meetings = momDashMeetings().filter(function (m) { return ids.indexOf(m.id) >= 0; });
+    if (!meetings.length) {
+      return '<div class="il-empty" style="padding:20px;">No meeting matches this filter.</div>';
+    }
+    return meetings.map(function (m) {
+      var its = momItemsOf(m.id);
+      var open = its.filter(function (it) { return momItemStatus(it) !== 'Closed'; }).length;
+      return '<div class="pd-card il-mom-mgroup">' +
+        '<div class="il-mom-mgrouphead" data-openmom="' + Fmt.esc(m.id) + '">' +
+          '<span class="il-mom-mgroupt">' + Fmt.esc(m.title || '(untitled)') + '</span>' +
+          '<span class="il-mom-mgroupm">' +
+            (m.meeting_date ? Fmt.esc(Fmt.date(m.meeting_date)) + ' · ' : '') +
+            its.length + ' minute' + (its.length === 1 ? '' : 's') +
+            (its.length ? ' · ' + open + ' open' : '') +
+            (momDashStarred(m) ? ' · ★' : '') +
+          '</span></div>' +
+        (its.length
+          ? '<table class="pd-table il-mom-mgrouptbl"><thead><tr><th>No.</th><th>Minute</th>' +
+            '<th>Department</th><th>Status</th><th>Responsible</th></tr></thead><tbody>' +
+            its.map(function (it, i) {
+              return '<tr data-openmom="' + Fmt.esc(m.id) + '">' +
+                '<td>' + Fmt.esc(it.item_no || String((it.seq == null ? i : it.seq) + 1)) + '</td>' +
+                '<td>' + Fmt.esc(clip(it.action_item || it.description || it.issue || '(blank)', 90)) + '</td>' +
+                '<td>' + Fmt.esc(momItemDept(it) || '—') + '</td>' +
+                '<td><span class="il-pill ' + statusClass(momItemStatus(it)) + '">' +
+                  Fmt.esc(momItemStatus(it)) + '</span></td>' +
+                '<td>' + Fmt.esc(championText(it.owner_ids, it.owner) || '—') + '</td>' +
+              '</tr>';
+            }).join('') + '</tbody></table>'
+          : '<p class="il-mom-note">No minute was recorded at this meeting.</p>') +
+      '</div>';
+    }).join('');
+  }
+
   function renderMomDashboard() {
     var host = $('il-mom-view'); if (!host) return;
     host.classList.remove('il-mom-report');
@@ -1020,145 +1149,231 @@ window.MinutesOfMeeting = (function () {
       host.innerHTML = '<div class="il-empty" style="padding:24px;">Could not load minutes: ' + Fmt.esc(_momErr) + '</div>';
       return;
     }
-    var last = momLastHeldDate();
-    var att = momAttendanceBattery();
-    var openStat = momOpenMinutesStat();
-    var sched = momOnScheduleStats();
-    // ⚠️ An empty pie (0 expected) reads as a real 0% conducted-as-scheduled,
-    // which is a false statement when there is simply no schedule to compare
-    // against yet — so the pie is withheld entirely rather than shown at 0/0.
-    var pieSlices = sched.expected
-      ? [{ label: 'Conducted as scheduled', value: sched.actual, color: '#2F855A' },
-         { label: 'Missed', value: Math.max(0, sched.expected - sched.actual), color: '#B7791F' }]
-      : [];
+    var items = momDashItems();
+    var statusSlices = momDashBarsFrom(items, momItemStatus, 'Open');
+    var deptSlices = momDashBarsFrom(items, momItemDept, '(no department)');
+    var respBars = momDashBarsFrom(items, function (it) {
+      return championText(it.owner_ids, it.owner);
+    }, '(unassigned)');
+    // "Minutes per meeting" — one bar per meeting in scope, so a meeting that
+    // produced nothing still shows as a zero rather than vanishing.
+    var perMeeting = momDashMeetingIds().map(function (id, i) {
+      var m = MOMS.find(function (x) { return x.id === id; }) || {};
+      return {
+        label: clip(m.title || '(untitled)', 28),
+        value: momItemsOf(id).length,
+        color: CHART_COLORS[i % CHART_COLORS.length],
+      };
+    }).sort(function (a, b) { return b.value - a.value; });
 
     host.innerHTML =
+      momDashFilterHTML() +
       '<div class="il-dash-grid">' +
-        '<div class="pd-card il-dash-card"><h4>Meeting frequency</h4>' +
-          (schedActiveList().length
-            ? '<ul class="il-mom-freqlist">' + schedActiveList().map(function (s) {
-                return '<li><b>' + Fmt.esc(s.title) + '</b> — ' + Fmt.esc(schedFrequencyLabel(s)) + '</li>';
-              }).join('') + '</ul>'
-            : '<p class="il-mom-note">No recurring schedule is defined yet — set one from the Meetings tab.</p>') +
-          '<p class="il-mom-note" style="margin-top:8px;">Last meeting held: ' +
-            (last ? '<b>' + Fmt.esc(Fmt.date(last)) + '</b>' : 'none recorded yet') + '</p>' +
+        momDashDonutCard('Minutes by Status', statusSlices, 'Minutes by status') +
+        momDashDonutCard('Minutes by Department', deptSlices, 'Minutes by department') +
+        '<div class="pd-card il-dash-card"><h4>Minutes by Responsible</h4>' +
+          (respBars.length ? barChartSVG(respBars, { aria: 'Minutes by responsible' })
+                           : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
         '</div>' +
-        '<div class="pd-card il-dash-card"><h4>Attendance — last meeting held</h4>' +
-          (att
-            ? meterHTML(att.pct, att.actual + ' of ' + att.required + ' required attendees (' + att.pct + '%) — ' +
-                Fmt.esc(att.title || 'the last meeting'), 'is-battery')
-            : '<p class="il-mom-note">Not recorded yet — set Required and Actual attendees when saving a meeting.</p>') +
-        '</div>' +
-        '<div class="pd-card il-dash-card"><h4>Open minutes</h4>' +
-          meterHTML(openStat.pct, openStat.open + ' of ' + openStat.total + ' minutes still in Draft (' + openStat.pct + '%)') +
-        '</div>' +
-        '<div class="pd-card il-dash-card"><h4>Conducted as scheduled</h4>' +
-          (pieSlices.length
-            ? '<div class="il-dash-chartwrap">' + donutChartSVG(pieSlices, { aria: 'Meetings conducted as scheduled' }) +
-              '<div class="il-dash-legend">' + pieSlices.map(function (s) {
-                return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
-                  Fmt.esc(s.label) + ' (' + s.value + ')</span>';
-              }).join('') + '</div></div>'
-            : '<div class="il-empty" style="padding:16px;">Not enough schedule history yet.</div>') +
+        '<div class="pd-card il-dash-card il-dash-wide"><h4>Minutes per meeting</h4>' +
+          (perMeeting.length ? barChartSVG(perMeeting, { aria: 'Minutes per meeting' })
+                             : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
         '</div>' +
       '</div>' +
-      '<h4 class="il-mom-dashsec">Action items across all minutes</h4>' +
-      '<div class="il-dash-grid">' + renderMomActionDashboard() + '</div>';
+      '<h4 class="il-mom-dashsec">Minutes by meeting</h4>' +
+      momDashByMeetingHTML();
 
-    host.querySelectorAll('[data-openmom]').forEach(function (tr) {
-      tr.onclick = function () { _momTab = 'meetings'; momOpenMeeting(tr.dataset.openmom); };
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+
+    var star = host.querySelector('#il-momd-star');
+    if (star) star.onchange = function () { _momDashF.starred = star.checked; renderMomDashboard(); };
+    var pick = host.querySelector('#il-momd-pick');
+    if (pick) pick.onclick = function () { _momDashF.pickOpen = !_momDashF.pickOpen; renderMomDashboard(); };
+    host.querySelectorAll('[data-mid]').forEach(function (cb) {
+      cb.onchange = function () {
+        var id = cb.dataset.mid;
+        var at = _momDashF.meetings.indexOf(id);
+        if (cb.checked && at < 0) _momDashF.meetings.push(id);
+        else if (!cb.checked && at >= 0) _momDashF.meetings.splice(at, 1);
+        renderMomDashboard();
+      };
+    });
+    var clr = host.querySelector('#il-momd-clear');
+    if (clr) clr.onclick = function () {
+      _momDashF = { starred: false, meetings: [], pickOpen: false };
+      renderMomDashboard();
+    };
+    host.querySelectorAll('[data-openmom]').forEach(function (el) {
+      el.onclick = function () { _momTab = 'meetings'; momOpenMeeting(el.dataset.openmom); };
     });
   }
 
+  // ==========================================================================
+  // REHAUL (2026-09-02) — UNIFIED MEETINGS LIST
+  // ⚠️ Item 4's list is "meetings" — a planner does not care whether a row is
+  // a one-off or a recurring series until they click into it, so List/Calendar
+  // now browse ONE set of descriptors built from BOTH `MOMS` (standalone —
+  // `schedule_id` null) and `SCHEDULES` (active recurring series). An
+  // OCCURRENCE of a series (`schedule_id` set) is never a row here — it is
+  // reached only from that series' own page (momOpenSeries), which is what
+  // item 6 asks for: click the recurring "meeting" → its definition + the
+  // meetings actually held under it, THEN click one of those for its minutes.
+  // ==========================================================================
+  function plannedAttendeeCount(row) {
+    return (attendeeCount(row.attendees_required) || 0) + (attendeeCount(row.attendees_optional) || 0);
+  }
+  // Item 11: "for action items in list, show only X of Y open." Counted from
+  // the minutes themselves, and — for a recurring series — summed across every
+  // occurrence held under it, since the series row stands for all of them.
+  // ⚠️ Openness is `momItemStatus`, which reads the REGISTER's live status for
+  // a minute pulled in from an issue — the same rule the card, the filter and
+  // the PDF already follow, so the list cannot claim a minute is open that the
+  // register has since closed.
+  function itemOpenCount(momIds) {
+    var open = 0, total = 0;
+    MOM_ITEMS.forEach(function (it) {
+      if (momIds.indexOf(it.mom_id) < 0) return;
+      total++;
+      if (momItemStatus(it) !== 'Closed') open++;
+    });
+    return { open: open, total: total };
+  }
+  function momUnifiedRows() {
+    var out = [];
+    MOMS.forEach(function (m) {
+      if (m.schedule_id) return;   // an occurrence — browsed from its series page, not here
+      var c = itemOpenCount([m.id]);
+      out.push({
+        kind: 'meeting', id: m.id, favorite: !!m.is_favorite,
+        title: m.title || '(untitled)',
+        dateSort: m.meeting_date || '',
+        dateLabel: m.meeting_date
+          ? (Fmt.date(m.meeting_date) + (m.start_time ? ' · ' + m.start_time : ''))
+          : '—',
+        attendees: plannedAttendeeCount(m),
+        location: m.venue || m.location || '—',
+        draft: !m.is_distributed,
+        group: m.meeting_group || '',
+        open: c.open, total: c.total,
+      });
+    });
+    schedActiveList().forEach(function (s) {
+      var next = schedNextOccurrence(s, momToday());
+      var cs = itemOpenCount(schedMeetingsOf(s.id).map(function (m) { return m.id; }));
+      out.push({
+        kind: 'series', id: s.id, favorite: !!s.is_favorite,
+        title: s.title || '(untitled)',
+        // ⚠️ dateSort is a real ISO date (next occurrence, else its own start)
+        // even though the DISPLAYED label is the frequency, so date-sorting a
+        // list mixing meetings and series still orders sensibly.
+        dateSort: next || s.start_date || '',
+        dateLabel: schedFrequencyLabel(s),
+        attendees: plannedAttendeeCount(s),
+        location: s.venue || '—',
+        // ⚠️ A SERIES HAS NO DRAFT STATE — a draft is a property of one
+        // recorded minute, and a series is the rule that produces them. It is
+        // `false` rather than null so the Draft pill simply never renders on a
+        // series row; the Status filter below documents what that means for it.
+        draft: false,
+        group: s.meeting_group || '',
+        open: cs.open, total: cs.total,
+      });
+    });
+    return out;
+  }
+  function momBrowseFilterOn() {
+    return !!(_momQ.trim() || _momBrowseF.kind || _momBrowseF.state || _momBrowseF.fav || _momBrowseF.group);
+  }
+  // Item 10's filter set, applied to the unified list (search folded in — the
+  // box lives inside the filter group now, not beside it).
+  function momUnifiedFilter(rows) {
+    var q = _momQ.trim().toLowerCase();
+    return rows.filter(function (r) {
+      if (q && r.title.toLowerCase().indexOf(q) < 0 && r.location.toLowerCase().indexOf(q) < 0) return false;
+      if (_momBrowseF.kind && r.kind !== _momBrowseF.kind) return false;
+      if (_momBrowseF.group && r.group !== _momBrowseF.group) return false;
+      // ⚠️ Filtering by Draft/Distributed excludes every SERIES row, because a
+      // series genuinely has neither state (see `draft` above). That is the
+      // honest outcome — the alternative, treating a series as "distributed",
+      // would assert something nobody recorded — and the filter's own option
+      // labels say "meetings only" so it is not a surprise.
+      if (_momBrowseF.state === 'draft' && !(r.kind === 'meeting' && r.draft)) return false;
+      if (_momBrowseF.state === 'distributed' && !(r.kind === 'meeting' && !r.draft)) return false;
+      if (_momBrowseF.fav && !r.favorite) return false;
+      return true;
+    });
+  }
+  // ⚠️ Favorites pinned to the top is layered OVER whatever column sort is
+  // active, not an alternative to it — partition into favorite/non-favorite,
+  // sort each half with the same comparator, concatenate. A column click still
+  // reorders within each half rather than fighting the favorite pin.
+  function momSortedRows(rows) {
+    var col = _momSort.col, dir = _momSort.dir === 'asc' ? 1 : -1;
+    function cmp(a, b) {
+      var av, bv;
+      if (col === 'title') { av = a.title.toLowerCase(); bv = b.title.toLowerCase(); }
+      else if (col === 'attendees') { av = a.attendees; bv = b.attendees; }
+      else if (col === 'location') { av = a.location.toLowerCase(); bv = b.location.toLowerCase(); }
+      else if (col === 'open') { av = a.open; bv = b.open; }
+      else { av = a.dateSort; bv = b.dateSort; }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    }
+    var fav = rows.filter(function (r) { return r.favorite; }).sort(cmp);
+    var rest = rows.filter(function (r) { return !r.favorite; }).sort(cmp);
+    return fav.concat(rest);
+  }
+
+  function momBrowseFilterBarHTML(shown, total) {
+    var on = momBrowseFilterOn();
+    return '<div class="il-mom-browsebar">' +
+        '<button class="pd-btn pd-btn-sm il-filt-toggle' + (_momFiltOpen ? ' open' : '') +
+          (on ? ' has-active' : '') + '" id="il-mom-filttoggle" title="Search and filter meetings">' +
+          '<span data-ico="filter" data-ico-size="15"></span> Filters</button>' +
+        '<span class="il-mom-count">' + (on ? (shown + ' of ' + total + ' meetings') : (total + ' meeting' + (total === 1 ? '' : 's'))) + '</span>' +
+        '<div style="flex:1;"></div>' +
+        '<select class="pd-select pd-input-sm" id="il-mom-listexport" title="Export the meeting list" style="width:auto;">' +
+          '<option value="">Export list as…</option><option value="html">HTML</option>' +
+          '<option value="pdf">PDF</option><option value="xlsx">Excel</option></select>' +
+        (canAdd ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-new">+ Add meeting</button>' : '') +
+      '</div>' +
+      (!_momFiltOpen ? '' :
+        '<div class="il-mom-filters">' +
+          '<input class="pd-input pd-input-sm il-mom-search" id="il-mom-q" placeholder="Search title or location…" value="' + Fmt.esc(_momQ) + '">' +
+          '<select class="pd-select pd-input-sm" id="il-momb-kind">' +
+            '<option value="">All meetings</option>' +
+            '<option value="meeting"' + (_momBrowseF.kind === 'meeting' ? ' selected' : '') + '>One-time only</option>' +
+            '<option value="series"' + (_momBrowseF.kind === 'series' ? ' selected' : '') + '>Recurring only</option>' +
+          '</select>' +
+          '<select class="pd-select pd-input-sm" id="il-momb-state">' +
+            '<option value="">Any status</option>' +
+            '<option value="draft"' + (_momBrowseF.state === 'draft' ? ' selected' : '') + '>Draft (meetings only)</option>' +
+            '<option value="distributed"' + (_momBrowseF.state === 'distributed' ? ' selected' : '') + '>Distributed (meetings only)</option>' +
+          '</select>' +
+          '<select class="pd-select pd-input-sm" id="il-momb-group">' +
+            '<option value="">Any group</option>' +
+            '<option value="Internal"' + (_momBrowseF.group === 'Internal' ? ' selected' : '') + '>Internal</option>' +
+            '<option value="External"' + (_momBrowseF.group === 'External' ? ' selected' : '') + '>External</option>' +
+          '</select>' +
+          '<label class="il-mom-favfilt"><input type="checkbox" id="il-momb-fav"' +
+            (_momBrowseF.fav ? ' checked' : '') + '> Favorites only</label>' +
+          (on ? '<button class="pd-btn pd-btn-sm" id="il-momb-clear">Clear</button>' : '') +
+        '</div>');
+  }
   function renderBrowse() {
     var host = $('il-mom-view'); if (!host) return;
     host.classList.remove('il-mom-report');
-    var list = momSearchList();
+    var all = momUnifiedRows();
+    var rows = momUnifiedFilter(all);
     host.innerHTML =
-      schedulesPanelHTML() +
-      '<div class="il-mom-browsebar">' +
-        '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
-        '<input class="pd-input pd-input-sm il-mom-search" id="il-mom-q" placeholder="Search meetings…" value="' + Fmt.esc(_momQ) + '">' +
-        '<div class="il-viewtoggle il-mom-vtoggle" id="il-mom-vtoggle">' +
-          '<button type="button" data-mv="list" class="' + (_momView === 'list' ? 'on' : '') + '">List</button>' +
-          '<button type="button" data-mv="calendar" class="' + (_momView === 'calendar' ? 'on' : '') + '">Calendar</button>' +
-        '</div>' +
-        (canAdd ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-new">+ New minutes</button>' : '') +
-      '</div>' +
+      momBrowseFilterBarHTML(rows.length, all.length) +
       (_momErr
         ? '<div class="il-empty" style="padding:24px;">Could not load minutes: ' + Fmt.esc(_momErr) +
           '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-duration-scenarios-and-mom.sql</code>.</small></div>'
-        : (_momView === 'calendar' ? renderMomCalendarHTML(list) : renderMomListHTML(list)));
+        : (_momView === 'calendar' ? renderMomCalendarHTML(momSearchList()) : renderMomListHTML(rows)));
     wireBrowse();
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
-  }
-
-  // ==========================================================================
-  // ITEM #19/#22 — recurring meeting schedules: where they are DEFINED (this
-  // panel, at the top of the Meetings tab) and the right pane a click on one
-  // opens, showing its next planned date, every actual meeting recorded
-  // against it, and the "+ Add a meeting" form that copies its defaults from
-  // the last occurrence. Sits ABOVE the List/Calendar browse of individual
-  // meeting_minutes rows below it, which is unaffected — a schedule is a
-  // commitment, not a replacement for the meetings themselves.
-  // ==========================================================================
-  function schedulesPanelHTML() {
-    var scheds = schedActiveList();
-    var sel = _schedSel ? SCHEDULES.find(function (s) { return s.id === _schedSel; }) : null;
-    return '<div class="il-mom-schedpanel">' +
-      '<div class="il-mom-schedhead">' +
-        '<h4>Recurring meeting schedules</h4>' +
-        (canAdd && !_schedFormOpen ? '<button class="pd-btn pd-btn-sm" id="il-sched-new">+ New schedule</button>' : '') +
-      '</div>' +
-      (_schedFormOpen ? scheduleFormHTML(_schedFormDraft) : '') +
-      (scheds.length
-        ? '<div class="il-mom-schedbody' + (sel ? ' has-sel' : '') + '">' +
-            '<div class="il-mom-schedlist">' + scheds.map(scheduleRowHTML).join('') + '</div>' +
-            (sel ? '<div class="il-mom-schedright">' + scheduleRightPaneHTML(sel) + '</div>' : '') +
-          '</div>'
-        : (_schedFormOpen ? '' : '<p class="il-mom-note">No recurring meeting is defined yet — add one so the ' +
-            'calendar can show its planned dates and the dashboard can report how often it is actually held.</p>')) +
-    '</div>';
-  }
-
-  function scheduleRowHTML(s) {
-    var next = schedNextOccurrence(s, momToday());
-    var n = schedMeetingsOf(s.id).length;
-    return '<button type="button" class="il-mom-schedrow' + (s.id === _schedSel ? ' active' : '') +
-      '" data-sched="' + Fmt.esc(s.id) + '">' +
-      '<span class="il-mom-schedrow-title">' + Fmt.esc(s.title) + '</span>' +
-      '<span class="il-mom-schedrow-meta">' + Fmt.esc(schedFrequencyLabel(s)) + ' · ' + Fmt.esc(s.meeting_group || 'Internal') + '</span>' +
-      '<span class="il-mom-schedrow-next">' + (next ? 'Next: ' + Fmt.esc(Fmt.date(next)) : 'No upcoming date') + ' · ' + n + ' held</span>' +
-    '</button>';
-  }
-
-  function scheduleRightPaneHTML(s) {
-    var next = schedNextOccurrence(s, momToday());
-    var past = schedMeetingsOf(s.id);
-    return '<div class="il-mom-schedright-head">' +
-      '<div><b>' + Fmt.esc(s.title) + '</b><div class="il-mom-schedrow-meta">' + Fmt.esc(schedFrequencyLabel(s)) + '</div></div>' +
-      '<div class="il-mom-schedright-acts">' +
-        (canAdd ? '<button class="pd-btn pd-btn-sm" id="il-sched-edit">Edit</button>' : '') +
-        (canAdd ? '<button class="pd-btn pd-btn-sm pd-btn-danger" id="il-sched-del">Delete…</button>' : '') +
-        '<button class="pd-btn pd-btn-sm" id="il-sched-close" title="Close">' +
-          '<span data-ico="x" data-ico-size="14"></span></button>' +
-      '</div>' +
-    '</div>' +
-    (canAdd && !_schedOccOpen
-      ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-sched-addocc">+ Add a meeting' +
-          (next ? ' for ' + Fmt.esc(Fmt.date(next)) : '') + '</button>'
-      : '') +
-    (_schedOccOpen ? scheduleOccFormHTML(s) : '') +
-    '<h5 class="il-mom-schedright-sub">Previously held</h5>' +
-    (past.length
-      ? '<div class="il-mom-schedpast">' + past.map(function (m) {
-          return '<button type="button" class="il-mom-schedpasti" data-mom="' + Fmt.esc(m.id) + '">' +
-            '<span>' + Fmt.esc(m.title || '(untitled)') + '</span>' +
-            '<span class="il-mom-schedrow-meta">' + (m.meeting_date ? Fmt.esc(Fmt.date(m.meeting_date)) : '—') +
-              (m.is_distributed ? '' : ' · Draft') + '</span>' +
-          '</button>';
-        }).join('') + '</div>'
-      : '<p class="il-mom-note">No meeting has been recorded against this schedule yet.</p>');
   }
 
   // ⚠️ Re-rendered in place (into #il-sf-rulewrap) whenever the frequency
@@ -1265,60 +1480,63 @@ window.MinutesOfMeeting = (function () {
   }
 
   // ---- List view --------------------------------------------------------
-  function momSortedList(list) {
-    var col = _momSort.col, dir = _momSort.dir === 'asc' ? 1 : -1;
-    var arr = list.slice();
-    arr.sort(function (a, b) {
-      var av, bv;
-      if (col === 'title') { av = (a.title || '').toLowerCase(); bv = (b.title || '').toLowerCase(); }
-      else if (col === 'type') { av = (a.meeting_type || '').toLowerCase(); bv = (b.meeting_type || '').toLowerCase(); }
-      else if (col === 'state') { av = a.is_distributed ? 1 : 0; bv = b.is_distributed ? 1 : 0; }
-      else { av = a.meeting_date || ''; bv = b.meeting_date || ''; }
-      if (av < bv) return -1 * dir;
-      if (av > bv) return 1 * dir;
-      return 0;
-    });
-    return arr;
-  }
+  // Item 4: Title / Date-or-frequency / # Attendees / Location, favorites
+  // pinned to the top (momSortedRows). A recurring "meeting" is tagged
+  // Recurring, a not-yet-distributed standalone one Draft — both plain text
+  // pills next to the title, the same visual language as the Detail view's
+  // own draft/distributed state, so the list previews what opening the row
+  // will show.
   function momListSortTh(label, col) {
     var on = _momSort.col === col;
     return '<th class="il-mom-th' + (on ? ' on' : '') + '" data-sort="' + col + '">' + Fmt.esc(label) +
       (on ? (_momSort.dir === 'asc' ? ' ▲' : ' ▼') : '') + '</th>';
   }
-  function renderMomListHTML(list) {
-    if (!list.length) {
+  function renderMomListHTML(rows) {
+    if (!rows.length) {
       return '<div class="il-empty" style="padding:28px;">' +
-        (MOMS.length ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
+        ((MOMS.length || SCHEDULES.length) ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
       '</div>';
     }
-    var sorted = momSortedList(list);
+    var sorted = momSortedRows(rows);
     return '<div class="pd-card" style="padding:0;overflow:auto;">' +
       '<table class="pd-table il-mom-listtable"><thead><tr>' +
-        momListSortTh('Title', 'title') + momListSortTh('Type', 'type') +
-        momListSortTh('Date', 'date') + momListSortTh('State', 'state') +
-        '<th>Action items</th><th>Recorded by</th>' +
+        '<th class="il-mom-favtd"></th>' +
+        momListSortTh('Title', 'title') + momListSortTh('Date', 'date') +
+        momListSortTh('Attendees', 'attendees') + momListSortTh('Location', 'location') +
+        momListSortTh('Minutes', 'open') +
       '</tr></thead><tbody>' +
-      sorted.map(function (x) {
-        var items = momItemsOf(x.id);
-        var open = items.filter(function (i) { return momItemStatus(i) !== 'Closed'; }).length;
-        return '<tr class="il-mom-lrow" data-mom="' + Fmt.esc(x.id) + '">' +
-          '<td>' + Fmt.esc(x.title || '(untitled)') + '</td>' +
-          '<td>' + Fmt.esc(x.meeting_type || '—') + '</td>' +
-          '<td>' + (x.meeting_date ? Fmt.date(x.meeting_date) : '—') + '</td>' +
-          '<td>' + (x.is_distributed ? '<span class="il-pill is-open">Distributed</span>' : '<span class="il-mom-draft">Draft</span>') + '</td>' +
-          '<td>' + items.length + (open ? ' (' + open + ' open)' : '') + '</td>' +
-          '<td>' + Fmt.esc(minuteRecordedByShort(x)) + '</td>' +
+      sorted.map(function (r) {
+        return '<tr class="il-mom-lrow" data-kind="' + r.kind + '" data-id="' + Fmt.esc(r.id) + '">' +
+          '<td class="il-mom-favtd"><button type="button" class="il-mom-favbtn' + (r.favorite ? ' on' : '') +
+            '" data-fav="' + r.kind + ':' + Fmt.esc(r.id) + '" title="' +
+            (r.favorite ? 'Remove from favorites' : 'Add to favorites') + '">' + (r.favorite ? '★' : '☆') + '</button></td>' +
+          '<td>' + Fmt.esc(r.title) +
+            (r.kind === 'series' ? ' <span class="il-mom-recur">Recurring</span>' : '') +
+            (r.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
+          '<td>' + Fmt.esc(r.dateLabel) + '</td>' +
+          '<td>' + (r.attendees || '—') + '</td>' +
+          '<td>' + Fmt.esc(r.location) + '</td>' +
+          // Item 11 — "X of Y open", never a bare total. ⚠️ A meeting with no
+          // minutes at all reads "—", not "0 of 0 open": nothing has been
+          // recorded yet, which is a different fact from everything being closed.
+          '<td class="il-mom-opencell">' + (r.total ? (r.open + ' of ' + r.total + ' open') : '—') + '</td>' +
         '</tr>';
       }).join('') +
       '</tbody></table></div>';
   }
 
-  // ---- Calendar view ------------------------------------------------------
-  // ⚠️ UTC throughout — the grid is built from Date.UTC() and every meeting is
-  // matched against its plain YYYY-MM-DD text, never parsed into a local Date.
-  // That local-vs-UTC off-by-one has bitten this app repeatedly (minusDays in
-  // both registers, the drawing importer) and a calendar is exactly the screen
-  // where it would silently move a meeting onto the wrong day.
+  // ---- Calendar view — Month / Week (item 9) -------------------------------
+  // ⚠️ UTC throughout — every grid is built from Date.UTC() and every meeting
+  // is matched against its plain YYYY-MM-DD/'HH:MM' text, never parsed into a
+  // local Date. That local-vs-UTC off-by-one has bitten this app repeatedly
+  // (minusDays in both registers, the drawing importer) and a calendar is
+  // exactly the screen where it would silently move a meeting onto the wrong
+  // day or hour.
+  // ⚠️ The calendar plots ACTUAL meetings from `MOMS` directly — including
+  // occurrences of a recurring series (`schedule_id` set) — unlike the List
+  // view, which deliberately excludes them (they're browsed from their
+  // series' own page there). A calendar's whole job is showing WHEN things
+  // happen, and an occurrence has a real date the same as any other meeting.
   function momCalInit() {
     if (_momCalMonth) return;
     var d = new Date();
@@ -1336,7 +1554,130 @@ window.MinutesOfMeeting = (function () {
       'August', 'September', 'October', 'November', 'December'];
     return names[+parts[1] - 1] + ' ' + parts[0];
   }
+
+  // ---- Week grid (item 9's "throughout week per hour") -------------------
+  var WEEK_HOUR_START = 6, WEEK_HOUR_END = 20, WEEK_HOUR_PX = 48;
+  function timeToMinutes(hhmm) {
+    if (!hhmm) return null;
+    var parts = String(hhmm).split(':');
+    var h = +parts[0], mi = +(parts[1] || 0);
+    if (isNaN(h) || isNaN(mi)) return null;
+    return h * 60 + mi;
+  }
+  function fmtHour(h) {
+    var h12 = h % 12; if (h12 === 0) h12 = 12;
+    return h12 + (h < 12 ? 'am' : 'pm');
+  }
+  // ⚠️ "This week" is seeded off the person's LOCAL wall-clock date (what
+  // "today" means to whoever opened the calendar) exactly once, then
+  // immediately re-expressed as a UTC date string — from that point on every
+  // date this view computes (momWeekShift/momWeekDates) is pure Date.UTC()
+  // arithmetic, matching Month view's own stated convention. Only the ONE-TIME
+  // "what week am I in right now" question touches local time at all.
+  function momWeekInit() {
+    if (_momWeekStart) return;
+    var d = new Date();
+    var localDow = (d.getDay() + 6) % 7;   // Monday=0..Sunday=6
+    var monday = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - localDow));
+    _momWeekStart = isoOf(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
+  }
+  function momWeekShift(deltaWeeks) {
+    momWeekInit();
+    var p = _momWeekStart.split('-');
+    var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + deltaWeeks * 7));
+    _momWeekStart = isoOf(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  function momWeekDates() {
+    momWeekInit();
+    var p = _momWeekStart.split('-'), out = [];
+    for (var i = 0; i < 7; i++) {
+      var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + i));
+      out.push(isoOf(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    }
+    return out;
+  }
+  function momWeekLabel() {
+    var dates = momWeekDates();
+    return Fmt.date(dates[0]) + ' – ' + Fmt.date(dates[6]);
+  }
+  function renderMomWeekHTML(list) {
+    var dates = momWeekDates();
+    var todayISO = momToday();
+    var dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    var byDay = {}, allDay = {};
+    dates.forEach(function (iso) { byDay[iso] = []; allDay[iso] = []; });
+    list.forEach(function (x) {
+      if (!x.meeting_date) return;
+      var iso = x.meeting_date.slice(0, 10);
+      if (dates.indexOf(iso) < 0) return;
+      // ⚠️ No start_time at all is plotted as an ALL-DAY chip above the hour
+      // grid, not silently dropped or forced onto a fake 12:00 slot — a
+      // meeting nobody has timed yet is still real and still needs to be seen.
+      if (timeToMinutes(x.start_time) == null) allDay[iso].push(x); else byDay[iso].push(x);
+    });
+    var totalPx = (WEEK_HOUR_END - WEEK_HOUR_START) * WEEK_HOUR_PX;
+
+    var head = '<div class="il-mom-wk-head"><div class="il-mom-wk-gutter"></div>' +
+      dates.map(function (iso, i) {
+        return '<div class="il-mom-wk-daycol' + (iso === todayISO ? ' is-today' : '') + '">' +
+          '<div class="il-mom-wk-dayname">' + dayNames[i] + '</div>' +
+          '<div class="il-mom-wk-daydate">' + (+iso.slice(8, 10)) + '</div></div>';
+      }).join('') + '</div>';
+
+    var allDayRow = '<div class="il-mom-wk-allday"><div class="il-mom-wk-gutter">All day</div>' +
+      dates.map(function (iso) {
+        return '<div class="il-mom-wk-daycol">' +
+          allDay[iso].map(function (x) {
+            return '<button type="button" class="il-mom-calchip' + (x.is_distributed ? '' : ' is-draft') +
+              '" data-mom="' + Fmt.esc(x.id) + '" title="' + Fmt.esc(x.title || '(untitled)') + '">' +
+              Fmt.esc(clip(x.title || '(untitled)', 18)) + '</button>';
+          }).join('') + '</div>';
+      }).join('') + '</div>';
+
+    var hourLabels = '', hourLines = '';
+    for (var h = WEEK_HOUR_START; h < WEEK_HOUR_END; h++) {
+      hourLabels += '<div class="il-mom-wk-hourlabel" style="height:' + WEEK_HOUR_PX + 'px;">' + fmtHour(h) + '</div>';
+    }
+    for (var h2 = 0; h2 <= (WEEK_HOUR_END - WEEK_HOUR_START); h2++) {
+      hourLines += '<div class="il-mom-wk-hourline" style="top:' + (h2 * WEEK_HOUR_PX) + 'px;"></div>';
+    }
+    var dayGridCols = dates.map(function (iso) {
+      var evs = byDay[iso].map(function (x) {
+        var s = timeToMinutes(x.start_time), e = timeToMinutes(x.end_time);
+        if (e == null || e <= s) e = s + 60;   // no/invalid end time defaults to a 1-hour block
+        var top = Math.max(0, (s - WEEK_HOUR_START * 60) / 60 * WEEK_HOUR_PX);
+        var bottom = Math.min(totalPx, (e - WEEK_HOUR_START * 60) / 60 * WEEK_HOUR_PX);
+        var hpx = Math.max(18, bottom - top);
+        return '<button type="button" class="il-mom-wk-event' + (x.is_distributed ? '' : ' is-draft') +
+          '" data-mom="' + Fmt.esc(x.id) + '" style="top:' + top + 'px;height:' + hpx + 'px;" title="' +
+          Fmt.esc((x.title || '(untitled)') + ' · ' + x.start_time + (x.end_time ? '–' + x.end_time : '')) + '">' +
+          '<span class="il-mom-wk-eventtime">' + Fmt.esc(x.start_time) + '</span> ' + Fmt.esc(clip(x.title || '(untitled)', 22)) +
+        '</button>';
+      }).join('');
+      return '<div class="il-mom-wk-daycol il-mom-wk-daybody">' + hourLines + evs + '</div>';
+    }).join('');
+    var body = '<div class="il-mom-wk-body" style="height:' + totalPx + 'px;">' +
+      '<div class="il-mom-wk-gutter il-mom-wk-hourgutter">' + hourLabels + '</div>' + dayGridCols + '</div>';
+
+    return '<div class="il-mom-cal">' +
+      '<div class="il-mom-calnav">' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wkprev" title="Previous week">‹</button>' +
+        '<span class="il-mom-calmonth">' + Fmt.esc(momWeekLabel()) + '</span>' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wknext" title="Next week">›</button>' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wktoday">Today</button>' +
+      '</div>' +
+      '<div class="il-mom-wk">' + head + allDayRow + '<div class="il-mom-wk-scroll">' + body + '</div></div>' +
+    '</div>';
+  }
+
   function renderMomCalendarHTML(list) {
+    return '<div class="il-mom-calmode"><div class="il-viewtoggle">' +
+        '<button type="button" data-cm="month" class="' + (_momCalMode === 'month' ? 'on' : '') + '">Month</button>' +
+        '<button type="button" data-cm="week" class="' + (_momCalMode === 'week' ? 'on' : '') + '">Week</button>' +
+      '</div></div>' +
+      (_momCalMode === 'week' ? renderMomWeekHTML(list) : renderMomMonthHTML(list));
+  }
+  function renderMomMonthHTML(list) {
     momCalInit();
     var parts = _momCalMonth.split('-'), y = +parts[0], m = +parts[1];
     var first = new Date(Date.UTC(y, m - 1, 1));
@@ -1406,11 +1747,30 @@ window.MinutesOfMeeting = (function () {
       var again = $('il-mom-q');
       if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (e) {} }
     };
-    host.querySelectorAll('#il-mom-vtoggle [data-mv]').forEach(function (b) {
-      b.onclick = function () { _momView = b.dataset.mv; render(); if (histView) histView.push(); };
+    // ---- item 10: the filter group behind one toggle ----------------------
+    var ft = host.querySelector('#il-mom-filttoggle');
+    if (ft) ft.onclick = function () { _momFiltOpen = !_momFiltOpen; renderBrowse(); };
+    [['il-momb-kind', 'kind'], ['il-momb-state', 'state'], ['il-momb-group', 'group']].forEach(function (p) {
+      var el = host.querySelector('#' + p[0]);
+      if (el) el.onchange = function () { _momBrowseF[p[1]] = el.value; renderBrowse(); };
     });
+    var fv = host.querySelector('#il-momb-fav');
+    if (fv) fv.onchange = function () { _momBrowseF.fav = fv.checked; renderBrowse(); };
+    var fc = host.querySelector('#il-momb-clear');
+    if (fc) fc.onclick = function () {
+      _momQ = ''; _momBrowseF = { kind: '', state: '', fav: false, group: '' };
+      renderBrowse();
+    };
+
     var nb = host.querySelector('#il-mom-new');
-    if (nb) nb.onclick = momCreateNew;
+    if (nb) nb.onclick = openAddMeetingModal;
+    var lex = host.querySelector('#il-mom-listexport');
+    if (lex) lex.onchange = async function () {
+      var v = lex.value; lex.value = '';
+      if (v === 'html') momExportListHTML();
+      else if (v === 'pdf') await momExportListPDF();
+      else if (v === 'xlsx') momExportListXLSX();
+    };
     host.querySelectorAll('.il-mom-th[data-sort]').forEach(function (th) {
       th.onclick = function () {
         var col = th.dataset.sort;
@@ -1419,23 +1779,35 @@ window.MinutesOfMeeting = (function () {
         renderBrowse();
       };
     });
+    // ⚠️ Dispatches by KIND — a series row (`kind === 'series'`) opens the
+    // series page (item 6), a plain meeting opens Detail (item 5). A favorite
+    // click inside the row stops propagation below, so it never also opens
+    // the row it sits in.
     host.querySelectorAll('.il-mom-lrow').forEach(function (tr) {
-      tr.onclick = function () { momOpenMeeting(tr.dataset.mom); };
+      tr.onclick = function () {
+        if (tr.dataset.kind === 'series') momOpenSeries(tr.dataset.id);
+        else momOpenMeeting(tr.dataset.id);
+      };
+    });
+    host.querySelectorAll('[data-fav]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var i = b.dataset.fav.indexOf(':');
+        momToggleFavorite(b.dataset.fav.slice(0, i), b.dataset.fav.slice(i + 1));
+      };
     });
     host.querySelectorAll('.il-mom-calchip[data-mom]').forEach(function (b) {
       b.onclick = function () { momOpenMeeting(b.dataset.mom); };
     });
-    // A PLANNED chip has no meeting to open yet — it opens the schedule's
-    // right pane with the "+ Add a meeting" form already showing, pre-dated
-    // to the day that was clicked (overriding the form's own default of the
-    // schedule's NEXT expected date, which may not be this exact day if
-    // several occurrences are visible on one screen).
+    // A PLANNED chip has no meeting to open yet — it opens the series page
+    // with the "+ Add a meeting" form already showing, pre-dated to the day
+    // that was clicked (overriding the form's own default of the schedule's
+    // NEXT expected date, which may not be this exact day if several
+    // occurrences are visible on one screen).
     host.querySelectorAll('.il-mom-calchip[data-plansched]').forEach(function (b) {
       b.onclick = function () {
-        _schedSel = b.dataset.plansched; _schedOccOpen = true; _schedOccDraft = { date: b.dataset.planiso };
-        renderBrowse();
-        var panel = host.querySelector('.il-mom-schedpanel');
-        if (panel) panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        _schedOccOpen = true; _schedOccDraft = { date: b.dataset.planiso };
+        momOpenSeries(b.dataset.plansched);
       };
     });
     var prev = host.querySelector('#il-mom-calprev');
@@ -1445,11 +1817,137 @@ window.MinutesOfMeeting = (function () {
     var today = host.querySelector('#il-mom-caltoday');
     if (today) today.onclick = function () { _momCalMonth = null; momCalInit(); renderBrowse(); };
 
-    // ---- recurring schedules panel (items #19, #22) ------------------------
-    var sn = host.querySelector('#il-sched-new');
-    if (sn) sn.onclick = function () { _schedFormDraft = null; _schedFormOpen = true; renderBrowse(); };
+    var wprev = host.querySelector('#il-mom-wkprev');
+    if (wprev) wprev.onclick = function () { momWeekShift(-1); renderBrowse(); };
+    var wnext = host.querySelector('#il-mom-wknext');
+    if (wnext) wnext.onclick = function () { momWeekShift(1); renderBrowse(); };
+    var wtoday = host.querySelector('#il-mom-wktoday');
+    if (wtoday) wtoday.onclick = function () { _momWeekStart = null; momWeekInit(); renderBrowse(); };
+    host.querySelectorAll('.il-mom-wk-event[data-mom]').forEach(function (b) {
+      b.onclick = function () { momOpenMeeting(b.dataset.mom); };
+    });
+
+    host.querySelectorAll('[data-cm]').forEach(function (b) {
+      b.onclick = function () { _momCalMode = b.dataset.cm; renderBrowse(); };
+    });
+  }
+
+  // ⚠️ Every schedule-CRUD/occurrence-creation control below (item #19/#22's
+  // "+ New schedule"/"+ Add a meeting"/rename/delete) now lives on the series
+  // page (renderSeriesPage/wireSeriesPage below), not in the browse view —
+  // a series is opened from the unified list like anything else (item 6),
+  // so it no longer needs its own always-visible panel in wireBrowse().
+  function reRenderMomHost() {
+    if (_momView === 'series') renderSeriesPage();
+    else if (_momView === 'detail') renderDetail();
+    else renderBrowse();
+  }
+
+  async function momToggleFavorite(kind, id) {
+    var table = kind === 'series' ? 'mom_schedules' : 'meeting_minutes';
+    var arr = kind === 'series' ? SCHEDULES : MOMS;
+    var row = arr.find(function (x) { return x.id === id; });
+    if (!row) return;
+    var next = !row.is_favorite;
+    row.is_favorite = next;   // optimistic — the star flips before the round-trip lands
+    reRenderMomHost();
+    try {
+      var u = await sb().from(table).update({ is_favorite: next }).eq('id', id);
+      if (u.error) throw u.error;
+    } catch (e) {
+      row.is_favorite = !next;
+      UI.toast(/column|schema cache/i.test(e.message || '')
+        ? 'Run migrations/2026-09-02-meetings-rehaul.sql in Supabase first.' : (e.message || e), 'error');
+      reRenderMomHost();
+    }
+  }
+
+  function momOpenSeries(id) {
+    _momTab = 'meetings';
+    if (_momView !== 'series') _momBrowsePrev = _momView;
+    _seriesSel = id; _momView = 'series';
+    render();
+    if (histView) histView.push();
+  }
+
+  // ---- Series page (item 6): a recurring schedule's own details plus every
+  // meeting actually held under it. -------------------------------------
+  function renderSeriesPage() {
+    var host = $('il-mom-view'); if (!host) return;
+    var s = SCHEDULES.find(function (x) { return x.id === _seriesSel; });
+    if (!s) { _momView = _momBrowsePrev || 'list'; renderBrowse(); return; }
+    host.classList.remove('il-mom-report');
+    var past = schedMeetingsOf(s.id);
+    var next = schedNextOccurrence(s, momToday());
+    var mine = s.created_by === UID;
+    host.innerHTML =
+      '<button type="button" class="pd-btn pd-btn-sm il-mom-back" id="il-mom-back">← Back to meetings</button>' +
+      '<div class="pd-card il-mom-seriescard">' +
+        '<div class="il-mom-seriesheadrow">' +
+          '<div>' +
+            '<h2 class="il-mom-seriestitle">' + Fmt.esc(s.title || '(untitled)') +
+              ' <span class="il-mom-recur">Recurring</span></h2>' +
+            '<div class="il-mom-seriesmeta">' + Fmt.esc(schedFrequencyLabel(s)) +
+              ' · ' + Fmt.esc(s.meeting_group || 'Internal') +
+              (s.end_date ? ' · ends ' + Fmt.esc(Fmt.date(s.end_date)) : '') +
+              (next ? ' · next: ' + Fmt.esc(Fmt.date(next)) : ' · no further occurrences') +
+            '</div>' +
+          '</div>' +
+          '<div class="il-mom-seriesacts">' +
+            '<button type="button" class="pd-btn pd-btn-sm il-mom-favbtn' + (s.is_favorite ? ' on' : '') +
+              '" id="il-mom-favtoggle" data-fav="series:' + Fmt.esc(s.id) + '">' +
+              (s.is_favorite ? '★ Favorited' : '☆ Favorite') + '</button>' +
+            ((isSteward || mine) ? '<button type="button" class="pd-btn pd-btn-sm" id="il-sched-edit">Edit</button>' : '') +
+            ((isSteward || mine) ? '<button type="button" class="pd-btn pd-btn-sm pd-btn-danger" id="il-sched-del">Delete</button>' : '') +
+            (canAdd ? '<button type="button" class="pd-btn pd-btn-primary pd-btn-sm" id="il-sched-addocc">+ Add a meeting</button>' : '') +
+          '</div>' +
+        '</div>' +
+        (_schedFormOpen ? scheduleFormHTML(_schedFormDraft) : '') +
+        (_schedOccOpen ? scheduleOccFormHTML(s) : '') +
+      '</div>' +
+      '<div class="pd-card il-mom-seriespast">' +
+        '<h3>Meetings held (' + past.length + ')</h3>' +
+        (past.length
+          ? '<table class="pd-table"><thead><tr><th>Date</th><th>Status</th><th>Attendees</th></tr></thead><tbody>' +
+            past.map(function (m) {
+              return '<tr class="il-mom-schedpasti" data-mom="' + Fmt.esc(m.id) + '">' +
+                '<td>' + Fmt.esc(m.meeting_date ? Fmt.date(m.meeting_date) : '—') + '</td>' +
+                '<td>' + (m.is_distributed ? 'Distributed' : '<span class="il-mom-draft">Draft</span>') + '</td>' +
+                '<td>' + (plannedAttendeeCount(m) || '—') + '</td>' +
+              '</tr>';
+            }).join('') + '</tbody></table>'
+          : '<div class="il-empty" style="padding:18px;">No meetings recorded on this schedule yet — ' +
+            '"+ Add a meeting" opens the first one, its details copied from nothing since none exist yet.</div>') +
+      '</div>';
+    wireSeriesPage();
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
+  }
+
+  function wireSeriesPage() {
+    var host = $('il-mom-view'); if (!host) return;
+    var back = host.querySelector('#il-mom-back');
+    if (back) back.onclick = function () {
+      _momView = _momBrowsePrev || 'list'; _seriesSel = null;
+      _schedFormOpen = false; _schedFormDraft = null; _schedOccOpen = false; _schedOccDraft = null;
+      render();
+      if (histView) histView.push();
+    };
+    host.querySelectorAll('[data-fav]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var i = b.dataset.fav.indexOf(':');
+        momToggleFavorite(b.dataset.fav.slice(0, i), b.dataset.fav.slice(i + 1));
+      };
+    });
+    var sedit = host.querySelector('#il-sched-edit');
+    if (sedit) sedit.onclick = function () {
+      _schedFormDraft = SCHEDULES.find(function (x) { return x.id === _seriesSel; });
+      _schedFormOpen = true; renderSeriesPage();
+    };
+    var sdel = host.querySelector('#il-sched-del');
+    if (sdel) sdel.onclick = function () { scheduleDelete(_seriesSel); };
     var sc = host.querySelector('#il-sf-cancel');
-    if (sc) sc.onclick = function () { _schedFormOpen = false; _schedFormDraft = null; renderBrowse(); };
+    if (sc) sc.onclick = function () { _schedFormOpen = false; _schedFormDraft = null; renderSeriesPage(); };
     var freqSel = host.querySelector('#il-sf-freq');
     if (freqSel) freqSel.onchange = function () {
       var wrap = host.querySelector('#il-sf-rulewrap');
@@ -1457,32 +1955,15 @@ window.MinutesOfMeeting = (function () {
     };
     var sv = host.querySelector('#il-sf-save');
     if (sv) sv.onclick = scheduleFormSave;
-
-    host.querySelectorAll('.il-mom-schedrow[data-sched]').forEach(function (b) {
-      b.onclick = function () {
-        _schedSel = (_schedSel === b.dataset.sched) ? null : b.dataset.sched;
-        _schedOccOpen = false; _schedOccDraft = null;
-        renderBrowse();
-      };
-    });
-    var sclose = host.querySelector('#il-sched-close');
-    if (sclose) sclose.onclick = function () { _schedSel = null; _schedOccOpen = false; renderBrowse(); };
-    var sedit = host.querySelector('#il-sched-edit');
-    if (sedit) sedit.onclick = function () {
-      _schedFormDraft = SCHEDULES.find(function (x) { return x.id === _schedSel; });
-      _schedFormOpen = true; renderBrowse();
-    };
-    var sdel = host.querySelector('#il-sched-del');
-    if (sdel) sdel.onclick = function () { scheduleDelete(_schedSel); };
     var saddocc = host.querySelector('#il-sched-addocc');
-    if (saddocc) saddocc.onclick = function () { _schedOccOpen = true; _schedOccDraft = null; renderBrowse(); };
+    if (saddocc) saddocc.onclick = function () { _schedOccOpen = true; _schedOccDraft = null; renderSeriesPage(); };
     var socancel = host.querySelector('#il-of-cancel');
-    if (socancel) socancel.onclick = function () { _schedOccOpen = false; _schedOccDraft = null; renderBrowse(); };
+    if (socancel) socancel.onclick = function () { _schedOccOpen = false; _schedOccDraft = null; renderSeriesPage(); };
     var socreate = host.querySelector('#il-of-create');
-    if (socreate) socreate.onclick = function () { scheduleCreateOccurrence(_schedSel); };
+    if (socreate) socreate.onclick = function () { scheduleCreateOccurrence(_seriesSel); };
     wirePeople(host, null);   // the occurrence form's Required/Optional pickers
-    host.querySelectorAll('.il-mom-schedpasti').forEach(function (b) {
-      b.onclick = function () { momOpenMeeting(b.dataset.mom); };
+    host.querySelectorAll('.il-mom-schedpasti').forEach(function (tr) {
+      tr.onclick = function () { momOpenMeeting(tr.dataset.mom); };
     });
   }
 
@@ -1520,11 +2001,11 @@ window.MinutesOfMeeting = (function () {
         if (ins.error) throw ins.error;
         SCHEDULES.push(ins.data);
         SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
-        _schedSel = ins.data.id;
+        _seriesSel = ins.data.id;
         UI.toast('Schedule created', 'ok');
       }
       _schedFormOpen = false; _schedFormDraft = null;
-      renderBrowse();
+      reRenderMomHost();
     } catch (e) {
       UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
         ? 'Run migrations/2026-09-01-mom-schedules-attendees-item-history.sql in Supabase first.' : e.message, 'error');
@@ -1541,9 +2022,9 @@ window.MinutesOfMeeting = (function () {
       var dl = await sb().from('mom_schedules').delete().eq('id', id);
       if (dl.error) throw dl.error;
       SCHEDULES = SCHEDULES.filter(function (x) { return x.id !== id; });
-      if (_schedSel === id) _schedSel = null;
+      if (_seriesSel === id) { _seriesSel = null; _momView = _momBrowsePrev || 'list'; }
       UI.toast('Schedule deleted', 'ok');
-      renderBrowse();
+      reRenderMomHost();
     } catch (e) { UI.toast(e.message, 'error'); }
   }
 
@@ -1577,7 +2058,12 @@ window.MinutesOfMeeting = (function () {
       }).select().single();
       if (ins.error) throw ins.error;
       MOMS.unshift(ins.data);
-      _schedOccOpen = false; _schedOccDraft = null; _schedSel = null;
+      // ⚠️ `_seriesSel` stays SET (not nulled) — momOpenMeeting captures the
+      // current `_momView` ('series', since we're calling this from the
+      // series page) as `_momBrowsePrev`, so "← Back to meetings" from the
+      // occurrence just created returns to ITS series page, not wherever
+      // List/Calendar happened to be sitting before the series was opened.
+      _schedOccOpen = false; _schedOccDraft = null;
       momOpenMeeting(ins.data.id);   // renders Detail NOW — see the note above
       // ⚠️ ITEM #19 — "starts always from previous meeting minutes." Seeded
       // quietly with the register's own still-open issues (the same rule
@@ -1605,28 +2091,207 @@ window.MinutesOfMeeting = (function () {
     if (_momView !== 'detail') _momBrowsePrev = _momView;
     _momSel = id; _momView = 'detail';
     _momF = { q: '', cat: '', type: '', status: '' };
-    _momPickerOpen = false; _momPickerQ = '';
     render();
     if (histView) histView.push();
   }
 
-  async function momCreateNew() {
+  // ---- + Add meeting modal (item 3) --------------------------------------
+  // ⚠️ Agenda is a small DOM-driven list, not a JS array kept in state — each
+  // row is a real input in the modal; adding/removing rows just adds/removes
+  // DOM nodes, and the values are read straight off the inputs at save time
+  // (agendaValuesOf). No separate model to keep in sync with the DOM.
+  function agendaRowsHTML(items) {
+    var list = (items && items.length) ? items : [''];
+    return list.map(function (t) {
+      return '<div class="il-mom-agrow"><input class="pd-input pd-input-sm il-mom-agitem" value="' +
+        Fmt.esc(t) + '" placeholder="Agenda item"><button type="button" class="il-mom-agdel" title="Remove">✕</button></div>';
+    }).join('');
+  }
+  // ⚠️ `wrapId`/`addId` default to the Add-meeting modal's own ids so every
+  // existing caller is unchanged; the meeting's own agenda editor (item 4 of the
+  // module list) passes its own pair rather than a second copy of this logic.
+  function wireAgendaList(root, wrapId, addId) {
+    var wrap = root.querySelector('#' + (wrapId || 'il-am-agenda')); if (!wrap) return;
+    function bindRow(row) {
+      var del = row.querySelector('.il-mom-agdel');
+      if (del) del.onclick = function () {
+        // Always leaves at least one row — clearing the last one's text is how
+        // you empty the agenda, rather than a form with no agenda row at all.
+        if (wrap.querySelectorAll('.il-mom-agrow').length > 1) row.remove();
+        else { var i = row.querySelector('.il-mom-agitem'); if (i) i.value = ''; }
+      };
+    }
+    wrap.querySelectorAll('.il-mom-agrow').forEach(bindRow);
+    var add = root.querySelector('#' + (addId || 'il-am-agenda-add'));
+    if (add) add.onclick = function () {
+      var tmp = document.createElement('div');
+      tmp.innerHTML = agendaRowsHTML(['']);
+      var row = tmp.firstElementChild;
+      wrap.appendChild(row);
+      bindRow(row);
+      var i = row.querySelector('.il-mom-agitem'); if (i) i.focus();
+    };
+  }
+  function agendaValuesOf(root, wrapId) {
+    var wrap = root.querySelector('#' + (wrapId || 'il-am-agenda')); if (!wrap) return [];
+    return Array.prototype.map.call(wrap.querySelectorAll('.il-mom-agitem'), function (i) { return i.value.trim(); })
+      .filter(function (v) { return v; });
+  }
+
+  function openAddMeetingModal() {
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h3 style="margin:0;">+ Add meeting</h3>' +
+        '<button class="pd-modal-close" id="il-am-x">&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting title *</label>' +
+            '<input class="pd-input" id="il-am-title" placeholder="e.g. Weekly PSC Meeting"></div>' +
+          '<div class="pd-field" style="flex:1 1 130px;"><label style="display:flex;align-items:center;gap:6px;font-weight:400;">' +
+            '<input type="checkbox" id="il-am-fav" style="width:auto;"> Favorite this meeting</label></div>' +
+        '</div>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 150px;"><label>Date *</label>' +
+            '<input class="pd-input" type="date" id="il-am-date" value="' + dateVal(momToday()) + '"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label><input class="pd-input" type="time" id="il-am-start"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label><input class="pd-input" type="time" id="il-am-end"></div>' +
+        '</div>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Venue</label><input class="pd-input" id="il-am-venue"></div>' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-am-link" placeholder="https://…"></div>' +
+        '</div>' +
+        '<div class="pd-field"><label>Required attendees</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
+        '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('am-opt', [], '', false) + '</div>' +
+        '<div class="pd-field"><label>Agenda</label><div id="il-am-agenda">' + agendaRowsHTML([]) + '</div>' +
+          '<button type="button" class="pd-btn pd-btn-sm" id="il-am-agenda-add" style="margin-top:6px;">+ Add agenda item</button></div>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 260px;"><label style="display:flex;align-items:center;gap:6px;font-weight:400;">' +
+            '<input type="checkbox" id="il-am-recur" style="width:auto;"> This is a recurring meeting</label></div>' +
+        '</div>' +
+        '<div id="il-am-recurwrap" hidden>' +
+          '<div class="il-form-row">' +
+            '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency</label><select class="pd-select" id="il-am-freq">' +
+              FREQUENCIES.map(function (f) { return '<option value="' + f.key + '">' + f.label + '</option>'; }).join('') +
+            '</select></div>' +
+          '</div>' +
+          '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: 'monthly_date' }) + '</div>' +
+          '<div class="il-form-row">' +
+            '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date</label>' +
+              '<input class="pd-input" type="date" id="il-am-sstart" value="' + dateVal(momToday()) + '"></div>' +
+            '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
+              '<input class="pd-input" type="date" id="il-am-send"></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="il-am-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="il-am-save">Save meeting</button>' +
+      '</div>',
+      { title: 'Add meeting' }
+    );
+    var root = m.el;
+    wirePeople(root, null);
+    wireAgendaList(root);
+    var recur = root.querySelector('#il-am-recur');
+    if (recur) recur.onchange = function () {
+      var wrap = root.querySelector('#il-am-recurwrap');
+      if (wrap) wrap.hidden = !recur.checked;
+    };
+    var freqSel = root.querySelector('#il-am-freq');
+    if (freqSel) freqSel.onchange = function () {
+      var wrap = root.querySelector('#il-sf-rulewrap');
+      if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: freqSel.value });
+    };
+    var x = root.querySelector('#il-am-x'); if (x) x.onclick = m.close;
+    var cancel = root.querySelector('#il-am-cancel'); if (cancel) cancel.onclick = m.close;
+    var save = root.querySelector('#il-am-save');
+    if (save) save.onclick = function () { saveAddMeeting(root, m.close, save); };
+    if (window.Icons && Icons.hydrate) Icons.hydrate(root);
+  }
+
+  async function saveAddMeeting(root, close, saveBtn) {
+    var g = function (id) { var e = root.querySelector('#' + id); return e ? e.value : ''; };
+    var title = g('il-am-title').trim();
+    var date = g('il-am-date');
+    if (!title) { UI.toast('Meeting title is required.', 'warn'); return; }
+    if (!date) { UI.toast('Date is required.', 'warn'); return; }
+    var reqRoot = root.querySelector('[data-people="am-req"]'), optRoot = root.querySelector('[data-people="am-opt"]');
+    var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? ((reqRoot.querySelector('.il-pp-free') || {}).value || '') : '';
+    var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? ((optRoot.querySelector('.il-pp-free') || {}).value || '') : '';
+    var agenda = agendaValuesOf(root);
+    var isRecur = !!(root.querySelector('#il-am-recur') || {}).checked;
+    var isFav = !!(root.querySelector('#il-am-fav') || {}).checked;
+    var venue = g('il-am-venue').trim(), link = g('il-am-link').trim();
+    var startT = g('il-am-start'), endT = g('il-am-end');
+    if (saveBtn) saveBtn.disabled = true;
     try {
-      var ins = await sb().from('meeting_minutes').insert({
-        project_id: pid, title: 'Meeting ' + Fmt.date(momToday()),
-        meeting_date: momToday(), created_by: UID }).select().single();
-      if (ins.error) throw ins.error;
-      MOMS.unshift(ins.data); _momErr = '';
-      // ⚠️ The new minute's agenda is SEEDED with the register's still-open
-      // issues, exactly as before the split — a problem raised three meetings
-      // ago keeps appearing until somebody closes it rather than falling off
-      // because nobody retyped it. `quiet` skips the header save (nothing typed
-      // yet) and the redundant render (momOpenMeeting below does that).
-      try { await momPullIssues(ins.data.id, { quiet: true }); } catch (e) {}
-      momOpenMeeting(ins.data.id);
+      if (isRecur) {
+        var freq = g('il-am-freq') || 'monthly_date';
+        var payload = {
+          project_id: pid, title: title, meeting_group: 'Internal', frequency: freq,
+          start_date: g('il-am-sstart') || date, end_date: g('il-am-send') || null,
+          is_favorite: isFav, venue: venue || null, meeting_link: link || null,
+          start_time: startT || null, end_time: endT || null,
+          attendees_required: { ids: reqIds, text: reqText },
+          attendees_optional: { ids: optIds, text: optText },
+          default_agenda: agenda.length ? agenda : null,
+          weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
+          created_by: UID,
+        };
+        // The rule fields are the shared scheduleRuleFieldsHTML() markup, so
+        // they carry the `il-sf-*` ids that helper always emits (the same ones
+        // the series-page edit form reads), not `il-am-*`.
+        if (freq === 'weekly') {
+          payload.weekday = +g('il-sf-weekday') || 0;
+          payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
+        } else if (freq === 'monthly_weekday') {
+          payload.weekday = +g('il-sf-weekday') || 0;
+          payload.week_ordinal = +g('il-sf-ordinal') || 1;
+        } else {
+          payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
+        }
+        var ins = await sb().from('mom_schedules').insert(payload).select().single();
+        if (ins.error) throw ins.error;
+        SCHEDULES.push(ins.data);
+        SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
+        close();
+        UI.toast('Recurring meeting series created', 'ok');
+        _momErr = ''; renderBrowse();
+      } else {
+        var mpayload = {
+          project_id: pid, title: title, meeting_date: date, meeting_group: 'Internal',
+          is_favorite: isFav, venue: venue || null, meeting_link: link || null,
+          start_time: startT || null, end_time: endT || null,
+          attendees_required: { ids: reqIds, text: reqText },
+          attendees_optional: { ids: optIds, text: optText },
+          created_by: UID,
+        };
+        var minsRes = await sb().from('meeting_minutes').insert(mpayload).select().single();
+        if (minsRes.error) throw minsRes.error;
+        MOMS.unshift(minsRes.data); _momErr = '';
+        // Each agenda item becomes a real action item on the new meeting — the
+        // same mom_items table every action lives in, so it gets the full
+        // workflow (owner, due date, hold/close, history) the moment the
+        // meeting exists, rather than being a second, throwaway list of text.
+        for (var i = 0; i < agenda.length; i++) {
+          try {
+            var itemIns = await sb().from('mom_items').insert({
+              mom_id: minsRes.data.id, project_id: pid, seq: i,
+              description: agenda[i], action_item: '', type: 'Report', status: 'Open', created_by: UID,
+            }).select().single();
+            if (!itemIns.error && itemIns.data) { MOM_ITEMS.push(itemIns.data); logItemHistory(itemIns.data.id, pid, 'create', null, null); }
+          } catch (e) {}
+        }
+        // Still-open register issues are quietly seeded onto the new agenda,
+        // the same rule every other "new minute" path in this module follows.
+        try { await momPullIssues(minsRes.data.id, { quiet: true }); } catch (e) {}
+        close();
+        momOpenMeeting(minsRes.data.id);
+      }
     } catch (e) {
-      UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
-        ? 'Run migrations/2026-08-19-duration-scenarios-and-mom.sql in Supabase first.' : e.message, 'error');
+      if (saveBtn) saveBtn.disabled = false;
+      UI.toast(/relation|does not exist|schema cache|column/i.test(e.message || '')
+        ? 'Run migrations/2026-08-19-duration-scenarios-and-mom.sql, migrations/2026-09-01-mom-schedules-attendees-item-history.sql ' +
+          'and migrations/2026-09-02-meetings-rehaul.sql in Supabase first.' : (e.message || e), 'error');
     }
   }
 
@@ -1647,10 +2312,39 @@ window.MinutesOfMeeting = (function () {
     var back = host.querySelector('#il-mom-back');
     if (back) back.onclick = function () {
       _momView = _momBrowsePrev || 'list'; _momSel = null; _momReport = false;
-      _momItemWF = {}; _momItemHistOpen = {};   // leave no half-open workflow behind
+      _momItemWF = {};   // leave no half-open workflow behind
       render();
       if (histView) histView.push();
     };
+  }
+
+  // ⚠️ MODULE ITEM 4 (2026-09-02) — "make sure that it is possible to add agenda
+  // to a meeting". The Add-meeting modal could set one; an EXISTING meeting had
+  // no way to. This is that editor, and it is also slide 2 of the reporting
+  // deck (item 12).
+  // ⚠️ The agenda is `meeting_minutes.agenda` (jsonb), NOT mom_items rows: an
+  // agenda TOPIC ("Safety") is what the meeting intends to cover, a MINUTE is
+  // what was actually recorded against it. Filing topics as minutes would put
+  // empty rows in the record and count them as open work.
+  function momAgendaSectionHTML(mom, ro) {
+    var ag = Array.isArray(mom.agenda) ? mom.agenda : [];
+    if (ro) {
+      return '<div class="il-mom-agenda" id="il-mom-slide-agenda"><h4>Agenda</h4>' +
+        (ag.length
+          ? '<ol class="il-mom-agview">' + ag.map(function (t) {
+              return '<li>' + Fmt.esc(t) + '</li>'; }).join('') + '</ol>'
+          : '<p class="il-mom-note">No agenda was set for this meeting.</p>') +
+      '</div>';
+    }
+    return '<div class="il-mom-agenda" id="il-mom-slide-agenda"><h4>Agenda</h4>' +
+      '<p class="il-mom-note">What this meeting sets out to cover. Separate from the minutes ' +
+      'below, which are what was actually recorded.</p>' +
+      '<div id="il-mom-agenda">' + agendaRowsHTML(ag) + '</div>' +
+      '<div class="il-mom-addrow">' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-agenda-add">+ Add agenda item</button>' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-agenda-save">Save agenda</button>' +
+      '</div>' +
+    '</div>';
   }
 
   function momDetailHTML(mom) {
@@ -1665,7 +2359,6 @@ window.MinutesOfMeeting = (function () {
     // the empty state. Rendering the filtered set as if it were everything is how a
     // hidden row gets mistaken for a deleted one.
     var vis = momVisibleItems(mom.id);
-    var act = mom.schedule_activity_id || '';
     var others = MOMS.filter(function (x) { return x.id !== mom.id && momCarryable(x).length; });
     return '<div class="il-mom-detail-card">' +
       (ro ? '' : '<input type="file" id="il-mom-fileinput" hidden ' +
@@ -1674,6 +2367,12 @@ window.MinutesOfMeeting = (function () {
         '<span class="il-mom-state' + (locked ? ' on' : '') + '">' +
           (locked ? 'Distributed' : 'Draft — only you and planners can see this') + '</span>' +
         '<div style="flex:1;"></div>' +
+        // Item 3/4: any meeting — not just a series — can be favorited; pinned
+        // to the top of the list either way (momSortedRows). A view control,
+        // offered to whoever can already see the minute, not gated on mayEdit.
+        '<button class="pd-btn pd-btn-sm il-mom-favbtn' + (mom.is_favorite ? ' on' : '') + '" id="il-mom-favtoggle" ' +
+          'title="' + (mom.is_favorite ? 'Remove from favorites' : 'Add to favorites') + '">' +
+          (mom.is_favorite ? '★ Favorited' : '☆ Favorite') + '</button>' +
         // Export is a READ, so it is offered to everyone who can see the minute —
         // unlike every other control on this card, which is gated on canEditMinute().
         // A VIEW control, so — like PDF — it is offered to everyone who can see the
@@ -1681,7 +2380,13 @@ window.MinutesOfMeeting = (function () {
         '<button class="pd-btn pd-btn-sm' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
           'title="Present these minutes as a clean read-only record — hides the editing controls">' +
           (_momReport ? '\u2713 Reporting view' : 'Reporting view') + '</button>' +
-        '<button class="pd-btn pd-btn-sm" id="il-mom-pdf" title="Download these minutes as a PDF">⬇ PDF</button>' +
+        // Item 8: one control surface for HTML/PDF/PowerPoint/Excel, plus a
+        // separate Email action — both reads, offered the same way PDF was.
+        '<select class="pd-select pd-input-sm" id="il-mom-exportsel" title="Export these minutes" style="width:auto;">' +
+          '<option value="">Export as…</option><option value="html">HTML</option>' +
+          '<option value="pdf">PDF</option><option value="pptx">PowerPoint</option>' +
+          '<option value="xlsx">Excel</option></select>' +
+        '<button class="pd-btn pd-btn-sm" id="il-mom-email" title="Email these minutes">✉ Email</button>' +
         (mayEdit ? '<button class="pd-btn pd-btn-sm' + (locked ? '' : ' pd-btn-primary') + '" id="il-mom-dist">' +
           (locked ? '↩ Revert to draft' : '📤 Distribute') + '</button>' : '') +
       '</div>' +
@@ -1689,10 +2394,32 @@ window.MinutesOfMeeting = (function () {
         ? '<p class="il-mom-note" style="margin-top:0;">These minutes have been issued, so the form is ' +
           'locked. Revert to draft to change them — everyone on the project can already read this version.</p>'
         : '') +
+      // ⚠️ ITEM 12 — the reporting view is a slide deck now, and these ids are
+      // what it steps through: #il-mom-slide-details, #il-mom-slide-agenda, then
+      // one .il-mi-card per minute. The markup is IDENTICAL in both modes (the
+      // controls are live either way, per "navigate and step through slides
+      // while also editing") — reporting only decides which slide is on screen.
+      '<div id="il-mom-slide-details">' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Location</label><input class="pd-input" id="il-mom-loc" value="' + Fmt.esc(mom.location || '') + '"' + d + '></div>' +
+      '</div>' +
+      // ⚠️ ITEM 3/5 — planned start/end alongside the ACTUAL start/end.
+      // Both are always shown, never conditionally revealed once "the meeting
+      // is done" — a meeting recorded ahead of time can still have its actual
+      // times filled in the moment it wraps, and hiding the fields until some
+      // date-based guess of "done" would just make them harder to find on the
+      // day they are most useful.
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
+          '<input class="pd-input" type="time" id="il-mom-stime" value="' + Fmt.esc(mom.start_time || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>End time</label>' +
+          '<input class="pd-input" type="time" id="il-mom-etime" value="' + Fmt.esc(mom.end_time || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Actual start</label>' +
+          '<input class="pd-input" type="time" id="il-mom-astime" value="' + Fmt.esc(mom.actual_start_time || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Actual finish</label>' +
+          '<input class="pd-input" type="time" id="il-mom-aetime" value="' + Fmt.esc(mom.actual_end_time || '') + '"' + d + '></div>' +
       '</div>' +
       // ⚠️ ITEM #21 — the "Meeting type" DROPDOWN is now grouped Internal /
       // External ONLY (writes `meeting_group`). Which specific standing
@@ -1742,30 +2469,50 @@ window.MinutesOfMeeting = (function () {
         ? '<p class="il-mom-note">Legacy attendees, recorded before Required / Optional / Actual existed: ' +
           Fmt.esc(mom.attendees) + '</p>'
         : '') +
-      '<div class="pd-field il-mom-act"><label>Activity discussed ' +
-        '<small style="font-weight:400;color:var(--pd-muted);">— optional; links these minutes to a schedule activity</small></label>' +
-        '<input type="hidden" id="il-mom-act" value="' + Fmt.esc(act) + '">' +
-        '<div id="il-mom-actsel">' + momActChipHTML(act, ro) + '</div>' +
-        (ro ? '' :
-          '<input class="pd-input pd-input-sm" id="il-mom-actq" placeholder="Search the schedule by Activity ID or name…" autocomplete="off">' +
-          '<div class="il-mom-acres" id="il-mom-acres" hidden></div>') +
-      '</div>' +
+      // ⚠️ OWNER ITEM 1 (2026-09-02) — the meeting-level "Activity discussed"
+      // picker is GONE; the activity is recorded per minute now (see
+      // momItemActCellHTML). A meeting-level value stored before this change is
+      // shown here read-only rather than hidden — it is real data somebody
+      // entered — and `momSaveHeader` no longer writes the column at all, so
+      // saving the header cannot blank it.
+      (mom.schedule_activity_id
+        ? '<p class="il-mom-note">Recorded against activity <code>' +
+            Fmt.esc(mom.schedule_activity_id) + '</code>' +
+            (MOM_ACT_NAME[mom.schedule_activity_id] ? ' · ' + Fmt.esc(MOM_ACT_NAME[mom.schedule_activity_id]) : '') +
+            ' when the whole meeting carried one activity. Each minute now carries its own.</p>'
+        : '') +
       (ro ? '<p class="il-raisedby il-mom-by">' + Fmt.esc(minuteByLabel(mom)) + '</p>' : '') +
-      '<div class="pd-field"><label>Notes / discussion</label>' +
-        '<textarea class="pd-textarea" id="il-mom-notes" rows="4"' + d + '>' + Fmt.esc(mom.notes || '') + '</textarea>' +
-      '</div>' +
+      // ⚠️ OWNER ITEM 2 (2026-09-02) — "remove the notes/discussion field in the
+      // meeting details". The minutes themselves are the record now (the list
+      // below), so a second free-text field covering the same ground invites the
+      // same discussion being written twice, in two places, with no way to tell
+      // which one is current. Existing text is shown read-only instead of being
+      // hidden, and `momSaveHeader` no longer writes the column, so saving the
+      // header cannot blank it. Exports still print it where a minute has it.
+      (mom.notes
+        ? '<div class="pd-field"><label>Notes / discussion ' +
+            '<small style="font-weight:400;color:var(--pd-muted);">— recorded before each minute ' +
+            'carried its own record; read-only</small></label>' +
+            '<div class="il-mi-val">' + Fmt.esc(mom.notes).replace(/\n/g, '<br>') + '</div></div>'
+        : '') +
+      '</div>' +   /* end #il-mom-slide-details */
+      momAgendaSectionHTML(mom, ro) +
 
-      '<div class="il-mom-actions"><h4>Action items</h4>' +
-        '<p>An action item lives here. Use <b>Get from issue</b> to bring in something already ' +
-        'logged in Issues &amp; Concerns — during a PPR, or any time — so it is tracked on this ' +
-        'agenda without retyping it. New issues are raised directly in that register now, not ' +
+      // ⚠️ OWNER ITEM 1 (2026-09-02) — "action items should be replaced by
+      // minutes". Same rows, same `mom_items` table: what changed is the name,
+      // because these ARE the minutes of the meeting, not a to-do list beside
+      // them. Every user-facing "action item" string in this module follows.
+      '<div class="il-mom-actions"><h4>Minutes</h4>' +
+        '<p>Each minute recorded at this meeting lives here. Use <b>Get from issue</b> to bring in ' +
+        'something already logged in Issues &amp; Concerns — during a PPR, or any time — so it is ' +
+        'tracked here without retyping it. New issues are raised directly in that register now, not ' +
         'from these minutes.</p>' +
         // ⚠️ Offered only when there is enough to filter. A filter bar over three
         // rows is noise, and a "Showing 0 of 3" that a stale filter caused is how a
         // planner concludes their minutes have lost data.
         (items.length > 4 ? momFilterBarHTML(items) : '') +
         (items.length && !vis.length
-          ? '<div class="il-empty" style="padding:14px;">No action item on these minutes matches the filter.</div>'
+          ? '<div class="il-empty" style="padding:14px;">No minute on these minutes matches the filter.</div>'
           : '') +
         // ⚠️⚠️ THIS IS A CARD LIST, NOT A TABLE, AND IT MUST STAY ONE.
         // It was an 11-column table needing 1400px+, so on a real screen Owner, Due,
@@ -1782,42 +2529,32 @@ window.MinutesOfMeeting = (function () {
         (vis.length ? '<div class="il-mi-cards">' +
           vis.map(function (it, i) { return momItemRowHTML(it, ro, d, mayEdit, locked, i); }).join('') +
           '</div>'
-          : (items.length ? '' : '<div class="il-empty" style="padding:14px;">No action items on these minutes.</div>')) +
+          : (items.length ? '' : '<div class="il-empty" style="padding:14px;">No minutes recorded on this meeting yet.</div>')) +
         (ro ? '' :
           '<div class="il-mom-addrow">' +
-            '<button class="pd-btn pd-btn-sm" id="il-mom-additem">+ Add action item</button>' +
+            '<button class="pd-btn pd-btn-sm" id="il-mom-additem">+ Add minute</button>' +
             // Carry-over is offered on ANY minute, not only a brand-new one — a recurring
             // meeting often has its agenda seeded after the fact. Only meetings that
             // actually still have something open are listed; an empty dropdown would
             // invite a click that does nothing.
+            // ⚠️ OWNER ITEM 3 (2026-09-02) — "the carry over dropdown should not be
+            // shown initially. clicking carry over should open a pop up window
+            // where user can select which minutes to carry over from." One button;
+            // the source meetings are listed inside the modal.
             (others.length
-              ? '<span class="il-mom-carry">' +
-                  '<select class="pd-select pd-input-sm" id="il-mom-carryfrom">' +
-                    '<option value="">Carry over still-open actions from…</option>' +
-                    others.map(function (x) {
-                      return '<option value="' + Fmt.esc(x.id) + '">' + Fmt.esc(x.title || '(untitled)') +
-                        (x.meeting_date ? ' · ' + Fmt.esc(Fmt.date(x.meeting_date)) : '') +
-                        ' · ' + momCarryable(x).length + ' open</option>';
-                    }).join('') +
-                  '</select>' +
-                  '<button class="pd-btn pd-btn-sm" id="il-mom-carrygo">Carry over</button>' +
-                '</span>'
+              ? '<button class="pd-btn pd-btn-sm" id="il-mom-carrygo" ' +
+                  'title="Bring still-open minutes forward from an earlier meeting">Carry over…</button>'
               : '') +
-            // ⚠️ The replacement for the removed "Raise as issue" button: this pulls
-            // FROM the register rather than raising a new issue into it. Disabled
-            // (with the reason) when nothing is left to bring in, rather than a live
-            // button that would toast an empty result on every click.
-            (function () {
-              var n = momOpenIssuesFor(mom.id).length;
-              return n
-                ? '<button class="pd-btn pd-btn-sm' + (_momPickerOpen ? ' is-active' : '') + '" id="il-mom-getissue" ' +
-                    'title="Bring an already-raised issue onto this agenda">Get from issue' +
-                    (_momPickerOpen ? '' : ' (' + n + ')') + '</button>'
-                : '<button class="pd-btn pd-btn-sm" disabled ' +
-                    'title="No open issue in the register is off this agenda already">Get from issue</button>';
-            })() +
-          '</div>' +
-          momGetPanelHTML(mom)) +
+            // ⚠️ OWNER ITEM 4 (2026-09-02) — "get from issue button is not working."
+            // It was not broken: a brand-new meeting auto-seeds EVERY open issue, so
+            // momOpenIssuesFor() legitimately returned an empty set and the button
+            // rendered permanently `disabled` — which reads as broken. It is always
+            // enabled now and opens a modal listing the project's issues, with the
+            // ones already on this agenda shown and marked rather than filtered out,
+            // so the answer to "where are my issues?" is on screen instead of absent.
+            '<button class="pd-btn pd-btn-sm" id="il-mom-getissue" ' +
+              'title="Bring issues from Issues &amp; Concerns onto this agenda">Get from issue</button>' +
+          '</div>') +
       '</div>' +
 
       (ro ? '' :
@@ -1839,8 +2576,10 @@ window.MinutesOfMeeting = (function () {
     return '<div class="il-mom-filters">' +
       '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
       '<input class="pd-input pd-input-sm" id="il-momf-q" placeholder="Search agenda, action, owner…" value="' + Fmt.esc(_momF.q) + '">' +
+      // ITEM 5 — filters on department now, over the same union the card's own
+      // select offers, so a legacy `category` value stays reachable.
       '<select class="pd-select pd-input-sm" id="il-momf-cat">' +
-        momOptions(MOM_CATEGORIES, momUsedCategories(), _momF.cat, 'All categories') + '</select>' +
+        momOptions(DEPARTMENTS, momUsedDepartments(), _momF.cat, 'All departments') + '</select>' +
       '<select class="pd-select pd-input-sm" id="il-momf-type">' +
         momOptions(MOM_TYPES, [], _momF.type, 'All types') + '</select>' +
       '<select class="pd-select pd-input-sm" id="il-momf-status">' +
@@ -1849,44 +2588,167 @@ window.MinutesOfMeeting = (function () {
             '<span data-ico="x" data-ico-size="14"></span>Clear</button>' : '') +
       '<span class="il-mom-count">' +
         (on ? 'Showing ' + momVisibleItems(_momSel).length + ' of ' + items.length
-            : items.length + ' action' + (items.length === 1 ? '' : 's')) + '</span>' +
+            : items.length + ' minute' + (items.length === 1 ? '' : 's')) + '</span>' +
     '</div>';
   }
 
-  // ⚠️ THE "GET FROM ISSUE" PANEL — what replaced the "Raise as issue" button. It
-  // lists still-open issues in the register that are NOT yet on this agenda
-  // (momOpenIssuesFor — the exact same set the bulk pull used), searchable, each
-  // one a single click to bring in (momPullOneIssue). "+ Add all" stays for the
-  // case that used to be the only option: bringing in everything at once.
-  // ⚠️ Session-only state (_momPickerOpen / _momPickerQ), reset whenever the
-  // selected minute changes — a panel left open on the wrong meeting, or a stale
-  // search term, would be confusing rather than convenient.
-  function momGetPanelHTML(mom) {
-    if (!_momPickerOpen) return '';
-    var avail = momOpenIssuesFor(mom.id);
-    var q = _momPickerQ.trim().toLowerCase();
-    var shown = q ? avail.filter(function (r) {
-      return [r.description, r.department, r.champion, r.caused_by].join(' ').toLowerCase().indexOf(q) >= 0;
-    }) : avail;
-    return '<div class="il-mom-getpanel">' +
-      '<div class="il-mom-getpanel-head">' +
-        '<input class="pd-input pd-input-sm" id="il-mom-getq" placeholder="Search open issues…" value="' + Fmt.esc(_momPickerQ) + '">' +
-        (avail.length > 1
-          ? '<button class="pd-btn pd-btn-sm" id="il-mom-getall">+ Add all ' + avail.length + '</button>' : '') +
+  // ⚠️ `UI.modal(html, opts)` wires NOTHING but the backdrop click — it does not
+  // bind `[data-close]` and it ignores an `opts.width`. Every modal in this file
+  // used to wire its own × and Cancel by id; this does the same job once, for
+  // the modals added in the 2026-09-02 rehaul, and applies the width to the
+  // `.pd-modal` box itself. A modal whose × does nothing is the exact silent
+  // failure this repo has recorded before.
+  function wireModalChrome(m, width) {
+    var box = m.el.querySelector('.pd-modal');
+    if (box && width) { box.style.maxWidth = width + 'px'; box.style.width = '100%'; }
+    m.el.querySelectorAll('[data-close]').forEach(function (b) { b.onclick = m.close; });
+    if (window.Icons && Icons.hydrate) Icons.hydrate(m.el);
+    return m;
+  }
+
+  // ⚠️ ITEM 4 — THE "GET FROM ISSUE" MODAL, replacing the inline panel.
+  // It lists EVERY issue on the project, not only the still-open ones that are
+  // off this agenda: the old panel's set was correct but invisible, because a
+  // new meeting is seeded with all of them and the button then had nothing to
+  // offer. Rows already on this agenda are shown, ticked and disabled — the
+  // honest answer to "why is that one not in the list" is to show it as
+  // already added.
+  // ⚠️ A closed issue is listed but NOT selectable: dragging something the
+  // register has settled onto next week's agenda is the exact thing
+  // momOpenIssuesFor() exists to prevent, and it stays prevented here.
+  // Field mapping is momIssuePayload()'s (issue ← description, description ←
+  // caused_by, action item ← corrective_action) — one shape for every route in.
+  function openGetIssueModal(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    var on = {};
+    momItemsOf(momId).forEach(function (it) { if (it.issue_id) on[it.issue_id] = 1; });
+    var picked = {}, q = '';
+
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h3>Get from issue</h3>' +
+        '<button class="pd-modal-close" data-close>&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="il-mom-note">Issues raised in <b>Issues &amp; Concerns</b> on this project. ' +
+        'Tick the ones to record on this meeting — the issue, what caused it and its corrective ' +
+        'action come across, and the minute keeps showing the register\'s live status.</p>' +
+        '<input class="pd-input" id="il-gi-q" placeholder="Search issues…" autocomplete="off">' +
+        '<div class="il-mom-getlist" id="il-gi-list"></div>' +
       '</div>' +
-      (shown.length
-        ? '<div class="il-mom-getlist">' + shown.map(function (r) {
-            return '<button type="button" class="il-mom-geti" data-issue="' + Fmt.esc(r.id) + '">' +
-              '<span class="il-mom-geti-txt">' + Fmt.esc(clip(r.description || '(no description)', 90)) + '</span>' +
-              '<span class="il-mom-geti-meta">' + Fmt.esc(r.department || '—') +
-                (r.champion ? ' · ' + Fmt.esc(r.champion) : '') + ' · ' + Fmt.esc(r.status || 'Open') + '</span>' +
-            '</button>';
-          }).join('') + '</div>'
-        : '<div class="il-empty" style="padding:10px;">' +
-            (avail.length ? 'No open issue matches “' + Fmt.esc(_momPickerQ) + '”.'
-                          : 'Every open issue in the register is already on this agenda.') +
-          '</div>') +
-    '</div>';
+      '<div class="pd-modal-footer">' +
+        '<span class="il-mom-note" id="il-gi-count" style="margin:0;flex:1;"></span>' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="il-gi-add" disabled>Add selected</button>' +
+      '</div>');
+    wireModalChrome(m, 640);
+
+    var list = m.el.querySelector('#il-gi-list');
+    var addBtn = m.el.querySelector('#il-gi-add');
+    var countEl = m.el.querySelector('#il-gi-count');
+
+    function rows() {
+      var t = q.trim().toLowerCase();
+      return ISSUES.filter(function (r) {
+        if (!t) return true;
+        return [r.description, r.department, r.champion, r.caused_by, r.corrective_action]
+          .join(' ').toLowerCase().indexOf(t) >= 0;
+      });
+    }
+    function paint() {
+      var rs = rows();
+      if (!ISSUES.length) {
+        list.innerHTML = '<div class="il-empty" style="padding:12px;">No issue has been raised on this ' +
+          'project yet. Raise one in Issues &amp; Concerns first.</div>';
+      } else if (!rs.length) {
+        list.innerHTML = '<div class="il-empty" style="padding:12px;">No issue matches that search.</div>';
+      } else {
+        list.innerHTML = rs.map(function (r) {
+          var already = !!on[r.id], closed = (r.status || 'Open') === 'Closed';
+          var dis = already || closed;
+          return '<label class="il-gi-row' + (dis ? ' is-dis' : '') + '">' +
+            '<input type="checkbox" data-issue="' + Fmt.esc(r.id) + '"' +
+              (already ? ' checked' : (picked[r.id] ? ' checked' : '')) +
+              (dis ? ' disabled' : '') + '>' +
+            '<span class="il-mom-geti-txt">' + Fmt.esc(clip(r.description || '(no description)', 120)) + '</span>' +
+            '<span class="il-mom-geti-meta">' + Fmt.esc(r.department || '—') +
+              (r.champion ? ' · ' + Fmt.esc(r.champion) : '') + ' · ' + Fmt.esc(r.status || 'Open') +
+              (already ? ' · already on this meeting' : (closed ? ' · closed in the register' : '')) +
+            '</span></label>';
+        }).join('');
+        list.querySelectorAll('input[data-issue]').forEach(function (cb) {
+          cb.onchange = function () {
+            if (cb.checked) picked[cb.dataset.issue] = 1; else delete picked[cb.dataset.issue];
+            sync();
+          };
+        });
+      }
+      sync();
+    }
+    function sync() {
+      var n = Object.keys(picked).length;
+      addBtn.disabled = !n;
+      addBtn.textContent = n ? 'Add ' + n + ' to this meeting' : 'Add selected';
+      countEl.textContent = ISSUES.length
+        ? (rows().length + ' of ' + ISSUES.length + ' issue' + (ISSUES.length === 1 ? '' : 's'))
+        : '';
+    }
+
+    var t = null;
+    m.el.querySelector('#il-gi-q').oninput = function (e) {
+      var v = e.target.value; clearTimeout(t);
+      t = setTimeout(function () { q = v; paint(); }, 160);
+    };
+    addBtn.onclick = async function () {
+      var ids = Object.keys(picked);
+      if (!ids.length) return;
+      addBtn.disabled = true; addBtn.textContent = 'Adding…';
+      var added = 0;
+      // ⚠️ Sequential, not Promise.all: momPullOneIssue derives the next
+      // sequence number from what is already on the agenda, so parallel pulls
+      // would race onto the same number.
+      for (var k = 0; k < ids.length; k++) {
+        try { if (await momPullOneIssue(momId, ids[k], { quiet: true })) added++; } catch (e) {}
+      }
+      m.close();
+      UI.toast(added
+        ? added + ' issue' + (added === 1 ? '' : 's') + ' recorded on this meeting'
+        : 'Nothing was added', added ? 'ok' : 'warn');
+      renderDetail();
+    };
+    paint();
+    setTimeout(function () { try { m.el.querySelector('#il-gi-q').focus(); } catch (e) {} }, 30);
+  }
+
+  // ⚠️ ITEM 3 — the carry-over picker, replacing the always-visible dropdown.
+  // One row per earlier meeting that actually still has something open on it
+  // (momCarryable — the REGISTER decides openness for a linked minute), so the
+  // modal can never list a meeting that would carry nothing across.
+  function openCarryOverModal(momId) {
+    var others = MOMS.filter(function (x) { return x.id !== momId && momCarryable(x).length; })
+      .sort(function (a, b) { return String(b.meeting_date || '').localeCompare(String(a.meeting_date || '')); });
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h3>Carry over minutes</h3>' +
+        '<button class="pd-modal-close" data-close>&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="il-mom-note">Bring whatever is still open on an earlier meeting onto this one. ' +
+        'A carried minute is the SAME minute discussed again — its register link comes with it, so ' +
+        'it is never chased twice. Running it again adds nothing that is already here.</p>' +
+        (others.length
+          ? '<div class="il-mom-getlist">' + others.map(function (x) {
+              return '<button type="button" class="il-mom-geti" data-carry="' + Fmt.esc(x.id) + '">' +
+                '<span class="il-mom-geti-txt">' + Fmt.esc(x.title || '(untitled)') + '</span>' +
+                '<span class="il-mom-geti-meta">' +
+                  (x.meeting_date ? Fmt.esc(Fmt.date(x.meeting_date)) + ' · ' : '') +
+                  momCarryable(x).length + ' still open</span></button>';
+            }).join('') + '</div>'
+          : '<div class="il-empty" style="padding:12px;">No earlier meeting on this project has ' +
+            'anything still open to carry over.</div>') +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button></div>');
+    wireModalChrome(m, 560);
+    m.el.querySelectorAll('[data-carry]').forEach(function (b) {
+      b.onclick = function () { var id = b.dataset.carry; m.close(); momCarryOver(id); };
+    });
   }
 
   // ⚠️ `ro` is "can this row's FIELDS be typed into" = permission AND not-locked.
@@ -1919,7 +2781,16 @@ window.MinutesOfMeeting = (function () {
   // register's, and this module never writes issues_lessons.
   // ==========================================================================
   var HISTORY_TABLE_ITEM = 'mom_items_history';
-  var ITEM_HIST_LABELS = { create: 'Logged', update: 'Updated', hold: 'Put on hold', close: 'Closed' };
+  // ⚠️ `distribute`/`revert` (2026-09-02, owner item 9: "for each minute item,
+  // history should also show when the minute item was distributed or reverted
+  // to draft"). Distribution is a property of the MEETING, so it is logged onto
+  // every one of its minutes at once — the history a reader opens is the
+  // minute's, and "this was issued on the 4th" is part of that minute's story
+  // even though the act covered its siblings too.
+  var ITEM_HIST_LABELS = {
+    create: 'Logged', update: 'Updated', hold: 'Put on hold', close: 'Closed',
+    distribute: 'Distributed with the minutes', revert: 'Reverted to draft',
+  };
 
   // ⚠️ Best-effort and never awaited-into-failure: the real mom_items write
   // has already succeeded by the time this runs, and a missing migration or
@@ -1934,7 +2805,7 @@ window.MinutesOfMeeting = (function () {
         changed_by_department: (profile && profile.department) || null,
       });
     } catch (e) { /* table not migrated yet, or a transient failure — silent */ }
-    if (_momItemHistOpen[itemId]) loadItemHistory(itemId);
+    loadItemHistory(itemId);
   }
   async function loadItemHistory(itemId) {
     try {
@@ -1942,7 +2813,81 @@ window.MinutesOfMeeting = (function () {
         .order('changed_at', { ascending: false }).limit(200);
       ITEM_HISTORY[itemId] = res.error ? [] : (res.data || []);
     } catch (e) { ITEM_HISTORY[itemId] = []; }
-    if (_momSel && _momItemHistOpen[itemId]) renderDetail();
+    if (_momSel) renderDetail();
+  }
+
+  // ⚠️ OWNER ITEM 7 (2026-09-02) — "history need not show and hide, follow the
+  // same set-up as issues and concerns". Issues can load one history per detail
+  // page because a detail page IS one issue; a meeting is N minutes, so making
+  // every card's history unconditional would have meant N round-trips per
+  // render. This fetches the WHOLE meeting's history in ONE request keyed on
+  // `.in('item_id', ids)` and fans it out per item.
+  // ⚠️ An id already loaded, or already covered by a fetch in flight, is
+  // dropped from the request — renderDetail() calls this on every repaint and
+  // the completion handler repaints, so without that guard it is an infinite
+  // fetch loop rather than a one-off load.
+  var _momItemHistFetch = {};
+  async function loadItemHistories(ids) {
+    ids = (ids || []).filter(function (id) {
+      return id && ITEM_HISTORY[id] === undefined && !_momItemHistFetch[id];
+    });
+    if (!ids.length) return;
+    ids.forEach(function (id) { _momItemHistFetch[id] = true; });
+    try {
+      // ⚠️ PDb.selectAll, not a bare select: one meeting's minutes can carry
+      // hundreds of history rows between them and a truncated read would print
+      // a plausible-looking but incomplete audit trail.
+      var all = await PDb.selectAll(HISTORY_TABLE_ITEM, function (q) { return q.in('item_id', ids); });
+      var by = {};
+      ids.forEach(function (id) { by[id] = []; });
+      (all || []).forEach(function (h) { if (by[h.item_id]) by[h.item_id].push(h); });
+      ids.forEach(function (id) {
+        ITEM_HISTORY[id] = by[id].sort(function (a, b) {
+          return String(b.changed_at || '').localeCompare(String(a.changed_at || ''));
+        });
+      });
+    } catch (e) { ids.forEach(function (id) { ITEM_HISTORY[id] = []; }); }
+    ids.forEach(function (id) { delete _momItemHistFetch[id]; });
+    if (_momSel) renderDetail();
+  }
+
+  // ⚠️ Field-by-field before→after, mirroring the Issues register's own
+  // HIST_FIELDS/issHistDiffHTML (item 7's "similar to the issues history").
+  // `logItemHistory` already snapshots the WHOLE row before each change; this is
+  // what turns that stored jsonb into something readable rather than a blob
+  // nobody opens.
+  var MI_HIST_FIELDS = [
+    ['status', 'Status'], ['department', 'Department'], ['owner', 'Responsible'],
+    ['issue', 'Issue / Agenda'], ['description', 'Description'],
+    ['action_item', 'Action item'], ['type', 'Type'], ['item_no', 'No.'],
+    ['schedule_activity_id', 'Activity discussed'],
+    ['hold_reason', 'Reason for Hold'], ['closure_report', 'Closure note'],
+    ['due_date', 'Target date'],
+  ];
+  function miHistNorm(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function miHistFieldHTML(key, val) {
+    if (!val) return '<em>—</em>';
+    if (key === 'due_date') return Fmt.esc(Fmt.date(val));
+    return Fmt.esc(val).replace(/\n/g, '<br>');
+  }
+  // `before` is null on a `create` entry (nothing existed to compare against),
+  // in which case this lists what was captured at creation instead of an arrow.
+  // Unchanged fields are omitted entirely.
+  function miHistDiffHTML(before, after) {
+    after = after || {};
+    var lines = MI_HIST_FIELDS.map(function (f) {
+      var key = f[0], label = f[1];
+      var a = miHistNorm(after[key]);
+      if (!before) {
+        if (!a) return '';
+        return '<li><strong>' + Fmt.esc(label) + ':</strong> ' + miHistFieldHTML(key, a) + '</li>';
+      }
+      var b = miHistNorm(before[key]);
+      if (b === a) return '';
+      return '<li><strong>' + Fmt.esc(label) + ':</strong> ' + miHistFieldHTML(key, b) +
+        ' &rarr; ' + miHistFieldHTML(key, a) + '</li>';
+    }).filter(Boolean);
+    return lines.length ? '<ul class="il-history-diff">' + lines.join('') + '</ul>' : '';
   }
   function itemHistoryHTML(itemId) {
     var list = ITEM_HISTORY[itemId];
@@ -1952,12 +2897,19 @@ window.MinutesOfMeeting = (function () {
         '2026-09-01-mom-schedules-attendees-item-history.sql</code> if this item has been updated ' +
         'and nothing appears here.</p>';
     }
-    return '<ul class="il-history">' + list.map(function (h) {
+    // ⚠️ Entry i's AFTER state is the snapshot the NEXT-more-recent entry
+    // stored as its BEFORE (the list is newest-first); the most recent entry's
+    // after-state is simply the live row, since no later entry exists to have
+    // snapshotted it. Same reconstruction the Issues register uses.
+    var current = MOM_ITEMS.find(function (x) { return x.id === itemId; }) || {};
+    return '<ul class="il-history">' + list.map(function (h, i) {
+      var after = i === 0 ? current : (list[i - 1].snapshot || {});
       return '<li class="il-history-i"><div class="il-history-top">' +
         '<span class="il-history-action">' + Fmt.esc(ITEM_HIST_LABELS[h.action] || h.action) + '</span>' +
         '<span class="il-history-when">' + Fmt.esc(Fmt.date(h.changed_at)) +
           (h.changed_by_department ? ' · ' + Fmt.esc(h.changed_by_department) : '') + '</span></div>' +
         (h.note ? '<div class="il-history-note">' + Fmt.esc(h.note).replace(/\n/g, '<br>') + '</div>' : '') +
+        miHistDiffHTML(h.snapshot, after) +
       '</li>';
     }).join('') + '</ul>';
   }
@@ -1967,10 +2919,13 @@ window.MinutesOfMeeting = (function () {
   // runtime.
   function reqMark(editable) { return editable ? ' <span class="il-req" title="Required">*</span>' : ''; }
 
-  // The status cell's whole control surface: a plain pill for a LINKED item
-  // (register-owned, see the comment at its call site), or — for an unlinked
-  // item — the pill plus Put On Hold / Close, or whichever reveal panel is
-  // open. `ro` already folds in both "not mine to edit" and "minutes locked".
+  // The status cell is now JUST the pill. ⚠️ OWNER ITEM 6 (2026-09-02) —
+  // "put on hold and close buttons should be beside the save minutes": the two
+  // workflow buttons moved out of this meta cell and into the card's own action
+  // footer (momItemWFButtonsHTML), beside Remove, where every other per-minute
+  // action already lives. The reveal panel they open is full-width below the
+  // text blocks (momItemWFPanelHTML) rather than crammed into a grid cell that
+  // is sized for a status pill.
   function momItemStatusCellHTML(it, ro) {
     if (it.issue_id) {
       var iss = momIssueOf(it);
@@ -1979,17 +2934,29 @@ window.MinutesOfMeeting = (function () {
         Fmt.esc(v) + '</span>';
     }
     var cur = it.status || 'Open';
+    return '<span class="il-pill ' + statusClass(cur) + '">' + Fmt.esc(cur) + '</span>';
+  }
+
+  // The footer's Put On Hold / Close pair. Offered for an UNLINKED item only —
+  // a linked item's status is the register's (see momItemStatusCellHTML), so
+  // these would edit a `mom_items.status` value nothing displays. Suppressed
+  // while that item's reveal panel is open, since the panel carries its own
+  // Cancel/Confirm.
+  function momItemWFButtonsHTML(it, ro) {
+    if (ro || it.issue_id || _momItemWF[it.id]) return '';
+    var cur = it.status || 'Open';
+    var canHold = cur === 'Open', canClose = cur !== 'Closed';
+    if (!canHold && !canClose) return '';
+    return (canHold ? '<button class="pd-btn pd-btn-sm il-mi-wfstart" data-item="' + Fmt.esc(it.id) +
+        '" data-wfstart="hold">Put On Hold</button>' : '') +
+      (canClose ? '<button class="pd-btn pd-btn-sm il-mi-wfstart" data-item="' + Fmt.esc(it.id) +
+        '" data-wfstart="close">Close</button>' : '');
+  }
+
+  // The hold / close reveal panel, full-width on the card.
+  function momItemWFPanelHTML(it, ro) {
     var wf = _momItemWF[it.id];
-    if (ro || !wf) {
-      var canHold = !ro && cur === 'Open', canClose = !ro && cur !== 'Closed';
-      return '<span class="il-pill ' + statusClass(cur) + '">' + Fmt.esc(cur) + '</span>' +
-        (ro ? '' : '<div class="il-mi-wfbtns">' +
-          (canHold ? '<button class="pd-btn pd-btn-sm il-mi-wfstart" data-item="' + Fmt.esc(it.id) +
-            '" data-wfstart="hold">Put On Hold</button>' : '') +
-          (canClose ? '<button class="pd-btn pd-btn-sm il-mi-wfstart" data-item="' + Fmt.esc(it.id) +
-            '" data-wfstart="close">Close</button>' : '') +
-        '</div>');
-    }
+    if (ro || it.issue_id || !wf) return '';
     if (wf.mode === 'hold') {
       return '<div class="il-workflow-panel il-mi-wfpanel">' +
         '<label>Reason for Hold' + reqMark(true) + '</label>' +
@@ -2037,10 +3004,17 @@ window.MinutesOfMeeting = (function () {
         // action is the SAME action, and its register link came with it — without the
         // tag it reads as something someone re-typed, and the two would be chased twice.
         (it.carried_from_item_id ? '<span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '')) +
-      momFieldHTML('Category', 'il-c-cat',
-        '<select class="pd-select pd-input-sm il-mi" data-f="category"' + d + '>' +
-        momOptions(MOM_CATEGORIES, momUsedCategories(), it.category || '') + '</select>',
-        it.category) +
+      // ⚠️ OWNER ITEM 5 (2026-09-02) — "instead of category, use department and
+      // get department dropdown from issues". `DEPARTMENTS` is a verbatim copy of
+      // the Issues register's own list (see its declaration). The legacy
+      // `category` column is NOT dropped and its stored values still surface
+      // through momUsedDepartments(), so a minute recorded before this change
+      // keeps whatever it was filed under rather than silently reading as the
+      // first option — the select-value trap this repo has been bitten by twice.
+      momFieldHTML('Department', 'il-c-dept',
+        '<select class="pd-select pd-input-sm il-mi" data-f="department"' + d + '>' +
+        momOptions(DEPARTMENTS, momUsedDepartments(), momItemDept(it)) + '</select>',
+        momItemDept(it)) +
       momFieldHTML('Type', 'il-c-type',
         '<select class="pd-select pd-input-sm il-mi" data-f="type"' + d + '>' +
         // ⚠️ A blank option is offered because the column is nullable — without it an
@@ -2065,6 +3039,13 @@ window.MinutesOfMeeting = (function () {
       momFieldHTML('Target date', 'il-c-due',
         '<input class="pd-input pd-input-sm il-mi" data-f="due_date" type="date" value="' + dateVal(it.due_date) + '"' + d + '>',
         it.due_date ? Fmt.date(it.due_date) : '') +
+      // ⚠️ OWNER ITEM 1 (2026-09-02) — "activity discussed in the meeting details
+      // should be assigned to each minute, not to the whole meeting". One meeting
+      // routinely covers several activities, so a single meeting-level link had to
+      // be wrong for all but one of its minutes. The meeting-level field is gone
+      // (see momDetailHTML) and this is its replacement, per minute.
+      momFieldHTML('Activity discussed', 'il-c-mact', momItemActCellHTML(it, ro),
+        momItemActLabel(it)) +
       '</div>' +
       // ---- the text blocks, full width so nothing is clipped ----------------
       momFieldHTML('Issue / Agenda', 'il-c-issue',
@@ -2105,6 +3086,8 @@ window.MinutesOfMeeting = (function () {
         ? momFieldHTML('Closure note', 'il-c-closenote',
             '<div class="il-mi-val">' + Fmt.esc(it.closure_report).replace(/\n/g, '<br>') + '</div>', it.closure_report)
         : '') +
+      // ITEM 6 — the hold/close reveal panel, full width (see momItemWFPanelHTML).
+      momItemWFPanelHTML(it, ro) +
       // ---- the footer: the two things the PDF has no equivalent for ----------
       '<div class="il-mi-foot">' +
       '<div class="il-mi-f il-c-file"><label>File</label>' + momAttachCellHTML(it, ro) + '</div>' +
@@ -2134,26 +3117,140 @@ window.MinutesOfMeeting = (function () {
           ? '<button class="pd-btn pd-btn-sm il-mi-lesson">+ Capture lesson</button>'
           : '<span class="il-noedit" title="No lesson captured from this action">—</span>';
       })() + '</div>' +
-      // ⚠️ ITEM #23 — "all items must have an updates history", so this is
-      // offered on EVERY item, linked or not (only the status workflow above
-      // is unlinked-only). Loaded lazily on first open, not with the rest of
-      // the minute — most cards on most days are never inspected for history.
-      '<div class="il-mi-f il-c-hist"><label>History</label>' +
-        '<button class="pd-btn pd-btn-sm il-mi-histbtn" data-item="' + Fmt.esc(it.id) + '">' +
-          (_momItemHistOpen[it.id] ? 'Hide' : 'Show') + '</button></div>' +
-      (ro ? '' : '<div class="il-mi-f il-c-del"><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this action">Remove</button></div>') +
+      // ⚠️ ITEM 6 — Put On Hold / Close live here now, beside the minute's own
+      // other actions, rather than inside the Status meta cell.
+      (function () {
+        var wfb = momItemWFButtonsHTML(it, ro);
+        return wfb ? '<div class="il-mi-f il-c-wf">' + wfb + '</div>' : '';
+      })() +
+      (ro ? '' : '<div class="il-mi-f il-c-del"><button class="pd-btn pd-btn-sm pd-btn-danger il-mi-del" title="Remove this minute">Remove</button></div>') +
       '</div>' +
-      (_momItemHistOpen[it.id] ? '<div class="il-mi-hist">' + itemHistoryHTML(it.id) + '</div>' : '') +
+      // ⚠️ OWNER ITEM 7 — the history is ALWAYS rendered; there is no Show/Hide
+      // any more. Its rows arrive from one batched fetch per meeting
+      // (loadItemHistories), so making it unconditional costs one round-trip for
+      // the whole meeting rather than one per card.
+      '<div class="il-mi-hist"><label class="il-mi-histlab">History</label>' +
+        itemHistoryHTML(it.id) + '</div>' +
     '</div>';
   }
 
-  function momActChipHTML(id, ro) {
-    if (!id) return '<span style="font-size:12px;color:var(--pd-muted);">Not linked to an activity.</span>';
-    var nm = MOM_ACT_NAME[id];
-    return '<span class="il-mom-chip"><code>' + Fmt.esc(id) + '</code>' +
-      '<span id="il-mom-actname">' + (nm ? Fmt.esc(nm) : '') + '</span>' +
-      (ro ? '' : '<button type="button" id="il-mom-actclear" title="Unlink">✕</button>') + '</span>';
+  // --------------------------------------------------- per-minute helpers ----
+  // ITEM 5 — the department values this project has actually used, so a value
+  // stored before DEPARTMENTS existed (or a legacy `category`) still appears in
+  // the select that has to round-trip it.
+  function momUsedDepartments() {
+    var seen = {}, out = [];
+    MOM_ITEMS.forEach(function (it) {
+      var v = momItemDept(it);
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out;
   }
+  // ⚠️ Falls back to the legacy `category` when `department` has never been set
+  // on that row: the 2026-09-02 migration adds the column but back-fills
+  // nothing, so without this every pre-existing minute would read as unfiled.
+  function momItemDept(it) { return it.department || it.category || ''; }
+
+  function momItemActLabel(it) {
+    var id = it.schedule_activity_id;
+    if (!id) return '';
+    return id + (MOM_ACT_NAME[id] ? ' · ' + MOM_ACT_NAME[id] : '');
+  }
+  // The per-minute activity cell: the linked activity as a chip, plus one
+  // button opening the shared picker modal. ⚠️ ONE modal rather than an inline
+  // search box per card — a meeting with twenty minutes would otherwise carry
+  // twenty live search inputs, twenty result panes and twenty debounced
+  // queries against a 40k-row schedule.
+  function momItemActCellHTML(it, ro) {
+    var id = it.schedule_activity_id || '';
+    var lab = momItemActLabel(it);
+    if (!id) {
+      return ro ? '<span class="il-noedit" title="Not linked to a schedule activity">—</span>'
+        : '<button type="button" class="pd-btn pd-btn-sm il-mi-actpick" data-item="' + Fmt.esc(it.id) +
+          '">Link activity…</button>';
+    }
+    return '<span class="il-mom-chip il-mi-actchip" title="' + Fmt.esc(lab) + '"><code>' + Fmt.esc(id) + '</code>' +
+      (MOM_ACT_NAME[id] ? '<span>' + Fmt.esc(MOM_ACT_NAME[id]) + '</span>' : '') +
+      (ro ? '' : '<button type="button" class="il-mi-actclear" data-item="' + Fmt.esc(it.id) +
+        '" title="Unlink">✕</button>') + '</span>' +
+      (ro ? '' : '<button type="button" class="pd-btn pd-btn-sm il-mi-actpick" data-item="' + Fmt.esc(it.id) +
+        '">Change</button>');
+  }
+
+  // ITEM 1 — the shared activity picker, opened from one minute's card.
+  // Reuses momActSearch (server-side, capped, and it says when it capped).
+  function openItemActPicker(itemId) {
+    var it = MOM_ITEMS.find(function (x) { return x.id === itemId; });
+    if (!it) return;
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h3>Activity discussed</h3>' +
+        '<button class="pd-modal-close" data-close>&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="il-mom-note">Search this project\'s schedule by Activity ID or name. ' +
+        'The activity is recorded on this minute only, not on the whole meeting.</p>' +
+        '<input class="pd-input" id="il-mia-q" placeholder="Search the schedule…" autocomplete="off">' +
+        '<div class="il-mom-acres" id="il-mia-res" style="position:static;margin-top:8px;"></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button></div>');
+    wireModalChrome(m, 560);
+    var q = m.el.querySelector('#il-mia-q'), res = m.el.querySelector('#il-mia-res');
+    var t = null;
+    function paint(html) { res.innerHTML = html; }
+    q.oninput = function () {
+      clearTimeout(t);
+      var term = q.value;
+      t = setTimeout(async function () {
+        if (String(term || '').trim().length < 2) { paint(''); return; }
+        paint('<div class="il-mom-acrow">Searching…</div>');
+        try {
+          var hits = await momActSearch(term);
+          if (hits === null) { paint(''); return; }
+          if (!hits.length) { paint('<div class="il-mom-acrow">No matching activity.</div>'); return; }
+          paint(hits.map(function (r) {
+            return '<button type="button" class="il-mom-acrow" data-act="' + Fmt.esc(r.activity_id) +
+              '" data-actn="' + Fmt.esc(r.activity_name || '') + '"><code>' + Fmt.esc(r.activity_id) +
+              '</code> ' + Fmt.esc(r.activity_name || '') + '</button>';
+          }).join('') + (hits.length >= 26
+            ? '<div class="il-mom-acrow">Showing the first 26 — keep typing to narrow.</div>' : ''));
+          res.querySelectorAll('[data-act]').forEach(function (b) {
+            b.onclick = async function () {
+              var id = b.dataset.act;
+              MOM_ACT_NAME[id] = b.dataset.actn || '';
+              m.close();
+              if (await momSaveItemTolerant(itemId, { schedule_activity_id: id })) renderDetail();
+            };
+          });
+        } catch (e) { paint('<div class="il-mom-acrow">' + Fmt.esc(e.message || e) + '</div>'); }
+      }, 220);
+    };
+    setTimeout(function () { try { q.focus(); } catch (e) {} }, 30);
+  }
+
+  // ⚠️ `department` and `schedule_activity_id` on mom_items both arrive with
+  // migrations/2026-09-02-meetings-rehaul.sql. PostgREST rejects the WHOLE row
+  // on an unknown column, so without this a planner on an un-migrated database
+  // would see a bare "column not found" and lose the edit. Only a MISSING
+  // column is tolerated — a constraint or RLS refusal still fails loudly.
+  async function momSaveItemTolerant(id, patch, histAction, histNote) {
+    var ok = await momSaveItem(id, patch, histAction, histNote);
+    if (ok) return true;
+    var keys = Object.keys(patch).filter(function (k) {
+      return k === 'department' || k === 'schedule_activity_id';
+    });
+    if (!keys.length) return false;
+    var trimmed = Object.assign({}, patch);
+    keys.forEach(function (k) { delete trimmed[k]; });
+    if (!Object.keys(trimmed).length) {
+      UI.toast('Not stored — run migrations/2026-09-02-meetings-rehaul.sql', 'warn');
+      return false;
+    }
+    if (await momSaveItem(id, trimmed, histAction, histNote)) {
+      UI.toast('Saved — ' + keys.join(', ') + ' needs migrations/2026-09-02-meetings-rehaul.sql', 'warn');
+      return true;
+    }
+    return false;
+  }
+
   // ---------------------------------------------------------- carry-over -----
   // "What is still open on that meeting?" — the set carry-over would bring forward.
   // ⚠️ For a RAISED action the REGISTER's status decides, not `mom_items.status`, which
@@ -2197,6 +3294,32 @@ window.MinutesOfMeeting = (function () {
     });
   }
 
+  // ⚠️ PostgREST rejects the WHOLE row on one unknown column, so an un-run
+  // migration would lose an entire carried/pulled minute rather than one field.
+  // This names the column out of the error message so the caller can drop just
+  // that one and retry. ⚠️ Only a MISSING column is matched — a constraint or an
+  // RLS refusal must still fail loudly.
+  var MIGRATE_COL = {
+    department: '2026-09-02-meetings-rehaul.sql',
+    schedule_activity_id: '2026-09-02-meetings-rehaul.sql',
+    owner_ids: '2026-08-26-people-and-assignment.sql',
+  };
+  function missingColumn(err, payload) {
+    var msg = String((err && err.message) || err || '');
+    if (!/column|schema cache/i.test(msg)) return null;
+    var keys = Object.keys(payload && payload.length ? (payload[0] || {}) : (payload || {}));
+    for (var i = 0; i < keys.length; i++) {
+      if (new RegExp("'" + keys[i] + "'|\\b" + keys[i] + "\\b").test(msg)) return keys[i];
+    }
+    return null;
+  }
+  function stripCol(payload, col) {
+    if (payload && payload.length) {
+      return payload.map(function (r) { var c = Object.assign({}, r); delete c[col]; return c; });
+    }
+    var c = Object.assign({}, payload); delete c[col]; return c;
+  }
+
   // Shared by momPullIssues (bulk) and momPullOneIssue (a single pick from the
   // "Get from issue" panel) — one payload shape, so the two routes can never
   // disagree about what a pulled action looks like.
@@ -2212,7 +3335,11 @@ window.MinutesOfMeeting = (function () {
       // ⚠️ Type is 'Issue', because it is one. FYI would file a live problem under
       // the heading the PDF prints for information-only items.
       type: 'Issue',
-      category: null,
+      // ⚠️ The register's own department comes across (2026-09-02 item 5) —
+      // a minute pulled in from an issue keeps the department it was raised
+      // under rather than arriving unclassified for someone to guess at.
+      // `category` is deliberately left unset: nothing writes it any more.
+      department: r.department || null,
       issue: r.description || null,
       // The register's corrective action is what is currently being done about it —
       // the right thing to read out, and the right thing to update in the meeting.
@@ -2260,17 +3387,19 @@ window.MinutesOfMeeting = (function () {
       if (!opts.quiet) renderDetail();
       return take.length;
     } catch (e) {
-      // ⚠️ Tolerant of the un-run assignment migration: owner_ids is dropped and the
-      // pull is retried, so the agenda still gets its issues and the planner is told
-      // which field did not travel rather than losing the whole action.
-      if (/owner_ids/.test(e.message || '')) {
-        payload.forEach(function (x) { delete x.owner_ids; });
+      // ⚠️ Tolerant of any un-run migration: the rejected column is dropped and
+      // the pull retried, so the agenda still gets its issues and the planner is
+      // told which field did not travel rather than losing the whole minute.
+      var bad = missingColumn(e, payload);
+      if (bad) {
+        payload = stripCol(payload, bad);
         try {
           var ins2 = await sb().from('mom_items').insert(payload).select();
           if (ins2.error) throw ins2.error;
           (ins2.data || []).forEach(function (x) { MOM_ITEMS.push(x); });
           UI.toast('Added ' + take.length + ' open issue' + (take.length === 1 ? '' : 's') +
-            ' — the responsible person was not stored. Run migrations/2026-08-26-people-and-assignment.sql', 'warn');
+            ' — ' + bad + ' was not stored. Run migrations/' +
+            (MIGRATE_COL[bad] || '2026-09-02-meetings-rehaul.sql'), 'warn');
           if (!opts.quiet) renderDetail();
           return take.length;
         } catch (e2) { e = e2; }
@@ -2285,7 +3414,11 @@ window.MinutesOfMeeting = (function () {
   // rather than raising a brand-new one from the minutes (that button is gone; new
   // issues are logged directly in Issues & Concerns now). Same shape as the bulk
   // pull above (momIssuePayload), for exactly one chosen issue.
-  async function momPullOneIssue(momId, issueId) {
+  // ⚠️ `opts.quiet` suppresses the per-issue toast — the Get-from-issue modal
+  // adds several at once and reports the total once, rather than stacking one
+  // toast per pick.
+  async function momPullOneIssue(momId, issueId, opts) {
+    var quiet = opts && opts.quiet;
     var target = MOMS.find(function (x) { return x.id === (momId || _momSel); });
     if (!target || !canEditMinute(target) || momLocked(target)) return false;
     var r = ISSUES.find(function (x) { return x.id === issueId; });
@@ -2293,7 +3426,7 @@ window.MinutesOfMeeting = (function () {
     // ⚠️ Idempotent, same rule as the bulk pull: an issue already linked on this
     // agenda is skipped rather than added a second time.
     if (momItemsOf(target.id).some(function (it) { return it.issue_id === issueId; })) {
-      UI.toast('That issue is already on this agenda.', 'info');
+      if (!quiet) UI.toast('That issue is already on this agenda.', 'info');
       return false;
     }
     var seq = momItemsOf(target.id).length;
@@ -2302,18 +3435,22 @@ window.MinutesOfMeeting = (function () {
       var ins = await sb().from('mom_items').insert(payload).select();
       if (ins.error) throw ins.error;
       (ins.data || []).forEach(function (x) { MOM_ITEMS.push(x); });
-      UI.toast('Added from the register.', 'ok');
+      if (!quiet) UI.toast('Added from the register.', 'ok');
       return true;
     } catch (e) {
-      // ⚠️ Same tolerant retry as the bulk pull — the un-run assignment migration
-      // must not lose the whole item, only the responsible-person link.
-      if (/owner_ids/.test(e.message || '')) {
-        delete payload.owner_ids;
+      // ⚠️ Tolerant retry, now over ANY column the database has not caught up
+      // with (owner_ids from the 2026-08-26 assignment migration, department
+      // from 2026-09-02) — an un-run migration must cost one field, never the
+      // whole minute.
+      var bad = missingColumn(e, payload);
+      if (bad) {
+        payload = stripCol(payload, bad);
         try {
           var ins2 = await sb().from('mom_items').insert(payload).select();
           if (ins2.error) throw ins2.error;
           (ins2.data || []).forEach(function (x) { MOM_ITEMS.push(x); });
-          UI.toast('Added — the responsible person was not stored. Run migrations/2026-08-26-people-and-assignment.sql', 'warn');
+          if (!quiet) UI.toast('Added — ' + bad + ' was not stored. Run migrations/' +
+            (MIGRATE_COL[bad] || '2026-09-02-meetings-rehaul.sql'), 'warn');
           return true;
         } catch (e2) { UI.toast(e2.message, 'error'); return false; }
       }
@@ -2356,7 +3493,8 @@ window.MinutesOfMeeting = (function () {
     var payload = take.map(function (it, i) {
       return {
         mom_id: target.id, project_id: pid, seq: seq + i,
-        item_no: it.item_no || null, category: it.category || null, type: it.type || null,
+        item_no: it.item_no || null, category: it.category || null,
+        department: it.department || null, type: it.type || null,
         issue: it.issue || null, description: it.description || '', action_item: it.action_item || null,
         owner: it.owner || null, due_date: it.due_date || null,
         // ⚠️ The status carried is the minute's own, not the register's. Where the two
@@ -2370,7 +3508,17 @@ window.MinutesOfMeeting = (function () {
     });
     try {
       var ins = await sb().from('mom_items').insert(payload).select();
-      if (ins.error) throw ins.error;
+      // ⚠️ Retry once without whichever column the database does not have yet —
+      // a carried minute losing its department beats losing the minute.
+      if (ins.error) {
+        var bad = missingColumn(ins.error, payload);
+        if (!bad) throw ins.error;
+        payload = stripCol(payload, bad);
+        ins = await sb().from('mom_items').insert(payload).select();
+        if (ins.error) throw ins.error;
+        UI.toast('Carried over — ' + bad + ' was not stored. Run migrations/' +
+          (MIGRATE_COL[bad] || '2026-09-02-meetings-rehaul.sql'), 'warn');
+      }
       (ins.data || []).forEach(function (r) { MOM_ITEMS.push(r); });
       // Records where the agenda came from, once — a minute can be topped up from several
       // meetings, and only the first seeding is what "carried from" means.
@@ -2414,8 +3562,24 @@ window.MinutesOfMeeting = (function () {
       var u = await sb().from('meeting_minutes').update(patch).eq('id', momId);
       if (u.error) throw u.error;
       Object.assign(mom, patch);
+      // Item 9 — every minute on this meeting records the act in its own
+      // history. ⚠️ Best-effort and un-awaited, the same rule every other
+      // logItemHistory call follows: the real write has already succeeded, and
+      // a missing history table must not make a successful distribute read as
+      // an error. ⚠️ `beforeRow` is null on purpose — nothing about the MINUTE
+      // changed, so a field-by-field diff would be empty and misleading; the
+      // action label plus its note is the whole entry.
+      momItemsOf(momId).forEach(function (it) {
+        logItemHistory(it.id, mom.project_id || pid, on ? 'distribute' : 'revert', null,
+          (mom.title || 'these minutes') + (on ? ' were distributed' : ' were reverted to draft'));
+      });
       UI.toast(on ? 'Minutes distributed' : 'Reverted to draft', 'ok');
       renderDetail();
+      // Item 10 — "once distribute is hit, prompt user to email to attendees
+      // confirmation." A prompt, not an automatic send: there is no mail
+      // backend here (see momEmailMinutes), so the honest act is to offer the
+      // person's own mail client pre-filled and let them press send.
+      if (on) momPromptEmailAttendees(momId);
     } catch (e) {
       UI.toast(/column|schema cache/i.test(e.message || '')
         ? 'Run migrations/2026-08-21-mom-schema-carryover-distribute.sql in Supabase first.'
@@ -2451,10 +3615,20 @@ window.MinutesOfMeeting = (function () {
         .eq('project_id', pid).eq('activity_id', id).limit(1);
       MOM_ACT_NAME[id] = (res && !res.error && res.data && res.data[0] && res.data[0].activity_name) || '';
     } catch (e) { MOM_ACT_NAME[id] = ''; }
-    // ⚠️ Patch the chip in place instead of re-rendering: a re-render here would throw
-    // away whatever the planner has typed into the form while this was in flight.
-    var el = $('il-mom-actname');
-    if (el && $('il-mom-act') && $('il-mom-act').value === id) el.textContent = MOM_ACT_NAME[id] ? '· ' + MOM_ACT_NAME[id] : '';
+    // ⚠️ Patch the chips in place instead of re-rendering: a re-render here would
+    // throw away whatever the planner has typed into the form while this was in
+    // flight. Every minute linked to this activity gets its name filled in.
+    var host = $('il-mom-view'); if (!host || !MOM_ACT_NAME[id]) return;
+    MOM_ITEMS.forEach(function (it) {
+      if (it.schedule_activity_id !== id) return;
+      var card = host.querySelector('[data-item="' + String(it.id).replace(/"/g, '\\"') + '"]');
+      var chip = card && card.querySelector('.il-mi-actchip');
+      if (!chip) return;
+      var nm = chip.querySelector('span');
+      if (nm) nm.textContent = MOM_ACT_NAME[id];
+      else chip.insertBefore(Object.assign(document.createElement('span'),
+        { textContent: MOM_ACT_NAME[id] }), chip.querySelector('.il-mi-actclear') || null);
+    });
   }
 
   // -------------------------------------------------------------- persist -----
@@ -2485,8 +3659,10 @@ window.MinutesOfMeeting = (function () {
       venue: g('il-mom-venue').trim() || null,
       meeting_link: g('il-mom-link').trim() || null,
       recording_url: g('il-mom-rec').trim() || null,
-      notes: g('il-mom-notes').trim() || null,
-      schedule_activity_id: g('il-mom-act').trim() || null,
+      start_time: g('il-mom-stime') || null,
+      end_time: g('il-mom-etime') || null,
+      actual_start_time: g('il-mom-astime') || null,
+      actual_end_time: g('il-mom-aetime') || null,
     };
     // ⚠️ `undefined` (the field was not rendered — a read-only view) leaves
     // the column untouched rather than blanking a value nobody had a chance
@@ -2508,13 +3684,14 @@ window.MinutesOfMeeting = (function () {
       if (/column|schema cache/i.test(e.message || '')) {
         var stripped = Object.assign({}, payload);
         ['meeting_group', 'venue', 'meeting_link', 'recording_url',
-         'attendees_required', 'attendees_optional', 'attendees_actual'].forEach(function (k) { delete stripped[k]; });
+         'attendees_required', 'attendees_optional', 'attendees_actual',
+         'start_time', 'end_time', 'actual_start_time', 'actual_end_time'].forEach(function (k) { delete stripped[k]; });
         try {
           var u2 = await sb().from('meeting_minutes').update(stripped).eq('id', mom.id);
           if (u2.error) throw u2.error;
           Object.assign(mom, stripped);
-          UI.toast('Saved — Group/Venue/Link/Recording/Attendees need ' +
-            'migrations/2026-09-01-mom-schedules-attendees-item-history.sql', 'warn');
+          UI.toast('Saved — some fields need migrations/2026-09-01-mom-schedules-attendees-item-history.sql ' +
+            'and migrations/2026-09-02-meetings-rehaul.sql', 'warn');
           return true;
         } catch (e2) { UI.toast(e2.message || e2, 'error'); return false; }
       }
@@ -2730,6 +3907,269 @@ window.MinutesOfMeeting = (function () {
       '<div style="font-size:10px;color:#1c1c1e;word-break:break-word;">' + safe + '</div></div>';
   }
 
+  // ---- Export & Email (item 8) -------------------------------------------
+  // ⚠️ Deliberately NOT sharing markup-building code with momDownloadPDF
+  // below — that function is already verified end-to-end (a real produced
+  // PDF was opened and checked, not just its source measured; see this
+  // module's own CLAUDE.md for the "measuring the source of a render is not
+  // verifying the render" lesson that cost a round of debugging once).
+  // Touching it to extract a shared helper risks reintroducing exactly that
+  // class of bug in an already-working export. A little duplication of the
+  // field list across four formats is the safer trade.
+  function momExportFilenameBase(mom) {
+    return (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') + (momLocked(mom) ? '' : '_DRAFT');
+  }
+  function momExportItemText(it) { return it.action_item || it.description || ''; }
+  function momDownloadBlob(filename, mime, content) {
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); URL.revokeObjectURL(url); }, 0);
+  }
+
+  function momExportHTML(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    var items = momItemsOf(mom.id);
+    var rowsHTML = items.length
+      ? items.map(function (it, i) {
+          var iss = momIssueOf(it);
+          return '<tr><td>' + Fmt.esc(it.item_no || String((it.seq == null ? i : it.seq) + 1)) + '</td>' +
+            '<td>' + Fmt.esc(momExportItemText(it)) + '</td>' +
+            '<td>' + Fmt.esc(momItemDept(it)) + '</td>' +
+            '<td>' + Fmt.esc(it.type || (it.issue_id ? 'Issue' : 'FYI')) + '</td>' +
+            '<td>' + Fmt.esc(iss ? (iss.status || 'Open') : (it.status || 'Open')) + '</td>' +
+            '<td>' + Fmt.esc(championText(it.owner_ids, it.owner) || '') + '</td>' +
+            '<td>' + Fmt.esc(it.due_date ? Fmt.date(it.due_date) : '') + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="7">No minutes were recorded on this meeting.</td></tr>';
+    var doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + Fmt.esc(mom.title || 'Meeting') + '</title>' +
+      '<style>body{font-family:Arial,Helvetica,sans-serif;color:#1c1c1e;padding:24px;}' +
+        'h1{color:#b40000;font-size:20px;margin:0 0 6px;} table{border-collapse:collapse;width:100%;margin-top:16px;}' +
+        'th,td{border:1px solid #ddd;padding:6px 8px;font-size:12px;text-align:left;vertical-align:top;}' +
+        'th{background:#f4f4f4;} .meta{margin:4px 0;font-size:13px;} .draft{background:#b40000;color:#fff;' +
+        'padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;}</style></head><body>' +
+      '<h1>' + Fmt.esc(projName) + ' — ' + Fmt.esc(mom.title || 'Meeting') +
+        (momLocked(mom) ? '' : ' <span class="draft">DRAFT</span>') + '</h1>' +
+      '<p class="meta"><b>Date:</b> ' + Fmt.esc(mom.meeting_date ? Fmt.date(mom.meeting_date) : '—') +
+        (mom.start_time ? ' · ' + Fmt.esc(mom.start_time) + (mom.end_time ? '–' + Fmt.esc(mom.end_time) : '') : '') + '</p>' +
+      (mom.venue ? '<p class="meta"><b>Venue:</b> ' + Fmt.esc(mom.venue) + '</p>' : '') +
+      (mom.meeting_link ? '<p class="meta"><b>Meeting link:</b> ' + Fmt.esc(mom.meeting_link) + '</p>' : '') +
+      (mom.attendees_required ? '<p class="meta"><b>Required attendees:</b> ' +
+        Fmt.esc(championText(mom.attendees_required.ids, mom.attendees_required.text)) + '</p>' : '') +
+      (mom.attendees_optional ? '<p class="meta"><b>Optional attendees:</b> ' +
+        Fmt.esc(championText(mom.attendees_optional.ids, mom.attendees_optional.text)) + '</p>' : '') +
+      (mom.attendees_actual ? '<p class="meta"><b>Actual attendees:</b> ' +
+        Fmt.esc(championText(mom.attendees_actual.ids, mom.attendees_actual.text)) + '</p>' : '') +
+      (mom.notes ? '<p class="meta"><b>Notes / discussion (Minutes of the Meeting):</b><br>' +
+        Fmt.esc(mom.notes).replace(/\n/g, '<br>') + '</p>' : '') +
+      '<h3>Minutes</h3><table><thead><tr><th>No.</th><th>Action item</th><th>Department</th><th>Type</th>' +
+      '<th>Status</th><th>Responsible</th><th>Target date</th></tr></thead><tbody>' + rowsHTML + '</tbody></table>' +
+    '</body></html>';
+    momDownloadBlob(momExportFilenameBase(mom) + '_MOM.html', 'text/html', doc);
+    UI.toast('HTML downloaded', 'ok');
+  }
+
+  function momExportXLSX(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    if (!window.XLSX) { UI.toast('The Excel library did not load — check the connection and reload.', 'error'); return; }
+    var items = momItemsOf(mom.id);
+    var headRows = [
+      ['Project', projName], ['Meeting', mom.title || ''],
+      ['Date', mom.meeting_date ? Fmt.date(mom.meeting_date) : ''],
+      ['Start / End', (mom.start_time || '') + (mom.end_time ? '–' + mom.end_time : '')],
+      ['Venue', mom.venue || ''], ['Meeting link', mom.meeting_link || ''],
+      ['Status', momLocked(mom) ? 'Distributed' : 'Draft'], [],
+    ];
+    var itemHead = ['No.', 'Action item', 'Department', 'Type', 'Status', 'Responsible', 'Target date'];
+    var itemRows = items.map(function (it, i) {
+      var iss = momIssueOf(it);
+      return [
+        it.item_no || String((it.seq == null ? i : it.seq) + 1), momExportItemText(it), momItemDept(it),
+        it.type || (it.issue_id ? 'Issue' : 'FYI'), iss ? (iss.status || 'Open') : (it.status || 'Open'),
+        championText(it.owner_ids, it.owner) || '', it.due_date ? Fmt.date(it.due_date) : '',
+      ];
+    });
+    var ws = XLSX.utils.aoa_to_sheet(headRows.concat([itemHead]).concat(itemRows));
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Minutes');
+    XLSX.writeFile(wb, momExportFilenameBase(mom) + '_MOM.xlsx');
+    UI.toast('Excel file downloaded', 'ok');
+  }
+
+  async function momExportPPTX(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    if (!window.PptxGenJS) { UI.toast('The PowerPoint library did not load — check the connection and reload.', 'error'); return; }
+    var items = momItemsOf(mom.id);
+    var pptx = new PptxGenJS();
+    var title = pptx.addSlide();
+    title.addText(mom.title || 'Meeting', { x: 0.5, y: 0.6, w: 9, h: 1, fontSize: 28, bold: true, color: 'B40000' });
+    title.addText(projName + (momLocked(mom) ? '' : '  ·  DRAFT'), { x: 0.5, y: 1.5, w: 9, h: 0.5, fontSize: 14, color: '444444' });
+    title.addText(
+      (mom.meeting_date ? 'Date: ' + Fmt.date(mom.meeting_date) : '') +
+      (mom.start_time ? '   ·   ' + mom.start_time + (mom.end_time ? '–' + mom.end_time : '') : '') +
+      (mom.venue ? '\nVenue: ' + mom.venue : ''),
+      { x: 0.5, y: 2.3, w: 9, h: 1, fontSize: 12, color: '444444' }
+    );
+    if (mom.notes) {
+      var notesSlide = pptx.addSlide();
+      notesSlide.addText('Notes / discussion (Minutes of the Meeting)', { x: 0.5, y: 0.4, w: 9, h: 0.6, fontSize: 20, bold: true, color: 'B40000' });
+      notesSlide.addText(mom.notes, { x: 0.5, y: 1.2, w: 9, h: 4.5, fontSize: 12, color: '1c1c1e' });
+    }
+    if (items.length) {
+      var rows = [['No.', 'Action item', 'Department', 'Status', 'Responsible']];
+      items.forEach(function (it, i) {
+        var iss = momIssueOf(it);
+        rows.push([
+          String(it.item_no || (i + 1)), clip(momExportItemText(it), 60), momItemDept(it),
+          iss ? (iss.status || 'Open') : (it.status || 'Open'), championText(it.owner_ids, it.owner) || '',
+        ]);
+      });
+      var actSlide = pptx.addSlide();
+      actSlide.addText('Minutes', { x: 0.3, y: 0.3, w: 9, h: 0.5, fontSize: 20, bold: true, color: 'B40000' });
+      actSlide.addTable(rows, { x: 0.3, y: 0.9, w: 9.4, fontSize: 9, border: { type: 'solid', color: 'DDDDDD', pt: 0.5 } });
+    }
+    await pptx.writeFile({ fileName: momExportFilenameBase(mom) + '_MOM.pptx' });
+    UI.toast('PowerPoint downloaded', 'ok');
+  }
+
+  // ⚠️ mailto: can only carry text, never an attachment — this app has no
+  // SMTP/API backend to actually send mail, so pre-filling the person's own
+  // mail client (with a note to attach the downloaded file by hand) is the
+  // honest version of "email these minutes," not a silent no-op that claims
+  // to have sent something.
+  function momEmailMinutes(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    var items = momItemsOf(mom.id);
+    var subject = 'Minutes of Meeting — ' + (mom.title || 'Meeting') +
+      (mom.meeting_date ? ' (' + Fmt.date(mom.meeting_date) + ')' : '');
+    var lines = [
+      mom.title || 'Meeting',
+      mom.meeting_date ? 'Date: ' + Fmt.date(mom.meeting_date) : '',
+      mom.venue ? 'Venue: ' + mom.venue : '',
+      '', 'Minutes:',
+    ];
+    if (items.length) {
+      items.forEach(function (it, i) {
+        lines.push((i + 1) + '. ' + momExportItemText(it) + (it.owner ? ' — ' + it.owner : ''));
+      });
+    } else {
+      lines.push('(none recorded)');
+    }
+    lines.push('', '(Download the full minutes as HTML/PDF/Excel/PowerPoint from this meeting\'s ' +
+      'Export menu and attach it by hand — a browser link cannot attach a file automatically.)');
+    window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(lines.join('\n'));
+  }
+
+  // Item 10 (2026-09-02) — offered right after a successful Distribute.
+  // ⚠️ A confirm(), not a silent redirect: distributing and emailing are two
+  // acts, and a mailto: that fires unasked hijacks the window to the person's
+  // mail client the instant they press a button that said "Distribute".
+  // ⚠️ It names the attendee tiers it can see so the planner knows WHO the
+  // draft is meant to reach — this app stores attendee NAMES, not addresses
+  // (the People Picker resolves to `users`/`people_directory` rows, and
+  // exposing their email here would need a read this screen has no business
+  // being granted), so the To: line is deliberately left for them to fill.
+  function momPromptEmailAttendees(momId) {
+    var mom = MOMS.find(function (x) { return x.id === momId; });
+    if (!mom) return;
+    var who = [];
+    ['attendees_required', 'attendees_optional', 'attendees_actual'].forEach(function (k) {
+      if (mom[k]) {
+        var t = championText(mom[k].ids, mom[k].text);
+        if (t) who.push(t);
+      }
+    });
+    if (!who.length && mom.attendees) who.push(mom.attendees);
+    if (!confirm('Minutes distributed.\n\nEmail them to the attendees now?' +
+      (who.length ? '\n\nAttendees on record: ' + who.join('; ') : '\n\nNo attendees are recorded on this meeting yet.') +
+      '\n\nThis opens your mail client with the minutes summarised in the body — ' +
+      'add the recipients and press send.')) return;
+    momEmailMinutes(momId);
+  }
+
+  // ---- Meeting LIST export (item 8's second sentence) --------------------
+  function momExportListRows() { return momSortedRows(momUnifiedRows()); }
+  function momExportListHTML() {
+    var rows = momExportListRows();
+    var body = rows.length
+      ? rows.map(function (r) {
+          return '<tr><td>' + (r.favorite ? '★' : '') + '</td><td>' + Fmt.esc(r.title) +
+            (r.kind === 'series' ? ' (Recurring)' : '') + '</td><td>' + Fmt.esc(r.dateLabel) + '</td>' +
+            '<td>' + (r.attendees || '') + '</td><td>' + Fmt.esc(r.location) + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="5">No meetings recorded.</td></tr>';
+    var doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Meetings — ' + Fmt.esc(projName) + '</title>' +
+      '<style>body{font-family:Arial,Helvetica,sans-serif;color:#1c1c1e;padding:24px;}h1{color:#b40000;font-size:20px;}' +
+      'table{border-collapse:collapse;width:100%;margin-top:16px;}th,td{border:1px solid #ddd;padding:6px 8px;font-size:12px;text-align:left;}' +
+      'th{background:#f4f4f4;}</style></head><body><h1>Meetings — ' + Fmt.esc(projName) + '</h1>' +
+      '<table><thead><tr><th></th><th>Title</th><th>Date / Frequency</th><th>Attendees</th><th>Location</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table></body></html>';
+    momDownloadBlob('Meetings_' + (projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '.html', 'text/html', doc);
+    UI.toast('HTML downloaded', 'ok');
+  }
+  function momExportListXLSX() {
+    if (!window.XLSX) { UI.toast('The Excel library did not load — check the connection and reload.', 'error'); return; }
+    var rows = momExportListRows();
+    var head = ['Favorite', 'Title', 'Date / Frequency', 'Attendees', 'Location'];
+    var body = rows.map(function (r) {
+      return [r.favorite ? 'Yes' : '', r.title + (r.kind === 'series' ? ' (Recurring)' : ''), r.dateLabel, r.attendees || '', r.location];
+    });
+    var ws = XLSX.utils.aoa_to_sheet([head].concat(body));
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Meetings');
+    XLSX.writeFile(wb, 'Meetings_' + (projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '.xlsx');
+    UI.toast('Excel file downloaded', 'ok');
+  }
+  async function momExportListPDF() {
+    if (typeof html2pdf !== 'function') { UI.toast('The PDF library did not load — check the connection and reload.', 'error'); return; }
+    var rows = momExportListRows();
+    var td = 'padding:5px 8px;border:1px solid #e5e5ea;';
+    var rowsHTML = rows.length
+      ? rows.map(function (r) {
+          return '<tr><td style="' + td + '">' + (r.favorite ? '★' : '') + '</td>' +
+            '<td style="' + td + '">' + Fmt.esc(r.title) + (r.kind === 'series' ? ' (Recurring)' : '') + '</td>' +
+            '<td style="' + td + '">' + Fmt.esc(r.dateLabel) + '</td>' +
+            '<td style="' + td + '">' + (r.attendees || '') + '</td>' +
+            '<td style="' + td + '">' + Fmt.esc(r.location) + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="5" style="' + td + '">No meetings recorded.</td></tr>';
+    var holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:190mm;';
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'font-family:Arial,sans-serif;font-size:10px;color:#1c1c1e;width:190mm;padding:15mm 10mm;box-sizing:border-box;background:#fff;';
+    wrap.innerHTML =
+      '<div style="background:#b40000;padding:14px 20px;margin:-20px -20px 18px -20px;">' +
+        '<div style="font-size:14px;font-weight:700;color:#fff;">Meetings — ' + Fmt.esc(projName) + '</div></div>' +
+      '<table style="border-collapse:collapse;width:100%;"><thead><tr>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;"></th>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Title</th>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Date / Frequency</th>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Attendees</th>' +
+        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Location</th>' +
+      '</tr></thead><tbody>' + rowsHTML + '</tbody></table>';
+    holder.appendChild(wrap);
+    document.body.appendChild(holder);
+    try {
+      await html2pdf().set({
+        margin: [10, 10, 10, 10], filename: 'Meetings_' + (projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(wrap).save();
+      UI.toast('PDF downloaded', 'ok');
+    } catch (e) {
+      UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
+    } finally {
+      if (holder.parentNode) holder.parentNode.removeChild(holder);
+    }
+  }
+
   async function momDownloadPDF(momId) {
     var mom = MOMS.find(function (x) { return x.id === momId; });
     if (!mom) return;
@@ -2752,7 +4192,7 @@ window.MinutesOfMeeting = (function () {
         return '<div style="margin-bottom:14px;padding:12px;border:1px solid #ddd;border-radius:8px;break-inside:avoid;">' +
           '<div style="display:grid;grid-template-columns:0.4fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr;gap:5px;margin-bottom:8px;">' +
             momPdfCell('No.', it.item_no || String((it.seq == null ? i : it.seq) + 1), true) +
-            momPdfCell('Category', it.category) +
+            momPdfCell('Department', momItemDept(it)) +
             '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
               '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">Type</div>' +
               // ⚠️ Falls back to the register link only when the row is untyped — legacy
@@ -2863,7 +4303,7 @@ window.MinutesOfMeeting = (function () {
               '   (' + items.length + ' item' + (items.length !== 1 ? 's' : '') + ')</div>' +
           '</div>' +
         '</div>' + head +
-        (items.length ? cards : momPdfField('Action items', 'No action items were recorded on these minutes.'));
+        (items.length ? cards : momPdfField('Minutes', 'No minutes were recorded on this meeting.'));
 
       // ⚠️ Must be IN the document: html2canvas measures a laid-out element, and an
       // orphan node has no box. The HOLDER is parked off-screen so the page does not
@@ -2891,13 +4331,147 @@ window.MinutesOfMeeting = (function () {
     }
   }
 
+  // ==========================================================================
+  // ITEM 12 — REPORTING VIEW AS A SLIDE DECK.
+  // "it should be a powerpoint style view where user can navigate and step
+  // through slides while also editing. slide 1 meeting details, slide 2 agenda,
+  // slide 3 onwards previous minutes 1 slide per minute."
+  // ⚠️ The deck is a VIEW over the very markup the editor already rendered —
+  // the same inputs, the same handlers — not a second read-only rendering of
+  // the same data. That is what makes "while also editing" true rather than
+  // approximately true, and it is why there is no separate slide template to
+  // drift from the form.
+  // ⚠️ Slides are found in the DOM, not counted from `MOM_ITEMS`: the minutes
+  // list is filterable, so a count taken from the data would step past cards
+  // that are not on screen.
+  // ==========================================================================
+  function momSlideEls(host) {
+    var out = [];
+    var det = host.querySelector('#il-mom-slide-details'); if (det) out.push(det);
+    var ag = host.querySelector('#il-mom-slide-agenda'); if (ag) out.push(ag);
+    host.querySelectorAll('.il-mi-card').forEach(function (c) { out.push(c); });
+    return out;
+  }
+  function momSlideLabel(el, i) {
+    if (el.id === 'il-mom-slide-details') return 'Meeting details';
+    if (el.id === 'il-mom-slide-agenda') return 'Agenda';
+    // ⚠️ Falls through on an EMPTY action item, not just on a missing one — a
+    // minute recorded as "what was raised" with the action still to be agreed
+    // is common, and `a || b` on the ELEMENTS would take the blank action
+    // field and label the slide "Minute 3" while its issue text sits right
+    // there. Caught by the harness, not by reading.
+    var pick = function (sel) {
+      var e = el.querySelector(sel);
+      return e && e.value ? String(e.value).trim() : '';
+    };
+    var txt = pick('[data-f="action_item"]') || pick('[data-f="issue"]');
+    return txt ? clip(txt, 48) : ('Minute ' + (i - 1));
+  }
+  function momApplySlides() {
+    var host = $('il-mom-view'); if (!host) return;
+    var root = host.querySelector('.il-mom-detail') || host;
+    var old = host.querySelector('#il-mom-slidenav');
+    if (old) old.remove();
+    var els = momSlideEls(host);
+    els.forEach(function (el) { el.hidden = false; el.classList.remove('il-slide'); });
+    root.classList.toggle('il-mom-slides', !!_momReport);
+    if (!_momReport || !els.length) return;
+
+    if (_momSlide >= els.length) _momSlide = els.length - 1;
+    if (_momSlide < 0) _momSlide = 0;
+    els.forEach(function (el, i) {
+      el.classList.add('il-slide');
+      el.hidden = i !== _momSlide;
+    });
+
+    var nav = document.createElement('div');
+    nav.className = 'il-mom-slidenav';
+    nav.id = 'il-mom-slidenav';
+    nav.innerHTML =
+      '<button class="pd-btn pd-btn-sm" data-sl="prev"' + (_momSlide === 0 ? ' disabled' : '') + '>&larr; Back</button>' +
+      '<div class="il-mom-slidename">' + Fmt.esc(momSlideLabel(els[_momSlide], _momSlide)) +
+        '<span>Slide ' + (_momSlide + 1) + ' of ' + els.length + '</span></div>' +
+      '<div class="il-mom-slidedots">' + els.map(function (el, i) {
+        return '<button type="button" class="il-mom-slidedot' + (i === _momSlide ? ' on' : '') +
+          '" data-sl="' + i + '" title="' + Fmt.esc(momSlideLabel(el, i)) + '"></button>';
+      }).join('') + '</div>' +
+      '<button class="pd-btn pd-btn-sm" data-sl="next"' +
+        (_momSlide >= els.length - 1 ? ' disabled' : '') + '>Next &rarr;</button>';
+    var tb = host.querySelector('.il-mom-toolbar');
+    if (tb && tb.parentNode) tb.parentNode.insertBefore(nav, tb.nextSibling);
+    else root.insertBefore(nav, root.firstChild);
+
+    nav.querySelectorAll('[data-sl]').forEach(function (b) {
+      b.onclick = function () {
+        var v = b.dataset.sl;
+        if (v === 'prev') _momSlide--;
+        else if (v === 'next') _momSlide++;
+        else _momSlide = parseInt(v, 10) || 0;
+        // ⚠️ Re-applies rather than re-rendering: a re-render would throw away
+        // whatever the presenter has typed into the slide they are leaving.
+        momApplySlides();
+        try { nav.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+      };
+    });
+  }
+  // ⚠️ Arrow keys move the deck, but ONLY when focus is not in a field — the
+  // whole point of this mode is that the slides stay editable, and stealing
+  // ArrowLeft from a text input would make typing impossible.
+  var _momSlideKeys = null;
+  function momBindSlideKeys() {
+    if (_momSlideKeys) return;
+    _momSlideKeys = function (e) {
+      if (!_momReport || !_momSel) return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      _momSlide += (e.key === 'ArrowRight' ? 1 : -1);
+      momApplySlides();
+      e.preventDefault();
+    };
+    document.addEventListener('keydown', _momSlideKeys);
+  }
+
   // ⚠️ DETAIL wiring only — the meeting picker and "+ New minutes" moved to the
   // List/Calendar browse views (wireBrowse), since selecting or creating a meeting
   // is how you GET to this view now, not something this view does to itself.
   function wireDetail() {
     var host = $('il-mom-view'); if (!host) return;
     if (!_momSel) return;
-    momResolveActName(($('il-mom-act') || {}).value);
+    // ⚠️ Per MINUTE now, not per meeting (item 1). De-duplicated so a meeting whose
+    // twenty minutes all sit on one activity costs one lookup, not twenty.
+    var _seenAct = {};
+    momItemsOf(_momSel).forEach(function (it) {
+      var a = it.schedule_activity_id;
+      if (a && !_seenAct[a]) { _seenAct[a] = 1; momResolveActName(a); }
+    });
+    // ITEM 7 — the history is always on screen, so it is loaded for the whole
+    // meeting in one request rather than per card on demand.
+    loadItemHistories(momItemsOf(_momSel).map(function (it) { return it.id; }));
+
+    // ---- item 4: the meeting's own agenda ---------------------------------
+    wireAgendaList(host, 'il-mom-agenda', 'il-mom-agenda-add');
+    var agSave = host.querySelector('#il-mom-agenda-save');
+    if (agSave) agSave.onclick = async function () {
+      var mom = MOMS.find(function (x) { return x.id === _momSel; });
+      if (!mom || !canEditMinute(mom) || momLocked(mom)) return;
+      var vals = agendaValuesOf(host, 'il-mom-agenda');
+      agSave.disabled = true;
+      try {
+        // ⚠️ An empty agenda is stored as NULL, not as [] — "nobody set one" and
+        // "someone set an empty one" are the same fact here, and every read
+        // tests for a non-empty array.
+        var u = await sb().from('meeting_minutes').update({ agenda: vals.length ? vals : null }).eq('id', mom.id);
+        if (u.error) throw u.error;
+        mom.agenda = vals.length ? vals : null;
+        UI.toast('Agenda saved', 'ok');
+      } catch (e) {
+        UI.toast(/column|schema cache/i.test(e.message || '')
+          ? 'Run migrations/2026-09-02-meetings-rehaul.sql in Supabase first — the agenda column is missing.'
+          : (e.message || e), 'error');
+      }
+      agSave.disabled = false;
+    };
 
     // ⚠️ Re-rendering on every keystroke would destroy the input and its focus, so
     // the value is kept in module state and the caret is restored after the repaint.
@@ -2919,31 +4493,40 @@ window.MinutesOfMeeting = (function () {
     var rep = host.querySelector('#il-mom-report');
     if (rep) rep.onclick = function () { _momReport = !_momReport; renderDetail(); };
 
+    var favt = host.querySelector('#il-mom-favtoggle');
+    if (favt) favt.onclick = function () { momToggleFavorite('meeting', _momSel); };
+
     var dist = host.querySelector('#il-mom-dist');
     if (dist) dist.onclick = function () {
       var cur = MOMS.find(function (x) { return x.id === _momSel; });
       momSetDistributed(_momSel, !momLocked(cur));
     };
 
-    // ⚠️ NO "#il-mom-pullissues" wiring here any more — the bulk pull moved
-    // inside the "Get from issue" panel as "+ Add all N" (see #il-mom-getall).
+    // ⚠️ NO "#il-mom-pullissues" wiring here any more — bringing issues in is
+    // the Get-from-issue modal's job (openGetIssueModal), which ticks as many
+    // as you like and adds them in one go.
+    // ITEM 3 — one button, the source meetings live inside the modal.
     var cgo = host.querySelector('#il-mom-carrygo');
-    if (cgo) cgo.onclick = function () {
-      var sel = host.querySelector('#il-mom-carryfrom');
-      if (!sel || !sel.value) { UI.toast('Pick the meeting to carry actions from.', 'warn'); return; }
-      momCarryOver(sel.value);
-    };
+    if (cgo) cgo.onclick = function () { openCarryOverModal(_momSel); };
 
-    var pb = host.querySelector('#il-mom-pdf');
-    // ⚠ Saves the header first when the user may edit: the export reads MOMS, not
-    // the form, so a title typed and not saved would be missing from the sheet.
-    if (pb) pb.onclick = async function () {
+    // ⚠ Saves the header first when the user may edit: every export reads
+    // MOMS, not the live form, so a title typed and not saved would be
+    // missing from the file. Not when locked — the form is already disabled,
+    // so this would be a pointless write to a distributed minute.
+    var exportSel = host.querySelector('#il-mom-exportsel');
+    if (exportSel) exportSel.onchange = async function () {
+      var v = exportSel.value; exportSel.value = '';
+      if (!v) return;
       var cur = MOMS.find(function (x) { return x.id === _momSel; });
-      // ⚠️ Not when locked: the form is disabled, so this would be a pointless write
-      // to a distributed minute — and one that bumps its updated_at for nothing.
       if (cur && canEditMinute(cur) && !momLocked(cur)) await momSaveHeader();
-      await momDownloadPDF(_momSel);
+      if (v === 'html') momExportHTML(_momSel);
+      else if (v === 'pdf') await momDownloadPDF(_momSel);
+      else if (v === 'pptx') await momExportPPTX(_momSel);
+      else if (v === 'xlsx') momExportXLSX(_momSel);
     };
+    var emailBtn = host.querySelector('#il-mom-email');
+    if (emailBtn) emailBtn.onclick = function () { momEmailMinutes(_momSel); };
+
     var sv = host.querySelector('#il-mom-save');
     if (sv) sv.onclick = async function () { if (await momSaveHeader()) { UI.toast('Minutes saved', 'ok'); renderDetail(); } };
 
@@ -2977,7 +4560,10 @@ window.MinutesOfMeeting = (function () {
         // columns would silently store '' where every read tests for null.
         patch[fld] = (fld === 'due_date' || !v) && fld !== 'description' && fld !== 'status'
           ? (v || null) : v;
-        momSaveItem(id, patch);
+        // ⚠️ `department` arrives with migrations/2026-09-02-meetings-rehaul.sql,
+        // so it goes through the tolerant path: PostgREST rejects the whole row
+        // on an unknown column and the planner would otherwise lose the edit.
+        momSaveItemTolerant(id, patch);
       };
     });
 
@@ -3004,12 +4590,13 @@ window.MinutesOfMeeting = (function () {
     host.querySelectorAll('.il-mi-wfconfirm').forEach(function (b) {
       b.onclick = function () { momItemWorkflowConfirm(b.dataset.item, b.dataset.wfaction); };
     });
-    host.querySelectorAll('.il-mi-histbtn').forEach(function (b) {
-      b.onclick = function () {
-        var id = b.dataset.item;
-        _momItemHistOpen[id] = !_momItemHistOpen[id];
-        if (_momItemHistOpen[id] && ITEM_HISTORY[id] === undefined) loadItemHistory(id);
-        renderDetail();
+    // ---- item 1: the per-minute activity link ------------------------------
+    host.querySelectorAll('.il-mi-actpick').forEach(function (b) {
+      b.onclick = function () { openItemActPicker(b.dataset.item); };
+    });
+    host.querySelectorAll('.il-mi-actclear').forEach(function (b) {
+      b.onclick = async function () {
+        if (await momSaveItemTolerant(b.dataset.item, { schedule_activity_id: null })) renderDetail();
       };
     });
 
@@ -3043,14 +4630,14 @@ window.MinutesOfMeeting = (function () {
     // once the two split apart. `momId`/`momItem`/`issue_id` carry the link across
     // exactly as newLesson({mom_id, mom_item_id, issue_id}) used to pre-fill it
     // locally; the receiving module reads them from the query string.
+    // ⚠️ OWNER ITEM 8 (2026-09-02) — "it should go to the ordinary Add Lessons
+    // Learned page. no linking needed. user can just return to the meeting
+    // minutes after." So the link carries no momId/momItem: the sibling opens
+    // its own plain Add-a-lesson form, and the browser's Back comes straight
+    // back to this meeting (both modules bind their screens to history state).
     host.querySelectorAll('.il-mi-lesson').forEach(function (b) {
       b.onclick = function () {
-        var id = b.closest('[data-item]').dataset.item;
-        var it = MOM_ITEMS.find(function (x) { return x.id === id; }) || {};
-        var q = 'screen=lessons&momId=' + encodeURIComponent(it.mom_id) +
-          '&momItem=' + encodeURIComponent(id) +
-          (it.issue_id ? '&issueId=' + encodeURIComponent(it.issue_id) : '');
-        location.href = '../issues-lessons/index.html?' + q;
+        location.href = '../issues-lessons/index.html?screen=lessons&newLesson=1';
       };
     });
     host.querySelectorAll('.il-mi-lesson-open').forEach(function (b) {
@@ -3059,33 +4646,10 @@ window.MinutesOfMeeting = (function () {
       };
     });
     // ---- the "Get from issue" panel -------------------------------------------
+    // ITEM 4 — the picker is a modal now (openGetIssueModal); the inline panel's
+    // own search/add-all/per-row wiring went with it.
     var gib = host.querySelector('#il-mom-getissue');
-    if (gib) gib.onclick = function () {
-      _momPickerOpen = !_momPickerOpen; _momPickerQ = '';
-      renderDetail();
-    };
-    var gq = host.querySelector('#il-mom-getq');
-    if (gq) gq.oninput = function () {
-      _momPickerQ = gq.value; var at = gq.selectionStart;
-      renderDetail();
-      var again = $('il-mom-getq');
-      if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (e) {} }
-    };
-    var gall = host.querySelector('#il-mom-getall');
-    if (gall) gall.onclick = async function () {
-      gall.disabled = true;
-      await momPullIssues(_momSel);
-      _momPickerOpen = false;
-      renderDetail();
-    };
-    host.querySelectorAll('.il-mom-geti').forEach(function (b) {
-      b.onclick = async function () {
-        b.disabled = true;
-        var ok = await momPullOneIssue(_momSel, b.dataset.issue);
-        renderDetail();
-        if (!ok) b.disabled = false;
-      };
-    });
+    if (gib) gib.onclick = function () { openGetIssueModal(_momSel); };
     // ⚠️ Saves on change, one field at a time — the same rule the rest of this card
     // follows. A Save button covering the header AND every action is how a half-typed
     // action gets written.
@@ -3101,7 +4665,7 @@ window.MinutesOfMeeting = (function () {
         // ⚠️ Removing the action does NOT remove the issue it raised — the register is
         // its own record and someone may already be working it. Said out loud, because
         // the opposite is a reasonable thing to assume.
-        if (!confirm('Remove this action item?' +
+        if (!confirm('Remove this minute?' +
           (it && it.attachment_url ? '\n\nIts attached file is deleted too.' : '') +
           (it && it.issue_id
           ? '\n\nThe issue it raised STAYS in Issues & Concerns — this only removes the line from these minutes.' : ''))) return;
@@ -3124,7 +4688,7 @@ window.MinutesOfMeeting = (function () {
       // ⚠️ Same rule as the single-action delete: capture the paths first. The action
       // rows go by `on delete cascade`, so after this they cannot be queried at all.
       var paths = momPathsOf(items);
-      if (!confirm('Delete these minutes and their ' + items.length + ' action item(s)?' +
+      if (!confirm('Delete this meeting and its ' + items.length + ' minute(s)?' +
         (paths.length ? '\n\n' + paths.length + ' attached file(s) are deleted too.' : '') +
         (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns will REMAIN — they simply stop pointing back at a meeting.' : ''))) return;
       try {
@@ -3137,68 +4701,19 @@ window.MinutesOfMeeting = (function () {
       } catch (e) { UI.toast(e.message, 'error'); }
     };
 
-    // ---- the activity picker ----
-    var clr = host.querySelector('#il-mom-actclear');
-    if (clr) clr.onclick = function () {
-      $('il-mom-act').value = '';
-      $('il-mom-actsel').innerHTML = momActChipHTML('', false);
-      // ⚠️ Re-wires the whole detail view, not just this chip: `#il-mom-actsel`'s
-      // innerHTML was just replaced, and the ONLY way a freshly-created button
-      // inside it (e.g. the "✕ Unlink" chip rendered below) gets a click handler
-      // is by re-running the same query-and-bind pass that wired it the first
-      // time. This used to call a `wireMom()` that was never defined anywhere in
-      // this file — a leftover from before the module split — so both this and
-      // the pick-an-activity handler below silently threw and left the new chip
-      // dead until the next full renderDetail().
-      wireDetail();
-    };
-    var q = host.querySelector('#il-mom-actq'), res = host.querySelector('#il-mom-acres');
-    if (q && res) {
-      var close = function () { res.hidden = true; res.innerHTML = ''; };
-      q.oninput = function () {
-        var term = q.value;
-        if (_momActTimer) clearTimeout(_momActTimer);
-        if (String(term).trim().length < 2) { close(); return; }
-        _momActTimer = setTimeout(async function () {
-          try {
-            var hits = await momActSearch(term);
-            if (hits === null) { close(); return; }
-            res.hidden = false;
-            res.innerHTML = hits.length
-              ? hits.slice(0, 25).map(function (r) {
-                  return '<button type="button" data-act="' + Fmt.esc(r.activity_id) + '" data-actn="' + Fmt.esc(r.activity_name || '') + '">' +
-                    '<b>' + Fmt.esc(r.activity_id) + '</b> — ' + Fmt.esc(r.activity_name || '(unnamed)') + '</button>';
-                }).join('') + (hits.length > 25 ? '<div class="il-mom-acnote">More than 25 match — keep typing to narrow.</div>' : '')
-              : '<div class="il-mom-acnote">No activity in this project matches.</div>';
-            res.querySelectorAll('[data-act]').forEach(function (b) {
-              b.onclick = function () {
-                var id = b.dataset.act;
-                MOM_ACT_NAME[id] = b.dataset.actn || '';
-                $('il-mom-act').value = id;
-                $('il-mom-actsel').innerHTML = momActChipHTML(id, false);
-                var nm = $('il-mom-actname'); if (nm && MOM_ACT_NAME[id]) nm.textContent = '· ' + MOM_ACT_NAME[id];
-                q.value = ''; close(); wireDetail();
-              };
-            });
-          } catch (e) {
-            res.hidden = false;
-            res.innerHTML = '<div class="il-mom-acnote">Could not search the schedule: ' + Fmt.esc(e.message || 'failed') + '</div>';
-          }
-        }, 250);
-      };
-      q.onkeydown = function (e) { if (e.key === 'Escape') { close(); e.stopPropagation(); } };
-      // ⚠️ Bound ONCE for the life of the page, not per wireDetail() call — wireDetail
-      // runs on every render and on every picker interaction (see the two calls
-      // above), so a listener added here would accumulate. It looks the picker up
-      // by id each time instead of closing over it.
-      if (!_momDocClick) {
-        _momDocClick = function (e) {
-          var r = $('il-mom-acres'), i = $('il-mom-actq');
-          if (r && !r.hidden && !r.contains(e.target) && e.target !== i) { r.hidden = true; r.innerHTML = ''; }
-        };
-        document.addEventListener('click', _momDocClick);
-      }
-    }
+    // ---- item 12: the reporting deck --------------------------------------
+    // ⚠️ LAST in wireDetail, after every control has been bound: momApplySlides
+    // only hides and shows what is already there, so anything wired after it
+    // would be wired on a hidden slide and work anyway — but the slide labels
+    // read the live field values, which have to exist first.
+    momBindSlideKeys();
+    momApplySlides();
+
+    // ⚠️ The meeting-level activity picker's wiring (#il-mom-actclear /
+    // #il-mom-actq / #il-mom-acres, and the document click-away listener it
+    // needed) is GONE with the field itself — item 1 moved the activity onto
+    // each minute, where it is picked through a modal instead of an inline
+    // search box per card. `_momActTimer` / `_momDocClick` went with it.
   }
 
   return { init: init };

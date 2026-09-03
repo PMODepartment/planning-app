@@ -84,6 +84,80 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (b) — Minutes of Meeting, corrected spec: the shared files, and a tabs-dropdown rollout
+
+The owner's follow-up ("some of my prompts were not captured") replaced the 10-item list
+below with 11 module-level + 14 minutes-specific items. Full detail in
+`modules/minutes-of-meeting/CLAUDE.md` (2026-09-02 (b)) — this entry covers only what a module
+dev is not meant to touch.
+
+**`assets/css/dashboard.css` — a new `@media (min-width: 701px)` block on `.pd-modulebar`**,
+for item 2 ("the whole secondary top bar should just be a single row"): `flex-wrap: nowrap`,
+with the project selector allowed to shrink and ellipsise. ⚠️ **It SHRINKS, it does not
+SCROLL.** `overflow-x: auto` on that bar would establish a clipping context and cut off every
+popover opened from inside it — the project switcher's own menu included — which is the exact
+trap the 2026-07-24 part-6 pass recorded and reversed. ⚠️ **Only safe now because the tab
+strip is one dropdown trigger** (`UI.tabsToDropdown`); with a real strip in there, nowrap would
+push controls off the edge. ⚠️ Wrapping is deliberately left intact below 700px, where the 44px
+touch minimums need the second row.
+
+**Three other modules gained the tabs→dropdown conversion** — `contracts-claims`,
+`risk-register`, `stakeholder-map` — one `UI.tabsToDropdown('.<x>-tabs')` line each in their
+`requireLogin` callback, per item 1's "apply same to other modules". ⚠️ **Body-level view
+switchers were NOT converted** (equipment-loading, manpower-loading, portfolio-overview,
+productivity-rates, resource-loading, `_template`): those are content tabs inside the page, not
+the topbar strip the ask names, and collapsing a module's primary in-page navigation into a
+dropdown below the fold would be a regression dressed as consistency.
+
+**`modules/issues-lessons/module.js` — one new deep link, `?screen=lessons&newLesson=1`**, for
+the minutes module's item 8 ("capturing lessons should go to the ordinary Add Lessons Learned
+page, no linking needed"). It opens the same form that module's own "+ Add" opens. ⚠️ The older
+`momId`/`momItem` linked form is **kept**: it is still how a lesson gets attached to a specific
+minute, and every existing link stays openable.
+
+**Nothing else shared was touched** — no `ui.js`, `db.js`, `config.js` or `icons.js` change.
+`migrations/2026-09-02-meetings-rehaul.sql` grew three columns (`meeting_minutes.agenda`,
+`mom_items.department`, `mom_items.schedule_activity_id`); no shared table.
+
+**Verified:** every inline `<script>` in the seven touched HTML files parses; `node --check`
+clean on all three JS files; `dashboard.css` braces balanced (431/431); 0 NUL bytes; **no
+shared asset served at two versions and none unversioned**; and 40 checks executing the
+module's shipped functions (which cannot load against the pre-change file at all). ⚠️ **Not
+verified signed in.**
+
+⚠️ **Merged onto `origin/main` (109 commits ahead) before opening the PR** — PR #46 had
+already been merged at the earlier bug-fix commit, so a merged PR could not track this and it
+ships as its own. All 30 conflicts were cache-busting version collisions bar `CLAUDE.md`
+(both sides prepend → both kept whole, seam marked). ⚠️ **`git checkout --theirs` is the wrong
+tool for a version collision** — it takes main's WHOLE file and drops your own non-conflicting
+edits in it, which it did to three modules' `UI.tabsToDropdown` lines before the pass was
+aborted and redone hunk-by-hunk.
+
+`dashboard.css?v=` → `20260903a` app-wide (29 files, above main's `20260902c`); `MODULE_V`
+(via `modules-grid.js?v=`) → `20260903a`, above main's `20260902am`, because this module's
+`index.html` changed structurally again (tab order) and three other modules' pages changed too.
+
+### 2026-09-02 — Minutes of Meeting rehaul; MODULE_V bump for the structurally-changed page
+
+Owner's 10-item Minutes of Meeting rehaul (dropdown tab, icon-only list/calendar toggle, a
+real "+ Add meeting" modal, favorites, series pages, a per-hour Week view, and HTML/PDF/
+PPTX/Excel export + email). Full detail in `modules/minutes-of-meeting/CLAUDE.md`
+(2026-09-02) — this entry covers the shared files a module dev isn't meant to edit.
+
+**`assets/js/modules-grid.js` — only the `MODULE_V` fallback literal changed** (the value
+matters, not the mechanism — see that file's own header comment for why it's derived from
+its OWN `<script>` tag's `?v=` rather than read from this constant). **`dashboard.html` /
+`modules.html` — the `modules-grid.js?v=` query bumped to `20260902a`**, because
+`modules/minutes-of-meeting/index.html` changed structurally (new toolbar markup for the
+list/calendar icon toggle, two new CDN `<script>` tags for XLSX/PPTX export) — without the
+bump, a returning browser keeps serving the cached pre-rehaul page and none of the new
+controls would appear, the exact stale-cache failure mode this file's own history has
+recorded (and mis-diagnosed as a code bug) more than once.
+
+Nothing else shared was touched — no `dashboard.css`, `ui.js`, `db.js`, or `config.js`
+change. `migrations/2026-09-02-meetings-rehaul.sql` added (module-scoped columns only, no
+shared table).
+
 ### 2026-09-02 (aj) — Magnifier removed; Planning Phase's branches were filed under Execution
 Owner: *"remove the magnifier since there is a zoom in already feature"* and *"There are found WBS under
 the execution phase such as procurement, design development and others that should be part of other

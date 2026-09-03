@@ -498,9 +498,15 @@ window.IssuesLessons = (function () {
         var dl = new URLSearchParams(location.search);
         // From Minutes of Meeting's "N lessons" / "Lesson captured" button.
         if (dl.get('openLesson')) openLesson(dl.get('openLesson'));
-        // From Minutes of Meeting's "+ Capture lesson" button — pre-fills the
-        // source exactly the way newLesson({mom_id, mom_item_id, issue_id})
-        // always has, just triggered from the other module now.
+        // ⚠️ From Minutes of Meeting's "Capture lesson" button (owner item 8,
+        // 2026-09-02: "when capturing lessons, it should go to the ordinary Add
+        // Lessons Learned page. no linking needed"). It opens the SAME form the
+        // "+ Add" button on this screen opens — nothing is pre-filled and no
+        // mom_item link is written, so a lesson learned at a meeting is filed
+        // like any other lesson rather than as an appendix to one minute.
+        else if (dl.get('newLesson')) newLessonAsClosedIssue();
+        // ⚠️ The older linked form is KEPT: it is still how a lesson gets
+        // attached to a specific action item, and existing links stay openable.
         else if (dl.get('momId') && dl.get('momItem')) {
           newLesson({ mom_id: dl.get('momId'), mom_item_id: dl.get('momItem'),
                        issue_id: dl.get('issueId') || null });

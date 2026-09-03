@@ -927,6 +927,33 @@ body { overflow-x: clip; }
   border-bottom: 1px solid var(--pd-line); background: var(--pd-card);
 }
 .pd-modulebar:empty { display: none; }
+
+/* ⚠️ ONE ROW above the phone breakpoint (2026-09-02, owner: "the whole
+   secondary top bar should just be a single row").
+   This is only safe now that the tab strip is a single compact dropdown
+   trigger rather than a row of N labelled buttons — before that, nowrap on a
+   4-tab module would have overflowed at laptop widths.
+   ⚠️ It SHRINKS, it does not SCROLL. `overflow-x:auto` here would establish a
+   clipping context and cut off every popover opened from inside this bar —
+   the project selector's own list, the tabs dropdown's menu, a module's
+   action menus — which is the exact trap the 2026-07-24 "part 6" pass hit and
+   documented after trying a scrolling tools strip. So each child gets
+   `min-width:0` and the wide ones truncate instead.
+   ⚠️ Left wrapping below 700px on purpose: the ≤700px block further down
+   deliberately gives the title and each control group its own full-width row
+   for 44px touch targets, and that rule set is load-bearing on a phone. */
+@media (min-width: 701px) {
+  .pd-modulebar { flex-wrap: nowrap; overflow: visible; }
+  .pd-modulebar > * { min-width: 0; }
+  /* The project selector is the one child with genuinely unbounded content (a
+     long project name), so it is the one that gives way first. */
+  .pd-modulebar > [class$="-projctx"],
+  .pd-modulebar > #ctx-switcher { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+  .pd-modulebar > [class$="-projctx"] > .pd-select,
+  .pd-modulebar > [class$="-projctx"] > select {
+    max-width: 100%; text-overflow: ellipsis;
+  }
+}
 /* The module's icon + title text — text is shown again now that it has its
    own bar with real room, rather than competing with tabs/tools for a single
    compact row. */
