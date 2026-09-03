@@ -2335,6 +2335,19 @@
     var isAdmin = !!profile && (profile.role === 'admin' || profile.role === 'super_admin');
     UI.renderNav(document.getElementById('side-nav'), 'portfolio', { active: 'portfolio-dashboard', base: '../../', isAdmin: isAdmin });
     UI.renderSwitcher(document.getElementById('ctx-switcher'), { mode: 'portfolio', base: '../../' });
+    // ⚠️ The sidebar hides these six modules for everyone but super_admin (config.js
+    // `superAdminOnly`, 2026-09-03) — but their cross-project data is ALSO reachable from
+    // right here, as this page's own tabs, which are static markup rather than built off
+    // APP_CONFIG.MODULES. Hiding the sidebar link and leaving the tab open would just move
+    // the leak one click over, so the matching tabs are hidden the same way, off the same
+    // role. `resources`/`s-curve`/`milestones`/`issues`/`meetings`/`photos`/`overview` stay —
+    // none of those seven modules are superAdminOnly.
+    if (profile.role !== 'super_admin') {
+      ['risk', 'stakeholders', 'equipment', 'contracts', 'cashflow', 'productivity'].forEach(function (v) {
+        var b = document.querySelector('.po-tab[data-view="' + v + '"]');
+        if (b) b.hidden = true;
+      });
+    }
     document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
     wireProjFilter();
     document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };
