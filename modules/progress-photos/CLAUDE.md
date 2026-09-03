@@ -2,6 +2,383 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## PowerPoint export was silently corrupting on real captions — root cause found and fixed (2026-09-03)
+
+Owner: a downloaded PPTX opened in PowerPoint Desktop with **"Sorry, PowerPoint can't read
+[filename]"** — PowerPoint's harshest error (not the softer "would you like us to repair it?"
+prompt). Investigated as a generation-corruption problem, not a download/blob-handling one, per
+the report's own framing — and that framing was right.
+
+### Root cause, reproduced directly
+
+`exportPptx()` (this file) builds the deck entirely **client-side** via **PptxGenJS v3.12.0**
+(`pptxgen.bundle.js`, pinned CDN version, `modules/progress-photos/index.html`) — there is no
+backend/HTTP layer in this path at all; `pptx.writeFile()` is the library's own browser-download
+method, JSZip under the hood. Confirmed by pulling PptxGenJS's own **real source** at the exact
+pinned tag (`v3.12.0`) from GitHub and reading `addImageDefinition`/`createChartMediaRels` end to
+end: the image-embedding path (including this file's `stripDataPrefix()`) was already correct —
+PptxGenJS's own zip-writer does `data.split(',').pop()`, which discards a `data:` prefix whether
+`stripDataPrefix` removed it or not, so that was never the bug.
+
+⚠️ **The real defect: PptxGenJS's `encodeXmlEntities()` only escapes `& < > " '` — it does NOT
+strip XML-1.0-illegal control characters**, and this module has never sanitized any user-typed
+text (project name, description, per-photo captions, trade/works/location) before handing it to
+`addText()`. A single stray control character — the kind a paste from WhatsApp, an OCR pass, a
+mobile keyboard, or a legacy DB value can carry invisibly — lands in the slide XML byte-for-byte.
+That is not well-formed XML, and PowerPoint's own strict parser refuses the **whole file**.
+
+⚠️ **Proven, not inferred.** Built a real browser test harness that generates an actual `.pptx`
+via the real CDN library, then re-opens the resulting Blob with JSZip and validates every
+package entry (`[Content_Types].xml`, `_rels/.rels`, every `ppt/slides/slideN.xml`, every
+`ppt/media/*` file's own binary signature) via `DOMParser`. A clean multi-slide/multi-image build
+— including a **real fetch→blob→canvas→toDataURL pipeline** matching `collectSlideImages()`
+exactly, and the literal reported filename (`…Dasmariñas…`) through the actual `writeFile()`
+download path — validated 100% clean: correct ZIP signature, well-formed XML throughout, every
+embedded image a valid JPEG. Embedding a single **U+000B (vertical tab)** into a title string,
+however, reproduced the failure exactly: `MALFORMED XML in ppt/slides/slide1.xml: … PCDATA
+invalid Char value 11`. This is the "before" side of the fix, measured against the real,
+currently-shipped code — not assumed.
+
+### Fix
+
+New **`sanitizePptxText(s)`** (module scope, beside `esc()`): strips the C0 control range
+(`\x00-\x08 \x0B \x0C \x0E-\x1F \x7F`) — keeping **tab/LF/CR**, the three control characters
+XML 1.0 actually permits — and separately drops any **unpaired UTF-16 surrogate** (no valid
+Unicode code point, no valid UTF-8 encoding — the identical failure class, one character short
+of a full emoji). Applied at every point `exportPptx()` hands text to PptxGenJS: the title-slide
+project name and description/date, each pane's caption block (`capLines` — capture date +
+caption + trade/works/location tags), the shared-location banner, and the download filename.
+
+⚠️ **Deliberately narrow.** It removes only bytes that cannot appear in valid XML text at all —
+never a printable character a real caption might use. Verified directly: sliced the **real,
+shipped** `sanitizePptxText` back out of the committed file (never retyped) and ran it against a
+clean-text regression set — the exact reported project name **"4PH Jab Greenwoods Dasmariñas"**
+(the accented ñ), emoji, café/naïve/Zürich accents, and literal tab/LF/CR — every one survived
+**byte-for-byte unchanged**. This directly satisfies the standing requirement that the printed/
+exported header text and every other existing behaviour (Internal/External type, its filter, the
+photo-markup toggle, zoom) must not regress; none of those were touched by this change at all —
+confirmed by diff, not just by not having edited those functions.
+
+Then re-ran the exact same U+000B fixture through the real, fixed pipeline: `ok: true`, 0
+notes, the slide's actual `<a:t>` text reading `"...Dasmarinas Tower 1"` — the illegal byte gone,
+everything else intact.
+
+### Answering the brief's specific questions
+
+- **PPTX generation, or download/blob handling?** Generation. There is no separate download step
+  to corrupt — `writeFile()` builds the complete Blob in memory (proven byte-identical to the
+  in-memory `write({outputType:'blob'})` build, confirmed by re-fetching from `writeFile()`'s own
+  object URL) and only then triggers the browser save.
+- **Library correctness?** PptxGenJS's own image/zip-writing code is correct for this use, so the
+  fix is in **our** call site (sanitizing text before it reaches `addText()`), not a library swap
+  or a rewrite of `exportPptx()`'s structure/design.
+- **Not a fake/renamed file.** The output is still a genuine OOXML package built by PptxGenJS +
+  JSZip; the fix changes what text goes INTO the same real pipeline, nothing about its output
+  format.
+
+### Verified
+
+No `node` binary is available in this environment (checked directly; this repo's own extensive
+`test.js` suite for this module needs it and could not be run this pass) — verification here is
+**live browser execution of the real, shipped code against the real, pinned PptxGenJS + JSZip
+libraries**, which for this specific class of bug (real XML well-formedness inside a real
+generated ZIP) is stronger evidence than a Node-side structural/regex check would have been.
+`node --check`-equivalent syntax validity is implied by the file loading and executing correctly
+in-browser throughout every test run. 0 other lines touched; `git diff --stat` shows exactly one
+file, +42/−5 lines, confined to `sanitizePptxText`'s declaration and its five call sites inside
+`exportPptx()`/`pptxPane()`.
+
+⚠️ **Not verified**: a real device/PowerPoint-Desktop open-and-save round-trip (this environment
+has no Windows PowerPoint to drive), and the HTML/PDF export paths were deliberately left
+untouched — a raw control character renders far more harmlessly inside HTML/DOM text content than
+inside strict OOXML XML, and neither export function was touched by this fix, so neither carries
+any risk from it either way. `ppr.js?v=` bumped `20260902f` → `20260903a` in `index.html`.
+
+## Twelfth feedback round: thumbnail-only picking, drone pin provenance, markup toolbar rework, key-plan overlay, click-to-open, zoom everywhere (2026-09-02)
+
+Owner's 12-item list for the Presentations screen + the shared markup editor. No migration —
+every column and table this touches already exists.
+
+⚠️ **This entry was rebased onto the "Eight-item owner feedback round" below (a separate,
+independently-landed round touching the same screens), and several of its items were reconciled
+against that round's later decisions rather than reapplied verbatim** — see the "Reconciled during
+rebase" note at the end of this entry for exactly what changed and why.
+
+1. **The "+Add Slide" photo picker now requests THUMBNAILS, not full-resolution images**, while
+   picking — `openThumbPicker` reads `thumbUrlOf(r)` (falling back to full-res only when a photo
+   predates the client-generated thumbnail column) instead of the full-size signed URL, matching
+   the "expanded view only" rule this module already applies everywhere else a photo is browsed
+   rather than examined.
+2. ⚠️ **Superseded by the later Eight-item round's own item 9** — that round shortened the
+   back-button label from "← Back to list" to a bare "Back" (the arrow icon already carries the
+   direction). This item's original ask ("← Back to list") is kept only in spirit — the button
+   still sits as a quiet breadcrumb link beside the screen tabs; the exact wording follows the
+   later, more recent decision.
+3. **Key-plan pin icon on the floor-plan view**: the photo/person pin shrank; a drone-sourced pin
+   now gets its own distinct icon (`drone` — a small quadcopter body with four rotor-ringed arms,
+   new in the shared `assets/js/icons.js`, recognisable even at pin-marker size rather than reusing
+   a generic gadget glyph) and a soft **gradient halo three times the icon's size** around it, so a
+   drone-sourced photo is identifiable on the plan at a glance without opening it.
+4. **The camera-angle drag handle moved slightly closer to the pin** on the key-plan marker — it
+   was sitting far enough out to read as a second, unrelated control; tightened the offset so the
+   pin+handle read as one widget.
+5. **Presentation-view delete button now turns white (not grey) on hover** — it sits on the same
+   dark scrim every other pane corner-overlay button uses, and grey-on-dark read as disabled.
+6. **The lightbox's markup show/hide toggle was broken — fixed.** It was silently defaulting to
+   the wrong CSS `display` value on toggle (`''` instead of `'block'` on the canvas, so an empty
+   string computed to the element's own default `inline`, which never actually painted the
+   overlay in the position the rest of the layout expects); it now explicitly sets `'block'`.
+
+### Items 7–10 — the presentation pane rebuilt around the photo's OWN markup, a real key plan, and zoom
+
+⚠️ **Item 7 retires a whole editing feature, not just a toggle.** The pane's per-photo
+"add presentation markup" button (`ppr-mkedit-<which>`, backed by the separate `ppr_slide_markups`
+table — a presentation-only overlay distinct from the photo's own permanent
+`progress_photos.markup`) is **gone**. In its place, each pane carries a plain **view/hide toggle**
+over the photo's own real markup — the same array the Gallery lightbox already draws from — reading
+and writing the **one shared, persisted preference** through `photoMarkupVisible()`/
+`setPhotoMarkupVisible()`, which proxy `ProgressPhotos.markupGlobalVisible()`/
+`setMarkupGlobalVisible()` (the same flag every tile and the lightbox already use). Hiding markup
+here hides it everywhere; there's nothing pane-local left to lose on a re-render. ⚠️ **There is no
+per-pane toggle BUTTON at all** — only the header-level `#ppr-photomk-toggle` (wired in
+`wirePresActs`) controls the shared preference; `pane()` itself only decides whether to draw the
+photo-markup canvas (`ppr-photomkcanvas-<which>`), never a control to click.
+- ⚠️ **`ppr_slide_markups`'s superseded machinery (`showMarkup`, `markupCache`, `markupRowId`,
+  `markupTableMissing`, `T_MARKUP`, `markupKey`, `markupFor`, `saveSlideMarkup`) is left in
+  place, retired-in-place** — this module's established convention for a design a later round
+  supersedes, not silently deleted. `load()`'s fetch of that table is a technically wasted
+  round-trip now; touching it was out of scope for this round and left alone deliberately.
+
+**Item 8 — the key plan is now the real bim.js pin+cone system** (position + camera direction),
+not the old flat reference-image toggle. `keyPlanInfoForPane(photoId)` resolves
+`BIM.pinInfoFor('photo', photoId)` into `{pin, planUrl, aspect}` — `aspect` is the plan's own true
+`width_px/height_px` ratio when known, falling back to a plain 4:3 box otherwise, never a
+divide-by-zero/NaN (a zero-height plan is treated as "unknown" too). The overlay box's inline CSS
+`aspect-ratio` is set to that value, paired with `object-fit: contain` on the plan image — when the
+two agree, the pin's percentage-based position lands pixel-exact with no letterboxing or distortion.
+- **Resizable by dragging the overlay's bottom-left corner** (`wireKpResizeDrag`): the box is
+  pinned `top:8px;right:8px`, so only its WIDTH needs to change (the CSS `aspect-ratio` keeps
+  height following automatically) — dragging left grows it, dragging right shrinks it, and the
+  top-right corner never moves. Defaults to 10% of the pane (`KP_OVERLAY_DEFAULT`), clamped
+  6%–60% (`KP_OVERLAY_MIN`/`MAX`).
+- **A legacy fallback (`keyPlanPathFor`, the old flat `key_plan_url`) renders a plain, pin-less
+  picture** for a photo captured before bim.js's pin system existed — no pin data means no cone to
+  draw, so it degrades to what it always showed rather than throwing or hiding the overlay entirely.
+- Draws the marker via `BIM.keyPlanMarkerHTML(pin)` — the exact same pin+cone markup the Plans
+  tab's own full view uses, never a second, re-derived drawing.
+- ⚠️ **Gated by the SINGLE header `showKeyPlan` flag** (item 11's own design, from the Eight-item
+  round's ancestor round — see reconciliation note below), never a per-pane open state: `kpOpen =
+  showKeyPlan && (kpInfo || kpLegacyPath)`.
+
+**Item 9 — clicking a pane's photo opens the ordinary lightbox.** The `<img>` carries
+`data-openphoto="<id>"`, wired in `wirePaneMarkup` to `ProgressPhotos.openPhotoById(this.dataset.
+openphoto)` — the same guarded function the audit-fixed Plan/Stack views already use (checks the
+full photo library, toasts and bails on a miss, never silently falls back to index 0 the way a raw
+`openLightbox(id)` against a filtered list would). ⚠️ **Bound to the `<img>` itself, never the
+wrapping `.ppr-imgwrap`** — the corner tool buttons (markup canvas/key-plan overlay/zoom) are
+siblings of the image, not descendants of it, so a click on one of them can never bubble into this
+handler.
+
+**Item 10 — zoom in/out on every photo viewer surface**:
+- **Lightbox**: new `#pp-lb-zoomout`/`#pp-lb-zoomin` buttons (new `zoomOut`/`zoomIn` icons), placed
+  between Download and the markup-EDIT button in the left tool cluster (the markup SHOW/HIDE toggle
+  lives in the separate right-hand cluster beside Key Plan — see the Eight-item round's item 6).
+  `lightboxZoom` resets to 1 as the FIRST thing `paintLightbox()` does — **before**
+  `paintMarkupOverlay()` ever measures the image's bounding rect via `getBoundingClientRect()`,
+  since that measurement reflects any active CSS transform at the moment it runs; measuring under a
+  stale non-1 zoom would size the canvas wrong. `applyLightboxZoom()` applies an identical
+  `transform: scale(z)` to the `<img>`/`<video>` AND the markup `<canvas>` so the two stay
+  pixel-aligned at any zoom with no canvas resize/redraw.
+- **Presentation panes**: `applyPaneZoom(which)` does the same thing for `.ppr-img`/
+  `.ppr-photomkcanvas-<which>` (the photo's own markup canvas — there is no per-pane slide-only
+  canvas any more, see item 7 above), reset to 1 on every slide prev/next. Both surfaces clamp
+  1×–3× in 0.25 steps and disable the respective button at each boundary.
+- ⚠️ `.ppr-imgwrap`/`.pp-lb-imgwrap` both gained `overflow: hidden` so a zoomed image can never
+  spill outside its frame; both media elements and the lightbox's markup overlay share the same
+  `transform-origin: center center` so scaling grows from the frame's centre, not a corner.
+
+### Reconciled during rebase (2026-09-02)
+
+This entry's commit was rebased onto `origin/main` after the Eight-item round below had already
+merged there — the two rounds turned out to overlap on exactly the two features items 7 and 8 touch,
+and reconciling them (rather than force-applying this round's diff verbatim) surfaced one genuine
+defect:
+
+⚠️ **A real duplicate-mechanism bug, caught by reading the auto-merged `pane()` function, not
+flagged by git.** This round's own `mk`/`mkVisible`/per-pane `ppr-mktoggle-<which>` toggle button/
+`ppr-mkcanvas-<which>` canvas (reading `ph.markup` via a plain session-only flag) had textually
+auto-merged cleanly alongside the Eight-item round's OWN, separately-built `photoMk`/
+`photoMkVisible`/`#ppr-photomk-toggle`/`ppr-photomkcanvas-<which>` mechanism — reading the **same**
+`ph.markup` field, just through the shared, persisted `markupGlobalVisible()` preference instead.
+Both mechanisms would have painted the same markup TWICE via two independent, competing toggle
+controls, since the two edits sat on non-overlapping lines and git's 3-way merge had no reason to
+flag them as conflicting. Resolved by dropping this round's duplicate entirely and upgrading the
+Eight-item round's own mechanism with two small proxy functions — `photoMarkupVisible()`/
+`setPhotoMarkupVisible()` — so this round's item 7 requirement ("persist the setting") is met
+without a second markup mechanism ever existing.
+
+⚠️ **Item 11's per-pane `keyPlanOpenPane` state (from the Eight-item round's own ancestor) was
+already retired there in favour of one shared `showKeyPlan` header flag** — this round's key-plan
+work (item 8) is gated on that same single flag (`kpOpen = showKeyPlan && (kpInfo || kpLegacyPath)`),
+never a reintroduced per-pane open state. A new `_setShowKeyPlan`/`_getShowKeyPlan` test hook was
+added (replacing a `_setKeyPlanOpenPane` hook this round had originally written against the retired
+per-pane map) so the overlay's open/closed behaviour can still be genuinely executed in tests.
+
+**Verified after reconciliation: 924 checks green, 6 pre-existing failures** (confirmed unchanged
+against a clean `origin/main` checkout via a scratch git worktree, before this round's rebase touched
+anything — `pane() reads each photo's own trade/works/location`, `every #fff use sits under a
+documented fixed-colour selector`, `Clear filters does NOT reset the archived toggle`, `insert uses
+.select() to return the id`, `the presentation row is created inside finish()`, and the Report Type
+`<select>` default — none touched by this round, none introduced by the rebase). Every assertion this
+round's own section touches was rewritten to genuinely execute against the reconciled source (via
+`_keyPlanInfoForPane`/`_paneHTML`/`_setPaneZoom`/`_getPaneZoom`/`_applyPaneZoom`/`_setShowKeyPlan`)
+rather than left asserting the pre-reconciliation shape, and one further real bug in the SUITE itself
+(not the app) was found and fixed while doing so — a stale `!/\.pp-lb-tool-labeled/` substring check
+that tripped on this file's own explanatory prose mentioning the retired class name, narrowed to
+match a real CSS rule declaration instead. `node --check` clean on every touched JS file; 0 NUL
+bytes; CSS braces balanced (538/538); 0 duplicate DOM ids (91 unique).
+
+⚠️ **Not verified signed in** — the standing caveat for this whole module. In particular: the real
+drag-to-resize gesture on the key-plan overlay, the actual pointer-driven zoom buttons against a
+live rendered pane/lightbox, and the drone-pin halo's real visual appearance on a real floor plan
+are all verified by genuine execution of the underlying render/state functions and by structural
+source checks, not by driving a live browser session.
+
+`module.css`/`module.js` → `?v=20260902a` (unchanged by this round's reconciliation); `ppr.js` →
+`?v=20260902f`; `bim.js` → `?v=20260902b` (both bumped fresh, since their reconciled content differs
+from what either round alone shipped); `assets/js/icons.js` (new `zoomIn`/`zoomOut`/`drone` icons,
+shared app-wide) → `?v=20260902f` across all 20 referencing pages.
+
+## Eight-item owner feedback round: delete + presentation-usage warning, icon-only
+## batch actions, additive archive filter, full-res-on-first-open fix, icon-only
+## markup/adjust, key-plan toggles moved beside close, pin+cone always drawn on
+## the key-plan overlay, a denser filter panel (2026-09-02)
+
+### Item 1 — batch delete, and a warning when a photo is cited by a presentation
+
+Single-photo delete already existed (the lightbox's Delete button); there was no
+way to delete more than one at a time. A **Delete** button joins Download/Add to
+Presentation/Archive in the selection toolbar, and both the single and batch
+paths now go through one shared **`openDeleteConfirm(ids)`** — `remove(r)` is a
+thin wrapper over it, so the two can never disagree about what gets checked or
+cleaned up.
+
+- **`findPresentationUsage(ids)`** runs two plain `.in()` reads against
+  `ppr_slides` (`before_photo_id`/`after_photo_id`) rather than one `.or()`
+  filter string — the ids are plain UUIDs with nothing to escape, so a second
+  query is simpler than getting PostgREST's `or()` delimiters right for no
+  benefit. ⚠️ **Best-effort, wrapped in try/catch** — a failed usage check must
+  never block a delete the planner already confirmed.
+- The confirm modal shows a `.pp-delwarn` line naming how many of the photos
+  being deleted are cited by how many presentations, when any are. ⚠️ It's a
+  **warning, not a block** — the FK is `on delete set null` (ppr.js), so the
+  slide survives with an empty frame; the warning just makes that consequence
+  visible before it happens instead of after.
+- Batch delete is scoped to real photos only (same reasoning as the existing
+  Download/Add to Presentation splits — a 360°/3D pseudo-row has no row in
+  `progress_photos` to delete), and clears deleted ids out of `selected`.
+
+### Item 2 — icon-only batch actions
+
+Download/Add to Presentation/Archive were labelled text buttons
+(`+ pp-tb-labeled`); all four (Delete included) are icon-only now, each
+carrying its label as a `title` tooltip — matching every other icon button in
+this module's topbar. New **`archive`** glyph added to the shared `icons.js`
+(a box with a lid); `layers`/`download`/`trash` are reused for the other three.
+
+### Item 3 — "Show archived" is additive, not either/or
+
+`matchesFilters` used to require `r.archived === filters.archived` exactly, so
+checking "Show archived" **swapped** the view to archived-only instead of
+adding to it. Now: `if (!filters.archived && r.archived) return false;` —
+unchecked hides archived (the normal, tidy view); checked shows **both**
+archived and unarchived together. Scoped to the Gallery's own toggle only; the
+Presentations list keeps its separate either/or "Show archived" filter
+unchanged (a different screen, not part of this ask).
+
+### Item 4 — full resolution only showed up on the SECOND open
+
+⚠️ **Real bug, not a loading-speed illusion.** `paintLightbox()`'s async
+full-res swap-in was guarded by `byId(lightboxIds[lightboxAt]) !== r` — OBJECT
+IDENTITY, not id. If `rows` gets a fresh object for the same photo between
+opening the lightbox and the sign request resolving (e.g. a realtime UPDATE
+echo replaces `rows[j]` with a new record — see `applyRemoteChange`), the guard
+wrongly read "the lightbox moved on" and silently dropped the swap — the tile
+kept showing the thumbnail stand-in until the photo was **reopened**, by which
+point `ensureFullUrl`'s cache already had the signed URL, so the second open
+"worked". Fixed by comparing the id the lightbox is currently pointed at
+(`lightboxIds[lightboxAt] !== openedId`) instead of object identity — the
+correct meaning of "has the lightbox moved on to a different photo", and
+robust to `rows` being replaced for the photo still being viewed.
+
+### Item 5 — Markup/Adjust go back to icon-only in the lightbox
+
+Reverses the 2026-08-29 "Item 12 follow-up" label. `#pp-lb-markupedit`/
+`#pp-lb-adjustedit` drop their `pp-lb-tool-labeled` class and `<span>Markup</
+span>`/`<span>Adjust</span>` text — icon + `title` tooltip only, matching every
+other lightbox tool. The now-unused `.pp-lb-tool-labeled` CSS rule is removed
+rather than left as dead weight.
+
+### Item 6 — Key Plan / Markup toggles move to their own cluster, left of Close
+
+A new **`.pp-lb-tools-right`** cluster (`#pp-lb-keyplan`, `#pp-lb-markuptoggle`)
+sits on the right side of the lightbox, offset 62px from the edge — enough to
+clear the close button (38px + 16px right + an 8px gap on desktop; 44px + 10px
++ 8px on the mobile close button size lands on the same figure, so one rule
+serves both breakpoints, with only `top` overridden to match the mobile safe-
+area offset). Download/Markup-edit/Adjust/Edit/Delete stay in the original
+left-hand `.pp-lb-tools` cluster.
+
+### Item 7 — the key-plan overlay always shows the pin and, when recorded, the
+### camera-facing cone
+
+⚠️ Previously the overlay was a bare `<img>` of the whole floor plan — it
+answered "which floor" but never "where on it, facing which way". It's now a
+small stage (`.pp-lb-kpoverlay` as a `<div>` holding an `<img>` + a pin dot +
+a direction cone), positioned from the resolved pin's own `x_norm`/`y_norm` —
+scaled-down copies of bim.js's own `.bim-pin`/`.bim-pincone` (that stage is
+sized for the full Plans-tab view; this corner overlay is 1/8-photo-width).
+- The pin colour follows `pin.item_type` (photo/panorama/reconstruction), same
+  three-way palette bim.js's own marker uses.
+- The cone is drawn **only** when a direction was actually recorded and the
+  item isn't marked drone/top-view (`direction_na`) — a fabricated cone would
+  claim a facing direction nobody captured.
+- `lightboxKeyPlanVisible` still resets to `false` on every `paintLightbox()`
+  call, so stepping ←/→ never carries a previous photo's overlay onto the next.
+
+### Item 8 — filter panel: bare hint text, denser and more minimalist
+
+- Trade/Works/each Location-Breakdown-level select's blank option and title
+  dropped the "Filter by " prefix — now just "Trade" / "Works" / the level's
+  own name (e.g. "Tower", "Level", "Zone"). Sitting inside the filter panel
+  already implies "filter by"; repeating it on every control was noise.
+- `.pp-filters` panel: padding 8px 12px → 6px 10px, gap 8px → 6px; controls
+  34px/13px → 30px/12px; date fields 145px/12px → 128px/11.5px; Clear-filters
+  and "Show archived" match the same reduced density (scoped to `.pp-filters
+  .ppr-allloc`, since `.ppr-allloc` is also a block label elsewhere and wasn't
+  redefined globally).
+
+### Verified
+
+**872 checks green** (was 853 before this round — 19 new, several updated in
+place where they encoded the exact behaviour this round deliberately reverses
+or replaces, e.g. the either/or archived filter, the labelled markup/adjust
+buttons, the bare `<img>` key-plan overlay, the four vs. five selection-toolbar
+ids). `node --check` clean on `module.js`/`test.js`/`icons.js`; 0 NUL bytes; CSS
+braces balanced (527/527); 0 duplicate DOM ids; a function-set diff against the
+prior commit shows **0 functions lost**, 2 intentional additions
+(`findPresentationUsage`, `openDeleteConfirm`).
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this
+file. In particular: the presentation-usage warning's real query against
+`ppr_slides`, the delete flow's actual storage cleanup, and the id-based
+lightbox guard's fix (which depends on a realtime UPDATE echo or similar
+`rows`-replacement timing to reproduce the original bug) are all verified by
+reading/structural checks, not by driving a live browser session.
+
+`module.css/js` → `?v=20260902a`. `assets/js/icons.js` → `?v=20260902e`
+(app-wide, 20 files — new `archive` glyph).
+
 ## Item 7 (11-item round) — 360° viewer smoothness: a real leaked `window` listener,
 ## and drag rendering with no requestAnimationFrame coalescing (2026-09-01)
 
@@ -444,6 +821,34 @@ speeds, or the person/drone icon rendering in an actual browser DOM.
 `assets/js/icons.js` → `?v=20260901b` (bumped across all 20 referencing HTML files —
 shared asset). `bim.js` → `?v=20260901c` (module-local; `module.css/js`/`ppr.js` stay at
 their existing `?v=20260901a` from this same day's earlier turns, unchanged by this entry).
+## "+ Add media" dropdown reopened permanently on every page load — the SAME `[hidden]`-vs-CSS-`display` trap as `.pp-selbar` (2026-09-02)
+
+Found independently via a headless audit pass (mocked-Supabase Playwright harness rendering the
+real, unmodified module — no live report). Screenshot at 1440×900 showed the Photo/Video/360°/3D
+dropdown sitting open on top of the empty-state card the instant the page loaded, with no click.
+
+⚠️ **Exactly the bug class this file's own 2026-08-29 entry already fixed once, for a different
+element.** `#pp-addmenu` carries `hidden` in the static markup and the JS toggle (`menu.hidden =
+!menu.hidden`) correctly flips the DOM attribute — confirmed by reading `wireAdd`'s click handler
+before touching anything. But `.pp-addmenu { ...; display: flex; ... }` in `module.css` sat at the
+**same specificity** as the browser's own `[hidden] { display: none }` user-agent rule, and an
+author stylesheet rule always wins over a UA rule at equal specificity — so the attribute was being
+silently overridden and the menu rendered permanently visible regardless of its `hidden` state.
+Measured directly: `el.hidden === true` and `el.hasAttribute('hidden') === true`, yet
+`getComputedStyle(el).display === 'flex'` with a real, non-zero on-screen rect. Fix drafted:
+`.pp-addmenu[hidden] { display: none; }`, the identical shape `.pp-selbar`'s own fix used.
+
+⚠️ **Superseded by a concurrent session, discovered while rebasing this branch onto `main`.**
+`main` had already landed the identical rule (`.pp-addmenu[hidden] { display: none; }`) in commit
+`97c7435` ("Progress Photos: 11-item feedback round complete"), independently of this branch — the
+2026-09-02 "Owner-reported round 2 item 1" comment above this rule in `module.css` is that other
+session's own writeup of the same specificity trap. So this entry records that the bug was real and
+was found and diagnosed here too, not that this branch's own patch is what shipped it — the code
+change itself carried no diff once rebased onto `main`, since `main` already had the fix.
+
+⚠️ **Not verified signed in** — found and diagnosed under a mocked Supabase backend; the underlying
+cause is pure CSS specificity, independent of any data, so the same fix applies identically to a
+real session (and, per the above, was already live via the other session's own commit).
 
 ## Six-item owner feedback round: old-photo thumbnail backfill, tile size, tab
 ## labels, "Add Text" fixed + formatting, Add-media dropdown leak, back-button

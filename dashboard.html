@@ -358,8 +358,8 @@
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260901a"></script>
   <script src="assets/js/ui.js?v=20260902a"></script>
-  <script src="assets/js/icons.js?v=20260901b"></script>
-  <script src="assets/js/modules-grid.js?v=20260902t"></script>
+  <script src="assets/js/icons.js?v=20260902f"></script>
+  <script src="assets/js/modules-grid.js?v=20260902ai"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -773,7 +773,7 @@
             'Load it in <b>Project Schedule → Cost Loading</b>, or read the duration curve in <b>S-Curve</b>.'
           : c && c.noEngine
             ? 'The curve engine did not load on this page.'
-            : 'No dated activities yet, so there is nothing to plot. Push a programme from <b>Schedule Builder</b>, ' +
+            : 'No dated activities yet, so there is nothing to plot. Push a programme from <b>Schedule Setup</b>, ' +
               'or set start and finish dates on the activities.';
         return vizEmpty('viz-scurve', 'S-Curve', why);
       }
@@ -949,7 +949,7 @@
       var sch = MET['project-schedule'] || {}, rowsPv = sch.program || [];
       rowsPv = rowsPv.filter(function (r) { return r.from && r.to; });
       if (!rowsPv.length) return vizEmpty('viz-program', 'Project Schedule & Milestones',
-        'No dated activities with a trade yet. Push a programme from Schedule Builder, or set the Trade on the activities.');
+        'No dated activities with a trade yet. Push a programme from Schedule Setup, or set the Trade on the activities.');
       var min = null, max = null;
       rowsPv.forEach(function (r) { if (!min || r.from < min) min = r.from; if (!max || r.to > max) max = r.to; });
       var span = Math.max(1, _days(min, max));

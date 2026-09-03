@@ -1,3 +1,781 @@
+## The scrub is smooth, and the trade colours were painting BLACK (2026-09-02) — fmlozano
+
+Owner, two reports on the focus window: *"can you make the progress bar smoother, it has fps drop
+whenever i drag the progress bar, it results into lagging"* and *"how come the colors of the trades
+vanish when put into the full screen. it just turns into black."*
+
+### ⚠️⚠️ The black cells were a REAL bug, and NOT a full-screen one
+
+`--ps-vs-scrim` / `--ps-vs-veil` / `--ps-vs-edge` are declared on `.ps-vstack`. `UI.modal` appends its
+overlay to **`document.body`**, so inside the focus window all three were **undefined**. An undefined
+`var()` is the guaranteed-invalid value → the property becomes `unset` → **`fill` is inherited** →
+**black**. So the remaining-work layer painted solid black over the trade colour at full opacity, and
+the hatch's `stroke` resolved to `none`, so there was not even a texture left to see through.
+
+⚠️ **It has been true in every mode since the focus window shipped** — full screen is simply where a
+mostly-unstarted building is big enough to notice. Re-reading the owner's very first screenshot of
+this window confirms it: the PLANNED pane (100% done, so the clean-colour layer covers the cell) was
+red, and the ACTUAL pane (0% done, so nothing covers the scrim) was **black**. I read that at the time
+as "0% is a dim tone" and it was not.
+
+⚠️ **The module already knew about this trap and I did not join the dots**: `_vsExportPDF` re-declares
+the same three tokens for its print window, with a comment saying the cloned buildings would otherwise
+lose them. The focus window clones buildings into exactly the same situation.
+
+**Fixed in two places on purpose.** The svg now emits `var(--ps-vs-scrim, <light value>)` and the same
+for the veil and the edge — so a clone into **any** container can never paint black again, which is
+the durable fix and costs the main view nothing (the token is defined there, so the fallback never
+applies). And the tokens are re-declared on `.ps-vs-focus-modal` in both themes, so dark mode gets the
+dark values rather than the light fallback.
+
+### The scrub: two speeds, because one of them cannot be fast
+
+⚠️⚠️ The first cut called the **full builder on every rAF**: it rewrote the whole modal's `innerHTML`,
+re-derived both buildings through `_vsTowerSVG`, re-parsed thousands of SVG nodes and re-bound every
+handler — 60 times a second, on a tower that can hold 2,500 activities. It also **destroyed the
+scrubber track the pointer was on**, every frame. That is not a budget anything can meet.
+
+⚠️ **Re-deriving a building cannot be a 16ms job at that size, so the fix is not to make it faster —
+it is to stop the buildings gating the CONTROL.**
+- **Chrome** (handle, fill, date label, the footer bar and its plan tick, the Vs-plan metric, the Live
+  state) is **style and text writes only**, on one rAF, always glued to the pointer. Everything it
+  touches was given a stable id for that reason, and the Vs-plan metric is now always emitted and
+  hidden rather than created and destroyed — a metric that has to be built cannot be a style write.
+- **Buildings** repaint on an **adaptive budget measured from how long the last repaint actually
+  took** (clamped 90–600ms), so a small trade looks continuous and a huge one steps rather than
+  seizing. ⚠️ Measured, never a fixed interval: a fixed 100ms is far too slow for a 6-floor trade and
+  still far too fast for a 14-floor × 6-zone one.
+- ⚠️ **A trailing repaint always lands on pointerup**, because the budget can legitimately swallow the
+  last few moves and wherever the drag stopped must be what you end up looking at.
+
+⚠️ **`paint()` swaps ONE NODE PER PANE** (`canvas.replaceChild`) instead of rebuilding the modal. The
+viewport listeners are bound to the viewport, not the svg, so they survive; the scrubber, the header
+and every button are the same elements throughout a drag — asserted.
+
+⚠️ **The cost is measured AROUND the call, not taken from a figure `paint` reports about itself** —
+caught by the suite, which stubbed an expensive paint and watched the budget stay at 1ms. A budget
+that trusts the thing it is budgeting can be told anything, and the whole scheme is only as honest as
+that number.
+
+⚠️ **`build(true)` and `_vsFocus.rebuild` are DELETED, not left beside the new path.** `paint()` now
+owns the keep-the-view repaint and does it far more cheaply; a second, far more expensive path that
+nothing calls is rot that someone will later "restore".
+
+**Verified: 29 checks in Node + 86 in a real browser** (was 29 + 67), executing the shipped functions.
+New: the scrim resolving to a translucent colour rather than black **in both themes**, the cell outline
+likewise, and a probe proving the svg's own fallback holds with the declarations stripped; a 24-move
+drag against a **deliberately 45ms-per-repaint** tower giving **24 of 24 distinct handle positions** at
+a fraction of that many repaints, the handle and the fill written from one number, the trailing repaint
+landing, the budget measured from a real repaint and clamped, and the track/handle/controls being the
+**same elements** after a repaint. **0 functions lost, 3 added**; parses; 0 NUL bytes; braces balanced.
+
+⚠️ **The honest limit, stated because the owner should not expect otherwise:** on a very large tower
+the *buildings* will still step while you drag — re-deriving thousands of activities in 16ms is not
+possible without a targeted per-cell patcher, which is a much larger change to `_vsTowerSVG`. What is
+fixed is that the handle, the date and the bar no longer wait for them.
+
+⚠️ **Not verified signed in** — the towers under test come from a stub shaped like `_vsTowerSVG`'s
+output, so neither the real repaint cost nor the real colours have been seen over live rows.
+`MODULE_V` → `20260902ah`.
+
+## Focus window round 2: the zoom is crisp, the bar drags, and it goes full screen (2026-09-02) — fmlozano
+
+Owner, on the shipped focus window: *"the quality is too low, and can you enlargen the divider between
+the planned and actual. now also the progress bar below should be working or has a dragger. In
+addition, is there an option where you can full screen. so it is better for the eye."* Four items, and
+the first was a genuine defect rather than a preference.
+
+**⚠️⚠️ "The quality is too low" was CSS `transform: scale()` stretching a bitmap, and it was mine.**
+The canvas was promoted to its own compositing layer and rasterised at 1:1; a transform scale then
+blows that raster up, so at the owner's 180% every zone date and every stroke was a magnified 1x
+image. The zoom is now the **svg's own `width`/`height`** (the viewBox is untouched, so the content
+re-renders as vector at the new size) and the transform carries **translate only**. Text is as sharp
+at 400% as at 100%, which is the entire reason this view is SVG and not canvas. ⚠️ Pan stays a
+transform — translate never rasterises at the wrong resolution, and moving a laid-out element every
+frame is what keeps the drag smooth. Asserted both ways: the svg's width triples with the zoom, and
+the transform string contains no `scale(`.
+
+**The divider is a real 16px gutter** with a centre rule and a grip, not the 1px border it was — at
+one pixel the two buildings read as one wide picture, which defeats the split. ⚠️ **Decorative, NOT
+draggable, deliberately:** the shared transform is only truthful while the panes are equal width (one
+fit measurement is true of both). Let someone drag it and the two windows show different portions of
+their buildings while still claiming to be synced — a silent wrong answer, which is worse than a
+fixed split. It rotates to a horizontal rule when the panes stack on a phone.
+
+**The frozen row's progress bar is now a scrubber** — a handle, month/year ticks, the data date
+marked, ‹ › month steps and **Live**. Dragging it re-reads both buildings at that date.
+⚠️⚠️ **MODELLED, NOT REPLAYED**, and the label says so: the database keeps ONE `percent_complete` per
+activity — today's — so a scrubbed cell answers *"what is scheduled to be done by this date"*, never
+*"what was done"*. A building filling up as you drag looks exactly like recorded history. Same rule
+and same wording as the main view's own time bar.
+- ⚠️ **The axis is measured at the ACTUAL basis whatever the panes show.** In compare mode the two
+  panes have two different spans (baseline vs current), and a scrubber whose axis flipped with the
+  pane would put the same date in two different places on the same track.
+- ⚠️ **A scrub keeps the zoom, the pan and the hovered zone** — it must move the progress, not throw
+  away where the planner had navigated to. `hoverKey` is forced to `undefined` before re-marking, or
+  `_vsFocusHover`'s own same-key guard skips the freshly rebuilt svgs and the outline vanishes.
+- ⚠️ **The drag captures the track's rect at pointerdown.** The track is replaced by every repaint, so
+  anything measured per-move against the live element jumps the instant the first frame lands.
+- ⚠️ **`_vsAsOf` is module-level, so the stack underneath goes stale the moment it moves.** It is
+  re-rendered **once, on close** rather than per frame: the main stack is every tower at every trade,
+  and repainting it behind a modal nobody can see through is work paid for by a planner scrubbing one
+  building.
+
+**⚠️⚠️ A REAL DEFECT THE BROWSER RUN FOUND AND READING DID NOT: the bar under the buildings did not
+move with them.** The footer read `_vsPct` — the raw recorded figure, which ignores the scrubber — so
+the frozen row went on reporting today's percentage while the towers above it re-read at the scrubbed
+date. A summary contradicting the cells it summarises, which is the exact trap this module's log
+already records once. It reads `_vsProgress` now — the same function the towers are drawn from, so
+the two cannot disagree. ⚠️ And while scrubbed the planned tick and the **pp** figure are **withheld**
+rather than computed anyway: "scheduled by this date" against "planned by the data date" are two
+different questions, and a variance between them is a number that means nothing.
+
+**Full screen** on the header. ⚠️ **Two mechanisms, and both are needed.** The Fullscreen API is
+requested on the **modal box**, so the overlay's dimming does not travel with it — hence the box
+paints its own edge-to-edge geometry under `:fullscreen`. And a context that refuses the API (an
+iframe, a permissions-policy) must still get the benefit, so an in-page `.is-maxed` class does the
+same thing as the fallback. ⚠️ The button's lit state is written from **what actually happened**,
+never from intent, and the panes have changed size so the fit is re-run on the frame after the box
+settles. ⚠️ Closing the modal exits full screen, or the page is stranded in it.
+
+**Verified: 29 checks in Node + 67 in a real browser** (was 26 + 39), both executing the SHIPPED
+functions sliced out of `index.html`, never reimplemented. New coverage: the svg resizing with the
+zoom while the transform stays scale-free, the divider's width and that it sits **between** the panes
+(and that there is exactly one, never a leading one), the handle's grab cursor, the scrubber living
+inside the frozen row, a real drag setting the date and re-reading both the buildings and the bar,
+the zoom/pan surviving a scrub, Live restoring, and full screen filling the viewport through the
+fallback path with the frozen row still on screen. **0 functions lost**; parses; 0 NUL bytes; CSS
+braces balanced; every new class has an emitter.
+
+⚠️ **Not verified signed in** — the buildings under test come from a stub with the shape
+`_vsTowerSVG` emits, so nothing here has been driven over live rows. ⚠️ **The real Fullscreen API
+path is untested**: the harness forces the fallback, because a headless run cannot grant fullscreen
+from a synthetic click. `MODULE_V` → `20260902ag`.
+
+## Vertical stacking: expand a tower into a focus window, and put planned beside actual (2026-09-02) — fmlozano
+
+Owner: *"for this vertical stacking view, is there a way or can you make it more visually pleasing and
+appealing? or can you add an expand view wherein it would focus on that tower itself and then have a
+progress bar on the bottom. sort of like a pop up window. and then users are able to use mouse
+controls like scrollbar to zoom in and out, and then there is a hand cursor to pan if the tower is
+zoomed in. next there could be an option wherein for a specific trade, there is a tower on the left
+portraying the planned and the tower on the right portraying the actual. now for example if i hover
+something on the planned or panned something on the left (planned) it should also updated the right
+window (actual) and then the progress bar is still shown below, like a frozen row."*
+
+**Every tower card gains an expand button** (hover, or keyboard focus) that opens a focus window:
+the building alone, **scroll to zoom · drag to pan · double-click to fit**, a **Planned vs Actual,
+side by side** toggle, and a **frozen row** across the bottom carrying the activity count, the span,
+the variance in points, an actual-vs-planned progress bar and a live readout of whatever zone the
+pointer is over.
+
+**⚠️ THE TWO PANES SHARE ONE TRANSFORM STATE — "synced" is structural, not two states kept in step.**
+`_vsFocus` holds a single `{z, px, py}` and every pane's canvas is written from it, so there is
+nothing that *can* drift. The hover is the same shape: one `hoverKey`, marked in every pane.
+
+⚠️ **Panning is a transform, never `scrollLeft`.** Two scrollers in two panes cannot be held
+identical — their maximum scroll differs with their content width — and the moment they diverge the
+comparison is silently wrong: two floors side by side that are not the same floor. `overflow:hidden`
+plus `touch-action:none` on the viewport, or a finger drag scrolls the modal instead of the building.
+
+⚠️ **Both buildings come from the SAME `_vsTowerSVG` the cards use**, with `_vsBasis` swapped around
+the call and restored in a `finally`. A second renderer for the modal would be a second thing to keep
+in step with the view it was opened from, and the first divergence would be a focus window that
+disagrees with the card behind it. `_vsCells` and `_vsHatchSeen` are module-level accumulators that
+function writes into, so both are snapshotted and restored — a modal build must not leave the main
+view's cell map describing a basis the main view is not drawing.
+
+⚠️⚠️ **A REAL DEFECT THE BROWSER RUN FOUND AND READING DID NOT.** The first cut gave each pane its own
+key prefix (`…|FZ0`, `…|FZ1`), to keep the two builds' cell maps apart. A cell key is
+`prefix|level|zone` and the hover sync finds the twin zone by **comparing keys across panes** — so a
+per-pane prefix made every key unique to its own pane and **the two windows silently stopped
+following each other**, which is the one thing the split view exists to do. Measured: 1 of 2 panes
+marked on hover. They could never have collided anyway — `_vsFocusBuild` gives each build its own
+`_vsCells`. One prefix now, asserted.
+
+⚠️ **Zoom anchors at the pointer** (`px = cx − (cx − px)·nz/z`): without it, zooming in on the 14th
+floor walks you back to the ground. ⚠️ **The floor is 0.05, not 1** — a tall building in a short pane
+must shrink well below 100%, and a "Fit" that cannot shrink fits nothing. ⚠️ The wheel listener is
+**non-passive**, or `preventDefault` is ignored and the page scrolls behind the modal instead of the
+building zooming — i.e. the scroll-to-zoom the owner asked for would do nothing. ⚠️ `deltaMode` is
+normalised, or one Firefox notch zooms ~16× a Chrome one. ⚠️ `setPointerCapture`, so a drag survives
+the pointer leaving the pane, which on a zoomed-in building is most of the time. ⚠️ A fit taken
+before the modal has been laid out reads a 0×0 box, so it runs on the next frame and no-ops (rather
+than producing `NaN`) if the box is still empty.
+
+⚠️ **The frozen row is OUTSIDE the panning stage**, which is the whole point of asking for it to be
+frozen — a progress bar that pans away with the building is what it replaces. ⚠️ Its planned marker
+rides the **same** track as the fill: the gap between the two IS the variance, and stacking two
+tracks makes that a subtraction. ⚠️ The readout derives its own actual/planned figures from the
+cell's `list`, which is basis-independent, rather than trusting whichever basis the map was built at.
+
+⚠️ **Compare is session-only, never persisted** — it is a way of *looking* at a building, and a
+remembered split view is how someone opens this next week and reports the tower duplicated.
+⚠️ Toggling it **rebuilds** rather than showing a hidden pane: the second building has to be BUILT at
+its own basis.
+
+⚠️ **Clicking a cell does nothing in the focus window, deliberately.** The cell drill-down is a
+`UI.modal`, and opening one on top of another is a nesting this app has no pattern for; `ps-vs-cell`
+and the native `<title>` tooltips are stripped from the clone so the pointer cursor and the tooltips
+cannot fight the pan gesture and the frozen readout that replaces them.
+
+**Also — the "more visually pleasing" half:** a **4px progress meter** under each card's header
+(fill = actual, tick = planned). It restates a number the header already prints, which is the point:
+across six cards side by side the bars are comparable at a glance where six percentages are not, and
+it is deliberately the **same bar** as the focus window's frozen row so the two read as one system.
+⚠️ Blank when there is no baseline — an absent tick is honest; a tick at 0 would read as "nothing was
+planned by now", a different claim from "nobody has baselined this". ⚠️ The header's count now takes
+`margin-left:auto` rather than relying on `space-between`, which would have centred it once a third
+child joined the row.
+
+⚠️ **`icons.js` carries no maximise glyph** and is a SHARED asset the module contract forbids a module
+editing, so the expand button carries an inline SVG.
+
+**Verified: 26 checks in Node + 39 in a real browser**, both executing the SHIPPED functions sliced
+out of `index.html` by brace matching, never reimplemented. Node covers the pan/zoom/fit/hover
+algebra (anchor invariance, both clamps, a tall building fitting by shrinking, an unlaid-out pane
+no-oping, hover marking and clearing both panes, the readout reading the list). The browser drives
+the real thing at 1440 and 390px, light and dark: the modal opens, cursor `grab` → `grabbing`, a real
+wheel zooms and a real drag pans by exactly the pointer delta, **compare builds `planned,actual` in
+that order into two equal-width panes carrying one identical transform**, panning the planned window
+moves the actual one, hovering the actual window marks the same zone in both, the frozen row stays
+put at every zoom and pan, contrast ≥4.5 on every new dark surface, panes stack and controls reach
+44px on a phone, 0 page horizontal scroll, 0 console errors. **0 functions lost, 12 added**; parses;
+0 NUL bytes; CSS braces balanced; every new CSS class has an emitter.
+
+⚠️ **Not verified signed in** — the buildings under test come from a stub with the shape
+`_vsTowerSVG` emits, not from a real project's rows, so the focus window has never been opened over
+live data. `MODULE_V` → `20260902af`.
+
+## The top-level WBS order is now ENFORCED, not merely seeded (2026-09-02) — eprobles
+
+Owner: *"also the arrangement of the WBS that is fixed should be milestones / initiation phase /
+planning phase / execution phase / close-out phase"* — which is exactly the order `WBS_SKELETON`
+already seeds. It was being **disturbed**, so seeding it once was not enough.
+
+New `_wbsCanonicalRootOrder()`, run on load immediately **before** `_wbsResyncCodes()`. It authorises
+the repair I declined to make unasked earlier today: the owner's project still had Initiation dragged
+ahead of Milestones by the push's sibling renumbering, and rewriting `sort_order` is a data change
+that needed to be asked for.
+
+- ⚠️ **SLOT BY SLOT, and the five slots are not matched the same way.** The four phases are matched by
+  their **resolved phase** (stored first, else `phaseFromName`), so every spelling lands in the right
+  slot — `Closeout Phase`, `Close-out Phase`, a P6 file's plain `Closeout`, or `Construction Phase`
+  for execution. **Milestones resolves no phase**, so it is matched by name — and only when nothing
+  else claims it, so a branch that *does* resolve a phase can never be pulled into the Milestones slot
+  by its name.
+- ⚠️⚠️ **BEFORE the code resync, never after.** A dotted WBS code is derived purely from a node's
+  POSITION among its siblings, so reordering the root **re-codes every branch under it**, and the
+  resync is what pushes those codes onto the rows (summary rows *and* activities, via its own depth
+  discriminator). Reversed, the tree and the codes disagree until the next load.
+- ⚠️⚠️ **It refuses on the same signal the resync refuses on — an UNLOCKED root node.** That means
+  adoption failed to place something, the resync will skip, and a reorder would then leave every code
+  describing an order the tree no longer has. **Not reordering is the safe answer**; this is the guard
+  that keeps a reorder from turning a tree problem into a data problem, the way the SLN101 damage did.
+- ⚠️ **A project already in canonical order writes NOTHING.** This runs on every load; touching five
+  rows each time would bump `updated_at` forever and make the audit trail useless. Only nodes whose
+  position actually changes are written, one at a time, mirrored into memory so `computeWbsCodes()`
+  immediately below sees the new order.
+- ⚠️ **A branch the skeleton does not define is never dropped and never interleaved** — the five come
+  first in canonical order, everything else follows in its existing relative order, because this rule
+  has nothing to say about where such a branch belongs. Children are untouched: order inside a phase
+  is the planner's.
+- ⚠️ Ties inside one slot keep their existing order — two branches resolving one phase are merged by
+  `_wbsDedupeSkeleton` later, and shuffling them arbitrarily in the meantime would be noise.
+- A move is **reported**, not silent: a planner who sees the tree renumber needs to know why.
+- The push's `_nextFreeSort` still *appends* a brand-new phase branch rather than placing it at its
+  slot. Deliberate: the push is followed by `load()`, so this healer normalises it, and **one owner of
+  the ordering rule** beats two that can disagree.
+- The WBS step says the order is fixed, so it does not read as the editor ignoring a drag.
+
+**Verified: 38 checks executing the shipped `_rootSlot` and `_wbsCanonicalRootOrder`** (only Supabase,
+UI and the module globals stubbed) — the owner's exact tree corrected with **only the two changed
+nodes written**, a canonical project writing nothing at all, hand-added roots preserved in order, the
+unlocked-root refusal, a child's `sort_order` untouched, a read-only project, and a failed write
+stopping the pass instead of half-applying. ⚠️ Plus an assertion that **the order enforced IS
+`WBS_SKELETON`'s own order**, so the two can never drift. The three suites from the earlier fixes
+still pass (25 + 29 + 25). **0 functions lost, 2 added**; 0 NUL bytes; parses.
+⚠️ **My harness re-declared a `var` the slice already declares — the same mistake as the previous
+harness, noted there and repeated here.** Fixed, and called out so the note is worth something.
+⚠️ **Not verified signed in.** On the next load of Test Project the order should correct itself and
+say so; if the project has an unlocked root branch it will (correctly) decline, and the console says
+which node.
+
+---
+
+## `reused` meant "the node exists", not "it is in the schedule" — so the lifecycle work landed invisibly (2026-09-02) — eprobles
+
+Owner, after the previous fix: *"good, the execution phase is migrated, however the WBS for the
+initiation, planning and close-out is not migrated now."*
+
+**The activities were being inserted correctly all along. They had no branch row to hang under.**
+
+### ⚠️⚠️ `reused[nd.key]` suppressed the WBS-Summary payload, and that was the wrong test
+A branch renders in the grid only if it has a **WBS-Summary ROW** in `project_schedule`; `wbs_nodes`
+alone is the WBS Manager's tree, not the schedule's. The push skipped emitting that row for any
+branch it *reused*, on the assumption that a node which already exists is already projected.
+`_wbsEnsureSummaries` does project one per node — **but it runs on LOAD, it bails on any read error,
+and the row can be deleted afterwards.** So a reused branch with no row got none from the push
+either, and its activities — filed with the right `wbs_node_id` and the right dotted code — had no
+parent row.
+
+⚠️ **And this is what makes the previous report and this one one bug, not two.** Before, the push
+missed `Closeout Phase` by name and **created** it — a created node is projected, so it got a summary
+row, so *"only activities under the close-out phase WBS was detected."* Fixing the name match made all
+three phases reused, so all three lost their summary row and all three went invisible. The symptom
+inverted because the cause was never the matching; it was this.
+
+**Fix:** `_hasSummaryRow(nid)` — checked per node rather than assumed, so a reused-but-unprojected
+branch gets its row and a reused-and-projected one still does not (that check is what stops the "two
+rows for one `wbs_node_id`" duplication `_wbsEnsureSummaries` exists to heal). ⚠️ It tests `isWbs`,
+not merely a matching node id: an **activity** under the branch shares that id and must not be
+mistaken for the branch's own row.
+
+### ⚠️⚠️ And "Execution Phase only" hides every lifecycle phase — by design
+`buildNodes` drops the other phases outright when `_execOnly` is on. It is a **per-browser
+localStorage** toggle, so a planner who set it weeks ago pushes Initiation / Planning / Close-out work
+and then cannot see any of it — which reads exactly like *"the WBS was not migrated"*. The push now
+clears it when it has just added non-execution work, because a view that excludes non-execution work
+is no longer showing the schedule. ⚠️ Said in the summary rather than done silently, with the way to
+turn it back on. An execution-only push does not touch it.
+
+### The summary now answers the question that was asked
+A single total cannot answer *"where did the Initiation work go?"*, so the completion summary lists
+each phase with its count. ⚠️ Counted from the **payload**, `activity_type === 'Task'` only — a branch
+row carrying `phase: 'closeout'` is not an activity, and counting it would overstate every push.
+
+**Verified: 79 checks executing the shipped code** — the payload-emission line and the exec-only block
+**sliced verbatim out of the file and run**, not reimplemented: the reused-but-unprojected branch gets
+a row with its own phase and no contract scope, a projected one emits nothing, a new trade branch is
+unchanged, an activity sharing the node id does not count as a projection, and the owner's exact tree
+resolves to 1 trade + 3 phase rows before / 1 after. Plus the 54 checks from the previous fix, still
+green. **0 functions lost, 1 added**; 0 NUL bytes; parses.
+⚠️ **Two of my own assertions were wrong before the code was** (I expected `undefined` where the code
+initialises `false`, and my harness re-declared a `var` the sliced block already declares). Corrected
+to what was measured. ⚠️ **Not verified signed in** — the next real push is the test.
+
+---
+
+## The push renumbered the project root, so the execution work came out detached (2026-09-02) — eprobles
+
+Owner: *"how come when a schedule was generated in the schedule setup, and pushed to project schedule,
+the activities generated under the execution phase was not migrated, as well as the WBS for the
+initiation and planning phase"* — then, with screenshots: *"in steps 8 and 10, there are activities
+detected, and then when it went to step 9, no activities were detected and then when pushed, only
+activities under the close-out phase WBS was detected."*
+
+**Two real defects in my own lifecycle-phase push, and the owner's step-9 screenshot contained the
+proof of the first one.** Its WBS read `1 Initiation Phase · 2 Milestones · 3 Planning Phase ·
+4 Execution Phase · 5 Closeout Phase` — but `WBS_SKELETON` seeds **Milestones first**. Initiation had
+been moved ahead of it, which is exactly what defect 1 does.
+
+### ⚠️⚠️ 1. The push renumbered branches it does not own
+`soByParent` counts a parent's children **from 0**. That is right under `__base__` — the builder
+creates every child of the Execution Phase branch, so a re-push may legitimately correct their sibling
+order. It is flatly wrong at the project (or package) **root**, where the push files only the lifecycle
+phases and sits beside Milestones, the Execution Phase branch and anything a planner added by hand.
+So reusing the skeleton's `Initiation Phase` handed it `sort_order` **0**, `Planning Phase` **1**,
+`Close-out Phase` **2** — numbers other top-level branches already held — and `reorder` **wrote that to
+the database**.
+
+⚠️ **A dotted WBS code is derived purely from a node's POSITION among its siblings**
+(`computeWbsCodes`), so that renumbering **re-coded the whole root**: the pushed activities were
+stamped from the new order while every existing summary row still carried the old one, which is why
+the execution work appeared detached from the Execution Phase branch. Measured on the owner's exact
+tree, the pre-fix logic moves Execution Phase off dotted code **"4" to "5"** and leaves a duplicate
+`sort_order` at the root — where the tie is broken by id, i.e. free to flip between loads. The same
+"codes shared by two branches, the grid draws them twice" corruption this file has already had to heal
+once.
+
+**Fix:** `_nodeOrderPlan` / `_nextFreeSort`. A `keepOrder` branch keeps the position it has — no
+reorder **and no `code_custom` clear**, since the skeleton's phase branches are locked and re-deriving
+their code would renumber the project. A **new** one is appended after the parent's existing children
+instead of claiming slot 0, seeded once per parent and then incremented (`WBS_NODES` is not appended to
+until the batch inserts, so two new phase branches in one push would otherwise both claim the same
+slot). ⚠️ Scoped to the lifecycle branches: the trade branches the builder **does** own are still
+renumbered and still have a stale name-derived code cleared, asserted as a regression.
+
+### ⚠️⚠️ 2. `Close-out Phase` never matched `Closeout Phase`
+`PHASE_LABELS.closeout` reads **"Close-out Phase"**; `WBS_SKELETON` seeds the branch as **"Closeout
+Phase"**. The push looked it up by exact name, missed it, and created a **sixth top-level branch** —
+the same duplicate-top-level shape the import placement step already exists to prevent (an imported
+`.xer` calls it plain "Closeout"). A duplicate root branch renumbers every sibling too, so this
+compounded defect 1. It also explains the reported symptom precisely: the new branch and its
+activities were coded consistently with each other, so **the Close-out work was the only work that
+landed where it was filed.**
+
+**Fix:** a lifecycle branch is found by its **phase**, never by a spelling — `_phaseBranchAt` uses the
+stored `phase` first and `phaseFromName` otherwise (which already tolerates *Closeout / Close-out /
+Close out*, any case), oldest first so a stray left by the buggy push never becomes the target. A
+branch it has to create takes the **skeleton's** spelling via `_phaseBranchName`, not the display
+label, so the next push, the import placement picker and the dedupe healer all find the same branch.
+⚠️ It falls back to the name so a project whose branch resolves no phase at all is still reused rather
+than duplicated.
+
+**And the damage already done is healed.** `_wbsDedupeSkeletonPass` keyed on the exact lowercased name,
+so it could not see `Closeout Phase` and `Close-out Phase` as duplicates — ⚠️ nor could `_wbsNameKey`,
+whose punctuation rule turns the hyphen into a space (`closeout` vs `close out`). At the **root** the
+key is now the resolved phase, because two top-level branches resolving to one phase **are** the same
+branch — an invariant this module already relies on (`execPhaseCode()` picks exactly one). Merging is
+lossless. ⚠️ Root only, and only when a phase actually resolves: `Milestones` and every trade branch
+resolve nothing and keep the name key.
+
+### 3. Step 9 read "0 activities" on every branch
+Not a data loss — the count is what the **live schedule** holds, and this project had never been pushed
+to. But a setup whose steps 8 and 10 both show a full programme, landing on a tree that reports 0
+everywhere, reads as *the activities were lost*, and the step never said otherwise. It now states the
+live count, names the generated count, and says the generated activities are not there until the push
+— amber in exactly the case that reads as a defect (something generated, nothing live).
+
+⚠️ **What is NOT repaired: the owner's project still has Initiation ahead of Milestones.** Rewriting
+`sort_order` on load would be a silent data change on every project in the app. Correct it in
+**Schedule Setup → 9 · WBS** with **Alt+↑/↓**; the push will no longer move it.
+
+**Verified: 54 checks executing the shipped functions** (`_nodeOrderPlan`, `_nextFreeSort`,
+`_phaseBranchAt`, `_phaseBranchName`, `phaseFromName`), sliced out of the file and run against the
+owner's own tree shape — including a reproduction of the pre-fix renumbering, five alternative
+`Closeout` spellings all reused, the stored-phase override, and six over-merge cases the new dedupe key
+must *not* collapse. **0 functions lost, 4 added**; 0 NUL bytes; parses. ⚠️ One assertion of mine was
+wrong first (I expected three duplicate `sort_order`s at the root; the real number is one, because two
+of the movers vacate the slots they leave) — corrected to what was measured. ⚠️ **Not verified signed
+in** — the next real push is the test.
+
+---
+
+## Reset + rebuild ran, and proved the damage is in the DATA, not the tree (2026-09-02aa) — fmlozano
+
+Owner: *"Reset WBS and rebuild, then check."* Driven live on SLN101.
+
+### The run
+| | |
+|---|---|
+| tree cleared | **12,408 branches** |
+| dangling links cleared | **28,667**, in 4,000-row batches, ~29s |
+| rebuilt | 12,426 nodes against 12,442 summary rows |
+
+✅ **`wbs_unlink_dangling` earned its migration.** 28,667 rows updated in batches; as the single
+statement it replaced, that is 3.5× the 8-second `statement_timeout` — Reset WBS would simply have
+failed on this project.
+
+### ❌ But it did not fix the hierarchy, and the reason matters
+**Roots went 19 → 16, unlocked roots 14 → 11.** Better, not fixed. Then the decisive measurement:
+**all 11 remaining promoted roots carry SINGLE-SEGMENT stored codes** — `Cluster 4` = **"3"**,
+`Cluster 3` = "5", `Dry Works` = "10", `Wet Works` = "11", `Masonry Works` = "13", `Hardwares` = "17".
+
+⚠️⚠️ **A single-segment code IS a root**, so the rebuild reproduced the flattening *faithfully*. The
+tree is not what is broken any more — **the codes are**, and they are what the rebuild builds from.
+The reset dialog's promise that rebuilding is *"reversible, because every row keeps its own WBS
+code"* holds only while those codes still describe the real hierarchy.
+
+### The design flaw this exposes
+Two functions disagree about who owns the truth:
+- `wbsAdopt()` builds the **tree** from the dotted **codes**;
+- `_wbsResyncCodes()` rewrites the **codes** from the **tree**.
+
+Fine while the tree is right; **catastrophic when it is not**, because the error stops being a tree
+problem and becomes a *data* problem. Adopt rooted 14 branches it could not place, resync wrote their
+new positions back as codes, and the original deep P6 codes were **destroyed**.
+
+**Guarded:** `_wbsResyncCodes()` now refuses to run when any **unlocked node sits at the top level**.
+The five phases are locked and every real branch hangs under one, so an unlocked root means adoption
+failed to place something — precisely the state whose codes must not be written back. Cheap, specific,
+and it would have made this recoverable.
+
+### ⚠️ Recovery for SLN101: a fresh re-import, not another rebuild
+The deep codes only exist in the .xer now. Re-importing restores them, and with the deferral fix
+(2026-09-02z) adopt no longer roots what it cannot place, so the flattening should not recur.
+⚠️ Also still true right now: **16,202 of 16,396 activities are unlinked** — the link matches an
+activity's parent code against a summary row's code, and with the codes corrupted most resolve to
+nothing. That resolves itself on a clean import; it is a symptom, not a separate fault.
+
+- `MODULE_V` → `20260902aa`.
+
+---
+## ⚠⚠ The tree flattened: adopt was rooting any node whose parent it could not find (2026-09-02z) — fmlozano
+
+Owner: *"Stevi's schedule also bugged out let's check."* The grid's root showed **Milestones,
+Initiation Phase, Fire Exit 2, Planning Phase, Cluster 2 (Units 07 to 12)** — two deep branches sitting
+beside the phases, and no Execution or Closeout Phase in sight.
+
+### Measured
+**26 top-level rows**, and they are not stale codes — they are real roots. `parent_id IS NULL` in the
+database for `Cluster 2/3/4/5/6`, `Wet Works`, `Dry Works`, `Masonry Works`, `Fire Exit 2`,
+`Thermal and Moisture Protection`, `Drywall and Ceiling`, `Hardwares`, `Aluminum, Glass and Glazing`.
+`Execution Phase` had been pushed to code **7** and `Closeout Phase` to **8**, past the visible rows.
+
+⚠️ **I read this wrong earlier and said the tree was sound.** That measurement (`nodesAtRoot: 19`)
+was taken *before* the owner's later adopts; it was true then and I carried it forward as though it
+still held. The roots grew afterwards.
+
+### The cause, one line
+```js
+var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;
+```
+⚠️ **`|| null` inserts the branch AT THE TOP LEVEL** whenever the parent code cannot be resolved —
+silently, and then **permanently**, because `_wbsResyncCodes()` rewrites the branch's dotted code to
+match its new position. This is the same flattening this file already records from an earlier
+regression (*1,584 of 1,623 nodes left at the top level*); rooting on a failed lookup is how it
+happens.
+
+**Fixed: a node whose parent cannot be resolved is DEFERRED, never rooted.** Safe and self-healing —
+the adopt runs depth-ascending and `autoAdoptAfterImport()` already loops while passes make progress,
+so a branch whose parent lands in pass N is adopted in pass N+1. A code with no parent segment is
+still legitimately a root. Deferrals are counted and logged, and the existing "tree is INCOMPLETE"
+toast reports whatever is left.
+
+⚠️ **The existing damage is not repaired by this.** SLN101's 7 promoted roots stay where they are
+until the tree is rebuilt: **WBS Manager → Reset WBS… → rebuild**, which now cannot flatten.
+
+---
+
+## The toolbar is one row again, and the View menu stops offering what it no longer owns (2026-09-02z)
+
+Owner: *"The progress and stacking buttons are still under the view button when we have already
+separated this entirely to the toolbar"* and *"the toolbar spilled over two rows now, we want this to
+be 1 row only."*
+
+- **Progress and Stacking are gone from the View menu.** ⚠️ I kept them last pass so the menu could
+  return you from a view its own button names — the 2026-08 defect that caused the fold. What makes
+  removing them safe now is that **each toolbar button toggles**: pressing the lit Stacking button
+  returns to `layoutMode`. `_viewKey()` still reports them, so *"View: Stacking"* keeps telling the
+  truth.
+- **The three controls are icon-only, and that is a measurement.** Measured on the shipped toolbar at
+  **1,344px available: the row needed 1,528px and wrapped onto 3 lines**, of which these three
+  labelled buttons were **284px** (94 + 92 + 98). Without them the row needs **1,229px** — what it was
+  before they were added. 3 × 36px saves **176px**, taking it to ~1,352px, which the flexible search
+  box (min 110px) absorbs.
+  ⚠️ **Icon-only is the only cut that does not spend the owner's own savings twice**: Scope, Zoom and
+  Group were deliberately folded from segments into labelled menus on 2026-09-02 to buy exactly this
+  space. ⚠️ `.ps-icobtn` is the toolbar's existing convention and already carries the lit `.active`
+  state, which is what keeps an unlabelled control readable — Progress and Stacking light red while
+  you are in them.
+
+- `MODULE_V` → `20260902z`.
+
+---
+
+## Schedule Builder → **Schedule Setup**, and the WBS tree moves into it (2026-09-02) — eprobles
+
+Owner: *"what are the current functions in the WBS manager that can be migrated instead to the
+Schedule Builder. also change the name of Schedule Builder to a more appropriate name. … to edit the
+WBS, it should be in the schedule builder instead, since the WBS manager is rendered useless given
+that the arrangement of the WBS can be modified in the project schedule instead."*
+
+### The name
+**Schedule Builder → Schedule Setup.** It no longer only builds a schedule: it owns the activity
+list, the location breakdown, the sequencing, the lifecycle phases and now the WBS, and the schedule
+itself is what it *pushes*. "Setup" is also the noun the screen already uses for its saved objects
+(`schedule_builder_setups` rows are called *setups* in its own dialogs).
+- ⚠️ **Only the display strings changed.** `ScheduleBuilder`, the `builder` tab key, the `sbld-*`
+  classes, the table name and the setup rows keep their names. Renaming those is churn with a
+  migration attached and no user-visible benefit — the tab key in particular is persisted in the URL
+  hash and in saved history rows.
+
+### What migrated, and what deliberately did not
+| WBS Manager function | Where it lives now | Why |
+|---|---|---|
+| The tree outliner (add / rename / indent / outdent / reorder / delete, keyboard) | **Schedule Setup → WBS step** | shaping the WBS *is* setup work |
+| Paste outline · Duplicate branch · From project | **Schedule Setup → WBS step** | bulk ways to author the same tree |
+| Expand / collapse / search + the "where will Add WBS land" hint | **Schedule Setup → WBS step** | they only make sense next to the tree |
+| **Adopt existing WBS** · **Reset WBS** | stays | repairs over a whole *imported* project, including phases the setup never generates — a setup-scoped screen is the wrong place to offer "drop every custom branch in this project" |
+| **Sync Engineering** · **Sync Procurement** · **Push need-by** | stays | other teams' apps, mirroring branches the setup does not own and must not write |
+| Node counts / activity counts | travels with the card | it is part of the tree's own header |
+
+So the WBS Manager is now the **repair-and-integrations** screen, and it says so where the editor
+used to be, with a button that opens the setup on the right step (`ScheduleBuilder.gotoStep('WBS')`
+— matched on the rail TITLE, because the step order has already changed twice today and an index
+would silently point at whatever now sits in that slot).
+
+### ⚠️⚠️ The tree is BORROWED, not copied
+`#ps-wbs-edittools` and `#ps-wbs-card` are the **same DOM nodes** declared in the WBS Manager's
+markup, relocated into the setup's panel by `sbWbsMount` and returned to a hidden `#ps-wbs-park` slot
+by `sbWbsPark`. A second editor in the builder was the obvious implementation and would have been
+wrong twice over:
+- the tree is a virtualized outliner whose selection, collapse map, search filter and flat row list
+  live in **module state** (`_wbsSel` / `_wbsCollapsed` / `_wbsSearch` / `_wbsFlat`) — two instances
+  would share that state and fight over it;
+- all ~30 of its handlers are bound **by id**, so a copy means either duplicate ids (first one wins,
+  silently) or a parallel handler set to keep in step forever.
+
+- ⚠️⚠️ **`sbWbsPark()` MUST run before any repaint of the host panel.** The builder rebuilds its panel
+  with `innerHTML` on every step change, which would take the borrowed nodes **out of the document
+  for the rest of the session** — the tree would be gone on both screens until a reload. It is
+  therefore called unconditionally at the top of the builder's `render()` (including on its
+  early-return path, which is itself one of those writes) and when switching away from the tab. This
+  is verified: a harness driving the real `sbWbsPark`/`sbWbsMount` shows the card back in the park
+  with its content and its click handler intact after a repaint — and **GONE** after a repaint with
+  the park call removed.
+- ⚠️ `renderWbsManager()` runs **after** the move, not before: the tree is virtualized off its own
+  `clientHeight`, and a walk measured while the node was parked (hidden, zero height) paints an
+  empty viewport.
+- ⚠️⚠️ **The keyboard gate had to follow the tree.** The type-to-build handler bailed unless
+  `#ps-view-wbs` was visible — which it is not on the screen that now owns the editing, so Enter,
+  Tab, Alt+arrows and Del would all have gone dead. It asks the **tree** where it is now
+  (`#ps-wbs-tree`.offsetParent), which is correct on either host.
+
+### Also
+- The help modal said *"The 6 steps"* and then listed **7** — stale before today, and there are ten
+  now. The heading and every step number are **derived** (`STEPS.length` / `_stepNo`) so the next
+  step added cannot make it lie again; Tower links was missing from the list entirely and is in it.
+- Step numbers baked into comments ("step 6") are replaced with the step's **name** for the same
+  reason.
+
+---
+## The No-level band stops blaming Schedule Builder (2026-09-02x) — fmlozano
+
+Owner: *"Reword the band text to point at the match table."*
+
+The banner read *"a trade with no floors in Schedule Builder step 2 is pushed as whole-trade work —
+give the trade floors in step 2 and re-push"*. On an **imported** schedule nothing was pushed from the
+Builder, so it sent the planner to a step that had no part in it — and on 4PH Strevi it was the wrong
+instruction for **all 692** rows in the band.
+
+It now names the three real causes, in the order they actually occur, each with what to do:
+1. **A branch name is not matched** — read the *WBS branch* column; an abbreviation such as **RD** for
+   Roofdeck is the usual culprit; fix in *Group ▾ → Match WBS to locations…*. This is what 76 of 76
+   rows in the MEPF cell were.
+2. **The work genuinely has no storey** — substructure, footings, site works. Give them their own
+   Level value to have them banded, or leave them in the band. Not a defect.
+3. **A Builder push with no floors in step 2** — kept last, for the schedules where it is true.
+
+⚠️ **It does not guess which kind of project this is.** Provenance is not recorded anywhere, and a
+confidently wrong instruction is exactly what is being replaced — so all three are offered and the
+reader picks. The first one now leads, because the match table is what derives a location on *every*
+project, imported or pushed.
+
+- `MODULE_V` → `20260902x`.
+
+---
+## The No level band, answered: `RD` is not in the Level match table (2026-09-02w) — fmlozano
+
+Owner: *"Reopen the No level band and check the branch column."* With the column now walking the node
+tree, it answers the question that has been open since the first screenshot.
+
+### The reading
+**692 of 15,834 execution activities (4.4%) carry no Level.** The branch column shows real tree paths,
+and **not one row fell back to `by code:`** — every one resolved through `wbs_node_id`.
+
+| cause | evidence |
+|---|---|
+| **A — a floor the matcher missed** | The MEPF cell is **76 of 76** rows reading `… Tower D › MEPF Works › **RD** › 1st Fix`. The Structural cell is full of `… Superstructure › **RD** › Zone 1 › Horizontal › Structural Frame › Flat Slab`. |
+| **B — genuinely floorless** | `Execution Phase › Construction Phase › **Substructure** › Tower D › Slab-on-grade › Zone 1`, and the same for `Footing Tie Girder`. Below-grade work with no storey. |
+
+### ⚠️ The cause of (A), and it is one missing row in a table
+The project's saved Level match table has **17 entries**: `Roofdeck`, `Ground Floor`, `2nd Floor` …
+`16th Floor`. The stamped values agree — `Roofdeck` is on 51 activities. **But the .xer names that
+branch `RD` in most places and `Roofdeck` in a few**, and the table matches on the branch NAME
+exactly. So `RD` maps to nothing and every activity under it lands in the No-level band.
+
+⚠️ **THE IMPORTER IS NOT AT FAULT** — which is worth stating plainly, because the original ask was
+*"fix the importer"* and three passes were spent looking there. Location is DERIVED from branch names
+against the planner's own match table; the table is simply missing an alias the source file uses.
+**Fix: Group ▾ → Match WBS to locations…, map `RD` → Roofdeck.** That is the owner's decision to make,
+not a rule to hard-code — `RD` could as easily mean *Road* on a different project.
+
+⚠️ **(B) is not a defect at all.** Substructure, slab-on-grade and footing work has no storey. It
+either wants its own Level value (`Substructure` / `Foundation`, which the stacking would then band
+like any floor) or it belongs in the No-level band permanently. Also the owner's call.
+
+⚠️ **The band's own explanation is wrong for this project**: it reads *"a trade with no floors in
+Schedule Builder step 2 is pushed as whole-trade work"*, but nothing here came from the Builder. It
+should name the match table on an imported project. Not changed yet.
+
+---
+## The No level band, read at last — and the diagnostic column was lying (2026-09-02v) — fmlozano
+
+Owner: *"Let's check the No level band now."* The tree is healthy enough to answer, and the answer
+came with a defect in the tool I built to find it.
+
+### Vertical Stacking works, and here are the numbers
+Read off the module itself rather than inferred from codes:
+- **15,834 execution-phase activities stacked**, towers **A / B / C / D** (+ *— No tower —*).
+- **692 activities carry no Level** — **4.4%**, in the dashed No-level band.
+- The trades it names: *Punchlisting and Handover, Structural Works, MEPF Works, Allied Services,
+  General Preliminaries, Site Development, Painting Works, Construction Phase.*
+
+⚠️ **The band's explanation is wrong for an imported project.** It reads *"a trade with no floors in
+Schedule Builder step 2 is pushed as whole-trade work"* — but nothing here was pushed from the
+Builder; this came from a .xer. The sentence sends a planner to a step that had no part in it.
+
+### ⚠️⚠️ AND THE `WBS branch` COLUMN I ADDED FOR THIS WAS LYING
+Opened the band's dialog on the 156 Structural Works rows. Every one showed
+**`Planning Phase › Design Development`** — while the **Trade** column on the same rows read
+**`Structural Works`**. Two columns of one table disagreeing about one row.
+
+The Trade is right. It resolves through `wbs_node_id`; my column reconstructed a path by **splitting
+the dotted code**. ⚠️ `_wbsResyncCodes()` rewrites the SUMMARY rows' codes to match the node tree and
+does **not** touch the activities', so after any repair the two are in different numbering systems —
+and splitting an activity's code walks into whatever branch happens to hold that number now. On this
+project the phase codes have moved (`Planning Phase` computes to `4`, `Execution Phase` to `7`), so
+the reconstruction was confidently, consistently wrong.
+
+**Now walks `wbs_node_id` up the node tree.** The code-derived form survives only for a row that has
+no node yet, and is prefixed **`by code:`** so it can never again be mistaken for the tree.
+
+⚠️ **A diagnostic that can be wrong about the thing it exists to show is worse than none** — it cost a
+round of analysis that concluded the schedule was mis-filed under Design Development, which the Trade
+column had already contradicted on screen.
+
+⚠️ **The real No-level question is therefore still open.** The 692 rows have to be re-read with a
+truthful branch column before anything can be said about whether they are a matcher gap or genuinely
+floorless work.
+
+⚠️ **One thing measured on the way and worth keeping:** the dotted codes on activities and on summary
+rows are genuinely out of step on this project. The grid derives its hierarchy by splitting the
+activity's code, so it is worth checking whether the grid's tree still matches the WBS Manager's.
+
+- `MODULE_V` → `20260902v`.
+
+---
+## "Nothing resolved" and "nothing loaded" are different answers (2026-09-02u) — fmlozano
+
+Owner, third report of the same symptom: *"Closeout phase activities in the legend are still showing
+the colour activities. Let's scope the colour only for activities in the execution phase."*
+
+### Measured on the live project, both paints
+The scoping itself was never broken. `phaseOf` resolves those rows correctly — walked their node
+chains in the database: *Commercial Closeout → Tower 2 → Partial Closeout* → **`closeout`**, never
+`construction`. And once the tree is loaded the legend is right:
+
+| stage | legend |
+|---|---|
+| cached paint | **4 Closeout chips**, and NO plain-Activity chip — i.e. everything was in scope |
+| after the tree loads | **40 execution chips** + *"Activity outside the Execution Phase"* |
+
+⚠️ **The absent plain-Activity chip is the tell.** It is emitted only when a task on screen is OUT of
+scope, so its absence proves `catInScope()` was answering true for Closeout work — the fallback was
+on.
+
+### ⚠️⚠️ The defect
+`catScopeIsExec()` asked *"does any row resolve a phase?"* and treated **no** as *"this project does
+not use phases"*. But `phaseOf()` reads through `WBS_NODES`, which `load()` fetches **after** the
+cached paint — so on that paint the answer is not "no phases", it is **"not loaded yet"**, and the
+fallback coloured everything.
+
+⚠️ **And the window is not the 3.3s measured in (m).** It lasts as long as the live fetch of 28,958
+rows — tens of seconds on this project, which is why it read as a permanent bug rather than a flicker.
+⚠️ The persisted hint from (n) did not save it either: the stored value was a legitimate `false`,
+written while the activities were unlinked and genuinely nothing resolved a phase.
+
+### The fix, and the trade it makes
+The fallback now demands **proof**: it fires only when the tree **is** loaded and still nothing
+resolves a phase — the genuinely-unphased project it was written for. With the tree absent the answer
+is unknown, and **the safe unknown is SCOPED**.
+
+⚠️ **This is the trade (m) considered and declined, taken deliberately now.** On a cached paint no row
+can resolve a phase, so scoping on means **nothing is coloured for those seconds** and the key reads
+*"No Execution Phase activities yet — the colour key covers execution work only."* Under-colouring
+is explained on screen; over-colouring is indistinguishable from the feature being broken, and it put
+the exact activities the owner asked to exclude in front of them three times.
+
+⚠️ **Consequence for (n):** the persisted `catScope` hint now only does real work for the **unphased**
+case. A stored `true` changes nothing, because with no tree nothing resolves as execution either way.
+The flicker for a normal project is now *empty → correct* rather than *wrong → correct*.
+
+- `MODULE_V` → `20260902u`.
+
+---
+
 ## Schedule Builder: a step for the phases either side of construction (2026-09-02) — eprobles
 
 Owner: *"i was thinking for the schedule builder, make it that the schedule builder has another step,
@@ -66,7 +844,6 @@ finish precedes its start and break the chain for everything after it. Legacy se
 saved recipe, which they would then push without noticing, is not a default anyone asked for.
 
 ---
-
 ## Every activity is linked — and adopting twice duplicated 5,850 nodes (2026-09-02r) — fmlozano
 
 Owner ran `2026-09-02-wbs-link-batched.sql` and clicked **Adopt existing WBS** again.
@@ -1098,6 +1875,77 @@ minimized as well."* It now also hides the sidebar, the topbar and the module ba
 - ⚠️ **Not verified signed in** — no live project was opened, so `_repIdPaint` has never read a real
   `projName()`/group head, and the legend fold has never run against a real category list.
 - `MODULE_V` → `20260902a`.
+## The toolbar's page-level overflow fix went stale — recurred at ordinary 1280px desktop, not just tablet (2026-09-02)
+
+Found independently via a headless audit pass (mocked-Supabase Playwright harness rendering the
+real, unmodified module, tested under `role:'viewer'`), not a live report: at a plain 1280px
+desktop window (collapsed 64px sidebar) the page reported 136px of `document.documentElement
+.scrollWidth − innerWidth` — genuine page-level horizontal overflow, letting the whole document
+(sidebar, topbar, avatar, everything) scroll sideways.
+
+⚠️ **This looked like the tablet-band `@media (min-width:701px) and (max-width:1140px)` rule's
+1140px upper bound going stale**, and it was, on the version this was diagnosed against — that
+rule's own comment showed its math (the toolbar's fit-without-wrapping width was hand-calibrated
+once, "900px … it is now 900+240=1140px"), and 1280px sits comfortably above it;
+`.ps-tb-row`'s own `scrollWidth` measured **1340px** needed against only **~1192px** available at
+1280px. The fix drafted here dropped the upper bound entirely (`@media (min-width:701px) and
+(max-width:1140px)` → `@media (min-width:701px)`), reasoning that a capped magic number will just
+go stale again the next time a toolbar button is added.
+
+⚠️ **Superseded by a concurrent, broader fix on `main`, found while rebasing this branch.**
+`main`'s own commit `712436d` ("Reporting view becomes a screen; project switcher un-stretched;
+foldable legend; toolbar stops clipping") changed `.ps-toolbar .ps-tb-row`'s own BASE rule from
+`flex-wrap:nowrap` to **unconditionally `flex-wrap:wrap`** — so the tablet-band media query this
+entry widened (whether capped at 1140px or not) no longer does anything at any width; the row
+always wraps as soon as it doesn't fit, with no band-specific carve-out left to keep in sync at
+all. The widened, uncapped version of that media query rebased in cleanly (it's a strict subset of
+what the base rule now always does) and was left in place as harmless dead code rather than risk
+excising a comment block from this file mid-rebase — the real fix, and the one actually live, is
+`main`'s unconditional base rule.
+
+⚠️ **Not verified against real live data or a live login** — pure CSS layout, independent of any
+data, so both fixes (the superseded one drafted here and the broader one that shipped) apply
+identically to a real session regardless. Reproduced and diagnosed under `role:'viewer'` but the
+cause is role-independent.
+
+## `computeWbsCodes` could crash the whole module on a corrupted tree — RangeError, unguarded recursion (2026-09-02)
+
+Found via a headless audit pass (mocked-Supabase Playwright harness rendering the real, unmodified
+module), not a live report: opening this module's page threw an uncaught
+`RangeError: Maximum call stack size exceeded` and the page never rendered.
+
+⚠️ **The stack trace was useless.** This file's inline `<script>` is ~1.2 MB on essentially one
+logical line, so V8 reports the identical `index.html:3110:9` for every frame regardless of which
+function is actually recursing. Localizing it needed a different technique: monkey-patching
+`Array.prototype.forEach` globally to track recursion depth and, past a threshold, capture
+`String(cb)` (the recursing callback's own source text) rather than trust the line number. That
+pointed straight at `computeWbsCodes(nodeList)`'s inner `walk(parentId, parentCode)`.
+
+⚠️ **`walk` had no cycle guard.** It builds a `parent_id → children[]` map and recurses child-by-child
+to assign dotted WBS codes. If any row in `wbs_nodes` ends up transitively its own ancestor — this
+file's own changelog is a long record of exactly that happening in production (duplicate ids across
+projects, cross-project parent/child links, race-condition duplicate rows from concurrent pushes,
+partial/failed writes) — `walk` recurses forever and takes the entire module down with it, since this
+function runs on every load/edit/push.
+
+**Fix:** a `seen` Set inside `computeWbsCodes`, checked and populated at the top of the per-child
+callback; a node already visited is skipped rather than re-walked. In a well-formed tree every id is
+visited exactly once regardless, so this changes nothing for normal data — it only stops a corrupted
+row from hanging the module. Same shape as this file's existing `_traceWalk` cycle guard and its
+"must not hang on a cyclic tree" tests elsewhere in this module.
+
+**Verified two ways, both clean:**
+1. Re-ran the exact diagnostic that found the bug (the `forEach` recursion-depth monkey-patch) against
+   the fixed file — no `DEEP_RECURSION_DETECTED`, no page error; only the expected benign
+   `ERR_PROXY_CONNECTION_FAILED` noise from the sandboxed environment's Realtime websocket attempts.
+2. Re-ran the full 7-page batch audit (dashboard, modules, projects, my-work, manpower-loading,
+   minutes-of-meeting, project-schedule) — every page including this one reports `errors: []` and
+   `overflow: 0`.
+
+⚠️ **Not verified against real live data or a live login** — reproduced under a mocked Supabase
+backend whose insert stub happens to assign duplicate ids across separate inserts, which is what
+actually triggered the cycle in this environment. The guard is correct regardless of trigger: it only
+activates on an already-corrupted tree and is a no-op otherwise.
 
 ## ⚠️ REGRESSION, same day: adoption built 1,584 TOP-LEVEL nodes — and my own harness said it was fine (2026-09-01) — fmlozano
 
@@ -10597,3 +11445,751 @@ project's WP "1", the ambiguous case returning null, archived lots still contrib
 invalidating on reassignment. **0 functions lost** against HEAD; 0 NUL bytes; inline script parses.
 ⚠️ **Not clicked through signed in and no live sync has been run** — the first real Sync Procurement on a
 mapped project is the test.
+
+### 2026-09-02 — One way in: the Setup owns how a schedule comes into existence
+
+Owner: *"let's sanitize the process in developing the project schedule either from import project
+schedule and starting a new project."* Five views collapsed to four, and **import stopped being a
+modal that writes on the first click**.
+
+**Two views removed.**
+- **Planner Cockpit.** A monitoring surface, not schedule development. Its four verbs had no second
+  home, so they moved rather than died: **Update progress**, **Take snapshot**, **Snapshots** and
+  **Change history** → the Schedule grid's **Actions** menu; **Export lookahead** → **File** (it
+  writes a workbook), now asking for its window in a dialog since the cockpit bar's `<select>` went
+  with it. ⚠️ Removing a view must not silently remove the verbs parked on it.
+- **WBS Manager.** Everything it hosted is in **Schedule Setup › WBS**: the tree and its edit tools
+  (already borrowed there since 2026-09-02's first pass), and now **Adopt existing WBS**, **Reset
+  WBS**, **Sync Engineering**, **Sync Procurement** and **Push need-by** as a second row
+  (`#ps-wbs-integrations`). Its markup survives ONLY as the hidden park slot those borrowed nodes
+  return to — `#ps-view-wbs` is `hidden` and switchTab no longer touches it.
+- ⚠️ **The Last Planner weekly loop was NOT part of the cockpit** — it was merged into it for
+  company. It is its own view now, **Weekly Work Plan**. Deleting it with the screen it was sitting
+  on would have removed a separate feature nobody asked about.
+- `renderPlanner()` is left in place and simply never called; it opens with
+  `getElementById('ps-ck-kpis'); if (!kp) return;`, so it is inert with that markup gone.
+
+**Which view a project opens on is a fact about the project, not a preference** (`_landOnOpen`):
+no activities → **Schedule Setup** (nothing to look at, everything to decide); activities exist →
+**Project Schedule** (that is the work). Counts ACTIVITIES, not rows — a project seeded with only the
+locked WBS skeleton has rows and no schedule. Fires **once per project**: `load()` runs again on every
+refresh, on the cache-then-revalidate second pass and after an import, and re-deciding there would
+yank a planner out of a view they had deliberately switched to. ⚠️ The cached-path call sits OUTSIDE
+that block's `catch (e) {}` — a screen decision inside a swallowing catch arms itself and then never
+retries.
+
+**The Setup now has a source step, and two paths.** `STEPS` is a live array rebuilt per mode by
+`sbSyncSteps()`, so every existing reader (`STEPS[step].fn`, `_stepNo`, the rail, `gotoStep`) is
+unchanged and only its contents depend on the mode. `mode`/`imp` are session state, deliberately: cfg
+describes a *generated* programme, and a saved setup claiming "mid-import" would lie the moment the
+browser closed. `gotoStep` is mode-aware — the Group menu's deep link to Floors & Zones has to be
+able to CHOOSE the generation path, or it would do nothing on exactly the fresh projects that need it.
+
+**Via new schedule:** the ten steps, in the original order, unchanged.
+
+**Via import — four checking steps, and the database is not touched until the last one.**
+`File › Import` parses and hands off to `ScheduleBuilder.stageImport()`; `previewImport` /
+`previewImportXER` are **deleted**, not left unreachable, so there is exactly one way into
+`doImport` / `doImportXER`. The old modal asked for replace-or-append, WBS placement, trade stamping,
+the package and the whole location mapping at once, over a twelve-row preview of a file that might
+hold forty thousand rows, and wrote the lot on the first click.
+1. **Activities & phases.** The file's WBS as a tree, with a **per-phase activity count** above it.
+   ⚠️ Filing a branch under a phase **is** setting the phase — an imported activity has no `phase`
+   column of its own; `phaseOf()` resolves it from the branch. Any branch at **any depth** can be
+   re-filed (a sub-branch that is really Close-out lifts out without unpicking its parent) or
+   **excluded** outright. The counts resolve through the same inheritance rule the import uses.
+2. **Floors & Zones.** The same Location Breakdown the generation path defines — one per project.
+3. **Relationships.** *"utilize the existing relationships in the import or the planner can adjust as
+   per their preference"*: keep the file's logic / keep only links inside the import (drops dangling
+   predecessors) / import dates only — plus a searchable table where individual links are struck out.
+4. **Review & import.** Every decision restated as what it will DO, then one button.
+
+⚠️ **The commit works on COPIES.** `applyWbsPlacement` rewrites `r.code` in place and the location
+pass stamps `r.loc`, so passing the staged recs would leave the staging holding half-applied codes and
+a planner walking back a step would see a file that no longer matched the one they read.
+
+**Location Breakdown moved completely.** *"Remove this in the project schedule tab. Move completely to
+the Schedule Setup."* The Group menu keeps a signpost and a deep link; the levels editor **and** both
+matchers (**Match WBS to locations**, **Fill location from the WBS tree**) are on Floors & Zones —
+leaving the wizards behind would have been the worst of both, mapping onto levels you cannot see.
+⚠️ The bar renders in the step's **empty state** too: this is now the only route to the editor, and a
+brand-new project has no trades yet.
+
+**Three shared pieces earned a small extension rather than a fork.**
+- `locMapUI(..., preset)` — the Setup rebuilds its panel with `innerHTML` on every step change, so
+  without a way to render previous choices the selections reset to the guesses each time the planner
+  walked back a step. `read()` now returns `srcKey`/`arg` so its own result feeds straight back in.
+- `locScopeFromPlan()` — locImportScope's decision taken from a plan object instead of a live dialog.
+  One rule for both the preview and the commit, or their numbers disagree.
+- `applyWbsPlacement`'s `ownRule` — a same-name parent MERGE emits a move per direct child, and a
+  child may now have a rule of its own; both would land in `moves` with the same `from` and the winner
+  would look random. The child wins, always.
+
+**Two defects caught by the new step, in code that predates it.**
+- ⚠️ **`_IMP_PHASE_HINT` pre-filled "Pre-Construction" as Execution Phase.** The Execution pattern
+  matches the bare word `construct`, and `pre-?construct` was listed inside the *Planning* pattern
+  below it where it could never win. Every OPC/P6 export in this office uses that branch name for
+  design, permits and procurement. It is its own rule now, ahead of Execution. Invisible for two
+  years because the old dropdown never showed the guess as a per-phase COUNT.
+- ⚠️ **The commit's view switch is in a `finally`.** The importers own their error reporting and
+  normally return quietly, but an unexpected throw in the reload chain they end with would strand the
+  planner on a Setup whose staged file had already been cleared, with no way to tell whether the
+  import had happened.
+
+**Guards.** `beforeunload` now fires for a staged import as well as a dirty cfg — the parse is in
+memory and a reload throws away every decision made over it. **Save setup** refuses while an import is
+staged over a never-built cfg, rather than writing an empty "Setup" row that describes nothing.
+
+**Verified in a browser**, driven through a throwaway harness that stubs `AppAuth`/`PDb` so the module
+boots with no session and every query returns empty (a brand-new project — the state the landing rule
+and the funnel have to work in). A synthetic 24-row programme (project-root wrapper, Milestones,
+Initiation, Pre-Construction, Execution with two towers, a consultant-admin branch, Close-out; 9
+relationships incl. one dangling) walked the four steps and committed:
+- landing: empty project → **Schedule Setup**; `?rows=1` → **Project Schedule**; switching to a
+  project with a schedule while on the Setup → **Project Schedule**;
+- phases: `1.1→Milestones`, `1.2→Initiation`, `1.3→Planning` (after the hint fix), `1.4→Execution`,
+  `1.6→Closeout`; tally 2/1/2/4/1 + 2 excluded = 12; a nested re-file moved Tower B's activity from
+  Execution to Close-out and back;
+- locations: **only the 4 Execution-Phase activities** got a Tower/Level/Zone — Milestones, Planning
+  and Close-out came through with `location: null`, which is the leak the scoping exists to prevent;
+  selections survived navigating away and back;
+- relationships: 9 → 8 (dangling dropped) → 7 (one struck out) → 0 (`none`) → 8 (back to `keep`, the
+  strike still in force); the committed payload carries `IN-100 pred=-` and `EX-2011 pred=-` and every
+  other link with its type and lag;
+- the written rows: 16 inserts, dotted codes `1.1 2.1 3.4.1 4.1.1.1 5.1` — the file's own
+  Milestones/Initiation/Closeout branches **merged** with the skeleton instead of double-layering, and
+  the excluded branch absent;
+- the generation path: Build a new schedule → Activities (step 2), `generate('int')` → 4 rows over 2
+  zones, Generate is step 11 with its Push button; the WBS step mounts the tools, the mirror row and
+  the tree; the Group menu's deep link lands on Floors & Zones; Weekly Work Plan renders its week and
+  commitments table; the four re-homed Actions verbs open their panels; the lookahead dialog exports.
+
+⚠️ **Not exercised signed in against a real project.** The harness cannot create rows
+(`insert().select().single()` has nothing to return), so `locEnsureLevels` was given pre-seeded levels
+and the post-import WBS heal chain throws on the stub's null nodes. The first real import of an OPC
+or P6 file is the test — in particular the phase tally on a forty-thousand-row export.
+
+### 2026-09-02 (b) — The import's WBS build was writing dead parent ids, and the repairs finished the job
+
+The first live import of the new funnel (4PH Strevi, 16,393 activities from a P6 `.xer`) inserted every
+activity correctly and then destroyed the view. Four defects in a row, each amplifying the last.
+
+**1. ⚠️⚠️⚠️ `wbs_nodes_parent_id_fkey` — the adopt wrote parent ids that no longer existed.**
+Reported as *"WBS adopt stopped after 102 of 12,432 branches"*. `wbsAdopt()` resolves a child's parent
+through `nodeByCode`, seeded from two places that can BOTH be stale: `computeWbsCodes()` over the
+in-memory `WBS_NODES` (a cached array), and `_adoptedCodes`, built from `project_schedule.wbs_node_id`
+on the surviving summary rows. A node deleted since either was written — a Reset WBS, a `_clearWbsTree`
+from an earlier Replace, another tab's repair, or a previous partly-failed adopt — leaves its id in
+both. The first child that resolved to one failed the foreign key and, because the insert is chunked,
+the adopt stopped there.
+- The adopt now reads **`wbs_nodes(id)` for the project first** and treats that as the only source of
+  truth for what may go into a `parent_id`. A code resolving to a non-live id **defers** (and forgets
+  the mapping, so a later pass re-resolves it) instead of inserting.
+- A summary row pointing at a **deleted** node is worse than one pointing at nothing — it makes the
+  branch look adopted AND hands its children a dead id. Those links are now cleared, in memory and in
+  the database, before anything reads them.
+- Stale entries are dropped from `WBS_NODES` too, since `computeWbsCodes()` is seeded from it.
+- Newly inserted ids are registered live, so the next depth can legally parent to them.
+
+**2. ⚠️⚠️ THE HEAL CHAIN REPAIRED OVER THE STUMP, and that is what emptied the grid.**
+`_wbsCanonicalRootOrder` + `_wbsResyncCodes` rewrite every summary row's dotted code to match the node
+tree, and `_wbsEnsureSummaries` manufactures a row for every node lacking one. All three are correct
+over a COMPLETE tree and destructive over a 102-node stump: they re-coded a 12,432-branch project to
+fit 102 branches, so every activity's code ("4.2.3.1.5") lost the branch above it, `rebuild()` — which
+derives ancestry by SPLITTING the code — could place none of them, and the grid went from a finished
+import to a single "Closeout Phase" row. A new `_wbsAdoptBroken` latch skips all three and names the
+button to press. ⚠️ The activities were never at risk; they are committed before any of this runs.
+
+**3. ⚠️⚠️ ONE `null` IN `WBS_NODES` EMPTIED THE ENTIRE SCHEDULE.** `computeWbsCodes()` read
+`nd.parent_id` unguarded, and it is called from `rebuild()` — so a single null aborted the rebuild,
+left `DL` empty, and rendered "no activities" over a footer still counting all 16,482. Nulls get in
+because **sixteen** call sites push `res.data` from an `insert().select().single()` straight into
+`WBS_NODES`, and PostgREST returns `data: null` for an insert that succeeded but returned no row (a
+select-side RLS policy, a 0-row return). Every one was a latent whole-grid outage. `computeWbsCodes`
+now filters falsy nodes (a missing node degrades to "that branch is not coded", not "nothing renders").
+⚠️ But guarding 54 read sites is not maintainable, so the array is kept CLEAN instead: the paged load
+that builds it `.filter(Boolean)`s, all ten bare push sites are guarded, and the three destructive
+load-time passes (`_wbsCanonicalRootOrder` / `_wbsResyncCodes` / `_wbsEnsureSummariesInner`) scrub in
+place before they judge anything — a falsy node there would either throw half-way through a write or
+be read as a node with no parent and re-rooted.
+
+**4. "No activities yet" WAS A LIE, and it sent the owner to the one button that could not help.**
+*"It logged 16482 activities in the total count but nothing is showing."* An empty display list over a
+non-empty row set has four causes and four different ways out, so the empty state now names the one
+that applies: the WBS build did not finish (press Adopt existing WBS) / **Execution Phase only** is on
+and nothing is phased yet (an imported activity takes its phase from its branch) / a filter is hiding
+everything / the tree could not place anything. Only a genuinely empty project still reads
+"No activities yet".
+
+### 2026-09-02 (c) — The legend's collapsed wall, fixed at the contradiction rather than the symptom
+
+*"I've collapsed all into level 1 but the legend is still bugging. Please fix this already we have
+logged and tried to fix this multiple times."* Four reports over three weeks. The reason it kept coming
+back is that **the two halves of `renderActLegend` disagreed with each other**:
+- `catVisibleValues()` was hardened (correctly) to mean STRICTLY the leaf task rows on screen — its own
+  note says five collapsed phase rows must not produce a 400-entry key;
+- a later pass, fixing a different symptom (the legend ignoring "Execution Phase only"), added a
+  fallback for when that strict set came back empty: fall back to `catScopedValues()`, i.e. every
+  category the view admits — the whole project.
+
+But "the strict set is empty" **is** the collapsed outline. The fallback won, and collapsing printed 40
+chips and "+156 more" — the exact wall collapsing was meant to remove. Each pass fixed its own symptom
+and re-armed the other.
+
+**The fallback is gone.** Collapsed means collapsed: no chips, and one line saying why, how many are
+waiting, and that the roll-up bars are still coloured — with the names in a hover popover and a pointer
+at **Key trades…**. The `+N more` for an over-cap on-screen list is no longer a bare number either.
+⚠️ The one honest cost is stated in the text rather than hidden: a collapsed roll-up bar paints its
+activities' colours and those segments are unkeyed until the branch is opened. That trade-off was
+already documented and accepted on `catVisibleValues`; this is the same decision applied consistently.
+
+**Verified in a browser** on a 188-row schedule shaped like the reported one (Execution Phase over
+2 towers × 8 levels × 2 zones, 128 distinct activity names), colours on and keyed by activity name:
+expanded → 40 chips + "+88 more on screen, not keyed" with the names in the popover; collapsed to
+level 1 → **0 chips** and "Nothing expanded — 128 activity names waiting". `_catNoun`'s unknown-field
+fallback also fixed, which was rendering "128 categories values".
+
+### 2026-09-02 (d) — Weekly Work Plan removed; the import lands on the schedule
+
+- **The Weekly Work Plan (Last Planner) view is gone** — *"Remove the Weekly Work Plan too."* It came
+  out of the Planner Cockpit earlier the same day on the reasoning that it was a separate feature; the
+  owner's answer is that it is not part of developing the schedule either. ⚠️ **The data is untouched**
+  and `openLastPlanner` / `renderLastPlanner` / `openCommitmentForm` are still declared and inert
+  (every writer is null-guarded), so restoring the view is markup plus one menu entry.
+- **The import switches to the Project Schedule BEFORE the write, not after.** *"After importing it
+  should redirect me to the project schedule page, not just leave me to the schedule setup page
+  thinking if the import really was successful."* Switching afterwards was technically true and
+  practically useless: a 16,000-activity import spends minutes inserting and rebuilding, and for all
+  of it the planner sat on the Setup's Start step — which, because the staging is cleared first, had
+  already reverted to "this project already has N activities" and was offering to import again.
+  Switching first puts them on the schedule under the importer's own progress overlay. The `finally`
+  stays as a backstop.
+
+### 2026-09-02 (e) — The imported schedule reads back into the eleven steps
+
+Owner: *"The schedule setup doesn't show the existing schedule. It just prompts for import or build a
+new schedule. I want it when I successfully import a schedule, it should show all of the breakdown of
+the steps from the existing schedule with our 11-step logic schedule wizard."* And why: *"In this way
+we can easily edit and save new setups instead of building everything from scratch or just reimporting
+again and again."*
+
+So the Start step has a **third door**, offered first when there is execution work to read:
+**Read the schedule that is already here**. `sbDeriveFromSchedule()` walks the live rows and builds a
+cfg out of them — a 16,000-activity P6 import becomes an editable recipe instead of a wall of rows.
+
+What is read, and from where:
+- **Activities** — one line per activity NAME (that is what step 2 is: a name repeated across 96 zones
+  is ONE line with a duration). Trade from the modal `work_type`, duration from the median
+  `duration_days`, contract scope from the modal `scope_type`.
+- **Duration scope** — inferred from how often the name occurs: once in the programme → whole project;
+  once per floor → per floor; otherwise → per zone. A visible guess, in a column step 2 can change.
+- **Towers / floors / zones / units** — from `location` on each row, mapped through the project's own
+  Location Breakdown. ⚠️ **Four levels or more puts the first on TOWER**; three or fewer starts at
+  floor. That matches how these projects are broken down (4PH Strevi is Tower › Level › Zone ›
+  Cluster; a single-building job is Level › Zone), and the report says which reading it used.
+- **Floor order** — by the EARLIEST START of the work in each location, not alphabetically: "10th
+  Floor" sorts before "2nd Floor" as text, and the point of that step is that the list reads the way
+  the building was built. Basement / roof / podium are recognised by name so the tower drawing is the
+  right way up.
+- **The sequence between activities** — from the relationships the schedule already holds, reduced from
+  row-level to NAME-level (the setup sequences class codes) with the most common type/lag per pair
+  winning. ⚠️ Self-pairs are dropped (that is the floor-to-floor repetition, which step 5 expresses as
+  a lead/lag) and a pair that would close a loop is dropped rather than written — real schedules
+  contain name-level cycles the activity level does not, and `generate()` walks the graph.
+- **Lifecycle phases** — the one part that IS a faithful round trip: those phases are stored as a plain
+  list of activities with durations, which is exactly what step 9 edits.
+
+⚠️⚠️ **DERIVED, NOT ROUND-TRIPPED**, and the report says so rather than implying a copy. The schedule
+stores WHAT was planned; the setup stores the RULES that would generate it. Trade hand-offs (how many
+floors a trade waits, what runs in parallel) and the tower interfaces are **not recoverable from a
+finished programme** — those steps keep their defaults, and the report names them as the ones to check
+before generating. ⚠️ Nothing is written: the schedule is read, `cfg` is built in memory and marked
+dirty, and only Generate › Push ever changes anything.
+
+⚠️ **PHASE OR CODE, in both the execution scan and the phase scan.** An activity imported minutes ago
+has no `phase` of its own — it takes it from the WBS branch, and that link is attached by a load-time
+heal pass. Asking `phaseOf()` alone returned nothing on exactly the projects this was built for, so
+both scans fall back to the dotted code under the relevant branch, which is already correct at that
+point.
+
+**Two defects found while verifying it, both fixed:**
+- ⚠️ **The activity codes were unusable.** The first cut took the first six characters of the name, so
+  "Trade activity 1..196" all became `TRADEA`, `TRADEA-2`, `TRADEA-3` … and "Masonry Works Type A/B"
+  both became `MASONR`. The code is what step 6 sequences BY, so indistinguishable codes make that
+  step useless. Now initials-plus-digits: `TA1`, `ETSSD` for "Excavation to Suitable Soil Depth",
+  `REBAR` for a single word. Verified 128 codes, 0 collisions.
+- ⚠️ **The phases came back empty** for the reason above, before the code fallback was added.
+
+**Verified in a browser** on a 188-row schedule (2 towers × 8 levels × 2 zones, 3 trades, 128 activity
+names, 96 relationships, Initiation + Close-out work): read → 128 activity lines with codes, trades,
+median durations and scopes; 2 towers; 16 floor rows per trade; 96 zones; zone order per trade; 96
+sequence links; Initiation (2) and Close-out (1) with real durations; the rail expands from `[Start]`
+to all eleven steps and lands on step 2, and the Floors & Zones step shows the towers, the trade chips
+and the project's real breakdown names.
+
+### 2026-09-02 (f) — Row zoom: two zooms, one per pane
+
+Owner: *"I want a feature to zoom out in the grid itself so that I can expand how many activities I can
+see in one screen. Right now a user can only see about 11 rows. By zooming out the grid the gantt
+should also follow in the zoom out."* Then: *"Could this be easily done via ctrl + mouse scroll or two
+finger pan by the trackpad?"*
+
+The density toggle only ever offered 34px and 27px — on a 16,000-activity schedule that is the
+difference between 11 rows and 14, which is not an answer. Row height is now a **continuous zoom**
+(0.5×–1.4× of the density's own height, floored at 16px, persisted per browser).
+
+⚠️ **ONE NUMBER, BOTH PANES.** `ROWH` in JS and `--ps-rowh` in CSS are set together by
+`applyRowZoom()`, and that equality is the whole mechanism: the grid rows are laid out by CSS while
+every Gantt bar, baseline rail, dependency arrow, selection band and the virtual window are positioned
+by JS arithmetic off `ROWH` (the bar internals already scaled off `ROWH / 34`). A mismatch of one pixel
+per row walks the bars off their rows further down a long list, so the two are never assigned
+separately — the density toggle now goes through `applyRowZoom` too, instead of setting `ROWH` itself.
+
+⚠️ **`.ps-wbs-row` WAS WINNING, and this took measuring to see.** A WBS summary row in the grid carries
+both `.ps-grid-row` and `.ps-wbs-row`, and the latter — declared later in the sheet for the WBS TREE,
+where 34px is fixed and its virtualization depends on it — sets `height:34px` at the same (0,1,0)
+specificity. So `--ps-rowh` reached the row as 20px and the computed height was still 34px. The grid's
+rule is now scoped to `.ps-grid-pane` so it outspecifies that without touching the tree. The Gantt's
+`.ps-row-bg` stripes read the same variable, or the two panes drift.
+
+**The gesture, and why it needs no modifier:** the two zooms are on different axes over different
+panes, so the pane the pointer is over decides which one you get.
+- **Ctrl + scroll over the activity grid → row height** (how many activities fit)
+- **Ctrl + scroll over the chart → timeline scale** (how much time fits) — the existing behaviour,
+  unchanged
+- **Ctrl + Shift + scroll → row height on either pane**, for when the pointer is over the chart
+
+⚠️ **Trackpad pinch works for free**: browsers synthesise a `wheel` event with `ctrlKey: true` for a
+two-finger pinch, so pinching over the grid zooms the rows and pinching over the chart zooms the
+timeline, with no extra code. ⚠️ `{ passive: false }` + `preventDefault()` is what stops the browser
+zooming the whole PAGE instead — that is Ctrl+wheel's default action, and without it both would happen.
+The View ▾ menu also carries a −/value/+/Reset stepper that states the row height **and how many rows
+fit**, which is the number the question was actually about.
+
+**Verified in a browser** with real dispatched `WheelEvent`s: Ctrl+wheel down over the grid took ROWH
+34→31 with the timeline scale untouched; up restored it; plain Ctrl+wheel over the chart took the
+timeline 1→1.15 with the rows untouched; Ctrl+Shift+wheel over the chart moved the rows and left the
+timeline alone; a plain wheel zoomed nothing; both gestures reported `defaultPrevented`, so the page
+does not zoom. Row heights measured off the DOM followed exactly (34 → 20 → 34) and rows-on-screen
+went 7 → 14 at 0.6×.
+
+### 2026-09-02 (g) — The import funnel's two UI complaints
+
+- ⚠️ **The file's WBS rows were clashing** — *"needs UI rework since the fields are clashing."* They
+  were borrowing `.sbld-phrow`, whose grid is `14px 1fr 74px 168px 34px` for a phase ACTIVITY (grip,
+  name, duration, window, delete). An import row carries a different set, so they landed in the wrong
+  tracks: the chevron sat on top of the name and the phase `<select>` was squeezed into 74px showing
+  "Miles…", "Initia…". `.sbld-improw` is its own template, sized for what it holds.
+  ⚠️ And a nested branch now shows a **chip** naming the phase it inherits, not a dropdown — every
+  branch having its own select made a 12,000-branch tree read as 12,000 decisions when the honest
+  default is "this follows the branch above it". One click turns the chip into the select.
+- ⚠️ **"First 25 activities that will be imported"** — *"means what exactly? why are these particular
+  activities are shown here?"* The answer was "the first 25 in file order", which is not an answer: it
+  looked curated, it was arbitrary, and on a 16,000-row file it showed 25 Milestones and nothing else,
+  so it could not be used to check anything. It is now a **checker** — search the whole file, and every
+  row states the phase it will land in (through the same inheritance rule as the tally) and whether it
+  is excluded.
+
+### 2026-09-02 (h) — The Relationships step becomes an editor, with the sequencing visual
+
+Owner, after using the first cut: *"Relationships: need rework as well, it should almost be the same
+with the sequencing when creating a new schedule. I cannot edit the predecessors nor type/lag unlike
+the schedule setup for new projects. I want to have a visual representation as well that is what is
+already available in the schedule setup."*
+
+They were right, and the first cut deserved it: three radio buttons and a 21,338-row table whose only
+verb was a ✕. You could throw a link away and nothing else — not repoint it, not change FS to SS, not
+fix a lag, not add the one that was missing. That is "accept or delete", not *"adjust as per their
+preference"*.
+
+**⚠⚠ WHY IT IS NOT THE NEW-SCHEDULE CANVAS, even though that is what was asked for.** Step 6 sequences
+~20 CLASS CODES and can draw all of them as boxes on one canvas. This step holds **21,338
+relationships over 16,393 activities**; a canvas of that is a black rectangle, and no amount of panning
+makes it one. So it is the same MODEL and the same verbs — pick a thing, see what feeds it and what it
+feeds, edit the link — scoped to ONE activity at a time, which is the unit a planner reasons about
+here. The chain visual reuses the `.ps-trace` layout the **Trace Logic** detail tab already uses for
+exactly this question, so it is a shape they have seen rather than a fourth idiom.
+
+**What it does now.** Two panes: a searchable activity list on the left (with each one’s predecessor
+count), and on the right the selected activity’s chain — **Predecessors → This activity → Successors**,
+each box naming the relationship type and lag — over an editable table where the **predecessor ID, the
+type and the lag** are all fields, with ✕ to remove and **+ Add a predecessor**. The three bulk modes
+(use the file’s logic / only links inside this import / dates only) stay above them.
+
+**The edit model is three maps LAYERED over the file’s parse, which is never written to:**
+`relDrop` (struck out) · `relEdit` (type/lag overrides) · `relAdd` (links the planner added). So Back
+and Next cannot half-apply anything, and "use the file’s relationships" always still means the file.
+- ⚠️ **Repointing a predecessor is a DROP PLUS AN ADD, not an in-place edit.** The key encodes
+  (successor, predecessor, type, lag) so that a strike survives a re-render; editing the predecessor
+  inside the key would make it describe a relationship that is not the one it identifies, and the next
+  render would look it up and miss.
+- ⚠️ An edit back to what the file said **deletes the override** rather than recording a no-op, so the
+  "N of your own changes" count means what it says.
+- ⚠️ A duplicate (successor, predecessor, type, lag) is refused, the way the setup’s own `addActLink`
+  refuses one. The test is the whole tuple, not the pair: FS **and** SS between the same two
+  activities is a real P6 pattern, but an exact repeat is always a mistake and the predecessor text
+  cannot represent it twice anyway.
+
+**⚠⚠ AND THE OLD HELPERS ARE GONE, WHICH MATTERS MORE THAN THE UI.** `impRelList` / `impRelKept` were a
+SECOND answer to "which relationships survive" — written before the step could edit anything, so they
+knew about drops and the bulk mode but nothing about type/lag overrides or added links. The review
+step’s tile and the commit each re-derived their own count from the raw predecessor text. Now
+`impRelBase` → `impRelsFor` → `impRelAll` is the single definition and the table, the chain, the tiles
+and **the commit** all read it. Two implementations of one rule is how a screen ends up promising a
+number the write does not deliver.
+
+Performance: the file’s parse is memoised on the **exclusion signature only** — it is the parse of
+21,338 predecessor strings, and re-doing it per keystroke in the search box made the step unusable.
+Mode, drops and edits compose cheaply on top, so they are not part of the key. The activity list caps
+at 250 and the `<datalist>` of IDs at 400, because 16,393 `<option>`s in the DOM per render is not a
+completion aid.
+
+**Verified in a browser** through the full funnel on the synthetic programme: selected EX-1012 and read
+its chain (`Predecessors (1) EX-1011 … FS → This activity EX-1012 → Successors (1) EX-1021 … FS`);
+changed FS to **SS with lag 3**; **added** a second predecessor; then repointed EX-2011’s **dangling**
+`EXTERNAL-99` to `EX-1012` — the row stopped being flagged red and the lag survived the repoint. The
+committed payload carried every one of those edits (`EX-1012 → "EX-1011 SS+3, EX-1011 FS"`,
+`EX-2011 → "EX-1012 FS+3"`), and the lede, the review tile and the written rows all agreed on 10.
+
+### 2026-09-02 (i) — Why every load was slow, and the one thing that fixes it
+
+Owner: *"Let's also look into the speeding up the app. Currently it is lagging so much due to the
+import and heal and probably the cycle of syncing from procurement and engineering."* Exactly right,
+and it was measurable: on 4PH Strevi (16,393 activities, 12,459 nodes) EVERY load ran four self-heal
+passes and both cross-app mirrors before the schedule was usable. `_wbsResyncCodes` alone pages the
+linked rows **13 round-trips** deep to compute 12,459 codes and compare them — almost always to
+discover that nothing drifted.
+
+**The passes are all IDEMPOTENT repairs, so the fix is not to make them faster — it is to know when
+they cannot possibly have anything to do.** Codes only drift when the tree moves; summary rows only go
+missing when a node appears without one; duplicates only appear when rows are written. So
+`_healFingerprint()` hashes exactly what they read — every node’s (id, parent, sort, code), every
+summary row’s (code, node id), and the row counts — and answers "has anything they care about changed
+since the last clean pass?" in one in-memory sweep.
+- ⚠️ ~30k string hashes is **20–40ms**. The chain it replaces is **13+ sequential network round-trips**.
+- ⚠️ Marked clean only at the very END of load(), past every repair, every mirror and every `gen`
+  check — so a load that was superseded or cut short never claims the tree is settled. Recomputed
+  there rather than reusing the pre-pass value, because the passes may legitimately have changed it.
+- ⚠️ **`_beginMutation()` invalidates it.** An import, a push, a Reset WBS and a Clear all run inside
+  a mutation region, so the one choke point they share is where the mark is dropped.
+- ⚠️ It cannot mask a real problem, because it is derived from the very data a problem shows up in.
+  The one thing it deliberately does not cover is a change made with this tab closed by someone whose
+  write left the tree consistent — which is, by definition, nothing to repair.
+
+**The two APP MIRRORS are throttled (10 min), not fingerprinted**, because what they read lives in
+ANOTHER database and nothing in this project can tell you whether it moved. A planner who wants it now
+has the Sync buttons in Schedule Setup › WBS, which bypass the throttle and re-stamp it; one who is
+just opening the schedule no longer pays two cross-app round-trips for a branch that is read-only here.
+⚠️ Stamped only on success, so a failed sync retries next load instead of going quiet for ten minutes.
+
+**Verified in a browser**: first load computed and stored `188.133.55.0.1eqtm9q` and a mirror stamp and
+ran everything; the second load logged *"tree repairs skipped - fingerprint unchanged"* and
+*"engineering/procurement mirrors skipped - synced less than 10 min ago"* and still reached **Live**
+with all 188 rows. A planted fake signature was cleared by an import’s mutation region and re-earned
+by the post-import load, so invalidation works through the real path.
+
+### 2026-09-02 (j) — The last unadoptable branch, and a recovery button that recovers
+
+After the parent-id fix the import reported *"WBS tree is INCOMPLETE — 1 branch(es) still unadopted
+after 3 pass(es)"* — down from 12,330, but still wrong, and worse than wrong: it told the planner to
+press **Adopt existing WBS**, which would have done exactly as little.
+
+- ⚠️ **A branch whose direct parent code does not exist ANYWHERE in the file defers forever.** The
+  deferral is correct (never root a branch whose parent is missing — that is the flattening this file
+  carries scars from), but no number of identical passes can place it, because the parent it waits for
+  is never going to arrive. Real P6 exports do contain those gaps.
+- `wbsAdopt(silent, lastResort)`: on the final pass only, such a branch is attached to its **nearest
+  EXISTING ancestor**, walking up the dotted code until something in the tree is found. ⚠️ Nearest
+  ancestor, never the root — an ancestor keeps it inside the right phase, where a root would let
+  `_wbsResyncCodes` rewrite its code and lose the original deep one. The walk is applied in BOTH the
+  filter and the payload builder, or the filter would admit a branch the payload then rooted.
+- The toast now **names** the re-parented branches, because it is a fact about the FILE that the
+  planner should look at, not a silent repair.
+- ⚠️ **The manual button runs the whole loop now, not one pass.** It is the recovery path every one
+  of these toasts points at, and one pass is exactly what leaves a deep tree half-built: each pass can
+  only place branches whose parents the previous pass created. It calls `autoAdoptAfterImport` (the
+  loop + the last-resort placement + an honest report) behind its own confirm, so the button
+  advertised as "use this to finish the tree" actually finishes it.
+
+### 2026-09-02 (k) — The mirrors stop running on load, and the duplicate branches get fixed at the cause
+
+**The Engineering + Procurement mirrors are manual-only now.** Owner, watching it: *"I think the
+syncing the design procurement branches is causing the lag. Let’s have this not automatic. It only
+syncs when prompted to. See screenshot its been a few mins already and the sync is still ongoing."*
+The ten-minute throttle I put in an hour earlier was the wrong shape — the first open of the day still
+paid it, and that is the open that matters. And the cost is not a fixed price: each mirror reads
+ANOTHER app’s tables, diffs a whole branch, then inserts, updates and sweeps nodes and summary rows.
+On a 12,459-node tree that is minutes, spent while the planner is looking at a schedule that is
+already fully loaded and correct.
+⚠️ **What it costs, stated plainly:** those two branches show what they showed at the last sync until
+somebody presses Sync. That is the right trade — they are read-only mirrors of other teams’ data,
+nobody edits them here, and the "synced &lt;date&gt;" label beside each button has always been what says
+how fresh they are. `_renderSyncPrcAt()` still runs on every load so those labels are painted.
+
+**⚠⚠⚠ AND THE DUPLICATE BRANCHES — FIXED AT THE CAUSE, not with the dedupe.** Owner: *"Why is there
+even duplicates in the first place? The dedupe is not the solution but should only be a backup.
+Duplicates should not occur in the first place."* Correct, and here is the hole they came through.
+
+`wbsAdopt` decided "does this branch already have a node?" purely by DOTTED CODE
+(`if (nodeByCode[r.wbs]) return false`), and `nodeByCode` is built from `computeWbsCodes()`, which
+derives a code from a node’s POSITION in the tree. Those two agree only while the stored code and the
+tree agree — and they stop agreeing the moment a summary row’s `wbs_node_id` fails to be written (a
+partial `_wbsLinkRows` batch, a superseded load, an RLS refusal). The row then still looks
+un-adopted while its node already exists, the tree’s computed codes have moved on from the file’s
+stored ones, the lookup misses, and the adopt inserts a **second node with the same parent and the
+same name**. Exactly what was on screen: `Slab-on-grade`, `Zone 2` and `Zone 1` twice each, whole
+subtrees doubled.
+
+**Identity is no longer positional.** A branch is matched by **(parent, name)** as well as by code: if
+the resolved parent already has a child of this name, the row is adopted ONTO that node and nothing is
+inserted. Maintained as rows are inserted, so two identical siblings inside one adopt run cannot both
+be created either. The toast reports how many branches were re-linked rather than duplicated — every
+one of those is a duplicate that did not happen.
+
+**And the backstop, for the trees already damaged** (the owner’s among them):
+`_wbsDedupeSiblingNodes()`. Neither existing pass could see this shape —
+`_wbsDedupeSummariesByCode` deliberately SKIPS a shared code whose rows are backed by two different
+nodes (rightly: those are usually two real branches whose codes collided, and deleting one would
+destroy a live branch that `_wbsEnsureSummaries` then re-creates, flapping on every load), and
+`_wbsDedupeSkeleton` only looks at the five locked roots. So a genuinely duplicated NODE had no owner.
+- ⚠️ **The merge rule is deliberately narrow, because this deletes WBS nodes.** A loser must share
+  BOTH its parent and its normalised name. Same name under a different parent is two different
+  branches ("Zone 1" exists under every floor); a different name under the same parent is two
+  different branches whatever their codes say. Nothing locked is ever a loser, and nothing with a
+  `source_kind` (another app’s mirror) is touched.
+- ⚠️ **The keeper is the one carrying the most work, then the oldest** — a tie broken by age is
+  stable, and two tabs repairing one project must pick the same keeper or they undo each other.
+- ⚠️ **Order is not arbitrary: children, then rows, then delete.** Both tables carry a foreign key to
+  `wbs_nodes`. An error stops the pass with the merge half-done, which is recoverable (the loser is
+  empty but still there) rather than destructive.
+- It runs BEFORE the row dedupe: two nodes for one branch is the cause, duplicate rows are the
+  symptom, and merging first is what leaves the row dedupe a pair it can safely act on.
+
+### 2026-09-02 (l) — "Check any activity in the file" finally checks something
+
+Owner: *"Check any activity in the live file doesn’t do much? Is it just a list of activities?"* It
+was. This panel has now been wrong twice — version one was "the first 25 in file order" (arbitrary,
+and on a 16,000-row file it showed 25 Milestones); version two added search and a phase column, which
+made it a nicer list but still only answered questions you already knew to ask. A step whose whole
+purpose is DATA CHECKING has to find the problems for you.
+
+It runs the checks a planner would otherwise meet weeks later, in the schedule: **no dates at all**,
+**finish before start**, **no activity ID** (cannot be a relationship target or take progress),
+**duplicate activity ID** (two rows claiming one ID — relationships and progress updates silently
+land on whichever wins), **progress with no actual start**, **100% with no actual finish**. Each is a
+chip that FILTERS the table, so "2 duplicates" is one click from being the list of the two, and every
+row carries its flags beside the phase it will land in.
+⚠️ None of them blocks the import — they are facts about the file and the planner decides. They are
+counted over the KEPT activities, so excluding a junk branch on the tree above makes its problems
+disappear from the count, which is the feedback loop the exclude tick is for.
+
+**Verified in a browser** on a file with one planted instance of each defect: all six chips read
+exactly 1 (duplicate ID reads 2, correctly — both rows are implicated), and clicking the duplicate
+chip narrowed the table to precisely those two rows with the flag shown.
+
+### 2026-09-03 — What the XER actually says, the import lock, and why rows went "missing"
+
+**First, the two factual questions, answered from the file itself** (`4PH Strevi Residences Schedule -
+BL02.xer`, 8.4 MB, parsed the way the module’s own `parseXER` reads it):
+
+| | |
+|---|---|
+| PROJWBS rows | **12,465** |
+| TASK rows | **16,393** |
+| TASKPRED rows | **21,338** |
+| task types | 16,284 `TT_Task` · 101 `TT_FinMile` · 8 `TT_Mile` |
+| tree depth | 10 levels; **6,675 branches at depth 9** |
+| branches holding no task anywhere beneath them | **9 of 12,465** |
+
+- ⚠️ **"Are those rows milestones?" — two of the four are, and the module drew them correctly.**
+  `Securing of Permits` (A4730) and `Signing of Contract` (A4720) are `TT_Task`; only
+  `Release of Down payment (1st/2nd Tranche)` (A4735 / A6860) are `TT_Mile`. The screenshot shows the
+  red diamond on exactly those two. No defect.
+- **All four sit directly under `wbs_id=993632` = "Initiation Phase"**, which holds 4 direct tasks and
+  no child branches — which is precisely what appeared once the heal finished. So the content was
+  right; what was wrong was that it took a hard refresh to show up.
+
+**⚠⚠⚠ AND THAT IS THE ROOT CAUSE THE OWNER ASKED FOR.** *"Import is already done but the status is
+showing that its still ‘restoring missing WBS rows’ — why are there missing WBS rows in the first
+place when the activities and sub-WBS are already mapped out to begin with? Let’s fix this at the
+source and make the dedupe/heal a backstop not the main solution."*
+
+Nothing was missing. `_wbsEnsureSummariesInner` decided "missing" purely by whether any summary row
+carried the node’s `wbs_node_id` — and on an import the rows are written FIRST (12,465 of them,
+straight from the file) and linked to their nodes AFTERWARDS by `_wbsLinkRows`. That link step is the
+fragile one: `wbs_link_codes` is a single statement over 12,465 rows against a deployment whose
+`statement_timeout` is ~8s (measured at 8,173ms on the sibling RPC — see
+`migrations/2026-09-02-wbs-link-batched.sql`), and its fallback was one PATCH **per row**. When it is
+cancelled or partial the rows are all still there; they have simply lost their `wbs_node_id`.
+
+The projection pass then read that as "these nodes have no rows" and **inserted a second one for each**
+— which is both reported symptoms at once:
+- **"Restoring missing WBS rows…" grinding for minutes** — one sequential INSERT per node, up to
+  12,465 round-trips;
+- **the duplicate `Slab-on-grade` / `Zone 2` / `Zone 1` branches** — every insert was a twin of a row
+  that already existed at the same dotted code.
+
+Fixed at both ends:
+1. **The projection pass looks for the row before creating one.** A summary row at the node’s own
+   computed code with `wbs_node_id IS NULL` **is** that node’s row; it is re-linked with an UPDATE.
+   Only a node with genuinely nothing at its code gets an insert. ⚠️ A code is claimed as it is
+   adopted, so two nodes computing the same code cannot both take one row.
+2. **Both paths are batched, and so is the link step.** The re-link and the insert go 200 at a time,
+   and `_wbsLinkRows`’ fallback is now a chunked bulk upsert (`id` present → PostgREST resolves to
+   ON CONFLICT DO UPDATE and touches only `wbs_node_id`): **~25 requests instead of 12,465**. And it
+   **reports** a failure now, because the silence is what produced the duplicates.
+3. **The adopt’s scan is shared across the passes of one run.** `autoAdoptAfterImport` calls it up to
+   twelve times and each call was re-paging both `wbs_nodes(id)` and every summary row — 26
+   round-trips per pass, spent re-learning what the previous pass had just written. One scan now,
+   carried forward and kept current in memory as nodes are inserted.
+
+### 2026-09-03 (b) — The import lock
+
+Owner: *"when the import is still ongoing let’s prevent the user from disrupting the import by adding
+activities or changing the details of the existing activities until the import is complete. Right now
+there is no guard for that. By allowing users to freely do this they can mistakenly think that the
+import is already done and yet it is still ongoing."*
+
+Both halves of that are real. The DANGER is concrete: an import runs inside a mutation region that
+clears and re-inserts thousands of rows and then rebuilds the tree, and an edit landing mid-way is
+written against a row set that is about to be replaced. The CONFUSION is why it happens: the progress
+overlay closes when the INSERTS finish, and the schedule underneath is already painted and looks
+done, while the tree is still being built for another minute.
+
+- ⚠️ **The lock spans the whole job, not just the write.** `_isMutating()` covers the insert region;
+  `_repairBusy` covers the load-time tree passes after it. From the planner’s side it is one
+  operation, and the moment it stops saying anything is the moment they start editing.
+- **One banner**, inserted above the toolbar on every view (an import started from the Setup finishes
+  while they are still on it), naming the file and the current phase.
+- **One guard.** All **28** sites that read `window.__viewOnly || window.__archived` now call
+  `_editLocked()`, and the six `"This project is read-only."` toasts call `_editLockMsg()`, which says
+  the accurate thing during an import instead of implying the project is read-only.
+- ⚠️ **`body.ps-locked` dims and disables the primary verbs by CSS** rather than one handler at a
+  time, so a button added later is covered without anyone remembering to.
+- ⚠️ It does NOT lock an ordinary load — a cached-then-revalidate open is not a job anyone waits
+  for, and locking it would make the schedule feel broken every time it opened.
+
+**Verified in a browser** with a MutationObserver over a full staged import: the banner appeared for
+every phase in order — *Import of harness-programme.xlsx in progress — do not edit yet.* + "Writing
+the activities into the schedule…", "Loading resources…", "Checking the WBS order…", "Checking WBS
+codes…", "Checking for duplicate WBS branches…", "Checking for duplicate WBS rows…", "Restoring
+missing WBS rows…" — and both the banner and `body.ps-locked` cleared on completion. `#ps-add` was
+`pointer-events:none` at 45% opacity throughout.
+
+Also: the post-import toast said **"open the WBS Manager"** for a screen that no longer exists. It and
+the other user-facing mentions now say **Schedule Setup › WBS**.
+
+### 2026-09-03 (c) — Working calendars become step 2, with a guided route
+
+Owner: *"I am also thinking working calendars should also be folded into the steps in the schedule
+setup. Its one of the things that would define the duration of cycles. In this case its a crucial
+input and its ideal to set this up at the start already rather than creating the schedule setup first
+then do the working calendar."* And: *"Let’s make it easier as well to create new calendars / use
+existing calendars by developing a wizard. The working calendar now has a feature for consideration of
+seasonal weathers in the Philippines. Let’s consider that in the wizard."*
+
+**⚠⚠ IT IS THE SECOND STEP, AND THE ORDERING IS THE POINT.** Every duration typed into the Activities
+step is a count of WORKING days, and the calendar is what turns that count into a date — so the zone
+cycle, the floor-to-floor rhythm, the trade hand-offs and the generated preview are all measured in a
+unit the calendar defines. Setting it afterwards means every number already typed silently meant
+something else while it was being typed. The rail is now twelve steps:
+**Start · Working calendars · Activities · Floors & Zones · Tower links · Zone sequence · Trade
+sequence · Scope per zone · Stacking · Project phases · WBS · Generate**, and **Working Calendars has
+left the view menu** — one door, at the point in the process where the answer is needed.
+
+⚠️ **The editor is not rebuilt.** `renderCalendarsInto(host)` draws into whatever host it is given, so
+the step gives it one. A second calendar editor would be two places to keep a season, a climate type
+and a holiday list correct — and this module already carries the scar of exactly that (the save’s own
+note: *"Omitting them would let a save from the schedule silently blank what was set in the roster
+module"*). `#ps-view-calendars` survives as a hidden host only; a stale deep link to `'calendars'` is
+routed to the step instead of showing a blank view.
+
+**The wizard, and why a wizard.** The editor is a good EDITOR and a poor blank page. Creating a
+calendar from nothing means knowing in advance that the working week and the seasonal week are
+different things, that a season is a month set with its own week, that PAGASA climate type decides
+which months are wet, and that exposure scales how many days are lost — four pieces of domain
+knowledge before the first useful keystroke. And getting the climate type wrong is, in `calendar.js`’
+own words, *"the single most expensive mistake this preset set exists to prevent"*: a Luzon wet season
+applied to a Mindanao project says to expect nothing in exactly the months that drown it.
+
+Five questions, in the order a planner can answer them, deriving the rest:
+1. **Start from** — one of the five named templates, or a copy of a calendar already on the project
+   (seasons and holidays included).
+2. **Working week** — days, hours, and the special-non-working-days choice, pre-filled from the
+   template, with the year’s working-day count shown as it changes.
+3. **Where is the site** — the four PAGASA types listed **by province**, because nobody knows their
+   type number. Plus site exposure (sheltered / typical / fully exposed).
+4. **Seasons** — the wet/dry blocks derived from the type via `PDCal.phSeasonPreset`, each a real
+   month set with its own week; editable, rebuildable, removable. ⚠️ A month may belong to one season
+   only, rejected here the way the editor rejects it on save.
+5. **Review** — the year’s actual working days, the indicative rain allowance for (type × exposure),
+   and the project-default choice.
+
+⚠️ **It writes the SAME payload shape the editor writes** — seasons normalised identically, and
+`observe_special_days` / `climate_type` always included, because a partial payload from the smaller
+door is how this module previously blanked the other door’s work. ⚠️ One default per project, cleared
+BEFORE the insert so a part-way failure leaves zero defaults (recoverable) rather than two
+(ambiguous). ⚠️ And it refuses to open or save while the import lock is on.
+
+**Verified in a browser**, driven through all five steps: 5 templates + copy; the `ph5` template
+seeded Mon–Fri / 8h and its own name; 4 types + Skip offered with their province lists; choosing
+**Type I** derived **wet Jun–Sep** and **dry Dec–Apr** and built two season blocks (wet = Mon–Fri, dry
+= Mon–Sat); **severe** exposure reported **~71 working days a year** of rain allowance; the review
+restated all of it; and Save issued exactly two writes — `update {is_default:false}` then an `insert`
+carrying the full payload with both seasons, their month sets, their per-season weeks,
+`climate_type: "I"` and `observe_special_days: true`.
+
+### 2026-09-03 (d) — Drag and connect: the import’s relationships use the build path’s own model
+
+Owner: *"I want this to be as easy as dragging and connecting not a per step field input and add a
+predecessor similar to the logic and wizard of the schedule setup for new projects."*
+
+The table it replaces was correct and tedious: to say *"concrete follows rebar"* you typed an activity
+ID, chose a type and typed a lag, one row at a time. On the build path the same statement is a gesture
+on a bar. So this step now carries the **same model, the same CSS classes and the same relationship
+dialog** as `stSequence` / `stTradeSeq`:
+
+- **Drag one bar onto another** → the FS/SS/FF/SF + lag dialog. The bar you start on is the
+  PREDECESSOR, the one you drop on is the successor — stated in the confirmation toast so it cannot
+  be guessed wrong.
+- **Edit mode 2-phase pick** — click source bars → right-click → click destination bars → right-click
+  → one dialog links every source to every destination. Byte-for-byte the wizard’s own flow, down to
+  the `pend` / `pend-dst` bar styling and the running hint line.
+- **Click an arrow** → edit its type/lag, or unlink.
+- **View mode** → click a bar and its predecessors go **green**, its successors **orange**, the rest
+  dim — `prednode` / `succnode` / `dimnode` / `hotpred` / `hotsucc` / `dimlink`, the build path’s own
+  classes, so the meaning carries over instead of being learned twice.
+- **Links (N)** still opens the familiar table, for the relationships the canvas deliberately does not
+  draw.
+
+**⚠⚠ WHY IT IS SCOPED AND THE WIZARD’S IS NOT.** The Trade-sequence step sequences ~20 class codes and
+can draw all of them. This step holds **21,338 relationships over 16,393 activities**; a canvas of that
+is a black rectangle, and no amount of panning makes it one. So the canvas is scoped to **one WBS
+branch of the file at a time** — which is also how the work is organised, and the exact analogue of
+"pick a trade". A branch over the 60-bar cap is drawn to the cap and says so.
+⚠️ Links that LEAVE the scope are counted on the bar as an off-canvas stub, never silently dropped: a
+bar that looks unconnected while it has nine predecessors elsewhere is worse than a crowded canvas.
+
+**Three real bugs found by driving it, two of which would have broken every drag:**
+- ⚠⚠ **The drop target was resolved with `elementFromPoint`, and the canvas scrolls.** A bar dropped
+  on while it sits below the fold has a perfectly valid bounding rect but `elementFromPoint` returns
+  `null` for it — so the drop silently did nothing. Measured: bars at viewport y=868 and y=898 in a
+  734px-tall window. It is a bounding-box scan over the bars now, which also survives any future
+  overlay becoming a hole in the drop area.
+- ⚠⚠ **The scan then measured a DETACHED node.** Every mousemove re-renders the step (that is how the
+  rubber band is drawn), which replaces the panel’s innerHTML — so the canvas element captured when
+  the drag started is detached by the time the drop lands and its children’s rects are all zeros. The
+  live canvas is looked up again at mouse-up.
+- **The reciprocal link is refused.** "A drives B" plus "B drives A" is a two-activity loop, and it is
+  the mistake a drag makes easily — drag the wrong way, then drag back to fix it. ⚠️ Only the
+  IMMEDIATE reciprocal is checked, deliberately: a reachability walk over 21,338 relationships per
+  link is not something to run on a mouse-up, and a longer cycle is already reported by the
+  schedule’s own Health check once the import lands.
+
+**Verified in a browser** on a staged file, end to end: View-mode click on `Z1-CONC` put `Z1-FORMS` in
+`prednode` and dimmed the rest; **dragging** `Z1-CONC` onto `Z1-CURE` drew the band, opened the dialog,
+and `SS` + lag `3` / `2` produced a real arrow labelled `SS+2`; the **2-phase pick** reported
+"1 source(s) selected — right-click to confirm" then "Now click one or more destination bars" and
+created its link; the **Links table** listed all five; the **reciprocal** attempt was refused with the
+link count unchanged; and the commit wrote `Z1-CURE :: Z1-CONC SS+2` alongside the file’s own
+relationships.

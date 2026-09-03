@@ -96,7 +96,7 @@ window.IssuesLessons = (function () {
   // meeting link / the combined Dashboard).
   var _lessMode = 'log';               // 'log' | 'detail'
   var _lessPrevMode = 'log';
-  var _lessSel = null, _lessNew = null, _lessReport = false;
+  var _lessSel = null, _lessNew = null;
   // "This came out of a meeting." The tag is read-only in the log: the minute is the
   // record of what was said, this register owns how the issue is chased. Both now live
   // in this module (the Minutes of Meeting screen), but they stay separate records.
@@ -608,6 +608,199 @@ window.IssuesLessons = (function () {
     };
     // ⚠️ The per-screen Dashboard/Log toggle is GONE — Dashboard is its own top-level tab
     // now (see `.il-tabs` in the HTML), so there is nothing left to wire here.
+
+    // ---- ITEM 8: export menu ---------------------------------------------
+    var eb = $('il-export-btn'), em = $('il-export-menu');
+    if (eb) eb.onclick = function (e) {
+      e.stopPropagation();
+      em.classList.toggle('open');
+      eb.classList.toggle('is-active', em.classList.contains('open'));
+    };
+    // Outside-click closes it, same convention as the topbar filter panel.
+    document.addEventListener('click', function (e) {
+      var ew = $('il-exportwrap');
+      if (ew && em && em.classList.contains('open') && !ew.contains(e.target)) closeExportMenu();
+    });
+    if (em) em.querySelectorAll('[data-export]').forEach(function (b) {
+      b.onclick = function () {
+        closeExportMenu();
+        exportRegister(screen === 'lessons' ? 'lessons' : 'issues', b.dataset.export);
+      };
+    });
+  }
+
+  function closeExportMenu() {
+    var em = $('il-export-menu'), eb = $('il-export-btn');
+    if (em) em.classList.remove('open');
+    if (eb) eb.classList.remove('is-active');
+  }
+
+  // ---- ITEM 8: export the currently-filtered/sorted Issues or Lessons list --
+  // ⚠️ Reuses the SAME filtered+sorted list each list's own table already shows
+  // (issuesFiltered()/lessonsFiltered() + applySort with the active _issSort/
+  // _lessSort) — an export built off a differently-scoped read could disagree
+  // with what's on screen, which is the one thing an export must never do.
+  function exportRows(kind) {
+    if (kind === 'lessons') {
+      var list = applySort(lessonsFiltered(), _lessSort, LESSON_SORT_EXTRACT);
+      return {
+        title: 'Lessons Learned',
+        headers: ['Department', 'Lesson Learned', 'Source', 'Date Resolved', 'Aging (d)'],
+        rows: list.map(function (l) {
+          var resolved = lessonResolvedDate(l), aging = lessonAgingDays(l);
+          return [
+            l.department || '', l.lesson || '', lessonSourceText(l),
+            resolved ? Fmt.date(resolved) : '', aging == null ? '' : aging,
+          ];
+        }),
+      };
+    }
+    var data = applySort(issuesFiltered(), _issSort, ISSUE_SORT_EXTRACT);
+    return {
+      title: 'Issues & Concerns',
+      headers: ['No.', 'Department', 'Issue', 'Caused By', 'Corrective Action', 'Champion',
+        'Status', 'Date Raised', 'Days Aging', 'Date Resolved'],
+      rows: data.map(function (r, i) {
+        var a = agingDays(r);
+        return [
+          i + 1, r.department || '', r.description || '', r.caused_by || '', r.corrective_action || '',
+          latestChampionText(r) || '', r.status || 'Open',
+          r.date_presented ? Fmt.date(r.date_presented) : '',
+          a == null ? '' : a,
+          r.date_resolved ? Fmt.date(r.date_resolved) : '',
+        ];
+      }),
+    };
+  }
+
+  function exportRegister(kind, format) {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    var exp = exportRows(kind);
+    if (!exp.rows.length) { UI.toast('Nothing to export — the current filter shows no rows.', 'warn'); return; }
+    if (format === 'excel') exportExcelFile(exp);
+    else if (format === 'html') exportHTMLFile(exp);
+    else if (format === 'pdf') exportPDFFile(exp);
+  }
+
+  // Excel — same SheetJS convention (aoa_to_sheet -> book_new -> writeFile) this
+  // suite already uses elsewhere (Drawing Register, Cash Flow, …).
+  function exportExcelFile(exp) {
+    if (typeof XLSX === 'undefined') {
+      UI.toast('The Excel library did not load — check the connection and reload.', 'error');
+      return;
+    }
+    var aoa = [exp.headers].concat(exp.rows);
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    var wb = XLSX.utils.book_new();
+    // Sheet names are capped at 31 chars by the xlsx format itself.
+    XLSX.utils.book_append_sheet(wb, ws, exp.title.slice(0, 31));
+    XLSX.writeFile(wb, exp.title + ' - ' + (projName || pid) + '.xlsx');
+  }
+
+  // A self-contained, offline-openable HTML file — inline CSS, no external
+  // references — matching the "offline export" convention this app already
+  // established elsewhere (Progress Photos' PPR export).
+  function exportHTMLFile(exp) {
+    var thead = '<tr>' + exp.headers.map(function (h) { return '<th>' + Fmt.esc(h) + '</th>'; }).join('') + '</tr>';
+    var tbody = exp.rows.map(function (row) {
+      return '<tr>' + row.map(function (c) { return '<td>' + Fmt.esc(c) + '</td>'; }).join('') + '</tr>';
+    }).join('');
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+      '<title>' + Fmt.esc(exp.title) + ' — ' + Fmt.esc(projName || pid) + '</title>' +
+      '<style>' +
+        'body{font-family:Arial,Helvetica,sans-serif;margin:24px;color:#231F20;}' +
+        'h1{font-size:18px;margin:0 0 4px;}' +
+        '.sub{color:#6b6b6b;font-size:12px;margin:0 0 18px;}' +
+        'table{border-collapse:collapse;width:100%;font-size:12px;}' +
+        'th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top;}' +
+        'th{background:#EE3124;color:#fff;font-weight:700;}' +
+        'tbody tr:nth-child(even){background:#f7f7f8;}' +
+      '</style></head><body>' +
+      '<h1>' + Fmt.esc(exp.title) + '</h1>' +
+      '<p class="sub">' + Fmt.esc(projName || pid) + ' &middot; ' + exp.rows.length +
+        ' record' + (exp.rows.length === 1 ? '' : 's') + ' &middot; exported ' + Fmt.esc(Fmt.date(todayISO())) + '</p>' +
+      '<table><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>' +
+      '</body></html>';
+    var blob = new Blob([html], { type: 'text/html' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = exp.title + ' - ' + (projName || pid) + '.html';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    UI.toast('HTML downloaded', 'ok');
+  }
+
+  // PDF — same html2pdf.js pattern this suite's other PDF export already
+  // established (see minutes-of-meeting's momDownloadPDF). ⚠️⚠️ THE CAPTURED
+  // NODE MUST STAY IN NORMAL FLOW — html2pdf clones it into its own container
+  // and measures it there; an out-of-flow element contributes nothing to that
+  // container's height and produces a completely blank PDF. The off-screen
+  // parking goes on a HOLDER instead; `wrap` (what gets rendered) sits in
+  // normal flow inside it. Landscape, since these are wide tables.
+  async function exportPDFFile(exp) {
+    if (typeof html2pdf !== 'function') {
+      UI.toast('The PDF library did not load — check the connection and reload.', 'error');
+      return;
+    }
+    var holder = null;
+    try {
+      var filename = exp.title + ' - ' + (projName || pid) + '.pdf';
+      var theadHTML = '<tr>' + exp.headers.map(function (h) {
+        return '<th style="background:#b40000;color:#fff;font-size:9px;text-transform:uppercase;' +
+          'letter-spacing:.03em;padding:5px 6px;text-align:left;border:1px solid #b40000;">' +
+          Fmt.esc(h) + '</th>';
+      }).join('') + '</tr>';
+      var tbodyHTML = exp.rows.map(function (row, i) {
+        var bg = i % 2 ? '#f7f7f8' : '#fff';
+        return '<tr>' + row.map(function (c) {
+          return '<td style="background:' + bg + ';font-size:8.5px;padding:5px 6px;' +
+            'border:1px solid #e5e5ea;vertical-align:top;">' + Fmt.esc(c) + '</td>';
+        }).join('') + '</tr>';
+      }).join('');
+
+      holder = document.createElement('div');
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:277mm;';
+
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'font-family:Arial,sans-serif;color:#1c1c1e;width:277mm;' +
+        'padding:12mm;box-sizing:border-box;background:#fff;';
+      wrap.innerHTML =
+        '<div style="background:#b40000;padding:12px 18px;margin:-12mm -12mm 14px -12mm;' +
+          'display:flex;justify-content:space-between;align-items:center;">' +
+          '<img src="../../assets/img/logo-white.png" style="height:24px;width:auto;" crossorigin="anonymous"/>' +
+          '<div style="text-align:right;">' +
+            '<div style="font-size:13px;font-weight:700;color:#fff;">' + Fmt.esc(exp.title) + '</div>' +
+            '<div style="font-size:9px;color:rgba(255,255,255,0.85);margin-top:2px;">' +
+              Fmt.esc(projName || pid) + ' &middot; ' + exp.rows.length + ' record' + (exp.rows.length === 1 ? '' : 's') +
+              ' &middot; exported ' + Fmt.esc(Fmt.date(todayISO())) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<table style="width:100%;border-collapse:collapse;">' +
+          '<thead>' + theadHTML + '</thead><tbody>' + tbodyHTML + '</tbody>' +
+        '</table>';
+
+      // ⚠️ Must be IN the document — html2canvas measures a laid-out element,
+      // an orphan node has no box. The HOLDER is parked off-screen; `wrap`
+      // sits in normal flow inside it (see the warning above).
+      holder.appendChild(wrap);
+      document.body.appendChild(holder);
+
+      await html2pdf().set({
+        margin: [8, 8, 8, 8],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+      }).from(wrap).save();
+
+      UI.toast('PDF downloaded', 'ok');
+    } catch (e) {
+      UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
+    } finally {
+      // ⚠️ In `finally`: a throw mid-render would otherwise leave the off-screen
+      // node in the document, and every later export would stack another one.
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+    }
   }
 
   // ---- ITEM 1: one shared topbar search box + funnel toggle -----------------
@@ -659,16 +852,20 @@ window.IssuesLessons = (function () {
     Array.prototype.forEach.call(document.querySelectorAll('.il-tab[data-screen]'), function (b) {
       b.classList.toggle('active', b.dataset.screen === s);
     });
-    // ITEM 10 (2026-09-01): the module title (icon + text) is dropped on
-    // Lessons Learned only — the tabs-dropdown trigger already names the
-    // active screen, so there it is pure duplication. Issues & Concerns /
-    // Issues Dashboard keep theirs (see dashboard.css's width-gated
-    // `.pd-title-hasdrop` rule, which prevents the "icon alone on a line" bug
-    // for THOSE two screens by hiding the label only above 700px); this is a
-    // full always-hide, scoped to Lessons alone, which cannot reproduce that
-    // bug — nothing is left standing alone once both icon and text are gone.
+    // ITEM 1 (this round): the module title (icon + text) is dropped on ALL
+    // THREE screens now, not Lessons Learned alone — the owner's report was
+    // "the tab label is there, to the left" on Issues & Concerns and Issues
+    // Dashboard specifically, i.e. entry (h)'s item 10 fix only ever covered
+    // Lessons. The tabs-dropdown trigger already names whichever of the three
+    // screens is active (it's built from the SAME `.il-tabs` group all three
+    // buttons belong to), so the module `<h1>` is pure duplication on every
+    // one of them, not just Lessons. ⚠️ Still a full always-hide of the WHOLE
+    // element (never a text-only `display:none`) — that is what keeps this
+    // safe from the "icon alone on a line" bug entry (h) traced: with nothing
+    // left standing (icon AND text both gone), there is no orphaned icon row
+    // for the dropdown trigger's label to land beside on the next line.
     var titleEl = document.querySelector('.il-title');
-    if (titleEl) titleEl.style.display = s === 'lessons' ? 'none' : '';
+    if (titleEl) titleEl.style.display = 'none';
     // ITEM 7 (2026-09-01): a linked issue can now render TWICE — once as the
     // Issues screen's own drill-down, once embedded below its lesson on the
     // Lessons screen — and DOM ids must stay unique, so whichever screen is
@@ -704,6 +901,16 @@ window.IssuesLessons = (function () {
     if (showNew) {
       nb.textContent = screen === 'lessons' ? '+ New lesson' : '+ New issue';
       nb.title = screen === 'lessons' ? 'Capture a lesson learned' : 'Log a new issue';
+    }
+    // ITEM 8 (this round): the export control makes sense against a LIST —
+    // shown for the Issues/Lessons log, hidden while a single record's detail
+    // is open (nothing to export there beyond the one record already on
+    // screen) and hidden on the Dashboard tab (no register of its own).
+    var ew = $('il-exportwrap');
+    if (ew) {
+      var showExport = (screen === 'issues' || screen === 'lessons') && curMode !== 'detail';
+      ew.style.display = showExport ? '' : 'none';
+      if (!showExport) closeExportMenu();
     }
   }
 
@@ -1434,7 +1641,6 @@ window.IssuesLessons = (function () {
   // "reporting" meant.
   function renderIssueDetailView() {
     var host = $('il-issues-view'); if (!host) return;
-    host.classList.remove('il-mom-report');
     if (!pid) {
       host.innerHTML = '<div class="pd-card" style="padding:24px;color:var(--pd-muted);">Select a project to see its issues.</div>';
       return;
@@ -1545,7 +1751,14 @@ window.IssuesLessons = (function () {
     // ⚠️ ITEM 1: the way back OUT of On Hold — mirrors canHold/canClose exactly, just
     // gated on the opposite status. Reopening always asks for an Action Plan (below),
     // the same "narrative required before the status changes" rule Hold/Close follow.
-    var canReopen = mayEdit && !isNew && status === 'On Hold';
+    // ITEM 9 (this round): also offered from Closed, not On Hold alone — a closed
+    // issue previously had no way back at all. `confirmReopenIssue()` needs no
+    // change for this: it already just sets status back to Open with a stated
+    // action plan, which is exactly as sound a transition from Closed as it is
+    // from On Hold. `date_resolved`/`closure_report` are deliberately left as-is
+    // (a historical record of when/why it was last closed) — a later re-close
+    // overwrites both with fresh values, same as it always has.
+    var canReopen = mayEdit && !isNew && (status === 'On Hold' || status === 'Closed');
     var canClose = mayEdit && !isNew && status !== 'Closed';
     var workflowRow = (ro || _issHoldOpen || _issCloseOpen || _issReopenOpen) ? '' :
       '<div class="il-workflow-btns">' +
@@ -1689,16 +1902,24 @@ window.IssuesLessons = (function () {
       // doesn't exist yet), so all this section could show is a confusing "No
       // lesson captured from this issue yet" while the very lesson being typed
       // below IS that lesson.
+      // ITEM 3/5 (this round): renamed "Lessons learned from this issue" ->
+      // "Related lessons", and rendered as a plain numbered list of lesson
+      // text ONLY — no department chip, date or action buttons — instead of
+      // the card/tile grid. `ls` is already built above with `excludeId`
+      // filtering the CURRENT lesson out (item 3's exclusion requirement),
+      // which stays unchanged here; only the heading and the markup change.
+      // Each item reuses the SAME `data-open-lesson` wiring `wireIssues()`
+      // already applies to any such element (used elsewhere for the same
+      // purpose), so opening one needs no new wiring.
       (forceClose ? '' :
-      '<div class="il-mom-actions il-iss-lessons"><h4>Lessons learned from this issue</h4>' +
+      '<div class="il-mom-actions il-iss-lessons"><h4>Related lessons</h4>' +
         (ls.length
-          // ITEM 10: `{hideIssueLink:true}` — this card list already IS the issue's own
-          // page, so a per-lesson "Open the issue →" button here would point at the page
-          // you're already on. Every OTHER lessonCardHTML caller (the unified Lessons
-          // screen) still gets that link — it's a genuine way out from there.
-          ? '<div class="il-lessons il-lessons-inline">' +
-              ls.map(function (l) { return lessonCardHTML(l, { hideIssueLink: true }); }).join('') +
-            '</div>'
+          ? '<ol class="il-related-lessons">' +
+              ls.map(function (l) {
+                return '<li><button class="il-related-lesson-item" data-open-lesson="' +
+                  Fmt.esc(l.id) + '">' + Fmt.esc(l.lesson) + '</button></li>';
+              }).join('') +
+            '</ol>'
           : '<div class="il-empty" style="padding:12px;">No lesson captured from this issue yet.</div>') +
         (canAdd && !isNew
           // ITEM 12: "Capture another lesson" -> "Add another lesson".
@@ -2384,7 +2605,7 @@ window.IssuesLessons = (function () {
 
   function lessReset() {
     LESSONS = []; _lessLoaded = false; _lessErr = ''; _lessLegacy = false;
-    _lessSel = null; _lessNew = null; _lessReport = false;
+    _lessSel = null; _lessNew = null;
     _lessMode = 'log'; _lessPrevMode = 'log';
   }
 
@@ -2519,11 +2740,11 @@ window.IssuesLessons = (function () {
   // "viewing a lesson" always meant leaving the Lessons screen. It now lists every
   // `LESSONS` row directly (issue-linked and standalone alike, one list, one shape —
   // lessonsFiltered() already covers both), and opening one opens the LESSON's own
-  // detail (openLesson) and stays on this screen. "Open the issue →" is still offered
-  // as an explicit, secondary link on a card that has one (lessonCardHTML) — a
-  // deliberate way OUT, never the default click.
+  // detail (openLesson) and stays on this screen. No "Open the issue →" button in
+  // this table (each row's source line under the lesson text names it already) —
+  // that explicit way OUT now lives on the lesson's own detail page instead (item 4,
+  // this round), where `#il-less-openissue` opens it via openIssue().
   function renderLessonsLogView(host) {
-    host.classList.remove('il-mom-report');
     var list = lessonsFiltered();
     // ITEM 9: a column sort, when active, replaces the manual/captured order.
     list = applySort(list, _lessSort, LESSON_SORT_EXTRACT);
@@ -2602,7 +2823,6 @@ window.IssuesLessons = (function () {
   // CURRENT lesson is excluded from that embedded issue's own "lessons
   // learned from this issue" list (excludeLessonId) so it isn't shown twice.
   function renderLessonDetailView(host) {
-    host.classList.remove('il-mom-report');
     var cur = _lessNew || LESSONS.find(function (l) { return l.id === _lessSel; }) || null;
     var issueRow = (cur && cur.issue_id) ? rows.find(function (x) { return x.id === cur.issue_id; }) : null;
     // The embedded issue view reads/writes the SAME module state the real
@@ -2651,41 +2871,18 @@ window.IssuesLessons = (function () {
     return 'Captured on its own';
   }
 
-  // ITEM 10: `opts.hideIssueLink` suppresses "Open the issue →" — used when this
-  // card is already rendered ON that issue's own page. ⚠️ Guarded against
-  // `typeof opts === 'object'` because `Array.prototype.map(lessonCardHTML)`
-  // (the unified Lessons screen's own call, which WANTS the issue link) passes
-  // the array INDEX as the second argument — a bare `opts = opts || {}` would
-  // treat that number as truthy and misread it as options.
-  function lessonCardHTML(l, opts) {
-    opts = (opts && typeof opts === 'object') ? opts : {};
-    var src = lessonSourceText(l);
-    // Item 2: reorderable unless it's a read-only legacy row (nothing to persist an
-    // order onto — see isLegacyLesson()).
-    var reorderAttrs = isLegacyLesson(l) ? ''
-      : ' draggable="true" data-reorder="' + Fmt.esc(l.id) + '" title="Drag to reorder"';
-    return '<div class="il-lcard il-reorderable"' + reorderAttrs + '>' +
-      '<div class="il-lcard-top">' +
-        // Item 4: department is the ONLY classification now — no separate "lesson
-        // category" chip alongside it (see the LESSON_CATS removal note above).
-        (l.department ? '<span class="il-chip">' + Fmt.esc(l.department) + '</span>' : '') +
-        '<span class="il-lcard-date">' + (l.date_captured ? Fmt.date(l.date_captured) : '—') + '</span>' +
-      '</div>' +
-      '<div class="il-lcard-lesson">' + Fmt.esc(l.lesson) + '</div>' +
-      // Item 2: no "Recommendation" line — see the removal note in lessonDetailHTML().
-      '<div class="il-lcard-src"><span class="il-src-issue">' + Fmt.esc(src) + '</span></div>' +
-      '<div class="il-lcard-acts">' +
-        '<button class="il-lcard-open" data-open-lesson="' + Fmt.esc(l.id) + '">Open this lesson →</button>' +
-        (!opts.hideIssueLink && l.issue_id && rows.some(function (x) { return x.id === l.issue_id; })
-          ? '<button class="il-lcard-open" data-open-issue="' + Fmt.esc(l.issue_id) + '">Open the issue →</button>' : '') +
-      '</div>' +
-    '</div>';
-  }
+  // ⚠️ `lessonCardHTML` (the card/tile renderer this used) is REMOVED this round —
+  // its only caller, issDetailHTML's "Related lessons" section, was rewritten to a
+  // plain numbered list of lesson text (item 5). See git history if this shape is
+  // ever wanted again.
 
   function lessonDetailHTML(l) {
     var isNew = !l.id;
     var mayEdit = isNew ? canAdd : canEditLesson(l);
-    var ro = !mayEdit || _lessReport, d = ro ? ' disabled' : '';
+    // ITEM 7 (this round): "no need for a reporting view" — `_lessReport` and its
+    // toolbar toggle are gone. `ro` now means exactly what it means on an issue's
+    // own page: whether this record can be edited, full stop.
+    var ro = !mayEdit, d = ro ? ' disabled' : '';
     // ⚠️ THE CHOSEN SOURCE IS UI INTENT AND MUST BE TRACKED, NOT DERIVED FROM THE IDS.
     // Deriving it looks right and is broken: picking "A meeting action item" clears the
     // issue link and leaves `mom_id` still null, so the re-render derived "Not linked" and
@@ -2712,15 +2909,22 @@ window.IssuesLessons = (function () {
     // and the field labels differ from an issue's page — the STRUCTURE is
     // identical, reusing `.il-iss-split`/`.il-iss-panel`/`.il-iss-body` verbatim
     // rather than a second, differently-shaped layout that could drift from it.
+    // ITEM 4 (this round): an explicit way to jump to the issue this lesson came
+    // from — reusing `openIssue()`, the SAME entry point the log/dashboard/step-
+    // through already use, so it lands on the real Issues & Concerns screen
+    // (switching screens if needed) rather than just scrolling to the embedded
+    // copy already sitting below on this page. Only offered when there is a real
+    // linked issue to go to.
+    var openIssueBtn = (!isNew && l.issue_id)
+      ? '<button class="pd-btn pd-btn-sm" id="il-less-openissue" data-open-issue="' +
+          Fmt.esc(l.issue_id) + '">Open issue in Issues &amp; Concerns →</button>'
+      : '';
     return '<div class="il-mom-detail-card il-iss-card">' +
       '<div class="il-mom-toolbar">' +
         '<span class="il-mom-state' + (linkKind ? ' on' : '') + '">' +
           (isNew ? 'New lesson — not yet saved' : lessonSourceText(l)) + '</span>' +
         '<div style="flex:1;"></div>' +
-        (isNew ? '' :
-          '<button class="pd-btn pd-btn-sm' + (_lessReport ? ' is-active' : '') + '" id="il-less-report" ' +
-            'title="Present this lesson as a clean read-only record">' +
-            (_lessReport ? '✓ Reporting view' : 'Reporting view') + '</button>') +
+        openIssueBtn +
       '</div>' +
       (isLegacyLesson(l)
         ? '<p class="il-mom-note" style="margin-top:0;">Captured on the issue itself, before lessons ' +
@@ -2730,17 +2934,17 @@ window.IssuesLessons = (function () {
         '<div class="il-iss-panel">' +
           // Item 4: no separate "Lesson category" field — Department is the one
           // classification, same list and same field an issue already uses.
-          ilField(_lessReport, 'Department', 'il-c-dept',
+          ilField(ro, 'Department', 'il-c-dept',
             '<select class="pd-select pd-input-sm il-lf-fld" data-f="department"' + d + '>' +
             opts(DEPARTMENTS, l.department || '', '—') + '</select>', l.department) +
-          ilField(_lessReport, 'Date captured', 'il-c-date',
+          ilField(ro, 'Date captured', 'il-c-date',
             '<input class="pd-input pd-input-sm il-lf-fld" data-f="date_captured" type="date" value="' +
             dateVal(l.date_captured) + '"' + d + '>',
             l.date_captured ? Fmt.date(l.date_captured) : '') +
         '</div>' +
 
         '<div class="il-iss-body">' +
-          ilField(_lessReport, 'Lesson learned', 'il-c-lesson',
+          ilField(ro, 'Lesson learned', 'il-c-lesson',
             '<textarea class="pd-textarea il-lf-fld" data-f="lesson" rows="4" ' +
             'placeholder="What did the team learn?"' + d + '>' + Fmt.esc(l.lesson) + '</textarea>', l.lesson) +
           // ⚠️ ITEM 2 (prior round): no separate "Recommendation" field any more —
@@ -2830,12 +3034,13 @@ window.IssuesLessons = (function () {
     var back = host.querySelector('#il-less-back'); if (back) back.onclick = backFromLessonDetail;
     var back2 = host.querySelector('#il-less-back2'); if (back2) back2.onclick = backFromLessonDetail;
     var nb = host.querySelector('#il-less-new'); if (nb) nb.onclick = function () { newLesson(null); };
-    var rep = host.querySelector('#il-less-report');
-    if (rep) rep.onclick = function () { _lessReport = !_lessReport; renderLessons(); };
     var sv = host.querySelector('#il-less-save'); if (sv) sv.onclick = saveLesson;
     var cn = host.querySelector('#il-less-cancel');
     if (cn) cn.onclick = function () { _lessNew = null; backFromLessonDetail(); };
     var dl = host.querySelector('#il-less-del'); if (dl) dl.onclick = delLesson;
+    // ITEM 4 (this round): jump to the linked issue's own page.
+    var oi = host.querySelector('#il-less-openissue');
+    if (oi) oi.onclick = function () { openIssue(oi.dataset.openIssue); };
 
     // The link pickers re-render, because changing the source changes which controls exist.
     // ⚠️ Whatever has been typed is captured into the draft/edit buffer FIRST, or changing

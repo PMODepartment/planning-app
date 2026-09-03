@@ -613,7 +613,7 @@ window.ProgressPhotos = (function () {
     var refresh = $('pp-refresh'); if (refresh) refresh.style.display = has ? 'none' : '';
     var count = $('pp-selcount');
     if (count) { count.style.display = has ? '' : 'none'; count.textContent = ids.length + ' selected'; }
-    ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'].forEach(function (id) {
+    ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive', 'pp-sel-delete'].forEach(function (id) {
       var el = $(id); if (el) el.style.display = has ? '' : 'none';
     });
   }
@@ -1058,8 +1058,8 @@ window.ProgressPhotos = (function () {
       }).join('');
       if (list.indexOf(keep) < 0) el.value = '';
     }
-    fill('pp-f-trade', distinctMulti('trades', 'trade'), 'Filter by Trade');
-    fill('pp-f-works', distinctMulti('works_multi', 'works'), 'Filter by Works');
+    fill('pp-f-trade', distinctMulti('trades', 'trade'), 'Trade');
+    fill('pp-f-works', distinctMulti('works_multi', 'works'), 'Works');
     renderLocFilterSelects();
   }
   // Distinct values already captured at this level, across this project's
@@ -1078,12 +1078,10 @@ window.ProgressPhotos = (function () {
     host.innerHTML = LOC_LEVELS.map(function (l) {
       var cur = filters.locValues[l.id] || '';
       var vals = distinctPhotoLocValues(l.id);
-      // "Filter by <level>" matches the Trade/Works filters' own blank-option
-      // wording (fillFilterOptions() above) — it used to show the bare level
-      // name here while its title attribute already said "Filter by X",
-      // which read as two different labels for the same control.
-      return '<select class="pd-select" data-lvl="' + l.id + '" title="Filter by ' + Fmt.esc(l.name) + '">' +
-        '<option value="">Filter by ' + Fmt.esc(l.name) + '</option>' +
+      // Item 8 (owner feedback): just the level's own name — "Filter by "
+      // is implied by sitting inside the filter panel and only added noise.
+      return '<select class="pd-select" data-lvl="' + l.id + '" title="' + Fmt.esc(l.name) + '">' +
+        '<option value="">' + Fmt.esc(l.name) + '</option>' +
         vals.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + '>' + Fmt.esc(v) + '</option>'; }).join('') +
         '</select>';
     }).join('');
@@ -1110,9 +1108,11 @@ window.ProgressPhotos = (function () {
   // id (archive/delete/the progress_photos table) has to branch on `_kind`
   // first; see byMergedId()/openMediaKindEditor()/the batch-action handlers.
   function matchesFilters(r) {
-    // Archived is hidden unless the toggle is on — same "never both at
-    // once" rule as the Presentations list's own archived filter.
-    if (!!r.archived !== !!filters.archived) return false;
+    // "Show archived" is additive, not an either/or toggle: unchecked hides
+    // archived items (the normal, tidy view); checked shows BOTH archived
+    // and unarchived together, so a planner can see everything at once
+    // instead of the view flipping to archived-only.
+    if (!filters.archived && r.archived) return false;
     // Panoramas/reconstructions carry no trade/works at all -- a trade or
     // works filter being SET therefore excludes them rather than silently
     // matching everything, so "Structural Works only" genuinely narrows to
@@ -2448,6 +2448,96 @@ window.ProgressPhotos = (function () {
       }
       openAddToPresentation(split.photo);
     };
+    // Item 1 (owner feedback) — batch delete, joining Download/Add to
+    // Presentation/Archive in the selection cluster. Scoped to real photos
+    // only (a 360°/3D pseudo-row has no row in TABLE for this to delete),
+    // same reasoning as the two splits above.
+    if ($('pp-sel-delete')) $('pp-sel-delete').onclick = function () {
+      var split = splitSelectedIds(visibleSelectedIds());
+      if (!split.photo.length) {
+        UI.toast('Select at least one photo — 360°/3D captures aren\'t deleted from here', 'warn');
+        return;
+      }
+      if (split.pano.length || split.recon.length) {
+        UI.toast((split.pano.length + split.recon.length) + ' 360°/3D item(s) skipped — delete covers photos only', 'warn');
+      }
+      openDeleteConfirm(split.photo);
+    };
+  }
+
+  // ---------------------------------------------------------------- delete ---
+  // Any photo(s) about to be deleted that are cited by a presentation slide
+  // (ppr_slides.before_photo_id/after_photo_id) — used to WARN before the
+  // irreversible delete, not to block it. The FK is `on delete set null`
+  // (see ppr.js), so the slide survives with an empty frame; the warning is
+  // what makes that consequence visible before it happens instead of after.
+  // ⚠️ Two separate `.in()` queries, not one `.or()` string — building an
+  // `or()` filter string is fiddly to get right (PostgREST's own delimiters)
+  // for no real benefit here, since ids are plain UUIDs with nothing to
+  // escape either way.
+  async function findPresentationUsage(ids) {
+    if (!ids.length) return { photoIds: [], pprIds: [] };
+    var beforeQ = sb().from('ppr_slides').select('ppr_id, before_photo_id').in('before_photo_id', ids);
+    var afterQ = sb().from('ppr_slides').select('ppr_id, after_photo_id').in('after_photo_id', ids);
+    var results = await Promise.all([beforeQ, afterQ]);
+    var photoIds = {}, pprIds = {};
+    results.forEach(function (res) {
+      (res.data || []).forEach(function (row) {
+        if (row.before_photo_id) photoIds[row.before_photo_id] = true;
+        if (row.after_photo_id) photoIds[row.after_photo_id] = true;
+        if (row.ppr_id) pprIds[row.ppr_id] = true;
+      });
+    });
+    return { photoIds: Object.keys(photoIds), pprIds: Object.keys(pprIds) };
+  }
+
+  // Shared confirm-and-delete for one photo (the lightbox's own Delete
+  // button, `remove(r)` below) or several at once (the batch selection's
+  // Delete button) — one path, so the presentation-usage warning and the
+  // storage cleanup can never disagree between the two entry points.
+  async function openDeleteConfirm(ids) {
+    if (!ids.length) return;
+    var one = ids.length === 1 ? byId(ids[0]) : null;
+    var label = one
+      ? ('<strong>' + Fmt.esc(one.description || one.title || one.view_name || 'this photo') + '</strong>')
+      : (ids.length + ' photos');
+    var usage = { photoIds: [], pprIds: [] };
+    try { usage = await findPresentationUsage(ids); } catch (e) { /* best-effort — a failed check must not block deleting */ }
+    var warnHtml = '';
+    if (usage.photoIds.length) {
+      var pluralPhoto = usage.photoIds.length === 1;
+      var pluralPpr = usage.pprIds.length === 1;
+      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true">⚠</span><span>' +
+        (pluralPhoto ? 'This photo is' : usage.photoIds.length + ' of ' + (ids.length === 1 ? 'this photo' : ids.length + ' selected photos') + ' are') +
+        ' used in ' + usage.pprIds.length + ' presentation' + (pluralPpr ? '' : 's') + '. Deleting ' +
+        (pluralPhoto ? 'it' : 'them') + ' will remove ' + (pluralPhoto ? 'it' : 'them') +
+        ' from ' + (pluralPpr ? 'that presentation' : 'those presentations') + ' too.</span></div>';
+    }
+    var html =
+      '<div class="pd-modal-header"><h3>Delete ' + (ids.length === 1 ? 'photo' : ids.length + ' photos') + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p>Delete ' + label + '? The image file' + (ids.length === 1 ? ' is' : 's are') +
+        ' removed from storage too. This cannot be undone.</p>' + warnHtml + '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-danger" id="pp-d-yes">Delete</button></div>';
+    var m = openModal(html, 460);
+    $('pp-d-yes').onclick = async function () {
+      this.disabled = true;
+      var targetRows = rows.filter(function (r) { return ids.indexOf(r.id) >= 0; });
+      var res = await sb().from(TABLE).delete().in('id', ids);
+      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      // Item 1's thumbnail is a real, separate object in the same bucket —
+      // deleting only the original would leave it orphaned forever (nothing
+      // else in the app ever points at it once this row is gone).
+      var toRemove = [];
+      targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
+      if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
+      m.close();
+      UI.toast((ids.length === 1 ? 'Photo' : ids.length + ' photos') + ' deleted', 'ok');
+      ids.forEach(function (id) { delete selected[id]; });
+      await load();
+    };
   }
 
   // Picks (or creates) a presentation, then adds every selected photo as a
@@ -2508,8 +2598,29 @@ window.ProgressPhotos = (function () {
     lightboxAt = (lightboxAt + d + lightboxIds.length) % lightboxIds.length;
     paintLightbox();
   }
+  // Item 10 (2026-09-02): zoom for the lightbox — resets whenever a
+  // DIFFERENT photo is navigated to (paintLightbox is the one place both
+  // open() and step() funnel through), applied as a CSS transform to
+  // whichever media element is showing plus the markup canvas so the two
+  // stay pixel-aligned through any zoom level.
+  var LB_ZOOM_MIN = 1, LB_ZOOM_MAX = 3, LB_ZOOM_STEP = 0.25;
+  var lightboxZoom = 1;
+  function applyLightboxZoom() {
+    var t = 'scale(' + lightboxZoom + ')';
+    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video'), cv = $('pp-lb-markup-canvas');
+    if (imgEl) imgEl.style.transform = t;
+    if (vidEl) vidEl.style.transform = t;
+    if (cv) cv.style.transform = t;
+    var zo = $('pp-lb-zoomout'), zi = $('pp-lb-zoomin');
+    if (zo) zo.disabled = lightboxZoom <= LB_ZOOM_MIN;
+    if (zi) zi.disabled = lightboxZoom >= LB_ZOOM_MAX;
+  }
   function paintLightbox() {
     var r = byId(lightboxIds[lightboxAt]); if (!r) return;
+    // Item 10 (2026-09-02): resets zoom BEFORE anything below measures the
+    // image's box (paintMarkupOverlay's own fit()) — so a stale non-1
+    // transform can never skew a freshly-sized canvas.
+    lightboxZoom = 1;
     // ⚠️ "full load only when opening the photo" — full-resolution is no
     // longer pre-signed for the whole project, so it's resolved HERE, the
     // one place that actually needs it, the moment a photo is opened. The
@@ -2532,9 +2643,22 @@ window.ProgressPhotos = (function () {
     // stepping) or having been closed entirely by the time the sign
     // request resolves — an outdated promise must never overwrite what's
     // now on screen.
+    // ⚠️ Item 4 (owner feedback) fix: this used to compare OBJECT IDENTITY
+    // (`byId(lightboxIds[lightboxAt]) !== r`), which silently dropped the
+    // full-res swap whenever `rows` was mutated for the SAME photo between
+    // opening the lightbox and this promise resolving (e.g. a realtime
+    // UPDATE echo replaces `rows[j]` with a new object — see
+    // applyRemoteChange) — the photo being viewed hadn't changed, only the
+    // object reference had, so the guard wrongly treated it as stale and
+    // the tile kept showing the thumbnail until the photo was reopened
+    // (full-res was already cached by then, so the SECOND open "worked").
+    // Comparing the ID the lightbox is currently pointed at is what the
+    // guard actually means — "has the lightbox moved on to a different
+    // photo" — and is robust to `rows` being replaced for the same id.
+    var openedId = r.id;
     ensureFullUrl(r).then(function (full) {
       if (!full) return;
-      if (byId(lightboxIds[lightboxAt]) !== r) return;
+      if (lightboxIds[lightboxAt] !== openedId) return;
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
       u = full;
       if (isVideo) { if (vidEl) vidEl.src = full; }
@@ -2611,6 +2735,20 @@ window.ProgressPhotos = (function () {
     }
     lightboxKeyPlanVisible = false;
     paintKeyPlanOverlay(r);
+    // Item 10 (2026-09-02): zoom in/out, wired the same way every other
+    // lightbox tool button is — a fresh onclick per paint (cheap; this whole
+    // function repaints on every photo open/step already) rather than a
+    // one-time bind, so it always closes over the CURRENT `r`.
+    var zo = $('pp-lb-zoomout'), zi = $('pp-lb-zoomin');
+    if (zo) zo.onclick = function () {
+      lightboxZoom = Math.max(LB_ZOOM_MIN, lightboxZoom - LB_ZOOM_STEP);
+      applyLightboxZoom();
+    };
+    if (zi) zi.onclick = function () {
+      lightboxZoom = Math.min(LB_ZOOM_MAX, lightboxZoom + LB_ZOOM_STEP);
+      applyLightboxZoom();
+    };
+    applyLightboxZoom();
     lightboxMarkupVisible = markupGlobalVisible();
     paintMarkupOverlay(r);
     hydrate($('pp-lightbox'));
@@ -2618,36 +2756,88 @@ window.ProgressPhotos = (function () {
   var lightboxMarkupVisible = true;
   var lightboxKeyPlanVisible = false;
   // Item 4 — the lightbox's own key-plan corner overlay (top-right, 1/8 of
-  // the photo). Reuses openPinPreview's retired centring math: an image
-  // positioned at left:50%/top:50% of its wrap, translated by
-  // -(x_norm*100%, y_norm*100%) of ITS OWN box, places the pin's normalized
-  // point exactly at the wrap's centre -- but here the overlay is capped to
-  // 1/8 width via CSS (.pp-lb-kpoverlay) instead of cropped/zoomed, since the
-  // ask was "overlays on top of the photo... size 1/8 of the photo", not a
-  // Tight/Wide crop like the retired Gallery-tile popup.
+  // the photo). ⚠️ Owner feedback (item 7): the overlay must always include
+  // the PIN itself and, when recorded, the camera-facing direction CONE —
+  // the bare plan image alone doesn't answer "where in the building, facing
+  // which way, was this shot from". The overlay is now a small stage (an
+  // <img> + a pin dot + a cone), positioned by the pin's own normalized
+  // x_norm/y_norm — the same left/top-percentage convention bim.js's own
+  // pinMarkerHTML/pinConeHTML use on the full Plans-tab stage, just at the
+  // smaller scale this 1/8-photo-width corner box needs.
   function paintKeyPlanOverlay(r) {
-    var img = $('pp-lb-keyplan-overlay'); if (!img) return;
+    var wrap = $('pp-lb-keyplan-overlay'); if (!wrap) return;
     var kpBtn = $('pp-lb-keyplan');
     if (kpBtn) kpBtn.classList.toggle('is-active', lightboxKeyPlanVisible);
-    if (!lightboxKeyPlanVisible) { img.hidden = true; img.removeAttribute('src'); return; }
+    var img = $('pp-lb-keyplan-overlay-img');
+    var pinEl = $('pp-lb-keyplan-overlay-pin');
+    var coneEl = $('pp-lb-keyplan-overlay-cone');
+    if (!lightboxKeyPlanVisible) {
+      wrap.hidden = true;
+      if (img) img.removeAttribute('src');
+      if (pinEl) pinEl.hidden = true;
+      if (coneEl) coneEl.hidden = true;
+      return;
+    }
     var pinType = r._kind || 'photo';
     var pinId = r._src ? r._src.id : r.id;
     var info = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor(pinType, pinId);
     if (!info || !info.planUrl) {
       UI.toast('That floor plan image is not available', 'warn');
-      img.hidden = true; img.removeAttribute('src');
+      wrap.hidden = true;
+      if (img) img.removeAttribute('src');
+      if (pinEl) pinEl.hidden = true;
+      if (coneEl) coneEl.hidden = true;
       return;
     }
-    img.src = info.planUrl;
-    img.hidden = false;
+    if (img) img.src = info.planUrl;
+    var pin = info.pin;
+    if (pinEl) {
+      if (pin) {
+        pinEl.hidden = false;
+        pinEl.className = 'pp-lb-kpoverlay-pin pp-lb-kppin-' + (pin.item_type || 'photo');
+        pinEl.style.left = (pin.x_norm * 100) + '%';
+        pinEl.style.top = (pin.y_norm * 100) + '%';
+      } else {
+        pinEl.hidden = true;
+      }
+    }
+    if (coneEl) {
+      // A cone is drawn only when a facing direction was actually recorded
+      // and the item isn't marked drone/top-view (direction_na) — a
+      // fabricated cone would claim a facing direction nobody captured.
+      var hasDir = pin && !pin.direction_na && pin.direction_deg !== null && pin.direction_deg !== undefined;
+      if (hasDir) {
+        coneEl.hidden = false;
+        coneEl.style.left = (pin.x_norm * 100) + '%';
+        coneEl.style.top = (pin.y_norm * 100) + '%';
+        coneEl.style.transform = 'translate(-50%,-100%) rotate(' + pin.direction_deg + 'deg)';
+      } else {
+        coneEl.hidden = true;
+      }
+    }
+    wrap.hidden = false;
   }
   function paintMarkupOverlay(r) {
     var canvas = $('pp-lb-markup-canvas'); if (!canvas) return;
     var imgEl = r.media_type === 'video' ? $('pp-lb-video') : $('pp-lb-img');
     var show = lightboxMarkupVisible && r.markup && r.markup.length;
-    canvas.style.display = show ? '' : 'none';
+    // ⚠️ Item 6 fix: `.pp-lb-markup`'s own base CSS rule is `display:none`
+    // (module.css) — setting the inline style to an EMPTY STRING clears the
+    // override rather than showing it, so it fell straight back to the
+    // stylesheet's `none` and "show markup" never actually showed anything.
+    // Must be an explicit non-none value.
+    canvas.style.display = show ? 'block' : 'none';
     var mkBtn = $('pp-lb-markuptoggle');
-    if (mkBtn) mkBtn.classList.toggle('is-active', lightboxMarkupVisible);
+    if (mkBtn) {
+      mkBtn.classList.toggle('is-active', lightboxMarkupVisible);
+      // Swap the glyph itself (eye / eyeOff), not just the active-class tint —
+      // matching syncMkVisBtn's own fix for the identical listbar toggle. A
+      // static "eye" icon that never changes shape is what read as unclear;
+      // re-render the SVG directly rather than Icons.hydrate() (its one-time
+      // dataset.icoDone guard would silently no-op from the second toggle on).
+      var mkIc = mkBtn.querySelector('[data-ico]');
+      if (mkIc && window.Icons) mkIc.innerHTML = Icons.svg(lightboxMarkupVisible ? 'eye' : 'eyeOff', 16);
+    }
     if (!show || !imgEl) return;
     // Sized to match whichever media element is currently visible — a photo
     // and a video report their box differently but both are the SAME element
@@ -3500,8 +3690,15 @@ window.ProgressPhotos = (function () {
         // into two flex groups; every id/data-attr below is unchanged, so the
         // existing querySelector wiring (by id or [data-*], not by parent) still
         // finds everything.
+        // Item 11: the Tools row and the Line/Fill/Text option groups are now
+        // two EXPLICIT stacked rows (.pp-mk-toolrow / .pp-mk-groupsrow) inside
+        // .pp-mk-toolgroup, rather than one flex-wrap row that only happened
+        // to break onto a second line once it ran out of width — "move line
+        // colours group BELOW the tools group" needs the tools row to always
+        // be its own row, not a width-dependent wrap.
         '<div class="pp-mk-toolbar">' +
         '<div class="pp-mk-toolgroup">' +
+          '<div class="pp-mk-toolrow">' +
           '<div class="pp-mk-tools" role="tablist">' + TOOL_ORDER.map(toolBtnHTML).join('') + '</div>' +
           '<div class="pp-mk-icons pp-mk-stickers" id="pp-mk-icons" style="display:none;">' +
             STICKER_NAMES.map(function (ic) {
@@ -3517,10 +3714,14 @@ window.ProgressPhotos = (function () {
                 '<span style="display:inline-block;width:20px;height:20px;">' + previewSvg + '</span></button>';
             }).join('') +
           '</div>' +
+          '</div>' +
+          '<div class="pp-mk-groupsrow">' +
           // Fifth round item 2: Line colour + Line weight are now visually ONE
           // labelled group, and Fill colour + Fill transparency are a
-          // SEPARATE labelled group — the two were adjacent, same-shaped
-          // swatch rows before, which is exactly what read as "mixed up".
+          // SEPARATE labelled group beside it (item 11: "fill colour group
+          // then beside line colour group") — the two were adjacent,
+          // same-shaped swatch rows before, which is exactly what read as
+          // "mixed up".
           '<div class="pp-mk-group pp-mk-group-line">' +
             '<span class="pp-mk-grouplabel">Line</span>' +
             '<div class="pp-mk-colors" id="pp-mk-colors" title="Line colour">' + MARKUP_COLORS.map(function (c) {
@@ -3552,7 +3753,8 @@ window.ProgressPhotos = (function () {
             '<label class="pp-mk-checklabel" title="Draw a border around the text box">' +
               '<input type="checkbox" id="pp-mk-textborder" /> Border</label>' +
           '</div>' +
-        '</div>' +
+          '</div>' + // /.pp-mk-groupsrow
+        '</div>' + // /.pp-mk-toolgroup
         '<div class="pp-mk-actiongroup">' +
           '<button type="button" class="pd-btn" id="pp-mk-undo" title="Undo">' + (window.Icons ? Icons.svg('undo', 16) : 'Undo') + '</button>' +
           // Fifth round item 3.
@@ -3841,6 +4043,18 @@ window.ProgressPhotos = (function () {
       return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
     }
     canvas.addEventListener('pointerdown', function (e) {
+      // Item 12 fix: a canvas has no `tabindex` and is not natively focusable,
+      // so the BROWSER'S OWN default mousedown action — which runs right
+      // after this handler returns — blurs whatever currently has focus and
+      // tries to focus the (unfocusable) canvas instead. That happens to run
+      // just after the Text tool's own `textEl.focus()` below, so the
+      // just-opened text box was blurred again within the same click, and
+      // `closeTextEdit`'s onblur handler then deleted it for being empty —
+      // "clicking Text does nothing" was this, not a missing feature.
+      // Proved live: a real `page.mouse.down()/up()` click reproduced it,
+      // while a bare synthetic `dispatchEvent(new PointerEvent(...))` (which
+      // never runs the browser's native default action) did not.
+      e.preventDefault();
       canvas.setPointerCapture(e.pointerId);
       if (editingTextIdx >= 0) closeTextEdit(true);
       var p = toNorm(e);
@@ -5087,29 +5301,12 @@ window.ProgressPhotos = (function () {
     }
   }
 
-  async function remove(r) {
-    var html =
-      '<div class="pd-modal-header"><h3>Delete photo</h3>' +
-        '<button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form"><p>Delete <strong>' + Fmt.esc(r.description || r.title || 'this photo') +
-        '</strong>? The image file is removed from storage too. This cannot be undone.</p></div>' +
-      '<div class="pd-modal-footer">' +
-        '<button class="pd-btn" data-close>Cancel</button>' +
-        '<button class="pd-btn pd-btn-danger" id="pp-d-yes">Delete</button></div>';
-    var m = openModal(html, 460);
-    $('pp-d-yes').onclick = async function () {
-      this.disabled = true;
-      var res = await sb().from(TABLE).delete().eq('id', r.id);
-      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
-      // Item 1's thumbnail is a real, separate object in the same bucket —
-      // deleting only the original would leave it orphaned forever (nothing
-      // else in the app ever points at it once this row is gone).
-      var toRemove = [r.photo_url, r.thumb_url].filter(Boolean);
-      if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
-      m.close(); UI.toast('Photo deleted', 'ok');
-      await load();
-    };
-  }
+  // Single-photo delete (the lightbox's Delete button, and every [data-act=
+  // "del"] row action) — a thin wrapper over the shared openDeleteConfirm
+  // (item 1, owner feedback), which also handles the batch-selection case
+  // and the presentation-usage warning. One path, so a single delete and a
+  // batch delete can never disagree about what gets checked or cleaned up.
+  function remove(r) { return openDeleteConfirm([r.id]); }
 
   // Every distinct combination of location values that appears on at least
   // one schedule activity -- these are the "places to visit", the same
@@ -5172,11 +5369,11 @@ window.ProgressPhotos = (function () {
     // case), which on leaving would silently UNDO that `show()` call and
     // leave the Photos screen's own Add/Refresh buttons visible on top of
     // whichever other screen is now showing. This only clears the selection
-    // state and hides the four selection-only controls, nothing else.
+    // state and hides the five selection-only controls, nothing else.
     _leavePhotosScreen: function () {
       selected = {};
       var count = $('pp-selcount'); if (count) count.style.display = 'none';
-      ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive'].forEach(function (id) {
+      ['pp-sel-download', 'pp-sel-addppr', 'pp-sel-archive', 'pp-sel-delete'].forEach(function (id) {
         var el = $(id); if (el) el.style.display = 'none';
       });
       // ⚠️ Real bug fixed: the "+ Add media" DROPDOWN (#pp-addmenu, a
@@ -5248,6 +5445,13 @@ window.ProgressPhotos = (function () {
     // presentation-only overlay reuses this instead of a second canvas
     // implementation. See openMarkupEditor's own comment for the format.
     openMarkupEditor: function (imageUrl, initialMarkup, onSave) { openMarkupEditor(imageUrl, initialMarkup, onSave); },
+    // Public (non-underscore) accessors for the ONE shared, per-project
+    // "show markup" preference (item 7, presentation-view rework) — reused
+    // by ppr.js's own pane markup toggle so hiding markup in the
+    // presentation view also hides it on Gallery tiles/the lightbox and vice
+    // versa, rather than a second, independently-toggled preference.
+    markupGlobalVisible: function () { return markupGlobalVisible(); },
+    setMarkupGlobalVisible: function (v) { setMarkupGlobalVisible(v); },
     // Test-only hook (2026-08-30 audit fix) — lets the test harness drive
     // openModal directly against a UI.modal stub shaped like the REAL one
     // (where m.close is the actual DOM-removal function), to genuinely
