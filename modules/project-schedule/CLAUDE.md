@@ -1,3 +1,370 @@
+## "No Location Breakdown Structure" — on a project that has five (2026-09-03) — jasantos2
+
+Owner, with two tabs of the SAME project (SLN101 — 4PH Strevi Bacoor) side by side:
+
+- **Schedule Setup › 5 · Floors & Zones** — *"This project breaks location down as **Tower › Level ›
+  Orientation › Zone › Cluster**"*, and the LBS editor lists all five levels.
+- **Project Schedule › Vertical Stacking** — *"This project has no Location Breakdown Structure, so
+  there is nothing to stack."*
+
+*"how come that is the error even though there is a defined location levels"*
+
+### ⚠️⚠️ Both panes read the SAME `LOC_LEVELS` global. The difference was WHEN.
+There is no second source and no second copy: `_locBreakdownBar()` (Schedule Setup) and
+`renderVStack()` (the stacking) both read the module's one array, and "Edit levels…" is literally
+`openLocLevels`, which selects from `location_levels`. So the disagreement was never about data.
+
+`load()` **paints from cache and calls `renderAll()` BEFORE `loadResourcesAssignments()` runs** —
+that is deliberate and documented ("the grid/Gantt only need `rows`"), and `location_levels` is
+fetched inside that later call. On a 16k-activity project the gap is seconds to minutes. For the
+whole of it, `LOC_LEVELS` is `[]` — and the stacking reported that as **"this project has no
+Location Breakdown Structure"**, a claim the code had no basis for.
+
+Two independent faults, both fixed:
+
+### 1 ⚠️ The message asserted something the app could not know
+`LOC_LEVELS.length === 0` was collapsed into one accusation regardless of cause. The loader even
+folded a **query error** into the same `[]` (`(r8 && !r8.error && r8.data) || []`), so an un-run
+migration or a missing grant also read as "you have no levels" — sending the planner to build what
+they already had.
+
+New `LOC_LOAD` state (`'pending'` / `'ok'` / `'error'`), and three answers where there was one:
+- **pending** → *"Loading this project's location breakdown…"*, and it says the stacking will draw
+  itself when the levels arrive.
+- **error** → names the actual database failure (escaped — it is a database string) and points at the
+  2026-08-04 location migration.
+- **ok + zero** → the original message, **unchanged**. It was always the right thing to say; it was
+  just being said in two cases where it was false.
+- ⚠️ `LOC_LOAD` resets to `'pending'` on a **project switch**, or moving from a project with levels
+  to one still loading would let the stacking assert "none" from the previous project's state.
+- ⚠️ `tLoc` carries its **own try/catch**, because `T()` swallows throws — without it a network
+  failure would pin `'pending'` forever and the planner would watch a spinner that never resolves.
+  Every path ends on `'ok'` or `'error'`.
+
+### 2 ⚠️⚠️ The pane was a DEAD END — nothing ever repainted it
+This is what made the wrong message permanent. **`renderAll()` does not draw the stacking** — it
+never has: header, grid, Gantt, legend, details, and that is all. The stacking pane is painted only
+by `setVStackMode()` and by its own controls. So a pane rendered during the load kept saying "no
+Location Breakdown Structure" **for the rest of the session**, no matter what arrived afterwards.
+
+New `_vsRepaintIfLevelsArrived()`, called by the `location_levels` fetch itself.
+- ⚠️ **Only when the pane is showing an empty state.** Repainting a drawn building would throw away
+  the planner's scroll position and any focus window they had open.
+- ⚠️ **Only on actual news.** Still pending with still no levels is not news — the pane is already
+  showing the right message, and re-rendering would paint the identical string over itself.
+- ⚠️ Signature-gated (`LOC_LOAD` + the level ids), so a repeat call does nothing, and it returns
+  immediately when the pane is closed.
+
+### What this does NOT fix
+⚠️ **A second tab does not learn about levels created in the first.** Tab A holds its own
+`LOC_LEVELS` and only refetches on load; defining levels in tab B changes nothing in tab A until it
+is refreshed. That is the module's existing single-fetch model and widening it to a live subscription
+is a much larger change than this report needs. The 'pending' copy at least no longer tells that
+planner their breakdown does not exist.
+
+---
+
+**Verified: 90 checks, slice-and-execute.** The empty-state block was cut out of the shipped
+`renderVStack` by brace-matching and **run** for all five states (pending / error / ok+0 / ok+5 /
+pending-but-levels-present, plus an escaping check with `<b>` in the error text); the shipped
+`_vsRepaintIfLevelsArrived` was run against a fake pane for all five paths (first call, levels
+arrive, repeat, drawn building, closed pane); and the loader's outcomes were read out of the file's
+own text. Includes the 66 checks from the tower work earlier today, re-run. Sanity gate on every
+scan: a known-present and a known-missing name through the same slicer, and a control asserting a
+state name that does not exist is absent. 0 functions lost, 1 added; the inline script parses; no NUL
+bytes.
+
+⚠️ **NOT verified signed-in.** The anon key has no grants on `project_schedule`, so this has not been
+run against SLN101. In particular the **cause** is inferred from the code path (a cache paint before
+the ancillary fetch) and from the screenshots — the Project Schedule tab's grid is also empty in
+them, which is consistent with a load still in flight, but it was not measured. If the stacking still
+reports no breakdown on SLN101 **after** the load visibly finishes, then `location_levels` really is
+returning nothing for that project id and the next step is the `'error'` text this change now
+surfaces.
+
+
+## One tower, however the WBS spells it — substructure + superstructure combined (2026-09-03) — jasantos2
+
+Owner: *"Make the detection of the WBS structure be easier in the project schedule. In addition, the
+activities detected under the execution phase must be detected in the vertical stacking. Make it have
+intelligence. bc for instances, there are scenarios wherein the substructure is separated from the
+superstructure, so we need to combine them to create a tower. And there are direct instances wherein
+tower 1 is defined including substructure and superstructure combined."*
+
+### The shape of the problem
+A tower is ONE building, and a WBS routinely spells it as two structural stages. Both shapes are
+real, and both have to land on one tower:
+
+| WBS branch | must resolve to |
+|---|---|
+| `Tower 1` | Tower 1 — already combined |
+| `Tower 1 - Substructure` + `Tower 1 - Superstructure` | Tower 1 |
+| `SUBSTRUCTURE - TOWER 1` + `SUPERSTRUCTURE - TOWER 1` | Tower 1 |
+| `TOWER-D SUBSTRUCTURE` | Tower D |
+| `Superstructure (Tower 2)` | Tower 2 |
+| `Bldg 2` | Building 2 |
+
+The nested form SLN101 actually uses — `Execution Phase › Construction Phase › Substructure ›
+Tower D › Excavation` — already worked, because every matcher source resolves **deepest ancestor
+wins** and `Tower D` is deeper than `Substructure`. What did not work is every form where the
+stage word sits in the same NAME as the tower.
+
+### New `locTowerToken()` — the canonical identity of a building
+Reads a family word (tower / building / bldg / block, whole-word) plus a designator (1–3
+alphanumerics, optionally through a hyphen, dot or bracket) and returns a canonical string. Wired
+into exactly three places, each deliberately narrow:
+
+**1 ⚠️⚠️ `locGuessLevel` — the token is consulted BEFORE the grouping veto, for the tower level only.**
+`Substructure - Tower D` is a tower. `locGroupingReason` read it as a *trade* — correctly, by its
+own earliest-term rule ('substructure' at 0 beats 'tower' at 18) — so the branch never reached the
+Tower level at all. Half of Tower D's work went unlocated while `Tower D - Substructure` (place word
+leading) mapped fine: one building, split.
+- ⚠️ **`locGroupingReason` itself is UNTOUCHED.** It goes on protecting the FLOOR axis exactly as
+  before, so a bare `Superstructure` still cannot become a storey — which is the band the stacking
+  actually draws. Widening the veto would have re-admitted every stage word as a floor and put a fake
+  storey in every tower, which is the bug that rule was written for. There is a regression check
+  pinning `locGroupingReason('Substructure - Tower D') === 'trade'`.
+- ⚠️ Only when the project HAS a tower-family level; otherwise there is nowhere to put it and forcing
+  `LOC_LEVELS[0]` would write a tower name into a Zone.
+
+**2 `locGuessValue` — the canonical token wins for a tower level.** This is what actually COMBINES
+the stages. `locTrimSeg` only splits on a **spaced** separator, so it reduced `Tower D - Substructure`
+and left `TOWER-D SUBSTRUCTURE` whole — two spellings of one tower standing as two values.
+
+**3 ⚠️ `_vsTowerOf` — canonicalised at READ time, so a building already stored under two spellings
+draws ONE card.** Every project matched before today has the stages stamped verbatim in `location`;
+the stacking drew Tower 1 twice, each card holding half the work and each reporting a % complete
+against half a building, and the tower picker listed both.
+- ⚠️ **Read-time only. No row is written and no stored value is changed** — same precedent as the
+  grouping veto immediately above it. The permanent fix is to re-run "Match WBS to locations…",
+  which now proposes the canonical token itself.
+- ⚠️ **Falls back to the raw value** whenever no token can be read, so a project whose towers are
+  "T1"/"T2" or "North Wing" is byte-identical to before.
+
+### ⚠️ What it deliberately does NOT do
+- **It never invents an identity.** A bare `Substructure` / `Superstructure` pair carrying no family
+  word at all returns `''`: the tower value stays blank, which reads as the project's single implicit
+  tower. Naming it "Tower 1" from nothing would be a guess printed onto the planner's breakdown as
+  fact.
+- **A bare family word with no designator must be about the building and nothing else.**
+  `Building Permit` carries the family word and no designator; calling it a tower named "Building"
+  would put a Planning deliverable in the Location Breakdown as a place. So the bare reading is
+  accepted only when every other word is a structural stage or noise — `Tower`,
+  `TOWER SUBSTRUCTURE` yes; `Building Permit`, `Block Testing` no. `Blockwork` fails the word
+  boundary. A name WITH a designator is exempt: `Tower 2 Fit-out Works` is still Tower 2.
+
+### Also — the WBS heal chain was a two-load deadlock
+An imported phase branch lands as an **unlocked root** beside the skeleton's locked one.
+`_wbsCanonicalRootOrder` and `_wbsResyncCodes` both refuse to run while any unlocked root exists
+(deliberately), and the only pass that removes one ran **after** both. So load 1 ordered nothing and
+re-coded nothing, merged at the end, and left the dotted codes describing the pre-merge tree until
+load 2. `_wbsDedupeSiblingNodes` now runs at the **head** of the chain:
+`merge → place → order → codes → row dedupe`.
+- ⚠️ Safe before the resync **specifically because** that pass keys on `(parent_id, normalised name)`
+  and never reads a dotted code. The "re-sync the codes first" rule guards
+  `_wbsDedupeSummariesByCode`, which does read them and still runs after the resync, untouched.
+- ⚠️ The later call is **kept, not moved**: `_wbsHealSkeletonPlacement` re-parents branches and can
+  itself create a same-name sibling. The second run is gated on an in-memory grouping — zero queries
+  on a clean tree.
+- ⚠️ **Neither guard was loosened.** Refusing on an unlocked root is right; the bug was reaching that
+  question with a duplicate still in the tree.
+
+### Wizard copy
+"Match WBS to locations…" now says the combining happens, naming all three spellings, instead of
+showing one example and leaving the planner to wonder about the others.
+
+---
+
+**Verified: 66 checks, slice-and-execute** — the shipped `locTowerToken`, `locGuessLevel`,
+`locGuessValue`, `locGroupingReason`, `_vsTowerOf`, `_vsTowersIn` and `_vsTowerLevelId` sliced out of
+`index.html` by brace-matching and run for real (only `LOC_LEVELS` / `WORK_CANON` supplied, and
+`WORK_CANON` is read from the file too). Every scan carries its sanity gate: a known-present and a
+known-missing function through the same slicer, and the heal-chain order read out of the file's own
+text rather than asserted from memory. 0 functions lost, 1 added; the inline script parses; no NUL
+bytes.
+
+⚠️ **NOT verified signed-in.** The anon key has no grants on `project_schedule`, so nothing here has
+been run against One Portwood, SLN101 or any live tree — the tower shapes above are the owner's
+description and the projects' known WBS text, not measured rows. The read-time canonicalisation and
+the read-only slicing are what make that acceptable to ship: no pass writes.
+
+
+## The grid said 16,396 activities under Execution Phase; the stacking said zero (2026-09-03) — jasantos2
+
+Owner, on SLN101 (4PH Strevi Bacoor), two screenshots side by side: the Gantt shows
+`Execution Phase → Construction Phase → Substructure → Tower D → Excavation` with *Total: 16,396
+activities*, and Vertical Stacking shows **"0 execution-phase activities stacked."**
+
+⚠️⚠️ **Neither screen was lying — the app resolved "which phase is this row in" two different ways and
+only one of them worked here.**
+
+| | reads | answer on SLN101 |
+|---|---|---|
+| the grid (`rebuild`) | the **dotted WBS code**, split into ancestors | correct tree |
+| `phaseOf()` | **`wbs_node_id` → `WBS_NODES`** only | `null`, for all 16,396 |
+
+Those node ids are null on this project — the 2026-09-02 (q)/(r) batched-link timeout left 16,393
+activities unlinked, and a plain importer files by dotted code without ever creating the link. That
+state is **invisible in the grid by construction** (the changelog has said so since 2026-09-02 (o):
+*"invisible in the grid, which derives ancestry from the dotted code and never reads the node id"*),
+so the only surface that reports it is every execution-phase-scoped feature going quietly empty:
+Vertical Stacking, Contract Scope, and the activity colour key.
+
+**`phaseOf` now has a third source, in strict precedence order:**
+1. the activity's own `phase` column;
+2. `_nodePhase(wbs_node_id)` — the tree;
+3. **`_phaseByCode(wbs)` — the tree's own projection in the rows.**
+
+`_phaseByCode` walks the dotted code's ancestor prefixes **nearest-first** and takes the first branch
+NAME that resolves through `phaseFromName` — the identical precedence `_nodePhase` uses on its parent
+chain, applied to the summary rows instead. It reads the same map the location matcher builds
+(`isWbs(r) && r.wbs → r.activity_name`).
+
+- ⚠️ **It is last on purpose.** A healthy linked project computes byte-identically to before; the
+  suite asserts both directions (own phase beats the code, a linked node beats the code).
+- ⚠️ **It cannot sweep other phases into Execution.** A Planning-phase activity's own ancestry names
+  *Planning Phase*, so it answers `planning`. All four phases are asserted, plus an orphan code that
+  correctly resolves to nothing.
+- ⚠️ **Read-time only. It fixes the SYMPTOM, not the link.** No row is written and the activities stay
+  unlinked — *Schedule Setup → WBS → Adopt existing WBS* remains the real repair. What it removes is
+  the previously recorded recovery for this state, which was **a re-import**: a destructive rebuild of
+  a schedule whose data is fine and whose only problem is a missing foreign key.
+- ⚠️ **The name-map cache is cleared in `_clearPhaseMemo()` alongside the node memo.** It is built
+  from `rows`, so it goes stale on a rename, an import or a WBS repair exactly like the node memo —
+  clearing one without the other is how a half-updated phase answer survives a reload.
+
+**The empty state was the other half of the report.** *"No execution-phase activities match the
+current filters"* is a true sentence that sent the owner to look at filters, when nothing in the
+project resolved a phase at all. It now measures which case it is and, for the second, says so
+plainly and names Adopt existing WBS.
+
+**Verified: 10 checks executing the shipped `phaseOf` / `_phaseByCode` / `_nodePhase` / `isExecPhase`**,
+sliced out of `index.html`, against the exact tree in the screenshot (Milestones / Initiation /
+Planning / Execution → General Preliminaries + Construction Phase → Substructure → Tower D /
+Close-out) with **every activity's `wbs_node_id` null**. ⚠️ The suite includes the pre-fix expression
+answering `null` for all of them, so it fails against HEAD rather than passing vacuously. The day's
+other suites stay green (26 LBS + 14 wizard); **0 functions lost / 2 added**; parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — measured against the reported shape, not the live project.
+⚠️ The owner's tab was serving `?v=20260902ab`: a module page is cached by its full URL, so
+**hard-refresh** before judging this. `MODULE_V` → `20260903d`.
+
+## The WBS says what work; the LBS says where — and the stacking only reads the LBS (2026-09-03) — jasantos2
+
+Owner: *"for the vertical stacking, it should only read the locations WBS. meaning tower, level, zones,
+clusters, units, those are locations WBS. so improve the distinction from 'groupings' WBS and
+'locations' WBS. idk what the correct term for the 'Location Breakdown' is now."*
+
+**The term is Location Breakdown Structure (LBS)** — the industry counterpart to the WBS, and it names
+the distinction exactly. Relabelled in the matcher heading, `Group ▾`, the Floors & Zones step and the
+stacking's empty state.
+
+**The distinction existed in the planner's head and nowhere in the code.** New `locGroupingReason(name,
+levels)` is the single answer, read by three places that used to each guess for themselves:
+
+- ⚠️⚠️ **It compares POSITIONS, not membership, and that is load-bearing.** `substructure` and
+  `superstructure` are in `LOC_SYN.level` *and* in `WORK_CANON`'s Structural Works terms. A flat "does
+  it contain a trade word" veto would have rejected **Tower D - Substructure** — a real tower on a real
+  project (Jab), and the exact case `locGuessValue`'s trimming was written for. So the term appearing
+  earliest in the name is what the name is ABOUT: `tower` at 0 beats `substructure` at 9 → location;
+  `Superstructure` scores 0 in both → tie → **grouping**. ⚠️ The tie resolves to grouping on purpose:
+  Superstructure / Substructure / Earthworks are stages of structural work, not storeys, and banding by
+  them puts a floor in the tower that does not exist.
+- ⚠️ **The veto affects the GUESS only.** `locGuessLevel` returns '' for a grouping, but a saved match
+  is applied after and wins — so a project that has already decided "Superstructure IS our Level" keeps
+  it, and this change moves no stored value on any project by itself.
+
+**⚠️⚠️ THE REAL DEFECT: un-matching a branch did nothing to the data.** `locMapPlan` only ever SETS a
+value. A branch matched once — the old guesser proposed `Superstructure` → Level — and later marked
+"not a location" left its value stamped on every activity beneath it, so the stacking, the grouping
+dimensions and the Location columns all kept reporting a place the planner had just said is not one.
+There was no way to undo it from the app at all.
+
+`clearPlan()` removes it, and deliberately **narrowly** — a value goes only when all four hold:
+1. the branch was in that level's **saved** `match` table and is not in the new one;
+2. it is the activity's **deepest** match for that level (same `locSrcsAssigned` resolution the write
+   uses, so it cannot reach an activity the branch never wrote);
+3. the stored value still **equals** what that branch would have written;
+4. the new matching sets nothing for that level on that activity.
+
+So a value typed by hand, or written by an importer or the WBS backfill, is left alone: this undoes
+**this tool's own writes** and nothing else. ⚠️ The toast reports the count separately from the
+updates — clearing is the half nobody expects, and a silent removal of stored location values is
+precisely the kind of change that has to be visible when it happens. ⚠️ The `!map.length` early return
+had to move too, or un-matching *everything* would have returned "match at least one first" and
+cleared nothing.
+
+**The stacking's own guard, `_vsLevVal(r, levelId)`,** is the backstop for values already stored:
+`locValOf` unless the value names a grouping, in which case ''. Hooked into the five places that read
+the **axis** level — `_vsHasLevel`, `_vsTowerSVG`'s band split, `stkLevelValues`, `stkPhaseRows`,
+`stackModel` — leaving the deeper zone/unit reads and every non-stacking consumer alone.
+- ⚠️ **NOTHING IS DROPPED.** A refused value means "no level", so the activity lands in the existing
+  dashed **No level** band rather than vanishing. That band now names the grouping values it found as
+  a third cause, beside the unmatched-alias and genuinely-floorless ones — without it a planner reads
+  the band as missing data and goes looking in the *WBS branch* column, where the value is plainly
+  there. It is the same shape as the existing `stkPhaseByLabel(loc)` fold, generalised.
+- ⚠️ **Read-time only** — no row is modified. The permanent fix is the matcher's clear pass.
+- ⚠️ The grouping cache is keyed on `pid` + level count and **dropped on Apply**, or the stack would
+  keep banding by a branch the planner just retired.
+
+**The wizard badges why** (`project phase` / `trade / work type`), shown even on a row already matched
+to a level — a saved match always wins over the guess, so that badge is the only thing that makes an
+old, wrong match visible instead of permanent.
+
+**Verified: 26 checks executing the shipped `locGroupingReason` / `locGuessLevel` / `locIsGroupingValue`
+/ `_vsLevVal` / `clearPlan`**, sliced out of `index.html` by brace-matching and never reimplemented:
+every both-vocabulary tie case, the Tower-D-Substructure rescue, an explicitly-marked branch, and all
+four narrowing conditions of the clear (including the hand-typed value at the same level surviving, and
+re-matching a branch clearing nothing). The previous pass's 14 wizard checks still pass; **0 functions
+lost / 7 added**; inline script parses; 0 NUL bytes.
+⚠️ **Not verified signed in.** No clear has run against real activities — that is the one thing worth
+watching on the first real use, and the toast now reports the count so it is visible when it happens.
+`MODULE_V` → `20260903c`.
+
+## WBS→location matcher: a level lens, a live location tree, and "grouping only" (2026-09-03) — jasantos2
+
+Owner, on *Match the WBS to your location breakdown*: filter the WBS (level 1 / 2 / 3…), enlarge the
+window, add a location tree on the right — and two questions: *"Category A and Category B may be the
+same in hierarchy — will that logic be conflicting?"* and *"there are WBS that are not locations,
+they are just a grouping of activities. how do we resolve that?"*
+
+**Both questions already had answers in the data model; neither had one on screen.**
+
+- ⚠️ **The Category A case is not a conflict, and it must not be drawn as one.** Two WBS names that
+  resolve to the same value are ONE value **at that level** — the level above keeps them apart,
+  because `locSrcsAssigned` resolves deepest-first and stamps *every* level an activity sits under, so
+  `Tower A › Category A` and `Tower B › Category A` are distinguishable by their tower. The tree
+  merges them into one row with a `×2` badge and both source names in the tooltip. Flagging a clash
+  would push a planner to rename real WBS branches to work around a problem that does not exist.
+- ⚠️ **A branch that is only a grouping of activities is a first-class answer, not a rejection.** It
+  was always `— not a location —` (stored `''`, remembered per project in `ps_locexcl_<pid>`), and the
+  wording read as *this one failed to match*. It is `— grouping only (not a location) —` now, with its
+  own filter, its own bucket in the tree, and one line stating that nothing is written and the
+  decision is remembered. ⚠️ **Consequence, and it is the point:** the *Not matched* lens used to be
+  `!s.lvl`, so it counted every deliberate exclusion — a fully-decided project still read as having
+  dozens of loose ends. It is now `!s.lvl && !s.excluded`, i.e. genuinely undecided, with `grp` as its
+  own lens.
+- **The WBS-level filter needed no new data** — `locScanNames` has recorded `depth` since it was
+  written and nothing surfaced it. ⚠️ It is a **second dropdown beside the match-state one, not merged
+  into it**: the real question is *"the un-matched level-3 branches"*, a pair of conditions that one
+  list cannot express. An `L n` column was added so the filter's effect is visible in the rows.
+- **The tree is the "what will my breakdown look like" view** the table cannot be: the table says what
+  each WBS name IS, the tree says what each LEVEL will HOLD. Clicking a node is a **third, transient
+  lens** (`treeSel`) that narrows the table without touching either dropdown, so clearing it restores
+  exactly the previous view; clicking the selected node clears it. ⚠️ Its click handler is **delegated
+  on the panel**, because the tree is re-rendered on every repaint and per-node handlers would be
+  rebound on every keystroke.
+- ⚠️ **Widening needed `maxHeight` as well as `maxWidth`.** The shared `.pd-modal` caps the box at
+  85vh; the inner column asks for 86vh, so without the override the footer — Cancel and **Apply to
+  activities** — would have been clipped out of reach. Now `min(96vw,1480px)` × 92vh.
+
+**Verified: 14 checks executing the shipped `visible` / `depths` / `depthOptions` / `treeHtml` /
+`lvlOptions` / `counts` / `rowsHtml`**, sliced out of `index.html` by index and run against a fixture
+carrying the owner's own Category-A-twice shape: all four match lenses, the level filter, both tree
+lenses (level and grouping bucket), the ×2 merge, the empty-level message and the 5-cell row
+alignment. Inline script parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — no matching has been applied against a real project from this build.
+`MODULE_V` → `20260903b`.
+
 ## The Setup instructions took more space than the steps they described — and every "step N" in them was wrong (2026-09-03) — eprobles
 
 Owner: *"on the schedule setup, please make the instructions more direct and concise. the text takes

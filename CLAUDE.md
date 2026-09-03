@@ -105,6 +105,270 @@ a planner. Distributing (and reverting) a minute stays owner/planner-only regard
 that RLS narrowing is unchanged, only the field-edit rule widened. Reading has always been
 project-wide for every minute, draft or distributed.
 
+<!-- both sides prepended a 2026-09-03 entry; both kept whole, seam here -->
+
+### 2026-09-03 (f) — "No Location Breakdown Structure", on a project that has five
+
+Owner, two tabs of SLN101 side by side: Schedule Setup lists **Tower › Level › Orientation › Zone ›
+Cluster**, Vertical Stacking says the project has no breakdown. *"how come that is the error even
+though there is a defined location levels"*
+
+Both panes read the same `LOC_LEVELS` global — the difference was **when**. `load()` paints from
+cache and renders before `loadResourcesAssignments()` fetches `location_levels`, which on a
+16k-activity project is minutes; for all of it the stacking reported an empty array as *"this project
+has no Location Breakdown Structure"*, a claim it had no basis for. It also folded a **query error**
+into the same message, blaming the planner for a missing migration. New `LOC_LOAD` state gives three
+honest answers (loading / could not be read / genuinely none), and — the reason the wrong one stuck —
+`renderAll()` **never repaints the stacking**, so the pane was a dead end for the session; the
+`location_levels` fetch now repaints it, but only when it is showing an empty state and only on
+actual news. Detail in `modules/project-schedule/CLAUDE.md`.
+
+⚠️ The "genuinely none" message is unchanged — it was always right, just said in two cases where it
+was false. ⚠️ Known limit, not fixed: a second tab still does not learn about levels created in the
+first until it reloads. ⚠️ Not verified signed-in; the cause is inferred from the code path and the
+screenshots, not measured on SLN101. 90 slice-and-execute checks. `MODULE_V` → `20260903f`.
+
+---
+
+### 2026-09-03 (e) — A tower is one building, however the WBS spells it
+
+Owner: *"there are scenarios wherein the substructure is separated from the superstructure, so we
+need to combine them to create a tower. And there are direct instances wherein tower 1 is defined
+including substructure and superstructure combined."*
+
+New `locTowerToken()` gives a building ONE canonical identity, so `Tower 1 - Substructure`,
+`SUBSTRUCTURE - TOWER 1`, `TOWER-1 SUPERSTRUCTURE` and a plain `Tower 1` all resolve to **Tower 1**.
+Wired into the level guesser (a stage-first name now reaches the Tower level instead of being vetoed
+as a trade), the value guesser (the stages combine), and Vertical Stacking's tower read — where it is
+**read-time only**, so a project already stamped with two spellings draws one card without a single
+row being written. Also: the WBS heal chain merged duplicate branches *after* the two passes that
+refuse to run while a duplicate exists, so it took two page loads to converge; the merge now runs
+first. Detail in `modules/project-schedule/CLAUDE.md`.
+
+⚠️ `locGroupingReason` is deliberately untouched — a bare `Superstructure` still cannot become a
+storey. ⚠️ Nothing is invented: a stage branch with no tower word at all leaves the tower blank rather
+than guessing a name. ⚠️ Not verified signed-in (the anon key has no grants); verification is 66
+slice-and-execute checks against the shipped functions. `MODULE_V` → `20260903e`.
+
+---
+
+### 2026-09-03 (d) — 16,396 activities under a visibly correct Execution Phase, and the stacking said zero
+
+Owner, with two screenshots of SLN101 (4PH Strevi Bacoor): the grid renders a perfect tree —
+**Execution Phase → Construction Phase → Substructure → Tower D → Excavation**, *Total: 16,396
+activities* — while Vertical Stacking reads **“0 execution-phase activities stacked.”** *"How come?
+even though the schedule is under the execution phase?"* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+⚠️⚠️ **Both screens were telling the truth about different things, and the app had no third source.**
+`rebuild()` derives a row's ancestry from its **dotted WBS code** and never reads the node id — that
+is why the grid is right. `phaseOf()` resolved **only** through `wbs_node_id → WBS_NODES`, and on this
+project those ids are null (the 2026-09-02 (q)/(r) batched-link timeout, and every plain importer,
+file activities by dotted code without ever linking them to a node). So all 16,396 answered *"no
+phase"*, `isExecPhase()` was false for every one, and **every execution-scoped feature — Vertical
+Stacking, Contract Scope, the activity colour key — silently reported an empty project.**
+
+- **`phaseOf` gained the code fallback**, reading the same source the grid trusts: walk the dotted
+  code's ancestors nearest-first and take the first branch name that resolves a phase — the identical
+  rule `_nodePhase` applies to the tree, applied to the projection of that tree the rows carry.
+- ⚠️ **Strictly last.** The row's own `phase` and the node chain both still win, so a healthy linked
+  project computes exactly what it computed before — asserted, along with the pre-fix expression
+  returning null for all of them, so the suite bites.
+- ⚠️ **Read-time only, and it repairs the symptom, not the link.** Nothing is written; the activities
+  are still unlinked, and *Schedule Setup → WBS → Adopt existing WBS* is still the real fix. But the
+  previously recorded recovery for this state was **a re-import**, i.e. a destructive repair of a
+  schedule that is not actually damaged.
+- ⚠️ **It cannot sweep other phases into Execution:** a Planning-phase activity's own ancestry names
+  Planning Phase, so it resolves to `planning`. Asserted for all four phases plus an orphan code,
+  which correctly still has no phase.
+- **The empty state now distinguishes the two cases** — *"nothing matches your filters"* vs *"not one
+  of this project's N activities resolves ANY phase, so this is not a filter problem"*, measured
+  rather than guessed, naming Adopt existing WBS. The old wording is exactly what made a full
+  schedule read as an empty one.
+
+**Verified: 10 checks executing the shipped `phaseOf` / `_phaseByCode` / `_nodePhase` / `isExecPhase`**
+(sliced from the file) against the tree in the owner's own screenshot; the day's other suites still
+green (26 + 14); **0 functions lost / 2 added**; parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — the fix is measured against the reported shape, not against the live
+project. ⚠️ The owner's tab was on `?v=20260902ab`; **hard-refresh**, since a module page is cached by
+its full URL. `MODULE_V` → `20260903d`.
+
+### 2026-09-03 (c) — A WBS branch is a PLACE or a GROUPING, and the stacking now reads only places
+
+Owner: *"for the vertical stacking, it should only read the locations WBS — tower, level, zones,
+clusters, units, those are locations WBS. improve the distinction from 'groupings' WBS and 'locations'
+WBS. idk what the correct term for 'Location Breakdown' is now."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+**The term is Location Breakdown Structure (LBS)** — the standard counterpart to the WBS, and exactly
+the distinction being asked for: the WBS says *what work*, the LBS says *where*. Relabelled in the
+matcher, the Group menu, the Floors & Zones step and the stacking's own empty state.
+
+- **The distinction had no name in the code.** New `locGroupingReason(name)` answers it once and is
+  read by the guesser, the wizard and the stacking: a **location** is a place (tower/building, level/
+  floor, zone, cluster, unit); a **grouping** is a project phase, a trade or a work type.
+- ⚠️ **It is POSITION-AWARE, and it has to be.** Several terms sit in both vocabularies —
+  `substructure`/`superstructure` are a Level synonym *and* a Structural Works term — so a flat
+  "is it a trade word" test would have thrown away **Tower D - Substructure**, a real tower. The term
+  appearing **earliest** wins: `Tower D - Substructure` → location; `Superstructure` (tie) → grouping.
+  ⚠️ A tie resolves to grouping deliberately: those are stages of structural work, not storeys.
+- **The guesser no longer proposes a trade or a phase as a location** — ⚠️ guess only. A saved match
+  still wins, so a project that already decided *"Superstructure IS our Level"* keeps it and no stored
+  data moves underneath anyone.
+- ⚠️⚠️ **UN-MATCHING A BRANCH USED TO DO NOTHING TO THE DATA — that is why a grouping went on drawing
+  a floor forever.** `locMapPlan` only ever SETS. A branch matched once and later marked grouping-only
+  left its value stamped on every activity beneath it. Apply now **clears** it, and narrowly: only
+  where the branch was in that level's *saved* table, is no longer in the new one, is the activity's
+  deepest match, the stored value still equals what it wrote, and the new matching sets nothing there.
+  Hand-typed, imported and backfilled values are untouched — it undoes this tool's own writes and
+  nothing else. The toast says how many were cleared, because a silent removal is not acceptable.
+- **The stacking refuses a grouping value at read time** as a backstop for values already stored.
+  ⚠️ **Nothing is dropped**: a refused value simply means "no level", so the work lands in the
+  existing dashed *No level* band — which now names the grouping branches as a cause, since a planner
+  reading that band would otherwise go hunting for a value that is plainly there.
+- The wizard badges each row with **why** it reads as a grouping (`project phase` / `trade / work
+  type`), shown even on rows already matched — that badge is the one thing that makes an old, wrong
+  match visible instead of permanent.
+
+**Verified: 26 checks executing the shipped `locGroupingReason` / `locGuessLevel` / `locIsGroupingValue`
+/ `_vsLevVal` / `clearPlan`** (sliced out of the file, never reimplemented), covering the both-vocabulary
+tie cases, the Tower-D-Substructure rescue, and all four narrowing conditions of the clear; the
+previous pass's 14 wizard checks still green; **0 functions lost / 7 added**; parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — no clear has run against real activities, which is the one thing most
+worth watching on the first real use. `MODULE_V` → `20260903c`.
+
+### 2026-09-03 (b) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
+<!-- both sides prepended a 2026-09-03 entry; both kept whole, seam here -->
+
+### 2026-09-03 (b) — Super-admin-only modules, module-logo dropdowns, bold Portfolio, view toggles repositioned
+
+Six items in one owner turn, two of them mid-turn follow-ups on the earlier five.
+
+**1. Seven modules + Personal hidden from everyone but `super_admin`, "for now."** New
+`superAdminOnly: true` on the risk-register, stakeholder-map, manpower-loading,
+equipment-loading, productivity-rates, contracts-claims and cash-flow entries in
+`config.js`. Read off `window.__role` — the global `AppAuth.requireLogin()` already sets
+before its callback runs — by a shared `visible(m)` predicate now duplicated (deliberately,
+one line each) in `ModulesGrid.render()` (the launcher grid), `UI.renderNav()` (both the
+project- and portfolio-mode sidebars), and `dashboard.html`'s own tile grid, so a hidden
+module can't surface from any of the three places a module can appear. **This is UI
+visibility only** — no RLS or table-grant change, so it's reversible in one line and a
+super_admin sees every module unchanged.
+- ⚠️ Personal (My Work / Tasks) gated the same way, off the same role, in **two** places —
+  `renderNav`'s Personal section AND `renderUserBar`'s avatar-menu "My Work" link (a second,
+  independent path to `my-work.html` that renders on every page, sidebar or not; gating only
+  the sidebar would have left the page one click away via the avatar on every module page).
+- ⚠️ **Portfolio Overview's own tabs are a fourth surface, and a static one** — its six
+  cross-project tabs (Risk / Stakeholders / Equipment / Contracts / Cash Flow / Productivity)
+  are hardcoded markup, not built off `APP_CONFIG.MODULES`, so hiding the sidebar link alone
+  would have moved the same data one click sideways instead of closing it. Hidden the same
+  role-gated way, straight in that page's own `requireLogin` callback; the other seven tabs
+  (Overview/S-Curve/Cash-Flow-rollup/Resources/Milestones/Issues/Meetings/Photos) are untouched
+  since none of those seven modules are `superAdminOnly`.
+
+**2–4. A module identity icon before the screen-switcher dropdown**, for Minutes of Meeting
+and Progress Photos — both modules whose `<h1>` text is hidden once `UI.tabsToDropdown()`
+builds a trigger that already names the current screen, so the icon was the only piece of
+module identity left, and until now it wasn't carried into the trigger at all. Extended
+`UI.tabsToDropdown(selOrEl, opts)` with `opts.icon`, baked straight into the trigger button
+(`.pd-tabsdrop-ico`, brand-red, matching Project Schedule's own `.ps-title-btn` pattern) rather
+than left as a separate element beside it — issues-lessons already tried a standalone icon
+element next to a dropdown and had to hide the WHOLE thing on narrow screens because a lone
+icon on its own row is exactly the "icon alone / label on the next line" defect this app's
+history has fixed twice already (see `tabsToDropdown`'s own comment). `UI.tabsToDropdown('.il-tabs',
+{icon:'clipboard'})` and `UI.tabsToDropdown('.pp-tabs', {icon:'camera'})` — matching each
+module's own `config.js` icon. ⚠️ Found by actually rendering the pages and inspecting the
+DOM, not by reading the CSS: issues-lessons' `<h1>` carries an inline `style="display:none"`
+set by `switchScreen()` from an earlier, deliberate round — a different mechanism from
+`tabsToDropdown`'s own class-based hide, and the reason its icon had disappeared entirely
+rather than merely being un-styled.
+
+**5. "Portfolio" now renders bold when it's the selected row in the project-selector dropdown.**
+The trigger button (closed state) already wrapped its label in `<strong>` unconditionally
+(`renderSwitcher`'s `mainLabel`) — this was specifically about the Portfolio row **inside the
+dropdown's own list** (`navListBody()`'s `.pd-nt-portfolio`, the one list body shared by
+`enhanceProjectSelect`'s popover, `renderSwitcher`'s menu, and `home.html`), whose `.sel`
+(current/active) state changed only background/color, with no weight change from the row's
+base 600. `.pd-nt-portfolio.sel` now adds `font-weight: 700` — measured via a real render:
+600 unselected, 700 selected.
+
+**6. The List/Calendar and Tile/List/Plan "change view" toggles moved out of the chrome and
+into the content, on the left** — Minutes of Meeting and Progress Photos, the two modules
+where they weren't already there. ⚠️ **Issues & Concerns needed no change** — its own
+List/Kanban toggle (`.il-viewbar`, built by `viewKanbanBarHTML()`) was already the leading,
+left-most element directly above `#il-table`; confirmed by rendering all three modules and
+comparing, not by re-reading the CSS a second time.
+- **Minutes of Meeting**: the icon-only List/Calendar toggle used to live in the topbar's
+  tool cluster (top-right, beside the profile — chrome, nowhere near the meetings it
+  switches), wired once in `wire()` since it sat outside `#il-mom-view`'s own re-rendered
+  content, with a separate `syncTopTabs()` pass to keep its hidden/`.on` state in sync. It now
+  opens `momBrowseFilterBarHTML()` — the "Filters / N meetings / Export / +Add meeting" bar
+  that already sits directly above the list/calendar and is rebuilt fresh on every
+  `renderBrowse()` — so its `.on` state needs no separate sync pass at all; wired in
+  `wireBrowse()` like every other control in that bar. The old topbar markup, its `wire()`
+  wiring and the `syncTopTabs()` block managing it are all removed rather than left dead; the
+  now-pointless `.il-topbar-tools .il-viewtoggle { height: 34px }` CSS override (the button's
+  own 34px rule already covered it) went with them.
+- **Progress Photos**: the Tile/List/Plan toggle (`.pd-viewtoggle`) already lived in the right
+  place — `.pp-listbar`, directly above the gallery/list — just pushed to the far right via
+  `.pp-listbar .pd-viewtoggle { margin-left: auto; }` while count/group-by/tile-size/markup sat
+  on the left. Moved to lead the row instead (markup relocated, the `margin-left:auto` rule
+  removed — flex's own start alignment does the rest). Checked first that nothing in
+  `module.js` depends on `.pp-listbar`'s child order (only one order-agnostic
+  `document.querySelector('.pp-listbar')` read, for a whole-bar visibility toggle) or queries
+  `.pd-vt[data-view]` by anything but the attribute (it does, everywhere).
+- Both re-rendered at 400px afterward: the toggles wrap onto their own compact row (not
+  stretched full-width — `.il-viewtoggle`/`.pd-viewtoggle` both carry `flex: none`), nothing
+  clipped or broken.
+
+Verified: `node --check` on every touched `.js` file; every touched `index.html`'s inline
+`<script>` parses (progress-photos' own extraction reports a failure that reproduces
+byte-for-byte against the untouched `origin/main` copy — the documented "`<script>` substring
+inside a CDN `src` URL fools a naive regex extractor" trap, not a defect in this change); CSS
+brace-balance holds on `dashboard.css` (450/450), minutes-of-meeting's `module.css` (301/301)
+and progress-photos' `module.css` (525/525); 0 duplicate DOM ids in any of the three touched
+module pages; 0 stray references to the removed `#il-viewtoggle` id anywhere in code (the one
+surviving hit is an unrelated Month/Week sub-toggle inside calendar mode that only ever shared
+the CSS *class*, never the id). All six items visually confirmed via Playwright renders at
+1400px and 400px against the shipped CSS with the real app markup (auth/DB stubbed — this
+environment has no live Supabase login). ⚠️ **Not verified signed in.**
+
+### 2026-09-03 (c) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
+
+Owner, off a screenshot of *Match the WBS to your location breakdown*: filter by WBS level, use the
+space, put a location tree on the right — plus two questions worth answering in the UI rather than in
+chat. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **A WBS-level lens, separate from the match-state lens.** `locScanNames` already recorded each
+  name's depth and nothing surfaced it; there is now a `WBS level N (count)` dropdown and an `L n`
+  column. ⚠️ **Two controls, not one merged list** — *"show me the un-matched level-3 branches"* is
+  the question a planner asks, and a single dropdown cannot express a pair.
+- **The window uses the room it has** — `min(96vw,1480px)` × 92vh. ⚠️ `maxHeight` had to be overridden
+  too: the shared `.pd-modal` caps at 85vh, so an 86vh inner column would have been clipped by it and
+  the footer buttons pushed out of reach.
+- **A live location tree on the right**, level by level, showing what each level will HOLD once
+  applied — the table says what each WBS name *is*, the tree says what the breakdown *becomes*.
+  Clicking a level (or the Grouping-only bucket) narrows the table as a third, transient lens that
+  leaves the two dropdowns alone, so clearing it restores exactly what was on screen.
+- ⚠️ **"Category A under Tower A and Category A under Tower B" is NOT a conflict — answered in the
+  UI.** Two WBS names resolving to the same value render merged with a `×2` badge and both names in
+  the tooltip. They are one value *at that level*; the level ABOVE keeps them apart, because
+  deepest-wins resolution stamps every level an activity sits under. Showing them as a clash would
+  invent a problem and invite a planner to rename real data to dodge it.
+- ⚠️ **"Some WBS are not locations, just a grouping of activities" — that answer already existed and
+  was named as a rejection.** `— not a location —` is now **`— grouping only (not a location) —`**,
+  with its own filter, its own bucket in the tree and a line saying nothing is written for it and the
+  decision is remembered. Same stored value (`''`) and the same per-project memory as before —
+  ⚠️ so the *"Not matched"* lens now means genuinely undecided (it used to include every deliberate
+  exclusion, which is what made a finished project still read as unfinished).
+
+**Verified: 14 checks executing the shipped `visible` / `depths` / `treeHtml` / `lvlOptions` /
+`counts` / `rowsHtml`** (sliced out of the file, never reimplemented) against a fixture carrying the
+owner's own Category-A-twice case — each lens, the level filter, both tree lenses, the merge badge and
+the header/row cell alignment. Inline script parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — no live matching has been applied against a real project.
+`MODULE_V` → `20260903b`.
+
 ### 2026-09-02 (b) — Minutes of Meeting, corrected spec: the shared files, and a tabs-dropdown rollout
 
 The owner's follow-up ("some of my prompts were not captured") replaced the 10-item list

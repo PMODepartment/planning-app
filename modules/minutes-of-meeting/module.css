@@ -196,11 +196,12 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 }
 .il-icondd-item:hover { background: var(--pd-bg); color: var(--pd-red); }
 
-/* ---- Icon-only List/Calendar toggle (item 2, topbar) ----------------------
+/* ---- Icon-only List/Calendar toggle --------------------------------------
    Reuses .il-viewtoggle's chrome (border/radius) but square icon buttons
-   instead of labelled text, since this lives in the tool cluster beside the
-   theme toggle/avatar, not inside the content area. */
-.il-topbar-tools .il-viewtoggle { height: 34px; }
+   instead of labelled text. Item 6 (2026-09-03) moved the toggle itself out
+   of the topbar tool cluster into the meetings list's own filter bar
+   (#il-mom-viewtoggle in momBrowseFilterBarHTML) — this styling is unchanged,
+   only where the markup lives moved. */
 .il-vt-btn {
   border: 0; background: var(--pd-card); color: var(--pd-muted);
   width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
