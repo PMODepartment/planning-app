@@ -1150,7 +1150,13 @@ window.IssuesLessons = (function () {
     // a colour marker (a filled "●" tspan in the slice's own colour, so it
     // works under any text-anchor without separate marker-positioning math),
     // the count, AND the percent of the total this slice represents.
-    var labelPadX = 86, labelPadY = 14;
+    // ITEM 1 (this round): the ring is bigger now (the caller passes a larger
+    // `size`, see the dashboard's own Status tile call), so a label sitting
+    // right against the stroke would crowd it — each label now trails a short
+    // LEADER LINE from the ring's outer edge out to where the text starts.
+    // `labelPadX`/`labelPadY` grow to give both the longer leader and the
+    // (now farther-out) label room inside the viewBox.
+    var labelPadX = 100, labelPadY = 16;
     var labels = '';
     if (total) {
       var off2 = 0;
@@ -1159,13 +1165,20 @@ window.IssuesLessons = (function () {
         off2 += len;
         if (!s.value) return '';
         var angleRad = ((mid / circ) * 360 - 90) * Math.PI / 180;
-        var labelR = r + sw / 2 + 8;
-        var lx = c + labelR * Math.cos(angleRad);
-        var ly = c + labelR * Math.sin(angleRad) + 4;
-        var cosv = Math.cos(angleRad);
+        var cosv = Math.cos(angleRad), sinv = Math.sin(angleRad);
+        // Three radii on the SAME angle: the leader starts just outside the
+        // ring's stroke, ends a short distance out, and the label sits just
+        // past where the leader ends — so the line visibly connects arc to text
+        // instead of the text merely floating near the ring as it did before.
+        var lineR1 = r + sw / 2 + 2, lineR2 = r + sw / 2 + 16, labelR = r + sw / 2 + 20;
+        var lx1 = c + lineR1 * cosv, ly1 = c + lineR1 * sinv;
+        var lx2 = c + lineR2 * cosv, ly2 = c + lineR2 * sinv;
+        var lx = c + labelR * cosv, ly = c + labelR * sinv + 4;
         var anchor = cosv > 0.2 ? 'start' : (cosv < -0.2 ? 'end' : 'middle');
         var pct = Math.round((s.value / total) * 100);
-        return '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor +
+        return '<line x1="' + lx1.toFixed(1) + '" y1="' + ly1.toFixed(1) + '" x2="' + lx2.toFixed(1) +
+            '" y2="' + ly2.toFixed(1) + '" stroke="var(--pd-muted)" stroke-width="1"></line>' +
+          '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor +
           '" font-size="10.5" font-weight="600" fill="var(--pd-ink)">' +
           '<tspan fill="' + s.color + '">●</tspan> ' +
           Fmt.esc(s.label) + ': ' + s.value + ' (' + pct + '%)</text>';
@@ -1241,33 +1254,43 @@ window.IssuesLessons = (function () {
     opts = opts || {};
     items = items || [];
     var w = opts.width || 380, barH = 22, gap = 10, padTop = 4, lineH = 13, fs = 11.5;
-    // padLeft is the fixed label column — bars start at x=padLeft. ITEM 10:
-    // the label column is now a wrap/centre zone (colCenter), not a plain
-    // left-aligned strip.
+    // padLeft is the fixed label column — bars start at x=padLeft. ITEM 3
+    // (this round): the label column is a plain LEFT-aligned strip again, not
+    // the centre-with-fallback zone the prior round built (`ilWrapLines` still
+    // wraps the label to this same column width; only its alignment changed).
     var padLeft = 132, padRight = 6;
     var trackW = Math.max(24, w - padLeft - padRight);
-    var colCenter = padLeft / 2, labelColW = padLeft - 12, edgeMargin = 4;
+    var labelColW = padLeft - 12, edgeMargin = 4;
     var max = Math.max(1, items.reduce(function (m, it) { return Math.max(m, it.total); }, 0));
     var openColor = opts.openColor || '#EE3124', totalColor = opts.totalColor || 'var(--pd-line)';
     var y = padTop;
     var svg = items.map(function (it) {
       var lines = ilWrapLines(it.label, labelColW, fs);
-      // ITEM 10: CENTRE the label in its column by default — but if that
-      // centring would push the label's LEFT edge past the y-axis (x=0, the
-      // chart's own left boundary), fall back to left-align instead, or a
-      // long centred label would run off the visible chart with nothing to
-      // stop it. Decided once per label off its WIDEST line, so a wrapped
-      // label's lines stay consistently aligned with each other.
-      var maxLineW = lines.reduce(function (m, ln) { return Math.max(m, ilTextW(ln, fs)); }, 0);
-      var leftEdge = colCenter - maxLineW / 2;
-      var anchor = leftEdge < edgeMargin ? 'start' : 'middle';
-      var labelX = anchor === 'start' ? edgeMargin : colCenter;
+      // ITEM 3 (this round): row labels are LEFT-ALIGNED, full stop — no
+      // longer "centre unless it would cross the y-axis" (the prior round's
+      // rule). The owner's ask this time names the row label specifically,
+      // distinct from the value label inside the bar (item 4, below), which
+      // keeps its own centre-with-fallback behaviour.
+      var anchor = 'start';
+      var labelX = edgeMargin;
       var rowH = Math.max(barH, lines.length * lineH + 6);
       var barY = y + (rowH - barH) / 2;
       var barMidY = barY + barH / 2 + 4;
       var totalW = Math.max(2, (it.total / max) * trackW);
       var openW = Math.max(it.open ? 2 : 0, (it.open / max) * trackW);
       var midX = padLeft + totalW / 2;
+      // ITEM 4 (this round): the "X/Y (Z%) open" value text CENTRES in the bar
+      // by default, but a short bar (a department/champion with a small total
+      // next to a much larger one, e.g. "0/1 (0%) open") can't fit that much
+      // text centred without it running past the bar's own edges and reading
+      // as garbled/overlapping — exactly the case the owner's screenshot
+      // highlighted. When the text is wider than the bar can hold (minus a
+      // little breathing room), it falls back to LEFT-aligned, anchored just
+      // inside the bar's own left edge, instead of centred over it.
+      var valueText = it.open + '/' + it.total + ' (' + (it.total ? Math.round((it.open / it.total) * 100) : 0) + '%) open';
+      var valFits = ilTextW(valueText, 10.5) <= totalW - 8;
+      var valAnchor = valFits ? 'middle' : 'start';
+      var valX = valFits ? midX : padLeft + 4;
       // First tspan sits vertically centred as a block within the ROW (not
       // just the bar) — see barMidY's own "+4" baseline correction, mirrored
       // here so a single-line label lands EXACTLY where it always has.
@@ -1282,19 +1305,25 @@ window.IssuesLessons = (function () {
           '" rx="4" fill="' + totalColor + '"><title>' + Fmt.esc(it.label) + ' — Total: ' + it.total + '</title></rect>' +
         '<rect x="' + padLeft + '" y="' + barY.toFixed(1) + '" width="' + openW.toFixed(1) + '" height="' + barH +
           '" rx="4" fill="' + openColor + '"><title>' + Fmt.esc(it.label) + ' — Open: ' + it.open + '</title></rect>' +
-        // ITEM 10: "X/Y (Z%) open", replacing "N open of N issues" — a stroke
+        // ITEM 10 (prior round)/4 (this round): "X/Y (Z%) open" — a stroke
         // halo (the tile's own card colour) keeps it legible over either
         // segment it may land on.
-        '<text x="' + midX.toFixed(1) + '" y="' + barMidY.toFixed(1) +
-          '" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--pd-ink)" ' +
+        '<text x="' + valX.toFixed(1) + '" y="' + barMidY.toFixed(1) +
+          '" text-anchor="' + valAnchor + '" font-size="10.5" font-weight="700" fill="var(--pd-ink)" ' +
           'paint-order="stroke" stroke="var(--pd-card)" stroke-width="3" stroke-linejoin="round">' +
-          it.open + '/' + it.total + ' (' + (it.total ? Math.round((it.open / it.total) * 100) : 0) + '%) open</text>';
+          Fmt.esc(valueText) + '</text>';
       y += rowH + gap;
       return rowSvg;
     }).join('');
     var h = items.length ? (y - gap + padTop) : (padTop * 2 + barH);
+    // ITEM 5 (this round): "bar charts must also be aligned left" — the SVG
+    // itself now anchors to the top-left of its viewport (`xMinYMin`) rather
+    // than centring (`xMidYMid`), so on a tile wider than the chart's own
+    // natural aspect it hugs the left edge instead of floating with padding
+    // on both sides. The donut (donutChartSVG) is untouched — item 1 gives it
+    // its OWN, deliberately centred treatment.
     return '<svg viewBox="0 0 ' + w + ' ' + h.toFixed(1) + '" width="100%" height="' + h.toFixed(1) + '" role="img" ' +
-      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet" overflow="visible">' + svg + '</svg>';
+      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMinYMin meet" overflow="visible">' + svg + '</svg>';
   }
 
   // ---- shared History (item #11) --------------------------------------------
@@ -1455,6 +1484,12 @@ window.IssuesLessons = (function () {
   // is the open subset, `totalCount` the same filter set BEFORE the open-only
   // narrowing (dashIssuesFiltered()'s own length), so the label states both
   // halves instead of just the open count alone.
+  // ITEM 7 (this round): the Issue cell no longer runs its text through
+  // `clip(…,90)` — the ask is "wrap text, not overflow", and truncating with
+  // an ellipsis is itself a form of "not showing the overflow" that silently
+  // drops text with nothing on screen saying more was cut. `.il-dash-list td`
+  // already wraps at word boundaries (`word-break: break-word`); removing the
+  // clip is what lets the full issue text actually reach that rule.
   function fullIssueListHTML(data, totalCount) {
     return '<div class="il-dash-fulllist-head"><h4>Open Issues</h4>' +
       '<span class="il-dash-fulllist-count">' + data.length + ' open of ' + totalCount +
@@ -1465,7 +1500,7 @@ window.IssuesLessons = (function () {
             data.map(function (r) {
               var a = agingDays(r);
               return '<tr data-open="' + Fmt.esc(r.id) + '">' +
-                '<td>' + Fmt.esc(clip(r.description, 90) || '(no issue text)') + '</td>' +
+                '<td>' + Fmt.esc(r.description || '(no issue text)') + '</td>' +
                 // Item 5: latest champion only, same rule as the Issues log.
                 '<td>' + Fmt.esc(latestChampionText(r) || '—') + '</td>' +
                 '<td>' + Fmt.esc(r.department || '—') + '</td>' +
@@ -1487,13 +1522,24 @@ window.IssuesLessons = (function () {
       return true;
     });
   }
+  // ITEM 8 (this round): dropped `clip(…,90)` on the lesson text — same "wrap,
+  // don't overflow" call as the Open Issues tile above — and added an ISSUE
+  // column (`lessonSourceText()`, the same helper the Lessons Learned list
+  // screen's own Issue column already reads, so the two can't disagree about
+  // what a lesson's source line says). ⚠️ `.il-dash-lessontile-list`, not
+  // `.il-dash-lesson-list` — that class is now a 4-column shape here vs. the
+  // 3-column (Lesson/Department/Date Closed) shape the issue detail's own
+  // "Lessons Learned" table (item 2, individual view) reuses `.il-dash-lesson-
+  // list` for; sharing one class between a 3- and 4-column table would make
+  // whichever set of nth-child width rules loaded second win for BOTH.
   function lessonsTileHTML(list) {
     if (!list.length) return '<div class="il-empty" style="padding:16px;">No lessons captured yet.</div>';
-    return '<div class="pd-tablewrap"><table class="il-dash-list il-dash-lesson-list"><thead><tr>' +
-      '<th>Lesson</th><th>Department</th><th>Captured</th></tr></thead><tbody>' +
+    return '<div class="pd-tablewrap"><table class="il-dash-list il-dash-lessontile-list"><thead><tr>' +
+      '<th>Lesson</th><th>Issue</th><th>Department</th><th>Captured</th></tr></thead><tbody>' +
       list.map(function (l) {
         return '<tr data-open-lesson="' + Fmt.esc(l.id) + '">' +
-          '<td>' + Fmt.esc(clip(l.lesson, 90) || '(no lesson text)') + '</td>' +
+          '<td>' + Fmt.esc(l.lesson || '(no lesson text)') + '</td>' +
+          '<td>' + Fmt.esc(lessonSourceText(l)) + '</td>' +
           '<td>' + Fmt.esc(l.department || '—') + '</td>' +
           '<td>' + (l.date_captured ? Fmt.date(l.date_captured) : '—') + '</td>' +
         '</tr>';
@@ -1568,6 +1614,18 @@ window.IssuesLessons = (function () {
     // rather than kept as decoration.
     var barLegendTop = '<span class="il-dash-legend-i"><i style="background:#EE3124"></i>Open</span>' +
       '<span class="il-dash-legend-i"><i style="background:var(--pd-line)"></i>Total</span>';
+    // ITEM 1 (this round): a legend UNDER the Status donut, in addition to (not
+    // instead of) its per-slice labels — the owner asked for both this time,
+    // where the prior round had dropped this in favour of the labels alone.
+    // Always all three statuses, unlike the per-slice labels which skip a
+    // zero-value slice — a legend is naming the vocabulary, not describing
+    // what's currently on the ring, so it stays complete even when a status
+    // has nothing in it right now.
+    function statusLegendBottomHTML(slices) {
+      return '<div class="il-dash-legend-bottom">' + slices.map(function (s) {
+        return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' + Fmt.esc(s.label) + '</span>';
+      }).join('') + '</div>';
+    }
 
     var lessonsList = dashLessonsFiltered();
 
@@ -1577,31 +1635,40 @@ window.IssuesLessons = (function () {
     // ITEM 1 (2026-09-01): the three now share ONE fixed content height
     // (.il-dash-cardbody), so they read as a real row instead of each one
     // drifting to whatever its own chart happens to need.
+    // ITEM 1 (this round): the Status donut is drawn LARGER (`size:170`, up
+    // from the 130 default) — "maximise to tile" — with a legend row added
+    // below the fixed-height body rather than inside it, so the shared
+    // `.il-dash-cardbody` height (item 6) stays the one number all three
+    // tiles agree on. ITEM 2 (this round): the Department/Champion tiles'
+    // own title+legend row moves to the SAME position — below the body — via
+    // `.il-dash-cardhead-bottom`, so all three tiles keep a comparable
+    // chart-then-footer shape and stay visually equal in height.
     host.innerHTML = migrateNoteHTML() +
       '<div class="il-dash-grid">' +
         '<div class="pd-card il-dash-card">' +
           '<div class="il-dash-cardhead"><h4>Issues by Status</h4></div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-center">' +
-            (total ? donutChartSVG(statusSlices, { aria: 'Issues by status' })
+            (total ? donutChartSVG(statusSlices, { aria: 'Issues by status', size: 170 })
               : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
           '</div>' +
+          (total ? statusLegendBottomHTML(statusSlices) : '') +
         '</div>' +
         '<div class="pd-card il-dash-card">' +
-          '<div class="il-dash-cardhead"><h4>Issues by Department</h4>' +
-            (deptList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
-          '</div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
             (deptList.length ? hbarSVG(deptList, { aria: 'Open vs total issues by department' })
               : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
           '</div>' +
+          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Issues by Department</h4>' +
+            (deptList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
+          '</div>' +
         '</div>' +
         '<div class="pd-card il-dash-card">' +
-          '<div class="il-dash-cardhead"><h4>Issues by Champion</h4>' +
-            (champList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
-          '</div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
             (champList.length ? hbarSVG(champList, { aria: 'Open vs total issues by champion' })
               : '<div class="il-empty" style="padding:16px;">No issues match the current filter.</div>') +
+          '</div>' +
+          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Issues by Champion</h4>' +
+            (champList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -2154,24 +2221,39 @@ window.IssuesLessons = (function () {
       // doesn't exist yet), so all this section could show is a confusing "No
       // lesson captured from this issue yet" while the very lesson being typed
       // below IS that lesson.
-      // ITEM 3/5 (this round): renamed "Lessons learned from this issue" ->
-      // "Related lessons", and rendered as a plain numbered list of lesson
-      // text ONLY — no department chip, date or action buttons — instead of
-      // the card/tile grid. `ls` is already built above with `excludeId`
-      // filtering the CURRENT lesson out (item 3's exclusion requirement),
-      // which stays unchanged here; only the heading and the markup change.
-      // Each item reuses the SAME `data-open-lesson` wiring `wireIssues()`
-      // already applies to any such element (used elsewhere for the same
-      // purpose), so opening one needs no new wiring.
+      // ITEM 1 (individual-view round): the heading depends on WHERE this
+      // section is rendered, not on a fixed label. `excludeId` is only ever
+      // set when issDetailHTML is embedded on a LESSON's own page (see
+      // renderLessonDetailView passing `excludeLessonId: cur.id`) — from
+      // there, the section is genuinely about lessons "related to" the one
+      // already being viewed, so it keeps "Related Lessons". On the issue's
+      // OWN page (the normal case, excludeId unset) it is simply the
+      // lessons THIS issue produced, so it reads "Lessons Learned" — the
+      // ask was specifically to rename it there and nowhere else.
+      // ITEM 2: a real table (Lesson Learned / Department / Date Closed)
+      // replacing the plain numbered list, so the department and closure
+      // date are visible without opening each lesson — reuses
+      // `.il-dash-list il-dash-lesson-list` VERBATIM (see module.css) rather
+      // than a third table-styling rule for the same 3-column shape.
+      // Lesson text is NOT truncated — `.il-dash-list td` already wraps
+      // (word-break: break-word), same as the dashboard's own tiles.
+      // `ls` is still built above with `excludeId` filtering the current
+      // lesson out; only the heading and the markup change here. Each row
+      // reuses the SAME `data-open-lesson` wiring `wireIssues()` already
+      // applies to any such element, so opening one needs no new wiring.
       (forceClose ? '' :
-      '<div class="il-mom-actions il-iss-lessons"><h4>Related lessons</h4>' +
+      '<div class="il-mom-actions il-iss-lessons"><h4>' + (excludeId ? 'Related Lessons' : 'Lessons Learned') + '</h4>' +
         (ls.length
-          ? '<ol class="il-related-lessons">' +
+          ? '<div class="pd-tablewrap"><table class="il-dash-list il-dash-lesson-list"><thead><tr>' +
+              '<th>Lesson Learned</th><th>Department</th><th>Date Closed</th></tr></thead><tbody>' +
               ls.map(function (l) {
-                return '<li><button class="il-related-lesson-item" data-open-lesson="' +
-                  Fmt.esc(l.id) + '">' + Fmt.esc(l.lesson) + '</button></li>';
-              }).join('') +
-            '</ol>'
+                var closed = lessonResolvedDate(l);
+                return '<tr data-open-lesson="' + Fmt.esc(l.id) + '">' +
+                  '<td>' + Fmt.esc(l.lesson || '(no lesson text)') + '</td>' +
+                  '<td>' + Fmt.esc(l.department || '—') + '</td>' +
+                  '<td>' + (closed ? Fmt.date(closed) : '—') + '</td>' +
+                '</tr>';
+              }).join('') + '</tbody></table></div>'
           : '<div class="il-empty" style="padding:12px;">No lesson captured from this issue yet.</div>') +
         (canAdd && !isNew
           // ITEM 12: "Capture another lesson" -> "Add another lesson".
