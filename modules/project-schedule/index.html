@@ -9935,33 +9935,60 @@
         val: s ? s.val : (g ? locGuessValue(f.name, g, LOC_LEVELS) : f.name),
         valEdited: !!s, excluded: excluded };
     });
-    var filter = 'sug', q = '';
+    // `filter` is the match-state lens (proposed / not matched / grouping-only / all); `depth` is a
+    // separate WBS-LEVEL lens (1 = top-level branch). They are deliberately two controls rather than
+    // one merged list: "show me the un-matched level-3 branches" is the question a planner actually
+    // asks, and a single dropdown cannot express a pair.
+    var filter = 'sug', q = '', depthF = '', treeSel = '';
 
     function lvlOptions(sel) {
-      return '<option value="">— not a location —</option>' + LOC_LEVELS.map(function (l) {
-        return '<option value="' + esc(l.id) + '"' + (l.id === sel ? ' selected' : '') + '>' + esc(l.name) + '</option>';
+      // ⚠️ "Grouping only" is the same value the empty option always carried ('' = no level), just
+      // named for what it MEANS. A WBS branch is very often a pure grouping of activities —
+      // "Construction Phase", "Wet Works", "Punchlisting" — and the old wording ("not a location")
+      // read as a rejection rather than a legitimate, remembered answer. It is remembered per
+      // project, so a branch marked here is never re-guessed as a location on the next open.
+      return '<option value="">— grouping only (not a location) —</option>' + LOC_LEVELS.map(function (l, li) {
+        return '<option value="' + esc(l.id) + '"' + (l.id === sel ? ' selected' : '') + '>' + esc(l.name) + ' (L' + (li + 1) + ')</option>';
+      }).join('');
+    }
+    function depths() {
+      var seen = {}; state.forEach(function (s) { seen[s.depth] = (seen[s.depth] || 0) + 1; });
+      return Object.keys(seen).map(Number).sort(function (a, b) { return a - b; })
+        .map(function (d) { return { d: d, n: seen[d] }; });
+    }
+    function depthOptions() {
+      return '<option value="">All WBS levels</option>' + depths().map(function (x) {
+        return '<option value="' + x.d + '"' + (String(x.d) === depthF ? ' selected' : '') + '>WBS level ' + x.d + ' (' + x.n + ')</option>';
       }).join('');
     }
     function visible() {
       var ql = q.toLowerCase();
       return state.filter(function (s) {
         if (ql && s.name.toLowerCase().indexOf(ql) === -1 && (s.trail || '').toLowerCase().indexOf(ql) === -1) return false;
+        if (depthF && String(s.depth) !== depthF) return false;
+        // A tree-panel click is a THIRD, transient lens: it narrows to one location level (or to the
+        // grouping-only bucket) without disturbing the two dropdowns, so clearing it restores exactly
+        // what was on screen before.
+        if (treeSel === '__none__') { if (s.lvl) return false; }
+        else if (treeSel) { if (s.lvl !== treeSel) return false; }
         if (filter === 'sug') return !!s.lvl;          // what the wizard proposes — the review list
-        if (filter === 'un') return !s.lvl;
+        if (filter === 'un') return !s.lvl && !s.excluded;
+        if (filter === 'grp') return !s.lvl && s.excluded;
         return true;
       });
     }
     function rowsHtml() {
       var vis = visible();
-      if (!vis.length) return '<tr><td colspan="4" style="padding:10px;color:var(--pd-muted);">Nothing matches.</td></tr>';
+      if (!vis.length) return '<tr><td colspan="5" style="padding:10px;color:var(--pd-muted);">Nothing matches.</td></tr>';
       return vis.map(function (s) {
         var i = state.indexOf(s);
         return '<tr data-i="' + i + '">' +
           '<td style="padding:3px 6px;"><div>' + esc(s.name) + '</div>' +
-            (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;" title="' + esc(s.trail) + '">' + esc(s.trail.length > 70 ? '…' + s.trail.slice(-70) : s.trail) + '</div>' : '') + '</td>' +
+            (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;" title="' + esc(s.trail) + '">' + esc(s.trail.length > 90 ? '…' + s.trail.slice(-90) : s.trail) + '</div>' : '') + '</td>' +
+          '<td style="padding:3px 6px;text-align:center;color:var(--pd-muted);white-space:nowrap;">L' + s.depth + '</td>' +
           '<td style="padding:3px 6px;text-align:right;color:var(--pd-muted);white-space:nowrap;">' + s.n.toLocaleString() + '</td>' +
-          '<td style="padding:3px 6px;"><select class="pd-input lw-lvl" style="min-width:120px;">' + lvlOptions(s.lvl) + '</select></td>' +
-          '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') + ' style="min-width:130px;"></td>' +
+          '<td style="padding:3px 6px;"><select class="pd-input lw-lvl" style="min-width:150px;">' + lvlOptions(s.lvl) + '</select></td>' +
+          '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') + ' style="min-width:150px;"></td>' +
         '</tr>';
       }).join('');
     }
@@ -9969,28 +9996,75 @@
       var per = {}; LOC_LEVELS.forEach(function (l) { per[l.id] = 0; });
       state.forEach(function (s) { if (s.lvl && per[s.lvl] != null) per[s.lvl]++; });
       return LOC_LEVELS.map(function (l) { return esc(l.name) + ': <strong>' + per[l.id] + '</strong>'; }).join(' · ') +
-        ' · not a location: <strong>' + state.filter(function (s) { return !s.lvl; }).length + '</strong>';
+        ' · grouping only: <strong>' + state.filter(function (s) { return !s.lvl; }).length + '</strong>';
     }
-    var m = UI.modal('<div style="width:100%;max-height:82vh;display:flex;flex-direction:column;">' +
+    // The tree is the answer to "what will my location breakdown actually look like when this is
+    // applied" — the table says what each WBS name IS, and this says what each LEVEL will HOLD.
+    // ⚠️ Two WBS names that resolve to the SAME value are shown merged, with a ×N badge and both
+    // names in the tooltip — that is not a conflict and must not read as one: "Category A" under one
+    // tower and "Category A" under another are one location value at that level, and the level ABOVE
+    // is what keeps them apart (deepest-wins resolution stamps every level an activity sits under).
+    function treeHtml() {
+      var out = '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--pd-muted);padding:0 2px 6px;">Location breakdown</div>';
+      LOC_LEVELS.forEach(function (l, li) {
+        var mine = state.filter(function (s) { return s.lvl === l.id; });
+        var byVal = {};
+        mine.forEach(function (s) {
+          var v = String(s.val || '').trim() || '(blank)';
+          (byVal[v] || (byVal[v] = [])).push(s);
+        });
+        var vals = Object.keys(byVal).sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); });
+        var on = treeSel === l.id;
+        out += '<div class="lw-tnode" data-tree="' + esc(l.id) + '" style="cursor:pointer;padding:4px 6px;border-radius:5px;margin-bottom:2px;' +
+          (on ? 'background:var(--pd-red-light);' : '') + '">' +
+          '<span style="font-weight:600;font-size:12.5px;">' + esc(l.name) + '</span>' +
+          '<span style="color:var(--pd-muted);font-size:11px;"> · L' + (li + 1) + ' · ' + vals.length + ' value' + (vals.length === 1 ? '' : 's') + '</span></div>';
+        if (!vals.length) {
+          out += '<div style="padding:1px 6px 6px ' + (12 + li * 10) + 'px;color:var(--pd-muted);font-size:11px;">nothing matched to this level yet</div>';
+          return;
+        }
+        out += '<div style="padding:0 4px 8px ' + (12 + li * 10) + 'px;">' + vals.map(function (v) {
+          var g = byVal[v], dup = g.length > 1;
+          return '<div title="' + esc(g.map(function (s) { return s.name; }).join(' · ')) + '" style="font-size:11.5px;padding:1px 0;color:var(--pd-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+            '<span style="color:var(--pd-muted);">└ </span>' + esc(v) +
+            (dup ? '<span style="color:var(--pd-muted);"> ×' + g.length + '</span>' : '') + '</div>';
+        }).join('') + '</div>';
+      });
+      var grp = state.filter(function (s) { return !s.lvl; });
+      var gon = treeSel === '__none__';
+      out += '<div class="lw-tnode" data-tree="__none__" style="cursor:pointer;padding:4px 6px;border-radius:5px;margin-top:8px;border-top:1px solid var(--pd-line);' +
+        (gon ? 'background:var(--pd-red-light);' : '') + '">' +
+        '<span style="font-weight:600;font-size:12.5px;">Grouping only</span>' +
+        '<span style="color:var(--pd-muted);font-size:11px;"> · ' + grp.length + ' branch' + (grp.length === 1 ? '' : 'es') + '</span></div>' +
+        '<div style="padding:2px 6px 4px 12px;color:var(--pd-muted);font-size:11px;">Not a place — a grouping of activities (a phase, a trade, a work type). Nothing is written for these, and the decision is remembered.</div>';
+      return out;
+    }
+    var m = UI.modal('<div style="width:100%;height:86vh;display:flex;flex-direction:column;">' +
       '<div style="flex:0 0 auto;">' +
       '<h2 style="margin:0 0 4px;">Match the WBS to your location breakdown</h2>' +
-      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">These are the WBS names sitting above real activities <strong>under Execution Phase</strong> only, most-used first — location/zone is a construction concept, so Initiation and Planning-phase work is never touched. Say which location level each one <em>is</em>; leave the rest as “not a location”. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">These are the WBS names sitting above real activities <strong>under Execution Phase</strong> only, most-used first. Say which location level each one <em>is</em>; a branch that is only a grouping of activities (a phase, a trade, a work type) stays <strong>“grouping only”</strong> and writes nothing. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
-        '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 200px;">' +
+        '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 180px;min-width:0;">' +
         '<select class="pd-input" id="lw-filter" style="flex:0 0 190px;">' +
-          '<option value="sug">Proposed matches</option><option value="un">Not matched</option><option value="all">All names</option>' +
+          '<option value="sug">Proposed matches</option><option value="un">Not matched yet</option>' +
+          '<option value="grp">Grouping only</option><option value="all">All names</option>' +
         '</select>' +
+        '<select class="pd-input" id="lw-depth" style="flex:0 0 170px;">' + depthOptions() + '</select>' +
         '<button class="pd-btn" id="lw-bulk">Assign all shown to…</button>' +
-        '<select class="pd-input" id="lw-bulk-lvl" style="flex:0 0 130px;">' + lvlOptions('') + '</select>' +
+        '<select class="pd-input" id="lw-bulk-lvl" style="flex:0 0 200px;">' + lvlOptions('') + '</select>' +
       '</div>' +
       '<div id="lw-shown" style="font-size:11.5px;color:var(--pd-muted);margin-bottom:2px;"></div>' +
       '<div id="lw-counts" style="font-size:12px;color:var(--pd-muted);margin-bottom:6px;"></div>' +
       '</div>' +
-      '<div style="flex:1 1 auto;min-height:120px;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;">' +
+      '<div style="flex:1 1 auto;min-height:120px;display:flex;gap:10px;align-items:stretch;">' +
+        '<div style="flex:1 1 auto;min-width:0;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;">' +
         '<table class="ps-table" style="min-width:0;font-size:12px;width:100%;"><thead style="position:sticky;top:0;z-index:1;background:var(--pd-card);"><tr>' +
         '<th style="text-align:left;">WBS name <span style="font-weight:400;color:var(--pd-muted);">(where it sits)</span></th>' +
+        '<th style="text-align:center;">WBS level</th>' +
         '<th style="text-align:right;">Activities</th><th style="text-align:left;">Location level</th><th style="text-align:left;">Value to write</th>' +
         '</tr></thead><tbody id="lw-rows">' + rowsHtml() + '</tbody></table></div>' +
+        '<div id="lw-tree" style="flex:0 0 clamp(220px,24%,330px);overflow:auto;border:1px solid var(--pd-line);border-radius:6px;padding:8px;background:var(--pd-bg);"></div>' +
+      '</div>' +
       '<details id="lw-prev-wrap" style="flex:0 0 auto;font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);margin-top:10px;padding-top:8px;">' +
         '<summary style="cursor:pointer;color:var(--pd-ink);font-weight:600;">Preview what will change</summary>' +
         '<div id="lw-prev" style="max-height:18vh;overflow:auto;margin-top:6px;"></div>' +
@@ -10001,8 +10075,15 @@
     // its overflow-y:auto forces overflow-x to auto too) — a width set on OUR inner div is a child
     // of that box, so it just overflowed it, and the whole dialog (not just the table) scrolled
     // sideways. Overriding the real `.pd-modal` element's own width is what actually widens it.
+    // ⚠️ maxHeight is overridden too: the shared rule caps the box at 85vh, so our own 86vh inner
+    // column would have been clipped by it and the footer buttons pushed out of reach.
     var _pm = m.el.querySelector('.pd-modal');
-    if (_pm) { _pm.style.maxWidth = 'min(94vw,980px)'; _pm.style.overflowX = 'hidden'; }
+    if (_pm) {
+      _pm.style.maxWidth = 'min(96vw,1480px)';
+      _pm.style.width = 'min(96vw,1480px)';
+      _pm.style.maxHeight = '92vh';
+      _pm.style.overflowX = 'hidden';
+    }
 
     function mapping() {
       return LOC_LEVELS.map(function (l) {
@@ -10026,8 +10107,12 @@
     }
     function repaint() {
       m.el.querySelector('#lw-rows').innerHTML = rowsHtml();
+      m.el.querySelector('#lw-tree').innerHTML = treeHtml();
       var n = visible().length;
-      m.el.querySelector('#lw-shown').textContent = n + ' name' + (n === 1 ? '' : 's') + ' shown — "Assign all shown to…" affects exactly these.';
+      var lens = treeSel ? (treeSel === '__none__' ? ' · narrowed to Grouping only' :
+        (' · narrowed to ' + ((LOC_LEVELS.filter(function (l) { return l.id === treeSel; })[0] || {}).name || ''))) : '';
+      m.el.querySelector('#lw-shown').innerHTML = esc(n + ' name' + (n === 1 ? '' : 's') + ' shown — "Assign all shown to…" affects exactly these.' + lens) +
+        (treeSel ? ' <a href="#" id="lw-tclear" style="color:var(--pd-red-dark);">clear</a>' : '');
       preview();
     }
 
@@ -10036,7 +10121,7 @@
       var s = state[+tr.dataset.i]; if (!s) return;
       if (e.target.classList.contains('lw-lvl')) {
         s.lvl = e.target.value;
-        s.excluded = !s.lvl; // explicit "— not a location —" pick — remembered on Apply
+        s.excluded = !s.lvl; // explicit "grouping only" pick — remembered on Apply
         // Re-clean the value for the newly chosen level, unless the planner typed their own.
         if (!s.valEdited) s.val = s.lvl ? locGuessValue(s.name, s.lvl, LOC_LEVELS) : s.name;
         var vi = tr.querySelector('.lw-val'); vi.disabled = !s.lvl; vi.value = s.val;
@@ -10045,6 +10130,19 @@
     });
     m.el.querySelector('#lw-q').oninput = function (e) { q = e.target.value; repaint(); };
     m.el.querySelector('#lw-filter').onchange = function (e) { filter = e.target.value; repaint(); };
+    m.el.querySelector('#lw-depth').onchange = function (e) { depthF = e.target.value; repaint(); };
+    // Delegated on the panel, not bound per node: the tree is re-rendered on every repaint, so
+    // per-node handlers would be rebound dozens of times a keystroke and lost on each rebuild.
+    m.el.querySelector('#lw-tree').addEventListener('click', function (e) {
+      var n = e.target.closest('.lw-tnode'); if (!n) return;
+      var k = n.dataset.tree;
+      treeSel = (treeSel === k) ? '' : k;   // clicking the selected node clears the lens
+      repaint();
+    });
+    m.el.querySelector('#lw-shown').addEventListener('click', function (e) {
+      if (e.target.id !== 'lw-tclear') return;
+      e.preventDefault(); treeSel = ''; repaint();
+    });
     m.el.querySelector('#lw-bulk').onclick = function () {
       var lvl = m.el.querySelector('#lw-bulk-lvl').value;
       // Same re-clean rule as the per-row dropdown: a value the planner hasn't hand-edited is
