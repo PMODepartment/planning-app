@@ -84,6 +84,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (g) — A blank stacking pane, a breakdown fetched once, and the `is_locked` that hid the mis-phased branches
+
+Three reports on OPW101 / SLN101:
+
+1. *"the vertical stacking is not shown even if it is already under execution phase"* — a completely
+   blank panel, not even an empty-state message. Every branch of `renderVStack` writes
+   `innerHTML`, so nothing on screen means it **threw**, and it threw invisibly because the
+   toggle called it bare. New `_vsRenderSafe()` turns a blank pane into a named failure with the
+   stack in the console and a retry. ⚠️ The underlying throw is not yet identified — the fix makes it
+   impossible to hide, not gone.
+2. *"still says no location breakdown after full load"* — the breakdown was fetched **once per page
+   load** and never re-asked, so a tab that got zero stayed at zero while another tab displayed all
+   five levels. Now a named `refreshLocLevels()`, re-run when the stacking opens, with a Check
+   again button and a line saying which project id was queried and how many rows came back.
+3. *"there are WBS again found under the execution phase that do not belong there"* — **again**,
+   because `_wbsHealSkeletonPlacement` only considered `is_locked` candidates, and an
+   imported branch is unlocked. Exactly the branches that end up misfiled were the ones it could not
+   see. That requirement is gone; every other guard stands.
+
+⚠️ Nothing else was loosened: only skeleton-declared branches move, only into a locked phase root,
+only out of the root or another top-level phase (MEPF's own Procurement stays put). ⚠️ The phase memo
+is now cleared on a move, or the change would be right in the database and wrong on screen. ⚠️ Not
+verified signed-in. 145 slice-and-execute checks. `MODULE_V` → `20260903g`.
+
+---
 ### 2026-09-03 — Minutes of Meeting UI/UX pass: icon-only chrome, draft-attendee editing, a labelled reporting switcher
 
 Owner's 18-item list across Meetings List / Meetings Dashboard / Individual View /

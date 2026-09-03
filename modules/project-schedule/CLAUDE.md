@@ -1,3 +1,96 @@
+## A blank stacking pane, a breakdown fetched once, and lifecycle branches the heal could not see (2026-09-03) — jasantos2
+
+Three reports in one thread, and the first two are the SAME bug reported twice because the app kept
+refusing to say what it had actually done.
+
+### 1 ⚠️⚠️ The Vertical Stacking rendered NOTHING — and that was invisible
+Owner, on **OPW101 (One Portwood Residences)**: *"the vertical stacking is not shown even if it is
+already under execution phase"*, with a screenshot of a completely empty panel — not the "no Location
+Breakdown Structure" text, which would at least have said something.
+
+**Every branch of `renderVStack` assigns `host.innerHTML`.** A pane showing nothing therefore
+means the function exited between the display toggle and its first write: **it threw.** And it threw
+invisibly — `setVStackMode` called `renderVStack` bare, so the exception escaped into the click
+handler, `_animIn(host)` never ran, and the planner was left with a blank rectangle and no way to
+report anything more useful than "it is not shown". That is why this took three rounds.
+
+New `_vsRenderSafe()` — every caller now goes through it (the toolbar toggle, the repaint hook, the
+Check-again button, the phone view).
+- ⚠️ **It does not paper over the bug.** It turns a blank pane into a NAMED one, logs the real stack to
+  the console, and offers a retry. A silent failure in a view is worse than a broken view.
+- ⚠️ It is a **wrapper, not a rewrite**: `renderVStack` is unchanged and the try/catch has no effect
+  on any path that already works.
+- ⚠️ **The underlying throw is NOT yet identified** — see the honesty note at the bottom.
+
+### 2 ⚠️ The location breakdown was fetched ONCE per page load
+Second report, after the previous fix: *"still says no location breakdown after full load."* So it was
+not only the load race — the fetch itself came back empty in that tab and **nothing ever asked again**.
+`LOC_LEVELS` is assigned in four places (the fetch, the no-project reset, and two local `.filter()` 
+removals), so once a tab answered "zero" it answered "zero" until reloaded, while another tab sat there
+displaying all five levels.
+
+The fetch is now a named, reusable `refreshLocLevels()` — one query, one place — and:
+- **Opening the stacking re-asks the database.** Paint first (the pane must be instant), refetch second,
+  repaint only if it changed. One bounded select on a handful of rows, only on OPEN, never in a render
+  or scroll path.
+- Both empty states now carry a **Check again** button, and the "none" state prints **what was actually
+  queried**: the project id and the row count. ⚠️ That diagnostic is the point — this message had been
+  shown twice on a project that demonstrably has five levels, and neither report could be resolved
+  because the app never said what it asked or what came back. It also flags when the answer on screen
+  belongs to a *different* project id than the one now open.
+- ⚠️ **A failure never empties a breakdown that is on screen.** On error the levels are left exactly as
+  they were and only the state changes, so a transient blip cannot blank a working view.
+- ⚠️ **The levels are not only the stacking's.** Each is also a grid column and a group-by dimension, so
+  a refetch that discovers five levels now tells `populateGroupSelect` / `seedExtraHidden` /
+  `renderHeader` too — otherwise the stacking would draw a building while the grid still had no
+  location columns, which is the same "two halves of one screen disagreeing" as everything else here.
+
+### 3 ⚠️⚠️ `is_locked` is why the mis-phased branches kept coming back
+Owner: *"there are WBS again found under the execution phase that do not belong there (e.g. project
+execution plan, design development, procurement)"* — **again**, because this was reported before and the
+pass that was supposed to fix it could not see the branches in question.
+
+`WBS_SKELETON` declares all three under **Planning Phase**. `_wbsHealSkeletonPlacement` files them
+there — but its candidate filter opened with `if (n.id === parent.id || !n.is_locked) return false;`.
+It was written for the branches the SKELETON creates (locked), and it places every one of those
+correctly. **A branch that arrived in an import is UNLOCKED** — so precisely the branches that end up
+misfiled, because the .xml/.xer had them somewhere else, were rejected before any other rule ran.
+
+The `is_locked` requirement is gone. **Nothing else was loosened**, and each remaining guard is
+load-bearing:
+- Only branches `WBS_SKELETON` actually declares. `General Requirements`, `Site Works`,
+  `Structural Works`, `MEPF Works` and every other real trade branch are invisible to this and
+  stay where the planner put them. Guessing a phase from a branch name quietly re-files someone else's
+  tree.
+- Only **into a LOCKED skeleton root** of the declared phase. Moving into an imported, unlocked root
+  would be picking a winner between two candidate homes on no evidence.
+- Only **out of the root or another locked top-level phase** — so a `Procurement` under `MEPF Works`
+  is MEPF's procurement and is left alone. That depth-2 rule is what makes admitting unlocked nodes safe,
+  and it has its own regression check.
+- `source_kind` still owns its own branches: matched by marker, never by name.
+- ⚠️ **The phase memo is now cleared when anything moves.** An activity's phase resolves *through* this
+  tree and is memoised per node id, so a `Design Development` branch that just moved would go on
+  reporting Execution — and Vertical Stacking, Contract Scope and the colour legend are all gated on
+  `isExecPhase`. The move would be right in the database and wrong on screen until a reload.
+- A move is reported, never silent, and a correct project **writes nothing at all**.
+
+---
+
+**Verified: 145 checks, slice-and-execute.** The shipped `_wbsHealSkeletonPlacement` was run over an
+OPW101-shaped tree (locked phase roots + unlocked imported branches) against a fake Supabase: the three
+declared branches move, the four real trade branches and MEPF's own Procurement do not, only
+`parent_id`+`sort_order` are written, and a correct project writes nothing. The shipped
+`refreshLocLevels` was run for success / query-error / throw / no-project / genuinely-zero. The
+empty-state block was cut out of `renderVStack` and run for all five states. Sanity gate on every
+scan: known-present and known-missing names through the same slicer. 0 functions lost, 2 added; the
+inline script parses; no NUL bytes.
+
+⚠️⚠️ **NOT verified signed-in, and one thing is explicitly NOT diagnosed.** The anon key has no grants on
+`project_schedule`, so none of this ran against OPW101. In particular **the exception that blanks the
+stacking has not been identified** — the fix guarantees it can no longer hide, not that it is gone. When
+the stacking is next opened on OPW101 it will either draw, or name its own failure on screen and log the
+stack; that message is the next piece of evidence and is worth sending over.
+
 ## "No Location Breakdown Structure" — on a project that has five (2026-09-03) — jasantos2
 
 Owner, with two tabs of the SAME project (SLN101 — 4PH Strevi Bacoor) side by side:

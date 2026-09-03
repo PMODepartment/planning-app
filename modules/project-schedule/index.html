@@ -4068,7 +4068,7 @@
      'error'   — the select failed (no grant, un-run migration). The old code folded this into the
                  same [] and blamed the planner for a database problem.
      'ok'      — actually fetched. Only here may the app say the project has no breakdown. */
-  var LOC_LOAD = 'pending', LOC_LOAD_ERR = '';
+  var LOC_LOAD = 'pending', LOC_LOAD_ERR = '', LOC_LEVELS_AT = '';
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
 
@@ -5920,21 +5920,8 @@
     });
     // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
     // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
-    var tLoc = T(async function () {
-      // ⚠️ The outcome is RECORDED, not just the rows. T() swallows a throw, so without the catch
-      // here a network failure would leave LOC_LOAD on 'pending' forever and the stacking would show
-      // a spinner that never resolves. Every path below ends on 'ok' or 'error'.
-      try {
-        var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
-        if (r8 && r8.error) { LOC_LEVELS = []; LOC_LOAD = 'error'; LOC_LOAD_ERR = String(r8.error.message || r8.error); }
-        else { LOC_LEVELS = (r8 && r8.data) || []; LOC_LOAD = 'ok'; LOC_LOAD_ERR = ''; }
-      } catch (e) {
-        LOC_LEVELS = []; LOC_LOAD = 'error'; LOC_LOAD_ERR = (e && e.message) ? e.message : String(e);
-      }
-      // The stacking may be on screen showing "no location breakdown" from before this resolved —
-      // see _vsRepaintIfLevelsArrived.
-      try { _vsRepaintIfLevelsArrived(); } catch (e) {}
-    });
+    var tLoc = T(async function () { await refreshLocLevels(); });
+
     // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
     // location_levels above: no table -> no packages -> the Package column offers nothing to
     // assign and everything else is unaffected. Bounded by definition (a project has packages,
@@ -9198,6 +9185,55 @@
       }
     };
     paintPrev();
+  }
+  /* ⚠️⚠️ THE LOCATION BREAKDOWN IS FETCHED ONCE PER PAGE LOAD, AND THAT IS THE BUG BEHIND
+     "no Location Breakdown Structure" ON A PROJECT THAT HAS FIVE.
+     Owner 2026-09-03, first report: Schedule Setup listed Tower › Level › Orientation › Zone ›
+     Cluster while Vertical Stacking said the project had none. Second report, after the load-state
+     fix: *"still says no location breakdown after full load."* So it is NOT only the load race the
+     first fix addressed — the fetch itself is genuinely coming back empty in that tab, and nothing
+     ever asks again. LOC_LEVELS is assigned in exactly four places (this refetch, the !pid reset,
+     and two local .filter() removals), so once a tab has answered "zero" it answers "zero" until it
+     is reloaded — even though levels exist and another tab is displaying them.
+     ⚠️ Cheap enough to re-ask: a project has a handful of location levels, not thousands. This is a
+     single bounded, unpaginated select — the same one load() runs — so calling it when the stacking
+     opens costs one round trip and removes the entire class of "stale in this tab".
+     ⚠️ It records the OUTCOME, not just the rows. T() in the loader swallows a throw, so without the
+     catch a network failure would leave LOC_LOAD on 'pending' forever and the stacking would show a
+     spinner that never resolves. Every path here ends on 'ok' or 'error'.
+     ⚠️ It does NOT clobber a good list with a failure: on error the levels are left as they were and
+     only the state changes, so a transient network blip cannot empty a breakdown that is on screen.
+     Returns true when what the stacking reads actually changed. */
+  async function refreshLocLevels() {
+    if (!pid) { LOC_LEVELS = []; LOC_LOAD = 'ok'; LOC_LOAD_ERR = ''; return false; }
+    var before = LOC_LEVELS.map(function (l) { return l && l.id; }).join(',');
+    var beforeState = LOC_LOAD;
+    try {
+      var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
+      if (r8 && r8.error) { LOC_LOAD = 'error'; LOC_LOAD_ERR = String(r8.error.message || r8.error); }
+      else { LOC_LEVELS = (r8 && r8.data) || []; LOC_LOAD = 'ok'; LOC_LOAD_ERR = ''; }
+    } catch (e) {
+      LOC_LOAD = 'error'; LOC_LOAD_ERR = (e && e.message) ? e.message : String(e);
+    }
+    LOC_LEVELS_AT = pid;
+    var changed = (LOC_LEVELS.map(function (l) { return l && l.id; }).join(',') !== before) || LOC_LOAD !== beforeState;
+    if (changed) {
+      // ⚠️ The AXIS CACHE is keyed on the level-id signature, so it re-resolves on its own — but it
+      // is cleared explicitly because a refetch that returns the SAME ids with a different ORDER
+      // (someone reordered Tower/Level in the other tab) produces an identical key and a stale axis.
+      try { _vsAxisCache = null; _vsAxisKey = null; } catch (e) {}
+      /* ⚠️ THE LEVELS ARE NOT ONLY THE STACKING'S. Each one is also a grid COLUMN and a group-by
+         dimension, so a refetch that discovers five levels must tell those three too — otherwise the
+         stacking draws a building while the grid still has no location columns and the group-by menu
+         still lists none, which is the same "two halves of one screen disagreeing" this whole report
+         is about. Each is guarded: this runs during load(), when the grid may not be built yet. */
+      try { populateGroupSelect(); } catch (e) {}
+      try { seedExtraHidden(); } catch (e) {}
+      try { renderHeader(); } catch (e) {}
+    }
+    // The stacking may be on screen showing "no location breakdown" from before this resolved.
+    try { _vsRepaintIfLevelsArrived(); } catch (e) {}
+    return changed;
   }
   function openLocLevels() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
@@ -12549,7 +12585,7 @@
       // The stacking is a picture, so it survives a phone as itself — rendered into the mobile
       // host rather than the hidden desktop one (see renderVStack's host argument).
       host.innerHTML = bar + '<div class="ps-vstack" id="ps-m-stack"></div>';
-      try { renderVStack(document.getElementById('ps-m-stack')); }
+      try { _vsRenderSafe(document.getElementById('ps-m-stack')); }
       catch (e) { try { console.error('[ps] stacking failed on phone', e); } catch (e2) {} }
       host.querySelectorAll('.ps-m-seg [data-mv]').forEach(function (b) {
         b.onclick = function () { _psMView = b.dataset.mv; try { localStorage.setItem('ps_mview', _psMView); } catch (e) {} renderMobile(); };
@@ -15001,10 +15037,33 @@
         // ⚠️ Name the database failure instead of blaming the planner for it. The 2026-08-04
         // migration is the usual cause, and "you have no levels" sends them to build what they
         // already have.
-        host.innerHTML = '<div class="ps-vs-empty">The location breakdown could not be read, so there is nothing to stack yet.<br><span style="opacity:.7;font-size:12px;">' + esc(LOC_LOAD_ERR || 'the location_levels query failed') + ' — if this project has never had location levels, the 2026-08-04 location migration may not have been run.</span></div>';
+        host.innerHTML = '<div class="ps-vs-empty">The location breakdown could not be read, so there is nothing to stack yet.<br><span style="opacity:.7;font-size:12px;">' + esc(LOC_LOAD_ERR || 'the location_levels query failed') + ' — if this project has never had location levels, the 2026-08-04 location migration may not have been run.</span>' +
+          '<div style="margin-top:12px;"><button class="pd-btn" id="ps-vs-recheck">Check again</button></div></div>';
       } else {
-        host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown Structure, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.</div>';
+        /* ⚠️ THE DIAGNOSTIC LINE IS THE POINT. This message has now been shown twice on a project
+           that demonstrably HAS five levels, and neither report could be resolved because the app
+           never said what it had actually asked or what came back. It now names the project id it
+           queried and the row count it got, so "the query returned 0 for this id" and "the query was
+           never re-run" stop looking identical from a screenshot.
+           ⚠️ It reports LOC_LEVELS_AT — the project the answer BELONGS to — not `pid`. Those differ
+           exactly when the answer is stale, which is the case worth catching. */
+        host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown Structure, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.' +
+          '<div style="margin-top:12px;"><button class="pd-btn" id="ps-vs-recheck">Check again</button></div>' +
+          '<div style="opacity:.55;font-size:11px;margin-top:10px;">Queried location_levels for project ' + esc(String(LOC_LEVELS_AT || pid || '—')) +
+          ' &middot; 0 rows' + (LOC_LEVELS_AT && pid && LOC_LEVELS_AT !== pid ? ' &middot; \u26a0 this answer is from a different project — press Check again' : '') + '</div></div>';
       }
+      // ⚠️ Wired for every empty state, not just the last one: "loading" can resolve to an error the
+      // planner wants to retry, and a failed fetch is exactly the case where a retry is the fix.
+      var _rc = host.querySelector('#ps-vs-recheck');
+      if (_rc) _rc.onclick = async function () {
+        _rc.disabled = true; _rc.textContent = 'Checking…';
+        var changed = false;
+        try { changed = await refreshLocLevels(); } catch (e) {}
+        // ⚠️ Repaint UNCONDITIONALLY here, unlike the passive hook: the planner pressed a button and
+        // must be told the answer even when the answer has not changed.
+        _vsAnim = 'fade'; _vsRenderSafe();
+        if (!changed) UI.toast('Re-read the location breakdown for this project — still ' + LOC_LEVELS.length + ' level' + (LOC_LEVELS.length === 1 ? '' : 's') + '.', 'warn');
+      };
       return;
     }
     var _actsAll = _vsActs(), detail = _vsDetailNow();
@@ -15393,7 +15452,34 @@
     // the planner's scroll position and any focus window they had opened.
     if (!host || !host.querySelector('.ps-vs-empty')) return;
     _vsAnim = 'fade';
-    try { renderVStack(); } catch (e) {}
+    _vsRenderSafe();
+  }
+  /* ⚠️⚠️ A THROW INSIDE renderVStack USED TO LEAVE THE PANE COMPLETELY BLANK — no building, no
+     message, no error, nothing. Owner 2026-09-03 (OPW101, One Portwood Residences): *"the vertical
+     stacking is not shown even if it is already under execution phase"*, with a screenshot of an
+     empty panel — not the "no Location Breakdown Structure" text, which would at least have said
+     something. Every branch of renderVStack assigns host.innerHTML, so a pane showing NOTHING means
+     the function exited between the display toggle and its first write: it threw.
+     ⚠️ And it threw INVISIBLY. setVStackMode called renderVStack bare, so the exception escaped into
+     the click handler, _animIn(host) never ran, and the planner got a blank rectangle with no way to
+     report anything more useful than "it is not shown" — which is why this took three rounds to get
+     to. A silent failure in a view is worse than a broken view.
+     ⚠️ This does NOT paper over the bug: it turns a blank pane into a NAMED one and logs the stack.
+     ⚠️ It is a wrapper, not a rewrite. renderVStack itself is unchanged, and the try/catch has no
+     effect on any path that works. */
+  function _vsRenderSafe(hostEl) {
+    try { renderVStack(hostEl); }
+    catch (e) {
+      try { console.error('[ps] Vertical Stacking failed to render', e); } catch (e2) {}
+      var host = hostEl || document.getElementById('ps-vstack');
+      if (!host) return;
+      host.innerHTML = '<div class="ps-vs-empty">The Vertical Stacking could not be drawn for this project.' +
+        '<br><span style="opacity:.7;font-size:12px;">' + esc((e && e.message) ? e.message : String(e)) +
+        ' — the schedule itself is unaffected; this is the stacking view only. The full details are in the browser console.</span>' +
+        '<div style="margin-top:12px;"><button class="pd-btn" id="ps-vs-recheck">Try again</button></div></div>';
+      var b = host.querySelector('#ps-vs-recheck');
+      if (b) b.onclick = function () { b.disabled = true; b.textContent = 'Retrying…'; _vsAnim = 'fade'; _vsRenderSafe(hostEl); };
+    }
   }
   function setVStackMode(on) {
     vstackMode = on;
@@ -15403,7 +15489,19 @@
     _paintViewBtn();
     document.body.classList.toggle('ps-vstack-on', !!on);
     var host = document.getElementById('ps-vstack'); if (host) host.style.display = on ? 'block' : 'none';
-    if (on) { _vsAnim = 'in'; renderVStack(); _animIn(host); }
+    if (on) {
+      _vsAnim = 'in'; _vsRenderSafe(); _animIn(host);
+      /* ⚠️ AND RE-ASK THE DATABASE. Painting first keeps the pane instant; the refetch then corrects
+         it if this tab's copy of the breakdown is stale — which is the owner's second report
+         ("still says no location breakdown after full load"), where the levels exist and are visible
+         in another tab but this tab fetched once, got nothing, and had no way to learn otherwise.
+         ⚠️ Deliberately NOT awaited: the pane must not wait on a round trip to appear. The refetch
+         repaints through _vsRepaintIfLevelsArrived, and only if the pane is still showing an empty
+         state — so a building already drawn is never pulled out from under the planner.
+         ⚠️ One bounded select on a handful of rows, and only when the pane is OPENED, so this is not
+         in any render or scroll path. */
+      try { refreshLocLevels(); } catch (e) {}
+    }
     else { _animIn(document.querySelector('.ps-split')); }
   }
 
@@ -20979,8 +21077,35 @@
       // project that genuinely has no Planning Phase has nowhere to put these, and inventing one
       // from a heal would impose a skeleton on a tree that opted out of it.
       if (!parent) continue;
+      /* ⚠️⚠️ AN UNLOCKED BRANCH COUNTS TOO, AND REQUIRING is_locked IS WHY THIS KEPT NOT WORKING.
+         Owner 2026-09-03, third report, on OPW101 (One Portwood Residences): *"there are WBS again
+         found under the execution phase that do not belong there (e.g. project execution plan,
+         design development, procurement)"* — and the grid screenshot shows `Project Execution Plan`
+         sitting as row 2 directly under Execution Phase, while WBS_SKELETON declares all three
+         under PLANNING.
+         This pass was written for the branches the SKELETON created (locked), and every one of
+         those it places correctly. But a branch that arrived in an IMPORT is UNLOCKED, and the
+         filter rejected it before any other rule was consulted — so precisely the branches that end
+         up misfiled, because the .xml/.xer had them somewhere else, were the ones it could not see.
+         ⚠️ NOTHING ELSE IS LOOSENED, and each remaining guard is load-bearing:
+           • Only branches WBS_SKELETON actually declares (`specs`). `General Requirements`,
+             `Site Works`, `Structural Works`, `MEPF Works` and every other real trade branch are
+             invisible to this and stay exactly where the planner put them. Guessing a phase from a
+             branch name is the version that quietly re-files someone else's tree.
+           • Only INTO a LOCKED skeleton root of the declared phase (`phaseByKey` filters on
+             is_locked). Moving a branch into an imported, unlocked root would be picking a winner
+             between two candidate homes on no evidence.
+           • Only OUT of the root or another LOCKED top-level phase (the `cur` test below), so a
+             `Procurement` under `MEPF Works` is MEPF's procurement and is left alone. That
+             depth-2 rule is what makes admitting unlocked nodes safe.
+           • source_kind still owns its own branches: a node mirrored from another app is matched
+             only by its marker, never by name.
+         ⚠️ A move can CREATE a same-name sibling under the destination phase. That is the
+         (parent_id, name) pair _wbsDedupeSiblingNodes keys on, and it runs after this pass in the
+         same load. ⚠️ Lossless: only parent_id and a sort slot are written, and children, activities
+         and the summary row all reference the node by id, so the whole subtree travels with it. */
       var cands = WBS_NODES.filter(function (n) {
-        if (n.id === parent.id || !n.is_locked) return false;
+        if (n.id === parent.id) return false;
         if (sp.source_kind && n.source_kind === sp.source_kind) return true;   // the marker IS the identity
         return _wbsNameKey(n.name) === sp.key && !n.source_kind;
       });
@@ -20998,9 +21123,17 @@
         moved.push(String(nd.name || sp.name) + ' \u2192 ' + parent.name);
       }
     }
+    /* ⚠️ THE PHASE MEMO MUST BE DROPPED WHEN ANYTHING MOVED. An activity's phase resolves THROUGH
+       this tree (phaseOf -> _nodePhase -> the ancestor chain) and is memoised per node id, so a
+       `Design Development` branch that just moved from Execution to Planning would go on
+       reporting Execution — and Vertical Stacking, Contract Scope and the colour legend are all
+       gated on isExecPhase. The move would be correct in the database and invisible on screen until
+       a reload, which is the same "two halves of one screen disagreeing" shape as the rest of
+       today's reports. */
+    if (moved.length) { try { _clearPhaseMemo(); } catch (e) {} try { _clearScopeMemo(); } catch (e) {} }
     // ⚠️ Never silent. It re-parents branches that carry live activities, and a planner who sees
     // Procurement move needs to know what moved it. ⚠️ Any same-name sibling this creates is merged
-    // losslessly by _wbsDedupeSkeleton, which runs later in the same load.
+    // losslessly by _wbsDedupeSiblingNodes, which runs after this pass in the same load.
     if (moved.length) {
       UI.toast('Moved ' + moved.length + ' WBS branch' + (moved.length === 1 ? '' : 'es') +
         ' back under the phase they belong to (' + moved.slice(0, 3).join(', ') +
