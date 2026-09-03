@@ -8848,14 +8848,51 @@
   }
   function setGroupBys(list) {
     saveCollapsedState();                 // remember the OUTGOING grouping's tree before switching
+    // ⚠️ From here the grouping is the PLANNER'S, not a default — see loadGroupBys. Recording that is
+    // what stops _adoptSetupGrouping from later overwriting a deliberate pick.
+    _gbChosen = true;
     groupBys = list.slice(); normalizeGroupBys();
     try { localStorage.setItem(_gbKey(), JSON.stringify(groupBys)); } catch (e) {}
     restoreCollapsedFor(_gbSig(), false); // was: collapsed = {} — now restores this grouping's tree
     populateGroupSelect(); renderGrid(); renderGantt();
   }
+  /* ⚠️⚠️ THE DEFAULT GROUPING FOLLOWS THE SCHEDULE SETUP — but only while it is still a DEFAULT.
+     Owner 2026-09-03: *"i think the WBS tree default should be matched with what was defined in the
+     schedule setup."* The setup is where the planner says how the project is organised; the grid was
+     grouping by a list hard-coded on the other side of the file, so the same decision lived twice.
+     ⚠️ A SAVED CHOICE ALWAYS WINS, and that is what makes this safe to change. `_gbChosen` records
+     whether localStorage held a grouping for this project: if it did, the planner picked it and
+     nothing here touches it. The setup only fills the slot nobody has filled yet.
+     ⚠️ Nothing is WRITTEN when the setup is adopted. It stays a default, so a planner who later
+     reorders the setup sees the grid follow — until they pick a grouping of their own, at which point
+     their choice is saved and sticks.
+     ⚠️ IT NEEDS THE SETUP IN MEMORY. `ScheduleBuilder` only holds a cfg once the Schedule Setup tab
+     has loaded one, which on a cold open of the Project Schedule has not happened yet — so this is
+     re-checked from _adoptSetupGrouping() when the builder loads a setup. Until then the plain WBS
+     tree stands, which is the same behaviour as before. */
+  var _gbChosen = false;
+  function _setupGroupDims() {
+    try { return (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.setupGroupDims) ? ScheduleBuilder.setupGroupDims() : []; }
+    catch (e) { return []; }
+  }
+  // Called when the builder loads a setup, for the cold-open case described above. A no-op once the
+  // planner has chosen a grouping, and a no-op when the grouping is not still the untouched default.
+  function _adoptSetupGrouping() {
+    if (_gbChosen) return;
+    var dims = _setupGroupDims();
+    if (!dims.length) return;
+    if (JSON.stringify(groupBys) === JSON.stringify(dims)) return;
+    // Only replace the plain WBS tree — never something already showing a structure.
+    if (!(groupBys.length === 1 && groupBys[0] === 'wbs')) return;
+    groupBys = dims.slice(); normalizeGroupBys();
+    try { populateGroupSelect(); renderHeader(); renderGrid(); renderGantt(); } catch (e) {}
+  }
   function loadGroupBys() {
     groupBys = ['wbs'];
-    try { var v = JSON.parse(localStorage.getItem(_gbKey()) || 'null'); if (Array.isArray(v) && v.length) groupBys = v; } catch (e) {}
+    _gbChosen = false;
+    try { var v = JSON.parse(localStorage.getItem(_gbKey()) || 'null'); if (Array.isArray(v) && v.length) { groupBys = v; _gbChosen = true; } } catch (e) {}
+    // No saved choice → follow the setup's structure when it is known.
+    if (!_gbChosen) { var _sd = _setupGroupDims(); if (_sd.length) groupBys = _sd.slice(); }
     normalizeGroupBys();
     // Runs late in load(), AFTER _applyBigCollapse() has seeded the large-schedule default — so
     // keepIfMissing=true: only a genuinely saved tree may replace it. The store itself is read at
@@ -8867,7 +8904,14 @@
   function renderGroupMenu() {
     var m = document.getElementById('ps-group-menu'); if (!m) return;
     var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
+    /* ⚠️ THE SETUP'S OWN STRUCTURE, OFFERED FIRST. See ScheduleBuilder.setupGroupDims: the planner
+       already said how this project is organised, and a grouping menu that ignores it is a second
+       opinion about the same decision. Hidden when there is no setup loaded or nothing resolves —
+       never an empty or half-resolved preset. */
+    var _setupDims = [];
+    try { _setupDims = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.setupGroupDims) ? ScheduleBuilder.setupGroupDims() : []; } catch (e) { _setupDims = []; }
     var presets = [
+      { name: 'Schedule Setup structure', dims: _setupDims },
       { name: 'WBS tree (default)', dims: ['wbs'] },
       // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
       // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
@@ -25218,7 +25262,18 @@
     // One implicit tower becomes one EXPLICIT tower, so every existing config keeps behaving
     // identically and nothing needs migrating.
     function blankTowers() { return [{ id: uidv(), code: 'T1', name: 'Tower 1' }]; }
-    var WBS_DIMS = ['trade', 'tower', 'floor', 'zone', 'unit'];
+    /* THE DEFAULT WBS STRUCTURE IS TOWER FIRST, THEN TRADE.
+       Owner 2026-09-03: *"it should be tower and then trades bc that's the way it should be as a
+       default."* A tower is a PLACE and a trade is a kind of work done in it, so the place leads:
+       Tower > Trade > Level > Zone > Unit. The old default led with Trade, which put every tower
+       underneath every discipline and split one building across the whole tree.
+       This list is also the order MISSING dims are appended in (see the push dialog and normalize),
+       so keeping the two in step is what stops a saved setup that omits a dim from getting it back
+       in the wrong place.
+       WARNING A SAVED SETUP KEEPS ITS OWN ORDER. This is the default for setups that have never
+       chosen one -- overwriting a planner's saved structure on load would be a silent edit of their
+       work. Reorder an existing setup with the up/down arrows in Push to Project Schedule. */
+    var WBS_DIMS = ['tower', 'trade', 'floor', 'zone', 'unit'];
     var DIM_LABEL = { trade: 'Trade', tower: 'Tower', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
     // ⚠️ The builder's three location levels ARE the project's Location Breakdown levels — the push
     // even creates them when a project has none. Owner 2026-08-18: "the location breakdown should be
@@ -25316,7 +25371,7 @@
       } catch (e) {}
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['trade', 'tower', 'floor', 'zone', 'unit'], phases: {} }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'floor', 'zone', 'unit'], phases: {} }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -25799,6 +25854,10 @@
         // checking steps, not back on Start. stageImport sets step before switching the tab, and
         // this branch is what would otherwise reset it as the setup list loads.
         curPid = projectId; step = imp ? 1 : 0; await loadCfg();
+        // ⚠️ The schedule grid's DEFAULT grouping follows this setup — see _adoptSetupGrouping. The
+        // Project Schedule may already be open behind this tab with the plain WBS tree, because the
+        // cfg did not exist when it loaded.
+        try { if (typeof _adoptSetupGrouping === 'function') _adoptSetupGrouping(); } catch (e) {}
       } else render();
     }
 
@@ -31740,6 +31799,40 @@
       // The canonical trade order (GROUPS), as the labels written to work_type. The single source
       // of truth for anything outside this closure that needs to order trades.
       tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
+      /* THE STRUCTURE THIS SETUP DEFINES, AS THE GRID GROUP-BY DIMS.
+         Owner 2026-09-03: *"i think the WBS tree default should be matched with what was defined in
+         the schedule setup."* Right — the setup is where the planner says how this project is
+         organised (step 5 defines the levels, the push dialog orders them), and the schedule grid was
+         grouping by a list hard-coded on the other side of the file. Two places holding one decision
+         is the same fault as the location breakdown living in two screens.
+         The two vocabularies differ, so this is the ONE place that translates them:
+           trade -> "work"  (Discipline / Trade)
+           tower / floor / zone / unit -> "loc:<the level id that dim resolves to>"
+         resolved through locLevelFor, so it follows the project real breakdown rather than a
+         position (see the note there).
+         A dim that resolves to no level is DROPPED, not guessed at — a project with no Unit level
+         gets a four-level grouping, not a broken fifth.
+         Returns [] when there is no setup loaded or nothing resolves, and the caller then keeps the
+         plain WBS tree. */
+      setupGroupDims: function () {
+        try {
+          if (!cfg || !Array.isArray(cfg.wbsOrder) || !cfg.wbsOrder.length) return [];
+          var out = [];
+          cfg.wbsOrder.forEach(function (d) {
+            if (d === "trade") { if (out.indexOf("work") < 0) out.push("work"); return; }
+            var lv = locLevelFor(d);
+            if (lv && out.indexOf("loc:" + lv.id) < 0) out.push("loc:" + lv.id);
+          });
+          return out;
+        } catch (e) { return []; }
+      },
+      // The raw order, for anything that wants to SHOW it rather than group by it.
+      setupOrderLabels: function () {
+        try {
+          if (!cfg || !Array.isArray(cfg.wbsOrder)) return [];
+          return cfg.wbsOrder.map(dimLabelOf);
+        } catch (e) { return []; }
+      },
       // Test surface — pure cfg-level decisions, no DOM. See PS.fn for the same idea module-side.
       _t: {
         normalize: normalize,

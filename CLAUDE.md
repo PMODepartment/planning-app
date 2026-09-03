@@ -84,6 +84,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (n) — The WBS default comes from the Schedule Setup, and it leads with the Tower
+
+*"the WBS tree default should be matched with what was defined in the schedule setup"* and *"it should
+be tower and then trades bc that's the way it should be as a default."*
+
+**(1)** The default structure is now **Tower → Trade → Level → Zone → Unit**. A tower is a place and a
+trade is work done in it, so the place leads; the old default led with Trade and filed every tower under
+every discipline. Changed in `blank().wbsOrder` **and** `WBS_DIMS` (the order a missing dim is
+appended in), so the two stay in step. ⚠️ A **saved** setup keeps its own order — OPW101 included;
+reorder it with the ↑/↓ arrows in the push dialog.
+
+**(2)** The grid's default grouping now follows the setup. New `ScheduleBuilder.setupGroupDims()`
+translates the setup structure into grid dims (`trade→work`, locations through `locLevelFor`),
+offered as a **"Schedule Setup structure"** preset and used as the default. ⚠️ A saved choice always
+wins and nothing is written when the setup is adopted, so it stays a default; a dim with no level is
+dropped rather than guessed. 270 checks, 0 functions lost. `MODULE_V` → `20260903n`.
+
+---
 ### 2026-09-03 (m) — The trades did not vanish: they were at L3, and a ticked Tower level was dropped
 
 *"from schedule setup it is okay ... yet in project schedule, the trades vanished?"* Two things, and

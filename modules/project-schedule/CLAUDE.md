@@ -1,3 +1,64 @@
+## The WBS default now comes from the Schedule Setup, and it leads with the Tower (2026-09-03) — jasantos2
+
+Owner, two messages:
+- *"i think the WBS tree default should be matched with what was defined in the schedule setup."*
+- *"it should be tower and then trades bc that's the way it should be as a default."*
+
+### 1 The default WBS structure is Tower → Trade, not Trade → Tower
+A tower is a **place**; a trade is a **kind of work done in it**. So the place leads:
+**Tower → Trade → Level → Zone → Unit.** The old default led with Trade, which filed every tower
+underneath every discipline and split one building across the whole tree.
+
+Changed in both places that decide it, and they must stay in step:
+- `blank().wbsOrder` — the structure a new setup starts with;
+- `WBS_DIMS` — the order a **missing** dim is appended in (the push dialog and `normalize` both
+  walk it), so a saved setup that omits a dim gets it back in the right place rather than at the end.
+
+⚠️ **A SAVED SETUP KEEPS ITS OWN ORDER.** This is the default for setups that have never chosen one —
+overwriting a planner's saved structure on load would be a silent edit of their work. **OPW101 has a
+saved order** (`Tower → Level → Trade → Zone → Unit`), so it is unchanged: reorder it with the ↑/↓
+arrows in *Push to Project Schedule* to get Tower → Trade.
+
+### 2 The grid's default grouping follows the setup
+The setup is where the planner says how the project is organised. The schedule grid was grouping by a
+list hard-coded on the other side of the file — the same decision held in two places, which is the
+fault the location breakdown already had to be cured of.
+
+New `ScheduleBuilder.setupGroupDims()` translates the setup's structure into the grid's vocabulary,
+in the one place that knows both:
+
+    trade                      -> "work"   (Discipline / Trade)
+    tower / floor / zone / unit -> "loc:<the level that dim resolves to>"
+
+…resolved through `locLevelFor`, so it follows the project's real breakdown rather than a position.
+It appears as a **"Schedule Setup structure"** preset, offered first, and becomes the **default**
+grouping.
+
+⚠️ **A SAVED CHOICE ALWAYS WINS, and that is what makes this safe.** `_gbChosen` records whether
+localStorage held a grouping for this project; if it did, the planner picked it and nothing here touches
+it. The setup only fills the slot nobody has filled yet, and **nothing is written** when it does — so it
+stays a default, and a planner who later reorders the setup sees the grid follow.
+⚠️ **It needs the setup in memory.** `ScheduleBuilder` only holds a cfg once the Schedule Setup tab
+has loaded one, which on a cold open of the Project Schedule has not happened — so it is re-checked
+from `_adoptSetupGrouping()` when the builder loads a setup. That late adopt bails on a chosen
+grouping and only ever replaces the plain WBS tree, never a structure already on screen.
+⚠️ **A dim that resolves to no level is dropped, not guessed.** A project with no Unit level gets a
+four-level grouping; a single-tower project with no Tower *level* leads with the trade.
+
+---
+
+**Verified: 270 checks.** The mapping executed for the tower-first default, for OPW101's saved order
+(mirrored faithfully, **not** silently corrected), for a project missing its Unit level, for one with no
+tower level, and for none at all. Plus the whole precedence chain: a saved grouping sets `_gbChosen`,
+the setup is consulted only when nothing was saved, the late adopt bails on a chosen grouping and
+writes nothing, and an explicit pick is persisted. 0 functions lost, 2 added.
+
+⚠️ Also fixed a **harness** fault, the third of its kind today: `vdims` compared against `HEAD`, so it
+silently stopped testing anything the moment the fix was committed. All three are now pinned to the
+commit that actually carried the bug, and no harness reads `HEAD` any more.
+
+⚠️ **NOT verified signed-in.** ⚠️ Still open: OPW101's duplicate phase roots.
+
 ## The trades did not vanish — they were at L3, and a ticked Tower level was silently dropped (2026-09-03) — jasantos2
 
 Owner: *"from schedule setup it is okay, the trades have been defined well, and the trade location was
