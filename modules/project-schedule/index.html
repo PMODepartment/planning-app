@@ -15218,6 +15218,22 @@
     // value at the axis level, but that value is a GROUPING branch (a phase or a trade), so the
     // stacking refuses it as a place — see _vsLevVal. Without saying so, a planner reads the band as
     // missing data and goes looking in the WBS branch column, where the value is plainly there.
+    /* ⚠️⚠️ RESOLVED HERE, ABOVE ITS FIRST READER — MOVING THIS DOWN IS THE CRASH.
+       Owner 2026-09-03: *"the vertical stacking is not shown"*, and once the render stopped failing
+       silently the pane named it: **Cannot read properties of undefined (reading '0')**.
+       `var _axLvls = _vsAxis()` sat ~20 lines BELOW the `noLevGrpVals` loop that reads
+       `_axLvls[0]`. A `var` is hoisted but its ASSIGNMENT is not, so at that loop _axLvls was
+       still `undefined` and `undefined[0]` threw — the exact message on screen.
+       ⚠️ IT ONLY THREW ON SOME PROJECTS, which is why it shipped. The loop body runs only for
+       activities with no level, so a project where every activity is located never entered it. OPW101
+       has 2,665 activities and no location breakdown yet, so EVERY row is in that list and it threw on
+       the first one — taking the whole pane with it.
+       ⚠️ Introduced by f8fc2e2 (2026-09-03), which added the grouping-value report; the declaration was
+       already further down serving lvl0Name and it was not moved up with the new reader. Every commit
+       before that one is clean — this is why the stacking worked in earlier versions.
+       ⚠️ Declaring it here changes NOTHING about what it computes: _vsAxis() is pure, memoised on the
+       level-id signature, and has no dependency on anything between the two positions. */
+    var _axLvls = _vsAxis();
     var noLevGrpVals = [];
     noLevList.forEach(function (r) {
       var raw = String(locValOf(r, _axLvls[0] ? _axLvls[0].id : '') || '').trim();
@@ -15242,11 +15258,15 @@
       }
       return false;
     };
-    var _axLvls = _vsAxis();
     var lvl0Name = _axLvls[0] ? _axLvls[0].name : 'level';
     // Only when the tower is a level of its own — on a one-level project the tower IS the axis, and
     // "assign every activity to one floor" would be nonsense.
-    var noTwList = (_twLvl && _twLvl.id !== _axLvls[0].id)
+    // ⚠️ GUARDED like every other read of this array. _vsAxis() falls back to the full level list
+    // rather than returning empty, but a project with NO location levels at all still yields [], and
+    // an unguarded _axLvls[0].id here would throw the moment a tower level existed alongside none —
+    // the same class of failure as the crash above, two lines apart, and the only one of the four
+    // reads that was missing its check.
+    var noTwList = (_twLvl && _axLvls[0] && _twLvl.id !== _axLvls[0].id)
       ? acts.filter(function (r) { return !locValOf(r, _twLvlId); }) : [];
     var allMissing = acts.length && noTwList.length === acts.length && noTwList.some(deeperLoc);
     var warn = '';

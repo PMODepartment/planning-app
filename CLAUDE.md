@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (h) — The stacking crash, named: a `var` read twenty lines before it was assigned
+
+*"still blank after hard refresh, there is an error message shown"* — **Cannot read properties of
+undefined (reading '0')**. And: *"the previous versions are okay, how come this changed now."*
+
+In `renderVStack`, `var _axLvls = _vsAxis();` sat ~20 lines BELOW the loop that reads
+`_axLvls[0]`. A `var` is hoisted but its assignment is not, so `undefined[0]` threw. It
+only fires on projects where activities have no level — OPW101 has no location breakdown, so all 2,665
+qualify and it threw on the first. **Not from this week's work:** bisected to **f8fc2e2** (today,
+*"a WBS branch is a place (LBS) or a grouping"*), which added the reader without moving the
+declaration up. Every commit before it is clean, which is exactly why older versions worked.
+
+Declaration moved above its first reader; the one unguarded `_axLvls[0].id` of four is now guarded.
+⚠️ The crash is **reproduced** in verification: HEAD throws the owner's exact message, the fix does not,
+and moving the declaration back re-introduces it. ⚠️ The previous round's `_vsRenderSafe` repaired
+nothing — it made the pane name its failure instead of going blank, and that is what made this
+diagnosable at all. ⚠️ Still open: OPW101 shows duplicate phase roots (Initiation / Execution / Planning
+twice each); the lifecycle-branch filing is fixed, the duplicates are not. 167 checks, 0 functions lost.
+`MODULE_V` → `20260903h`.
+
+---
 ### 2026-09-03 (g) — A blank stacking pane, a breakdown fetched once, and the `is_locked` that hid the mis-phased branches
 
 Three reports on OPW101 / SLN101:
