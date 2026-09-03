@@ -250,10 +250,25 @@
       var o = Array.prototype.filter.call(sel.options, function (o) { return o.value === v; })[0];
       return o ? o.textContent : '';
     }
+    // Subtitle: address + group head, resolved from the same cached
+    // PDb.getProjects()/getGroupHeads() reads ensureData() already populates.
+    // Blank until that resolves — unlike the code/name (below), there's no
+    // synchronous source for either field, so the button's second line fills
+    // in a beat after first paint rather than blocking it.
+    function subFor(v) {
+      var row = (projs || []).filter(function (p) { return p.id === v; })[0];
+      if (!row) return '';
+      var gh = row.group_head_id && (ghs || []).filter(function (g) { return g.id === row.group_head_id; })[0];
+      return [row.location, gh ? 'Group Head: ' + gh.name : ''].filter(Boolean).join(' · ');
+    }
     function syncBtn() {
       var t = labelFor(sel.value), ph = !t;
-      var txt = t || (sel.options[0] ? sel.options[0].textContent : 'Select…');
-      btn.innerHTML = '<span class="pd-psel-txt' + (ph ? ' pd-psel-ph' : '') + '">' + esc(txt) + '</span>' +
+      // The project id IS its code (the PK) — "CODE — Name" needs no async
+      // lookup, sel.value already carries it synchronously.
+      var txt = t ? (sel.value + ' — ' + t) : (sel.options[0] ? sel.options[0].textContent : 'Select…');
+      var sub = t ? subFor(sel.value) : '';
+      btn.innerHTML = '<span class="pd-psel-txt' + (ph ? ' pd-psel-ph' : '') + '"><strong>' + esc(txt) + '</strong>' +
+        (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>' +
         '<span class="pd-psel-caret" data-ico="chevronDown" data-ico-size="14"></span>';
       if (window.Icons) Icons.hydrate(btn);
     }
@@ -294,6 +309,10 @@
     var api = { refresh: function () { syncBtn(); if (!pop.hidden) paintPop(); }, close: close };
     sel.__pdEnhanced = api;
     syncBtn();
+    // Warm the project/group-head cache in the BACKGROUND — not gated behind
+    // the popover's own open() — so the subtitle fills in without requiring a
+    // click. open() awaits the same cache and just finds it already warm.
+    ensureData().then(function () { projs = _pdProjCache || []; ghs = _pdGhCache || []; syncBtn(); });
     return api;
   }
 
@@ -409,15 +428,36 @@
     var pid = opts.pid || null;
 
     mount.classList.add('pd-projsw');
+    // Code before name (the project id IS the code, no lookup needed) — a
+    // caller carrying both synchronously (every call site already has pid+
+    // pname before this runs) gets it for free.
+    var mainLabel = mode === 'portfolio' ? 'Portfolio'
+      : (pid && opts.pname ? pid + ' — ' + opts.pname : (opts.pname || 'Select a project'));
     mount.innerHTML =
       '<button class="pd-projsw-btn" type="button">' +
         '<span class="pd-projsw-ic" data-ico="' + (mode === 'portfolio' ? 'barChart' : 'project') + '" data-ico-size="16"></span>' +
-        '<span class="pd-projsw-txt"><strong>' + esc(mode === 'portfolio' ? 'Portfolio' : (opts.pname || 'Select a project')) + '</strong>' +
-          (opts.ghLabel ? '<small>' + esc(opts.ghLabel) + '</small>' : '') + '</span>' +
+        '<span class="pd-projsw-txt"><strong>' + esc(mainLabel) + '</strong>' +
+          (opts.ghLabel ? '<small>' + esc(opts.ghLabel) + '</small>' : '<small class="pd-projsw-sub"></small>') + '</span>' +
         '<span class="pd-projsw-caret" data-ico="chevronDown" data-ico-size="13"></span>' +
       '</button>' +
       '<div class="pd-projsw-menu"></div>';
     if (window.Icons) Icons.hydrate(mount);
+
+    // Subtitle: address + group head, resolved from the same cached
+    // PDb.getProjects()/getGroupHeads() reads the menu itself uses below —
+    // never gated behind actually opening the menu. opts.ghLabel (an explicit
+    // override a couple of callers already pass) always wins and is left
+    // untouched — the placeholder above is only rendered when it's absent.
+    if (!opts.ghLabel && mode === 'project' && pid) {
+      ensureSwitcherData().then(function () {
+        var sub = mount.querySelector('.pd-projsw-sub');
+        if (!sub) return;   // this switcher was re-rendered before the fetch resolved
+        var row = (_pdSwProj || []).filter(function (p) { return p.id === pid; })[0];
+        if (!row) return;
+        var gh = row.group_head_id && (_pdSwGh || []).filter(function (g) { return g.id === row.group_head_id; })[0];
+        sub.textContent = [row.location, gh ? 'Group Head: ' + gh.name : ''].filter(Boolean).join(' · ');
+      });
+    }
 
     var btn = mount.querySelector('.pd-projsw-btn');
     var menu = mount.querySelector('.pd-projsw-menu');
