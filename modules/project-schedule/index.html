@@ -2601,7 +2601,31 @@
        (.sbld-canvaswrap / .sbld-xlwrap) handles its own overflow. */
     .sbld-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:20px; min-height:55vh; min-width:0; }
     .sbld-panel h2 { margin:0 0 4px; font-size:18px; }
-    .sbld-panel .sbld-lede { margin:0 0 18px; color:var(--pd-muted); font-size:13px; max-width:70ch; }
+    .sbld-panel .sbld-lede { margin:0 0 10px; color:var(--pd-muted); font-size:13px; max-width:70ch; }
+    /* ---- "How to use this step" (the disclosure) -------------------------------------------
+       Owner 2026-09-03: *"on the schedule setup, please make the instructions more direct and
+       concise. the text takes too much space."* Step 8's lede alone ran to ~150 words and pushed
+       the class-code grid and the flow diagram below the fold on a 1080p screen.
+       ⚠️ THE MECHANICS ARE MOVED, NEVER DELETED. Every keystroke and every click sequence a step
+       supports is still written down — the lede now says only what the step is FOR, and the how-to
+       lives one click away in here. Deleting it would make the setup unusable for anyone who has
+       not already been shown it, which is the opposite of the ask.
+       ⚠️ `<details>` and not a JS panel on purpose: the open/closed state is the browser's, it
+       needs no handler in the step's own bind pass (a step that forgot one would have an unopenable
+       summary), and it re-renders closed like the rest of the panel. */
+    .sbld-how { margin:0 0 16px; max-width:78ch; font-size:12.5px; }
+    .sbld-how > summary { cursor:pointer; color:var(--pd-red); font-weight:700; font-size:12px;
+      list-style:none; display:inline-flex; align-items:center; gap:5px; padding:2px 0;
+      -webkit-tap-highlight-color:transparent; }
+    .sbld-how > summary::-webkit-details-marker { display:none; }
+    .sbld-how > summary::before { content:"▸"; font-size:10px; transition:transform .15s ease; }
+    .sbld-how[open] > summary::before { transform:rotate(90deg); }
+    .sbld-how > summary:hover { text-decoration:underline; }
+    .sbld-how > div { margin:7px 0 0; padding:9px 12px; color:var(--pd-muted); line-height:1.6;
+      border-left:3px solid var(--pd-line); background:var(--pd-bg); border-radius:0 8px 8px 0; }
+    .sbld-how b { color:var(--pd-ink); }
+    .sbld-how ol, .sbld-how ul { margin:6px 0 0; padding-left:18px; }
+    .sbld-how li { margin:2px 0; }
     .sbld-sec-actions { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
     .sbld-foot { display:flex; justify-content:space-between; gap:10px; margin-top:22px; padding-top:16px; border-top:1px solid var(--pd-line); }
     .sbld-list { display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
@@ -25879,6 +25903,15 @@
     // The 1-based number of a step, by its rail title — see the note above. Returns '' for an
     // unknown title rather than a wrong number, so a typo shows up as a missing digit, not as a lie.
     function _stepNo(t) { var i = STEPS.map(function (x) { return x.t; }).indexOf(t); return i < 0 ? '' : (i + 1); }
+    // The step's mechanics, collapsed. Owner: the instructions took too much space — so a step's
+    // lede now states its PURPOSE in a sentence or two and every keystroke / click sequence it used
+    // to spell out inline lives in here instead. Nothing was dropped; see the .sbld-how CSS note.
+    // ⚠️ `label` is optional and only worth passing when “How to use this step” would be vague
+    // (step 3's two modes each have their own).
+    function _sbldHow(html, label) {
+      if (!html) return '';
+      return '<details class="sbld-how"><summary>' + (label || 'How to use this step') + '</summary><div>' + html + '</div></details>';
+    }
     /* ⚠️⚠️ `STEPS` IS A LIVE ARRAY, MUTATED IN PLACE by sbSyncSteps() — not reassigned. Every existing
        reader (STEPS[step].fn, STEPS.length, the rail's map, _stepNo, gotoStep) keeps working exactly
        as it did; only its CONTENTS depend on the source mode now. Reassigning it would work too, but
@@ -26030,7 +26063,11 @@
         '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty" style="padding:10px;font-size:11.5px;">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       host.innerHTML = '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
-        '<p class="sbld-lede">Your class-code list as a <b>spreadsheet</b> (left) beside a <b>holding list</b> of all class codes (right). The grid works like Excel — <b>click</b> a cell, <b>drag</b>/<b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C/Ctrl+V</b> copy &amp; paste (paste one cell into a selection to fill), <b>Ctrl+D</b> fill-down, <b>Delete</b> clears, or paste a block from Excel. Use <b>&larr;</b> to load ticked codes from the list into the build and <b>&rarr;</b> to send selected grid rows out to the list. <b>Scope</b> says whether a duration is per zone, per floor, or the whole project (auto-split per zone, editable in step 4).</p>' +
+        '<p class="sbld-lede">The class codes this programme is built from — code, name, trade, <b>scope</b> and its interior/exterior duration — as a spreadsheet, beside a holding list of every code available.</p>' +
+        _sbldHow('The grid works like Excel: <b>click</b> a cell, <b>drag</b> or <b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste one cell into a selection to fill it), <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear — or paste a block straight from Excel.' +
+          '<ul><li><b>&larr;</b> loads ticked codes from the holding list into the build; <b>&rarr;</b> sends selected grid rows back out.</li>' +
+          '<li><b>+ Library</b> loads the standard class-code library into the holding list.</li>' +
+          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project. Anything coarser than a zone is auto-split down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li></ul>') +
         '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add row</button><button class="pd-btn" id="b-seed">Load typical set</button>' +
         '<button class="pd-btn" id="b-delrows">Delete selected rows</button>' +
         '<span class="sbld-tb-sep2"></span><button class="pd-btn" id="b-tmpl"><span data-ico="download" data-ico-size="14"></span> Download template</button>' +
@@ -26038,7 +26075,7 @@
         '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>' +
         (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
         '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
-        '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step 4.</p>';
+        '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step ' + _stepNo('Trade sequence') + '.</p>';
       // toolbar
       host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };
       host.querySelector('#b-tmpl').onclick = actTemplateCsv;
@@ -26224,7 +26261,7 @@
       return v ? String(v) : '';
     }
     function t4GridHTML(acts, tr) {
-      if (!acts.length) return '<div class="sbld-empty">No class codes assigned to ' + e2(GLABEL[tr]) + ' yet — assign a trade to your activities in step 1.</div>';
+      if (!acts.length) return '<div class="sbld-empty">No class codes assigned to ' + e2(GLABEL[tr]) + ' yet — assign a trade to your activities in step ' + _stepNo('Activities') + '.</div>';
       var cols = T4_COLS, CW = function (c) { return c.w || 100; };
       // Linking is done by clicking the schedule BARS on the right (view/edit toggle, like step 3),
       // NOT a per-row column — so the grid is purely the Excel editor for the code/durations.
@@ -26325,7 +26362,7 @@
       var used = usedGroups();
       if (!used.length) {
         host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
-          '<div class="sbld-empty">No trades yet — add activities in step 1 and assign each one a trade. The trades you use there will show up here to sequence.</div>';
+          '<div class="sbld-empty">No trades yet — add activities in step ' + _stepNo('Activities') + ' and assign each one a trade. The trades you use there will show up here to sequence.</div>';
         return;
       }
       if (used.indexOf(uiTrade) < 0) uiTrade = used[0];
@@ -26341,7 +26378,7 @@
       // copied from any other defined category (or the default), and reverts in one click; a forked
       // DURATION is marked on the cell itself (.sbld-ownd), since it is per activity, not per trade.
       // ⚠ The list comes from kindsInProject() — i.e. from the categories STEP 2 assigned to this
-      // project's floors. There is no level-type list of step 4's own to drift out of step with it.
+      // project's floors. There is no level-type list of the Trade sequence step's own to drift out of step with it.
       var kindRow = (function () {
         var btns = [['all', 'All levels (default)']].concat(kindsInProject().map(function (k) { return [k, KIND_LABEL[k]]; }))
           .map(function (o) {
@@ -26360,7 +26397,7 @@
         var state = uiSeqKind === 'all'
           ? '<span class="sbld-hint">Editing the default every level type follows &mdash; sequence <b>and</b> durations. ' +
             (noKinds
-              ? 'No level types yet: tag your floors (Basement / Podium / Typical / Roof Deck) in <b>step 2</b> and they appear here.'
+              ? 'No level types yet: tag your floors (Basement / Podium / Typical / Roof Deck) in <b>step ' + _stepNo('Floors & Zones') + '</b> and they appear here.'
               : 'Pick a level type above to give it its own.') + '</span>'
           : (kindHasOwn(uiSeqKind)
             ? '<span class="sbld-hint"><b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels have their own sequence. Durations typed here apply to <b>' + e2(KIND_LABEL[uiSeqKind]) + '</b> levels only (marked cells).</span><button class="pd-btn" id="b-seqreset">Follow the default here</button>'
@@ -26379,7 +26416,12 @@
           ? '<button class="pd-btn pd-btn-primary" id="b-aconfirm">Create ' + pendActDst.length + ' link' + (pendActDst.length === 1 ? '' : 's') + ' →</button>'
           : '';
       host.innerHTML = '<h2>' + _stepNo('Trade sequence') + ' · Trade sequence — connect the class codes, per level type</h2>' +
-        '<p class="sbld-lede">Pick a <b>trade</b>, then the <b>level type</b> it applies to &mdash; the level types are the ones you tagged your floors with in <b>step 2</b>. A basement is not built in the same order, or at the same pace, as a typical floor, so <b>both the sequence and the durations</b> are per level type: <b>All levels</b> holds the default, and typing a duration while a category is selected applies to that category only (its cells are marked). Any category can also <b>copy</b> a sequence already defined elsewhere. Its class codes are an <b>Excel-style grid</b> — click/drag or Shift-click to select cells, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste, <b>Ctrl+D</b> fill-down, <b>Delete</b> clears. To connect codes, switch to <b>Edit mode</b> and click the <b>schedule bars</b> on the right: <b>1)</b> click one or more <b>source</b> bars, <b>2)</b> <b>right-click</b>, <b>3)</b> click <b>destination</b> bars, <b>4)</b> right-click, <b>5)</b> choose FS/SS/FF/SF + lag. In <b>View mode</b> a click just shows a bar\'s links. Open <b>Links</b> to edit them in a table; <b>Auto-chain</b> links every code back-to-back.</p>' +
+        '<p class="sbld-lede">How a trade’s class codes run <b>inside one zone</b> — their order and their durations — defined per <b>level type</b>, because a basement is not built in the same order, or at the same pace, as a typical floor. <b>All levels</b> is the default the others inherit until they fork.</p>' +
+        _sbldHow('<b>Level type</b> — the categories you tagged your floors with in step ' + _stepNo('Floors & Zones') + '. Both the sequence <b>and</b> the durations are per level type: a duration typed while a category is selected applies to that category only (those cells are marked). Any category can <b>copy</b> a sequence already defined elsewhere, or revert to the default in one click.' +
+          '<br><br><b>The grid</b> (left) works like Excel — click/drag or Shift-click to select, double-click or type to edit, <b>Ctrl+C / Ctrl+V</b>, <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear.' +
+          '<br><br><b>To link codes</b>, switch to <b>Edit mode</b> and click the schedule bars on the right:' +
+          '<ol><li>Click one or more <b>source</b> bars.</li><li>Right-click to confirm them.</li><li>Click the <b>destination</b> bars.</li><li>Right-click again.</li><li>Choose FS / SS / FF / SF + lag.</li></ol>' +
+          'In <b>View mode</b> a click just shows a bar’s links. <b>Links</b> opens them as a table; <b>Auto-chain</b> links every code back-to-back with the relationship in the dropdown beside it.') +
         chips + kindRow +
         '<div class="sbld-sec-actions">' +
         '<button class="pd-btn' + (aEditing ? ' pd-btn-primary' : '') + '" id="b-amode">' + (aEditing ? '✎ Edit mode — click to View' : '◉ View mode — click to Edit') + '</button>' +
@@ -26791,7 +26833,7 @@
           (f.sub ? '<span class="sbld-subtag" title="Basement / substructure">BSMT</span>' : '') +
           '<input class="pd-input" data-fk="code" data-f="' + i + '" value="' + e2(f.code) + '" placeholder="' + (f.sub ? 'B1' : 'Floor') + '" style="width:88px;" />' +
           '<input class="pd-input grow" data-fk="name" data-f="' + i + '" value="' + e2(f.name) + '" placeholder="Floor name" />' +
-          '<select class="pd-select sbld-kind" data-kf="' + i + '" title="Floor category — drives how trades hand off on this kind of level in step 3" style="height:34px;">' +
+          '<select class="pd-select sbld-kind" data-kf="' + i + '" title="Floor category — drives how trades hand off on this kind of level in step ' + _stepNo('Zone sequence') + '" style="height:34px;">' +
             KIND_ORDER.map(function (k) { return '<option value="' + k + '"' + (floorKind(f) === k ? ' selected' : '') + '>' + e2(KIND_LABEL[k]) + '</option>'; }).join('') + '</select>' +
           (showZones ? '<button class="pd-btn sbld-addzone" data-f="' + i + '">+ Zone</button>' : '') +
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
@@ -27078,8 +27120,10 @@
       // Single toggle button: flips View ⇄ Edit. Primary (filled) while Editing so the mode is obvious.
       var modeToggle = '<button class="pd-btn ' + (editing ? 'pd-btn-primary' : '') + '" id="b-seqmode" title="' + (editing ? 'Edit mode: click zones to select sources, right-click for destinations, then link. Click to return to View.' : 'View mode: click a bar or zone to inspect its relationships. Click to switch to Edit and create links.') + '">' + (editing ? '✎ Edit mode — click to View' : '◉ View mode — click to Edit') + '</button><span class="sbld-tb-sep2"></span>';
       var lede = editing
-        ? '<p class="sbld-lede"><b>Edit mode:</b> <b>1)</b> click one or more <b>source</b> zones, <b>2)</b> right-click (or press <b>Confirm sources</b>), <b>3)</b> click one or more <b>destination</b> zones, <b>4)</b> right-click (or <b>Create links</b>), <b>5)</b> choose the relationship (FS/SS/FF/SF) + lag. Every source links to every destination. <b>Auto-trace logic</b> builds the whole takt flow for you.</p>'
-        : '<p class="sbld-lede"><b>View mode:</b> click any bar or zone to <b>highlight / inspect</b> its relationships (predecessors + successors). Switch to <b>Edit</b> to connect zones, or open <b>Links</b> to edit them in a table.</p>';
+        ? '<p class="sbld-lede"><b>Edit mode</b> — connect the zones: which location follows which. Topology only; every block is the same size here.</p>' +
+          _sbldHow('<ol><li>Click one or more <b>source</b> zones.</li><li>Right-click, or press <b>Confirm sources</b>.</li><li>Click one or more <b>destination</b> zones.</li><li>Right-click, or press <b>Create links</b>.</li><li>Choose the relationship (FS / SS / FF / SF) + lag.</li></ol>' +
+            'Every source links to every destination. <b>Auto-trace logic</b> asks a few takt questions per trade — zones at once per floor, units at once per zone, floors finished before the next trade follows — then builds the whole flow for you, replacing the current links.', 'How linking works')
+        : '<p class="sbld-lede"><b>View mode</b> — click any bar or zone to highlight its <b>predecessors</b> (what drives it) and <b>successors</b> (what it drives). Switch to <b>Edit</b> to connect zones, or open <b>Links</b> to edit them as a table.</p>';
       host.innerHTML = '<h2>' + _stepNo('Zone sequence') + ' · Zone sequence — connect the flow</h2>' +
         lede +
         tradeChips +
@@ -27297,7 +27341,7 @@
 
     function stScope(host) {
       var locs = locList();
-      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2><div class="sbld-empty">Add activities (step 1) and per-trade floors/zones (step 2) first.</div>'; return; }
+      if (!locs.length || !cfg.activities.length) { host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2><div class="sbld-empty">Add activities (step ' + _stepNo('Activities') + ') and per-trade floors/zones (step ' + _stepNo('Floors & Zones') + ') first.</div>'; return; }
       var sections = '';
       usedGroups().forEach(function (tr) {
         var tlocs = locs.filter(function (l) { return l.trade === tr; }), acts = tradeActs(tr);
@@ -27310,7 +27354,7 @@
       host.innerHTML = '<h2>' + _stepNo('Scope per zone') + ' · Scope per zone</h2>' +
         '<p class="sbld-lede">Per trade, tick which activities apply to each of that trade\'s locations (all on by default). Untick where a trade doesn\'t occur. Click an <b>activity header</b> to toggle that activity across every location, or a <b>location label</b> to toggle all its activities.</p>' +
         '<div class="sbld-sec-actions"><button class="pd-btn" id="b-all">All on</button><button class="pd-btn" id="b-none">All off</button></div>' +
-        (sections || '<div class="sbld-empty">Assign activities to trades (step 1) and give those trades floors/zones (step 2).</div>');
+        (sections || '<div class="sbld-empty">Assign activities to trades (step ' + _stepNo('Activities') + ') and give those trades floors/zones (step ' + _stepNo('Floors & Zones') + ').</div>');
       host.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.onchange = function () { var key = c.dataset.uid + '|' + c.dataset.act; if (c.checked) delete cfg.scopeOff[key]; else cfg.scopeOff[key] = true; markDirty(); }; });
       // Column toggle: flip an activity for every location of its trade (all on → all off, else all on).
       host.querySelectorAll('.sbld-scope-col').forEach(function (th) { th.onclick = function () {
@@ -27342,7 +27386,7 @@
       // zero-length here), so "only <one trade> will be pushed" is visible before the push, not after.
       var miss = (g.missingTrades && g.missingTrades.length)
         ? '<div class="sbld-warn" style="margin:6px 0;padding:6px 9px;border:1px solid var(--pd-red);border-radius:6px;background:var(--pd-red-light);font-size:11.5px;">⚠️ No ' + e2(label) + ' duration for: <b>' +
-          g.missingTrades.map(function (t) { return e2(GLABEL[t] || t); }).join(', ') + '</b> — these trades will NOT be pushed with the ' + e2(label) + ' basis. Enter their durations in step 1.</div>'
+          g.missingTrades.map(function (t) { return e2(GLABEL[t] || t); }).join(', ') + '</b> — these trades will NOT be pushed with the ' + e2(label) + ' basis. Enter their durations in step ' + _stepNo('Activities') + '.</div>'
         : '';
       return '<div class="sbld-genpanel"><div class="sbld-genh" style="border-color:' + accent + ';color:' + accent + ';">' + e2(label) + ' schedule</div>' +
         kpis + miss + pz + '<div class="sbld-tablewrap" style="max-height:340px;margin-top:8px;"><table class="sbld-tbl"><thead><tr><th>Code</th><th>Activity</th><th>Dur</th><th>Start – Finish</th></tr></thead><tbody>' + pv + '</tbody></table></div></div>';
@@ -29659,7 +29703,7 @@
       if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate schedule</h2><div class="sbld-empty">Complete the earlier steps first (activities + per-trade floors/zones).</div>'; return; }
       var gInt = generate('int'), gExt = generate('ext');
       host.innerHTML = '<h2>' + _stepNo('Generate') + ' · Generate &amp; preview — Internal vs External</h2>' +
-        '<p class="sbld-lede">Both schedules are built from the same zoning + links (steps 2–3), each using its own activity durations: <b>Internal</b> (target) and <b>External</b> (contract). Use <b>Push to Project Schedule</b> to add one of them to the live schedule (with its relationships).</p>' +
+        '<p class="sbld-lede">Both schedules are built from the same zoning + links (steps ' + _stepNo('Floors & Zones') + '–' + _stepNo('Zone sequence') + '), each using its own activity durations: <b>Internal</b> (target) and <b>External</b> (contract). Use <b>Push to Project Schedule</b> to add one of them to the live schedule (with its relationships).</p>' +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Project start&nbsp; <input class="pd-input" type="date" id="b-start" value="' + e2(cfg.startDate) + '" style="height:30px;"></label>' +
         '<button class="pd-btn" id="b-csv-int">CSV · Internal</button><button class="pd-btn" id="b-csv-ext">CSV · External</button>' +
         '<button class="pd-btn pd-btn-primary" id="b-push" title="Add one of these schedules to the live schedule">Push to Project Schedule</button></div>' +
@@ -29741,7 +29785,7 @@
       ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
     }
     function stStacking(host) {
-      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps 1–5 first (activities + per-trade floors/zones + scope).</div>'; return; }
+      if (!cfg.activities.length || !locList().length) { host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking</h2><div class="sbld-empty">Complete steps ' + _stepNo('Activities') + '–' + _stepNo('Scope per zone') + ' first (activities + per-trade floors/zones + scope).</div>'; return; }
       var g = generate(stackBasis);
       var finBy = {}; g.perZone.forEach(function (z) { finBy[z.loc.uid] = z.finish; });
       var used = usedGroups();
@@ -29779,7 +29823,9 @@
         }).join('');
       }).join('');
       host.innerHTML = '<h2>' + _stepNo('Stacking') + ' · Vertical stacking — completion by zone</h2>' +
-        '<p class="sbld-lede">From steps 1–5, this is the <b>vertical stacking</b>: each trade\'s building model, one cell per <b>zone</b> with its <b>zone number</b> and <b>completion date</b> (a zone completes when its last unit does). A zone marked <b>“N units ▾”</b> is <b>clickable</b> to see each unit\'s date. Superstructure sits above the grade line, basements below. Pick a <b>tower</b> and a <b>trade</b> to focus; switch Internal (target) / External (contract); push it into the live schedule next.</p>' +
+        '<p class="sbld-lede">The <b>vertical stacking</b> the steps above produce: each trade’s building, one cell per <b>zone</b>, showing its zone number and completion date.</p>' +
+        _sbldHow('A zone completes when its last unit does. A cell marked <b>“N units ▾”</b> is clickable — it opens each unit’s own date. Superstructure sits above the grade line, basements below.' +
+          '<br><br>Pick a <b>tower</b> and a <b>trade</b> to focus, and switch between <b>Internal</b> (target) and <b>External</b> (contract) durations. Nothing is edited here — it is the read-back before the push in step ' + _stepNo('Generate') + '.') +
         towerChips + tradeChips +
         '<div class="sbld-sec-actions"><label class="sbld-tag" style="padding:6px 10px;">Schedule&nbsp; ' +
         '<select class="pd-select sbld-mini" id="b-stackbasis">' +
@@ -29790,7 +29836,7 @@
         (multiTower() ? ' · ' + showTw.length + ' of ' + towerList().length + ' tower(s)' : '') +
         '. Zoom in if a floor\'s dates are cramped.</span></div>' +
         '<div class="sbld-stackgrid">' + (towers || '<div class="sbld-empty">' +
-          (multiTower() && stackTower !== 'ALL' ? 'No floors for this selection in ' + e2(towerLabel(stackTower)) + '. Pick another tower or trade, or add floors in step 2.' : 'No trades with floors yet.') +
+          (multiTower() && stackTower !== 'ALL' ? 'No floors for this selection in ' + e2(towerLabel(stackTower)) + '. Pick another tower or trade, or add floors in step ' + _stepNo('Floors & Zones') + '.' : 'No trades with floors yet.') +
           '</div>') + '</div>';
       host.querySelectorAll('[data-stktr]').forEach(function (b) { b.onclick = function () { stackTrade = b.dataset.stktr; render(); }; });
       host.querySelectorAll('[data-stktw]').forEach(function (b) { b.onclick = function () { stackTower = b.dataset.stktw; render(); }; });
@@ -30045,7 +30091,7 @@
         (locRows[r.loc.uid] = locRows[r.loc.uid] || []).push(r);
       });
       function lagStr(l) { return l ? (l > 0 ? '+' + l : '' + l) : ''; }
-      // intra-zone predecessors: use the trade's class-code links (step 4) when it has any; otherwise
+      // intra-zone predecessors: use the trade's class-code links (step ' + _stepNo('Trade sequence') + ') when it has any; otherwise
       // fall back to a plain FS chain in the step-1 order.
       Object.keys(locRows).forEach(function (uid) {
         var arr = locRows[uid], byAct = {}; arr.forEach(function (r) { byAct[r.act.id] = r; });
@@ -30687,7 +30733,7 @@
             .concat(Object.keys(wbsUnnamed || {}).length
               ? ['Some locations had no code or name, so their branch was named after its level instead: ' +
                  Object.keys(wbsUnnamed).map(function (k) { return (k === 'unknown' ? 'WBS' : dimLabelOf(k)) + ' \u00d7' + wbsUnnamed[k]; }).join(', ') +
-                 '. Give those floors/zones/units a code in step 2 to name them properly.']
+                 '. Give those floors/zones/units a code in step ' + _stepNo('Floors & Zones') + ' to name them properly.']
               : [])
             // \u26a0\ufe0f The silent-drop warning: a trade with activities but 0 pushed rows was dropped because
             // its activities have no duration for the basis just pushed (this is the "only Allied
@@ -30695,7 +30741,7 @@
             .concat((g.missingTrades && g.missingTrades.length)
               ? ['Nothing was pushed for: ' + g.missingTrades.map(function (t) { return GLABEL[t] || t; }).join(', ') +
                  '. Their activities have no ' + (basis === 'ext' ? 'External' : 'Internal') +
-                 ' duration in step 1, so every location came out zero-length and was skipped. Enter durations in that column, or push the other basis.']
+                 ' duration in step ' + _stepNo('Activities') + ', so every location came out zero-length and was skipped. Enter durations in that column, or push the other basis.']
               : []),
           note: 'Filed ' + (base ? 'under <strong>' + e2(base) + '</strong>' : 'at the top level') + ' · ' + (basis === 'ext' ? 'External' : 'Internal') + ' durations. ' +
             ((_ccList.length && _ccTypeId && !codesDropped)

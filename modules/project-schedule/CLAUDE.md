@@ -1,3 +1,125 @@
+## The Setup instructions took more space than the steps they described — and every "step N" in them was wrong (2026-09-03) — eprobles
+
+Owner: *"on the schedule setup, please make the instructions more direct and concise. the text takes
+too much space."* Plus a proposal for the imported-WBS problem below.
+
+### 1 The ledes were the size of the step
+
+Step 8's lede alone ran to ~150 words and pushed the class-code grid **and** the flow diagram below
+the fold on a 1080p screen — the state in the owner's screenshot.
+
+New `.sbld-how` + `_sbldHow(html, label)`: a `<details>` disclosure. Each reworked step now states
+its **purpose** in a sentence or two, and the mechanics sit one click away under *"How to use this
+step"*. Applied to the four worst: **Activities**, **Zone sequence** (both modes, labelled *"How
+linking works"*), **Trade sequence**, **Stacking**.
+
+- ⚠️ **THE MECHANICS ARE MOVED, NEVER DELETED.** Every keystroke and every click sequence is still
+  written down, reformatted into `<ol>`/`<ul>` — which is what a five-step linking procedure wanted
+  in the first place, and is most of why the old paragraphs read as a wall. Deleting them would make
+  the Setup unusable for anyone who has not already been shown it, which is the opposite of the ask.
+- ⚠️ `<details>` and **not** a JS panel: the open/closed state is the browser's, so it needs no
+  handler in the step's own bind pass — a step whose bind pass forgot one would have an unopenable
+  summary — and it re-renders closed along with the rest of the panel.
+- The marker is a literal `▸`, not `content:"\25B8"`. Worth recording: writing that escape through a
+  Node patch script put a raw **0x15 byte** in the stylesheet (`\25` is a legacy octal escape in a
+  sloppy-mode JS string), and the browser rendered `□B8` beside every summary. Caught by actually
+  looking at the rendered page, not by the parse check — which passed.
+
+### 2 ⚠️⚠️ And while rewriting them: every hard-coded "step N" in the Setup named the wrong step
+
+The note above `STEPS_NEW` says *"Nothing indexes these steps by number: `_stepNo(title)` looks them
+up by TITLE … Verified by grep for `_stepNo(` — there is no numeric step literal anywhere."* That was
+true of the **cross-references** it checked and false of the **prose**. WBS moved to first and
+Working calendars was inserted before Activities, so all sixteen surviving literals were off by
+three or four:
+
+> *"tag your floors … in **step 2**"* — Floors & Zones is step 5.
+> *"fine-tune links in **step 4**"* — Trade sequence is step 8.
+> *"Complete **steps 1–5** first"*, *"the same zoning + links (**steps 2–3**)"*, *"add floors in
+> **step 2**"*, *"Enter their durations in **step 1**"* … all wrong the same way.
+
+All sixteen now resolve through `_stepNo(<title>)`, so the claim in that note is finally true of the
+whole file. ⚠️ The mapping is *by the order those numbers were written in* — `1 Activities ·
+2 Floors & Zones · 3 Zone sequence · 4 Trade sequence · 5 Scope per zone` — not by today's numbering;
+reading them as current step numbers would have re-pointed each one at a different step again. Two of
+the sixteen were stale **comments** rather than UI copy and were reworded to name the step instead.
+
+### 3 The WBS reports — what was already fixed, and what I did not touch
+
+The owner also reported *"WBS found under the execution phase that should be part of other phases,
+and there are duplicate phases"* on **One Portwood Residences**.
+
+**The first half was already fixed on `main` before this work landed** — `_wbsHealSkeletonPlacement()`
+plus the `_wbsBackfillSkeleton` fix in *"The magnifier is gone, and Planning Phase's branches were
+filed under Execution"* (fmlozano, 2026-09-02) re-parents `Project Execution Plan` /
+`Design Development` / `Procurement` back under Planning Phase and fixes the backfill that never
+created them there. I built a duplicate of that against a stale checkout and **threw it away**
+rather than ship two owners for one rule; the lesson is recorded below.
+
+**The duplicate roots I did NOT fix, deliberately, and here is what I found.** Two things are true of
+the current repair chain:
+
+- The chain is `placement → order → codes → sibling-node dedupe → row dedupe`, and **both**
+  `_wbsCanonicalRootOrder` and `_wbsResyncCodes` refuse to run while any unlocked root node exists.
+  An imported phase branch lands as exactly that. So a load that *has* a duplicate root repairs
+  nothing except the merge at the end — and since nothing resyncs after it, the dotted codes describe
+  the pre-merge tree until the next load. `_healFingerprint()` does change, so the second load
+  finishes the job: **one wasted load with the duplicates on screen, not a permanent state.**
+  The obvious fix — hoist the merge — is *not* obviously safe: the comment above
+  `_wbsDedupeSiblingNodes` states that being before the code resync "would have been wrong", and the
+  narrow root-and-phase-keyed `_wbsDedupeSkeleton` would be the right pass to hoist instead. That is
+  a new tree-mutating pass, which this file's history says not to write on a hypothesis.
+- The shape in the screenshot — five **empty** roots beside three **populated** ones — is also what
+  un-adopted import rows look like: a top-level WBS-Summary row with no `wbs_node_id` is invisible to
+  every dedupe (`_wbsDedupeSummariesByCode` groups by dotted code, and the node passes need a node).
+  That case already has a planner-facing notice pointing at **Schedule Setup › WBS › Adopt existing
+  WBS**, which is the supported repair.
+
+**I could not tell these apart without the project's data** (no SQL runner; the anon key has no
+grants), and guessing between them decides whether the fix is a chain reorder or an adoption prompt.
+Left for the owner to say which notice One Portwood actually shows.
+
+### 4 Proposal — activity-type WBS branches, detected and tagged
+
+Owner, on **4PH Strevi Bacoor** (imported from XML): *"the breakdown of WBS is not the same as what
+was intended in the schedule setup of just purely locations. It also involves activities. So propose
+a feature wherein it detects those activities (e.g. Masonry, Dry Works) as WBS and assign them to a
+tagging just like the purpose of 'location breakdowns'."*
+
+Written up as **[`docs/wbs-activity-tagging-proposal.md`](../../docs/wbs-activity-tagging-proposal.md)**.
+An imported tree interleaves *places* and *kinds of work* at one depth
+(`Cluster 2 (Units 07 to 12) › Masonry Works`, `Fire Exit 2 › Wet Works`, a bare `Dry Works` — the
+exact branch names this changelog already records from the adopt damage), while the push only ever
+builds `trade › tower › floor › zone`. The proposal: an `activity_levels` table mirroring
+`location_levels` field for field including `match` (keyed by branch **name**, so it survives a
+re-import that renumbers every node id), an `act:<id>` dimension family beside `loc:<id>` so grouping
+/ columns / filters come along unchanged, a `_wbsClassifyBranches()` detector whose strongest signal
+is Finance's `CLASS_CODES` chart, and an Activity-tagging wizard shaped like the Location Wizard.
+Deliberately **reads** the tree and never rewrites it, and `unknown` stays a first-class answer —
+guessing is what put `Dry Works` in the Location Wizard's Tower list to begin with. **Nothing
+implemented.**
+
+---
+
+**Verified:** the reworked ledes rendered in a browser from the **shipped** source — the lede/how
+expressions are lifted out of `index.html` and evaluated, with only `_stepNo` / `e2` / `dimLabelOf`
+stubbed — collapsed and expanded, in dark. That is what caught the `\25` byte. Step 8 collapsed is
+**3 lines + a link** against 11 before. **0 functions lost, 1 added** (`_sbldHow`); 0 NUL bytes; the
+single inline script parses; every `(step|steps) N` literal between the Setup's `_stepNo` and
+`CostLoading` is gone, and the 14 + 2 rewrites each matched exactly one occurrence.
+⚠️ **Not verified signed in.** The step numbers now come from the live `STEPS` array; the four titles
+I pass (`Activities`, `Floors & Zones`, `Zone sequence`, `Trade sequence`, `Scope per zone`,
+`Generate`) were checked against `STEPS_NEW`, but a Setup opened on the **import** path uses
+`STEPS_IMP`, where `_stepNo` correctly returns `''` for a title that path does not have — the
+affected strings all belong to generation-path steps, so they are unreachable there.
+⚠️⚠️ **THE LESSON WORTH MORE THAN THE FIX: I worked for an hour on a checkout 30 commits behind
+`origin/main`, and two of the three reports were already fixed there.** `git fetch` before reading
+the code, not before pushing. `.gitignore` also now matches `**/*harness*` / `**/_vx*` /
+`**/_scratch*` — the focus-window harness was sitting untracked under a name no existing pattern
+caught, which is the same miss that shipped four harness pages to production on 2026-09-01.
+
+---
+
 ## The magnifier is gone, and Planning Phase's branches were filed under Execution (2026-09-02) — fmlozano
 
 Owner: *"For the vertical stacking, kindly remove the magnifier since there is a zoom in already

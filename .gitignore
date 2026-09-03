@@ -25,6 +25,13 @@ node_modules/
 **/harness.html
 **/harness-stub.js
 **/*.harness.html
+# ⚠️ AND THE SAME MISS HAPPENED AGAIN (found 2026-09-03): the Vertical-Stacking focus-window
+# harness was sitting untracked as `_vxharness.html` / `_vxslice.js` / `_vxcss.css` — named to no
+# pattern above, so nothing but luck was keeping it out of a deploy. Match the WORD anywhere in the
+# name, and reserve the `_vx*` / `_scratch*` prefixes for local scratch outright.
+**/*harness*
+**/_vx*
+**/_scratch*
 
 # Supabase CLI local state
 supabase/.temp/
