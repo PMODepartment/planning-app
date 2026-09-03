@@ -1,5 +1,94 @@
 # Module: issues-lessons
 
+## 2026-09-03 (c) — Issues Dashboard chart consistency (shared with the Minutes of Meeting dashboard), and Champion's free-text input is retired in favour of the dropdown alone
+
+Owner's list included two items naming **both** dashboards (this module's Issues Dashboard and
+Minutes of Meeting's own Meetings Dashboard) plus one app-wide item reaching every People Picker
+in the suite. This module keeps its own copy of the chart/picker code by this repo's established
+no-shared-runtime convention (two small IIFEs in two files, each module owning its own), so every
+fix here mirrors an identical fix applied in `modules/minutes-of-meeting/module.js` — see that
+module's own CLAUDE.md for the paired entry with the full reasoning; this entry records the
+issues-lessons-specific application and verification.
+
+### Issues Dashboard: filter hidden by default, chart titles on top, one bottom legend, no bold text
+
+- **`donutChartSVG(slices, opts)`** (Issues by Status): dropped its per-slice on-chart labels
+  entirely — the ring now renders alone, with every count and percent living in the one
+  `statusLegendBottomHTML` legend beneath it (`● Open: 2 (67%)`), so the chart and its legend
+  cannot disagree about a number.
+- **`hbarSVG`** (Issues by Department / Issues by Champion): the in-bar "X/Y (Z%) open" value
+  text lost its bold weight and its font size was unified to 11px, matching the donut's own
+  label size — the same "no bold except the `<h4>` chart title" rule applied here as in Minutes
+  of Meeting.
+- **Every dashboard tile now renders title-then-chart-then-bottom-legend.** The Department/
+  Champion bar tiles' `.il-dash-cardhead` moved above the chart body (was below it, with the
+  legend above); their legend moved to a new `.il-dash-legend-bottom` block underneath (replacing
+  `.il-dash-cardhead-bottom`/`.il-dash-legend-top`). The Status donut tile already had this
+  shape from an earlier round and needed no structural change — only the label rewording above.
+- Two now-dead selectors removed from `module.css` — `.il-dash-cardhead-bottom` and
+  `.il-dash-legend-top`/`.il-dash-legend-top .il-dash-legend-i` — with the explanatory comment
+  above `.il-dash-cardhead` rewritten to describe the unified shape, and a second stale reference
+  to the removed classes (a leftover comment further down the file) found and removed too.
+  `.il-dash-legend-i`'s base rule now carries `font-size: 11px; font-weight: 400; white-space:
+  nowrap;` directly, matching the un-bolded, size-matched text this item asks for.
+- ⚠️ **The filter-hidden-by-default half needed no new work** — already satisfied by this
+  module's existing topbar funnel-toggle wiring; checked against live behaviour rather than
+  duplicating a fix already shipped.
+
+### The Champion People Picker's free-text input is gone; the dropdown alone is now the only way in
+
+*"Remove the separate free-text input for Responsible/Champion fields — rely solely on the
+existing dropdown, which already has a + add a person option."*
+
+This module's shared People Picker backs the **Champion** field — an always-editable free-text
+`<input class="il-pp-free">` sat beside the account-chip dropdown, letting a name be typed with
+no link to any account. The dropdown's own "+ Someone without an account…" option already writes
+a real `people_directory` row via `PDb.createContact()`, so the second, un-vetted typing box
+duplicated what the dropdown already did correctly.
+
+- **The `<input>` is removed from `peoplePickerHTML()`.** In its place: nothing, when no legacy
+  free text exists, or a read-only **`.il-pp-freenote`** ("Also (typed): …") with its own ✕
+  (`.il-pp-rmtext`) when the row already carries hand-typed text saved before this change —
+  preserving that data rather than discarding it on the next repaint.
+- **`root.dataset.text` replaces the input as the free-text half's state**, read through a new
+  `textOf(root)` (mirroring the existing `idsOf(root)`). The one external call site —
+  `issChampion()` — now reads `textOf(root).trim()` instead of the old input's `.value`; the
+  read-only (no picker rendered) branch is unaffected, since it already resolved through
+  `championExtra(champion_ids, champion)` rather than any live DOM control.
+- **`repaintPicker`/`wirePeople`** rewritten identically to the Minutes of Meeting copy: the
+  `fire` closure's `.il-pp-free.onchange` wiring is gone, every internal read of the old input's
+  `.value` is now `textOf(root)`/`textOf(fresh)`, and a new `.il-pp-rmtext` click handler clears
+  `root.dataset.text = ''` and repaints.
+- ⚠️ **Nothing NEW can be typed any more, by construction** — a champion with no account is added
+  exclusively through the dropdown's "+ add a person" flow into `people_directory`, never through
+  a fresh unlinkable string. `championExtra()` (the function that separates a saved row's typed
+  "extra" text from its resolved account names, built 2026-09-01(c) to fix the champion-doubling
+  bug) is untouched — it still reads whatever `dataset.text` holds, which is now legacy-only.
+
+### CSS
+
+`.il-pp-free` (the dead input-width rule) removed from this module's own copy of the People
+Picker block; `.il-pp-freenote`/`.il-pp-rmtext` added, styled identically to the Minutes of
+Meeting copy (a quiet dashed-border row with a small hover-to-red remove button). Header comment
+above `.il-people` rewritten from "Chips for accounts + one free-text line for people with no
+login" to describe the dropdown-only shape with an optional legacy-text note.
+
+### Verified
+
+`node --check` clean on `module.js`. CSS brace balance: 287/287 (unchanged proportionally after
+both the dashboard and picker edits). Grepped `module.js`/`module.css` for the removed
+`.il-pp-free` input class — zero remaining references outside the new, differently-named
+`.il-pp-freenote`/`.il-pp-rmtext` rules. Confirmed `issChampion()` is the only external reader of
+the picker's free-text half in this module (checked before assuming — Minutes of Meeting has
+four such call sites, this module has one, since Champion is its only People Picker field).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this module. No live click-through of the reworked Issues
+Dashboard tiles against real department/champion data, or of the Champion picker's
+dropdown-only flow against a real save.
+
+`module.css/js?v=` → `20260903d`. No shared asset touched, no `MODULE_V` bump.
+
 ## 2026-09-03 (b) — Lessons list Issue column trimmed, "Date Closed" -> "Date Logged", a boxed read-only Background, and a real navigation bug in "View issue"
 
 Owner's list:

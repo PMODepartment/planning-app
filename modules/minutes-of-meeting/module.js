@@ -92,7 +92,7 @@ window.MinutesOfMeeting = (function () {
   // _momReport itself: it is where the presenter has got to right now, not a
   // property of the minute, and it resets whenever the deck changes shape.
   var _momSlide = 0;
-  var _momF = { q: '', cat: '', type: '', status: '', sort: '' };   // per-minute filters (Detail)
+  var _momF = { q: '', cat: '', type: '', status: '' };   // per-minute filters (Detail)
   var _momQ = '';                                          // meeting search (Browse)
   // Item 10 (2026-09-02): "add filter options and combine search bar to filter
   // grouping. filter group should be hidden/shown by a button." So the search
@@ -253,43 +253,25 @@ window.MinutesOfMeeting = (function () {
         return piece;
       }).join('');
     }
-    // A label beside each SECTION of the donut, placed just outside the ring
-    // at that slice's own midpoint angle with a short leader line, carrying a
-    // colour marker + count + percent — the same per-slice label the Issues
-    // dashboard's Status donut uses, so "copy format of issues by status" is
-    // exact rather than approximate.
-    var labelPadX = 100, labelPadY = 16;
-    var labels = '';
-    if (total) {
-      var off2 = 0;
-      labels = slices.map(function (s) {
-        var frac = s.value / total, len = frac * circ, mid = off2 + len / 2;
-        off2 += len;
-        if (!s.value) return '';
-        var angleRad = ((mid / circ) * 360 - 90) * Math.PI / 180;
-        var cosv = Math.cos(angleRad), sinv = Math.sin(angleRad);
-        var lineR1 = r + sw / 2 + 2, lineR2 = r + sw / 2 + 16, labelR = r + sw / 2 + 20;
-        var lx1 = c + lineR1 * cosv, ly1 = c + lineR1 * sinv;
-        var lx2 = c + lineR2 * cosv, ly2 = c + lineR2 * sinv;
-        var lx = c + labelR * cosv, ly = c + labelR * sinv + 4;
-        var anchor = cosv > 0.2 ? 'start' : (cosv < -0.2 ? 'end' : 'middle');
-        var pct = Math.round((s.value / total) * 100);
-        return '<line x1="' + lx1.toFixed(1) + '" y1="' + ly1.toFixed(1) + '" x2="' + lx2.toFixed(1) +
-            '" y2="' + ly2.toFixed(1) + '" stroke="var(--pd-muted)" stroke-width="1"></line>' +
-          '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor +
-          '" font-size="10.5" font-weight="600" fill="var(--pd-ink)">' +
-          '<tspan fill="' + s.color + '">●</tspan> ' +
-          Fmt.esc(s.label) + ': ' + s.value + ' (' + pct + '%)</text>';
-      }).join('');
-    }
-    var vw = size + labelPadX * 2, vh = size + labelPadY * 2;
+    // ⚠️ NO per-slice on-chart labels (2026-09-03, owner: "the legend should be
+    // placed only at the middle-bottom of the chart, not as separate per-item
+    // labels elsewhere"). The chart is the ring alone; count/percent per slice
+    // live in statusLegendBottomHTML() below instead — the ONE place this
+    // information is shown, so it can't disagree with itself.
+    var vw = size, vh = size;
     return '<svg class="il-donut-svg" viewBox="0 0 ' + vw + ' ' + vh + '" width="100%" height="' + vh +
-      '" role="img" aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet" overflow="visible">' +
-      '<g transform="translate(' + labelPadX + ',' + labelPadY + ')">' + arcs + labels + '</g></svg>';
+      '" role="img" aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet">' +
+      arcs + '</svg>';
   }
+  // The one legend for a donut: swatch + label + count + percent, centered
+  // beneath the chart. Carries what the old per-slice on-chart labels used to
+  // show, now that those are gone — see donutChartSVG's own comment.
   function statusLegendBottomHTML(slices) {
+    var total = slices.reduce(function (s, x) { return s + x.value; }, 0);
     return '<div class="il-dash-legend-bottom">' + slices.map(function (s) {
-      return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' + Fmt.esc(s.label) + '</span>';
+      var pct = total ? Math.round((s.value / total) * 100) : 0;
+      return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
+        Fmt.esc(s.label) + ': ' + s.value + ' (' + pct + '%)</span>';
     }).join('') + '</div>';
   }
   // ---- a crude, deterministic per-character width estimate (no canvas/DOM
@@ -332,7 +314,7 @@ window.MinutesOfMeeting = (function () {
   function hbarSVG(items, opts) {
     opts = opts || {};
     items = items || [];
-    var w = opts.width || 380, barH = 22, gap = 10, padTop = 4, lineH = 13, fs = 11.5;
+    var w = opts.width || 380, barH = 22, gap = 10, padTop = 4, lineH = 13, fs = 11;
     var padLeft = 132, padRight = 6;
     var trackW = Math.max(24, w - padLeft - padRight);
     var labelColW = padLeft - 12, edgeMargin = 4;
@@ -350,7 +332,7 @@ window.MinutesOfMeeting = (function () {
       var openW = Math.max(it.open ? 2 : 0, (it.open / max) * trackW);
       var midX = padLeft + totalW / 2;
       var valueText = it.open + '/' + it.total + ' (' + (it.total ? Math.round((it.open / it.total) * 100) : 0) + '%) open';
-      var valFits = ilTextW(valueText, 10.5) <= totalW - 8;
+      var valFits = ilTextW(valueText, fs) <= totalW - 8;
       var valAnchor = valFits ? 'middle' : 'start';
       var valX = valFits ? midX : padLeft + 4;
       var textY0 = y + rowH / 2 - ((lines.length - 1) * lineH) / 2 + 4;
@@ -365,7 +347,7 @@ window.MinutesOfMeeting = (function () {
         '<rect x="' + padLeft + '" y="' + barY.toFixed(1) + '" width="' + openW.toFixed(1) + '" height="' + barH +
           '" rx="4" fill="' + openColor + '"><title>' + Fmt.esc(it.label) + ' — Open: ' + it.open + '</title></rect>' +
         '<text x="' + valX.toFixed(1) + '" y="' + barMidY.toFixed(1) +
-          '" text-anchor="' + valAnchor + '" font-size="10.5" font-weight="700" fill="var(--pd-ink)" ' +
+          '" text-anchor="' + valAnchor + '" font-size="' + fs + '" fill="var(--pd-ink)" ' +
           'paint-order="stroke" stroke="var(--pd-card)" stroke-width="3" stroke-linejoin="round">' +
           Fmt.esc(valueText) + '</text>';
       y += rowH + gap;
@@ -438,6 +420,10 @@ window.MinutesOfMeeting = (function () {
     var v = (root && root.dataset.ids) || '';
     return v ? v.split(',').filter(Boolean) : [];
   }
+  // The free-text half of the picker, held on the root's own dataset now that
+  // there is no `<input>` to read it off — see peoplePickerHTML's own comment
+  // on why (2026-09-03: "rely solely on the dropdown").
+  function textOf(root) { return (root && root.dataset.text) || ''; }
 
   // ⚠️ The qualifier is the COMPANY for a contact and the DEPARTMENT for an
   // account. Two people called Cruz are told apart by who they work for, and for
@@ -496,7 +482,9 @@ window.MinutesOfMeeting = (function () {
       return '<div class="il-mi-val' + (shown ? '' : ' is-empty') + '">' +
         (shown ? Fmt.esc(shown) : '—') + '</div>';
     }
+    var freeText = (text || '').trim();
     return '<div class="il-people" data-people="' + Fmt.esc(key) + '" data-ids="' + Fmt.esc(ids.join(',')) + '"' +
+      ' data-text="' + Fmt.esc(freeText) + '"' +
       (newOpen ? ' data-new="1"' : '') + '>' +
       (ids.length
         ? '<div class="il-pp-chips">' + (function () {
@@ -518,11 +506,18 @@ window.MinutesOfMeeting = (function () {
         : '') +
       peopleOptionsHTML(ids) +
       (newOpen ? newPersonHTML() : '') +
-      // ⚠️ The free-text box is NOT a fallback for a missing roster — it is how
-      // someone without an account gets named. Its own label says so, or a
-      // planner reasonably assumes the dropdown is the only valid route.
-      '<input class="pd-input pd-input-sm il-pp-free" value="' + Fmt.esc(text || '') + '" ' +
-        'placeholder="Others not on the system (typed)">' +
+      // ⚠️ 2026-09-03 (owner): no free-text INPUT any more — the dropdown above
+      // is now the only way to add someone, its own "+ Someone without an
+      // account…" option covering exactly the case the box existed for (it
+      // writes a real people_directory row via createContact, so that person
+      // can be picked, shown and removed like anyone else). A value TYPED
+      // before this change still has to be shown and stay removable, so it
+      // survives as a read-only note with its own ✕ — never as a box that
+      // invites typing more into it.
+      (freeText
+        ? '<div class="il-pp-freenote"><span>Also (typed): ' + Fmt.esc(freeText) + '</span>' +
+          '<button type="button" class="il-pp-rmtext" title="Remove">✕</button></div>'
+        : '') +
     '</div>';
   }
 
@@ -532,8 +527,7 @@ window.MinutesOfMeeting = (function () {
   function repaintPicker(root, onChange, newOpen) {
     var key = root.dataset.people;
     var ids = idsOf(root);
-    var free = root.querySelector('.il-pp-free');
-    var text = free ? free.value : '';
+    var text = textOf(root);
     // ⚠️ A half-typed new person survives the repaint that removing a chip causes.
     // Losing it would make the two controls fight each other.
     var nn = root.querySelector('.il-pp-nname'), nc = root.querySelector('.il-pp-nco');
@@ -557,10 +551,6 @@ window.MinutesOfMeeting = (function () {
     scope.querySelectorAll('.il-people').forEach(function (root) {
       if (root._wired) return;
       root._wired = true;
-      var fire = function () {
-        if (onChange) onChange(root.dataset.people, idsOf(root),
-          (root.querySelector('.il-pp-free') || {}).value || '');
-      };
       var add = root.querySelector('.il-pp-add');
       if (add) add.onchange = function () {
         if (!add.value) return;
@@ -576,8 +566,7 @@ window.MinutesOfMeeting = (function () {
         if (ids.indexOf(add.value) < 0) ids.push(add.value);
         root.dataset.ids = ids.join(',');
         var fresh = repaintPicker(root, onChange);
-        if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
-          (fresh.querySelector('.il-pp-free') || {}).value || '');
+        if (onChange) onChange(fresh.dataset.people, idsOf(fresh), textOf(fresh));
       };
 
       // ---- The new-person form -------------------------------------------
@@ -605,8 +594,7 @@ window.MinutesOfMeeting = (function () {
         if (ids.indexOf(made.id) < 0) ids.push(made.id);
         root.dataset.ids = ids.join(',');
         var fresh = repaintPicker(root, onChange, false);
-        if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
-          (fresh.querySelector('.il-pp-free') || {}).value || '');
+        if (onChange) onChange(fresh.dataset.people, idsOf(fresh), textOf(fresh));
         UI.toast(made.name + ' added — everyone can pick them now.', 'ok');
       };
       var ncan = root.querySelector('.il-pp-ncancel');
@@ -615,12 +603,18 @@ window.MinutesOfMeeting = (function () {
         b.onclick = function () {
           root.dataset.ids = idsOf(root).filter(function (i) { return i !== b.dataset.rm; }).join(',');
           var fresh = repaintPicker(root, onChange);
-          if (onChange) onChange(fresh.dataset.people, idsOf(fresh),
-            (fresh.querySelector('.il-pp-free') || {}).value || '');
+          if (onChange) onChange(fresh.dataset.people, idsOf(fresh), textOf(fresh));
         };
       });
-      var free = root.querySelector('.il-pp-free');
-      if (free) free.onchange = fire;
+      // A legacy typed value's own remove — clears the text half only, the
+      // ids are untouched. See peoplePickerHTML's comment on why there's no
+      // longer an input to type a NEW one into.
+      var rmt = root.querySelector('.il-pp-rmtext');
+      if (rmt) rmt.onclick = function () {
+        root.dataset.text = '';
+        var fresh = repaintPicker(root, onChange);
+        if (onChange) onChange(fresh.dataset.people, idsOf(fresh), textOf(fresh));
+      };
     });
   }
 
@@ -739,36 +733,17 @@ window.MinutesOfMeeting = (function () {
     var iss = momIssueOf(it);
     return iss ? (iss.status || 'Open') : (it.status || 'Open');
   }
-  // Individual View item 1 (2026-09-03) — an explicit sort over the minute
-  // cards. ⚠️ '' means "order recorded", i.e. whatever momItemsOf() already
-  // returns (MOM_ITEMS is kept sorted by `seq` on load — see the loader) —
-  // never re-sorted here, so the un-sorted default reproduces the order the
-  // minutes were actually taken in. Every other option sorts blanks LAST,
-  // matching this app's own convention elsewhere (dates, aging, …) — an
-  // ascending sort that put blanks first would read as "nobody is
-  // responsible" being the most important thing on the list.
-  function momSortMinutes(list) {
-    var s = _momF.sort;
-    if (!s) return list;
-    var out = list.slice();
-    function cmp(av, bv) {
-      var a = av || '', b = bv || '';
-      if (!a !== !b) return a ? -1 : 1;
-      return a.localeCompare(b);
-    }
-    if (s === 'status') out.sort(function (a, b) { return cmp(momItemStatus(a), momItemStatus(b)); });
-    else if (s === 'dept') out.sort(function (a, b) { return cmp(momItemDept(a), momItemDept(b)); });
-    else if (s === 'owner') out.sort(function (a, b) {
-      return cmp(championText(a.owner_ids, a.owner), championText(b.owner_ids, b.owner));
-    });
-    else if (s === 'due') out.sort(function (a, b) { return cmp(a.due_date, b.due_date); });
-    return out;
-  }
+  // ⚠️ ROUND 2 (Individual View item 3): ordering is MANUAL now, by dragging
+  // a card (wireMinuteDrag(), which persists the new `seq` values) — never an
+  // automatic re-sort by status/department/owner/date. `momItemsOf()` is
+  // already kept in `seq` order at load, so simply not re-sorting here IS
+  // "order recorded", and filtering below preserves it (Array#filter keeps
+  // relative order).
   function momVisibleItems(momId) {
     var all = momItemsOf(momId);
-    if (!momFilterOn()) return momSortMinutes(all);
+    if (!momFilterOn()) return all;
     var q = _momF.q.toLowerCase();
-    var filtered = all.filter(function (it) {
+    return all.filter(function (it) {
       if (_momF.cat && momItemDept(it) !== _momF.cat) return false;
       if (_momF.type && (it.type || '') !== _momF.type) return false;
       if (_momF.status && momItemStatus(it) !== _momF.status) return false;
@@ -776,14 +751,13 @@ window.MinutesOfMeeting = (function () {
       return [it.item_no, momItemDept(it), it.issue, it.description, it.action_item, it.owner]
         .join(' ').toLowerCase().indexOf(q) >= 0;
     });
-    return momSortMinutes(filtered);
   }
   function momStatusFilterOpts() { return STATUSES.slice(); }
 
   function momReset() {
     MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = []; SCHEDULES = [];
     _momSel = null; _momErr = ''; _momLoaded = false;
-    _momQ = ''; _momF = { q: '', cat: '', type: '', status: '', sort: '' };
+    _momQ = ''; _momF = { q: '', cat: '', type: '', status: '' };
     _momView = 'list'; _momBrowsePrev = 'list'; _momTab = 'meetings';
     _momCameFromSeries = null; _momCalMode = 'month'; _momWeekStart = null;
     _addOpen = false; _addDraft = null;
@@ -1145,6 +1119,26 @@ window.MinutesOfMeeting = (function () {
     // Icon-dropdown menus (export, etc.) close on any click outside them —
     // wired once here rather than per-render, same reasoning as the tabs above.
     document.addEventListener('click', function () { closeIconMenus(document); });
+
+    // ⚠️ Meetings List items 2-3 / Meetings Dashboard item 1 (2026-09-03,
+    // round 2): filter / export / "+ Add meeting" are now static controls in
+    // the secondary top bar (index.html), so — like the tab strip above — they
+    // are wired exactly ONCE here, never rebuilt by render(). What changes per
+    // render is only which of them are visible and what they act on
+    // (syncTopTabs()'s own sibling, syncTopbarTools() below).
+    var tbf = $('il-mom-tb-filter');
+    if (tbf) tbf.onclick = function () {
+      if (_momTab === 'dashboard') _momDashF.open = !_momDashF.open;
+      else _momFiltOpen = !_momFiltOpen;
+      render();
+    };
+    var tba = $('il-mom-tb-add');
+    if (tba) tba.onclick = openAddMeetingModal;
+    wireIconMenu(document, 'il-mom-tb-export', async function (v) {
+      if (v === 'html') momExportListHTML();
+      else if (v === 'pdf') await momExportListPDF();
+      else if (v === 'xlsx') momExportListXLSX();
+    });
   }
 
   // -------------------------------------------------------------- render ---
@@ -1156,7 +1150,39 @@ window.MinutesOfMeeting = (function () {
       b.classList.toggle('active', b.dataset.tab === _momTab);
     });
   }
+  // Shows/hides the three static topbar controls and reflects whichever
+  // filter panel is relevant right now. ⚠️ The Meetings Dashboard gets a
+  // filter toggle only — nothing in that tab's own item list asked for a
+  // download or an add-meeting button there, and offering either would act
+  // on data the dashboard isn't even displaying rows of. A single meeting or
+  // series page shows none of the three; its own per-meeting toolbar
+  // (further down in Detail) is untouched by this.
+  function syncTopbarTools() {
+    var filtBtn = $('il-mom-tb-filter'), expWrap = $('il-mom-tb-export'), addBtn = $('il-mom-tb-add');
+    if (!filtBtn) return;
+    if (!pid || !_momLoaded) {
+      filtBtn.hidden = true;
+      if (expWrap) expWrap.hidden = true;
+      if (addBtn) addBtn.hidden = true;
+      return;
+    }
+    var inDash = _momTab === 'dashboard';
+    var inBrowse = _momTab === 'meetings' && (_momView === 'list' || _momView === 'calendar');
+    filtBtn.hidden = !(inDash || inBrowse);
+    if (expWrap) expWrap.hidden = !inBrowse;
+    if (addBtn) addBtn.hidden = !(inBrowse && canAdd);
+    var open = inDash ? _momDashF.open : _momFiltOpen;
+    var active = inDash ? momDashFilterOn() : momBrowseFilterOn();
+    // ⚠️ Same class names as the shared `UI.wireFilterToggle` component
+    // (assets/css/dashboard.css) — `.pd-filttoggle` is already applied via
+    // index.html's markup, so this button reads identically to every other
+    // module's funnel toggle even though the panel it drives is rebuilt on
+    // every render rather than a persistent node wireFilterToggle can bind to.
+    filtBtn.classList.toggle('is-active', !!open);
+    filtBtn.classList.toggle('has-active', !!active);
+  }
   function render() {
+    syncTopbarTools();
     if (!pid) { _paintEmpty('Select a project to see its minutes.'); return; }
     if (!_momLoaded) { _paintEmpty('Loading minutes…'); return; }
     syncTopTabs();
@@ -1214,7 +1240,12 @@ window.MinutesOfMeeting = (function () {
   // ⚠️ These charts count EVERY minute, not only the open ones — "Minutes by
   // Status" is meaningless if Closed is filtered out before it is charted.
   // ==========================================================================
-  var _momDashF = { starred: false, meetings: [], pickOpen: false };
+  // ⚠️ Meetings Dashboard item 1 (2026-09-03 round 2): the filter panel is
+  // hidden by default and only shown by the funnel button, matching the
+  // Meetings List's own filter panel — `open` is the toggle it responds to,
+  // flipped from the SHARED topbar filter button (see syncTopbarTools()),
+  // never from a control inside the panel itself.
+  var _momDashF = { open: false, starred: false, meetings: [], pickOpen: false };
 
   // Every meeting a minute could belong to, newest first — the multi-select's
   // own option set, and the grouping order of the summary below it.
@@ -1276,6 +1307,12 @@ window.MinutesOfMeeting = (function () {
   }
 
   function momDashFilterHTML() {
+    // ⚠️ Hidden by default; the funnel button that opens it now lives in the
+    // secondary top bar (syncTopbarTools()), not inline here — an "active
+    // filter" dot on THAT button is how a narrowed dashboard stays visible
+    // even while this panel is collapsed (same rule the browse filter bar
+    // already follows).
+    if (!_momDashF.open) return '';
     var all = momDashMeetings();
     var sel = _momDashF.meetings;
     var label = sel.length
@@ -1285,7 +1322,6 @@ window.MinutesOfMeeting = (function () {
           : sel.length + ' meetings')
       : 'All meetings';
     return '<div class="il-mom-dashfilt">' +
-      '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
       '<label class="il-mom-favfilt"><input type="checkbox" id="il-momd-star"' +
         (_momDashF.starred ? ' checked' : '') + '> Starred meetings only</label>' +
       '<div class="il-mom-msel">' +
@@ -1387,8 +1423,15 @@ window.MinutesOfMeeting = (function () {
         total: its.length,
       };
     });
-    var barLegendTop = '<span class="il-dash-legend-i"><i style="background:#EE3124"></i>Open</span>' +
-      '<span class="il-dash-legend-i"><i style="background:var(--pd-line)"></i>Total</span>';
+    // ⚠️ ONE legend shape for every chart on this dashboard, always centered
+    // BELOW the chart it belongs to (2026-09-03: "titles on top of the chart,
+    // legend only at the middle-bottom"). The donut's own legend already
+    // carries count+percent per slice (statusLegendBottomHTML); a bar chart's
+    // per-row value is already printed ON each bar, so its bottom legend only
+    // has to name what the two bar colours mean.
+    var barLegendBottom = '<div class="il-dash-legend-bottom">' +
+      '<span class="il-dash-legend-i"><i style="background:#EE3124"></i>Open</span>' +
+      '<span class="il-dash-legend-i"><i style="background:var(--pd-line)"></i>Total</span></div>';
 
     host.innerHTML =
       momDashFilterHTML() +
@@ -1402,31 +1445,28 @@ window.MinutesOfMeeting = (function () {
           (total ? statusLegendBottomHTML(statusSlices) : '') +
         '</div>' +
         '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardhead"><h4>Minutes by Department</h4></div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
             (deptList.length ? hbarSVG(deptList, { aria: 'Open vs total minutes by department' })
               : '<div class="il-empty" style="padding:16px;">No minutes match the current filter.</div>') +
           '</div>' +
-          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Minutes by Department</h4>' +
-            (deptList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
-          '</div>' +
+          (deptList.length ? barLegendBottom : '') +
         '</div>' +
         '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardhead"><h4>Minutes by Responsible</h4></div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
             (respList.length ? hbarSVG(respList, { aria: 'Open vs total minutes by responsible' })
               : '<div class="il-empty" style="padding:16px;">No minutes match the current filter.</div>') +
           '</div>' +
-          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Minutes by Responsible</h4>' +
-            (respList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
-          '</div>' +
+          (respList.length ? barLegendBottom : '') +
         '</div>' +
         '<div class="pd-card il-dash-card il-dash-wide">' +
+          '<div class="il-dash-cardhead"><h4>Minutes by Meeting</h4></div>' +
           '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
             (byMeetingList.length ? hbarSVG(byMeetingList, { aria: 'Open vs total minutes by meeting', width: 760 })
               : '<div class="il-empty" style="padding:16px;">No meeting matches this filter.</div>') +
           '</div>' +
-          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Minutes by Meeting</h4>' +
-            (byMeetingList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
-          '</div>' +
+          (byMeetingList.length ? barLegendBottom : '') +
         '</div>' +
       '</div>' +
       '<h4 class="il-mom-dashsec">Minutes by meeting</h4>' +
@@ -1576,35 +1616,23 @@ window.MinutesOfMeeting = (function () {
 
   function momBrowseFilterBarHTML(shown, total) {
     var on = momBrowseFilterOn();
-    // Item 6 (2026-09-03, owner: "move all change view tab groups… to the
-    // left above the tables"): the List/Calendar switch used to live in the
-    // topbar's tool cluster, top-right — chrome, not content, and stranded
-    // above the AVATAR rather than the list it actually switches. It now
-    // opens this bar (rebuilt on every renderBrowse(), so its `.on` state
-    // never needs a separate sync pass the way the topbar copy did), leading
-    // on the LEFT — the same corner Issues & Concerns' own List/Kanban
-    // toggle already occupies, directly above ITS table.
+    // ⚠️ Meetings List items 2-3 (2026-09-03, round 2): Filter / Export /
+    // "+ Add meeting" moved OUT of this in-page row entirely and into the
+    // static secondary top bar (index.html #il-mom-tb-filter/-export/-add),
+    // wired once and shown/hidden by syncTopbarTools() — they act on
+    // whatever module state is current rather than being rebuilt per row.
+    // What is left of this bar is the count and the List/Calendar switch,
+    // now on the RIGHT (was leading on the left) so it reads as sitting "on
+    // top of the view" it switches, per the owner's marked-up screenshot.
     return '<div class="il-mom-browsebar">' +
+        '<span class="il-mom-count">' + (on ? (shown + ' of ' + total + ' meetings') : (total + ' meeting' + (total === 1 ? '' : 's'))) + '</span>' +
+        '<div style="flex:1;"></div>' +
         '<div class="il-viewtoggle" id="il-mom-viewtoggle">' +
           '<button type="button" class="il-vt-btn' + (_momView === 'list' ? ' on' : '') + '" data-mv="list" title="List view">' +
             '<span data-ico="listView" data-ico-size="16"></span></button>' +
           '<button type="button" class="il-vt-btn' + (_momView === 'calendar' ? ' on' : '') + '" data-mv="calendar" title="Calendar view">' +
             '<span data-ico="calendar" data-ico-size="16"></span></button>' +
         '</div>' +
-        // Item 1 (2026-09-03): icon only — the toggle already says what it does
-        // via its title/aria-label, and "Filters" repeated the icon in words.
-        '<button class="pd-btn pd-btn-sm il-filt-toggle' + (_momFiltOpen ? ' open' : '') +
-          (on ? ' has-active' : '') + '" id="il-mom-filttoggle" title="Search and filter meetings" aria-label="Search and filter meetings">' +
-          '<span data-ico="filter" data-ico-size="15"></span></button>' +
-        '<span class="il-mom-count">' + (on ? (shown + ' of ' + total + ' meetings') : (total + ' meeting' + (total === 1 ? '' : 's'))) + '</span>' +
-        '<div style="flex:1;"></div>' +
-        // Item 2 (2026-09-03): a `<select>` showing "Export list as…" is a
-        // text-labelled dropdown button; this is the same choice behind a
-        // plain icon (see iconMenuHTML above).
-        iconMenuHTML('il-mom-listexport', 'download', 'Export the meeting list', [
-          { value: 'html', label: 'HTML' }, { value: 'pdf', label: 'PDF' }, { value: 'xlsx', label: 'Excel' },
-        ]) +
-        (canAdd ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-new">+ Add meeting</button>' : '') +
       '</div>' +
       (!_momFiltOpen ? '' :
         '<div class="il-mom-filters">' +
@@ -1928,22 +1956,53 @@ window.MinutesOfMeeting = (function () {
       '<div class="il-mom-wk-gutter il-mom-wk-hourgutter">' + hourLabels + '</div>' + dayGridCols + '</div>';
 
     return '<div class="il-mom-cal">' +
-      '<div class="il-mom-calnav">' +
-        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wkprev" title="Previous week">‹</button>' +
-        '<span class="il-mom-calmonth">' + Fmt.esc(momWeekLabel()) + '</span>' +
-        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wknext" title="Next week">›</button>' +
-        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-wktoday">Today</button>' +
-      '</div>' +
       '<div class="il-mom-wk">' + head + allDayRow + '<div class="il-mom-wk-scroll">' + body + '</div></div>' +
     '</div>';
   }
 
+  // ⚠️ ROUND 2 — ONE header bar for both Month and Week, replacing the two
+  // separate nav rows each mode used to build for itself (with their own
+  // prev/next/today ids). Left to right, per the owner's marked-up layout:
+  // Today (left) · ‹ label › (middle) · Month/Week switcher (right, in the
+  // SAME button format as Today — both plain `.pd-btn`-family controls, not
+  // two different visual languages for two controls that sit side by side).
+  // `#il-mom-calprev`/`-calnext`/`-caltoday` now serve BOTH modes — the click
+  // handlers in wireBrowse() dispatch on `_momCalMode` — so there is only one
+  // set of nav ids to wire, not a month copy and a week copy.
+  function momCalHeaderHTML() {
+    var isWeek = _momCalMode === 'week';
+    // ⚠️ Must run BEFORE reading _momCalMonth/momWeekLabel() — this header is
+    // built before renderMomMonthHTML()/renderMomWeekHTML(), which used to be
+    // the only callers of these init functions. Without this, the very first
+    // paint (before either has ever run) reads a null _momCalMonth and throws.
+    if (isWeek) momWeekInit(); else momCalInit();
+    var label = isWeek ? momWeekLabel() : momMonthLabel(_momCalMonth);
+    // ⚠️ ROUND 2, CALENDAR ITEMS 1-3 — three equal-width zones so the middle
+    // one (prev/label/next) sits genuinely centred regardless of how wide
+    // Today or the switcher render: Today (left) · ‹ label › (middle) ·
+    // Month/Week switcher (right). Today is styled as the same kind of pill
+    // button as the switcher's own segments (`.il-mom-todaybtn`, matching
+    // `.il-viewtoggle button`'s look) rather than a generic toolbar button,
+    // per "use the same label/button format for both."
+    return '<div class="il-mom-calnav">' +
+      '<div class="il-mom-calnav-l">' +
+        '<button type="button" class="il-mom-todaybtn" id="il-mom-caltoday">Today</button>' +
+      '</div>' +
+      '<div class="il-mom-calnavmid">' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-calprev" title="Previous ' + (isWeek ? 'week' : 'month') + '">‹</button>' +
+        '<span class="il-mom-calmonth">' + Fmt.esc(label) + '</span>' +
+        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-calnext" title="Next ' + (isWeek ? 'week' : 'month') + '">›</button>' +
+      '</div>' +
+      '<div class="il-mom-calnav-r">' +
+        '<div class="il-viewtoggle">' +
+          '<button type="button" data-cm="month" class="' + (!isWeek ? 'on' : '') + '">Month</button>' +
+          '<button type="button" data-cm="week" class="' + (isWeek ? 'on' : '') + '">Week</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
   function renderMomCalendarHTML(list) {
-    return '<div class="il-mom-calmode"><div class="il-viewtoggle">' +
-        '<button type="button" data-cm="month" class="' + (_momCalMode === 'month' ? 'on' : '') + '">Month</button>' +
-        '<button type="button" data-cm="week" class="' + (_momCalMode === 'week' ? 'on' : '') + '">Week</button>' +
-      '</div></div>' +
-      (_momCalMode === 'week' ? renderMomWeekHTML(list) : renderMomMonthHTML(list));
+    return momCalHeaderHTML() + (_momCalMode === 'week' ? renderMomWeekHTML(list) : renderMomMonthHTML(list));
   }
   function renderMomMonthHTML(list) {
     momCalInit();
@@ -1993,12 +2052,6 @@ window.MinutesOfMeeting = (function () {
       '</div>';
     }
     return '<div class="il-mom-cal">' +
-      '<div class="il-mom-calnav">' +
-        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-calprev" title="Previous month">‹</button>' +
-        '<span class="il-mom-calmonth">' + Fmt.esc(momMonthLabel(_momCalMonth)) + '</span>' +
-        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-calnext" title="Next month">›</button>' +
-        '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-caltoday">Today</button>' +
-      '</div>' +
       '<div class="il-mom-calgrid il-mom-calhead">' +
         ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(function (d) { return '<div>' + d + '</div>'; }).join('') +
       '</div>' +
@@ -2019,9 +2072,8 @@ window.MinutesOfMeeting = (function () {
       var again = $('il-mom-q');
       if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (e) {} }
     };
-    // ---- item 10: the filter group behind one toggle ----------------------
-    var ft = host.querySelector('#il-mom-filttoggle');
-    if (ft) ft.onclick = function () { _momFiltOpen = !_momFiltOpen; renderBrowse(); };
+    // ---- item 10: the filter group's own fields (the toggle button itself
+    // is now the shared topbar control — see syncTopbarTools()) ------------
     [['il-momb-kind', 'kind'], ['il-momb-state', 'state'], ['il-momb-group', 'group']].forEach(function (p) {
       var el = host.querySelector('#' + p[0]);
       if (el) el.onchange = function () { _momBrowseF[p[1]] = el.value; renderBrowse(); };
@@ -2034,13 +2086,6 @@ window.MinutesOfMeeting = (function () {
       renderBrowse();
     };
 
-    var nb = host.querySelector('#il-mom-new');
-    if (nb) nb.onclick = openAddMeetingModal;
-    wireIconMenu(host, 'il-mom-listexport', async function (v) {
-      if (v === 'html') momExportListHTML();
-      else if (v === 'pdf') await momExportListPDF();
-      else if (v === 'xlsx') momExportListXLSX();
-    });
     host.querySelectorAll('.il-mom-th[data-sort]').forEach(function (th) {
       th.onclick = function () {
         var col = th.dataset.sort;
@@ -2080,19 +2125,25 @@ window.MinutesOfMeeting = (function () {
         momOpenSeries(b.dataset.plansched);
       };
     });
+    // ⚠️ ROUND 2 — ONE prev/next/today, shared by Month and Week (see
+    // momCalHeaderHTML); each dispatches on whichever mode is current
+    // instead of the two modes each wiring their own copy under different ids.
     var prev = host.querySelector('#il-mom-calprev');
-    if (prev) prev.onclick = function () { momCalShift(-1); renderBrowse(); };
+    if (prev) prev.onclick = function () {
+      if (_momCalMode === 'week') momWeekShift(-1); else momCalShift(-1);
+      renderBrowse();
+    };
     var next = host.querySelector('#il-mom-calnext');
-    if (next) next.onclick = function () { momCalShift(1); renderBrowse(); };
+    if (next) next.onclick = function () {
+      if (_momCalMode === 'week') momWeekShift(1); else momCalShift(1);
+      renderBrowse();
+    };
     var today = host.querySelector('#il-mom-caltoday');
-    if (today) today.onclick = function () { _momCalMonth = null; momCalInit(); renderBrowse(); };
-
-    var wprev = host.querySelector('#il-mom-wkprev');
-    if (wprev) wprev.onclick = function () { momWeekShift(-1); renderBrowse(); };
-    var wnext = host.querySelector('#il-mom-wknext');
-    if (wnext) wnext.onclick = function () { momWeekShift(1); renderBrowse(); };
-    var wtoday = host.querySelector('#il-mom-wktoday');
-    if (wtoday) wtoday.onclick = function () { _momWeekStart = null; momWeekInit(); renderBrowse(); };
+    if (today) today.onclick = function () {
+      if (_momCalMode === 'week') { _momWeekStart = null; momWeekInit(); }
+      else { _momCalMonth = null; momCalInit(); }
+      renderBrowse();
+    };
     host.querySelectorAll('.il-mom-wk-event[data-mom]').forEach(function (b) {
       b.onclick = function () { momOpenMeeting(b.dataset.mom); };
     });
@@ -2313,8 +2364,8 @@ window.MinutesOfMeeting = (function () {
     var dateV = dateEl ? dateEl.value : '';
     if (!dateV) { UI.toast('Pick a date for this meeting.', 'warn'); return; }
     var reqRoot = host.querySelector('[data-people="occ-req"]'), optRoot = host.querySelector('[data-people="occ-opt"]');
-    var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? ((reqRoot.querySelector('.il-pp-free') || {}).value || '') : '';
-    var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? ((optRoot.querySelector('.il-pp-free') || {}).value || '') : '';
+    var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? textOf(reqRoot) : '';
+    var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? textOf(optRoot) : '';
     var last = schedMeetingsOf(schedId)[0];
     try {
       var ins = await sb().from('meeting_minutes').insert({
@@ -2360,7 +2411,7 @@ window.MinutesOfMeeting = (function () {
     _momTab = 'meetings';
     if (_momView !== 'detail') _momBrowsePrev = _momView;
     _momSel = id; _momView = 'detail';
-    _momF = { q: '', cat: '', type: '', status: '', sort: '' };
+    _momF = { q: '', cat: '', type: '', status: '' };
     render();
     if (histView) histView.push();
   }
@@ -2418,22 +2469,47 @@ window.MinutesOfMeeting = (function () {
       '" aria-label="' + (on ? 'Remove from favorites' : 'Add to favorites') + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
       (on ? '★' : '☆') + '</button>';
   }
+  // ⚠️ A "ghost" label — same block the real labels above it occupy, but
+  // empty and `aria-hidden` — reserves the identical vertical space so a
+  // field with no label text (the star, the recurring checkbox) still starts
+  // its control on the SAME Y as every input beside it in the row. Combined
+  // with `.il-am-form .pd-field > label`'s fixed min-height (module.css),
+  // this is what makes "align to the meeting title input" and "same Y/height
+  // throughout" true by construction rather than by eyeballing pixel offsets.
+  function amGhostLabel() { return '<label aria-hidden="true">&nbsp;</label>'; }
   function openAddMeetingModal() {
     var m = UI.modal(
       '<div class="pd-modal-header"><h3 style="margin:0;">+ Add meeting</h3>' +
         '<button class="pd-modal-close" id="il-am-x">&times;</button></div>' +
-      '<div class="pd-modal-body">' +
+      '<div class="pd-modal-body il-am-form">' +
+        '<h4 class="il-mom-sechead">Details</h4>' +
         '<div class="il-form-row il-am-titlerow">' +
           '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting title *</label>' +
             '<input class="pd-input" id="il-am-title" placeholder="e.g. Weekly PSC Meeting"></div>' +
-          '<div class="pd-field il-am-favfield" style="flex:0 0 auto;"><label>Favorite</label>' + amFavBtnHTML(false) + '</div>' +
-          '<div class="pd-field" style="flex:1 1 170px;"><label style="display:flex;align-items:center;gap:6px;font-weight:400;">' +
-            '<input type="checkbox" id="il-am-recur" style="width:auto;"> Recurring meeting</label></div>' +
+          // ITEM 1 (round 2): a plain star, no rectangular button chrome, no
+          // "Favorite" text anywhere — the star icon alone is the control.
+          '<div class="pd-field il-am-favfield" style="flex:0 0 auto;">' + amGhostLabel() + amFavBtnHTML(false) + '</div>' +
+          // ITEM 4 (round 2): shortened to "Recurring" (was "Recurring meeting").
+          '<div class="pd-field" style="flex:0 0 auto;">' + amGhostLabel() +
+            '<label class="il-am-checklabel"><input type="checkbox" id="il-am-recur" style="width:auto;"> Recurring</label></div>' +
         '</div>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 130px;"><label>Meeting type</label>' +
+            '<select class="pd-select" id="il-am-group">' +
+              '<option value="Internal">Internal</option><option value="External">External</option>' +
+            '</select></div>' +
+          '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting description</label>' +
+            '<input class="pd-input" id="il-am-desc" list="il-am-desclist" placeholder="e.g. PPR Meeting, PSC Meeting">' +
+            '<datalist id="il-am-desclist">' + momTypeDatalistOptions() + '</datalist></div>' +
+        '</div>' +
+
+        '<h4 class="il-mom-sechead">Schedule</h4>' +
         // ITEM 6: the plain Date field and the recurring series' Start/End dates
         // occupy the SAME row and are mutually exclusive — recur.onchange below
         // toggles which pair is hidden, so a recurring meeting's date field is
         // genuinely replaced rather than merely duplicated further down the form.
+        // ITEM 3: Start/End time stay in this SAME row so they are always
+        // beside each other, whichever date fields are showing.
         '<div class="il-form-row">' +
           '<div class="pd-field" id="il-am-datewrap" style="flex:1 1 150px;"><label>Date *</label>' +
             '<input class="pd-input" type="date" id="il-am-date" value="' + dateVal(momToday()) + '"></div>' +
@@ -2444,15 +2520,10 @@ window.MinutesOfMeeting = (function () {
           '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label><input class="pd-input" type="time" id="il-am-start"></div>' +
           '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label><input class="pd-input" type="time" id="il-am-end"></div>' +
         '</div>' +
-        '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 200px;"><label>Venue *</label><input class="pd-input" id="il-am-venue"></div>' +
-          '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-am-link" placeholder="https://…"></div>' +
-          '<div class="pd-field" style="flex:1 1 200px;"><label>Recording</label><input class="pd-input" id="il-am-rec" placeholder="https://… (optional)"></div>' +
-        '</div>' +
-        '<div class="pd-field"><label>Required attendees *</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
-        '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('am-opt', [], '', false) + '</div>' +
-        '<div class="pd-field"><label>Agenda *</label><div id="il-am-agenda">' + agendaRowsHTML([]) + '</div>' +
-          '<button type="button" class="pd-btn pd-btn-sm" id="il-am-agenda-add" style="margin-top:6px;">+ Add agenda item</button></div>' +
+        // ITEM 5: Frequency/weekday/"every N weeks" sit directly BELOW the
+        // date row now — was after Attendees/Agenda, at the very bottom of
+        // the whole form, which read as an afterthought to the very thing it
+        // reshapes.
         '<div id="il-am-recurwrap" hidden>' +
           '<div class="il-form-row">' +
             '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-am-freq">' +
@@ -2461,6 +2532,20 @@ window.MinutesOfMeeting = (function () {
           '</div>' +
           '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key }) + '</div>' +
         '</div>' +
+
+        '<h4 class="il-mom-sechead">Venue</h4>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Venue *</label><input class="pd-input" id="il-am-venue"></div>' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-am-link" placeholder="https://…"></div>' +
+        '</div>' +
+
+        '<h4 class="il-mom-sechead">Attendees</h4>' +
+        '<div class="pd-field"><label>Required attendees *</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
+        '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('am-opt', [], '', false) + '</div>' +
+
+        '<h4 class="il-mom-sechead">Agenda</h4>' +
+        '<div class="pd-field"><div id="il-am-agenda">' + agendaRowsHTML([]) + '</div>' +
+          '<button type="button" class="pd-btn pd-btn-sm" id="il-am-agenda-add" style="margin-top:6px;">+ Add agenda item</button></div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" id="il-am-cancel">Cancel</button>' +
@@ -2516,7 +2601,7 @@ window.MinutesOfMeeting = (function () {
     if (!g('il-am-venue').trim()) return 'Venue is required.';
     var reqRoot = root.querySelector('[data-people="am-req"]');
     var reqIds = reqRoot ? idsOf(reqRoot) : [];
-    var reqText = reqRoot ? ((reqRoot.querySelector('.il-pp-free') || {}).value || '').trim() : '';
+    var reqText = reqRoot ? textOf(reqRoot).trim() : '';
     if (!reqIds.length && !reqText) return 'At least one required attendee is needed.';
     if (!agendaValuesOf(root).length) return 'At least one agenda item is required.';
     if (!isRecur) {
@@ -2545,27 +2630,35 @@ window.MinutesOfMeeting = (function () {
     var vErr = validateAddMeeting(root, g, isRecur);
     if (vErr) { UI.toast(vErr, 'warn'); return; }
     var reqRoot = root.querySelector('[data-people="am-req"]'), optRoot = root.querySelector('[data-people="am-opt"]');
-    var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? ((reqRoot.querySelector('.il-pp-free') || {}).value || '') : '';
-    var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? ((optRoot.querySelector('.il-pp-free') || {}).value || '') : '';
+    var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? textOf(reqRoot) : '';
+    var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? textOf(optRoot) : '';
     var agenda = agendaValuesOf(root);
     // ITEM 3: the favourite state lives on the star button's `data-on`
     // attribute now, not a checkbox's `.checked`.
     var favBtn2 = root.querySelector('#il-am-fav');
     var isFav = !!(favBtn2 && favBtn2.dataset.on === '1');
     var venue = g('il-am-venue').trim(), link = g('il-am-link').trim();
-    // ITEM 5: the recording link. ⚠️ `mom_schedules` has no `recording_url`
-    // column of its own (only `meeting_minutes` does — see the 2026-09-01
-    // migration) so this only ever reaches the plain one-time-meeting insert;
-    // a recurring series' own occurrences each get their own Recording field
-    // once created, from the full Detail editor.
-    var rec = g('il-am-rec').trim();
+    // ⚠️ Meeting type (Group) + description now come from the Add modal's own
+    // Details section instead of always defaulting to Internal with no
+    // description — the same two columns (`meeting_group`/`meeting_type`) the
+    // Detail editor's "Group"/"Meeting description" fields already write.
+    var group = g('il-am-group') || 'Internal', desc = g('il-am-desc').trim();
+    // ⚠️ Recording is deliberately NOT collected here (round 2, owner: "not
+    // needed during initial add") — a meeting that hasn't happened yet has
+    // nothing to record; the Detail editor's own Recording field is where it
+    // belongs once the meeting exists, whether one-time or a series occurrence.
     var startT = g('il-am-start'), endT = g('il-am-end');
     if (saveBtn) saveBtn.disabled = true;
     try {
       if (isRecur) {
         var freq = g('il-am-freq') || 'monthly_date';
+        // ⚠️ `mom_schedules` has no `meeting_type` column (only
+        // `meeting_group` — see migrations/2026-09-01-…sql) — a series has no
+        // single "description" the way one meeting does, so the Details
+        // section's description field is silently not carried onto it. Each
+        // occurrence gets its own description from the full Detail editor.
         var payload = {
-          project_id: pid, title: title, meeting_group: 'Internal', frequency: freq,
+          project_id: pid, title: title, meeting_group: group, frequency: freq,
           start_date: g('il-am-sstart') || date, end_date: g('il-am-send') || null,
           is_favorite: isFav, venue: venue || null, meeting_link: link || null,
           start_time: startT || null, end_time: endT || null,
@@ -2596,9 +2689,11 @@ window.MinutesOfMeeting = (function () {
         _momErr = ''; renderBrowse();
       } else {
         var mpayload = {
-          project_id: pid, title: title, meeting_date: date, meeting_group: 'Internal',
+          project_id: pid, title: title, meeting_date: date, meeting_group: group,
+          meeting_type: desc || null,
           is_favorite: isFav, venue: venue || null, meeting_link: link || null,
-          recording_url: rec || null,
+          // ⚠️ No Recording field here (round 2, owner: not needed on add) —
+          // it stays null until the Detail editor's own field sets it.
           start_time: startT || null, end_time: endT || null,
           attendees_required: { ids: reqIds, text: reqText },
           attendees_optional: { ids: optIds, text: optText },
@@ -2703,9 +2798,25 @@ window.MinutesOfMeeting = (function () {
     // hidden row gets mistaken for a deleted one.
     var vis = momVisibleItems(mom.id);
     var others = MOMS.filter(function (x) { return x.id !== mom.id && momCarryable(x).length; });
+    // ⚠️ ITEM 5 (round 2): "if the meeting is recurring, the meeting title
+    // and favorite button should be fixed/sticky." `schedule_id` is what
+    // makes a meeting an occurrence of a recurring SERIES (as opposed to the
+    // series' own page, a different view entirely) — that is the only
+    // "recurring" this row can mean, since a plain meeting has no schedule to
+    // be an occurrence of.
+    var isRecurOcc = !!mom.schedule_id;
     return '<div class="il-mom-detail-card">' +
       (ro ? '' : '<input type="file" id="il-mom-fileinput" hidden ' +
         'accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx">') +
+      (isRecurOcc
+        ? '<div class="il-mom-stickyhead">' +
+            '<span class="il-mom-stickytitle">' + Fmt.esc(mom.title || '(untitled)') + '</span>' +
+            '<button class="il-mom-favbtn il-mom-favbig' + (mom.is_favorite ? ' on' : '') + '" id="il-mom-favtoggle-sticky" ' +
+              'title="' + (mom.is_favorite ? 'Remove from favorites' : 'Add to favorites') +
+              '" aria-label="' + (mom.is_favorite ? 'Remove from favorites' : 'Add to favorites') + '">' +
+              (mom.is_favorite ? '★' : '☆') + '</button>' +
+          '</div>'
+        : '') +
       '<div class="il-mom-toolbar">' +
         '<span class="il-mom-state' + (locked ? ' on' : '') + '">' +
           // ⚠️ READING a draft has always been project-wide (meeting_minutes_read has
@@ -2714,12 +2825,14 @@ window.MinutesOfMeeting = (function () {
           // meeting's attendees while it's a draft.
           (locked ? 'Distributed' : 'Draft — editable by you, a planner, or this meeting\'s attendees') + '</span>' +
         '<div style="flex:1;"></div>' +
-        // Item 3/4: any meeting — not just a series — can be favorited; pinned
-        // to the top of the list either way (momSortedRows). A view control,
-        // offered to whoever can already see the minute, not gated on mayEdit.
-        '<button class="pd-btn pd-btn-sm il-mom-favbtn' + (mom.is_favorite ? ' on' : '') + '" id="il-mom-favtoggle" ' +
-          'title="' + (mom.is_favorite ? 'Remove from favorites' : 'Add to favorites') + '">' +
-          (mom.is_favorite ? '★ Favorited' : '☆ Favorite') + '</button>' +
+        // ITEM 5 (round 2): the favorite label ("★ Favorited"/"☆ Favorite")
+        // is gone — a plain, larger star icon, no text, matching the icon-only
+        // controls beside it. Any meeting — not just a series — can be
+        // favorited; pinned to the top of the list either way (momSortedRows).
+        '<button class="il-mom-favbtn il-mom-favbig' + (mom.is_favorite ? ' on' : '') + '" id="il-mom-favtoggle" ' +
+          'title="' + (mom.is_favorite ? 'Remove from favorites' : 'Add to favorites') +
+          '" aria-label="' + (mom.is_favorite ? 'Remove from favorites' : 'Add to favorites') + '">' +
+          (mom.is_favorite ? '★' : '☆') + '</button>' +
         // Export is a READ, so it is offered to everyone who can see the minute —
         // unlike every other control on this card, which is gated on canEditMinute().
         // A VIEW control, so — like PDF — it is offered to everyone who can see the
@@ -2757,42 +2870,19 @@ window.MinutesOfMeeting = (function () {
       // controls are live either way, per "navigate and step through slides
       // while also editing") — reporting only decides which slide is on screen.
       '<div id="il-mom-slide-details">' +
-      // ⚠️ INDIVIDUAL VIEW ITEM 2 (2026-09-03) — three named sections: Meeting
-      // details, Agenda, Minutes. Agenda and Minutes already carried their own
-      // <h4> (momAgendaSectionHTML / the "Minutes" block below); this heading
-      // completes the set so the card reads as three deliberate parts rather
-      // than one long form that happens to end in a list.
-      '<h4 class="il-mom-sechead">Meeting details</h4>' +
+      // ⚠️ INDIVIDUAL VIEW ITEM 2 (round 2) — six named sections, mirroring the
+      // Add-meeting modal's own layout so the two forms read as one system:
+      // Details / Schedule / Venue / Attendees / Agenda / Minutes. The single
+      // "Meeting details" block this replaced held all of Title through
+      // Recording under one heading; it is now four.
+      '<h4 class="il-mom-sechead">Details</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
-        '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
-        '<div class="pd-field" style="flex:1 1 140px;"><label>Location</label><input class="pd-input" id="il-mom-loc" value="' + Fmt.esc(mom.location || '') + '"' + d + '></div>' +
-      '</div>' +
-      // ⚠️ ITEM 3/5 — planned start/end alongside the ACTUAL start/end.
-      // Both are always shown, never conditionally revealed once "the meeting
-      // is done" — a meeting recorded ahead of time can still have its actual
-      // times filled in the moment it wraps, and hiding the fields until some
-      // date-based guess of "done" would just make them harder to find on the
-      // day they are most useful.
-      '<div class="il-form-row">' +
-        '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
-          '<input class="pd-input" type="time" id="il-mom-stime" value="' + Fmt.esc(mom.start_time || '') + '"' + d + '></div>' +
-        '<div class="pd-field" style="flex:1 1 110px;"><label>End time</label>' +
-          '<input class="pd-input" type="time" id="il-mom-etime" value="' + Fmt.esc(mom.end_time || '') + '"' + d + '></div>' +
-        '<div class="pd-field" style="flex:1 1 110px;"><label>Actual start</label>' +
-          '<input class="pd-input" type="time" id="il-mom-astime" value="' + Fmt.esc(mom.actual_start_time || '') + '"' + d + '></div>' +
-        '<div class="pd-field" style="flex:1 1 110px;"><label>Actual finish</label>' +
-          '<input class="pd-input" type="time" id="il-mom-aetime" value="' + Fmt.esc(mom.actual_end_time || '') + '"' + d + '></div>' +
-      '</div>' +
-      // ⚠️ ITEM #21 — the "Meeting type" DROPDOWN is now grouped Internal /
-      // External ONLY (writes `meeting_group`). Which specific standing
-      // meeting this is (PPR / PSC / Client…) is free TEXT now — "Meeting
-      // description" — with the old vocabulary offered as suggestions via a
-      // <datalist> rather than enforced as a closed list, per the owner's
-      // explicit instruction that this belongs in the description, not the
-      // dropdown. `meeting_type` is the same column as before; only what it
-      // means to the form changed.
-      '<div class="il-form-row">' +
+        // ⚠️ ITEM #21 — the "Meeting type" DROPDOWN is grouped Internal /
+        // External ONLY (writes `meeting_group`). Which specific standing
+        // meeting this is (PPR / PSC / Client…) is free TEXT now — "Meeting
+        // description" — with the old vocabulary offered as suggestions via a
+        // <datalist> rather than enforced as a closed list.
         '<div class="pd-field" style="flex:1 1 130px;"><label>Group</label>' +
           '<select class="pd-select" id="il-mom-group"' + d + '>' +
             '<option value="Internal"' + ((mom.meeting_group || 'Internal') === 'Internal' ? ' selected' : '') + '>Internal</option>' +
@@ -2802,15 +2892,41 @@ window.MinutesOfMeeting = (function () {
           '<input class="pd-input" id="il-mom-type" list="il-mom-typelist" value="' + Fmt.esc(mom.meeting_type || '') +
           '" placeholder="e.g. PPR Meeting, PSC Meeting"' + d + '>' +
           '<datalist id="il-mom-typelist">' + momTypeDatalistOptions() + '</datalist></div>' +
+      '</div>' +
+
+      '<h4 class="il-mom-sechead">Schedule</h4>' +
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
+          '<input class="pd-input" type="time" id="il-mom-stime" value="' + Fmt.esc(mom.start_time || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>End time</label>' +
+          '<input class="pd-input" type="time" id="il-mom-etime" value="' + Fmt.esc(mom.end_time || '') + '"' + d + '></div>' +
+      '</div>' +
+      // ⚠️ ITEM 3/5 — planned start/end alongside the ACTUAL start/end.
+      // Both are always shown, never conditionally revealed once "the meeting
+      // is done" — a meeting recorded ahead of time can still have its actual
+      // times filled in the moment it wraps, and hiding the fields until some
+      // date-based guess of "done" would just make them harder to find on the
+      // day they are most useful.
+      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Actual start</label>' +
+          '<input class="pd-input" type="time" id="il-mom-astime" value="' + Fmt.esc(mom.actual_start_time || '') + '"' + d + '></div>' +
+        '<div class="pd-field" style="flex:1 1 110px;"><label>Actual finish</label>' +
+          '<input class="pd-input" type="time" id="il-mom-aetime" value="' + Fmt.esc(mom.actual_end_time || '') + '"' + d + '></div>' +
+      '</div>' +
+
+      '<h4 class="il-mom-sechead">Venue</h4>' +
+      '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:1 1 160px;"><label>Venue</label>' +
           '<input class="pd-input" id="il-mom-venue" value="' + Fmt.esc(mom.venue || '') + '"' + d + '></div>' +
-      '</div>' +
-      '<div class="il-form-row">' +
+        '<div class="pd-field" style="flex:1 1 140px;"><label>Location</label><input class="pd-input" id="il-mom-loc" value="' + Fmt.esc(mom.location || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label>' +
           '<input class="pd-input" id="il-mom-link" value="' + Fmt.esc(mom.meeting_link || '') + '" placeholder="https://…"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 200px;"><label>Recording</label>' +
           '<input class="pd-input" id="il-mom-rec" value="' + Fmt.esc(mom.recording_url || '') + '" placeholder="https://… (optional)"' + d + '></div>' +
       '</div>' +
+
+      '<h4 class="il-mom-sechead">Attendees</h4>' +
       // ⚠️ ITEM #20 — three attendee tiers, each the same hybrid ids+text
       // People Picker used for Champion/Responsible elsewhere in this app.
       // The legacy free-text `attendees` column is read verbatim below when
@@ -2942,6 +3058,10 @@ window.MinutesOfMeeting = (function () {
   // as data loss — the reason they were gated in the first place. Sorting
   // never hides anything, so it is offered as soon as there is more than one
   // minute to put in an order (see the `> 1` gate at the call site).
+  // ⚠️ ROUND 2, INDIVIDUAL VIEW ITEM 3 — the "Sort by" `<select>` is gone.
+  // Ordering the minutes is manual now (drag-to-reorder on the cards below —
+  // see wireMinuteDrag()), never an automatic re-sort by status/department/
+  // owner/date, so there is nothing left here to pick a sort from.
   function momFilterBarHTML(items) {
     var on = momFilterOn(), full = items.length > 4;
     return '<div class="il-mom-filters">' +
@@ -2956,18 +3076,12 @@ window.MinutesOfMeeting = (function () {
         '<select class="pd-select pd-input-sm" id="il-momf-status">' +
           momOptions(momStatusFilterOpts(), [], _momF.status, 'All statuses') + '</select>'
         : '') +
-      '<select class="pd-select pd-input-sm" id="il-momf-sort" title="Sort the minutes below">' +
-        '<option value=""' + (!_momF.sort ? ' selected' : '') + '>Order recorded</option>' +
-        '<option value="status"' + (_momF.sort === 'status' ? ' selected' : '') + '>Sort by status</option>' +
-        '<option value="dept"' + (_momF.sort === 'dept' ? ' selected' : '') + '>Sort by department</option>' +
-        '<option value="owner"' + (_momF.sort === 'owner' ? ' selected' : '') + '>Sort by responsible</option>' +
-        '<option value="due"' + (_momF.sort === 'due' ? ' selected' : '') + '>Sort by target date</option>' +
-      '</select>' +
       (on ? '<button class="il-clear" id="il-momf-clear" title="Clear all filters">' +
             '<span data-ico="x" data-ico-size="14"></span>Clear</button>' : '') +
       '<span class="il-mom-count">' +
         (on ? 'Showing ' + momVisibleItems(_momSel).length + ' of ' + items.length
-            : items.length + ' minute' + (items.length === 1 ? '' : 's')) + '</span>' +
+            : items.length + ' minute' + (items.length === 1 ? '' : 's')) +
+        (!on && !full ? ' · drag to reorder' : '') + '</span>' +
     '</div>';
   }
 
@@ -3372,7 +3486,16 @@ window.MinutesOfMeeting = (function () {
     // ⚠️ Rows written before the 2026-08-21 migration hold their action text in
     // `description`, the same fallback the PDF applies.
     var actText = it.action_item || it.description || '';
-    return '<div class="il-mi-card" data-item="' + Fmt.esc(it.id) + '">' +
+    // ⚠️ ROUND 2, ITEM 3 — manual drag-to-reorder replaces the removed
+    // "sort by" control. Only offered while the card is actually editable
+    // (not locked/read-only), while a filter or search isn't narrowing/
+    // re-ordering what's on screen (dragging a filtered SUBSET would leave
+    // the seq math ambiguous for whatever is hidden), and never in the
+    // reporting/slide view, which is for reading, not rearranging.
+    var canDrag = !ro && !momFilterOn() && !_momReport;
+    return '<div class="il-mi-card"' + (canDrag ? ' draggable="true"' : '') +
+      ' data-item="' + Fmt.esc(it.id) + '">' +
+      (canDrag ? '<span class="il-mi-draghandle" title="Drag to reorder" aria-hidden="true">⠿</span>' : '') +
       // ---- the six-cell meta grid, in mom-app's own order --------------------
       '<div class="il-mi-meta">' +
       momFieldHTML('No.', 'il-c-no',
@@ -3468,24 +3591,32 @@ window.MinutesOfMeeting = (function () {
       // ITEM 6 — the hold/close reveal panel, full width (see momItemWFPanelHTML).
       momItemWFPanelHTML(it, ro) +
       // ---- the footer: the two things the PDF has no equivalent for ----------
+      // ⚠️ ROUND 2 — the section labels sitting above these three controls
+      // ("File" / "From the register" / "Lesson") are gone. Each control
+      // already names itself (the attach button, the "Linked" pill, "+
+      // Capture lesson") and a heading repeating that read as clutter over a
+      // control most rows never populate.
       '<div class="il-mi-foot">' +
-      '<div class="il-mi-f il-c-file"><label>File</label>' + momAttachCellHTML(it, ro) + '</div>' +
+      '<div class="il-mi-f il-c-file">' + momAttachCellHTML(it, ro) + '</div>' +
       // ⚠️ NO "Raise" here any more — a freeform action item is just a freeform
       // action item now. The only way a row carries `issue_id` is that it was
       // brought in with Get from issue (or, on an older minute, was raised before
       // this change). Either way the pill reads the REGISTER's live status (from
       // `ISSUES`, this module's own light read) so the two can never disagree.
-      '<div class="il-mi-f il-c-reg"><label>From the register</label>' + (it.issue_id
-        ? (iss
+      // ⚠️ Also gone: the "—" placeholder this cell used to show for every
+      // unlinked minute (the common case) — a dash under a removed label had
+      // nothing left to explain itself, so an unlinked minute now renders
+      // this cell empty rather than noise.
+      (it.issue_id ? '<div class="il-mi-f il-c-reg">' + (iss
             ? '<span class="il-pill ' + statusClass(iss.status) + '" title="' + Fmt.esc(iss.description || '') + '">Linked · ' + Fmt.esc(iss.status || 'Open') + '</span>'
-            : '<span style="font-size:12px;color:var(--pd-muted);" title="Linked to an issue in Issues & Concerns">Linked</span>')
-        : '<span class="il-noedit" title="Not brought in from an issue">—</span>') + '</div>' +
+            : '<span style="font-size:12px;color:var(--pd-muted);" title="Linked to an issue in Issues & Concerns">Linked</span>') + '</div>'
+        : '') +
       // ⚠️ Capturing a lesson is NOT an edit of the minute — it writes a row in the
       // library — so it is offered to anyone who may add records, on a distributed minute
       // or a draft alike, and it stays available when the minute is locked. Same reasoning
       // as the register cell above, without the distribution gate: a lesson carries no
       // provenance a reader must be able to open.
-      '<div class="il-mi-f il-c-lesson"><label>Lesson</label>' + (function () {
+      '<div class="il-mi-f il-c-lesson">' + (function () {
         var ls = lessonsOfMomItem(it.id);
         if (ls.length) {
           return '<button class="pd-btn pd-btn-sm il-mi-lesson-open" data-lesson="' + Fmt.esc(ls[0].id) + '" ' +
@@ -3959,8 +4090,8 @@ window.MinutesOfMeeting = (function () {
       renderDetail();
       // Item 10 — "once distribute is hit, prompt user to email to attendees
       // confirmation." A prompt, not an automatic send: there is no mail
-      // backend here (see momEmailMinutes), so the honest act is to offer the
-      // person's own mail client pre-filled and let them press send.
+      // backend here (see openEmailModal), so the honest act is to offer the
+      // Email modal and let the person fill it in and press send themselves.
       if (on) momPromptEmailAttendees(momId);
     } catch (e) {
       UI.toast(/column|schema cache/i.test(e.message || '')
@@ -4024,7 +4155,7 @@ window.MinutesOfMeeting = (function () {
   function momAttendeesOf(key) {
     var root = document.querySelector('[data-people="' + key + '"]');
     if (!root) return undefined;   // the field wasn't rendered at all (e.g. read-only)
-    var ids = idsOf(root), text = (root.querySelector('.il-pp-free') || {}).value || '';
+    var ids = idsOf(root), text = textOf(root);
     return (ids.length || text.trim()) ? { ids: ids, text: text.trim() } : null;
   }
 
@@ -4419,60 +4550,156 @@ window.MinutesOfMeeting = (function () {
     UI.toast('PowerPoint downloaded', 'ok');
   }
 
-  // ⚠️ mailto: can only carry text, never an attachment — this app has no
-  // SMTP/API backend to actually send mail, so pre-filling the person's own
-  // mail client (with a note to attach the downloaded file by hand) is the
-  // honest version of "email these minutes," not a silent no-op that claims
-  // to have sent something.
-  function momEmailMinutes(momId) {
+  // ⚠️ A minimal RFC5545 .ics event, hand-built — no calendar library
+  // anywhere in this app, and one file's worth of text is not a reason to
+  // load one. This is the "meeting invites" file-selection option in the
+  // Email modal below.
+  function momInviteICS(mom) {
+    function icsDate(dateStr, timeStr) {
+      if (!dateStr) return '';
+      return String(dateStr).replace(/-/g, '') + 'T' + (timeStr || '00:00').replace(':', '') + '00';
+    }
+    var start = icsDate(mom.meeting_date, mom.start_time);
+    var end = icsDate(mom.meeting_date, mom.end_time) || start;
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Planners Dashboard//Minutes of Meeting//EN',
+      'BEGIN:VEVENT',
+      'UID:' + (mom.id || 'mom') + '@planners-dashboard',
+      'DTSTAMP:' + icsDate(momToday()),
+      start ? 'DTSTART:' + start : '',
+      end ? 'DTEND:' + end : '',
+      'SUMMARY:' + Fmt.esc(mom.title || 'Meeting'),
+      mom.venue ? 'LOCATION:' + String(mom.venue).replace(/\n/g, ' ') : '',
+      mom.meeting_link ? 'DESCRIPTION:' + String(mom.meeting_link).replace(/\n/g, ' ') : '',
+      'END:VEVENT', 'END:VCALENDAR']
+      .filter(Boolean).join('\r\n');
+  }
+
+  // ⚠️⚠️ INDIVIDUAL VIEW ITEM 1 (round 2) — a real pop-up, replacing the plain
+  // "click Email, your mail client opens" action. It lets the planner settle
+  // the recipient list, the title, the message body, and WHICH files to
+  // attach — meeting invites, the agenda (as a PDF), and/or the minutes
+  // (optionally from more than one meeting date, when this is a recurring
+  // occurrence) — before anything downloads or the mail client opens.
+  // ⚠️ mailto: can still only carry TEXT, never an attachment — this app has
+  // no SMTP/API backend to actually send mail, so "Prepare files" downloads
+  // whatever was ticked (so they sit in Downloads, ready to attach by hand)
+  // and THEN opens the person's own mail client with the recipients/subject/
+  // body already filled in. That is the honest version of "email these
+  // minutes" this app can offer, not a silent no-op dressed up as one.
+  // ⚠️ This app stores attendee NAMES, not addresses (the People Picker
+  // resolves to `users`/`people_directory` rows, and exposing an email here
+  // would need a read this screen has no business being granted) — the
+  // recipients field is seeded blank, with the attendee names shown as a note
+  // so the planner knows WHO to type in, not typed in for them as if it were
+  // an address.
+  function openEmailModal(momId) {
     var mom = MOMS.find(function (x) { return x.id === momId; });
     if (!mom) return;
-    var items = momItemsOf(mom.id);
+    var who = [];
+    ['attendees_required', 'attendees_optional', 'attendees_actual'].forEach(function (k) {
+      if (mom[k]) { var t = championText(mom[k].ids, mom[k].text); if (t) who.push(t); }
+    });
+    if (!who.length && mom.attendees) who.push(mom.attendees);
     var subject = 'Minutes of Meeting — ' + (mom.title || 'Meeting') +
       (mom.meeting_date ? ' (' + Fmt.date(mom.meeting_date) + ')' : '');
-    var lines = [
+    var items = momItemsOf(mom.id);
+    var bodyLines = [
       mom.title || 'Meeting',
       mom.meeting_date ? 'Date: ' + Fmt.date(mom.meeting_date) : '',
       mom.venue ? 'Venue: ' + mom.venue : '',
       '', 'Minutes:',
     ];
-    if (items.length) {
-      items.forEach(function (it, i) {
-        lines.push((i + 1) + '. ' + momExportItemText(it) + (it.owner ? ' — ' + it.owner : ''));
-      });
-    } else {
-      lines.push('(none recorded)');
-    }
-    lines.push('', '(Download the full minutes as HTML/PDF/Excel/PowerPoint from this meeting\'s ' +
-      'Export menu and attach it by hand — a browser link cannot attach a file automatically.)');
-    window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(lines.join('\n'));
+    if (items.length) items.forEach(function (it, i) { bodyLines.push((i + 1) + '. ' + momExportItemText(it) + (it.owner ? ' — ' + it.owner : '')); });
+    else bodyLines.push('(none recorded)');
+    // "select minutes from a specific meeting date" — only meaningful when
+    // this meeting is an occurrence of a recurring series; a one-off meeting
+    // has no other date to choose from.
+    var seriesMeetings = mom.schedule_id ? schedMeetingsOf(mom.schedule_id) : [];
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h3 style="margin:0;">Email these minutes</h3>' +
+        '<button class="pd-modal-close" data-close>&times;</button></div>' +
+      '<div class="pd-modal-body il-em-form">' +
+        '<div class="pd-field"><label>Recipients</label>' +
+          '<input class="pd-input" id="il-em-to" placeholder="name@example.com, name2@example.com">' +
+          (who.length
+            ? '<p class="il-mom-note">Attendees on record: ' + Fmt.esc(who.join('; ')) +
+              ' — this app has no email addresses on file, so add them here yourself.</p>'
+            : '') +
+        '</div>' +
+        '<div class="pd-field"><label>Email title</label><input class="pd-input" id="il-em-subject" value="' + Fmt.esc(subject) + '"></div>' +
+        '<div class="pd-field"><label>Message</label><textarea class="pd-textarea" id="il-em-body" rows="7">' + Fmt.esc(bodyLines.join('\n')) + '</textarea></div>' +
+        '<div class="pd-field"><label>Files to include</label>' +
+          '<label class="il-em-chk"><input type="checkbox" id="il-em-invite"> Meeting invite (.ics calendar file)</label>' +
+          '<label class="il-em-chk"><input type="checkbox" id="il-em-agenda"> The agenda (PDF)</label>' +
+          '<label class="il-em-chk"><input type="checkbox" id="il-em-minutes" checked> Meeting minutes (PDF)</label>' +
+        '</div>' +
+        (seriesMeetings.length
+          ? '<div class="pd-field" id="il-em-datewrap"><label>Minutes from which meeting date(s)</label>' +
+              seriesMeetings.map(function (om) {
+                return '<label class="il-em-chk"><input type="checkbox" class="il-em-occ" value="' + Fmt.esc(om.id) + '"' +
+                  (om.id === mom.id ? ' checked' : '') + '> ' +
+                  (om.meeting_date ? Fmt.esc(Fmt.date(om.meeting_date)) : '(undated)') +
+                  (om.id === mom.id ? ' — this meeting' : '') + '</label>';
+              }).join('') +
+            '</div>'
+          : '') +
+        '<p class="il-mom-note">This app has no email server, so <b>Prepare &amp; open mail client</b> downloads ' +
+          'whatever is ticked above — attach the downloaded files by hand once your mail client opens with the ' +
+          'recipients, title and message already filled in.</p>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="il-em-send">Prepare &amp; open mail client</button>' +
+      '</div>',
+      { title: 'Email these minutes' }
+    );
+    wireModalChrome(m, 560);
+    var minCb = m.el.querySelector('#il-em-minutes'), dateWrap = m.el.querySelector('#il-em-datewrap');
+    function syncDateWrap() { if (dateWrap) dateWrap.hidden = !(minCb && minCb.checked); }
+    if (minCb) minCb.onchange = syncDateWrap;
+    syncDateWrap();
+    var send = m.el.querySelector('#il-em-send');
+    if (send) send.onclick = async function () {
+      send.disabled = true;
+      try {
+        if ((m.el.querySelector('#il-em-invite') || {}).checked) {
+          momDownloadBlob(momExportFilenameBase(mom) + '_invite.ics', 'text/calendar', momInviteICS(mom));
+        }
+        var agendaChecked = (m.el.querySelector('#il-em-agenda') || {}).checked;
+        if (agendaChecked) await momDownloadPDF(mom.id);
+        if (minCb && minCb.checked) {
+          var occCbs = dateWrap ? dateWrap.querySelectorAll('.il-em-occ:checked') : [];
+          var occIds = occCbs.length ? Array.prototype.map.call(occCbs, function (c) { return c.value; }) : [mom.id];
+          for (var i = 0; i < occIds.length; i++) {
+            // ⚠️ The agenda checkbox above and this one both render the SAME
+            // PDF (this module has only one PDF template, and it already
+            // carries the agenda plus the minutes together) — skip a second
+            // download of this exact meeting rather than fetching it twice.
+            if (occIds[i] === mom.id && agendaChecked) continue;
+            await momDownloadPDF(occIds[i]);
+          }
+        }
+        var toRaw = (m.el.querySelector('#il-em-to') || {}).value || '';
+        var to = toRaw.split(',').map(function (s) { return s.trim(); }).filter(Boolean).join(',');
+        var subj = (m.el.querySelector('#il-em-subject') || {}).value || subject;
+        var body = (m.el.querySelector('#il-em-body') || {}).value || bodyLines.join('\n');
+        window.location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body);
+        m.close();
+      } catch (e) {
+        UI.toast((e && e.message) || 'Could not prepare the files.', 'error');
+      } finally {
+        send.disabled = false;
+      }
+    };
   }
 
   // Item 10 (2026-09-02) — offered right after a successful Distribute.
-  // ⚠️ A confirm(), not a silent redirect: distributing and emailing are two
-  // acts, and a mailto: that fires unasked hijacks the window to the person's
-  // mail client the instant they press a button that said "Distribute".
-  // ⚠️ It names the attendee tiers it can see so the planner knows WHO the
-  // draft is meant to reach — this app stores attendee NAMES, not addresses
-  // (the People Picker resolves to `users`/`people_directory` rows, and
-  // exposing their email here would need a read this screen has no business
-  // being granted), so the To: line is deliberately left for them to fill.
+  // ⚠️ A confirm(), not a silent modal: distributing and emailing are two
+  // acts, and popping the Email modal unasked hijacks the screen the instant
+  // someone presses a button that said "Distribute".
   function momPromptEmailAttendees(momId) {
-    var mom = MOMS.find(function (x) { return x.id === momId; });
-    if (!mom) return;
-    var who = [];
-    ['attendees_required', 'attendees_optional', 'attendees_actual'].forEach(function (k) {
-      if (mom[k]) {
-        var t = championText(mom[k].ids, mom[k].text);
-        if (t) who.push(t);
-      }
-    });
-    if (!who.length && mom.attendees) who.push(mom.attendees);
-    if (!confirm('Minutes distributed.\n\nEmail them to the attendees now?' +
-      (who.length ? '\n\nAttendees on record: ' + who.join('; ') : '\n\nNo attendees are recorded on this meeting yet.') +
-      '\n\nThis opens your mail client with the minutes summarised in the body — ' +
-      'add the recipients and press send.')) return;
-    momEmailMinutes(momId);
+    if (!confirm('Minutes distributed.\n\nOpen the Email modal for these minutes now?')) return;
+    openEmailModal(momId);
   }
 
   // ---- Meeting LIST export (item 8's second sentence) --------------------
@@ -4778,28 +5005,27 @@ window.MinutesOfMeeting = (function () {
     var nav = document.createElement('div');
     nav.className = 'il-mom-slidenav';
     nav.id = 'il-mom-slidenav';
-    // Reporting View item 2 (2026-09-03) — the switcher is now a row of
-    // labelled buttons (M / A / 1 / 2 / 3…), with the Back/Next arrows as
-    // plain icon buttons flanking that row rather than text buttons at
-    // either end of the whole bar. The slide's full name + counter moves to
-    // its own line underneath, since a labelled switcher no longer needs a
-    // separate caption to say WHICH slide is showing — only what it's called.
+    // ⚠️ ROUND 2, ITEMS 7-8 — Prev/Next are grouped TOGETHER on the right
+    // (was flanking the switcher, one arrow on each end of the bar), and the
+    // slide's full name + "Slide N of M" caption line underneath is GONE —
+    // the labelled switcher (M / A / 1 / 2 / 3…) already names which slide
+    // is current, so a second line repeating it was redundant.
     nav.innerHTML =
       '<div class="il-mom-slidebar">' +
-        '<button type="button" class="pd-btn pd-btn-sm il-mom-slidearrow" data-sl="prev"' +
-          (_momSlide === 0 ? ' disabled' : '') + ' title="Previous slide" aria-label="Previous slide">' +
-          '<span data-ico="chevronLeft" data-ico-size="16"></span></button>' +
         '<div class="il-mom-slidedots">' + els.map(function (el, i) {
           return '<button type="button" class="il-mom-slidedot' + (i === _momSlide ? ' on' : '') +
             '" data-sl="' + i + '" title="' + Fmt.esc(momSlideLabel(el, i)) + '">' +
             Fmt.esc(momSlideShortLabel(el, i)) + '</button>';
         }).join('') + '</div>' +
-        '<button type="button" class="pd-btn pd-btn-sm il-mom-slidearrow" data-sl="next"' +
-          (_momSlide >= els.length - 1 ? ' disabled' : '') + ' title="Next slide" aria-label="Next slide">' +
-          '<span data-ico="chevronRight" data-ico-size="16"></span></button>' +
-      '</div>' +
-      '<div class="il-mom-slidename">' + Fmt.esc(momSlideLabel(els[_momSlide], _momSlide)) +
-        '<span>Slide ' + (_momSlide + 1) + ' of ' + els.length + '</span></div>';
+        '<div class="il-mom-slidearrows">' +
+          '<button type="button" class="pd-btn pd-btn-sm il-mom-slidearrow" data-sl="prev"' +
+            (_momSlide === 0 ? ' disabled' : '') + ' title="Previous slide" aria-label="Previous slide">' +
+            '<span data-ico="chevronLeft" data-ico-size="16"></span></button>' +
+          '<button type="button" class="pd-btn pd-btn-sm il-mom-slidearrow" data-sl="next"' +
+            (_momSlide >= els.length - 1 ? ' disabled' : '') + ' title="Next slide" aria-label="Next slide">' +
+            '<span data-ico="chevronRight" data-ico-size="16"></span></button>' +
+        '</div>' +
+      '</div>';
     // ⚠️ Built via document.createElement + innerHTML, outside the normal
     // render()/Icons.hydrate() pass — the chevrons need their own hydrate or
     // they render as empty spans.
@@ -4837,6 +5063,69 @@ window.MinutesOfMeeting = (function () {
       e.preventDefault();
     };
     document.addEventListener('keydown', _momSlideKeys);
+  }
+
+  // ⚠️ ROUND 2, INDIVIDUAL VIEW ITEM 3 — manual drag-to-reorder over the
+  // minute cards, replacing the removed automatic "sort by" control.
+  // HTML5 drag events, no library — the same class of interaction the WBS
+  // Manager / Drawing Register already use elsewhere in this app.
+  var _momDragCard = null;
+  function wireMinuteDrag(host, momId) {
+    var wrap = host.querySelector('.il-mi-cards');
+    if (!wrap) return;
+    function clearDropMarks() {
+      wrap.querySelectorAll('.il-mi-card').forEach(function (c) { c.classList.remove('drop-before', 'drop-after'); });
+    }
+    wrap.querySelectorAll('.il-mi-card[draggable="true"]').forEach(function (card) {
+      card.ondragstart = function (e) {
+        _momDragCard = card;
+        card.classList.add('is-dragging');
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', card.dataset.item); } catch (e2) {} }
+      };
+      card.ondragend = function () { card.classList.remove('is-dragging'); clearDropMarks(); _momDragCard = null; };
+      card.ondragover = function (e) {
+        if (!_momDragCard || _momDragCard === card) return;
+        e.preventDefault();
+        var r = card.getBoundingClientRect();
+        var before = (e.clientY - r.top) < r.height / 2;
+        clearDropMarks();
+        card.classList.add(before ? 'drop-before' : 'drop-after');
+      };
+      card.ondrop = function (e) {
+        e.preventDefault();
+        if (!_momDragCard || _momDragCard === card) return;
+        var r = card.getBoundingClientRect();
+        var before = (e.clientY - r.top) < r.height / 2;
+        wrap.insertBefore(_momDragCard, before ? card : card.nextSibling);
+        clearDropMarks();
+        persistMinuteOrder(momId, wrap);
+      };
+    });
+  }
+  // ⚠️ Only the CARDS ACTUALLY ON SCREEN are renumbered — drag is offered
+  // only while nothing is filtering the meeting's minutes (canDrag in
+  // momItemRowHTML), so this is always every minute the meeting has, never a
+  // filtered subset whose seq math would otherwise leave the hidden rows
+  // ambiguous. `MOM_ITEMS` is updated in place so the very next render (and
+  // anything else reading it — the dashboard, the PDF) agrees with the drop.
+  async function persistMinuteOrder(momId, wrap) {
+    var ids = Array.prototype.map.call(wrap.querySelectorAll('.il-mi-card'), function (c) { return c.dataset.item; });
+    var changed = [];
+    ids.forEach(function (id, idx) {
+      var it = MOM_ITEMS.find(function (x) { return x.id === id && x.mom_id === momId; });
+      if (it && it.seq !== idx) { it.seq = idx; changed.push({ id: id, seq: idx }); }
+    });
+    if (!changed.length) return;
+    MOM_ITEMS.sort(function (a, b) {
+      return (a.seq || 0) - (b.seq || 0) || String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
+    // ⚠️ Sequential, not Promise.all — same rule "Get from issue" already
+    // follows for numbering writes: overlapping requests racing onto the
+    // same sequence is worse than the small delay of writing in order.
+    for (var i = 0; i < changed.length; i++) {
+      try { await sb().from('mom_items').update({ seq: changed[i].seq }).eq('id', changed[i].id); }
+      catch (e) { /* best-effort — the on-screen order already reflects the drop */ }
+    }
   }
 
   // ⚠️ DETAIL wiring only — the meeting picker and "+ New minutes" moved to the
@@ -4890,21 +5179,22 @@ window.MinutesOfMeeting = (function () {
       var again = $('il-momf-q');
       if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (e) {} }
     };
-    [['il-momf-cat', 'cat'], ['il-momf-type', 'type'], ['il-momf-status', 'status'], ['il-momf-sort', 'sort']].forEach(function (pair) {
+    [['il-momf-cat', 'cat'], ['il-momf-type', 'type'], ['il-momf-status', 'status']].forEach(function (pair) {
       var el = host.querySelector('#' + pair[0]);
       if (el) el.onchange = function () { _momF[pair[1]] = el.value; renderDetail(); };
     });
     var fc = host.querySelector('#il-momf-clear');
-    // ⚠️ Sort is a DISPLAY preference, not a filter — "Clear all filters" clears
-    // what narrows the list, not the order it's read in, so it's carried across
-    // rather than reset to '' with the rest.
-    if (fc) fc.onclick = function () { _momF = { q: '', cat: '', type: '', status: '', sort: _momF.sort }; renderDetail(); };
+    if (fc) fc.onclick = function () { _momF = { q: '', cat: '', type: '', status: '' }; renderDetail(); };
 
     var rep = host.querySelector('#il-mom-report');
     if (rep) rep.onclick = function () { _momReport = !_momReport; renderDetail(); };
 
     var favt = host.querySelector('#il-mom-favtoggle');
     if (favt) favt.onclick = function () { momToggleFavorite('meeting', _momSel); };
+    // ITEM 5 (round 2) — the sticky header's own copy of the same star, shown
+    // only on a recurring occurrence (see isRecurOcc in momDetailHTML).
+    var favtS = host.querySelector('#il-mom-favtoggle-sticky');
+    if (favtS) favtS.onclick = function () { momToggleFavorite('meeting', _momSel); };
 
     var dist = host.querySelector('#il-mom-dist');
     if (dist) dist.onclick = function () {
@@ -4932,7 +5222,7 @@ window.MinutesOfMeeting = (function () {
       else if (v === 'xlsx') momExportXLSX(_momSel);
     });
     var emailBtn = host.querySelector('#il-mom-email');
-    if (emailBtn) emailBtn.onclick = function () { momEmailMinutes(_momSel); };
+    if (emailBtn) emailBtn.onclick = function () { openEmailModal(_momSel); };
 
     var sv = host.querySelector('#il-mom-save');
     if (sv) sv.onclick = async function () { if (await momSaveHeader()) { UI.toast('Minutes saved', 'ok'); renderDetail(); } };
@@ -5088,6 +5378,11 @@ window.MinutesOfMeeting = (function () {
         } catch (e) { UI.toast(e.message, 'error'); }
       };
     });
+
+    // ITEM 3 (round 2) — manual drag-to-reorder, replacing the removed
+    // "sort by" control. Only the cards momItemRowHTML actually marked
+    // draggable="true" (editable, unfiltered, not in reporting view) wire up.
+    wireMinuteDrag(host, _momSel);
 
     var db = host.querySelector('#il-mom-del');
     if (db) db.onclick = async function () {

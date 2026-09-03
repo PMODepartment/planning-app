@@ -1,5 +1,94 @@
 # Module: minutes-of-meeting
 
+## 2026-09-03 (c) — Dashboard chart consistency (shared with Issues Dashboard), and the
+## Responsible/attendee free-text input is retired in favour of the dropdown alone
+
+Owner's list included two items that name **both** dashboards (this module's Meetings Dashboard
+and Issues & Concerns' own Issues Dashboard) plus one app-wide item that reaches every People
+Picker in the suite. Both modules keep their own copy of the chart/picker code by this repo's
+established no-shared-runtime convention (two small IIFEs in two files), so every fix here was
+applied twice, once per module — see `modules/issues-lessons/CLAUDE.md` for its mirror entry.
+
+### Dashboard: filter hidden by default, chart titles on top, one bottom legend, no bold text
+
+The two module dashboards had drifted from each other and from a plain, consistent chart
+language: some tiles put the legend scattered per-item beside the chart, some put the count/
+value label in bold, and font sizes between the donut's labels and the bar chart's value labels
+didn't match.
+
+- **`donutChartSVG(slices, opts)` dropped its per-slice on-chart labels entirely.** The ring now
+  renders alone; every count and percent moved into the ONE legend beneath it
+  (`statusLegendBottomHTML`), which prints `● Label: N (P%)` per entry — so there is exactly one
+  place this information can be read and the chart and its legend can never disagree with each
+  other about a number.
+- **`hbarSVG`'s in-bar value text lost its bold weight** (`font-weight="700"` removed) and its
+  font size was unified to match the donut's own label size (10.5px → 11px), so a reader moving
+  from the pie to a bar chart sees the same weight and size throughout — "no bold font except
+  chart titles" taken literally: the `<h4>` title keeps its ordinary (bold) heading style as the
+  one sanctioned exception, everything else in a chart tile is regular weight.
+- **Every dashboard tile now renders title-then-chart-then-bottom-legend**, matching the shape
+  the donut tile already had — the Department/Responsible/Meeting bar tiles moved their
+  `.il-dash-cardhead`(title) ABOVE the chart body and their legend BELOW it, replacing the older
+  `.il-dash-cardhead-bottom`/`.il-dash-legend-top` shape where the title sat under the chart and
+  the legend sat above it. All three tile kinds are now visually the same family.
+- ⚠️ **The filter-hidden-by-default half of this item needed no new work.** It was already
+  satisfied by the topbar funnel-toggle wiring built for an earlier item in this same list
+  (`momBrowseFilterBarHTML()`'s toggle) — checked against the live behaviour before assuming it
+  still needed doing, rather than duplicating a fix that already shipped.
+
+### The People Picker's free-text input is gone; the dropdown (with "+ add a person") is now the only way in
+
+*"Remove the separate free-text input for Responsible/Champion fields — rely solely on the
+existing dropdown, which already has a + add a person option."*
+
+This module's shared "People Picker" component backs **Responsible / Required / Optional /
+Actual attendees** — an always-editable free-text `<input class="il-pp-free">` sat beside the
+account-chip dropdown, letting a name be typed with no link to any account and no route through
+the directory. That is exactly the redundant control the ask names: the dropdown's own
+"+ Someone without an account…" option already writes a real `people_directory` row via
+`PDb.createContact()`, so a second, un-vetted typing box duplicated what the dropdown already did
+properly.
+
+- **The `<input>` is removed from `peoplePickerHTML()`.** In its place: nothing, when no legacy
+  free text exists on the row, or a read-only **`.il-pp-freenote`** ("Also (typed): …") with its
+  own small ✕ (`.il-pp-rmtext`) when a row already carries hand-typed text from before this
+  change — preserving existing data rather than silently discarding it on the next repaint.
+- **`root.dataset.text` replaces the input as the free-text half's state**, read through a new
+  `textOf(root)` (mirroring the existing `idsOf(root)` for the ids half). Every call site that used
+  to read `(root.querySelector('.il-pp-free')||{}).value||''` now calls `textOf(root)` instead —
+  `repaintPicker`, `wirePeople`, `scheduleCreateOccurrence`, `validateAddMeeting`,
+  `saveAddMeeting`, and `momAttendeesOf`.
+- ⚠️ **Nothing NEW can be typed into a free-text field any more, by construction** — there is no
+  input left to type into. A person with no account is added exclusively through the dropdown's
+  own "+ add a person" flow, which resolves through `people_directory` (case-insensitive identity,
+  reused across projects) rather than a fresh, unlinkable string each time.
+- The ✕ on `.il-pp-freenote` sets `root.dataset.text = ''` and repaints — a way to retire old
+  hand-typed text once it's been superseded by a real assignment, without ever offering a way to
+  add MORE of it.
+
+### CSS
+
+Both modules' People Picker stylesheet blocks (`.il-people`/`.il-pp-*`) had the dead
+`.il-people .il-pp-free { width:100%; }` rule removed and gained `.il-pp-freenote`/
+`.il-pp-rmtext` — the note styled as a quiet dashed-border row (matching `.il-pp-new`'s own
+"something's different here" treatment) with its remove button styled like the existing
+`.il-pp-rm` chip-remove control. Header comments above the block rewritten to describe the new
+"chips + dropdown + an optional read-only legacy-text note" shape.
+
+### Verified
+
+`node --check` clean on both modules' `module.js`. CSS brace balance unchanged proportionally
+after the edits (this module 348/348, issues-lessons 287/287). Grepped both modules' `module.js`
+and `module.css` for the removed `.il-pp-free` input class — zero remaining references outside
+the new `.il-pp-freenote`/`.il-pp-rmtext` names (which only share a substring, not the class).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the reworked dashboard tiles
+against real department/champion data, or of the People Picker's dropdown-only flow (including
+the "+ add a person" → `people_directory` round-trip) against a real save.
+
+`module.css/js?v=` → `20260903d` in both modules. No shared asset touched, no `MODULE_V` bump.
+
 ## 2026-09-03 — UI/UX polish: icon-only chrome, a clickable star, required
 ## fields, the dashboard matched to Issues, sort + three named sections,
 ## draft-attendee editing, and a labelled reporting-view switcher
