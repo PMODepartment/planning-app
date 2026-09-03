@@ -84,6 +84,137 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (ah) — The scrub goes smooth, and the trade colours were painting BLACK
+Owner: *"can you make the progress bar smoother, it has fps drop whenever i drag"* and *"how come the
+colors of the trades vanish when put into the full screen. it just turns into black."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **The black cells were real, and NOT a full-screen bug.** `--ps-vs-scrim` / `-veil` / `-edge` are
+  declared on `.ps-vstack`; `UI.modal` appends to **`document.body`**, so in the focus window all three
+  were **undefined** — and an undefined `var()` makes the property `unset`, `fill` is **inherited**, so
+  the remaining-work layer painted **solid black** over the trade colour (and the hatch stroke resolved
+  to `none`). True in every mode since the window shipped; full screen is just where it is big enough
+  to notice. ⚠️ `_vsExportPDF` already re-declares these tokens for the same reason and I did not join
+  the dots. Fixed twice over: the svg emits `var(--token, <fallback>)` so a clone into ANY container
+  can never paint black again, and the tokens are re-declared on the modal so dark mode gets its own.
+- ⚠️⚠️ **The lag was the full builder running on every rAF** — rewriting the modal's innerHTML,
+  re-deriving both buildings, re-parsing thousands of SVG nodes and **destroying the scrubber track the
+  pointer was on**, 60 times a second on a tower that can hold 2,500 activities.
+- ⚠️ **Re-deriving a building cannot be a 16ms job, so the fix is to stop the buildings gating the
+  CONTROL.** Chrome (handle, fill, date, footer bar) is style/text writes only on one rAF and is always
+  glued to the pointer; the buildings repaint on a budget **measured from how long the last repaint
+  actually took** (clamped 90–600ms), with a trailing repaint always landing on release.
+- ⚠️ `paint()` swaps **one node per pane**, so the track, the handle and every control are the same
+  elements throughout a drag. ⚠️ The cost is measured **around** the call, not taken from a figure
+  `paint` reports about itself — caught by the suite. ⚠️ The old `build(true)` path is **deleted**.
+- **29 checks in Node + 86 in a browser** (was 29 + 67): a 24-move drag against a deliberately
+  45ms-per-repaint tower gives **24 of 24 distinct handle positions**; the scrim is translucent in both
+  themes and the fallback holds with the declarations stripped. 0 functions lost.
+  ⚠️ **Honest limit:** on a very large tower the *buildings* still step while dragging — only the
+  handle, date and bar are now free of them. ⚠️ Not verified signed in. `MODULE_V` → `20260902ah`.
+
+### 2026-09-02 (ag) — The focus window: crisp zoom, a real divider, a working scrubber, full screen
+Owner: *"the quality is too low, and can you enlargen the divider between the planned and actual. now
+also the progress bar below should be working or has a dragger. In addition, is there an option where you
+can full screen."* Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **"Quality is too low" was a real defect of mine: CSS `transform: scale()` stretching a bitmap.**
+  The canvas is rasterised at 1:1 and a scale blows that raster up, so at 180% every zone date was a
+  magnified 1x image. Zoom is now the **svg's own width/height** (viewBox untouched → vector re-render);
+  the transform carries **translate only**, because pan must not rasterise at the wrong resolution.
+- **The divider is a 16px gutter**, not a 1px border. ⚠️ **Decorative, never draggable:** the shared
+  transform is only truthful while the panes are equal width, so a drag would show different portions of
+  the two buildings while still claiming they are synced — a silent wrong answer.
+- **The progress bar is a scrubber** — handle, ticks, data date, month steps, Live — and dragging it
+  re-reads both buildings. ⚠️ **Modelled, not replayed** (one `percent_complete` per activity exists, and
+  it is today's), and it says so. ⚠️ The axis is measured at the ACTUAL basis whatever the panes show, or
+  the same date would sit in two places. ⚠️ A scrub keeps the zoom, pan and hovered zone. ⚠️ The stack
+  underneath is re-rendered **once on close**, not per frame behind a modal nobody can see through.
+- ⚠️⚠️ **A REAL DEFECT THE BROWSER RUN FOUND: the bar did not move with the buildings.** It read
+  `_vsPct` — the raw recorded figure, which ignores the scrubber — so the frozen row reported today's
+  percentage while the towers above it re-read at the scrubbed date. It reads `_vsProgress` now, the
+  same function the towers are drawn from. ⚠️ While scrubbed the planned tick is **withheld**, because
+  "scheduled by this date" vs "planned by the data date" is a variance that means nothing.
+- **Full screen.** ⚠️ Two mechanisms: the API on the modal box (so the overlay's dimming does not travel
+  with it) **plus** an in-page `.is-maxed` fallback, because an iframe or a permissions-policy can refuse
+  it. The button lights from what actually happened, never from intent.
+- **29 checks in Node + 67 in a browser** (was 26 + 39), executing the shipped functions; 0 functions
+  lost. ⚠️ Not verified signed in, and the real Fullscreen API path is untested (the harness forces the
+  fallback). `MODULE_V` → `20260902ag`.
+
+### 2026-09-02 (af) — Vertical stacking: expand a tower, and put planned beside actual
+Owner: *"can you make it more visually pleasing… or can you add an expand view wherein it would focus on
+that tower itself and then have a progress bar on the bottom… scrollbar to zoom in and out, and then there
+is a hand cursor to pan… for a specific trade, there is a tower on the left portraying the planned and the
+tower on the right portraying the actual… if i hover something on the planned or panned something on the
+left it should also update the right window… and then the progress bar is still shown below, like a frozen
+row."* Detail in `modules/project-schedule/CLAUDE.md`.
+- Every tower card gains an **expand** button opening a focus window: scroll to zoom, drag to pan (hand
+  cursor), double-click to fit, a **Planned vs Actual side by side** toggle, and a **frozen row** below
+  carrying the counts, the span, the variance in points, a progress bar and a live hovered-zone readout.
+- ⚠️⚠️ **The two panes share ONE transform state, so "synced" is structural rather than two states kept
+  in step** — there is nothing that can drift. Same for the hover: one key, marked in every pane.
+- ⚠️ **Panning is a transform, never `scrollLeft`.** Two scrollers in two panes cannot be held identical
+  (their max scroll differs with their content width) and the moment they diverge the comparison is
+  silently wrong — two floors side by side that are not the same floor.
+- ⚠️⚠️ **A REAL DEFECT THE BROWSER RUN FOUND AND READING DID NOT.** The first cut gave each pane its own
+  cell-key prefix to keep the two builds' cell maps apart. The hover sync finds the twin zone by
+  **comparing keys across panes**, so that made every key pane-unique and **the two windows silently
+  stopped following each other** — the one thing the split view exists to do. Measured: 1 of 2 panes
+  marked. They could never have collided anyway; each build already gets its own `_vsCells`.
+- ⚠️ Both buildings come from the **same `_vsTowerSVG` the cards use**, `_vsBasis` swapped and restored in
+  a `finally` — a second renderer would be a second thing to keep in step with the view it was opened from.
+- ⚠️ The frozen row sits **outside** the panning stage (a progress bar that pans away is what it replaces),
+  and its planned marker rides the **same** track as the fill, because the gap between them IS the variance.
+- **Cards:** a 4px meter under each header (fill = actual, tick = planned) — the same bar as the focus
+  window's, so the two read as one system. ⚠️ Blank with no baseline: a tick at 0 would claim "nothing was
+  planned by now", which is not "nobody has baselined this".
+- **26 checks in Node + 39 in a real browser**, both executing the shipped functions; 0 functions lost.
+  ⚠️ **Not verified signed in** — the focus window has never been opened over live data.
+  `MODULE_V` → `20260902af`.
+
+### 2026-09-02 (ae) — The top-level WBS order is enforced, not merely seeded
+Owner: *"the arrangement of the WBS that is fixed should be milestones / initiation phase / planning phase /
+execution phase / close-out phase"* — the order `WBS_SKELETON` already seeds, which was being disturbed.
+Detail in `modules/project-schedule/CLAUDE.md`.
+- New `_wbsCanonicalRootOrder()` on load. It also authorises the repair I declined to make unasked earlier
+  today: the owner's project still had Initiation dragged ahead of Milestones by the push's renumbering.
+- ⚠️ **Slot by slot, matched two different ways.** The four phases by their **resolved phase** (stored first,
+  else `phaseFromName`), so `Closeout Phase` / `Close-out Phase` / a P6 file's plain `Closeout` /
+  `Construction Phase` all land in the right slot. **Milestones resolves no phase**, so by name — and only
+  when nothing else claims it, so a branch that does resolve a phase can never be pulled into that slot.
+- ⚠️⚠️ **Runs BEFORE the code resync, never after.** A dotted code derives purely from sibling POSITION, so
+  reordering the root re-codes every branch under it and the resync is what pushes those codes onto the rows.
+- ⚠️⚠️ **Refuses on an unlocked root node** — the same signal `_wbsResyncCodes` refuses on. That means
+  adoption failed to place something and the resync will skip, so a reorder would leave every code
+  describing an order the tree no longer has: a tree problem turned into a data problem.
+- ⚠️ **A project already in order writes nothing** (this runs on every load, and touching five rows each
+  time would make `updated_at` useless). Branches the skeleton does not define keep their relative order
+  after the five, are never dropped and never interleaved; children are untouched.
+- **38 checks** executing the shipped functions, including an assertion that the order enforced IS
+  `WBS_SKELETON`'s own so the two cannot drift; the three earlier suites still green; 0 functions lost.
+  MODULE_V → `20260902ae`.
+
+### 2026-09-02 (ad) — The lifecycle activities were pushed correctly and had no branch row to hang under
+Owner: *"good, the execution phase is migrated, however the WBS for the initiation, planning and close-out is
+not migrated now."* Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **`reused[nd.key]` suppressed the WBS-Summary payload, and that was the wrong test.** A branch renders
+  in the grid only if it has a summary ROW; `wbs_nodes` alone is the WBS Manager's tree. The push skipped
+  that row for any branch it reused, assuming an existing node is already projected — but
+  `_wbsEnsureSummaries` only runs on LOAD, bails on a read error, and the row can be deleted afterwards.
+  So the activities were filed with the right node id and code and had no parent row.
+- ⚠️ **That makes this report and the last one ONE bug.** Before, the push missed `Closeout Phase` by name and
+  *created* it — a created node is projected — which is why Close-out was the only phase that showed. Fixing
+  the name match made all three reused, so all three lost their row. The symptom inverted; the cause never
+  was the matching.
+- **Fix:** `_hasSummaryRow(nid)`, checked per node rather than assumed — and it tests `isWbs`, not merely a
+  matching node id, since an activity under the branch shares that id.
+- ⚠️⚠️ **"Execution Phase only" hides every lifecycle phase by design**, and it is a per-browser toggle — so a
+  planner who set it weeks ago pushes Initiation/Planning/Close-out work and sees none of it. The push now
+  clears it when it has just added non-execution work, and says so in the summary rather than silently.
+- The completion summary lists **each phase with its count** (from the payload, `Task` rows only — a branch
+  row carrying a phase is not an activity), so the next report of this shape answers itself.
+- **79 checks** executing the shipped emission line and exec-only block, sliced verbatim; 0 functions lost.
+  MODULE_V → `20260902ad`.
+
 ### 2026-09-02 (ac) — The Schedule Setup push renumbered the project root, so the execution work came out detached
 Owner: *"the activities generated under the execution phase was not migrated, as well as the WBS for the
 initiation and planning phase"* / *"when pushed, only activities under the close-out phase WBS was detected."*
@@ -12432,3 +12563,29 @@ months-outside-the-axis path, the import and the seed — all suite-covered, non
 a DOM or database read rather than a picture.
 
 `MODULE_V` → `20260828d`.
+
+### 2026-09-02 — Project Schedule: five views to four, and import stops writing on the first click
+
+Owner: *"let's sanitize the process in developing the project schedule either from import project
+schedule and starting a new project."* All of it inside
+[`modules/project-schedule/index.html`](modules/project-schedule/index.html) — no shared file
+touched, so no `?v=` bump is due. Full detail (and the browser verification) is in that module's own
+[`CLAUDE.md`](modules/project-schedule/CLAUDE.md); the shell-level shape of it:
+
+- **Planner Cockpit and WBS Manager are gone from the view menu.** The order is now **Schedule Setup
+  › Project Schedule › Cost Loading › Weekly Work Plan › Working Calendars** — the Setup first,
+  because that is where a schedule comes from.
+- ⚠️ **Neither removal took a feature with it.** The cockpit's only-way-in verbs (Update progress,
+  snapshots, change history) moved to the Schedule grid's **Actions** menu and the lookahead export to
+  **File**; the WBS Manager's Adopt/Reset and the Engineering + Procurement mirrors moved into
+  **Schedule Setup › WBS**; and the Last Planner weekly loop — a separate feature that merely lived
+  inside the cockpit — became its own **Weekly Work Plan** view.
+- **A project opens on the view its state calls for:** no activities → Schedule Setup; a schedule
+  already there → Project Schedule. Decided once per project, never re-decided on a refresh.
+- **Importing a programme is now four checking steps inside the Setup**, not a modal that commits on
+  the first click: check the activities and file each WBS branch under a phase (or exclude it), map
+  the location breakdown, settle the file's relationships, then review and write. The single
+  all-at-once import modal was deleted rather than left unreachable, so there is exactly one path
+  into the importers.
+- **The Location Breakdown lives only in Schedule Setup › Floors & Zones now** — levels and both WBS
+  matchers. The Project Schedule's Group menu keeps a signpost and a deep link.

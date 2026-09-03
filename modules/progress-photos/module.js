@@ -2598,8 +2598,29 @@ window.ProgressPhotos = (function () {
     lightboxAt = (lightboxAt + d + lightboxIds.length) % lightboxIds.length;
     paintLightbox();
   }
+  // Item 10 (2026-09-02): zoom for the lightbox — resets whenever a
+  // DIFFERENT photo is navigated to (paintLightbox is the one place both
+  // open() and step() funnel through), applied as a CSS transform to
+  // whichever media element is showing plus the markup canvas so the two
+  // stay pixel-aligned through any zoom level.
+  var LB_ZOOM_MIN = 1, LB_ZOOM_MAX = 3, LB_ZOOM_STEP = 0.25;
+  var lightboxZoom = 1;
+  function applyLightboxZoom() {
+    var t = 'scale(' + lightboxZoom + ')';
+    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video'), cv = $('pp-lb-markup-canvas');
+    if (imgEl) imgEl.style.transform = t;
+    if (vidEl) vidEl.style.transform = t;
+    if (cv) cv.style.transform = t;
+    var zo = $('pp-lb-zoomout'), zi = $('pp-lb-zoomin');
+    if (zo) zo.disabled = lightboxZoom <= LB_ZOOM_MIN;
+    if (zi) zi.disabled = lightboxZoom >= LB_ZOOM_MAX;
+  }
   function paintLightbox() {
     var r = byId(lightboxIds[lightboxAt]); if (!r) return;
+    // Item 10 (2026-09-02): resets zoom BEFORE anything below measures the
+    // image's box (paintMarkupOverlay's own fit()) — so a stale non-1
+    // transform can never skew a freshly-sized canvas.
+    lightboxZoom = 1;
     // ⚠️ "full load only when opening the photo" — full-resolution is no
     // longer pre-signed for the whole project, so it's resolved HERE, the
     // one place that actually needs it, the moment a photo is opened. The
@@ -2714,6 +2735,20 @@ window.ProgressPhotos = (function () {
     }
     lightboxKeyPlanVisible = false;
     paintKeyPlanOverlay(r);
+    // Item 10 (2026-09-02): zoom in/out, wired the same way every other
+    // lightbox tool button is — a fresh onclick per paint (cheap; this whole
+    // function repaints on every photo open/step already) rather than a
+    // one-time bind, so it always closes over the CURRENT `r`.
+    var zo = $('pp-lb-zoomout'), zi = $('pp-lb-zoomin');
+    if (zo) zo.onclick = function () {
+      lightboxZoom = Math.max(LB_ZOOM_MIN, lightboxZoom - LB_ZOOM_STEP);
+      applyLightboxZoom();
+    };
+    if (zi) zi.onclick = function () {
+      lightboxZoom = Math.min(LB_ZOOM_MAX, lightboxZoom + LB_ZOOM_STEP);
+      applyLightboxZoom();
+    };
+    applyLightboxZoom();
     lightboxMarkupVisible = markupGlobalVisible();
     paintMarkupOverlay(r);
     hydrate($('pp-lightbox'));
@@ -2786,7 +2821,12 @@ window.ProgressPhotos = (function () {
     var canvas = $('pp-lb-markup-canvas'); if (!canvas) return;
     var imgEl = r.media_type === 'video' ? $('pp-lb-video') : $('pp-lb-img');
     var show = lightboxMarkupVisible && r.markup && r.markup.length;
-    canvas.style.display = show ? '' : 'none';
+    // ⚠️ Item 6 fix: `.pp-lb-markup`'s own base CSS rule is `display:none`
+    // (module.css) — setting the inline style to an EMPTY STRING clears the
+    // override rather than showing it, so it fell straight back to the
+    // stylesheet's `none` and "show markup" never actually showed anything.
+    // Must be an explicit non-none value.
+    canvas.style.display = show ? 'block' : 'none';
     var mkBtn = $('pp-lb-markuptoggle');
     if (mkBtn) {
       mkBtn.classList.toggle('is-active', lightboxMarkupVisible);
@@ -3650,8 +3690,15 @@ window.ProgressPhotos = (function () {
         // into two flex groups; every id/data-attr below is unchanged, so the
         // existing querySelector wiring (by id or [data-*], not by parent) still
         // finds everything.
+        // Item 11: the Tools row and the Line/Fill/Text option groups are now
+        // two EXPLICIT stacked rows (.pp-mk-toolrow / .pp-mk-groupsrow) inside
+        // .pp-mk-toolgroup, rather than one flex-wrap row that only happened
+        // to break onto a second line once it ran out of width — "move line
+        // colours group BELOW the tools group" needs the tools row to always
+        // be its own row, not a width-dependent wrap.
         '<div class="pp-mk-toolbar">' +
         '<div class="pp-mk-toolgroup">' +
+          '<div class="pp-mk-toolrow">' +
           '<div class="pp-mk-tools" role="tablist">' + TOOL_ORDER.map(toolBtnHTML).join('') + '</div>' +
           '<div class="pp-mk-icons pp-mk-stickers" id="pp-mk-icons" style="display:none;">' +
             STICKER_NAMES.map(function (ic) {
@@ -3667,10 +3714,14 @@ window.ProgressPhotos = (function () {
                 '<span style="display:inline-block;width:20px;height:20px;">' + previewSvg + '</span></button>';
             }).join('') +
           '</div>' +
+          '</div>' +
+          '<div class="pp-mk-groupsrow">' +
           // Fifth round item 2: Line colour + Line weight are now visually ONE
           // labelled group, and Fill colour + Fill transparency are a
-          // SEPARATE labelled group — the two were adjacent, same-shaped
-          // swatch rows before, which is exactly what read as "mixed up".
+          // SEPARATE labelled group beside it (item 11: "fill colour group
+          // then beside line colour group") — the two were adjacent,
+          // same-shaped swatch rows before, which is exactly what read as
+          // "mixed up".
           '<div class="pp-mk-group pp-mk-group-line">' +
             '<span class="pp-mk-grouplabel">Line</span>' +
             '<div class="pp-mk-colors" id="pp-mk-colors" title="Line colour">' + MARKUP_COLORS.map(function (c) {
@@ -3702,7 +3753,8 @@ window.ProgressPhotos = (function () {
             '<label class="pp-mk-checklabel" title="Draw a border around the text box">' +
               '<input type="checkbox" id="pp-mk-textborder" /> Border</label>' +
           '</div>' +
-        '</div>' +
+          '</div>' + // /.pp-mk-groupsrow
+        '</div>' + // /.pp-mk-toolgroup
         '<div class="pp-mk-actiongroup">' +
           '<button type="button" class="pd-btn" id="pp-mk-undo" title="Undo">' + (window.Icons ? Icons.svg('undo', 16) : 'Undo') + '</button>' +
           // Fifth round item 3.
@@ -3991,6 +4043,18 @@ window.ProgressPhotos = (function () {
       return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
     }
     canvas.addEventListener('pointerdown', function (e) {
+      // Item 12 fix: a canvas has no `tabindex` and is not natively focusable,
+      // so the BROWSER'S OWN default mousedown action — which runs right
+      // after this handler returns — blurs whatever currently has focus and
+      // tries to focus the (unfocusable) canvas instead. That happens to run
+      // just after the Text tool's own `textEl.focus()` below, so the
+      // just-opened text box was blurred again within the same click, and
+      // `closeTextEdit`'s onblur handler then deleted it for being empty —
+      // "clicking Text does nothing" was this, not a missing feature.
+      // Proved live: a real `page.mouse.down()/up()` click reproduced it,
+      // while a bare synthetic `dispatchEvent(new PointerEvent(...))` (which
+      // never runs the browser's native default action) did not.
+      e.preventDefault();
       canvas.setPointerCapture(e.pointerId);
       if (editingTextIdx >= 0) closeTextEdit(true);
       var p = toNorm(e);
@@ -5381,6 +5445,13 @@ window.ProgressPhotos = (function () {
     // presentation-only overlay reuses this instead of a second canvas
     // implementation. See openMarkupEditor's own comment for the format.
     openMarkupEditor: function (imageUrl, initialMarkup, onSave) { openMarkupEditor(imageUrl, initialMarkup, onSave); },
+    // Public (non-underscore) accessors for the ONE shared, per-project
+    // "show markup" preference (item 7, presentation-view rework) — reused
+    // by ppr.js's own pane markup toggle so hiding markup in the
+    // presentation view also hides it on Gallery tiles/the lightbox and vice
+    // versa, rather than a second, independently-toggled preference.
+    markupGlobalVisible: function () { return markupGlobalVisible(); },
+    setMarkupGlobalVisible: function (v) { setMarkupGlobalVisible(v); },
     // Test-only hook (2026-08-30 audit fix) — lets the test harness drive
     // openModal directly against a UI.modal stub shaped like the REAL one
     // (where m.close is the actual DOM-removal function), to genuinely

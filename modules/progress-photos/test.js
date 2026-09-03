@@ -1879,8 +1879,6 @@ console.log('\n[misc] insert().select() returns the new row id');
      /objs\.splice\(idx, 1\); pushHistory\(\); redraw\(\);/.test(mjs));
   ok('presentation markup is a SEPARATE store, keyed by (slide, pane) — never attached to the photo itself',
      /function markupKey\(slideId, pane\) \{ return slideId \+ '\|' \+ pane; \}/.test(pjs));
-  ok('the presentation pane reuses the SAME editor rather than re-implementing drawing a second time',
-     /ProgressPhotos\.openMarkupEditor\(u, markupFor\(cur\.id, which\), function \(objs\) \{/.test(pjs));
   // ⚠️ Superseded (owner feedback, progress-photos item 5): the text labels
   // on Markup/Adjust are gone again — icon-only, matching every other
   // lightbox tool, with the title attribute still naming each on hover. The
@@ -1892,8 +1890,30 @@ console.log('\n[misc] insert().select() returns the new row id');
      /id="pp-lb-adjustedit" title="Adjust exposure[^"]*">\s*<span data-ico="sliders"/.test(html) &&
      !/pp-lb-markupedit"[\s\S]{0,200}<span>Markup<\/span>/.test(html) &&
      !/pp-lb-adjustedit"[\s\S]{0,200}<span>Adjust<\/span>/.test(html));
+  // ⚠️ Checks the real RULE DECLARATION, not a bare substring — module.css's
+  // own comment on the zoom-button addition explains .pp-lb-tool-labeled is
+  // NOT carried forward, and a naive substring check would trip on that
+  // prose itself (the same trap this file's history has hit before).
   ok('the now-unused .pp-lb-tool-labeled rule is removed, not left as dead CSS',
-     !/\.pp-lb-tool-labeled/.test(css));
+     !/\.pp-lb-tool-labeled\s*\{/.test(css));
+  // 2026-09-02 item 7: the per-pane "Edit markup" entry point (ppr-mkedit-<which>,
+  // which called openMarkupEditor + saveSlideMarkup against the SEPARATE
+  // ppr_slide_markups store) is REMOVED — presentation view now only ever
+  // VIEWS the photo's own permanent markup (progress_photos.markup), toggled
+  // by the one shared, persisted markupGlobalVisible() preference (proxied
+  // through photoMarkupVisible()/setPhotoMarkupVisible() so item 7's own
+  // requirement — "persist the setting" — is met without duplicating the
+  // per-pane toggle module.js/the Gallery/lightbox already share). Editing
+  // still happens exactly one place: the Gallery lightbox.
+  ok('the presentation pane reuses the SAME drawing routine module.js exports for its READ-ONLY markup view',
+     /ProgressPhotos\.drawMarkupOnCanvas\(pcv, ph\.markup \|\| \[\]\)/.test(pjs));
+  ok('the per-pane "Edit markup" entry point is gone — no ppr-mkedit- id remains',
+     !/ppr-mkedit-/.test(pjs));
+  ok('photoMarkupVisible()/setPhotoMarkupVisible() proxy the ONE shared, persisted preference (not a per-pane session flag)',
+     /function photoMarkupVisible\(\) \{ return ProgressPhotos\.markupGlobalVisible\(\); \}/.test(pjs) &&
+     /function setPhotoMarkupVisible\(v\) \{ ProgressPhotos\.setMarkupGlobalVisible\(v\); \}/.test(pjs));
+  ok('the header toggle button calls through that proxy, never the module.js export directly',
+     /setPhotoMarkupVisible\(!photoMarkupVisible\(\)\)/.test(pjs));
 
   // --- Fourth round, items 3/4 (2026-08-30): select-to-edit, Line, Polygon --
   // "I can't select the markup or shape to edit" — the biggest gap. Genuinely
@@ -3367,39 +3387,48 @@ console.log('\n[misc] insert().select() returns the new row id');
      /id="ppr-back" title="Back to the presentation list" style="display:none;">\s*\n\s*<span data-ico="arrowLeft" data-ico-size="14"><\/span> Back<\/button>/.test(html));
 
   // --- Item 10: "Preview this presentation" removed, replaced by a photo-markup toggle
+  // ⚠️ Superseded again by the LATER 2026-09-02 round (items 7/8/9/10, see
+  // section [41] below): showPhotoMarkup (a plain bool var) is gone —
+  // photoMarkupVisible()/setPhotoMarkupVisible() now PROXY the one shared,
+  // persisted ProgressPhotos.markupGlobalVisible() preference so item 7's
+  // own requirement ("persist the setting") is met, and the per-pane
+  // SLIDE-only markup editor/canvas (ppr-mkcanvas-<which>, ppr_slide_markups)
+  // is retired entirely — only the photo's own permanent markup canvas
+  // (ppr-photomkcanvas-<which>) remains. Assertions rewritten to match.
   ok('the "Preview this presentation\'s slides" header icon is gone; a photo-markup toggle (ppr-photomk-toggle) takes its place',
      !/id="ppr-pres-preview"/.test(pjs) && /id="ppr-photomk-toggle"/.test(pjs));
-  ok('showPhotoMarkup is a SEPARATE, presentation-wide flag from showMarkup{} (the per-pane SLIDE-only annotation toggle), defaulting true',
-     /var showPhotoMarkup = true;/.test(pjs));
-  ok('clicking the toggle flips showPhotoMarkup and re-renders the slide (both panes read it fresh on every renderSlides() call)',
-     /\$\('ppr-photomk-toggle'\)\.onclick = function \(\) \{\s*\n\s*showPhotoMarkup = !showPhotoMarkup;\s*\n\s*renderSlides\(\);\s*\n\s*\};/.test(pjs));
-  ok('pane() reads the photo\'s OWN permanent markup (ph.markup, progress_photos.markup) — a field the slide-markup canvas never reads',
+  ok('photoMarkupVisible()/setPhotoMarkupVisible() are SEPARATE from showMarkup{} (the retired-in-place, per-pane SLIDE-only annotation toggle) — they proxy the one shared, persisted preference',
+     /function photoMarkupVisible\(\) \{ return ProgressPhotos\.markupGlobalVisible\(\); \}/.test(pjs) &&
+     /function setPhotoMarkupVisible\(v\) \{ ProgressPhotos\.setMarkupGlobalVisible\(v\); \}/.test(pjs));
+  ok('clicking the toggle calls setPhotoMarkupVisible(!photoMarkupVisible()) and re-renders the slide (both panes read it fresh on every renderSlides() call)',
+     /\$\('ppr-photomk-toggle'\)\.onclick = function \(\) \{\s*\n\s*setPhotoMarkupVisible\(!photoMarkupVisible\(\)\);\s*\n\s*renderSlides\(\);\s*\n\s*\};/.test(pjs));
+  ok('pane() reads the photo\'s OWN permanent markup (ph.markup, progress_photos.markup) through the shared preference',
      /var photoMk = \(ph && ph\.markup\) \|\| \[\];/.test(pjs) &&
-     /var photoMkVisible = showPhotoMarkup && u && photoMk\.length;/.test(pjs));
-  ok('the photo-markup canvas is a SECOND, separate canvas element from the slide-markup one (ppr-photomkcanvas-<which> vs ppr-mkcanvas-<which>), painted UNDERNEATH it in DOM order',
-     /id="ppr-photomkcanvas-' \+ which \+ '"/.test(pjs) && /id="ppr-mkcanvas-' \+ which \+ '"/.test(pjs) &&
-     pjs.indexOf('ppr-photomkcanvas-') < pjs.indexOf("id=\"ppr-mkcanvas-' + which + '\""));
-  ok('wirePaneMarkup paints the photo-markup canvas from photoById(photoId).markup via the SAME shared drawMarkupOnCanvas export the slide canvas uses (never a second drawing implementation)',
+     /var photoMkVisible = photoMarkupVisible\(\) && u && photoMk\.length;/.test(pjs));
+  ok('the per-pane SLIDE-only markup canvas (ppr-mkcanvas-<which>) is gone — the photo\'s own permanent markup canvas (ppr-photomkcanvas-<which>) is the only markup canvas a pane can render now',
+     /id="ppr-photomkcanvas-' \+ which \+ '"/.test(pjs) && !/id="ppr-mkcanvas-' \+ which \+ '"/.test(pjs));
+  ok('wirePaneMarkup paints the photo-markup canvas from photoById(photoId).markup via the SAME shared drawMarkupOnCanvas export the Gallery/lightbox use (never a second drawing implementation)',
      /var ph = photoById\(photoId\);\s*\n\s*if \(ph && window\.ProgressPhotos && ProgressPhotos\.drawMarkupOnCanvas\) \{\s*\n\s*ProgressPhotos\.drawMarkupOnCanvas\(pcv, ph\.markup \|\| \[\]\);/.test(pjs));
   ok('the slide-export path (slideFigureHTML/EXPORT_CSS) is untouched by item 10 — the photo-markup toggle is a live viewing aid, never baked into a downloaded file',
      /function slideFigureHTML/.test(pjs) && !/showPhotoMarkup/.test(pjs.slice(pjs.indexOf('function slideFigureHTML'))));
 
   // --- Item 11: ONE key-plan toggle, top-right corner overlay at 1/10 size --
+  // ⚠️ Superseded again by item 8 of the LATER 2026-09-02 round (section [41]
+  // below): the flat popup (kpPopup/kpPath/.ppr-kppopup) is itself retired —
+  // replaced by a resizable overlay drawing the REAL bim.js pin+cone
+  // (kpInfo/kpLegacyPath/kpOverlay/.ppr-kpoverlay). Assertions rewritten.
   ok('item 21\'s per-pane keyPlanOpenPane state is gone (no declaration/assignment of it survives — only explanatory prose mentioning the retired name), replaced by a single showKeyPlan flag',
      !/var keyPlanOpenPane/.test(pjs) && !/keyPlanOpenPane\[/.test(pjs) && !/keyPlanOpenPane =/.test(pjs) &&
      /var showKeyPlan = false;/.test(pjs));
   ok('openPpr() resets showKeyPlan (not the old per-pane object) when opening a presentation',
      /selId = id; viewPprId = id; slideAt = 0; showKeyPlan = false;/.test(pjs));
-  ok('the header key-plan toggle (#ppr-kp-toggle) is offered ONLY when the current slide actually has a key plan on at least one pane — never a speculative control',
-     /\(cur && \(keyPlanPathFor\(cur, 'before'\) \|\| keyPlanPathFor\(cur, 'after'\)\)\)/.test(pjs) &&
-     /id="ppr-kp-toggle"/.test(pjs));
-  ok('clicking it flips showKeyPlan (a presentation-wide flag) and re-renders — both panes read it fresh',
+  ok('clicking the header key-plan toggle (#ppr-kp-toggle) flips showKeyPlan (a presentation-wide flag) and re-renders — both panes read it fresh',
      /\$\('ppr-kp-toggle'\)\.onclick = function \(\) \{\s*\n\s*showKeyPlan = !showKeyPlan;\s*\n\s*renderSlides\(\);\s*\n\s*\};/.test(pjs));
-  ok('pane() no longer renders a per-pane ppr-kpicon button — the popup\'s visibility is driven by the header\'s showKeyPlan alone, gated per-pane only on whether THAT photo has a plan',
-     !/class="ppr-kpicon/.test(pjs) &&
-     /var kpPopup = \(showKeyPlan && kpPath\)/.test(pjs));
-  ok('module.css: the popup is pinned to the photo\'s own top-right corner (top:8px;right:8px, matching where the retired per-pane icon used to sit) and sized as a FRACTION of the photo (10% width), not a fixed 220px dropdown',
-     /\.ppr-kppopup \{[^}]*top: 8px; right: 8px;[^}]*width: 10%;/.test(css.replace(/\n/g, ' ')));
+  ok('pane() no longer renders a per-pane ppr-kpicon button, nor the old flat kpPopup/kpPath — the overlay\'s open state is showKeyPlan alone, gated per-pane only on whether THAT photo actually has a plan (kpInfo or the legacy kpLegacyPath)',
+     !/class="ppr-kpicon/.test(pjs) && !/var kpPopup/.test(pjs) && !/var kpPath =/.test(pjs) &&
+     /var kpOpen = showKeyPlan && \(kpInfo \|\| kpLegacyPath\);/.test(pjs));
+  ok('the retired flat .ppr-kppopup CSS rule is gone entirely (superseded by .ppr-kpoverlay, which draws the real pin+cone)',
+     !/\.ppr-kppopup\s*\{/.test(css) && /\.ppr-kpoverlay \{/.test(css));
   ok('the retired .ppr-kpicon CSS rule is gone entirely',
      !/\.ppr-kpicon\s*\{/.test(css));
   ok('.pp-iconbtn.is-active exists (the shared "on" state both the item-10 and item-11 header toggles use)',
@@ -3617,6 +3646,203 @@ console.log('\n[misc] insert().select() returns the new row id');
      /if \(res\.error && isMissingColumnErr\(res\.error\) && 'report_type' in data\) \{\s*\n\s*var retry = Object\.assign\(\{\}, data\); delete retry\.report_type;/.test(pjs));
   ok('generateFromTemplate() carries the RUNNING TEMPLATE\'s own meeting_type onto the presentation it creates — the concrete "reuse the existing classification field" the owner asked to check for',
      /report_type: tmpl\.meeting_type/.test(pjs));
+
+  // =========================================================== [47] =========
+  // Items 7/8/9/10 (2026-09-02, a later round than [41]-[46] above): the
+  // presentation pane's markup toggle now reads the PHOTO'S OWN permanent
+  // markup (progress_photos.markup) through photoMarkupVisible()/
+  // setPhotoMarkupVisible() — proxies over the one shared, persisted
+  // ProgressPhotos.markupGlobalVisible() preference, so item 7's own
+  // requirement ("persist the setting") is met without a second, per-pane
+  // markup mechanism competing with it. The per-pane "add presentation
+  // markup" edit feature (ppr-mkedit-<which>, the separate SLIDE-only
+  // ppr-mkcanvas-<which> canvas, keyPlanOpenPane) is removed entirely; the
+  // key-plan overlay is now the real bim.js pin+cone (position + camera
+  // direction), gated by the SINGLE showKeyPlan header flag (kpOpen =
+  // showKeyPlan && (kpInfo || kpLegacyPath)) rather than a retired per-pane
+  // open state, and resizable by dragging its bottom-left corner; clicking
+  // a pane's photo opens the ordinary lightbox; and every photo viewer
+  // surface (lightbox + both panes) gained zoom in/out, to the left of the
+  // markup toggle. Genuinely executed via new hooks (_keyPlanInfoForPane,
+  // _paneHTML, _setPaneZoom/_getPaneZoom/_applyPaneZoom) rather than only
+  // regex-read — pane()'s conditional markup is exactly the kind of "which
+  // branch actually fired" question a source-level read can't answer alone.
+  console.log('\n[47] Items 7/8/9/10: photo-owned markup toggle, the real pin+cone key plan, click-to-open, zoom everywhere');
+
+  // --- keyPlanInfoForPane's composition logic (item 8) ---
+  (function () {
+    const savedPinInfoFor = BIM.pinInfoFor;
+    try {
+      eq('keyPlanInfoForPane: no photoId returns null without ever consulting BIM', PPR._keyPlanInfoForPane(null), null);
+
+      BIM.pinInfoFor = function () { return null; };
+      eq('keyPlanInfoForPane: BIM reports no pin at all for this photo -> null', PPR._keyPlanInfoForPane('p1'), null);
+
+      BIM.pinInfoFor = function () { return { pin: null, planUrl: 'x' }; };
+      eq('keyPlanInfoForPane: BIM info with a falsy .pin -> null (never a half-formed overlay with no pin to draw)',
+         PPR._keyPlanInfoForPane('p1'), null);
+
+      BIM.pinInfoFor = function () { return { pin: { x_norm: 0.5 }, planUrl: 'plan.png', planWidth: 800, planHeight: 400 }; };
+      let info = PPR._keyPlanInfoForPane('p1');
+      ok('keyPlanInfoForPane: aspect is the PLAN\'s real width/height ratio when both dimensions are known (800/400 = 2)',
+         info && info.aspect === 2);
+      eq('...and planUrl/pin pass through unchanged', [info.planUrl, info.pin.x_norm], ['plan.png', 0.5]);
+
+      BIM.pinInfoFor = function () { return { pin: { x_norm: 0.1 }, planUrl: 'y.png', planWidth: null, planHeight: null }; };
+      info = PPR._keyPlanInfoForPane('p1');
+      ok('keyPlanInfoForPane: unknown plan dimensions fall back to a plain 4:3 box, never NaN/a divide-by-zero',
+         info && info.aspect === 4 / 3);
+
+      BIM.pinInfoFor = function () { return { pin: { x_norm: 0.1 }, planUrl: 'z.png', planWidth: 800, planHeight: 0 }; };
+      info = PPR._keyPlanInfoForPane('p1');
+      ok('keyPlanInfoForPane: a zero height is treated the same as "unknown" (falsy), not a literal division by zero',
+         info && info.aspect === 4 / 3);
+    } finally {
+      BIM.pinInfoFor = savedPinInfoFor;
+    }
+  })();
+
+  // --- pane(): no photo linked at all ---
+  (function () {
+    const sl = { id: 'sl-empty', before_photo_id: null, after_photo_id: null };
+    const h = PPR._paneHTML([], {}, sl, 'after', false);
+    ok('pane(): with no photo linked, renders the "Photo not set" placeholder and NO data-openphoto/zoom/markup controls at all — nothing to click, zoom or toggle',
+       /Photo not set/.test(h) && !/data-openphoto/.test(h) && !/ppr-zoomin-after/.test(h) && !/ppr-photomkcanvas-after/.test(h));
+  })();
+
+  // --- pane(): a linked photo — data-openphoto (item 9) + zoom clamping (item 10) ---
+  (function () {
+    const photos = [{ id: 'ph1', photo_url: 'path/a.jpg', description: 'desc', location: 'Tower 1', taken_at: '2026-01-01', markup: [] }];
+    const urlCache = { 'path/a.jpg': 'signed://a' };
+    const sl = { id: 'sl1', after_photo_id: 'ph1', before_photo_id: null };
+
+    PPR._setPaneZoom('after', 1);
+    let h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+    ok('pane(): a linked photo\'s <img> carries data-openphoto with the EXACT photo id (item 9\'s click-to-open wiring target)',
+       /data-openphoto="ph1"/.test(h));
+    ok('pane(): zoom out/in buttons render for a linked photo', /ppr-zoomout-after/.test(h) && /ppr-zoomin-after/.test(h));
+    ok('pane(): at the minimum zoom (1), Zoom Out is disabled and Zoom In is not',
+       /id="ppr-zoomout-after" title="Zoom out" disabled/.test(h) && !/id="ppr-zoomin-after" title="Zoom in" disabled/.test(h));
+    ok('pane(): with no markup on the photo, the photo-markup canvas is NOT rendered at all (there is no PER-PANE toggle button any more — only the header #ppr-photomk-toggle controls visibility, and there is nothing to show here regardless)',
+       !/ppr-photomkcanvas-after/.test(h));
+
+    PPR._setPaneZoom('after', 3);
+    h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+    ok('pane(): at the maximum zoom (3), Zoom In is disabled and Zoom Out is not',
+       /id="ppr-zoomin-after" title="Zoom in" disabled/.test(h) && !/id="ppr-zoomout-after" title="Zoom out" disabled/.test(h));
+    PPR._setPaneZoom('after', 1);
+  })();
+
+  // --- pane(): the photo-markup canvas reads/reflects the ONE shared,
+  // persisted preference (photoMarkupVisible/setPhotoMarkupVisible, proxying
+  // ProgressPhotos.markupGlobalVisible) — there is no per-pane toggle button
+  // any more; only the header #ppr-photomk-toggle (wired in wirePresActs)
+  // controls it, and pane() itself only decides whether to draw the canvas.
+  (function () {
+    const photos = [{ id: 'ph2', photo_url: 'path/b.jpg', description: '', location: '', taken_at: '2026-01-02', markup: [{ type: 'rect' }] }];
+    const urlCache = { 'path/b.jpg': 'signed://b' };
+    const sl = { id: 'sl2', after_photo_id: 'ph2', before_photo_id: null };
+
+    PP.setMarkupGlobalVisible(true);
+    let h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+    ok('pane(): markup present + the shared preference ON -> the photo-markup canvas draws',
+       /<canvas class="ppr-mkcanvas ppr-photomkcanvas" id="ppr-photomkcanvas-after"><\/canvas>/.test(h));
+    ok('pane(): no "add presentation markup" editor entry point is left anywhere in the shipped source (item 7 removed it, not just hid it)',
+       !/ppr-mkedit-/.test(pjs));
+
+    PP.setMarkupGlobalVisible(false);
+    h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+    ok('pane(): same photo, shared preference OFF -> the canvas is not drawn at all',
+       !/ppr-photomkcanvas-after/.test(h));
+    PP.setMarkupGlobalVisible(true);
+  })();
+
+  // --- pane(): the resizable, pin+cone key-plan overlay (item 8), gated by
+  // the SINGLE header showKeyPlan flag (via the new _setShowKeyPlan hook) —
+  // superseding item 11's retired per-pane keyPlanOpenPane state.
+  (function () {
+    const savedPinInfoFor = BIM.pinInfoFor, savedMarkerHTML = BIM.keyPlanMarkerHTML;
+    try {
+      BIM.pinInfoFor = function () { return { pin: { x_norm: 0.4, y_norm: 0.6 }, planUrl: 'plan.png', planWidth: 800, planHeight: 400 }; };
+      BIM.keyPlanMarkerHTML = function (pin) { return '<div class="fake-pin" data-x="' + pin.x_norm + '"></div>'; };
+
+      const photos = [{ id: 'ph3', photo_url: 'path/c.jpg', markup: [], taken_at: '2026-01-03' }];
+      const urlCache = { 'path/c.jpg': 'signed://c' };
+      const sl = { id: 'sl3', after_photo_id: 'ph3', before_photo_id: null };
+
+      PPR._setShowKeyPlan(false);
+      let h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+      ok('pane(): a photo WITH a real pin renders NO overlay at all while the header toggle (showKeyPlan) is off — there is no per-pane button to open it independently',
+         !/ppr-kpoverlay-after/.test(h));
+
+      PPR._setShowKeyPlan(true);
+      h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+      ok('pane(): with showKeyPlan on, the overlay box carries the PLAN\'s real aspect ratio (800/400=2), never a fixed/guessed one — the pin renders undistorted',
+         /id="ppr-kpoverlay-after" style="width:10%;aspect-ratio:2;"/.test(h));
+      ok('...defaults to the 10% overlay size (KP_OVERLAY_DEFAULT) until the user drags to resize',
+         /style="width:10%;/.test(h));
+      ok('...draws the SAME pin+cone marker bim.js\'s own Plans-tab view uses (BIM.keyPlanMarkerHTML), never a re-derived one',
+         /<div class="fake-pin" data-x="0\.4"><\/div>/.test(h));
+      ok('...and carries a drag-to-resize handle on its bottom-left corner',
+         /class="ppr-kpoverlay-resize" data-resize="after" title="Drag to resize"/.test(h));
+    } finally {
+      BIM.pinInfoFor = savedPinInfoFor; BIM.keyPlanMarkerHTML = savedMarkerHTML;
+      PPR._setShowKeyPlan(false);
+    }
+  })();
+
+  // --- pane(): the legacy flat key_plan_url fallback (pre-2026-08-30 slides) ---
+  (function () {
+    const savedPinInfoFor = BIM.pinInfoFor;
+    try {
+      BIM.pinInfoFor = function () { return null; }; // no real bim.js pin recorded
+      const photos = [{ id: 'ph4', photo_url: 'path/d.jpg', key_plan_url: 'keyplans/legacy.png', markup: [], taken_at: '2026-01-04' }];
+      const urlCache = { 'path/d.jpg': 'signed://d', 'keyplans/legacy.png': 'signed://legacy' };
+      const sl = { id: 'sl4', after_photo_id: 'ph4', before_photo_id: null };
+      PPR._setShowKeyPlan(true);
+      const h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+      ok('pane(): a photo with NO real bim.js pin but a legacy key_plan_url still renders a plain, pin-less key-plan overlay — pre-2026-08-30 slides keep working',
+         /class="ppr-kpoverlay ppr-kpoverlay-legacy"/.test(h) && /signed:\/\/legacy/.test(h));
+    } finally {
+      BIM.pinInfoFor = savedPinInfoFor;
+      PPR._setShowKeyPlan(false);
+    }
+  })();
+
+  // --- click-to-open wiring (item 9) — the harness's document.querySelector
+  // always returns null (see documentStub above), so the real click can't be
+  // driven end to end here; confirmed structurally instead, against the
+  // shipped source rather than assumed from the render-side test above.
+  ok('wirePaneMarkup(): clicking the pane\'s photo routes through the SAME guarded ProgressPhotos.openPhotoById used by the audit-fixed Plan/Stack views — never a raw openLightbox(id) that silently falls back to index 0 on a miss',
+     /if \(window\.ProgressPhotos && ProgressPhotos\.openPhotoById\) \{\s*ProgressPhotos\.openPhotoById\(this\.dataset\.openphoto\);\s*\}/.test(pjs));
+  ok('...bound to the <img> itself via document.querySelector(\'#ppr-pane-\' + which + \' .ppr-img[data-openphoto]\'), never the wrapping .ppr-imgwrap — so a click on a sibling corner tool button (markup/key-plan/zoom) can never bubble into it',
+     /var imgEl = document\.querySelector\('#ppr-pane-' \+ which \+ ' \.ppr-img\[data-openphoto\]'\);/.test(pjs));
+
+  // --- item 10, the lightbox side: zoom buttons + reset-before-markup-repaint ordering ---
+  // ⚠️ The markup SHOW/HIDE toggle lives in the RIGHT-hand cluster
+  // (#pp-lb-markuptoggle, owner feedback item 6) — not beside Download in
+  // the left cluster, where only the markup EDIT button (#pp-lb-markupedit)
+  // sits. The zoom buttons are positioned between Download and that edit
+  // button in the left cluster.
+  ok('index.html: the lightbox toolbar gained Zoom out/in buttons, positioned between Download and the markup-edit button',
+     /id="pp-lb-download"[\s\S]{0,400}id="pp-lb-zoomout"[\s\S]{0,400}id="pp-lb-zoomin"[\s\S]{0,900}id="pp-lb-markupedit"/.test(html));
+  ok('...and the (separate, right-hand-cluster) markup SHOW/HIDE toggle still exists, unaffected',
+     /id="pp-lb-markuptoggle"/.test(html));
+  ok('module.js: lightboxZoom resets to 1 as the FIRST thing paintLightbox() does — before paintMarkupOverlay() ever measures the image\'s bounding rect, so a stale non-1 transform can never skew the freshly-sized canvas',
+     (function () {
+       const m = /function paintLightbox\(\) \{([\s\S]*?)\n  \}\n  var lightboxMarkupVisible/.exec(mjs);
+       if (!m) return false;
+       const zoomResetAt = m[1].indexOf('lightboxZoom = 1;');
+       const paintOverlayAt = m[1].lastIndexOf('paintMarkupOverlay(r);');
+       return zoomResetAt !== -1 && paintOverlayAt !== -1 && zoomResetAt < paintOverlayAt;
+     })());
+  ok('module.js: applyLightboxZoom() disables Zoom out at LB_ZOOM_MIN and Zoom in at LB_ZOOM_MAX, applying an identical transform: scale(z) to the image/video AND the markup canvas so they stay pixel-aligned at any zoom',
+     /function applyLightboxZoom\(\) \{/.test(mjs) &&
+     /disabled = lightboxZoom <= LB_ZOOM_MIN/.test(mjs) && /disabled = lightboxZoom >= LB_ZOOM_MAX/.test(mjs));
+  ok('module.css: both viewer surfaces clip overflow on their wrap and apply the SAME transform-origin/transition to the media + its markup overlay, so zooming can never spill outside the frame or desync the two layers',
+     /\.ppr-imgwrap \{[^}]*overflow: hidden/.test(cssFile) && /\.pp-lb-imgwrap \{[^}]*overflow: hidden/.test(cssFile) &&
+     /\.ppr-img \{[^}]*transform-origin: center center/.test(cssFile) && /\.pp-lb-img \{[^}]*transform-origin: center center/.test(cssFile) &&
+     /\.pp-lb-markup \{[^}]*transform-origin: center center/.test(cssFile));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
