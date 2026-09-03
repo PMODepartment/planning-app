@@ -84,6 +84,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (aj) — Magnifier removed; Planning Phase's branches were filed under Execution
+Owner: *"remove the magnifier since there is a zoom in already feature"* and *"There are found WBS under
+the execution phase such as procurement, design development and others that should be part of other
+phases / WBS."* Detail in `modules/project-schedule/CLAUDE.md`.
+- **The magnifier is out** — the focus window's scroll-to-zoom answers the same question with the whole
+  building in view. 9 functions, the panel, both resize handles, the cursor and its localStorage keys.
+  ⚠️ `[data-vsk].is-loupe` **stays**: the focus window's hover sync marks the twin zone with it.
+- ⚠️ **A self-inflicted scare worth recording:** the cursor block sat immediately before the same anchor
+  the focus-window CSS had been inserted at, so cutting to that anchor **swallowed every `.ps-vs-fz-*`
+  rule**. 24 browser checks failed at once. Restored verbatim from HEAD. **Print or diff what a computed
+  `src[i:j]` cut removes before writing it** — the `catEntry` lesson, again.
+- ⚠️⚠️ **The WBS bug is two faults meeting.** (1) `_wbsBackfillSkeleton` did
+  `if (!key || have[key]) continue;` — so when a phase ALREADY EXISTED it skipped the entry **children
+  included**. Planning Phase's three children were added to `WBS_SKELETON` long after most projects were
+  seeded, and all of those have a Planning Phase — so they were never created there. Measured against
+  HEAD: **0 of 3**. (2) `_skeletonRoot(kind)` resolves the branch by `source_kind` **alone, wherever it
+  sits**, and never checks its parent — so once one existed under the wrong phase every sync reinforced
+  it there.
+- **Fixed at both:** the backfill reconciles an existing phase's children, and a new
+  `_wbsHealSkeletonPlacement()` moves a skeleton child back under the phase the skeleton declares.
+  ⚠️ **Restoring, not overriding** — these nodes are `is_locked`, so nobody moved them by hand. ⚠️ An
+  **unlocked** same-name branch (a pushed trade called "Procurement") is never touched; ⚠️ a node filed
+  deep inside a real branch is left alone; ⚠️ the heal never CREATES a phase; ⚠️ it runs **before** the
+  backfill (or the backfill mints an empty twin) and **before** the code resync (a dotted code is
+  derived from position). ⚠️ It toasts what it moved.
+- ⚠️ **The third case is now visible rather than silent:** if the tree is right but the dotted CODES are
+  stale the grid still misplaces a branch, and `_wbsResyncCodes` deliberately refuses to repair that
+  while any unlocked node sits at the top level. That refusal was a `console.warn`; it now says so once
+  per project and points at Schedule Setup → WBS.
+- **35 checks in Node** executing the shipped functions against **the exact tree in the screenshot**; the
+  suite fails 8+ against HEAD. Focus-window suites still green (29 + 86); 0 functions lost beyond the 9
+  deliberate removals, none still called.
+  ⚠️ **Not verified signed in — which of the two faults produced the screenshot is NOT established**;
+  the fix covers both. `MODULE_V` → `20260902aj`.
+
 ### 2026-09-02 (ah) — The scrub goes smooth, and the trade colours were painting BLACK
 Owner: *"can you make the progress bar smoother, it has fps drop whenever i drag"* and *"how come the
 colors of the trades vanish when put into the full screen. it just turns into black."* Detail in

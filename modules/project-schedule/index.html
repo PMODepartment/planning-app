@@ -1234,6 +1234,9 @@
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
     .ps-vs-seg > button:last-child { border-right:0; }
     .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    /* An icon + label inside a .ps-vs-seg button (the PDF export). It used to borrow the
+       magnifier button's rule; that went with the magnifier, so it has its own name now. */
+    .ps-vs-icolab { display:inline-flex; align-items:center; gap:6px; }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
@@ -1420,8 +1423,8 @@
        ⚠️ These are CSS VARS, not literals in the JS, precisely so the two themes can differ — the
        SVG resolves them from the document. They are re-declared in the PDF export's fixed light
        palette (_vsExportPDF); change one and you must change the other or the print goes flat. */
-    .ps-vstack, .ps-vs-loupe { --ps-vs-scrim:rgba(17,20,26,.34); --ps-vs-veil:rgba(255,255,255,.42); --ps-vs-edge:rgba(15,18,24,.34); }
-    html.pd-dark .ps-vstack, html.pd-dark .ps-vs-loupe { --ps-vs-scrim:rgba(0,0,0,.46); --ps-vs-veil:rgba(255,255,255,.24); --ps-vs-edge:rgba(255,255,255,.24); }
+    .ps-vstack { --ps-vs-scrim:rgba(17,20,26,.34); --ps-vs-veil:rgba(255,255,255,.42); --ps-vs-edge:rgba(15,18,24,.34); }
+    html.pd-dark .ps-vstack { --ps-vs-scrim:rgba(0,0,0,.46); --ps-vs-veil:rgba(255,255,255,.24); --ps-vs-edge:rgba(255,255,255,.24); }
     /* ---- The cards ("windows") -------------------------------------------------------------
        Cards keep their content width (see the note above — that is deliberate), but a row of them
        now shares a height and hangs from a common top line instead of each card ending wherever
@@ -1442,74 +1445,10 @@
     .ps-vs-tower:hover { transform:translateY(-1px); }
     .ps-vs-tower { transition:box-shadow .2s ease, border-color .2s ease, transform .2s ease; }
     @media (prefers-reduced-motion: reduce) { .ps-vs-tower:hover { transform:none; } }
-    /* ---- Magnifier (loupe) ----------------------------------------------------------------
-       Zones get small fast - a tall tower at detail 3 is a wall of 8pt dates, and the Zoom control
-       fixes that only by making the whole building too wide to see at once. The loupe keeps the
-       building where it is and paints a magnified copy of whatever the pointer is over into a
-       docked panel on the right. It is a CLONE of the same <svg> with a tighter viewBox, so what
-       the panel shows is exactly what is drawn - there is no second renderer to keep in step. */
-    .ps-vs-stage { display:flex; gap:14px; align-items:flex-start; width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
-    /* ---- Fit the whole building in the pane -----------------------------------------------
-       ⚠️ width:auto is what makes this work. The svg carries explicit width/height ATTRIBUTES, so
-       a max-height alone would squash it — the browser only preserves the aspect ratio when the
-       other axis is free to follow. Both axes are auto here and both are capped, so the building
-       shrinks whole rather than being cropped or distorted.
-       ⚠️ The cap is a CSS VAR set per render from the real pane geometry, not a vh constant: this
-       pane sits under a toolbar whose height changes with wrapping, and a fixed vh would put the
-       bottom of a tall building behind the time bar on exactly the projects that need it most. */
-    .ps-vs-stage.is-fit .ps-vs-scroll { overflow:visible; }
-    .ps-vs-stage.is-fit .ps-vs-scroll svg {
-      width:auto; height:auto; max-width:100%; max-height:var(--ps-vs-fith, 420px); }
-    /* The card must not hold the old width open once its drawing has shrunk. */
-    .ps-vs-stage.is-fit .ps-vs-tower { min-width:0; }
-    /* ⚠️ basis 0, not auto: with an `auto` basis the towers' natural (building) width is the starting
-       size of the viewport, and on a wide building the row still overflows its container - which is
-       how the magnifier ended up hanging off the right edge of the screen. A zero basis makes the
-       viewport take only the space LEFT OVER after the panel, so the panel is always fully on screen. */
-    .ps-vs-stage > .ps-vs-viewport { flex:1 1 0%; min-width:0; max-width:100%; }
-    /* Width is a CSS var so the drag handle can set it without rewriting the flex shorthand.
-       ⚠️ The panel is right-docked, so its LEFT edge is the only one that can move — dragging it
-       left widens the panel and narrows the stacking pane in the SAME gesture, which is why one
-       handle resizes both windows. */
-    .ps-vs-loupe { flex:0 0 var(--ps-loupe-w, clamp(260px, 24vw, 400px)); max-width:72%; box-sizing:border-box;
-      position:sticky; top:6px; border:1px solid var(--pd-line);
-      border-radius:12px; background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
-    /* Rides in the stage's 14px gap (negative margins), so it steals no width from either pane. */
-    .ps-vs-loupe-res { flex:0 0 6px; align-self:stretch; min-height:70px; margin:0 -4px; border-radius:4px;
-      cursor:col-resize; background:transparent; }
-    .ps-vs-loupe-res:hover, .ps-vs-loupe-res.drag { background:var(--pd-red-light); }
-    .ps-vs-loupe-resb { height:7px; cursor:row-resize; background:transparent; }
-    .ps-vs-loupe-resb:hover, .ps-vs-loupe-resb.drag { background:var(--pd-red-light); }
-    /* Held on <body> for the duration of a drag: without it the cursor flickers back to the
-       default the moment the pointer leaves the 6px handle, and text selects as you drag. */
-    body.ps-loupe-rz { cursor:col-resize !important; user-select:none; }
-    body.ps-loupe-rzv { cursor:row-resize !important; user-select:none; }
-    .ps-vs-loupe-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;
-      background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:12.5px; font-weight:800; }
-    .ps-vs-loupe-head .t { display:inline-flex; align-items:center; gap:6px; min-width:0; }
-    .ps-vs-loupe-head .ps-vs-seg > button { padding:3px 9px; }
-    .ps-vs-loupebtn { display:inline-flex; align-items:center; gap:6px; }
-    .ps-vs-loupe-stage { height:var(--ps-loupe-h, clamp(220px, 34vh, 400px)); background:var(--pd-bg); overflow:hidden;
-      display:flex; align-items:center; justify-content:center; }
-    /* The clone is sized by the box, never by its own width/height attributes - those are stripped. */
-    .ps-vs-loupe-stage > svg { width:100%; height:100%; display:block; }
-    .ps-vs-loupe-hint { padding:14px; font-size:12px; color:var(--pd-muted); text-align:center; line-height:1.5; }
-    .ps-vs-loupe-info { padding:9px 11px; border-top:1px solid var(--pd-line); font-size:12px; }
-    .ps-vs-loupe-info .h { font-weight:800; font-size:13px; margin-bottom:3px; }
-    .ps-vs-loupe-info .r { color:var(--pd-muted); line-height:1.55; }
-    /* The hovered zone is outlined in BOTH panes, so it is obvious which cell the loupe is showing.
+    /* ⚠️ KEPT after the magnifier was removed: the FOCUS WINDOW's planned-vs-actual hover sync marks
+       the twin zone in both panes with this class, which is the whole point of the split view.
        !important beats the per-cell stroke painted inline by _vsTowerSVG. */
     [data-vsk].is-loupe { stroke:var(--pd-red) !important; stroke-width:2.5px !important; stroke-dasharray:none !important; }
-    /* ---- Magnify cursor -------------------------------------------------------------------
-       With the loupe on, the pointer itself says so: a loupe glyph rides over the building, so it
-       is obvious the left pane is the thing to sweep. `zoom-in` is the fallback for the rare
-       browser that refuses the SVG cursor. The !important beats .ps-vs-cell's own `pointer`. */
-    .ps-vs-stage.is-loupe-on .ps-vs-scroll,
-    .ps-vs-stage.is-loupe-on .ps-vs-scroll svg,
-    .ps-vs-stage.is-loupe-on .ps-vs-cell {
-      cursor: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cg fill='none' stroke='%23231F20' stroke-width='3' opacity='.35'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M16.2 16.2 24 24' stroke-linecap='round'/%3E%3C/g%3E%3Cg fill='none' stroke='%23E4002B' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M16.2 16.2 24 24' stroke-linecap='round'/%3E%3Cpath d='M8 11h6M11 8v6' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 11 11, zoom-in !important;
-    }
-
     /* ---- Expand a tower: focus window (pan / zoom / compare) ---------------------------------
        Owner 2026-09-02: *"can you add an expand view wherein it would focus on that tower itself and
        then have a progress bar on the bottom… users are able to use mouse controls like scrollbar to
@@ -1658,9 +1597,7 @@
       background:var(--tc, var(--pd-red)); transition:width .28s cubic-bezier(.22,.61,.36,1); }
     .ps-vs-meter > b { position:absolute; top:0; bottom:0; width:2px; background:var(--pd-ink); opacity:.55; }
     @media (prefers-reduced-motion: reduce) { .ps-vs-meter > i { transition:none; } }
-    /* Three children in the header now, so the count is pushed right by its own auto margin
-       rather than by space-between, which would have centred it once a button joined it. */
-    .ps-vs-towerh .ct { margin-left:auto; }
+
     /* The expand affordance on each tower card. Opacity, not display, so it stays keyboard-reachable. */
     .ps-vs-expand { flex:none; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center;
       border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); color:var(--pd-muted);
@@ -1668,12 +1605,8 @@
     .ps-vs-tower:hover .ps-vs-expand, .ps-vs-expand:focus-visible { opacity:1; }
     .ps-vs-expand:hover { border-color:var(--pd-red); color:var(--pd-red); }
     @media (hover: none) { .ps-vs-expand { opacity:1; } }
-
     @media (max-width: 1100px) {
       .ps-vs-stage { flex-direction:column; }
-      .ps-vs-loupe { position:static; flex:1 1 auto; width:100%; max-width:100%; }
-      /* Stacked layout: both panes are full-width, so a horizontal drag has nothing to divide. */
-      .ps-vs-loupe-res { display:none; }
     }
     /* ---- iPad / phone: the vertical stacking is a TOUCH view -------------------------------
        Owner 2026-08-26: *"allow it for an ipad or phone view, wherein it is very aesthetic."*
@@ -1697,7 +1630,6 @@
       /* ⚠️ The magnifier is DISABLED, not merely hidden: on a touch screen there is no hover to
          drive it, and a docked panel would eat half the screen to show nothing. Tapping a zone
          still opens its activity list, which is the phone equivalent. */
-      .ps-vs-loupe, .ps-vs-loupe-res, #ps-vs-loupebtn { display:none !important; }
       .ps-vstack { padding:8px 8px 18px; }
       .ps-vs-chip, .ps-vs-seg button, .ps-vs-bar .pd-btn, .ps-vs-bar .pd-select { min-height:44px; }
       .ps-vs-chips { gap:8px 6px; }
@@ -7082,6 +7014,13 @@
     if (_isMutating()) return;
     // ⚠️ BEFORE the resync, never after: reordering re-codes the root, and the resync is what pushes
     // those codes onto the rows. Reversed, the tree and the codes disagree until the next load.
+    // ⚠️ BEFORE the reorder and the resync: re-parenting changes a branch's position, and a dotted
+    // code is derived purely from position — so the codes must be rewritten from the tree AFTER the
+    // tree is right, not before. Runs here as well as in ensureWbsSkeleton because a sync (which can
+    // create these nodes) happens in between.
+    _repair('Checking the WBS placement…');
+    await _wbsHealSkeletonPlacement();
+    if (gen !== _loadGen) return;
     _repair('Checking the WBS order…');
     await _wbsCanonicalRootOrder();
     if (gen !== _loadGen) return;
@@ -11837,6 +11776,12 @@
   // pushed the top of the building off screen.
   // ⚠️ ON by default. The default view of a stacking is the whole stack; a planner who wants a
   // bigger picture of one part turns Fit off (or hovers, which is cheaper).
+  // ⚠️ The magnifier was REMOVED (owner 2026-09-02: *"remove the magnifier since there is a zoom in
+  // already feature"*) — the focus window's scroll-to-zoom does the same job with the whole building
+  // in view, so a second magnification mechanism was two controls for one question. Its four
+  // localStorage keys are swept once, so a returning browser is not left carrying state for a
+  // feature that no longer exists.
+  try { ['ps_vsloupe', 'ps_vsloupez', 'ps_vsloupew', 'ps_vsloupeh'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
   var _vsFit = true;
   try { var _vf = localStorage.getItem('ps_vsfit'); if (_vf === '0') _vsFit = false; } catch (e) {}
   function _saveVsFit() { try { localStorage.setItem('ps_vsfit', _vsFit ? '1' : '0'); } catch (e) {} }
@@ -11876,59 +11821,6 @@
       }
     }
   }
-  // ---- Magnifier (loupe) state. See the CSS note: hovering the left pane paints a magnified clone
-  // of the same svg into the right-hand panel. Both the on/off state and the magnification are
-  // viewing preferences (like ps_ganttscale), so they persist globally rather than per project.
-  var _vsLoupe = false, _vsLoupeZ = 3;
-  // Floors for the two panes. The stacking pane keeps enough room for one zone column plus the
-  // tower header; the panel keeps enough for its own head controls.
-  var VS_LOUPE_MIN = 200, VS_STACK_MIN = 220;
-  try {
-    _vsLoupe = localStorage.getItem('ps_vsloupe') === '1';
-    var _vlz = parseFloat(localStorage.getItem('ps_vsloupez'));
-    if (_vlz >= 1.5 && _vlz <= 8) _vsLoupeZ = _vlz;
-  } catch (e) {}
-  function _saveLoupe() { try { localStorage.setItem('ps_vsloupe', _vsLoupe ? '1' : '0'); localStorage.setItem('ps_vsloupez', String(_vsLoupeZ)); } catch (e) {} }
-  // ---- Panel size (both windows). Dragging the panel's left edge widens it and narrows the
-  // stacking pane in one gesture; dragging under the magnified drawing sets the panel's height.
-  // null = follow the responsive CSS default, so a planner who never drags keeps today's layout.
-  var _vsLoupeW = null, _vsLoupeH = null;
-  try {
-    var _lw = parseFloat(localStorage.getItem('ps_vsloupew')); if (_lw >= VS_LOUPE_MIN) _vsLoupeW = _lw;
-    var _lh = parseFloat(localStorage.getItem('ps_vsloupeh')); if (_lh >= 140 && _lh <= 1400) _vsLoupeH = _lh;
-  } catch (e) {}
-  function _saveLoupeSize() {
-    try {
-      if (_vsLoupeW == null) localStorage.removeItem('ps_vsloupew'); else localStorage.setItem('ps_vsloupew', String(Math.round(_vsLoupeW)));
-      if (_vsLoupeH == null) localStorage.removeItem('ps_vsloupeh'); else localStorage.setItem('ps_vsloupeh', String(Math.round(_vsLoupeH)));
-    } catch (e) {}
-  }
-  // ⚠️ Clamped against the stage's CURRENT width on every apply, and the corrected value is what
-  // gets stored. A width dragged on a wide window would otherwise be restored verbatim on a narrow
-  // one and collapse the stacking pane to nothing — the exact ps_grid_w trap that once made the
-  // Gantt pane vanish with no way back but editing localStorage.
-  // ⚠️ Mirrors the CSS `max-width:72%` as well as the stacking pane's floor, so the width we STORE
-  // is a width that can actually be displayed. Without the 72% term the drag stored 938px while the
-  // panel rendered 852px, and the number in localStorage described a layout nobody had seen.
-  function _vsLoupeMaxW(avail) {
-    return Math.max(VS_LOUPE_MIN, Math.min(avail - VS_STACK_MIN - 14, avail * 0.72));
-  }
-  function _vsApplyLoupeSize(stage) {
-    if (!stage) return;
-    if (_vsLoupeH != null) stage.style.setProperty('--ps-loupe-h', Math.round(_vsLoupeH) + 'px');
-    else stage.style.removeProperty('--ps-loupe-h');
-    if (_vsLoupeW == null) { stage.style.removeProperty('--ps-loupe-w'); return; }
-    var avail = stage.clientWidth || 0;
-    // With no measurable width yet (hidden pane) leave the stored value alone rather than healing
-    // it to the minimum — that would silently shrink the panel on a background render.
-    if (avail > VS_LOUPE_MIN + VS_STACK_MIN) {
-      _vsLoupeW = Math.min(Math.max(_vsLoupeW, VS_LOUPE_MIN), _vsLoupeMaxW(avail));
-    }
-    stage.style.setProperty('--ps-loupe-w', Math.round(_vsLoupeW) + 'px');
-  }
-  // The svg currently cloned into the panel, its clone, and the cell outlined in the LEFT pane.
-  // All three are reset by every renderVStack - the DOM they point at is replaced wholesale.
-  var _vsLoupeSrc = null, _vsLoupeClone = null, _vsLoupeMark = null;
   // Which trades are shown. Owner 2026-08-27: *"can't there be a filter to show which trades to be
   // shown. In addition, i want a view wherein all selected trades can be shown side by side."*
   // ⚠️ EMPTY MEANS ALL, and that is the whole reason this is a list rather than a set of booleans.
@@ -12918,162 +12810,10 @@
     var _box = m.el.querySelector('.pd-modal'); if (_box) _box.classList.add('ps-vs-modal');
     m.el.querySelector('#ps-vs-x').onclick = function () { m.close(); };
   }
-  // Paint the loupe: point (ux,uy) is in the source svg's USER units, key is the hovered cell (may
-  // be null when the pointer is over the label gutter or the gap between zones).
-  // ---- Resize both windows -------------------------------------------------------------------
-  // One horizontal handle, because the two panes share one row: the panel's width is set directly
-  // and the stacking pane takes whatever is left (it is flex:1 1 0), so a single drag resizes both
-  // and they can never disagree about how much room there is.
-  // ⚠️ Pointer events, not mouse: a planner on a touch screen gets the same handle for free, and
-  // setPointerCapture means the drag survives the pointer leaving the 6px strip mid-gesture.
-  function _vsWireLoupeResize(host) {
-    var stage = host.querySelector('.ps-vs-stage'); if (!stage) return;
-    var hx = host.querySelector('#ps-vs-loupe-res');
-    var hy = host.querySelector('#ps-vs-loupe-resb');
-    if (hx) {
-      hx.onpointerdown = function (e) {
-        if (e.button) return;
-        e.preventDefault();
-        var pane = host.querySelector('#ps-vs-loupe'); if (!pane) return;
-        var x0 = e.clientX, w0 = pane.getBoundingClientRect().width;
-        var max = _vsLoupeMaxW(stage.clientWidth || 0);
-        hx.classList.add('drag'); document.body.classList.add('ps-loupe-rz');
-        try { hx.setPointerCapture(e.pointerId); } catch (_e) {}
-        // Dragging LEFT (dx negative) widens the panel — the handle is on its left edge.
-        hx.onpointermove = function (ev) {
-          _vsLoupeW = Math.min(Math.max(w0 + (x0 - ev.clientX), VS_LOUPE_MIN), max);
-          stage.style.setProperty('--ps-loupe-w', Math.round(_vsLoupeW) + 'px');
-        };
-        var done = function () {
-          hx.onpointermove = hx.onpointerup = hx.onpointercancel = null;
-          hx.classList.remove('drag'); document.body.classList.remove('ps-loupe-rz');
-          try { hx.releasePointerCapture(e.pointerId); } catch (_e) {}
-          _saveLoupeSize();
-          // The clone is sized by its BOX, so it has to be repainted at the new size — otherwise
-          // the magnified drawing keeps the aspect ratio of the box it was painted into.
-          _vsLoupeRepaint();
-        };
-        hx.onpointerup = hx.onpointercancel = done;
-      };
-      hx.ondblclick = function () { _vsLoupeW = null; _saveLoupeSize(); _vsApplyLoupeSize(stage); _vsLoupeRepaint(); };
-    }
-    if (hy) {
-      hy.onpointerdown = function (e) {
-        if (e.button) return;
-        e.preventDefault();
-        var st = host.querySelector('#ps-vs-loupe-stage'); if (!st) return;
-        var y0 = e.clientY, h0 = st.getBoundingClientRect().height;
-        hy.classList.add('drag'); document.body.classList.add('ps-loupe-rzv');
-        try { hy.setPointerCapture(e.pointerId); } catch (_e) {}
-        hy.onpointermove = function (ev) {
-          _vsLoupeH = Math.min(Math.max(h0 + (ev.clientY - y0), 140), 1400);
-          stage.style.setProperty('--ps-loupe-h', Math.round(_vsLoupeH) + 'px');
-        };
-        var done2 = function () {
-          hy.onpointermove = hy.onpointerup = hy.onpointercancel = null;
-          hy.classList.remove('drag'); document.body.classList.remove('ps-loupe-rzv');
-          try { hy.releasePointerCapture(e.pointerId); } catch (_e) {}
-          _saveLoupeSize(); _vsLoupeRepaint();
-        };
-        hy.onpointerup = hy.onpointercancel = done2;
-      };
-      hy.ondblclick = function () { _vsLoupeH = null; _saveLoupeSize(); _vsApplyLoupeSize(stage); _vsLoupeRepaint(); };
-    }
-  }
-  // Re-paint the panel at the box's new size, from the last cell that was hovered. Silent when
-  // nothing has been hovered yet — the hint is still showing and there is nothing to re-scale.
-  var _vsLoupeLast = null;
-  function _vsLoupeRepaint() {
-    var L = _vsLoupeLast;
-    if (!L || !L.sv || !L.sv.isConnected) return;
-    _vsLoupePaint(L.sv, L.ux, L.uy, L.key);
-  }
-  function _vsLoupePaint(sv, ux, uy, key) {
-    if (!_vsLoupe) return;
-    var stage = document.getElementById('ps-vs-loupe-stage'); if (!stage || !sv) return;
-    var vb = (sv.getAttribute('viewBox') || '').split(/[\s,]+/);
-    var W = parseFloat(vb[2]), H = parseFloat(vb[3]);
-    if (!(W > 0) || !(H > 0)) return;
-    // Remembered so a resize can re-scale the panel to its new box without waiting for the next
-    // hover — a resized panel that keeps the old box's aspect ratio reads as a rendering fault.
-    _vsLoupeLast = { sv: sv, ux: ux, uy: uy, key: key };
-    // Clone once per tower, then only the viewBox moves - re-cloning on every mousemove would
-    // rebuild thousands of rects a second at detail 3.
-    if (_vsLoupeSrc !== sv) {
-      var cl = sv.cloneNode(true);
-      cl.removeAttribute('width'); cl.removeAttribute('height');
-      cl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-      // The panel is a VIEW, not a second set of controls: the copy takes no pointer events, so the
-      // native <title> tooltips and the hover brightness stay with the real cells on the left.
-      cl.querySelectorAll('title').forEach(function (t) { t.parentNode.removeChild(t); });
-      cl.querySelectorAll('.ps-vs-cell').forEach(function (r) { r.classList.remove('ps-vs-cell'); });
-      cl.style.pointerEvents = 'none';
-      stage.innerHTML = ''; stage.appendChild(cl);
-      _vsLoupeSrc = sv; _vsLoupeClone = cl;
-    }
-    var cl2 = _vsLoupeClone, box = stage.getBoundingClientRect();
-    var aspect = (box.width > 0 && box.height > 0) ? (box.height / box.width) : 0.8;
-    // Never magnify past the drawing itself: a window wider than the tower would letterbox it.
-    var vw = Math.min(W, Math.max(30, W / _vsLoupeZ)), vh = Math.min(H, Math.max(30, vw * aspect));
-    var vx = (W <= vw) ? (W - vw) / 2 : Math.max(0, Math.min(W - vw, ux - vw / 2));
-    var vy = (H <= vh) ? (H - vh) / 2 : Math.max(0, Math.min(H - vh, uy - vh / 2));
-    cl2.setAttribute('viewBox', vx.toFixed(1) + ' ' + vy.toFixed(1) + ' ' + vw.toFixed(1) + ' ' + vh.toFixed(1));
-    // Outline the hovered zone in both panes. Attribute values are compared in JS rather than
-    // through a [data-vsk="..."] selector: a level or zone name may contain a quote.
-    var prev = cl2.querySelector('[data-vsk].is-loupe'); if (prev) prev.classList.remove('is-loupe');
-    if (_vsLoupeMark) { _vsLoupeMark.classList.remove('is-loupe'); _vsLoupeMark = null; }
-    if (key) {
-      var all = cl2.querySelectorAll('[data-vsk]'), i, j;
-      for (i = 0; i < all.length; i++) if (all[i].getAttribute('data-vsk') === key) { all[i].classList.add('is-loupe'); break; }
-      var src = sv.querySelectorAll('[data-vsk]');
-      for (j = 0; j < src.length; j++) if (src[j].getAttribute('data-vsk') === key) { _vsLoupeMark = src[j]; src[j].classList.add('is-loupe'); break; }
-    }
-    _vsLoupeInfo(key, sv);
-  }
   // The readout under the magnified copy - the same numbers the cell's tooltip carries, but held
   // still so they can be read without keeping the pointer in place.
-  function _vsLoupeInfo(key, sv) {
-    var el = document.getElementById('ps-vs-loupe-info'); if (!el) return;
-    var d = key ? _vsCells[key] : null;
-    if (!d) {
-      var card = sv && sv.closest ? sv.closest('.ps-vs-tower') : null;
-      var nmEl = card ? card.querySelector('.ps-vs-towerh .n') : null;
-      var nm = nmEl ? String(nmEl.textContent || '').trim() : '';
-      el.innerHTML = '<div class="r">' + (nm ? '<strong>' + esc(nm) + '</strong> \u2014 hover a zone for its numbers.' : 'Hover a zone for its numbers.') + '</div>';
-      return;
-    }
-    var slip = _vsSlip(d.list), pp = _vsPlanPct(d.list);
-    el.innerHTML = '<div class="h">' + esc(String(d.level) + (d.cell ? ' \u00b7 ' + d.cell : '')) + '</div>' +
-      // The status line only appears on a finished zone, and it carries the finish variance — the
-      // same number the badge on the cell shows, held still so it can be read.
-      (d.done
-        ? '<div class="r" style="font-weight:800;color:' + _vsSlipColor(d.fslip) + ';">✓ DONE · ' + esc(_vsSlipWord(d.fslip)) + '</div>'
-        : '') +
-      '<div class="r">' + d.list.length + ' activit' + (d.list.length === 1 ? 'y' : 'ies') + ' \u00b7 ' + d.pct + '% ' + _vsProgressWord() +
-        (pp == null ? '' : ' (planned ' + pp + '%)') + '<br>' +
-        _vsDateWord() + ' ' + esc(d.fin ? Fmt.date(dstr(d.fin)) : '\u2014') + ' \u00b7 ' + esc(_vsBasisWord()) +
-        (slip == null ? '' : ' \u00b7 ' + (slip > 0 ? slip + 'd late' : (slip < 0 ? (-slip) + 'd early' : 'on time'))) +
-        '<br>Click the zone on the left for the activities behind it.</div>';
-  }
   // Hover wiring, one listener per tower svg. Throttled to a frame: mousemove fires far faster than
   // the panel can usefully repaint, and each repaint walks the clone's cells.
-  function _vsWireLoupe(host) {
-    if (!_vsLoupe) return;
-    var raf = 0, pend = null;
-    host.querySelectorAll('.ps-vs-scroll svg').forEach(function (sv) {
-      sv.addEventListener('mousemove', function (e) {
-        var r = sv.getBoundingClientRect(); if (!r.width || !r.height) return;
-        var vb = (sv.getAttribute('viewBox') || '').split(/[\s,]+/);
-        var W = parseFloat(vb[2]) || r.width, H = parseFloat(vb[3]) || r.height;
-        var t = e.target && e.target.getAttribute ? e.target.getAttribute('data-vsk') : null;
-        pend = { sv: sv, ux: (e.clientX - r.left) * W / r.width, uy: (e.clientY - r.top) * H / r.height, key: t };
-        if (raf) return;
-        raf = requestAnimationFrame(function () { raf = 0; if (pend) _vsLoupePaint(pend.sv, pend.ux, pend.uy, pend.key); });
-      });
-      // Leaving the tower does NOT clear the panel: the last zone stays magnified so its numbers can
-      // still be read with the pointer off the building.
-    });
-  }
   // ---- Expand one tower: a focus window with pan / zoom / planned-vs-actual --------------------
   // Owner 2026-09-02: *"can you add an expand view wherein it would focus on that tower itself and
   // then have a progress bar on the bottom. sort of like a pop up window. and then users are able to
@@ -13865,11 +13605,10 @@
         ' title="Fit the whole building in the pane. The labels get small on purpose — hover a zone and read it in the magnifier.">Fit</button></span>' +
       '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
       '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
-      '<span class="ps-vs-seg"><button class="ps-vs-loupebtn' + (_vsLoupe ? ' on' : '') + '" id="ps-vs-loupebtn" title="Magnifier \u2014 hover a zone on the left and it is shown enlarged, with its dates and progress, in a panel on the right"><span data-ico="search" data-ico-size="14"></span>Magnify</button></span>' +
       // \u26a0\ufe0f The PDF is built from the buildings ALREADY ON SCREEN (their svg is cloned), not re-derived.
       // Re-deriving would be a second renderer to keep in step with this one, and the first divergence
       // would be a report that disagrees with the screen it was exported from.
-      '<span class="ps-vs-seg"><button class="ps-vs-loupebtn" id="ps-vs-pdf" title="Export what is on screen as a clean one-page-per-building report \u2014 opens the print dialog, choose Save as PDF"><span data-ico="printer" data-ico-size="14"></span>PDF</button></span>' +
+      '<span class="ps-vs-seg"><button class="ps-vs-icolab" id="ps-vs-pdf" title="Export what is on screen as a clean one-page-per-building report \u2014 opens the print dialog, choose Save as PDF"><span data-ico="printer" data-ico-size="14"></span>PDF</button></span>' +
       '<span style="flex:1 1 auto;"></span>' +
       (_vsBasis === 'compare'
         ? '<span class="ps-vs-note" style="display:inline-flex;align-items:center;gap:8px;">' +
@@ -13985,7 +13724,6 @@
       'or file them under a WBS branch. Actions → Diagnose data… lists them.');
 
     _vsCells = {}; _vsHatchSeen = {}; _vsFocusCards = [];
-    _vsLoupeSrc = _vsLoupeClone = _vsLoupeMark = _vsLoupeLast = null;   // the DOM they point at is replaced below
     var towers;
     if (!acts.length) {
       towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.</div>';
@@ -14030,18 +13768,9 @@
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
-      '<div class="ps-vs-stage' + (_vsLoupe ? ' is-loupe-on' : '') + (_vsFit ? ' is-fit' : '') + '"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
+      '<div class="ps-vs-stage' + (_vsFit ? ' is-fit' : '') + '"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
       // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
       // rather than being covered by it.
-      (_vsLoupe ? '<div class="ps-vs-loupe-res" id="ps-vs-loupe-res" title="Drag to resize both windows — double-click to reset"></div>' +
-        '<aside class="ps-vs-loupe" id="ps-vs-loupe">' +
-        '<div class="ps-vs-loupe-head"><span class="t"><span data-ico="search" data-ico-size="14"></span>Magnifier</span>' +
-          '<span class="ps-vs-seg"><button id="ps-vs-lzout" title="Less magnification">&#8722;</button>' +
-          '<button id="ps-vs-lzin" title="More magnification">+</button></span>' +
-          '<span class="ps-vs-note">' + _vsLoupeZ.toFixed(1) + '&times;</span></div>' +
-        '<div class="ps-vs-loupe-stage" id="ps-vs-loupe-stage"><div class="ps-vs-loupe-hint">Hover a zone in the building on the left &mdash; it is magnified here, with its dates and progress underneath.</div></div>' +
-        '<div class="ps-vs-loupe-resb" id="ps-vs-loupe-resb" title="Drag to resize the magnified view — double-click to reset"></div>' +
-        '<div class="ps-vs-loupe-info" id="ps-vs-loupe-info"><div class="r">Nothing hovered yet.</div></div></aside>' : '') +
       '</div></div>' + _vsTimelineHTML(acts) + '</div>';
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
     // project still settles in well under half a second instead of trickling in.
@@ -14094,13 +13823,6 @@
     var zi = host.querySelector('#ps-vs-zin'); if (zi) zi.onclick = function () { _vsZoom = Math.min(4, Math.round((_vsZoom + 0.2) * 10) / 10); renderVStack(); };
     // Magnifier: the toggle repaints silently (the towers only narrow to make room - replaying an
     // entrance would read as though the data had changed), and so do the magnification steps.
-    var lb = host.querySelector('#ps-vs-loupebtn');
-    if (lb) lb.onclick = function () { _vsLoupe = !_vsLoupe; _saveLoupe(); renderVStack(); };
-    var lzo = host.querySelector('#ps-vs-lzout'); if (lzo) lzo.onclick = function () { _vsLoupeZ = Math.max(1.5, Math.round((_vsLoupeZ - 0.5) * 10) / 10); _saveLoupe(); renderVStack(); };
-    var lzi = host.querySelector('#ps-vs-lzin'); if (lzi) lzi.onclick = function () { _vsLoupeZ = Math.min(8, Math.round((_vsLoupeZ + 0.5) * 10) / 10); _saveLoupe(); renderVStack(); };
-    _vsApplyLoupeSize(host.querySelector('.ps-vs-stage'));
-    _vsWireLoupeResize(host);
-    _vsWireLoupe(host);
     _vsWireTimeline(host);
     var _fixGo = host.querySelector('#ps-vs-fixgo');
     if (_fixGo) _fixGo.onclick = function () {
@@ -19243,7 +18965,10 @@
     _seedingSkeleton = true;
     try {
       // A tree that already exists still needs the phases added to WBS_SKELETON since it was seeded.
-      if (WBS_NODES.length) { await _wbsBackfillSkeleton(); return; }
+      // ⚠️ PLACEMENT FIRST, THEN THE BACKFILL. A mis-parented child must be moved home before the
+      // backfill looks for it, or the backfill sees nothing under the phase and creates an empty
+      // twin beside the real branch.
+      if (WBS_NODES.length) { await _wbsHealSkeletonPlacement(); await _wbsBackfillSkeleton(); return; }
       var chk = await sb().from('wbs_nodes').select('id').eq('project_id', pid).limit(1);
       if (chk.error || (chk.data && chk.data.length)) return;   // already seeded by someone else — don't duplicate
       await _seedSkeleton();
@@ -19262,6 +18987,77 @@
   // rather than leaving that to `_wbsEnsureSummaries()` — a backfilled phase the heal then failed to
   // project would sit in the WBS Manager with no row in the schedule at all, which is the very orphan
   // state the heal exists to repair. Creator owns the projection; the heal is only the backstop.
+  // ---- A skeleton child must sit under the phase the skeleton declares --------------------------
+  // Owner 2026-09-02: *"There are found WBS under the execution phase such as procurement, design
+  // development and others that should be part of other phases / WBS."* Correct, and it is two
+  // faults meeting:
+  //   1) `_wbsBackfillSkeleton` never created Planning Phase's children on a project that already
+  //      had a Planning Phase (fixed above), so they did not exist where they belong; and
+  //   2) `_skeletonRoot(kind)` resolves the Design Development / Procurement branch by `source_kind`
+  //      ALONE, wherever it happens to sit — it has never checked its parent. So once such a node
+  //      existed under the wrong phase (a push, an import, an adopt that rooted it, or an earlier
+  //      resolver), every sync wrote into it there and nothing ever moved it back.
+  // ⚠️ This is RESTORING, not overriding a planner's choice: these nodes are `is_locked`, so the WBS
+  // outliner will not let anyone move them by hand in the first place. Anything unlocked — a planner's
+  // own branch, or a Schedule Setup trade that happens to be called "Procurement" — is never touched.
+  function _skeletonChildSpecs() {
+    var out = [];
+    (WBS_SKELETON || []).forEach(function (ph) {
+      (ph.children || []).forEach(function (c, idx) {
+        out.push({ key: _wbsNameKey(c.name), name: c.name, order: idx,
+                   parentKey: _wbsNameKey(ph.name), parentName: ph.name, source_kind: c.source_kind || null });
+      });
+    });
+    return out;
+  }
+  async function _wbsHealSkeletonPlacement() {
+    if (!pid || !canWrite || !WBS_NODES.length) return 0;
+    var specs = _skeletonChildSpecs(); if (!specs.length) return 0;
+    var ownPid = pid;
+    // The declared parents, resolved among the LOCKED top-level phases only.
+    var phaseByKey = {};
+    WBS_NODES.forEach(function (n) {
+      if (n.parent_id || !n.is_locked) return;
+      var k = _wbsNameKey(n.name);
+      if (k && !phaseByKey[k]) phaseByKey[k] = n;
+    });
+    var byId = {}; WBS_NODES.forEach(function (n) { byId[n.id] = n; });
+    var moved = [];
+    for (var i = 0; i < specs.length; i++) {
+      var sp = specs[i], parent = phaseByKey[sp.parentKey];
+      // ⚠️ Never CREATE the phase here — that is the backfill's job, and it has already run. A
+      // project that genuinely has no Planning Phase has nowhere to put these, and inventing one
+      // from a heal would impose a skeleton on a tree that opted out of it.
+      if (!parent) continue;
+      var cands = WBS_NODES.filter(function (n) {
+        if (n.id === parent.id || !n.is_locked) return false;
+        if (sp.source_kind && n.source_kind === sp.source_kind) return true;   // the marker IS the identity
+        return _wbsNameKey(n.name) === sp.key && !n.source_kind;
+      });
+      for (var c = 0; c < cands.length; c++) {
+        var nd = cands[c];
+        if (nd.parent_id === parent.id) continue;                     // already home
+        // ⚠️ Lift it only out of the ROOT or ANOTHER top-level phase. A node filed deep inside a real
+        // branch was put there by something that knew more than this function does, and yanking it to
+        // the root of another phase would take its activities with it.
+        var cur = nd.parent_id ? byId[nd.parent_id] : null;
+        if (cur && !(!cur.parent_id && cur.is_locked)) continue;
+        var res = await sb().from('wbs_nodes').update({ parent_id: parent.id, sort_order: sp.order }).eq('id', nd.id);
+        if (res.error || pid !== ownPid) continue;
+        nd.parent_id = parent.id; nd.sort_order = sp.order;
+        moved.push(String(nd.name || sp.name) + ' \u2192 ' + parent.name);
+      }
+    }
+    // ⚠️ Never silent. It re-parents branches that carry live activities, and a planner who sees
+    // Procurement move needs to know what moved it. ⚠️ Any same-name sibling this creates is merged
+    // losslessly by _wbsDedupeSkeleton, which runs later in the same load.
+    if (moved.length) {
+      UI.toast('Moved ' + moved.length + ' WBS branch' + (moved.length === 1 ? '' : 'es') +
+        ' back under the phase they belong to (' + moved.slice(0, 3).join(', ') +
+        (moved.length > 3 ? ', \u2026' : '') + ').', 'success');
+    }
+    return moved.length;
+  }
   async function _wbsBackfillSkeleton() {
     var tops = WBS_NODES.filter(function (n) { return !n.parent_id; });
     // ⚠️ ONLY complete a skeleton this project already has — never impose one.
@@ -19284,25 +19080,45 @@
     var added = 0;
     for (var i = 0; i < WBS_SKELETON.length; i++) {
       var spec = WBS_SKELETON[i], key = _wbsNameKey(spec.name);
-      if (!key || have[key]) continue;
-      // Prefer the constant's own position; fall back past the end if something already sits there,
-      // so a user's own top-level branch is never renumbered out from under them.
-      var so = used[i] ? (++maxSo) : i;
-      var res = await sb().from('wbs_nodes').insert({
-        project_id: pid, parent_id: null, name: spec.name, sort_order: so,
-        created_by: UID, is_locked: true, source_kind: spec.source_kind || null
-      }).select().single();
-      if (res.error) continue;   // tolerant — a DB without the skeleton migration simply gets no backfill
-      WBS_NODES.push(res.data); have[key] = res.data; used[so] = 1; if (so > maxSo) maxSo = so;
-      await _ensureNodeSummary(res.data);
-      added++;
+      if (!key) continue;
+      var phaseNode = have[key];
+      if (!phaseNode) {
+        // Prefer the constant's own position; fall back past the end if something already sits there,
+        // so a user's own top-level branch is never renumbered out from under them.
+        var so = used[i] ? (++maxSo) : i;
+        var res = await sb().from('wbs_nodes').insert({
+          project_id: pid, parent_id: null, name: spec.name, sort_order: so,
+          created_by: UID, is_locked: true, source_kind: spec.source_kind || null
+        }).select().single();
+        if (res.error) continue;   // tolerant — a DB without the skeleton migration simply gets no backfill
+        phaseNode = res.data;
+        WBS_NODES.push(phaseNode); have[key] = phaseNode; used[so] = 1; if (so > maxSo) maxSo = so;
+        await _ensureNodeSummary(phaseNode);
+        added++;
+      }
+      // ⚠️⚠️ THE CHILDREN ARE RECONCILED EVEN WHEN THE PHASE ALREADY EXISTED, and the `continue` that
+      // used to skip them was a real bug. `WBS_SKELETON` gained Planning Phase's three children
+      // (Project Execution Plan / Design Development / Procurement) long after most projects were
+      // seeded — and every one of those projects has a Planning Phase already, so the old loop
+      // `continue`d past it and the children were NEVER created there. The sync then resolved its
+      // branch by `source_kind` alone (see _skeletonRoot), wherever one happened to exist, which is
+      // how Design Development and Procurement end up hanging under the Execution Phase.
       var kids = spec.children || [];
       for (var j = 0; j < kids.length; j++) {
+        var kk = _wbsNameKey(kids[j].name);
+        var _pid2 = phaseNode.id;
+        if (WBS_NODES.some(function (n) { return n.parent_id === _pid2 && _wbsNameKey(n.name) === kk; })) continue;
+        // ⚠️ NEVER create a second one while the real branch exists somewhere else. A node already
+        // bearing this child's `source_kind` IS this branch, mis-parented — it holds the mirrored
+        // activities, and `_wbsHealSkeletonPlacement` moves it home. Creating a fresh empty twin here
+        // would split the mirror across two branches and leave the sync writing into whichever one
+        // `_skeletonRoot` happened to pick.
+        if (kids[j].source_kind && WBS_NODES.some(function (n) { return n.source_kind === kids[j].source_kind; })) continue;
         var kres = await sb().from('wbs_nodes').insert({
-          project_id: pid, parent_id: res.data.id, name: kids[j].name, sort_order: j,
+          project_id: pid, parent_id: phaseNode.id, name: kids[j].name, sort_order: j,
           created_by: UID, is_locked: true, source_kind: kids[j].source_kind || null
         }).select().single();
-        if (!kres.error) { WBS_NODES.push(kres.data); await _ensureNodeSummary(kres.data); }
+        if (!kres.error) { WBS_NODES.push(kres.data); await _ensureNodeSummary(kres.data); added++; }
       }
     }
     return added;
@@ -19519,6 +19335,7 @@
     if (moved) UI.toast('Restored the standard WBS order (' + want.slice(0, known.length).map(function (n) { return n.name; }).join(' → ') + ').', 'success');
     return moved;
   }
+  var _resyncWarned = {};
   async function _wbsResyncCodes() {
     if (!pid || !canWrite || !WBS_NODES.length) return 0;
     if (_resyncingCodes) return 0;
@@ -19540,6 +19357,21 @@
       try { console.warn('[ps] _wbsResyncCodes SKIPPED: ' + _looseRoots.length + ' unlocked root node(s) — ' +
                          'the tree looks flattened and rewriting codes from it would make that permanent.',
                          _looseRoots.slice(0, 8).map(function (n) { return n.name; })); } catch (e) {}
+      // ⚠️ SAY SO. Refusing is right, but it used to be a console line nobody reads — and the state it
+      // leaves is one where the GRID and the WBS MANAGER disagree about where a branch sits, because
+      // the grid builds its hierarchy from the dotted CODE while the Manager reads the node tree. A
+      // planner looking at a branch under the wrong phase has no way to discover that the codes are
+      // stale and that a repair is deliberately being withheld. Once per project per session — a
+      // toast on every load would be noise on a project someone has decided to leave as it is.
+      if (!_resyncWarned[pid]) {
+        _resyncWarned[pid] = 1;
+        UI.toast('WBS codes are NOT being re-synced: ' + _looseRoots.length + ' branch' +
+          (_looseRoots.length === 1 ? '' : 'es') + ' sit' + (_looseRoots.length === 1 ? 's' : '') +
+          ' at the top level outside the phases (' +
+          _looseRoots.slice(0, 3).map(function (n) { return n.name; }).join(', ') +
+          (_looseRoots.length > 3 ? ', …' : '') + '). Until they are filed under a phase, the grid can ' +
+          'show a branch under the wrong phase. Fix it in Schedule Setup → WBS.', 'warn');
+      }
       return 0;
     }
     _resyncingCodes = true;

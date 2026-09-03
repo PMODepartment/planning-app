@@ -1,3 +1,100 @@
+## The magnifier is gone, and Planning Phase's branches were filed under Execution (2026-09-02) — fmlozano
+
+Owner: *"For the vertical stacking, kindly remove the magnifier since there is a zoom in already
+feature. Moreover, for the project schedule, fix bugs. There are found WBS under the execution phase
+such as procurement, design development and others that should be part of other phases / WBS."*
+
+### The magnifier, removed
+
+The focus window's scroll-to-zoom answers the same question with the whole building in view, so two
+magnification mechanisms were two controls for one question. Out: the toolbar toggle, the docked
+panel, both resize handles, the magnify cursor, `_vsLoupe*` state and nine functions
+(`_saveLoupe`, `_saveLoupeSize`, `_vsLoupeMaxW`, `_vsApplyLoupeSize`, `_vsWireLoupeResize`,
+`_vsLoupeRepaint`, `_vsLoupePaint`, `_vsLoupeInfo`, `_vsWireLoupe`). Its four `localStorage` keys are
+swept once on load, so a returning browser is not left holding state for a feature that is gone.
+
+⚠️ **`[data-vsk].is-loupe` STAYS, and must.** The focus window's planned-vs-actual hover sync marks the
+twin zone in both panes with that class — it is the whole point of the split view. Its comment now
+says so, since it no longer names a feature that exists.
+⚠️ The PDF button borrowed `.ps-vs-loupebtn` for its icon+label layout; it has its own
+`.ps-vs-icolab` now rather than a class whose rule went with the magnifier.
+
+⚠️ **A REAL SELF-INFLICTED SCARE, caught by the suite and worth recording.** The magnify-cursor block
+sat immediately before the `@media (max-width:1100px)` query, and I cut from its comment to that
+anchor — which **swallowed the entire focus-window CSS block** that had been inserted at the same
+anchor. Every `.ps-vs-fz-*` rule, `.ps-vs-expand` and `.ps-vs-meter` went with it: 24 browser checks
+failed at once (`cursor: auto`, panes not side by side, the frozen row off screen). Restored verbatim
+out of HEAD and re-asserted class-by-class. **A computed `src[i:j]` cut must have its contents
+printed, or diffed for what it removed, before it is written** — this module's log already records
+that lesson once, from the `catEntry` deletion.
+
+### The WBS bug: two faults meeting
+
+`WBS_SKELETON` declares **Project Execution Plan / Design Development / Procurement as children of
+Planning Phase**. The owner's grid shows all three under Execution Phase. Both halves of why:
+
+⚠️⚠️ **1. `_wbsBackfillSkeleton` never created them.** Its loop was
+`if (!key || have[key]) continue;` — so when the phase ALREADY EXISTED it skipped the whole entry,
+**children included**. Those three children were added to the constant long after most projects were
+seeded, and every one of those projects already has a Planning Phase — so the backfill stepped over
+it every time and the children were never created there. Measured against HEAD: a project with a
+Planning Phase and no children gets **0** of the 3.
+
+⚠️⚠️ **2. `_skeletonRoot(kind)` resolves the branch by `source_kind` ALONE, wherever it sits.** It has
+never checked the parent. So once a Design Development or Procurement node existed under the wrong
+phase — an adopt that rooted it, an import, an earlier resolver — every sync wrote into it *there*,
+and nothing in the module ever moved it back.
+
+**Fixed at both.** The backfill now reconciles a declared phase's children **even when the phase
+already exists**; and a new `_wbsHealSkeletonPlacement()` re-parents a skeleton child that is sitting
+under the root or under another top-level phase back to the phase the skeleton declares, re-ordering
+it to its declared index.
+
+⚠️ **This is RESTORING, not overriding a planner.** These nodes are `is_locked`, so the outliner will
+not let anyone move them by hand in the first place.
+⚠️ **Nothing unlocked is ever touched** — a Schedule Setup trade that happens to be called
+"Procurement" is a planner's branch and stays exactly where the push put it. Asserted.
+⚠️ **A node filed DEEP inside a real branch is left alone.** Only the root and other top-level phases
+are lifted out of; something that filed it under `Execution Phase › Tower 1` knew more than this
+function does, and yanking it to a phase root would take its activities with it. Asserted.
+⚠️ **The heal never CREATES a phase.** A project with no Planning Phase has nowhere to put these, and
+inventing one from a heal would impose a skeleton on a tree that opted out — the exact damage the
+backfill's own `seeded` guard exists to prevent. Asserted.
+⚠️ **Placement runs BEFORE the backfill**, or the backfill sees nothing under the phase and mints an
+empty twin beside the real branch. And the backfill independently refuses to create a child whose
+`source_kind` already exists somewhere — that node IS the branch, mis-parented, and it holds the
+mirrored activities. Asserted with the heal deliberately switched off.
+⚠️ **It also runs before `_wbsCanonicalRootOrder` / `_wbsResyncCodes` in the repair chain**, because a
+dotted code is derived purely from POSITION: the codes must be rewritten from the tree *after* the
+tree is right. Any same-name sibling the move creates is merged losslessly by `_wbsDedupeSkeleton`,
+which runs later in the same load.
+⚠️ **Never silent** — it re-parents branches carrying live activities, so it toasts what it moved.
+
+### And the case this does NOT fix, now made visible
+
+⚠️ If the tree is right but the **dotted codes** are stale, the grid still shows a branch under the
+wrong phase — it builds its hierarchy from the CODE while the WBS Manager reads the node tree.
+`_wbsResyncCodes` exists to fix that, but it **deliberately refuses** when any unlocked node sits at
+the top level (rewriting codes from a flattened tree is what made the SLN101 damage permanent). That
+refusal was a `console.warn` nobody reads, so a planner had no way to discover that the codes are
+stale and that a repair is being withheld on purpose. It now toasts once per project per session,
+names the offending branches and points at Schedule Setup → WBS.
+
+**Verified: 35 checks in Node** executing the shipped `_wbsHealSkeletonPlacement` / `_skeletonChildSpecs`
+/ `_wbsBackfillSkeleton` / `_wbsNameKey` and `WBS_SKELETON` itself — sliced by brace matching, never
+reimplemented — driven against **the exact tree shape in the owner's screenshot**: the three move home,
+all six Execution trades stay put, nothing is inserted, the order under Planning is the skeleton's own.
+⚠️ **The suite bites**: against HEAD it fails 8+ before the missing functions abort it, and reports the
+backfill creating **0** children. Plus the focus-window suites still green (29 Node + 86 browser),
+0 NUL bytes, braces balanced, parses, and every one of the 9 removed functions confirmed to have no
+remaining caller.
+
+⚠️ **Not verified signed in, and this is the caveat that matters most here.** I could not query
+OPW101, so **which of the two faults produced the owner's screenshot is not established** — the fix
+covers both, and the third case (stale codes) is now self-reporting rather than silent. The heal
+writes to `wbs_nodes` on a real project the first time it runs; the toast is what makes that visible.
+`MODULE_V` → `20260902aj`.
+
 ## The scrub is smooth, and the trade colours were painting BLACK (2026-09-02) — fmlozano
 
 Owner, two reports on the focus window: *"can you make the progress bar smoother, it has fps drop
