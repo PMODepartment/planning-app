@@ -8812,7 +8812,7 @@
     // which one — and that job now lives in one place: Schedule Setup › Floors & Zones. Leaving the
     // two wizards here while the editor moved would be the worst of both, because a planner would
     // map onto levels they cannot see. `phases` and `discwizard` stay: neither is location.
-    h += '<div class="ps-gm-sec">Location Breakdown</div>' +
+    h += '<div class="ps-gm-sec">Location Breakdown Structure</div>' +
       '<div class="ps-gm-note">Levels, <strong>Match WBS to locations</strong> and <strong>Fill location from the WBS tree</strong> are in <strong>Schedule Setup › Floors &amp; Zones</strong> — one place for the whole breakdown.</div>' +
       '<button data-gact="gotoloc"><span data-ico="layers" data-ico-size="14"></span> Open Floors &amp; Zones setup…</button>' +
       '<div class="ps-gm-sec">Tagging</div>' +
@@ -9092,7 +9092,7 @@
   }
   function openLocLevels() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
-    var m = UI.modal('<h2 style="margin-top:0;">Location Breakdown</h2>' +
+    var m = UI.modal('<h2 style="margin-top:0;">Location Breakdown Structure (LBS)</h2>' +
       '<p style="color:var(--pd-muted);font-size:12.5px;margin:-4px 0 12px;">The location levels this project uses, outermost first — e.g. <em>Building › Level › Zone</em>. ' +
       'Each becomes a column on every activity and a level you can group by.</p>' +
       '<div id="lvl-list"></div>' +
@@ -9412,7 +9412,53 @@
     UI.toast('No "Execution Phase" WBS branch found — matching against the whole schedule instead.', 'warn');
     return acts;
   }
+  // ---- Location branch vs grouping branch -------------------------------------------------------
+  // ⚠️⚠️ THE DISTINCTION THIS WHOLE FEATURE TURNS ON, and it had no name in the code until now.
+  // A WBS branch is one of two things and never both:
+  //   • a LOCATION branch — a PLACE work happens: tower / building, level / floor, zone, cluster,
+  //     unit, area. These form the project's Location Breakdown Structure (LBS) and are the ONLY
+  //     thing the Vertical Stacking may read: a stacking band is a physical part of the building.
+  //   • a GROUPING branch — a way of ORGANISING activities: a project phase (Execution,
+  //     Close-out), a trade (Structural Works, Wet Works, MEPF), a work type (Punchlisting).
+  //     These are real, useful WBS, but they are not places, so they must never become a band.
+  // The predicate below is the shared answer, used by the guesser (so a trade is never PROPOSED as
+  // a location), by the wizard (so the planner sees WHY a row is grouping) and by the stacking
+  // (so a value that slipped through earlier cannot draw a floor that does not exist).
+  function _discTermHit(name) {
+    var best = -1;
+    for (var i = 0; i < WORK_CANON.length; i++) {
+      var at = locTermHit(name, WORK_CANON[i].terms);
+      if (at !== -1 && (best === -1 || at < best)) best = at;
+    }
+    return best;
+  }
+  // Why a name reads as a grouping — '' when it does not. Position-aware on purpose: several terms
+  // are in BOTH vocabularies ('substructure' / 'superstructure' are a Level synonym and a Structural
+  // Works term), so a flat "is it a trade word" test would have thrown away "Tower D - Substructure",
+  // a real tower. The term that appears EARLIEST in the name is the one the name is ABOUT:
+  //   "Tower D - Substructure" → 'tower' at 0 beats 'substructure' at 9  → location.
+  //   "Superstructure"         → both at 0, tie → grouping.
+  // ⚠️ A tie resolves to GROUPING deliberately. Superstructure/Substructure/Earthworks are stages of
+  // structural work, not storeys — banding by them puts a fake floor in every tower.
+  function locGroupingReason(name, levels) {
+    var t = String(name == null ? '' : name).trim();
+    if (!t) return '';
+    if (phaseFromName(t)) return 'phase';
+    var trade = _discTermHit(t);
+    if (trade === -1) return '';
+    var locAt = -1;
+    (levels || LOC_LEVELS).forEach(function (l) {
+      var at = locTermHit(t, locLevelTerms(l));
+      if (at !== -1 && (locAt === -1 || at < locAt)) locAt = at;
+    });
+    if (locAt !== -1 && locAt < trade) return '';   // the place word leads — it is a location
+    return 'trade';
+  }
   function locGuessLevel(name, levels) {
+    // ⚠️ The veto runs FIRST and only affects the GUESS. A saved match always wins over it, so a
+    // project that has already decided "Superstructure IS our Level" keeps that decision and no
+    // stored data changes underneath anyone.
+    if (locGroupingReason(name, levels)) return '';
     var best = '', bestAt = -1;
     levels.forEach(function (l) {
       var at = locTermHit(name, locLevelTerms(l));
@@ -9977,13 +10023,24 @@
         return true;
       });
     }
+    // Says WHY a branch reads as a grouping rather than a place, so "grouping only" is a decision the
+    // planner can check rather than a verdict they have to trust. ⚠️ Shown even on a row already
+    // matched to a level — a saved match always wins over the guess, and this badge is the one thing
+    // that makes an old, wrong match visible instead of permanent.
+    function grpBadge(s) {
+      var why = locGroupingReason(s.name, LOC_LEVELS);
+      if (!why) return '';
+      var label = why === 'phase' ? 'project phase' : 'trade / work type';
+      return ' <span title="' + esc(label + ' — a way of organising activities, not a place. Not part of the Location Breakdown Structure.') +
+        '" style="font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border:1px solid var(--pd-line);border-radius:99px;padding:0 5px;color:var(--pd-muted);white-space:nowrap;">' + esc(label) + '</span>';
+    }
     function rowsHtml() {
       var vis = visible();
       if (!vis.length) return '<tr><td colspan="5" style="padding:10px;color:var(--pd-muted);">Nothing matches.</td></tr>';
       return vis.map(function (s) {
         var i = state.indexOf(s);
         return '<tr data-i="' + i + '">' +
-          '<td style="padding:3px 6px;"><div>' + esc(s.name) + '</div>' +
+          '<td style="padding:3px 6px;"><div>' + esc(s.name) + grpBadge(s) + '</div>' +
             (s.trail ? '<div style="color:var(--pd-muted);font-size:11px;" title="' + esc(s.trail) + '">' + esc(s.trail.length > 90 ? '…' + s.trail.slice(-90) : s.trail) + '</div>' : '') + '</td>' +
           '<td style="padding:3px 6px;text-align:center;color:var(--pd-muted);white-space:nowrap;">L' + s.depth + '</td>' +
           '<td style="padding:3px 6px;text-align:right;color:var(--pd-muted);white-space:nowrap;">' + s.n.toLocaleString() + '</td>' +
@@ -10005,7 +10062,8 @@
     // tower and "Category A" under another are one location value at that level, and the level ABOVE
     // is what keeps them apart (deepest-wins resolution stamps every level an activity sits under).
     function treeHtml() {
-      var out = '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--pd-muted);padding:0 2px 6px;">Location breakdown</div>';
+      var out = '<div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--pd-muted);padding:0 2px 2px;">Location Breakdown Structure</div>' +
+        '<div style="font-size:11px;color:var(--pd-muted);padding:0 2px 8px;">What the Vertical Stacking will read.</div>';
       LOC_LEVELS.forEach(function (l, li) {
         var mine = state.filter(function (s) { return s.lvl === l.id; });
         var byVal = {};
@@ -10036,13 +10094,13 @@
         (gon ? 'background:var(--pd-red-light);' : '') + '">' +
         '<span style="font-weight:600;font-size:12.5px;">Grouping only</span>' +
         '<span style="color:var(--pd-muted);font-size:11px;"> · ' + grp.length + ' branch' + (grp.length === 1 ? '' : 'es') + '</span></div>' +
-        '<div style="padding:2px 6px 4px 12px;color:var(--pd-muted);font-size:11px;">Not a place — a grouping of activities (a phase, a trade, a work type). Nothing is written for these, and the decision is remembered.</div>';
+        '<div style="padding:2px 6px 4px 12px;color:var(--pd-muted);font-size:11px;">Not a place — a grouping of activities (a phase, a trade, a work type). Nothing is written for these and they never draw a stacking band. Moving a branch here also <strong>clears</strong> any location value it wrote before.</div>';
       return out;
     }
     var m = UI.modal('<div style="width:100%;height:86vh;display:flex;flex-direction:column;">' +
       '<div style="flex:0 0 auto;">' +
-      '<h2 style="margin:0 0 4px;">Match the WBS to your location breakdown</h2>' +
-      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">These are the WBS names sitting above real activities <strong>under Execution Phase</strong> only, most-used first. Say which location level each one <em>is</em>; a branch that is only a grouping of activities (a phase, a trade, a work type) stays <strong>“grouping only”</strong> and writes nothing. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
+      '<h2 style="margin:0 0 4px;">Match the WBS to your Location Breakdown Structure (LBS)</h2>' +
+      '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 10px;">Every WBS branch below is one of two things. A <strong>location</strong> is a <em>place</em> — tower / building, level / floor, zone, cluster, unit — and those build your <strong>LBS</strong>, which is what the Vertical Stacking draws. A <strong>grouping</strong> organises activities — a phase, a trade, a work type — writes nothing, and never becomes a floor. Say which level each place <em>is</em> and leave the rest as <strong>grouping only</strong>. The value on the right is what gets written — edit it to tidy a name (e.g. <em>Tower D - Substructure</em> → <em>Tower D</em>).</p>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
         '<input class="pd-input" id="lw-q" placeholder="Search names…" style="flex:1 1 180px;min-width:0;">' +
         '<select class="pd-input" id="lw-filter" style="flex:0 0 190px;">' +
@@ -10156,10 +10214,51 @@
       repaint();
     };
     m.el.querySelector('#lw-x').onclick = m.close;
+    // ⚠️⚠️ UN-MATCHING USED TO DO NOTHING TO THE DATA, and that is why a grouping branch went on
+    // drawing a floor forever. `locMapPlan` only ever SETS values; a branch that was previously
+    // matched (say "Superstructure" → Level) and is now marked grouping-only left its value stamped
+    // on every activity beneath it, so the stacking, the grouping dimensions and the Location
+    // columns all kept reporting a place that the planner had just said is not one.
+    // The clear pass is deliberately NARROW: it removes a value ONLY where
+    //   (a) the branch was in this level's SAVED match table and is not in the new one, AND
+    //   (b) that branch is the activity's deepest match for the level (same resolution the write
+    //       uses, so it cannot reach an activity the branch never wrote), AND
+    //   (c) the stored value still equals what that branch would have written, AND
+    //   (d) the new matching does not set a value for that level on that activity.
+    // Anything typed by hand, by an importer, or by the backfill is therefore left alone — this
+    // undoes THIS TOOL's own writes and nothing else.
+    function clearPlan(setUps) {
+      var setBy = {}; setUps.forEach(function (u) { setBy[u.rec.id] = u.loc; });
+      var byId = {};
+      LOC_LEVELS.forEach(function (l) {
+        var now = {}; state.forEach(function (x) { if (x.lvl === l.id && String(x.val || '').trim()) now[x.name] = String(x.val).trim(); });
+        var saved = l.match || {}, removed = {}, any = false;
+        Object.keys(saved).forEach(function (nm) { if (!(nm in now)) { removed[nm] = saved[nm]; any = true; } });
+        if (!any) return;
+        var src = locSrcsAssigned(function (r) { return r.wbs; }, nameByCode, removed);
+        acts.forEach(function (r) {
+          var was = src.get(r); if (!was) return;
+          var cur = (setBy[r.id] || r.location || {});
+          if (String(cur[l.id] || '') !== String(was)) return;   // already changed, or set by the new matching
+          (byId[r.id] || (byId[r.id] = { rec: r, lvls: [] })).lvls.push(l.id);
+        });
+      });
+      return Object.keys(byId).map(function (id) {
+        var e = byId[id], loc = Object.assign({}, setBy[id] || e.rec.location || {});
+        e.lvls.forEach(function (lid) { delete loc[lid]; });
+        return { rec: e.rec, loc: loc, cleared: e.lvls.length };
+      });
+    }
     m.el.querySelector('#lw-go').onclick = async function () {
       var map = mapping();
-      if (!map.length) { UI.toast('Match at least one WBS name to a level first.', 'warn'); return; }
       var p = locMapPlan(acts, map, function (r) { return r.location; }, true);
+      var clears = clearPlan(p.ups);
+      // A record that is both set and cleared is ONE upsert: clearPlan already started from the set
+      // patch, so its `loc` supersedes.
+      var clearedIds = {}; clears.forEach(function (c) { clearedIds[c.rec.id] = 1; });
+      p.ups = p.ups.filter(function (u) { return !clearedIds[u.rec.id]; }).concat(clears);
+      var nCleared = clears.reduce(function (a, c) { return a + c.cleared; }, 0);
+      if (!map.length && !clears.length) { UI.toast('Match at least one WBS name to a level first.', 'warn'); return; }
       if (!p.ups.length) { UI.toast('Nothing to update — the matching produces the values already stored.', 'info'); m.close(); return; }
       m.close(); showLoading('Applying the location matching…');
       var prev = {}; p.ups.forEach(function (u) { prev[u.rec.id] = u.rec.location; });
@@ -10188,9 +10287,14 @@
       var carried = loadLocExcluded().filter(function (n) { return !stateNames[n]; });
       var stillExcluded = state.filter(function (s) { return s.excluded && !s.lvl; }).map(function (s) { return s.name; });
       saveLocExcluded(carried.concat(stillExcluded));
+      _vsGrpCache = null;   // the stacking's grouping veto reads this list — stale = wrong bands
+      _vsAxisCache = null;
       rebuild(false); renderGrid(); renderGantt();
       var wokCount = p.ups.length - wres.failedIds.length;
-      var wpartial = wres.failedIds.length ? (' Located ' + wokCount + ' of ' + p.ups.length + ' — run this again to retry the rest.') : ('Located ' + p.ups.length + ' activities.');
+      var wpartial = wres.failedIds.length ? (' Updated ' + wokCount + ' of ' + p.ups.length + ' — run this again to retry the rest.') : ('Updated ' + p.ups.length + ' activities.');
+      // Stated separately: clearing is the half nobody expects, and a silent removal of stored
+      // location values is exactly the kind of change that has to be visible when it happens.
+      if (nCleared) wpartial += ' Cleared ' + nCleared + ' location value' + (nCleared === 1 ? '' : 's') + ' written by branches now marked grouping-only.';
       UI.toast(wpartial + (savedOk ? '' : ' (The matching itself could not be saved — run the 2026-08-05 location-level-match migration.)'), (wres.ok && savedOk) ? 'success' : 'warn');
     };
     preview();
@@ -13153,7 +13257,37 @@
   // "Has a level" means a value on the STACK'S axis level (the floor), not on the tower — see
   // _vsAxis. Reading the tower here is what made a fully-floored multi-tower project look fine
   // while every floor sat in one band.
-  function _vsHasLevel(r) { var ax = _vsAxis(); return !!(ax.length && locValOf(r, ax[0].id)); }
+  // ⚠️⚠️ THE STACKING READS THE LBS, NOT THE WBS — this is what enforces it.
+  // A stored location value is only honoured as a PLACE. A value that names a grouping (a phase, a
+  // trade, or a branch the planner has explicitly marked "grouping only" in Match WBS to locations)
+  // is treated as ABSENT, so it can never draw a band. Two ways such a value gets there:
+  //   • an older match that classified "Superstructure" as a Level (the guesser used to propose it);
+  //   • an importer or backfill that stamped a branch name wholesale.
+  // ⚠️ NOTHING IS DROPPED. An activity whose axis value is vetoed here simply has no level, so it
+  // lands in the existing dashed "No level" band — which already explains itself and points at the
+  // matcher. Silently deleting the work would be far worse than banding it honestly.
+  // ⚠️ Read-time only: no row is modified and no value is deleted. The permanent fix is to mark the
+  // branch grouping-only in the matcher, which now clears what it previously wrote.
+  var _vsGrpCache = null, _vsGrpKey = null;
+  function _vsGroupingSet() {
+    var key = pid + '|' + LOC_LEVELS.length;
+    if (_vsGrpCache && _vsGrpKey === key) return _vsGrpCache;
+    var set = Object.create(null);
+    try { loadLocExcluded().forEach(function (n) { set[String(n).trim().toLowerCase()] = 1; }); } catch (e) {}
+    _vsGrpKey = key; _vsGrpCache = set;
+    return set;
+  }
+  function locIsGroupingValue(v) {
+    var t = String(v == null ? '' : v).trim();
+    if (!t) return false;
+    if (_vsGroupingSet()[t.toLowerCase()]) return true;
+    return !!locGroupingReason(t, LOC_LEVELS);
+  }
+  function _vsLevVal(r, levelId) {
+    var v = locValOf(r, levelId);
+    return locIsGroupingValue(v) ? '' : v;
+  }
+  function _vsHasLevel(r) { var ax = _vsAxis(); return !!(ax.length && _vsLevVal(r, ax[0].id)); }
   var VS_NOLEV = '— No level —';
   // Duration-weighted % complete — the same weighting the WBS roll-ups use, so a stacking cell and a
   // summary row covering the same activities can never disagree.
@@ -13679,7 +13813,7 @@
     var _ax = _vsAxis(), lvl0 = _ax[0].id, detail = _vsDetailNow();
     var byLevel = {}, levels = [], noLev = [];
     list.forEach(function (r) {
-      var v = locValOf(r, lvl0);
+      var v = _vsLevVal(r, lvl0);                        // LBS values only — see _vsLevVal
       if (!v) { noLev.push(r); return; }                 // project-wide work — banded at the bottom
       if (!(v in byLevel)) { byLevel[v] = []; levels.push(v); }
       byLevel[v].push(r);
@@ -14633,7 +14767,7 @@
     var host = hostEl || document.getElementById('ps-vstack'); if (!host) return;
     if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
     if (!LOC_LEVELS.length) {
-      host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.</div>';
+      host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown Structure, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.</div>';
       return;
     }
     var _actsAll = _vsActs(), detail = _vsDetailNow();
@@ -14784,6 +14918,15 @@
     var noLevList = acts.filter(function (r) { return !_vsHasLevel(r); });
     var noLevTrades = [];
     noLevList.forEach(function (r) { var t = _vsTradeOf(r); if (noLevTrades.indexOf(t) < 0) noLevTrades.push(t); });
+    // ⚠️ A THIRD cause of "no level", new and worth naming separately: the activity DOES carry a
+    // value at the axis level, but that value is a GROUPING branch (a phase or a trade), so the
+    // stacking refuses it as a place — see _vsLevVal. Without saying so, a planner reads the band as
+    // missing data and goes looking in the WBS branch column, where the value is plainly there.
+    var noLevGrpVals = [];
+    noLevList.forEach(function (r) {
+      var raw = String(locValOf(r, _axLvls[0] ? _axLvls[0].id : '') || '').trim();
+      if (raw && locIsGroupingValue(raw) && noLevGrpVals.indexOf(raw) < 0) noLevGrpVals.push(raw);
+    });
     // ⚠️ TWO DIFFERENT FAULTS, AND THEY ARE ABOUT TWO DIFFERENT LEVELS — do not merge them again.
     //   (a) An activity carries no value on the STACK'S AXIS level (the floor). It lands in the
     //       dashed "No level" band. Whole-trade work from a trade with no floors — re-push.
@@ -14848,6 +14991,11 @@
       warn += _vsWarnWrap(_vsWarnKey('nolevel', noLevList.length), '<strong>' + noLevList.length + ' activit' + (noLevList.length === 1 ? 'y' : 'ies') +
         ' carr' + (noLevList.length === 1 ? 'ies' : 'y') + ' no ' + esc(lvl0Name) + '</strong> — shown in the dashed <em>No level</em> band, ' +
         'from ' + esc(noLevTrades.join(', ')) + '. A ' + esc(lvl0Name) + ' is read from the WBS branch names, so either:' +
+        (noLevGrpVals.length ? ('<br>• <strong>the branch is a grouping, not a place</strong> — ' +
+          esc(noLevGrpVals.slice(0, 6).join(', ')) + (noLevGrpVals.length > 6 ? ' and ' + (noLevGrpVals.length - 6) + ' more' : '') +
+          ' ' + (noLevGrpVals.length === 1 ? 'is a phase / trade' : 'are phases / trades') + ', not ' + esc(lvl0Name) + 's, so the stacking will not band by ' +
+          (noLevGrpVals.length === 1 ? 'it' : 'them') + '. That is deliberate: a stacking band is a physical part of the building. ' +
+          'Give this work its real ' + esc(lvl0Name) + ' in <em>Group ▾ → Match WBS to locations…</em>, or leave it here;') : '') +
         '<br>• <strong>a branch name is not matched</strong> — open the band and read the ' +
         '<em>WBS branch</em> column: if you can see a ' + esc(lvl0Name) + ' in it (an abbreviation such ' +
         'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Group ▾ → Match WBS to locations…</em>;' +
@@ -26050,7 +26198,7 @@
          something else while it was being typed. */
       { t: 'Working calendars', s: 'Which days are workable', fn: stCalendars },
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
-      { t: 'Floors & Zones', s: 'Location breakdown', fn: stLevels },
+      { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stLevels },
       { t: 'Tower links', s: 'How towers interface', fn: stTowerLinks },
       { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
       { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
@@ -26069,7 +26217,7 @@
          4 review      — and only here does anything get written. */
     var STEPS_IMP = [
       { t: 'Activities & phases', s: 'Check the file, file each branch', fn: stImpPhases },
-      { t: 'Floors & Zones', s: 'Location breakdown', fn: stImpLoc },
+      { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stImpLoc },
       { t: 'Relationships', s: 'Keep the file\u2019s logic, or not', fn: stImpRels },
       { t: 'Review & import', s: 'Write it into the schedule', fn: stImpCommit },
     ];
@@ -34033,7 +34181,7 @@
         var want = _stkScope[outer[i].id];
         if (want && locValOf(r, outer[i].id) !== want) return;
       }
-      var v = locValOf(r, levelId); if (v) seen[v] = (seen[v] || 0) + 1;
+      var v = _vsLevVal(r, levelId); if (v) seen[v] = (seen[v] || 0) + 1;   // LBS values only
     });
     return (_svMap[levelId] = Object.keys(seen).sort(cmpLevelValue).map(function (v) { return { value: v, n: seen[v] }; }));
   }
@@ -34209,7 +34357,7 @@
     rows.forEach(function (r) {
       if (isWbs(r)) return;
       if (!stkPhaseInScope(r, levelId)) return;    // whole-building: no tower value, in scope everywhere
-      if (locValOf(r, levelId)) return;            // has a per-floor tag → part of the floor stack, not here
+      if (_vsLevVal(r, levelId)) return;           // has a per-floor tag → part of the floor stack, not here
       var p = stkPhaseLabel(r); if (!p) return;
       var g = groups[p.label] || (groups[p.label] = { p: p, acts: [], first: null });
       g.acts.push(r);
@@ -34235,7 +34383,7 @@
     var by = {};
     rows.forEach(function (r) {
       if (isWbs(r)) return;
-      var loc = locValOf(r, levelId); if (!loc) return;
+      var loc = _vsLevVal(r, levelId); if (!loc) return;   // a grouping branch never becomes a band
       // ⚠️ A phase the "Tag phases…" wizard WROTE carries the phase label AS its Level value, so it
       // arrives here rather than via stkPhaseRows — and it still has no tower value. Scope it by the
       // whole-building rule or it is filtered out of every tower exactly like the untagged case.

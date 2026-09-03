@@ -1,3 +1,75 @@
+## The WBS says what work; the LBS says where — and the stacking only reads the LBS (2026-09-03) — jasantos2
+
+Owner: *"for the vertical stacking, it should only read the locations WBS. meaning tower, level, zones,
+clusters, units, those are locations WBS. so improve the distinction from 'groupings' WBS and
+'locations' WBS. idk what the correct term for the 'Location Breakdown' is now."*
+
+**The term is Location Breakdown Structure (LBS)** — the industry counterpart to the WBS, and it names
+the distinction exactly. Relabelled in the matcher heading, `Group ▾`, the Floors & Zones step and the
+stacking's empty state.
+
+**The distinction existed in the planner's head and nowhere in the code.** New `locGroupingReason(name,
+levels)` is the single answer, read by three places that used to each guess for themselves:
+
+- ⚠️⚠️ **It compares POSITIONS, not membership, and that is load-bearing.** `substructure` and
+  `superstructure` are in `LOC_SYN.level` *and* in `WORK_CANON`'s Structural Works terms. A flat "does
+  it contain a trade word" veto would have rejected **Tower D - Substructure** — a real tower on a real
+  project (Jab), and the exact case `locGuessValue`'s trimming was written for. So the term appearing
+  earliest in the name is what the name is ABOUT: `tower` at 0 beats `substructure` at 9 → location;
+  `Superstructure` scores 0 in both → tie → **grouping**. ⚠️ The tie resolves to grouping on purpose:
+  Superstructure / Substructure / Earthworks are stages of structural work, not storeys, and banding by
+  them puts a floor in the tower that does not exist.
+- ⚠️ **The veto affects the GUESS only.** `locGuessLevel` returns '' for a grouping, but a saved match
+  is applied after and wins — so a project that has already decided "Superstructure IS our Level" keeps
+  it, and this change moves no stored value on any project by itself.
+
+**⚠️⚠️ THE REAL DEFECT: un-matching a branch did nothing to the data.** `locMapPlan` only ever SETS a
+value. A branch matched once — the old guesser proposed `Superstructure` → Level — and later marked
+"not a location" left its value stamped on every activity beneath it, so the stacking, the grouping
+dimensions and the Location columns all kept reporting a place the planner had just said is not one.
+There was no way to undo it from the app at all.
+
+`clearPlan()` removes it, and deliberately **narrowly** — a value goes only when all four hold:
+1. the branch was in that level's **saved** `match` table and is not in the new one;
+2. it is the activity's **deepest** match for that level (same `locSrcsAssigned` resolution the write
+   uses, so it cannot reach an activity the branch never wrote);
+3. the stored value still **equals** what that branch would have written;
+4. the new matching sets nothing for that level on that activity.
+
+So a value typed by hand, or written by an importer or the WBS backfill, is left alone: this undoes
+**this tool's own writes** and nothing else. ⚠️ The toast reports the count separately from the
+updates — clearing is the half nobody expects, and a silent removal of stored location values is
+precisely the kind of change that has to be visible when it happens. ⚠️ The `!map.length` early return
+had to move too, or un-matching *everything* would have returned "match at least one first" and
+cleared nothing.
+
+**The stacking's own guard, `_vsLevVal(r, levelId)`,** is the backstop for values already stored:
+`locValOf` unless the value names a grouping, in which case ''. Hooked into the five places that read
+the **axis** level — `_vsHasLevel`, `_vsTowerSVG`'s band split, `stkLevelValues`, `stkPhaseRows`,
+`stackModel` — leaving the deeper zone/unit reads and every non-stacking consumer alone.
+- ⚠️ **NOTHING IS DROPPED.** A refused value means "no level", so the activity lands in the existing
+  dashed **No level** band rather than vanishing. That band now names the grouping values it found as
+  a third cause, beside the unmatched-alias and genuinely-floorless ones — without it a planner reads
+  the band as missing data and goes looking in the *WBS branch* column, where the value is plainly
+  there. It is the same shape as the existing `stkPhaseByLabel(loc)` fold, generalised.
+- ⚠️ **Read-time only** — no row is modified. The permanent fix is the matcher's clear pass.
+- ⚠️ The grouping cache is keyed on `pid` + level count and **dropped on Apply**, or the stack would
+  keep banding by a branch the planner just retired.
+
+**The wizard badges why** (`project phase` / `trade / work type`), shown even on a row already matched
+to a level — a saved match always wins over the guess, so that badge is the only thing that makes an
+old, wrong match visible instead of permanent.
+
+**Verified: 26 checks executing the shipped `locGroupingReason` / `locGuessLevel` / `locIsGroupingValue`
+/ `_vsLevVal` / `clearPlan`**, sliced out of `index.html` by brace-matching and never reimplemented:
+every both-vocabulary tie case, the Tower-D-Substructure rescue, an explicitly-marked branch, and all
+four narrowing conditions of the clear (including the hand-typed value at the same level surviving, and
+re-matching a branch clearing nothing). The previous pass's 14 wizard checks still pass; **0 functions
+lost / 7 added**; inline script parses; 0 NUL bytes.
+⚠️ **Not verified signed in.** No clear has run against real activities — that is the one thing worth
+watching on the first real use, and the toast now reports the count so it is visible when it happens.
+`MODULE_V` → `20260903c`.
+
 ## WBS→location matcher: a level lens, a live location tree, and "grouping only" (2026-09-03) — jasantos2
 
 Owner, on *Match the WBS to your location breakdown*: filter the WBS (level 1 / 2 / 3…), enlarge the

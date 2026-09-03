@@ -84,6 +84,50 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (c) — A WBS branch is a PLACE or a GROUPING, and the stacking now reads only places
+
+Owner: *"for the vertical stacking, it should only read the locations WBS — tower, level, zones,
+clusters, units, those are locations WBS. improve the distinction from 'groupings' WBS and 'locations'
+WBS. idk what the correct term for 'Location Breakdown' is now."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+**The term is Location Breakdown Structure (LBS)** — the standard counterpart to the WBS, and exactly
+the distinction being asked for: the WBS says *what work*, the LBS says *where*. Relabelled in the
+matcher, the Group menu, the Floors & Zones step and the stacking's own empty state.
+
+- **The distinction had no name in the code.** New `locGroupingReason(name)` answers it once and is
+  read by the guesser, the wizard and the stacking: a **location** is a place (tower/building, level/
+  floor, zone, cluster, unit); a **grouping** is a project phase, a trade or a work type.
+- ⚠️ **It is POSITION-AWARE, and it has to be.** Several terms sit in both vocabularies —
+  `substructure`/`superstructure` are a Level synonym *and* a Structural Works term — so a flat
+  "is it a trade word" test would have thrown away **Tower D - Substructure**, a real tower. The term
+  appearing **earliest** wins: `Tower D - Substructure` → location; `Superstructure` (tie) → grouping.
+  ⚠️ A tie resolves to grouping deliberately: those are stages of structural work, not storeys.
+- **The guesser no longer proposes a trade or a phase as a location** — ⚠️ guess only. A saved match
+  still wins, so a project that already decided *"Superstructure IS our Level"* keeps it and no stored
+  data moves underneath anyone.
+- ⚠️⚠️ **UN-MATCHING A BRANCH USED TO DO NOTHING TO THE DATA — that is why a grouping went on drawing
+  a floor forever.** `locMapPlan` only ever SETS. A branch matched once and later marked grouping-only
+  left its value stamped on every activity beneath it. Apply now **clears** it, and narrowly: only
+  where the branch was in that level's *saved* table, is no longer in the new one, is the activity's
+  deepest match, the stored value still equals what it wrote, and the new matching sets nothing there.
+  Hand-typed, imported and backfilled values are untouched — it undoes this tool's own writes and
+  nothing else. The toast says how many were cleared, because a silent removal is not acceptable.
+- **The stacking refuses a grouping value at read time** as a backstop for values already stored.
+  ⚠️ **Nothing is dropped**: a refused value simply means "no level", so the work lands in the
+  existing dashed *No level* band — which now names the grouping branches as a cause, since a planner
+  reading that band would otherwise go hunting for a value that is plainly there.
+- The wizard badges each row with **why** it reads as a grouping (`project phase` / `trade / work
+  type`), shown even on rows already matched — that badge is the one thing that makes an old, wrong
+  match visible instead of permanent.
+
+**Verified: 26 checks executing the shipped `locGroupingReason` / `locGuessLevel` / `locIsGroupingValue`
+/ `_vsLevVal` / `clearPlan`** (sliced out of the file, never reimplemented), covering the both-vocabulary
+tie cases, the Tower-D-Substructure rescue, and all four narrowing conditions of the clear; the
+previous pass's 14 wizard checks still green; **0 functions lost / 7 added**; parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — no clear has run against real activities, which is the one thing most
+worth watching on the first real use. `MODULE_V` → `20260903c`.
+
 ### 2026-09-03 (b) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
 
 Owner, off a screenshot of *Match the WBS to your location breakdown*: filter by WBS level, use the
