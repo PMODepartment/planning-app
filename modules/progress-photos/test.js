@@ -290,11 +290,15 @@ const css = fs.readFileSync(here('module.css'), 'utf8');
 
 console.log('\n[0] Batch A (2026-08-29 18-item feedback) — Gallery default view + row-icon padding');
 ok('Gallery (tile) view is the default landing view (item 1) — was list', /var view = 'gallery';/.test(mjs));
-// Widened item 16 (2026-08-29 second round) to admit 'plan'/'stack' too —
-// a returning user's explicit choice of ANY of the four views still
-// overrides the default.
-ok('a returning user\'s explicit view choice still overrides the new default (restoreUI, widened for item 16)',
-   /if \(\['list', 'gallery', 'plan', 'stack'\]\.indexOf\(v\) >= 0\) view = v;/.test(mjs));
+// Widened item 16 (2026-08-29 second round) to admit 'plan' too — a
+// returning user's explicit choice of any of the three views still
+// overrides the default. ⚠️ 'stack' was ALSO admitted here, briefly — Round-2
+// item 7 (2026-09-02) removed Stack view, so it is deliberately no longer in
+// this whitelist (a stale saved 'stack' value now just falls through to the
+// 'gallery' default, per module.js's own comment at that exact line).
+ok('a returning user\'s explicit view choice still overrides the default (restoreUI) — and a STALE saved \'stack\' choice is deliberately no longer honoured',
+   /if \(\['list', 'gallery', 'plan'\]\.indexOf\(v\) >= 0\) view = v;/.test(mjs) &&
+   !/if \(\['list', 'gallery', 'plan', 'stack'\]/.test(mjs));
 ok('the Presentations-list row-action icons carry left padding (follow-up item 2)',
    /\.ppr-acts \{[^}]*padding-left: 10px/.test(css));
 
@@ -1293,10 +1297,12 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var cur = initial \|\| 'photo';/.test(mjs));
   ok('switching media type clears the staged batch — revokes object URLs, drops pending markup/adjustments, resets the file input and grid',
      /var mtype = wireMediaTypeSelector\('pp', preset\.mtype, function \(t\) \{[\s\S]{0,400}revokeStaged\(\);[\s\S]{0,100}pendingMarkup = \{\}; pendingAdjust = \{\};[\s\S]{0,100}pp-stagedgrid/.test(mjs));
-  ok('"+ Add media" is a dropdown (Photo/Video/360°/3D) — index.html carries the menu markup',
-     /pp-addmenu-wrap/.test(html) && /data-addtype="photo"/.test(html) && /data-addtype="video"/.test(html) && /data-addtype="360"/.test(html));
+  ok('"+ Add media" is a dropdown (Photo/Video/360°/3D) — index.html carries the menu markup, with 360° now disabled (round-1 item 1) alongside 3D rather than carrying a real data-addtype',
+     /pp-addmenu-wrap/.test(html) && /data-addtype="photo"/.test(html) && /data-addtype="video"/.test(html) &&
+     /class="pp-addmenu-item" disabled title="360° capture is on hold"/.test(html) &&
+     !/data-addtype="360"/.test(html.replace(/<!--[\s\S]*?-->/g, '')));
   ok('picking Photo/Video from the dropdown opens the upload modal pre-set to that type',
-     /openUpload\(\{ mtype: t \}\);/.test(mjs));
+     /openUpload\(\{ mtype: this\.dataset\.addtype \}\);/.test(mjs));
   ok('the upload save payload records which kind was picked', /media_type: kind/.test(mjs));
   ok('a video renders as a real <video> element, not an <img>, in thumb()',
      /r\.media_type === 'video'/.test(mjs) && /pp-vidplay/.test(mjs));
@@ -1368,8 +1374,8 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('ppr.js loads presentation-only markups tolerant of the migration not having run', /async function loadSlideMarkups\(\)/.test(pjs) && /markupTableMissing/.test(pjs));
   ok('saveSlideMarkup UPDATEs an existing row (by cached row id) rather than violating the (ppr_slide_id,pane) unique constraint with a second INSERT',
      /async function saveSlideMarkup\(slideId, pane, objs\)/.test(pjs) && /if \(rowId\) \{/.test(pjs));
-  ok('each pane renders its own toggle/edit toolbar + overlay canvas, wired by wirePaneMarkup after render',
-     /ppr-panetools/.test(pjs) && /function wirePaneMarkup\(cur\)/.test(pjs) && /wirePaneMarkup\(cur\);/.test(pjs));
+  ok('wirePaneMarkup still wires each pane after render (photo-markup canvas + key-plan resize + click-to-open) — its own zoom/toggle toolbar (.ppr-panetools) is gone entirely as of round-2 item 2 (item 7 had already retired the edit button, leaving only zoom in it; item 2 removed the zoom too, so nothing renders that class any more). ⚠️ Checked for real markup output, not a bare substring — the class name is still mentioned in a retirement COMMENT, which a naive substring test would (wrongly) trip on.',
+     !/class="ppr-panetools/.test(pjs) && /function wirePaneMarkup\(cur\)/.test(pjs) && /wirePaneMarkup\(cur\);/.test(pjs));
   ok('exports (offline HTML/PDF/PPTX) never reference the presentation-only markup overlay — it is a live viewing aid, not part of the record',
      (function () {
        const exportSlice = (pjs.split('function slideFigureHTML')[1] || '').split('var EXPORT_CSS')[0];
@@ -1484,10 +1490,14 @@ console.log('\n[misc] insert().select() returns the new row id');
      /pinsForPlan: function \(planId\) \{ return allPins\.filter/.test(bmjs));
 
   // --- Item 16: Plan view (floor + month stepping) --------------------------
-  ok('the Gallery view toggle gains Plan and Stack buttons alongside List/Tile',
-     /data-view="plan"/.test(html) && /data-view="stack"/.test(html));
-  ok('render() dispatches to renderPlanView/renderStackView for those two views, reading PROJECT-WIDE data, not the filtered list',
-     /if \(view === 'plan' \|\| view === 'stack'\) \{[\s\S]{0,200}renderPlanView\(\)[\s\S]{0,100}renderStackView\(\)/.test(mjs));
+  ok('the Gallery view toggle gains a Plan button alongside List/Tile',
+     /data-view="plan"/.test(html));
+  ok('⚠️ Round-2 item 7 (2026-09-02) removed Stack view — no Stack button, and no Stack-only functions/markup, survive anywhere in the shipped source',
+     !/data-view="stack"/.test(html) && !/function renderStackView/.test(mjs) && !/function wireStackView/.test(mjs) &&
+     !/function stackGrid/.test(mjs) && !/function mostRecentAsOf/.test(mjs) && !/function stackRowSort/.test(mjs) &&
+     !/id="pp-stack-/.test(mjs));
+  ok('render() dispatches to renderPlanView for Plan view, reading PROJECT-WIDE data, not the filtered list',
+     /if \(view === 'plan'\) \{[\s\S]{0,150}renderPlanView\(\)/.test(mjs));
   ok('a floor STEPPER exists (prev/next/animate) — the genuinely NEW capability the old bim.js Map view never had (only a bare <select>)',
      /id="pp-plan-floorprev"/.test(mjs) && /id="pp-plan-floornext"/.test(mjs) && /id="pp-plan-floorplay"/.test(mjs) &&
      /planFloorId = fs\[i \+ 1\]\.id;/.test(mjs));
@@ -1499,116 +1509,8 @@ console.log('\n[misc] insert().select() returns the new row id');
      /planFloorPlaying = true;[\s\S]{0,450}\}, 1200\);/.test(mjs));
   ok('clicking a cluster opens its member list rather than jumping straight into one item (ambiguous which one)',
      /function openPlanClusterList\(cluster\)/.test(mjs));
-  ok('Group-by is hidden in Plan/Stack (it has no meaning there) rather than left visible and silently inert',
-     /gbField\.style\.display = \(view === 'plan' \|\| view === 'stack'\) \? 'none' : '';/.test(mjs));
-
-  // --- Item 16: Stack view — combine-by-default, step-through opt-in --------
-  ok('Stack defaults to COMBINE (every photo at a location, across all months) — REVERSES bim.js\'s old single-most-recent default',
-     /var stackStepMode = false;/.test(mjs) && /REVERSES bim\.js's old Stack default/.test(mjs));
-  ok('a "Step through months instead" toggle exists, switching to the old cutoff-driven single-photo-per-cell behaviour',
-     /id="pp-stack-stepmode"/.test(mjs) && /stackStepMode = this\.checked; stopStackPlay\(\); render\(\);/.test(mjs));
-  ok('combined mode caps thumbnails per cell and reports the overflow as "+N more" rather than silently truncating with no sign',
-     /var STACK_COMBINE_MAX = 6;/.test(mjs) && /pp-stackmore/.test(mjs) && /c\.photos\.length - STACK_COMBINE_MAX/.test(mjs));
-  ok('combined-mode thumbnails open the ordinary lightbox on click; step-mode keeps the hover-magnifier instead',
-     // Routes through openPhotoById (audit fix), NOT a raw openLightbox(id) —
-     // Stack/Plan read project-wide data, so a clicked photo can be one the
-     // Gallery's own active filter excludes; a bare openLightbox(id) falls
-     // back to index 0 on a miss and silently shows a DIFFERENT photo. See
-     // section [35]'s structural checks for the shared openPhotoById guard.
-     /im\.onclick = function \(\) \{ openPhotoById\(this\.dataset\.open\); \};/.test(mjs) &&
-     /mag\.hidden = false;/.test(mjs));
-  ok('only the first-picked row level and a SEPARATE column level drive the grid — a level can never be picked as both axes',
-     /levels\.filter\(function \(l\) \{ return l\.id !== \(stackRowLevel\(\) && stackRowLevel\(\)\.id\); \}\)/.test(mjs));
-  ok('a single-level project collapses columns to one shared "All" bucket rather than repeating the row axis',
-     /if \(!colNames\.length\) colNames = \[''\];  \/\/ single-level project/.test(mjs) && /Fmt\.esc\(c \|\| 'All'\)/.test(mjs));
-
-  // Genuine execution of the "as of" cell rule, ported into module.js — the
-  // exact class of bug this module has already been bitten by once (the
-  // vendor-performance / reportedThrough family): a wrong fallback here
-  // reports a photo as existing at a location before it was actually taken,
-  // or hides one that should already be visible.
-  (function () {
-    const photos = [
-      { id: 'p1', taken_at: '2026-01-15' },
-      { id: 'p2', taken_at: '2026-03-10' },
-      { id: 'p3', taken_at: '2026-05-01' },
-    ];
-    eq('mostRecentAsOf: no cutoff returns the single latest photo', PP._mostRecentAsOf(photos, null).id, 'p3');
-    eq('mostRecentAsOf: cutoff mid-way returns the latest photo AT OR BEFORE it, never a later one', PP._mostRecentAsOf(photos, '2026-03').id, 'p2');
-    eq('mostRecentAsOf: cutoff before every photo returns null, never the earliest by mistake', PP._mostRecentAsOf(photos, '2025-12'), null);
-    eq('mostRecentAsOf: an empty candidate list (no photo at this cell) returns null, not a crash', PP._mostRecentAsOf([], '2026-06'), null);
-  })();
-
-  // Genuine execution of the full row/column grid builder against a small,
-  // hand-checked fixture — two towers, two floors each, one cell deliberately
-  // left with no photo at all (must read as empty, never invent a neighbour).
-  // Also confirms `photos` (item 16's combined list) is populated alongside
-  // the legacy `photo` (step-mode's single resolved one).
-  (function () {
-    const levels = [{ id: 'lvl-tower', name: 'Tower', sort_order: 1 }, { id: 'lvl-floor', name: 'Floor', sort_order: 2 }];
-    const photos = [
-      { id: 'a1', taken_at: '2026-01-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },
-      { id: 'a2', taken_at: '2026-02-01', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 1' } },  // combines with a1; supersedes it in step mode
-      { id: 'b1', taken_at: '2026-01-15', location_values: { 'lvl-tower': 'Tower 1', 'lvl-floor': 'Floor 2' } },
-      { id: 'c1', taken_at: '2026-01-20', location_values: { 'lvl-tower': 'Tower 2', 'lvl-floor': 'Floor 1' } },
-      // Tower 2 / Floor 2: deliberately NO photo at all.
-    ];
-    const g = PP._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', null);
-    // ⚠️ Rows sort NUMERIC-DESCENDING now (stackRowSort, added on main the same
-    // day this fixture was written) — the intended reading for a vertical
-    // building stack is highest floor/tower first, so 'Tower 2' precedes
-    // 'Tower 1'. Columns are untouched (plain ascending .sort()). Updated on
-    // merge (2026-09-01) — this fixture predates stackRowSort and originally
-    // asserted the old ascending order, which is no longer what the shipped
-    // function does.
-    eq('stackGrid: rows are the distinct ROW-level values, sorted numeric-descending (stackRowSort)', g.rows.map((r) => r.row), ['Tower 2', 'Tower 1']);
-    eq('stackGrid: columns are the distinct COLUMN-level values, sorted', g.cols, ['Floor 1', 'Floor 2']);
-    eq('stackGrid: Tower 1 / Floor 1 COMBINES both competing photos (item 16 default)', g.rows[1].cells[0].photos.map((p) => p.id).sort(), ['a1', 'a2']);
-    eq('stackGrid: Tower 1 / Floor 1 step-mode field still resolves to the LATEST (a2, not a1) for the opt-in toggle',
-       g.rows[1].cells[0].photo.id, 'a2');
-    eq('stackGrid: Tower 1 / Floor 2 resolves to its one photo', g.rows[1].cells[1].photo.id, 'b1');
-    eq('stackGrid: Tower 2 / Floor 1 resolves to its one photo', g.rows[0].cells[0].photo.id, 'c1');
-    eq('stackGrid: Tower 2 / Floor 2 (no photo at all) is null, never borrowed from a neighbouring cell',
-       g.rows[0].cells[1].photo, null);
-    eq('stackGrid: Tower 2 / Floor 2 combined list is empty, not null/undefined', g.rows[0].cells[1].photos, []);
-    // As-of cutoff applied through the WHOLE grid, not just one cell (step mode only).
-    const gCutoff = PP._stackGrid(levels, photos, 'lvl-tower', 'lvl-floor', '2026-01');
-    eq('stackGrid with a cutoff: Tower 1 / Floor 1 step-mode falls back to a1 (a2 is in the future relative to the cutoff)',
-       gCutoff.rows[1].cells[0].photo.id, 'a1');
-    eq('stackGrid: a project with only ONE level collapses columns to a single shared bucket',
-       PP._stackGrid([levels[0]], photos, 'lvl-tower', null, null).cols, ['']);
-  })();
-
-  // Item 30 (2026-08-30): "even if no photos have been assigned, we should
-  // be able to show the vertical stacking format" — row/column headers must
-  // come from the SCHEDULE's own distinct values (the skeleton), not only
-  // from photos, so a freshly-configured project with zero photos still
-  // renders the grid instead of the old "no photos tagged" empty state.
-  (function () {
-    const levels = [{ id: 'lvl-tower', name: 'Tower', sort_order: 1 }, { id: 'lvl-floor', name: 'Floor', sort_order: 2 }];
-    const schedActs = [
-      { location: { 'lvl-tower': 'Tower 1', 'lvl-floor': '9th Floor' } },
-      { location: { 'lvl-tower': 'Tower 1', 'lvl-floor': '10th Floor' } },
-      { location: { 'lvl-tower': 'Tower 2', 'lvl-floor': '9th Floor' } },
-    ];
-    const g = PP._stackGrid(levels, [], 'lvl-tower', 'lvl-floor', null, schedActs);
-    // ⚠️ Rows sort NUMERIC-DESCENDING (stackRowSort, added on main the same day
-    // this fixture was written) — 'Tower 2' precedes 'Tower 1'. Columns are
-    // unaffected (plain ascending .sort(), and '10th Floor' < '9th Floor'
-    // lexicographically either way). Updated on merge (2026-09-01).
-    eq('with ZERO photos, rows still come from the SCHEDULE\'s own distinct values (the skeleton)', g.rows.map((r) => r.row), ['Tower 2', 'Tower 1']);
-    eq('…and so do the columns', g.cols, ['10th Floor', '9th Floor']);
-    eq('every cell is honestly empty (no photo), never invented', g.rows[0].cells[0].photo, null);
-    eq('…and the combined-photos list for that cell is [], not null/undefined', g.rows[0].cells[0].photos, []);
-
-    // A photo tagged at a location the schedule doesn't (yet) know about is
-    // still shown — the union goes both ways, so real data is never hidden
-    // just because the schedule hasn't caught up.
-    const photosOnly = [{ id: 'x1', taken_at: '2026-01-01', location_values: { 'lvl-tower': 'Tower 3', 'lvl-floor': '9th Floor' } }];
-    const g2 = PP._stackGrid(levels, photosOnly, 'lvl-tower', 'lvl-floor', null, schedActs);
-    eq('the union includes a photo-only location the schedule has never carried', g2.rows.map((r) => r.row), ['Tower 3', 'Tower 2', 'Tower 1']);
-    eq('…and that photo is findable in its own (schedule-unknown) cell', g2.rows[0].cells[1].photo.id, 'x1');
-  })();
+  ok('Group-by is hidden in Plan view (it has no meaning there) rather than left visible and silently inert',
+     /gbField\.style\.display = \(view === 'plan'\) \? 'none' : '';/.test(mjs));
 
   // Genuine execution of the cluster grouping (grid-snap by ~5% cell, ported
   // verbatim from bim.js's mapClusters) and the pin-date resolution. Grouping
@@ -1803,14 +1705,18 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('bisectorBearing reports the bearing to the MIDPOINT of the two edges, not either edge alone',
      Math.abs(BIM._bisectorBearing(0.5, 0.5, 0.4, 0, 0.6, 0, 1, 1) - 0) < 0.001);
 
-  // --- Item 17: 4-way media type, only 3D stays disabled ---------------------
-  ok('the type selector offers Photo / Video / 360° / 3D as four distinct buttons',
-     /id="' \+ idPrefix \+ '-mtype-360">360°<\/button>/.test(mjs) &&
+  // --- Item 17 originally re-enabled 360°, disabling only 3D — REVERSED by
+  // round-1 item 1 (2026-09-02): "the 360 photo feature is quite buggy. let's
+  // discontinue it for now. disable and grey out 360." Both stays disabled
+  // now, matching the 3D button's own shape. ---------------------------------
+  ok('the type selector offers Photo / Video / 360° / 3D as four distinct buttons, 360° now disabled alongside 3D (round-1 item 1 discontinues it)',
+     /id="' \+ idPrefix \+ '-mtype-360" disabled title="360° capture is on hold">360°<\/button>/.test(mjs) &&
      /disabled title="3D reconstruction is on hold">3D<\/button>/.test(mjs));
-  ok('360° is NOT disabled (item 17 re-enables it — item 18 fixes the flow it delegates to)',
-     !/id="' \+ idPrefix \+ '-mtype-360"[^>]*disabled/.test(mjs));
-  ok('picking 360° closes the Add Media modal and hands off to pano.js\'s real capture flow',
-     /\$\('pp-mtype-360'\)\.onclick = function \(\) \{[\s\S]{0,150}m\.close\(\);[\s\S]{0,80}PANO\.openCapture\(\)/.test(mjs));
+  ok('360° IS disabled (round-1 item 1 reverses item 17\'s earlier re-enable)',
+     /id="' \+ idPrefix \+ '-mtype-360" disabled/.test(mjs));
+  ok('the retired onclick handler that hands off to pano.js\'s capture flow is left wired but explicitly documented as unreachable while the button stays disabled — re-enabling the button alone restores it, per this module\'s shelve-don\'t-strip convention',
+     /\$\('pp-mtype-360'\)\.onclick = function \(\) \{[\s\S]{0,150}m\.close\(\);[\s\S]{0,80}PANO\.openCapture\(\)/.test(mjs) &&
+     /2026-09-02: the button is `disabled` now \(360° discontinued/.test(mjs));
   ok('pano.js exposes openCapture — its capture flow\'s only reachable entry point now that #pano-new is gone',
      /openCapture: function \(\) \{ openCaptureModal\(\); \}/.test(pnjs));
 
@@ -1879,8 +1785,6 @@ console.log('\n[misc] insert().select() returns the new row id');
      /objs\.splice\(idx, 1\); pushHistory\(\); redraw\(\);/.test(mjs));
   ok('presentation markup is a SEPARATE store, keyed by (slide, pane) — never attached to the photo itself',
      /function markupKey\(slideId, pane\) \{ return slideId \+ '\|' \+ pane; \}/.test(pjs));
-  ok('the presentation pane reuses the SAME editor rather than re-implementing drawing a second time',
-     /ProgressPhotos\.openMarkupEditor\(u, markupFor\(cur\.id, which\), function \(objs\) \{/.test(pjs));
   // ⚠️ Superseded (owner feedback, progress-photos item 5): the text labels
   // on Markup/Adjust are gone again — icon-only, matching every other
   // lightbox tool, with the title attribute still naming each on hover. The
@@ -1892,8 +1796,30 @@ console.log('\n[misc] insert().select() returns the new row id');
      /id="pp-lb-adjustedit" title="Adjust exposure[^"]*">\s*<span data-ico="sliders"/.test(html) &&
      !/pp-lb-markupedit"[\s\S]{0,200}<span>Markup<\/span>/.test(html) &&
      !/pp-lb-adjustedit"[\s\S]{0,200}<span>Adjust<\/span>/.test(html));
+  // ⚠️ Checks the real RULE DECLARATION, not a bare substring — module.css's
+  // own comment on the zoom-button addition explains .pp-lb-tool-labeled is
+  // NOT carried forward, and a naive substring check would trip on that
+  // prose itself (the same trap this file's history has hit before).
   ok('the now-unused .pp-lb-tool-labeled rule is removed, not left as dead CSS',
-     !/\.pp-lb-tool-labeled/.test(css));
+     !/\.pp-lb-tool-labeled\s*\{/.test(css));
+  // 2026-09-02 item 7: the per-pane "Edit markup" entry point (ppr-mkedit-<which>,
+  // which called openMarkupEditor + saveSlideMarkup against the SEPARATE
+  // ppr_slide_markups store) is REMOVED — presentation view now only ever
+  // VIEWS the photo's own permanent markup (progress_photos.markup), toggled
+  // by the one shared, persisted markupGlobalVisible() preference (proxied
+  // through photoMarkupVisible()/setPhotoMarkupVisible() so item 7's own
+  // requirement — "persist the setting" — is met without duplicating the
+  // per-pane toggle module.js/the Gallery/lightbox already share). Editing
+  // still happens exactly one place: the Gallery lightbox.
+  ok('the presentation pane reuses the SAME drawing routine module.js exports for its READ-ONLY markup view',
+     /ProgressPhotos\.drawMarkupOnCanvas\(pcv, ph\.markup \|\| \[\]\)/.test(pjs));
+  ok('the per-pane "Edit markup" entry point is gone — no ppr-mkedit- id remains',
+     !/ppr-mkedit-/.test(pjs));
+  ok('photoMarkupVisible()/setPhotoMarkupVisible() proxy the ONE shared, persisted preference (not a per-pane session flag)',
+     /function photoMarkupVisible\(\) \{ return ProgressPhotos\.markupGlobalVisible\(\); \}/.test(pjs) &&
+     /function setPhotoMarkupVisible\(v\) \{ ProgressPhotos\.setMarkupGlobalVisible\(v\); \}/.test(pjs));
+  ok('the header toggle button calls through that proxy, never the module.js export directly',
+     /setPhotoMarkupVisible\(!photoMarkupVisible\(\)\)/.test(pjs));
 
   // --- Fourth round, items 3/4 (2026-08-30): select-to-edit, Line, Polygon --
   // "I can't select the markup or shape to edit" — the biggest gap. Genuinely
@@ -1922,7 +1848,7 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('Select is the DEFAULT tool on open — a planner opening markup to review an existing photo must not start drawing by accident',
      /var tool = 'select', color = MARKUP_COLORS\[0\]/.test(mjs));
   ok('the Select tool grabs whatever markupHitTest finds under the pointer, and deselects on an empty-canvas click',
-     /var hit = markupHitTest\(objs, p\[0\], p\[1\], canvas\.width, canvas\.height\);\s*selectedIdx = hit;/.test(mjs));
+     /var hit = markupHitTest\(objs, p\[0\], p\[1\], canvas\.width, canvas\.height, ctx\);\s*selectedIdx = hit;/.test(mjs));
   ok('dragging a selection uses translateMarkupObj against a SNAPSHOT taken at drag-start, not the live object (so a fast drag can\'t compound its own delta)',
      /dragOrig = Object\.assign\(\{\}, objs\[hit\]\); dragStart = p; drawing = true;/.test(mjs) &&
      /objs\[selectedIdx\] = translateMarkupObj\(dragOrig, p\[0\] - dragStart\[0\], p\[1\] - dragStart\[1\]\);/.test(mjs));
@@ -2076,8 +2002,11 @@ console.log('\n[misc] insert().select() returns the new row id');
      /if \(imgEl\) imgEl\.style\.filter = cssFilterFor\(newAdj\);/.test(mjs));
   ok('the Adjust button is hidden for a video (adjustments are photo-only) and for a read-only viewer, mirroring the Markup button\'s own gating',
      /adjBtn\.style\.display = \(canWrite && !isVideo\) \? '' : 'none';/.test(mjs));
-  ok('Stack view applies the SAME per-photo filter in both its step-through and combined-photos cells, so a corrected photo looks corrected everywhere it appears',
-     /var cfilt = adjustmentsAreDefault\(c\.photo\.adjustments\)/.test(mjs) && /var pfilt = adjustmentsAreDefault\(p\.adjustments\)/.test(mjs));
+  // ⚠️ Stack view's own adjustments-in-cells assertion (it applied the same
+  // filter in both its step-through and combined-photos cells) is retired
+  // along with Stack view itself — Round-2 item 7. Adjustments still apply
+  // everywhere Stack view is NOT the render path (thumb(), the lightbox,
+  // the staged-file grid below), which the surrounding assertions cover.
   ok('the staged-file grid (Add Media) offers Adjust beside Markup, wired the same way — available BEFORE the file is even uploaded',
      /data-adjuststage="' \+ i \+ '"/.test(mjs) &&
      /openAdjustEditor\(stagedUrls\[i\], pendingAdjust\[i\] \|\| \{\}, function \(adj\) \{ pendingAdjust\[i\] = adj; \}\);/.test(mjs));
@@ -2627,8 +2556,9 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('module.css: the four confirmed-orphaned selectors are gone (.pp-thumb-wrap, .pp-cardphoto-wrap, .ppr-pickinfo, .ppr-pickthumb — zero references anywhere in the JS/HTML before this pass)',
      !/\.pp-thumb-wrap \{/.test(cssFile) && !/\.pp-cardphoto-wrap \{/.test(cssFile) &&
      !/\.ppr-pickinfo \{/.test(cssFile) && !/\.ppr-pickthumb \{/.test(cssFile));
-  ok('module.css: .pp-plancluster and .pp-stackthumb-sm gain a phone-width touch-target bump (neither had one at all before — every dimension was under 44px on a touch device)',
-     /@media \(max-width: 700px\) \{[\s\S]{0,400}\.pp-plancluster \{ min-width: 40px; height: 40px; \}\s*\.pp-stackthumb-sm \{ width: 40px; height: 46px; \}/.test(cssFile));
+  ok('module.css: .pp-plancluster gains a phone-width touch-target bump (had none at all before — every dimension was under 44px on a touch device); its sibling Stack-view rule is gone with Stack view itself (Round-2 item 7)',
+     /@media \(max-width: 700px\) \{[\s\S]{0,700}\.pp-plancluster \{ min-width: 40px; height: 40px; \}/.test(cssFile) &&
+     !/\.pp-stackthumb-sm \{ width: 40px; height: 46px; \}/.test(cssFile));
 
   ok('ppr.js: slides() no longer re-sorts on every call — slidesOf[k] is already kept sorted at both of its two write sites (load()\'s explicit sort, and the slide-sorter\'s renumber-to-match-array-order before assigning), so the per-call .sort() was pure wasted work',
      /function slides\(pprId\) \{ return \(slidesOf\[pprId\] \|\| \[\]\)\.slice\(\); \}/.test(pjs) &&
@@ -3047,12 +2977,18 @@ console.log('\n[misc] insert().select() returns the new row id');
   }
   eq('thumbUrlOf/thumbCache/THUMB_OPTS width shrunk 480->320 for both the client thumbnail and the Storage-transform fallback (item 9 — still slow even after real thumbnails)',
      (/var THUMB_MAXW = 320, THUMB_JPEG_Q = 0\.5;/.test(mjs) && /transform: \{ width: 320, quality: 50, resize: 'contain' \}/.test(mjs)), true);
-  ok('markup now shows on Gallery/List tiles by default — thumb() wraps a marked-up photo in a positioned overlay canvas',
-     /if \(r\.markup && r\.markup\.length && markupGlobalVisible\(\)\) \{/.test(mjs) && /pp-thumbmk/.test(mjs));
+  ok('markup now shows on Gallery/List tiles by default — thumb() wraps a marked-up photo in a positioned overlay canvas (round-2 item 8: List always shows it regardless of the shared preference; Gallery still respects the preference)',
+     /if \(r\.markup && r\.markup\.length && \(view === 'list' \|\| markupGlobalVisible\(\)\)\) \{/.test(mjs) && /pp-thumbmk/.test(mjs));
   ok('...gated by ONE shared, persisted preference read from localStorage, per project',
      /function markupGlobalVisible\(\) \{/.test(mjs) && /function markupVisKey\(\) \{ return 'pp_markupvis_' \+ pid; \}/.test(mjs));
   ok('the lightbox\'s own markup toggle now WRITES the shared preference too, so hiding it there hides it on every tile',
      /lightboxMarkupVisible = !lightboxMarkupVisible;\s*setMarkupGlobalVisible\(lightboxMarkupVisible\);/.test(mjs));
+  // --- round-2 item 8: "in the list and plan view, no need for the
+  // show/hide mark-up button. by default show mark-up for these views." ---
+  ok('syncMkVisBtn() hides #pp-mkvistoggle entirely on List/Plan views (via el.hidden, not a bare style tweak — Plan never draws a markup layer at all, so a control for it there would do nothing) and shows it, reflecting the real preference, everywhere else',
+     /function syncMkVisBtn\(\) \{[\s\S]{0,40}var b = \$\('pp-mkvistoggle'\); if \(!b\) return;\s*if \(view === 'list' \|\| view === 'plan'\) \{ b\.hidden = true; return; \}\s*b\.hidden = false;/.test(mjs));
+  ok('module.css: the button\'s own display:inline-flex is overridden for [hidden] — the exact same specificity trap already documented for .pp-addmenu/.pp-selbar, where a class-level display rule silently defeats the browser\'s [hidden]{display:none} rule at equal specificity',
+     /\.pp-mkvistoggle\[hidden\] \{ display: none; \}/.test(cssFile));
   ok('a Redo button exists beside Undo, and popping its stack restores exactly what Undo just removed',
      /id="pp-mk-redo"/.test(mjs) && /if \(!undone\.length\) return;\s*history\.push\(undone\.pop\(\)\);/.test(mjs));
   ok('Line/Fill/Text-size controls are visually grouped (item 2) — each carries its own uppercase caption, not three unlabelled rows side by side',
@@ -3182,26 +3118,19 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('…and clicking Live while already live is a genuine no-op (guarded, doesn\'t stop a timer or force an unnecessary render)',
      /if \(planMonth == null\) return;   \/\/ already live/.test(mjs));
 
-  ok('Stack view\'s step-mode month stepper renders the same Live button, styled is-live exactly when stackMonth is null',
-     /'<button class="pd-btn pp-livebtn' \+ \(stackMonth == null \? ' is-live' : ''\) \+ '" id="pp-stack-mlive" title="Back to the latest month">Live<\/button>' \+/.test(mjs));
-  ok('…placed after Play, before the "as of the end of this month" hint — same cluster shape as Plan view',
-     /id="pp-stack-mplay">[\s\S]{0,120}'<button class="pd-btn pp-livebtn' \+ \(stackMonth == null \? ' is-live' : ''\) \+ '" id="pp-stack-mlive"[\s\S]{0,120}as of the end of this month/.test(mjs));
-  ok('wireStackView(): clicking Live stops the Stack play timer first, then snaps stackMonth back to null and re-renders — only wired while step mode is actually on',
-     /if \(\$\('pp-stack-mlive'\)\) \$\('pp-stack-mlive'\)\.onclick = function \(\) \{\s*if \(stackMonth == null\) return;[^\n]*\s*stopStackPlay\(\);\s*stackMonth = null; render\(\);\s*\};/.test(mjs));
-  ok('…that wiring lives inside the `if (stackStepMode) { ... }` block, alongside mprev\\/mnext\\/mplay — combine mode never wires a stepper it doesn\'t render',
-     (function () {
-       const m = /function wireStackView\(\) \{([\s\S]*?)\n  \}/.exec(mjs);
-       if (!m) return false;
-       const stepBlock = /if \(stackStepMode\) \{([\s\S]*?)\n\s*\} else \{/.exec(m[1]);
-       return !!stepBlock && /pp-stack-mlive/.test(stepBlock[1]) && /pp-stack-mprev/.test(stepBlock[1]);
-     })());
+  // ⚠️ Stack view's own copy of this Live button (and its wireStackView()
+  // wiring) is retired along with Stack view itself — Round-2 item 7
+  // (2026-09-02, "remove stack view for the photos"). Confirmed gone as
+  // part of section [49]'s own sweep, further down this file (no
+  // data-view="stack", no renderStackView/wireStackView/stackGrid/
+  // mostRecentAsOf/stackRowSort, no id="pp-stack-* anywhere).
 
   ok('module.css: .pp-livebtn / .is-live are defined (a solid brand-red fill + white text — same fixed-background exemption from the dark-mode #fff audit as .pp-tab.active / .pd-btn-primary)',
      /\.pp-livebtn \{ padding: 4px 12px; font-size: 12px; \}/.test(cssFile) &&
      /\.pp-livebtn\.is-live \{ background: var\(--pd-red\); border-color: var\(--pd-red\); color: #fff;/.test(cssFile));
 
-  ok('the two new ids (pp-plan-mlive / pp-stack-mlive) are each referenced exactly 3 times in module.js — once rendered, twice in the wiring ($(id) guard + $(id).onclick, the same shape every sibling stepper button already uses) — never a stray 4th reference suggesting a leftover or a duplicate',
-     (mjs.match(/pp-plan-mlive/g) || []).length === 3 && (mjs.match(/pp-stack-mlive/g) || []).length === 3);
+  ok('pp-plan-mlive is referenced exactly 3 times in module.js — once rendered, twice in the wiring ($(id) guard + $(id).onclick, the same shape every sibling stepper button already uses) — never a stray 4th reference suggesting a leftover or a duplicate; its retired Stack-view sibling (pp-stack-mlive) is referenced zero times',
+     (mjs.match(/pp-plan-mlive/g) || []).length === 3 && (mjs.match(/pp-stack-mlive/g) || []).length === 0);
 
   console.log('\n[41] Old-photo thumbnail backfill ("manually add the thumbnail data… for the app to fetch")');
   ok('photosNeedingThumb() exists and scopes to real images missing thumb_url (never videos, which already get a free <video preload="metadata"> preview)',
@@ -3367,42 +3296,51 @@ console.log('\n[misc] insert().select() returns the new row id');
      /id="ppr-back" title="Back to the presentation list" style="display:none;">\s*\n\s*<span data-ico="arrowLeft" data-ico-size="14"><\/span> Back<\/button>/.test(html));
 
   // --- Item 10: "Preview this presentation" removed, replaced by a photo-markup toggle
+  // ⚠️ Superseded again by the LATER 2026-09-02 round (items 7/8/9/10, see
+  // section [41] below): showPhotoMarkup (a plain bool var) is gone —
+  // photoMarkupVisible()/setPhotoMarkupVisible() now PROXY the one shared,
+  // persisted ProgressPhotos.markupGlobalVisible() preference so item 7's
+  // own requirement ("persist the setting") is met, and the per-pane
+  // SLIDE-only markup editor/canvas (ppr-mkcanvas-<which>, ppr_slide_markups)
+  // is retired entirely — only the photo's own permanent markup canvas
+  // (ppr-photomkcanvas-<which>) remains. Assertions rewritten to match.
   ok('the "Preview this presentation\'s slides" header icon is gone; a photo-markup toggle (ppr-photomk-toggle) takes its place',
      !/id="ppr-pres-preview"/.test(pjs) && /id="ppr-photomk-toggle"/.test(pjs));
-  ok('showPhotoMarkup is a SEPARATE, presentation-wide flag from showMarkup{} (the per-pane SLIDE-only annotation toggle), defaulting true',
-     /var showPhotoMarkup = true;/.test(pjs));
-  ok('clicking the toggle flips showPhotoMarkup and re-renders the slide (both panes read it fresh on every renderSlides() call)',
-     /\$\('ppr-photomk-toggle'\)\.onclick = function \(\) \{\s*\n\s*showPhotoMarkup = !showPhotoMarkup;\s*\n\s*renderSlides\(\);\s*\n\s*\};/.test(pjs));
-  ok('pane() reads the photo\'s OWN permanent markup (ph.markup, progress_photos.markup) — a field the slide-markup canvas never reads',
+  ok('photoMarkupVisible()/setPhotoMarkupVisible() are SEPARATE from showMarkup{} (the retired-in-place, per-pane SLIDE-only annotation toggle) — they proxy the one shared, persisted preference',
+     /function photoMarkupVisible\(\) \{ return ProgressPhotos\.markupGlobalVisible\(\); \}/.test(pjs) &&
+     /function setPhotoMarkupVisible\(v\) \{ ProgressPhotos\.setMarkupGlobalVisible\(v\); \}/.test(pjs));
+  ok('clicking the toggle calls setPhotoMarkupVisible(!photoMarkupVisible()) and re-renders the slide (both panes read it fresh on every renderSlides() call)',
+     /\$\('ppr-photomk-toggle'\)\.onclick = function \(\) \{\s*\n\s*setPhotoMarkupVisible\(!photoMarkupVisible\(\)\);\s*\n\s*renderSlides\(\);\s*\n\s*\};/.test(pjs));
+  ok('pane() reads the photo\'s OWN permanent markup (ph.markup, progress_photos.markup) through the shared preference',
      /var photoMk = \(ph && ph\.markup\) \|\| \[\];/.test(pjs) &&
-     /var photoMkVisible = showPhotoMarkup && u && photoMk\.length;/.test(pjs));
-  ok('the photo-markup canvas is a SECOND, separate canvas element from the slide-markup one (ppr-photomkcanvas-<which> vs ppr-mkcanvas-<which>), painted UNDERNEATH it in DOM order',
-     /id="ppr-photomkcanvas-' \+ which \+ '"/.test(pjs) && /id="ppr-mkcanvas-' \+ which \+ '"/.test(pjs) &&
-     pjs.indexOf('ppr-photomkcanvas-') < pjs.indexOf("id=\"ppr-mkcanvas-' + which + '\""));
-  ok('wirePaneMarkup paints the photo-markup canvas from photoById(photoId).markup via the SAME shared drawMarkupOnCanvas export the slide canvas uses (never a second drawing implementation)',
+     /var photoMkVisible = photoMarkupVisible\(\) && u && photoMk\.length;/.test(pjs));
+  ok('the per-pane SLIDE-only markup canvas (ppr-mkcanvas-<which>) is gone — the photo\'s own permanent markup canvas (ppr-photomkcanvas-<which>) is the only markup canvas a pane can render now',
+     /id="ppr-photomkcanvas-' \+ which \+ '"/.test(pjs) && !/id="ppr-mkcanvas-' \+ which \+ '"/.test(pjs));
+  ok('wirePaneMarkup paints the photo-markup canvas from photoById(photoId).markup via the SAME shared drawMarkupOnCanvas export the Gallery/lightbox use (never a second drawing implementation)',
      /var ph = photoById\(photoId\);\s*\n\s*if \(ph && window\.ProgressPhotos && ProgressPhotos\.drawMarkupOnCanvas\) \{\s*\n\s*ProgressPhotos\.drawMarkupOnCanvas\(pcv, ph\.markup \|\| \[\]\);/.test(pjs));
   ok('the slide-export path (slideFigureHTML/EXPORT_CSS) is untouched by item 10 — the photo-markup toggle is a live viewing aid, never baked into a downloaded file',
      /function slideFigureHTML/.test(pjs) && !/showPhotoMarkup/.test(pjs.slice(pjs.indexOf('function slideFigureHTML'))));
 
   // --- Item 11: ONE key-plan toggle, top-right corner overlay at 1/10 size --
-  ok('item 21\'s per-pane keyPlanOpenPane state is gone (no declaration/assignment of it survives — only explanatory prose mentioning the retired name), replaced by a single showKeyPlan flag',
-     !/var keyPlanOpenPane/.test(pjs) && !/keyPlanOpenPane\[/.test(pjs) && !/keyPlanOpenPane =/.test(pjs) &&
-     /var showKeyPlan = false;/.test(pjs));
-  ok('openPpr() resets showKeyPlan (not the old per-pane object) when opening a presentation',
-     /selId = id; viewPprId = id; slideAt = 0; showKeyPlan = false;/.test(pjs));
-  ok('the header key-plan toggle (#ppr-kp-toggle) is offered ONLY when the current slide actually has a key plan on at least one pane — never a speculative control',
-     /\(cur && \(keyPlanPathFor\(cur, 'before'\) \|\| keyPlanPathFor\(cur, 'after'\)\)\)/.test(pjs) &&
-     /id="ppr-kp-toggle"/.test(pjs));
-  ok('clicking it flips showKeyPlan (a presentation-wide flag) and re-renders — both panes read it fresh',
-     /\$\('ppr-kp-toggle'\)\.onclick = function \(\) \{\s*\n\s*showKeyPlan = !showKeyPlan;\s*\n\s*renderSlides\(\);\s*\n\s*\};/.test(pjs));
-  ok('pane() no longer renders a per-pane ppr-kpicon button — the popup\'s visibility is driven by the header\'s showKeyPlan alone, gated per-pane only on whether THAT photo has a plan',
-     !/class="ppr-kpicon/.test(pjs) &&
-     /var kpPopup = \(showKeyPlan && kpPath\)/.test(pjs));
-  ok('module.css: the popup is pinned to the photo\'s own top-right corner (top:8px;right:8px, matching where the retired per-pane icon used to sit) and sized as a FRACTION of the photo (10% width), not a fixed 220px dropdown',
-     /\.ppr-kppopup \{[^}]*top: 8px; right: 8px;[^}]*width: 10%;/.test(css.replace(/\n/g, ' ')));
+  // ⚠️ Superseded again by item 8 of the LATER 2026-09-02 round (section [41]
+  // below): the flat popup (kpPopup/kpPath/.ppr-kppopup) is itself retired —
+  // replaced by a resizable overlay drawing the REAL bim.js pin+cone
+  // (kpInfo/kpLegacyPath/kpOverlay/.ppr-kpoverlay). Assertions rewritten.
+  // ⚠️ Superseded AGAIN by Round-2 item 5 (2026-09-02, section [48] below):
+  // the owner explicitly re-asked for an independent PER-PANE key-plan
+  // toggle ("opposite the previous/current label" in each photo tile) —
+  // item 11's single shared showKeyPlan flag is retired in turn, and the
+  // per-pane keyPlanOpenPane state this comment used to say was gone is
+  // back (under the same name), just reached via a per-pane icon instead
+  // of the old ppr-kpicon markup. Assertions below cover the CURRENT
+  // (item-11-era) intermediate shape only for what nothing later changed;
+  // the four that actually tested showKeyPlan/#ppr-kp-toggle/kpOpen are
+  // rewritten in section [48].
+  ok('the retired flat .ppr-kppopup CSS rule is gone entirely (superseded by .ppr-kpoverlay, which draws the real pin+cone)',
+     !/\.ppr-kppopup\s*\{/.test(css) && /\.ppr-kpoverlay \{/.test(css));
   ok('the retired .ppr-kpicon CSS rule is gone entirely',
      !/\.ppr-kpicon\s*\{/.test(css));
-  ok('.pp-iconbtn.is-active exists (the shared "on" state both the item-10 and item-11 header toggles use)',
+  ok('.pp-iconbtn.is-active exists (the shared "on" state the item-10 header toggle and Round-2 item 5\'s per-pane toggles both use)',
      /\.pp-iconbtn\.is-active \{/.test(css));
 
   console.log('\n[45] Item 4 — Gallery/List key-plan button removed, replaced by a per-photo lightbox toggle overlaying 1/8 of the photo');
@@ -3433,18 +3371,54 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var kpHasPin = window\.BIM && BIM\.pinInfoFor && !!BIM\.pinInfoFor\(kpPinType, kpPinId\);/.test(mjs));
   ok('the #pp-lb-keyplan button is shown ONLY when the current item actually has a pin, never speculatively',
      /kpBtn\.style\.display = kpHasPin \? '' : 'none';/.test(mjs));
-  ok('lightboxKeyPlanVisible resets to false on EVERY paintLightbox() call — stepping ←/→ to a different photo must not carry a previous photo\'s overlay over onto it',
-     /lightboxKeyPlanVisible = false;\s*\n\s*paintKeyPlanOverlay\(r\);/.test(mjs));
+  ok('lightboxKeyPlanVisible resets to false on EVERY paintLightbox() call — stepping ←/→ to a different photo must not carry a previous photo\'s overlay over onto it, and (round-2 item 4) so does the drag-resized overlay width, back to its default',
+     /lightboxKeyPlanVisible = false;[\s\S]{0,300}?lightboxKpOverlaySize = null;[\s\S]{0,60}?paintKeyPlanOverlay\(r\);/.test(mjs));
   ok('clicking #pp-lb-keyplan toggles lightboxKeyPlanVisible and repaints the overlay for the CURRENT row (the same one paintLightbox closed over, not a re-read of lightboxIds[lightboxAt] which could have moved on)',
      /kpBtn\.onclick = function \(\) \{\s*\n\s*lightboxKeyPlanVisible = !lightboxKeyPlanVisible;\s*\n\s*paintKeyPlanOverlay\(r\);/.test(mjs));
-  ok('paintKeyPlanOverlay() exists, hides+clears the overlay stage when NOT visible (never leaves a stale src around), and reflects the on/off state on the button via .is-active',
+  // ⚠️ Round-2 item 4 rewrote paintKeyPlanOverlay() around a local setShown(shown)
+  // helper — the button's is-active state and the wrap's hidden flag are now set
+  // from the ACTUAL outcome (once, at whichever return point is reached), never
+  // ahead of knowing whether a plan was really found. Healthy churn from an
+  // intentional change: the two tests below assert the new shape, not the old
+  // "set is-active from intent, then separately hide/show the wrap" one.
+  ok('paintKeyPlanOverlay() exists and defines a local setShown(shown) helper that drives BOTH the button\'s .is-active class and the overlay\'s hidden flag from one outcome, clearing the img src + pin/cone when hiding (never leaves a stale src around)',
      /function paintKeyPlanOverlay\(r\) \{/.test(mjs) &&
-     /if \(kpBtn\) kpBtn\.classList\.toggle\('is-active', lightboxKeyPlanVisible\);/.test(mjs) &&
-     /if \(!lightboxKeyPlanVisible\) \{\s*\n\s*wrap\.hidden = true;/.test(mjs));
-  ok('paintKeyPlanOverlay() sets the overlay\'s src to the resolved plan URL and un-hides it only once one is actually found; a missing plan hides it and warns rather than showing a broken image',
+     /function setShown\(shown\) \{/.test(mjs) &&
+     /if \(kpBtn\) kpBtn\.classList\.toggle\('is-active', shown\);/.test(mjs) &&
+     /wrap\.hidden = !shown;/.test(mjs) &&
+     /if \(!shown\) \{ if \(img\) img\.removeAttribute\('src'\); if \(pinEl\) pinEl\.hidden = true; if \(coneEl\) coneEl\.hidden = true; \}/.test(mjs));
+  ok('paintKeyPlanOverlay() calls setShown(false) — never touching the button\'s active state ahead of time — both when the toggle is off and when a plan genuinely isn\'t available (with a toast, never a broken <img>)',
+     /if \(!lightboxKeyPlanVisible\) \{ setShown\(false\); return; \}/.test(mjs) &&
+     /if \(!info \|\| !info\.planUrl\) \{[\s\S]{0,40}?UI\.toast\('That floor plan image is not available', 'warn'\);[\s\S]{0,20}?setShown\(false\);/.test(mjs));
+  ok('paintKeyPlanOverlay() sets the overlay\'s src to the resolved plan URL, sizes the overlay from lightboxKpOverlaySize (falling back to the LB_KP_DEFAULT 1/8-photo width), and only calls setShown(true) once a plan is actually found',
      /if \(img\) img\.src = info\.planUrl;/.test(mjs) &&
-     /UI\.toast\('That floor plan image is not available', 'warn'\);/.test(mjs) &&
-     /wrap\.hidden = false;/.test(mjs));
+     /wrap\.style\.width = \(\(lightboxKpOverlaySize \|\| LB_KP_DEFAULT\) \* 100\) \+ '%';/.test(mjs) &&
+     /setShown\(true\);\s*\n\s*\}/.test(mjs));
+  ok('round-2 item 4: a drag handle exists on the lightbox key-plan overlay, wireLightboxKpResizeDrag() drives its resize through the pure kpResizeFrac() helper, and it is wired exactly once during wire() (never re-bound per paint)',
+     /id="pp-lb-keyplan-resize"/.test(html) &&
+     /function wireLightboxKpResizeDrag\(\) \{/.test(mjs) &&
+     /var LB_KP_DEFAULT = 0\.125, LB_KP_MIN = 0\.06, LB_KP_MAX = 0\.6;/.test(mjs) &&
+     /var frac = kpResizeFrac\(startFrac, startX, ev\.clientX, wrapW\);/.test(mjs) &&
+     /wireLightboxKpResizeDrag\(\);/.test(mjs) &&
+     (mjs.match(/wireLightboxKpResizeDrag\(\)/g) || []).length === 2); // definition + the one call in wire()
+  // ⚠️ kpResizeFrac is exported (_kpResizeFrac) and genuinely EXECUTED here —
+  // same reasoning as _magnifierGeom above: a flipped sign or a missing
+  // clamp is silent (the handle still looks draggable either way).
+  ok('kpResizeFrac: dragging LEFT (cursor x decreases below startX) GROWS the box — the box is pinned top/right, so only its bottom-left corner can move, and moving the pointer left widens it',
+     PP._kpResizeFrac(0.125, 100, 40, 400) > 0.125);
+  ok('kpResizeFrac: dragging RIGHT (cursor x increases past startX) SHRINKS the box',
+     PP._kpResizeFrac(0.125, 100, 160, 400) < 0.125);
+  ok('kpResizeFrac: the delta is normalised by wrap width, not an absolute pixel count — the same 60px drag on a 400px wrap vs. an 800px wrap produces a HALF-sized fractional change on the wider wrap',
+     (function () {
+       var wide = PP._kpResizeFrac(0.2, 100, 40, 800) - 0.2;
+       var narrow = PP._kpResizeFrac(0.2, 100, 40, 400) - 0.2;
+       return Math.abs(wide - narrow / 2) < 1e-9;
+     })());
+  ok('kpResizeFrac: clamps to LB_KP_MIN/LB_KP_MAX (0.06/0.6) — an extreme drag can never shrink the overlay to nothing or blow it up past the stage',
+     PP._kpResizeFrac(0.125, 100, 100000, 400) === 0.06 &&
+     PP._kpResizeFrac(0.125, 100000, 100, 400) === 0.6);
+  ok('kpResizeFrac: a zero-width wrap (not yet laid out) falls back to dividing by 1 rather than throwing/returning Infinity or NaN',
+     Number.isFinite(PP._kpResizeFrac(0.125, 100, 40, 0)));
   // ⚠️ Owner feedback item 7: the pin + camera-facing cone are always drawn
   // on the overlay too, positioned by the pin's own x_norm/y_norm — never
   // just the bare plan image.
@@ -3600,9 +3574,12 @@ console.log('\n[misc] insert().select() returns the new row id');
      /<option value="internal">Internal<\/option>/.test(pjs) &&
      /<option value="client">External \(Client\)<\/option>/.test(pjs));
   ok('the form reads the picked Report Type on Save and threads it through BOTH the direct-save path and the copy-wizard hand-off',
-     /var reportType = \$\('ppr-f-reporttype'\) \? \$\('ppr-f-reporttype'\)\.value : '';/.test(pjs) &&
+     /var reportType = \$\('ppr-frm-reporttype'\) \? \$\('ppr-frm-reporttype'\)\.value : '';/.test(pjs) &&
      /openCopyWizard\(\{ ppr_date: date, description: desc, report_type: reportType \}, copyFrom\);/.test(pjs) &&
      /var data = \{ ppr_date: date, description: desc, report_type: reportType \};/.test(pjs));
+  ok('⚠️ REGRESSION GUARD (bug found live, 2026-09-02): the form field is id="ppr-frm-reporttype", a DIFFERENT id than the list filter\'s own "ppr-f-reporttype" — document.getElementById always resolves the FIRST match in the DOM, and the persistent filter select (rendered in index.html, ahead of any modal) comes before this form field every time a modal opens. Sharing one id meant every save silently read the filter\'s current value (almost always \'\', i.e. "All") instead of what was actually picked in the modal — confirmed live: several real presentations saved with report_type = \'\' regardless of what this dropdown showed.',
+     /<select class="pd-select" id="ppr-frm-reporttype">/.test(pjs) &&
+     !/<select class="pd-select" id="ppr-f-reporttype">/.test(pjs));
 
   // --- Tolerant of the migration not having run yet ---------------------------
   ok('a shared insertPresentation()/updatePresentation() pair is used by EVERY ppr_presentations write that can carry report_type (openPprForm, createPresentationPlain, the copy wizard\'s finish(), and generateFromTemplate) — one retry rule, not four independent copies',
@@ -3614,6 +3591,301 @@ console.log('\n[misc] insert().select() returns the new row id');
      /if \(res\.error && isMissingColumnErr\(res\.error\) && 'report_type' in data\) \{\s*\n\s*var retry = Object\.assign\(\{\}, data\); delete retry\.report_type;/.test(pjs));
   ok('generateFromTemplate() carries the RUNNING TEMPLATE\'s own meeting_type onto the presentation it creates — the concrete "reuse the existing classification field" the owner asked to check for',
      /report_type: tmpl\.meeting_type/.test(pjs));
+
+  // =========================================================== [47] =========
+  // Items 7/8/9/10 (2026-09-02, a later round than [41]-[46] above): the
+  // presentation pane's markup toggle now reads the PHOTO'S OWN permanent
+  // markup (progress_photos.markup) through photoMarkupVisible()/
+  // setPhotoMarkupVisible() — proxies over the one shared, persisted
+  // ProgressPhotos.markupGlobalVisible() preference, so item 7's own
+  // requirement ("persist the setting") is met without a second, per-pane
+  // markup mechanism competing with it. The per-pane "add presentation
+  // markup" edit feature (ppr-mkedit-<which>, the separate SLIDE-only
+  // ppr-mkcanvas-<which> canvas) is removed entirely; the key-plan overlay
+  // is now the real bim.js pin+cone (position + camera direction). ⚠️ At
+  // the time this comment was first written the overlay's open state was
+  // gated by a SINGLE showKeyPlan header flag; Round-2 item 5 (2026-09-02,
+  // see section [48]) restores an independent PER-PANE open state instead
+  // (keyPlanOpenPane[which]) — the assertions in this section were updated
+  // in place to match. It's resizable by dragging its bottom-left corner;
+  // clicking
+  // a pane's photo opens the ordinary lightbox; and every photo viewer
+  // surface (lightbox + both panes) gained zoom in/out, to the left of the
+  // markup toggle. Genuinely executed via new hooks (_keyPlanInfoForPane,
+  // _paneHTML, _setPaneZoom/_getPaneZoom/_applyPaneZoom) rather than only
+  // regex-read — pane()'s conditional markup is exactly the kind of "which
+  // branch actually fired" question a source-level read can't answer alone.
+  console.log('\n[47] Items 7/8/9/10: photo-owned markup toggle, the real pin+cone key plan, click-to-open, zoom everywhere');
+
+  // --- keyPlanInfoForPane's composition logic (item 8) ---
+  (function () {
+    const savedPinInfoFor = BIM.pinInfoFor;
+    try {
+      eq('keyPlanInfoForPane: no photoId returns null without ever consulting BIM', PPR._keyPlanInfoForPane(null), null);
+
+      BIM.pinInfoFor = function () { return null; };
+      eq('keyPlanInfoForPane: BIM reports no pin at all for this photo -> null', PPR._keyPlanInfoForPane('p1'), null);
+
+      BIM.pinInfoFor = function () { return { pin: null, planUrl: 'x' }; };
+      eq('keyPlanInfoForPane: BIM info with a falsy .pin -> null (never a half-formed overlay with no pin to draw)',
+         PPR._keyPlanInfoForPane('p1'), null);
+
+      BIM.pinInfoFor = function () { return { pin: { x_norm: 0.5 }, planUrl: 'plan.png', planWidth: 800, planHeight: 400 }; };
+      let info = PPR._keyPlanInfoForPane('p1');
+      ok('keyPlanInfoForPane: aspect is the PLAN\'s real width/height ratio when both dimensions are known (800/400 = 2)',
+         info && info.aspect === 2);
+      eq('...and planUrl/pin pass through unchanged', [info.planUrl, info.pin.x_norm], ['plan.png', 0.5]);
+
+      BIM.pinInfoFor = function () { return { pin: { x_norm: 0.1 }, planUrl: 'y.png', planWidth: null, planHeight: null }; };
+      info = PPR._keyPlanInfoForPane('p1');
+      ok('keyPlanInfoForPane: unknown plan dimensions fall back to a plain 4:3 box, never NaN/a divide-by-zero',
+         info && info.aspect === 4 / 3);
+
+      BIM.pinInfoFor = function () { return { pin: { x_norm: 0.1 }, planUrl: 'z.png', planWidth: 800, planHeight: 0 }; };
+      info = PPR._keyPlanInfoForPane('p1');
+      ok('keyPlanInfoForPane: a zero height is treated the same as "unknown" (falsy), not a literal division by zero',
+         info && info.aspect === 4 / 3);
+    } finally {
+      BIM.pinInfoFor = savedPinInfoFor;
+    }
+  })();
+
+  // --- pane(): no photo linked at all ---
+  (function () {
+    const sl = { id: 'sl-empty', before_photo_id: null, after_photo_id: null };
+    const h = PPR._paneHTML([], {}, sl, 'after', false);
+    ok('pane(): with no photo linked, renders the "Photo not set" placeholder and NO data-openphoto/zoom/markup controls at all — nothing to click, zoom or toggle',
+       /Photo not set/.test(h) && !/data-openphoto/.test(h) && !/ppr-zoomin-after/.test(h) && !/ppr-photomkcanvas-after/.test(h));
+  })();
+
+  // --- pane(): a linked photo — data-openphoto (item 9); round-2 item 2
+  // retires per-pane zoom entirely ("zoom is only for the image pop-up
+  // view") — no zoom buttons/ids are rendered here any more.
+  (function () {
+    const photos = [{ id: 'ph1', photo_url: 'path/a.jpg', description: 'desc', location: 'Tower 1', taken_at: '2026-01-01', markup: [] }];
+    const urlCache = { 'path/a.jpg': 'signed://a' };
+    const sl = { id: 'sl1', after_photo_id: 'ph1', before_photo_id: null };
+
+    let h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+    ok('pane(): a linked photo\'s <img> carries data-openphoto with the EXACT photo id (item 9\'s click-to-open wiring target)',
+       /data-openphoto="ph1"/.test(h));
+    ok('pane(): round-2 item 2 — no zoom buttons render for a linked photo any more (zoom lives only in the lightbox)',
+       !/ppr-zoomout-after/.test(h) && !/ppr-zoomin-after/.test(h) && !/ppr-panetools/.test(h));
+    ok('pane(): with no markup on the photo, the photo-markup canvas is NOT rendered at all (there is no PER-PANE toggle button any more — only the header #ppr-photomk-toggle controls visibility, and there is nothing to show here regardless)',
+       !/ppr-photomkcanvas-after/.test(h));
+  })();
+
+  // --- pane(): the photo-markup canvas reads/reflects the ONE shared,
+  // persisted preference (photoMarkupVisible/setPhotoMarkupVisible, proxying
+  // ProgressPhotos.markupGlobalVisible) — there is no per-pane toggle button
+  // any more; only the header #ppr-photomk-toggle (wired in wirePresActs)
+  // controls it, and pane() itself only decides whether to draw the canvas.
+  (function () {
+    const photos = [{ id: 'ph2', photo_url: 'path/b.jpg', description: '', location: '', taken_at: '2026-01-02', markup: [{ type: 'rect' }] }];
+    const urlCache = { 'path/b.jpg': 'signed://b' };
+    const sl = { id: 'sl2', after_photo_id: 'ph2', before_photo_id: null };
+
+    PP.setMarkupGlobalVisible(true);
+    let h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+    ok('pane(): markup present + the shared preference ON -> the photo-markup canvas draws',
+       /<canvas class="ppr-mkcanvas ppr-photomkcanvas" id="ppr-photomkcanvas-after"><\/canvas>/.test(h));
+    ok('pane(): no "add presentation markup" editor entry point is left anywhere in the shipped source (item 7 removed it, not just hid it)',
+       !/ppr-mkedit-/.test(pjs));
+
+    PP.setMarkupGlobalVisible(false);
+    h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+    ok('pane(): same photo, shared preference OFF -> the canvas is not drawn at all',
+       !/ppr-photomkcanvas-after/.test(h));
+    PP.setMarkupGlobalVisible(true);
+  })();
+
+  // --- pane(): the resizable, pin+cone key-plan overlay (item 8), gated by
+  // a PER-PANE open/closed state (Round-2 item 5, via the _setKeyPlanOpenPane/
+  // _getKeyPlanOpenPane hooks) — superseding item 11's single shared
+  // showKeyPlan header flag, which is itself now retired in turn. Also
+  // confirms the pane renders its OWN toggle button (data-kptoggle) only
+  // when the photo actually has a plan, and that toggling ONE pane's state
+  // never affects the other.
+  (function () {
+    const savedPinInfoFor = BIM.pinInfoFor, savedMarkerHTML = BIM.keyPlanMarkerHTML;
+    try {
+      BIM.pinInfoFor = function () { return { pin: { x_norm: 0.4, y_norm: 0.6 }, planUrl: 'plan.png', planWidth: 800, planHeight: 400 }; };
+      BIM.keyPlanMarkerHTML = function (pin) { return '<div class="fake-pin" data-x="' + pin.x_norm + '"></div>'; };
+
+      const photos = [{ id: 'ph3', photo_url: 'path/c.jpg', markup: [], taken_at: '2026-01-03' }];
+      const urlCache = { 'path/c.jpg': 'signed://c' };
+      const sl = { id: 'sl3', after_photo_id: 'ph3', before_photo_id: null };
+
+      PPR._setKeyPlanOpenPane('after', false);
+      let h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+      ok('pane(): a photo WITH a real pin still renders NO overlay while THIS pane\'s own open state is false',
+         !/ppr-kpoverlay-after/.test(h));
+      ok('...but DOES render its own toggle button, since the photo has a plan to show (never a speculative control on a pane with nothing to toggle)',
+         /data-kptoggle="after"/.test(h));
+
+      PPR._setKeyPlanOpenPane('after', true);
+      h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+      ok('pane(): with this pane\'s own state on, the overlay box carries the PLAN\'s real aspect ratio (800/400=2), never a fixed/guessed one — the pin renders undistorted',
+         /id="ppr-kpoverlay-after" style="width:10%;aspect-ratio:2;"/.test(h));
+      ok('...defaults to the 10% overlay size (KP_OVERLAY_DEFAULT) until the user drags to resize',
+         /style="width:10%;/.test(h));
+      ok('...draws the SAME pin+cone marker bim.js\'s own Plans-tab view uses (BIM.keyPlanMarkerHTML), never a re-derived one',
+         /<div class="fake-pin" data-x="0\.4"><\/div>/.test(h));
+      ok('...and carries a drag-to-resize handle on its bottom-left corner',
+         /class="ppr-kpoverlay-resize" data-resize="after" title="Drag to resize"/.test(h));
+
+      ok('_getKeyPlanOpenPane(\'after\') reflects the value just set, and the OTHER pane (\'before\') is untouched by it',
+         PPR._getKeyPlanOpenPane('after') === true && PPR._getKeyPlanOpenPane('before') === false);
+    } finally {
+      BIM.pinInfoFor = savedPinInfoFor; BIM.keyPlanMarkerHTML = savedMarkerHTML;
+      PPR._setKeyPlanOpenPane('after', false);
+    }
+  })();
+
+  // --- pane(): a photo with NO plan at all renders no toggle button, and
+  // no overlay, however this pane's own open state is set (never a
+  // speculative control that would usually do nothing) ---
+  (function () {
+    const savedPinInfoFor = BIM.pinInfoFor;
+    try {
+      BIM.pinInfoFor = function () { return null; };
+      const photos = [{ id: 'ph3b', photo_url: 'path/c2.jpg', markup: [], taken_at: '2026-01-03' }];
+      const urlCache = { 'path/c2.jpg': 'signed://c2' };
+      const sl = { id: 'sl3b', after_photo_id: 'ph3b', before_photo_id: null };
+
+      PPR._setKeyPlanOpenPane('after', true);
+      const h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+      ok('pane(): no plan on this photo at all -> no data-kptoggle button and no overlay, regardless of this pane\'s own (stale) open state',
+         !/data-kptoggle="after"/.test(h) && !/ppr-kpoverlay-after/.test(h));
+    } finally {
+      BIM.pinInfoFor = savedPinInfoFor;
+      PPR._setKeyPlanOpenPane('after', false);
+    }
+  })();
+
+  // --- pane(): the legacy flat key_plan_url fallback (pre-2026-08-30 slides) ---
+  (function () {
+    const savedPinInfoFor = BIM.pinInfoFor;
+    try {
+      BIM.pinInfoFor = function () { return null; }; // no real bim.js pin recorded
+      const photos = [{ id: 'ph4', photo_url: 'path/d.jpg', key_plan_url: 'keyplans/legacy.png', markup: [], taken_at: '2026-01-04' }];
+      const urlCache = { 'path/d.jpg': 'signed://d', 'keyplans/legacy.png': 'signed://legacy' };
+      const sl = { id: 'sl4', after_photo_id: 'ph4', before_photo_id: null };
+      PPR._setKeyPlanOpenPane('after', true);
+      const h = PPR._paneHTML(photos, urlCache, sl, 'after', false);
+      ok('pane(): a photo with NO real bim.js pin but a legacy key_plan_url still renders a plain, pin-less key-plan overlay — pre-2026-08-30 slides keep working',
+         /class="ppr-kpoverlay ppr-kpoverlay-legacy"/.test(h) && /signed:\/\/legacy/.test(h));
+    } finally {
+      BIM.pinInfoFor = savedPinInfoFor;
+      PPR._setKeyPlanOpenPane('after', false);
+    }
+  })();
+
+  // --- click-to-open wiring (item 9) — the harness's document.querySelector
+  // always returns null (see documentStub above), so the real click can't be
+  // driven end to end here; confirmed structurally instead, against the
+  // shipped source rather than assumed from the render-side test above.
+  ok('wirePaneMarkup(): clicking the pane\'s photo routes through the SAME guarded ProgressPhotos.openPhotoById used by the audit-fixed Plan/Stack views — never a raw openLightbox(id) that silently falls back to index 0 on a miss',
+     /if \(window\.ProgressPhotos && ProgressPhotos\.openPhotoById\) \{\s*ProgressPhotos\.openPhotoById\(this\.dataset\.openphoto\);\s*\}/.test(pjs));
+  ok('...bound to the <img> itself via document.querySelector(\'#ppr-pane-\' + which + \' .ppr-img[data-openphoto]\'), never the wrapping .ppr-imgwrap — so a click on a sibling corner tool button (markup/key-plan/zoom) can never bubble into it',
+     /var imgEl = document\.querySelector\('#ppr-pane-' \+ which \+ ' \.ppr-img\[data-openphoto\]'\);/.test(pjs));
+
+  // --- round-2 item 3: zoom buttons RETIRED, a magnifier lens replaces them ---
+  // ⚠️ The markup SHOW/HIDE toggle lives in the RIGHT-hand cluster
+  // (#pp-lb-markuptoggle, owner feedback item 6) — not beside Download in
+  // the left cluster, where only the markup EDIT button (#pp-lb-markupedit)
+  // sits.
+  ok('index.html: the lightbox toolbar no longer has Zoom out/in buttons — "instead of zoom buttons... have a magnifier instead" (round-2 item 3)',
+     !/id="pp-lb-zoomout"/.test(html) && !/id="pp-lb-zoomin"/.test(html));
+  ok('index.html: a magnifier lens element exists in the image wrap, and the (separate, right-hand-cluster) markup SHOW/HIDE toggle still exists, unaffected',
+     /id="pp-lb-magnifier"/.test(html) && /id="pp-lb-markuptoggle"/.test(html));
+  ok('module.js: applyLightboxZoom/lightboxZoom/LB_ZOOM_MIN/MAX are gone entirely, not just unwired',
+     !/function applyLightboxZoom/.test(mjs) && !/\blightboxZoom\b/.test(mjs) && !/LB_ZOOM_MIN|LB_ZOOM_MAX/.test(mjs));
+  ok('module.js: paintLightbox() hides any magnifier left showing from the previous photo (hideLightboxMagnifier), and wireLightboxMagnifier is called once during wire(), not re-bound on every paint',
+     /hideLightboxMagnifier\(\);/.test(mjs) && /function wireLightboxMagnifier\(\) \{/.test(mjs) &&
+     /wireLightboxMagnifier\(\);/.test(mjs));
+  ok('module.js: magnifierGeom returns null when the cursor is outside the image bounds or the image has no size yet (the caller\'s cue to hide the lens rather than show a garbage crop)',
+     (function () {
+       const rect = { left: 0, top: 0, width: 200, height: 100 };
+       const wrapRect = { left: 0, top: 0 };
+       return PP._magnifierGeom(-1, 50, rect, wrapRect, 160, 2.5) === null &&
+              PP._magnifierGeom(50, 150, rect, wrapRect, 160, 2.5) === null &&
+              PP._magnifierGeom(50, 50, { left: 0, top: 0, width: 0, height: 0 }, wrapRect, 160, 2.5) === null;
+     })());
+  ok('module.js: magnifierGeom centres the lens on the cursor (relative to the WRAP, since that\'s what it\'s positioned against) and reads the zoomed crop from the cursor\'s position WITHIN the image, scaled by `zoom` — a real, checkable geometric invariant, not just "it runs"',
+     (function () {
+       // Cursor dead-centre of a 200x100 image, wrap offset by (10,20) from
+       // the viewport, 160px lens, 2x zoom.
+       const g = PP._magnifierGeom(110, 70, { left: 10, top: 20, width: 200, height: 100 }, { left: 10, top: 20 }, 160, 2);
+       // Cursor is at image-local (100,50) — dead centre — so the background
+       // must be centred there too: bgX = -(100*2 - 80) = -120, bgY = -(50*2 - 80) = -20.
+       return g && g.left === 20 && g.top === -30 && g.bgW === 400 && g.bgH === 200 && g.bgX === -120 && g.bgY === -20;
+     })());
+  ok('module.css: a magnifier lens rule exists, hidden by default (JS shows it on hover), and both viewer surfaces still clip overflow on their wrap',
+     /\.pp-lb-magnifier \{[^}]*display: none/.test(cssFile) &&
+     /\.ppr-imgwrap \{[^}]*overflow: hidden/.test(cssFile) && /\.pp-lb-imgwrap \{[^}]*overflow: hidden/.test(cssFile));
+
+  // =========================================================== [48] =========
+  // Round-2 item 6 (2026-09-02): "for floor plan, accept only images. no
+  // longer pdf" — both floor-plan upload file inputs (bim.js) are restricted
+  // to image mimetypes; the old isPdf-detection/PDF-contentType branches in
+  // both upload handlers are gone; isPdfPlan()/the <embed> render path are
+  // KEPT, defensively, only to display a plan uploaded before this change.
+  console.log('\n[48] Round-2 item 6: floor plan upload accepts images only, no longer PDF');
+
+  ok('the main "Upload a floor plan" file input no longer offers application/pdf',
+     /id="bim-p-file" accept="image\/\*"/.test(bmjs) && !/id="bim-p-file" accept="image\/\*,application\/pdf"/.test(bmjs));
+  ok('the inline (Add/Edit Photo modal) mini upload form\'s file input is the same — image/* only',
+     /id="' \+ idPrefix \+ '-inlineplan-file" accept="image\/\*"/.test(bmjs) &&
+     !/id="' \+ idPrefix \+ '-inlineplan-file" accept="image\/\*,application\/pdf"/.test(bmjs));
+  ok('neither upload handler detects/branches on a PDF any more — no isPdf variable survives in either save function',
+     !/var isPdf = /.test(bmjs));
+  ok('both upload handlers now call imageDims(f) unconditionally (never an isPdf ternary short-circuiting to null dims)',
+     (bmjs.match(/var dims = await imageDims\(f\);/g) || []).length === 2 &&
+     !/var dims = isPdf \?/.test(bmjs));
+  ok('both handlers\' Storage upload contentType falls back to plain \'image/jpeg\' (no more conditional application/pdf)',
+     (bmjs.match(/contentType: f\.type \|\| 'image\/jpeg' \}/g) || []).length === 2);
+  ok('both file-choice guards read "Choose an image file" now, not "...or PDF file"',
+     (bmjs.match(/'Choose an image file', 'warn'/g) || []).length === 2 &&
+     !/Choose an image or PDF file/.test(bmjs));
+  ok('imageDims() itself no longer special-cases a .pdf file/mimetype — a real image is always measured via <img>.onload',
+     !/if \(\/pdf\$\/i\.test\(file\.type\)/.test(bmjs));
+  ok('isPdfPlan()/the <embed type="application/pdf"> render path are DELIBERATELY KEPT (not removed) — only for a plan uploaded before this change; the comment above isPdfPlan says so',
+     /function isPdfPlan\(plan\)/.test(bmjs) && /type="application\/pdf"/.test(bmjs) &&
+     /Kept ONLY for a plan uploaded before[\s\S]{0,20}Round-2 item 6 retired PDF uploads/.test(bmjs));
+
+  // =========================================================== [49] =========
+  // Round-2 item 7 (2026-09-02, owner: "remove stack view for the photos") —
+  // deleted outright, not gated/retired-in-place, matching the treatment
+  // this module already gave the Today's Rounds feature. A full sweep:
+  // no button, no state, no render/wire functions, no CSS, no test hooks.
+  console.log('\n[49] Round-2 item 7: Stack view removed entirely');
+
+  ok('index.html: no "stack" view-toggle button anywhere (was #pd-vt[data-view="stack"], the layers icon)',
+     !/data-view="stack"/.test(html));
+  ok('module.js: not one Stack-only function survives (render/wire/grid/sort/as-of resolution)',
+     !/function renderStackView/.test(mjs) && !/function wireStackView/.test(mjs) &&
+     !/function stackGrid\(/.test(mjs) && !/function stackRowSort/.test(mjs) &&
+     !/function mostRecentAsOf/.test(mjs) && !/function stopStackPlay/.test(mjs) &&
+     !/function stackLevels/.test(mjs) && !/function stackRowLevel/.test(mjs) &&
+     !/function stackColLevel/.test(mjs) && !/function stackMonthsAvailable/.test(mjs));
+  ok('module.js: not one Stack-only state variable survives (stackRowLevelId/stackColLevelId/stackStepMode/stackMonth/stackPlaying/stackPlayTimer/STACK_COMBINE_MAX) — a bare mention in the retirement comment\'s own prose doesn\'t count, only a real declaration would',
+     !/var stackRowLevelId/.test(mjs) && !/stackColLevelId = /.test(mjs) &&
+     !/var stackStepMode/.test(mjs) && !/var stackMonth/.test(mjs) &&
+     !/var stackPlaying/.test(mjs) && !/var STACK_COMBINE_MAX/.test(mjs));
+  ok('module.js: no id="pp-stack-* markup anywhere (the toolbar/table/magnifier ids the retired view used to render)',
+     !/id="pp-stack-/.test(mjs) && !/pp-stackwrap|pp-stacktable|pp-stackcell|pp-stackthumb|pp-stackmore|pp-stackmag|pp-stacklevels|pp-stackcellphotos/.test(mjs));
+  ok('module.js: the render() dispatch, restoreUI() whitelist and view comment all mention only plan\'s state now — 0 remaining "view === \'stack\'"/"|| view === \'stack\'" branches',
+     !/view === 'stack'/.test(mjs) && !/'plan', 'stack'/.test(mjs));
+  ok('module.js: the retired test hooks (_stackGrid/_stackRowSort/_mostRecentAsOf) are gone from the exported test-only object — nothing left to call the deleted functions',
+     !/_stackGrid:/.test(mjs) && !/_stackRowSort:/.test(mjs) && !/_mostRecentAsOf:/.test(mjs));
+  ok('module.css: no .pp-stack* rule survives anywhere in the stylesheet (levels/wrap/table/cell/thumb/mag, both desktop and the phone-width override)',
+     !/\.pp-stack[a-z]*\s*\{/.test(cssFile) && !/\.pp-stack[a-z]*[,\s]/.test(cssFile.replace(/\/\*[\s\S]*?\*\//g, '')));
+  ok('test.js itself carries no surviving PP._stackGrid/_stackRowSort/_mostRecentAsOf call (this file\'s own retired assertions were rewritten, not merely disabled)',
+     (function () {
+       const selfSrc = fs.readFileSync(__filename, 'utf8');
+       return !/PP\._stackGrid\(/.test(selfSrc) && !/PP\._stackRowSort\(/.test(selfSrc) && !/PP\._mostRecentAsOf\(/.test(selfSrc);
+     })());
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

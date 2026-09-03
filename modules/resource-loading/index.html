@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Resource &amp; Role Master · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902c" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -38,10 +38,17 @@
     .rl-kpi-v { font-size:22px; font-weight:800; line-height:1; } .rl-kpi-v.rl-bad { color:var(--pd-bad); }
     .rl-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
 
-    /* Filter bar (card, matches risk-register / stakeholder-map) */
-    .rl-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
+    /* Filter bar — collapsed by default, revealed via the topbar funnel toggle
+       (#rl-filttoggle, UI.wireFilterToggle) instead of sitting permanently
+       open. The search box that used to sit alone in the topbar now lives
+       inside it too (renderFilterbar rebuilds it per tab, same as the
+       type/role/discipline selects). renderFilterbar() still force-hides the
+       whole thing on tabs with nothing to filter (Loading). */
+    .rl-filters { display:none; }
+    .rl-filters.open { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
     .rl-filt-ico { color:var(--pd-muted); flex:none; }
     .rl-filters .pd-select { height:34px; font-size:13px; max-width:200px; }
+    .rl-filters .rl-search-input { flex:1 1 200px; min-width:150px; }
 
     .rl-table { width:100%; border-collapse:collapse; font-size:13px; }
     .rl-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
@@ -157,7 +164,9 @@
         <select class="pd-select rl-project" id="rl-project" title="Project"></select>
       </div>
       <div class="rl-topbar-tools">
-        <input class="pd-input rl-search-input" id="rl-search" placeholder="Search…" />
+        <!-- Search moved into the filter group (#rl-filterbar, below) instead
+             of sitting alone here — UI.wireFilterToggle in the init script. -->
+        <button class="pd-filttoggle" id="rl-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
         <span class="rl-tb-sep"></span>
         <button class="pd-btn pd-btn-primary rl-tb-labeled" id="rl-add"><span data-ico="plus" data-ico-size="15"></span> <span id="rl-add-lbl">Add resource</span></button>
       </div>
@@ -226,9 +235,9 @@
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260902a"></script>
-<script src="../../assets/js/icons.js?v=20260902e"></script>
-<script src="../../assets/js/calendar.js?v=20260824a"></script>
+<script src="../../assets/js/ui.js?v=20260902c"></script>
+<script src="../../assets/js/icons.js?v=20260902f"></script>
+<script src="../../assets/js/calendar.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script>
@@ -238,6 +247,7 @@
   var assignments = [], schedById = {}, loadingLoaded = false;         // Loading view data (lazy)
   var rfilters = { type: '', role: '', discipline: '' };
   var loadMode = 'util', overOnly = false;
+  var filterToggle = null;   // UI.wireFilterToggle() handle for #rl-filterbar
   function sb() { return AppAuth.getSB(); }
   function esc(s) { return Fmt.esc(s); }
 
@@ -397,7 +407,7 @@
     document.getElementById('rl-roster').style.display = isLoad ? 'none' : '';
     document.getElementById('rl-loading').style.display = isLoad ? '' : 'none';
     document.getElementById('rl-add').style.display = isLoad ? 'none' : '';
-    document.getElementById('rl-search').style.display = isLoad ? 'none' : '';
+    if (document.getElementById('rl-filttoggle')) document.getElementById('rl-filttoggle').style.display = isLoad ? 'none' : '';
     document.getElementById('rl-add-lbl').textContent = tab === 'roles' ? 'Add role' : tab === 'calendars' ? 'Add calendar' : 'Add resource';
     renderKpis();
     renderFilterbar();
@@ -422,12 +432,22 @@
     }
   }
 
+  // Search used to sit alone in the topbar; it's now the leading control of
+  // this SAME collapsible group (rebuilt here per tab, like the type/role/
+  // discipline selects), so one funnel toggle shows/hides the lot together.
+  function searchInputHTML() {
+    return '<input class="pd-input rl-search-input" id="rl-search" placeholder="Search…" value="' + esc(search) + '" />';
+  }
+  function wireSearchInput() {
+    var si = document.getElementById('rl-search');
+    if (si) si.oninput = function (e) { search = e.target.value; renderRoster(); };
+  }
   function renderFilterbar() {
     var host = document.getElementById('rl-filterbar');
     if (tab === 'resources') {
       host.style.display = '';
       var roleOpts = '<option value="">All roles</option>' + rows.roles.map(function (r) { return '<option' + (rfilters.role === r.name ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('');
-      host.innerHTML = '<span class="rl-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
+      host.innerHTML = '<span class="rl-filt-ico" data-ico="filter" data-ico-size="15"></span>' + searchInputHTML() +
         '<select class="pd-select" id="rl-f-type"><option value="">All types</option>' + TYPES.map(function (t) { return '<option' + (rfilters.type === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select>' +
         '<select class="pd-select" id="rl-f-role">' + roleOpts + '</select>';
       document.getElementById('rl-f-type').onchange = function (e) { rfilters.type = e.target.value; renderRoster(); };
@@ -435,13 +455,21 @@
     } else if (tab === 'roles') {
       host.style.display = '';
       var discs = Array.from(new Set(rows.roles.map(function (r) { return r.discipline; }).filter(Boolean))).sort();
-      host.innerHTML = '<span class="rl-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
+      host.innerHTML = '<span class="rl-filt-ico" data-ico="filter" data-ico-size="15"></span>' + searchInputHTML() +
         '<select class="pd-select" id="rl-f-disc"><option value="">All disciplines</option>' + discs.map(function (d) { return '<option' + (rfilters.discipline === d ? ' selected' : '') + '>' + esc(d) + '</option>'; }).join('') + '</select>';
       document.getElementById('rl-f-disc').onchange = function (e) { rfilters.discipline = e.target.value; renderRoster(); };
+    } else if (tab === 'calendars') {
+      // No extra filters yet — search alone still needs a home.
+      host.style.display = '';
+      host.innerHTML = '<span class="rl-filt-ico" data-ico="filter" data-ico-size="15"></span>' + searchInputHTML();
     } else {
+      // Loading has its own "over-allocated only" filter inside its own
+      // view — nothing here applies to it.
       host.style.display = 'none'; host.innerHTML = '';
     }
+    wireSearchInput();
     if (window.Icons) Icons.hydrate(host);
+    if (filterToggle) filterToggle.sync(); // rebuilt controls carry the live values already — just resync the dot
   }
 
   function renderRoster() {
@@ -980,7 +1008,10 @@
       apply: function (s) { switchTab(s.t); }
     });
     document.getElementById('rl-project').onchange = function (e) { pid = e.target.value || null; if (pid) sessionStorage.setItem('pd_project', pid); load(); joinCollab(); };
-    document.getElementById('rl-search').oninput = function (e) { search = e.target.value; renderRoster(); };
+    // The search box lives inside the filter group now (renderFilterbar
+    // rebuilds + rewires it per tab) — just wire the toggle that shows/hides
+    // the whole group.
+    filterToggle = UI.wireFilterToggle(document.getElementById('rl-filttoggle'), document.getElementById('rl-filterbar'));
     document.getElementById('rl-add').onclick = function () { openForm(null); };
     document.getElementById('rl-modal-x').onclick = document.getElementById('rl-cancel').onclick = function () { broadcastCollabSel(null); document.getElementById('rl-modal').style.display = 'none'; editId = null; };
     document.getElementById('rl-save').onclick = save;

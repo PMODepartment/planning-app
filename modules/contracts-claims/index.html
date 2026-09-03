@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Contracts &amp; Claims Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260827b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902c" />
+  <link rel="stylesheet" href="module.css?v=20260902a" />
 </head>
 <body>
   <div class="pd-app">
@@ -47,6 +47,12 @@
           <button class="cc-tab" data-view="eot">Extension of Time</button>
         </div>
         <div class="cc-topbar-tools" id="cc-topbar-tools">
+          <!-- Filters, moved into a single toggleable group (UI.wireFilterToggle,
+               ui.js) instead of the always-open bar this used to be. Hidden on
+               the Contract tab (which is keyed by package, not this filter
+               bar) — see render() in module.js. -->
+          <button class="pd-filttoggle" id="cc-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+          <span class="cc-tb-sep"></span>
           <button class="pd-btn cc-tb-labeled pd-btn-primary" id="cc-add" title="Add a record">+ Add</button>
           <span class="cc-tb-sep"></span>
           <button class="pd-btn" id="cc-export" title="Export to Excel"><span data-ico="download" data-ico-size="16"></span></button>
@@ -90,8 +96,8 @@
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260902a"></script>
-  <script src="../../assets/js/icons.js?v=20260902e"></script>
+  <script src="../../assets/js/ui.js?v=20260902c"></script>
+  <script src="../../assets/js/icons.js?v=20260902f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
@@ -100,7 +106,7 @@
   <script src="pmi.js?v=20260825a"></script>
   <script src="packages.js?v=20260827f"></script>
   <script src="wizard.js?v=20260827e"></script>
-  <script src="module.js?v=20260830b"></script>
+  <script src="module.js?v=20260902a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

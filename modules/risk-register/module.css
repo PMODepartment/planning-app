@@ -27,10 +27,15 @@
 .rr-topbar-tools .pd-btn.rr-tb-labeled { padding:0 12px; gap:6px; }
 .rr-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
 .rr-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+.rr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 @media (max-width:820px) { .rr-title-txt { display:none; } }
 
-/* Filter bar (card, matches the suite) */
-.rr-filters {
+/* Filter bar (card, matches the suite) — collapsed by default, revealed via
+   the topbar funnel toggle (#rr-filttoggle, UI.wireFilterToggle in module.js)
+   instead of sitting permanently open. Only ever shown on the Register view
+   (switchView also force-hides it on the other three). */
+.rr-filters { display:none; }
+.rr-filters.open {
   display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px;
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px;
 }

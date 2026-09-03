@@ -117,7 +117,136 @@ phases / WBS."* Detail in `modules/project-schedule/CLAUDE.md`.
   suite fails 8+ against HEAD. Focus-window suites still green (29 + 86); 0 functions lost beyond the 9
   deliberate removals, none still called.
   ⚠️ **Not verified signed in — which of the two faults produced the screenshot is NOT established**;
-  the fix covers both. `MODULE_V` → `20260902aj`.
+  the fix covers both. `MODULE_V` → `20260902am`.
+
+### 2026-09-03 — Favicon nudged back up: the (ai) padding pass over-corrected
+
+Owner shared a screenshot comparing two browser tabs side by side — ours read visibly smaller than a
+reference tab's icon — and asked to increase it "by a little" to match. Follow-up to the same-day
+(ai) entry below, which had gone the other way (owner: *"reduce favicon size"*, because the old
+`favicon.png` bled edge-to-edge at close to 100% fill) and landed `favicon-icon.png` at a **68%/57%**
+width/height fill — reasonable against "bleeding," but evidently too far the other way once seen next
+to another tab.
+
+- ⚠️ **Regenerated from the pristine, untouched `assets/img/favicon.png`** (still the original
+  1020×850 source — (ai) deliberately left it alone since it doubles as the `.pd-auth-mark`/
+  `.pd-home-mark` login/home logo, and that reasoning still holds), not by re-scaling the already-
+  downsampled `favicon-icon.png` — re-scaling a 256px file that was itself scaled down from 1020px
+  would compound a second round of resampling loss for no reason when the real source is one file away.
+- **Target fill raised to ~88% width / ~73% height** (was 68%/57%) — a deliberate middle point between
+  the two complaints: nowhere near the old edge-to-edge bleed, but a clearly bigger, bolder mark than
+  the (ai) version at real favicon size. Same proportional scale-to-fit + center-on-transparent-256px-
+  canvas construction as (ai), just with a smaller margin.
+- Verified by rendering both the shipped (ai) file and this replacement down to actual 32×32 and 16×16
+  favicon sizes and comparing: the new version is legibly bigger and still fully legible with clean
+  margins at 16px, not touching the canvas edges.
+- Shared asset changed → **`favicon-icon.png?v=` bumped from none to `20260903a` across all 29
+  referencing pages** (it had shipped with no cache-bust query string at all in the (ai) pass).
+
+### 2026-09-02 (ak) — Issues & Concerns: Kanban view, wider columns, squeezed KPI bands — and a real bug the verification caught
+Owner's 10-item follow-up on Issues & Concerns / Lessons Learned, off a screenshot of the lesson
+detail view (the "more feedback still pending" the (aj) entry below flagged as not-yet-supplied):
+drop the lesson tag from the Issues list; widen Issue/Caused By/Corrective Action; a **List | Kanban
+toggle** for both the Issues and Lessons logs, grouped by Department or Champion; both KPI bands
+squeeze to one row except on a phone, with their aging tiles dropped; the Lessons list splits its
+combined Lesson/source cell into separate Lesson Learned and Issue columns; the lesson detail's
+embedded issue is renamed "Background", loses its own toolbar and its "open issue" button, gains one
+in the Background header instead, and is made **fully read-only** (Related lessons stays live and
+excludes the lesson being viewed); the dashboard's status donut drops its separate legend in favour
+of colour+count+percent baked into each slice's own label; and the Department/Champion bar charts
+wrap long labels to two lines, centre them (falling back to left-align only when centring would run
+the label past the chart's own left edge), and reword the in-bar text to "X/Y (Z%) open".
+- ⚠️⚠️ **A real bug, found only because the new `opts.readOnly`/`opts.hideToolbarState` flags were
+  EXECUTED rather than read.** `issDetailHTML(r, opts)` declared an internal helper — for building a
+  handful of `<select>` option lists — also named `opts`. A function DECLARATION hoists and takes
+  over its scope's binding for that name before any statement runs, so by the time `mayEdit`/
+  `excludeId` were computed, `opts` was already the helper function, never the caller's object.
+  `opts && opts.readOnly` was testing a function object (no `.readOnly` property) and was **always
+  falsy** — the read-only lock and the toolbar suppression would have shipped as complete no-ops, and
+  `excludeLessonId` (added in an earlier round, hit by the identical collision) had likely been
+  broken the same way since it was first built. Fixed by renaming the inner helper
+  (`selOptsHTML`); confirmed with a Node `vm`+`Proxy` harness executing the real, unmodified function
+  straight out of the shipped file — all three flags now measurably work, and a plain call with no
+  `opts` (the real Issues screen's own usage) is provably unaffected.
+- Detail, the full owner request verbatim, and everything verified: `modules/issues-lessons/CLAUDE.md`.
+- `module.css/js?v=` (issues-lessons) → `20260902b`; `MODULE_V` (`modules-grid.js?v=` on
+  `dashboard.html`/`modules.html`) → `20260902ak`. Not verified signed-in.
+
+### 2026-09-02 (aj) — Every top-bar search box now hides behind a filter group
+Owner: *"for all search bars in top bars, include the search in filter groups which can be hidden and
+shown."* Confirmed via `AskUserQuestion` this meant **every module's top filter/search row** — not just
+literal `.pd-topbar` chrome, but the always-visible filter bar most modules render directly beneath it —
+should collapse behind a funnel toggle, matching the pattern Issues & Concerns and Progress Photos had
+already shipped by hand.
+- **New shared component, not six hand-rolled copies.** `UI.wireFilterToggle(toggle, panel, opts)`
+  (`assets/js/ui.js`) wires a funnel button to show/hide a panel, tracks an "active filter" dot
+  (`.has-active`) via a capture-phase `input`/`change` listener on the panel — so it stays correct even
+  when a module's own handlers reset a field programmatically, provided the caller calls the returned
+  `.sync()` after doing so — and exposes `open()`/`close()`/`sync()`. New `.pd-filtergroup`/
+  `.pd-filttoggle` CSS in `dashboard.css` (hidden by default, `.open` reveals it as a flex row on the
+  same card/border/padding language every filter bar in the app already uses; `min-height` not `height`
+  on the controls, this app's own repeatedly-learned lesson about clipped descenders at 16px).
+- **Rolled out to six modules**, each following the module's own existing `.xx-filters{display:none}
+  .xx-filters.open{display:flex}` idiom (already proven by Issues/Photos) rather than leaning on the
+  shared class alone to win by cascade order — module `<style>`/`module.css` loads AFTER `dashboard.css`
+  in `<head>`, so an unconditional same-specificity module rule would silently beat a shared one:
+  - **Risk Register, Stakeholder Map, Contracts & Claims** (`module.css`/`module.js`) — a `pd-filttoggle`
+    button added to each topbar tool cluster; the toggle is hidden on non-list views (Contracts &
+    Claims additionally hides it on the Contract tab, which is keyed by package rather than the filter
+    bar, and inside its BOQ/PMI sub-screens).
+  - **Resource & Role Master** (single-file, inline `<script>`) — the topbar's standalone search input
+    was disconnected from the filter panel beneath it; `renderFilterbar()` now builds the search box as
+    part of the panel's own per-tab HTML so search and the other filters are one group, not two.
+  - **Portfolio Overview** (single-file) — **five** independent toggles, one per tab that carries its own
+    filter row (Overview, Equipment, Risk, Stakeholders, Issues), each wrapping only the filter controls
+    — action buttons like Export/Refresh/the live count badge stay outside the group, since hiding those
+    behind a "filters" icon would be misleading.
+  - **Manpower Loading** (single-file) — the Roster and Portfolio-People tabs' small "Find" boxes.
+- ⚠️ **Deliberately NOT touched: Project Schedule's `#ps-search`.** In scope per the confirmed answer, but
+  this module's own CLAUDE.md documents an extensive history of region-replace regressions from careless
+  edits to its ~690KB inline script; converting its bespoke `.ps-toolbar` search box is left for a
+  dedicated, isolated pass rather than folded into a six-module sweep.
+- Shared assets changed again (both `dashboard.css` and `ui.js`, past the earlier same-day favicon/
+  dropdown bump) → **`dashboard.css?v=` and `ui.js?v=` bumped `20260902b`/`20260902a` → `20260902c`
+  across all 29 / 21 referencing HTML files** respectively.
+- Verified: every edited JS/inline-script file passes `node --check` (the three single-file modules'
+  inline scripts extracted and checked individually); all four edited CSS files brace-balanced; every
+  new `pd-filttoggle`/`pd-filtergroup`/panel id pairs up correctly between markup and its wiring call
+  (spot-checked across all six modules); 0 new duplicate DOM ids introduced (resource-loading's four
+  pre-existing duplicate ids — `f-name`/`f-rate`/`f-rem`/`f-uom`, documented in that module's own
+  CLAUDE.md as a deliberate single-branch-in-the-DOM pattern — are untouched by this diff). Not verified
+  in a live browser (no signed-in session available in this environment).
+- ⚠️ Owner separately flagged more feedback still pending on the Issues & Concerns module specifically —
+  not yet supplied as concrete items in this conversation, so nothing was changed there beyond what this
+  entry covers.
+
+### 2026-09-02 (ai) — Favicon stopped bleeding to the edges; the project dropdown stops wrapping on desktop
+Owner: *"reduce favicon size"* and *"in windows, have the project dropdown at the top bar be in the same
+line. if needed wrap text. only in mobile view should dropdown be moved down."*
+- ⚠️ **The favicon really was bleeding edge-to-edge — the mark filled the full 1020×850 canvas with zero
+  margin**, the same defect the apple-touch-icon (`icon.png`) was redesigned away from on 2026-08-30
+  ("more breathing room around the mark"); the plain `<link rel="icon">` favicon never got that pass.
+  New **`assets/img/favicon-icon.png`** (256×256, ~16% padding, transparent, 1,993 bytes vs the source's
+  7,919) is a dedicated file for the browser-tab icon only — every `<link rel="icon">` across all 29
+  pages now points at it. ⚠️ **`favicon.png` itself is left untouched on purpose**: it's also the
+  `<img class="pd-auth-mark">`/`pd-home-mark` logo on the login/register/forgot-password/home pages,
+  sized by `height:56px` in CSS — padding *that* file would have shrunk the visible mark on every one of
+  those screens as an unasked side effect.
+- **The project/portfolio dropdown no longer drops to its own row on a normal desktop window.** Root
+  cause: `.pd-tb-main [class$="-projctx"]` was forced to `flex-basis:100%; order:5` at the **820px
+  "drawer"** breakpoint — this file's own boundary for "sidebar becomes an off-canvas drawer," not a true
+  phone width — so a perfectly ordinary Windows browser window (a snapped half-screen, a smaller laptop
+  panel, anything under 820px) triggered the mobile stacking. Moved to the **700px "phone"** boundary,
+  the narrower threshold this same file already uses everywhere else for genuine phone-only layout
+  (`.pd-modulebar > h1`, the tab-strip segmenting, the filter-bar rules a few lines down). ⚠️ Above 700px
+  the dropdown now **shrinks in place instead** (`min-width:0` on the wrapper) and its label already
+  truncates with an ellipsis (`.pd-psel-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }`,
+  pre-existing) — "wrap the text, not the row," which is the literal ask. Verified nothing else in the
+  file depends on the dropdown breaking at 820px specifically (the two other `820px` blocks are the
+  sidebar-drawer transform and its tablet chrome padding, unrelated); no module CSS duplicates this rule.
+- Shared asset changed → **`dashboard.css?v=` bumped `20260902a` → `20260902b` across all 29 HTML files.**
+- Not verified in a live browser (this environment has no way to render the app signed in) — verified by
+  computed rule inspection (brace balance, the shifted breakpoint, the pre-existing ellipsis rule) instead.
 
 ### 2026-09-02 (ah) — The scrub goes smooth, and the trade colours were painting BLACK
 Owner: *"can you make the progress bar smoother, it has fps drop whenever i drag"* and *"how come the
@@ -12624,3 +12753,17 @@ touched, so no `?v=` bump is due. Full detail (and the browser verification) is 
   into the importers.
 - **The Location Breakdown lives only in Schedule Setup › Floors & Zones now** — levels and both WBS
   matchers. The Project Schedule's Group menu keeps a signpost and a deep link.
+- **A reload no longer looks like an import.** `_repair('Loading resources…')` set `_repairBusy`,
+  which is half of `_editLocked()`, so every ordinary open of the Project Schedule raised the red
+  *"A schedule update in progress — do not edit yet"* banner and disabled Add activity on a schedule
+  that was already painted and correct. The chip still names each pass; only the passes that WRITE
+  rows lock, and those are all behind the heal gates, so a healthy project's load never locks.
+- **Working calendars can hold days that repeat every year.** A company holiday is entered once as
+  `--MM-DD` (ISO 8601's own recurring-date notation, in the existing `extra_holidays` array — no
+  migration) instead of once per year; a P6 import folds its own repeats at the parse, and a saved
+  calendar offers a button that says how many it would fold. One-off dates — proclamations, lunar
+  holidays, a shutdown after a typhoon — stay exact. `PDCal.nonWorkingReason` is indexed rather than
+  scanning the list per day, which it does up to 7,300 times per activity.
+- **Schedule Setup opens on the WBS.** The tree editor is step 2 rather than step 11: it is the only
+  step that shows what the project already has, it edits the live tree rather than filling in the
+  setup, and the import path already checked branches first.
