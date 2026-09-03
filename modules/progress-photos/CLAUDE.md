@@ -2,6 +2,58 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Discontinue 360° panoramas: greyed out (not removed) + a one-time DB purge (2026-09-02)
+
+Owner: *"the 360 photo feature is quite buggy. let's discontinue it for now. disable and grey out
+360. delete all 360 photos from the database as well."* Landed just before the eight-item Round 2
+below, and following this file's own convention for retiring a feature: **shelved, not stripped** —
+the same call already made for 3D/Gaussian-Splat reconstruction (2026-09-01).
+
+- **Both places 360° could be started from are now `disabled` and greyed out**, matching the shape
+  the 3D button already had. The **"+ Add media" dropdown** button in `index.html` drops its
+  `data-addtype="360"` entirely (a disabled button carrying an action attribute would be confusing
+  to read, since nothing dispatches on it any more) and gets `disabled title="360° capture is on
+  hold"` instead; `module.js`'s loop that wires `[data-addtype]` clicks now only ever wires
+  Photo/Video, since 360° no longer has that attribute to match. The **upload modal's own type
+  selector** button (`#…-mtype-360`) gets the identical `disabled title="360° capture is on hold"`
+  treatment.
+- ⚠️ **The click handler that hands off to `pano.js`'s real capture flow is deliberately left wired,
+  not deleted** — a disabled button can't fire a click, so it's simply unreachable while `disabled`
+  stays on the element. Re-enabling 360° later is therefore a one-line change (drop `disabled`,
+  restore `data-addtype="360"`), not a rebuild — the whole capture/stitch pipeline in `pano.js` is
+  untouched and still fully wired underneath the disabled button.
+- ⚠️ **Reverses a narrower, more recent decision, not an old one.** An earlier round (2026-08-29
+  feedback item 17) had specifically *re-enabled* 360° as a live fourth option alongside Photo/
+  Video/3D, with only 3D staying disabled. This entry reverses exactly that — both stay disabled
+  now, and the module.js/test.js comments explaining the earlier re-enable were updated in place to
+  say so, rather than left describing a state that's no longer true.
+- **New migration `migrations/2026-09-02-discontinue-360-panoramas.sql`** — a destructive, one-time
+  cleanup of every existing panorama capture, run by the owner in the Supabase SQL editor (this repo
+  has no live DB credentials, so it can only ever ship as a migration someone runs, never something
+  executed from here). Deletes in dependency order so nothing is ever left dangling for even one
+  statement: **`floor_plan_pins`** rows pointing at a panorama first (a pin surviving its target's
+  deletion would be an orphan the app has to degrade around forever), then the stitched JPEGs
+  themselves from **`storage.objects`** (matched off each row's own `pano_url` column, so this can
+  never drift from wherever `pano.js` actually uploads to), then the **`panoramas`** rows last, once
+  nothing points at them and their files are gone. Idempotent — re-running it against an
+  already-empty table is a no-op.
+- ⚠️ **The `panoramas` table and every `item_type = 'panorama'` code branch stay in the schema and
+  in `bim.js`/`module.js`, untouched** — this migration clears data, it does not retire the feature
+  at the schema level. The app already degrades correctly with zero panorama rows (the Gallery
+  media strip and floor-plan pins render nothing when a project has none), so the UI-side change
+  above does not depend on this migration having been run.
+
+### Verified
+Covered by the same full-suite run as the Round 2 entry below (they landed in the same commit):
+`node --check` clean, the type-selector/dropdown assertions in `test.js` were updated in place
+(not silently deleted) to assert both buttons ARE disabled now, reversing the pre-existing
+assertions that had checked 360° was live. ⚠️ **The migration itself is unverified and cannot be
+run from here** — no live Supabase credentials exist in this environment; the owner runs it
+directly in the SQL editor.
+
+No `?v=` bump needed beyond what Round 2 already carries below — `module.js`/`index.html` landed
+in the same commit as that round's own version bump.
+
 ## Owner feedback round 2: white-on-red markup icon, magnifier over zoom, per-pane key-plan toggles, image-only floor plans, Stack view removed, forced markup in List/Plan (2026-09-02)
 
 Owner's eight-item list off the Presentations screen + the shared floor-plan/lightbox chrome.
