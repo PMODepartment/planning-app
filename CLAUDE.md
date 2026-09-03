@@ -84,6 +84,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (j) — The Schedule Setup push carried a construction sequence where the building order belonged
+
+*"fix the migration from schedule setup to project schedule, the trades are not properly arranged, the
+floors are not properly arranged also."*
+
+`buildTree` created one WBS branch per group in **first-seen** order, and only the trade dim was ever
+sorted. Floors, zones, units and towers therefore came out in the order their work STARTS —
+`generate()` sequences by date, so that is a construction sequence, not a building. Executing the
+shipped code over a five-floor tower whose fit-out starts high: **before**
+`5TH, 2ND, Ground, B1, B2` — **after** `B2, B1, Ground, 2ND, 5TH`. On a straight bottom-up push
+the old order looked right only by coincidence.
+
+New `dimOrderIndex` sorts every dim by the order the setup already defines and the builder already
+reads: floors from `cfg.zoning[trade].floors`, zones from `floor.zones`, units from
+`zone.units`, towers from `cfg.towers`, trades from `GROUPS` (unchanged). ⚠️ Unknown values
+sort last, never first; ties are stable; the "no value at this level" sentinel is never reordered, so a
+single-tower push still skips the tower level. ⚠️ The trade dim was ALREADY GROUPS-sorted — if trades
+still read wrong, the intended rule is the step-8 Trade sequence, and I have not switched to it on a
+guess. ⚠️ Not verified signed-in. 179 checks, 0 functions lost. `MODULE_V` → `20260903j`.
+
+---
 ### 2026-09-03 (i) — Contracts & Claims unhidden, sidebar active state un-bolded, Schedule gets a Gantt icon, the module-name flash fixed, project selector goes bold+coded
 
 Five owner items across two messages.

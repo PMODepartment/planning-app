@@ -1,3 +1,71 @@
+## The push carried a construction SEQUENCE where the building order belonged (2026-09-03) — jasantos2
+
+Owner: *"fix the migration from schedule setup to project schedule, the trades are not properly
+arranged, the floors are not properly arranged also."*
+
+### What the push was actually doing
+`buildTree` groups the generated rows into `ord` in **first-seen order**, then created one WBS
+branch per group in that order. Only the trade dim was ever sorted (by `GROUPS`). **Floors, zones,
+units and towers were not sorted at all** — they came out in the order their work happens to START,
+because `generate()` sequences by DATE. That is a construction sequence, not a building.
+
+Measured by executing the shipped `buildTree` over a five-floor tower whose fit-out starts high:
+
+| | floors under Structural Works |
+|---|---|
+| before | `5TH Floor, 2ND Floor, Ground Floor, B1, B2` |
+| after | `B2, B1, Ground Floor, 2ND Floor, 5TH Floor` |
+
+On a straight bottom-up push the old order looked right **by coincidence** — the sequence and the
+building happened to agree. The moment any trade starts on an upper floor (a fit-out, a re-push after
+a partial sequence, a floor carrying a lead or a lag) the WBS listed the 5th floor above the ground.
+
+### The fix — one order, the one the setup already draws
+New `dimOrderIndex(dim, r)`, and `ord` is now sorted for **every** dim, not just the trade. None
+of these orders is invented; the builder already reads all of them:
+- **floors** — `cfg.zoning[trade].floors`, the list dragged to reorder in step 5, index 0 = lowest
+  (the same list `floorsOf` / `floorIndexOf` use, and the one the tower drawing stacks from the
+  ground up);
+- **zones** — `floor.zones`, in the order `leavesOfFloor` walks them;
+- **units** — `zone.units`, likewise;
+- **towers** — `cfg.towers` (`towerList`), the order of the tower chips;
+- **trades** — `GROUPS`, which is exactly what the previous trade-only sort used. **Unchanged.**
+
+⚠️ **A group takes the MINIMUM index of its rows.** Every row in a floor group shares that floor, so the
+minimum *is* the floor index; the reduction only matters for a dim whose rows legitimately disagree,
+where the earliest is the stable answer.
+⚠️ **Unknown sorts LAST (99999), never first.** A value the setup no longer knows about — a floor
+deleted after its activities were made, a hand-edited row — must not displace the floors the planner
+did define. Ties keep their relative order (Array#sort is stable), so nothing shuffles arbitrarily.
+⚠️ **The `\u0000` sentinel is never reordered.** It means "no value at this level"; its rows attach to
+the parent instead of becoming a branch, and a single-tower push still skips the tower level entirely.
+⚠️ Fixing `ord` fixes the stored `sort_order` too — nodes are inserted depth by depth in
+`nodeDescs` order and `soByParent` numbers them as it goes, so the database order follows.
+
+### ⚠️ One thing I could not confirm about the TRADES
+The trade dim was **already** sorted by `GROUPS` before this change, and it verifies correct against
+that order. So if the trade arrangement still looks wrong after this, the expected order is not
+`GROUPS` — most likely it should follow the planner's **step 8 Trade sequence** instead. I did not
+switch it on a guess, because silently re-ordering every project's trade branches to a different rule
+is not something to do without being told that is the rule. Say the word and it is a small change.
+
+---
+
+**Verified: 179 checks.** The shipped `buildTree` (and its new helper) sliced out and executed over a
+setup whose construction sequence deliberately disagrees with the building: floors, zones and towers
+all come out in setup order; a trade that touches only two floors still gets those two in order; an
+unknown floor sorts last; a single-tower push still skips the tower level. **Controls:** a deliberately
+shuffled input still comes out right, and the SAME input run through the previous commit comes out
+wrong — so the harness distinguishes the two versions rather than reporting the label. 0 functions
+lost, 1 added; the inline script parses.
+
+⚠️ **NOT verified signed-in** — no push has been run against a live project from here. This changes the
+order branches are CREATED in; existing trees are re-ordered only where the push already owns the
+sibling order (see `_nodeOrderPlan`, unchanged).
+
+⚠️ Also still open from earlier today: OPW101's **duplicate phase roots**, and the `safety/main-before-revert`
+tag (`a9a8b7f`) is still in place if a rollback is wanted.
+
 ## The stacking crash, named at last: a `var` read twenty lines before it was assigned (2026-09-03) — jasantos2
 
 Owner: *"still blank after hard refresh, there is an error message shown"* — and that message is the
@@ -12598,7 +12666,7 @@ changed FS to **SS with lag 3**; **added** a second predecessor; then repointed 
 committed payload carried every one of those edits (`EX-1012 → "EX-1011 SS+3, EX-1011 FS"`,
 `EX-2011 → "EX-1012 FS+3"`), and the lede, the review tile and the written rows all agreed on 10.
 
-### 2026-09-02 (i) — Why every load was slow, and the one thing that fixes it
+### 2026-09-02 (j) — Why every load was slow, and the one thing that fixes it
 
 Owner: *"Let's also look into the speeding up the app. Currently it is lagging so much due to the
 import and heal and probably the cycle of syncing from procurement and engineering."* Exactly right,

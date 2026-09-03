@@ -30984,15 +30984,63 @@
         // (dimName) and nothing else. Kept as a function returning null rather than deleted, so the
         // buildTree call sites keep their shape and the rule stays visible where it is enforced.
         function dimCode(/* dim, r */) { return null; }
+        /* ⚠️⚠️ EVERY LEVEL IS ORDERED BY THE SETUP, NOT BY WHICHEVER ACTIVITY STARTED FIRST.
+           Owner 2026-09-03: *"fix the migration from schedule setup to project schedule, the trades
+           are not properly arranged, the floors are not properly arranged also."*
+           buildTree groups rows into `ord` in FIRST-SEEN order. Trades were then sorted by GROUPS,
+           and nothing else was sorted at all — so floors, zones and units came out in the order their
+           work happens to START. `generate()` sequences by DATE, so that is a construction
+           sequence, not a building: on a bottom-up push the tower reads B3, B2, B1, GF, 2ND… only by
+           coincidence, and the moment a trade starts on the 5th floor (a fit-out, a re-push after a
+           partial sequence, any floor with a lead or a lag) the WBS lists 5TH Floor above Ground.
+           ⚠️ The setup already holds the true order at every level and the builder itself reads it:
+             • floors — `cfg.zoning[trade].floors`, the list the planner drags to reorder in step 5,
+               index 0 = lowest (see floorsOf/floorIndexOf, and the tower drawing that stacks ground
+               at the bottom);
+             • zones  — `floor.zones`, in the order leavesOfFloor walks them;
+             • units  — `zone.units`, likewise;
+             • towers — `cfg.towers` (towerList), the order of the tower chips;
+             • trades — GROUPS, which is what the existing sort already used and is kept.
+           So this is not a new opinion about ordering: it is the ONE order the setup already draws,
+           finally carried across the push.
+           ⚠️ A group takes the MINIMUM index of its rows. Every row in a floor group shares that
+           floor, so the minimum IS the floor index — the reduction only matters for a dim whose rows
+           legitimately disagree, where sorting by the earliest is the stable answer.
+           ⚠️ UNKNOWN SORTS LAST, STABLY (99999), never first: a value the setup does not know about
+           (a hand-edited row, a floor deleted after the activities were made) must not silently
+           displace the floors the planner did define. Ties keep their existing relative order,
+           because Array#sort is stable in every engine this runs on. */
+        function dimOrderIndex(dim, r) {
+          var l = (r && r.loc) || {}, i = -1;
+          try {
+            if (dim === "trade") i = GROUPS.indexOf(l.trade);
+            else if (dim === "tower") i = towerList().findIndex(function (t) { return t.id === l.towerId; });
+            else if (dim === "floor") i = (l.floor && !l.floor._all && cfg.zoning[l.trade]) ? cfg.zoning[l.trade].floors.indexOf(l.floor) : -1;
+            else if (dim === "zone") i = (l.floor && l.zone && l.floor.zones) ? l.floor.zones.indexOf(l.zone) : -1;
+            else if (dim === "unit") i = (l.zone && l.unit && l.zone.units) ? l.zone.units.indexOf(l.unit) : -1;
+          } catch (e) { i = -1; }
+          return (i == null || i < 0) ? 99999 : i;
+        }
         function buildTree(rowsIn, dims, parentKey) {
           if (!dims.length) { rowsIn.forEach(function (r) { taskAssign.push({ k: parentKey, r: r, name: r.act.name }); }); return; }
           var dim = dims[0], rest = dims.slice(1), m = {}, ord = [];
-          rowsIn.forEach(function (r) { var k = dimKey(dim, r); if (!m[k]) { m[k] = []; ord.push(k); } m[k].push(r); });
-          // Trade branches follow the canonical GROUPS order — see the note above. Without this the
-          // branch order is whichever trade started earliest, which is not an order at all.
-          if (dim === 'trade') ord.sort(function (a, b) {
-            var ia = GROUPS.indexOf(a), ib = GROUPS.indexOf(b);
-            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);   // anything unrecognised sorts last, stably
+          var _oi = {};
+          rowsIn.forEach(function (r) {
+            var k = dimKey(dim, r);
+            if (!m[k]) { m[k] = []; ord.push(k); }
+            m[k].push(r);
+            // The group's rank is the smallest rank any of its rows claims — see dimOrderIndex.
+            var i = dimOrderIndex(dim, r);
+            if (_oi[k] === undefined || i < _oi[k]) _oi[k] = i;
+          });
+          /* ⚠️ EVERY dim is sorted now, not just the trade. This replaces the trade-only sort that
+             used to live here: it kept the same GROUPS rule (dimOrderIndex returns exactly that for
+             'trade'), and adds the floor / zone / unit / tower orders the setup already defines.
+             ⚠️ The sentinel group is NEVER reordered into the middle of real branches — it is handled
+             immediately below, and its rows attach to the parent rather than becoming a level. */
+          ord.sort(function (a, b) {
+            if (a === '\u0000' || b === '\u0000') return 0;
+            return (_oi[a] === undefined ? 99999 : _oi[a]) - (_oi[b] === undefined ? 99999 : _oi[b]);
           });
           // whole group has no value for this dim → skip the level entirely
           if (ord.length === 1 && ord[0] === '\u0000') { buildTree(rowsIn, rest, parentKey); return; }
