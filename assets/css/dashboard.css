@@ -35,8 +35,17 @@
   --pd-danger-text: #C42127;
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --pd-radius: 4px;
-  --pd-shadow: 0 1px 3px rgba(35,31,32,.08), 0 1px 2px rgba(35,31,32,.04);
+  /* ⚠️ Radii and shadows are a SCALE, mirroring PRC's --radius-sm/md/lg/xl and
+     --shadow-sm/md/lg one-for-one. Before this the file carried six ad-hoc radii
+     (4/8/9/10/12/14) picked per component, which is most of what read as
+     "chunky" next to PRC. Reach for a rung, never a fresh literal. */
+  --pd-radius: 4px;                 /* = PRC --radius-sm */
+  --pd-radius-md: 8px;
+  --pd-radius-lg: 12px;
+  --pd-radius-xl: 16px;
+  --pd-shadow: 0 1px 3px rgba(0,0,0,.07);       /* = PRC --shadow-sm */
+  --pd-shadow-md: 0 4px 12px rgba(0,0,0,.08);
+  --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.10);
   --pd-sidebar-w: 240px;
   /* ⚠️ The sidebar surface is its OWN token, not --pd-ink. PRC paints its panel
      --mw-black (#231F20) and --pd-ink happens to be that same value in light
@@ -228,20 +237,23 @@ a:hover { text-decoration: underline; }
   .pd-usermenu-link { min-height: 44px; }
   .pd-usermenu-signout { min-height: 44px; }
 }
-.pd-main { padding: 22px; }
+.pd-main { padding: 20px 24px 48px; }
 
 /* ---- Cards ---- */
 .pd-card { background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); padding: 18px; }
+  border-radius: var(--pd-radius-lg); box-shadow: var(--pd-shadow); padding: 18px; }
 
 /* ---- Home / module launcher ---- */
-.pd-home-head { margin: 4px 0 22px; }
-.pd-home-head h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
-.pd-home-head p { margin: 0; color: var(--pd-muted); }
+.pd-home-head { margin: 0 0 18px; }
+/* Sized to PRC's largest heading (.page-title, 1.0714rem/700) rather than a hero.
+   PRC's own dashboards carry no 22px body heading at all — they open straight on
+   the metric row — so this is the closest faithful equivalent. */
+.pd-home-head h2 { margin: 0 0 2px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.pd-home-head p { margin: 0; color: var(--pd-muted); font-size: 12.5px; }
 
 /* Big, evenly distributed tiles. 4 across on wide screens → 7 cards = 4 + 3. */
 .pd-module-grid {
-  display: grid; gap: 20px;
+  display: grid; gap: 14px;
   grid-template-columns: repeat(4, 1fr);
 }
 @media (max-width: 1280px) { .pd-module-grid { grid-template-columns: repeat(3, 1fr); } }
@@ -250,31 +262,35 @@ a:hover { text-decoration: underline; }
 
 .pd-module-card {
   position: relative; background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: 14px; box-shadow: var(--pd-shadow); padding: 24px 22px;
-  display: flex; flex-direction: column; gap: 14px; min-height: 168px;
-  transition: transform .1s ease, box-shadow .15s ease, border-color .15s ease; cursor: pointer;
+  border-radius: var(--pd-radius-lg); box-shadow: var(--pd-shadow); padding: 18px;
+  display: flex; flex-direction: column; gap: 10px; min-height: 130px;
+  transition: box-shadow .18s ease, border-color .18s ease; cursor: pointer;
   overflow: hidden;
 }
-.pd-module-card::before {   /* brand red accent strip on the left */
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
-  background: var(--pd-red); opacity: 0; transition: opacity .15s ease;
+/* ⚠️ PRC marks a clickable tile with a 3px bottom bar that wipes in from the left
+   (.project-card::after) and NO translate. A lift on a 12-tile grid is the single
+   chunkiest bit of motion on this page; do not put translateY back. */
+.pd-module-card::before {   /* brand red accent bar along the bottom */
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: var(--pd-red); transform: scaleX(0); transform-origin: left;
+  transition: transform .2s ease;
 }
-.pd-module-card:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(35,31,32,.12);
-  border-color: var(--pd-red-mid); text-decoration: none; }
-.pd-module-card:hover::before { opacity: 1; }
+.pd-module-card:hover { box-shadow: var(--pd-shadow-md);
+  border-color: var(--pd-red); text-decoration: none; }
+.pd-module-card:hover::before { transform: scaleX(1); }
 .pd-module-card.disabled { cursor: not-allowed; background: var(--pd-bg); }
-.pd-module-card.disabled:hover { transform: none; box-shadow: var(--pd-shadow); border-color: var(--pd-line); }
-.pd-module-card.disabled:hover::before { opacity: 0; }
+.pd-module-card.disabled:hover { box-shadow: var(--pd-shadow); border-color: var(--pd-line); }
+.pd-module-card.disabled:hover::before { transform: scaleX(0); }
 .pd-module-card.disabled .pd-module-icon { filter: grayscale(1); opacity: .6; }
 .pd-module-card.disabled .pd-module-title { color: var(--pd-muted); }
 
 .pd-module-icon {
-  width: 56px; height: 56px; border-radius: 14px; background: var(--pd-red-light);
-  display: flex; align-items: center; justify-content: center; font-size: 28px; line-height: 1;
+  width: 40px; height: 40px; border-radius: var(--pd-radius-md); background: var(--pd-red-light);
+  display: flex; align-items: center; justify-content: center; font-size: 20px; line-height: 1;
 }
 .pd-module-body { margin-top: auto; }
-.pd-module-title { font-weight: 700; font-size: 16px; color: var(--pd-ink); margin-bottom: 4px; line-height: 1.25; }
-.pd-module-sub { color: var(--pd-red); font-size: 13px; font-weight: 600; }
+.pd-module-title { font-weight: 700; font-size: 14px; color: var(--pd-ink); margin-bottom: 3px; line-height: 1.3; }
+.pd-module-sub { color: var(--pd-red); font-size: 11.5px; font-weight: 600; }
 .pd-module-card.disabled .pd-module-sub { color: var(--pd-muted); font-weight: 500; }
 .pd-badge-soon {
   font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
@@ -369,8 +385,13 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
    this quiet, never heavier than that. */
 .pd-table { width: 100%; border-collapse: collapse; background: var(--pd-card); font-size: 12.5px; }
 .pd-table th, .pd-table td { padding: 8px 10px; border-bottom: 1px solid var(--pd-line); text-align: left; }
-.pd-table th { background: var(--pd-bg); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
-.pd-table tr:hover td { background: var(--pd-bg); }
+/* = PRC .data-table th: a real header band (700 + a 2px rule under it), not a
+   washed-out 500-weight row. --pd-line/--pd-bg already hold PRC's own
+   --mw-gray/--mw-gray-light values, so only weight/tracking/hover change. */
+.pd-table th { background: var(--pd-bg); font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--pd-muted); border-bottom: 2px solid var(--pd-line);
+  padding: 9px 10px; }
+.pd-table tr:hover td { background: var(--pd-red-light); }
 
 /* ---- Auth pages ---- */
 .pd-auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -480,12 +501,14 @@ html.pd-dark {
   --pd-red-mid: #6E2A25;
   --pd-ok: #34D27B; --pd-warn: #E0A008; --pd-bad: #EF5350;
   --pd-danger-text: #FF8A80;          /* see the light-mode note: 6.14:1 here */
-  --pd-shadow: 0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4);
+  --pd-shadow: 0 1px 3px rgba(0,0,0,.5);
+  --pd-shadow-md: 0 4px 12px rgba(0,0,0,.55);
+  --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.6);
   background: #1C1C1C;
 }
 /* Modal/overlay shadows read better darker */
 html.pd-dark .pd-modal { box-shadow: 0 20px 60px rgba(0,0,0,.6); }
-html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
+html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 
 /* ============================================================================
    PROJECT SELECTOR + PROJECT HOME (Primavera-style) — added 2026-06-30
@@ -529,7 +552,8 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-toolbar-right .pd-input-sm { flex: 0 1 220px; min-width: 0; }
 .pd-proj-count { color: var(--pd-muted); font-size: 13px; white-space: nowrap; }
 .pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
-.pd-vt { border: none; background: var(--pd-card); padding: 6px 12px; cursor: pointer; color: var(--pd-muted); font-size: 14px; }
+.pd-vt { border: none; background: var(--pd-card); padding: 6px 14px; cursor: pointer; color: var(--pd-muted);
+  font-size: 12px; font-weight: 600; }
 .pd-vt.active { background: var(--pd-red); color: #fff; }
 
 /* add dropdown */
@@ -575,9 +599,15 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 
 /* project cards */
 .pd-proj-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
-.pd-proj-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  padding: 16px; cursor: pointer; transition: box-shadow .15s, border-color .15s, transform .1s; }
-.pd-proj-card:hover { border-color: var(--pd-red-mid); box-shadow: var(--pd-shadow); transform: translateY(-2px); }
+.pd-proj-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-xl);
+  padding: 18px; cursor: pointer; transition: box-shadow .18s, border-color .18s;
+  position: relative; overflow: hidden; }
+/* Same treatment as .pd-module-card — PRC's .project-card wipe-in bottom bar, no lift. */
+.pd-proj-card::after { content:""; position:absolute; left:0; right:0; bottom:0; height:3px;
+  background: var(--pd-red); transform: scaleX(0); transform-origin: left;
+  transition: transform .2s ease; }
+.pd-proj-card:hover { border-color: var(--pd-red); box-shadow: var(--pd-shadow-md); }
+.pd-proj-card:hover::after { transform: scaleX(1); }
 .pd-proj-card-top { display: flex; align-items: center; justify-content: space-between; }
 .pd-proj-card-top .pd-proj-ic { font-size: 22px; }
 .pd-proj-card-title { font-weight: 500; margin: 8px 0 2px; line-height: 1.25; }
@@ -588,7 +618,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-proj-card-loc { margin-top: 10px; font-size: 12px; color: var(--pd-muted); }
 
 /* Manage Group Heads modal (item 6) */
-.pd-ghm-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--pd-line); border-radius: 10px; }
+.pd-ghm-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); }
 .pd-ghm-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--pd-line); }
 .pd-ghm-row:last-child { border-bottom: none; }
 .pd-ghm-order { display: flex; flex-direction: column; gap: 0; flex: none; }
@@ -627,15 +657,15 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-projsw-all { display: block; padding: 11px 14px; color: var(--pd-red); font-weight: 600; font-size: 13px; border-top: 1px solid var(--pd-line); }
 .pd-projsw-all:hover { background: var(--pd-bg); }
 
-.pd-tabbar { display: flex; gap: 2px; padding: 0 24px; background: var(--pd-card);
+.pd-tabbar { display: flex; gap: 2px; padding: 0 20px; background: var(--pd-card);
   border-bottom: 1px solid var(--pd-line); }
-.pd-tab { border: none; background: none; padding: 13px 20px; cursor: pointer; font-size: 14px;
-  font-weight: 500; color: var(--pd-muted); border-bottom: 3px solid transparent; }
+.pd-tab { border: none; background: none; padding: 10px 16px; cursor: pointer; font-size: 12.5px;
+  font-weight: 600; color: var(--pd-muted); border-bottom: 2px solid transparent; }
 .pd-tab:hover { color: var(--pd-ink); }
 .pd-tab.active { color: var(--pd-red); border-bottom-color: var(--pd-red); }
 
 .pd-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
-.pd-info-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius); padding: 16px; }
+.pd-info-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-lg); padding: 16px; }
 .pd-info-ic { font-size: 22px; }
 .pd-info-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin-top: 8px; }
 .pd-info-val { font-size: 16px; font-weight: 600; margin-top: 2px; }
@@ -732,8 +762,8 @@ body { overflow-x: clip; }
 @media (max-width: 1024px) {
   :root { --pd-sidebar-w: 210px; }
   .pd-topbar { padding: 10px 16px; gap: 10px; }
-  .pd-main { padding: 18px; }
-  .pd-module-grid { gap: 16px; }
+  .pd-main { padding: 18px 16px 40px; }
+  .pd-module-grid { gap: 12px; }
   /* Tab strips scroll sideways rather than wrapping into a tall stack. */
   .pd-tabbar { padding: 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .pd-tabbar::-webkit-scrollbar { display: none; }
@@ -861,12 +891,12 @@ body { overflow-x: clip; }
 
   .pd-projsw-btn { max-width: 100%; }
   .pd-projsw-txt strong, .pd-projsw-txt small { max-width: 52vw; }
-  .pd-tab { padding: 12px 14px; font-size: 13.5px; }
+  .pd-tab { padding: 10px 13px; font-size: 12px; }
   .pd-proj-cards { grid-template-columns: 1fr; }
   .pd-info-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-  .pd-module-card { min-height: 0; padding: 18px 16px; gap: 10px; }
-  .pd-module-icon { width: 44px; height: 44px; border-radius: 11px; }
-  .pd-home-head h2 { font-size: 19px; }
+  .pd-module-card { min-height: 0; padding: 14px; gap: 9px; }
+  .pd-module-icon { width: 36px; height: 36px; border-radius: var(--pd-radius-md); font-size: 18px; }
+  .pd-home-head h2 { font-size: 14px; }
   .pd-toast { left: 12px; right: 12px; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateY(20px); }
   .pd-toast.show { transform: none; }
   .pd-auth-wrap { padding: 16px; align-items: flex-start; padding-top: 8vh; }
@@ -1210,34 +1240,52 @@ body { overflow-x: clip; }
    five short values, and a fixed grid leaves a ragged empty cell on the widths
    where six would fit. */
 .pd-kpis {
-  display: grid; gap: 12px; margin-bottom: 18px;
+  display: grid; gap: 12px; margin-bottom: 20px;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 .pd-kpi {
   background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); padding: 12px 14px; box-shadow: var(--pd-shadow);
+  border-radius: var(--pd-radius-lg); padding: 16px 18px; box-shadow: var(--pd-shadow);
   display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  position: relative; overflow: hidden;
 }
-.pd-kpi-label { font-size: 10px; font-weight: 600; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--pd-muted); }
+/* PRC's .metric-card signature: a permanent 4px full-height accent on the left
+   edge. It is what makes a stat card read as a stat card rather than a box, and
+   it is the cheapest way to stop a KPI row looking like a row of empty panels. */
+.pd-kpi::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--pd-red);
+}
+/* min-height reserves the two lines a wrapping label needs (= PRC .metric-label),
+   so a one-line and a two-line label still line their VALUES up across the row. */
+.pd-kpi-label { font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--pd-muted);
+  min-height: 26px; display: flex; align-items: flex-end; }
 /* ⚠️ Kept at 700, not compressed further with the rest of this pass — a KPI
    value is the one number on the whole card someone is actually scanning for,
    and dropping it to regular weight alongside its own label would leave
    nothing on the card to anchor the eye on. Every other weight in this file's
    minimalist pass moved down a full step; this one moved down half a step
-   (800→700) for the same reason. */
-.pd-kpi-value { font-size: 18px; font-weight: 700; letter-spacing: -.01em;
+   (800→700) for the same reason. Restored to PRC's own .metric-value
+   (1.4286rem/800 = 20px/800) in the 2026-09-03 convergence pass — PRC is
+   *bolder* here than this file had become, not lighter. */
+.pd-kpi-value { font-size: 20px; font-weight: 800; letter-spacing: -.3px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-kpi-sub { color: var(--pd-muted); font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Section header: title left, one action right. */
 .pd-sec-head { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
-.pd-sec-head h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
-  display: flex; align-items: center; gap: 8px; }
+/* = PRC .panel-title (0.7857rem/700, uppercase, tracked, secondary ink, red icon).
+   This is the defining minimalist tell: a section heading is a quiet LABEL over
+   its content, not a second page title competing with the content for weight. */
+.pd-sec-head h3 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--pd-muted);
+  display: flex; align-items: center; gap: 7px; }
+.pd-sec-head h3 svg, .pd-sec-head h3 .pd-ico { color: var(--pd-red); }
 .pd-sec-head > :last-child { margin-left: auto; }
 .pd-sec-note { margin: 10px 0 0; color: var(--pd-muted); font-size: 12.5px; }
-.pd-pkg-card { margin-bottom: 22px; }
+.pd-pkg-card { margin-bottom: 18px; }
 /* The table is the widest thing on the page on a phone — let it scroll inside
    its own card instead of pushing the whole document sideways. */
 .pd-pkg-card > div { overflow-x: auto; }
@@ -1245,8 +1293,8 @@ body { overflow-x: clip; }
 /* Module tile figures. A tile without a published `dash` spec says so rather
    than showing a zero it never measured. */
 .pd-module-figs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
-  margin-top: 4px; font-size: 13px; color: var(--pd-muted); }
-.pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: 15px; font-weight: 700; margin-right: 3px; }
+  margin-top: 2px; font-size: 11.5px; color: var(--pd-muted); }
+.pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: 13px; font-weight: 700; margin-right: 3px; }
 /* Amber, not red: an open item is normal work in progress, not an error. */
 .pd-module-figs .pd-fig.warn b { color: var(--pd-warn); }
 .pd-fig-when { font-size: 11.5px; }
