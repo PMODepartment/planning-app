@@ -84,6 +84,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (p) — A single tower is not a WBS level, and that is why Allied Services sat beside it
+
+*"why is there tower 1? if it is just a singular tower, the tower 1 should not be a WBS anymore."* Right
+— a level with one branch carries no information and pushes the whole tree down a level.
+
+⚠️ **The gate is back after I removed it this morning, and that removal was the wrong fix.** The
+complaint then was that the dialog promised five levels and built four; the fault was the DIALOG lying,
+not the tree. So `multiTower()` gates the tower dim again, and the dialog now dims a
+ticked-but-skipped Tower row with *"skipped — this project has one tower"*, excludes it from the
+*"N-level WBS"* line, and uses the **same predicate the push uses** rather than a copy. Ticking it is
+still remembered: add a second tower and it builds.
+
+That also answers *"how come the allied services is not under tower 1?"* — a trade with no floors gets
+the `__all__` location, which carries no `towerId`, so it could never be filed under a tower and
+sat beside it. With no tower branch it now sits with the other trades. ⚠️ On a genuinely multi-tower
+project it still sits beside the towers, deliberately: it spans them, and filing it under Tower 1 would
+invent a fact. The grid's grouping follows the same rule. 276 checks, 0 functions lost.
+`MODULE_V` → `20260903p`.
+
+---
 ### 2026-09-03 (n) — The WBS default comes from the Schedule Setup, and it leads with the Tower
 
 *"the WBS tree default should be matched with what was defined in the schedule setup"* and *"it should

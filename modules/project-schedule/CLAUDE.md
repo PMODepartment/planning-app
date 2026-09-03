@@ -1,3 +1,60 @@
+## A single tower is not a WBS level — and that is why Allied Services sat beside it (2026-09-03) — jasantos2
+
+Owner: *"how come the allied services is not under tower 1? and also why is there tower 1? if it is
+just a singular tower, the tower 1 should not be a WBS anymore. isn't that logical? just make it
+logical."*
+
+Yes. Both questions have one answer.
+
+### ⚠️⚠️ This rule has now gone round once, and the round trip is the lesson
+A level with exactly **one** branch carries no information: every activity is under it, so it says
+nothing and pushes the whole tree down a level. The project **is** that tower.
+
+That gate (`multiTower()`) existed. **I removed it earlier today**, and that was the wrong fix for a
+real problem. The complaint then was that the push dialog promised *"5-level WBS: Tower → Level → Trade
+→ Zone → Unit"* and built four. The fault was **the dialog lying, not the tree being right** — so the
+gate is back, and the dialog now says the tower will be skipped and does not count it.
+
+**Fix the message, not the structure it describes.** Writing that down because the pull to change the
+behaviour instead of the copy was strong enough to win once already.
+
+### Why Allied Services was beside Tower 1
+A trade with **no floors** gets the `__all__` location (the fallback that stops a whole discipline
+being dropped from a push), and that location carries **no `towerId`**. So it could never be filed
+under a tower branch and sat beside it — exactly what the screenshot shows.
+
+With no tower branch on a single-tower project the question dissolves: Allied Services now sits with
+General Requirements, Site Works and the rest, which is where it belongs.
+
+⚠️ **On a genuinely multi-tower project it still sits beside the towers, and that is deliberate.** A
+project-wide trade spans them; filing it under Tower 1 would be inventing a fact.
+
+### The dialog stops promising a level it will not build
+New `willBuild(d)` — `incl[d] && !(d === "tower" && !multiTower())` — drives the level
+numbering, the *"N-level WBS"* line and the *"directly under the Execution Phase"* line. A ticked-but-
+skipped Tower row now renders dimmed with **"skipped — this project has one tower, so it would be a
+level with a single branch"**.
+- ⚠️ Ticking it is still allowed and still remembered: **add a second tower and it starts building.** It
+  simply stops claiming a level it will not occupy.
+- ⚠️ It uses the **same predicate the push uses**, not a copy. Two functions disagreeing about which
+  levels get built is the whole subject of this exchange.
+
+### The grid follows the same rule
+`setupGroupDims()` also skips the tower when there is only one, so the schedule grid cannot end up
+grouping by a level the pushed tree does not have.
+
+---
+
+**Verified: 276 checks.** The shipped `dimKey` + `buildTree` executed over an OPW101-shaped setup:
+one tower builds **no** tower branch and Allied Services sits with the floors; two towers build a branch
+each in `cfg.towers` order with the floors nested and Allied beside them; a trade-first order still
+puts the trades on top; `dimKey` returns the sentinel for one tower, the id for two, and the
+sentinel for a row with no tower id even when the project has two. Controls throughout. 0 functions
+lost, 1 added; the inline script parses.
+
+⚠️ **NOT verified signed-in**, and this changes what a **new** push builds — OPW101's existing 2,561 rows
+keep the tree they were pushed with until re-pushed. ⚠️ Still open: OPW101's duplicate phase roots.
+
 ## The WBS default now comes from the Schedule Setup, and it leads with the Tower (2026-09-03) — jasantos2
 
 Owner, two messages:

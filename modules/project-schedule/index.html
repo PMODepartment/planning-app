@@ -30772,12 +30772,22 @@
       var incl = {}; WBS_DIMS.forEach(function (d) { incl[d] = cfg.wbsOrder.indexOf(d) >= 0; });
       function renderStruct() {
         var host = ov.querySelector('#sbpush-struct'); if (!host) return;
+        /* ⚠️ A DIM THAT WILL BE SKIPPED IS NOT COUNTED AND NOT PROMISED. This is the honest half of
+           the single-tower rule (see dimKey): the Tower level is only built when there is more than
+           one tower, so on a one-tower project it must not appear as "L1" and must not be included in
+           the "N-level WBS" line. Ticking it is still allowed and still remembered — add a second
+           tower and it starts building — it simply does not claim a level it will not occupy.
+           ⚠️ Driven by the same predicate the push uses, not a copy of it. Two functions disagreeing
+           about which levels get built is the bug this whole exchange has been about. */
+        function willBuild(d) { return incl[d] && !(d === 'tower' && !multiTower()); }
         var lvl = 0;
         host.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">WBS structure <span style="font-weight:400;color:var(--pd-muted);">(drag order with ↑/↓; tick to include)</span></div>' +
           '<div class="sbld-wbsrows">' + work.map(function (d, i) {
-            var on = incl[d]; if (on) lvl++;
-            return '<div class="sbld-wbsrow"><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
-              '<span class="sbld-wbslvl">' + (on ? 'L' + lvl : '—') + '</span> ' + e2(dimLabelOf(d)) + '</label>' +
+            var on = incl[d], build = willBuild(d); if (build) lvl++;
+            var skipped = on && !build;
+            return '<div class="sbld-wbsrow"' + (skipped ? ' style="opacity:.6;"' : '') + '><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
+              '<span class="sbld-wbslvl">' + (build ? 'L' + lvl : '—') + '</span> ' + e2(dimLabelOf(d)) +
+              (skipped ? '<span class="sbld-hint" style="margin:0;">skipped — this project has one tower, so it would be a level with a single branch</span>' : '') + '</label>' +
               '<button class="pd-btn sbld-wbsmv" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
               '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === work.length - 1 ? ' disabled' : '') + '>↓</button></div>';
           }).join('') + '</div>' +
@@ -30787,9 +30797,9 @@
              third. That is exactly the reported "the trades vanished" — they were built, one level
              under every floor. Saying which level is the FIRST branch makes the consequence of the
              order visible before the push instead of after it. */
-          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + e2(work.filter(function (d) { return incl[d]; }).map(dimLabelOf).join(' → ')) : 'No levels selected — tick at least one level.') + '</p>' +
+          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + e2(work.filter(willBuild).map(dimLabelOf).join(' → ')) : 'No levels selected — tick at least one level.') + '</p>' +
           (lvl ? '<p class="sbld-hint" style="margin:2px 0 0;opacity:.8;">Directly under the Execution Phase you will see <b>' +
-            e2(dimLabelOf(work.filter(function (d) { return incl[d]; })[0])) + '</b> branches; everything below it nests inside them. Drag with ↑/↓ to change what leads.</p>' : '');
+            e2(dimLabelOf(work.filter(willBuild)[0])) + '</b> branches; everything below it nests inside them. Drag with ↑/↓ to change what leads.</p>' : '');
         host.querySelectorAll('[data-dim]').forEach(function (c) { c.onchange = function () { incl[c.dataset.dim] = c.checked; renderStruct(); }; });
         host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; var t = work[i - 1]; work[i - 1] = work[i]; work[i] = t; renderStruct(); }; });
         host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; var t = work[i + 1]; work[i + 1] = work[i]; work[i] = t; renderStruct(); }; });
@@ -31117,7 +31127,24 @@
            case it was written for. A project with no towers defined writes no tower branch.
            ⚠️ Untick Tower in the push dialog to get the old shape -- it is one click, and it is now the
            planner saying so rather than a count deciding it for them. */
-        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'tower') return l.towerId || '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
+        /* ⚠️⚠️ A SINGLE TOWER IS NOT A WBS LEVEL, AND THIS RULE HAS NOW GONE ROUND ONCE.
+           Owner 2026-09-03: *"why is there tower 1? if it is just a singular tower, the tower 1
+           should not be a WBS anymore. isn't that logical?"* Yes. A level with exactly ONE branch
+           carries no information: every activity is under it, so it says nothing and pushes the whole
+           tree down a level. The project IS that tower.
+           ⚠️ EARLIER TODAY I REMOVED THIS GATE, and that was the wrong fix for a real problem. The
+           complaint then was that the dialog promised *"5-level WBS: Tower -> Level -> Trade -> Zone
+           -> Unit"* and built four. The fault was the DIALOG LYING, not the tree being right — so the
+           gate is back and the dialog now says the tower will be skipped and does not count it. Fix
+           the message, not the structure it describes.
+           ⚠️ This also answers *"how come the allied services is not under tower 1?"* — a trade with no
+           floors gets the `__all__` location, which carries no towerId, so it could never be filed
+           under a tower branch and sat beside it. With no tower branch on a single-tower project,
+           Allied Services now sits with the other trades, which is where it belongs.
+           ⚠️ MULTIPLE TOWERS STILL GET A BRANCH EACH. And a project-wide trade (no floors, so no
+           tower) still sits beside them rather than being assigned to one arbitrarily — it genuinely
+           spans them, and picking Tower 1 would be inventing a fact. */
+        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'tower') return multiTower() ? (l.towerId || '\u0000') : '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
         // the short label made the same trade reachable under TWO different names - and for the three
@@ -31820,6 +31847,10 @@
           var out = [];
           cfg.wbsOrder.forEach(function (d) {
             if (d === "trade") { if (out.indexOf("work") < 0) out.push("work"); return; }
+            // A single tower is not a grouping level either -- it would be one group holding
+            // everything. Same rule and same predicate as the WBS tree (see dimKey), so the grid and
+            // the pushed structure cannot disagree about whether the tower is a level.
+            if (d === "tower" && !multiTower()) return;
             var lv = locLevelFor(d);
             if (lv && out.indexOf("loc:" + lv.id) < 0) out.push("loc:" + lv.id);
           });
