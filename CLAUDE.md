@@ -129,6 +129,102 @@ previous pass's 14 wizard checks still green; **0 functions lost / 7 added**; pa
 worth watching on the first real use. `MODULE_V` → `20260903c`.
 
 ### 2026-09-03 (b) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
+<!-- both sides prepended a 2026-09-03 entry; both kept whole, seam here -->
+
+### 2026-09-03 (b) — Super-admin-only modules, module-logo dropdowns, bold Portfolio, view toggles repositioned
+
+Six items in one owner turn, two of them mid-turn follow-ups on the earlier five.
+
+**1. Seven modules + Personal hidden from everyone but `super_admin`, "for now."** New
+`superAdminOnly: true` on the risk-register, stakeholder-map, manpower-loading,
+equipment-loading, productivity-rates, contracts-claims and cash-flow entries in
+`config.js`. Read off `window.__role` — the global `AppAuth.requireLogin()` already sets
+before its callback runs — by a shared `visible(m)` predicate now duplicated (deliberately,
+one line each) in `ModulesGrid.render()` (the launcher grid), `UI.renderNav()` (both the
+project- and portfolio-mode sidebars), and `dashboard.html`'s own tile grid, so a hidden
+module can't surface from any of the three places a module can appear. **This is UI
+visibility only** — no RLS or table-grant change, so it's reversible in one line and a
+super_admin sees every module unchanged.
+- ⚠️ Personal (My Work / Tasks) gated the same way, off the same role, in **two** places —
+  `renderNav`'s Personal section AND `renderUserBar`'s avatar-menu "My Work" link (a second,
+  independent path to `my-work.html` that renders on every page, sidebar or not; gating only
+  the sidebar would have left the page one click away via the avatar on every module page).
+- ⚠️ **Portfolio Overview's own tabs are a fourth surface, and a static one** — its six
+  cross-project tabs (Risk / Stakeholders / Equipment / Contracts / Cash Flow / Productivity)
+  are hardcoded markup, not built off `APP_CONFIG.MODULES`, so hiding the sidebar link alone
+  would have moved the same data one click sideways instead of closing it. Hidden the same
+  role-gated way, straight in that page's own `requireLogin` callback; the other seven tabs
+  (Overview/S-Curve/Cash-Flow-rollup/Resources/Milestones/Issues/Meetings/Photos) are untouched
+  since none of those seven modules are `superAdminOnly`.
+
+**2–4. A module identity icon before the screen-switcher dropdown**, for Minutes of Meeting
+and Progress Photos — both modules whose `<h1>` text is hidden once `UI.tabsToDropdown()`
+builds a trigger that already names the current screen, so the icon was the only piece of
+module identity left, and until now it wasn't carried into the trigger at all. Extended
+`UI.tabsToDropdown(selOrEl, opts)` with `opts.icon`, baked straight into the trigger button
+(`.pd-tabsdrop-ico`, brand-red, matching Project Schedule's own `.ps-title-btn` pattern) rather
+than left as a separate element beside it — issues-lessons already tried a standalone icon
+element next to a dropdown and had to hide the WHOLE thing on narrow screens because a lone
+icon on its own row is exactly the "icon alone / label on the next line" defect this app's
+history has fixed twice already (see `tabsToDropdown`'s own comment). `UI.tabsToDropdown('.il-tabs',
+{icon:'clipboard'})` and `UI.tabsToDropdown('.pp-tabs', {icon:'camera'})` — matching each
+module's own `config.js` icon. ⚠️ Found by actually rendering the pages and inspecting the
+DOM, not by reading the CSS: issues-lessons' `<h1>` carries an inline `style="display:none"`
+set by `switchScreen()` from an earlier, deliberate round — a different mechanism from
+`tabsToDropdown`'s own class-based hide, and the reason its icon had disappeared entirely
+rather than merely being un-styled.
+
+**5. "Portfolio" now renders bold when it's the selected row in the project-selector dropdown.**
+The trigger button (closed state) already wrapped its label in `<strong>` unconditionally
+(`renderSwitcher`'s `mainLabel`) — this was specifically about the Portfolio row **inside the
+dropdown's own list** (`navListBody()`'s `.pd-nt-portfolio`, the one list body shared by
+`enhanceProjectSelect`'s popover, `renderSwitcher`'s menu, and `home.html`), whose `.sel`
+(current/active) state changed only background/color, with no weight change from the row's
+base 600. `.pd-nt-portfolio.sel` now adds `font-weight: 700` — measured via a real render:
+600 unselected, 700 selected.
+
+**6. The List/Calendar and Tile/List/Plan "change view" toggles moved out of the chrome and
+into the content, on the left** — Minutes of Meeting and Progress Photos, the two modules
+where they weren't already there. ⚠️ **Issues & Concerns needed no change** — its own
+List/Kanban toggle (`.il-viewbar`, built by `viewKanbanBarHTML()`) was already the leading,
+left-most element directly above `#il-table`; confirmed by rendering all three modules and
+comparing, not by re-reading the CSS a second time.
+- **Minutes of Meeting**: the icon-only List/Calendar toggle used to live in the topbar's
+  tool cluster (top-right, beside the profile — chrome, nowhere near the meetings it
+  switches), wired once in `wire()` since it sat outside `#il-mom-view`'s own re-rendered
+  content, with a separate `syncTopTabs()` pass to keep its hidden/`.on` state in sync. It now
+  opens `momBrowseFilterBarHTML()` — the "Filters / N meetings / Export / +Add meeting" bar
+  that already sits directly above the list/calendar and is rebuilt fresh on every
+  `renderBrowse()` — so its `.on` state needs no separate sync pass at all; wired in
+  `wireBrowse()` like every other control in that bar. The old topbar markup, its `wire()`
+  wiring and the `syncTopTabs()` block managing it are all removed rather than left dead; the
+  now-pointless `.il-topbar-tools .il-viewtoggle { height: 34px }` CSS override (the button's
+  own 34px rule already covered it) went with them.
+- **Progress Photos**: the Tile/List/Plan toggle (`.pd-viewtoggle`) already lived in the right
+  place — `.pp-listbar`, directly above the gallery/list — just pushed to the far right via
+  `.pp-listbar .pd-viewtoggle { margin-left: auto; }` while count/group-by/tile-size/markup sat
+  on the left. Moved to lead the row instead (markup relocated, the `margin-left:auto` rule
+  removed — flex's own start alignment does the rest). Checked first that nothing in
+  `module.js` depends on `.pp-listbar`'s child order (only one order-agnostic
+  `document.querySelector('.pp-listbar')` read, for a whole-bar visibility toggle) or queries
+  `.pd-vt[data-view]` by anything but the attribute (it does, everywhere).
+- Both re-rendered at 400px afterward: the toggles wrap onto their own compact row (not
+  stretched full-width — `.il-viewtoggle`/`.pd-viewtoggle` both carry `flex: none`), nothing
+  clipped or broken.
+
+Verified: `node --check` on every touched `.js` file; every touched `index.html`'s inline
+`<script>` parses (progress-photos' own extraction reports a failure that reproduces
+byte-for-byte against the untouched `origin/main` copy — the documented "`<script>` substring
+inside a CDN `src` URL fools a naive regex extractor" trap, not a defect in this change); CSS
+brace-balance holds on `dashboard.css` (450/450), minutes-of-meeting's `module.css` (301/301)
+and progress-photos' `module.css` (525/525); 0 duplicate DOM ids in any of the three touched
+module pages; 0 stray references to the removed `#il-viewtoggle` id anywhere in code (the one
+surviving hit is an unrelated Month/Week sub-toggle inside calendar mode that only ever shared
+the CSS *class*, never the id). All six items visually confirmed via Playwright renders at
+1400px and 400px against the shipped CSS with the real app markup (auth/DB stubbed — this
+environment has no live Supabase login). ⚠️ **Not verified signed in.**
+
+### 2026-09-03 (c) — WBS→location matcher: level filter, a live location tree, and "grouping only" named for what it is
 
 Owner, off a screenshot of *Match the WBS to your location breakdown*: filter by WBS level, use the
 space, put a location tree on the right — plus two questions worth answering in the UI rather than in

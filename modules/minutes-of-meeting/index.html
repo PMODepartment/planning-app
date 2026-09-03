@@ -53,18 +53,11 @@
           <button class="il-tab" data-tab="dashboard">Meetings Dashboard</button>
         </div>
 
-        <!-- Tool cluster beside the profile. Item 2: an icon-only List/Calendar
-             toggle, top-right — only meaningful once inside Meetings and while
-             actually browsing (not with a single meeting/series open), so it
-             starts hidden and syncTopTabs() in module.js shows/hides + syncs
-             its `.on` state on every render(). -->
+        <!-- Tool cluster beside the profile. The icon-only List/Calendar toggle
+             that used to live here moved to the left of the meetings list's own
+             filter bar (item 6, 2026-09-03 — "above the tables", not the
+             chrome) — see momBrowseFilterBarHTML in module.js. -->
         <div class="il-topbar-tools">
-          <div class="il-viewtoggle" id="il-viewtoggle" hidden>
-            <button type="button" class="il-vt-btn" data-mv="list" title="List view">
-              <span data-ico="listView" data-ico-size="16"></span></button>
-            <button type="button" class="il-vt-btn" data-mv="calendar" title="Calendar view">
-              <span data-ico="calendar" data-ico-size="16"></span></button>
-          </div>
           <button class="pd-btn" id="il-refresh" title="Reload">
             <span data-ico="refresh" data-ico-size="16"></span></button>
         </div>

@@ -212,7 +212,11 @@
       // Issues & Concerns / Lessons Learned / Dashboard as a Project-Schedule-style
       // dropdown instead of a flat tab row (kept from before the Minutes of Meeting
       // split — still worth it at 3 tabs, matching every other module's chrome).
-      UI.tabsToDropdown('.il-tabs');
+      // `icon: 'clipboard'` (2026-09-03) — the module mark shown before the
+      // dropdown, matching config.js's own icon for this module; the `.il-title`
+      // <h1> stays hidden (switchScreen() already turns it off on every screen —
+      // see that comment for why it's the WHOLE element, never just its text).
+      UI.tabsToDropdown('.il-tabs', { icon: 'clipboard' });
       IssuesLessons.init(user, profile);
     });
   </script>

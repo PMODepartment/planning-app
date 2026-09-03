@@ -207,6 +207,24 @@
                picker; Year and Activity are dropped, Month/Trade/Location
                apply identically to whichever view is active. -->
           <div class="pp-listbar">
+            <!-- Item 6 (2026-09-03, owner: "move all change view tab
+                 groups… to the left above the tables"): the toggle used to
+                 trail this row, pushed to the far right via `margin-left:
+                 auto` — it now leads it instead, on the left, matching
+                 Minutes of Meeting's own List/Calendar toggle and Issues &
+                 Concerns' List/Kanban toggle, both of which already led
+                 their own content bar. Tile (Gallery) is still the DEFAULT
+                 view (module.js's own `view = 'gallery'`), so its button
+                 still leads the GROUP itself — only the group's own position
+                 in the row changed. -->
+            <div class="pd-viewtoggle" role="tablist">
+              <button class="pd-vt active" data-view="gallery" title="Tile view">
+                <span data-ico="gridView" data-ico-size="15"></span></button>
+              <button class="pd-vt" data-view="list" title="List view">
+                <span data-ico="listView" data-ico-size="15"></span></button>
+              <button class="pd-vt" data-view="plan" title="Plan view — floor plan with photos clustered by location">
+                <span data-ico="compass" data-ico-size="15"></span></button>
+            </div>
             <span class="pp-countbar" id="pp-count"></span>
             <label class="pp-groupby">Group by
               <select class="pd-select" id="pp-groupby">
@@ -244,23 +262,6 @@
             <button class="pd-btn" id="pp-genthumbs" title="" style="display:none;">
               <span data-ico="refresh" data-ico-size="14"></span> Generate thumbnails</button>
             <span class="pp-genthumbs-prog" id="pp-genthumbs-prog" style="display:none;"></span>
-            <!-- Item 3: Tile (Gallery) is the DEFAULT view (module.js's own
-                 `view = 'gallery'`), so its button leads the group — List
-                 moves to second place. -->
-            <div class="pd-viewtoggle" role="tablist">
-              <button class="pd-vt active" data-view="gallery" title="Tile view">
-                <span data-ico="gridView" data-ico-size="15"></span></button>
-              <button class="pd-vt" data-view="list" title="List view">
-                <span data-ico="listView" data-ico-size="15"></span></button>
-              <!-- Item 16 — Plan moves here from the Plans tab (which keeps
-                   only "all plans", item 15). ⚠️ Round-2 item 7 (2026-09-02)
-                   REMOVES Stack view entirely (owner: "remove stack view for
-                   the photos") — its button, and every renderStackView/
-                   wireStackView/stackGrid/mostRecentAsOf function it alone
-                   drove, are gone; see module.js's own retirement comment. -->
-              <button class="pd-vt" data-view="plan" title="Plan view — floor plan with photos clustered by location">
-                <span data-ico="compass" data-ico-size="15"></span></button>
-            </div>
           </div>
           <!-- 360° panoramas + 3D scans render INSIDE #pp-view now (items
                6/8, current round) -- merged into the same date/trade/location
@@ -420,8 +421,11 @@
         active: 'progress-photos', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
       // Item 6: Gallery/Presentations/Plans as a Project-Schedule-style
-      // dropdown instead of a flat tab row.
-      UI.tabsToDropdown('.pp-tabs');
+      // dropdown instead of a flat tab row. `icon: 'camera'` (2026-09-03) —
+      // this module dropped its standalone <h1> entirely on an earlier owner
+      // ask, so the dropdown trigger is the only place left for its identity
+      // mark; matches config.js's own icon for this module.
+      UI.tabsToDropdown('.pp-tabs', { icon: 'camera' });
       // ⚠️ Each sub-module's init() is isolated in its own try/catch. Before
       // this, a throw anywhere in ProgressPhotos.init()/PPR.init()/etc. (e.g.
       // a project load failing, or any future bug in one file) aborted every

@@ -1253,7 +1253,10 @@
 
     function renderTiles() {
       var grid = document.getElementById('tile-grid');
-      var mods = APP_CONFIG.MODULES || [];
+      // superAdminOnly modules (config.js) drop out here too — same rule ModulesGrid.render()
+      // and UI.renderNav() apply, so a hidden module can't surface as a live-figures tile here
+      // while being absent from the launcher and the sidebar.
+      var mods = (APP_CONFIG.MODULES || []).filter(function (m) { return !window.ModulesGrid || ModulesGrid.visible(m); });
       grid.innerHTML = mods.map(function (m) {
         // ⚠️ Delegated to the LAUNCHER's own card builder (2026-09-01, owner). This branch used
         // to render its own dead grey box, so Drawing Register and Material Submittal Log were
