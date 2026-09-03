@@ -1,3 +1,56 @@
+## The stacking PDF stretched every building to the page width (2026-09-03) — jasantos2
+
+Owner, with the print preview: *"for the conversion to PDF, make it more compact. look at this it is
+too big."* — a four-cell **BOH Area** card filling an entire A4 sheet, **4 sheets** for the report.
+
+### The cause was one CSS declaration
+The cloned building SVG was given `width:100%`, which **stretches every building to the full
+content width whatever its size**. A narrow card — one trade column, a few levels — was blown up
+several times over, and because the height follows the aspect ratio it grew just as tall. One small
+building therefore took a whole page.
+
+The old comment beside it explained why the `width`/`height` attributes are dropped ("a wide
+building would print off the right margin"). That reasoning is sound — it just does not require
+stretching the SMALL ones to match.
+
+### New `_pdfSize()` — natural size, shrink only if it does not fit
+1 viewBox unit = 1 CSS px = **25.4/96 mm**, so a building prints at the size it appears on screen,
+capped to the printable area (168 × 205 mm inside A4 portrait at 10mm margins).
+
+| building | before | after |
+|---|---|---|
+| 260 × 190 (the reported card) | stretched to full width, ~1 sheet | **68.8 × 50.3 mm — 3 per sheet** |
+| 1600 × 400 (wide) | capped at the page | capped at the page (unchanged) |
+| degenerate / missing viewBox | full width | full width (unchanged fallback) |
+
+⚠️ **Height is capped too**, at one page of content. A building taller than a page would otherwise run
+past the bottom of a sheet it is not allowed to break inside, pushing it onto its own page and wasting
+the one before it.
+⚠️ **A very tall tower therefore prints narrow** — shrink-to-fit keeps the whole building visible, and
+a complete-but-narrow building beats a clipped one, because `break-inside:avoid` means the overflow
+would simply be cut off. Worth revisiting with a landscape option if it bites.
+⚠️ **The fallback is kept.** A missing or unparseable viewBox returns the old full-width style — better
+a stretched building than none.
+
+### The page furniture was tightened to match
+A compact building under a header sized for a full-page drawing just moves the wasted space rather than
+removing it. Body 13 → 11.5px, h1 19 → 15px, card margin 16 → 9px, card header padding 9 → 5px, page
+margin 12 → 10mm, and the meta/legend rows condensed.
+
+⚠️ `break-inside:avoid` is **kept**. "Compact" means several buildings FIT on a sheet — not that one
+is allowed to straddle two. A building is only readable whole.
+
+---
+
+**Verified: 317 checks.** The shipped `_pdfSize` executed for the reported small card (natural size,
+aspect preserved, 3 per sheet), a building wider than the page (capped, ratio held), a very tall one
+(height capped, never exceeding the width cap either), and five degenerate viewBoxes (all fall back).
+The CSS shrink is measured by parsing the old and new print stylesheets and comparing the numbers, so
+"tighter" is a measurement rather than a claim. 0 functions lost, 1 added.
+
+⚠️ **NOT verified by actually printing** — the anon key has no grants, so no live stacking was exported.
+The geometry is arithmetic over the viewBox and is checked as such; the visual result is not.
+
 ## An un-floored trade is still in the building, so it carries the tower (2026-09-03) — jasantos2
 
 Owner: *"i dont think if there is no floors or zones under a trade, it should have an all location. if

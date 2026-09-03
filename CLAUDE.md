@@ -84,6 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (s) — The stacking PDF stretched every building to the page width
+
+*"for the conversion to PDF, make it more compact. look at this it is too big."* — a four-cell card
+filling an A4 sheet, 4 sheets for the report.
+
+One CSS declaration: the cloned building SVG was given `width:100%`, stretching every building to
+the full content width whatever its size — and the height follows the aspect ratio, so a small card grew
+just as tall. New `_pdfSize()` prints at natural size (1 viewBox unit = 1px at 96dpi), shrinking
+only when it does not fit: the reported 260×190 card goes from ~a full sheet to **68.8 × 50.3 mm, three
+per sheet**, while a wider-than-page building is still capped exactly as before. ⚠️ Height is capped at
+one page too, so a tall tower prints narrow rather than clipped — `break-inside:avoid` is kept,
+because a building is only readable whole. ⚠️ A missing/unparseable viewBox falls back to the old
+behaviour. Page furniture tightened to match (body 13→11.5px, card margin 16→9px, page margin 12→10mm).
+317 checks, 0 functions lost. `MODULE_V` → `20260903s`.
+
+---
 ### 2026-09-03 (r) — The chunky shell converged on the PRC app's own values
 
 Owner: *"Can you copy the formatting and css from prc-app to the planning-app. The prc-app looks more

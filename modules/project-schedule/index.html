@@ -14989,8 +14989,31 @@
       ['Trades', _vsTradeSel.length ? _vsTradeSel.join(', ') : 'all']
     ];
 
-    // ⚠️ Width/height attributes are dropped so each building scales to the page; the viewBox is what
-    // carries the geometry. Left as-is, a wide building would print off the right margin.
+    /* ⚠️⚠️ EACH BUILDING PRINTS AT ITS NATURAL SIZE, SHRINKING ONLY IF IT IS TOO WIDE FOR THE PAGE.
+       Owner 2026-09-03: *"for the conversion to PDF, make it more compact. look at this it is too
+       big."* — a four-cell "BOH Area" filling an entire A4 sheet, four sheets for the report.
+       The clone used to be given ' + width:100% + ', which STRETCHES every building to the full content
+       width whatever its size. A narrow building (one trade column, a few levels) was blown up several
+       times over, and because the height follows the aspect ratio it grew just as tall — so one small
+       building took a whole page.
+       ⚠️ The rule is now: natural size at 96dpi (1 viewBox unit = 1 CSS px = 25.4/96 mm), capped to the
+       printable width. A building that already fits prints as it looks on screen; only one genuinely
+       wider than the page is scaled down, which is the case the old comment was written for.
+       ⚠️ HEIGHT IS CAPPED TOO, at one page's worth of content. A 17-storey tower would otherwise run
+       past the bottom of a page it is not allowed to break inside (break-inside:avoid), which pushes
+       it onto its own sheet and wastes the one before it.
+       ⚠️ Falls back to the old full-width behaviour when the viewBox is missing or unparseable —
+       better a stretched building than none. */
+    var PDF_W_MM = 168, PDF_H_MM = 205;   // A4 portrait, 12mm margins, less the card's own padding
+    function _pdfSize(svgEl) {
+      var vb = String(svgEl.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+      var vw = vb[2], vh = vb[3];
+      if (!(vw > 0) || !(vh > 0)) return 'width:100%;height:auto;display:block;';
+      var wmm = Math.min(vw * 25.4 / 96, PDF_W_MM);
+      var hmm = wmm * vh / vw;
+      if (hmm > PDF_H_MM) { hmm = PDF_H_MM; wmm = hmm * vw / vh; }
+      return 'width:' + wmm.toFixed(1) + 'mm;height:' + hmm.toFixed(1) + 'mm;display:block;';
+    }
     var body = '';
     for (var i = 0; i < cards.length; i++) {
       var c = cards[i];
@@ -15000,7 +15023,7 @@
       if (!sv) continue;
       var clone = sv.cloneNode(true);
       clone.removeAttribute('width'); clone.removeAttribute('height');
-      clone.setAttribute('style', 'width:100%;height:auto;display:block;');
+      clone.setAttribute('style', _pdfSize(clone));
       var tc = c.style.getPropertyValue('--tc') || '#EE3124';
       body += '<section class="b" style="--tc:' + tc + '">' +
         '<div class="bh"><span class="bn">' + esc(nm ? String(nm.textContent || '').trim() : 'Building') + '</span>' +
@@ -15024,27 +15047,31 @@
       ':root{--pd-ink:#231F20;--pd-muted:#6E7378;--pd-line:#DCE0E5;--pd-red:#EE3124;' +
       '--ps-vs-scrim:rgba(17,20,26,.32);--ps-vs-veil:rgba(255,255,255,.46);--ps-vs-edge:rgba(15,18,24,.34);}' +
       '*{box-sizing:border-box;}' +
-      'body{font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--pd-ink);margin:0;padding:22px 24px 28px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
-      'header{border-bottom:2px solid var(--pd-red);padding-bottom:10px;margin-bottom:14px;}' +
-      'h1{font-size:19px;letter-spacing:-.01em;margin:0 0 3px;font-weight:700;}' +
+      // ⚠️ The furniture is tightened to match — a compact building under a header sized for a
+      // full-page drawing just moves the wasted space rather than removing it.
+      'body{font:11.5px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--pd-ink);margin:0;padding:14px 16px 16px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+      'header{border-bottom:2px solid var(--pd-red);padding-bottom:6px;margin-bottom:9px;}' +
+      'h1{font-size:15px;letter-spacing:-.01em;margin:0 0 2px;font-weight:700;}' +
       '.pj{font-size:13px;color:var(--pd-ink);font-weight:600;margin:0;}' +
-      '.mt{margin:10px 0 0;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:10.5px;color:var(--pd-muted);}' +
+      '.mt{margin:6px 0 0;display:flex;flex-wrap:wrap;gap:3px 14px;font-size:9.5px;color:var(--pd-muted);}' +
       '.mt b{display:block;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#8A9096;}' +
       '.mt span{color:var(--pd-ink);font-weight:600;}' +
-      '.lgs{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--pd-muted);margin:12px 0 16px;align-items:center;}' +
+      '.lgs{display:flex;gap:10px;flex-wrap:wrap;font-size:9px;color:var(--pd-muted);margin:7px 0 9px;align-items:center;}' +
       '.lg{display:inline-flex;align-items:center;gap:5px;}' +
       '.lg i{width:11px;height:11px;border-radius:2.5px;background:var(--pd-muted);display:inline-block;}' +
       '.lg i.sol{background:#6E7378;}' +
       '.lg i.hat{background:repeating-linear-gradient(45deg,#6E7378 0 2px,#fff 2px 5px);border:1px solid var(--pd-line);}' +
       '.lg i.dn{width:20px;border-radius:6px;background:' + VS_SLIP_ONTIME + ';}' +
       // ⚠️ break-inside on the section, not on the svg: a building is only readable whole.
-      '.b{border:1px solid var(--pd-line);border-top:3px solid var(--tc,var(--pd-red));border-radius:10px;padding:0 0 12px;margin:0 0 16px;break-inside:avoid;page-break-inside:avoid;}' +
-      '.bh{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 13px 8px;border-bottom:1px solid var(--pd-line);}' +
-      '.bn{font-size:13px;font-weight:700;}' +
-      '.bc{font-size:10px;color:var(--pd-muted);text-align:right;}' +
-      '.bs{padding:12px 13px 0;}' +
-      'footer{margin-top:18px;padding-top:9px;border-top:1px solid var(--pd-line);font-size:9.5px;color:#8A9096;display:flex;justify-content:space-between;}' +
-      '@page{size:A4 portrait;margin:12mm;}' +
+      // ⚠️ Still break-inside:avoid — a building is only readable whole. Compact now means several
+      // FIT on a sheet, not that one is allowed to straddle two.
+      '.b{border:1px solid var(--pd-line);border-top:2px solid var(--tc,var(--pd-red));border-radius:7px;padding:0 0 7px;margin:0 0 9px;break-inside:avoid;page-break-inside:avoid;}' +
+      '.bh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:5px 9px 4px;border-bottom:1px solid var(--pd-line);}' +
+      '.bn{font-size:11px;font-weight:700;}' +
+      '.bc{font-size:9px;color:var(--pd-muted);text-align:right;}' +
+      '.bs{padding:7px 9px 0;}' +
+      'footer{margin-top:10px;padding-top:6px;border-top:1px solid var(--pd-line);font-size:8.5px;color:#8A9096;display:flex;justify-content:space-between;}' +
+      '@page{size:A4 portrait;margin:10mm;}' +
       '@media print{body{padding:0;}}' +
       '</style></head><body>' +
       '<header><h1>Vertical Stacking</h1><p class="pj">' + esc(projName()) + '</p>' +
