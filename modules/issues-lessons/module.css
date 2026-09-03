@@ -61,6 +61,24 @@
 .il-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
 .il-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 
+/* ITEM 8: the Export dropdown — Excel / PDF / HTML, in the topbar tool
+   cluster beside Refresh. Same anchored-popover pattern the topbar filter
+   funnel uses (open/close via a class toggle, outside-click closes it). */
+.il-exportwrap { position: relative; }
+#il-export-btn.is-active { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-red); }
+.il-export-menu {
+  display: none; position: absolute; top: 40px; right: 0; z-index: 20;
+  min-width: 200px; background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); box-shadow: var(--pd-shadow);
+  padding: 6px; flex-direction: column; gap: 2px;
+}
+.il-export-menu.open { display: flex; }
+.il-export-menu button {
+  text-align: left; background: none; border: 0; border-radius: 6px;
+  padding: 8px 10px; font-size: 13px; color: var(--pd-ink); cursor: pointer;
+}
+.il-export-menu button:hover { background: var(--pd-bg); color: var(--pd-red); }
+
 /* ---- Topbar search + filter toggle ----------------------------------------
    Item 1: the SAME search/filter UX as Progress Photos, on all three screens
    (Issues, Lessons, Dashboard) — a compact search box in the topbar tool
@@ -123,9 +141,53 @@
 .il-clear:hover { background: var(--pd-bg); color: var(--pd-ink); }
 .il-clear[hidden] { display: none; }
 
-/* ---- KPIs ---------------------------------------------------------------- */
-.il-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
-.il-kpis-2 { grid-template-columns: repeat(3, 1fr); }
+/* ---- ITEM 3 (2026-09-02): List | Kanban toggle + board ---------------------
+   The toggle is the shared `.pd-viewtoggle`/`.pd-vt` component this app
+   already uses elsewhere (Progress Photos' List/Gallery switch) — kept in
+   `.il-viewbar` so a group-by picker can sit beside it once Kanban is chosen
+   (viewKanbanBarHTML(), module.js). The board itself is a horizontally-
+   scrolling row of columns (one per Department/Champion value), each a
+   vertically-scrolling stack of cards — hand-rolled like every other chart/
+   component in this app, no board library. */
+.il-viewbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.il-kanban-groupby { height: 34px; font-size: 13px; width: auto; min-width: 170px; }
+.il-kanban { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 6px; }
+.il-kanban-col {
+  flex: 0 0 280px; background: var(--pd-bg); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); display: flex; flex-direction: column; max-height: 72vh;
+}
+.il-kanban-col-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; font-weight: 700; font-size: 13px; color: var(--pd-ink);
+  border-bottom: 1px solid var(--pd-line); flex: none;
+}
+.il-kanban-count {
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 999px;
+  padding: 1px 8px; font-size: 11px; font-weight: 700; color: var(--pd-muted); flex: none;
+}
+.il-kanban-col-body { padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
+.il-kanban-card {
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: var(--pd-shadow); padding: 10px 12px; cursor: pointer;
+}
+.il-kanban-card:hover { border-color: var(--pd-red-mid); }
+.il-kanban-card-title { font-size: 13px; font-weight: 600; color: var(--pd-ink); line-height: 1.4; }
+.il-kanban-card-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px;
+  font-size: 11.5px; color: var(--pd-muted);
+}
+.il-kanban-card-meta .il-pill { padding: 1px 8px; font-size: 10.5px; }
+
+/* ---- KPIs ----------------------------------------------------------------
+   ITEM 4 (2026-09-02): both bands squeeze to ONE ROW at every width down to
+   phone — Issues' band is 4 tiles now (Total/Open/On Hold/Closed — the "Avg
+   aging" tile is dropped, see renderIssueKpis), Lessons' is 2 (Lessons
+   learned/Issues closed — its own aging tile dropped the same way). Only at
+   ≤700px ("mobile view") does the band get to wrap onto a second row — see
+   the ≤700px block below — rather than the earlier 5-/3-tile bands' own
+   compression logic, which no longer applies at this tile count. */
+.il-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.il-kpis-2 { grid-template-columns: repeat(2, 1fr); }
 .il-kpi {
   background: var(--pd-card); border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); padding: 14px 16px;
@@ -137,20 +199,32 @@
 .il-kpi.is-closed .il-kpi-val { color: #16a34a; }
 
 /* ---- Issues table -------------------------------------------------------- */
-.il-table { min-width: 980px; }
-.il-table th { white-space: nowrap; }
+/* ITEM 6 (earlier round): a smaller, denser read for both the Issues & the
+   Lessons Learned tables — "reduce font sizes to make more minimalist" —
+   plus the Issue / Caused By / Corrective Action / Lesson Learned columns
+   widened and allowed to wrap their full text rather than being clamped to
+   3 lines. ITEMS 2/5 (2026-09-02): widened again — Issue/Caused by/
+   Corrective action (Issues) and Lesson Learned/Issue (Lessons) all share
+   this ONE `.il-cell-wrap` class, so a single width decision widens both
+   tables' wide columns at once. min-width raised with it so the header/body
+   columns keep agreeing rather than the table shrinking back onto them. */
+.il-table { min-width: 1400px; font-size: 12.5px; }
+.il-table th { white-space: nowrap; font-size: 11px; }
 .il-table td { vertical-align: top; }
-.il-cell-wrap { max-width: 320px; white-space: normal; }
+.il-cell-wrap { max-width: 620px; white-space: normal; }
 .il-cell-num { color: var(--pd-muted); font-variant-numeric: tabular-nums; }
-.il-clip {
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.il-champ { font-size: 13px; white-space: normal; max-width: 150px; }
-.il-lessontag {
-  display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
-  font-size: 11px; font-weight: 600; color: var(--pd-red);
-}
+/* ITEM 5 (2026-09-02): the Lessons table's two NARROW columns, freeing the
+   room `.il-cell-wrap`'s widening above just took from Department/Date
+   Resolved — a date is a handful of characters and never needs to wrap. */
+.il-ls-dept { font-size: 12px; white-space: normal; max-width: 120px; }
+.il-ls-date { font-size: 12px; white-space: nowrap; max-width: 90px; }
+/* ⚠️ No `-webkit-line-clamp` any more — a clamped cell hid text with nothing on
+   screen saying more was cut off. Text now wraps to as many lines as it needs
+   ("allow text overflows as needed"); `overflow:hidden` also dropped since
+   there's nothing left to clip. The mobile card view's OWN clamp (below, inside
+   the ≤700px block) is untouched — that's a different, deliberately-scoped rule. */
+.il-clip { white-space: normal; }
+.il-champ { font-size: 12px; white-space: normal; max-width: 150px; }
 
 /* "Raised at a meeting" — the reciprocal of the schedule module's Minutes of Meeting.
    Deliberately quieter than the lesson tag: it is provenance, not a state to act on. */
@@ -162,7 +236,6 @@
 .il-momtag { display:inline-flex; align-items:center; gap:4px; margin-top:4px; margin-left:6px;
   font-size:10.5px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
   border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; vertical-align:middle; }
-.il-lessontag .pd-ico { color: var(--pd-red); }
 
 /* Status pill */
 .il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: 12px; color: #fff; white-space: nowrap; }
@@ -193,36 +266,22 @@
 .il-lead-ico { color: var(--pd-red); flex: none; margin-top: 2px; }
 .il-lead-sub { color: var(--pd-muted); font-size: 13px; display: block; margin-top: 3px; }
 
-.il-lessons { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
-.il-lcard {
-  background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); box-shadow: var(--pd-shadow);
-  padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
-}
-.il-lcard-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.il-chip {
-  font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
-  padding: 2px 9px; border-radius: 999px; background: var(--pd-bg);
-  color: var(--pd-muted); border: 1px solid var(--pd-line);
-}
-.il-chip.is-cat { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
-.il-lcard-date { margin-left: auto; color: var(--pd-muted); font-size: 12px; }
-.il-lcard-lesson { font-size: 14px; line-height: 1.45; }
-.il-lcard-rec {
-  font-size: 13px; color: var(--pd-ink); background: var(--pd-bg);
-  border-left: 3px solid var(--pd-red); border-radius: 4px; padding: 8px 10px;
-}
-.il-lcard-rec b { color: var(--pd-red); }
-.il-lcard-src {
-  border-top: 1px dashed var(--pd-line); padding-top: 8px; margin-top: 2px;
-  font-size: 12px; color: var(--pd-muted);
-}
-.il-lcard-src .il-src-issue { color: var(--pd-ink); }
-.il-lcard-open {
-  align-self: flex-start; margin-top: 2px; background: transparent; border: 0;
-  color: var(--pd-red); font-weight: 600; font-size: 12px; cursor: pointer; padding: 0;
-}
-.il-lcard-open:hover { text-decoration: underline; }
+/* ⚠️ `.il-lessons`/`.il-lcard*`/`.il-chip` (the card/tile grid) are REMOVED —
+   their only emitter, `lessonCardHTML`, was deleted when item 5 (2026-09-01)
+   replaced the "Related lessons" section with a plain numbered list.
+   `.il-lcard-src`/`.il-src-issue` are ALSO removed as of item 5 (2026-09-02):
+   the source line they styled under a lesson's row is now its own "Issue"
+   column in the Lessons Learned table (`.il-cell-wrap`, shared with Issue /
+   Caused by / Corrective action below), not a sub-line under Lesson Learned. */
+
+/* ⚠️ `.il-related-lessons`/`.il-related-lesson-item` (the numbered-list version
+   of this section) are REMOVED — the section is a real table now (Lesson
+   Learned / Department / Date Closed, see issDetailHTML), reusing
+   `.il-dash-list`/`.il-dash-lesson-list` VERBATIM (see the wider comment on
+   that class below) rather than a third set of table rules for the same
+   3-column shape. The heading itself reads "Lessons Learned" on an issue's
+   own page and "Related Lessons" when this same markup is embedded on a
+   LESSON's page instead — see the excludeId comment in issDetailHTML. */
 
 /* ---- Empty states -------------------------------------------------------- */
 .il-empty { padding: 40px 24px; text-align: center; color: var(--pd-muted); }
@@ -238,9 +297,12 @@
 .il-form-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .il-form-row > .pd-field { flex: 1 1 160px; }
 
-@media (max-width: 1000px) { .il-kpis { grid-template-columns: repeat(3, 1fr); } }
+/* ITEM 4 (2026-09-02): the old 3-tile-vs-5-tile compression logic that used
+   to live here (dropping `.il-kpis` to 3 columns at ≤1000px so 5 tiles could
+   auto-place as 3-over-2) is gone with the 5th/3rd tile it existed for —
+   `.il-kpis`/`.il-kpis-2` now stay at their base 4/2 columns down to phone
+   width, per the note above the base rule. */
 @media (max-width: 820px) {
-  .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); }
   .il-filters.open .il-search { flex: 1 1 100%; }
 }
 
@@ -290,7 +352,13 @@
   /* The issue text is the headline of the card, not a labelled field. */
   .il-table td.il-cell-issue { font-size: 14px; font-weight: 600; padding-bottom: 6px; }
   .il-table td.il-cell-issue::before { content: none; }
-  .il-table td.il-cell-issue .il-clip { -webkit-line-clamp: 4; }
+  /* ⚠️ The desktop `.il-clip` rule (above) dropped its clamp this round (item 6) —
+     this mobile-card clamp now carries its OWN full definition rather than
+     depending on the base rule for `display`/`-webkit-box-orient`/`overflow`, or
+     `-webkit-line-clamp` alone here would do nothing. */
+  .il-table td.il-cell-issue .il-clip {
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
   /* Row number reads as a card index, kept small and unlabelled. */
   .il-table td.il-cell-num { font-size: 11px; color: var(--pd-muted); }
   .il-table td.il-cell-num::before { content: "#"; }
@@ -301,8 +369,17 @@
 
   .il-filters.open { flex-wrap: wrap; gap: 8px; }
   .il-filters.open > * { flex: 1 1 100%; min-width: 0; }
-  .il-kpis, .il-kpis-2 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .il-lessons { grid-template-columns: 1fr; }
+  /* ITEM 4 (2026-09-02): "mobile view" IS where these bands are allowed to
+     wrap — 4 tiles across a phone leaves each one too narrow to read its own
+     number, so Issues' band drops to 2-over-2 here; Lessons' 2-tile band was
+     already 2 across and just tightens its gap. */
+  .il-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .il-kpis-2 { gap: 8px; }
+  /* ITEM 3: a phone can't show two board columns side by side at 280px
+     each — narrower columns, and the group-by select takes the full row
+     rather than fighting the toggle for width. */
+  .il-kanban-col { flex-basis: 240px; }
+  .il-viewbar .il-kanban-groupby { flex: 1 1 100%; }
 }
 
 /* =========================================================================
@@ -418,50 +495,14 @@
   padding: 1px 6px; border-radius: 3px; margin-left: 6px;
   background: var(--pd-red-light); color: var(--pd-red);
 }
-/* --- Reporting view -------------------------------------------------------
-   Follows the Project Schedule's precedent exactly: hide the AUTHORING controls
-   and neutralise the edit affordances; keep every VIEW control (filters, search,
-   PDF, distribute state, and the toggle itself — the way back out).
-   ⚠️ Presentation only. Nothing here disables a write path, so this must never be
-   mistaken for a permission: the real gates stay canEditMinute() + RLS. */
-
-/* Inputs and selects become plain text. This is what makes the screen presentable
-   — a wall of bordered boxes is exactly what stops a live grid reading as a record. */
-.il-mom-report .pd-input,
-.il-mom-report .pd-select,
-.il-mom-report .pd-textarea {
-  border-color: transparent; background: transparent; box-shadow: none;
-  padding-left: 2px; pointer-events: none;
-  /* kills the dropdown arrow, which otherwise still reads as "editable" */
-  -webkit-appearance: none; -moz-appearance: none; appearance: none;
-}
-.il-mom-report .pd-textarea { resize: none; }
-/* ⚠️ Placeholders are hidden: "What will be done" is prompt text, and in a report
-   it would read as though it were the content. An empty cell reads as empty, which is
-   honest. (No ::after em-dash here — pseudo-elements do not render on <input>.) */
-.il-mom-report .pd-input::placeholder { color: transparent; }
-
-/* Authoring controls only. The toggle, PDF, filters and the distribute state stay. */
-.il-mom-report #il-mom-additem,
-.il-mom-report .il-mom-carry,
-.il-mom-report #il-mom-save,
-.il-mom-report #il-mom-del,
-.il-mom-report .il-mi-del,
-.il-mom-report .il-mi-fadd,
-.il-mom-report .il-c-del,
-.il-mom-report .il-mom-note { display: none !important; }
-
-/* Cards breathe — this is read across a room, not scanned at a desk. */
-.il-mom-report .il-mi-card { padding: 14px 16px; }
-.il-mom-report .il-mi-cards { gap: 12px; }
-.il-mom-report .il-mom-detail-card { padding: 18px 20px; }
-/* ⚠️ A dashed rule above the footer is an editing affordance; in a printed-looking
-   record it reads as a tear line. The footer still shows the file and the register
-   link — those are part of the record — just without the seam. */
-.il-mom-report .il-mi-foot { border-top-style: solid; }
-/* ⚠️ Reporting no longer renders form controls inside a card at all (momFieldHTML
-   emits the value as text), so the control-neutralising rules above do not reach the
-   action items — they still cover the minute's own header fields, which are inputs. */
+/* ⚠️ ITEM 7 (this round): the "Reporting view" CSS block that used to live here
+   is REMOVED. It was already 100% dead in this file — it targets ids
+   (`#il-mom-additem`, `#il-mom-carry`, `#il-mom-save`, …) that belong to the
+   Minutes of Meeting module this file predates the split from (see that
+   module's own `.il-mom-report` rules, which are the live copy), and nothing
+   in `module.js` has set `.il-mom-report` on an Issues/Lessons host since
+   entry (f)/(g) removed the toggle. "No need for reporting view" — confirmed
+   unreachable, not just unused. */
 
 /* ============================================================================
    REPORT / LOG PRESENTATION SWITCH  +  the Issues & Concerns report view
@@ -547,17 +588,8 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-mom-item .il-iss-lpill { transform: scale(.85); transform-origin: left center; display: block; margin-bottom: 2px; }
 .il-mom-item .il-less-lchip { display: inline-block; margin-bottom: 3px; }
 
-.il-iss-lessons .il-lessons-inline { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
-.il-lcard-acts { display: flex; gap: 12px; flex-wrap: wrap; }
-
 /* The action-item card's lesson cell, beside the register link. */
 .il-c-lesson { flex: 0 0 auto; }
-
-/* Reporting view hides the editing controls on these screens too (the class is set on
-   each screen's own host element, never on <body>). */
-.il-mom-report #il-iss-new, .il-mom-report #il-iss-save, .il-mom-report #il-iss-del,
-.il-mom-report #il-iss-addlesson, .il-mom-report #il-less-new, .il-mom-report #il-less-save,
-.il-mom-report #il-less-del { display: none !important; }
 
 @media (max-width: 700px) {
   .il-iss-panel { flex: 1 1 100%; }
@@ -607,8 +639,17 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 }
 .il-workflow-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 
-/* ---- Per-issue History (item #11) — an append-only, read-only list -------- */
-.il-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+/* ---- Per-issue History (item #11) — an append-only, read-only list --------
+   ⚠️ THIS ROUND: a wrapping GRID, not one full-width column. Each entry is
+   narrower now ("reduced width") and the next ones flow to the side, only
+   wrapping to a new row once the current one is full ("add to the side and
+   down") — the same auto-fill/minmax shape the Kanban board columns already
+   use elsewhere in this file. `align-items:start` so a short entry never
+   stretches to match a taller one sharing its row — history entries carry
+   wildly different amounts of diff text and forcing them to equal height
+   would leave visible empty space in the shorter ones. */
+.il-history { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; align-items: start; }
 .il-history-i { padding: 8px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .il-history-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .il-history-action { font-weight: 700; font-size: 12.5px; color: var(--pd-ink); }
@@ -643,16 +684,38 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-dash-card { padding: 14px 16px; display: flex; flex-direction: column; }
 .il-dash-card h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
 /* ---- Items 1/2 (2026-09-01 round): the three chart tiles share ONE fixed
-   content height instead of each drifting to whatever its own chart needs,
-   and each tile's own legend moves into ITS OWN HEADER, top right, as a
-   compact swatch+label row — replacing the donut's side column and the two
-   bar tiles' below-chart legend row. This is what makes the three read as a
-   real row. */
+   content height instead of each drifting to whatever its own chart needs.
+   ⚠️ ITEM 6 (this round): that shared height is REDUCED (340px -> 260px) to
+   cut the whitespace the owner's screenshot showed around a small donut — it
+   stays the ONE value every `.il-dash-cardbody` uses, so all three tiles stay
+   equal simply by construction, not by three separately-tuned numbers. */
 .il-dash-cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+/* ITEM 2 (this round): "Issues by Department"/"Issues by Champion"'s own
+   title+legend row moves BELOW the chart body instead of above it — same
+   `.il-dash-cardhead` flex row, just the opposite margin so it reads as a
+   footer instead of a header. The Status tile's head stays on top (it was
+   never asked to move); its own bottom row is the NEW legend (item 1),
+   `.il-dash-legend-bottom` below, a sibling of this class, not this class. */
+.il-dash-cardhead-bottom { margin: 10px 0 0; }
 .il-dash-legend-top { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 10px; max-width: 60%; }
 .il-dash-legend-top .il-dash-legend-i { font-size: 11px; white-space: nowrap; }
-.il-dash-cardbody { height: 340px; }
+/* ITEM 1 (this round): a legend row under the Status donut, distinct from
+   the per-slice labels the ring itself already carries (donutChartSVG) — the
+   owner asked for both. Centred, unlike the bar tiles' right-aligned header
+   legend, since it sits alone under a centred chart rather than beside a title. */
+.il-dash-legend-bottom { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 10px; }
+.il-dash-cardbody { height: 260px; }
 .il-dash-cardbody-center { display: flex; align-items: center; justify-content: center; }
+/* ITEM 5 (2026-09-01, mobile round): the donut's own viewBox now carries room
+   for its per-section labels (see donutChartSVG), so it's rendered at
+   `width="100%"` like every other chart in this file — this caps how large
+   it's allowed to scale, so a wide single-column card (mobile) doesn't blow
+   the donut+labels up to an oversized graphic just because the tile is wide.
+   ITEM 1 (this round): raised 260px -> 320px alongside donutChartSVG's own
+   larger `size` — "maximise to tile" needs both the ring AND its display cap
+   to grow together, or the bigger ring would just get scaled back down to
+   the old 260px ceiling. */
+.il-donut-svg { max-width: 320px; }
 /* ---- Item 5: the horizontal "N open of N issues" bar charts (department /
    champion) — rows are never capped (see hbarSVG in module.js), so a tile with
    many departments/champions scrolls internally within its fixed-height body
@@ -678,20 +741,51 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-dash-list th:nth-child(3), .il-dash-list td:nth-child(3) { width: 17%; }
 .il-dash-list th:nth-child(4), .il-dash-list td:nth-child(4) { width: 13%; }
 .il-dash-list th:nth-child(5), .il-dash-list td:nth-child(5) { width: 11%; }
-/* ITEM 8: the Lessons Learned tile's table has its own 3-column shape (Lesson /
-   Department / Captured) — combined-class selectors so these definitively
-   outrank the 5-column widths above regardless of source order. */
+/* `.il-dash-lesson-list` is a 3-column shape (Lesson Learned / Department /
+   Date Closed) — combined-class selectors so these definitively outrank the
+   5-column widths above regardless of source order. ⚠️ This class no longer
+   belongs to the dashboard's Lessons Learned TILE (that gained an Issue
+   column this round and moved to `.il-dash-lessontile-list`, below, so a
+   4-column table couldn't fight this rule for the SAME class name — see the
+   module.js comment above lessonsTileHTML()). It is now the issue detail's
+   own "Lessons Learned" / "Related Lessons" table (see issDetailHTML) — no
+   Issue column there on purpose, since a lesson shown on its OWN issue's
+   page has nothing useful to say about which issue it came from. */
 .il-dash-list.il-dash-lesson-list th:nth-child(1), .il-dash-list.il-dash-lesson-list td:nth-child(1) { width: 60%; }
 .il-dash-list.il-dash-lesson-list th:nth-child(2), .il-dash-list.il-dash-lesson-list td:nth-child(2) { width: 22%; }
 .il-dash-list.il-dash-lesson-list th:nth-child(3), .il-dash-list.il-dash-lesson-list td:nth-child(3) { width: 18%; }
 .il-dash-list.il-dash-lesson-list tr[data-open-lesson] { cursor: pointer; }
 .il-dash-list.il-dash-lesson-list tr[data-open-lesson]:hover td { background: var(--pd-bg); }
+/* The dashboard's own Lessons Learned tile (item 8, this round): 4 columns —
+   Lesson / Issue / Department / Captured — since the tile has to say WHICH
+   issue produced each lesson (it isn't sitting on that issue's own page).
+   Lesson keeps the lion's share; Issue is second-widest for the same reason. */
+.il-dash-list.il-dash-lessontile-list th:nth-child(1), .il-dash-list.il-dash-lessontile-list td:nth-child(1) { width: 36%; }
+.il-dash-list.il-dash-lessontile-list th:nth-child(2), .il-dash-list.il-dash-lessontile-list td:nth-child(2) { width: 30%; }
+.il-dash-list.il-dash-lessontile-list th:nth-child(3), .il-dash-list.il-dash-lessontile-list td:nth-child(3) { width: 19%; }
+.il-dash-list.il-dash-lessontile-list th:nth-child(4), .il-dash-list.il-dash-lessontile-list td:nth-child(4) { width: 15%; }
+.il-dash-list.il-dash-lessontile-list tr[data-open-lesson] { cursor: pointer; }
+.il-dash-list.il-dash-lessontile-list tr[data-open-lesson]:hover td { background: var(--pd-bg); }
 
 /* ITEM 3: the 2-up / 1-up breakpoints stay equal columns — the ask was
    specifically "if in wide screen"; there's no room left at these widths for a
    deliberately-narrower Status column to matter. */
 @media (max-width: 1000px) { .il-dash-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 700px)  { .il-dash-grid { grid-template-columns: 1fr; } }
+
+/* ITEM 4 (2026-09-01, mobile round): "chart tiles need not be same height if
+   mobile or narrow width" — the fixed .il-dash-cardbody height (and the
+   internal scroller it exists to bound) is a WIDE-SCREEN-ONLY rule now. Below
+   1000px the tiles are no longer a strict single row of three (they stack
+   2-up or 1-up), so forcing three differently-shaped charts to share one
+   height stops being the thing that reads as "one row" — each tile is free to
+   size to its own content instead. `align-items:stretch` on `.il-dash-grid`
+   is left alone; without an explicit height on the body it has nothing left
+   to stretch each CARD to beyond its natural content height. */
+@media (max-width: 1000px) {
+  .il-dash-cardbody { height: auto; }
+  .il-dash-cardbody-scroll { overflow-y: visible; max-height: none; }
+}
 
 /* ---- Dashboard rework: one unified page, no Issues/Lessons split — a status
    pie, horizontal "N open of N issues" bars by department and by champion
@@ -712,6 +806,14 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted);
 }
 .il-dash-fulllist-count { font-size: 12px; color: var(--pd-muted); }
+/* ITEM 7 (2026-09-01, mobile round): both list tiles cap their height and
+   scroll internally rather than growing the whole page taller the more open
+   issues / lessons a project has — the shared `.pd-tablewrap` (dashboard.css)
+   already handles the HORIZONTAL scroll every wide table in this app uses;
+   this adds the VERTICAL cap on top of it, scoped to just these two tiles so
+   no other `.pd-tablewrap` in the app (which must stay unbounded) is touched. */
+.il-dash-fulllist-card .pd-tablewrap,
+.il-dash-lessons-card .pd-tablewrap { max-height: 400px; overflow-y: auto; }
 
 /* ---- Drag-to-reorder (item 2) ----------------------------------------- */
 [draggable="true"].il-reorderable { cursor: grab; }
@@ -723,6 +825,33 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   width: 18px; color: var(--pd-line); cursor: grab; flex: none;
 }
 .il-draghandle:hover { color: var(--pd-muted); }
+/* ITEM 3 (2026-09-01, mobile round): move-up/move-down step buttons stand in
+   for the drag grip below 700px, where HTML5 drag-and-drop never fires at
+   all on a touch device (see the note on dragGripHTML/moveButtonsHTML in
+   module.js) — only one of the two controls is ever shown at a given width.
+   ⚠️ Sized smaller than this app's usual 44px touch minimum on purpose: a
+   full-size control here would make every row noticeably taller across the
+   whole register just for this one cell, and a step button's target (move
+   one place) tolerates an imprecise tap far better than a primary action
+   does — a miss just needs a second tap, not a wrong record touched. */
+.il-movebtns { display: none; flex-direction: column; gap: 1px; }
+.il-movebtn {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 16px; padding: 0; border: 1px solid var(--pd-line);
+  border-radius: 3px; background: var(--pd-card); color: var(--pd-muted);
+  font-size: 8px; line-height: 1; cursor: pointer;
+}
+.il-movebtn:hover:not(:disabled) { background: var(--pd-bg); color: var(--pd-ink); }
+.il-movebtn:disabled { opacity: .3; cursor: default; }
+@media (max-width: 700px) {
+  .il-draghandle { display: none; }
+  /* Row (not column) here — the dragcell becomes a stacked card's own
+     top block at this width (see "Mobile & tablet" below), so a horizontal
+     pair reads as a compact toolbar line rather than an unexplained vertical
+     stack taking its own height before the card's real content starts. */
+  .il-movebtns { display: flex; flex-direction: row; gap: 6px; margin-bottom: 4px; }
+  .il-movebtn { width: 36px; height: 28px; font-size: 12px; }
+}
 
 /* ---- People picker (Champion / Responsible) ------------------------------
    Chips for accounts + one free-text line for people with no login. Both are
@@ -790,3 +919,12 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    eyebrow separator) is reused as the divider between the two, rather than a
    third separator style. */
 .il-less-issuewrap { margin-top: 18px; }
+/* ITEM 6/8 (2026-09-02): "Background" is that same eyebrow separator, plus an
+   "Open issue" link at the top right (moved here from the lesson's own
+   toolbar) — a flex-row modifier so the label and the button share the line
+   instead of the button wrapping the border-bottom the base rule already
+   carries. */
+.il-less-bg-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.il-less-bg-head span { text-transform: inherit; letter-spacing: inherit; }

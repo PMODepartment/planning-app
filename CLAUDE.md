@@ -125,9 +125,17 @@ shared asset served at two versions and none unversioned**; and 40 checks execut
 module's shipped functions (which cannot load against the pre-change file at all). ⚠️ **Not
 verified signed in.**
 
-`dashboard.css?v=` → `20260902a` app-wide (28 files); `MODULE_V` (via `modules-grid.js?v=` on
-`dashboard.html`/`modules.html`) → `20260902b`, because this module's `index.html` changed
-structurally again (tab order) and three other modules' pages changed too.
+⚠️ **Merged onto `origin/main` (109 commits ahead) before opening the PR** — PR #46 had
+already been merged at the earlier bug-fix commit, so a merged PR could not track this and it
+ships as its own. All 30 conflicts were cache-busting version collisions bar `CLAUDE.md`
+(both sides prepend → both kept whole, seam marked). ⚠️ **`git checkout --theirs` is the wrong
+tool for a version collision** — it takes main's WHOLE file and drops your own non-conflicting
+edits in it, which it did to three modules' `UI.tabsToDropdown` lines before the pass was
+aborted and redone hunk-by-hunk.
+
+`dashboard.css?v=` → `20260903a` app-wide (29 files, above main's `20260902c`); `MODULE_V`
+(via `modules-grid.js?v=`) → `20260903a`, above main's `20260902am`, because this module's
+`index.html` changed structurally again (tab order) and three other modules' pages changed too.
 
 ### 2026-09-02 — Minutes of Meeting rehaul; MODULE_V bump for the structurally-changed page
 
@@ -149,6 +157,1007 @@ recorded (and mis-diagnosed as a code bug) more than once.
 Nothing else shared was touched — no `dashboard.css`, `ui.js`, `db.js`, or `config.js`
 change. `migrations/2026-09-02-meetings-rehaul.sql` added (module-scoped columns only, no
 shared table).
+
+### 2026-09-02 (aj) — Magnifier removed; Planning Phase's branches were filed under Execution
+Owner: *"remove the magnifier since there is a zoom in already feature"* and *"There are found WBS under
+the execution phase such as procurement, design development and others that should be part of other
+phases / WBS."* Detail in `modules/project-schedule/CLAUDE.md`.
+- **The magnifier is out** — the focus window's scroll-to-zoom answers the same question with the whole
+  building in view. 9 functions, the panel, both resize handles, the cursor and its localStorage keys.
+  ⚠️ `[data-vsk].is-loupe` **stays**: the focus window's hover sync marks the twin zone with it.
+- ⚠️ **A self-inflicted scare worth recording:** the cursor block sat immediately before the same anchor
+  the focus-window CSS had been inserted at, so cutting to that anchor **swallowed every `.ps-vs-fz-*`
+  rule**. 24 browser checks failed at once. Restored verbatim from HEAD. **Print or diff what a computed
+  `src[i:j]` cut removes before writing it** — the `catEntry` lesson, again.
+- ⚠️⚠️ **The WBS bug is two faults meeting.** (1) `_wbsBackfillSkeleton` did
+  `if (!key || have[key]) continue;` — so when a phase ALREADY EXISTED it skipped the entry **children
+  included**. Planning Phase's three children were added to `WBS_SKELETON` long after most projects were
+  seeded, and all of those have a Planning Phase — so they were never created there. Measured against
+  HEAD: **0 of 3**. (2) `_skeletonRoot(kind)` resolves the branch by `source_kind` **alone, wherever it
+  sits**, and never checks its parent — so once one existed under the wrong phase every sync reinforced
+  it there.
+- **Fixed at both:** the backfill reconciles an existing phase's children, and a new
+  `_wbsHealSkeletonPlacement()` moves a skeleton child back under the phase the skeleton declares.
+  ⚠️ **Restoring, not overriding** — these nodes are `is_locked`, so nobody moved them by hand. ⚠️ An
+  **unlocked** same-name branch (a pushed trade called "Procurement") is never touched; ⚠️ a node filed
+  deep inside a real branch is left alone; ⚠️ the heal never CREATES a phase; ⚠️ it runs **before** the
+  backfill (or the backfill mints an empty twin) and **before** the code resync (a dotted code is
+  derived from position). ⚠️ It toasts what it moved.
+- ⚠️ **The third case is now visible rather than silent:** if the tree is right but the dotted CODES are
+  stale the grid still misplaces a branch, and `_wbsResyncCodes` deliberately refuses to repair that
+  while any unlocked node sits at the top level. That refusal was a `console.warn`; it now says so once
+  per project and points at Schedule Setup → WBS.
+- **35 checks in Node** executing the shipped functions against **the exact tree in the screenshot**; the
+  suite fails 8+ against HEAD. Focus-window suites still green (29 + 86); 0 functions lost beyond the 9
+  deliberate removals, none still called.
+  ⚠️ **Not verified signed in — which of the two faults produced the screenshot is NOT established**;
+  the fix covers both. `MODULE_V` → `20260902am`.
+
+### 2026-09-03 — Favicon nudged back up: the (ai) padding pass over-corrected
+
+Owner shared a screenshot comparing two browser tabs side by side — ours read visibly smaller than a
+reference tab's icon — and asked to increase it "by a little" to match. Follow-up to the same-day
+(ai) entry below, which had gone the other way (owner: *"reduce favicon size"*, because the old
+`favicon.png` bled edge-to-edge at close to 100% fill) and landed `favicon-icon.png` at a **68%/57%**
+width/height fill — reasonable against "bleeding," but evidently too far the other way once seen next
+to another tab.
+
+- ⚠️ **Regenerated from the pristine, untouched `assets/img/favicon.png`** (still the original
+  1020×850 source — (ai) deliberately left it alone since it doubles as the `.pd-auth-mark`/
+  `.pd-home-mark` login/home logo, and that reasoning still holds), not by re-scaling the already-
+  downsampled `favicon-icon.png` — re-scaling a 256px file that was itself scaled down from 1020px
+  would compound a second round of resampling loss for no reason when the real source is one file away.
+- **Target fill raised to ~88% width / ~73% height** (was 68%/57%) — a deliberate middle point between
+  the two complaints: nowhere near the old edge-to-edge bleed, but a clearly bigger, bolder mark than
+  the (ai) version at real favicon size. Same proportional scale-to-fit + center-on-transparent-256px-
+  canvas construction as (ai), just with a smaller margin.
+- Verified by rendering both the shipped (ai) file and this replacement down to actual 32×32 and 16×16
+  favicon sizes and comparing: the new version is legibly bigger and still fully legible with clean
+  margins at 16px, not touching the canvas edges.
+- Shared asset changed → **`favicon-icon.png?v=` bumped from none to `20260903a` across all 29
+  referencing pages** (it had shipped with no cache-bust query string at all in the (ai) pass).
+
+### 2026-09-02 (ak) — Issues & Concerns: Kanban view, wider columns, squeezed KPI bands — and a real bug the verification caught
+Owner's 10-item follow-up on Issues & Concerns / Lessons Learned, off a screenshot of the lesson
+detail view (the "more feedback still pending" the (aj) entry below flagged as not-yet-supplied):
+drop the lesson tag from the Issues list; widen Issue/Caused By/Corrective Action; a **List | Kanban
+toggle** for both the Issues and Lessons logs, grouped by Department or Champion; both KPI bands
+squeeze to one row except on a phone, with their aging tiles dropped; the Lessons list splits its
+combined Lesson/source cell into separate Lesson Learned and Issue columns; the lesson detail's
+embedded issue is renamed "Background", loses its own toolbar and its "open issue" button, gains one
+in the Background header instead, and is made **fully read-only** (Related lessons stays live and
+excludes the lesson being viewed); the dashboard's status donut drops its separate legend in favour
+of colour+count+percent baked into each slice's own label; and the Department/Champion bar charts
+wrap long labels to two lines, centre them (falling back to left-align only when centring would run
+the label past the chart's own left edge), and reword the in-bar text to "X/Y (Z%) open".
+- ⚠️⚠️ **A real bug, found only because the new `opts.readOnly`/`opts.hideToolbarState` flags were
+  EXECUTED rather than read.** `issDetailHTML(r, opts)` declared an internal helper — for building a
+  handful of `<select>` option lists — also named `opts`. A function DECLARATION hoists and takes
+  over its scope's binding for that name before any statement runs, so by the time `mayEdit`/
+  `excludeId` were computed, `opts` was already the helper function, never the caller's object.
+  `opts && opts.readOnly` was testing a function object (no `.readOnly` property) and was **always
+  falsy** — the read-only lock and the toolbar suppression would have shipped as complete no-ops, and
+  `excludeLessonId` (added in an earlier round, hit by the identical collision) had likely been
+  broken the same way since it was first built. Fixed by renaming the inner helper
+  (`selOptsHTML`); confirmed with a Node `vm`+`Proxy` harness executing the real, unmodified function
+  straight out of the shipped file — all three flags now measurably work, and a plain call with no
+  `opts` (the real Issues screen's own usage) is provably unaffected.
+- Detail, the full owner request verbatim, and everything verified: `modules/issues-lessons/CLAUDE.md`.
+- `module.css/js?v=` (issues-lessons) → `20260902b`; `MODULE_V` (`modules-grid.js?v=` on
+  `dashboard.html`/`modules.html`) → `20260902ak`. Not verified signed-in.
+
+### 2026-09-02 (aj) — Every top-bar search box now hides behind a filter group
+Owner: *"for all search bars in top bars, include the search in filter groups which can be hidden and
+shown."* Confirmed via `AskUserQuestion` this meant **every module's top filter/search row** — not just
+literal `.pd-topbar` chrome, but the always-visible filter bar most modules render directly beneath it —
+should collapse behind a funnel toggle, matching the pattern Issues & Concerns and Progress Photos had
+already shipped by hand.
+- **New shared component, not six hand-rolled copies.** `UI.wireFilterToggle(toggle, panel, opts)`
+  (`assets/js/ui.js`) wires a funnel button to show/hide a panel, tracks an "active filter" dot
+  (`.has-active`) via a capture-phase `input`/`change` listener on the panel — so it stays correct even
+  when a module's own handlers reset a field programmatically, provided the caller calls the returned
+  `.sync()` after doing so — and exposes `open()`/`close()`/`sync()`. New `.pd-filtergroup`/
+  `.pd-filttoggle` CSS in `dashboard.css` (hidden by default, `.open` reveals it as a flex row on the
+  same card/border/padding language every filter bar in the app already uses; `min-height` not `height`
+  on the controls, this app's own repeatedly-learned lesson about clipped descenders at 16px).
+- **Rolled out to six modules**, each following the module's own existing `.xx-filters{display:none}
+  .xx-filters.open{display:flex}` idiom (already proven by Issues/Photos) rather than leaning on the
+  shared class alone to win by cascade order — module `<style>`/`module.css` loads AFTER `dashboard.css`
+  in `<head>`, so an unconditional same-specificity module rule would silently beat a shared one:
+  - **Risk Register, Stakeholder Map, Contracts & Claims** (`module.css`/`module.js`) — a `pd-filttoggle`
+    button added to each topbar tool cluster; the toggle is hidden on non-list views (Contracts &
+    Claims additionally hides it on the Contract tab, which is keyed by package rather than the filter
+    bar, and inside its BOQ/PMI sub-screens).
+  - **Resource & Role Master** (single-file, inline `<script>`) — the topbar's standalone search input
+    was disconnected from the filter panel beneath it; `renderFilterbar()` now builds the search box as
+    part of the panel's own per-tab HTML so search and the other filters are one group, not two.
+  - **Portfolio Overview** (single-file) — **five** independent toggles, one per tab that carries its own
+    filter row (Overview, Equipment, Risk, Stakeholders, Issues), each wrapping only the filter controls
+    — action buttons like Export/Refresh/the live count badge stay outside the group, since hiding those
+    behind a "filters" icon would be misleading.
+  - **Manpower Loading** (single-file) — the Roster and Portfolio-People tabs' small "Find" boxes.
+- ⚠️ **Deliberately NOT touched: Project Schedule's `#ps-search`.** In scope per the confirmed answer, but
+  this module's own CLAUDE.md documents an extensive history of region-replace regressions from careless
+  edits to its ~690KB inline script; converting its bespoke `.ps-toolbar` search box is left for a
+  dedicated, isolated pass rather than folded into a six-module sweep.
+- Shared assets changed again (both `dashboard.css` and `ui.js`, past the earlier same-day favicon/
+  dropdown bump) → **`dashboard.css?v=` and `ui.js?v=` bumped `20260902b`/`20260902a` → `20260902c`
+  across all 29 / 21 referencing HTML files** respectively.
+- Verified: every edited JS/inline-script file passes `node --check` (the three single-file modules'
+  inline scripts extracted and checked individually); all four edited CSS files brace-balanced; every
+  new `pd-filttoggle`/`pd-filtergroup`/panel id pairs up correctly between markup and its wiring call
+  (spot-checked across all six modules); 0 new duplicate DOM ids introduced (resource-loading's four
+  pre-existing duplicate ids — `f-name`/`f-rate`/`f-rem`/`f-uom`, documented in that module's own
+  CLAUDE.md as a deliberate single-branch-in-the-DOM pattern — are untouched by this diff). Not verified
+  in a live browser (no signed-in session available in this environment).
+- ⚠️ Owner separately flagged more feedback still pending on the Issues & Concerns module specifically —
+  not yet supplied as concrete items in this conversation, so nothing was changed there beyond what this
+  entry covers.
+
+### 2026-09-02 (ai) — Favicon stopped bleeding to the edges; the project dropdown stops wrapping on desktop
+Owner: *"reduce favicon size"* and *"in windows, have the project dropdown at the top bar be in the same
+line. if needed wrap text. only in mobile view should dropdown be moved down."*
+- ⚠️ **The favicon really was bleeding edge-to-edge — the mark filled the full 1020×850 canvas with zero
+  margin**, the same defect the apple-touch-icon (`icon.png`) was redesigned away from on 2026-08-30
+  ("more breathing room around the mark"); the plain `<link rel="icon">` favicon never got that pass.
+  New **`assets/img/favicon-icon.png`** (256×256, ~16% padding, transparent, 1,993 bytes vs the source's
+  7,919) is a dedicated file for the browser-tab icon only — every `<link rel="icon">` across all 29
+  pages now points at it. ⚠️ **`favicon.png` itself is left untouched on purpose**: it's also the
+  `<img class="pd-auth-mark">`/`pd-home-mark` logo on the login/register/forgot-password/home pages,
+  sized by `height:56px` in CSS — padding *that* file would have shrunk the visible mark on every one of
+  those screens as an unasked side effect.
+- **The project/portfolio dropdown no longer drops to its own row on a normal desktop window.** Root
+  cause: `.pd-tb-main [class$="-projctx"]` was forced to `flex-basis:100%; order:5` at the **820px
+  "drawer"** breakpoint — this file's own boundary for "sidebar becomes an off-canvas drawer," not a true
+  phone width — so a perfectly ordinary Windows browser window (a snapped half-screen, a smaller laptop
+  panel, anything under 820px) triggered the mobile stacking. Moved to the **700px "phone"** boundary,
+  the narrower threshold this same file already uses everywhere else for genuine phone-only layout
+  (`.pd-modulebar > h1`, the tab-strip segmenting, the filter-bar rules a few lines down). ⚠️ Above 700px
+  the dropdown now **shrinks in place instead** (`min-width:0` on the wrapper) and its label already
+  truncates with an ellipsis (`.pd-psel-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }`,
+  pre-existing) — "wrap the text, not the row," which is the literal ask. Verified nothing else in the
+  file depends on the dropdown breaking at 820px specifically (the two other `820px` blocks are the
+  sidebar-drawer transform and its tablet chrome padding, unrelated); no module CSS duplicates this rule.
+- Shared asset changed → **`dashboard.css?v=` bumped `20260902a` → `20260902b` across all 29 HTML files.**
+- Not verified in a live browser (this environment has no way to render the app signed in) — verified by
+  computed rule inspection (brace balance, the shifted breakpoint, the pre-existing ellipsis rule) instead.
+
+### 2026-09-02 (ah) — The scrub goes smooth, and the trade colours were painting BLACK
+Owner: *"can you make the progress bar smoother, it has fps drop whenever i drag"* and *"how come the
+colors of the trades vanish when put into the full screen. it just turns into black."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **The black cells were real, and NOT a full-screen bug.** `--ps-vs-scrim` / `-veil` / `-edge` are
+  declared on `.ps-vstack`; `UI.modal` appends to **`document.body`**, so in the focus window all three
+  were **undefined** — and an undefined `var()` makes the property `unset`, `fill` is **inherited**, so
+  the remaining-work layer painted **solid black** over the trade colour (and the hatch stroke resolved
+  to `none`). True in every mode since the window shipped; full screen is just where it is big enough
+  to notice. ⚠️ `_vsExportPDF` already re-declares these tokens for the same reason and I did not join
+  the dots. Fixed twice over: the svg emits `var(--token, <fallback>)` so a clone into ANY container
+  can never paint black again, and the tokens are re-declared on the modal so dark mode gets its own.
+- ⚠️⚠️ **The lag was the full builder running on every rAF** — rewriting the modal's innerHTML,
+  re-deriving both buildings, re-parsing thousands of SVG nodes and **destroying the scrubber track the
+  pointer was on**, 60 times a second on a tower that can hold 2,500 activities.
+- ⚠️ **Re-deriving a building cannot be a 16ms job, so the fix is to stop the buildings gating the
+  CONTROL.** Chrome (handle, fill, date, footer bar) is style/text writes only on one rAF and is always
+  glued to the pointer; the buildings repaint on a budget **measured from how long the last repaint
+  actually took** (clamped 90–600ms), with a trailing repaint always landing on release.
+- ⚠️ `paint()` swaps **one node per pane**, so the track, the handle and every control are the same
+  elements throughout a drag. ⚠️ The cost is measured **around** the call, not taken from a figure
+  `paint` reports about itself — caught by the suite. ⚠️ The old `build(true)` path is **deleted**.
+- **29 checks in Node + 86 in a browser** (was 29 + 67): a 24-move drag against a deliberately
+  45ms-per-repaint tower gives **24 of 24 distinct handle positions**; the scrim is translucent in both
+  themes and the fallback holds with the declarations stripped. 0 functions lost.
+  ⚠️ **Honest limit:** on a very large tower the *buildings* still step while dragging — only the
+  handle, date and bar are now free of them. ⚠️ Not verified signed in. `MODULE_V` → `20260902ah`.
+
+### 2026-09-02 (ag) — The focus window: crisp zoom, a real divider, a working scrubber, full screen
+Owner: *"the quality is too low, and can you enlargen the divider between the planned and actual. now
+also the progress bar below should be working or has a dragger. In addition, is there an option where you
+can full screen."* Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **"Quality is too low" was a real defect of mine: CSS `transform: scale()` stretching a bitmap.**
+  The canvas is rasterised at 1:1 and a scale blows that raster up, so at 180% every zone date was a
+  magnified 1x image. Zoom is now the **svg's own width/height** (viewBox untouched → vector re-render);
+  the transform carries **translate only**, because pan must not rasterise at the wrong resolution.
+- **The divider is a 16px gutter**, not a 1px border. ⚠️ **Decorative, never draggable:** the shared
+  transform is only truthful while the panes are equal width, so a drag would show different portions of
+  the two buildings while still claiming they are synced — a silent wrong answer.
+- **The progress bar is a scrubber** — handle, ticks, data date, month steps, Live — and dragging it
+  re-reads both buildings. ⚠️ **Modelled, not replayed** (one `percent_complete` per activity exists, and
+  it is today's), and it says so. ⚠️ The axis is measured at the ACTUAL basis whatever the panes show, or
+  the same date would sit in two places. ⚠️ A scrub keeps the zoom, pan and hovered zone. ⚠️ The stack
+  underneath is re-rendered **once on close**, not per frame behind a modal nobody can see through.
+- ⚠️⚠️ **A REAL DEFECT THE BROWSER RUN FOUND: the bar did not move with the buildings.** It read
+  `_vsPct` — the raw recorded figure, which ignores the scrubber — so the frozen row reported today's
+  percentage while the towers above it re-read at the scrubbed date. It reads `_vsProgress` now, the
+  same function the towers are drawn from. ⚠️ While scrubbed the planned tick is **withheld**, because
+  "scheduled by this date" vs "planned by the data date" is a variance that means nothing.
+- **Full screen.** ⚠️ Two mechanisms: the API on the modal box (so the overlay's dimming does not travel
+  with it) **plus** an in-page `.is-maxed` fallback, because an iframe or a permissions-policy can refuse
+  it. The button lights from what actually happened, never from intent.
+- **29 checks in Node + 67 in a browser** (was 26 + 39), executing the shipped functions; 0 functions
+  lost. ⚠️ Not verified signed in, and the real Fullscreen API path is untested (the harness forces the
+  fallback). `MODULE_V` → `20260902ag`.
+
+### 2026-09-02 (af) — Vertical stacking: expand a tower, and put planned beside actual
+Owner: *"can you make it more visually pleasing… or can you add an expand view wherein it would focus on
+that tower itself and then have a progress bar on the bottom… scrollbar to zoom in and out, and then there
+is a hand cursor to pan… for a specific trade, there is a tower on the left portraying the planned and the
+tower on the right portraying the actual… if i hover something on the planned or panned something on the
+left it should also update the right window… and then the progress bar is still shown below, like a frozen
+row."* Detail in `modules/project-schedule/CLAUDE.md`.
+- Every tower card gains an **expand** button opening a focus window: scroll to zoom, drag to pan (hand
+  cursor), double-click to fit, a **Planned vs Actual side by side** toggle, and a **frozen row** below
+  carrying the counts, the span, the variance in points, a progress bar and a live hovered-zone readout.
+- ⚠️⚠️ **The two panes share ONE transform state, so "synced" is structural rather than two states kept
+  in step** — there is nothing that can drift. Same for the hover: one key, marked in every pane.
+- ⚠️ **Panning is a transform, never `scrollLeft`.** Two scrollers in two panes cannot be held identical
+  (their max scroll differs with their content width) and the moment they diverge the comparison is
+  silently wrong — two floors side by side that are not the same floor.
+- ⚠️⚠️ **A REAL DEFECT THE BROWSER RUN FOUND AND READING DID NOT.** The first cut gave each pane its own
+  cell-key prefix to keep the two builds' cell maps apart. The hover sync finds the twin zone by
+  **comparing keys across panes**, so that made every key pane-unique and **the two windows silently
+  stopped following each other** — the one thing the split view exists to do. Measured: 1 of 2 panes
+  marked. They could never have collided anyway; each build already gets its own `_vsCells`.
+- ⚠️ Both buildings come from the **same `_vsTowerSVG` the cards use**, `_vsBasis` swapped and restored in
+  a `finally` — a second renderer would be a second thing to keep in step with the view it was opened from.
+- ⚠️ The frozen row sits **outside** the panning stage (a progress bar that pans away is what it replaces),
+  and its planned marker rides the **same** track as the fill, because the gap between them IS the variance.
+- **Cards:** a 4px meter under each header (fill = actual, tick = planned) — the same bar as the focus
+  window's, so the two read as one system. ⚠️ Blank with no baseline: a tick at 0 would claim "nothing was
+  planned by now", which is not "nobody has baselined this".
+- **26 checks in Node + 39 in a real browser**, both executing the shipped functions; 0 functions lost.
+  ⚠️ **Not verified signed in** — the focus window has never been opened over live data.
+  `MODULE_V` → `20260902af`.
+
+### 2026-09-02 (ae) — The top-level WBS order is enforced, not merely seeded
+Owner: *"the arrangement of the WBS that is fixed should be milestones / initiation phase / planning phase /
+execution phase / close-out phase"* — the order `WBS_SKELETON` already seeds, which was being disturbed.
+Detail in `modules/project-schedule/CLAUDE.md`.
+- New `_wbsCanonicalRootOrder()` on load. It also authorises the repair I declined to make unasked earlier
+  today: the owner's project still had Initiation dragged ahead of Milestones by the push's renumbering.
+- ⚠️ **Slot by slot, matched two different ways.** The four phases by their **resolved phase** (stored first,
+  else `phaseFromName`), so `Closeout Phase` / `Close-out Phase` / a P6 file's plain `Closeout` /
+  `Construction Phase` all land in the right slot. **Milestones resolves no phase**, so by name — and only
+  when nothing else claims it, so a branch that does resolve a phase can never be pulled into that slot.
+- ⚠️⚠️ **Runs BEFORE the code resync, never after.** A dotted code derives purely from sibling POSITION, so
+  reordering the root re-codes every branch under it and the resync is what pushes those codes onto the rows.
+- ⚠️⚠️ **Refuses on an unlocked root node** — the same signal `_wbsResyncCodes` refuses on. That means
+  adoption failed to place something and the resync will skip, so a reorder would leave every code
+  describing an order the tree no longer has: a tree problem turned into a data problem.
+- ⚠️ **A project already in order writes nothing** (this runs on every load, and touching five rows each
+  time would make `updated_at` useless). Branches the skeleton does not define keep their relative order
+  after the five, are never dropped and never interleaved; children are untouched.
+- **38 checks** executing the shipped functions, including an assertion that the order enforced IS
+  `WBS_SKELETON`'s own so the two cannot drift; the three earlier suites still green; 0 functions lost.
+  MODULE_V → `20260902ae`.
+
+### 2026-09-02 (ad) — The lifecycle activities were pushed correctly and had no branch row to hang under
+Owner: *"good, the execution phase is migrated, however the WBS for the initiation, planning and close-out is
+not migrated now."* Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **`reused[nd.key]` suppressed the WBS-Summary payload, and that was the wrong test.** A branch renders
+  in the grid only if it has a summary ROW; `wbs_nodes` alone is the WBS Manager's tree. The push skipped
+  that row for any branch it reused, assuming an existing node is already projected — but
+  `_wbsEnsureSummaries` only runs on LOAD, bails on a read error, and the row can be deleted afterwards.
+  So the activities were filed with the right node id and code and had no parent row.
+- ⚠️ **That makes this report and the last one ONE bug.** Before, the push missed `Closeout Phase` by name and
+  *created* it — a created node is projected — which is why Close-out was the only phase that showed. Fixing
+  the name match made all three reused, so all three lost their row. The symptom inverted; the cause never
+  was the matching.
+- **Fix:** `_hasSummaryRow(nid)`, checked per node rather than assumed — and it tests `isWbs`, not merely a
+  matching node id, since an activity under the branch shares that id.
+- ⚠️⚠️ **"Execution Phase only" hides every lifecycle phase by design**, and it is a per-browser toggle — so a
+  planner who set it weeks ago pushes Initiation/Planning/Close-out work and sees none of it. The push now
+  clears it when it has just added non-execution work, and says so in the summary rather than silently.
+- The completion summary lists **each phase with its count** (from the payload, `Task` rows only — a branch
+  row carrying a phase is not an activity), so the next report of this shape answers itself.
+- **79 checks** executing the shipped emission line and exec-only block, sliced verbatim; 0 functions lost.
+  MODULE_V → `20260902ad`.
+
+### 2026-09-02 (ac) — The Schedule Setup push renumbered the project root, so the execution work came out detached
+Owner: *"the activities generated under the execution phase was not migrated, as well as the WBS for the
+initiation and planning phase"* / *"when pushed, only activities under the close-out phase WBS was detected."*
+Two defects in my own lifecycle-phase push. Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **The push renumbered branches it does not own.** `soByParent` counts a parent's children from 0 —
+  right under the Execution Phase branch (the builder creates every child there), wrong at the project root,
+  where it files only the lifecycle phases beside Milestones and everything a planner added. So reusing the
+  skeleton's `Initiation Phase` gave it `sort_order` **0**, Planning **1**, Close-out **2**, and `reorder`
+  **wrote it to the database**. ⚠️ A dotted WBS code is derived purely from sibling POSITION, so that
+  re-coded the whole root: the pushed activities were stamped from the new order while every existing
+  summary row still carried the old one. Measured on the owner's tree, Execution Phase moves off code
+  **"4" to "5"**. **Their step-9 screenshot showed the damage** — Initiation ahead of Milestones, which the
+  skeleton seeds the other way round.
+- ⚠️⚠️ **`PHASE_LABELS.closeout` is "Close-out Phase"; the skeleton seeds "Closeout Phase".** The exact-name
+  lookup missed it and created a sixth top-level branch, which renumbers every sibling again — and explains
+  the symptom exactly: that branch and its activities were coded consistently with each other, so the
+  Close-out work was the only work that landed where it was filed. A lifecycle branch is now found by its
+  **phase** (stored first, then `phaseFromName`, which already tolerates every spelling), and a new one takes
+  the **skeleton's** spelling so the next push finds it again.
+- **The damage already done is healed:** the dedupe keyed on the exact name, so it could not see the two
+  spellings as duplicates — nor could `_wbsNameKey`, whose punctuation rule turns the hyphen into a space.
+  At the root the key is now the resolved phase, because two top-level branches resolving to one phase ARE
+  the same branch (`execPhaseCode()` already assumes exactly one). Root only, and only when a phase resolves.
+- **Step 9's "0 activities" is the LIVE schedule's count** and the step never said so, so a setup showing a
+  full programme in steps 8 and 10 read as having lost it. It now states both counts and that the generated
+  activities arrive on the push.
+- ⚠️ **Not repaired: the owner's project still has Initiation ahead of Milestones.** Rewriting `sort_order`
+  on load would be a silent data change on every project — fix it with Alt+↑/↓ in step 9.
+- **54 checks** executing the shipped functions against the owner's own tree shape; 0 functions lost.
+  MODULE_V → `20260902ac`.
+
+### 2026-09-02 (aa) — Reset + rebuild ran, and proved the damage is in the DATA
+
+Owner: *"Reset WBS and rebuild, then check."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ✅ **The batched unlink earned its migration:** 12,408 branches cleared and **28,667 dangling links**
+  updated in 4,000-row batches (~29s). As one statement that is 3.5× the 8s `statement_timeout` — Reset
+  WBS would have failed outright on this project.
+- ❌ **It did not fix the hierarchy.** Roots 19 → 16, unlocked roots 14 → 11 — and **all 11 remaining
+  carry single-segment stored codes** (`Cluster 4` = "3", `Dry Works` = "10", `Wet Works` = "11").
+  ⚠️ A single segment IS a root, so the rebuild reproduced the flattening faithfully. **The tree is no
+  longer what is broken; the codes are**, and the codes are what a rebuild builds from.
+- **The flaw:** `wbsAdopt()` builds the tree from the codes, `_wbsResyncCodes()` rewrites the codes
+  from the tree. Fine while the tree is right, catastrophic when it is not — adopt rooted 14 branches,
+  resync wrote those positions back as codes, and the original P6 codes were destroyed.
+- **Guarded:** the resync now refuses to run when any **unlocked node sits at the top level** — the
+  phases are locked and every real branch hangs under one, so that state means adoption failed to
+  place something. It would have made this recoverable.
+- ⚠️ **Recovery is a fresh re-import, not another rebuild** — the deep codes exist only in the .xer
+  now. `MODULE_V` → `20260902aa`.
+
+### 2026-09-02 (z) — The tree flattened: adopt rooted any node whose parent it could not find
+
+Owner: *"Stevi's schedule also bugged out"*, plus two toolbar asks. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠⚠ **The grid's root had grown from the 5 phases to 26 branches** — `Fire Exit 2`, `Cluster 2`,
+  `Wet Works`, `Dry Works`, `Masonry Works` beside `Milestones`, with `Execution Phase` pushed to code
+  7 and off the visible rows. Not stale codes: `parent_id IS NULL` in the database for every one.
+- **Cause:** `var parentId = parentCode ? (nodeByCode[parentCode] || null) : null;` — ⚠️ `|| null`
+  inserts at the TOP LEVEL when the parent cannot be resolved, silently, and then permanently because
+  `_wbsResyncCodes()` rewrites the code to match the new position. Same flattening this module records
+  from an earlier regression (1,584 of 1,623 nodes at top level).
+- **Fixed: deferred, never rooted.** Self-healing, since the adopt is depth-ascending and
+  `autoAdoptAfterImport()` loops while passes progress. ⚠️ **Existing damage is not repaired** —
+  SLN101 needs *WBS Manager → Reset WBS… → rebuild*, which now cannot flatten.
+- ⚠️ **I said the tree was sound earlier and it was not** — that `nodesAtRoot: 19` reading predated the
+  owner's later adopts, and I carried it forward as though it still held.
+- **Toolbar:** Progress and Stacking removed from the View menu (safe now that each button toggles
+  back out), and the three controls are **icon-only** — measured: the row needed **1,528px against
+  1,344 available and wrapped onto 3 lines**, these three were **284px** of it, and 3 × 36px saves
+  176px. `MODULE_V` → `20260902z`.
+
+### 2026-09-02 (w) — Schedule Builder → Schedule Setup, and the WBS tree moves into it
+Owner: *"what are the current functions in the WBS manager that can be migrated instead to the Schedule
+Builder. also change the name … to edit the WBS, it should be in the schedule builder instead, since the WBS
+manager is rendered useless given that the arrangement of the WBS can be modified in the project schedule."*
+- **Renamed to Schedule Setup.** It no longer only builds a schedule — it owns the activity list, the location
+  breakdown, the sequencing, the lifecycle phases and now the WBS, and the schedule is what it *pushes*.
+  ⚠️ Display strings only: `ScheduleBuilder`, the `builder` tab key (persisted in the URL hash and in saved
+  history rows) and the `sbld-*` classes keep their names.
+- **Migrated to a new WBS step:** the tree outliner and its whole keyboard model, Paste outline, Duplicate
+  branch, From project, expand/collapse/search and the "where will Add WBS land" hint.
+  **Deliberately left on the WBS Manager:** Adopt existing WBS and Reset WBS (repairs over a whole *imported*
+  project, including phases the setup never generates) and the Engineering / Procurement mirrors (other teams'
+  data). That screen is now repair-and-integrations, and says where the editor went.
+- ⚠️⚠️ **The tree is BORROWED, not copied** — the same DOM nodes, relocated in and returned to a hidden park
+  slot. A second editor would share the module-level selection/collapse/search state and fight over it, and
+  every one of its ~30 handlers is bound by id.
+- ⚠️⚠️ **`sbWbsPark()` must run before any repaint of the host panel**, or the borrowed nodes leave the
+  document for the rest of the session — verified by driving the real functions: content and handlers intact
+  after a repaint, GONE with the park call removed.
+- ⚠️ **The type-to-build keyboard gate had to follow the tree** — it tested `#ps-view-wbs`, which is hidden on
+  the screen that now owns the editing, so Enter/Tab/Alt+arrows/Del would all have gone dead.
+- The help modal said *"The 6 steps"* and listed **7** (stale before today, ten now); the heading and every
+  number are derived from `STEPS` so it cannot lie again.
+- MODULE_V → `20260902y`.
+### 2026-09-02 (x) — The No-level band stops blaming Schedule Builder
+
+Owner: *"Reword the band text to point at the match table."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- The banner told every reader to give the trade floors in *Schedule Builder step 2* and re-push —
+  wrong for all **692** rows on an imported schedule, which never went through the Builder.
+- It now names the three real causes with the action for each: **a branch name not matched** (read the
+  *WBS branch* column; `RD` for Roofdeck is the usual culprit; fix in *Group ▾ → Match WBS to
+  locations…*), **work that genuinely has no storey** (substructure, footings, site works — not a
+  defect), and the Builder route kept last for schedules where it applies.
+- ⚠️ **It does not guess the project's provenance** — that is not recorded, and a confidently wrong
+  instruction is what this replaces. `MODULE_V` → `20260902x`.
+
+### 2026-09-02 (w) — The No level band, answered: `RD` is not in the Level match table
+
+Owner: *"Reopen the No level band and check the branch column."* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **692 of 15,834 execution activities (4.4%) carry no Level**, and with the column now walking the
+  node tree **not one row fell back to `by code:`**.
+- **Cause A — a floor the matcher missed.** The MEPF cell is **76 of 76** rows reading
+  `… Tower D › MEPF Works › RD › 1st Fix`; the Structural cell is full of `… Superstructure › RD ›
+  Zone 1 …`. The saved Level match table has 17 entries — `Roofdeck`, `Ground Floor`, `2nd`…`16th
+  Floor` — and `Roofdeck` is stamped on 51 activities, but **the .xer names that branch `RD` in most
+  places** and the table matches on the exact name.
+- **Cause B — genuinely floorless:** `… Substructure › Tower D › Slab-on-grade › Zone 1` and
+  `Footing Tie Girder`. Below-grade work with no storey.
+- ⚠️ **The importer is not at fault**, which is worth saying plainly after three passes spent looking
+  there. **Fix: Group ▾ → Match WBS to locations…, map `RD` → Roofdeck** — the owner's call, not a
+  rule to hard-code, since `RD` could mean *Road* elsewhere. (B) wants either a `Substructure` Level
+  value or to stay in the band.
+- ⚠️ The band's own text still blames *Schedule Builder step 2*, which had no part in an imported
+  project. Not changed yet.
+
+### 2026-09-02 (v) — The No level band, read at last; the diagnostic column was lying
+
+Owner: *"Let's check the No level band now."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **Vertical Stacking works:** **15,834 execution-phase activities stacked**, towers A/B/C/D, and
+  **692 carry no Level (4.4%)** — from Punchlisting and Handover, Structural Works, MEPF Works, Allied
+  Services, General Preliminaries, Site Development, Painting Works, Construction Phase. ⚠️ The band's
+  own explanation names *Schedule Builder step 2*, which had no part in an imported project.
+- ⚠️⚠️ **The `WBS branch` column added in (h) was lying.** All 156 Structural Works rows showed
+  *"Planning Phase › Design Development"* while the **Trade** column on the same rows read
+  *"Structural Works"*. The Trade is right: it resolves through `wbs_node_id`, whereas my column split
+  the **dotted code** — and `_wbsResyncCodes()` rewrites summary-row codes without touching the
+  activities', so the two are in different numbering systems after any repair (`Planning Phase`
+  computes to `4` here, `Execution Phase` to `7`). Now walks the node tree; the code-derived form is
+  kept only for a row with no node and is prefixed **`by code:`**.
+- ⚠️ **The No-level question is still open** — those 692 rows need re-reading with a truthful column
+  before anything can be concluded. `MODULE_V` → `20260902v`.
+
+### 2026-09-02 (u) — "Nothing resolved" and "nothing loaded" are different answers
+
+Owner, third report: *"Closeout phase activities in the legend are still showing the colour
+activities."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **The scoping was never broken.** Walked the node chains in the database: *Commercial Closeout →
+  Tower 2 → Partial Closeout* resolves to **`closeout`**, never `construction`, and once the tree is
+  loaded the legend is correct (40 execution chips + *"Activity outside the Execution Phase"*).
+- ⚠️⚠️ **`catScopeIsExec()` read "no row resolves a phase" as "this project has no phases".** But
+  `phaseOf()` resolves through `WBS_NODES`, which `load()` fetches **after** the cached paint — so on
+  that paint the honest answer is *"not loaded yet"*, and the fallback coloured everything. ⚠️ The
+  window lasts as long as the live fetch of 28,958 rows — tens of seconds, not (m)'s 3.3s, which is
+  why it read as permanent. ⚠️ The (n) hint did not help: the stored `false` was legitimate, written
+  while the activities were unlinked.
+- Fixed: the fallback now fires **only when the tree is loaded and still nothing resolves** — the
+  genuinely unphased project. Unknown now means **scoped**.
+- ⚠️ **The trade, taken deliberately:** on a cached paint nothing can resolve, so nothing is coloured
+  for those seconds and the key says *"No Execution Phase activities yet."* Under-colouring is
+  explained on screen; over-colouring looks like the feature is broken. ⚠️ (n)'s hint now only does
+  real work for the unphased case. `MODULE_V` → `20260902u`.
+
+### 2026-09-02 (s) — Schedule Builder: a step for the phases either side of construction
+Owner: *"make it that the schedule builder has another step, being able to add phases like the initiation
+phase planning phase etc. and the established as of now, that is only applicable for the execution phase."*
+- New **step 8 · Project phases**. Everything the other steps build IS the Execution Phase, so this step
+  adds **Initiation / Planning / Close-out** as a flat list of activities with durations — no location, no
+  contract scope, nothing to repeat per zone.
+- ⚠️⚠️ **Only four phase codes exist**: `project_schedule.phase` carries a 4-value CHECK, and the push drops
+  the phase column *wholesale* on a phase error — so one invented lifecycle name would silently strip the
+  phase off every row in the push. Another phase is a migration, not a list edit.
+- Dates chain finish-to-start in calendar days (the arithmetic `generate()` uses). The **before** phases are
+  back-scheduled onto the execution start, Close-out picks up after the execution finish, so the programme
+  reads continuously. Reordering a row re-dates the phase — the order *is* the chain.
+- ⚠️⚠️ The branches are pushed as **siblings** of the Execution Phase, never children: `phaseOf()` inherits
+  from the nearest tagged ancestor, so filing Initiation under it would make the charter construction work.
+  On a package push they land under that package's root, so each lot keeps its own lifecycle.
+- ⚠️ The WBS-Summary payload's hard-coded `phase: 'construction'` is now `nd.phase || 'construction'` — the
+  branch's phase is what every activity under it inherits.
+- ⚠️ `normalize()` rebuilds cfg from `blank()` and copies only known keys, so it had to learn `phases` or the
+  step would work all session and be empty tomorrow. Legacy setups open with every phase **off**.
+- MODULE_V → `20260902s`.
+
+### 2026-09-02 (r) — Every activity is linked; adopting twice duplicated 5,850 nodes
+
+Owner ran the batched-link migration and clicked Adopt existing WBS again. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ✅ **The batched linker works: `activitiesUnlinked: 0` of 16,485.** The 8s `statement_timeout` is no
+  longer reachable — the client loops in batches of 4,000 and halves on 57014.
+- ⚠️⚠️ **The second adopt created 5,850 duplicate nodes** (`wbs_nodes` 12,473 → 18,323 against 12,473
+  summary rows) — exactly the count the first adopt had left outstanding. `wbsAdopt` decided what to
+  insert from the cached `rows`, which still showed those branches unlinked. ⚠️ And duplicates spread:
+  `_wbsEnsureSummaries()` would project a summary row for each on the next load, which the next adopt
+  would adopt — the duplicate-WBS-row runaway.
+- Fixed: **`wbsAdopt` now reads the adopted state from the server**, not from `rows`, and ⚠️ **refuses
+  to run if that read fails** — it cannot otherwise tell "not adopted" from "not loaded".
+- ⚠️ **`Reset WBS tree` would itself have timed out** (one update over ~28,958 rows), so the recovery
+  failed on the projects needing it. **`migrations/2026-09-02-wbs-unlink-batched.sql`** batches it, and
+  adds `wbs_delete_orphan_leaves` for targeted cleanup — ⚠️ leaves only, because `parent_id` cascades,
+  and deliberately not auto-wired, since `_wbsEnsureSummaries` is a healer with the opposite opinion.
+- ⚠️ **Recovery for SLN101: WBS Manager → Reset WBS… → rebuild** (after running the migration).
+  ⚠️ Not verified end to end. `MODULE_V` → `20260902r`.
+
+### 2026-09-02 (q) — The activity link times out at 8s, and three layers of silence hid it
+
+Owner clicked **Adopt existing WBS**; the tree finished, the activities did not, nothing said so.
+Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **Measured live:** `wbs_link_activity_parents` answers **57014 "canceling statement due to statement
+  timeout" after 8,173ms**. The deployment's `statement_timeout` is ~8s and that is ONE update over
+  16,485 activities joined to a GROUP BY over 12,473 summary rows, on a key computed per row that no
+  index can serve. Same class as the original clear timeout.
+- **State left behind:** tree complete (12,473 nodes, all summary rows linked), **16,393 of 16,485
+  activities with a null `wbs_node_id`** — no phase, no trade, empty Vertical Stacking, every node
+  count 0, while the grid looks perfect.
+- ⚠️⚠️ **Three layers of silence:** the catch toasted only `if (!silent)`; every real caller passes
+  silent; and **`onclick = wbsAdopt` passed the click EVENT as `silent`** — truthy — so the button I
+  documented last pass as the *non-silent* recovery path skipped its confirm, its success toast and
+  its error toast. My own recommended diagnostic could not produce a diagnosis.
+- Fixed: **`migrations/2026-09-02-wbs-link-batched.sql`** adds `p_limit` (⚠️ `drop function` first, or
+  PostgREST answers PGRST203 for the one-arg call); the client loops, halves the batch on 57014 and
+  reports regardless of `silent`; the button calls `wbsAdopt(false)`.
+- ⚠️ **Not verified end to end — the migration has not been run.** `MODULE_V` → `20260902q`.
+
+### 2026-09-02 (p) — The import's tree build stops half way and says nothing
+
+Owner re-imported 4PH Strevi and asked for the output to be checked. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **The insert is complete and correct**: 28,958 rows (16,485 activities + 12,473 summary rows). **The
+  tree build is not** — `wbs_nodes` **6,623** against 12,473 summary rows, 22,243 rows unlinked — and
+  (o) is not the cause.
+- ⚠️ Read in full rather than sampled, it is **not a depth cut-off**: adopted and un-adopted rows exist
+  at every depth 2-10, and **5,833 of 5,850 un-adopted rows have a parent that is also un-adopted**.
+  Whole subtrees. ⚠️ My earlier "400/400" parent figure came from a 1,000-row sample and was wrong.
+- ⚠️⚠️ **The real defect is the silence.** `wbsAdopt`'s insert error did `if (!silent) toast; return 0`,
+  and `autoAdoptAfterImport` calls it with `silent = true` — so a half-built tree produced no toast, no
+  console entry, and looked finished. That is the state where Vertical Stacking draws nothing and every
+  node count reads 0, while the grid looks perfect because `rebuild()` splits the dotted code and never
+  reads the node id.
+- Fixed both ways: it now **reports regardless of `silent`** (naming how many of how many landed), and
+  `autoAdoptAfterImport` **verifies and resumes** while passes make progress, then says plainly if
+  branches remain. ⚠️ **The reason a pass stops is still unidentified** — the failure was silent, so
+  there is no error text yet. This makes the next occurrence diagnosable, it does not fix the cause.
+- ⚠️ **Recovery:** WBS Manager → **"Adopt existing WBS"** (non-silent). `MODULE_V` → `20260902p`.
+
+### 2026-09-02 (e) — "Contracts & Claims" rename, centered/padded sidebar logo, and Portfolio mode gets every module
+
+Three owner asks in one prompt. The third — *"when selecting portfolio, all modules from projects
+must also be inherited… contents shall be a consolidation of all project data"* — the owner
+confirmed (via `AskUserQuestion`) means **full cross-project consolidation for every module**, not
+just nav links, plus a genuinely separate Tasks page under Personal. Recorded here as one entry.
+
+**1. Sidebar module label.** `config.js` — "Contracts & Claims Register" → **"Contracts & Claims"**
+(module tile, sidebar, launcher — all read this one string).
+
+**2. Sidebar logo.** `.pd-sidebar .pd-brand` padding widened `18px 20px 16px` → `28px 20px 24px` +
+`text-align:center`; `.pd-brand-logo` margin `0 0 10px` → `0 auto 10px` (it is a block narrower than
+its container, so centering needs `margin:auto`, not `text-align` alone) and
+`object-position:center center`. Mirrored in the ≤820px drawer's duplicate padding rule.
+
+**3. Portfolio-mode sidebar restructured into the owner's three sections**, and Portfolio Overview
+gained the **7 remaining consolidated tabs** it was missing (Risk Register, Stakeholders, Issues,
+Meetings, Contracts, Photos, Productivity) so "inherited" is real, not aspirational — it already had
+Overview/S-Curve/Cash Flow/Resources/Equipment/Milestones from earlier prompts (see those modules'
+own dated entries above).
+
+- **`UI.renderNav`'s `'portfolio'` branch rebuilt**: Portfolio (Projects, Dashboard, then every
+  **enabled** module from the shared registry) → Personal (Dashboard = `my-work.html`, **Tasks** =
+  new `my-tasks.html`) → System (Admin, gated). ⚠️ **`ctx.modules` now defaults to
+  `window.APP_CONFIG.MODULES`** inside `renderNav` itself — the five portfolio-mode pages
+  (`projects.html`/`admin.html`/`my-work.html`/`portfolio-overview`/`my-tasks.html`) never had to
+  pass it before, and none of their call sites needed touching because of this default.
+- **A `PORTFOLIO_TAB` map (`ui.js`)** resolves each module key to the matching portfolio-overview
+  tab (`risk-register → risk`, `issues-lessons → issues`, …), and the link becomes
+  `modules/portfolio-overview/index.html#po_view={"v":"<tab>"}` — the **exact** hash shape
+  `UI.bindHistoryState` already reads on load (`{key:'po_view', get:()=>({v:view})}`), so this is not
+  a new mechanism, it is driving an existing one from outside the page for the first time.
+  ⚠️ `project-schedule` and `s-curve` both resolve to the `scurve` tab — there is no dedicated
+  cross-project Schedule view, and S-Curve (duration-weighted progress off `project_schedule`) is
+  the closest real equivalent; said in the code rather than inventing an eighth tab for one module.
+  ⚠️ **`manpower-loading` is deliberately absent from the map** — it already hosts its own
+  cross-project **Portfolio** tab *inside* the module (2026-08-28 (d) entry), so its sidebar link
+  goes straight to the module page rather than being forced through portfolio-overview a second time.
+  A module with neither falls back to its plain page, same as Project mode.
+
+⚠️ **A REAL, PREVIOUSLY-LATENT BUG THIS EXPOSED AND HAD TO BE FIXED: landing directly on a
+non-overview tab via the hash rendered blank.** `bindHistoryState`'s `apply(initial)` fires
+**synchronously** inside `requireLogin`'s callback, before the `PDb.getProjects()`/`getGroupHeads()`
+`Promise.all` resolves — so `switchView('risk')` ran while `PROJ` was still `[]`,
+`scopedProjectIds()` returned `[]`, every `loadX()` bailed on "no projects match" and — because that
+early-return path never sets `xLoadedIds` — nothing ever asked again. This was always true of the
+pre-existing S-Curve/Cash Flow/Equipment/Milestones tabs too, but nothing before this prompt
+navigated to the page with the hash **already set on load** — every prior hash change happened by
+clicking a tab on an already-loaded page, where `PROJ` was long since populated. The sidebar's new
+deep links are the first thing that actually lands cold on `#po_view=…`, so it would have made every
+one of them open to an empty tab. Fixed with one line: `switchView(view)` re-invoked right after
+`PROJ`/`GH` load, harmless when still on `'overview'` (`renderAll()` already painted it) and now
+correct for any other view.
+
+**The 7 new tabs, at a consistent depth (KPI band + one grouped/filterable `.po-table`,
+no bespoke chart) — deliberately narrower than S-Curve/Cash Flow's SVG-chart treatment, to keep 7
+new consolidations shippable in one pass rather than gold-plating one and leaving the rest thin:**
+- **Risk** — `risk_register`, priority via the **shared `EPCRCM.riskPriority` 5×5 lookup** (new
+  `epc-rcm.js?v=20260901a` script tag), never a re-derived threshold — the grid answers a product of
+  4 three different ways, so guessing at it here would disagree with the Risk Register module itself.
+- **Stakeholders** — `stakeholder_map`. ⚠️ **Reproduces the module's own column-reuse exactly**:
+  `influence` stores impact, `interest` stores influence (a historical naming mismatch documented in
+  `stakeholder-map/module.js`) — reading it any other way here would silently disagree with the
+  module. Approach via `EPCRCM.stkApproach`, overridden by a planner's own `mgmt_approach` where set.
+- **Issues** — `issues_lessons`, aging = `today − date_presented` only while open (the register's
+  own rule, reproduced not reinvented).
+- **Meetings** — `meeting_minutes` + `mom_items`, both carry their own `project_id` so no join is
+  needed. ⚠️ **Deliberately simplified**, said in the code: reads `mom_items.status` directly rather
+  than resolving a raised item through its linked `issues_lessons` row the way the module itself
+  does — this is a cross-project worklist (open action items only, oldest-due first), not the
+  register of record.
+- **Contracts** — `contracts_claims`, `record_type` in {Contract, Claim, Change Order, EOT},
+  Pending/Approved/Disapproved/Cancelled status vocabulary reproduced from the module.
+- **Photos** — `progress_photos`. ⚠️ Narrow on purpose: one shared bucket (`progress-photos`) across
+  every project, so a batched `createSignedUrls` call (the same primitive the module itself uses) is
+  enough for an 18-photo "most recently captured" strip; no cross-project PPR/presentation
+  consolidation, which stays a per-project screen.
+- **Productivity** — `productivity_activities` + `productivity_entries`, rate = `qty ÷ (crew × work
+  days)` reproduced verbatim from `productivity-rates/index.html`'s own `rateOf`.
+- Every one of the 7 reads via **`PDb.selectAll`, never a bare select** — this repo's own
+  most-repeated defect class is a table read silently truncated at PostgREST's 1000-row cap, and a
+  portfolio-wide read is exactly where that risk is highest.
+- Shared helpers added once (`clip(s,n)`, `statePill(label,tone)`) rather than seven near-identical
+  copies; two new pill tones (`.pd-pill-bad`/`.pd-pill-warn`) added to the **shared** `dashboard.css`
+  (only `-ok`/`-muted` existed), following the existing `-ok` pattern's own light-tint-not-remapped
+  convention rather than inventing a new one.
+- **`.po-tabs` now wraps at every width, not just ≤900px** (13 tabs, not 6) — `#po-projfilter-wrap`'s
+  dropdown is `position:absolute`, so an `overflow-x` scroller here would clip it, the exact trap
+  this file's own 2026-08-26 milestone-calendar entry already recorded once.
+
+**Tasks page (`my-tasks.html`, new)** — the "what I owe" half of My Work as its own screen, not a
+fourth definition of "mine": `assets/js/my-work.js` gained **`MyWork.renderTasks(host, user)`**, a
+**third host** on the same `fetchAll`/`counts` the Dashboard and the per-project block already share
+(champion issues + responsible action items only — raised issues / captured lessons are what the
+account has put in, not what it owes, and stay off this page). Unified into one sortable list
+(overdue/soon-due first, blanks last), filterable by search/status/project.
+⚠️ **The filter bar is a static shell built once; only the results body re-renders on a filter
+change** — rebuilding the search `<input>` itself on every keystroke would lose focus after one
+character, the standard trap of full-host `innerHTML` rebuilds on `oninput`.
+
+**Verified:** every inline script + both touched JS files (`ui.js`, `my-work.js`) pass `node --check`;
+0 duplicate DOM ids and 0 dangling `getElementById` targets across `portfolio-overview/index.html`
+and `my-tasks.html`; 0 duplicate top-level function names introduced; CSS braces balanced
+(168/168) in the portfolio-overview `<style>` block. ⚠️ **Not verified signed in** — no live session
+in this environment, the standing constraint for every UI pass in this repo; in particular the seven
+new `PDb.selectAll` reads have never hit PostgREST, and the `#po_view=` deep-link fix is verified by
+reading the timing, not by driving a real reload.
+
+Shared assets changed → **`ui.js`, `my-work.js`, `my-work.css`, `dashboard.css`, `config.js` all
+bumped to `?v=20260902a` across every referencing page**; `epc-rcm.js` referenced at its existing
+`?v=20260901a` (unchanged, no version bump needed since the file itself wasn't touched).
+
+### 2026-09-02 (o) — ⚠⚠ The (i) mutation fence swallowed the import's own finishing pass
+
+Found while checking the owner's re-import of 4PH Strevi. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- Both importers end with `await load(); await autoAdoptAfterImport();` — the steps that build the
+  tree and attach every activity to it. (i) wrapped each importer in **one** mutation region, so that
+  finishing sequence sat **inside** the fence and `load()`'s heal chain returned immediately, skipping
+  every pass including `_wbsLinkActivityParents`.
+- **Measured live:** 28,958 rows, **7,297 `wbs_nodes` against 12,473 summary rows**, and **21,569 rows
+  with a null `wbs_node_id`**. ⚠️ Exactly the failure `2026-09-01-wbs-link-rpc.sql` documents — no
+  phase, so Vertical Stacking reports nothing; no trade; WBS Manager counts read 0 — and invisible in
+  the grid, which derives ancestry from the dotted code and never reads the node id.
+- Fixed: `_beginMutation()` returns a token and `_endMutation(tok)` is idempotent, so an importer
+  closes its own region when its WRITES finish, before the rebuild, with the wrapper's `finally` as
+  the backstop.
+- ⚠️ **Recovery for a project imported under (i)-(n): a reload is not enough.** Nothing on a normal
+  load rebuilds missing NODES — use the WBS Manager's **"Adopt existing WBS"**, which resumes from a
+  partial tree. `MODULE_V` → `20260902o`.
+
+### 2026-09-02 (n) — The colour scope rides in the row cache, so the cached paint starts right
+
+Owner: *"Yes let's persist the scope answer to fix the flicker."* (m) made the cached paint
+self-correct after 3.3s; this removes the 3.3s. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- The cache entry gains **`catScope`** — the answer the previous live load reached — seeded into
+  `_catExecCache` **before** `rebuild()`/`renderAll()`, both of which read it.
+- ⚠️ **Only written from a load that had the tree** (`WBS_NODES` non-empty), else `null`. Caching an
+  answer computed before the tree arrived would persist the very wrong answer this exists to avoid,
+  and it would be wrong *instantly* instead of for three seconds.
+- ⚠️ **A hint, not a source of truth**: the live pass still recomputes and repaints on disagreement, so
+  a stale hint costs one repaint and never a wrong final state. `null` behaves exactly like (m).
+- `MODULE_V` → `20260902n`.
+
+### 2026-09-02 (m) — The 92-entry key came back: (k) was verified on the one load that could not show it
+
+Owner on the cleared SLN101: *"Legend still shows activities that are not within the execution
+phase."* Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️⚠️ **`load()` paints from the localStorage cache before `wbs_nodes` are fetched.** `phaseOf()`
+  resolves through `WBS_NODES`, so at first paint on a cached load **no row resolves any phase**, the
+  fallback colours everything, and `catList()` memoises the 92-entry list.
+- ⚠️ `_clearPhaseMemo()` dropped `_catExecCache` but **not `_catCache`**, whose key
+  (`pid|field|rows.length|theme|keySet`) does not change when the tree arrives — so the stale list was
+  re-served for the whole session. ⚠️ And invalidating a cache **repaints nothing**; `load()` never
+  re-rendered the legend afterwards.
+- Fixed both: the memo drops `_catCache`, and `load()` compares the scope answer either side of
+  `loadResourcesAssignments()`, repainting only when it flips.
+- ⚠️ **The lesson is about the test.** (k) was verified live and reported 40 → 0 — on a **cold** load,
+  the one path where `WBS_NODES` are already in hand when the legend first renders, so the bug cannot
+  appear. A returning browser takes the **cached** path. **A module that paints twice must be verified
+  on both paints.**
+- **Verified on the cached paint**, sampled from first paint: **40 chips at 264ms → 0 at 3,590ms**, ending
+  Live with the empty-key message. ⚠️ **The cached paint is still wrong for ~3.3s** — before the tree
+  arrives the fallback cannot tell an unphased project from a not-yet-loaded one. It self-corrects.
+  ⚠️ Defaulting the other way would blank the colours for those seconds on every *normal* project; the
+  real fix is to persist the scope answer beside the cached rows, not done here. `MODULE_V` → `20260902m`.
+
+### 2026-09-02 (k) — An emptied schedule showed a 92-entry colour key
+
+Owner, on the just-cleared SLN101: *"Why are there still activities and shown in the legend"*. Two
+things. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- **The 92 activities are the Design Development and Procurement mirrors**, all under Planning Phase,
+  re-projected by the next `load()` from the Engineering and Procurement apps. ⚠️ Derived data —
+  deleting them only makes them return — so they are now **named in the clear's dialog and toast**
+  instead of appearing unexplained.
+- ⚠️⚠️ **The legend was (h)'s fallback misfiring.** `catScopeIsExec()` asked *"does this project have
+  execution work?"* and coloured everything when the answer was no — but a **cleared** project is not
+  an **unphased** one. Measured live: all 92 resolve to `planning`, none to `construction`, so the
+  fallback fired and keyed 92 drawing-register and procurement names on an empty schedule. The test
+  now asks **"are phases in use at all"**; a genuinely unphased project still falls back.
+- **Verified live on the deployed build: category chips 40 → 0** against the cleared SLN101. ⚠️ Two
+  follow-ons that only appeared once the key was correctly empty: the empty-state message still said
+  *"Nothing expanded"* (wrong reason — there is simply no execution work), and the plain Activity chip
+  was emitted unconditionally rather than gated on a plain bar being on screen, which is not what (h)
+  claimed. Both fixed. `MODULE_V` → `20260902l`.
+
+### 2026-09-02 (j) — The clear measured live: 28,863 rows in 16 seconds, and one thing it never deleted
+
+Owner ran the RPC migration and authorised a destructive test on **SLN101 (4PH Strevi Bacoor)**,
+driven through the deployed site in their own signed-in Chrome. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- **28,863 activities + 8,645 WBS nodes cleared in ~16 seconds**, in **2 RPC calls** where the old
+  path needed 174 requests and 5-10 minutes. Measured round trips: RPC ~110ms vs a 200-id chunk
+  ~210ms. ⚠️ The counter reported **exactly** the 28,863 measured beforehand, and the batch boundary
+  landed at 20,000 — `p_limit` behaving as designed. All 19 locked skeleton nodes survived.
+- ⚠️ The clear was deliberately started **while the heal chain was mid-"Attaching activities to the
+  WBS tree…"** — the precise race that used to leave a project un-clearable. It cleared cleanly, and
+  the new repair-chip states were confirmed live.
+- ⚠️⚠️ **`resource_assignments` went 167 → 167 — Clear schedule has never deleted them**, though both
+  import-REPLACE paths always have. Not debris: assignments join activities **by activity code**, so
+  re-importing the same P6 file would have silently re-attached all 167 to different work — defeating
+  the exact purpose the button is pressed for. Now cleared with the schedule, by code for a package
+  scope, and named in the confirmation dialog. ⚠️ That fix shipped after the run, so it is not itself
+  live-verified.
+- ⚠️ Correction carried from (i): SLN101 *is* 4PH Strevi Bacoor and held 28,863 rows, so the owner's
+  "29,605 removed" screenshot was never evidence of a runaway counter. `MODULE_V` → `20260902j`.
+
+### 2026-09-02 (i) — The delete loop belongs in the database; Progress / Stacking / Outline are buttons again
+
+Owner: the clear ran at *"100-200 activities per 2 seconds"*, stopped, and *"when I tried deleting
+schedule again it bugged"*; the Engineering/Procurement mirrors were suspected of corrupting imports;
+and the three folded-away view controls were wanted back on the toolbar. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠️⚠️ **That 10ms a row was never database time.** `project_schedule` has no trigger and nothing
+  references it, and it is indexed on `(project_id, id)` — the cost is the HTTP round trip. ⚠️ And the
+  chunk cannot just be made bigger: 200 uuids is already ~8KB of URL, near PostgREST's `in.(...)`
+  limit, so 20,000 rows is ~100 sequential requests however the client is written. **The loop moved
+  into the database** — `migrations/2026-09-02-clear-project-rpc.sql`. ⚠️ **Until that migration is
+  run the delete is exactly as slow as before**; the client keeps the old path as a fallback.
+- ⚠️ **The counter counted ids *sent*, not rows gone**, so a delete affecting nothing would re-read
+  the same page for ever. It now fails when the same first id comes back. ⚠️ **I first justified this
+  with the owner's "29,605 removed" screenshot and that was wrong** — checked live afterwards, SLN101
+  *is* 4PH Strevi Bacoor and holds **28,863 activities**, so 29,605 is a plausible real figure, not a
+  runaway. The live check does show the clear **never completed**: every row is still there.
+- ⚠️⚠️ **The clear was fighting the previous load.** `load()` runs four self-heal passes plus the
+  Design Development and Procurement mirrors — minutes of writes that all exist to **create** rows.
+  Nothing bumped the load generation when a destructive operation began, so the chain never learned
+  the schedule beneath it had been deleted: the clear deleted, the chain re-created, the project never
+  emptied. That is both "the delete stopped" and the suspected Engineering/Procurement corruption, and
+  it is now fenced with a nesting-safe mutation counter around both importers and the clear.
+- **Progress, Stacking and Outline are top-level again.** ⚠️ They route through `_setView`, so the old
+  bug where Progress and Stacking could both be on at once does not come back, and the two stay listed
+  in the View menu so it can still return you from the view it names. ⚠️ Costs ~280px: a 1440 laptop
+  is back to two toolbar lines, ~1920 stays on one.
+- **Verified:** parses, 5,116 → 5,132 functions, none lost. ⚠️ **Not verified signed in, and almost
+  nothing here can be** — the RPC, the retry, the guard and the race are server-and-timing facts.
+  ⚠️ **The importer was inspected, not exercised.** `MODULE_V` → `20260902i`.
+
+### 2026-09-02 (h) — Clear timed out, the network ignored every filter, colouring is the Execution Phase's
+
+Owner, five reports on Project Schedule after re-importing Avesta and 4PH Strevi. Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+- ⚠⚠ **"Canceling statement due to statement timeout" on Clear schedule.** `.delete().eq('project_id',
+  pid)` is ONE statement over every row and Postgres kills it — so it fails hardest on the projects
+  that most need clearing (4PH Strevi: 16,485 activities, 12,465 WBS nodes). ⚠️ **The package-scoped
+  paths always chunked at 200; only the "everything" paths were unbounded** — which is why *clear one
+  package* worked, *clear the schedule* did not, and a **REPLACE import** (which clears everything
+  first) failed the same way. Six sites, one bug, all now chunked. ⚠️ A timeout inside the WBS-tree
+  clear leaves no activities and a full tree, which re-projects on the next load and reads as "clear
+  did nothing" — **the most likely cause of the bugged re-imports.**
+- ⚠️ **"WBS isn't showing properly initially."** `load()` paints immediately, then runs four self-heal
+  passes over every row — minutes on a fresh import, during which the tree really is incomplete. The
+  freshness chip said **"Live" the whole time**. It now names the running pass and only says Live at
+  the end of the chain.
+- ⚠⚠ **The Activity Network ignored every filter — including the ones its own error message named.**
+  It read off `rows`, so Filter, Search and "Execution Phase only" changed the count by zero while
+  the over-300 message said to use them. Now scoped like the grid, with **per-level location pickers**
+  (Tower / Level / Zone), and the cap raised 300 → 1,200. It was never the threshold.
+- **Colouring is the Execution Phase's** — one switch in `catEntry()`, with a fallback that keeps
+  un-phased projects working. ⚠️ A schedule can now show BOTH bar treatments, so the plain Activity
+  chip is emitted (and named) when a plain bar is actually on screen.
+- **The "No level" band shows the WBS branch it came from.** ⚠️ Diagnostic, not a guess: no importer
+  rule changed, because whether a gabion belongs on a storey is the owner's modelling decision.
+- **Verified:** parses, 5,091 → 5,116 functions, none lost. ⚠️ **Not verified signed in, and the three
+  server-side fixes are precisely the ones that need it.** `MODULE_V` → `20260902h`.
+
+### 2026-09-02 (g) — You could not type a space in the project search; Equipment Loading's backdrop and workspace
+Owner: *"i cannot add / type space in the search bar of the projects."* and, on Equipment Loading,
+*"add an option where you can resize the image uploaded, and also adjust the transparency of the image.
+Furthermore, enlargen the workspace."*
+- ⚠️ **The space bug was one `.trim()`.** `UI.renderNavListInto` (the shared project tree behind the header
+  switcher and the Projects page) rebuilt its whole container on every keystroke and re-rendered the search
+  input **with the trimmed query as its value**. A space is trailing whitespace at the instant it is typed, so
+  the repaint deleted it before the next character arrived — "Test Project" could never be typed. Fixed twice
+  over: the field keeps the RAW value (trimming is for the filter), and **typing no longer re-renders the
+  input at all** — only the list below it repaints, so no repaint can edit what someone is typing (and the
+  save/restore of `selectionStart` that existed only to paper over this is gone).
+- Equipment Loading → Site Plan: an **Image…** panel (fade 10–100 %, size 25–400 %, nudge, reset). The picture
+  moves; the traced towers do not — that is how a skewed scan gets lined up with towers already traced.
+  Stored in the plan row, not localStorage: where the backdrop sits is project data, not a browser preference.
+  Defaults reproduce the old full-bleed rect exactly, so existing plans open unchanged.
+- Workspace: the pane grows to `clamp(420px, 78vh, 1200px)`, **Wide** hides the side rail, and **Full screen**
+  fullscreens the rail *and* canvas together — a fullscreened canvas alone would strand the equipment chips
+  on the page underneath.
+- ⚠️ `ui.js` is a SHARED asset: its `?v=` is bumped in all 20 HTML files, or the search fix reaches nobody.
+- MODULE_V → `20260902f`.
+
+### 2026-09-02 (f) — A legend regression from yesterday's legend fix, and EPC → MCC finished
+
+Owner: *"Separate the Progress and Stacking buttons, extract them within the View button"*,
+*"Shorten the Activity legend chip"*, *"Finish the EPC → MCC rename."* Detail in
+`modules/project-schedule/CLAUDE.md` and both register `CLAUDE.md`s.
+
+- ⚠️⚠️ **THE LEGEND COMPLAINT WAS A REGRESSION, NOT A DESIGN CALL.** `.lg-lsmon { display:none }` is
+  (0,1,0); retargeting the layout rule to `.ps-actlegend .lg` (0,2,0) yesterday — itself a correct fix
+  for dead CSS — put a **higher-specificity `display:inline-flex` above it**, so the LSM-only
+  coloured-bar chip has been drawn in the **plain view too** ever since. Two chips both labelled
+  *Activity*, saying different things about the same mark. Measured: **8 chips shown where 7 exist**,
+  and the row wrapped to **two lines (88px vs 41px)**. Now scoped to `.ps-actlegend .lg-lsmon`, which
+  wins on source order while the `.ps-lsm` rule (1,2,0) still decides when the chip appears.
+- ⚠️ **The 482px measurement that opened this thread was taken in the wrong view.** The previous
+  harness never set `.ps-lsm`, so it measured a chip that should not have been on screen. Right number,
+  wrong conclusion — a harness that can only render one state cannot check a rule about two.
+- **The three facts a bar encodes moved to their own caption line rather than being cut.** The chip is
+  **72px** now (was 482, against 77 / 113 / 128 / 136), and the whole legend is **2px taller**, not
+  shorter-by-losing-something. ⚠️ The caption's sentence sits in ONE child span because `.lg-note` is a
+  flex container and **flex strips the whitespace between items** — the identical defect that shipped
+  as `Activity(solid`.
+- **Progress and Stacking are their own section of the View menu** (*Schedule layout* / *Separate
+  views*). The split is the one the state already makes: the first four are `layoutMode` arrangements
+  of the same grid + timeline, the other two replace the screen outright.
+- **EPC → MCC finished** — `epc-rcm.js`/`.css` → `mcc-rcm.js`/`.css`, `window.EPCRCM` → `window.MCCRCM`,
+  and the `EPC Control Masterlist` caption that was missed last pass. ⚠️ **Smaller than it was flagged
+  as:** the "40-odd CSS classes" are `.rcm-*` and never said EPC. ⚠️ **Every remaining "EPC" is
+  transcribed workbook content** — activity 16 really is named "EPC FUNCTIONAL MEETINGS" — and renaming
+  data would make the file disagree with the register it came from. Written into the engine's header.
+- **Verified:** register suite **163 pass / 0 fail**; the module parses with **5,090 → 5,091** functions
+  and none lost; the legend measured in both view states in a browser. ⚠️ **Not verified signed in.**
+- `MODULE_V` → `20260902f`; shared RCM files and both registers' `module.js`/`module.css` → `?v=20260902a`.
+
+### 2026-09-02 (e) — Vertical stacking: a DONE status on finished zones, with the day variance
+Owner: *"show a status of done for zones or areas or units that have been declared as completed. and then
+show the variance in terms of days to determine if it was completed in time or not."*
+- A finished zone prints a **`✓ DONE` pill** where an unfinished one prints its percentage. The pill *is*
+  the variance: coloured by it (early / on time / late / no baseline) and carrying the figure (`✓ DONE +62d`).
+- ⚠️ **"Done" is not `pct >= 100`.** That number is rounded (99.6 % already prints 100 %) and it follows the
+  basis — on *Planned* it would badge a zone complete because it was **due**. `_vsDone` reads the activities'
+  own `percent_complete`: done means no activity in the cell is left short.
+- ⚠️ **The variance is `_vsFinSlip`, not `_vsSlip`.** `_vsSlip` follows the Start/Finish toggle, so on *Start*
+  it would have put a start variance inside a completion badge. `null` (no baseline) reads as unknown, never
+  as on time.
+- Explained in the tooltip, the magnifier readout, the on-screen legend and the PDF key.
+- MODULE_V → `20260902e`.
+
+### 2026-09-02 (d) — Vertical stacking: readable in day mode, and the cards read as a set
+Owner: *"improve the visuals in this vertical stacking … if it is on day mode, please make it more visually
+appealing … choose better colors or colors of text … and also in terms of orientation of the windows."*
+- ⚠️ **Every stacking label was hard-coded `fill="#fff"` over a cell body drawn as a 16 % wash of the trade
+  colour** — white text on a near-white box on the light theme. The body is now always the saturated colour
+  and done-vs-remaining is a **brightness step on that one colour** (scrim + light veil hatch for remaining,
+  the clean colour out to the POC for done), so it carries a label at full contrast in either theme.
+- ⚠️ The three paint tokens are **CSS vars** (`--ps-vs-scrim/-veil/-edge`) so the themes can differ — and they
+  are **re-declared in the PDF export's fixed light palette**; change one without the other and the print goes flat.
+- ⚠️ **Ink is chosen per cell from the colour's luminance**, halo included: white is wrong on the palette's yellow.
+- Cards keep their content width (deliberate) but a row now shares a height and a top line, with a softer
+  radius, a two-stop shadow, a hover lift and a header washed in the card's own colour.
+- MODULE_V → `20260902d`.
+### 2026-09-02 (c) — Project Schedule: Outline + Saved layouts folded into the View menu
+
+Owner: *"Yes fold Outline and Layouts into View too."* Two more toolbar buttons become sections of
+`View ▾`. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️ **A folded-in menu can outgrow the viewport, and `.ps-menu` will not tell you.** It is
+  `position:absolute; overflow:hidden; max-height:none`. Measured with the real menu HTML: 804px of
+  content 209px down a 900px viewport, and `Reporting view` + `Reset layout` were **rendered, inside
+  the menu box, and un-hittable by `elementFromPoint`**. Third instance of this defect class in this
+  repo (column chooser, group menu). Fixed with the existing `anchorMenu()` pin-and-clamp — **any
+  `.ps-menu` that grows past ~20 rows needs it.**
+- ⚠️ **Sixth "brand red is not a text colour":** the Save-current-layout item came over as
+  `--pd-red` at 13px/600 — **4.12:1 light, 3.40:1 dark, dark fails AA.** Now `--pd-danger-text`
+  (5.84 / 6.14).
+- ⚠️ An attribute collision that would have been silent: saved layouts used `data-view`, which the
+  View menu already binds to the six view modes. Renamed `data-lyt`.
+- Row needs **1590px → 1381px**; one row now at a ~1486px viewport (was ~1720). **1440 is still two
+  lines, by 46px** — the last lever is a collapsing search box, not done.
+- `.gitignore` now has `**/_*_test.html`. The harness patterns were filename-specific despite their
+  own comment saying otherwise, and a new harness file slipped through — the same gap that put four
+  harness files into production on 2026-09-01.
+
+**42/42** executing the shipped section builders + binders, 33/33 and 40/40 regressions.
+⚠️ Not verified signed in. `MODULE_V` → `20260902c`.
+
+### 2026-09-02 (b) — Project Schedule: contract scope + timeline zoom folded from segments into menus
+
+Owner: *"Yes let's fold the scope and zoom into menus."* Both 3-button segments become labelled menu
+buttons in the `View: Split ▾` pattern. Detail in `modules/project-schedule/CLAUDE.md`.
+
+- ⚠️ **I over-stated the win when I offered it.** The two segments were ~400px of the row, but the
+  menu buttons that replace them cost 286px back: measured **1705px → 1590px, 115px saved**. One row now
+  needs a ~1720px viewport (was ~1815) — so the owner's ~1920 screen was one row before and after, and
+  1440 is still two. Reaching one row at 1440 needs ~280px more (Outline + Layouts into the View menu,
+  or a collapsing search box); flagged, not done.
+- The scope button lights only when a scope filter is actually ON — red for Main, CO amber for change
+  orders. The segment always showed a lit pill including on the default, which is how a control stops
+  being seen.
+- ⚠️ A latent bug caught while rewiring: `applyView` re-synced the old segment with
+  `querySelectorAll('#ps-zoom button')`, which under the new markup also matches the trigger button
+  (no `dataset.zoom`) and would have silently cleared the active mark on every saved-layout restore.
+
+**40/40** executing the shipped functions; 0 functions lost. ⚠️ Not verified signed in.
+`MODULE_V` → `20260902b`.
+
+### 2026-09-02 — Project Schedule: toolbar finished, switcher un-stretched, foldable legend, Reporting view becomes a screen
+
+Four owner items. Detail in `modules/project-schedule/CLAUDE.md`; the two that matter beyond this module:
+
+- ⚠️ **A shared-CSS rule, not a module one, was stretching the project switcher.**
+  `UI.initModuleTopbar()` splits every module topbar, and `dashboard.css` then gives `-projctx`
+  `flex:1 1 220px; max-width:420px` and its trigger `width:100%; **max-width:none**` — cancelling the
+  module's own 260px cap. Measured 420px with a 259px gap to the caret → 167px with a 6px gap. Any
+  module whose `-projctx` looks over-wide has the same cause; the override needs (0,5,0) specificity
+  to beat dashboard.css's (0,4,0).
+- ⚠️ **A toolbar that silently clipped its own controls.** `.ps-tb-row` was `nowrap` +
+  `overflow:visible`, and `body { overflow-x:clip }` (from the mobile pass) means overflow is not
+  scrollable — it is simply gone. Measured at 1280: the row needed 1660px of 1256px, so six controls
+  including the search box were unreachable with nothing to say so. Now wraps. **Worth checking any
+  other module that pairs a nowrap row with `overflow:visible`.**
+- Reporting view now hides the sidebar, topbar and module bar (163px of vertical chrome and 64px of
+  sidebar reclaimed), carries the project/group/data-date identity into the toolbar so a screenshot
+  stays trustworthy, and gates itself on the Schedule tab so it can never strand a planner on a view
+  whose toolbar — and therefore whose only way out — is hidden.
+- ⚠️ Fifth instance of "brand red is not a text colour at this size": the reporting chip measured
+  **3.74:1** and now uses `--pd-danger-text` (5.31 light / 7.47 dark).
+
+`MODULE_V` → `20260902a`. ⚠️ Not verified signed in.
+
+### 2026-09-01 (p) — Issues Dashboard mobile pass: the title-hide fix widened for phone width, plus nine module-local items
+
+Owner sent a phone screenshot — the same duplicate module `<h1>` / tabs-dropdown title entry (o)'s
+`tabsToDropdown` fix already addressed, still showing on a narrow screen — with 10 items covering
+the mobile KPI/chart layout, touch reordering, and the Lessons Learned detail view's field
+arrangement. Full detail in `modules/issues-lessons/CLAUDE.md` (2026-09-01 (h)); this entry covers
+the two **shared** files touched.
+
+**`assets/js/ui.js` (`tabsToDropdown`) + `assets/css/dashboard.css` — the title-hide widened to
+mobile, without reopening the bug it was built to avoid.** Entry (o)'s fix deliberately hid the
+duplicate title TEXT only `@media (min-width:701px)` — below 700px `.pd-modulebar > h1` is forced
+onto its own full-width row, and hiding just the text there would leave a bare icon alone on that
+row with the dropdown trigger's label on the row after it, the "icon alone / label on the next
+line" defect this repo had already fixed once. The screenshot showed the opposite shape — the FULL
+duplicate text on its own row, not a bare icon — so that caution didn't actually cover this case.
+⚠️ Fixed by marking the **`<h1>` element itself**, not just its text span
+(`pd-h1-hasdrop`, alongside the existing `pd-title-hasdrop`), and hiding the WHOLE element below
+700px. With no separate icon row left at all, there is nothing left to read as "alone" — the old
+defect can't recur through this door either, and desktop (≥701px) is untouched.
+
+**Verified:** `node --check` clean on both files; the module's own suite of structural checks
+(0 NUL bytes, CSS braces balanced, 0 duplicate DOM ids, 0 functions lost) all green — see the
+module's own CLAUDE.md entry for the full list. ⚠️ **Not verified signed-in.**
+
+`ui.js`/`dashboard.css?v=` → `20260901d` (app-wide — 20/28 referencing files respectively);
+`MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260901s`.
 
 ### 2026-09-01 (o) — Issues Dashboard cleanup off a screenshot; the shared tabs-dropdown fix that almost reintroduced a fixed bug
 
@@ -181,6 +1190,7 @@ bytes. ⚠️ **Not verified signed in.**
 
 `ui.js`/`dashboard.css?v=` → `20260901c` (app-wide — 20/28 referencing files respectively);
 `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260901q`.
+
 
 ### 2026-09-01 (m) — Live audit of both rebuilt registers: 8 real defects, and 4 of my own measurements were wrong first
 
@@ -345,6 +1355,45 @@ unfiltered exhaustive sweep buries one real defect under 180 impossible ones, an
 learns to skim it will miss the next real one.
 
 Stakeholder `module.css` → `?v=20260901k`; `MODULE_V` → `20260901n`.
+
+⚠️ **A THIRTEENTH, and the third instance of "brand red as text" in this pair of registers.** The
+Add/Edit form's section headers (`.rr-fsec` / `.sm-fsec`, 11px/800 `--pd-red-dark` on the modal)
+measured **2.40:1 in dark**. They were missed when the band header and the lit band pill were fixed
+because **the modal is not in the page until it is opened** — every sweep only ever saw what the
+register had already rendered. Dark-only override to `#FF8A80`. **If a fourth turns up, the honest fix
+is a `--pd-red-text` token in `dashboard.css`, not a fourth copy of the same two-line override.**
+
+**Final live state: both registers, both themes, 0 AA failures** — measured against the combinations
+the JS actually emits (57 surfaces on the Risk Register, 102 emitted combinations on the Stakeholder
+Register), worst margins 4.67:1 dark / 4.83:1 light.
+
+**Also, at the owner's request: "EPC Risk Universe" → "MCC Risk Universe" and "EPC Stakeholder
+Universe" → "MCC Stakeholder Universe"** — the two view headings, the shared criteria table, the
+off-taxonomy note and the test suite's section label. ⚠️ The shared file is still `epc-rcm.js` /
+`EPCRCM` / `.rcm-*`: renaming the module, its global and forty-odd CSS classes is a mechanical change
+with real blast radius across both registers, and the ask was about the headings.
+
+⚠️ **A CONCURRENCY HAZARD WORTH RECORDING, because it cost this pass an hour and nearly lost work.**
+Another session was editing `dashboard.html`, `modules.html` and `modules/project-schedule/index.html`
+in the same clone at the same time. Three things followed:
+1. **`git add -A` swept their uncommitted WIP into my commit.** Their 56-line change to
+   `project-schedule/index.html` was not in anything they had pushed, so it was live work.
+2. **They then `git reset --soft HEAD~1` MY commit** and committed the combined index under their own
+   message — so my changes briefly existed only under someone else's commit — then reset again.
+   Because the index is shared, every commit either session makes claims the other's staged work.
+3. **My work survived only as the unreachable commit object `a8e72c8`**, recovered from the reflog.
+
+**The rule that follows: in a clone another session is live in, never `git add -A`, and never rebase
+or reset shared HEAD.** This work was landed from an isolated `git worktree` checked out at
+`origin/main`, with my eight files taken verbatim out of my own commit object — which touches neither
+the shared index nor the shared HEAD, and let the other session keep working uninterrupted.
+
+⚠️ **`MODULE_V` deliberately NOT bumped here**, though both module `index.html` files changed their
+asset `?v=` strings. It lives in `dashboard.html`/`modules.html`, which the other session was actively
+editing — and they bumped it themselves in the same window. **Confirm a bump landed before trusting a
+returning browser to pick these up.**
+
+`epc-rcm.js` → `?v=20260901b`; both `module.js` → `?v=20260901g`; both `module.css` → `?v=20260901l`.
 
 ### 2026-09-01 (n) — Admin was UNREACHABLE, and it was a navigation defect, not a permissions one
 
@@ -11752,3 +12801,56 @@ months-outside-the-axis path, the import and the seed — all suite-covered, non
 a DOM or database read rather than a picture.
 
 `MODULE_V` → `20260828d`.
+
+### 2026-09-02 — Project Schedule: five views to four, and import stops writing on the first click
+
+Owner: *"let's sanitize the process in developing the project schedule either from import project
+schedule and starting a new project."* All of it inside
+[`modules/project-schedule/index.html`](modules/project-schedule/index.html) — no shared file
+touched, so no `?v=` bump is due. Full detail (and the browser verification) is in that module's own
+[`CLAUDE.md`](modules/project-schedule/CLAUDE.md); the shell-level shape of it:
+
+- **Planner Cockpit and WBS Manager are gone from the view menu.** The order is now **Schedule Setup
+  › Project Schedule › Cost Loading › Weekly Work Plan › Working Calendars** — the Setup first,
+  because that is where a schedule comes from.
+- ⚠️ **Neither removal took a feature with it.** The cockpit's only-way-in verbs (Update progress,
+  snapshots, change history) moved to the Schedule grid's **Actions** menu and the lookahead export to
+  **File**; the WBS Manager's Adopt/Reset and the Engineering + Procurement mirrors moved into
+  **Schedule Setup › WBS**; and the Last Planner weekly loop — a separate feature that merely lived
+  inside the cockpit — became its own **Weekly Work Plan** view.
+- **A project opens on the view its state calls for:** no activities → Schedule Setup; a schedule
+  already there → Project Schedule. Decided once per project, never re-decided on a refresh.
+- **Importing a programme is now four checking steps inside the Setup**, not a modal that commits on
+  the first click: check the activities and file each WBS branch under a phase (or exclude it), map
+  the location breakdown, settle the file's relationships, then review and write. The single
+  all-at-once import modal was deleted rather than left unreachable, so there is exactly one path
+  into the importers.
+- **The Location Breakdown lives only in Schedule Setup › Floors & Zones now** — levels and both WBS
+  matchers. The Project Schedule's Group menu keeps a signpost and a deep link.
+- **A reload no longer looks like an import.** `_repair('Loading resources…')` set `_repairBusy`,
+  which is half of `_editLocked()`, so every ordinary open of the Project Schedule raised the red
+  *"A schedule update in progress — do not edit yet"* banner and disabled Add activity on a schedule
+  that was already painted and correct. The chip still names each pass; only the passes that WRITE
+  rows lock, and those are all behind the heal gates, so a healthy project's load never locks.
+- **Working calendars can hold days that repeat every year.** A company holiday is entered once as
+  `--MM-DD` (ISO 8601's own recurring-date notation, in the existing `extra_holidays` array — no
+  migration) instead of once per year; a P6 import folds its own repeats at the parse, and a saved
+  calendar offers a button that says how many it would fold. One-off dates — proclamations, lunar
+  holidays, a shutdown after a typhoon — stay exact. `PDCal.nonWorkingReason` is indexed rather than
+  scanning the list per day, which it does up to 7,300 times per activity.
+- **Schedule Setup opens on the WBS.** The tree editor is step 2 rather than step 11: it is the only
+  step that shows what the project already has, it edits the live tree rather than filling in the
+  setup, and the import path already checked branches first.
+- **A quarter of the biggest schedule's logic was invisible to the CPM.** `predRels` matched activity
+  ids as `[A-Za-z0-9._-]+`, and 3,990 of 4PH Strevi's 16,393 activity codes contain `&`, `/` or a
+  space — so **5,239 of its 21,338 relationships (24.6%)** named a predecessor the parser truncated,
+  and the link was dropped with no error. The critical path, total float, the Activity Network and the
+  DCMA Health checks were all computed over three quarters of the graph. The parser now peels the
+  `<type><lag>` suffix off the right and takes the id to be whatever precedes it: verified at 100.0%
+  on all 21,338 real relationships, up from 75.4%, with zero wrong ids, types or lags.
+- **Reading a live schedule into Schedule Setup now fills the towers, the trade sequence and the tower
+  links.** Four separate defects: derived floors carried `tower` where everything else reads `towerId`
+  (so all 256 of them were reassigned to the first tower); the trade sequence's link graph is keyed on
+  activity ids and the derive wrote codes; the cross-tower pass needed a location for activities that
+  have no floor, which is exactly what a tower hand-off is; and the Tower-links form carried a 62px
+  width class that clipped all five of its dropdowns.

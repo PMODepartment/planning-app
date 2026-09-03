@@ -44,15 +44,58 @@ window.PPR = (function () {
   // overlay right now" is a viewing preference, not presentation content.
   var markupCache = {}, markupRowId = {}, showMarkup = {};
   var markupTableMissing = false;  // migrations/2026-08-29-markup.sql not run yet
+  // Item 10 (current round) / Item 7 (2026-09-02): "No need for 'preview this
+  // presentation's button'. instead use button to show or hide photo
+  // mark-ups (which are different from the presentation mark-ups)." AND
+  // "remove option to add presentation mark-ups per photo; add a view/hide
+  // toggle for the photo's own existing markup, persisted" — the SAME ask
+  // from two feedback rounds. showMarkup{}/markupCache above are the
+  // SLIDE-only annotation (ppr_slide_markups) toggled per pane;
+  // photoMarkupVisible()/setPhotoMarkupVisible() below is the ONE
+  // presentation-wide toggle for each pane's underlying PHOTO's own
+  // permanent markup (progress_photos.markup — the same drawing a Gallery
+  // tile/lightbox shows). ⚠️ Backed by the SAME shared, persisted preference
+  // module.js's Gallery/lightbox markup toggles already use
+  // (ProgressPhotos.markupGlobalVisible/setMarkupGlobalVisible) rather than
+  // a private, session-only flag — hiding a photo's markup here now hides it
+  // everywhere in the module, and the choice survives a reload, per the
+  // explicit "persist the setting" ask. There is deliberately no separate
+  // PER-PANE markup-view control any more (a first draft of this merge had
+  // one, `ppr-mktoggle-<which>`, reading the exact same `ph.markup` this one
+  // header toggle already covers — removed as a straightforward duplicate,
+  // not a second, competing preference).
+  function photoMarkupVisible() { return ProgressPhotos.markupGlobalVisible(); }
+  function setPhotoMarkupVisible(v) { ProgressPhotos.setMarkupGlobalVisible(v); }
   var selId = null;              // selected PPR (drives the preview pane)
-  var filters = { from: '', to: '', archived: false };  // archived: false = hide archived (default)
+  // reportType: '' = All, 'internal' = Internal, 'client' = External (Client) —
+  // same vocabulary as ppr_report_templates.meeting_type, see the migration.
+  var filters = { from: '', to: '', archived: false, reportType: '' };  // archived: false = hide archived (default)
   var screen = 'list';           // list | slides | templates
   var viewPprId = null, slideAt = 0;
-  // Item 21: "the key plan should be per photo, not shared at the top."
-  // Replaces the single shared `keyPlanOpen` toggle with per-pane state —
-  // each of the two photos in a slide can show/hide its OWN key plan popup
-  // independently of the other.
+  // ⚠️ RESTORED (Round-2 item 5, 2026-09-02): item 11 (an earlier round)
+  // had consolidated the original per-pane keyPlanOpenPane ({before,after})
+  // into ONE shared header button — "singular control, both panes together".
+  // The owner has now explicitly asked for the opposite again: "in each
+  // photo tile opposite the previous/current label, add show/hide key
+  // plan" — an independent toggle PER PANE, not a single header control.
+  // The header `#ppr-kp-toggle` button (and its showKeyPlan flag) is gone;
+  // each pane renders its OWN small icon + popup, gated on its own entry in
+  // this map, and only when that photo actually has a key plan at all
+  // (never a speculative, usually-inert control — same rule this file
+  // already applies to the markup-view toggle).
   var keyPlanOpenPane = { before: false, after: false };
+  // Item 8 (2026-09-02): the key-plan overlay's own width, as a fraction of
+  // the photo's rendered width — starts at 1/10 (matching item 11's fixed
+  // sizing above), drag-resizable from the overlay's bottom-left corner (see
+  // wirePaneMarkup's resize wiring). Kept PER-PANE (unlike the singular
+  // show/hide flag above) since it's a screen-space preference for that one
+  // photo, not a shared on/off decision — session-only either way.
+  var KP_OVERLAY_DEFAULT = 0.10, KP_OVERLAY_MIN = 0.06, KP_OVERLAY_MAX = 0.6;
+  var keyPlanOverlaySize = { before: null, after: null };
+  // ⚠️ Round-2 item 2 (2026-09-02) RETIRES the per-pane zoom feature item 10
+  // added — "zoom is only for the image pop-up view". Its buttons, wiring and
+  // applyPaneZoom() are all removed (see pane()'s own note); nothing here
+  // reads a per-pane zoom level any more.
   // Multi-select batch actions (item 14) — deliberately SEPARATE from `selId`.
   // `selId` means "this ONE presentation is open/being previewed"; `selectedPprs`
   // is a checkbox set for Download/Archive/Merge, and when 2+ are checked it
@@ -127,9 +170,14 @@ window.PPR = (function () {
     // default list — this checkbox is the ONLY way back to see one, same rule
     // as the Gallery's own archived items.
     if ($('ppr-f-archived')) $('ppr-f-archived').onchange = function () { filters.archived = this.checked; renderList(); };
+    // Report Type filter (Internal / External(Client)) — a real narrowing
+    // filter like the date range, not a view-mode toggle like Archived, so
+    // it IS reset by Clear filters below (unlike filters.archived).
+    if ($('ppr-f-reporttype')) $('ppr-f-reporttype').onchange = function () { filters.reportType = this.value; renderList(); };
     $('ppr-clearfilters').onclick = function () {
-      filters = { from: '', to: '', archived: filters.archived };  // the archived toggle is not a "filter" to clear
+      filters = { from: '', to: '', archived: filters.archived, reportType: '' };  // the archived toggle is not a "filter" to clear
       ['from', 'to'].forEach(function (k) { var el = $('ppr-f-' + k); if (el) el.value = ''; });
+      if ($('ppr-f-reporttype')) $('ppr-f-reporttype').value = '';
       renderList();
     };
     // Item 2 parity — the topbar funnel toggles the same collapsed-by-default
@@ -223,14 +271,22 @@ window.PPR = (function () {
   }
 
   // Every image on screen (photos + key plans) signed in one round-trip.
+  // New item 1 (photo-picker slowness): `thumbCache` mirrors module.js's own
+  // thumbUrlOf() fallback chain — a real client-generated `thumb_url` file
+  // first, else a Storage image-transform request against `photo_url`, so the
+  // "+ Add slide" photo picker (openThumbPicker below) can show a small image
+  // instead of loading every candidate at full resolution.
+  var thumbCache = {};
+  var THUMB_OPTS = { transform: { width: 320, quality: 50, resize: 'contain' } };
   async function signAll() {
-    urlCache = {};
+    urlCache = {}; thumbCache = {};
     var paths = {};
     // Key plans now live on the PHOTO (progress_photos.key_plan_url); the legacy
     // slide-level key_plan_url is still signed so pre-migration PPRs render.
     photos.forEach(function (p) {
       if (p.photo_url) paths[p.photo_url] = 1;
       if (p.key_plan_url) paths[p.key_plan_url] = 1;
+      if (p.thumb_url) paths[p.thumb_url] = 1;
     });
     Object.keys(slidesOf).forEach(function (k) {
       slidesOf[k].forEach(function (s) { if (s.key_plan_url) paths[s.key_plan_url] = 1; });
@@ -242,11 +298,35 @@ window.PPR = (function () {
     (res.data || []).forEach(function (d) {
       if (d && d.signedUrl && !d.error) urlCache[d.path] = d.signedUrl;
     });
+    // Best-effort — no thumb_url column yet, or the transform add-on
+    // unavailable, both degrade quietly to full-res via thumbUrlOfPhoto below.
+    try {
+      var photoPaths = photos.map(function (p) { return p.photo_url; }).filter(Boolean);
+      if (photoPaths.length) {
+        var tres = await sb().storage.from(BUCKET).createSignedUrls(photoPaths, SIGN_TTL, THUMB_OPTS);
+        if (!tres.error) {
+          (tres.data || []).forEach(function (d) { if (d && d.signedUrl && !d.error) thumbCache[d.path] = d.signedUrl; });
+        }
+      }
+    } catch (e) { /* transform add-on unavailable */ }
   }
 
   function photoById(id) { return photos.filter(function (p) { return p.id === id; })[0] || null; }
   function urlOfPhoto(id) { var p = photoById(id); return p && p.photo_url ? (urlCache[p.photo_url] || '') : ''; }
   function urlOfPath(path) { return path ? (urlCache[path] || '') : ''; }
+  // Item 1: the picker grid's own small preview — real thumb_url first (via
+  // urlCache, batch-signed above like every other path), else the Storage
+  // transform request against photo_url (thumbCache), else full-res — the
+  // exact same three-step fallback module.js's thumbUrlOf() uses, restated
+  // here rather than reached into module.js's private closure (this file's
+  // established small-helper convention, see reqMark()'s own comment).
+  function thumbUrlOfPhoto(id) {
+    var p = photoById(id);
+    if (!p) return '';
+    if (p.thumb_url && urlCache[p.thumb_url]) return urlCache[p.thumb_url];
+    if (p.photo_url && thumbCache[p.photo_url]) return thumbCache[p.photo_url];
+    return p.photo_url ? (urlCache[p.photo_url] || '') : '';
+  }
   // ⚠️ Audit fix: slidesOf[k] is ALREADY kept sorted by slide_no at both of
   // its only two write sites — load() explicitly sorts it once, and the
   // slide-sorter's own save handler renumbers slide_no sequentially to
@@ -379,6 +459,22 @@ window.PPR = (function () {
     if (mg) mg.style.display = (hasSel && canWrite && selIds.length >= 2) ? '' : 'none';
   }
 
+  // Report Type — shared by the row pill and the Add/Edit form. Reuses
+  // ppr_report_templates.meeting_type's own vocabulary ('internal'/'client')
+  // rather than a second spelling of the same two values.
+  function reportTypeLabel(rt) {
+    return rt === 'client' ? 'External (Client)' : rt === 'internal' ? 'Internal' : 'Not set';
+  }
+  // Row pill text is shortened ("External", not the full "External (Client)")
+  // to fit the list's narrow Type column; the fuller wording is reserved for
+  // the filter dropdown and the Add/Edit form, where there's room for it.
+  function reportTypePillHTML(rt) {
+    var title = ' title="' + esc(reportTypeLabel(rt)) + '"';
+    if (rt === 'client') return '<span class="pd-pill pd-pill-warn"' + title + '>External</span>';
+    if (rt === 'internal') return '<span class="pd-pill pd-pill-muted"' + title + '>Internal</span>';
+    return '<span class="pd-pill pd-pill-muted"' + title + '>—</span>';
+  }
+
   function visiblePprs() {
     return pprs.filter(function (p) {
       // Archived is hidden unless the toggle is explicitly on — never both at
@@ -387,6 +483,9 @@ window.PPR = (function () {
       if (!!p.archived !== !!filters.archived) return false;
       if (filters.from && (!p.ppr_date || p.ppr_date < filters.from)) return false;
       if (filters.to && (!p.ppr_date || p.ppr_date > filters.to)) return false;
+      // A legacy (NULL) presentation matches neither specific option — it
+      // shows under "All" only, until someone opens it and sets a type.
+      if (filters.reportType && p.report_type !== filters.reportType) return false;
       return true;
     });
   }
@@ -409,7 +508,7 @@ window.PPR = (function () {
     $('ppr-countbar').style.visibility = pprs.length ? '' : 'hidden';
 
     var clr = $('ppr-clearfilters');
-    if (clr) clr.hidden = !(filters.from || filters.to);
+    if (clr) clr.hidden = !(filters.from || filters.to || filters.reportType);
 
     if (!pprs.length) {
       host.innerHTML = '<div class="pp-empty">' +
@@ -438,6 +537,7 @@ window.PPR = (function () {
           (selectedPprs[p.id] ? ' checked' : '') + ' /></div>' +
         '<div class="ppr-cell ppr-date">' + esc(longDate(p.ppr_date)) + '</div>' +
         '<div class="ppr-cell">' + esc(p.description || '—') + '</div>' +
+        '<div class="ppr-cell">' + reportTypePillHTML(p.report_type) + '</div>' +
         '<div class="ppr-cell ppr-num">' + n + '</div>' +
         '</div>';
     }).join('');
@@ -449,7 +549,7 @@ window.PPR = (function () {
     var table = '<div class="ppr-table">' +
       '<div class="ppr-head"><div class="pp-selcell"><input type="checkbox" id="ppr-selall"' +
         (allChecked ? ' checked' : '') + ' title="Select/unselect all shown" /></div>' +
-        '<div>Presentation Date</div><div>Description</div>' +
+        '<div>Presentation Date</div><div>Description</div><div>Type</div>' +
       '<div class="ppr-num">No. of Slides</div></div>' +
       (list.length ? rows : '<div class="pp-empty" style="border:0;">' +
         (filters.archived ? 'No archived presentations.' : 'No presentations in this date range.') + '</div>') +
@@ -683,32 +783,14 @@ window.PPR = (function () {
   // Read-only view of the exported look, without downloading a file — reuses
   // slidesBodyHTML/EXPORT_CSS (the SAME markup the offline HTML/PDF exports
   // produce) so what you preview can never look different from what you'd get.
-  // ⚠️ Deliberately NOT collectSlideImages()'s downscaled data-URI embedding —
-  // this stays on screen, so the already-cached SIGNED URLs serve directly
-  // (an identity map: imgs[url] === url), at zero extra fetch/embed cost.
-  function identityImgs(s) {
-    var imgs = {};
-    s.forEach(function (sl) {
-      [sl.before_photo_id, sl.after_photo_id].forEach(function (id) {
-        var u = urlOfPhoto(id); if (u) imgs[u] = u;
-      });
-      ['before', 'after'].forEach(function (which) {
-        var k = urlOfPath(keyPlanPathFor(sl, which)); if (k) imgs[k] = k;
-      });
-    });
-    return imgs;
-  }
-  function openPreviewModal(p) {
-    var s = slides(p.id);
-    if (!s.length) { UI.toast('This presentation has no slides to preview', 'warn'); return; }
-    var html =
-      '<div class="pd-modal-header"><h3>Preview — ' + esc(p.description || longDate(p.ppr_date)) + '</h3>' +
-        '<button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="ppr-previewbox">' +
-        '<style>' + EXPORT_CSS + '</style>' + slidesBodyHTML(p, s, identityImgs(s)) +
-      '</div>';
-    openModal(html, 1000);
-  }
+  // ⚠️ RETIRED (item 10, current round): identityImgs()/openPreviewModal()
+  // (the full-slide-deck modal opened from the presentation header's own
+  // "Preview" icon) had exactly one caller between them — that icon, now
+  // replaced by the photo-markup toggle — and the list screen's per-row
+  // Preview icon was already superseded by the checkbox-driven preview pane
+  // (renderPreview/renderCombinedPreview below, an independent code path
+  // that never called either of these) in an earlier round. Both deleted
+  // rather than left with nothing left to call them.
 
   // The three export formats, behind one button — "Download…" alone doesn't
   // say which file you'll get, and the three were previously three separate
@@ -744,7 +826,8 @@ window.PPR = (function () {
 
   function openPpr(id) {
     var p = pprById(id); if (!p) return;
-    selId = id; viewPprId = id; slideAt = 0; keyPlanOpenPane = { before: false, after: false };
+    selId = id; viewPprId = id; slideAt = 0;
+    keyPlanOpenPane = { before: false, after: false };
     screen = 'slides';
     render();
   }
@@ -844,8 +927,12 @@ window.PPR = (function () {
         // now scoped to the Templates screen only). Rendered as the FIRST
         // child of this header so the reading order is exactly
         // Back Button > Presentation Details > action buttons.
+        // Item 9 (current round): "instead of presentations list label of
+        // button, add a back arrow and the words back to the button label" —
+        // the arrow icon was already here; only the label text changes,
+        // "Presentations list" -> "Back".
         '<button class="pp-crumbback ppr-slideback" id="ppr-slide-back" title="Back to the presentation list">' +
-          '<span data-ico="arrowLeft" data-ico-size="14"></span> Presentations list</button>' +
+          '<span data-ico="arrowLeft" data-ico-size="14"></span> Back</button>' +
         // Item 23: the Project field is gone — it's redundant (the topbar
         // project selector already names it, on every screen of this module).
         '<div class="ppr-hfield"><label>Presentation Date</label><span>' + esc(longDate(p.ppr_date)) + '</span></div>' +
@@ -870,16 +957,40 @@ window.PPR = (function () {
           // Sixth round item 6: "no need for the full size preview button" —
           // that button opened a modal reproducing the SAME pane already on
           // screen (you're already viewing this exact slide full-size while
-          // editing it), and was removed. This is a DIFFERENT feature: the
-          // list row's own "Preview" (openPreviewModal, all of the
-          // presentation's slides at once) had no way back INTO it once you
-          // opened the presentation to edit it — restored here so it's
-          // reachable from both places, not just the list. Preview and
-          // Download are reads (never gated by canWrite, same as the list
-          // row's own Preview/Download always were); Archive/Edit/Delete
-          // mutate the record and stay writer-only.
-          '<button class="pp-iconbtn" id="ppr-pres-preview" title="Preview this presentation\'s slides">' +
-            '<span data-ico="eye" data-ico-size="15"></span></button>' +
+          // editing it), and was removed. Its sibling, the "Preview this
+          // presentation's slides" button (openPreviewModal, all of the
+          // presentation's slides at once), was restored here in an earlier
+          // round for the same "no way back into it" reason — but item 10
+          // (current round) removes it again, permanently, in favour of the
+          // photo-markup toggle below. ⚠️ This was its LAST caller anywhere
+          // in the file (the list screen's own per-row Preview icon was
+          // already superseded by the checkbox-driven preview pane in an
+          // even earlier round — see the "Preview is superseded by the
+          // checkbox-driven preview pane" note above), so openPreviewModal()
+          // and its private identityImgs() helper are deleted below rather
+          // than left as dead code with nothing left to call them.
+          // Item 10: a presentation-wide toggle for each pane's underlying
+          // PHOTO's own permanent markup (progress_photos.markup) — the ONLY
+          // markup control left in this screen now (item 7, 2026-09-02
+          // removed the per-pane "add presentation markup" edit feature that
+          // used to sit inside pane() below). Icon-active when on, matching
+          // the shared Gallery markup toggle's own styling convention
+          // (module.js's #pp-mkvistoggle). A read, never gated by canWrite,
+          // same as Download beside it.
+          // Icon mirrors the eye/eyeOff convention module.js's own markup
+          // toggles use (#pp-mkvistoggle, #pp-lb-markuptoggle) — a pencil
+          // read as "edit", not "show/hide", and the whole header re-renders
+          // fresh on every toggle (renderSlides() above), so the icon name
+          // simply follows photoMarkupVisible() in the template rather than
+          // needing a separate live-DOM patch step.
+          '<button class="pp-iconbtn' + (photoMarkupVisible() ? ' is-active' : '') + '" id="ppr-photomk-toggle" ' +
+            'title="Show/hide each photo\'s own markup">' +
+            '<span data-ico="' + (photoMarkupVisible() ? 'eye' : 'eyeOff') + '" data-ico-size="15"></span></button>' +
+          // ⚠️ RETIRED (Round-2 item 5, 2026-09-02): item 11's single header
+          // "show/hide key plans" button is gone — each pane now carries its
+          // OWN toggle, opposite its Previous/Current label (see pane()
+          // below), so there is nothing left for one shared header control
+          // to do that isn't already better expressed per-pane.
           '<button class="pp-iconbtn" id="ppr-pres-dl" title="Download this presentation">' +
             '<span data-ico="download" data-ico-size="15"></span></button>' +
           (canWrite ? '<button class="pp-iconbtn" id="ppr-pres-arch" title="' + (p.archived ? 'Restore from archive' : 'Archive presentation') + '">' +
@@ -937,10 +1048,8 @@ window.PPR = (function () {
     if ($('ppr-slide-add')) $('ppr-slide-add').onclick = function () { openSlideForm(null); };
     if ($('ppr-slide-edit')) $('ppr-slide-edit').onclick = function () { openSlideForm(cur); };
     if ($('ppr-slide-del')) $('ppr-slide-del').onclick = function () { removeSlide(cur); };
-    ['before', 'after'].forEach(function (which) {
-      var kp = $('ppr-kp-' + which);
-      if (kp) kp.onclick = function () { keyPlanOpenPane[which] = !keyPlanOpenPane[which]; renderSlides(); };
-    });
+    // Item 11 — ONE key-plan toggle now (wired in wirePresActs, alongside the
+    // item-10 photo-markup toggle), no longer a per-pane button.
     wirePaneMarkup(cur);
     hydrate();
   }
@@ -956,7 +1065,18 @@ window.PPR = (function () {
     if ($('ppr-sort')) $('ppr-sort').onclick = function () { openSlideSorter(p); };
     if ($('ppr-pres-arch')) $('ppr-pres-arch').onclick = function () { toggleArchive(p); };
     if ($('ppr-pres-dl')) $('ppr-pres-dl').onclick = function () { openDownloadChoice(p); };
-    if ($('ppr-pres-preview')) $('ppr-pres-preview').onclick = function () { openPreviewModal(p); };
+    // Item 10 / Item 7 (2026-09-02): toggling flips the SHARED, persisted
+    // preference (photoMarkupVisible/setPhotoMarkupVisible) and re-renders —
+    // pane() reads it fresh on every renderSlides() call, so a single click
+    // updates both panes of the currently-shown slide at once, AND every
+    // Gallery tile and the lightbox the moment they're next painted too.
+    if ($('ppr-photomk-toggle')) $('ppr-photomk-toggle').onclick = function () {
+      setPhotoMarkupVisible(!photoMarkupVisible());
+      renderSlides();
+    };
+    // ⚠️ RETIRED (Round-2 item 5): the single header key-plan toggle wiring
+    // is gone — each pane wires its own toggle inside wirePaneMarkup() below,
+    // against keyPlanOpenPane[which].
   }
 
   // ------------------------------------------------------ slide-sorter (item 12) ---
@@ -1087,6 +1207,31 @@ window.PPR = (function () {
     return (ph && ph.key_plan_url) || sl.key_plan_url || '';
   }
 
+  // Item 8 (2026-09-02): resolve the REAL bim.js pin (position + camera
+  // direction cone) for a photo, if one was placed on the Floor Plans screen.
+  // Reuses BIM.pinInfoFor/keyPlanMarkerHTML verbatim (bim.js's own exports,
+  // added specifically for this) rather than re-deriving pin/cone geometry a
+  // second time in this file.
+  // ⚠️ `aspect` is the PLAN's own true width/height ratio (when known) so the
+  // overlay's box can be given that exact aspect-ratio via CSS — the pin's
+  // x_norm/y_norm are percentages of the plan image's FULL box, and only an
+  // undistorted, non-letterboxed render of that image (achieved by matching
+  // the box's aspect to the image's own) keeps the pin's on-screen position
+  // correct. A plan with no recorded pixel size falls back to a plain 4:3 box
+  // and accepts the image may letterbox inside it — the pin can end up
+  // slightly off in that one case, which is an acceptable approximation for
+  // a small presentation-view preview (the authoritative view stays the
+  // Floor Plans screen itself).
+  function keyPlanInfoForPane(photoId) {
+    if (!photoId || !window.BIM || !BIM.pinInfoFor) return null;
+    var info = BIM.pinInfoFor('photo', photoId);
+    if (!info || !info.pin) return null;
+    return {
+      pin: info.pin, planUrl: info.planUrl,
+      aspect: (info.planWidth && info.planHeight) ? (info.planWidth / info.planHeight) : (4 / 3)
+    };
+  }
+
   // `hideLocation` is true when renderSlides() already printed the two photos'
   // shared location once, above the pair (follow-up feedback item 3) — this
   // pane's own head then shows no location line at all, since it was already
@@ -1099,16 +1244,38 @@ window.PPR = (function () {
     var u = urlOfPhoto(photoId);
     var cap = (which === 'before' ? sl.before_caption : sl.after_caption) ||
               (ph ? ph.description : '') || '';
-    // Item 21: the key plan is per-pane now — its own icon, its own popup,
-    // independent of the other pane. Only offered when this SPECIFIC photo
-    // actually has one (never a speculative, usually-inert icon).
-    var kpPath = keyPlanPathFor(sl, which);
-    var kpOpen = keyPlanOpenPane[which];
-    var kpIcon = kpPath
-      ? '<button class="ppr-kpicon' + (kpOpen ? ' is-active' : '') + '" id="ppr-kp-' + which + '" ' +
-        'title="Show/hide this photo\'s key plan"><span data-ico="mapPin" data-ico-size="14"></span></button>'
-      : '';
-    var kpPopup = (kpOpen && kpPath) ? '<div class="ppr-kppopup"><img src="' + esc(urlOfPath(kpPath)) + '" alt="Key plan" /></div>' : '';
+    // Item 8 (2026-09-02): the key plan is now the real bim.js pin+cone system
+    // (position + camera direction), not the old flat reference-image toggle
+    // — offered only when this SPECIFIC photo actually has a placed pin.
+    // `keyPlanPathFor` (the legacy `key_plan_url`/`ppr_slides.key_plan_url`
+    // path) is kept as a fallback ONLY for photos captured before bim.js
+    // pins existed, rendered as a plain picture with no pin/cone (there is
+    // no pin data to draw one from) — so an old slide still shows what it
+    // always showed. ⚠️ Round-2 item 5 (2026-09-02) RESTORES a per-pane
+    // open/closed state (`keyPlanOpenPane[which]`) — item 11's single
+    // shared header toggle is retired (see the module-state comment near
+    // the top of this file), so each pane now decides independently
+    // whether ITS OWN overlay is shown, via its own small icon rendered
+    // below (only when this photo actually has a plan at all).
+    var kpInfo = photoId ? keyPlanInfoForPane(photoId) : null;
+    var kpLegacyPath = (!kpInfo && u) ? keyPlanPathFor(sl, which) : null;
+    var kpHasPlan = !!(kpInfo || kpLegacyPath);
+    var kpOpen = keyPlanOpenPane[which] && kpHasPlan;
+    var kpOverlay = '';
+    if (kpOpen && kpInfo) {
+      var kpwPct = (keyPlanOverlaySize[which] || KP_OVERLAY_DEFAULT) * 100;
+      kpOverlay = '<div class="ppr-kpoverlay" id="ppr-kpoverlay-' + which + '" ' +
+        'style="width:' + kpwPct + '%;aspect-ratio:' + kpInfo.aspect + ';">' +
+        '<div class="ppr-kpoverlay-inner">' +
+          '<img class="ppr-kpoverlay-img" src="' + esc(kpInfo.planUrl) + '" alt="Key plan" />' +
+          BIM.keyPlanMarkerHTML(kpInfo.pin) +
+        '</div>' +
+        '<div class="ppr-kpoverlay-resize" data-resize="' + which + '" title="Drag to resize"></div>' +
+      '</div>';
+    } else if (kpOpen && kpLegacyPath) {
+      kpOverlay = '<div class="ppr-kpoverlay ppr-kpoverlay-legacy" id="ppr-kpoverlay-' + which + '">' +
+        '<img src="' + esc(urlOfPath(kpLegacyPath)) + '" alt="Key plan" /></div>';
+    }
     // Each pane carries its own Location, since the two photos are no longer
     // required to share one. Sixth round item 10: location is now ALWAYS
     // rendered (an em-dash when unset, matching Date/Description below)
@@ -1117,24 +1284,34 @@ window.PPR = (function () {
     // `hideLocation` still suppresses it here specifically because the SAME
     // value is already shown once, above the pair, when both photos agree.
     var loc = hideLocation ? null : (ph ? ph.location : sl.location) || '';
-    // Presentation-only markup (item 14) — never on the offline/PDF/PPTX
-    // exports (those are the record of what was PRESENTED; this overlay is a
-    // live annotation aid), and never shown at all without an actual photo.
-    var mk = u ? markupFor(sl.id, which) : [];
-    var mkKey = markupKey(sl.id, which);
-    var mkVisible = showMarkup[mkKey] !== false;
-    var mkTools = u ? '<div class="ppr-panetools">' +
-      (mk.length ? '<button class="ppr-mktool' + (mkVisible ? ' is-active' : '') + '" ' +
-        'id="ppr-mktoggle-' + which + '" title="Show/hide markup">' +
-        '<span data-ico="eye" data-ico-size="13"></span></button>' : '') +
-      (canWrite ? '<button class="ppr-mktool" id="ppr-mkedit-' + which + '" title="Edit markup">' +
-        '<span data-ico="palette" data-ico-size="13"></span></button>' : '') +
-      '</div>' : '';
+    // ⚠️ Item 7 (2026-09-02): the presentation-only markup overlay/editor
+    // (ppr_slide_markups, a separate drawing you'd make just for the deck) is
+    // REMOVED entirely — there is nothing left to "edit" per pane; editing a
+    // photo's markup happens where every other markup edit happens, the
+    // Gallery lightbox. The one remaining markup control is item 11's own
+    // header-level `#ppr-photomk-toggle` (photoMarkupVisible() below) — a
+    // per-pane toggle here would be a straightforward duplicate of it, both
+    // reading the exact same `ph.markup`.
+    // ⚠️ Round-2 item 2 (2026-09-02): the per-pane zoom in/out buttons that
+    // used to sit here (`ppr-panetools`/`ppr-zoomin-<which>`/`ppr-zoomout-
+    // <which>`, driven by `applyPaneZoom`) are REMOVED — "zoom is only for
+    // the image pop-up view" (the lightbox, which gets its own zoom-then-
+    // magnifier treatment in items 3/10). A presentation pane is a preview;
+    // opening the photo (item 9's click-to-open) is how you examine it.
+    // The PHOTO's own permanent markup (progress_photos.markup) — gated on
+    // the ONE shared, persisted preference (photoMarkupVisible/
+    // setPhotoMarkupVisible, backed by ProgressPhotos.markupGlobalVisible —
+    // the same flag the Gallery/lightbox already read, so hiding it here
+    // hides it everywhere and the choice survives a reload), and, like
+    // before, never rendered at all without an actual photo or with nothing
+    // recorded to draw.
+    var photoMk = (ph && ph.markup) || [];
+    var photoMkVisible = photoMarkupVisible() && u && photoMk.length;
     // Item 22/23: capture date / description / works move ABOVE the image
     // (previously a figcaption below it) — a per-pane "head" tile, holding
     // its own location line when the shared tile above the pair doesn't
     // already cover it.
-    return '<figure class="ppr-pane">' +
+    return '<figure class="ppr-pane" id="ppr-pane-' + which + '">' +
       // "Previous"/"Current" is the user-facing label (owner feedback, item 7:
       // less ambiguous than Before/After for a recurring capture). The
       // internal `which` discriminator stays 'before'/'after' throughout this
@@ -1144,7 +1321,15 @@ window.PPR = (function () {
       // Sixth round item 9: Current gets the filled brand-red chip (it's the
       // stage being reported on), Previous the quieter outlined one — so the
       // two panes read as distinct at a glance, not just by left/right order.
-      '<div class="ppr-panelabel' + (which === 'after' ? ' is-current' : '') + '">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
+      // Round-2 item 5: a per-pane key-plan toggle sits OPPOSITE the label,
+      // in the same top row (.ppr-panetop) — only rendered when this photo
+      // actually has a plan to show (never a speculative, usually-inert
+      // control), so a pane whose photo has no pin renders no button at all.
+      '<div class="ppr-panetop">' +
+        '<div class="ppr-panelabel' + (which === 'after' ? ' is-current' : '') + '">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
+        (kpHasPlan ? '<button class="pp-iconbtn' + (kpOpen ? ' is-active' : '') + '" data-kptoggle="' + which + '" ' +
+          'title="Show/hide key plan"><span data-ico="mapPin" data-ico-size="14"></span></button>' : '') +
+      '</div>' +
       // Sixth round items 10/11: Location is always shown (never silently
       // absent when unset), and Date/Description each carry an explicit
       // label — previously both were bare values with no indication of
@@ -1159,57 +1344,120 @@ window.PPR = (function () {
         '<div class="ppr-captxt"><span class="ppr-panehead-lbl">Description</span> ' + esc(cap || '—') + '</div>' +
       '</div>' +
       '<div class="ppr-imgwrap">' +
-        (u ? '<img class="ppr-img" src="' + esc(u) + '" alt="' + esc(cap) + '" />'
+        // Item 9 (2026-09-02): clicking the photo opens it in the ordinary
+        // lightbox — `data-openphoto` is wired in wirePaneMarkup rather than
+        // an inline onclick, so it goes through the SAME safe
+        // ProgressPhotos.openPhotoById(id) the audit-fixed Plan/Stack views
+        // use (toasts + bails on a miss instead of silently opening the
+        // wrong photo at index 0).
+        (u ? '<img class="ppr-img" data-openphoto="' + esc(photoId) + '" src="' + esc(u) + '" alt="' + esc(cap) + '" />'
            : '<div class="ppr-img pp-noimg"><span>Photo not set</span></div>') +
-        (u && mk.length && mkVisible ? '<canvas class="ppr-mkcanvas" id="ppr-mkcanvas-' + which + '"></canvas>' : '') +
-        mkTools + kpIcon + kpPopup +
+        // Photo markup paints FIRST (underneath), slide markup on top — a
+        // planner annotating THIS presentation should never have their own
+        // marks obscured by whatever was already on the source photo.
+        (photoMkVisible ? '<canvas class="ppr-mkcanvas ppr-photomkcanvas" id="ppr-photomkcanvas-' + which + '"></canvas>' : '') +
+        kpOverlay +
       '</div>' +
     '</figure>';
+  }
+
+  // Item 8's drag-to-resize handle: drags the overlay's BOTTOM-LEFT corner.
+  // The overlay box is pinned `top:8px;right:8px`, so its top-right corner
+  // never moves — growing/shrinking the box's WIDTH alone (its `aspect-
+  // ratio` keeps height following automatically) is exactly "drag the
+  // bottom-left corner": dragging left grows the box, dragging right shrinks
+  // it, and the top-right corner stays put the whole time.
+  function wireKpResizeDrag(which) {
+    var handle = document.querySelector('#ppr-kpoverlay-' + which + ' .ppr-kpoverlay-resize');
+    var box = $('ppr-kpoverlay-' + which);
+    if (!handle || !box || !box.parentElement) return;
+    handle.onpointerdown = function (e) {
+      e.preventDefault();
+      var wrapW = box.parentElement.clientWidth || 1;
+      var startX = e.clientX;
+      var startFrac = keyPlanOverlaySize[which] || KP_OVERLAY_DEFAULT;
+      var move = function (ev) {
+        var dx = startX - ev.clientX;
+        var frac = Math.max(KP_OVERLAY_MIN, Math.min(KP_OVERLAY_MAX, startFrac + dx / wrapW));
+        keyPlanOverlaySize[which] = frac;
+        box.style.width = (frac * 100) + '%';
+      };
+      var up = function () {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    };
   }
 
   // Called after renderSlides() paints — sizes each pane's overlay canvas to
   // the image's own rendered box (a canvas has no intrinsic size of its own)
   // and paints it via the SHARED drawing routine module.js exports, then
-  // wires the toggle/edit buttons. `cur` is the slide object currently shown.
+  // wires the markup/key-plan/zoom toggles and the click-to-view-photo
+  // handler. `cur` is the slide object currently shown.
   function wirePaneMarkup(cur) {
     ['before', 'after'].forEach(function (which) {
       var photoId = which === 'before' ? cur.before_photo_id : cur.after_photo_id;
-      var cv = $('ppr-mkcanvas-' + which);
-      if (cv) {
-        var wrap = cv.parentElement;
-        var paint = function () {
-          var w = wrap.clientWidth, h = wrap.clientHeight;
+      // Item 10 — the photo's own permanent markup canvas, sized/painted the
+      // same way the slide-markup canvas below already is (a canvas has no
+      // intrinsic size, so it's read off the already-laid-out wrapper).
+      var pcv = $('ppr-photomkcanvas-' + which);
+      if (pcv) {
+        var pwrap = pcv.parentElement;
+        var ppaint = function () {
+          var w = pwrap.clientWidth, h = pwrap.clientHeight;
           if (!w || !h) return;
-          cv.width = w; cv.height = h;
-          if (window.ProgressPhotos && ProgressPhotos.drawMarkupOnCanvas) {
-            ProgressPhotos.drawMarkupOnCanvas(cv, markupFor(cur.id, which));
+          pcv.width = w; pcv.height = h;
+          var ph = photoById(photoId);
+          if (ph && window.ProgressPhotos && ProgressPhotos.drawMarkupOnCanvas) {
+            ProgressPhotos.drawMarkupOnCanvas(pcv, ph.markup || []);
           }
         };
-        var img = wrap.querySelector('img.ppr-img');
-        if (img && img.complete && img.naturalWidth) paint();
-        else if (img) img.addEventListener('load', paint, { once: true });
-        else paint();
+        var pimg = pwrap.querySelector('img.ppr-img');
+        if (pimg && pimg.complete && pimg.naturalWidth) ppaint();
+        else if (pimg) pimg.addEventListener('load', ppaint, { once: true });
+        else ppaint();
       }
-      var tgl = $('ppr-mktoggle-' + which);
-      if (tgl) tgl.onclick = function () {
-        var key = markupKey(cur.id, which);
-        showMarkup[key] = !(showMarkup[key] !== false);
+      // ⚠️ RETIRED: the per-pane slide-only markup canvas (`ppr-mkcanvas-
+      // <which>`) and its own toggle button (`ppr-mktoggle-<which>`) are no
+      // longer emitted by pane() — item 7 removed the presentation-only
+      // markup editor entirely (the photo's OWN markup, painted above via
+      // `ppr-photomkcanvas-<which>`/`pcv`, is the only markup canvas left).
+      // Round-2 item 5 (2026-09-02) RESTORES the per-pane key-plan toggle
+      // (`data-kptoggle="<which>"`) — item 11's single shared header button
+      // is gone; each pane's own icon flips only ITS OWN entry in
+      // keyPlanOpenPane.
+      var kpBtn = document.querySelector('#ppr-pane-' + which + ' [data-kptoggle="' + which + '"]');
+      if (kpBtn) kpBtn.onclick = function () {
+        keyPlanOpenPane[which] = !keyPlanOpenPane[which];
         renderSlides();
       };
-      var edt = $('ppr-mkedit-' + which);
-      if (edt) edt.onclick = function () {
-        var u = urlOfPhoto(photoId);
-        if (!u) { UI.toast('Pick a photo for this pane before adding markup', 'warn'); return; }
-        ProgressPhotos.openMarkupEditor(u, markupFor(cur.id, which), function (objs) {
-          saveSlideMarkup(cur.id, which, objs);
-        });
+      // Item 8's resize handle still needs wiring per-pane — the overlay
+      // itself is per-pane, and so is its open/closed state again now.
+      wireKpResizeDrag(which);
+      // Round-2 item 2: no more per-pane zoom to wire (see pane()'s own note
+      // — zoom lives only in the lightbox now).
+      // Item 9 — click the photo itself to view it full-size in the ordinary
+      // lightbox. Bound on the <img> specifically (never the wrapping
+      // .ppr-imgwrap) so clicking one of the corner tool buttons — siblings
+      // of the <img>, not descendants of it — can never bubble into this.
+      var imgEl = document.querySelector('#ppr-pane-' + which + ' .ppr-img[data-openphoto]');
+      if (imgEl) imgEl.onclick = function () {
+        if (window.ProgressPhotos && ProgressPhotos.openPhotoById) {
+          ProgressPhotos.openPhotoById(this.dataset.openphoto);
+        }
       };
     });
   }
 
   function wireSlideNav(s) {
-    if ($('ppr-prev')) $('ppr-prev').onclick = function () { if (slideAt > 0) { slideAt--; renderSlides(); } };
-    if ($('ppr-next')) $('ppr-next').onclick = function () { if (slideAt < s.length - 1) { slideAt++; renderSlides(); } };
+    if ($('ppr-prev')) $('ppr-prev').onclick = function () {
+      if (slideAt > 0) { slideAt--; renderSlides(); }
+    };
+    if ($('ppr-next')) $('ppr-next').onclick = function () {
+      if (slideAt < s.length - 1) { slideAt++; renderSlides(); }
+    };
   }
 
   // -------------------------------------------------------- Presentation CRUD ----
@@ -1217,12 +1465,49 @@ window.PPR = (function () {
   // both a PPR presentation and a client presentation, distinguished in the description.
   // The DB table/columns keep their `ppr_*` names — renaming them would break
   // every existing row and the migration isn't worth it for a label change.
+
+  // Shared by every ppr_presentations write that can carry report_type
+  // (openPprForm's insert/update, createPresentationPlain, the copy wizard's
+  // finish()) — tolerant of migrations/2026-09-02-ppr-presentation-report-
+  // type.sql not having run yet. Strips just that one column and retries so
+  // the presentation itself is never blocked from being created/renamed by
+  // one not-yet-migrated field; callers report typeDropped in their own toast
+  // rather than this helper toasting on their behalf.
+  function isMissingColumnErr(e) { return /column .* does not exist|schema cache/i.test((e && e.message) || ''); }
+  async function insertPresentation(data) {
+    var res = await sb().from(T_PPR).insert(Object.assign({}, data, { project_id: pid, created_by: uid })).select();
+    var typeDropped = false;
+    if (res.error && isMissingColumnErr(res.error) && 'report_type' in data) {
+      var retry = Object.assign({}, data); delete retry.report_type;
+      res = await sb().from(T_PPR).insert(Object.assign(retry, { project_id: pid, created_by: uid })).select();
+      typeDropped = !res.error;
+    }
+    return { res: res, typeDropped: typeDropped };
+  }
+  async function updatePresentation(id, data) {
+    var res = await sb().from(T_PPR)
+      .update(Object.assign({}, data, { updated_at: new Date().toISOString() })).eq('id', id);
+    var typeDropped = false;
+    if (res.error && isMissingColumnErr(res.error) && 'report_type' in data) {
+      var retry = Object.assign({}, data); delete retry.report_type;
+      res = await sb().from(T_PPR).update(Object.assign(retry, { updated_at: new Date().toISOString() })).eq('id', id);
+      typeDropped = !res.error;
+    }
+    return { res: res, typeDropped: typeDropped };
+  }
+
   function openPprForm(p) {
     var isNew = !p; p = p || {};
     // Copy-previous: pre-selects the most recent EARLIER presentation so a new one
     // starts from last period's slides, with its "after" photos promoted to
     // "before" (see copySlidesFrom below).
     var prior = pprs.filter(function (x) { return x.id !== p.id; });
+    // Report Type — reuses ppr_report_templates.meeting_type's own vocabulary.
+    // Defaults the PICKER to Internal for a brand-new presentation, and for a
+    // legacy (NULL) one being edited — visible/changeable before Save, never
+    // a silent backend backfill. An already-classified 'client' row keeps
+    // showing External (Client) as expected.
+    var curType = p.report_type || 'internal';
     var html =
       '<div class="pd-modal-header"><h3>' + (isNew ? 'New Presentation' : 'Edit Presentation') + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
@@ -1232,6 +1517,20 @@ window.PPR = (function () {
         '<div class="pd-field"><label>Description</label>' +
           '<input class="pd-input" id="ppr-f-desc" placeholder="e.g. PPR ftm of June 2026 / Client Presentation" value="' +
           esc(p.description || '') + '" /></div>' +
+        '<div class="pd-field"><label>Report Type</label>' +
+          // ⚠️ Bug fix (found live, 2026-09-02): this MUST be a different id
+          // than the list's own filter select (#ppr-f-reporttype in
+          // index.html) — document.getElementById resolves to whichever
+          // comes first in the DOM, which was always the persistent filter
+          // bar, never this modal's own field. Every save was therefore
+          // silently writing whatever the FILTER happened to be set to
+          // ('' = All, almost always) instead of what was picked here —
+          // confirmed live: several real presentations saved with
+          // report_type = '' regardless of what this dropdown showed.
+          '<select class="pd-select" id="ppr-frm-reporttype">' +
+            '<option value="internal"' + (curType === 'internal' ? ' selected' : '') + '>Internal</option>' +
+            '<option value="client"' + (curType === 'client' ? ' selected' : '') + '>External (Client)</option>' +
+          '</select></div>' +
         (isNew && prior.length
           ? '<div class="pd-field pp-span2"><label>Copy from a previous presentation ' +
               '<span class="pp-optnote">(optional)</span></label>' +
@@ -1253,6 +1552,7 @@ window.PPR = (function () {
       var date = $('ppr-f-date').value;
       if (!date) { UI.toast('A presentation date is required', 'warn'); return; }
       var desc = $('ppr-f-desc').value.trim();
+      var reportType = $('ppr-frm-reporttype') ? $('ppr-frm-reporttype').value : '';
       var copyFrom = $('ppr-f-copy') ? $('ppr-f-copy').value : '';
 
       // Copying from a previous presentation now goes through a wizard
@@ -1265,26 +1565,29 @@ window.PPR = (function () {
       // slides.
       if (isNew && copyFrom) {
         m.close();
-        openCopyWizard({ ppr_date: date, description: desc }, copyFrom);
+        openCopyWizard({ ppr_date: date, description: desc, report_type: reportType }, copyFrom);
         return;
       }
 
       this.disabled = true;
-      var data = { ppr_date: date, description: desc };
-      var res, newId = null;
+      var data = { ppr_date: date, description: desc, report_type: reportType };
+      var r, newId = null;
       if (isNew) {
-        // .select() so the new id comes back — needed to jump straight to its editor.
-        res = await sb().from(T_PPR)
-          .insert(Object.assign(data, { project_id: pid, created_by: uid })).select();
-        if (!res.error) newId = res.data && res.data[0] && res.data[0].id;
+        r = await insertPresentation(data);
+        newId = r.res.data && r.res.data[0] && r.res.data[0].id;
       } else {
-        res = await sb().from(T_PPR)
-          .update(Object.assign(data, { updated_at: new Date().toISOString() })).eq('id', p.id);
+        r = await updatePresentation(p.id, data);
       }
-      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      if (r.res.error) { UI.toast(r.res.error.message, 'error'); this.disabled = false; return; }
 
       m.close();
-      UI.toast(isNew ? 'Presentation created' : 'Presentation updated', 'ok');
+      UI.toast(
+        r.typeDropped
+          ? (isNew ? 'Presentation created' : 'Presentation updated') +
+            ', but Report Type was not stored — run migrations/2026-09-02-ppr-presentation-report-type.sql'
+          : (isNew ? 'Presentation created' : 'Presentation updated'),
+        r.typeDropped ? 'warn' : 'ok'
+      );
       await load();
       // After creating, go straight into the slides editor (owner feedback:
       // "after adding PPR, it should go to PPR edit") rather than dropping the
@@ -1380,7 +1683,9 @@ window.PPR = (function () {
       });
       var grid = $('ppr-pp-grid');
       grid.innerHTML = list.length ? list.map(function (p) {
-        var u = urlOfPhoto(p.id);
+        // Item 1: the picker only ever needs a small preview to pick from —
+        // showing every candidate at full resolution is what made this slow.
+        var u = thumbUrlOfPhoto(p.id);
         var cap = [capDate(p.taken_at), p.description].filter(Boolean).join(' · ');
         return '<button type="button" class="ppr-pickitem' + (p.id === opts.currentId ? ' sel' : '') +
           '" data-id="' + esc(p.id) + '">' +
@@ -1685,10 +1990,9 @@ window.PPR = (function () {
         UI.toast('Every slide needs a current photo before this can be saved', 'warn'); return;
       }
       $('ppr-wiz-finish').disabled = true;
-      var res = await sb().from(T_PPR)
-        .insert(Object.assign({}, newData, { project_id: pid, created_by: uid })).select();
-      if (res.error) { UI.toast(res.error.message, 'error'); $('ppr-wiz-finish').disabled = false; return; }
-      var newId = res.data && res.data[0] && res.data[0].id;
+      var ir = await insertPresentation(newData);
+      if (ir.res.error) { UI.toast(ir.res.error.message, 'error'); $('ppr-wiz-finish').disabled = false; return; }
+      var newId = ir.res.data && ir.res.data[0] && ir.res.data[0].id;
       var payload = drafts.map(function (d) {
         return Object.assign({}, d, { ppr_id: newId, project_id: pid, created_by: uid,
           before_caption: d.before_caption || null, after_caption: d.after_caption || null });
@@ -1702,7 +2006,9 @@ window.PPR = (function () {
         m.close(); await load(); openPpr(newId); return;
       }
       m.close();
-      UI.toast('Presentation created with ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's') + ' copied', 'ok');
+      UI.toast('Presentation created with ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's') + ' copied' +
+        (ir.typeDropped ? ' (Report Type not stored — run migrations/2026-09-02-ppr-presentation-report-type.sql)' : ''),
+        ir.typeDropped ? 'warn' : 'ok');
       await load(); openPpr(newId);
     }
     var m = null;
@@ -1710,11 +2016,13 @@ window.PPR = (function () {
   }
 
   async function createPresentationPlain(data) {
-    var res = await sb().from(T_PPR).insert(Object.assign({}, data, { project_id: pid, created_by: uid })).select();
-    if (res.error) { UI.toast(res.error.message, 'error'); return; }
-    UI.toast('Presentation created', 'ok');
+    var r = await insertPresentation(data);
+    if (r.res.error) { UI.toast(r.res.error.message, 'error'); return; }
+    UI.toast(r.typeDropped
+      ? 'Presentation created, but Report Type was not stored — run migrations/2026-09-02-ppr-presentation-report-type.sql'
+      : 'Presentation created', r.typeDropped ? 'warn' : 'ok');
     await load();
-    var newId = res.data && res.data[0] && res.data[0].id;
+    var newId = r.res.data && r.res.data[0] && r.res.data[0].id;
     if (newId) openPpr(newId);
   }
 
@@ -1899,7 +2207,7 @@ window.PPR = (function () {
     }).join('');
     return '<header><h1>' + esc(projName || pid) + ' — Progress Photos</h1>' +
       '<p>' + esc(p.description || '') + ' · Presentation Date: ' + esc(longDate(p.ppr_date)) +
-      ' · ' + s.length + ' slide' + (s.length === 1 ? '' : 's') + '</p></header>' +
+      '</p></header>' +
       '<div class="wrap">' + slidesHTML + '</div>' +
       '<footer>Generated ' + esc(longDate(new Date().toISOString().slice(0, 10))) +
       ' from the Planners Dashboard · Megawide Construction Corporation</footer>';
@@ -2202,10 +2510,13 @@ window.PPR = (function () {
 
     var today = new Date().toISOString().slice(0, 10);
     var desc = tmpl.name + ' — ' + longDate(today);
-    var ires = await sb().from(T_PPR)
-      .insert(Object.assign({ ppr_date: today, description: desc }, { project_id: pid, created_by: uid })).select();
-    if (ires.error) { UI.toast(ires.error.message, 'error'); return; }
-    var newId = ires.data && ires.data[0] && ires.data[0].id;
+    // Carries the template's OWN classification onto the presentation it
+    // generates ('internal'/'client', the same vocabulary as report_type) —
+    // a template already tagged Internal/Client shouldn't need re-tagging by
+    // hand after every Generate.
+    var ir = await insertPresentation({ ppr_date: today, description: desc, report_type: tmpl.meeting_type });
+    if (ir.res.error) { UI.toast(ir.res.error.message, 'error'); return; }
+    var newId = ir.res.data && ir.res.data[0] && ir.res.data[0].id;
     if (!newId) { UI.toast('Presentation created, but its id could not be read back', 'error'); await load(); return; }
 
     var payload = picks.map(function (x, i) {
@@ -2234,6 +2545,7 @@ window.PPR = (function () {
     var note = [];
     if (noPhoto) note.push(noPhoto + ' location' + (noPhoto === 1 ? '' : 's') + ' still ha' + (noPhoto === 1 ? 's' : 've') + ' no photo');
     if (noBaseline) note.push(noBaseline + ' baseline photo' + (noBaseline === 1 ? '' : 's') + ' no longer exist' + (noBaseline === 1 ? 's' : ''));
+    if (ir.typeDropped) note.push('Report Type not stored — run migrations/2026-09-02-ppr-presentation-report-type.sql');
     UI.toast('Generated ' + payload.length + ' slide' + (payload.length === 1 ? '' : 's') +
       ' for "' + tmpl.name + '"' + (note.length ? ' — ' + note.join('; ') : ''), note.length ? 'warn' : 'ok');
     await load();
@@ -2490,6 +2802,51 @@ window.PPR = (function () {
     // Item 17 — the stacked-photo-card thumbnail is worth genuinely
     // executing (a mismatched previous/current guard here would silently
     // fall back to a flat single image for every dual-photo slide).
-    _slideThumbHTML: function (sl, i, clickable) { return slideThumbHTML(sl, i, clickable); }
+    _slideThumbHTML: function (sl, i, clickable) { return slideThumbHTML(sl, i, clickable); },
+    // Report Type (Internal/External filter) — worth genuinely executing:
+    // a flipped comparison in visiblePprs() would silently show the wrong
+    // presentations under a chosen filter with nothing in the UI to catch
+    // it, the same class of risk this file already documents for
+    // archiveDirectionFor. Save/restore convention matches
+    // _renderPreviewWithState above.
+    _reportTypeLabel: function (rt) { return reportTypeLabel(rt); },
+    _reportTypePillHTML: function (rt) { return reportTypePillHTML(rt); },
+    _visiblePprsWithState: function (pprsArr, filtersPatch) {
+      var savedPprs = pprs, savedFilters = filters;
+      pprs = pprsArr; filters = Object.assign({}, filters, filtersPatch);
+      try { return visiblePprs(); } finally { pprs = savedPprs; filters = savedFilters; }
+    },
+    // Items 7/8/9/10 (2026-09-02) test-only hooks, same convention as every
+    // hook above — genuinely execute the real function rather than only
+    // regex-matching its source.
+    // keyPlanInfoForPane is pure (given the injected BIM stub) and is
+    // exactly the kind of "silent wrong aspect" risk worth running for real:
+    // a flipped fallback here would letterbox/distort the pin overlay on
+    // every photo whose plan dimensions are unknown.
+    _keyPlanInfoForPane: function (photoId) { return keyPlanInfoForPane(photoId); },
+    // Renders a real pane and hands back the raw HTML string — proves what
+    // the function ACTUALLY emits (key-plan overlay markup, the zoom
+    // buttons' disabled state at the current paneZoom, the markup toggle's
+    // active class against the real shared preference, and the
+    // data-openphoto attribute) rather than only what the source appears to
+    // say it emits. Save/restore convention matches _eligiblePhotos above —
+    // `photos`/`urlCache` are this file's own module-scope state, injected
+    // for the duration of the call.
+    _paneHTML: function (photosArr, urlCacheObj, sl, which, hideLocation) {
+      var savedPhotos = photos, savedUrlCache = urlCache;
+      photos = photosArr; urlCache = urlCacheObj || {};
+      try { return pane(sl, which, hideLocation); }
+      finally { photos = savedPhotos; urlCache = savedUrlCache; }
+    },
+    // ⚠️ _setPaneZoom/_getPaneZoom/_applyPaneZoom are deliberately NOT carried
+    // forward — round-2 item 2 retired the per-pane zoom feature entirely
+    // ("zoom is only for the image pop-up view"); there is no zoom state left
+    // on a pane to drive.
+    // ⚠️ _setShowKeyPlan/_getShowKeyPlan (hooks over item 11's single shared
+    // header flag) are deliberately NOT carried forward — Round-2 item 5
+    // restores a per-pane open/closed state instead; these are the current
+    // equivalent.
+    _setKeyPlanOpenPane: function (which, v) { keyPlanOpenPane[which] = v; },
+    _getKeyPlanOpenPane: function (which) { return keyPlanOpenPane[which]; }
   };
 })();

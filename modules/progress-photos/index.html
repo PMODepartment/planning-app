@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260901a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260903a" />
+  <link rel="stylesheet" href="module.css?v=20260902g" />
 </head>
 <body>
   <div class="pd-app">
@@ -57,8 +57,10 @@
              Back Button > Presentation Details > action buttons) — a
              topbar breadcrumb sitting well above that content read as
              detached from what it was navigating away from. -->
+        <!-- Item 9 (current round): label shortened to "Back" (the arrow
+             already carried the direction). -->
         <button class="pp-crumbback" id="ppr-back" title="Back to the presentation list" style="display:none;">
-          <span data-ico="arrowLeft" data-ico-size="14"></span> Presentations list</button>
+          <span data-ico="arrowLeft" data-ico-size="14"></span> Back</button>
 
         <!-- Tool cluster beside the profile: one labelled primary action per
              screen, everything else icon-only (Drawing Register / Cash Flow). -->
@@ -89,9 +91,14 @@
                than deciding it inside the modal after files may already be
                staged — the very ambiguity that let a staged photo survive a
                later switch to Video. Picking Photo/Video opens the same
-               upload modal pre-set to that type; 360° goes straight to
-               pano.js's capture flow, matching the modal's own former
-               in-place 360° button. -->
+               upload modal pre-set to that type.
+               ⚠️ 2026-09-02 owner feedback item 1: "the 360 photo feature is
+               quite buggy — let's discontinue it for now." 360° is disabled/
+               greyed out here the same way 3D already is, rather than removed
+               — the capture flow in pano.js is untouched (shelved, not
+               deleted), so re-enabling it later is a one-line change (drop
+               `disabled`, restore `data-addtype="360"`), matching how 3D
+               reconstruction was already put on hold in this same menu. -->
           <div class="pp-addmenu-wrap" id="pp-addmenu-wrap">
             <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos, video, or other media">
               + Add media <span data-ico="chevronDown" data-ico-size="12"></span></button>
@@ -100,7 +107,7 @@
                 <span data-ico="camera" data-ico-size="15"></span> Photo</button>
               <button type="button" class="pp-addmenu-item" data-addtype="video">
                 <span data-ico="video" data-ico-size="15"></span> Video</button>
-              <button type="button" class="pp-addmenu-item" data-addtype="360">
+              <button type="button" class="pp-addmenu-item" disabled title="360° capture is on hold">
                 <span data-ico="compass" data-ico-size="15"></span> 360°</button>
               <button type="button" class="pp-addmenu-item" disabled title="3D reconstruction is on hold">
                 <span data-ico="box" data-ico-size="15"></span> 3D</button>
@@ -112,11 +119,20 @@
           <!-- Selection-mode tools (item 3): replace the row above the moment
                a photo is selected, instead of a separate always-rendered box
                further down the page. module.js's syncChrome() toggles both
-               groups together so exactly one is ever visible. -->
+               groups together so exactly one is ever visible.
+               Owner feedback (item 2): icons instead of words, to compress
+               the row — each still carries its label as a title tooltip.
+               Delete (item 1) joins the cluster; deleting checks whether any
+               selected photo is used in a presentation and warns first. -->
           <span class="pp-selcount-tb" id="pp-selcount" style="display:none;"></span>
-          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-download" style="display:none;">Download</button>
-          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-addppr" style="display:none;">Add to Presentation</button>
-          <button class="pd-btn pd-btn-sm pp-tb-labeled" id="pp-sel-archive" style="display:none;">Archive</button>
+          <button class="pd-btn pd-btn-sm" id="pp-sel-download" title="Download" style="display:none;">
+            <span data-ico="download" data-ico-size="15"></span></button>
+          <button class="pd-btn pd-btn-sm" id="pp-sel-addppr" title="Add to Presentation" style="display:none;">
+            <span data-ico="layers" data-ico-size="15"></span></button>
+          <button class="pd-btn pd-btn-sm" id="pp-sel-archive" title="Archive" style="display:none;">
+            <span data-ico="archive" data-ico-size="15"></span></button>
+          <button class="pd-btn pd-btn-sm pd-btn-danger" id="pp-sel-delete" title="Delete" style="display:none;">
+            <span data-ico="trash" data-ico-size="15"></span></button>
           <!-- PPR-screen tools. Item 2 parity: a funnel toggle reveals the
                same collapsed-by-default filter panel (#ppr-listbar shares
                the .pp-filters class, so the CSS/behaviour is identical —
@@ -176,8 +192,8 @@
                 <input class="pd-input" type="date" id="pp-f-from" title="Filter by capture start" /></label>
               <label class="pp-datefield">to
                 <input class="pd-input" type="date" id="pp-f-to" title="Filter by capture end" /></label>
-              <select class="pd-select" id="pp-f-trade"><option value="">Filter by Trade</option></select>
-              <select class="pd-select" id="pp-f-works"><option value="">Filter by Works</option></select>
+              <select class="pd-select" id="pp-f-trade"><option value="">Trade</option></select>
+              <select class="pd-select" id="pp-f-works"><option value="">Works</option></select>
               <div class="pp-locfilters" id="pp-f-loclevels"></div>
               <label class="ppr-allloc"><input type="checkbox" id="pp-f-archived" /> Show archived</label>
               <button class="pp-clear" id="pp-clearfilters" title="Clear all filters" hidden>
@@ -236,21 +252,25 @@
                 <span data-ico="gridView" data-ico-size="15"></span></button>
               <button class="pd-vt" data-view="list" title="List view">
                 <span data-ico="listView" data-ico-size="15"></span></button>
-              <!-- Item 16 — Plan and Stack move here from the Plans tab (which
-                   keeps only "all plans", item 15). -->
+              <!-- Item 16 — Plan moves here from the Plans tab (which keeps
+                   only "all plans", item 15). ⚠️ Round-2 item 7 (2026-09-02)
+                   REMOVES Stack view entirely (owner: "remove stack view for
+                   the photos") — its button, and every renderStackView/
+                   wireStackView/stackGrid/mostRecentAsOf function it alone
+                   drove, are gone; see module.js's own retirement comment. -->
               <button class="pd-vt" data-view="plan" title="Plan view — floor plan with photos clustered by location">
                 <span data-ico="compass" data-ico-size="15"></span></button>
-              <button class="pd-vt" data-view="stack" title="Stack view — photos stacked by the schedule's Location Breakdown">
-                <span data-ico="layers" data-ico-size="15"></span></button>
             </div>
           </div>
+          <!-- 360° panoramas + 3D scans render INSIDE #pp-view now (items
+               6/8, current round) -- merged into the same date/trade/location
+               grouping as ordinary photos via mergedRows(), not a separate
+               strip below the grid. pano.js/recon.js's own capture flows are
+               unchanged and reached via the "+ Capture 360°"/"+ Request 3D
+               scan" buttons in the topbar above; opening/editing one from the
+               grid dispatches to PANO.open/RECON.openById or this module's
+               own openMediaKindEditor, per tile kind. -->
           <div id="pp-view"></div>
-          <!-- 360° panoramas + 3D scans, folded into the Gallery screen
-               (2026-08-29 feedback) rather than kept as separate tabs. This
-               strip lists what's already captured; pano.js/recon.js's own
-               capture flows are unchanged and reached via the "+ Capture
-               360°"/"+ Request 3D scan" buttons in the topbar above. -->
-          <div id="pp-media-strip"></div>
         </div>
 
         <!-- ================= PPR Presentations ================= -->
@@ -261,6 +281,11 @@
               <input class="pd-input" type="date" id="ppr-f-from" title="Filter by presentation date start" /></label>
             <label class="pp-datefield">to
               <input class="pd-input" type="date" id="ppr-f-to" title="Filter by presentation date end" /></label>
+            <select class="pd-select" id="ppr-f-reporttype" title="Filter by report type">
+              <option value="">Report Type: All</option>
+              <option value="internal">Internal</option>
+              <option value="client">External (Client)</option>
+            </select>
             <label class="ppr-allloc"><input type="checkbox" id="ppr-f-archived" /> Show archived</label>
             <button class="pp-clear" id="ppr-clearfilters" title="Clear all filters" hidden>
               <span data-ico="x" data-ico-size="14"></span>Clear filters</button>
@@ -297,14 +322,35 @@
   <div class="pp-lightbox" id="pp-lightbox" hidden>
     <div class="pp-lb-tools" id="pp-lb-tools">
       <button class="pp-lb-tool" id="pp-lb-download" title="Download"><span data-ico="download" data-ico-size="16"></span></button>
-      <button class="pp-lb-tool" id="pp-lb-markuptoggle" title="Show/hide markup"><span data-ico="eye" data-ico-size="16"></span></button>
-      <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-markupedit" title="Add or edit markup on this photo — pencil, shapes, icons, text">
-        <span data-ico="palette" data-ico-size="16"></span><span>Markup</span></button>
-      <!-- Item 5 (2026-08-30, fourth round): exposure/brightness/contrast/sharpness. -->
-      <button class="pp-lb-tool pp-lb-tool-labeled" id="pp-lb-adjustedit" title="Adjust exposure, brightness, contrast and sharpness">
-        <span data-ico="sliders" data-ico-size="16"></span><span>Adjust</span></button>
+      <!-- Round-2 item 3 (2026-09-02): the Zoom out/in buttons that used to
+           sit here are GONE — "instead of zoom buttons in the image pop-up,
+           have a magnifier instead" (see .pp-lb-magnifier below, and
+           wireLightboxMagnifier in module.js). -->
+      <!-- Owner feedback (item 5): markup/adjust are icon-only now, matching
+           every other lightbox tool — the text labels these carried (added
+           when Markup was one bare icon among five and easy to miss) are
+           gone; the title attribute still names each tool on hover.
+           ⚠️ The markup SHOW/HIDE toggle itself is NOT duplicated here — it
+           already lives in the right-hand tools cluster below
+           (#pp-lb-markuptoggle, owner feedback item 6); a second element
+           with the same id would be an invisible duplicate-DOM-id bug. -->
+      <button class="pp-lb-tool" id="pp-lb-markupedit" title="Add or edit markup on this photo — pencil, shapes, icons, text">
+        <span data-ico="palette" data-ico-size="16"></span></button>
+      <button class="pp-lb-tool" id="pp-lb-adjustedit" title="Adjust exposure, brightness, contrast and sharpness">
+        <span data-ico="sliders" data-ico-size="16"></span></button>
       <button class="pp-lb-tool" id="pp-lb-edit" title="Edit details"><span data-ico="pencil" data-ico-size="16"></span></button>
       <button class="pp-lb-tool pp-lb-tool-danger" id="pp-lb-delete" title="Delete"><span data-ico="trash" data-ico-size="16"></span></button>
+    </div>
+    <!-- Owner feedback (item 6): show/hide Key Plan and show/hide Markup move
+         to their own cluster on the RIGHT, immediately to the left of the
+         close button — everything else stays in the left-hand tool cluster
+         above. Item 4 (11-item round): key-plan is shown/hidden per photo in
+         paintLightbox() (only when BIM.pinInfoFor resolves a pin for the item
+         currently open); Item 7 (markup toggle) is the shared show/hide-
+         markup-on-tiles preference. -->
+    <div class="pp-lb-tools-right" id="pp-lb-tools-right">
+      <button class="pp-lb-tool" id="pp-lb-keyplan" title="Show/hide key plan" style="display:none"><span data-ico="mapPin" data-ico-size="16"></span></button>
+      <button class="pp-lb-tool" id="pp-lb-markuptoggle" title="Show/hide markup"><span data-ico="eye" data-ico-size="16"></span></button>
     </div>
     <button class="pp-lb-close" id="pp-lb-close" title="Close (Esc)">×</button>
     <button class="pp-lb-btn pp-lb-prev" id="pp-lb-prev" title="Previous (←)">‹</button>
@@ -312,6 +358,24 @@
       <img class="pp-lb-img" id="pp-lb-img" alt="" />
       <video class="pp-lb-img" id="pp-lb-video" controls playsinline hidden></video>
       <canvas class="pp-lb-markup" id="pp-lb-markup-canvas"></canvas>
+      <!-- Round-2 item 3: the magnifier lens — hidden until the pointer moves
+           over the photo (wireLightboxMagnifier in module.js). -->
+      <div class="pp-lb-magnifier" id="pp-lb-magnifier"></div>
+      <!-- Item 4: the key-plan corner overlay, top-right, sized to 1/8 of the
+           photo by paintKeyPlanOverlay(). Item 7 (owner feedback): it must
+           always include the pin itself and, when recorded, the camera-
+           facing direction cone — not just the bare plan image — so it's a
+           small stage (img + pin + cone), not a lone <img>. -->
+      <div class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" hidden>
+        <img id="pp-lb-keyplan-overlay-img" alt="Key plan" />
+        <span class="pp-lb-kpoverlay-pin" id="pp-lb-keyplan-overlay-pin" hidden></span>
+        <span class="pp-lb-kpoverlay-cone" id="pp-lb-keyplan-overlay-cone" hidden></span>
+        <!-- Round-2 item 4: drag the bottom-left corner to temporarily resize
+             the overlay (wireLightboxKpResizeDrag in module.js) — the box is
+             pinned top/right, so only the width changes; the <img>'s own
+             natural aspect ratio keeps the height following. -->
+        <div class="pp-lb-kpoverlay-resize" id="pp-lb-keyplan-resize" title="Drag to resize"></div>
+      </div>
     </div>
     <button class="pp-lb-btn pp-lb-next" id="pp-lb-next" title="Next (→)">›</button>
     <div class="pp-lb-cap" id="pp-lb-cap"></div>
@@ -333,20 +397,20 @@
        r128 PLYLoader (classic global THREE.PLYLoader), same pinned Three.js
        revision as the 360° viewer above — one version of THREE for the page. -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
-  <script src="../../assets/js/config.js?v=20260901c"></script>
+  <script src="../../assets/js/config.js?v=20260902a"></script>
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260901c"></script>
-  <script src="../../assets/js/icons.js?v=20260830c"></script>
+  <script src="../../assets/js/ui.js?v=20260902c"></script>
+  <script src="../../assets/js/icons.js?v=20260902f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260901a"></script>
-  <script src="ppr.js?v=20260901a"></script>
-  <script src="pano.js?v=20260830b"></script>
+  <script src="module.js?v=20260902g"></script>
+  <script src="ppr.js?v=20260902g"></script>
+  <script src="pano.js?v=20260901d"></script>
   <script src="recon.js?v=20260830b"></script>
-  <script src="bim.js?v=20260830e"></script>
+  <script src="bim.js?v=20260902g"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

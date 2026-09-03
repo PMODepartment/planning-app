@@ -15,12 +15,12 @@
 // this project's counts against it), and Criteria (the controlled document's
 // rating tables, so nobody has to open the file to score a risk).
 //
-// SHARED REFERENCE DATA lives in assets/js/epc-rcm.js (EPCRCM) because the
+// SHARED REFERENCE DATA lives in assets/js/mcc-rcm.js (MCCRCM) because the
 // Stakeholder Register runs on the identical activity list, taxonomy, criteria
 // and grids — see that file's header for why it is not duplicated here.
 //
 // ⚠️ DERIVED, NEVER STORED: IMPORTANCE (impact × probability), PRIORITY / LEVEL
-// (a 5×5 lookup, NOT a band on the product — see EPCRCM.RISK_GRID), the residual
+// (a 5×5 lookup, NOT a band on the product — see MCCRCM.RISK_GRID), the residual
 // score and its band. Persisting any of them would only let it drift away from
 // the numbers it is made of.
 //
@@ -42,6 +42,7 @@ window.RiskRegister = (function () {
   var histView = null;       // UI.bindHistoryState() handle
   var collapsed = {};        // activity_no -> true when its group is folded
   var bands = { id: true, as: true, rs: true, res: false, au: false };
+  var filterToggle = null;   // UI.wireFilterToggle() handle for #rr-filters
 
   var STATUSES = ['Open', 'In Progress', 'Closed'];
 
@@ -62,7 +63,7 @@ window.RiskRegister = (function () {
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
-  function E() { return window.EPCRCM; }
+  function E() { return window.MCCRCM; }
 
   // ===== live collaboration (presence + who's-editing row cursor) + offline =====
   var _collab = null, _remoteSel = {}, _collabSelf = {}, PKEY = 'risk_register', PID_PFX = 'rr';
@@ -134,7 +135,12 @@ window.RiskRegister = (function () {
       ['rr-f-activity', 'rr-f-category', 'rr-f-sub', 'rr-f-priority', 'rr-f-status', 'rr-f-search']
         .forEach(function (id) { $(id).value = ''; });
       fillSubFilter(); render();
+      if (filterToggle) filterToggle.sync(); // fields reset programmatically — no native change event
     };
+    // The whole filter bar hides behind one funnel toggle instead of sitting
+    // permanently open (see the "Filter bar" comment in module.css) — the dot
+    // stays in sync with the panel's own controls automatically.
+    filterToggle = UI.wireFilterToggle($('rr-filttoggle'), $('rr-filters'));
     document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) {
       a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); histView.push(); };
     });
@@ -565,7 +571,7 @@ window.RiskRegister = (function () {
     });
     var offKeys = Object.keys(off);
     if (offKeys.length) {
-      html += '<tr class="rr-unicat"><td colspan="3"><strong>Off-taxonomy</strong> <span class="rcm-muted">— rows written before the EPC Risk Universe; re-categorise them</span></td>' +
+      html += '<tr class="rr-unicat"><td colspan="3"><strong>Off-taxonomy</strong> <span class="rcm-muted">— rows written before the MCC Risk Universe; re-categorise them</span></td>' +
         '<td class="rr-num"><strong>' + offKeys.reduce(function (a, k) { return a + off[k]; }, 0) + '</strong></td></tr>';
       offKeys.sort().forEach(function (k) {
         html += '<tr><td></td><td>' + Fmt.esc(k) + '</td><td class="rcm-muted">not in the taxonomy</td><td class="rr-num">' + off[k] + '</td></tr>';
@@ -616,6 +622,7 @@ window.RiskRegister = (function () {
     // The filter bar and the band toggles only apply to the register itself.
     $('rr-filters').style.display = view === 'list' ? '' : 'none';
     $('rr-bands').style.display = view === 'list' ? '' : 'none';
+    if ($('rr-filttoggle')) $('rr-filttoggle').style.display = view === 'list' ? '' : 'none';
     if (link) {
       document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) { a.classList.remove('active'); });
       link.classList.add('active');
@@ -826,7 +833,7 @@ window.RiskRegister = (function () {
         activity_no:         no,
         // Denormalised on purpose: the activity NAME is stored so a row still
         // says what process it belongs to when it is exported, or read by a
-        // dashboard that does not load EPCRCM.
+        // dashboard that does not load MCCRCM.
         activity:            act ? act.name : (q('#f-act').value ? r.activity : null),
         sub_process:         q('#f-sub').value.trim(),
         process_objectives:  act ? act.objective : null,

@@ -103,6 +103,12 @@ create table if not exists ppr_presentations (
   ppr_date    date,                  -- PPR meeting date
   description text,                  -- e.g. "PPR ftm of June 2026"
   archived    boolean default false, -- soft-archive (Presentations-list row action, 2026-08-29 follow-up)
+  -- 'internal' | 'client' (shown "External (Client)"). NULL = not yet
+  -- classified (legacy row) — deliberately NO default here; see
+  -- migrations/2026-09-02-ppr-presentation-report-type.sql for why a
+  -- backfilled default would be a wrong guess on at least one real row.
+  -- Same vocabulary as ppr_report_templates.meeting_type below.
+  report_type text,
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()

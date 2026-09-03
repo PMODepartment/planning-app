@@ -1,5 +1,41 @@
 # Module: risk-register
 
+## EPC → MCC finished: the file, the global and the captions (2026-09-02f) — fmlozano
+
+Owner: *"Finish the EPC → MCC rename."* The 2026-09-01 pass renamed the two view **headings** and
+flagged the rest as too wide to do in passing — *"the module, its global and 40-odd CSS classes"*.
+
+⚠️ **That estimate was wrong, and checking is what shrank it.** The 40-odd classes are `.rcm-*`
+(Risk and Control Matrix) and **never said EPC**, so they need nothing. The real surface was
+**11 references across 4 files** plus two file names:
+
+- `assets/js/epc-rcm.js` → `assets/js/mcc-rcm.js`, `window.EPCRCM` → `window.MCCRCM`
+- `assets/css/epc-rcm.css` → `assets/css/mcc-rcm.css`
+- the rendered caption `EPC Control Masterlist` → `MCC Control Masterlist` (the parallel of the
+  Universe heading renamed last pass, and it had been missed)
+- both registers' `index.html`, `module.js` and `module.css` pointers, and the test suite
+
+⚠️ **WHAT WAS DELIBERATELY LEFT SAYING EPC, and this is the point of the change rather than an
+omission.** Activity 16 is literally named **"EPC FUNCTIONAL MEETINGS"** in the source workbook, the
+sheet is called **"EPC Project Risk Categorization"**, and two activity descriptions quote the
+workbook's own wording. Those strings are **data, not labels** — the suite asserts the activity names,
+and rewriting them would make this file disagree with the register it was transcribed from. The
+distinction is now written into the engine's header so the next pass does not "finish the job".
+
+⚠️ **No `window.EPCRCM` alias was left behind.** A stale `module.js` calling `EPCRCM` against a fresh
+`mcc-rcm.js` would throw on first use — exactly the failure this repo has mis-diagnosed as a code bug
+before. It cannot happen: `index.html` names the `?v=` of **both** files, so a browser holding an old
+`index.html` holds an old pair, and one holding the new one gets the new pair. Nothing can mix, so an
+alias would be dead code that only hides the next mistake.
+
+**Verified: 163 checks pass** (unchanged — the suite loads the shipped engine by path and asserts both
+registers link it, so a half-done rename would have failed it). Zero `epc-rcm` / `EPCRCM` references
+remain outside that one explanatory comment.
+
+Shared files → `?v=20260902a`; both `module.js` + `module.css` → `?v=20260902a`; `MODULE_V` → `20260902f`.
+
+---
+
 ## Live audit, out-of-app browser (2026-09-01) — fmlozano
 
 Verified on the **deployed** site in the owner's signed-in Chrome, against **real legacy rows** written

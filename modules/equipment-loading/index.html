@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Equipment Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260903a" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -143,6 +143,11 @@
     .eq-mx th.eq-c2, .eq-mx td.eq-c2 { position:sticky; left:150px; z-index:1; text-align:left;
       background:var(--pd-card); font-weight:600; color:var(--pd-muted); width:84px; min-width:84px; max-width:84px; padding-left:9px; padding-right:9px; }
     .eq-mx thead th.eq-c1, .eq-mx thead th.eq-c2 { z-index:3; background:var(--pd-bg); }
+    /* "Planned / Actual" needs ~127px on one line but eq-c2 is fixed at 84px (that width is
+       load-bearing for the chart-bar/matrix-column alignment above — see MX_C1/MX_C2/MX_CELL).
+       Wrap the header label instead of widening the column; the body cells only ever say
+       "Planned" or "Actual" (one word) and already fit at 84px, so they stay nowrap. */
+    .eq-mx thead th.eq-c2 { white-space:normal; line-height:1.2; }
     .eq-mx tr.eq-r-actual td:not(.eq-c1):not(.eq-c2) { background:var(--pd-red-light); }
     .eq-mx tr.eq-r-total td { font-weight:800; border-top:2px solid var(--pd-line); }
     .eq-mx tr.eq-r-total td.eq-c1, .eq-mx tr.eq-r-total td.eq-c2 { background:var(--pd-card); }
@@ -191,9 +196,33 @@
        it — CAD behaviour — so zooming must never resize the window itself. With max-height the pane
        grew and shrank with its own content at low zoom, which is what made zooming feel like the
        window was moving rather than the plan. */
+    /* ⚠️ Owner 2026-09-02: *"enlargen the workspace"*. Three things do it, and the height is only
+       the first — on a 1080p screen the pane was 66vh with a 320px rail beside it, so the drawing
+       had barely half the window. The other two are the rail toggle and true fullscreen below. */
     .eq-plan { position:relative; width:100%; background:var(--pd-bg); border:1px solid var(--pd-line);
-      border-radius:10px; overflow:auto; height:clamp(360px, 66vh, 780px); overscroll-behavior:contain;
+      border-radius:10px; overflow:auto; height:clamp(420px, 78vh, 1200px); overscroll-behavior:contain;
       touch-action:none; cursor:grab; }
+    /* Rail hidden → the canvas takes the whole width. The rail is only DISPLAY:NONE, never removed:
+       the chips and the tower list keep their handlers, so re-showing it needs no re-render. */
+    .eq-site.rail-off .eq-site-rail { display:none; }
+    /* ⚠️ Fullscreen is on .eq-site (rail + canvas), not on .eq-plan alone: the drag-a-chip-onto-a-
+       tower gesture is the point of this screen, and a fullscreened canvas would leave the chips
+       behind on the page underneath, where they cannot be reached. */
+    .eq-site:fullscreen { background:var(--pd-card); padding:12px; overflow:auto; }
+    .eq-site:fullscreen .eq-plan { height:calc(100vh - 40px); }
+    .eq-site:fullscreen.rail-off .eq-plan { height:calc(100vh - 24px); }
+    /* The backdrop panel — sliders live in the toolbar popover, not on the drawing. */
+    .eq-img-pop { min-width:250px; padding:11px 12px; }
+    .eq-img-pop .row { display:flex; align-items:center; gap:8px; margin-bottom:9px; font-size:12px; color:var(--pd-muted); }
+    .eq-img-pop .row > label { flex:0 0 58px; color:var(--pd-ink); font-weight:600; }
+    .eq-img-pop .row input[type=range] { flex:1 1 auto; min-width:0; accent-color:var(--pd-red); }
+    .eq-img-pop .row .val { flex:0 0 42px; text-align:right; font-variant-numeric:tabular-nums; color:var(--pd-ink); font-weight:600; }
+    .eq-img-nudge { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-bottom:9px; }
+    .eq-img-nudge button, .eq-img-pop .act { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
+      font:inherit; font-size:12px; border-radius:6px; padding:5px 0; cursor:pointer; }
+    .eq-img-nudge button:hover, .eq-img-pop .act:hover { border-color:var(--pd-red); }
+    .eq-img-pop .act { width:100%; padding:6px 9px; }
+    .eq-img-pop .hint { font-size:11px; color:var(--pd-muted); line-height:1.45; margin:2px 0 0; }
     .eq-plan.is-pan { cursor:grabbing; }
     .eq-plan.is-draw { cursor:crosshair; }
     /* ⚠️ margin:auto, not flex centring. A flex container centring an overflowing child makes the
@@ -230,7 +259,11 @@
     .eq-plan-grid { position:absolute; inset:0; pointer-events:none; opacity:.45;
       background-image:linear-gradient(var(--pd-line) 1px, transparent 1px), linear-gradient(90deg, var(--pd-line) 1px, transparent 1px);
       background-size:40px 40px; }
-    .eq-plan-img { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    /* ⚠️ NOT `inset:0` any more. The backdrop is scaled and nudged from the toolbar, so its box is
+       set inline (left/top/width/height, all in % of the stage) by renderSite. At the defaults
+       (100 % scale, no offset) that resolves to exactly the old full-bleed rect, so an existing
+       plan is untouched. */
+    .eq-plan-img { position:absolute; display:block; pointer-events:none; }
     .eq-plan-svg { position:absolute; inset:0; width:100%; height:100%; touch-action:none; }
     .eq-plan.is-draw .eq-plan-svg { cursor:crosshair; }
     .eq-shape polygon { cursor:grab; }
@@ -447,7 +480,14 @@
             <div class="eq-menu-pop" id="eq-shape-pop"></div>
           </span>
           <button class="pd-btn" id="eq-grid-toggle" title="Show or hide the drawing grid">Grid</button>
+          <span class="eq-menu" id="eq-img-menu">
+            <button class="pd-btn" id="eq-img-btn" title="Resize, move and fade the uploaded site development plan">Image… <span data-ico="chevronDown" data-ico-size="13"></span></button>
+            <div class="eq-menu-pop eq-img-pop" id="eq-img-pop"></div>
+          </span>
           <button class="pd-btn" id="eq-icons-btn" title="Choose the icon shown for each piece of equipment">Icons…</button>
+          <span class="eq-tb-sep"></span>
+          <button class="pd-btn" id="eq-rail-toggle" title="Hide the side panel and give the whole width to the drawing">Wide</button>
+          <button class="pd-btn" id="eq-full-toggle" title="Open the site plan full screen"><span data-ico="layout" data-ico-size="15"></span> Full screen</button>
           <span class="eq-tb-sep"></span>
           <span class="eq-zoom" title="Ctrl + scroll over the plan also zooms">
             <button id="eq-zoom-out" aria-label="Zoom out">&minus;</button>
@@ -492,12 +532,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260901c"></script>
+<script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260901c"></script>
-<script src="../../assets/js/icons.js?v=20260830c"></script>
+<script src="../../assets/js/ui.js?v=20260902c"></script>
+<script src="../../assets/js/icons.js?v=20260902f"></script>
 <script>
 // ============================================================================
 // Equipment Loading (per project).
@@ -541,6 +581,8 @@
   var dragItemId = null;          // the equipment chip currently being dragged onto a tower
   var panMoved = false;           // the pan that just ended actually moved, so its click is not a click
   var planFitted = false;         // the plan has been fitted to the window once for this project/backdrop
+  // Per-browser, not per-project — see the note on wireWorkspace.
+  var railOff = (function () { try { return localStorage.getItem('eq_rail_off') === '1'; } catch (e) { return false; } })();
   var planGrid = true;            // the drawing grid, CAD-style: model space, so it scales with zoom
   var blkSel = null;              // the tower shape currently selected on the plan
   var drawing = false, drawPts = [];  // trace-a-tower mode and the points taken so far
@@ -1955,6 +1997,50 @@
   // detected again without touching a single equipment row.
   function newBlockId() { return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function planH() { var h = +PLAN.h; return (isFinite(h) && h > 80) ? h : 620; }
+  // ---- The BACKDROP's own box ------------------------------------------------------------
+  // Owner 2026-09-02: *"add an option where you can resize the image uploaded, and also adjust the
+  // transparency of the image."*
+  // Scale, offset and opacity live in the plan's jsonb beside the shapes, so they survive a reload
+  // and are the same for everyone looking at the project — a per-browser localStorage setting would
+  // mean two planners tracing towers against two differently-placed backdrops.
+  // ⚠️ THE SHAPES DO NOT MOVE WITH IT. The polygons are in plan units and the equipment is attached
+  // to the polygons; this only moves the picture UNDER them, which is the whole point — it is how a
+  // scan that is not quite square to the sheet gets lined up with towers that are already traced.
+  // ⚠️ DEFAULTS ARE THE OLD BEHAVIOUR EXACTLY: scale 1, no offset and opacity 1 resolve to the same
+  // full-bleed rect `inset:0` used to give, so every plan saved before today opens unchanged.
+  var IMG_SMIN = 0.25, IMG_SMAX = 4;
+  function imgCfg() {
+    var i = PLAN.img || {};
+    var sc = +i.s; var op = +i.o;
+    return {
+      s: (isFinite(sc) && sc > 0) ? clamp(sc, IMG_SMIN, IMG_SMAX) : 1,
+      x: isFinite(+i.x) ? +i.x : 0,          // % of the stage, + = right
+      y: isFinite(+i.y) ? +i.y : 0,          // % of the stage, + = down
+      o: (isFinite(op) && op >= 0 && op <= 1) ? op : 1
+    };
+  }
+  function setImgCfg(patch) {
+    var c = imgCfg();
+    PLAN.img = { s: patch.s == null ? c.s : clamp(patch.s, IMG_SMIN, IMG_SMAX),
+                 x: patch.x == null ? c.x : clamp(patch.x, -200, 200),
+                 y: patch.y == null ? c.y : clamp(patch.y, -200, 200),
+                 o: patch.o == null ? c.o : clamp(patch.o, 0, 1) };
+  }
+  // ⚠️ Scaling is about the CENTRE, not the top-left corner. Anchoring at the corner sends the plan
+  // off toward the bottom-right the moment it is enlarged, and every enlargement then needs a
+  // re-drag to bring it back — which is how a resize control ends up feeling broken.
+  function imgStyle() {
+    var c = imgCfg(), w = c.s * 100, off = (100 - w) / 2;
+    return 'left:' + (off + c.x).toFixed(3) + '%;top:' + (off + c.y).toFixed(3) + '%;' +
+      'width:' + w.toFixed(3) + '%;height:' + w.toFixed(3) + '%;opacity:' + c.o.toFixed(3) + ';';
+  }
+  // ⚠️ Repaints the <img>'s style IN PLACE rather than calling renderSite(). Dragging a slider
+  // re-renders on every step, and a full renderSite() rebuilds the whole SVG — which drops the
+  // selected tower's handles and, on a big plan, stutters. This touches one attribute.
+  function applyImgStyle() {
+    var im = document.querySelector('#eq-plan .eq-plan-img');
+    if (im) im.setAttribute('style', imgStyle());
+  }
 
   // ⚠️ Blocks saved by the first version are rectangles (x/y/w/h). They are READ as 4-point
   // polygons rather than migrated on load: a plan written by an older build must keep working,
@@ -2165,7 +2251,7 @@
 
     var g = ['<div class="eq-plan-zoom" style="width:' + (planZoom * 100).toFixed(2) + '%;">' +
       '<div class="eq-plan-stage" style="padding-bottom:' + (H / PLAN_W * 100).toFixed(3) + '%;">'];
-    if (PLANIMG_URL) g.push('<img class="eq-plan-img" src="' + PLANIMG_URL + '" alt="Site development plan">');
+    if (PLANIMG_URL) g.push('<img class="eq-plan-img" style="' + imgStyle() + '" src="' + PLANIMG_URL + '" alt="Site development plan">');
     g.push('<svg class="eq-plan-svg" viewBox="0 0 ' + PLAN_W + ' ' + H + '" id="eq-plan-svg">');
     // ⚠️ The grid lives INSIDE the drawing, in plan units — not as a fixed CSS background on the
     // pane. That is what makes it behave like CAD's: it scales with the zoom, so it stays a
@@ -2227,6 +2313,9 @@
         ? 'Now mark the towers: <b>Detect towers</b> for a first pass, or <b>Draw shape</b> to trace one by hand.'
         : 'Add the <b>site development plan</b>, then mark each tower on it — or draw the towers without a backdrop.') + '</div>');
     wireSite(host);
+    // The backdrop usually loads AFTER the toolbar was wired, so the Image… panel is re-synced here:
+    // it is what enables the button and what puts the saved size/fade on the sliders.
+    wireImagePanel();
     // ⚠️ Fit ONCE per project/backdrop, not on every render: re-fitting on each repaint would throw
     // away the zoom and pan the planner had set the moment anything else on the tab changed.
     if (!planFitted && host.clientWidth) {
@@ -2941,6 +3030,115 @@
     if (sync) sync.style.display = (v === 'site') ? 'none' : '';
   }
 
+  // ---- The backdrop panel: resize, nudge, fade ------------------------------------------
+  function wireImagePanel() {
+    var menu = document.getElementById('eq-img-menu'), btn = document.getElementById('eq-img-btn'),
+        pop = document.getElementById('eq-img-pop');
+    if (!menu || !btn || !pop) return;
+    // ⚠️ Disabled, not hidden, when there is no backdrop: a control that disappears reads as a
+    // missing feature, and this one is the answer to "where do I fade the plan?".
+    btn.disabled = !PLANIMG_URL;
+    btn.title = PLANIMG_URL ? 'Resize, move and fade the uploaded site development plan'
+                            : 'Upload a site development plan first — this resizes and fades it.';
+    var c = imgCfg();
+    pop.innerHTML =
+      '<div class="row"><label for="eq-img-op">Fade</label>' +
+        '<input type="range" id="eq-img-op" min="10" max="100" step="1" value="' + Math.round(c.o * 100) + '">' +
+        '<span class="val" id="eq-img-opv">' + Math.round(c.o * 100) + '%</span></div>' +
+      '<div class="row"><label for="eq-img-sc">Size</label>' +
+        '<input type="range" id="eq-img-sc" min="25" max="400" step="1" value="' + Math.round(c.s * 100) + '">' +
+        '<span class="val" id="eq-img-scv">' + Math.round(c.s * 100) + '%</span></div>' +
+      '<div class="eq-img-nudge">' +
+        '<button type="button" data-nudge="l" title="Move left">◀</button>' +
+        '<button type="button" data-nudge="r" title="Move right">▶</button>' +
+        '<button type="button" data-nudge="u" title="Move up">▲</button>' +
+        '<button type="button" data-nudge="d" title="Move down">▼</button>' +
+      '</div>' +
+      '<button type="button" class="act" id="eq-img-reset">Reset to fit</button>' +
+      '<p class="hint">The picture moves; the traced towers stay where they are. Hold <b>Shift</b> on a nudge to move it 5× further.</p>';
+    btn.onclick = function (e) { e.stopPropagation(); if (!btn.disabled) menu.classList.toggle('open'); };
+    // ⚠️ The popover's own clicks must not reach the document listener that closes every menu —
+    // otherwise dragging a slider inside it closes it on mouse-up.
+    pop.onclick = function (e) { e.stopPropagation(); };
+    // ⚠️ Bound once. This runs again on every renderSite (the backdrop may only have arrived after
+    // the toolbar was wired, and the sliders have to show the loaded values), and a listener added
+    // per render would accumulate one closer per repaint.
+    if (!menu._eqDocBound) {
+      menu._eqDocBound = true;
+      document.addEventListener('click', function () { menu.classList.remove('open'); });
+    }
+
+    // ⚠️ 'input' PREVIEWS, 'change' SAVES. A slider fires input on every pixel of the drag; one
+    // upsert per pixel would hammer the table and race its own responses. The preview is free —
+    // it is one style attribute (applyImgStyle) — and the write happens once, on release.
+    var op = pop.querySelector('#eq-img-op'), opv = pop.querySelector('#eq-img-opv');
+    var sc = pop.querySelector('#eq-img-sc'), scv = pop.querySelector('#eq-img-scv');
+    op.oninput = function () { opv.textContent = op.value + '%'; setImgCfg({ o: +op.value / 100 }); applyImgStyle(); };
+    sc.oninput = function () { scv.textContent = sc.value + '%'; setImgCfg({ s: +sc.value / 100 }); applyImgStyle(); };
+    op.onchange = sc.onchange = function () { savePlan(); };
+    pop.querySelectorAll('[data-nudge]').forEach(function (b) {
+      b.onclick = function (e) {
+        var step = e.shiftKey ? 5 : 1, k = b.dataset.nudge, cc = imgCfg();
+        setImgCfg(k === 'l' ? { x: cc.x - step } : k === 'r' ? { x: cc.x + step } :
+                  k === 'u' ? { y: cc.y - step } : { y: cc.y + step });
+        applyImgStyle(); savePlan();
+      };
+    });
+    pop.querySelector('#eq-img-reset').onclick = function () {
+      setImgCfg({ s: 1, x: 0, y: 0, o: 1 });
+      op.value = 100; opv.textContent = '100%'; sc.value = 100; scv.textContent = '100%';
+      applyImgStyle(); savePlan();
+    };
+  }
+
+  // ---- The workspace: hide the rail, or go fullscreen -----------------------------------
+  // ⚠️ The rail toggle is per-BROWSER (localStorage), unlike the backdrop's placement, which is
+  // project data. How wide someone likes their own window is not a fact about the project, and
+  // pushing it to the shared row would move every other planner's panel.
+  function wireWorkspace() {
+    var site = document.querySelector('.eq-site');
+    var railBtn = document.getElementById('eq-rail-toggle'), fsBtn = document.getElementById('eq-full-toggle');
+    if (!site || !railBtn || !fsBtn) return;
+    function paintRail() {
+      site.classList.toggle('rail-off', railOff);
+      railBtn.classList.toggle('pd-btn-primary', railOff);
+      railBtn.textContent = railOff ? 'Show panel' : 'Wide';
+      // The drawing's box just changed width, so re-take the fit — the same two calls the Fit
+      // button makes. (There is no fitPlan() helper; this is deliberately the identical pair.)
+      setZoom(fitZoom());
+      var ph = document.getElementById('eq-plan'); if (ph) { ph.scrollLeft = 0; ph.scrollTop = 0; }
+    }
+    paintRail();
+    railBtn.onclick = function () {
+      railOff = !railOff;
+      try { localStorage.setItem('eq_rail_off', railOff ? '1' : '0'); } catch (e) {}
+      paintRail();
+    };
+    fsBtn.onclick = function () {
+      if (document.fullscreenElement) { document.exitFullscreen(); return; }
+      // ⚠️ Guarded: fullscreen is refused outright in some embedded/iframed contexts, and an
+      // unhandled rejection there would surface as a console error and nothing else.
+      try {
+        var pr = site.requestFullscreen ? site.requestFullscreen() : null;
+        if (pr && pr.catch) pr.catch(function () { UI.toast('This browser would not open the plan full screen.', 'error'); });
+      } catch (e) { UI.toast('This browser would not open the plan full screen.', 'error'); }
+    };
+    if (!site._eqFsBound) {
+      site._eqFsBound = true;
+      document.addEventListener('fullscreenchange', function () {
+        var on = document.fullscreenElement === site;
+        fsBtn.classList.toggle('pd-btn-primary', on);
+        // The pane's height changes with the mode, so the fit has to be taken again. Deferred a
+        // frame: on entering fullscreen the element has not been re-laid-out yet when this fires,
+        // so measuring now would fit against the OLD box.
+        requestAnimationFrame(function () {
+          setZoom(fitZoom());
+          var ph2 = document.getElementById('eq-plan'); if (ph2) { ph2.scrollLeft = 0; ph2.scrollTop = 0; }
+        });
+      });
+    }
+  }
+
   // ---- Init -----------------------------------------------------------------------------
   async function init(u, prof) {
     user = u; profile = prof;
@@ -3011,6 +3209,8 @@
       renderSite();
     };
     document.getElementById('eq-icons-btn').onclick = function () { if (pid) openIconSettings(); };
+    wireImagePanel();
+    wireWorkspace();
     // The backdrop button both adds and replaces; once a plan is loaded it also offers to remove
     // it, because a remove buried in a menu is a remove nobody finds.
     var planFile = document.getElementById('eq-plan-file');

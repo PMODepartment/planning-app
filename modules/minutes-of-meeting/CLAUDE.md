@@ -181,9 +181,22 @@ the rebuilt dashboard against real data. Until the migration runs, `department` 
 `schedule_activity_id` are dropped from every write with a toast naming the file, and
 saving an agenda says which migration is missing.
 
-`module.css/js?v=20260902b`; `issues-lessons` `module.css/js?v=20260902a`;
-`dashboard.css?v=20260902a` app-wide (28 files — a shared file changed);
-`modules-grid.js?v=` (hence `MODULE_V`) → `20260902b`.
+⚠️ **Merged onto `origin/main` before the PR** (109 commits ahead; PR #46 had already
+been merged at the earlier bug-fix commit, so this work needs its own PR). 30 conflicts,
+**every one a cache-busting version collision** except `CLAUDE.md` — both sides prepend, so
+both sides are kept whole and unreworded with the seam marked, the resolution this repo
+already set for the PR #13 and 2026-08-21 conflicts. ⚠️ **A first pass resolved them with
+`git checkout --theirs`, which takes main's WHOLE file and silently discarded my own
+non-conflicting `UI.tabsToDropdown` lines in three modules** — caught by grepping for them
+afterwards, aborted, and redone by rewriting each conflict hunk in place. ⚠️ Also confirmed:
+`epc-rcm.css` was renamed `mcc-rcm.css` on main, and 0 stale references to the old name
+remain.
+
+Versions after reconciling with main: `module.css/js?v=20260903b`; `issues-lessons`
+`module.js?v=20260903b` (my `?newLesson=1` deep link rode into main's newer file, so it needs
+a token above main's `20260903a`); `dashboard.css?v=20260903a` app-wide (29 files — the shared
+`.pd-modulebar` block is mine, above main's `20260902c`); `modules-grid.js?v=` (hence
+`MODULE_V`) → `20260903a`, above main's `20260902am`.
 
 
 ## 2026-09-02 — Full rehaul: dropdown tab, list/calendar icon toggle, a real "+ Add

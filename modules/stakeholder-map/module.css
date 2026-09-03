@@ -1,6 +1,6 @@
 /* Stakeholder Register module styles — all classes prefixed .sm- to avoid
    collisions. The RCM furniture shared with the Risk Register (priority pills,
-   criteria tables, heat-map grid) lives in ../../assets/css/epc-rcm.css. */
+   criteria tables, heat-map grid) lives in ../../assets/css/mcc-rcm.css. */
 
 /* ---- Uniform module chrome (matches every other enabled module). Keep in
    sync with those. .pd-content is NOT given width:100% here — the shared
@@ -25,10 +25,15 @@
 .sm-topbar-tools .pd-btn.sm-tb-labeled { padding:0 12px; gap:6px; }
 .sm-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
 .sm-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+.sm-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 @media (max-width:900px) { .sm-title-txt { display:none; } }
 
-/* Filter bar */
-.sm-filters {
+/* Filter bar — collapsed by default, revealed via the topbar funnel toggle
+   (#sm-filttoggle, UI.wireFilterToggle in module.js) instead of sitting
+   permanently open. Only ever shown on Register/Cards (switchView also
+   force-hides it on the other two views). */
+.sm-filters { display:none; }
+.sm-filters.open {
   display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px;
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px;
 }
@@ -148,7 +153,7 @@ html.pd-dark .sm-ovr { color:#fbbf24; }
 /* ---- Engagement approach + relationship strategy chips ----------------- */
 /* Semantic and fixed in both themes: these are the controlled document's own
    four quadrants, and a pale amber in dark mode stops meaning "Keep Satisfied". */
-/* ⚠️ Same fill/text split as epc-rcm.css's priority palette, for the same measured
+/* ⚠️ Same fill/text split as mcc-rcm.css's priority palette, for the same measured
    reason. --sm-c is the FILL: white sits on it (.sm-appr passes 5.0-7.6 for all four).
    --sm-t is the same meaning as TEXT, and it needs a different value per theme —
    .sm-gm-lab (the Mendelow map's 10px/800 cell label on a 15% wash of its own fill)
@@ -225,6 +230,11 @@ html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
 /* ---- Add/Edit form furniture ------------------------------------------ */
 .sm-fsec { font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
   color:var(--pd-red-dark); margin:18px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--pd-line); }
+/* ⚠️ The third brand-red-as-text surface, and it was missed when the band header and
+   the lit band pill were fixed: 2.40:1 in dark (11px/800 --pd-red-dark on the modal).
+   Light passes, so dark only. If a fourth turns up, the honest fix is a --pd-red-text
+   token in dashboard.css rather than a fourth copy of this override. */
+html.pd-dark .sm-fsec { color:#FF8A80; }
 .sm-fsec:first-of-type { margin-top:10px; }
 .sm-fsec-hint { color:var(--pd-muted); font-weight:600; letter-spacing:0; text-transform:none; margin-left:6px; }
 .sm-lbl-hint { color:var(--pd-muted); font-weight:400; }

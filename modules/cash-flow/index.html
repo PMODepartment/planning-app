@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260903a" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -262,6 +262,22 @@
         .cf-actions .pd-btn { flex: 0 1 auto; min-height: 44px; }
         .cf-viewbar { flex: 1 1 100%; min-width: 0; }
       }
+
+      /* ⚠️ Real bug, found by measuring: the phone fix above only covers ≤700px, but
+         `.cf-controls`'s natural (nowrap) content needs ~1015px before it stops
+         overflowing — so from 701px to ~1040px (the whole tablet band, and most small
+         laptop windows) the SAME failure the comment above describes for phones was
+         still happening: the action cluster, `Assumptions` included, sat off past the
+         right edge of `.cf-controls`'s own `overflow-x:auto` scroller. The page itself
+         never scrolled (scrollWidth stayed equal to the viewport), so nothing signalled
+         a scroll was needed — `Assumptions` measured fully unreachable at 750-1000px
+         viewport widths, the exact button the "Contract not set — open Assumptions"
+         nudge banner tells the reader to click. A separate block (not widened phone
+         rules) so the phone-only KPI/matrix sizing above is untouched. */
+      @media (min-width: 701px) and (max-width: 1060px) {
+        .cf-controls { flex-wrap: wrap; overflow-x: visible; }
+        .cf-actions { flex-wrap: wrap; margin-left: 0; }
+      }
     </style>
 </head>
 <body>
@@ -375,12 +391,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260901c"></script>
+<script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260901c"></script>
-<script src="../../assets/js/icons.js?v=20260830c"></script>
+<script src="../../assets/js/ui.js?v=20260902c"></script>
+<script src="../../assets/js/icons.js?v=20260902f"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script>

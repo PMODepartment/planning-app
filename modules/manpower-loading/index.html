@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Manpower Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260903a" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -52,6 +52,15 @@
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
     .mp-controls .pd-select, .mp-controls .pd-input { height:34px; font-size:13px; max-width:230px; }
     .mp-filt-ico { color:var(--pd-muted); flex:none; }
+    /* The Roster/Portfolio "Find" search box collapses behind the shared
+       .pd-filttoggle funnel (UI.wireFilterToggle, ui.js) instead of sitting
+       permanently open — same component every other module now uses.
+       .mp-controls is ALREADY the card chrome, so the nested .pd-filtergroup
+       is stripped back to a plain flex row here rather than a card-in-card. */
+    .mp-controls .pd-filtergroup.open {
+      display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+      background:none; border:0; padding:0; margin:0; flex:1 1 auto; min-width:0;
+    }
     .mp-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .mp-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px;
       font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
@@ -255,7 +264,21 @@
          a row action you cannot reliably hit is a row action that is not there. */
       .mp-btn-sm { min-height:44px; padding:3px 12px; }
       .mp-seg button { min-height:44px; }
-      .mp-tab { min-height:44px; }
+      /* ⚠️ Real bug, found by measuring: `.mp-tab` is `display:inline-flex` (vestigial — these
+         tabs carry no icon, just bare text), which turns its own text into an anonymous flex item
+         whose default `min-width:auto` refuses to shrink below the width of its longest unbroken
+         WORD. That defeats the shared dashboard.css rule at this width (`.pd-modulebar >
+         [class$="-tabs"] > button { flex:1 1 0; min-width:0; white-space:normal; ... }`), whose
+         whole job is to wrap a long tab label onto two lines instead of letting it overflow — the
+         same bug already fixed once for Contracts & Claims. With 7 tabs at ~44px each, single
+         unbreakable words ("Mobilization", "Positions", "Activities", "Portfolio") don't wrap; they
+         overflow past their own tab and visibly overlap the neighbour on both sides. Measured:
+         "Mobilization"'s text ran 14px past its own tab's right edge into "Activities". Switching
+         `display` here to `block` removes the competing flex-item min-width (this button's own
+         children go back to normal block text flow), and `overflow-wrap`/`word-break` let a single
+         long word actually break mid-word so it can wrap within a ~44px column, which the shared
+         rule's `white-space:normal` alone cannot do for text with no spaces to break on. */
+      .mp-tab { min-height:44px; display:block; text-align:center; overflow-wrap:break-word; word-break:break-word; }
     }
   </style>
 </head>
@@ -391,17 +414,20 @@
         <div class="mp-controls">
           <button class="pd-btn pd-btn-primary" id="mp-add-person" style="height:34px;">+ Add manpower profile</button>
           <span class="mp-tb-sep"></span>
-          <label for="mp-r-search" style="font-size:12.5px;">Find</label>
-          <input class="pd-input" id="mp-r-search" placeholder="name or position">
-          <label for="mp-r-work" style="font-size:12.5px;">Workforce</label>
-          <select class="pd-select" id="mp-r-work">
-            <option value="">All categories</option>
-            <option value="Shared Staff">Shared Staff</option>
-            <option value="Project Staff">Project Staff</option>
-            <option value="Skilled Admin">Skilled Admin</option>
-            <option value="Skilled Self-Performed">Skilled Self-Performed</option>
-            <option value="Subcontractors">Subcontractors</option>
-          </select>
+          <button class="pd-filttoggle" id="mp-r-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+          <div class="pd-filtergroup" id="mp-r-filtgroup">
+            <label for="mp-r-search" style="font-size:12.5px;">Find</label>
+            <input class="pd-input" id="mp-r-search" placeholder="name or position">
+            <label for="mp-r-work" style="font-size:12.5px;">Workforce</label>
+            <select class="pd-select" id="mp-r-work">
+              <option value="">All categories</option>
+              <option value="Shared Staff">Shared Staff</option>
+              <option value="Project Staff">Project Staff</option>
+              <option value="Skilled Admin">Skilled Admin</option>
+              <option value="Skilled Self-Performed">Skilled Self-Performed</option>
+              <option value="Subcontractors">Subcontractors</option>
+            </select>
+          </div>
           <span class="mp-note" id="mp-roster-note" style="margin-left:auto;"></span>
         </div>
         <div class="mp-kpis" id="mp-roster-kpis"></div>
@@ -508,17 +534,19 @@
 
         <div class="mp-pv" id="mp-pv-people">
           <div class="mp-controls">
-            <span class="mp-filt-ico" data-ico="users" data-ico-size="15"></span>
-            <label for="mp-pp-free" style="font-size:12.5px;">Coming free</label>
-            <select class="pd-select" id="mp-pp-free">
-              <option value="">Everyone</option>
-              <option value="3">Within 3 months</option>
-              <option value="6">Within 6 months</option>
-              <option value="12">Within 12 months</option>
-              <option value="done">Already off contract</option>
-            </select>
-            <label for="mp-pp-search" style="font-size:12.5px;">Find</label>
-            <input class="pd-input" id="mp-pp-search" placeholder="name, position or project">
+            <button class="pd-filttoggle" id="mp-pp-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+            <div class="pd-filtergroup" id="mp-pp-filtgroup">
+              <label for="mp-pp-free" style="font-size:12.5px;">Coming free</label>
+              <select class="pd-select" id="mp-pp-free">
+                <option value="">Everyone</option>
+                <option value="3">Within 3 months</option>
+                <option value="6">Within 6 months</option>
+                <option value="12">Within 12 months</option>
+                <option value="done">Already off contract</option>
+              </select>
+              <label for="mp-pp-search" style="font-size:12.5px;">Find</label>
+              <input class="pd-input" id="mp-pp-search" placeholder="name, position or project">
+            </div>
             <span class="mp-note" id="mp-pp-note" style="margin-left:auto;"></span>
           </div>
           <div class="mp-card" style="padding:0;overflow:hidden;">
@@ -544,12 +572,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260901c"></script>
+<script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260901c"></script>
-<script src="../../assets/js/icons.js?v=20260830c"></script>
+<script src="../../assets/js/ui.js?v=20260902c"></script>
+<script src="../../assets/js/icons.js?v=20260902f"></script>
 <script>
 // ============================================================================
 // Manpower Loading (per project) — the HRD Manpower Report as a live module.
@@ -598,6 +626,7 @@
   var PORTX = null;               // the full cross-project series behind the curve and the Gantt
   var ppFree = '', ppSearch = '';
   var PG_CELL = 44;
+  var rFilterToggle = null, ppFilterToggle = null;   // UI.wireFilterToggle() handles
 
   // The four bands of the source sheet. `col` is the headcount column, `cost` the
   // project-month cost column that pairs with it.
@@ -3662,6 +3691,7 @@
     };
     document.getElementById('mp-r-search').oninput = function (e) { rSearch = e.target.value; renderRoster(); };
     document.getElementById('mp-r-work').onchange = function (e) { rWork = e.target.value; renderRoster(); };
+    rFilterToggle = UI.wireFilterToggle(document.getElementById('mp-r-filttoggle'), document.getElementById('mp-r-filtgroup'));
     document.getElementById('mp-p-work').onchange = function (e) { portWork = e.target.value; if (PORT) loadPortfolio(); };
     document.getElementById('mp-p-month').onchange = function (e) {
       var v = e.target.value;
@@ -3675,6 +3705,7 @@
     });
     document.getElementById('mp-pp-free').onchange = function (e) { ppFree = e.target.value; renderPortPeople(); };
     document.getElementById('mp-pp-search').oninput = function (e) { ppSearch = e.target.value; renderPortPeople(); };
+    ppFilterToggle = UI.wireFilterToggle(document.getElementById('mp-pp-filttoggle'), document.getElementById('mp-pp-filtgroup'));
 
     var sel = document.getElementById('mp-project');
     var projects = await PDb.getProjects();
@@ -3691,6 +3722,8 @@
       fDept = ''; rSearch = ''; PORTX = null; PORT = null; ppFree = ''; ppSearch = '';
       orgMonth = null; stackLevelId = null; stackTowerVal = ''; stackActKey = '';
       var rs = document.getElementById('mp-r-search'); if (rs) rs.value = '';
+      if (rFilterToggle) rFilterToggle.sync();
+      if (ppFilterToggle) ppFilterToggle.sync();
       load(true);
     };
     await load(true);

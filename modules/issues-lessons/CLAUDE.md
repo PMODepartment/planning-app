@@ -1,5 +1,631 @@
 # Module: issues-lessons
 
+## 2026-09-03 — Dashboard chart tiles maximised/aligned, and the issue detail's Lessons Learned becomes a table
+
+Owner's list, off a screenshot of the Issues Dashboard:
+
+**Issues dashboard**
+1. "increase size of pie for issues by status chart (maximize to tile but with sufficient padding).
+   have also the labels extend a bit with leader lines. add also the legend at the bottom of the tile"
+2. "for issue by department and issue by champion, move label to bottom of tile"
+3. "for the department and champion labels in issues by dept and issues by champion, left align."
+4. "for the value labels, center align by default but align left to avoid situations like in the
+   first photo attached"
+5. "bar charts must also be aligned left."
+6. "chart tile heights should be minimized to reduce whitespace. but maintain that all 3 chart tile
+   heights to be equal."
+7. "for the open issues tile, make sure issue can wrap text, not overflow"
+8. "for the lessons learned tile, make sure also lessons can wrap text, not overflow. add also issue
+   column"
+
+**Issues individual view**
+1. "label 'Related Lessons' to 'Lessons Learned'. but in lessons learned individual view, keep as
+   'Related Lessons'"
+2. "the lessons learned should be be in a table format instead with lessons learned, department, and
+   date closed columns. lessons learned here should be wrap text"
+3. "the history can also be improved. each tile inside can be reduced width. next history items then
+   add to the side and down."
+
+### Dashboard items 1–6 — the donut grows, gets leader lines and a bottom legend; both bar tiles move their header below the chart
+
+The status donut goes from the shared 130px default to **170px** (`size: 170` on `donutChartSVG`),
+and each slice now draws a leader line from its own arc out to its label — a straight radial
+segment from just outside the ring to the label's anchor point — so a label can sit clear of a thin
+slice instead of crowding the ring itself. A second, always-complete legend (`statusLegendBottomHTML`)
+sits **under** the donut, listing all three statuses even when one is currently empty — the
+per-slice labels skip a zero-value slice (nothing to point a leader line at), but a legend is
+naming the vocabulary, not describing the current ring, so it stays complete.
+
+⚠️ The Department/Champion tiles' own `<h4>` + legend row moves from *above* the chart to *below*
+it (`.il-dash-cardhead-bottom`), matching the shape "chart, then a caption" the Status tile now
+also has after item 1 — so all three tiles read the same way and stay comparable in height (item 6).
+`.il-dash-cardbody` itself is squeezed 340px → 260px (item 6's "minimise to reduce whitespace"),
+and because it's still the ONE height every tile's body shares, they stay equal regardless of what
+each chart draws inside it.
+
+### Dashboard items 3–5 — row labels left, value labels centre-or-left, the whole chart hugs the left edge
+
+`hbarSVG`'s row (department/champion) labels drop the prior round's "centre unless it would cross
+the y-axis" rule and are now unconditionally left-aligned (`anchor: 'start'`, flush to the tile's
+left edge) — item 3 names the row label specifically, as a plain column of names down the left side.
+
+The **value label** inside each bar ("X/Y (Z%) open") keeps a fallback rule, but inverted from
+row-label alignment: it centres in the bar by default, and only drops to left-aligned (anchored
+just inside the bar's own left edge) when the text is too wide for the bar to hold centred without
+running past its edges. That's exactly the screenshot's complaint — a short bar like Finance's
+"0/1 (0%) open" next to a much longer department's bar couldn't fit the text centred, so it spilled
+and looked garbled; `ilTextW(valueText, 10.5) <= totalW - 8` is the fit test, and failing it flips
+`valAnchor`/`valX` to the left-fallback rather than trying to shrink the font or the text.
+
+Item 5's "bar charts must also be aligned left" is the chart's own SVG `preserveAspectRatio`,
+changed from `xMidYMid meet` (centres the chart's natural aspect inside a wider tile, leaving
+padding on both sides) to `xMinYMin meet` (anchors to the top-left, so the chart hugs the tile's
+left edge with no floating gap). The donut is untouched — item 1 gives it its own, deliberately
+centred treatment, since a ring chart reads differently from a left-to-right bar list.
+
+### Dashboard items 7/8 — the Open Issues and Lessons Learned tiles wrap instead of truncating, and the lessons tile gains an Issue column
+
+Both `fullIssueListHTML` and `lessonsTileHTML` drop their `clip(text, 90)` ellipsis-truncation call
+on the issue/lesson text column — `.il-dash-list td` already sets `word-break: break-word`, so the
+cell wraps onto as many lines as it needs rather than either overflowing its column or being cut
+short with an ellipsis that hid the rest of the sentence.
+
+Item 8 also adds an **Issue** column to the Lessons Learned tile (via `lessonSourceText(l)`, the
+same helper the standalone Lessons Learned list screen's own Issue column already reads, so the
+dashboard tile and that screen can't describe a lesson's source two different ways).
+
+⚠️ That pushed the tile from 3 columns to 4, which collided with the existing
+`.il-dash-list.il-dash-lesson-list` 3-column width rule (60/22/18%) — reusing it unmodified would
+have silently mis-sized whichever table's markup happened to load its CSS second. The dashboard
+tile now carries its own class, `.il-dash-list.il-dash-lessontile-list` (36/30/19/15% —
+Lesson/Issue/Department/Captured), and `.il-dash-lesson-list` is freed up for the individual-view
+table below, where it fits perfectly: both are a 3-column Lesson/Department/date shape, just with
+a different final column (Captured vs. Date Closed) and a different heading.
+
+### Individual-view item 1 — "Related Lessons" only when embedded on a LESSON's own page
+
+`issDetailHTML` already carries `opts.excludeLessonId`, set **only** when this same markup is
+rendered embedded on a lesson's own detail page (showing that lesson's parent issue) — see
+`renderLessonDetailView` passing `excludeLessonId: cur.id`. That flag is now also the signal for
+the heading: unset (the issue's own, normal page) it reads **"Lessons Learned"** — these are simply
+the lessons this issue produced; set (embedded on a lesson's page) it keeps **"Related Lessons"** —
+from there, the section really is about lessons *related to* the one already on screen. One
+variable answers both "which lessons to exclude" and "what to call the section," because both
+questions are really the same question: is this the issue's own page or not.
+
+### Individual-view item 2 — a real table (Lesson Learned / Department / Date Closed), not a numbered list
+
+The plain `<ol class="il-related-lessons">` (added by the prior round, item 5) is replaced with a
+`<table class="il-dash-list il-dash-lesson-list">` — reusing the dashboard's own table styling and
+column widths verbatim rather than inventing a third set of table rules for the same 3-column
+shape. Date Closed reads `lessonResolvedDate(l)` (already used by the standalone Lessons list and
+its export — the same "closed only once the linked issue has a `date_resolved`" rule everywhere).
+Lesson text is not truncated (`.il-dash-list td` wraps, matching the "wrap text" ask), and each row
+keeps the exact same `data-open-lesson` attribute the old `<li>` used, so the existing generic
+`[data-open-lesson]` click-wiring (`wireIssues()`) attaches with no changes of its own.
+
+### Individual-view item 3 — History entries shrink and wrap to the next row
+
+`.il-history` goes from a single-column flex list to a CSS grid
+(`repeat(auto-fill, minmax(220px, 1fr))`), so entries lay out several to a row and wrap to a new
+row once the current one is full — "next history items then add to the side and down," reusing the
+same auto-fill/minmax shape the Kanban board columns already use elsewhere in this file.
+`align-items: start` so a short entry never stretches to match a taller one sharing its row — entries
+carry wildly different amounts of before/after diff text, and forcing equal height would leave
+visible empty space in the shorter ones.
+
+### Verified
+
+`node --check` clean on `module.js`; CSS brace-balance unchanged proportionally (287/287); 0 NUL
+bytes in either file; a function-name-set diff against `origin/main` shows **0 functions lost, 1
+added** (`statusLegendBottomHTML`) — nothing was accidentally dropped by the edits. Confirmed no
+stale references remain to the removed `.il-related-lessons`/`.il-related-lesson-item` classes
+outside the explanatory comment documenting their removal, and that `.il-dash-lesson-list` and
+`.il-dash-lessontile-list` are each used by exactly the table they're now scoped to.
+
+⚠️ Not verified signed in — no live click-through of the new leader lines, the left/centre value-label
+fallback on real department data, or the individual-view table against a real lesson history. Module
+assets bumped `module.css/js?v=20260903a`; no `MODULE_V` bump (index.html's structure is unchanged —
+only its two module-local `?v=` query strings moved).
+
+## 2026-09-02 (b) — Kanban view, wider/reworked columns, squeezed KPI bands, a stripped-down Background section — and a real bug the verification pass found
+
+Owner's 10-item list, off a screenshot of the lesson detail view:
+1. "in the issues list, no need to show lessons learned if captured."
+2. "in issues list, increase column width for issue, caused by, corrective action."
+3. "add also option for kanban view for issues which can be grouped by department or by champion.
+   same applies for lessons list."
+4. "for the summary tiles in the top of the issues and lessons list, squeeze to one row except in
+   mobile view. no need to show aging."
+5. "in lessons list, separate column for lessons learned and for issue. reduce column width of
+   department and date resolved. increase width for lesson learned and issue and allow wrap text.
+   remove aging column in list."
+6. "In lessons individual view, as in first photo, in lessons group, remove issue text and open
+   issue button. remove also issue in register marking. for the label 'The Issue this Lesson came
+   from' rename simply to 'Background'."
+7. "From the lessons learned individual view, the issue should not be editable. except for related
+   lessons which user can directly add from the view. In the related Lessons, do not include the
+   lesson displayed - include only the others."
+8. "In the background group add in the top right option to open issue. this will bring to the
+   individual issue view."
+9. "In the Issue dashboard, Issues by Status do not need legends, labels is enough. labels should
+   include the color, the number of issues and the percent."
+10. "In dashboard, issues by department and issues by champion, wrap text of label if cannot fit in
+    1 line. also center label but if left side of label crosses the y-axis, convert to left align.
+    also change label to X/Y (_%) open instead of X open of Y issues."
+
+### Item 1 — the lesson tag is gone from the Issues list
+
+The `hasLesson(r)`-gated `.il-lessontag` span is removed from the Issue cell in `renderIssuesLog()`.
+`hasLesson()` itself is untouched — it still gates the close-workflow's "a lesson is already on
+record" branch, and the lesson is still one click away from an issue's own detail page (Related
+lessons). The now-unreferenced `.il-lessontag`/`.il-lessontag .pd-ico` CSS is deleted rather than
+left as rot.
+
+### Item 2 — Issue / Caused By / Corrective Action widened
+
+`.il-cell-wrap { max-width: 420px }` → `620px`, `.il-table { min-width: 1080px }` → `1400px` so the
+header and body columns keep agreeing at the new width.
+
+### Item 3 — a List | Kanban toggle, shared between Issues and Lessons
+
+⚠️ Built as ONE shared pair of helpers (`viewKanbanBarHTML`/`wireViewKanbanBar`/`kanbanGroups`/
+`kanbanBoardHTML`) rather than two near-identical boards — the toggle is the same `.pd-viewtoggle`/
+`.pd-vt` component Progress Photos' List/Gallery switch already uses, so this isn't a new UI pattern,
+just a new use of an existing one.
+- Each screen keeps its **own** view/group state (`_issView`/`_issKanbanGroup`,
+  `_lessView`/`_lessKanbanGroup`) — a planner may want the Issues log as a board and the Lessons log
+  as a table, or the reverse, and neither resets on a project switch (a presentation preference, not
+  project data, the same rule `_issSort`/`_lessSort` already follow).
+- The board groups by Department or Champion (a picker that only appears once Kanban is actually
+  chosen). **Champion grouping reads the SAME `latestChampionText()` the log column shows** — a card
+  reading "assigned to Cruz" that disagreed with the table would be worse than no grouping at all.
+- ⚠️ **A lesson has no champion of its own.** `lessKanbanChampion()` resolves it through the
+  lesson's linked issue (the same indirection `lessonResolvedDate()` already uses to reach an
+  issue's `date_resolved`) — a lesson with no linked issue falls into "(no champion)".
+- ⚠️ Blank/"(no …)" buckets always sort LAST, never alphabetically — a board where the unassigned
+  pile is buried mid-alphabet is how it gets mistaken for a small group rather than the backlog it
+  usually is.
+- The board reads the SAME filtered set the table would (`issuesFiltered()`/`lessonsFiltered()`) —
+  a board that ignored the Open-by-default filter would show closed issues nobody asked for the
+  moment it was switched to. It has no column sort of its own (a board has no row order to sort).
+- **Issues screen: new static containers** (`#il-issues-viewbar`/`#il-issues-listwrap`/
+  `#il-issues-kanban` in `index.html`) — the existing `#il-table` is written to directly by both
+  `renderIssuesLog()` and the transient "Loading…"/"Select a project" states in `load()`, so it stays
+  a real DOM element rather than being rebuilt from a string each time; `renderIssuesLog()` shows
+  exactly one of `#il-issues-listwrap`/`#il-issues-kanban` at a time. ⚠️ `load()` now resets both to
+  their list-view defaults at its very start — otherwise a load kicked off while a board was showing
+  would write its transient messages into the now-hidden `#il-table`, invisible until the render at
+  the end of `load()` re-applied the current view.
+- **Lessons screen: no HTML changes needed** — `renderLessonsLogView(host)` already rebuilds its
+  whole host from a string on every call, so the toggle bar and the board are folded straight into
+  that string.
+
+### Item 4 — KPI bands squeeze to one row (except on a phone)
+
+`.il-kpis`/`.il-kpis-2` go `repeat(4,1fr)`/`repeat(2,1fr)` (was 5/3 — the aging tiles below are
+dropped) and STAY there down to phone width; the old `@media (max-width:1000px)` 3-column
+compression rule (built for the 5-tile band's 3-over-2 auto-place) is deleted along with the tile it
+existed for. Only at ≤700px do the bands get to wrap — Issues' 4-tile band drops to 2-over-2 there
+(four tiles across a 375px screen leaves each too narrow to read its own number); Lessons' 2-tile
+band was already 2 across.
+- `renderIssueKpis()` drops its "Avg aging (open)" tile → exactly Total/Open/On Hold/Closed.
+- `renderLessonKpis()` drops its "Avg aging (d)" tile → exactly Lessons learned/Issues closed.
+
+### Item 5 — Lessons list: Lesson Learned and Issue as two real columns
+
+The value that used to render as a small `.il-lcard-src` sub-line under the lesson text
+(`lessonSourceText()`: the linked issue's text, "From a meeting: …", or "Captured on its own") is
+now its own **Issue** column, sharing the SAME `.il-cell-wrap` class item 2 just widened — one width
+decision, both tables' wide columns benefit. Department and Date Resolved get their own narrow
+classes (`.il-ls-dept` max-width 120px, `.il-ls-date` max-width 90px + nowrap — a date never needs to
+wrap). Aging is dropped from the table (its KPI tile is already gone, per item 4 — a column repeating
+a number two clicks from where it's acted on). `.il-lcard-src`/`.il-src-issue` CSS deleted; they had
+exactly one remaining reference and it was a stale comment, not code.
+
+### Items 6/7/8 — the lesson's own Background section: renamed, read-only, and its "open issue" moved
+
+- **Item 6:** the lesson's OWN toolbar (`.il-mom-toolbar` — the state pill + `openIssueBtn`) is
+  removed from `lessonDetailHTML()` entirely. The embedded issue's OWN toolbar (a second, separate
+  `.il-mom-toolbar` inside `issDetailHTML()`, reading "Issue in the register" / "New issue — not yet
+  saved") is now suppressed too, via a new `opts.hideToolbarState` flag — the section's own header
+  already says what the block is. "The issue this lesson came from" → **"Background"**.
+- **Item 7:** a new `opts.readOnly` flag forces `mayEdit = false` regardless of `canEditRow(r)` —
+  "the issue should not be editable" from a lesson's own page, full stop, even for a planner who
+  normally could edit it. Related lessons + "+ Add another lesson" are gated independently
+  (`canAdd`/`isSteward`, never on `ro`) and are untouched by this flag, exactly as asked. The current
+  lesson is excluded from that embedded issue's own "Related lessons" list via the existing
+  `opts.excludeLessonId` (built 2026-09-01, reused here) — "include only the others."
+- **Item 8:** the "open the real issue" button moved out of the lesson's own toolbar (removed by
+  item 6) and into the Background section's own header, top right (`.il-less-bg-head`, a flex-row
+  modifier on the existing `.il-dash-sec-head` eyebrow style) — reusing the SAME id/attribute
+  `wireLessons()` already wires (`#il-less-openissue` → `openIssue(dataset.openIssue)`), so no new
+  wiring was needed for it to work from its new position.
+
+⚠️⚠️ **A REAL BUG, FOUND ONLY BECAUSE THE THREE NEW `opts.*` FLAGS WERE EXECUTED, NOT JUST READ.**
+`issDetailHTML(r, opts)` had an internal helper — used to build a handful of `<select>` option
+lists — ALSO named `opts`: `function opts(list, val, blank) { … }`, declared inside the same
+function body as the `opts` PARAMETER. A function DECLARATION hoists and takes over its scope's
+binding for that name before a single statement runs, so `opts` was already this helper — not the
+caller's object — by the time `mayEdit`/`excludeId` were computed a few lines later. Confirmed with
+a throwaway Node repro before touching anything: `typeof opts` inside the body reads `'function'`
+from the very first line, never the object passed in. Consequence: `opts && opts.readOnly` was
+testing a function object (which has no `.readOnly`) and was **always falsy** — items 6's toolbar
+suppression and item 7's read-only lock would have silently done NOTHING; only `excludeLessonId`
+(built in an earlier round, same collision, same bug) happened to already be broken the same way.
+Fixed by renaming the inner helper to `selOptsHTML` and its one call site. ⚠️ Two OTHER functions in
+this file (`lessonDetailHTML`, `openQuickLessonModal`) declare their own local `opts(list,val,blank)`
+too, but neither takes an `opts` PARAMETER, so there is no collision there and nothing to rename.
+Verified the fix with a `vm` + permissive-`Proxy` harness executing the real, unmodified
+`issDetailHTML` straight out of the shipped file (see Verified below) — every flag now measurably
+does what it says, and a normal (no-`opts`) call from the real Issues screen is provably unaffected.
+
+### Item 9 — Issues by Status: no separate legend, the donut's own labels carry it
+
+`donutChartSVG()`'s per-slice label gained a coloured "●" `<tspan>` (inheriting the slice's own
+colour) ahead of the existing `Label: N` text, plus a computed percent: `● Open: 3 (75%)`. The Status
+card's separate legend row (`statusLegendTop`) is deleted — the donut now states colour, count and
+percent in one place, so a legend repeating the same three facts is dropped rather than kept as
+decoration. `barLegendTop` (the Department/Champion tiles' own header legend, from an earlier round)
+is untouched — those bars don't carry per-row colour the way a donut slice does.
+
+### Item 10 — Issues by Department/Champion: wrapped, y-axis-aware centring, "X/Y (Z%) open"
+
+`hbarSVG()` rebuilt around three new helpers: `ilCharW`/`ilTextW` (a deterministic, DOM-free
+per-character width estimate — this verification harness has no browser/canvas to measure real text
+with) and `ilWrapLines(label, maxW, fs)`, which word-wraps a label to **at most 2 lines** (a row's
+height must stay bounded; every word past the first line's break is appended to the second
+regardless of width, never wrapping to a third). A single word wider than the column on its own is
+placed unbroken — never character-truncated, this module's own established rule ("overflows rather
+than being cut, with nothing on screen saying more was cut off").
+- Each row's label is **centred** in its column by default. ⚠️ If centring would push the label's
+  LEFT edge past the chart's own left boundary (x=0, "crosses the y-axis"), it falls back to
+  **left-aligned** instead — decided once per label off its WIDEST line, so a wrapped label's lines
+  stay consistently aligned with each other rather than each line deciding independently.
+- The in-bar text changed from "N open of N issues" to **"X/Y (Z%) open"**, with a stroke halo (the
+  tile's own card colour) so it stays legible over whichever segment (Total track or Open fill) it
+  lands on.
+- Rows are still never capped (unchanged from the prior round) — every department/champion is
+  always shown; the caller's scrollable panel absorbs a long list.
+
+### ⚠️⚠️ A REAL BUG THIS BUG FOUND WHILE VERIFYING
+
+See items 6/7/8 above — the `opts`-named-inner-helper collision inside `issDetailHTML`. Recorded
+here too because it is, by a wide margin, the most consequential finding of this round: without it,
+items 6 and 7 would have shipped as text changes with no actual effect, and the owner's explicit "the
+issue should not be editable" would have quietly continued to render an editable form.
+
+### Verified
+
+- `node --check module.js` clean; CSS braces balanced 283/283 (was 272/272 before this round — net
+  new rules from the Kanban board + the narrowed Lessons columns).
+- 0 duplicate DOM `id=` attributes in `index.html` after adding `#il-issues-viewbar`/
+  `#il-issues-listwrap`/`#il-issues-kanban`.
+- Function-name-set diff against `origin/main`: **0 functions lost, 18 added** — `ilCharW`, `ilTextW`,
+  `ilWrapLines` (item 10), `viewKanbanBarHTML`, `wireViewKanbanBar`, `kanbanGroups`, `kanbanBoardHTML`,
+  `issKanbanGroupKey`, `issKanbanCardHTML`, `issKanbanHTML`, `wireIssKanban`, `lessKanbanChampion`,
+  `lessKanbanGroupKey`, `lessKanbanCardHTML`, `lessKanbanHTML`, `wireLessKanban`, `wireBar` (item 3),
+  and `selOptsHTML` (the item 6/7/8 bug fix's rename).
+- Repo-wide grep: 0 remaining references to `.il-lessontag`/`.il-lcard-src`/`.il-src-issue` outside
+  explanatory comments; every new class emitted by `module.js` (`.il-viewbar`, `.il-kanban*`,
+  `.il-ls-dept`, `.il-ls-date`) resolves to at least one CSS rule.
+- **Every new/changed function EXECUTED, not just read**, via a Node `vm`+`Proxy` harness sliced
+  straight out of the shipped file (never reimplemented): `hbarSVG` (centred vs. left-align fallback,
+  the 2-line wrap cap, an unbroken over-wide word, zero-total with no `NaN`, the `X/Y (Z%) open`
+  format, multi-row rect counts), `donutChartSVG` (the `●`-marker + percent label format),
+  `kanbanGroups`/`kanbanBoardHTML`/`viewKanbanBarHTML`/`wireViewKanbanBar` (grouping + "(no …)"
+  sorts-last, the empty-board message, the toggle's active-button + pre-selected group, and that
+  clicking List/Kanban/the group-select fires exactly the right callback), `issKanbanHTML`/
+  `lessKanbanHTML` (department AND champion grouping, including champion resolved through a lesson's
+  linked issue) — and, decisively, the FIXED `issDetailHTML` itself: `readOnly:true` now measurably
+  disables every field and drops the workflow buttons, `hideToolbarState:true` now measurably drops
+  the toolbar, `excludeLessonId` now measurably excludes just that one lesson from Related lessons —
+  and a normal call with no `opts` (the real Issues & Concerns screen's own usage) is provably
+  unaffected: toolbar shown, fields editable, both lessons listed.
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing constraint
+for every UI pass in this module. No live click-through of the Kanban toggle/board against real
+project data, the widened columns' actual rendered width, or the Background section's new "Open
+issue" button against a real linked issue.
+
+`module.css/js?v=` → `20260902b`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260902ak`.
+
+## 2026-09-02 — Title dedup extended to all 3 screens, Related lessons as a numbered list, denser table, Reopen from Closed, and export to Excel/PDF/HTML
+
+Owner's 9-item list: (1) the module title is still showing "to the left" on Issues & Concerns and
+Issues Dashboard — only Lessons Learned had it removed; (2) a lesson's own detail view should be
+the same layout as an issue's, with the lesson above the issue, not two differently-shaped blocks;
+(3) that embedded issue's own lesson list should exclude the current lesson and read "Related
+lessons"; (4) a button to open the referenced issue, and every lesson added straight from the
+Lessons Learned screen must log a real issue behind it; (5) that lesson list should be a numbered
+list of lesson text only, not tiles; (6) smaller, denser table fonts, text allowed to overflow, and
+the Issue/Caused By/Corrective Action columns widened; (7) no reporting view; (8) export Issues and
+Lessons Learned as Excel/PDF/HTML; (9) a Reopen button on a Closed issue, not just On Hold.
+
+**Items 2 and half of item 4 were already built** (entries (f)/(g)/(h)): `lessonDetailHTML` already
+reuses `issDetailHTML`'s `.il-iss-split`/`.il-iss-panel`/`.il-iss-body` layout with the lesson above
+the embedded issue, and `newLessonAsClosedIssue()` already routes every "+ New lesson" click from
+the Lessons screen through the full issue-to-closure form — so a lesson created there has always
+logged a real (Closed) issue behind it. This entry closes the remaining gaps.
+
+### Item 1 — the title was hidden on Lessons only
+
+⚠️ Entry (h)'s fix scoped the always-hide to `s === 'lessons'` — deliberate at the time, but the
+owner's report names Issues & Concerns and Issues Dashboard too. `switchScreen()` now hides the
+whole `<h1>` on **every** screen: `.il-tabs`' dropdown trigger already names whichever of the three
+is active, so the module title duplicates it everywhere, not just on Lessons. ⚠️ Still a full
+element hide (never text-only) — hiding only `.il-title-txt` is the exact defect entry (h) traced
+("icon alone on a line, dropdown label on the next"); hiding the whole `<h1>` leaves nothing
+standing for that to happen to.
+
+### Item 3 — "Related lessons", not "Lessons learned from this issue"
+
+Heading renamed in `issDetailHTML`. The exclusion (`opts.excludeLessonId`, so the lesson you're
+already looking at never lists itself as "related" to itself) was already correct and untouched.
+
+### Item 4 — an explicit "Open issue" button
+
+`lessonDetailHTML`'s toolbar gains **"Open issue in Issues & Concerns →"** (only when the lesson
+has a real `issue_id`) — reusing `openIssue()`, the same entry point the log/dashboard/step-through
+already use, so it switches to the real Issues & Concerns screen rather than merely scrolling to
+the read-embedded copy already sitting below on the same page. It replaces the toolbar slot the
+removed Reporting-view toggle (item 7) used to occupy.
+
+### Item 5 — a numbered list, lesson text only
+
+The "Related lessons" section's tile/card grid (`lessonCardHTML`, `.il-lessons.il-lessons-inline`)
+is replaced with a plain `<ol>` of lesson text — no department chip, date, or action buttons, just
+the line, clickable to open. ⚠️ `lessonCardHTML` is **removed outright** — its only caller was this
+section, and nothing else in the module ever called it (checked before deleting, not assumed).
+Reuses `wireIssues()`'s existing generic `[data-open-lesson]` wiring, so no new event handler was
+needed. The now-dead `.il-lessons`/`.il-lcard*`/`.il-chip` CSS (that tile grid's own styling) is
+removed with it; `.il-lcard-src`/`.il-src-issue` are **kept** — `renderLessonsLogView` still uses
+them for the source line under a lesson's own row in the Lessons Learned table.
+
+### Item 6 — a denser, more minimalist table
+
+`.il-table` drops to 12.5px body / 11px header font (was inherited ~14px); `.il-cell-wrap` (the
+Issue / Caused By / Corrective Action / Lesson Learned cells) widens 320px → 420px; `min-width`
+raised 980px → 1080px to fit. ⚠️ **`-webkit-line-clamp` removed from the desktop `.il-clip` rule** —
+a clamped cell hid text with nothing on screen saying more had been cut off, exactly what "allow
+text overflows as needed" asks to stop. ⚠️ The **mobile card view's own 4-line clamp had to keep its
+own complete definition** (`display:-webkit-box`/`-webkit-box-orient`/`overflow`, not just
+`-webkit-line-clamp`) — it previously borrowed those three properties from the desktop rule I just
+stripped them from, and `-webkit-line-clamp` alone does nothing without them.
+
+### Item 7 — no reporting view (lessons)
+
+`_lessReport` and its toolbar toggle (`#il-less-report`) are removed from `lessonDetailHTML` —
+issues already lost theirs in an earlier round (entry note: "the separate 'Reporting view'
+read-only toggle this used to also fold in is gone"), lessons hadn't caught up. `ro` in
+`lessonDetailHTML` now means exactly what it means on an issue's page: edit permission, full stop.
+
+⚠️ **Found while removing it: an entire CSS block for a Minutes-of-Meeting-style reporting view
+(`.il-mom-report`) was already 100% dead in this file** — it targeted ids (`#il-mom-additem`,
+`#il-mom-carry`, `#il-mom-save`, …) belonging to the *other* module this file split out of in
+2026-08-31, and nothing in `module.js` had set that class on an Issues/Lessons host since the
+issues-side toggle was removed in an earlier round. Confirmed dead (grepped for every `.add`/
+`.toggle` of the class — none), then removed along with the three vestigial
+`host.classList.remove('il-mom-report')` calls that were its only remaining trace.
+
+### Item 8 — export to Excel / PDF / HTML
+
+New **Export ▾** control in the topbar tool cluster (beside Refresh), offering the currently
+**filtered and sorted** Issues or Lessons list (whichever screen is active) — the same list
+`issuesFiltered()`/`lessonsFiltered()` + the active `_issSort`/`_lessSort` already render on screen,
+so an export can never disagree with what's on it. Hidden while a single record's detail is open or
+on the Dashboard tab (nothing there is "the list").
+
+- **Excel** — the same SheetJS convention this suite already uses elsewhere (`aoa_to_sheet` →
+  `book_new` → `writeFile`), loaded from the same pinned CDN build (`xlsx@0.18.5`) every other
+  exporting module already loads.
+- **HTML** — a self-contained file (inline `<style>`, no external references) built as a string and
+  downloaded via `Blob` + a throwaway `<a download>`, so it opens correctly offline.
+- **PDF** — `html2pdf.js@0.10.1`, the same pinned CDN build minutes-of-meeting and progress-photos
+  already load, landscape (these are wide tables). ⚠️⚠️ **Follows the "normal flow" rule this repo
+  already learned the hard way** (minutes-of-meeting's `momDownloadPDF`): the captured node must
+  stay in normal flow — html2pdf clones it into its own container and measures it there, so an
+  out-of-flow node contributes zero height and produces a silently blank PDF. The off-screen parking
+  goes on a separate holder (`position:fixed;left:-10000px`); the rendered `wrap` sits in normal
+  flow inside it. Cleanup runs in `finally`, so a thrown export can't leave a stray node behind for
+  the next one to stack on top of.
+
+### Item 9 — Reopen offered from Closed too
+
+`canReopen` widened from `status === 'On Hold'` to `status === 'On Hold' || status === 'Closed'`.
+No change needed to `confirmReopenIssue()` — it already just sets status back to `Open` with a
+required Action Plan, which is exactly as sound a transition from Closed as it always was from On
+Hold. `date_resolved`/`closure_report` are deliberately left as historical record of the last
+closure; a later re-close overwrites both with fresh values, same as before.
+
+### Verified
+
+- `node --check` clean on `module.js`.
+- 0 NUL bytes across `module.js`/`module.css`/`index.html`.
+- CSS braces balanced: 272/272 (was 281/281 before the dead-code removals below).
+- 0 duplicate DOM `id=` attributes in `index.html`; `<div>` tags balanced (28/28).
+- Function-name-set diff against `origin/main`: **1 function removed (`lessonCardHTML`, its only
+  caller replaced), 6 added** (`closeExportMenu`, `exportRows`, `exportRegister`,
+  `exportExcelFile`, `exportHTMLFile`, `exportPDFFile`) — all deliberate.
+- Repo-wide grep confirms no other file references any of the removed classes (`il-lcard`,
+  `il-chip`, `il-lessons`) or the removed `_lessReport`/`il-mom-report` mechanism.
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing constraint
+for every UI pass in this module. No live click-through of the export menu against real filtered
+rows (in particular, no PDF has actually been opened, no `.xlsx` has actually been read back, and
+no HTML export has actually been opened offline), the Reopen-from-Closed workflow against a real
+row, or the numbered "Related lessons" list's click-to-open against real linked lessons.
+
+`module.css/js?v=` → `20260902a`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260902u`.
+
+## 2026-09-01 (h) — Mobile pass off a phone screenshot: the duplicate title, KPI/chart tile layout, touch reorder, and the lesson detail's field arrangement
+
+Owner sent a phone screenshot of the live Issues & Concerns screen — the module `<h1>` ("Issues &
+Concerns") crossed out in red, sitting directly above the tabs-dropdown trigger reading the same
+thing — with 10 items. Two touch shared files (`assets/js/ui.js`, `assets/css/dashboard.css`); the
+rest are module-local.
+
+### Item 1 — the duplicate title on mobile
+
+⚠️ **The earlier fix (entry (f)) only hid the duplicate ≥701px.** `UI.tabsToDropdown()` marks the
+title text `.pd-title-hasdrop`, and dashboard.css hid it `@media (min-width:701px)` on purpose —
+below 700px `.pd-modulebar > h1` is forced onto its own full-width row (the phone stacking rule),
+and hiding just the TEXT there would leave a bare icon alone on that row with the dropdown
+trigger's own label on the row after it, which is the exact "icon alone / label on the next line"
+defect this file's own history (`issues-lessons/module.css`, "REMOVED 2026-08-31") already fixed
+once. The screenshot showed the opposite problem — the FULL duplicate text, not a bare icon — so
+the earlier caution didn't actually cover this case.
+
+Fixed by marking the **`<h1>` itself**, not just its text span (`pd-h1-hasdrop`, added in
+`tabsToDropdown()` right beside the existing `pd-title-hasdrop`), and hiding the whole element
+below 700px (`.pd-modulebar > h1.pd-h1-hasdrop { display: none; }`). ⚠️ **This removes the row
+entirely rather than leaving it half-empty** — with no separate icon row left at all, there is
+nothing left to read as "alone", so the old defect can't recur through this door either. Desktop
+(≥701px) is untouched: the icon still rides the same row as the dropdown trigger and tools, which
+is the wanted look there.
+
+### Item 2 — the 5-tile KPI band compresses to two rows on narrow screens
+
+⚠️ **Root cause: `.il-kpis` (the Issues screen's 5-tile band) was narrowed to 2 COLUMNS at both
+≤820px and ≤700px**, and 5 items over 2 columns auto-place as 2+2+1 — three rows, with the last
+tile (AVG AGING) stranded alone on a mostly-empty third row, exactly the screenshot. Fixed by
+**not** narrowing `.il-kpis` (without the `-2` suffix) below the existing ≤1000px rule, which
+already sets it to 3 columns — kept at 3 all the way to phone width, so 5 tiles over 3 columns
+auto-place as 3+2, always exactly two rows, the tiles just getting narrower rather than gaining a
+third row. ⚠️ `.il-kpis-2` (the smaller 3-tile bands — e.g. the Lessons screen's own band, item 10
+below) is untouched and still narrows to 2 columns at ≤820px — a 3-tile band reading fine at 3
+columns needs no such fix.
+
+### Item 3 — reordering on a touch device did nothing
+
+⚠️ **Not a bug in the drag code — a whole input model that doesn't exist on touch.**
+`dragGripHTML`/`wireReorder` are pure HTML5 native drag-and-drop (`draggable="true"`,
+`ondragstart`/`ondragover`/`ondrop`), and touch devices never fire those events at all — reordering
+"does nothing" on a phone by construction, not by a fault in the gesture handling.
+
+Rather than reimplement drag-and-drop on top of touch/pointer events (real risk of fighting the
+page's own scroll gesture, and nothing here can be verified against a real touchscreen in this
+environment), a **move-up / move-down button pair** does the same job with no gesture at all.
+`moveButtonsHTML(id, isFirst, isLast)` renders two small buttons; `wireReorder` now also wires
+`[data-moveup]`/`[data-movedown]` clicks, computing the row's neighbour in the currently-displayed
+`list` and calling the **same `applyReorder`** the drag handle already uses (fed a computed
+neighbour id instead of a drop target) — so drag and the buttons can never disagree about what
+"move" means, and there is exactly one reorder/renumber code path, not two. CSS shows the drag grip
+by default and swaps to the move buttons below 700px, since dragging genuinely doesn't work there
+and a control that does nothing is worse than none.
+
+⚠️ **Sized smaller than this app's usual 44px touch minimum, deliberately** — a full-size control
+here would make every row noticeably taller across the whole register for one small cell, and a
+step button's target (move one place) tolerates an imprecise tap far better than a primary action
+does: a miss just needs a second tap, not the wrong record touched.
+
+### Item 4 — dashboard chart tiles need not share height below 1000px
+
+⚠️ **Reverses part of entry (g)'s item 1**, on purpose, per this round's explicit ask. The fixed
+`.il-dash-cardbody { height: 340px; }` (and the internal scroller it exists to bound) is now a
+wide-screen-only rule — below 1000px the three tiles are no longer a strict single row (they stack
+2-up or 1-up per the existing `.il-dash-grid` breakpoints), so forcing three differently-shaped
+charts to share one height stops being what makes them read as "one row"; each tile now sizes to
+its own content there instead.
+
+### Item 5 — donut chart: a label beside each section
+
+`donutChartSVG` gained per-slice labels, not just the top-right legend added in entry (g). Each
+non-zero slice's midpoint angle is computed from its own cumulative arc offset, and a label
+("Open (2)") is placed just outside the ring at that angle, anchored toward whichever side of the
+circle it falls on (right of the ring reads outward from it; left of the ring anchors from its own
+end so it also reads away from the arc; top/bottom centre) — so a label never sits through the arc
+it names. ⚠️ **A zero-value slice gets no label** — "Closed (0)" floating beside an otherwise-empty
+arc position would read as a data point that exists when it doesn't.
+
+⚠️ The viewBox is widened to give the labels room, with the ring drawn inside a translated `<g>` so
+its own coordinate math (built for the un-padded box) needed no changes. The SVG renders at
+`width="100%"` (matching `hbarSVG`'s own scaling convention) so it shrinks to fit a narrow tile
+instead of a fixed pixel width overflowing it, capped by a new `.il-donut-svg { max-width: 260px; }`
+so it can't grow oversized on a wide single-column mobile layout.
+
+### Item 6 — department/champion bar labels overflow instead of truncating
+
+`hbarSVG`'s row labels were character-truncated to 24 chars with an ellipsis (`clip(it.label, 24)`)
+— removed; the full label now renders regardless of length. ⚠️ Most browsers default a root `<svg>`
+to `overflow:hidden`, which would have silently clipped anything running past the viewBox even
+without the character truncation — the returned `<svg>` now carries `overflow="visible"` so a long
+name genuinely overflows past the fixed label column rather than being cut, matching the literal
+ask. The `.il-dash-cardbody-scroll` wrapper's own `overflow-y:auto` already computes `overflow-x`
+to `auto` too per the CSS spec's cross-axis rule (an explicit `overflow-y` value forces a `visible`
+`overflow-x` to compute as `auto`), so an overflowing label scrolls into view horizontally rather
+than spilling onto neighbouring page content.
+
+### Item 7 — the Open Issues and Lessons Learned dashboard tiles scroll internally
+
+Both tiles' inner `.pd-tablewrap` (the shared horizontal-scroll wrapper every wide table in this
+app uses) now also caps at `max-height: 400px; overflow-y: auto;` — scoped to
+`.il-dash-fulllist-card .pd-tablewrap`/`.il-dash-lessons-card .pd-tablewrap` specifically, since
+`.pd-tablewrap` itself is a shared utility class used unbounded everywhere else in the app and must
+stay that way.
+
+### Item 8 — the lesson detail view now mirrors the issue detail's own field arrangement
+
+⚠️ **Corrects entry (g)'s item 7**, which built the lesson's own fields in a bespoke shape (a
+`.il-form-row` pair, one textarea, a "what produced it" section, a save row) stacked ABOVE a
+completely separately-shaped, full `issDetailHTML` block for the linked issue. This round's ask —
+"same contents as issues including order and arrangement of fields, only the header differs" —
+reads as: the lesson's OWN block should use the same STRUCTURE issues use, not a second, different
+layout.
+
+`lessonDetailHTML` now builds its content with the identical `.il-iss-split` /
+`.il-iss-panel` / `.il-iss-body` two-pane layout `issDetailHTML` already uses (reused verbatim, not
+a second copy of the classes), in the same relative order: **panel** — Department, then Date
+Captured (the same relative order Department and Date Raised hold in an issue's own panel); **body**
+— the Lesson Learned textarea (the position an issue's primary narrative field occupies), then, at
+the foot of the body pane, "what produced this lesson" when unlinked — the same structural position
+an issue's provenance line (`il-iss-prov`) occupies. Save/Cancel/Delete sit below the split, in the
+same position `issDetailHTML`'s workflow row does. ⚠️ Only the toolbar's state text (already
+lesson-worded via `lessonSourceText`) and the field labels differ from an issue's page — the
+arrangement itself is now identical. The embedded full issue block below (when linked) is
+unchanged from entry (g) — this round's wording doesn't retract it, only corrects the shape of the
+lesson's own block above it.
+
+### Item 9 — lesson list labels: "Lesson Learned", and "From an issue" → "Issue"
+
+The Lessons Learned list's column header (and its mobile-stacked `data-l` label) changed from
+"Lessons" to **"Lesson Learned"**. `lessonSourceText(l)`'s issue-linked case changed from
+`'From an issue' + ...` to `'Issue' + ...` — the only case the ask named; the meeting-linked and
+standalone cases ("From a meeting", "Captured on its own") are untouched.
+
+### Item 10 — the Lessons Learned KPI band is exactly three tiles
+
+`renderLessonKpis()` rewritten from `Lessons captured / From a closed issue / Departments` to
+exactly three: **Lessons learned** (count), **Issues closed** (project-wide `rows` count of
+`status === 'Closed'`, not scoped to only issues with a lesson attached — the two registers read
+side by side), and **Avg aging (d)** — the mean of every lesson's own `lessonAgingDays(l)`. ⚠️ Reuses
+the SAME function the list's own Aging column already reads, so the tile and the column can never
+disagree about what one lesson's aging is.
+
+### Verified
+
+- `node --check` clean on both touched JS files (`module.js`, `assets/js/ui.js`).
+- 0 NUL bytes across every touched file.
+- CSS braces balanced: `module.css` 285/285, `dashboard.css` 427/427.
+- 0 duplicate DOM `id=` attributes in `index.html` (unchanged this round — no markup was added or
+  removed there; every new control is rendered dynamically by JS into existing containers).
+- `<div>` tags balanced (26/26, unchanged — `index.html` untouched this round).
+- Function-name-set diff against `main`: **0 functions lost, 1 added** (`moveButtonsHTML`) in
+  `module.js`; **0 lost, 0 added** in `ui.js` (the fix there is inline inside the existing
+  `tabsToDropdown`, not a new named function).
+- 0 leftover git conflict markers repo-wide after the branch restart (see below).
+
+⚠️ **Not verified signed-in** — this environment has no live Supabase login, the standing constraint
+for every UI pass in this module. No live click-through of the move-up/move-down buttons on a real
+touch device, the donut label placement against real slice values, the bar-label horizontal
+overflow-scroll, or the restructured lesson detail view's live save/cancel/delete cycle.
+
+`module.css/js?v=` → `20260901j`; shared `assets/js/ui.js?v=` / `assets/css/dashboard.css?v=` →
+`20260901d` (app-wide — 20/28 referencing files respectively); `MODULE_V` (via `modules-grid.js?v=`
+on `dashboard.html`/`modules.html`) → `20260901s`.
+
 ## 2026-09-01 (g) — Dashboard tile sizing/legends, list ordering, Lessons Learned reworked to embed the source issue, sortable columns
 
 Owner's 10-item list, verbatim: (1) the three dashboard chart tiles should share one height;

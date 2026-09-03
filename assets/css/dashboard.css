@@ -68,20 +68,20 @@ a:hover { text-decoration: underline; }
   display: flex; flex-direction: column;
   transition: width .2s ease, flex-basis .2s ease, padding .2s ease;
 }
-/* Brand block — PRC's .sidebar-logo, value for value. The sidebar itself carries
-   no padding (see above), so this needs no negative margins: it is a plain block
-   with PRC's own 18px 20px 16px. The logo has NO max-width — the 188px cap that
-   used to sit here made the wordmark visibly smaller than PRC's inside an
-   identically 240px sidebar. */
+/* Brand block — PRC's .sidebar-logo, widened top/bottom and centered. The sidebar
+   itself carries no padding (see above), so this needs no negative margins: it is
+   a plain block. The logo is centered (not left-aligned) with extra breathing
+   room above/below it. */
 .pd-sidebar .pd-brand {
   font-size: 0;                                  /* hides the inline text node beside the logo */
-  display: block; margin: 0; padding: 18px 20px 16px;
+  display: block; margin: 0; padding: 28px 20px 24px;
   background: var(--pd-sidebar-bg);
   border-bottom: 1px solid rgba(255,255,255,.08);
+  text-align: center;
 }
 .pd-brand-logo {
   display: block; width: 100%; max-width: 150px; height: auto;
-  margin: 0 0 10px; object-fit: contain; object-position: left center;
+  margin: 0 auto 10px; object-fit: contain; object-position: center center;
 }
 .pd-sidebar .pd-brand small {
   display: block; font-size: 9px; font-weight: 700; letter-spacing: .14em;   /* PRC .app-label */
@@ -485,6 +485,8 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .pd-pill-ok { background: rgba(31,143,78,.12); color: var(--pd-ok); }
 .pd-pill-muted { background: var(--pd-line); color: var(--pd-muted); }
+.pd-pill-bad { background: rgba(196,33,39,.12); color: var(--pd-bad); }
+.pd-pill-warn { background: rgba(199,119,0,.12); color: var(--pd-warn); }
 
 /* Projects list. The group-head pane that used to sit beside it is gone —
    group heads are a toolbar filter now, not a folder column (see A2). */
@@ -747,7 +749,7 @@ body { overflow-x: clip; }
      a notch makes the drawer's own top padding larger than 18px. */
   .pd-app.pd-collapsed .pd-brand,
   .pd-sidebar .pd-brand {
-    margin: 0; padding: max(18px, env(safe-area-inset-top)) 20px 14px;
+    margin: 0; padding: max(28px, env(safe-area-inset-top)) 20px 22px;
   }
 
   /* Nav rows are the primary touch targets on a phone. */
@@ -988,12 +990,21 @@ body { overflow-x: clip; }
   .pd-modulebar { padding-left: 16px; padding-right: 16px; }
 }
 
-/* ---- Drawer breakpoint: the dropdown moves to its OWN row, BELOW the
+/* ---- Phone breakpoint ONLY: the dropdown moves to its OWN row, BELOW the
    toggle/theme/avatar cluster — the opposite order from the wide layout,
    where it leads. `order` (not DOM order) is what makes the same three
    chrome controls stay together on row 1 while the dropdown, now ordered
-   last, wraps onto row 2 by itself via its 100% basis. ---- */
-@media (max-width: 820px) {
+   last, wraps onto row 2 by itself via its 100% basis.
+   ⚠️ Deliberately gated at the PHONE boundary (700px), not the wider 820px
+   "drawer" one. A real desktop/Windows browser window is routinely narrower
+   than 820px (a snapped half-screen window, a smaller laptop panel) without
+   being "mobile view" in any meaningful sense, and this control should stay
+   on the toggle/theme/avatar row there. Above 700px the dropdown shrinks in
+   place instead (flex-shrink via `min-width:0` on the wrapper) and its own
+   label already truncates with an ellipsis (`.pd-psel-txt`), which is the
+   "wrap the text, not the row" behaviour — only true phone widths drop it
+   to its own line. ---- */
+@media (max-width: 700px) {
   .pd-topbar.pd-tb-split .pd-tb-main { row-gap: 8px; }
   .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"],
   .pd-topbar.pd-tb-split .pd-tb-main #ctx-switcher { flex-basis: 100%; order: 5; max-width: none; }
@@ -1016,6 +1027,16 @@ body { overflow-x: clip; }
 
 @media (max-width: 700px) {
   .pd-modulebar > h1 { flex: 1 1 100%; min-width: 0; }
+  /* Item 1 (2026-09-01, mobile round): a module whose tab strip already got a
+     dropdown (UI.tabsToDropdown) drops its <h1> ENTIRELY here — "the dropdown
+     should suffice". Above, hiding just the text still leaves an icon-only h1
+     claiming a full-width row for itself; this rule (higher specificity than
+     the bare `.pd-modulebar > h1` above, so `display:none` wins over the
+     `flex:1 1 100%`) removes the row outright, so there's no separate icon
+     row left to read as "alone". Desktop (≥701px) is untouched — there the
+     icon rides on the SAME row as the dropdown trigger and tools, which is
+     the wanted look; only the stacked-rows shape below 700px changes. */
+  .pd-modulebar > h1.pd-h1-hasdrop { display: none; }
   /* Equal segments, like a native segmented control. ⚠️ `min-height` matters:
      the modules size these to 28px, well under the 44px touch minimum — they
      were among the hardest things on the page to hit accurately. */
@@ -1031,8 +1052,8 @@ body { overflow-x: clip; }
     min-width: 0; white-space: normal; line-height: 1.15;
     font-size: 12.5px; padding-left: 6px; padding-right: 6px; text-align: center;
   }
-  /* Dropdown, moved to row 2 of .pd-tb-main at 820px, gets the same
-     touch-target rule row 1's own controls already carry. */
+  /* Dropdown, moved to row 2 of .pd-tb-main at this phone breakpoint, gets
+     the same touch-target rule row 1's own controls already carry. */
   .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-select,
   .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { min-height: var(--pd-tap); height: auto; }
   /* Actions share their row proportionally, so a labelled button keeps its words
@@ -1106,6 +1127,51 @@ body { overflow-x: clip; }
 @media (max-width: 700px) {
   .pd-tabsdrop { flex: 1 1 100%; }
   .pd-tabsdrop-btn { width: 100%; justify-content: space-between; min-height: var(--pd-tap); }
+}
+
+/* ============================================================================
+   SHARED FILTER GROUP (`UI.wireFilterToggle`) — a module's search box +
+   selects, collapsed behind a funnel toggle instead of sitting permanently
+   open. Generalised from the pattern Issues & Concerns / Progress Photos
+   already shipped (their own `.il-filters`/`.pp-filters`) so every module's
+   top filter/search row — whether it's literally inside `.pd-topbar` or the
+   always-visible filter bar most modules render directly under it — gets the
+   same hide/show behaviour from one shared component instead of N hand-rolled
+   copies. Usage: add `pd-filtergroup` alongside a module's own filter-bar
+   class (its own rules — column widths, etc. — still apply, untouched), add a
+   `pd-filttoggle` button with a `filter` icon in the topbar tools, then call
+   `UI.wireFilterToggle(toggleEl, panelEl)` once at init. ---------------------- */
+.pd-filtergroup { display: none; }
+.pd-filtergroup.open {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;
+  background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); padding: 8px 12px;
+}
+/* ⚠️ MIN-height, not height — a fixed box against the shared 16px control font
+   clips its own descenders (this app has hit that exact defect before). */
+.pd-filtergroup .pd-input, .pd-filtergroup .pd-select { min-height: 34px; font-size: 13px; }
+.pd-filtergroup .pd-select { flex: 1 1 150px; min-width: 0; max-width: 200px; }
+.pd-filtergroup input[type="text"], .pd-filtergroup input[type="search"],
+.pd-filtergroup input:not([type]) { flex: 1 1 220px; min-width: 160px; }
+.pd-filttoggle {
+  position: relative; height: 34px; width: 34px; padding: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; color: var(--pd-muted);
+  cursor: pointer; border-radius: var(--pd-radius);
+}
+.pd-filttoggle:hover, .pd-filttoggle.is-active { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-red); }
+/* A filter narrower than the module's default still narrows what's shown
+   while the panel is collapsed — this dot is the only signal of that once
+   the panel is closed again (set/cleared automatically by wireFilterToggle
+   as the panel's own controls change, no per-module wiring needed). */
+.pd-filttoggle.has-active::after {
+  content: ''; position: absolute; top: 5px; right: 5px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--pd-red); border: 1.5px solid var(--pd-card);
+}
+@media (max-width: 700px) {
+  .pd-filtergroup.open { flex-wrap: wrap; gap: 8px; }
+  .pd-filtergroup.open > * { flex: 1 1 100%; min-width: 0; }
 }
 
 

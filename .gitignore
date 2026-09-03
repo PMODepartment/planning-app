@@ -21,6 +21,7 @@ node_modules/
 # renders a fake register from fixtures with the auth layer stubbed out. Match the
 # WORD, not one filename.
 **/_ui_test.html
+**/_*_test.html
 **/harness.html
 **/harness-stub.js
 **/*.harness.html

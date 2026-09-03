@@ -75,6 +75,7 @@ window.ContractsClaims = (function () {
   var histView = null;   // UI.bindHistoryState() handle for the top-level cc-tabs — see init()
   var canWrite = false, isAdmin = false, sel = {};
   var filters = { q: '', type: '', status: '', dateField: '', from: '', to: '', pkg: '' };
+  var filterToggle = null;   // UI.wireFilterToggle() handle for #cc-filters
   /* A3's tail. Loaded tolerantly — `packages` arrives with
      2026-08-19-packages.sql, and until it is run the picker is simply absent. */
   var PKGS = [];
@@ -214,11 +215,13 @@ window.ContractsClaims = (function () {
     clearSubBar();
     document.getElementById('cc-filters').style.display = '';
     document.getElementById('cc-topbar-tools').style.display = '';
+    if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = '';
     /* The Contract tab is now keyed by PACKAGE — a contract defines a package, so one
        list carries both, and a package with no contract (or a contract with no package)
        is shown rather than dropped. packages.js owns that view. */
     if (view === 'contract' && window.CCPackages) {
       document.getElementById('cc-filters').style.display = 'none';
+      if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
       CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew);
       return;
     }
@@ -1061,7 +1064,12 @@ window.ContractsClaims = (function () {
       q.value = '';
       ['cc-f-type', 'cc-f-status', 'cc-f-datefield', 'cc-f-from', 'cc-f-to', 'cc-f-pkg'].forEach(function (id) { var e = document.getElementById(id); if (e) e.value = ''; });
       render();
+      if (filterToggle) filterToggle.sync(); // fields reset programmatically — no native change event
     };
+    // The whole filter bar hides behind one funnel toggle instead of sitting
+    // permanently open (see the "Filter bar" comment in module.css) — the dot
+    // stays in sync with the panel's own controls automatically.
+    filterToggle = UI.wireFilterToggle(document.getElementById('cc-filttoggle'), document.getElementById('cc-filters'));
 
     await load();
     joinCollab();
